@@ -1,0 +1,6 @@
+cache
+*.sif
+__pycache__
+
+/data
+/scratch
