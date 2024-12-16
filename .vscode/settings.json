@@ -1,6 +1,14 @@
 {
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}/lib",
+        "${workspaceFolder}/src",
+    ],
     "python.analysis.extraPaths": [
         "${workspaceFolder}/lib",
-        "${workspaceFolder}/src"
+        "${workspaceFolder}/src",
     ],
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}/lib:${workspaceFolder}/src",
+        "ws": "${workspaceFolder}",
+    },
 }

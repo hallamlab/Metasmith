@@ -1,0 +1,44 @@
+schema: 0.1
+ontology:
+  - doi: https://doi.org/10.1093/bioinformatics/btt113
+  - name: EDAM
+  - version: 1.25
+  - strict: false
+prototypes:
+  - contigs:
+    - "Format:FASTA"
+    - "Data:DNA sequence"
+  - orfs:
+    - "Format:GFF3"
+    - "Data:Protein sequence"
+  - aa_ref_db:
+    - "Format:FASTA"
+    - "Data:Protein sequence"
+  - fast_db:
+    - "Format:Binary format"
+    - "None:indexed fast reference database"
+  - web_resource:
+    - "Format:Textual format"
+    - "None:URL"
+transforms:
+  - pprodigal:
+    inputs:
+      - contigs
+    outputs:
+      - orfs
+  - download_refernece_db:
+    inputs:
+      - web_resource
+    outputs:
+      - aa_ref_db
+  - create_fast_index:
+    inputs:
+      - aa_ref_db
+    outputs:
+      - fast_db
+  - fast:
+    inputs:
+      - orfs
+      - fast_db
+    outputs:
+      - orf_annotation
