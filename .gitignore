@@ -4,4 +4,5 @@ __pycache__
 
 /data
 /scratch
-/lib/tini
+**/lib/tini
+.secret
