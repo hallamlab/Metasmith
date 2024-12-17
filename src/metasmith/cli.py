@@ -25,6 +25,25 @@ class CommandLineInterface:
     def _get_fn_name(self):
         return inspect.stack()[1][3]
 
+    def deploy(self, raw_args=None):
+        parser = ArgumentParser(
+            prog = f'{CLI_ENTRY} {self._get_fn_name()}',
+            description=f"Deploy an executor agent to a remote machine via ssh"
+        )
+
+        parser.add_argument("--xx", required=True)
+
+        paths = parser.add_argument_group(title="main")
+        paths.add_argument("--step", required=True)
+        paths.add_argument("--args", nargs='*', required=False, default=[])
+
+        x = parser.add_argument_group(title="a")
+        x.add_argument("--e", required=True)
+        x.add_argument("--r", nargs='*', required=False, default=[])
+
+        args = parser.parse_args(raw_args)
+        print(args)
+
     def api(self, raw_args=None):
         parser = ArgumentParser(
             prog = f'{CLI_ENTRY} {self._get_fn_name()}',
@@ -46,7 +65,7 @@ class CommandLineInterface:
             f"{NAME} v{VERSION}",
             f"{GIT_URL}",
             f"",
-            f"Syntax: {CLI_ENTRY} COMMAND [OPTIONS]",
+            f"usage: {CLI_ENTRY} COMMAND [OPTIONS]",
             f"",
             f"Where COMMAND is one of:",
         ]+[f"- {k}" for k in COMMANDS]+[

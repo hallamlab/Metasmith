@@ -127,11 +127,11 @@ case $1 in
     ###################################################
     # run
 
-    # -r)
-    #     shift
-    #     mkdir -p ./scratch
-    #     cd ./scratch
-    # ;;
+    -r)
+        shift
+        export PYTHONPATH=$HERE/src:$PYTHONPATH
+        python -m $NAME $@
+    ;;
     -rd) # docker
             # -e XDG_CACHE_HOME="/ws"\
         shift
