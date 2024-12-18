@@ -12,4 +12,4 @@ nextflow -C ../config.nf -log ./.nextflow_logs/log \
     run ../test.2.nf \
     --given_OVtA given/2beaver_fosmid_seqs.fna given/contigs.fna \
     --given_bAYL given/swissprot_fastal_ref \
-    --account st-shallam-1
+    --account ***REMOVED***
