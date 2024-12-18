@@ -4,3 +4,6 @@ channels:
 dependencies:
   - python=3.12
   - nextflow=24.10.2
+  - flask=3.1.0       # builds REST API
+  - gevent=24.11.1    # runs flask server
+  - pyyaml=6.0.2

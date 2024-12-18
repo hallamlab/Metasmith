@@ -4,8 +4,9 @@
 HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 NAME=metasmith
 DEV_USER=hallamlab
-# VER="$(cat $HERE/version.txt).$(git branch --show-current)-$(git rev-parse --short HEAD)"
-VER="$(cat $HERE/version.txt)"
+_ver_file=$(find $HERE/src | grep version.txt)
+VER="$(cat $_ver_file).$(git branch --show-current)-$(git rev-parse --short HEAD)"
+# VER="$(cat $_ver_file)"
 DOCKER_IMAGE=quay.io/$DEV_USER/$NAME
 
 # CONDA=conda
@@ -61,8 +62,8 @@ case $1 in
 
     -bp) # pip
         # build pip package
-        rm -r build
-        rm -r dist
+        [ -d ./build ] && rm -r build
+        [ -d ./dist ] && rm -r dist
         python -m build
     ;;
     -bpi) # pip - test install
@@ -157,7 +158,9 @@ case $1 in
     # test
 
     -t)
-        echo "no tests"
+        shift
+        export PYTHONPATH=$HERE/src:$PYTHONPATH
+        python -m $NAME $@ deploy
     ;;
 
     ###################################################

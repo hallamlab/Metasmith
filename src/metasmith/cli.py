@@ -6,12 +6,7 @@ import inspect
 from dataclasses import dataclass
 import importlib
 
-from .constants import NAME, VERSION, GIT_URL
-
-ENTRY_POINTS = [
-    "ms=metasmith.cli:main",
-    "metasmith=metasmith.cli:main",
-]
+from .constants import NAME, VERSION, GIT_URL, ENTRY_POINTS
 
 CLI_ENTRY = [e.split("=")[0].strip() for e in ENTRY_POINTS][0]
     
@@ -31,18 +26,22 @@ class CommandLineInterface:
             description=f"Deploy an executor agent to a remote machine via ssh"
         )
 
-        parser.add_argument("--xx", required=True)
+        from .deploy import Deploy
+        
+        Deploy()
 
-        paths = parser.add_argument_group(title="main")
-        paths.add_argument("--step", required=True)
-        paths.add_argument("--args", nargs='*', required=False, default=[])
+        # parser.add_argument("--xx", required=True)
 
-        x = parser.add_argument_group(title="a")
-        x.add_argument("--e", required=True)
-        x.add_argument("--r", nargs='*', required=False, default=[])
+        # paths = parser.add_argument_group(title="main")
+        # paths.add_argument("--step", required=True)
+        # paths.add_argument("--args", nargs='*', required=False, default=[])
 
-        args = parser.parse_args(raw_args)
-        print(args)
+        # x = parser.add_argument_group(title="a")
+        # x.add_argument("--e", required=True)
+        # x.add_argument("--r", nargs='*', required=False, default=[])
+
+        # args = parser.parse_args(raw_args)
+        # print(args)
 
     def api(self, raw_args=None):
         parser = ArgumentParser(

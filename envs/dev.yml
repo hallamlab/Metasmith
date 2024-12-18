@@ -4,4 +4,11 @@ dependencies:
   - python=3.12
   - jupyter
   - notebook
+  - conda-build
+  - boa
+  - anaconda-client
+  - pip
+  - pip:
+    - twine
+    - build
   

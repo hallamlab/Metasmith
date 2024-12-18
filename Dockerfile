@@ -22,11 +22,14 @@ ENTRYPOINT ["/tini", "-s", "-g", "--"]
 # https://mamba.readthedocs.io/en/latest/user_guide/mamba.html
 # create conda env from yaml config
 COPY ./envs/base.yml /opt/base.yml
-# use an external cache for solved environments
+# use an external cache for solved environments and install packages
 RUN --mount=type=cache,target=/opt/conda/pkgs \
     mamba env create -n ${CONDA_ENV} --no-default-packages -f /opt/base.yml
 # add bins to PATH so that the env appears "active"
 ENV PATH /opt/conda/envs/${CONDA_ENV}/bin:/app:$PATH
+# install src
+COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
+RUN pip install /opt/metasmith.tar.gz
 # # add local scripts/executables
 # COPY ./src /app/
 # ENV PATH="/app:${PATH}"
