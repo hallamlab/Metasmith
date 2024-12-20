@@ -6,7 +6,7 @@ import inspect
 from dataclasses import dataclass
 import importlib
 
-from .constants import NAME, VERSION, GIT_URL, ENTRY_POINTS
+from ..constants import NAME, VERSION, GIT_URL, ENTRY_POINTS
 
 CLI_ENTRY = [e.split("=")[0].strip() for e in ENTRY_POINTS][0]
     
@@ -26,38 +26,20 @@ class CommandLineInterface:
             description=f"Deploy an executor agent to a remote machine via ssh"
         )
 
-        from .deploy import Deploy
-        
+        from ..agents.ssh import Deploy
         Deploy()
-
-        # parser.add_argument("--xx", required=True)
-
-        # paths = parser.add_argument_group(title="main")
-        # paths.add_argument("--step", required=True)
-        # paths.add_argument("--args", nargs='*', required=False, default=[])
-
-        # x = parser.add_argument_group(title="a")
-        # x.add_argument("--e", required=True)
-        # x.add_argument("--r", nargs='*', required=False, default=[])
-
-        # args = parser.parse_args(raw_args)
-        # print(args)
 
     def api(self, raw_args=None):
         parser = ArgumentParser(
             prog = f'{CLI_ENTRY} {self._get_fn_name()}',
-            description=f"Snakemake uses this to call the python script for each step"
+            description=f"Not intended for manual use. This is for communications between agents"
         )
 
-        parser.add_argument("--step", required=True)
-        parser.add_argument("--args", nargs='*', required=False, default=[])
-        args = parser.parse_args(raw_args)
-
-        mo = importlib.import_module(name=f".steps.{args.step}", package=NAME)
-        try:
-            mo.Procedure(args.args)
-        except KeyboardInterrupt:
-            exit()
+        # from .api import Request
+        # parser.add_argument("--json", required=True)
+        # args = parser.parse_args(raw_args)
+        # request = Request.Parse(Request, args.json)
+        # request.Handle()
 
     def help(self, args=None):
         help = [
@@ -67,7 +49,7 @@ class CommandLineInterface:
             f"usage: {CLI_ENTRY} COMMAND [OPTIONS]",
             f"",
             f"Where COMMAND is one of:",
-        ]+[f"- {k}" for k in COMMANDS]+[
+        ]+[f"  {k}" for k in COMMANDS]+[
             f"",
             f"for additional help, use:",
             f"{CLI_ENTRY} COMMAND -h/--help",

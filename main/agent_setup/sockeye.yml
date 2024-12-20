@@ -1,0 +1,9 @@
+ssh_command: ssh sockeye
+timeout: 15
+lib: ~/.metasmith
+workspace: ~/scratch/metasmith
+pre: |
+  module load gcc/9.4.0
+  module load apptainer/1.3.1
+  module load python/3.8.10
+container: docker://quay.io/hallamlab/metasmith:0.2.dev-f694ba5
