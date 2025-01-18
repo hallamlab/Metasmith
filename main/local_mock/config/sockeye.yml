@@ -1,6 +1,5 @@
 ssh_command: ssh sockeye
 timeout: 15
-lib: ~/.metasmith
 workspace: ~/scratch/metasmith
 pre: |
   module load gcc/9.4.0
