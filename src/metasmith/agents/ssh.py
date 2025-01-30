@@ -1,12 +1,9 @@
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import yaml
 
-from ..coms import LiveShell
+from ..coms.ipc import LiveShell
 from ..logging import Log
-
-# dev
-_config = "/home/tony/workspace/tools/Metasmith/main/agent_setup.ssh/sockeye.yml"
 
 CONTAINER = "docker://quay.io/hallamlab/metasmith:latest"
 CONTAINER_FILE = "metasmith.sif"
@@ -15,11 +12,11 @@ CONTAINER_FILE = "metasmith.sif"
 class DeploymentConfig:
     ssh_command: str
     timeout: int
-    lib: str
     workspace: str
     pre: str = ""
     post: str = ""
     container: str = CONTAINER
+    container_args: list[str] = field(default_factory=list)
 
     @classmethod
     def Parse(cls, file_path):
@@ -27,6 +24,8 @@ class DeploymentConfig:
             with open(file_path, "r") as f:
                 config = cls(**yaml.safe_load(f))
             return config
+        except FileNotFoundError as e:
+            Log.Error(f"config file [{file_path}] not found")
         except TypeError as e:
             emsg = str(e)
             emsg = emsg.replace("DeploymentConfig.__init__()", "").strip()
@@ -41,34 +40,64 @@ class DeploymentConfig:
             Log.Error(f"error with config [{file_path}]")
             Log.Error(emsg)
 
-def Deploy():
-    config: DeploymentConfig = DeploymentConfig.Parse(_config)
-    if config is None: return
-    Log.Info(config)
+def Deploy(config_path: Path):
+    config = DeploymentConfig.Parse(config_path)
+    if config is None: 
+        Log.Error("config failed to parse")
+        return
+    workspace = Path(config.workspace).absolute()
 
-    with LiveShell(silent=False) as shell:
-        shell.Exec(config.ssh_command, timeout=config.timeout)
+    with LiveShell() as shell:
+        SILENT = False
+        internal = workspace/"internal"
+        containers = workspace/"containers"
+        shell.Exec(config.ssh_command, timeout=config.timeout, silent=SILENT)
+        shell.Exec(config.pre, timeout=None, silent=SILENT)
         shell.Exec(
             f"""\
             {config.pre}
-            [ -d {config.lib} ] || mkdir -p {config.lib}
-            cd {config.lib}
+            [ -d {internal} ] || mkdir -p {internal}
+            [ -d {containers} ] || mkdir -p {containers}
+            cd {containers}
             [ -f {CONTAINER_FILE} ] || apptainer pull {CONTAINER_FILE} {config.container}
             """,
-            timeout=None,
+            timeout=None, silent=SILENT
         )
         shell.Exec(
             f"""\
-            cd {config.lib}
-            apptainer run {CONTAINER_FILE} metasmith api container_unpack
+            cd {workspace}
+            apptainer run {" ".join(config.container_args)} {containers/CONTAINER_FILE} metasmith api unpack_container
+            nohup {internal}/relay --io {internal}/connections &
             """,
-            timeout=None,
+            timeout=None, silent=SILENT
         )
-
+        shell.Exec(config.post, timeout=None, silent=SILENT)
         shell.Exec("exit")
 
 def UnpackContainer():
-    pass
+    SILENT = False
+    Log.Warn("pretend to unpack relay")
+    # with LiveShell() as shell:
+    #     shell.Exec(
+    #         f"""\
+    #         pwd
+    #         ls
+    #         cd ..
+    #         ls
+    #         """,
+    #         timeout=None, silent=SILENT
+    #     )
 
-def StartContainerService():
-    pass
+def RunWorkflow():
+    Log.Warn("pretend to run job")
+    # with LiveShell() as shell:
+    #     shell.Exec(
+    #         f"""\
+    #         pwd
+    #         ls
+    #         cd ..
+    #         ls
+    #         """,
+    #         timeout=None, silent=SILENT
+    #    )
+

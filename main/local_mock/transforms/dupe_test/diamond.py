@@ -2,20 +2,20 @@ from pathlib import Path
 from metasmith import DataInstance, DataTypeLibrary, TransformInstance, ExecutionContext, ExecutionResult
 
 def protocol(context: ExecutionContext):
-    print("this is pprodigal!")
+    print("this is diamond2!")
     return ExecutionResult()
 
 HERE = Path(__file__).parent
 lib = DataTypeLibrary.Load((HERE/"../../prototypes/metagenomics.yml").resolve())
 
 TransformInstance.Register(
-    container="docker://quay.io/hallamlab/external_pprodigal:1.0.1",
+    container="docker://bschiffthaler/diamond:2.0.14",
     protocol=protocol,
     input_signature={
-        lib["contigs"],
+        lib["orfs_faa"],
+        lib["diamond_protein_reference"],
     },
     output_signature={
-        DataInstance(Path("orfs.gbk"), lib["orfs_gbk"]),
-        DataInstance(Path("orfs.faa"), lib["orfs_faa"]),
+        DataInstance(Path("annotations.csv"), lib["orf_annotations"]),
     },
 )

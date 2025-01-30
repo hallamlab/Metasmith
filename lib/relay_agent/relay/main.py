@@ -61,6 +61,7 @@ def RunServer(workspace: Path):
     connections: dict[str, tuple[int, PipeServer]] = {}
     lock = Condition()
     running = True
+    workspace.mkdir(parents=True, exist_ok=True)
 
     def new_connection(channel: PipeServer, raw: str):
         req = IpcRequest.Parse(raw)

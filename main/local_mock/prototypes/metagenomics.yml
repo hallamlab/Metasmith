@@ -1,23 +1,27 @@
-schema: 0.1
+schema: 0.3
 ontology:
     doi: https://doi.org/10.1093/bioinformatics/btt113
     name: EDAM
     version: 1.25
     strict: false
-namespace: metagenomics
-prototypes:
+types:
     contigs:
-        - "Format=FASTA"
-        - "Data=DNA sequence"
-    orfs:
-        - "Format=GFF3"
-        - "Data=Protein sequence"
-    diamond_reference:
-        - "Format=Binary format"
-        - "Data=diamond reference db"
+        format: FASTA
+        data: DNA sequence
+    orfs_gbk:
+        format: GenBank
+        data: Protein features
+    orfs_faa:
+        format: FASTA
+        data: Amino acid sequence
+    diamond_protein_reference:
+        format: Binary format
+        data: database reference
+        reference_type: diamond db
     fastal_protein_reference:
-        - "Format=Binary format"
-        - "Data=fastal reference db"
-    orf_annotation:
-        - "Format=CSV"
-        - "Data=Protein features"
+        format: Binary format
+        data: database reference
+        reference_type: diamond db
+    orf_annotations:
+        format: CSV
+        data: Protein features

@@ -26,8 +26,25 @@ class CommandLineInterface:
             description=f"Deploy an executor agent to a remote machine via ssh"
         )
 
+        parser.add_argument("--config", required=True, metavar="yaml", help="path to configuration file")
+
+        args = parser.parse_args(raw_args)
         from ..agents.ssh import Deploy
-        Deploy()
+        Deploy(args.config)
+
+    def run(self, raw_args=None):
+        parser = ArgumentParser(
+            prog = f'{CLI_ENTRY} {self._get_fn_name()}',
+            description=f"Register data"
+        )
+
+        parser.add_argument("--request", required=True, metavar="yaml", help="yaml file describing requested data to produce")
+        parser.add_argument("--work", required=True, metavar="path", help="path to deployed metasmith workspace")
+        args = parser.parse_args(raw_args)
+        from ..workflow import Run
+        home = Path(args.work)
+        request = Path(args.request)
+        Run(home, request)
 
     def api(self, raw_args=None):
         parser = ArgumentParser(
@@ -35,11 +52,12 @@ class CommandLineInterface:
             description=f"Not intended for manual use. This is for communications between agents"
         )
 
-        # from .api import Request
-        # parser.add_argument("--json", required=True)
-        # args = parser.parse_args(raw_args)
-        # request = Request.Parse(Request, args.json)
-        # request.Handle()
+        from .api import HandleRequest
+        parser.add_argument("endpoint")
+        parser.add_argument("--body", required=False, default="{}")
+        args = parser.parse_args(raw_args)
+        body = json.loads(args.body)
+        HandleRequest(args.endpoint, body)
 
     def help(self, args=None):
         help = [

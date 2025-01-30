@@ -1,0 +1,7 @@
+ssh_command: bash
+timeout: 15
+workspace: ../../scratch/test_ws
+pre: ""
+container_args:
+  - -B /home/tony/workspace/tools/Metasmith/src/metasmith:/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith
+container: docker://quay.io/hallamlab/metasmith:0.2.dev-f694ba5
