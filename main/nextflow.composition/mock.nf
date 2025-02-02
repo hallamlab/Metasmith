@@ -8,7 +8,7 @@ process pprodigal {
 
     script:
         """
-        touch orfs
+        cat ${contigs} > orfs.gff3
         """
 }
 
@@ -20,10 +20,16 @@ process fastal {
 
     output:
         path 'annotations.csv'
+
+    script:
+        """
+        cat ${orfs} > annotations.csv
+        """
 }
 
 workflow {
+    contigs = Channel.fromPath("/home/tony/workspace/tools/Metasmith/main/nextflow.composition/cache/given/contigs.fna")
     aRk4 = pprodigal(contigs)
     
-    splitLetters | flatten | convertToUpper | view { v -> v.trim() }
+    // splitLetters | flatten | convertToUpper | view { v -> v.trim() }
 }

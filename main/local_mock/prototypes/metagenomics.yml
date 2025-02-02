@@ -1,0 +1,27 @@
+schema: 0.3
+ontology:
+    doi: https://doi.org/10.1093/bioinformatics/btt113
+    name: EDAM
+    version: 1.25
+    strict: false
+types:
+    contigs:
+        format: FASTA
+        data: DNA sequence
+    orfs_gbk:
+        format: GenBank
+        data: Protein features
+    orfs_faa:
+        format: FASTA
+        data: Amino acid sequence
+    diamond_protein_reference:
+        format: Binary format
+        data: database reference
+        reference_type: diamond db
+    fastal_protein_reference:
+        format: Binary format
+        data: database reference
+        reference_type: diamond db
+    orf_annotations:
+        format: CSV
+        data: Protein features

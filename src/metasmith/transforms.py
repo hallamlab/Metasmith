@@ -3,8 +3,9 @@ import yaml
 from pathlib import Path
 from typing import Callable, Iterable
 from importlib import import_module, __import__
-from .models import ExecutionContext, ExecutionResult, TransformReference
+from .models.libraries import ExecutionContext, ExecutionResult, TransformInstance
 
+_last_transform: TransformInstance = None
 def LoadTransform(definition: Path):
     global _last_transform
     _last_transform = None
@@ -20,10 +21,8 @@ def LoadTransform(definition: Path):
     finally:
         sys.path = original_path
 
-_last_transform: TransformReference = None
 # this is called from within a transform definition
 def RegisterTransform(
-    container: str,
     protocol: Callable[[ExecutionContext], ExecutionResult],
     prototypes: Iterable[Path],
     input_signature: Iterable[str],
@@ -33,11 +32,11 @@ def RegisterTransform(
     for p in prototypes:
         with open(p, "r") as f:
             d = yaml.safe_load(f)
-        k = d.get("namespace", "base")
+        k = p.stem
         protos = d["prototypes"]
         ns = prototypes_lib.get(k, {})
         for pk, pv in protos.items():
-            ns[pk] = set(pv)
+            ns[pk] = {f"{k}={v}" for k, v in pv.items()}
         prototypes_lib[k] = ns
 
     def lookup(k):
@@ -60,8 +59,7 @@ def RegisterTransform(
             return prototypes_lib[namespace][prototype]
 
     global _last_transform
-    _last_transform = TransformReference(
-        container=container,
+    _last_transform = TransformInstance(
         protocol=protocol,
         input_signature={k:lookup(k) for k in input_signature},
         output_signature={k:lookup(k) for k in output_signature},

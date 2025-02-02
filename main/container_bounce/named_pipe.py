@@ -5,6 +5,7 @@ os.mkfifo("mypipe")
 
 # Read from and write to the named pipe
 with open("mypipe", "r") as pipe:
+    print("opened")
     data = pipe.read()
     print("Received:", data)
     

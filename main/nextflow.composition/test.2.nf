@@ -17,7 +17,7 @@ process pprodigal {
         """
 }
 
-process fastal {
+process fastal__asdf {
     publishDir "$params.output", mode: 'copy', pattern: "annotations.csv"
 
     input:
@@ -44,5 +44,5 @@ workflow {
     _bAYL = Channel.fromPath(params.given_bAYL)
 
     _QAaL = pprodigal(_OVtA)
-    _PGmm = fastal(_QAaL, _bAYL)
+    _PGmm = fastal__asdf(_QAaL, _bAYL)
 }

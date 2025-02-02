@@ -5,3 +5,7 @@ mkdir -p $HERE/cache
 fpath=$HERE/cache/$(date +%Y-%m-%d--%H-%M-%S)
 touch $fpath
 echo $@ >> $fpath
+echo "" >> $fpath
+cat $1 >> $fpath
+
+echo 123
