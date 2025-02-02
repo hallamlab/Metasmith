@@ -8,7 +8,7 @@ from typing import Callable, Iterable
 from importlib import reload, __import__
 from hashlib import sha256
 
-from .logging import Log
+from ..logging import Log
 
 class NotImplementedException(Exception):
     pass
@@ -91,6 +91,9 @@ class DataInstanceLibrary:
     time_created: dt = field(default_factory=lambda: dt.now())
     time_modified: dt = field(default_factory=lambda: dt.now())
 
+    def __getitem__(self, key: str) -> DataType:
+        return self.manifest[key]
+    
     @classmethod
     def Load(cls, path: Path):
         if not hasattr(cls, "_loaded_libraries"):
@@ -148,8 +151,8 @@ class TransformInstance:
     container: str
     protocol: Callable[[ExecutionContext], ExecutionResult]
     input_signature: set[DataType]
-    output_signature: dict[DataType, Path]
-    container_path: Path|None = None
+    output_signature: set[DataInstance]
+    source: Path = None
 
     @classmethod
     def Load(cls, definition: Path) -> TransformInstance|None:
@@ -161,6 +164,7 @@ class TransformInstance:
             m = __import__(f"{definition.stem}")
             reload(m)
             if cls._last_loaded_transform is not None:
+                cls._last_loaded_transform.source = definition
                 return cls._last_loaded_transform
         finally:
             sys.path = original_path_var
@@ -188,21 +192,38 @@ class TransformInstance:
 
 @dataclass
 class TransformInstanceLibrary:
-    source: Path
-    manifest: dict[Path, TransformInstance]
+    manifest: dict[Path, dict[Path, TransformInstance]]
+
+    def __getitem__(self, key: str) -> DataType:
+        return self.manifest[key]
+    
+    def __iter__(self):
+        for root, section in self.manifest.items():
+            for path, tr in section.items():
+                yield root/path, tr
+
+    def __len__(self):
+        return sum(len(s) for s in self.manifest.values())
 
     @classmethod
-    def Load(cls, path: Path) -> tuple[list[Path], TransformInstanceLibrary]:
-        assert path.is_dir(), "TransformInstanceLibrary must be a directory"
-        manifest = {}
+    def Load(cls, path: Path|Iterable[Path], silent=True) -> TransformInstanceLibrary:
+        if isinstance(path, Path):
+            path = [path]
         failures = []
-        for p in path.glob("**/*.py"):
-            if p.is_dir(): continue
-            k = p.relative_to(path)
+        manifest = {}
+        for root in path:
+            root = root.resolve()
+            assert root.is_dir(), "TransformInstanceLibrary must be a directory"
+            section = {}
+            for p in root.glob("**/*.py"):
+                if p.is_dir(): continue
+                k = p.relative_to(root)
 
-            inst = TransformInstance.Load(p)
-            if inst is None:
-                failures.append(k)
-            else:
-                manifest[k] = inst
-        return failures, cls(path.resolve(), manifest)
+                inst = TransformInstance.Load(p)
+                if inst is None:
+                    if not silent: Log.Warn(f"could not load [{k}] from [{root}]")
+                    failures.append(k)
+                else:
+                    section[k] = inst
+                manifest[root] = section
+        return cls(manifest)
