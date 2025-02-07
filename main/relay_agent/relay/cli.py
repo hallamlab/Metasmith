@@ -2,8 +2,8 @@ import os, sys
 from pathlib import Path
 import argparse
 
-from .main import RunServer
-from .self_test import run
+from .main import RunServer, GetStatus, StopServer
+from .self_test import run as SelfTest
 
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
@@ -17,11 +17,13 @@ def main():
     )
 
     parser.add_argument("--io", required=True, metavar="PATH", type=Path)
-    parser.add_argument("--test", action="store_true", help="run self test")
+    parser.add_argument("command")
     args = parser.parse_args()
 
     workspace = Path(args.io)
-    if args.test:
-        run(workspace/"main.in")
-    else:
-        RunServer(workspace)
+    { # switch
+        "start": RunServer,
+        "status": GetStatus,
+        "test": SelfTest,
+        "stop": StopServer,
+    }.get(args.command, lambda _: print(f"invalid command [{args.command}]"))(workspace)

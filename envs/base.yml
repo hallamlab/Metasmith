@@ -7,3 +7,4 @@ dependencies:
   - flask=3.1.0       # builds REST API
   - gevent=24.11.1    # runs flask server
   - pyyaml=6.0.2
+  - numpy=2.2.1

@@ -18,8 +18,8 @@ process {
     time = '2h'
     
     queueSize = 100
-    submitRateLimit = '1/1sec'  // this is aggressive, need to lower for production
-    pollInterval = '5 sec'      // same^
+    submitRateLimit = '10/1sec'  // this is aggressive, need to lower for production
+    pollInterval = '1 sec'      // same^
 
     // -----------------------------------------
     // notes

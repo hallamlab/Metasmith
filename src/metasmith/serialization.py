@@ -1,3 +1,4 @@
+from __future__ import annotations
 import time
 from datetime import datetime as dt
 
@@ -19,4 +20,3 @@ class StdTime:
     @classmethod
     def CurrentTimeMillis(cls):
         return round(time.time() * 1000)
-    

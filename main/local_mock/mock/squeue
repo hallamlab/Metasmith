@@ -1,0 +1,16 @@
+#!/home/tony/lib/miniforge3/envs/msm/bin/python
+
+from pathlib import Path
+from datetime import datetime as dt
+import time
+import sys
+
+HERE = Path(__file__).parent
+cache = HERE / "cache"
+fpath = cache / f"squeue.{dt.now().strftime('%Y-%m-%d--%H-%M-%S')}"
+
+with open(fpath, "w") as f:
+    f.write("# === command ===\n")
+    f.write("|".join(sys.argv) + "\n")
+    f.write("# === cwd ===\n")
+    f.write(f"{Path('./').resolve()}\n")

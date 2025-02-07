@@ -1,16 +1,18 @@
 from typing import Iterable
 from pathlib import Path
 from dataclasses import dataclass
-from metasmith.models.libraries import DataInstance, DataType, TransformInstanceLibrary, TransformInstance
-from metasmith.models.solver import *
+
+from .models.libraries import DataInstance, DataType, TransformInstanceLibrary, TransformInstance
+from .models.solver import *
 
 # concretely describes a solver.Application
 @dataclass
 class WorkflowStep:
     key: str
+    transform_key: str
     uses: list[tuple[DataInstance, Endpoint]]
     produces: list[tuple[DataInstance, Endpoint]]
-    transform: TransformInstance
+    transform: TransformInstance | Path
 
 # concretely describes a solver.Result
 @dataclass
@@ -27,23 +29,9 @@ class WorkflowSolver:
             self,
             lib: TransformInstanceLibrary,
         ) -> None:
-        self._namespace = Namespace()
         self._transform_lib = lib
-        self._transform_map: dict[Transform, TransformInstance] = {}
-        self._prototype_instances: dict[Dependency, DataInstance] = {}
-        def _parse_transform(tr: TransformInstance):
-            ns = self._namespace
-            model = Transform(ns)
-            self._transform_map[model] = tr
-            for x in tr.input_signature:
-                model.AddRequirement(x.AsProperties())
-            for x in tr.output_signature:
-                dep = model.AddProduct(x.type.AsProperties())
-                self._prototype_instances[dep] = x
-            return model
-        self._transforms = [_parse_transform(t) for p, t in lib]
 
-    def Solve(self, given: Iterable[DataInstance], target: Iterable[DataType], horizon: int=64):
+    def Solve(self, given: Iterable[DataInstance], target: Iterable[DataType], horizon: int=64, seed: int|None=None):
         def _solve(given: Iterable[Endpoint], target: Transform, transforms: Iterable[Transform], _debug=False):
             @dataclass
             class State:
@@ -255,27 +243,55 @@ class WorkflowSolver:
             if _debug: debug_print("END")
             return res
 
-        data_instances = {Endpoint(self._namespace, x.type.AsProperties()):x for x in given}
+        _namespace = Namespace(seed=seed)
+        _transform_map: dict[Transform, TransformInstance] = {}
+        _prototype_instances: dict[Dependency, DataInstance] = {}
+        def _parse_transform(tr: TransformInstance):
+            model = Transform(_namespace)
+            _transform_map[model] = tr
+            for x in tr.input_signature:
+                model.AddRequirement(x.AsProperties())
+            for x in tr.output_signature:
+                dep = model.AddProduct(x.type.AsProperties())
+                _prototype_instances[dep] = x
+            return model
+        _transforms = [_parse_transform(t) for p, t in self._transform_lib]
+
+        data_instances = {Endpoint(_namespace, x.type.AsProperties()):x for x in given}
         given_instances = {k for k in data_instances}
         output_map: dict[Dependency, DataType] = {}
-        target_tr = Transform(self._namespace)
-        for x in target:
-            dep = target_tr.AddRequirement(x.AsProperties())
-            output_map[dep] = x
-        solutions = _solve(data_instances, target_tr, self._transforms)
+        target_tr = Transform(_namespace)
+
+        _target_deps: dict[str, Dependency] = {}
+        def _add_target(t: DataType, top=False):
+            if t in _target_deps: return
+            for a in t.ancestors:
+                _add_target(a)
+            parents = {_target_deps[a.name] for a in t.ancestors}
+            dep = target_tr.AddRequirement(t.AsProperties(), parents=parents)
+            _target_deps[t.name] = dep
+            if top:
+                output_map[dep] = t
+        for t in target:
+            _add_target(t, top=True)
+        solutions = _solve(data_instances, target_tr, _transforms)
         if len(solutions) == 0: return
 
-        solution = solutions[0] # just pick first solution
+        solution: Result = solutions[0] # just pick first solution
         steps = []
         for appl in solution.dependency_plan:
-            tr = self._transform_map[appl.transform]
+            tr = _transform_map[appl.transform]
+            appl.used = dict(sorted(appl.used.items(), key=lambda x: x[0].key))
+            appl.produced = dict(sorted(appl.produced.items(), key=lambda x: x[0].key))
             used = [(data_instances[x], x) for x in appl.used]
             produced = []
             for e, dep in appl.produced.items():
-                inst = self._prototype_instances[dep]
-                data_instances[e] = inst
+                inst = _prototype_instances[dep]
+                data_instances[e] = inst    
                 produced.append((inst, e))
-            steps.append(WorkflowStep(appl.transform.key, used, produced, tr))
+            
+            key =  _namespace._kg.FromStr(appl.transform.key+''.join(x.key for x in appl.used), 5)
+            steps.append(WorkflowStep(key, appl.transform.key, used, produced, tr))
         return WorkflowPlan(
             [(x, e) for e, x in data_instances.items() if e in given_instances],
             [(data_instances[e], e) for e in solution.application.used],

@@ -1,12 +1,15 @@
 from __future__ import annotations
 import sys
 from pathlib import Path
+from networkx import ancestors
 import yaml
 from datetime import datetime as dt
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
 from importlib import reload, __import__
 from hashlib import sha256
+
+from metasmith.models.solver import Endpoint
 
 from ..logging import Log
 
@@ -19,24 +22,58 @@ def str_hash(s):
 @dataclass
 class DataType:
     name: str
-    properties: dict[str, str]
+    properties: dict[str, str|list[str]]
     library: DataTypeLibrary
+    ancestors: list[DataType] = field(default_factory=list)
     
     def __hash__(self) -> int:
         if not hasattr(self, "_hash"):
             self._hash = str_hash(''.join(self.AsProperties()))
         return self._hash
 
+    def WithAncestors(self, ancestors: Iterable[DataType]):
+        return DataType(self.name, self.properties, self.library, list(ancestors))
+
     @classmethod
-    def SetFromDict(cls, raw: dict[str, str]):
-        return set(f"{k}={v}" for k, v in raw.items())
+    def SetFromDict(cls, raw: dict[str, str|list[str]]):
+        return set(f"{k}={','.join(v) if isinstance(v, list) else v}" for k, v in raw.items())
 
     def AsProperties(self):
         return self.SetFromDict(self.properties)
     
+    @classmethod
+    def Unpack(cls, d: dict):
+        an = d.get("ancestors")
+        if an is not None:
+            an = [_data_type_cache[a] for a in an]
+        return cls(
+            name=d["name"],
+            properties=d["properties"],
+            library=DataTypeLibrary.Load(d["library"]),
+            ancestors=an,
+        )
+
+    def Pack(self):
+        an = [a.name for a in self.ancestors]
+        return {
+            "name": self.name,
+            "properties": self.properties,
+            "library": str(self.library.key),
+        } | ({"ancestors": an} if len(an)>0 else {})
+
+@dataclass
+class DataTarget:
+    type: DataType
+    ancestors: list[DataType]
+
+
+
+
+_library_cache: dict[str, DataTypeLibrary] = {}
 @dataclass
 class DataTypeLibrary:
-    path: Path
+    key: str
+    source: Path
     schema: str
     ontology: dict
     types: dict[str, DataType] = field(default_factory=dict)
@@ -48,11 +85,22 @@ class DataTypeLibrary:
         return key in self.types
 
     @classmethod
-    def Load(cls, path: Path) -> DataTypeLibrary:
+    def Load(cls, path_or_key: Path|str) -> DataTypeLibrary:
+        # todo, urls
+        if isinstance(path_or_key, str):
+            if path_or_key in _library_cache:
+                return _library_cache[path_or_key]
+            path = Path(path_or_key)
+        else:
+            path = path_or_key
+        key = path.stem
+        if key in _library_cache:
+            return _library_cache[key]
+        path = path.resolve()
         with open(path) as f:
             d = yaml.safe_load(f)
-        lib = cls(path, d["schema"], d["ontology"])
-        types = {}
+        lib = cls(key=key, source=path, schema=d["schema"], ontology=d["ontology"])
+        types: dict[str, DataType] = {}
         for k, v in d["types"].items():
             types[k] = DataType(
                 name=k,
@@ -60,27 +108,34 @@ class DataTypeLibrary:
                 library=lib,
             )
         lib.types = types
+        _library_cache[key] = lib
         return lib
 
+_data_instance_cache: dict[Path, DataInstance] = {}
 @dataclass
 class DataInstance:
     source: Path
     type: DataType
 
+    def __post_init__(self):
+        _data_instance_cache[self.source] = self
+
     def __hash__(self) -> int:
         if not hasattr(self, "_hash"):
             self._hash = str_hash(str(self.source.resolve())+''.join(self.type.AsProperties()))
         return self._hash
-    
+
     @classmethod
-    def Register(cls, source: Path, type: DataType):
-        return cls(source, type)
+    def Unpack(cls, d: dict):
+        return cls(
+            source=Path(d["source"]),
+            type=DataType.Unpack(d["type"]),
+        )
     
     def Pack(self):
         return {
             "source": str(self.source),
-            "type": self.type.name,
-            "properties": self.type.properties,
+            "type": self.type.Pack(),
         }
 
 @dataclass
@@ -91,7 +146,7 @@ class DataInstanceLibrary:
     time_created: dt = field(default_factory=lambda: dt.now())
     time_modified: dt = field(default_factory=lambda: dt.now())
 
-    def __getitem__(self, key: str) -> DataType:
+    def __getitem__(self, key: str) -> DataInstance:
         return self.manifest[key]
     
     @classmethod
@@ -132,7 +187,7 @@ class DataInstanceLibrary:
                 if k.startswith("_"): continue
                 if callable(v): continue
                 if k == "types_library":
-                    v = str(v.path)
+                    v = dict(source=str(v.path), key=v.key)
                 elif k == "manifest":
                     v = {kk: vv.Pack() for kk, vv in v.items()}
                 d[k] = v
@@ -140,15 +195,39 @@ class DataInstanceLibrary:
 
 @dataclass
 class ExecutionContext:
-    pass
+    inputs: dict[str, DataInstance]
+    outputs: dict[str, DataInstance]
+    transform_definition: Path
+    type_libraries: list[Path]
+    _shell: Callable = None
+
+    def Shell(self, cmd: str, timeout: int|float|None=None) -> tuple[list[str], list[str]]:
+        assert self._shell is not None, "shell not set"
+        self._shell(cmd, timeout)
+
+    @classmethod
+    def Unpack(cls, d: dict):
+        return cls(
+            inputs={k:DataInstance.Unpack(v) for k, v in d["inputs"].items()},
+            outputs={k:DataInstance.Unpack(v) for k, v in d["outputs"].items()},
+            transform_definition=Path(d["transform_definition"]),
+            type_libraries=[Path(p) for p in d["type_libraries"]],
+        )
+    
+    def Pack(self):
+        return {
+            "inputs": {k:v.Pack() for k, v in self.inputs.items()},
+            "outputs": {k:v.Pack() for k, v in self.outputs.items()},
+            "transform_definition": str(self.transform_definition),
+            "type_libraries": [str(p) for p in self.type_libraries],
+        }
 
 @dataclass
 class ExecutionResult:
-    pass
+    success: bool = False
 
 @dataclass
 class TransformInstance:
-    container: str
     protocol: Callable[[ExecutionContext], ExecutionResult]
     input_signature: set[DataType]
     output_signature: set[DataInstance]
@@ -173,18 +252,18 @@ class TransformInstance:
     @classmethod
     def Register(
         cls,
-        container: str|Path,
+        # container: str|Path,
         protocol: Callable[[ExecutionContext], ExecutionResult],
         input_signature: set[DataType],
         output_signature: set[DataInstance],
     ):
-        assert isinstance(container, str) or isinstance(container, Path), "[container] must be a container url or path"
+        # assert isinstance(container, str) or isinstance(container, Path), "[container] must be a container url or path"
         assert isinstance(protocol, Callable), "[protocol] must be a function"
         assert isinstance(input_signature, set), "[input_signature] must be a set of DataType"
         assert isinstance(output_signature, set), "[output_signature] must be a set of DataInstance"
 
         cls._last_loaded_transform = cls(
-            container=container,
+            # container=container,
             protocol=protocol,
             input_signature=input_signature,
             output_signature=output_signature,

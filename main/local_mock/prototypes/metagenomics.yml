@@ -8,20 +8,22 @@ types:
     contigs:
         format: FASTA
         data: DNA sequence
-    orfs_gbk:
-        format: GenBank
-        data: Protein features
     orfs_faa:
         format: FASTA
         data: Amino acid sequence
-    diamond_protein_reference:
+    protein_reference_diamond:
         format: Binary format
         data: database reference
-        reference_type: diamond db
-    fastal_protein_reference:
-        format: Binary format
-        data: database reference
-        reference_type: diamond db
+    oci_image_pprodigal:
+        format: OCI
+        data: software container
+        provides:
+            - pprodigal
+    oci_image_diamond:
+        format: OCI
+        data: software container
+        provides:
+            - diamond
     orf_annotations:
         format: CSV
         data: Protein features
