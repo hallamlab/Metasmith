@@ -1,7 +1,6 @@
 from __future__ import annotations
 import sys
 from pathlib import Path
-from networkx import ancestors
 import yaml
 from datetime import datetime as dt
 from dataclasses import dataclass, field
@@ -18,21 +17,24 @@ class NotImplementedException(Exception):
 
 def str_hash(s):
     return int(sha256(s.encode("utf-8", "replace")).hexdigest(), 16)
-    
+
 @dataclass
 class DataType:
     name: str
     properties: dict[str, str|list[str]]
     library: DataTypeLibrary
-    ancestors: list[DataType] = field(default_factory=list)
+    # ancestors: list[DataType] = field(default_factory=list)
     
     def __hash__(self) -> int:
         if not hasattr(self, "_hash"):
             self._hash = str_hash(''.join(self.AsProperties()))
         return self._hash
 
-    def WithAncestors(self, ancestors: Iterable[DataType]):
-        return DataType(self.name, self.properties, self.library, list(ancestors))
+    def AsTarget(self, ancestors: Iterable[DataType]=None):
+        return DataTarget(self.name, self.properties, self.library, [] if ancestors is None else list(ancestors))
+
+    def AsDependency(self, ancestors: Iterable[DataType]=None):
+        return DataDependency(self.name, self.properties, self.library, [] if ancestors is None else list(ancestors))
 
     @classmethod
     def SetFromDict(cls, raw: dict[str, str|list[str]]):
@@ -43,31 +45,28 @@ class DataType:
     
     @classmethod
     def Unpack(cls, d: dict):
-        an = d.get("ancestors")
-        if an is not None:
-            an = [_data_type_cache[a] for a in an]
         return cls(
             name=d["name"],
             properties=d["properties"],
             library=DataTypeLibrary.Load(d["library"]),
-            ancestors=an,
         )
 
     def Pack(self):
-        an = [a.name for a in self.ancestors]
         return {
             "name": self.name,
             "properties": self.properties,
             "library": str(self.library.key),
-        } | ({"ancestors": an} if len(an)>0 else {})
+        }
 
 @dataclass
 class DataTarget:
     type: DataType
-    ancestors: list[DataType]
+    ancestors: list[DataInstance] = field(default_factory=list)
 
-
-
+@dataclass
+class DataDependency:
+    type: DataType
+    ancestors: list[DataDependency] = field(default_factory=list)
 
 _library_cache: dict[str, DataTypeLibrary] = {}
 @dataclass
@@ -77,6 +76,9 @@ class DataTypeLibrary:
     schema: str
     ontology: dict
     types: dict[str, DataType] = field(default_factory=dict)
+
+    def __post_init__(self):
+        _library_cache[self.key] = self
 
     def __getitem__(self, key: str) -> DataType:
         return self.types[key]
@@ -108,17 +110,13 @@ class DataTypeLibrary:
                 library=lib,
             )
         lib.types = types
-        _library_cache[key] = lib
         return lib
 
-_data_instance_cache: dict[Path, DataInstance] = {}
 @dataclass
 class DataInstance:
     source: Path
     type: DataType
-
-    def __post_init__(self):
-        _data_instance_cache[self.source] = self
+    ancestors: list[DataInstance] = field(default_factory=list)
 
     def __hash__(self) -> int:
         if not hasattr(self, "_hash"):
@@ -229,13 +227,13 @@ class ExecutionResult:
 @dataclass
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult]
-    input_signature: set[DataType]
+    input_signature: set[DataDependency]
     output_signature: set[DataInstance]
     source: Path = None
 
     @classmethod
     def Load(cls, definition: Path) -> TransformInstance|None:
-        cls._last_loaded_transform = None
+        cls._last_loaded_transform: TransformInstance = None
 
         original_path_var = sys.path
         sys.path = [str(definition.parent)]+sys.path

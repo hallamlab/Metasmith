@@ -2,7 +2,7 @@ from typing import Iterable
 from pathlib import Path
 from dataclasses import dataclass
 
-from .models.libraries import DataInstance, DataType, TransformInstanceLibrary, TransformInstance
+from .models.libraries import DataDependency, DataInstance, DataTarget, DataType, DataType, TransformInstanceLibrary, TransformInstance
 from .models.solver import *
 
 # concretely describes a solver.Application
@@ -31,7 +31,7 @@ class WorkflowSolver:
         ) -> None:
         self._transform_lib = lib
 
-    def Solve(self, given: Iterable[DataInstance], target: Iterable[DataType], horizon: int=64, seed: int|None=None):
+    def Solve(self, given: Iterable[DataInstance], target: Iterable[DataTarget], horizon: int=64, seed: int|None=None):
         def _solve(given: Iterable[Endpoint], target: Transform, transforms: Iterable[Transform], _debug=False):
             @dataclass
             class State:
@@ -249,10 +249,19 @@ class WorkflowSolver:
         def _parse_transform(tr: TransformInstance):
             model = Transform(_namespace)
             _transform_map[model] = tr
+            def _add_dep(d: DataDependency):
+                deps: list[Dependency] = []
+                for a in d.ancestors:
+                    _dep_a, _cumulative = _add_dep(a)
+                    deps.extend(_cumulative)
+                    deps.append(_dep_a)
+                dep = model.AddRequirement(d.type.AsProperties(), parents=deps)
+                return dep, deps
+                
             for x in tr.input_signature:
                 model.AddRequirement(x.AsProperties())
             for x in tr.output_signature:
-                dep = model.AddProduct(x.type.AsProperties())
+                dep, _ = _add_dep(x)
                 _prototype_instances[dep] = x
             return model
         _transforms = [_parse_transform(t) for p, t in self._transform_lib]
@@ -263,11 +272,11 @@ class WorkflowSolver:
         target_tr = Transform(_namespace)
 
         _target_deps: dict[str, Dependency] = {}
-        def _add_target(t: DataType, top=False):
+        def _add_target(t: DataTarget, top=False):
             if t in _target_deps: return
             for a in t.ancestors:
                 _add_target(a)
-            parents = {_target_deps[a.name] for a in t.ancestors}
+            parents = {_target_deps[a.type.name] for a in t.ancestors}
             dep = target_tr.AddRequirement(t.AsProperties(), parents=parents)
             _target_deps[t.name] = dep
             if top:
