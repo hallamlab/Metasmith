@@ -1,7 +1,6 @@
 from __future__ import annotations
 import sys
 from pathlib import Path
-from networkx import ancestors
 import yaml
 from datetime import datetime as dt
 from dataclasses import dataclass, field
@@ -19,6 +18,7 @@ class NotImplementedException(Exception):
 def str_hash(s):
     return int(sha256(s.encode("utf-8", "replace")).hexdigest(), 16)
     
+_data_type_cache: dict[str, DataType] = {}
 @dataclass
 class DataType:
     name: str
@@ -26,6 +26,9 @@ class DataType:
     library: DataTypeLibrary
     ancestors: list[DataType] = field(default_factory=list)
     
+    def __post_init__(self):
+        _data_type_cache[self.name] = self
+
     def __hash__(self) -> int:
         if not hasattr(self, "_hash"):
             self._hash = str_hash(''.join(self.AsProperties()))
@@ -60,14 +63,6 @@ class DataType:
             "properties": self.properties,
             "library": str(self.library.key),
         } | ({"ancestors": an} if len(an)>0 else {})
-
-@dataclass
-class DataTarget:
-    type: DataType
-    ancestors: list[DataType]
-
-
-
 
 _library_cache: dict[str, DataTypeLibrary] = {}
 @dataclass
