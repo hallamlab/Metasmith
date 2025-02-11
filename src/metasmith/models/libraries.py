@@ -111,7 +111,7 @@ class DataInstance:
 
     def __hash__(self) -> int:
         if not hasattr(self, "_hash"):
-            _hash, _key = KeyGenerator.FromStr(str(self.source.resolve())+''.join(self.type.properties))
+            _hash, _key = KeyGenerator.FromStr(str(self.source)+''.join(self.type.properties))
             self._hash: int = _hash
         return self._hash
 
