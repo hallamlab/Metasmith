@@ -7,60 +7,10 @@ from dataclasses import dataclass, field
 from typing import Callable, Iterable
 from importlib import reload, __import__
 
-from .solver import Dependency, Endpoint, Namespace, Transform
+from .solver import Dependency, Endpoint, Transform
 from ..hashing import KeyGenerator
 from ..logging import Log
 from ..constants import VERSION
-
-# @dataclass
-# class DataType:
-#     properties: dict[str, str|list[str]]
-#     lineage: list[DataType] = field(default_factory=list)
-    
-#     def __post_init__(self):
-#         self._sort_properties()
-
-#     def __hash__(self) -> int:
-#         if not hasattr(self, "_hash"):
-#             self._hash = str_hash(''.join(self.AsProperties()))
-#         return self._hash
-
-#     def _sort_properties(self):
-#         self.properties = {k: v for k, v in sorted(self.properties.items())}
-
-#     def AsProperties(self):
-#         return set(f"{k}={','.join(v) if isinstance(v, list) else v}".lower() for k, v in self.properties.items())
-    
-#     def IsA(self, other: DataType) -> bool:
-#         return self.AsProperties().issubset(other.AsProperties())
-
-#     def WithLineage(self, lineage: Iterable[DataType]) -> DataType:
-#         m = self.Clone()
-#         m.lineage = [x.Clone() for x in lineage]
-#         return m
-
-#     def Clone(self):
-#         return DataType(
-#             properties={k: v.copy() if isinstance(v, list) else v for k, v in self.properties.items()},
-#             lineage=[x.Clone() for x in self.lineage],
-#         )
-
-#     @classmethod
-#     def Unpack(cls, d: dict):
-#         m = cls(
-#             properties=d["properties"],
-#         )
-#         if "lineage" in d:
-#             m.lineage = [cls.Unpack(x) for x in d["lineage"]]
-#         return m
-
-#     def Pack(self):
-#         d = {
-#             "properties": self.properties,
-#         }
-#         if len(self.lineage)>0:
-#             d["lineage"] = [x.Pack() for x in self.lineage]
-#         return d
 
 @dataclass
 class DataTypeOntology:
@@ -74,6 +24,7 @@ class DataTypeOntology:
         for k, v in self.__dict__.items():
             if k.startswith("_"): continue
             d[k] = v
+        return d
     
     @classmethod
     def Unpack(cls, d: dict):
@@ -88,17 +39,18 @@ class DataTypeOntologies:
     )
 
 # caches by absolute path
-_library_cache: dict[Path, DataTypeLibrary] = {}
+_dataTypeLibrary_cache: dict[Path, DataTypeLibrary] = {}
+_dataTypeLibrary_history: list[str] = []
 @dataclass
 class DataTypeLibrary:
     types: dict[str, Endpoint] = field(default_factory=dict)
     source: Path|None = None
-    ontology: dict = field(default_factory= lambda: DataTypeOntologies.EDAM)
+    ontology: DataTypeOntology = field(default_factory= lambda: DataTypeOntologies.EDAM)
     schema: str = VERSION
 
     def __post_init__(self):
         if self.source is None: return
-        _library_cache[self.source] = self
+        _dataTypeLibrary_cache[self.source] = self
 
     def __getitem__(self, key: str) -> Endpoint:
         return self.types[key]
@@ -120,17 +72,21 @@ class DataTypeLibrary:
         return ss
 
     @classmethod
-    def Load(cls, path: Path|str) -> DataTypeLibrary:
+    def Proxy(cls, alt: str, lib: DataTypeLibrary):
+        _dataTypeLibrary_cache[str(alt)] = lib
+
+    @classmethod
+    def Load(cls, path: str) -> DataTypeLibrary:
+        path = str(path)
+        _dataTypeLibrary_history.append(path)
+        if path in _dataTypeLibrary_cache: return _dataTypeLibrary_cache[path]
         # todo, urls
-        if isinstance(path, str):            
-            path = Path(path)
-        assert path.is_absolute(), f"path to [{cls}] must be absolute"
-        if path in _library_cache:
-            return _library_cache[path]
-        with open(path) as f:
+        _path = Path(path)
+        assert _path.is_absolute(), f"path to [{cls}] must be absolute"
+        with open(_path) as f:
             d = yaml.safe_load(f)
         lib = cls(
-            source=path,
+            source=_path,
             schema=d["schema"],
             ontology=DataTypeOntology.Unpack(d["ontology"])
         )
@@ -166,10 +122,10 @@ class DataInstance:
             type=Endpoint.Unpack(d["type"]),
         )
     
-    def Pack(self):
+    def Pack(self, parents=False):
         return {
             "source": str(self.source),
-            "type": self.type.Pack(),
+            "type": self.type.Pack(parents=parents),
         }
     
 @dataclass
@@ -191,7 +147,10 @@ class DataInstanceLibrary:
 
     def __iter__(self):
         for path, inst in self.manifest.items():
-            yield path, inst
+            yield self.source/path, inst
+
+    def __len__(self):
+        return len(self.manifest)
 
     def _index_path(self):
         return self.source/self._index_name
@@ -245,6 +204,7 @@ class TransformInstance:
     model: Transform
     output_signature: dict[Dependency, Path]
     _source: Path = None
+    _used_libraries: set[str] = field(default_factory=list)
 
     def __post_init__(self):
         for k, vt in [
@@ -262,10 +222,6 @@ class TransformInstance:
             assert dep in self.output_signature, f"model output missing in signature [{dep}]"
         TransformInstance._last_loaded_transform = self
 
-    def GetOutput(self, dep: Dependency) -> DataInstance:
-        if dep not in self.model.produces: return
-
-
     @classmethod
     def Load(cls, definition: Path) -> TransformInstance|None:
         cls._last_loaded_transform: TransformInstance = None
@@ -277,7 +233,9 @@ class TransformInstance:
             reload(m)
             if cls._last_loaded_transform is not None:
                 cls._last_loaded_transform._source = definition
+                cls._last_loaded_transform._used_libraries = set(_dataTypeLibrary_history)
                 return cls._last_loaded_transform
+            _dataTypeLibrary_history.clear()
         finally:
             sys.path = original_path_var
 
@@ -328,11 +286,26 @@ class TransformInstanceLibrary:
 
 @dataclass
 class ExecutionContext:
-    inputs: dict[str, DataInstance]
-    outputs: dict[str, DataInstance]
+    input: list[DataInstance]
+    output: list[DataInstance]
     transform_definition: Path
     type_libraries: list[Path]
     _shell: Callable = None
+
+    def __post_init__(self):
+        self._input_map: dict[str, DataInstance] = {x.type.key:x for x in self.input}
+        self._output_map: dict[str, DataInstance] = {x.type.key:x for x in self.output}
+
+    def _get_by_properties(self, instances: list[DataInstance], e: Endpoint) -> DataInstance|None:
+        for x in instances:
+            if x.type.Signature() != e.Signature(): continue
+            return x
+
+    def GetInput(self, e: Endpoint):
+        return self._get_by_properties(self.input, e)
+
+    def GetOutput(self, e: Endpoint):
+        return self._get_by_properties(self.output, e)
 
     def Shell(self, cmd: str, timeout: int|float|None=None) -> tuple[list[str], list[str]]:
         assert self._shell is not None, "shell not set"
@@ -341,16 +314,16 @@ class ExecutionContext:
     @classmethod
     def Unpack(cls, d: dict):
         return cls(
-            inputs={k:DataInstance.Unpack(v) for k, v in d["inputs"].items()},
-            outputs={k:DataInstance.Unpack(v) for k, v in d["outputs"].items()},
+            input=[DataInstance.Unpack(v) for v in d["input"]],
+            output=[DataInstance.Unpack(v) for v in d["output"]],
             transform_definition=Path(d["transform_definition"]),
             type_libraries=[Path(p) for p in d["type_libraries"]],
         )
     
     def Pack(self):
         return {
-            "inputs": {k:v.Pack() for k, v in self.inputs.items()},
-            "outputs": {k:v.Pack() for k, v in self.outputs.items()},
+            "input": [v.Pack(parents=True) for v in self.input],
+            "output": [v.Pack(parents=True) for v in self.output],
             "transform_definition": str(self.transform_definition),
             "type_libraries": [str(p) for p in self.type_libraries],
         }

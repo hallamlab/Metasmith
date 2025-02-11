@@ -31,7 +31,10 @@ class WorkflowPlan:
     ):
         _given_map: dict[Endpoint, DataInstance] = {}
         for lib in given:
-            _given_map.update({e.type:e for e in lib.manifest.values()})
+            _map = {e.type:e for e in lib.manifest.values()}
+            for inst in _map.values():
+                inst.source = lib.source/inst.source
+            _given_map.update(_map)
 
         _transform_map = {t.model:t for _, t in transforms}
 
@@ -79,3 +82,13 @@ class WorkflowPlan:
             targets=_sol_target_instances,
             steps=steps,
         )
+    
+@dataclass
+class Workspace:
+    source: Path
+
+    def Deploy(self) -> None:
+        pass
+
+    def Execute(self, plan: WorkflowPlan) -> None:
+        pass

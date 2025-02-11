@@ -3,7 +3,7 @@ from metasmith import DataInstance, DataTypeLibrary, TransformInstance, Executio
 
 def protocol(context: ExecutionContext):
     Log.Info("this is diamond!")
-    for x, e in context.outputs:
+    for x, e in context.output:
         context.Shell(f"touch {x.source}")
     return ExecutionResult(success=True)
 

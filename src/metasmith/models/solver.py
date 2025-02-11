@@ -65,7 +65,7 @@ class Node(Hashable):
         # self._sames = set()
 
     def __str__(self) -> str:
-        return f"<{','.join(sorted(list(self.properties)))}:{self.key}>"
+        return f"<{self._json_dumps(self.Pack(parents=False)['properties'])}:{self.key}>"
 
     def __repr__(self) -> str:
         return f"{self}"
@@ -141,7 +141,7 @@ class Node(Hashable):
             m.parents = [cls.Unpack(x) for x in d["parents"]]
         return m
 
-    def Pack(self):
+    def Pack(self, parents=False):
         if len(self.properties)==0:
             props = []
         elif next(iter(self.properties)).startswith("{"):
@@ -153,13 +153,9 @@ class Node(Hashable):
         d = {
             "properties": props,
         }
-        if len(self.parents)>0:
+        if len(self.parents)>0 and parents:
             d["parents"] = [x.Pack() for x in self.parents]
         return d
-    
-    @classmethod
-    def FromDict(cls, properties: dict[str, str|list[str]]):
-        return cls(properties = cls._encode_dict_props(properties))
 
 # of a Transform
 class Dependency(Node):
