@@ -20,7 +20,7 @@ def DeployFromContainer(workspace: Path):
             f"""\
             cd {workspace}
             mkdir .msm && cd .msm
-            mkdir lib logs work inputs outputs
+            mkdir lib logs work inputs
             mkdir -p relay/connections
             cp /app/relay ./relay/server
             """,
@@ -56,30 +56,29 @@ def StageAndRunTransform(workspace: Path, context_path: Path):
             return shell.Exec(cmd, timeout)
         
         Log.Info("loading context")
-        external_shell(f"rm -f {context_path} && cp {context_path.resolve()} ./")
+        external_shell(f"rm -f {context_path}; cp {context_path.resolve()} ./")
         with open(context_path) as f:
             raw_context = yaml.safe_load(f)
 
         for lib_path in raw_context["type_libraries"]:
-            lib_path = Path(lib_path)
-            Log.Info(f"loading type library [{lib_path.resolve()}]")
+            lib_path = Path(lib_path).resolve()
+            Log.Info(f"loading type library [{lib_path}]")
             local_path = Path(f"./.msm/lib/{lib_path.name}")
-            external_shell(f"cp {lib_path.resolve()} {local_path}")
-            DataTypeLibrary.Load(local_path.resolve())
+            external_shell(f"cp {lib_path} {local_path}")
+            lib = DataTypeLibrary.Load(local_path.absolute())
+            DataTypeLibrary.Proxy(str(lib_path), lib)
 
         context = ExecutionContext.Unpack(raw_context)
         Log.Info("staging transform definition")
         external_shell(f"cp {context.transform_definition.resolve()} ./.msm/lib/")
 
-        input_map = {}
-        with open("inputs.manifest") as f:
-            for l in f:
-                k, v = l.strip().split(",")
-                input_map[k] = v
-        for key, x in context.inputs.items():
-            nxf_path = Path(input_map[x.type.name])
+        from ..models.libraries import _dataTypeLibrary_cache
+        print(_dataTypeLibrary_cache)
+
+        for x in context.input:
+            nxf_path = x.source
             orig_path = nxf_path.resolve()
-            Log.Info(f"staging [{x.type.name}:{key}] from [{orig_path}]")
+            Log.Info(f"staging [{x.type}] from [{orig_path}]")
             new_path = Path(f"./.msm/inputs/{nxf_path.name}")
             external_shell(f"cp {orig_path} {new_path}")
             x.source = new_path
@@ -88,16 +87,16 @@ def StageAndRunTransform(workspace: Path, context_path: Path):
         transform = TransformInstance.Load(workspace/f"./.msm/lib/{context.transform_definition.name}")
         
         context._shell = external_shell
-        Log.Info(f">>> executing [{transform.source.stem}] ")
+        Log.Info(f">>> executing [{transform._source.stem}] ")
         try:
             result = transform.protocol(context)
         except Exception as e:
-            Log.Info(f"<<< [{transform.source.stem}] failed with error")
-            Log.Error(f"error while executing transform [{transform.source.stem}]")
+            Log.Info(f"<<< [{transform._source.stem}] failed with error")
+            Log.Error(f"error while executing transform [{transform._source.stem}]")
             Log.Error(str(e))
             with open("traceback.temp", "w") as f:
                 traceback.print_tb(e.__traceback__, file=f)
             with open("traceback.temp", "r") as f:
                 Log.Error(f.read()[:-1])
             return ExecutionResult(False)
-        Log.Info(f"<<< [{transform.source.stem}] reports {'success' if result.success else 'failure'}")
+        Log.Info(f"<<< [{transform._source.stem}] reports {'success' if result.success else 'failure'}")

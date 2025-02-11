@@ -1,11 +1,13 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Generator, Iterable
+from pathlib import Path
+import json
 
 from ..hashing import KeyGenerator
     
 class Namespace:
-    def __init__(self, key_length=4, seed: int|None=None, key_from_order=False) -> None:
+    def __init__(self, key_length=5, seed: int|None=None, key_from_order=False) -> None:
         self.node_signatures: dict[int, str] = {}
         self._last_k: int = 0
         generator = KeyGenerator(seed=seed)
@@ -30,11 +32,17 @@ class Namespace:
         t = Transform(self)
         self.transforms[name] = t
         return t
+    
+_DEFAULT_NAMESPACE = Namespace()
+def _set_default_namespace(namespace: Namespace):
+    global _DEFAULT_NAMESPACE
+    _DEFAULT_NAMESPACE = namespace
 
 class Hashable:
-    def __init__(self, ns: Namespace) -> None:
-        self.namespace = ns
-        self.hash, self.key = ns.NewKey()
+    def __init__(self, namespace: Namespace=None) -> None:
+        if namespace is None: namespace = _DEFAULT_NAMESPACE
+        self._namespace = namespace
+        self.hash, self.key = namespace.NewKey()
 
     def __hash__(self) -> int:
         return self.hash
@@ -46,12 +54,10 @@ class Hashable:
 class Node(Hashable):
     def __init__(
         self,
-        ns: Namespace,
         properties: set[str],
         parents: set[Node],
     ) -> None:
-        super().__init__(ns)
-        self.namespace = ns
+        super().__init__()
         self.properties = properties
         self.parents = parents
         self._sig: str|None = None
@@ -59,7 +65,7 @@ class Node(Hashable):
         # self._sames = set()
 
     def __str__(self) -> str:
-        return f"({'-'.join(self.properties)}:{self.key})"
+        return f"<{self._json_dumps(self.Pack(parents=False)['properties'])}:{self.key}>"
 
     def __repr__(self) -> str:
         return f"{self}"
@@ -80,19 +86,89 @@ class Node(Hashable):
             sig = ",".join(sorted(self.properties))
             self._sig = f'{sig}:[{psig}]' if len(self.parents)>0 else sig
         return self._sig
+    
+    def Clone(self):
+        clone = self.__class__(
+            properties=self.properties,
+            parents=[p.Clone() for p in self.parents],
+        )
+        clone.hash, clone.key = self.hash, self.key
+        return clone
+    
+    def WithLineage(self, parents: Iterable[Node]):
+        image = self.__class__(
+            properties=self.properties,
+            parents=set(parents),
+        )
+        return image
+    
+    def AddAsDependency(self, transform: Transform, mapping: dict[Endpoint, Dependency]=None):
+        if mapping is None: mapping = {}
+        def _add(e: Endpoint):
+            if e in mapping: return mapping[e]
+            for p in e.parents:
+                _add(p)
+            d = transform.AddRequirement(e)
+            mapping[e] = d
+            return d
+        return _add(self)
+
+    @classmethod
+    def _json_dumps(cls, d):
+        return json.dumps(d, separators=(',', ':'), sort_keys=True)
+
+    @classmethod
+    def _encode_dict_props(cls, properties: dict):
+        return {cls._json_dumps({k:v}) for k, v in properties.items()}
+
+    @classmethod
+    def _encode_list_props(cls, properties: list):
+        return {cls._json_dumps([v]) for v in properties}
+    
+    @classmethod
+    def Unpack(cls, d: dict):
+        raw_props = d["properties"]
+        if isinstance(raw_props, list):
+            props = cls._encode_list_props(raw_props)
+        elif isinstance(raw_props, dict):
+            props = cls._encode_dict_props(raw_props)
+        else:
+            assert False, f"cant unpack type [{type(raw_props)}] instance [{raw_props}]"
+        m = cls(
+            properties=props,
+        )
+        if "parents" in d:
+            m.parents = [cls.Unpack(x) for x in d["parents"]]
+        return m
+
+    def Pack(self, parents=False):
+        if len(self.properties)==0:
+            props = []
+        elif next(iter(self.properties)).startswith("{"):
+            props = {k:v for p in self.properties for k, v in json.loads(p).items()}
+        else:
+            def _unlist(s: str):
+                if s.startswith("[") and s.endswith("]"): return s[1:-1]
+            props = [_unlist(p) for p in self.properties]
+        d = {
+            "properties": props,
+        }
+        if len(self.parents)>0 and parents:
+            d["parents"] = [x.Pack() for x in self.parents]
+        return d
 
 # of a Transform
 class Dependency(Node):
-    def __init__(self, namespace: Namespace, properties: set[str], parents: set[Node]) -> None:
-        super().__init__(namespace, properties, parents)
+    def __init__(self, properties: set[str], parents: set[Node]) -> None:
+        super().__init__(properties=properties, parents=parents)
 
     def __str__(self) -> str:
-        return f"(D:{'-'.join(self.properties)})"
+        return f"(D:{'-'.join(sorted(list(self.properties)))})"
 
 # as in a free floating data type
 class Endpoint(Node):
-    def __init__(self, namespace: Namespace, properties: set[str], parents: dict[Endpoint, Node]=dict()) -> None:
-        super().__init__(namespace, properties, set(parents))
+    def __init__(self, properties: set[str], parents: dict[Endpoint, Node]=dict()) -> None:
+        super().__init__(properties=properties, parents=set(parents))
         self._parent_map = parents # real, proto
 
     def Iterparents(self):
@@ -101,14 +177,12 @@ class Endpoint(Node):
             yield e, p
 
 class Transform(Hashable):
-    def __init__(self, ns: Namespace) -> None:
-        super().__init__(ns)
+    def __init__(self) -> None:
+        super().__init__()
         self.requires: list[Dependency] = list()
         self.produces: list[Dependency] = list()
-        self.deletes: set[Dependency] = set()
-        self._ns = ns
         self._input_group_map: dict[int, list[Dependency]] = {}
-        self._key = ns.NewKey()
+        self._key = self._namespace.NewKey()
         self._seen: set[str] = set()
 
     def __str__(self) -> str:
@@ -118,31 +192,18 @@ class Transform(Hashable):
 
     def __repr__(self): return f"{self}"
 
-    def AddRequirement(self, properties: Iterable[str], parents: set[Dependency]=set()):
-        prototype = Dependency(properties=set(properties), parents=parents, namespace=self._ns)
-        return self._add_dependency(self.requires, prototype)
+    def AddRequirement(self, node: Node=None, properties: Iterable[str]=None, parents: set[Dependency]=None):
+        return self._add_dependency(destination=self.requires, node=node, properties=properties, parents=parents)
 
-    def AddProduct(self, properties: Iterable[str], parents: set[Dependency]=set()):
-        prototype = Dependency(properties=set(properties), parents=parents, namespace=self._ns)
-        for d in self.deletes:
-            assert not prototype.IsA(d), f"can not produce and delete product[{d}]"
-        return self._add_dependency(self.produces, prototype)
-    
-    # def AddDeletion(self, to_delete: Dependency):
-    #     print("warning!, deletion not implemented")
-    #     assert to_delete in self.requires, f"{to_delete} not in requirements"
-    #     if to_delete in self.deletes: return # already added
-    #     for p in self.produces:
-    #         assert not p.IsA(to_delete), f"can not produce and delete product [{p}]"
-    #     self.deletes.add(to_delete)
+    def AddProduct(self, node: Node=None, properties: Iterable[str]=None, parents: set[Dependency]=None):
+        return self._add_dependency(destination=self.produces, node=node, properties=properties, parents=parents)
 
-    def _add_dependency(self, destination: list[Dependency], prototype: Dependency):
-        # _dep = Dependency(properties=set(properties), parents=_parents, namespace=self._ns)
-        _dep = prototype
+    def _add_dependency(self, destination: set[Dependency], node: Node=None, properties: Iterable[str]=None, parents: set[Dependency]=None):
+        assert node is not None or properties is not None, "must provide either node or properties"
+        if parents is None: parents = set()
+        _properties = set(node.properties) if node is not None else set(properties)
+        _dep = Dependency(properties=_properties, parents=parents)
         _parents = _dep.parents
-        # assert not any(e.IsA(_dep) for e in destination), f"prev. dep ⊆ new dep"
-        # assert not any(_dep.IsA(e) for e in destination), f"new dep ⊆ prev. dep "
-        # destination.add(_dep)
         destination.append(_dep)
         if destination == self.requires:
             i = len(self.requires)-1
@@ -227,7 +288,6 @@ class Transform(Hashable):
             parent_dict[e] = eproto
         produced = {
             Endpoint(
-                namespace=self._ns,
                 properties=out.properties,
                 parents=parent_dict
             ):out
@@ -252,7 +312,7 @@ class Application:
 
 @dataclass
 class Result:
-    application: Application # overall inputs and outputs
+    application: Application
     dependency_plan: list[Application]
 
     def __len__(self):
@@ -265,3 +325,214 @@ class DependencyResult:
 
     def __len__(self):
         return len(self.plan)
+
+# lineage is satisfied at depth 1 (parents of parents are not considered) 
+def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transforms: Iterable[Transform], horizon: int=64, _debug=False):
+    @dataclass
+    class State:
+        have: dict[Endpoint, Dependency]
+        needed: set[Dependency]
+        target: Dependency|Transform
+        lineage_requirements: dict[Node, Endpoint]
+        seen_signatures: set[str]
+        depth: int
+
+    def _get_producers_of(target: Dependency):
+        for tr in transforms:
+            for p in tr.produces:
+                if p.IsA(target):
+                    yield tr
+                    break
+
+    if _debug:
+        log_path = Path("./cache/debug_log.txt")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log = open("./cache/debug_log.txt", "w")
+        debug_print = lambda *args: log.write(" ".join(str(a) for a in args)+"\n") if args[0] != "END" else log.close()
+    else:
+        debug_print = lambda *args: None
+
+    _apply_cache: dict[str, Application] = {}
+    def _apply(target: Transform, inputs: Iterable[tuple[Endpoint, Node]]):
+        sig  = "".join(e.key+d.key for e, d in inputs)
+        if sig in _apply_cache:
+            return _apply_cache[sig]
+        appl = target.Apply(inputs)
+        _apply_cache[sig] = appl
+        return appl
+
+    def _satisfies_lineage(tproto: Dependency, candidate: Endpoint):
+        for tp_proto in tproto.parents:
+            if all(not p.IsA(tp_proto) for p, _ in candidate.Iterparents()):
+                return False
+        return True
+
+    def _solve_dep(s: State) -> list[DependencyResult]:
+        if s.depth >= horizon:
+            if _debug: debug_print(f" <-  HORIZON", s.depth)
+            return []
+        target: Dependency = s.target
+        assert isinstance(target, Dependency), f"{s.target}, not dep"
+        if _debug: debug_print(f" ->", s.target, s.lineage_requirements)
+        if _debug: debug_print(f"   ", s.have.keys())
+
+        candidates:list[DependencyResult] = []
+        for e, eproto in s.have.items():
+            if not e.IsA(target): continue
+            acceptable = True
+            for rproto, r in s.lineage_requirements.items():
+                if e == r: continue
+                if eproto.IsA(rproto): # e is protype, but explicitly breaks lineage
+                    acceptable=False; break
+
+                for p, pproto in e.Iterparents():
+                    if rproto.IsA(pproto):
+                        if p != r:
+                            acceptable=False; break
+
+            if not acceptable:
+                continue
+            else:
+                if _debug: debug_print(f"    ^candidate", e, eproto, e.parents)
+                if _debug: debug_print(f"    ^reqs.    ", s.lineage_requirements)
+                candidates.append(DependencyResult([], e))
+            # elif quality == 2:
+            #     if DEBUG: debug_print(f" <-", s.target, e, "DIRECT")
+            #     return [DepResult(0, [], e)]
+
+        def _add_result(res: Result):
+            ep: Endpoint|None = None
+            for e in res.application.produced:
+                if e.IsA(target):
+                    ep = e; break
+            assert isinstance(ep, Endpoint)
+            if not _satisfies_lineage(target, ep): return
+            candidates.append(DependencyResult(
+                res.dependency_plan+[res.application],
+                ep,
+            ))
+
+        for tr in _get_producers_of(target):
+            # if target in tr.deletes: continue
+            results = _solve_tr(State(s.have, s.needed, tr, s.lineage_requirements, s.seen_signatures, s.depth))
+            for res in results:
+                _add_result(res)
+
+        if _debug: debug_print(f" <-", s.target, f"{len(candidates)} sol.", candidates[0].endpoint if len(candidates)>0 else None)
+        return candidates
+
+    _transform_cache: dict[str, list[Result]] = {}
+    def _solve_tr(s: State) -> list[Result]:
+        assert isinstance(s.target, Transform), f"{s.target} not tr"
+        target: Transform = s.target
+        if _debug: debug_print(f">>>{s.depth:02}", s.target, s.lineage_requirements)
+        for h in s.have:
+            if _debug: debug_print(f"      ", h)
+
+        # memoization
+        sig = "".join(e.key for e in s.have)
+        sig += f":{s.target.key}"
+        sig += ":"+"".join(e.key for e in s.lineage_requirements.values())
+        if sig in _transform_cache:
+            if _debug: debug_print(f"<<<{s.depth:02} CACHED: {len(_transform_cache[sig])} solutions")
+            return _transform_cache[sig]
+        if sig in s.seen_signatures:
+            if _debug: debug_print(f"<<<{s.depth:02} FAIL: is loop")
+            return []
+
+        plans: list[list[DependencyResult]] = []
+        for i, req in enumerate(s.target.requires):
+            req_p = {}
+            for proto, e in s.lineage_requirements.items():
+                if req.IsA(proto): continue
+                req_p[proto] = e
+
+            results = _solve_dep(State(s.have, s.needed|{req}, req, req_p, s.seen_signatures|{sig}, s.depth+1))
+            
+            if len(results) == 0:
+                if _debug: debug_print(f"<<< FAIL", s.target, req)
+                return []
+            else:
+                plans.append(results)
+
+        def _gather_valid_inputs():
+            valids: list[list[DependencyResult]] = []
+            ii = 0
+            def _gather(req_i: int, req: Dependency, res: DependencyResult, deps: dict, used: set[Endpoint], inputs: list[DependencyResult]):
+                nonlocal ii; ii += 1         
+                if _debug: debug_print(f"          ", deps)
+                if _debug: debug_print(f"    ___", req, req.parents)
+                if _debug: debug_print(f"        __", res.endpoint, list(res.endpoint.Iterparents()))
+                if res.endpoint in used:
+                    if _debug: debug_print(f"    ___ FAIL: duplicate input", res.endpoint)
+                    return
+                # used.add(res.endpoint)
+
+                if not _satisfies_lineage(req, res.endpoint):
+                    if _debug: debug_print(f"    ___ FAIL: unsatisfied lineage", req)
+                    return
+
+                for rproto in req.parents:
+                    r = deps[rproto]
+                    # if all(not p.IsA(rproto) for p, pproto in res.endpoint.Iterparents()):
+                    #     if DEBUG: debug_print(f"    ___ FAIL: unsatisfied lineage", rproto)
+                    #     _fail=True; break
+                    res_parents = list(res.endpoint.Iterparents())
+                    res_parents.reverse()
+                    for p, pproto in res_parents:
+                        if not p.IsA(rproto): continue
+                        if p!=r:
+                            if _debug: debug_print(f"    ___ FAIL: lineage mismatch", p, r)
+                            return
+                        else:
+                            break # in the case of asm -> bin, the closest ancestor takes priority
+                # deps[req] = res.endpoint
+
+                if req_i >= len(target.requires)-1:
+                    valids.append(inputs+[res])
+                else:
+                    req_i += 1
+                    for i, next_res in enumerate(plans[req_i]):
+                        _gather(req_i, target.requires[req_i], next_res, deps|{req:res.endpoint}, used|{res.endpoint}, inputs+[res])
+            req_i = 0
+            for i, next_res in enumerate(plans[req_i]):
+                _gather(0, target.requires[req_i], next_res, {}, set(), [])
+            total = 1
+            for s in plans:
+                total *= len(s)
+            if _debug: debug_print(f"    ## {ii} visited, {total} combos")
+            return valids
+
+        if _debug: debug_print(f"<<<{s.depth:02}", s.target, s.lineage_requirements)
+        if _debug: debug_print(f"     ", [len(x) for x in plans])
+        solutions: list[Result] = []
+        # for inputs in _iter_satisfies():
+        for inputs in _gather_valid_inputs():
+            my_appl = _apply(s.target, [(res.endpoint, req) for req, res in zip(s.target.requires, inputs)])
+            consolidated_plan: list[Application] = []
+            produced_sigs: set[str] = {p.Signature() for p in my_appl.produced}
+            # if DEBUG: debug_print(f"   __", my_appl)
+            for res in inputs:
+                for appl in res.plan:
+                    if all(p.Signature() in produced_sigs for p in appl.produced): continue
+                    consolidated_plan.append(appl)
+                    produced_sigs = produced_sigs.union(p.Signature() for p in appl.produced)
+            solutions.append(Result(
+                my_appl,
+                consolidated_plan,
+            ))
+            # if DEBUG: debug_print(f"    *", my_appl)
+            # if DEBUG: debug_print(f"     ", [res.endpoint for res in inputs])
+            # if DEBUG: debug_print(f"    .", target.requires)
+            # for appl in consolidated_plan:
+            #     if DEBUG: debug_print(f"    __", appl)
+        if _debug: debug_print(f"     ", f"{len(solutions)} sol.", solutions[0].application.produced if len(solutions)>0 else None)
+        solutions = sorted(solutions, key=lambda s: len(s))
+        _transform_cache[sig] = solutions
+        return solutions
+
+    input_tr = Transform()
+    given_dict = {g:input_tr.AddProduct(properties=g.properties) for g in given}
+    res = _solve_tr(State(given_dict, set(), target, {}, set(), 0))
+    if _debug: debug_print("END")
+    return res
