@@ -1,0 +1,31 @@
+ontology: null
+schema: '0.2'
+types:
+  contigs:
+    properties:
+      data: DNA sequence
+      format: FASTA
+  oci_image_diamond:
+    properties:
+      data: software contaienr
+      format: OCI
+      provides:
+      - diamond
+  oci_image_pprodigal:
+    properties:
+      data: software contaienr
+      format: OCI
+      provides:
+      - pprodigal
+  orf_annotations:
+    properties:
+      data: Protein features
+      format: CSV
+  orfs_faa:
+    properties:
+      data: Amino acid sequence
+      format: FASTA
+  protein_reference_diamond:
+    properties:
+      data: database reference
+      format: .dmnd

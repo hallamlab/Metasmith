@@ -1,4 +1,5 @@
 from pathlib import Path
+import tempfile
 
 NAME = Path(__file__).parent.name
 GIT_URL = "https://github.com/Tony-xy-Liu/Metasmith"

@@ -1,5 +1,5 @@
 from pathlib import Path
-from metasmith import DataInstance, DataTypeLibrary, TransformInstance, ExecutionContext, ExecutionResult, Log, Container
+from metasmith import *
 
 def protocol(context: ExecutionContext):
     Log.Info("this is pprodigal!")
@@ -7,16 +7,18 @@ def protocol(context: ExecutionContext):
         context.Shell(f"touch {x.source}")
     return ExecutionResult(success=True)
 
-HERE = Path(__file__).parent
-lib = DataTypeLibrary.Load((HERE/"../../prototypes/metagenomics.yml").resolve())
+# todo: url for more consistency
+lib = DataTypeLibrary.Load("/home/tony/workspace/tools/Metasmith/main/local_mock/prototypes/metagenomics.dev3.yml")
 
-TransformInstance.Register(
+TransformInstance(
     protocol=protocol,
-    input_signature={
-        lib["oci_image_pprodigal"],
-        lib["contigs"],
-    },
-    output_signature={
-        DataInstance(Path("orfs.faa"), lib["orfs_faa"]),
-    },
+    input_signature=lib.Subset([
+        "oci_image_pprodigal",
+        "contigs",
+    ]),
+    output_signature=DataInstanceLibrary(
+        manifest={
+            Path("orfs.faa"): lib["orfs_faa"],
+        },
+    ),
 )

@@ -59,7 +59,7 @@ class Node(Hashable):
         # self._sames = set()
 
     def __str__(self) -> str:
-        return f"({'-'.join(self.properties)}:{self.key})"
+        return f"({','.join(self.properties)}:{self.key})"
 
     def __repr__(self) -> str:
         return f"{self}"
@@ -127,14 +127,6 @@ class Transform(Hashable):
         for d in self.deletes:
             assert not prototype.IsA(d), f"can not produce and delete product[{d}]"
         return self._add_dependency(self.produces, prototype)
-    
-    # def AddDeletion(self, to_delete: Dependency):
-    #     print("warning!, deletion not implemented")
-    #     assert to_delete in self.requires, f"{to_delete} not in requirements"
-    #     if to_delete in self.deletes: return # already added
-    #     for p in self.produces:
-    #         assert not p.IsA(to_delete), f"can not produce and delete product [{p}]"
-    #     self.deletes.add(to_delete)
 
     def _add_dependency(self, destination: list[Dependency], prototype: Dependency):
         # _dep = Dependency(properties=set(properties), parents=_parents, namespace=self._ns)
