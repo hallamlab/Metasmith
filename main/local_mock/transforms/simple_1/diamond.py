@@ -9,16 +9,15 @@ def protocol(context: ExecutionContext):
 
 # todo: url for more consistency
 lib = DataTypeLibrary.Load("/home/tony/workspace/tools/Metasmith/main/local_mock/prototypes/metagenomics.dev3.yml")
+model = Transform()
+dep = model.AddRequirement(node=lib["oci_image_diamond"])
+dep = model.AddRequirement(node=lib["orfs_faa"])
+dep = model.AddRequirement(node=lib["protein_reference_diamond"])
+
 TransformInstance(
-    protocol=protocol,
-    input_signature=lib.Subset([
-        "oci_image_diamond",
-        "orfs_faa",
-        "protein_reference_diamond",
-    ]),
-    output_signature=DataInstanceLibrary(
-        manifest={
-            Path("annotations.csv"): lib["orf_annotations"],
-        },
-    ),
+    protocol = protocol,
+    model = model,
+    output_signature = {
+        model.AddProduct(node=lib["orf_annotations"]): Path("annotations.csv"),
+    },
 )

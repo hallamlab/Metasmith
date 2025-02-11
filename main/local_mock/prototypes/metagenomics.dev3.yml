@@ -7,13 +7,13 @@ types:
       format: FASTA
   oci_image_diamond:
     properties:
-      data: software contaienr
+      data: software container
       format: OCI
       provides:
       - diamond
   oci_image_pprodigal:
     properties:
-      data: software contaienr
+      data: software container
       format: OCI
       provides:
       - pprodigal

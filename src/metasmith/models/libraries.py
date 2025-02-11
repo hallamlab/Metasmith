@@ -1,5 +1,4 @@
 from __future__ import annotations
-from enum import Enum
 import os, sys
 import shutil
 from pathlib import Path
@@ -7,67 +6,61 @@ import yaml
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
 from importlib import reload, __import__
-from hashlib import sha256
 
-from .solver import Endpoint, Namespace, Transform
+from .solver import Dependency, Endpoint, Namespace, Transform
+from ..hashing import KeyGenerator
 from ..logging import Log
 from ..constants import VERSION
 
-class NotImplementedException(Exception):
-    pass
-
-def str_hash(s):
-    return int(sha256(s.encode("utf-8", "replace")).hexdigest(), 16)
-
-@dataclass
-class DataType:
-    properties: dict[str, str|list[str]]
-    lineage: list[DataType] = field(default_factory=list)
+# @dataclass
+# class DataType:
+#     properties: dict[str, str|list[str]]
+#     lineage: list[DataType] = field(default_factory=list)
     
-    def __post_init__(self):
-        self._sort_properties()
+#     def __post_init__(self):
+#         self._sort_properties()
 
-    def __hash__(self) -> int:
-        if not hasattr(self, "_hash"):
-            self._hash = str_hash(''.join(self.AsProperties()))
-        return self._hash
+#     def __hash__(self) -> int:
+#         if not hasattr(self, "_hash"):
+#             self._hash = str_hash(''.join(self.AsProperties()))
+#         return self._hash
 
-    def _sort_properties(self):
-        self.properties = {k: v for k, v in sorted(self.properties.items())}
+#     def _sort_properties(self):
+#         self.properties = {k: v for k, v in sorted(self.properties.items())}
 
-    def AsProperties(self):
-        return set(f"{k}={','.join(v) if isinstance(v, list) else v}".lower() for k, v in self.properties.items())
+#     def AsProperties(self):
+#         return set(f"{k}={','.join(v) if isinstance(v, list) else v}".lower() for k, v in self.properties.items())
     
-    def IsA(self, other: DataType) -> bool:
-        return self.AsProperties().issubset(other.AsProperties())
+#     def IsA(self, other: DataType) -> bool:
+#         return self.AsProperties().issubset(other.AsProperties())
 
-    def WithLineage(self, lineage: Iterable[DataType]) -> DataType:
-        m = self.Clone()
-        m.lineage = [x.Clone() for x in lineage]
-        return m
+#     def WithLineage(self, lineage: Iterable[DataType]) -> DataType:
+#         m = self.Clone()
+#         m.lineage = [x.Clone() for x in lineage]
+#         return m
 
-    def Clone(self):
-        return DataType(
-            properties={k: v.copy() if isinstance(v, list) else v for k, v in self.properties.items()},
-            lineage=[x.Clone() for x in self.lineage],
-        )
+#     def Clone(self):
+#         return DataType(
+#             properties={k: v.copy() if isinstance(v, list) else v for k, v in self.properties.items()},
+#             lineage=[x.Clone() for x in self.lineage],
+#         )
 
-    @classmethod
-    def Unpack(cls, d: dict):
-        m = cls(
-            properties=d["properties"],
-        )
-        if "lineage" in d:
-            m.lineage = [cls.Unpack(x) for x in d["lineage"]]
-        return m
+#     @classmethod
+#     def Unpack(cls, d: dict):
+#         m = cls(
+#             properties=d["properties"],
+#         )
+#         if "lineage" in d:
+#             m.lineage = [cls.Unpack(x) for x in d["lineage"]]
+#         return m
 
-    def Pack(self):
-        d = {
-            "properties": self.properties,
-        }
-        if len(self.lineage)>0:
-            d["lineage"] = [x.Pack() for x in self.lineage]
-        return d
+#     def Pack(self):
+#         d = {
+#             "properties": self.properties,
+#         }
+#         if len(self.lineage)>0:
+#             d["lineage"] = [x.Pack() for x in self.lineage]
+#         return d
 
 @dataclass
 class DataTypeOntology:
@@ -98,7 +91,7 @@ class DataTypeOntologies:
 _library_cache: dict[Path, DataTypeLibrary] = {}
 @dataclass
 class DataTypeLibrary:
-    types: dict[str, DataType] = field(default_factory=dict)
+    types: dict[str, Endpoint] = field(default_factory=dict)
     source: Path|None = None
     ontology: dict = field(default_factory= lambda: DataTypeOntologies.EDAM)
     schema: str = VERSION
@@ -107,11 +100,11 @@ class DataTypeLibrary:
         if self.source is None: return
         _library_cache[self.source] = self
 
-    def __getitem__(self, key: str) -> DataType:
+    def __getitem__(self, key: str) -> Endpoint:
         return self.types[key]
     
-    def __setitem__(self, key: str, value: DataType):
-        assert isinstance(value, DataType)
+    def __setitem__(self, key: str, value: Endpoint):
+        assert isinstance(value, Endpoint)
         assert isinstance(key, str)
         self.types[key] = value
     
@@ -141,11 +134,9 @@ class DataTypeLibrary:
             schema=d["schema"],
             ontology=DataTypeOntology.Unpack(d["ontology"])
         )
-        types: dict[str, DataType] = {}
+        types: dict[str, Endpoint] = {}
         for k, v in d["types"].items():
-            types[k] = DataType(
-                properties=v,
-            )
+            types[k] = Endpoint.Unpack(v)
         lib.types = types
         return lib
 
@@ -160,18 +151,19 @@ class DataTypeLibrary:
 @dataclass
 class DataInstance:
     source: Path
-    type: DataType
+    type: Endpoint
 
     def __hash__(self) -> int:
         if not hasattr(self, "_hash"):
-            self._hash = str_hash(str(self.source.resolve())+''.join(self.type.AsProperties()))
+            _hash, _key = KeyGenerator.FromStr(str(self.source.resolve())+''.join(self.type.properties))
+            self._hash: int = _hash
         return self._hash
 
     @classmethod
     def Unpack(cls, d: dict):
         return cls(
             source=Path(d["source"]),
-            type=DataType.Unpack(d["type"]),
+            type=Endpoint.Unpack(d["type"]),
         )
     
     def Pack(self):
@@ -204,7 +196,7 @@ class DataInstanceLibrary:
     def _index_path(self):
         return self.source/self._index_name
 
-    def ImportDataInstance(self, source: Path|str, type: DataType, local_path: Path=None, copy: bool=False, overwrite: bool=False):
+    def ImportDataInstance(self, source: Path|str, type: Endpoint, local_path: Path=None, copy: bool=False, overwrite: bool=False):
         source = Path(source)
         assert source.exists(), f"path doesn't exist [{source}]"
         if local_path is None:
@@ -230,7 +222,7 @@ class DataInstanceLibrary:
         source = Path(source)
         with open(source/cls._index_name) as f:
             d = yaml.safe_load(f)
-        manifest = {Path(k):DataInstance(Path(k), DataType.Unpack(v)) for k, v in d["manifest"].items()}
+        manifest = {Path(k):DataInstance(Path(k), Endpoint.Unpack(v)) for k, v in d["manifest"].items()}
         return DataInstanceLibrary(source, manifest)
 
     def Save(self):
@@ -241,37 +233,38 @@ class DataInstanceLibrary:
                 manifest=d,
             ), f)
 
-    def Get(self, like: DataType) -> DataInstance:
+    def Get(self, like: Endpoint) -> DataInstance:
         for k, v in self.manifest.items():
             if v.type.IsA(like):
                 return v
         raise KeyError(f"no instance like [{like}] in [{self.source}]")
-
-    def AsEndpoints(self, namespace: Namespace):
-        map: dict[Endpoint, DataInstance] = {}
-        for k, v in self.manifest.items():
-            p = self.source/k
-            inst = DataInstance(p, v.type)
-            ep = Endpoint(namespace, inst.type.AsProperties()) # todo, lineage
-            map[ep] = inst
-        return map
     
 @dataclass
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult]
-    input_signature: DataTypeLibrary
-    output_signature: DataInstanceLibrary
+    model: Transform
+    output_signature: dict[Dependency, Path]
     _source: Path = None
 
     def __post_init__(self):
         for k, vt in [
             ("protocol", Callable),
-            ("input_signature", DataTypeLibrary),
-            ("output_signature", DataInstanceLibrary),
+            ("model", Transform),
+            ("output_signature", dict),
         ]:
             v = getattr(self, k)
             assert isinstance(v, vt), f"[{k}] must be of type [{vt}] but got [{type(v)}]"
+        for d, p in self.output_signature.items():
+            assert isinstance(p, Path), f"output signature key must be of type [Path] but got [{type(p)}]"
+            assert isinstance(d, Dependency), f"output signature value must be of type [Dependency] but got [{type(d)}]"
+            assert d in self.model.produces, f"output signature value must be added to model"
+        for dep in self.model.produces:
+            assert dep in self.output_signature, f"model output missing in signature [{dep}]"
         TransformInstance._last_loaded_transform = self
+
+    def GetOutput(self, dep: Dependency) -> DataInstance:
+        if dep not in self.model.produces: return
+
 
     @classmethod
     def Load(cls, definition: Path) -> TransformInstance|None:
@@ -288,16 +281,11 @@ class TransformInstance:
         finally:
             sys.path = original_path_var
 
-    def AsTransform(self, namespace: Namespace):
-        tr = Transform(namespace)
-        for k, v in self.input_signature.types.items():
-            dep = tr.AddRequirement(v.AsProperties(), [x.AsProperties() for x in v.lineage])
-
 @dataclass
 class TransformInstanceLibrary:
     manifest: dict[Path, dict[Path, TransformInstance]]
 
-    def __getitem__(self, key: str) -> DataType:
+    def __getitem__(self, key: str) -> TransformInstance:
         return self.manifest[key]
     
     def __iter__(self):
@@ -337,14 +325,6 @@ class TransformInstanceLibrary:
         for root in path:
             manifest[root] = cls._Load_section(root)
         return cls(manifest)
-    
-    def AsTransforms(self, namespace: Namespace):
-        map: dict[Transform, TransformInstance] = {}
-        for root, section in self.manifest.items():
-            for path, inst in section.items():
-                tr = Transform(namespace)
-
-                map[tr] = inst
 
 @dataclass
 class ExecutionContext:
