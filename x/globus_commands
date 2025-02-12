@@ -1,0 +1,544 @@
+
+=== globus ===
+
+    globus cli-profile-list
+        List all CLI profiles which have been used.
+
+    globus delete
+        Submit a delete task (asynchronous).
+
+    globus get-identities
+        Lookup Globus Auth Identities.
+
+    globus list-commands
+        List all CLI Commands.
+
+    globus login
+        Log into Globus to get credentials for the Globus CLI.
+
+    globus logout
+        Logout of the Globus CLI.
+
+    globus ls
+        List endpoint directory contents.
+
+    globus mkdir
+        Create a directory on an endpoint.
+
+    globus rename
+        Rename a file or directory on an endpoint.
+
+    globus rm
+        Delete a single path; wait for it to complete.
+
+    globus stat
+        Get the status of a path.
+
+    globus transfer
+        Submit a transfer task (asynchronous).
+
+    globus update
+        Update the Globus CLI to its latest version.
+
+    globus version
+        Show the version and exit.
+
+    globus whoami
+        Show the currently logged-in identity.
+
+
+=== globus api ===
+
+    globus api auth
+        Make API calls to Globus Auth
+
+    globus api flows
+        Make API calls to Globus Flows
+
+    globus api gcs
+        Make API calls to Globus Gcs
+
+    globus api groups
+        Make API calls to Globus Groups
+
+    globus api search
+        Make API calls to Globus Search
+
+    globus api timer
+        Make API calls to Globus Timer
+
+    globus api transfer
+        Make API calls to Globus Transfer
+
+
+=== globus bookmark ===
+
+    globus bookmark create
+        Create a bookmark for the current user.
+
+    globus bookmark delete
+        Delete a bookmark.
+
+    globus bookmark list
+        List your bookmarks.
+
+    globus bookmark rename
+        Change a bookmark's name.
+
+    globus bookmark show
+        Resolve a bookmark name or ID to an endpoint:path.
+
+
+=== globus collection ===
+
+    globus collection delete
+        Delete an existing Collection.
+
+    globus collection list
+        List all Collections on an Endpoint.
+
+    globus collection show
+        Show a Collection definition.
+
+    globus collection update
+        Update a Collection definition.
+
+
+=== globus collection create ===
+
+    globus collection create guest
+        Create a GCSv5 Guest Collection.
+
+    globus collection create mapped
+        Create a new Mapped Collection.
+
+
+=== globus endpoint ===
+
+    globus endpoint delete
+        Delete an endpoint.
+
+    globus endpoint local-id
+        Display UUID of locally installed endpoint.
+
+    globus endpoint my-shared-endpoint-list
+        List the current user's shared endpoints.
+
+    globus endpoint search
+        Find and discover endpoints.
+
+    globus endpoint set-subscription-id
+        (Deprecated) Set an endpoint's subscription.
+
+    globus endpoint show
+        Display a detailed endpoint definition.
+
+    globus endpoint update
+        Update attributes of an endpoint.
+
+
+=== globus endpoint permission ===
+
+    globus endpoint permission create
+        Create an access control rule.
+
+    globus endpoint permission delete
+        Delete an access control rule.
+
+    globus endpoint permission list
+        List access control rules.
+
+    globus endpoint permission show
+        Display an access control rule.
+
+    globus endpoint permission update
+        Update an access control rule.
+
+
+=== globus endpoint role ===
+
+    globus endpoint role create
+        Add a role to an endpoint.
+
+    globus endpoint role delete
+        Remove a role from an endpoint.
+
+    globus endpoint role list
+        List roles on an endpoint.
+
+    globus endpoint role show
+        Show full info for a role on an endpoint.
+
+
+=== globus endpoint storage-gateway ===
+
+    globus endpoint storage-gateway list
+        List the Storage Gateways on an Endpoint.
+
+
+=== globus endpoint user-credential ===
+
+    globus endpoint user-credential delete
+        Delete a specific User Credential on an Endpoint.
+
+    globus endpoint user-credential list
+        List all User Credentials on an Endpoint.
+
+    globus endpoint user-credential show
+        Show a specific User Credential on an Endpoint.
+
+
+=== globus endpoint user-credential create ===
+
+    globus endpoint user-credential create from-json
+        Create a User Credential from a JSON document.
+
+    globus endpoint user-credential create posix
+        Create a User Credential for a POSIX...
+
+    globus endpoint user-credential create s3
+        Create a User Credential for an S3 Storage...
+
+
+=== globus flows ===
+
+    globus flows create
+        Create a flow.
+
+    globus flows delete
+        Delete a flow.
+
+    globus flows list
+        List flows.
+
+    globus flows show
+        Show a flow.
+
+    globus flows start
+        Start a flow.
+
+    globus flows update
+        Update a flow.
+
+    globus flows validate
+        Validate a flow definition.
+
+
+=== globus flows run ===
+
+    globus flows run cancel
+        Cancel a run.
+
+    globus flows run delete
+        Delete a run.
+
+    globus flows run list
+        List runs.
+
+    globus flows run resume
+        Resume a run.
+
+    globus flows run show
+        Show a run.
+
+    globus flows run show-definition
+        Show a run's flow definition and input schema.
+
+    globus flows run show-logs
+        List run logs entries.
+
+    globus flows run update
+        Update a run.
+
+
+=== globus gcp ===
+
+    globus gcp set-subscription-id
+        Update a GCP endpoint's subscription.
+
+
+=== globus gcp create ===
+
+    globus gcp create guest
+        Create a new Guest Collection on GCP.
+
+    globus gcp create mapped
+        Create a new GCP Mapped Collection.
+
+
+=== globus gcp update ===
+
+    globus gcp update guest
+        Update a Guest Collection on GCP.
+
+    globus gcp update mapped
+        Update a GCP Mapped Collection.
+
+
+=== globus gcs ===
+
+
+=== globus gcs collection ===
+
+    globus gcs collection delete
+        Delete an existing Collection.
+
+    globus gcs collection list
+        List all Collections on an Endpoint.
+
+    globus gcs collection show
+        Show a Collection definition.
+
+    globus gcs collection update
+        Update a Collection definition.
+
+
+=== globus gcs collection create ===
+
+    globus gcs collection create guest
+        Create a GCSv5 Guest Collection.
+
+    globus gcs collection create mapped
+        Create a new Mapped Collection.
+
+
+=== globus gcs endpoint ===
+
+    globus gcs endpoint set-subscription-id
+        Set a GCS Endpoint's subscription.
+
+    globus gcs endpoint show
+        Display information about a particular GCS...
+
+    globus gcs endpoint update
+        Update a GCS Endpoint.
+
+
+=== globus gcs endpoint role ===
+
+    globus gcs endpoint role create
+        Create a role on a GCS Endpoint.
+
+    globus gcs endpoint role delete
+        Delete a role from a GCS Endpoint.
+
+    globus gcs endpoint role list
+        List all roles on a GCS Endpoint...
+
+    globus gcs endpoint role show
+        Describe a particular role on a GCS Endpoint.
+
+
+=== globus gcs storage-gateway ===
+
+    globus gcs storage-gateway list
+        List the Storage Gateways on an Endpoint.
+
+
+=== globus gcs user-credential ===
+
+    globus gcs user-credential delete
+        Delete a specific User Credential on an Endpoint.
+
+    globus gcs user-credential list
+        List all User Credentials on an Endpoint.
+
+    globus gcs user-credential show
+        Show a specific User Credential on an Endpoint.
+
+
+=== globus gcs user-credential create ===
+
+    globus gcs user-credential create from-json
+        Create a User Credential from a JSON document.
+
+    globus gcs user-credential create posix
+        Create a User Credential for a POSIX...
+
+    globus gcs user-credential create s3
+        Create a User Credential for an S3 Storage...
+
+
+=== globus group ===
+
+    globus group create
+        Create a new group.
+
+    globus group delete
+        Delete a group.
+
+    globus group get-by-subscription
+        Show the group for a specific subscription.
+
+    globus group get-subscription-info
+        Show data about a specific Subscription.
+
+    globus group join
+        Join a group.
+
+    globus group leave
+        Leave a group.
+
+    globus group list
+        List groups you belong to.
+
+    globus group set-policies
+        Update an existing group's policies.
+
+    globus group show
+        Show a group definition.
+
+    globus group update
+        Update an existing group.
+
+
+=== globus group invite ===
+
+    globus group invite accept
+        Accept an invitation.
+
+    globus group invite decline
+        Decline an invitation.
+
+
+=== globus group member ===
+
+    globus group member add
+        Add a member to a group.
+
+    globus group member approve
+        Approve a member to join a group.
+
+    globus group member invite
+        Invite a user to a group.
+
+    globus group member list
+        List group members.
+
+    globus group member reject
+        Reject a member from a group.
+
+    globus group member remove
+        Remove a member from a group.
+
+
+=== globus search ===
+
+    globus search delete-by-query
+        Perform a delete-by-query.
+
+    globus search ingest
+        Ingest a document into Globus Search.
+
+    globus search query
+        Perform a search.
+
+
+=== globus search index ===
+
+    globus search index create
+        Create a new index.
+
+    globus search index delete
+        Delete a Search index.
+
+    globus search index list
+        List indices where you have some permissions.
+
+    globus search index show
+        Display information about an index.
+
+
+=== globus search index role ===
+
+    globus search index role create
+        Create a role (requires admin or owner).
+
+    globus search index role delete
+        Delete a role (requires admin or owner).
+
+    globus search index role list
+        List roles on an index (requires admin).
+
+
+=== globus search subject ===
+
+    globus search subject delete
+        Delete a subject (requires writer, admin,...
+
+    globus search subject show
+        Show the data for a given subject in an...
+
+
+=== globus search task ===
+
+    globus search task list
+        List recent tasks for an index.
+
+    globus search task show
+        Display a task.
+
+
+=== globus session ===
+
+    globus session consent
+        Update your session with specific consents.
+
+    globus session show
+        Show your current CLI auth session.
+
+    globus session update
+        Update your CLI auth session.
+
+
+=== globus task ===
+
+    globus task cancel
+        Cancel a task.
+
+    globus task event-list
+        List events for a given task.
+
+    globus task generate-submission-id
+        Get a task submission ID.
+
+    globus task list
+        List your tasks.
+
+    globus task pause-info
+        Show why an in-progress task is currently paused.
+
+    globus task show
+        Show detailed information about a task.
+
+    globus task update
+        Update a task.
+
+    globus task wait
+        Wait for a task to complete.
+
+
+=== globus timer ===
+
+    globus timer delete
+        Delete a timer.
+
+    globus timer list
+        List your timers.
+
+    globus timer pause
+        Pause a timer.
+
+    globus timer resume
+        Resume a timer.
+
+    globus timer show
+        Display a timer.
+
+
+=== globus timer create ===
+
+    globus timer create transfer
+        Create a recurring transfer timer.
+
+

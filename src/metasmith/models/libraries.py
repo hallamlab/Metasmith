@@ -63,6 +63,10 @@ class DataTypeLibrary:
     def __in__(self, key: str) -> bool:
         return key in self.types
     
+    def __iter__(self):
+        for k, v in self.types.items():
+            yield k, v
+    
     def __len__(self) -> int:
         return len(self.types)
 
@@ -134,6 +138,9 @@ class DataInstanceLibrary:
     manifest: dict[Path, DataInstance] = field(default_factory=dict)
     schema: str = VERSION
     _index_name: str = "info.yml"
+
+    def __post_init__(self):
+        if not isinstance(self.source, Path): self.source = Path(self.source)
 
     def __getitem__(self, key: Path|str) -> DataInstance:
         if isinstance(key, str):
