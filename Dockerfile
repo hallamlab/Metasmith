@@ -30,6 +30,8 @@ ENV PATH /opt/conda/envs/${CONDA_ENV}/bin:/app:$PATH
 # install src
 COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
 RUN pip install /opt/metasmith.tar.gz
+
+RUN mkdir /home_link && ln -s /home_link/home ~ 
 # # add local scripts/executables
 # COPY ./src /app/
 # ENV PATH="/app:${PATH}"

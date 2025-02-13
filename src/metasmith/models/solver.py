@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Generator, Iterable
+from typing import Any, Callable, Generator, Iterable
 from pathlib import Path
 import json
 
@@ -58,6 +58,8 @@ class Node(Hashable):
         parents: set[Node],
     ) -> None:
         super().__init__()
+        assert isinstance(properties, set)
+        assert isinstance(parents, set)
         self.properties = properties
         self.parents = parents
         self._sig: str|None = None
@@ -87,11 +89,25 @@ class Node(Hashable):
             self._sig = f'{sig}:[{psig}]' if len(self.parents)>0 else sig
         return self._sig
     
-    def Clone(self):
+    def _props_have_keys(self):
+        if len(self.properties)==0: return False
+        return next(iter(self.properties)).startswith("{")
+
+    def AddProperty(self, value: str, key: str=None):
+        if key is None:
+            assert not self._props_have_keys(), "this endpoint's properties have keys"
+            self.properties.add(self._json_dumps([value]))
+        else:
+            assert self._props_have_keys(), "this endpoint's properties do not have keys"
+            self.properties.add(self._json_dumps({key:value}))
+        return self
+    
+    def Clone(self, properties_only: bool=False):
         clone = self.__class__(
-            properties=self.properties,
-            parents=[p.Clone() for p in self.parents],
+            properties=set(self.properties),
+            parents={p.Clone() for p in self.parents},
         )
+        if properties_only: return clone
         clone.hash, clone.key = self.hash, self.key
         return clone
     
@@ -106,9 +122,8 @@ class Node(Hashable):
         if mapping is None: mapping = {}
         def _add(e: Endpoint):
             if e in mapping: return mapping[e]
-            for p in e.parents:
-                _add(p)
-            d = transform.AddRequirement(e)
+            parent_deps = {_add(p) for p in e.parents}
+            d = transform.AddRequirement(node=e, parents=parent_deps)
             mapping[e] = d
             return d
         return _add(self)
@@ -138,7 +153,7 @@ class Node(Hashable):
             properties=props,
         )
         if "parents" in d:
-            m.parents = [cls.Unpack(x) for x in d["parents"]]
+            m.parents = {cls.Unpack(x) for x in d["parents"]}
         return m
 
     def Pack(self, parents=False):
@@ -149,6 +164,7 @@ class Node(Hashable):
         else:
             def _unlist(s: str):
                 if s.startswith("[") and s.endswith("]"): return s[1:-1]
+                return s
             props = [_unlist(p) for p in self.properties]
         d = {
             "properties": props,
@@ -168,9 +184,11 @@ class Dependency(Node):
 # as in a free floating data type
 class Endpoint(Node):
     def __init__(self, properties: set[str], parents: dict[Endpoint, Node]=dict()) -> None:
-        super().__init__(properties=properties, parents=set(parents))
+        if isinstance(parents, set):
+            parents = {p:p for p in parents}
+        super().__init__(properties=properties, parents=set(parents.keys()))
         self._parent_map = parents # real, proto
-
+    
     def Iterparents(self):
         """real, prototype"""
         for e, p in self._parent_map.items():
