@@ -137,9 +137,13 @@ case $1 in
             # -e XDG_CACHE_HOME="/ws"\
         shift
         mkdir -p ./scratch/docker
+        cd ./scratch/docker
+        # mkdir -p cache/.globus cache/.globusonline
         docker run -it --rm \
             -u $(id -u):$(id -g) \
             --mount type=bind,source="$HERE/scratch/docker",target="/ws"\
+            --mount type=bind,source="$HOME/.globus",target="/.globus"\
+            --mount type=bind,source="$HOME/.globusonline",target="/.globusonline"\
             --workdir="/ws" \
             $DOCKER_IMAGE:$VER /bin/bash
     ;;
@@ -151,7 +155,9 @@ case $1 in
         apptainer exec \
             --bind ./:/ws \
             --workdir /ws \
-            docker://$DOCKER_IMAGE:$VER /bin/bash
+            --no-home \
+            $HERE/$NAME.sif /bin/bash
+            # docker-daemon://$DOCKER_IMAGE:$VER /bin/bash
     ;;
 
     ###################################################

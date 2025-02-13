@@ -10,4 +10,5 @@ dependencies:
   - numpy=2.2.1
   - pip
   - pip:
-    - globus-cli=3.32
+    - globus-cli==3.32.0
+    - globus-sdk==3.46.0

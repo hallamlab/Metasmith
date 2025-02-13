@@ -31,7 +31,7 @@ class WorkflowPlan:
     ):
         _given_map: dict[Endpoint, DataInstance] = {}
         for lib in given:
-            _map = {e.type:e for e in lib.manifest.values()}
+            _map = {e.type:e for e in lib}
             for inst in _map.values():
                 inst.source = lib.source/inst.source
             _given_map.update(_map)

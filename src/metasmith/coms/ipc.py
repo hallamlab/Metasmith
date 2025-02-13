@@ -439,11 +439,24 @@ class TerminalProcess:
 class LiveShell:
     def __init__(self) -> None:
         self._shell = None
-        self._MARK = "done"
+        self._MARK = f"done_{GenerateId()}"
         self._done = False
-        self._silent = True
+        self._err_callbacks = []
+        self._out_callbacks = []
 
-    def Exec(self, cmd: str, timeout: int|None = 15, silent=True, live_out: Callable[[str], None] = None, live_err: Callable[[str], None] = None, history: bool=False):
+    def RegisterOnOut(self, callback: Callable[[str], None]):
+        self._out_callbacks.append(callback)
+    
+    def RegisterOnErr(self, callback: Callable[[str], None]):
+        self._err_callbacks.append(callback)
+
+    def RemoveOnOut(self, callback: Callable[[str], None]):
+        if callback in self._out_callbacks: self._out_callbacks.remove(callback)
+
+    def RemoveOnErr(self, callback: Callable[[str], None]):
+        if callback in self._err_callbacks: self._err_callbacks.remove(callback)
+
+    def ExecAsync(self, cmd: str):
         def _strip_indent(s):
             lines = s.split("\n")
             if len(lines) == 0: return s
@@ -452,7 +465,9 @@ class LiveShell:
                 if c not in {" ", "\t"}: break
                 indent += 1
             return "\n".join([l[indent:] for l in lines])
-        
+        self._shell.Write(_strip_indent(cmd))
+
+    def AwaitDone(self, timeout: int|float = 15):
         def _await_done(await_timeout, delta):
             start = CurrentTimeMillis()
             while True:
@@ -462,23 +477,6 @@ class LiveShell:
             self._done = False
             return True
         
-        _out, _err = [], []
-        def _decode(x):
-            return RemoveTrailingNewline(self._shell.Decode(x))
-        def _on_out(x):
-            msg = _decode(x)
-            if msg == self._MARK: return
-            if history: _out.append(msg)
-            if live_out is not None: live_out(msg)
-        def _on_err(x):
-            msg = _decode(x)
-            if history: _err.append(msg)
-            if live_err is not None: live_err(msg)
-        self._shell.RegisterOnOut(_on_out)
-        self._shell.RegisterOnErr(_on_err)
-
-        self._silent = silent
-        self._shell.Write(_strip_indent(cmd))
         start = CurrentTimeMillis()
         _d = 0.5
         while True:
@@ -489,32 +487,43 @@ class LiveShell:
             _d = min(_d*10, 864000) # 10 days
             if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
 
-        self._shell.RemoveOnOut(_on_out)
-        self._shell.RemoveOnErr(_on_err)
+    def Exec(self, cmd: str, timeout: int|None = 15, history: bool=False):
+        _out, _err = [], []
+        def _log_err(msg):
+            _err.append(msg)
+        def _log_out(msg):
+            _out.append(msg)
+        if history:
+            self.RegisterOnOut(_log_out)
+            self.RegisterOnErr(_log_err)
+
+        self.ExecAsync(cmd)
+        self.AwaitDone(timeout=timeout)
+        if history:
+            self.RemoveOnOut(_log_out)
+            self.RemoveOnErr(_log_err)
         return _out, _err
     
     def __enter__(self):
         self._shell = TerminalProcess()
-        def _check(x):
-            if len(x) > len(self._MARK)+2: return
-            x = RemoveTrailingNewline(self._shell.Decode(x))
-            if x == self._MARK: self._done = True
-        self._shell.RegisterOnOut(_check)
-        def _tee(prefix):
+        def _tee(cb_lst: list[Callable[[str], None]], check=False):
             def _cb(x):
-                if self._silent: return
                 msg = RemoveTrailingNewline(self._shell.Decode(x))
                 if len(msg) == 0: return
-                if msg == self._MARK: return
-                print(f"{prefix}{msg}")
+                if msg == self._MARK:
+                    if check: self._done = True
+                    return
+                for f in cb_lst: f(msg)
             return _cb
-        self._shell.RegisterOnErr(_tee("E: "))
-        self._shell.RegisterOnOut(_tee("I: "))
+        self._shell.RegisterOnErr(_tee(self._err_callbacks))
+        self._shell.RegisterOnOut(_tee(self._out_callbacks, check=True))
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._shell.Dispose()
         self._shell = None
+        self._err_callbacks.clear()
+        self._out_callbacks.clear()
 
 class RemoteShell:
     def __init__(self, server_path: Path) -> None:
@@ -568,7 +577,7 @@ class RemoteShell:
         self._channel=channel
         self._out_callbacks=out_cb # care to not reassign these
         self._err_callbacks=err_cb # care to not reassign these
-        self.MARK=MARK
+        self._MARK=MARK
 
     def __enter__(self):
         return self
@@ -588,7 +597,27 @@ class RemoteShell:
     def RemoveOnErr(self, callback: Callable[[str], None]):
         if callback in self._err_callbacks: self._err_callbacks.remove(callback)
 
-    def Exec(self, cmd: str, timeout: int|float|None=None, history: bool=False):
+
+    def _send(self, cmd):
+        res = self._channel.Transact(IpcRequest(endpoint="bash", data={"script": cmd}))
+        if res.status not in {204, 200}:
+            return res.data.get("error")
+        else:
+            return
+
+    def ExecAsync(self, cmd: str):
+        def _strip_indent(s):
+            lines = s.split("\n")
+            if len(lines) == 0: return s
+            indent = 0
+            for c in lines[0]:
+                if c not in {" ", "\t"}: break
+                indent += 1
+            return "\n".join([l[indent:] for l in lines])
+        err = self._send(_strip_indent(cmd))
+        if err: raise ConnectionError(err)
+
+    def AwaitDone(self, timeout: int|float=15):
         def _await_done(await_timeout, delta):
             start = CurrentTimeMillis()
             while True:
@@ -597,32 +626,29 @@ class RemoteShell:
                 time.sleep(delta)
             return True
 
-        _out, _err = [], []
-        def _on_out(msg):
-            if history: _out.append(msg)
-        def _on_err(msg):
-            if history: _err.append(msg)
-        self.RegisterOnOut(_on_out)
-        self.RegisterOnErr(_on_err)
-
-        def _send(cmd):
-            res = self._channel.Transact(IpcRequest(endpoint="bash", data={"script": cmd}))
-            if res.status not in {204, 200}:
-                _err.append(res.data.get("error"))
-                return False
-            return True
-        self._done = False
-        if not _send(cmd): return _out, _err
         start = CurrentTimeMillis()
         _d = 0.5
         while True:
-            if not _send(f'echo "{self.MARK}"'): return _out, _err
+            err = self._send(f'echo "{self._MARK}"')
+            if err: raise ConnectionError(err)
             if _await_done(await_timeout=_d, delta=min(_d/5, 1)): break
             _d = min(_d*10, 864000) # 10 days
             if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
 
-        self.RemoveOnOut(_on_out)
-        self.RemoveOnErr(_on_err)
+    def Exec(self, cmd: str, timeout: int|float|None=None, history: bool=False):
+        _out, _err = [], []
+        def _on_out(msg):
+            _out.append(msg)
+        def _on_err(msg):
+            _err.append(msg)
+        if history:
+            self.RegisterOnOut(_on_out)
+            self.RegisterOnErr(_on_err)
+        self.ExecAsync(cmd)
+        self.AwaitDone(timeout=timeout)
+        if history:
+            self.RemoveOnOut(_on_out)
+            self.RemoveOnErr(_on_err)
         return _out, _err
 
     def Dispose(self):

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from enum import Enum
 import os, sys
 import shutil
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Callable, Iterable
 from importlib import reload, __import__
 
 from .solver import Dependency, Endpoint, Transform
+from .remote import Source
 from ..hashing import KeyGenerator
 from ..logging import Log
 from ..constants import VERSION
@@ -110,32 +112,34 @@ class DataTypeLibrary:
 
 @dataclass
 class DataInstance:
-    source: Path
+    source: Source
     type: Endpoint
+    _key: str = None
+    _hash: int = None
+
+    def __post_init__(self):
+        self._hash, self._key = KeyGenerator.FromStr(str(self.source)+''.join(self.type.properties))
 
     def __hash__(self) -> int:
-        if not hasattr(self, "_hash"):
-            _hash, _key = KeyGenerator.FromStr(str(self.source)+''.join(self.type.properties))
-            self._hash: int = _hash
         return self._hash
 
     @classmethod
     def Unpack(cls, d: dict):
         return cls(
-            source=Path(d["source"]),
+            source=d["source"],
             type=Endpoint.Unpack(d["type"]),
         )
     
     def Pack(self, parents=False):
         return {
-            "source": str(self.source),
+            "source": self.source,
             "type": self.type.Pack(parents=parents),
         }
-    
+
 @dataclass
 class DataInstanceLibrary:
     source: Path = Path("./")
-    manifest: dict[Path, DataInstance] = field(default_factory=dict)
+    manifest: dict[str, DataInstance] = field(default_factory=dict)
     schema: str = VERSION
     _index_name: str = "info.yml"
 
@@ -143,14 +147,17 @@ class DataInstanceLibrary:
         if not isinstance(self.source, Path): self.source = Path(self.source)
 
     def __getitem__(self, key: Path|str) -> DataInstance:
-        if isinstance(key, str):
-            key = Path(key)
+        key = str(key)
         return self.manifest[key]
+    
+    def __setitem__(self, key: str, value: DataInstance):
+        assert isinstance(key, str)
+        assert isinstance(value, DataInstance)
+        self.manifest[key] = value
 
-    def __in__(self, key: Path) -> bool:
-        if key.is_relative_to(self.source):
-            key = key.relative_to(self.source)
-        return key in self.manifest and Path(key.name) in self.manifest
+    def __in__(self, key: str) -> bool:
+        key = str(key)
+        return key in self.manifest
 
     def __iter__(self):
         for path, inst in self.manifest.items():
@@ -162,26 +169,30 @@ class DataInstanceLibrary:
     def _index_path(self):
         return self.source/self._index_name
 
-    def ImportDataInstance(self, source: Path|str, type: Endpoint, local_path: Path=None, copy: bool=False, overwrite: bool=False):
-        source = Path(source)
-        assert source.exists(), f"path doesn't exist [{source}]"
-        if local_path is None:
-            local_path = self.source/source.name
-        else:
-            assert not local_path.is_absolute(), "local_path must be relative"
-            local_path = self.source/local_path
-        if local_path.exists():
-            if overwrite:
-                local_path.unlink()
-            else:
-                raise FileExistsError(f"already exists [{local_path}]")
-        self.source.mkdir(parents=True, exist_ok=True)
-        if copy:
-            shutil.copy(source, local_path)
-        else:
-            os.symlink(source, local_path)
-        local_path = local_path.relative_to(self.source)
-        self.manifest[local_path] = DataInstance(local_path, type)
+    # def ResolveAll(self, like: Endpoint, method: SourceType=SourceType.SYMLINK, overwrite: bool=False):
+    #     self.source.mkdir(parents=True, exist_ok=True)
+
+    #     if method in {SourceType.SYMLINK, SourceType.COPY}:
+    #         source = Path(source)
+    #         assert source.exists(), f"path doesn't exist [{source}]"
+    #         if local_path is None:
+    #             local_path = self.source/source.name
+    #         else:
+    #             assert not local_path.is_absolute(), "local_path must be relative"
+    #             local_path = self.source/local_path
+    #         if local_path.exists():
+    #             if overwrite:
+    #                 local_path.unlink()
+    #             else:
+    #                 raise FileExistsError(f"already exists [{local_path}]")
+    #         self.source.mkdir(parents=True, exist_ok=True)
+    #         if method == SourceType.COPY:
+    #             shutil.copy(source, local_path)
+    #         else:
+    #             os.symlink(source, local_path)
+    #         _key, _path = str(local_path.relative_to(self.source)), local_path.resolve()
+    #     else:
+    #         _key, _path = local_path.relative_to(self.source), local_path.resolve()
 
     @classmethod
     def Load(cls, source: Path|str):
