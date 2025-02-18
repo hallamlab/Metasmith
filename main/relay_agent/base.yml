@@ -3,4 +3,4 @@ channels:
 dependencies:
   - python=3.10
   - pyinstaller=6.11.1
-  - numpy
+  - numpy=1.22
