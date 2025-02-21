@@ -1,0 +1,34 @@
+#!/opt/conda/envs/metasmith_env/bin/python
+# this bounces "sbatch" commands from inside a container
+
+import sys
+from pathlib import Path
+import time
+from metasmith.coms.ipc import RemoteShell
+from metasmith.agents.ssh import Agent
+
+SERVER_PATH = Path("/msm_home/relay/connections/main.in")
+cwd = Path("./").resolve() # example /ws/runs/WSFa2f/nxf_work/08/b8eb0c0fd0f5b02aed6c4cecefe08f/
+WS = Path("/ws")
+assert cwd.is_relative_to(WS)
+tail = cwd.relative_to(WS)
+agent = Agent.Load(Path("/msm_home/lib/agent.yml"))
+external_ws = agent.workspace/tail
+
+with RemoteShell(SERVER_PATH) as shell:
+    # take this opportunity to fix the paths of the command.run script
+    res = shell.Exec(f"realpath {agent.workspace}", history=True)
+    assert len(res.err) == 0, "failed to resolve external workspace path"
+    resolved_agent_workspace = res.out[0]
+    command_run_path = Path(sys.argv[1])
+    with open(command_run_path, 'r') as f:
+        command_run = "".join(f.readlines())
+    command_run = command_run.replace("/ws", resolved_agent_workspace)
+    with open(command_run_path, 'w') as f:
+        f.write(command_run)
+
+    shell.RegisterOnOut(print)
+    shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
+    shell.Exec(f"cd {external_ws} && sbatch {' '.join(sys.argv[1:])}")
+    time.sleep(1) # don't know if or why this is needed...
+

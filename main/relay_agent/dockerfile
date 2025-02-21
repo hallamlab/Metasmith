@@ -1,9 +1,5 @@
 ARG CONDA_ENV=for_container
 
-# https://github.com/conda-forge/miniforge/releases
-# https://sourceware.org/glibc/wiki/Glibc%20Timeline
-# glibc 2.34 for sockeye
-# FROM condaforge/miniforge3:4.10.3-4
 FROM condaforge/miniforge3
 # scope var from global
 ARG CONDA_ENV
@@ -22,6 +18,6 @@ RUN apt-get update && apt-get install -y \
 COPY ./base.yml /opt/base.yml
 # use an external cache for solved environments and install packages
 RUN --mount=type=cache,target=/opt/conda/pkgs \
-    mamba env create -n ${CONDA_ENV} --no-default-packages -f /opt/base.yml
+    conda env create -n ${CONDA_ENV} --no-default-packages -f /opt/base.yml
 # add bins to PATH so that the env appears "active"
 ENV PATH /opt/conda/envs/${CONDA_ENV}/bin:/app:$PATH

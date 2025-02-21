@@ -154,9 +154,12 @@ class Node(Hashable):
         )
         if "parents" in d:
             m.parents = {cls.Unpack(x) for x in d["parents"]}
+        if "_hash" in d:
+            m.hash, m.key = d["_hash"].split("/")
+            m.hash = int(m.hash)
         return m
 
-    def Pack(self, parents=False):
+    def Pack(self, parents=False, save_hash=False):
         if len(self.properties)==0:
             props = []
         elif next(iter(self.properties)).startswith("{"):
@@ -169,6 +172,8 @@ class Node(Hashable):
         d = {
             "properties": props,
         }
+        if save_hash:
+            d["_hash"] = f"{self.hash}/{self.key}"
         if len(self.parents)>0 and parents:
             d["parents"] = [x.Pack() for x in self.parents]
         return d
@@ -205,10 +210,8 @@ class Transform(Hashable):
 
     def __str__(self) -> str:
         def _props(d: Dependency):
-            return "{"+"-".join(d.properties)+"}"
+            return "{"+"-".join(sorted(d.properties))+"}"
         return f"{','.join(_props(r) for r in self.requires)}->{','.join(_props(p) for p in self.produces)}"
-
-    def __repr__(self): return f"{self}"
 
     def AddRequirement(self, node: Node=None, properties: Iterable[str]=None, parents: set[Dependency]=None):
         return self._add_dependency(destination=self.requires, node=node, properties=properties, parents=parents)
@@ -229,11 +232,7 @@ class Transform(Hashable):
                 assert p in self.requires, f"{p} not added as a requirement"
             self._input_group_map[i] = self._input_group_map.get(i, [])+list(_parents)
         return _dep
-
-    def _sig(self, endpoints: Iterable[Endpoint]):
-        # return "".join(e.key for e in endpoints)
-        return self.key+"-"+ "".join(e.key for e in endpoints)
-
+    
     # just all possibilities regardless of lineage
     def Possibilities(self, have: set[Endpoint], constraints: dict[Dependency, Endpoint]=dict()) -> Generator[list[Endpoint], Any, None]:
         matches: list[list[Endpoint]] = []

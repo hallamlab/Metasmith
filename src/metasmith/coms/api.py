@@ -2,6 +2,7 @@ from pathlib import Path
 
 from ..logging import Log
 from ..agents.bootstrap import DeployFromContainer, StageAndRunTransform
+from ..agents.workflow import ExecuteWorkflow, StageWorkflow
 
 class Api:
     def deploy_from_container(self, body: dict):
@@ -13,15 +14,27 @@ class Api:
     def execute_transform(self, body: dict):
         workspace = Path(body.get("workspace", "/ws")).resolve()
         context = body.get("context")
-        assert context, "context is required"
+        assert context, "[context] is required"
         StageAndRunTransform(workspace, Path(context))
+
+    def stage_workflow(self, body: dict):
+        plan_dir = body.get("plan_dir")
+        assert plan_dir, "[plan_dir] is required"
+        plan_dir = Path(plan_dir)
+        StageWorkflow(plan_dir)
+
+    def execute_workflow(self, body: dict):
+        plan_dir = body.get("plan_dir")
+        assert plan_dir, "[plan_dir] is required"
+        plan_dir = Path(plan_dir)
+        ExecuteWorkflow(plan_dir)
 
 _ENDPOINTS = {k:v for k, v in Api.__dict__.items() if k[0]!="_"} 
 def HandleRequest(endpoint: str, body: dict):
     endpoint = endpoint.lower()
-    if endpoint not in endpoint:
+    if endpoint not in _ENDPOINTS:
         Log.Error(f"endpoint [{endpoint}] does not exist")
         return
     api = Api()
-    Log.Info(f"api call to [{endpoint}]")
+    Log.Info(f"api call to [{endpoint}] with [{body}]")
     _ENDPOINTS[endpoint](api, body)

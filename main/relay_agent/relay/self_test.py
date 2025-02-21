@@ -1,27 +1,29 @@
 from pathlib import Path
 
-from .coms.ipc import IpcRequest, PipeClient
+from .coms.ipc import IpcRequest, PipeClient, RemoteShell
 
 def run(workspace: Path):
     server_path = workspace/"main.in"
     with PipeClient(server_path) as p:
         res = p.Transact(IpcRequest(endpoint="connect"), timeout=1)
-    if res.status != "200":
+    if res.status != 200:
         print("error", res.data.get("error"))
         return
-
-    channel_path = Path(res.data.get("path"))
-    print(f"connecting as [{channel_path.stem}]")
-    if channel_path is None:
+    
+    channel = Path(res.data.get("path"))
+    if channel is None:
         print("error", "no channel path")
         return
+    channel_path = workspace/channel
+    print(f"connecting as [{channel.stem}]")
     
     with PipeClient(channel_path) as p:
         res = p.Transact(IpcRequest(endpoint="echo", data=dict(asdf=1)), timeout=2)
         print(f">>> echo")
         print(res)
-        
-        print(f">>> bash")
+
+    print(f">>> bash")
+    with RemoteShell(server_path) as shell:
         script = f"""\
             echo "hello world"
             echo $$
@@ -30,19 +32,9 @@ def run(workspace: Path):
             ls "non existent file"
             date
         """
-        script = [line.strip() for line in script.split("\n") if line.strip()]
-        script = "\n".join(f"  {line}" for line in script)
-        print(f"script:")
-        print(script)
-        res = p.Transact(IpcRequest(endpoint="bash", data=dict(
-            script=script,
-        )), timeout=2)
-        print(f"status: {res.status}")
-        print(f"std_out")
-        for line in res.data.get("out", []):
-            print(f"  {line}")
-        print(f"std_err")
-        for line in res.data.get("err", []):
-            print(f"  {line}")
-        
+        shell.RegisterOnOut(lambda data: print(f"  {data}"))
+        shell.RegisterOnErr(lambda data: print(f"E {data}"))
+        shell.ExecAsync(script)
+        shell.AwaitDone()
+                
     print("test complete")

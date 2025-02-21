@@ -28,6 +28,21 @@ def RemoveTrailingNewline(s):
         s = s[:-1]
     return s
 
+def RemoveLeadingIndent(s: str):
+    lines = s.split("\n")
+    if len(lines) == 0: return s
+    indent = 0
+    for line in lines:
+        if line == "": continue
+        for c in line:
+            if c not in {" ", "\t"}: break
+            indent += 1
+        break
+    cleaned = "\n".join([l[indent:] for l in lines])
+    cleaned = cleaned.strip()
+    if lines[-1][indent:] == "": cleaned += "\n"
+    return cleaned
+
 _kg = KeyGenerator()
 def GenerateId():
     return _kg.GenerateUID(12)
@@ -436,6 +451,11 @@ class TerminalProcess:
         for i, fd in enumerate(self._fds):
             os.close(fd)
 
+@dataclass
+class ShellResult:
+    out: list[str]
+    err: list[str]
+
 class LiveShell:
     def __init__(self) -> None:
         self._shell = None
@@ -457,15 +477,7 @@ class LiveShell:
         if callback in self._err_callbacks: self._err_callbacks.remove(callback)
 
     def ExecAsync(self, cmd: str):
-        def _strip_indent(s):
-            lines = s.split("\n")
-            if len(lines) == 0: return s
-            indent = 0
-            for c in lines[0]:
-                if c not in {" ", "\t"}: break
-                indent += 1
-            return "\n".join([l[indent:] for l in lines])
-        self._shell.Write(_strip_indent(cmd))
+        self._shell.Write(RemoveLeadingIndent(cmd))
 
     def AwaitDone(self, timeout: int|float = 15):
         def _await_done(await_timeout, delta):
@@ -487,7 +499,7 @@ class LiveShell:
             _d = min(_d*10, 864000) # 10 days
             if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
 
-    def Exec(self, cmd: str, timeout: int|None = 15, history: bool=False):
+    def Exec(self, cmd: str, timeout: int|None = 15, history: bool=False) -> ShellResult:
         _out, _err = [], []
         def _log_err(msg):
             _err.append(msg)
@@ -502,7 +514,7 @@ class LiveShell:
         if history:
             self.RemoveOnOut(_log_out)
             self.RemoveOnErr(_log_err)
-        return _out, _err
+        return ShellResult(out=_out, err=_err)
     
     def __enter__(self):
         self._shell = TerminalProcess()
@@ -529,7 +541,7 @@ class RemoteShell:
     def __init__(self, server_path: Path) -> None:
         ws = server_path.parent
         with PipeClient(server_path) as p:
-            res = p.Transact(IpcRequest(endpoint="connect"), timeout=1)
+            res = p.Transact(IpcRequest(endpoint="connect"), timeout=5)
         if res.status != 200:
             raise ConnectionError(f"server connect error: [{res.data.get('error')}]")
 
@@ -540,6 +552,7 @@ class RemoteShell:
         channel_path = ws/channel_path
         out_cb, err_cb = [], []
         MARK = f"done_{GenerateId()}"
+        self._done = False
         def _make_callback(callback_list: list):
             def _handler(channel: PipeServer, raw: str):
                 if raw == MARK:
@@ -597,7 +610,6 @@ class RemoteShell:
     def RemoveOnErr(self, callback: Callable[[str], None]):
         if callback in self._err_callbacks: self._err_callbacks.remove(callback)
 
-
     def _send(self, cmd):
         res = self._channel.Transact(IpcRequest(endpoint="bash", data={"script": cmd}))
         if res.status not in {204, 200}:
@@ -606,15 +618,7 @@ class RemoteShell:
             return
 
     def ExecAsync(self, cmd: str):
-        def _strip_indent(s):
-            lines = s.split("\n")
-            if len(lines) == 0: return s
-            indent = 0
-            for c in lines[0]:
-                if c not in {" ", "\t"}: break
-                indent += 1
-            return "\n".join([l[indent:] for l in lines])
-        err = self._send(_strip_indent(cmd))
+        err = self._send(RemoveLeadingIndent(cmd))
         if err: raise ConnectionError(err)
 
     def AwaitDone(self, timeout: int|float=15):
@@ -635,7 +639,7 @@ class RemoteShell:
             _d = min(_d*10, 864000) # 10 days
             if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
 
-    def Exec(self, cmd: str, timeout: int|float|None=None, history: bool=False):
+    def Exec(self, cmd: str, timeout: int|float|None=None, history: bool=False) -> ShellResult:
         _out, _err = [], []
         def _on_out(msg):
             _out.append(msg)
@@ -649,7 +653,7 @@ class RemoteShell:
         if history:
             self.RemoveOnOut(_on_out)
             self.RemoveOnErr(_on_err)
-        return _out, _err
+        return ShellResult(out=_out, err=_err)
 
     def Dispose(self):
         self._err_pipe.Dispose()

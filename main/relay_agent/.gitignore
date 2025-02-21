@@ -1,4 +1,4 @@
-/relay/serialization
-/relay/logging
-/relay/hashing
-/relay/coms
+/relay/serialization.py
+/relay/logging.py
+/relay/hashing.py
+/relay/coms/ipc.py

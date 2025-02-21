@@ -8,6 +8,7 @@ dependencies:
   - gevent=24.11.1    # runs flask server
   - pyyaml=6.0.2
   - numpy=2.2.1
+  - rsync=3.4.1
   - pip
   - pip:
     - globus-cli==3.32.0

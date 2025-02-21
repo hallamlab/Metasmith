@@ -1,4 +1,4 @@
-import os
+import os, sys
 from pathlib import Path
 import time
 from typing import Callable
@@ -11,11 +11,32 @@ from .logging import Log
 
 WS = Path(os.curdir).resolve()
 GRACE = 3*1000
+MAIN_ID = "main"
 
 def log(x, timestamp=True):
     Log.Info(x)
 
 def RunServer(workspace: Path):
+    if (workspace/f"{MAIN_ID}.in").exists():
+        Log.Error(f"relay server already running in [{workspace}]")
+        os._exit(1)
+
+    try:
+        pid = os.fork()
+        if pid > 0:
+            Log.Info(f"relay server started with pid: [{pid}]")
+            # Exit parent process
+            return
+    except OSError as e:
+        Log.Error(f"fork failed: {e.errno} ({e.strerror})")
+        return
+    # forked child
+
+    Log.SetLogFile(workspace/"log")
+    _start_msg = "starting relay server"
+    Log.Info("="*len(_start_msg))
+    Log.Info(_start_msg)
+
     @dataclass
     class Client:
         key: str
@@ -105,15 +126,17 @@ def RunServer(workspace: Path):
         log(f"request from: [{channel._id}]")
         req = IpcRequest.Parse(raw)
         def _err(msg: str, status=400):
+            Log.Error(f"[{channel._id}]: {msg}")
             return IpcResponse(status=status, data=dict(error=msg))
         def _handle() -> IpcResponse:
             if not req.IsValid(): return _err(req.parse_error)
             ep_key = req.endpoint.lower()
-            bad_ep = _err(f"invalid endpoint: [{ep_key}]", status=404)
-            if ep_key.startswith("_"): return bad_ep
-            if not hasattr(client, ep_key): return bad_ep
+            make_err_for_bad_ep = lambda: _err(f"invalid endpoint: [{ep_key}]", status=404)
+            if ep_key.startswith("_"): return make_err_for_bad_ep()
+            if not hasattr(client, ep_key): return make_err_for_bad_ep()
             ep = getattr(client, ep_key)
-            if not callable(ep): return bad_ep
+            if not callable(ep): return make_err_for_bad_ep()
+            Log.Info(f"[{channel._id}]: calling [{ep_key}]")
             status, data = ep(req.data)
             return IpcResponse(
                 status=status, data=data
@@ -151,7 +174,7 @@ def RunServer(workspace: Path):
         res.message_id = req.message_id
         channel.Send(res.Serialize())
 
-    main_channel = PipeServer(workspace, new_connection, overwrite=True)
+    main_channel = PipeServer(workspace, new_connection, overwrite=True, id=MAIN_ID)
     def run():
         log("ready")
         while main_channel.IsOpen() and running:
@@ -169,7 +192,7 @@ def RunServer(workspace: Path):
             if channel.IsOpen() and channel._client_path.exists(): continue
             client._dispose()
             del connections[id]
-            log(f"channel reaped: [{id}]")
+            log(f"[{id}]: reaped")
 
     lock = Condition()
     def reaper_process():
@@ -201,30 +224,34 @@ def RunServer(workspace: Path):
             client._dispose()
 
 def _connect_as_client(server_path: Path, silent=False):
+    if not server_path.exists():
+        Log.Error(f"relay server not started in [{server_path}]")
+        return
     with PipeClient(server_path) as p:
         try:
             res = p.Transact(IpcRequest(endpoint="connect"), timeout=1)
         except TimeoutError:
-            Log.Error("error", "timeout")
+            Log.Error("error timeout")
             return
     if res.status != 200:
-        Log.Error("error", res.data.get("error"))
+        Log.Error(f"error{res.data.get('error')}")
         return
 
     channel_path = Path(res.data.get("path"))
     if not silent: Log.Info(f"connecting to relay as [{channel_path.stem}]")
     if channel_path is None:
-        Log.Error("error", "no channel path")
+        Log.Error("error no channel path")
         return
     return server_path.parent/channel_path
 
 def StopServer(workspace: Path):
-    channel_path = _connect_as_client(workspace/"main.in", silent=True)
+    channel_path = _connect_as_client(workspace/f"{MAIN_ID}.in", silent=True)
+    if channel_path is None: return
     with PipeClient(channel_path) as p:
         try:
             res = p.Transact(IpcRequest(endpoint="shutdown"), timeout=2)
         except TimeoutError:
-            Log.Error("error", "timeout")
+            Log.Error("error timeout")
             return
         if res.status != 200:
             Log.Error(f"error: {res.data.get('error')}")
@@ -236,12 +263,13 @@ def StopServer(workspace: Path):
             Log.Error(f"Relay stop request got unexpected status [{res.data.get('message')}]")
 
 def GetStatus(workspace: Path):
-    channel_path = _connect_as_client(workspace/"main.in")
+    channel_path = _connect_as_client(workspace/f"{MAIN_ID}.in")
+    if channel_path is None: return
     with PipeClient(channel_path) as p:
         try:
             res = p.Transact(IpcRequest(endpoint="status"), timeout=2)
         except TimeoutError:
-            Log.Error("error", "timeout")
+            Log.Error("error timeout")
             return
         _clients = res.data.get("clients", [])
         if res.status != 200:

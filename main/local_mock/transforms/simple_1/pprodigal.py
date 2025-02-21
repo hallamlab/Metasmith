@@ -1,5 +1,5 @@
 from pathlib import Path
-from metasmith import *
+from metasmith.pythonapi import *
 
 # todo: url for more consistency
 lib = DataTypeLibrary.Load("/home/tony/workspace/tools/Metasmith/main/local_mock/prototypes/metagenomics.dev3.yml")
@@ -7,7 +7,7 @@ lib = DataTypeLibrary.Load("/home/tony/workspace/tools/Metasmith/main/local_mock
 def protocol(context: ExecutionContext):
     Log.Info("this is pprodigal!")
     for x in context.output:
-        context.Shell(f"touch {x.source}")
+        context.Shell(f"touch {x.source.address}")
     return ExecutionResult(success=True)
 
 model = Transform()

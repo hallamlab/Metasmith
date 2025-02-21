@@ -2,6 +2,7 @@ from pathlib import Path
 from .constants import WORKSPACE_ROOT
 
 def LinkifyPath(path: Path):
+    if isinstance(path, str): path = Path(path)
     if not path.is_absolute():
         print(f"./{path}")
         return

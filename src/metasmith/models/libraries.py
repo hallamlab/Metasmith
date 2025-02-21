@@ -7,9 +7,10 @@ import yaml
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
 from importlib import reload, __import__
+import re
 
 from .solver import Dependency, Endpoint, Transform
-from .remote import Source
+from .remote import GlobusSource, Logistics, Source, SourceType
 from ..hashing import KeyGenerator
 from ..logging import Log
 from ..constants import VERSION
@@ -82,13 +83,16 @@ class DataTypeLibrary:
         _dataTypeLibrary_cache[str(alt)] = lib
 
     @classmethod
-    def Load(cls, path: str) -> DataTypeLibrary:
-        path = str(path)
+    def Load(cls, path: Source|str) -> DataTypeLibrary:
+        if isinstance(path, Source):
+            path = path.address
+        else:
+            path = str(path)
         _dataTypeLibrary_history.append(path)
         if path in _dataTypeLibrary_cache: return _dataTypeLibrary_cache[path]
         # todo, urls
         _path = Path(path)
-        assert _path.is_absolute(), f"path to [{cls}] must be absolute"
+        assert _path.is_absolute(), f"given [{path}] must be absolute"
         with open(_path) as f:
             d = yaml.safe_load(f)
         lib = cls(
@@ -118,7 +122,9 @@ class DataInstance:
     _hash: int = None
 
     def __post_init__(self):
-        self._hash, self._key = KeyGenerator.FromStr(str(self.source)+''.join(self.type.properties))
+        if self._key is not None: return
+        props = sorted(self.type.properties)
+        self._hash, self._key = KeyGenerator.FromStr(str(self.source.address)+''.join(props), l=12)
 
     def __hash__(self) -> int:
         return self._hash
@@ -126,25 +132,21 @@ class DataInstance:
     @classmethod
     def Unpack(cls, d: dict):
         return cls(
-            source=d["source"],
+            source=Source.Unpack(d["source"]),
             type=Endpoint.Unpack(d["type"]),
         )
     
     def Pack(self, parents=False):
         return {
-            "source": self.source,
-            "type": self.type.Pack(parents=parents),
+            "source": self.source.Pack(),
+            "type": self.type.Pack(parents=parents, save_hash=True),
         }
 
 @dataclass
 class DataInstanceLibrary:
-    source: Path = Path("./")
     manifest: dict[str, DataInstance] = field(default_factory=dict)
     schema: str = VERSION
     _index_name: str = "info.yml"
-
-    def __post_init__(self):
-        if not isinstance(self.source, Path): self.source = Path(self.source)
 
     def __getitem__(self, key: Path|str) -> DataInstance:
         key = str(key)
@@ -160,69 +162,76 @@ class DataInstanceLibrary:
         return key in self.manifest
 
     def __iter__(self):
-        for path, inst in self.manifest.items():
-            yield self.source/path, inst
+        for k, inst in self.manifest.items():
+            yield k, inst
 
     def __len__(self):
         return len(self.manifest)
+    
+    def Add(self, name: str, source: Source, type: Endpoint):
+        self.manifest[name] = DataInstance(source, type)
 
-    def _index_path(self):
-        return self.source/self._index_name
+    def Move(self, dest: Source, label: str=None) -> DataInstanceLibrary:
+        mover = Logistics()
+        dest_lib = DataInstanceLibrary(schema=self.schema)
+        for name, inst in self.manifest.items():
+            dest_name = inst.source.GetName()
+            dest_name = Path(re.sub(r"\.msm_\w{4,16}", "", dest_name))
+            dest_name = dest_name.with_suffix(f".msm_{inst._key}{dest_name.suffix}")
+            dest_path = (dest/dest_name).address
+            dest_source = Source(
+                address=dest_path,
+                type=dest.type,
+            )
+            mover.QueueTransfer(
+                inst.source,
+                dest_source,
+            )
+            dest_lib.manifest[name] = DataInstance(source=dest_source, type=inst.type, _key=inst._key, _hash=inst._hash)
+        errs = mover.ExecuteTransfers(label=label)
+        for e in errs:
+            Log.Error(e)
+        return dest_lib
 
-    # def ResolveAll(self, like: Endpoint, method: SourceType=SourceType.SYMLINK, overwrite: bool=False):
-    #     self.source.mkdir(parents=True, exist_ok=True)
-
-    #     if method in {SourceType.SYMLINK, SourceType.COPY}:
-    #         source = Path(source)
-    #         assert source.exists(), f"path doesn't exist [{source}]"
-    #         if local_path is None:
-    #             local_path = self.source/source.name
-    #         else:
-    #             assert not local_path.is_absolute(), "local_path must be relative"
-    #             local_path = self.source/local_path
-    #         if local_path.exists():
-    #             if overwrite:
-    #                 local_path.unlink()
-    #             else:
-    #                 raise FileExistsError(f"already exists [{local_path}]")
-    #         self.source.mkdir(parents=True, exist_ok=True)
-    #         if method == SourceType.COPY:
-    #             shutil.copy(source, local_path)
-    #         else:
-    #             os.symlink(source, local_path)
-    #         _key, _path = str(local_path.relative_to(self.source)), local_path.resolve()
-    #     else:
-    #         _key, _path = local_path.relative_to(self.source), local_path.resolve()
+    def Pack(self, lineage=False):
+        return dict(
+            schema=self.schema,
+            manifest={k:v.Pack(parents=lineage) for k, v in self.manifest.items()},
+        )
 
     @classmethod
-    def Load(cls, source: Path|str):
-        source = Path(source)
-        with open(source/cls._index_name) as f:
-            d = yaml.safe_load(f)
-        manifest = {Path(k):DataInstance(Path(k), Endpoint.Unpack(v)) for k, v in d["manifest"].items()}
-        return DataInstanceLibrary(source, manifest)
+    def Unpack(cls, raw: dict):
+        return cls(
+            schema=raw["schema"],
+            manifest={k:DataInstance.Unpack(v) for k, v in raw["manifest"].items()},
+        )
 
-    def Save(self):
-        d = {str(k):v.type.Pack() for k, v in self.manifest.items()}
-        with open(self._index_path(), "w") as f:
-            yaml.dump(dict(
-                schema=self.schema,
-                manifest=d,
-            ), f)
-
-    def Get(self, like: Endpoint) -> DataInstance:
-        for k, v in self.manifest.items():
-            if v.type.IsA(like):
-                return v
-        raise KeyError(f"no instance like [{like}] in [{self.source}]")
+    def Save(self, path: Path|str):
+        path = Path(path)
+        if path.resolve().is_dir():
+            path = path/self._index_name
+        with open(path, "w") as f:
+            yaml.dump(self.Pack(), f)
     
+    @classmethod
+    def Load(cls, path: Path|str):
+        path = Path(path)
+        assert path.exists(), f"path [{path}] does not exist"
+        if path.resolve().is_dir():
+            path = path/cls._index_name
+        with open(path) as f:
+            d = yaml.safe_load(f)
+        return cls.Unpack(d)
+
 @dataclass
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult]
     model: Transform
     output_signature: dict[Dependency, Path]
-    _source: Path = None
+    _source: Source = None
     _used_libraries: set[str] = field(default_factory=list)
+    _hash: int = None
+    _key: str = None
 
     def __post_init__(self):
         for k, vt in [
@@ -240,6 +249,9 @@ class TransformInstance:
             assert dep in self.output_signature, f"model output missing in signature [{dep}]"
         TransformInstance._last_loaded_transform = self
 
+    def __hash__(self) -> int:
+        return self._hash
+
     @classmethod
     def Load(cls, definition: Path) -> TransformInstance|None:
         cls._last_loaded_transform: TransformInstance = None
@@ -250,8 +262,13 @@ class TransformInstance:
             m = __import__(f"{definition.stem}")
             reload(m)
             if cls._last_loaded_transform is not None:
-                cls._last_loaded_transform._source = definition
-                cls._last_loaded_transform._used_libraries = set(_dataTypeLibrary_history)
+                tr = cls._last_loaded_transform
+                with open(definition) as f:
+                    raw = "".join(f.readlines())
+                    h, k = KeyGenerator.FromStr(raw, l=5)
+                    tr._hash, tr._key = h, k
+                tr._source = Source(address=definition, type=SourceType.DIRECT)
+                tr._used_libraries = set(_dataTypeLibrary_history)
                 return cls._last_loaded_transform
             _dataTypeLibrary_history.clear()
         finally:
@@ -259,21 +276,67 @@ class TransformInstance:
 
 @dataclass
 class TransformInstanceLibrary:
-    manifest: dict[Path, dict[Path, TransformInstance]]
+    manifest: dict[Path, TransformInstance] = field(default_factory=dict)
+    type_lib_aliases: dict[Path, list[str]] = field(default_factory=dict)
+    _by_keys: dict[str, TransformInstance] = field(default_factory=dict)
+    _TYPELIB_SAVE = "_type_libraries"
+    _ALIASES_SAVE = "_aliases.yml"
+
+    def __post_init__(self):
+        self._by_keys = {t._key: t for t in self.manifest.values()}
 
     def __getitem__(self, key: str) -> TransformInstance:
         return self.manifest[key]
     
+    def GetByKey(self, key: str) -> TransformInstance:
+        return self._by_keys[key]
+    
     def __iter__(self):
-        for root, section in self.manifest.items():
-            for path, tr in section.items():
-                yield root/path, tr
+        for path, tr in self.manifest.items():
+            yield path, tr
 
     def __len__(self):
         return sum(len(s) for s in self.manifest.values())
-    
+
+    def Gather(self, folder: Path, overwrite: bool=False):
+        if isinstance(folder, str): folder = Path(folder)
+        assert overwrite or not folder.exists(), f"folder [{folder}] already exists"
+        if overwrite and folder.exists():
+            shutil.rmtree(folder)
+        folder.mkdir(parents=True)
+        mover = Logistics()
+        type_libs = set()
+        added_names = set()
+        for _, inst in self.manifest.items():
+            src = inst._source
+            dest = Path(src.address).name
+            assert dest not in added_names, f"duplicate transform name [{dest}]"
+            added_names.add(dest)
+            dest = Source(folder/dest, SourceType.DIRECT)
+            mover.QueueTransfer(src, dest)
+            type_libs.update(inst._used_libraries)
+
+        type_lib_dir = folder/self._TYPELIB_SAVE
+        type_lib_dir.mkdir(parents=True, exist_ok=True)
+        type_lib_aliases = {}
+        for lib_path in type_libs:
+            lib_path = Path(lib_path)
+            mover.QueueTransfer(
+                Source(lib_path, SourceType.DIRECT),
+                Source(type_lib_dir/lib_path.name, SourceType.DIRECT),
+            )
+            type_lib_aliases[lib_path.name] = [str(lib_path)]
+        with open(type_lib_dir/self._ALIASES_SAVE, "w") as f:
+            yaml.dump(type_lib_aliases, f)
+
+        errs = mover.ExecuteTransfers()
+        for e in errs:
+            Log.Error(f"transfer error: [{e}]")
+        new = self.Load(folder)
+        return new
+
     @classmethod
-    def _Load_section(cls, path: Path):
+    def _load_section(cls, path: Path):
         path = path.resolve()
         assert path.is_dir(), f"[{path}] for TransformInstanceLibrary not a directory"
         section = {}
@@ -284,30 +347,50 @@ class TransformInstanceLibrary:
             if inst is None:
                 Log.Warn(f"could not load [{k}] from [{path}]")
             else:
-                section[k] = inst
+                section[p.resolve()] = inst
         return section
-
-    def Import(self, path: Path|Iterable[Path]):
-        if isinstance(path, Path):
+    
+    def Import(self, path: str|Path|Iterable[Path|str]):
+        if isinstance(path, Path) or isinstance(path, str):
             path = [path]
         for p in path:
-            self.manifest[p] = self._Load_section(p)
+            if isinstance(p, str): p = Path(p)
+            type_lib_path = p/self._TYPELIB_SAVE
+            alias_path = type_lib_path/self._ALIASES_SAVE
+            if alias_path.exists():
+                with open(alias_path) as f:
+                    aliases = yaml.safe_load(f)
+                for lib_name, aliases in aliases.items():
+                    if lib_name not in aliases: self.type_lib_aliases[lib_name] = set()
+                    added_aliases = self.type_lib_aliases[lib_name]
+                    for a in aliases:
+                        if a in added_aliases: continue
+                        DataTypeLibrary.Proxy(a, DataTypeLibrary.Load((type_lib_path/lib_name).resolve()))
+                        added_aliases.add(a)
+                    self.type_lib_aliases[lib_name] = added_aliases
+            self.manifest.update(self._load_section(p))
+            self._by_keys.update({t._key: t for t in self.manifest.values()})
+
+    def Update(self, other: TransformInstanceLibrary):
+        for lib_name, aliases in other.type_lib_aliases.items():
+            if lib_name not in aliases: self.type_lib_aliases[lib_name] = set()
+            added_aliases = self.type_lib_aliases[lib_name]
+            self.type_lib_aliases[lib_name] = added_aliases|set(aliases)
+        self.manifest.update(other.manifest)
+        self._by_keys.update(other._by_keys)
 
     @classmethod
     def Load(cls, path: Path|Iterable[Path]) -> TransformInstanceLibrary:
-        if isinstance(path, Path):
-            path = [path]
-        manifest = {}
-        for root in path:
-            manifest[root] = cls._Load_section(root)
-        return cls(manifest)
+        lib = cls()
+        lib.Import(path)
+        return lib
 
 @dataclass
 class ExecutionContext:
     input: list[DataInstance]
     output: list[DataInstance]
-    transform_definition: Path
-    type_libraries: list[Path]
+    transform_key: str
+    work_dir: Path
     _shell: Callable = None
 
     def __post_init__(self):
@@ -334,17 +417,27 @@ class ExecutionContext:
         return cls(
             input=[DataInstance.Unpack(v) for v in d["input"]],
             output=[DataInstance.Unpack(v) for v in d["output"]],
-            transform_definition=Path(d["transform_definition"]),
-            type_libraries=[Path(p) for p in d["type_libraries"]],
+            transform_key=d["transform_key"],
+            work_dir=Path(d["work_dir"]),
         )
+    
+    @classmethod
+    def Load(cls, path: Path):
+        with open(path) as f:
+            d = yaml.safe_load(f)
+        return cls.Unpack(d)
     
     def Pack(self):
         return {
             "input": [v.Pack(parents=True) for v in self.input],
             "output": [v.Pack(parents=True) for v in self.output],
-            "transform_definition": str(self.transform_definition),
-            "type_libraries": [str(p) for p in self.type_libraries],
+            "transform_key": self.transform_key,
+            "work_dir": str(self.work_dir),
         }
+    
+    def Save(self, path: Path):
+        with open(path, "w") as f:
+            yaml.dump(self.Pack(), f)
 
 @dataclass
 class ExecutionResult:

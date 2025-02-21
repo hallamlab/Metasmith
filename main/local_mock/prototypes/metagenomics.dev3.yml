@@ -3,7 +3,7 @@ ontology:
   name: EDAM
   strict: false
   version: 1.25
-schema: '0.2'
+schema: '0.3'
 types:
   contigs:
     properties:

@@ -1,31 +1,34 @@
 import os
 from pathlib import Path
+from pkgutil import extend_path
 import time
-import trace
+import shutil
 import yaml
 import traceback
 
 from ..logging import Log
-from ..models.libraries import DataTypeLibrary, ExecutionContext, ExecutionResult, TransformInstance
+from ..models.libraries import DataTypeLibrary, ExecutionContext, ExecutionResult, TransformInstance, TransformInstanceLibrary
 from ..coms.ipc import LiveShell, RemoteShell
 from ..coms.containers import Container
 from ..serialization import StdTime
 
 # CONTAINER = Container("docker://quay.io/hallamlab/metasmith:latest")
-CONTAINER = Container("docker-daemon://quay.io/hallamlab/metasmith:0.2.dev-47c27e4")
+# CONTAINER = Container("docker-daemon://quay.io/hallamlab/metasmith:0.2.dev-47c27e4")
 
 def DeployFromContainer(workspace: Path):
-    with LiveShell() as shell:
-        shell.Exec(
-            f"""\
-            cd {workspace}
-            mkdir .msm && cd .msm
-            mkdir lib logs work inputs
-            mkdir -p relay/connections
-            cp /app/relay ./relay/server
-            """,
-        )
-        Log.Info("deployment complete")
+    relay_server = Path("/opt/msm_relay")
+    deploy_root = workspace/".msm"
+    relay_server_dest = deploy_root/"relay/msm_relay"
+    if not relay_server_dest.exists():
+        relay_server_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(relay_server, relay_server_dest)
+    for p in [ # these are coupled to StageAndRunTransform() below
+        "relay/connections",
+        "lib",
+        "logs",
+    ]:
+        (deploy_root/p).mkdir(parents=True, exist_ok=True)
+    Log.Info("deployment complete")
 
 def StageAndRunTransform(workspace: Path, context_path: Path):
     os.chdir(workspace)
@@ -55,48 +58,52 @@ def StageAndRunTransform(workspace: Path, context_path: Path):
             cmd_log.write(f"{cmd}\n")
             return shell.Exec(cmd, timeout)
         
-        Log.Info("loading context")
-        external_shell(f"rm -f {context_path}; cp {context_path.resolve()} ./")
+        Log.Info(f"cwd [{Path('.').resolve()}]")
+        res = shell.Exec("pwd -P", history=True)
+        external_cwd = Path(res.out[0])
+        Log.Info(f"external cwd [{external_cwd}]")
+        Log.Info(f"loading context [{context_path}]")
         with open(context_path) as f:
-            raw_context = yaml.safe_load(f)
-
-        for lib_path in raw_context["type_libraries"]:
-            lib_path = Path(lib_path).resolve()
-            Log.Info(f"loading type library [{lib_path}]")
-            local_path = Path(f"./.msm/lib/{lib_path.name}")
-            external_shell(f"cp {lib_path} {local_path}")
-            lib = DataTypeLibrary.Load(local_path.absolute())
-            DataTypeLibrary.Proxy(str(lib_path), lib)
-
-        context = ExecutionContext.Unpack(raw_context)
-        Log.Info("staging transform definition")
-        external_shell(f"cp {context.transform_definition.resolve()} ./.msm/lib/")
-
-        from ..models.libraries import _dataTypeLibrary_cache
-        print(_dataTypeLibrary_cache)
+            context = ExecutionContext.Unpack(yaml.safe_load(f))
+        Log.Info(f"transform key [{context.transform_key}]")
+        Log.Info(f"external work [{context.work_dir}]")
+        Log.Info("uses:")
+        for inst in context.input:
+            Log.Info(f"    {inst.source.address}: {inst.type}")
+        Log.Info("produces:")
+        for inst in context.output:
+            Log.Info(f"    {inst.source.address}: {inst.type}")
+        extern_lib_path = context.work_dir/'metasmith/transforms.lib'
+        local_lib_path = Path(f".msm/{extern_lib_path.name}")
+        Log.Info(f"staging transform library [{extern_lib_path}] to [{local_lib_path}]")
+        external_shell(f"cp -r {extern_lib_path} {local_lib_path}")
+        Log.Info("loading transform library")
+        trlib: TransformInstanceLibrary = TransformInstanceLibrary.Load(local_lib_path)
 
         for x in context.input:
-            nxf_path = x.source
-            orig_path = nxf_path.resolve()
+            nxf_path = Path(x.source.address)
+            orig_path = nxf_path
             Log.Info(f"staging [{x.type}] from [{orig_path}]")
-            new_path = Path(f"./.msm/inputs/{nxf_path.name}")
-            external_shell(f"cp {orig_path} {new_path}")
-            x.source = new_path
+            # # todo: move from /agent_workspace/data
+            # new_path = Path(f"./.msm/inputs/{nxf_path.name}")
+            # external_shell(f"cp {orig_path} {new_path}")
+            # x.source.address = str(new_path)
 
-        Log.Info("loading transform")
-        transform = TransformInstance.Load(workspace/f"./.msm/lib/{context.transform_definition.name}")
-        
+        Log.Info("getting transform")
+        transform = trlib.GetByKey(context.transform_key)
+        transform_name = Path(transform._source.address).stem
+
         context._shell = external_shell
-        Log.Info(f">>> executing [{transform._source.stem}] ")
+        Log.Info(f">>> executing [{transform_name}] ")
         try:
             result = transform.protocol(context)
         except Exception as e:
-            Log.Info(f"<<< [{transform._source.stem}] failed with error")
-            Log.Error(f"error while executing transform [{transform._source.stem}]")
+            Log.Info(f"<<< [{transform_name}] failed with error")
+            Log.Error(f"error while executing transform [{transform_name}]")
             Log.Error(str(e))
             with open("traceback.temp", "w") as f:
                 traceback.print_tb(e.__traceback__, file=f)
             with open("traceback.temp", "r") as f:
                 Log.Error(f.read()[:-1])
             return ExecutionResult(False)
-        Log.Info(f"<<< [{transform._source.stem}] reports {'success' if result.success else 'failure'}")
+        Log.Info(f"<<< [{transform_name}] reports {'success' if result.success else 'failure'}")
