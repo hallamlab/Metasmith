@@ -17,7 +17,8 @@ from ..serialization import StdTime
 
 def DeployFromContainer(workspace: Path):
     relay_server = Path("/opt/msm_relay")
-    deploy_root = workspace/".msm"
+    # deploy_root = workspace/".msm"
+    deploy_root = workspace
     relay_server_dest = deploy_root/"relay/msm_relay"
     if not relay_server_dest.exists():
         relay_server_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -25,7 +26,6 @@ def DeployFromContainer(workspace: Path):
     for p in [ # these are coupled to StageAndRunTransform() below
         "relay/connections",
         "lib",
-        "logs",
     ]:
         (deploy_root/p).mkdir(parents=True, exist_ok=True)
     Log.Info("deployment complete")
@@ -41,11 +41,10 @@ def StageAndRunTransform(workspace: Path, context_path: Path):
         time.sleep(1)
     assert server_path.exists(), f"server not started [{server_path}]"
 
-    logs_dir = workspace/".msm/logs"
     Log.Info("connecting to relay")
     with \
         RemoteShell(server_path) as shell, \
-        open(logs_dir/"shell.cmd", "w") as cmd_log:
+        open(workspace/"relay_shell_history.log", "w") as cmd_log:
         def _make_listener(logger):
             def _listener(x: str):
                 logger(x)
@@ -59,12 +58,13 @@ def StageAndRunTransform(workspace: Path, context_path: Path):
             return shell.Exec(cmd, timeout)
         
         Log.Info(f"cwd [{Path('.').resolve()}]")
+        for p in Path('.').iterdir():
+            Log.Info(f"    {p}")
         res = shell.Exec("pwd -P", history=True)
         external_cwd = Path(res.out[0])
         Log.Info(f"external cwd [{external_cwd}]")
         Log.Info(f"loading context [{context_path}]")
-        with open(context_path) as f:
-            context = ExecutionContext.Unpack(yaml.safe_load(f))
+        context = ExecutionContext.Load(context_path)
         Log.Info(f"transform key [{context.transform_key}]")
         Log.Info(f"external work [{context.work_dir}]")
         Log.Info("uses:")
@@ -73,11 +73,16 @@ def StageAndRunTransform(workspace: Path, context_path: Path):
         Log.Info("produces:")
         for inst in context.output:
             Log.Info(f"    {inst.source.address}: {inst.type}")
+
         extern_lib_path = context.work_dir/'metasmith/transforms.lib'
         local_lib_path = Path(f".msm/{extern_lib_path.name}")
         Log.Info(f"staging transform library [{extern_lib_path}] to [{local_lib_path}]")
+        # external_shell(f"pwd -P")
         external_shell(f"cp -r {extern_lib_path} {local_lib_path}")
         Log.Info("loading transform library")
+        Log.Info(f"{local_lib_path.exists()}")
+        Log.Info(f"{local_lib_path.is_dir()}")
+        os.system(f"ls -lf {local_lib_path.parent}")
         trlib: TransformInstanceLibrary = TransformInstanceLibrary.Load(local_lib_path)
 
         for x in context.input:

@@ -21,7 +21,9 @@ class Api:
         plan_dir = body.get("plan_dir")
         assert plan_dir, "[plan_dir] is required"
         plan_dir = Path(plan_dir)
-        StageWorkflow(plan_dir)
+        force = body.get("force", "false")
+        force = force.lower() in {"true", "1"}
+        StageWorkflow(plan_dir, force)
 
     def execute_workflow(self, body: dict):
         plan_dir = body.get("plan_dir")

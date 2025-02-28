@@ -15,15 +15,13 @@ class Agent:
     ssh_address: str
     pre: str
     home: Path
-    workspace: Path
     container: str = "docker://quay.io/hallamlab/metasmith:latest"
     globus_endpoint: str = None
 
     def __post_init__(self):
         self.home = Path(self.home)
-        self.workspace = Path(self.workspace)
-        self.ssh_command = RemoveLeadingIndent(self.ssh_command)
-        self.pre = RemoveLeadingIndent(self.pre)
+        self.ssh_command = RemoveLeadingIndent(self.ssh_command).strip()
+        self.pre = RemoveLeadingIndent(self.pre).strip()
     
     def Pack(self):
         return dict(
@@ -31,7 +29,6 @@ class Agent:
             ssh_address=self.ssh_address,
             pre=self.pre,
             home=str(self.home),
-            workspace=str(self.workspace),
             container=self.container,
             globus_endpoint=self.globus_endpoint,
         )
@@ -76,6 +73,7 @@ class Agent:
                 
 
             def _remote_file(x: str|Path, dest: Path, executable=False):
+                Log.Info(f">>> deploying file [{dest}]")
                 if isinstance(x, str):
                     x = RemoveLeadingIndent(x)
                     fpath = tmpdir/f"{dest.name}"
@@ -85,22 +83,12 @@ class Agent:
                 local_shell.Exec(f"rsync -avcp {fpath} {self.ssh_address}:{dest}")
 
             _step(self.ssh_command, get_errs=_ssh_errs)
-            if not force:
-                res = shell.Exec(f"{self.home/'relay/msm_relay'} start", history=True)
-                for x in res.out+res.err:
-                    for k in ["relay server started", "relay server already running"]:
-                        if k in x:
-                            Log.Info("already deployed")
-                            shell.Exec("exit")
-                            return
-
             _step(self.pre)
             res = shell.Exec(f"""
                 realpath {self.home}
-                realpath {self.workspace}
                 realpath ~
             """, history=True)
-            resolved_msmhome, resolved_workspace, resolved_home = [Path(x.strip()) for x in res.out]
+            resolved_msmhome, resolved_home = [Path(x.strip()) for x in res.out]
             res = shell.Exec(f'[ -d {resolved_msmhome}/dev/metasmith ] && echo "dev exists"', history=True)
             dev_exists = "dev exists" in res.out
             dev_binds = []
@@ -113,14 +101,23 @@ class Agent:
                 container_cache=resolved_msmhome, # just so the main container is saved here
                 binds=[
                     (resolved_msmhome, Path("/msm_home")),
-                    (resolved_workspace, Path("/ws")),
-                    (resolved_msmhome/"lib/.globus", Path(resolved_home)/".globus"),
-                    (resolved_msmhome/"lib/.globusonline", Path(resolved_home)/".globusonline"),
+                    (Path(resolved_home)/".globus", Path(resolved_home)/".globus"),
+                    (Path(resolved_home)/".globusonline", Path(resolved_home)/".globusonline"),
                 ] + dev_binds,
                 runtime=CONTAINER_RUNTIME.APPTAINER
             )
-            _step(f"mkdir -p {resolved_msmhome}")
+            _cmds = [f"mkdir -p {p}" for p, _ in container.binds]
+            _step("\n".join(_cmds))
             _step(f"[ -e {container._get_local_path()} ] || {container.MakePullCommand()}", timeout=None)
+
+            _remote_file(
+                f"""
+                #!/bin/bash
+                {container.MakeRunCommand('', local=f"{resolved_msmhome}/metasmith.sif")} $@
+                """,
+                dest=resolved_msmhome/"msm_stub",
+                executable=True,
+            )
 
             HERE='$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )'
             _remote_file(
@@ -130,15 +127,6 @@ class Agent:
                 $HERE/msm_stub metasmith $@
                 """,
                 dest=resolved_msmhome/"msm",
-                executable=True,
-            )
-
-            _remote_file(
-                f"""
-                #!/bin/bash
-                {container.MakeRunCommand('', local=f"{resolved_msmhome}/metasmith.sif")} $@
-                """,
-                dest=resolved_msmhome/"msm_stub",
                 executable=True,
             )
 
@@ -156,7 +144,6 @@ class Agent:
                     (Path("./.msm"), Path("/msm_home")),
                     (Path("./"), Path("/ws")),
                     (resolved_msmhome, Path("/agent_home")),
-                    (resolved_workspace, Path("/agent_workspace")),
                 ]+dev_binds,
                 workdir=Path("/ws"),
                 runtime=CONTAINER_RUNTIME.APPTAINER,
@@ -165,8 +152,9 @@ class Agent:
                 f"""
                 #!/bin/bash
                 cp {resolved_msmhome}/metasmith.sif ./
-                mkdir -p ./.msm
-                {bootstrap_container.MakeRunCommand('metasmith api deploy_from_container', local="./metasmith.sif")}
+                mkdir -p ./.msm && cd ./.msm
+                {bootstrap_container.MakeRunCommand('metasmith api deploy_from_container', local="../metasmith.sif")}
+                cd ..
                 echo "===== post deploy ====="
                 find .
                 ls -lh .

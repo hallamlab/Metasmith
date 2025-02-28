@@ -38,33 +38,38 @@ def _set_default_namespace(namespace: Namespace):
     global _DEFAULT_NAMESPACE
     _DEFAULT_NAMESPACE = namespace
 
-class Hashable:
-    def __init__(self, namespace: Namespace=None) -> None:
-        if namespace is None: namespace = _DEFAULT_NAMESPACE
-        self._namespace = namespace
-        self.hash, self.key = namespace.NewKey()
+# class Hashable:
+#     def __init__(self, namespace: Namespace=None) -> None:
+#         if namespace is None: namespace = _DEFAULT_NAMESPACE
+#         self._namespace = namespace
+#         self.hash, self.key = namespace.NewKey()
 
-    def __hash__(self) -> int:
-        return self.hash
+#     def __hash__(self) -> int:
+#         return self.hash
     
-    def __eq__(self, __value: object) -> bool:
-        K = "key"
-        return hasattr(__value, K) and self.key == getattr(__value, K)
+#     def __eq__(self, __value: object) -> bool:
+#         K = "key"
+#         return hasattr(__value, K) and self.key == getattr(__value, K)
 
-class Node(Hashable):
+class Node:
     def __init__(
         self,
         properties: set[str],
         parents: set[Node],
+        _sig: str|None=None,
     ) -> None:
         super().__init__()
         assert isinstance(properties, set)
         assert isinstance(parents, set)
         self.properties = properties
         self.parents = parents
-        self._sig: str|None = None
+        self._sig = _sig
+        self.hash, self.key = KeyGenerator.FromStr(self.Signature())
         # self._diffs = set()
         # self._sames = set()
+
+    def __hash__(self) -> int:
+        return self.hash
 
     def __str__(self) -> str:
         return f"<{self._json_dumps(self.Pack(parents=False)['properties'])}:{self.key}>"
@@ -106,9 +111,8 @@ class Node(Hashable):
         clone = self.__class__(
             properties=set(self.properties),
             parents={p.Clone() for p in self.parents},
+            _sig=None if properties_only else self._sig,
         )
-        if properties_only: return clone
-        clone.hash, clone.key = self.hash, self.key
         return clone
     
     def WithLineage(self, parents: Iterable[Node]):
@@ -159,21 +163,20 @@ class Node(Hashable):
             m.hash = int(m.hash)
         return m
 
-    def Pack(self, parents=False, save_hash=False):
+    def Pack(self, parents=False):
+        props = sorted(list(self.properties))
         if len(self.properties)==0:
             props = []
         elif next(iter(self.properties)).startswith("{"):
-            props = {k:v for p in self.properties for k, v in json.loads(p).items()}
+            props = {k:v for p in props for k, v in json.loads(p).items()}
         else:
             def _unlist(s: str):
                 if s.startswith("[") and s.endswith("]"): return s[1:-1]
                 return s
-            props = [_unlist(p) for p in self.properties]
+            props = [_unlist(p) for p in props]
         d = {
             "properties": props,
         }
-        if save_hash:
-            d["_hash"] = f"{self.hash}/{self.key}"
         if len(self.parents)>0 and parents:
             d["parents"] = [x.Pack() for x in self.parents]
         return d
@@ -199,19 +202,25 @@ class Endpoint(Node):
         for e, p in self._parent_map.items():
             yield e, p
 
-class Transform(Hashable):
+class Transform:
     def __init__(self) -> None:
         super().__init__()
         self.requires: list[Dependency] = list()
         self.produces: list[Dependency] = list()
         self._input_group_map: dict[int, list[Dependency]] = {}
-        self._key = self._namespace.NewKey()
         self._seen: set[str] = set()
+        self._update_hash()
 
     def __str__(self) -> str:
         def _props(d: Dependency):
             return "{"+"-".join(sorted(d.properties))+"}"
         return f"{','.join(_props(r) for r in self.requires)}->{','.join(_props(p) for p in self.produces)}"
+
+    def __hash__(self) -> int:
+        return self.hash
+
+    def _update_hash(self):
+        self.hash, self.key = KeyGenerator.FromStr(str(self))
 
     def AddRequirement(self, node: Node=None, properties: Iterable[str]=None, parents: set[Dependency]=None):
         return self._add_dependency(destination=self.requires, node=node, properties=properties, parents=parents)
@@ -231,6 +240,7 @@ class Transform(Hashable):
             for p in _parents:
                 assert p in self.requires, f"{p} not added as a requirement"
             self._input_group_map[i] = self._input_group_map.get(i, [])+list(_parents)
+        self._update_hash()
         return _dep
     
     # just all possibilities regardless of lineage

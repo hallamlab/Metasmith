@@ -106,7 +106,6 @@ class SourceType(Enum):
 class Source:
     address: str
     type: SourceType = SourceType.DIRECT
-    _hash: int = None
 
     def __post_init__(self):
         if not isinstance(self.address, str):
@@ -128,9 +127,21 @@ class Source:
             other = other[1:]
         return Source(address=f"{address}/{other}", type=self.type)
 
+    def Clone(self):
+        return Source(address=self.address, type=self.type)
+
+    @classmethod
+    def FromLocal(cls, path: Path):
+        assert path.is_absolute(), f"Path must be absolute [{path}]"
+        t = SourceType.SYMLINK if path.is_symlink() else SourceType.DIRECT
+        return Source(address=str(path), type=t)
+
     def GetName(self, extension: bool = True):
-        p = Path(self.address.split(":")[-1])
+        p = self.GetPath()
         return p.stem if not extension else p.name
+    
+    def GetPath(self):
+        return Path(self.address.split(":")[-1])
 
     @classmethod
     def Unpack(cls, d: dict):
@@ -152,10 +163,13 @@ class Logistics:
     def QueueTransfer(self, src: Source, dest: Source):
         self._queue.append((src, dest))
 
-    def ExecuteTransfers(self, label: str = None):
+    def RemoveTransfer(self, src: Source, dest: Source):
+        self._queue.remove((src, dest))
+
+    def ExecuteTransfers(self, label: str = None, silent=True):
         locals: list[tuple[Source, Source]] = []
         globus: list[tuple[Source, Source]] = []
-        Log.Info(f"starting [{len(self._queue)}] transfers")
+        if not silent: Log.Info(f"starting [{len(self._queue)}] transfers")
         for src, dest in self._queue:
             if SourceType.GLOBUS in (src.type, dest.type):
                 globus.append((src, dest))
@@ -186,17 +200,19 @@ class Logistics:
 
         with LiveShell() as shell, TemporaryDirectory(prefix="msm.") as tmpdir:
             shell.RegisterOnErr(Log.Error)
-            shell.RegisterOnOut(Log.Info)
+            if not silent: shell.RegisterOnOut(Log.Info)
             task_ids = []
             try:
                 # start globus transfers
                 for (src_ep, dest_ep), batch in batched_globus.items():
-                    Log.Info(f"executing globus batch of [{len(batch)}] for [{src_ep}] -> [{dest_ep}]")
-                    for src, dest in batch:
-                        Log.Info(f"[{src.path}] -> [{dest.path}]")
-                        shell.ExecAsync(f'echo "\"{src.path}\" \"{dest.path}\"" >> {tmpdir}/batch')
+                    if not silent: Log.Info(f"executing globus batch of [{len(batch)}] for [{src_ep}] -> [{dest_ep}]")
+                    batch_path = Path(tmpdir)/"batch"
+                    with open(batch_path, "w") as f:
+                        for src, dest in batch:
+                            if not silent: Log.Info(f"[{src.path}] -> [{dest.path}]")
+                            f.write(f"{src.path} {dest.path}\n")
                     shell.AwaitDone()
-                    cmd = f"globus transfer {src_ep} {dest_ep} --batch {tmpdir}/batch --sync-level checksum" + (f" --label {label}" if label else "")
+                    cmd = f"globus transfer {src_ep} {dest_ep} --batch {batch_path} --sync-level checksum" + (f" --label {label}" if label else "")
                     res = shell.Exec(cmd, history=True)
                     errs.extend(f"globus batch std_err: [{e}]" for e in res.err)
                     _kw = "Task ID: "
@@ -208,26 +224,15 @@ class Logistics:
                 def _local_transfer_err(e):
                     errs.append(f"local transfer error: [{e}]")
                 shell.RegisterOnErr(_local_transfer_err)
-                _hashes = {}
-                def _checksum(p):
-                    if p not in _hashes:
-                        res = shell.Exec(f"shasum -a 256 {p}", history=True)
-                        if len(res.err)>0:
-                            errs.extend(f"checksum error: [{e}]" for e in res.err)
-                            return
-                        _hashes[p] = res.out[0].split(" ")[0]
-                    return _hashes[p]
-                if len(locals)>0: Log.Info(f"executing [{len(locals)}] local transfers")
+                if len(locals)>0 and not silent:Log.Info(f"executing [{len(locals)}] local transfers")
                 for src, dest in locals:
                     dest_path = Path(dest.address)
-                    if dest_path.exists():
-                        if dest_path.is_symlink() and (dest.type == SourceType.SYMLINK): continue
-                        if _checksum(src.address) == _checksum(dest_path): continue
+                    if dest_path.exists() and (dest_path.is_symlink() != (dest.type == SourceType.SYMLINK)):
                         dest_path.unlink()
                     if dest.type == SourceType.SYMLINK:
                         shell.ExecAsync(f"ln -s {src.address} {dest.address}")
                     elif dest.type == SourceType.DIRECT:
-                        shell.ExecAsync(f"cp {src.address} {dest.address}")
+                        shell.ExecAsync(f"rsync -at {src.address} {dest.address}")
                 shell.AwaitDone(timeout=None)
                 shell.RegisterOnErr(_local_transfer_err)
                 
@@ -237,7 +242,7 @@ class Logistics:
                 while len(task_ids) > 0:
                     if len(task_ids) != _last_len:
                         _last_len = len(task_ids)
-                        Log.Info(f"awaiting [{_last_len}] globus transfers")
+                        if not silent: Log.Info(f"awaiting [{_last_len}] globus transfers")
                     _task = task_ids[-1]
                     res = shell.Exec(f"globus task show {_task} -F json", history=True)
                     errs.extend(f"globus poll std_err: [{e}]" for e in res.err)
@@ -252,9 +257,42 @@ class Logistics:
                         task_ids.remove(_task)
                         continue
                     time.sleep(1)
+
+                to_check = {}
+                for src, dest in self._queue:
+                    if dest.type == SourceType.GLOBUS:
+                        t = "globus"
+                        g_dest = GlobusSource.Parse(dest.address)
+                        ep = g_dest.endpoint
+                        p = g_dest.path.parent
+                        v = g_dest.path.name
+                    else:
+                        t = "local"
+                        ep = None
+                        p = None
+                        v = Path(dest.address)
+                    k = (t, ep, p)
+                    to_check[k] = to_check.get(k, [])+[(v, src, dest)]
+                complete: list[tuple[Source, Source]] = []
+                for (t, ep, p), g in to_check.items():
+                    if t == "globus":
+                        res = shell.Exec(f"globus ls {ep}:{p}", history=True)
+                        exists = {str(Path(x)) for x in res.out}
+                        # Log.Debug(f"> {exists}")
+                        for v, src, dest in g:
+                            # Log.Debug(f"{v}")
+                            if v not in exists: continue
+                            complete.append((src, dest))
+                    elif t == "local":
+                        for v, src, dest in g:
+                            if v.exists():
+                                complete.append((src, dest))
+                    else:
+                        assert False, "this assert should not be reachable"
+                return complete
+
             finally:
                 for k in task_ids:
                     shell.ExecAsync(f"globus task cancel {k}")
                 shell.AwaitDone()
-            Log.Info(f"attempted [{len(self._queue)}] transfers")
-        return errs
+        return []

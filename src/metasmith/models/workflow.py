@@ -142,11 +142,12 @@ class WorkflowPlan:
             steps=steps,
         )
     
-    def PrepareNextflow(self, work_dir: Path, external_work: Path, external_home: Path):
+    def PrepareNextflow(self, work_dir: Path, external_work: Path):
         TAB = " "*4
         wf_path = work_dir/"metasmith/workflow.nf"
         context_dir = work_dir/"metasmith/contexts"
         external_context_dir = external_work/"metasmith/contexts"
+        external_bootstrap = external_work/"metasmith/msm_bootstrap"
         context_dir.mkdir(parents=True, exist_ok=True)
         contexts: dict[str, Path] = {}
         process_definitions = {}
@@ -207,7 +208,7 @@ class WorkflowPlan:
 
         workflow_definition = [
             "workflow {",
-            TAB+f'bootstrap = Channel.fromPath("{external_home/'lib/msm_bootstrap'}")',
+            TAB+f'bootstrap = Channel.fromPath("{external_bootstrap}")',
         ] + [
             TAB+f'context_{k} = Channel.fromPath("{p}")' for k, p in contexts.items()
         ] + [

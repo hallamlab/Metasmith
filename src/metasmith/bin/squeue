@@ -13,7 +13,7 @@ WS = Path("/ws")
 assert cwd.is_relative_to(WS)
 tail = cwd.relative_to(WS)
 agent = Agent.Load(Path("/msm_home/lib/agent.yml"))
-external_ws = agent.workspace/tail
+external_ws = agent.home/tail
 
 with RemoteShell(SERVER_PATH) as shell:
     shell.RegisterOnOut(print)

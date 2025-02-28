@@ -15,45 +15,44 @@ from ..hashing import KeyGenerator
 from ..logging import Log
 from ..constants import VERSION
 
-@dataclass
-class DataTypeOntology:
-    name: str
-    version: str
-    doi: str
-    strict: bool
+# @dataclass
+# class DataTypeOntology:
+#     name: str
+#     version: str
+#     doi: str
+#     strict: bool
 
-    def Pack(self):
-        d = {}
-        for k, v in self.__dict__.items():
-            if k.startswith("_"): continue
-            d[k] = v
-        return d
+#     def Pack(self):
+#         d = {}
+#         for k, v in self.__dict__.items():
+#             if k.startswith("_"): continue
+#             d[k] = v
+#         return d
     
-    @classmethod
-    def Unpack(cls, d: dict):
-        return cls(**d)
+#     @classmethod
+#     def Unpack(cls, d: dict):
+#         return cls(**d)
 
-class DataTypeOntologies:
-    EDAM = DataTypeOntology(
-        name = "EDAM",
-        version = 1.25,
-        doi = "https://doi.org/10.1093/bioinformatics/btt113",
-        strict = False,
-    )
+# class DataTypeOntologies:
+#     EDAM = DataTypeOntology(
+#         name = "EDAM",
+#         version = 1.25,
+#         doi = "https://doi.org/10.1093/bioinformatics/btt113",
+#         strict = False,
+#     )
 
 # caches by absolute path
-_dataTypeLibrary_cache: dict[Path, DataTypeLibrary] = {}
-_dataTypeLibrary_history: list[str] = []
+# _dataTypeLibrary_cache: dict[Path, DataTypeLibrary] = {}
+# _dataTypeLibrary_history: list[str] = []
 @dataclass
 class DataTypeLibrary:
+    # ontology: DataTypeOntology = field(default_factory=lambda: DataTypeOntologies.EDAM)
     types: dict[str, Endpoint] = field(default_factory=dict)
-    source: Path|None = None
-    ontology: DataTypeOntology = field(default_factory= lambda: DataTypeOntologies.EDAM)
-    schema: str = VERSION
+    # schema: str = VERSION
 
-    def __post_init__(self):
-        if self.source is None: return
-        _dataTypeLibrary_cache[self.source] = self
+    # def __post_init__(self):
+    #     if self.source is None: return
+    #     _dataTypeLibrary_cache[self.source] = self
 
     def __getitem__(self, key: str) -> Endpoint:
         return self.types[key]
@@ -73,89 +72,90 @@ class DataTypeLibrary:
     def __len__(self) -> int:
         return len(self.types)
 
-    def Subset(self, keys: Iterable[str]) -> DataTypeLibrary:
-        ss = DataTypeLibrary(schema=self.schema, ontology=self.ontology)
-        ss.types = {k: v.Clone() for k, v in self.types.items() if k in keys}
-        return ss
-
-    @classmethod
-    def Proxy(cls, alt: str, lib: DataTypeLibrary):
-        _dataTypeLibrary_cache[str(alt)] = lib
-
-    @classmethod
-    def Load(cls, path: Source|str) -> DataTypeLibrary:
-        if isinstance(path, Source):
-            path = path.address
-        else:
-            path = str(path)
-        _dataTypeLibrary_history.append(path)
-        if path in _dataTypeLibrary_cache: return _dataTypeLibrary_cache[path]
-        # todo, urls
-        _path = Path(path)
-        assert _path.is_absolute(), f"given [{path}] must be absolute"
-        with open(_path) as f:
-            d = yaml.safe_load(f)
-        lib = cls(
-            source=_path,
-            schema=d["schema"],
-            ontology=DataTypeOntology.Unpack(d["ontology"])
-        )
-        types: dict[str, Endpoint] = {}
-        for k, v in d["types"].items():
-            types[k] = Endpoint.Unpack(v)
-        lib.types = types
-        return lib
-
-    def Save(self):
-        with open(self.source, "w") as f:
-            yaml.safe_dump(dict(
-                schema=self.schema,
-                ontology=self.ontology.Pack(),
-                types={k: v.Pack() for k, v in self.types.items()},
-            ), f)
-
-@dataclass
-class DataInstance:
-    source: Source
-    type: Endpoint
-    _key: str = None
-    _hash: int = None
-
-    def __post_init__(self):
-        if self._key is not None: return
-        props = sorted(self.type.properties)
-        self._hash, self._key = KeyGenerator.FromStr(str(self.source.address)+''.join(props), l=12)
-
-    def __hash__(self) -> int:
-        return self._hash
+    # @classmethod
+    # def Proxy(cls, alt: str, lib: DataTypeLibrary):
+    #     _dataTypeLibrary_cache[str(alt)] = lib
 
     @classmethod
     def Unpack(cls, d: dict):
         return cls(
-            source=Source.Unpack(d["source"]),
-            type=Endpoint.Unpack(d["type"]),
+            types={k: Endpoint.Unpack(v) for k, v in d["types"].items()},
         )
-    
-    def Pack(self, parents=False):
+
+    @classmethod
+    def Load(cls, path: Source|str|Path) -> DataTypeLibrary:
+        if isinstance(path, Source):
+            path = path.address
+        # todo, urls
+        _path = Path(path)
+        with open(_path) as f:
+            d = yaml.safe_load(f)
+        return cls.Unpack(d)
+
+    def Pack(self):
         return {
-            "source": self.source.Pack(),
-            "type": self.type.Pack(parents=parents, save_hash=True),
+            "types": {k: v.Pack() for k, v in self.types.items()},
         }
+
+    def Save(self, path: Path):
+        with open(path, "w") as f:
+            yaml.safe_dump(self.Pack(), f)
+
+# @dataclass
+# class DataInstance:
+#     source: Source
+#     type: Endpoint
+#     _key: str = None
+#     _hash: int = None
+
+#     def __post_init__(self):
+#         if self._key is not None: return
+#         props = sorted(self.type.properties)
+#         self._hash, self._key = KeyGenerator.FromStr(str(self.source.address)+''.join(props), l=12)
+
+#     def __hash__(self) -> int:
+#         return self._hash
+
+#     def Clone(self):
+#         return DataInstance(
+#             source=self.source.Clone(),
+#             type=self.type.Clone(),
+#             _key=self._key,
+#             _hash=self._hash,
+#         )
+
+#     @classmethod
+#     def Unpack(cls, d: dict):
+#         return cls(
+#             source=Source.Unpack(d["source"]),
+#             type=Endpoint.Unpack(d["type"]),
+#         )
+    
+#     def Pack(self, parents=False):
+#         return {
+#             "source": self.source.Pack(),
+#             "type": self.type.Pack(parents=parents, save_hash=True),
+#         }
 
 @dataclass
 class DataInstanceLibrary:
-    manifest: dict[str, DataInstance] = field(default_factory=dict)
+    location: Path
+    manifest: dict[Path, Endpoint] = field(default_factory=dict)
     schema: str = VERSION
-    _index_name: str = "info.yml"
+    _path_to_index: Path = Path("./metadata/index.yml")
+    _path_to_types: Path = Path("./metadata/types.yml")
 
-    def __getitem__(self, key: Path|str) -> DataInstance:
-        key = str(key)
+    def __post_init__(self):
+        if not self.location.exists():
+            self.location.mkdir(parents=True)
+        else:
+            assert self.location.is_dir(), f"[{self.location}] must be a directory"
+
+    def __getitem__(self, key: Endpoint):
+        if isinstance(key, str) and key.startswith("/"):
+            key = key[1:]
+        key = Path(key)
         return self.manifest[key]
-    
-    def __setitem__(self, key: str, value: DataInstance):
-        assert isinstance(key, str)
-        assert isinstance(value, DataInstance)
-        self.manifest[key] = value
 
     def __in__(self, key: str) -> bool:
         key = str(key)
@@ -167,61 +167,102 @@ class DataInstanceLibrary:
 
     def __len__(self):
         return len(self.manifest)
-    
-    def Add(self, name: str, source: Source, type: Endpoint):
-        self.manifest[name] = DataInstance(source, type)
 
-    def Move(self, dest: Source, label: str=None) -> DataInstanceLibrary:
+    def Add(self, items: list[tuple[Path|str, Path|str, Endpoint]], method: SourceType=SourceType.DIRECT, on_exist: str="skip"):
+        assert method in {SourceType.DIRECT, SourceType.SYMLINK}
+        assert on_exist in {"skip", "replace", "error"}
         mover = Logistics()
-        dest_lib = DataInstanceLibrary(schema=self.schema)
-        for name, inst in self.manifest.items():
-            dest_name = inst.source.GetName()
-            dest_name = Path(re.sub(r"\.msm_\w{4,16}", "", dest_name))
-            dest_name = dest_name.with_suffix(f".msm_{inst._key}{dest_name.suffix}")
-            dest_path = (dest/dest_name).address
-            dest_source = Source(
-                address=dest_path,
-                type=dest.type,
-            )
+        items = [(Path(src), Path(dest), dtype) for src, dest, dtype in items]
+        seen = {v for v in self.manifest.values()}
+        for src, dest, dtype in items:
+            assert src.exists(), f"[{src}] does not exist"
+            assert not dest.is_absolute(), f"destination [{dest}] must be relative"
+            assert dtype not in seen, f"datatype [{dtype}] already registered and so would not be distinguishable"
             mover.QueueTransfer(
-                inst.source,
-                dest_source,
+                src = Source.FromLocal(src),
+                dest = Source(address=self.location/dest, type=method),
             )
-            dest_lib.manifest[name] = DataInstance(source=dest_source, type=inst.type, _key=inst._key, _hash=inst._hash)
-        errs = mover.ExecuteTransfers(label=label)
-        for e in errs:
-            Log.Error(e)
-        return dest_lib
+        moved = mover.ExecuteTransfers()
+        completed = {str(Path(s.address)) for s, d in moved}
+        report: list[Path] = []
+        for src, dest, dtype in items:
+            k = str(src)
+            if k not in completed:
+                Log.Error(f"failed to add [{src}]")
+                continue
+            self.manifest[dest] = dtype
+            report.append(dest)
+        return report
+    
+    def CopyTo(self, dest: Source, label: str=None):
+        mover = Logistics()
+        mover.QueueTransfer(
+            src=Source.FromLocal(self.location),
+            dest=dest,
+        )
+        res = mover.ExecuteTransfers(label=label)
+        assert len(res) == 1, f"move failed"
 
-    def Pack(self, lineage=False):
+    @classmethod
+    def DownloadFrom(cls, src: Source, dest: Path, label: str=None):
+        mover = Logistics()
+        mover.QueueTransfer(
+            src=src,
+            dest=Source.FromLocal(dest),
+        )
+        res = mover.ExecuteTransfers(label=label)
+        assert len(res) == 1, f"move failed"
+        return cls.Load(dest)
+
+    def Pack(self):
         return dict(
             schema=self.schema,
-            manifest={k:v.Pack(parents=lineage) for k, v in self.manifest.items()},
+            manifest={str(k):v.key for k, v in self.manifest.items()},
         )
 
     @classmethod
-    def Unpack(cls, raw: dict):
+    def Unpack(cls, location: Path, raw: dict, dtypes: DataTypeLibrary):
+        manifest = {}
+        for k, v in raw["manifest"].items():
+            if not (location/k).exists():
+                Log.Error(f"skipping [{k}], does not exist")
+                continue
+            manifest[Path(k)] = dtypes[v]
         return cls(
+            location=location,
             schema=raw["schema"],
-            manifest={k:DataInstance.Unpack(v) for k, v in raw["manifest"].items()},
+            manifest=manifest,
         )
 
-    def Save(self, path: Path|str):
-        path = Path(path)
-        if path.resolve().is_dir():
-            path = path/self._index_name
-        with open(path, "w") as f:
+    def Save(self):
+        types_path = self.location/self._path_to_types
+        dtypes = DataTypeLibrary()
+        for _, e in self.manifest.items():
+            dtypes[e.key] = e
+        types_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(types_path, "w") as f:
+            yaml.dump(dtypes.Pack(), f)
+
+        index_path = self.location/self._path_to_index
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(index_path, "w") as f:
             yaml.dump(self.Pack(), f)
+        
     
     @classmethod
     def Load(cls, path: Path|str):
         path = Path(path)
+        _index_path = path/cls._path_to_index
+        _types_path = path/cls._path_to_types
         assert path.exists(), f"path [{path}] does not exist"
-        if path.resolve().is_dir():
-            path = path/cls._index_name
-        with open(path) as f:
+        assert _index_path.exists(), f"index file [{_index_path}] does not exist"
+        assert _types_path.exists(), f"types file [{_types_path}] does not exist"
+
+        dtypes = DataTypeLibrary.Load(_types_path)
+        with open(_index_path) as f:
             d = yaml.safe_load(f)
-        return cls.Unpack(d)
+            self = cls.Unpack(location=path, raw=d, dtypes=dtypes)
+        return self
 
 @dataclass
 class TransformInstance:

@@ -13,11 +13,11 @@ WS = Path("/ws")
 assert cwd.is_relative_to(WS)
 tail = cwd.relative_to(WS)
 agent = Agent.Load(Path("/msm_home/lib/agent.yml"))
-external_ws = agent.workspace/tail
+external_ws = agent.home/tail
 
 with RemoteShell(SERVER_PATH) as shell:
     # take this opportunity to fix the paths of the command.run script
-    res = shell.Exec(f"realpath {agent.workspace}", history=True)
+    res = shell.Exec(f"realpath {agent.home}", history=True)
     assert len(res.err) == 0, "failed to resolve external workspace path"
     resolved_agent_workspace = res.out[0]
     command_run_path = Path(sys.argv[1])
