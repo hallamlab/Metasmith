@@ -72,7 +72,7 @@ class Node:
         return self.hash
 
     def __str__(self) -> str:
-        return f"<{self._json_dumps(self.Pack(parents=False)['properties'])}:{self.key}>"
+        return f"<{self._json_dumps(self.Pack(parents=False)['properties']).replace('"', '')}:{self.key}>"
 
     def __repr__(self) -> str:
         return f"{self}"
@@ -171,7 +171,7 @@ class Node:
             props = {k:v for p in props for k, v in json.loads(p).items()}
         else:
             def _unlist(s: str):
-                if s.startswith("[") and s.endswith("]"): return s[1:-1]
+                if s.startswith("[") and s.endswith("]"): return json.loads(s)[0]
                 return s
             props = [_unlist(p) for p in props]
         d = {
@@ -215,6 +215,9 @@ class Transform:
         def _props(d: Dependency):
             return "{"+"-".join(sorted(d.properties))+"}"
         return f"{','.join(_props(r) for r in self.requires)}->{','.join(_props(p) for p in self.produces)}"
+
+    def __repr__(self) -> str:
+        return str(self)
 
     def __hash__(self) -> int:
         return self.hash

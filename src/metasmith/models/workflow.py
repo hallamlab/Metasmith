@@ -190,7 +190,7 @@ class WorkflowPlan:
             external_context_path = external_context_dir/f"{step_key}.yml"
             # external_transform_path = step.transform._source.address.replace(str(work_dir), str(external_work))
             context = ExecutionContext(
-                input = [x for x in step.uses],
+                inputs = [x for x in step.uses],
                 output = [x for x in step.produces],
                 transform_key = step.transform_key,
                 work_dir = external_work,
