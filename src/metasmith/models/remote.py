@@ -138,14 +138,15 @@ class HttpSource:
         raise ValueError(f"not an http(s) address [{address}]")
     
     def AsSource(self):
-        return Source(address=str(self), type=SourceType.HTTPS)
+        return Source(address=str(self), type=SourceType.HTTP)
 
+# transfer priority
 class SourceType(Enum):
-    DIRECT =    "direct"
-    SYMLINK =   "symlink"
     GLOBUS =    "globus"
     SSH =       "ssh"
-    # HTTP =      "http"
+    HTTP =      "http"
+    SYMLINK =   "symlink"
+    DIRECT =    "direct"
 
     def __str__(self) -> str:
         return f"SourceType.{self.name}"
@@ -214,17 +215,28 @@ class LogiscsResult:
     errors: list[str]
 
 class Logistics:
-    _PURES = {SourceType.GLOBUS, SourceType.SSH}
     def __init__(self) -> None:
         self._queue: list[tuple[Source, Source]] = []
 
     def _check_pures(self, src: Source, dest: Source):
-        pures = self._PURES
-        pure_types = {x for x in [src.type, dest.type] if x in pures}
-        if len(pure_types) > 0:
-            assert len(pure_types)==1, f"cannot transfer between [{src.type} -> {dest.type}]"
-            return next(iter(pure_types))
-        return None
+        # illegal destination types
+        assert dest.type not in {SourceType.HTTP}, f"cannot transfer to [{dest.type}]"
+        
+        # transfers including cloud must use the same platform
+        CLOUD_TYPES = {SourceType.GLOBUS, SourceType.SSH, SourceType.HTTP}
+        specified_cloud_types = {x for x in [src.type, dest.type] if x in CLOUD_TYPES}
+        assert len(specified_cloud_types) <= 1, f"cannot transfer between [{src.type} -> {dest.type}]"
+        
+        if len(specified_cloud_types) == 0:
+            dominant = SourceType.DIRECT # including symlinks
+        else:
+            dominant = next(iter(specified_cloud_types))
+
+            # cloud <-> local must be direct
+            cloud, other = (src, dest) if src.type in CLOUD_TYPES else (dest, src)
+            assert other in CLOUD_TYPES or other.type == SourceType.DIRECT, f"transfer involves [{cloud.type}] so [{other.type} must be {SourceType.DIRECT}"
+
+        return dominant
 
     def QueueTransfer(self, src: Source, dest: Source):
         self._check_pures(src, dest)
@@ -377,30 +389,43 @@ class Logistics:
                     return completed
                 return _join
 
-        by_type = {}
-        for src, dest in self._queue:
-            t = self._check_pures(src, dest)
-            if t is None:
-                t = SourceType.DIRECT # symlinks included
-            by_type[t] = by_type.get(t, [])+[(src, dest)]
-        _order = [SourceType.GLOBUS, SourceType.SSH, SourceType.DIRECT]
-        _t2i = {t: i for i, t in enumerate(_order)}
-        by_type = {k: v for k, v in sorted(by_type.items(), key=lambda x: _t2i[x[0]])}
-        try:
-            _joiners = []
-            for t, todo in by_type.items():
-                if t == SourceType.DIRECT:
-                    _joiners.append(_execute_local(todo))
-                elif t == SourceType.GLOBUS:
-                    _joiners.append(_execute_globus(todo))
-                elif t == SourceType.SSH:
-                    _joiners.append(_execute_ssh(todo))
-                else:
-                    assert False, "this assert should not be reachable"
-            
-            for fn in _joiners:
-                result.completed += fn()
-        finally:
-            for d in to_dispose:
-                d._stop()
-        return result
+            def _execute_http(todo: list[tuple[Source, Source]]):
+                shell = LiveShell()
+                shell._start()
+                shell.RegisterOnErr(lambda x: result.errors.append(f"http: {x}"))
+                to_dispose.append(shell)
+                for src, dest in todo:
+                    dest_path = Path(dest.address)
+                    shell.ExecAsync(f"mkdir -p {dest_path.parent} && curl -C - --silent -o {dest_path} {src.address}")
+                def _join():
+                    shell.AwaitDone(timeout=None)
+                    completed = []
+                    for src, dest in todo:
+                        if Path(dest.address).exists():
+                            completed.append((src, dest))
+                    return completed
+                return _join
+
+            by_type = {}
+            for src, dest in self._queue:
+                type_category = self._check_pures(src, dest)
+                by_type[type_category] = by_type.get(type_category, [])+[(src, dest)]
+            _order = list(SourceType)
+            _t2i = {t: i for i, t in enumerate(_order)}
+            by_type = {k: v for k, v in sorted(by_type.items(), key=lambda x: _t2i[x[0]])}
+            try:
+                _joiners = []
+                for type_category, todo in by_type.items():
+                    exe = { # switch
+                        SourceType.DIRECT: _execute_local,
+                        SourceType.GLOBUS: _execute_globus,
+                        SourceType.SSH: _execute_ssh,
+                        SourceType.HTTP: _execute_http,
+                    }[type_category]
+                    _joiners.append(exe(todo))
+                for fn in _joiners:
+                    result.completed += fn()
+            finally:
+                for d in to_dispose:
+                    d._stop()
+            return result
