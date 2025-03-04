@@ -464,6 +464,27 @@ class LiveShell:
         self._err_callbacks = []
         self._out_callbacks = []
 
+    def _start(self):
+        self._shell = TerminalProcess()
+        def _tee(cb_lst: list[Callable[[str], None]], check=False):
+            def _cb(x):
+                msg = RemoveTrailingNewline(self._shell.Decode(x))
+                if len(msg) == 0: return
+                if msg == self._MARK:
+                    if check: self._done = True
+                    return
+                for f in cb_lst: f(msg)
+            return _cb
+        self._shell.RegisterOnErr(_tee(self._err_callbacks))
+        self._shell.RegisterOnOut(_tee(self._out_callbacks, check=True))
+
+    def _stop(self):
+        if self._shell is None: return
+        self._shell.Dispose()
+        self._shell = None
+        self._err_callbacks.clear()
+        self._out_callbacks.clear()
+
     def RegisterOnOut(self, callback: Callable[[str], None]):
         self._out_callbacks.append(callback)
     
@@ -517,25 +538,11 @@ class LiveShell:
         return ShellResult(out=_out, err=_err)
     
     def __enter__(self):
-        self._shell = TerminalProcess()
-        def _tee(cb_lst: list[Callable[[str], None]], check=False):
-            def _cb(x):
-                msg = RemoveTrailingNewline(self._shell.Decode(x))
-                if len(msg) == 0: return
-                if msg == self._MARK:
-                    if check: self._done = True
-                    return
-                for f in cb_lst: f(msg)
-            return _cb
-        self._shell.RegisterOnErr(_tee(self._err_callbacks))
-        self._shell.RegisterOnOut(_tee(self._out_callbacks, check=True))
+        self._start()
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._shell.Dispose()
-        self._shell = None
-        self._err_callbacks.clear()
-        self._out_callbacks.clear()
+        self._stop()
 
 class RemoteShell:
     def __init__(self, server_path: Path) -> None:

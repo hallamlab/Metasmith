@@ -123,8 +123,9 @@ class DataInstanceLibrary:
             mover = Logistics()
             ext = self._metadata_ext
             namespace = namespace.replace(".yaml", "").replace(ext, "")
-            lib_path = self.location/self._path_to_meta
-            lib_path /= namespace+ext
+            meta_path = self.location/self._path_to_meta
+            meta_path.mkdir(parents=True, exist_ok=True)
+            lib_path = meta_path/(namespace+ext)
             lib_dest = Source(address=lib_path, type=SourceType.DIRECT)
             mover.QueueTransfer(
                 src=lib,
@@ -361,7 +362,7 @@ class TransformInstanceLibrary:
 
 @dataclass
 class ExecutionContext:
-    inputs: dict[Endpoint, Path]
+    inputs: dict[str, Path]
     work_dir: Path
     shell: LiveShell
 

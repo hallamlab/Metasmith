@@ -91,10 +91,61 @@ class GlobusSource:
     def AsSource(self):
         return Source(address=str(self), type=SourceType.GLOBUS)
 
+@dataclass
+class SshSource:
+    host: str
+    path: Path
+    _prefix = "ssh://"
+    
+    def __str__(self) -> str:
+        return self._prefix+f"{self.host}:{self.path}"
+    
+    def __repr__(self) -> str:
+        return f"{self}"
+
+    @classmethod
+    def Parse(cls, address: str):
+        if address.startswith(cls._prefix):
+            address = address[len(cls._prefix):]
+            toks = address.split(":")
+            host = toks[0]
+            path = ":".join(toks[1:])
+            return cls(host=host, path=Path(path))
+        raise ValueError(f"not an ssh address [{address}]")
+    
+    def CompileAddress(self):
+        if self.host == "":
+            return str(self.path)
+        else:
+            return f"{self.host}:{self.path}"
+
+    def AsSource(self):
+        return Source(address=str(self), type=SourceType.SSH)
+
+@dataclass
+class HttpSource:
+    url: str
+    def __str__(self) -> str:
+        return f"{self.url}"
+    
+    def __repr__(self) -> str:
+        return f"{self}"
+    
+    @classmethod
+    def Parse(cls, address: str):
+        if any(address.startswith(pre) for pre in ["http://", "https://", "ftp://"]): # yes yes, ftp is not http
+            return cls(url=address)
+        raise ValueError(f"not an http(s) address [{address}]")
+    
+    def AsSource(self):
+        return Source(address=str(self), type=SourceType.HTTPS)
+
 class SourceType(Enum):
-    DIRECT = "direct"
-    SYMLINK = "symlink"
-    GLOBUS = "globus"
+    DIRECT =    "direct"
+    SYMLINK =   "symlink"
+    GLOBUS =    "globus"
+    SSH =       "ssh"
+    # HTTP =      "http"
 
     def __str__(self) -> str:
         return f"SourceType.{self.name}"
@@ -131,7 +182,8 @@ class Source:
         return Source(address=self.address, type=self.type)
 
     @classmethod
-    def FromLocal(cls, path: Path):
+    def FromLocal(cls, path: Path|str):
+        if isinstance(path, str): path = Path(path)
         assert path.is_absolute(), f"Path must be absolute [{path}]"
         t = SourceType.SYMLINK if path.is_symlink() else SourceType.DIRECT
         return Source(address=str(path), type=t)
@@ -156,143 +208,199 @@ class Source:
             "type": self.type.name,
         }
 
+@dataclass
+class LogiscsResult:
+    completed: list[tuple[Source, Source]]
+    errors: list[str]
+
 class Logistics:
+    _PURES = {SourceType.GLOBUS, SourceType.SSH}
     def __init__(self) -> None:
         self._queue: list[tuple[Source, Source]] = []
 
+    def _check_pures(self, src: Source, dest: Source):
+        pures = self._PURES
+        pure_types = {x for x in [src.type, dest.type] if x in pures}
+        if len(pure_types) > 0:
+            assert len(pure_types)==1, f"cannot transfer between [{src.type} -> {dest.type}]"
+            return next(iter(pure_types))
+        return None
+
     def QueueTransfer(self, src: Source, dest: Source):
+        self._check_pures(src, dest)
         self._queue.append((src, dest))
 
     def RemoveTransfer(self, src: Source, dest: Source):
         self._queue.remove((src, dest))
 
-    def ExecuteTransfers(self, label: str = None, silent=True):
-        locals: list[tuple[Source, Source]] = []
-        globus: list[tuple[Source, Source]] = []
-        if not silent: Log.Info(f"starting [{len(self._queue)}] transfers")
-        for src, dest in self._queue:
-            if SourceType.GLOBUS in (src.type, dest.type):
-                globus.append((src, dest))
-            else:
-                locals.append((src, dest))
+    def ExecuteTransfers(self, label: str = None) -> LogiscsResult:
+        to_dispose: list[LiveShell] = []
+        result = LogiscsResult(completed=[], errors=[])
 
-        def _to_globus(s: Source):
-            if s.type == SourceType.GLOBUS:
-                return GlobusSource.Parse(s.address)
-            else:
-                path = Path(s.address)
-                assert path.is_absolute()
-                return GlobusSource(endpoint=_get_globus_local_id(), path=str(path))
-
-        batched_globus: dict[tuple[str, str], list[tuple[GlobusSource, GlobusSource]]] = {}
-        errs: list[str] = []
-        for src, dest in globus:
-            try:
-                src = _to_globus(src)
-                dest = _to_globus(dest)
-            except (ValueError, AssertionError) as e:
-                errs.append(f"skipped [{src}, {dest}] due to parse error [{e}]")
-                continue
-            key = src.endpoint, dest.endpoint
-            batch = batched_globus.get(key, [])
-            batch.append((src, dest))
-            batched_globus[key] = batch
-
-        with LiveShell() as shell, TemporaryDirectory(prefix="msm.") as tmpdir:
-            shell.RegisterOnErr(Log.Error)
-            if not silent: shell.RegisterOnOut(Log.Info)
-            task_ids = []
-            try:
-                # start globus transfers
-                for (src_ep, dest_ep), batch in batched_globus.items():
-                    if not silent: Log.Info(f"executing globus batch of [{len(batch)}] for [{src_ep}] -> [{dest_ep}]")
-                    batch_path = Path(tmpdir)/"batch"
-                    with open(batch_path, "w") as f:
-                        for src, dest in batch:
-                            if not silent: Log.Info(f"[{src.path}] -> [{dest.path}]")
-                            f.write(f"{src.path} {dest.path}\n")
-                    shell.AwaitDone()
-                    cmd = f"globus transfer {src_ep} {dest_ep} --batch {batch_path} --sync-level checksum" + (f" --label {label}" if label else "")
-                    res = shell.Exec(cmd, history=True)
-                    errs.extend(f"globus batch std_err: [{e}]" for e in res.err)
-                    _kw = "Task ID: "
-                    _task_ids = [x.replace(_kw, "") for x in res.out if x.startswith(_kw)]
-                    assert len(_task_ids) == 1, f"globus transfer failed to submit"
-                    task_ids.append(_task_ids[0])
-            
-                # do local transfers in meantime
-                def _local_transfer_err(e):
-                    errs.append(f"local transfer error: [{e}]")
-                shell.RegisterOnErr(_local_transfer_err)
-                if len(locals)>0 and not silent:Log.Info(f"executing [{len(locals)}] local transfers")
-                for src, dest in locals:
+        with TemporaryDirectory(prefix="msm.") as tmpdir:
+            def _execute_local(todo: list[tuple[Source, Source]]):
+                shell = LiveShell()
+                shell._start()
+                shell.RegisterOnErr(lambda x: result.errors.append(f"local: {x}"))
+                to_dispose.append(shell)
+                for src, dest in todo:
                     dest_path = Path(dest.address)
                     if dest_path.exists() and (dest_path.is_symlink() != (dest.type == SourceType.SYMLINK)):
                         dest_path.unlink()
                     if dest.type == SourceType.SYMLINK:
                         shell.ExecAsync(f"ln -s {src.address} {dest.address}")
                     elif dest.type == SourceType.DIRECT:
-                        shell.ExecAsync(f"rsync -at {src.address} {dest.address}")
-                shell.AwaitDone(timeout=None)
-                shell.RegisterOnErr(_local_transfer_err)
-                
-                # wait for globus transfers to complete
-                _last_len = -1
-                shell.RemoveOnOut(Log.Info) # will print out json otherwise
-                while len(task_ids) > 0:
-                    if len(task_ids) != _last_len:
-                        _last_len = len(task_ids)
-                        if not silent: Log.Info(f"awaiting [{_last_len}] globus transfers")
-                    _task = task_ids[-1]
-                    res = shell.Exec(f"globus task show {_task} -F json", history=True)
-                    errs.extend(f"globus poll std_err: [{e}]" for e in res.err)
+                        shell.ExecAsync(f"rsync -au {src.address}/ {dest.address} 2>/dev/null || rsync -au {src.address} {dest.address}")
+
+                def _join():
+                    shell.AwaitDone(timeout=None)
+                    completed = []
+                    for src, dest in todo:
+                        dest_path = Path(dest.address)
+                        if not dest_path.exists(): continue
+                        completed.append((src, dest))
+                return _join
+
+            def _execute_globus(todo: list[tuple[Source, Source]]):
+                def _to_globus(s: Source):
+                    if s.type == SourceType.GLOBUS:
+                        return GlobusSource.Parse(s.address)
+                    else:
+                        path = Path(s.address)
+                        assert path.is_absolute()
+                        return GlobusSource(endpoint=_get_globus_local_id(), path=str(path))
+                batched_globus: dict[tuple[str, str], list[tuple[GlobusSource, GlobusSource, Source, Source]]] = {}
+                for src, dest in todo:
                     try:
-                        d = json.loads("\n".join(res.out))
-                    except json.JSONDecodeError as e:
-                        errs.extend(f"globus poll json error: [{x}]" for x in res.out)
-                        task_ids.remove(_task)
+                        src_g = _to_globus(src)
+                        dest_g = _to_globus(dest)
+                    except (ValueError, AssertionError) as e:
+                        result.errors.append(f"failed to convert to GlobusSource: [{e}] [{src}] [{dest}]")
                         continue
-                    status = d.get("status")
-                    if status not in {"ACTIVE"}:
-                        task_ids.remove(_task)
+                    key = src_g.endpoint, dest_g.endpoint
+                    batch = batched_globus.get(key, [])
+                    batch.append((src_g, dest_g, src, dest))
+                    batched_globus[key] = batch
+
+                tasks = []
+                with LiveShell() as shell:
+                    for (src_ep, dest_ep), batch in batched_globus.items():
+                        batch_path = Path(tmpdir)/"batch"
+                        with open(batch_path, "w") as f:
+                            for src_g, dest_g, _, _ in batch:
+                                f.write(f"{src_g.path} {dest_g.path}\n")
+                        cmd = f"globus transfer {src_ep} {dest_ep} --batch {batch_path} --sync-level checksum" + (f" --label {label}" if label else "")
+                        res = shell.Exec(cmd, history=True)
+                        _kw = "Task ID: "
+                        _task_ids = [x.replace(_kw, "") for x in res.out if x.startswith(_kw)]
+                        assert len(_task_ids) == 1, f"globus transfer failed to submit"
+                        _task_id = _task_ids[0]
+                        tasks.append((_task_id, [(src, dest) for _, _, src, dest in batch]))
+
+                def _join():
+                    completed = []
+                    try:
+                        _last_len = -1
+                        while len(tasks) > 0:
+                            if len(tasks) != _last_len:
+                                _last_len = len(tasks)
+                            _task, batch = tasks[-1]
+                            res = shell.Exec(f"globus task show {_task} -F json", history=True)
+                            try:
+                                d = json.loads("\n".join(res.out))
+                            except json.JSONDecodeError as e:
+                                result.errors.append(f"globus poll json error: [{'\n'.join(res.out)}]")
+                                tasks.pop(-1)
+                                continue
+                            status = d.get("status")
+                            if status not in {"ACTIVE"}:
+                                completed += batch
+                                tasks.pop(-1) # completed
+                                continue
+                            time.sleep(1)
+                    finally:
+                        for k, _ in tasks:
+                            shell.ExecAsync(f"globus task cancel {k}")
+                        shell.AwaitDone()
+                    return completed
+                return _join
+            
+            def _execute_ssh(todo: list[tuple[Source, Source]]):
+                def _to_ssh(s: Source):
+                    if s.type == SourceType.SSH:
+                        return SshSource.Parse(s.address)
+                    else:
+                        path = Path(s.address)
+                        assert path.is_absolute()
+                        return SshSource(host="", path=str(path))
+
+                batched_ssh: dict[tuple[str, str], list[tuple[SshSource, SshSource, Source, Source]]] = {}
+                for src, dest in todo:
+                    try:
+                        src_s = _to_ssh(src)
+                        dest_s = _to_ssh(dest)
+                    except (ValueError, AssertionError) as e:
+                        result.errors.append(f"failed to convert to SshSource: [{e}] [{src}] [{dest}]")
                         continue
-                    time.sleep(1)
+                    key = src_s.host, dest_s.host
+                    batch = batched_ssh.get(key, [])
+                    batch.append((src_s, dest_s, src, dest))
+                    batched_ssh[key] = batch
 
-                to_check = {}
-                for src, dest in self._queue:
-                    if dest.type == SourceType.GLOBUS:
-                        t = "globus"
-                        g_dest = GlobusSource.Parse(dest.address)
-                        ep = g_dest.endpoint
-                        p = g_dest.path.parent
-                        v = g_dest.path.name
-                    else:
-                        t = "local"
-                        ep = None
-                        p = None
-                        v = Path(dest.address)
-                    k = (t, ep, p)
-                    to_check[k] = to_check.get(k, [])+[(v, src, dest)]
-                complete: list[tuple[Source, Source]] = []
-                for (t, ep, p), g in to_check.items():
-                    if t == "globus":
-                        res = shell.Exec(f"globus ls {ep}:{p}", history=True)
-                        exists = {str(Path(x)) for x in res.out}
-                        # Log.Debug(f"> {exists}")
-                        for v, src, dest in g:
-                            # Log.Debug(f"{v}")
-                            if v not in exists: continue
-                            complete.append((src, dest))
-                    elif t == "local":
-                        for v, src, dest in g:
-                            if v.exists():
-                                complete.append((src, dest))
-                    else:
-                        assert False, "this assert should not be reachable"
-                return complete
+                shell = LiveShell()
+                shell._start()
+                shell.RegisterOnErr(lambda x: result.errors.append(f"ssh: {x}"))
+                to_dispose.append(shell)
+                for (src_host, dest_host), batch in batched_ssh.items():
+                    for src_s, dest_s, _, _ in batch:
+                        src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
+                        shell.ExecAsync(f"rsync -au {src_addr}/ {dest_addr} 2>/dev/null || rsync -au {src_addr} {dest_addr}")
+                def _join():
+                    shell.AwaitDone(timeout=None)
+                    completed = []
+                    for (src_host, dest_host), batch in batched_ssh.items():
+                        def _check(path: str):
+                            if dest_host != "":
+                                FLAG = "ok"
+                                res = shell.Exec(f'[ -e {path} ] && echo "{FLAG}"', history=True)
+                                return FLAG in res.out
+                            else:
+                                return Path(path).exists()
 
-            finally:
-                for k in task_ids:
-                    shell.ExecAsync(f"globus task cancel {k}")
-                shell.AwaitDone()
-        return []
+                        if dest_host != "":
+                            shell.Exec(f'ssh {dest_host}') # todo: what if ssh fails?
+                        for _, dest_s, src, dest in batch:
+                            if _check(dest_s.path):
+                                completed.append((src, dest))
+                        if dest_host != "":
+                            shell.Exec("exit")
+                    return completed
+                return _join
+
+        by_type = {}
+        for src, dest in self._queue:
+            t = self._check_pures(src, dest)
+            if t is None:
+                t = SourceType.DIRECT # symlinks included
+            by_type[t] = by_type.get(t, [])+[(src, dest)]
+        _order = [SourceType.GLOBUS, SourceType.SSH, SourceType.DIRECT]
+        _t2i = {t: i for i, t in enumerate(_order)}
+        by_type = {k: v for k, v in sorted(by_type.items(), key=lambda x: _t2i[x[0]])}
+        try:
+            _joiners = []
+            for t, todo in by_type.items():
+                if t == SourceType.DIRECT:
+                    _joiners.append(_execute_local(todo))
+                elif t == SourceType.GLOBUS:
+                    _joiners.append(_execute_globus(todo))
+                elif t == SourceType.SSH:
+                    _joiners.append(_execute_ssh(todo))
+                else:
+                    assert False, "this assert should not be reachable"
+            
+            for fn in _joiners:
+                result.completed += fn()
+        finally:
+            for d in to_dispose:
+                d._stop()
+        return result

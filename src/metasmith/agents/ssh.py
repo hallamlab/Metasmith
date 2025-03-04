@@ -80,7 +80,7 @@ class Agent:
                     with open(fpath, "w") as f:
                         f.write(x)
                     if executable: os.chmod(fpath, 0o755)
-                local_shell.Exec(f"rsync -avcp {fpath} {self.ssh_address}:{dest}")
+                local_shell.Exec(f"rsync -ac -progress {fpath} {self.ssh_address}:{dest}")
 
             _step(self.ssh_command, get_errs=_ssh_errs)
             _step(self.pre)
