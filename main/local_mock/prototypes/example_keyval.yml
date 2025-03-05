@@ -1,0 +1,28 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: 1.25
+schema: '0.3'
+types:
+  property_type_demo:
+    properties:
+      str: abc
+      int: 1
+      float: 0.3
+      bool: True
+      none: null
+      list:
+      - item 1
+      - item 2
+  contigs:
+    properties:
+      data: DNA sequence
+      format: FASTA
+  oci_image:
+    properties:
+      data: software container
+      format: OCI
+      provides:
+      - python==3.12
+      - some other tool

@@ -1,23 +1,22 @@
 from pathlib import Path
-from metasmith import *
+from metasmith.pythonapi import *
 
-# todo: url for more consistency
-lib = DataTypeLibrary.Load("/home/tony/workspace/tools/Metasmith/main/local_mock/prototypes/metagenomics.dev3.yml")
-
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 def protocol(context: ExecutionContext):
     Log.Info("this is pprodigal!")
-    for x in context.output:
-        context.Shell(f"touch {x.source}")
+    container = context.inputs[lib.GetType("metagenomics::oci_image_pprodigal")]
+    Log.Info(f"container: [{container}] exists [{container.exists()}]")
+    context.shell.Exec(f"touch orfs.faa")
     return ExecutionResult(success=True)
 
 model = Transform()
-dep = model.AddRequirement(node=lib["oci_image_pprodigal"])
-dep = model.AddRequirement(node=lib["contigs"])
+dep = model.AddRequirement(node=lib.GetType("metagenomics::oci_image_pprodigal"))
+dep = model.AddRequirement(node=lib.GetType("metagenomics::contigs"))
 
 TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        model.AddProduct(lib["orfs_faa"]): Path("orfs.faa"),
+        model.AddProduct(node=lib.GetType("metagenomics::orfs_faa")): "orfs.faa",
     },
 )

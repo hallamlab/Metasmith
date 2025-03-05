@@ -1,9 +1,3 @@
-ontology:
-  doi: https://doi.org/10.1093/bioinformatics/btt113
-  name: EDAM
-  strict: false
-  version: 1.25
-schema: '0.3'
 types:
   contigs:
     properties:

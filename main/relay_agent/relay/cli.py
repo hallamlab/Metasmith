@@ -16,7 +16,8 @@ def main():
         description=f"start relay agent to access its terminal environment via named pipes",
     )
 
-    parser.add_argument("--io", required=True, metavar="PATH", type=Path)
+    here = Path(sys.orig_argv[0]).parent
+    parser.add_argument("--io", default=here/"connections", required=False, metavar="PATH", type=Path)
     parser.add_argument("command")
     args = parser.parse_args()
 

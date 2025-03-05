@@ -10,5 +10,6 @@ __pycache__
 /data
 /scratch
 /secrets
-**/lib/tini
+/lib
+!/lib/local
 .secret

@@ -3,4 +3,6 @@ channels:
 dependencies:
   - python=3.10
   - pyinstaller=6.11.1
-  - numpy
+  - pip
+  - pip:
+    - numpy==2.2 # using pip packs glibc as well, I think. Sockeye has old glibc version

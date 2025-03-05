@@ -1,0 +1,13 @@
+types:
+  example_input:
+    properties:
+    - example_input
+    - metasmith
+  example_output:
+    properties:
+    - example_output
+    - metasmith
+  transform:
+    properties:
+    - metasmith
+    - transform

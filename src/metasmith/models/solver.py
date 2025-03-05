@@ -38,36 +38,44 @@ def _set_default_namespace(namespace: Namespace):
     global _DEFAULT_NAMESPACE
     _DEFAULT_NAMESPACE = namespace
 
-class Hashable:
-    def __init__(self, namespace: Namespace=None) -> None:
-        if namespace is None: namespace = _DEFAULT_NAMESPACE
-        self._namespace = namespace
-        self.hash, self.key = namespace.NewKey()
+# class Hashable:
+#     def __init__(self, namespace: Namespace=None) -> None:
+#         if namespace is None: namespace = _DEFAULT_NAMESPACE
+#         self._namespace = namespace
+#         self.hash, self.key = namespace.NewKey()
 
-    def __hash__(self) -> int:
-        return self.hash
+#     def __hash__(self) -> int:
+#         return self.hash
     
-    def __eq__(self, __value: object) -> bool:
-        K = "key"
-        return hasattr(__value, K) and self.key == getattr(__value, K)
+#     def __eq__(self, __value: object) -> bool:
+#         K = "key"
+#         return hasattr(__value, K) and self.key == getattr(__value, K)
 
-class Node(Hashable):
+class Node:
     def __init__(
         self,
         properties: set[str],
         parents: set[Node],
+        _sig: str|None=None,
     ) -> None:
         super().__init__()
         assert isinstance(properties, set)
         assert isinstance(parents, set)
         self.properties = properties
         self.parents = parents
-        self._sig: str|None = None
+        self._sig = _sig
+        self.hash, self.key = KeyGenerator.FromStr(self.Signature())
         # self._diffs = set()
         # self._sames = set()
 
+    def __hash__(self) -> int:
+        return self.hash
+    
+    def __eq__(self, __value: object) -> bool:
+        return isinstance(__value, Node) and self.hash == __value.hash
+
     def __str__(self) -> str:
-        return f"<{self._json_dumps(self.Pack(parents=False)['properties'])}:{self.key}>"
+        return f"<{self._json_dumps(self.Pack(parents=False)['properties']).replace('"', '')}:{self.key}>"
 
     def __repr__(self) -> str:
         return f"{self}"
@@ -106,9 +114,8 @@ class Node(Hashable):
         clone = self.__class__(
             properties=set(self.properties),
             parents={p.Clone() for p in self.parents},
+            _sig=None if properties_only else self._sig,
         )
-        if properties_only: return clone
-        clone.hash, clone.key = self.hash, self.key
         return clone
     
     def WithLineage(self, parents: Iterable[Node]):
@@ -131,22 +138,22 @@ class Node(Hashable):
     @classmethod
     def _json_dumps(cls, d):
         return json.dumps(d, separators=(',', ':'), sort_keys=True)
-
-    @classmethod
-    def _encode_dict_props(cls, properties: dict):
-        return {cls._json_dumps({k:v}) for k, v in properties.items()}
-
-    @classmethod
-    def _encode_list_props(cls, properties: list):
-        return {cls._json_dumps([v]) for v in properties}
     
     @classmethod
     def Unpack(cls, d: dict):
         raw_props = d["properties"]
+        props = set()
         if isinstance(raw_props, list):
-            props = cls._encode_list_props(raw_props)
+            for v in raw_props:
+                assert type(v) not in {list, dict}
+                props.add(cls._json_dumps([v]))
         elif isinstance(raw_props, dict):
-            props = cls._encode_dict_props(raw_props)
+            for k, v in raw_props.items():
+                assert type(v) not in {dict}
+                if isinstance(v, list):
+                    props.update(cls._json_dumps({k:x}) for x in v)
+                else:
+                    props.add(cls._json_dumps({k:v}))
         else:
             assert False, f"cant unpack type [{type(raw_props)}] instance [{raw_props}]"
         m = cls(
@@ -154,18 +161,32 @@ class Node(Hashable):
         )
         if "parents" in d:
             m.parents = {cls.Unpack(x) for x in d["parents"]}
+        if "_hash" in d:
+            m.hash, m.key = d["_hash"].split("/")
+            m.hash = int(m.hash)
         return m
 
     def Pack(self, parents=False):
+        props = sorted(list(self.properties))
         if len(self.properties)==0:
             props = []
-        elif next(iter(self.properties)).startswith("{"):
-            props = {k:v for p in self.properties for k, v in json.loads(p).items()}
+        elif next(iter(self.properties)).startswith("{"): # key val pairs
+            props = {}
+            for p in self.properties:
+                e = json.loads(p).items()
+                assert len(e)==1
+                k, v = next(iter(e))
+                if k in props:
+                    if not isinstance(props[k], list):
+                        props[k] = [props[k]]
+                    props[k].append(v)
+                else:
+                    props[k] = v
         else:
             def _unlist(s: str):
-                if s.startswith("[") and s.endswith("]"): return s[1:-1]
+                if s.startswith("[") and s.endswith("]"): return json.loads(s)[0]
                 return s
-            props = [_unlist(p) for p in self.properties]
+            props = [_unlist(p) for p in props]
         d = {
             "properties": props,
         }
@@ -188,27 +209,34 @@ class Endpoint(Node):
             parents = {p:p for p in parents}
         super().__init__(properties=properties, parents=set(parents.keys()))
         self._parent_map = parents # real, proto
-    
+
     def Iterparents(self):
         """real, prototype"""
         for e, p in self._parent_map.items():
             yield e, p
 
-class Transform(Hashable):
+class Transform:
     def __init__(self) -> None:
         super().__init__()
         self.requires: list[Dependency] = list()
         self.produces: list[Dependency] = list()
         self._input_group_map: dict[int, list[Dependency]] = {}
-        self._key = self._namespace.NewKey()
         self._seen: set[str] = set()
+        self._update_hash()
 
     def __str__(self) -> str:
         def _props(d: Dependency):
-            return "{"+"-".join(d.properties)+"}"
+            return "{"+"-".join(sorted(d.properties))+"}"
         return f"{','.join(_props(r) for r in self.requires)}->{','.join(_props(p) for p in self.produces)}"
 
-    def __repr__(self): return f"{self}"
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __hash__(self) -> int:
+        return self.hash
+
+    def _update_hash(self):
+        self.hash, self.key = KeyGenerator.FromStr(str(self))
 
     def AddRequirement(self, node: Node=None, properties: Iterable[str]=None, parents: set[Dependency]=None):
         return self._add_dependency(destination=self.requires, node=node, properties=properties, parents=parents)
@@ -228,12 +256,9 @@ class Transform(Hashable):
             for p in _parents:
                 assert p in self.requires, f"{p} not added as a requirement"
             self._input_group_map[i] = self._input_group_map.get(i, [])+list(_parents)
+        self._update_hash()
         return _dep
-
-    def _sig(self, endpoints: Iterable[Endpoint]):
-        # return "".join(e.key for e in endpoints)
-        return self.key+"-"+ "".join(e.key for e in endpoints)
-
+    
     # just all possibilities regardless of lineage
     def Possibilities(self, have: set[Endpoint], constraints: dict[Dependency, Endpoint]=dict()) -> Generator[list[Endpoint], Any, None]:
         matches: list[list[Endpoint]] = []

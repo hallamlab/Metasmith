@@ -1,33 +1,47 @@
 import os
 from pathlib import Path
+from pkgutil import extend_path
 import time
-import trace
+import shutil
 import yaml
 import traceback
 
 from ..logging import Log
-from ..models.libraries import DataTypeLibrary, ExecutionContext, ExecutionResult, TransformInstance
+from ..models.libraries import DataTypeLibrary, ExecutionContext, ExecutionResult, TransformInstance, TransformInstanceLibrary
+from ..models.workflow import WorkflowTask
 from ..coms.ipc import LiveShell, RemoteShell
 from ..coms.containers import Container
 from ..serialization import StdTime
 
 # CONTAINER = Container("docker://quay.io/hallamlab/metasmith:latest")
-CONTAINER = Container("docker-daemon://quay.io/hallamlab/metasmith:0.2.dev-47c27e4")
+# CONTAINER = Container("docker-daemon://quay.io/hallamlab/metasmith:0.2.dev-47c27e4")
 
 def DeployFromContainer(workspace: Path):
-    with LiveShell() as shell:
-        shell.Exec(
-            f"""\
-            cd {workspace}
-            mkdir .msm && cd .msm
-            mkdir lib logs work inputs
-            mkdir -p relay/connections
-            cp /app/relay ./relay/server
-            """,
-        )
-        Log.Info("deployment complete")
+    relay_server = Path("/opt/msm_relay")
+    # deploy_root = workspace/".msm"
+    deploy_root = workspace
+    for p in [ # these are coupled to StageAndRunTransform() below
+        "relay/connections",
+        "lib",
+    ]:
+        (deploy_root/p).mkdir(parents=True, exist_ok=True)
 
-def StageAndRunTransform(workspace: Path, context_path: Path):
+    Log.Info("deploying relay server")
+    relay_server_dest = deploy_root/"relay/msm_relay"
+    if not relay_server_dest.exists():
+        relay_server_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(relay_server, relay_server_dest)
+
+    Log.Info("deploying nextflow executable")
+    nxf_exec = Path("/opt/nextflow")
+    nxf_exec_dest = deploy_root/"lib/nextflow"
+    if not nxf_exec_dest.exists():
+        nxf_exec_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(nxf_exec, nxf_exec_dest)
+
+    Log.Info("deployment complete")
+
+def StageAndRunTransform(workspace: Path, step_index: int):
     os.chdir(workspace)
 
     server_path = workspace/".msm/relay/connections/main.in"
@@ -38,65 +52,69 @@ def StageAndRunTransform(workspace: Path, context_path: Path):
         time.sleep(1)
     assert server_path.exists(), f"server not started [{server_path}]"
 
-    logs_dir = workspace/".msm/logs"
     Log.Info("connecting to relay")
     with \
         RemoteShell(server_path) as shell, \
-        open(logs_dir/"shell.cmd", "w") as cmd_log:
+        open(workspace/"relay_shell_history.log", "w") as cmd_log:
+        _paused = False
         def _make_listener(logger):
             def _listener(x: str):
+                if _paused: return
                 logger(x)
             return _listener
+        class PausedStdOut:
+            def __enter__(self):
+                nonlocal _paused
+                _paused = True
+            def __exit__(self, *args):
+                nonlocal _paused
+                _paused = False
         
         shell.RegisterOnOut(_make_listener(Log.Info))
         shell.RegisterOnErr(_make_listener(Log.Error))
-        def external_shell(cmd: str, timeout: int|float|None=None):
-            cmd_log.write(f"{StdTime.Timestamp()} {'='*20}\n")
-            cmd_log.write(f"{cmd}\n")
-            return shell.Exec(cmd, timeout)
         
-        Log.Info("loading context")
-        external_shell(f"rm -f {context_path}; cp {context_path.resolve()} ./")
-        with open(context_path) as f:
-            raw_context = yaml.safe_load(f)
+        Log.Info(f"cwd [{Path('.').resolve()}]")
+        for p in Path('.').iterdir():
+            Log.Info(f"    {p}")
+        with PausedStdOut():
+            res = shell.Exec("pwd -P", history=True)
+        external_cwd = Path(res.out[0])
+        Log.Info(f"external cwd [{external_cwd}]")
 
-        for lib_path in raw_context["type_libraries"]:
-            lib_path = Path(lib_path).resolve()
-            Log.Info(f"loading type library [{lib_path}]")
-            local_path = Path(f"./.msm/lib/{lib_path.name}")
-            external_shell(f"cp {lib_path} {local_path}")
-            lib = DataTypeLibrary.Load(local_path.absolute())
-            DataTypeLibrary.Proxy(str(lib_path), lib)
+        Log.Info(f"staging task metadata")
+        local_meta_path = Path("./_metasmith")
+        extern_meta_src = local_meta_path.readlink()
+        shell.Exec(f"rm {local_meta_path} && cp -r {extern_meta_src} {local_meta_path}")
+        with PausedStdOut(): # this forces the filesystem to catch up...
+            shell.Exec(f"find {local_meta_path}")
+        Log.Info(f"loading task metadata")
+        task = WorkflowTask.Load(local_meta_path/"task") # ...otherwise this fails
 
-        context = ExecutionContext.Unpack(raw_context)
-        Log.Info("staging transform definition")
-        external_shell(f"cp {context.transform_definition.resolve()} ./.msm/lib/")
+        step = task.plan.steps[step_index-1]
+        step_name = f"{step.transform.name}:{step.transform.GetKey()}"
+        Log.Info(f"step {step_index:02} [{step_name}]")
+        Log.Info("uses:")
+        for inst in step.uses:
+            Log.Info(f"    {inst.dtype_name} at {inst.ResolvePath()}")
+        Log.Info("produces:")
+        for inst in step.produces:
+            Log.Info(f"    {inst.dtype_name} at {inst.ResolvePath()}")
 
-        from ..models.libraries import _dataTypeLibrary_cache
-        print(_dataTypeLibrary_cache)
-
-        for x in context.input:
-            nxf_path = x.source
-            orig_path = nxf_path.resolve()
-            Log.Info(f"staging [{x.type}] from [{orig_path}]")
-            new_path = Path(f"./.msm/inputs/{nxf_path.name}")
-            external_shell(f"cp {orig_path} {new_path}")
-            x.source = new_path
-
-        Log.Info("loading transform")
-        transform = TransformInstance.Load(workspace/f"./.msm/lib/{context.transform_definition.name}")
-        
-        context._shell = external_shell
-        Log.Info(f">>> executing [{transform._source.stem}] ")
+        context = ExecutionContext(
+            inputs={inst.dtype: inst.ResolvePath() for inst in step.uses},
+            outputs={inst.dtype: inst.ResolvePath() for inst in step.produces},
+            shell=shell,
+        )
+        Log.Info(f">>> executing protocol")
         try:
-            result = transform.protocol(context)
+            result = step.transform.protocol(context)
         except Exception as e:
-            Log.Info(f"<<< [{transform._source.stem}] failed with error")
-            Log.Error(f"error while executing transform [{transform._source.stem}]")
+            Log.Info(f"<<< [{step_name}] failed with error")
+            Log.Error(f"error while executing transform [{step_name}]")
             Log.Error(str(e))
             with open("traceback.temp", "w") as f:
                 traceback.print_tb(e.__traceback__, file=f)
             with open("traceback.temp", "r") as f:
                 Log.Error(f.read()[:-1])
             return ExecutionResult(False)
-        Log.Info(f"<<< [{transform._source.stem}] reports {'success' if result.success else 'failure'}")
+        Log.Info(f"<<< [{step_name}] reports {'success' if result.success else 'failure'}")
