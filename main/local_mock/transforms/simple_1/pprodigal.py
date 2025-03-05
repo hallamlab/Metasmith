@@ -6,7 +6,7 @@ def protocol(context: ExecutionContext):
     Log.Info("this is pprodigal!")
     container = context.inputs[lib.GetType("metagenomics::oci_image_pprodigal")]
     Log.Info(f"container: [{container}] exists [{container.exists()}]")
-    context.shell.Exec(f"touch annotations.csv")
+    context.shell.Exec(f"touch orfs.faa")
     return ExecutionResult(success=True)
 
 model = Transform()

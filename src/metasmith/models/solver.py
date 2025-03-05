@@ -70,6 +70,9 @@ class Node:
 
     def __hash__(self) -> int:
         return self.hash
+    
+    def __eq__(self, __value: object) -> bool:
+        return isinstance(__value, Node) and self.hash == __value.hash
 
     def __str__(self) -> str:
         return f"<{self._json_dumps(self.Pack(parents=False)['properties']).replace('"', '')}:{self.key}>"
@@ -135,22 +138,22 @@ class Node:
     @classmethod
     def _json_dumps(cls, d):
         return json.dumps(d, separators=(',', ':'), sort_keys=True)
-
-    @classmethod
-    def _encode_dict_props(cls, properties: dict):
-        return {cls._json_dumps({k:v}) for k, v in properties.items()}
-
-    @classmethod
-    def _encode_list_props(cls, properties: list):
-        return {cls._json_dumps([v]) for v in properties}
     
     @classmethod
     def Unpack(cls, d: dict):
         raw_props = d["properties"]
+        props = set()
         if isinstance(raw_props, list):
-            props = cls._encode_list_props(raw_props)
+            for v in raw_props:
+                assert type(v) not in {list, dict}
+                props.add(cls._json_dumps([v]))
         elif isinstance(raw_props, dict):
-            props = cls._encode_dict_props(raw_props)
+            for k, v in raw_props.items():
+                assert type(v) not in {dict}
+                if isinstance(v, list):
+                    props.update(cls._json_dumps({k:x}) for x in v)
+                else:
+                    props.add(cls._json_dumps({k:v}))
         else:
             assert False, f"cant unpack type [{type(raw_props)}] instance [{raw_props}]"
         m = cls(
@@ -167,8 +170,18 @@ class Node:
         props = sorted(list(self.properties))
         if len(self.properties)==0:
             props = []
-        elif next(iter(self.properties)).startswith("{"):
-            props = {k:v for p in props for k, v in json.loads(p).items()}
+        elif next(iter(self.properties)).startswith("{"): # key val pairs
+            props = {}
+            for p in self.properties:
+                e = json.loads(p).items()
+                assert len(e)==1
+                k, v = next(iter(e))
+                if k in props:
+                    if not isinstance(props[k], list):
+                        props[k] = [props[k]]
+                    props[k].append(v)
+                else:
+                    props[k] = v
         else:
             def _unlist(s: str):
                 if s.startswith("[") and s.endswith("]"): return json.loads(s)[0]
@@ -196,7 +209,7 @@ class Endpoint(Node):
             parents = {p:p for p in parents}
         super().__init__(properties=properties, parents=set(parents.keys()))
         self._parent_map = parents # real, proto
-    
+
     def Iterparents(self):
         """real, prototype"""
         for e, p in self._parent_map.items():

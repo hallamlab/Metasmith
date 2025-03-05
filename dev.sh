@@ -83,13 +83,16 @@ case $1 in
         mkdir -p $HERE/lib
         cd $HERE/lib
         TINI_VERSION=v0.19.0
-        ! [ -f tini ] && wget https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini
+        ! [ -f tini ] && wget https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini && chmod +x ./tini
         if ! [ -d globusconnectpersonal-latest ]; then
             wget -continue https://downloads.globus.org/globus-connect-personal/linux/stable/globusconnectpersonal-latest.tgz
             tar -xvf globusconnectpersonal-latest.tgz
             rm globusconnectpersonal-latest.tgz
             mv globusconnectpersonal-* globusconnectpersonal-latest
         fi
+        NEXTFLOW_VERSION=$(cat ../envs/base.yml | grep nextflow | cut -c14- | xargs)
+        echo "nextflow version: $NEXTFLOW_VERSION"
+        ! [ -f nextflow ] && wget https://github.com/nextflow-io/nextflow/releases/download/v${NEXTFLOW_VERSION}}/nextflow && chmod +x ./nextflow
         cd $HERE
 
         # build the docker container locally

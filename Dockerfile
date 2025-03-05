@@ -14,7 +14,6 @@ RUN old_umask=`umask` \
 # Singularity uses tini, but raises warnings
 # we set it up here correctly for singularity
 ADD ./lib/tini /tini
-RUN chmod +x /tini
     
 # singularity doesn't use the -s flag, and that causes warnings.
 # -g kills process group on ctrl+C
@@ -38,4 +37,5 @@ RUN pip install /opt/metasmith.tar.gz
 
 COPY ./lib/globusconnectpersonal-latest /opt/globusconnectpersonal-latest
 COPY ./main/relay_agent/dist/relay /opt/msm_relay
+COPY ./lib/nextflow /opt/nextflow
 RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin /app

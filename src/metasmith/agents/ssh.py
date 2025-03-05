@@ -12,7 +12,7 @@ from ..coms.containers import Container, CONTAINER_RUNTIME
 @dataclass
 class Agent:
     ssh_command: str
-    ssh_address: str
+    ssh_host: str
     pre: str
     home: Path
     container: str = "docker://quay.io/hallamlab/metasmith:latest"
@@ -26,7 +26,7 @@ class Agent:
     def Pack(self):
         return dict(
             ssh_command=self.ssh_command,
-            ssh_address=self.ssh_address,
+            ssh_host=self.ssh_host,
             pre=self.pre,
             home=str(self.home),
             container=self.container,
@@ -73,14 +73,15 @@ class Agent:
                 
 
             def _remote_file(x: str|Path, dest: Path, executable=False):
-                Log.Info(f">>> deploying file [{dest}]")
                 if isinstance(x, str):
                     x = RemoveLeadingIndent(x)
                     fpath = tmpdir/f"{dest.name}"
                     with open(fpath, "w") as f:
                         f.write(x)
                     if executable: os.chmod(fpath, 0o755)
-                local_shell.Exec(f"rsync -ac -progress {fpath} {self.ssh_address}:{dest}")
+                cmd = f"rsync -au --progress {fpath} {self.ssh_host}:{dest}"
+                Log.Info(f">>> deploying file [{dest}]: [{cmd}]")
+                local_shell.Exec(cmd)
 
             _step(self.ssh_command, get_errs=_ssh_errs)
             _step(self.pre)
@@ -151,18 +152,22 @@ class Agent:
             _remote_file(
                 f"""
                 #!/bin/bash
+                echo "get container =================="
                 cp {resolved_msmhome}/metasmith.sif ./
-                mkdir -p ./.msm && cd ./.msm
-                {bootstrap_container.MakeRunCommand('metasmith api deploy_from_container', local="../metasmith.sif")}
-                cd ..
-                echo "===== post deploy ====="
+                mkdir -p ./.msm
+                echo "deploy ========================="
+                {bootstrap_container.MakeRunCommand('metasmith api deploy_from_container -a workspace=./.msm', local="./metasmith.sif")}
+                echo "post deploy ===================="
                 find .
                 ls -lh .
+                echo "relay =========================="
                 ./.msm/relay/msm_relay start
-                {bootstrap_container.MakeRunCommand('metasmith api execute_transform -a context=$1', local="./metasmith.sif")}
-                echo "===== post run ====="
+                echo "execute ========================"
+                {bootstrap_container.MakeRunCommand('metasmith api execute_transform -a step_index=$1', local="./metasmith.sif")}
+                echo "post execute ==================="
                 find .
                 ls -lh .
+                echo "exit ==========================="
                 ./.msm/relay/msm_relay stop
                 sleep 1
                 """,
@@ -171,7 +176,7 @@ class Agent:
             )
 
             HERE = Path(__file__).parent
-            local_shell.Exec(f"rsync -avcp {HERE/'../nextflow_config'} {self.ssh_address}:{resolved_msmhome/'lib/'}")
+            local_shell.Exec(f"rsync -avcp {HERE/'../nextflow_config'} {self.ssh_host}:{resolved_msmhome/'lib/'}")
 
 # # ========================================
 # # old

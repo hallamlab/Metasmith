@@ -262,7 +262,7 @@ class Logistics:
                     if dest.type == SourceType.SYMLINK:
                         shell.ExecAsync(f"ln -s {src.address} {dest.address}")
                     elif dest.type == SourceType.DIRECT:
-                        shell.ExecAsync(f"rsync -au {src.address}/ {dest.address} 2>/dev/null || rsync -au {src.address} {dest.address}")
+                        shell.ExecAsync(f"rsync -au --mkpath {src.address}/ {dest.address} 2>/dev/null || rsync -au {src.address} {dest.address}")
 
                 def _join():
                     shell.AwaitDone(timeout=None)
@@ -271,6 +271,7 @@ class Logistics:
                         dest_path = Path(dest.address)
                         if not dest_path.exists(): continue
                         completed.append((src, dest))
+                    return completed
                 return _join
 
             def _execute_globus(todo: list[tuple[Source, Source]]):
@@ -295,19 +296,22 @@ class Logistics:
                     batched_globus[key] = batch
 
                 tasks = []
-                with LiveShell() as shell:
-                    for (src_ep, dest_ep), batch in batched_globus.items():
-                        batch_path = Path(tmpdir)/"batch"
-                        with open(batch_path, "w") as f:
-                            for src_g, dest_g, _, _ in batch:
-                                f.write(f"{src_g.path} {dest_g.path}\n")
-                        cmd = f"globus transfer {src_ep} {dest_ep} --batch {batch_path} --sync-level checksum" + (f" --label {label}" if label else "")
-                        res = shell.Exec(cmd, history=True)
-                        _kw = "Task ID: "
-                        _task_ids = [x.replace(_kw, "") for x in res.out if x.startswith(_kw)]
-                        assert len(_task_ids) == 1, f"globus transfer failed to submit"
-                        _task_id = _task_ids[0]
-                        tasks.append((_task_id, [(src, dest) for _, _, src, dest in batch]))
+                shell = LiveShell()
+                shell._start()
+                shell.RegisterOnErr(lambda x: result.errors.append(f"globus: {x}"))
+                to_dispose.append(shell)
+                for (src_ep, dest_ep), batch in batched_globus.items():
+                    batch_path = Path(tmpdir)/"batch"
+                    with open(batch_path, "w") as f:
+                        for src_g, dest_g, _, _ in batch:
+                            f.write(f"{src_g.path} {dest_g.path}\n")
+                    cmd = f"globus transfer {src_ep} {dest_ep} --batch {batch_path} --sync-level checksum" + (f" --label {label}" if label else "")
+                    res = shell.Exec(cmd, history=True)
+                    _kw = "Task ID: "
+                    _task_ids = [x.replace(_kw, "") for x in res.out if x.startswith(_kw)]
+                    assert len(_task_ids) == 1, f"globus transfer failed to submit [{res.err}]"
+                    _task_id = _task_ids[0]
+                    tasks.append((_task_id, [(src, dest) for _, _, src, dest in batch]))
 
                 def _join():
                     completed = []
@@ -326,7 +330,7 @@ class Logistics:
                                 continue
                             status = d.get("status")
                             if status not in {"ACTIVE"}:
-                                completed += batch
+                                if status in {"SUCCEEDED"}: completed.extend(batch) # trust globus
                                 tasks.pop(-1) # completed
                                 continue
                             time.sleep(1)
@@ -366,7 +370,7 @@ class Logistics:
                 for (src_host, dest_host), batch in batched_ssh.items():
                     for src_s, dest_s, _, _ in batch:
                         src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
-                        shell.ExecAsync(f"rsync -au {src_addr}/ {dest_addr} 2>/dev/null || rsync -au {src_addr} {dest_addr}")
+                        shell.ExecAsync(f"rsync -au --mkpath {src_addr}/ {dest_addr} 2>/dev/null || rsync -au {src_addr} {dest_addr}")
                 def _join():
                     shell.AwaitDone(timeout=None)
                     completed = []
@@ -424,8 +428,10 @@ class Logistics:
                     }[type_category]
                     _joiners.append(exe(todo))
                 for fn in _joiners:
-                    result.completed += fn()
+                    _completed = fn()
+                    assert _completed is not None, f"internal error when joining [{type_category}] tasks"
+                    result.completed.extend(_completed)
             finally:
                 for d in to_dispose:
                     d._stop()
-            return result
+        return result
