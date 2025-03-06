@@ -31,7 +31,7 @@ class Container:
         else:
             return f"{self.runtime.value} pull {self.image}"
 
-    def MakeRunCommand(self, command: str, local: bool|str = False):
+    def MakeRunCommand(self, local: bool|str = False):
         image = self.image
         default_binds = [("./", "/ws")]
         binds = {str(d):str(s) for s, d in default_binds+self.binds}
@@ -58,12 +58,11 @@ class Container:
             workdir,
             binds,
             image,
-            command,
         ]
         return " ".join(str(x) for x in toks if x != "")
 
     def Run(self, command: str):
         with LiveShell() as shell:
             shell.Exec(
-                self.MakeRunCommand(command),
+                f"{self.MakeRunCommand()} {command}",
             )

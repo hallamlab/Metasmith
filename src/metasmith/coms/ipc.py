@@ -458,13 +458,11 @@ class ShellResult:
 
 class LiveShell:
     def __init__(self) -> None:
-        self._shell = None
         self._MARK = f"done_{GenerateId()}"
         self._done = False
         self._err_callbacks = []
         self._out_callbacks = []
 
-    def _start(self):
         self._shell = TerminalProcess()
         def _tee(cb_lst: list[Callable[[str], None]], check=False):
             def _cb(x):
@@ -477,8 +475,14 @@ class LiveShell:
             return _cb
         self._shell.RegisterOnErr(_tee(self._err_callbacks))
         self._shell.RegisterOnOut(_tee(self._out_callbacks, check=True))
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.Dispose()
 
-    def _stop(self):
+    def Dispose(self):
         if self._shell is None: return
         self._shell.Dispose()
         self._shell = None
@@ -536,13 +540,6 @@ class LiveShell:
             self.RemoveOnOut(_log_out)
             self.RemoveOnErr(_log_err)
         return ShellResult(out=_out, err=_err)
-    
-    def __enter__(self):
-        self._start()
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self._stop()
 
 class RemoteShell:
     def __init__(self, server_path: Path) -> None:

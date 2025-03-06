@@ -1,36 +1,34 @@
 import os
 from pathlib import Path
 from dataclasses import dataclass, field
-from tempfile import TemporaryDirectory
+from socket import timeout
+import tempfile
+import shutil
+from typing import Iterable
 import yaml
 import time
 
+from ..hashing import KeyGenerator
 from ..coms.ipc import LiveShell, ShellResult, RemoveLeadingIndent
 from ..logging import Log
 from ..coms.containers import Container, CONTAINER_RUNTIME
+from ..models.remote import Logistics, Source
+
+AGENT_SETUP_COMPLETE = f"setup_complete.{KeyGenerator.FromInt(2**42)}"
 
 @dataclass
 class Agent:
-    ssh_command: str
-    ssh_host: str
-    pre: str
-    home: Path
+    setup_commands: Iterable[str] # must echo AGENT_SETUP_COMPLETE to indicate sucess
+    cleanup_commands: Iterable[str]
+    home: Source
     container: str = "docker://quay.io/hallamlab/metasmith:latest"
-    globus_endpoint: str = None
 
-    def __post_init__(self):
-        self.home = Path(self.home)
-        self.ssh_command = RemoveLeadingIndent(self.ssh_command).strip()
-        self.pre = RemoveLeadingIndent(self.pre).strip()
-    
     def Pack(self):
         return dict(
-            ssh_command=self.ssh_command,
-            ssh_host=self.ssh_host,
-            pre=self.pre,
-            home=str(self.home),
+            setup_commands=list(self.setup_commands),
+            cleanup_commands=list(self.cleanup_commands),
+            home=self.home.Pack(),
             container=self.container,
-            globus_endpoint=self.globus_endpoint,
         )
     
     def Save(self, file_path: Path):
@@ -39,6 +37,7 @@ class Agent:
 
     @classmethod
     def Unpack(cls, data):
+        data["home"] = Source.Unpack(data["home"])
         return cls(**data)
     
     @classmethod
@@ -47,30 +46,26 @@ class Agent:
             data = yaml.safe_load(f)
         return cls.Unpack(data)
 
-    def Deploy(self, force=False):
-        with LiveShell() as shell, LiveShell() as local_shell, TemporaryDirectory() as tmpdir:
+    def RunSetup(self, shell: LiveShell, timeout: int = None):
+        for cmd in self.setup_commands:
+            res = shell.Exec(cmd, timeout=timeout, history=True)
+            if any(AGENT_SETUP_COMPLETE in x for x in res.out): return
+        assert False, f"Setup commands failed, since AGENT_SETUP_COMPLETE was not detected [{AGENT_SETUP_COMPLETE}]"
+    
+    def RunCleanup(self, shell: LiveShell):
+        for cmd in self.cleanup_commands:
+            shell.Exec(cmd)
+
+    def Deploy(self):
+        with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
             shell.RegisterOnOut(Log.Info)
             shell.RegisterOnErr(Log.Error)
-            local_shell.RegisterOnOut(Log.Info)
-            local_shell.RegisterOnErr(Log.Error)
-            def _step(cmd: str, timeout=15, get_errs=None):
+            def do_step(cmd: str, timeout=15):
                 str_cmd = RemoveLeadingIndent(cmd)
                 for x in str_cmd.split("\n"):
                     Log.Info(f">>> {x}")
-                res = shell.Exec(cmd, timeout=timeout, history=True)
-                if get_errs is not None:
-                    errs = get_errs(res)
-                    assert errs is None, errs
-
-            def _ssh_errs(res: ShellResult):
-                WL = {
-                    "Pseudo-terminal will not be allocated because stdin is not a terminal."
-                }
-                errs = [e for e in res.err if e not in WL]
-                if len(errs) > 0:
-                    return "\n".join(errs)
-                
+                return shell.Exec(cmd, timeout=timeout, history=True)
 
             def _remote_file(x: str|Path, dest: Path, executable=False):
                 if isinstance(x, str):
@@ -79,24 +74,34 @@ class Agent:
                     with open(fpath, "w") as f:
                         f.write(x)
                     if executable: os.chmod(fpath, 0o755)
-                cmd = f"rsync -au --progress {fpath} {self.ssh_host}:{dest}"
-                Log.Info(f">>> deploying file [{dest}]: [{cmd}]")
-                local_shell.Exec(cmd)
+                else:
+                    fpath = x
+                mover = Logistics()
+                mover.QueueTransfer(
+                    src=Source.FromLocal(fpath),
+                    dest=self.home.WithPath(dest)
+                )
+                Log.Info(f">>> deploying file [{dest}]")
+                res = mover.ExecuteTransfers()
+                assert len(res.completed) == 1, "Failed to deploy file"
 
-            _step(self.ssh_command, get_errs=_ssh_errs)
-            _step(self.pre)
+            self.RunSetup(shell)
             res = shell.Exec(f"""
-                realpath {self.home}
+                realpath {self.home.GetPath()}
                 realpath ~
             """, history=True)
             resolved_msmhome, resolved_home = [Path(x.strip()) for x in res.out]
-            res = shell.Exec(f'[ -d {resolved_msmhome}/dev/metasmith ] && echo "dev exists"', history=True)
-            dev_exists = "dev exists" in res.out
-            dev_binds = []
-            if dev_exists:
-                dev_binds = [
-                    (resolved_msmhome/"dev/metasmith", Path("/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith")),
-                ]
+
+            dev_src = resolved_msmhome/"dev/metasmith"
+            def make_dev_container(c: Container):
+                return Container(
+                    image=c.image,
+                    binds=c.binds+[
+                        (dev_src, Path("/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith")),
+                    ],
+                    workdir=c.workdir,
+                    runtime=c.runtime,
+                )
             container = Container(
                 image=self.container,
                 container_cache=resolved_msmhome, # just so the main container is saved here
@@ -104,17 +109,22 @@ class Agent:
                     (resolved_msmhome, Path("/msm_home")),
                     (Path(resolved_home)/".globus", Path(resolved_home)/".globus"),
                     (Path(resolved_home)/".globusonline", Path(resolved_home)/".globusonline"),
-                ] + dev_binds,
+                ],
                 runtime=CONTAINER_RUNTIME.APPTAINER
             )
+            container_dev = make_dev_container(container)
             _cmds = [f"mkdir -p {p}" for p, _ in container.binds]
-            _step("\n".join(_cmds))
-            _step(f"[ -e {container._get_local_path()} ] || {container.MakePullCommand()}", timeout=None)
+            do_step("\n".join(_cmds))
+            do_step(f"[ -e {container._get_local_path()} ] || {container.MakePullCommand()}", timeout=None)
 
             _remote_file(
                 f"""
                 #!/bin/bash
-                {container.MakeRunCommand('', local=f"{resolved_msmhome}/metasmith.sif")} $@
+                if [ -e "{dev_src}" ]; then
+                    {container_dev.MakeRunCommand(local=f"{resolved_msmhome}/metasmith.sif")} $@
+                else
+                    {container.MakeRunCommand(local=f"{resolved_msmhome}/metasmith.sif")} $@
+                fi
                 """,
                 dest=resolved_msmhome/"msm_stub",
                 executable=True,
@@ -131,8 +141,8 @@ class Agent:
                 executable=True,
             )
 
-            _step(f"cd {resolved_msmhome} && ./msm api deploy_from_container")
-            _step(f"exit")
+            do_step(f"cd {resolved_msmhome} && ./msm api deploy_from_container")
+            do_step(f"exit")
 
             _remote_file(
                 yaml.dump(self.Pack()),
@@ -145,25 +155,35 @@ class Agent:
                     (Path("./.msm"), Path("/msm_home")),
                     (Path("./"), Path("/ws")),
                     (resolved_msmhome, Path("/agent_home")),
-                ]+dev_binds,
+                ],
                 workdir=Path("/ws"),
                 runtime=CONTAINER_RUNTIME.APPTAINER,
             )
+            bootstrap_container_dev = make_dev_container(bootstrap_container)
             _remote_file(
                 f"""
                 #!/bin/bash
+                function run_container {{
+                    if [ -e "{dev_src}" ]; then
+                        echo "including dev binds"
+                        {bootstrap_container_dev.MakeRunCommand(local="./metasmith.sif")} $@
+                    else
+                        {bootstrap_container.MakeRunCommand(local="./metasmith.sif")} $@
+                    fi
+                }}
+
                 echo "get container =================="
                 cp {resolved_msmhome}/metasmith.sif ./
                 mkdir -p ./.msm
                 echo "deploy ========================="
-                {bootstrap_container.MakeRunCommand('metasmith api deploy_from_container -a workspace=./.msm', local="./metasmith.sif")}
+                run_container metasmith api deploy_from_container -a workspace=./.msm
                 echo "post deploy ===================="
                 find .
                 ls -lh .
                 echo "relay =========================="
                 ./.msm/relay/msm_relay start
                 echo "execute ========================"
-                {bootstrap_container.MakeRunCommand('metasmith api execute_transform -a step_index=$1', local="./metasmith.sif")}
+                run_container metasmith api execute_transform -a step_index=$1
                 echo "post execute ==================="
                 find .
                 ls -lh .
@@ -176,104 +196,5 @@ class Agent:
             )
 
             HERE = Path(__file__).parent
-            local_shell.Exec(f"rsync -avcp {HERE/'../nextflow_config'} {self.ssh_host}:{resolved_msmhome/'lib/'}")
-
-# # ========================================
-# # old
-
-# CONTAINER = "docker://quay.io/hallamlab/metasmith:latest"
-# CONTAINER_FILE = "metasmith.sif"
-
-# @dataclass
-# class DeploymentConfig:
-#     ssh_command: str
-#     timeout: int
-#     workspace: str
-#     pre: str = ""
-#     post: str = ""
-#     container: str = CONTAINER
-#     container_args: list[str] = field(default_factory=list)
-
-#     @classmethod
-#     def Parse(cls, file_path):
-#         try:
-#             with open(file_path, "r") as f:
-#                 config = cls(**yaml.safe_load(f))
-#             return config
-#         except FileNotFoundError as e:
-#             Log.Error(f"config file [{file_path}] not found")
-#         except TypeError as e:
-#             emsg = str(e)
-#             emsg = emsg.replace("DeploymentConfig.__init__()", "").strip()
-#             to_replace = {
-#                 "missing 1 required positional argument:": "missing field",
-#                 "got an unexpected keyword argument": "unknown field",
-#                 "'": "[",
-#                 "'": "]",
-#             }
-#             for k, v in to_replace.items():
-#                 emsg = emsg.replace(k, v, 1)
-#             Log.Error(f"error with config [{file_path}]")
-#             Log.Error(emsg)
-
-# def Deploy(config_path: Path):
-#     config = DeploymentConfig.Parse(config_path)
-#     if config is None: 
-#         Log.Error("config failed to parse")
-#         return
-#     workspace = Path(config.workspace).absolute()
-
-#     with LiveShell() as shell:
-#         SILENT = False
-#         internal = workspace/"internal"
-#         containers = workspace/"containers"
-#         shell.Exec(config.ssh_command, timeout=config.timeout, silent=SILENT)
-#         shell.Exec(config.pre, timeout=None, silent=SILENT)
-#         shell.Exec(
-#             f"""\
-#             {config.pre}
-#             [ -d {internal} ] || mkdir -p {internal}
-#             [ -d {containers} ] || mkdir -p {containers}
-#             cd {containers}
-#             [ -f {CONTAINER_FILE} ] || apptainer pull {CONTAINER_FILE} {config.container}
-#             """,
-#             timeout=None, silent=SILENT
-#         )
-#         shell.Exec(
-#             f"""\
-#             cd {workspace}
-#             apptainer run {" ".join(config.container_args)} {containers/CONTAINER_FILE} metasmith api unpack_container
-#             nohup {internal}/relay --io {internal}/connections &
-#             """,
-#             timeout=None, silent=SILENT
-#         )
-#         shell.Exec(config.post, timeout=None, silent=SILENT)
-#         shell.Exec("exit")
-
-# def UnpackContainer():
-#     SILENT = False
-#     Log.Warn("pretend to unpack relay")
-#     # with LiveShell() as shell:
-#     #     shell.Exec(
-#     #         f"""\
-#     #         pwd
-#     #         ls
-#     #         cd ..
-#     #         ls
-#     #         """,
-#     #         timeout=None, silent=SILENT
-#     #     )
-
-# def RunWorkflow():
-#     Log.Warn("pretend to run job")
-#     # with LiveShell() as shell:
-#     #     shell.Exec(
-#     #         f"""\
-#     #         pwd
-#     #         ls
-#     #         cd ..
-#     #         ls
-#     #         """,
-#     #         timeout=None, silent=SILENT
-#     #    )
-
+            _remote_file(HERE/"../nextflow_config", resolved_msmhome/"lib/nextflow_config")
+            self.RunCleanup(shell)

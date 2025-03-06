@@ -290,13 +290,13 @@ class DataInstanceLibrary:
         lib.manifest = manifest
         return lib
 
-    def Save(self, force=False):
+    def Save(self, update_types=False):
         ext = self._metadata_ext
         types_path = self.location/self._path_to_types
         types_path.mkdir(parents=True, exist_ok=True)
         for namespace, types_lib in self.types.items():
             local_path = types_path/(namespace+ext)
-            if not force and local_path.exists(): continue
+            if not update_types and local_path.exists(): continue
             types_lib.Save(local_path)
 
         metadata_path = self.location/self._path_to_meta
@@ -411,7 +411,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
     def __init__(self, location: Path|str|DataInstanceLibrary) -> None:
         super().__init__(location)
         if "transforms" not in self.types:
-            transform_types = DataTypeLibrary(dict(
+            transform_types = DataTypeLibrary(types=dict(
                 transform=Endpoint({"metasmith", "transform"}),
                 example_input=Endpoint({"metasmith", "example_input"}),
                 example_output=Endpoint({"metasmith", "example_output"}),

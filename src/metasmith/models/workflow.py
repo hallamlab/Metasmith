@@ -9,7 +9,7 @@ from .libraries import TransformInstance, TransformInstanceLibrary
 from .libraries import ExecutionContext, ExecutionResult
 from .remote import Logistics, Source, SourceType
 from .solver import Endpoint, Dependency, Transform, _solve_by_bounded_dfs
-from ..agents.ssh import Agent
+from ..agents.presets import Agent
 from ..hashing import KeyGenerator
 from ..logging import Log
 
