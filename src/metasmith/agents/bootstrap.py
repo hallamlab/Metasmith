@@ -74,21 +74,29 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         shell.RegisterOnErr(_make_listener(Log.Error))
         
         Log.Info(f"cwd [{Path('.').resolve()}]")
-        for p in Path('.').iterdir():
-            Log.Info(f"    {p}")
         with PausedStdOut():
             res = shell.Exec("pwd -P", history=True)
         external_cwd = Path(res.out[0])
         Log.Info(f"external cwd [{external_cwd}]")
 
-        Log.Info(f"staging task metadata")
         local_meta_path = Path("./_metasmith")
         extern_meta_src = local_meta_path.readlink()
-        shell.Exec(f"rm {local_meta_path} && cp -r {extern_meta_src} {local_meta_path}")
-        with PausedStdOut(): # this forces the filesystem to catch up...
-            shell.Exec(f"find {local_meta_path}")
+        if local_meta_path.is_symlink():
+            Log.Info(f"staging task metadata")
+            shell.Exec(f"rm {local_meta_path} && cp -r {extern_meta_src} {local_meta_path}")
+
         Log.Info(f"loading task metadata")
-        task = WorkflowTask.Load(local_meta_path/"task") # ...otherwise this fails
+        try_get_task = lambda: WorkflowTask.Load(local_meta_path/"task")
+        RETRY = 6
+        for i in range(RETRY):
+            to_wait = 2**i # total of 63 seconds
+            try:
+                task = try_get_task()
+                break
+            except:
+                Log.Info(f"failed to load task metadata, retry [{i+1} of {RETRY}] in [{to_wait}] seconds")
+                time.sleep(to_wait)
+        task = try_get_task()
 
         step = task.plan.steps[step_index-1]
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
@@ -105,6 +113,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             outputs={inst.dtype: inst.ResolvePath() for inst in step.produces},
             shell=shell,
         )
+        Log.Info(">"*30)
         Log.Info(f">>> executing protocol")
         try:
             result = step.transform.protocol(context)
@@ -118,3 +127,4 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                 Log.Error(f.read()[:-1])
             return ExecutionResult(False)
         Log.Info(f"<<< [{step_name}] reports {'success' if result.success else 'failure'}")
+        Log.Info("<"*30)

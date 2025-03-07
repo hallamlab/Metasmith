@@ -5,7 +5,7 @@ import sys
 import time
 from pathlib import Path
 from metasmith.coms.ipc import RemoteShell
-from metasmith.agents.ssh import Agent
+from metasmith.agents.presets import Agent
 
 SERVER_PATH = Path("/msm_home/relay/connections/main.in")
 cwd = Path("./").resolve()

@@ -8,7 +8,7 @@ from ..models.libraries import DataInstanceLibrary, TransformInstanceLibrary
 from ..models.remote import GlobusSource, Source, SourceType, Logistics
 from ..models.workflow import WorkflowTask
 from ..logging import Log
-from .ssh import Agent
+from .presets import Agent
 
 WORK_ROOT = Path("/ws")
 HOME_ROOT = Path("/msm_home")
@@ -37,7 +37,7 @@ def StageWorkflow(task_dir: Path, force=False):
         extern_shell.RegisterOnErr(lambda data: Log.Error(f"ex|  {data}"))
         res = extern_shell.Exec(
             f"""
-            realpath {task.agent.home}
+            realpath {task.agent.home.GetPath()}
             """,
             history=True
         )
@@ -96,14 +96,14 @@ def ExecuteWorkflow(key: str):
     Log.Info(f"executing workflow [{task.plan._key}] with [{len(task.plan.steps)}] steps")
 
     agent = Agent.Load(HOME_ROOT/"lib/agent.yml")
-    extern_home = agent.home
+    extern_home = agent.home.GetPath()
     extern_nxf_exe = extern_home/"lib/nextflow"
 
     Log.Info(f"connecting to relay for external shell")
     with RemoteShell(HOME_ROOT/"relay/connections/main.in") as extern_shell:
         extern_shell.RegisterOnOut(Log.Info)
         extern_shell.RegisterOnErr(Log.Error)
-        Log.Info(f"calling nextflow")
+        Log.Info(f"calling nextflow via relay")
         extern_shell.Exec(
             f"""
             cd {extern_home}/runs/{key}

@@ -168,6 +168,18 @@ class Source:
     def __hash__(self) -> int:
         return self._hash
 
+    def GetName(self, extension: bool = True):
+        p = self.GetPath()
+        return p.stem if not extension else p.name
+    
+    def GetPath(self):
+        return Path(self.address.split(":")[-1])
+    
+    def WithPath(self, path: Path):
+        prev_path = str(self.GetPath())
+        new_address = self.address.replace(prev_path, str(path))
+        return Source(address=new_address, type=self.type)
+
     def __truediv__(self, other: str|Path):
         if isinstance(other, Path):
             assert not other.is_absolute()
@@ -188,13 +200,6 @@ class Source:
         assert path.is_absolute(), f"Path must be absolute [{path}]"
         t = SourceType.SYMLINK if path.is_symlink() else SourceType.DIRECT
         return Source(address=str(path), type=t)
-
-    def GetName(self, extension: bool = True):
-        p = self.GetPath()
-        return p.stem if not extension else p.name
-    
-    def GetPath(self):
-        return Path(self.address.split(":")[-1])
 
     @classmethod
     def Unpack(cls, d: dict):
@@ -252,7 +257,6 @@ class Logistics:
         with TemporaryDirectory(prefix="msm.") as tmpdir:
             def _execute_local(todo: list[tuple[Source, Source]]):
                 shell = LiveShell()
-                shell._start()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"local: {x}"))
                 to_dispose.append(shell)
                 for src, dest in todo:
@@ -297,7 +301,6 @@ class Logistics:
 
                 tasks = []
                 shell = LiveShell()
-                shell._start()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"globus: {x}"))
                 to_dispose.append(shell)
                 for (src_ep, dest_ep), batch in batched_globus.items():
@@ -364,7 +367,6 @@ class Logistics:
                     batched_ssh[key] = batch
 
                 shell = LiveShell()
-                shell._start()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"ssh: {x}"))
                 to_dispose.append(shell)
                 for (src_host, dest_host), batch in batched_ssh.items():
@@ -395,7 +397,6 @@ class Logistics:
 
             def _execute_http(todo: list[tuple[Source, Source]]):
                 shell = LiveShell()
-                shell._start()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"http: {x}"))
                 to_dispose.append(shell)
                 for src, dest in todo:
@@ -433,5 +434,5 @@ class Logistics:
                     result.completed.extend(_completed)
             finally:
                 for d in to_dispose:
-                    d._stop()
+                    d.Dispose()
         return result
