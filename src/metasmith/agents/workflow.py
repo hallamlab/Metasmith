@@ -103,7 +103,7 @@ def ExecuteWorkflow(key: str):
     with RemoteShell(HOME_ROOT/"relay/connections/main.in") as extern_shell:
         extern_shell.RegisterOnOut(Log.Info)
         extern_shell.RegisterOnErr(Log.Error)
-        Log.Info(f"calling nextflow")
+        Log.Info(f"calling nextflow via relay")
         extern_shell.Exec(
             f"""
             cd {extern_home}/runs/{key}

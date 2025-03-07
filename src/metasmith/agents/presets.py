@@ -121,6 +121,7 @@ class Agent:
                 f"""
                 #!/bin/bash
                 if [ -e "{dev_src}" ]; then
+                    echo "including dev binds"
                     {container_dev.MakeRunCommand(local=f"{resolved_msmhome}/metasmith.sif")} $@
                 else
                     {container.MakeRunCommand(local=f"{resolved_msmhome}/metasmith.sif")} $@
