@@ -1,0 +1,4 @@
+manifest:
+  diamond.py: transforms::transform
+  pprodigal.py: transforms::transform
+schema: '0.3'

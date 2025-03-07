@@ -1,21 +1,23 @@
 from pathlib import Path
-from metasmith import DataInstance, DataTypeLibrary, TransformInstance, ExecutionContext, ExecutionResult
+from metasmith.pythonapi import *
 
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 def protocol(context: ExecutionContext):
-    print("this is diamond!")
-    return ExecutionResult()
+    Log.Info("this is diamond!")
+    container = context.inputs[lib.GetType("metagenomics::oci_image_diamond")]
+    Log.Info(f"container: [{container}] exists [{container.exists()}]")
+    context.shell.Exec(f"touch annotations.csv")
+    return ExecutionResult(success=True)
 
-HERE = Path(__file__).parent
-lib = DataTypeLibrary.Load((HERE/"../../prototypes/metagenomics.yml").resolve())
+model = Transform()
+dep = model.AddRequirement(node=lib.GetType("metagenomics::oci_image_diamond"))
+dep = model.AddRequirement(node=lib.GetType("metagenomics::orfs_faa"))
+dep = model.AddRequirement(node=lib.GetType("metagenomics::protein_reference_diamond"))
 
-TransformInstance.Register(
-    container="docker://bschiffthaler/diamond:2.0.14",
-    protocol=protocol,
-    input_signature={
-        lib["orfs_faa"],
-        lib["diamond_protein_reference"],
-    },
-    output_signature={
-        DataInstance(Path("annotations.csv"), lib["orf_annotations"]),
+TransformInstance(
+    protocol = protocol,
+    model = model,
+    output_signature = {
+        model.AddProduct(node=lib.GetType("metagenomics::orf_annotations")): "annotations.csv",
     },
 )

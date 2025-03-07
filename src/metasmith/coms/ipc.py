@@ -11,10 +11,12 @@ import select
 import pty
 import time
 import random
-from uuid import uuid4
+
+from ..hashing import KeyGenerator
+from ..serialization import StdTime
 
 def CurrentTimeMillis():
-    return round(time.time() * 1000)
+    return StdTime.CurrentTimeMillis()
 
 # removes: colors, escape, control sequences
 # https://stackoverflow.com/questions/14693701/how-can-i-remove-the-ansi-escape-sequences-from-a-string-in-python 
@@ -26,23 +28,27 @@ def RemoveTrailingNewline(s):
         s = s[:-1]
     return s
 
+def RemoveLeadingIndent(s: str):
+    lines = s.split("\n")
+    if len(lines) == 0: return s
+    indent = 0
+    for line in lines:
+        if line == "": continue
+        for c in line:
+            if c not in {" ", "\t"}: break
+            indent += 1
+        break
+    cleaned = "\n".join([l[indent:] for l in lines])
+    cleaned = cleaned.strip()
+    if lines[-1][indent:] == "": cleaned += "\n"
+    return cleaned
+
+_kg = KeyGenerator()
 def GenerateId():
-    ascii_ranges = [(48, 57), (65, 90), (97, 122)]
-    ascii_vocab = []
-    for a, b in ascii_ranges:
-        for i in range(a, b+1):
-            ascii_vocab.append(chr(i))
-    ID_LEN = 12
-    buffer = []
-    while True:
-        _break = False
-        x = uuid4().int
-        while x > 0:
-            x, r = divmod(x, len(ascii_vocab))
-            buffer.append(ascii_vocab[r])
-            if len(buffer) >= ID_LEN: _break=True; break
-        if _break: break
-    return ''.join(buffer)
+    return _kg.GenerateUID(12)
+
+class ConnectionError(Exception):
+    pass
 
 @dataclass
 class IpcModel:
@@ -226,14 +232,14 @@ class PipeClient:
         if self._closed: return
         os.write(self._server_channel, (msg+"\n").encode())
 
-    def Transact(self, req: IpcRequest, timeout: int|float = 15) -> IpcResponse:
+    def Transact(self, req: IpcRequest, timeout: int|float|None = 15) -> IpcResponse:
         self._last_response = None
         self._last_message_id = req.message_id
         msg = req.Serialize()
         self.Send(msg)
         start = CurrentTimeMillis()
         while self._last_response is None:
-            if CurrentTimeMillis() - start > timeout*1000:
+            if timeout and CurrentTimeMillis() - start > timeout*1000:
                 raise TimeoutError("Failed to receive response")
             with self._lock:
                 self._lock.wait(0.1)
@@ -265,157 +271,6 @@ class PipeClient:
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         return self.Dispose()
-
-class LiveShell:
-    def __init__(self) -> None:
-        self._shell = None
-        self._MARK = "done"
-        self._done = False
-        self._silent = True
-
-    def Exec(self, cmd: str, timeout: int|None = 15, silent=True, live_out: Callable[[str], None] = None, live_err: Callable[[str], None] = None):
-        def _strip_indent(s):
-            lines = s.split("\n")
-            if len(lines) == 0: return s
-            indent = 0
-            for c in lines[0]:
-                if c not in {" ", "\t"}: break
-                indent += 1
-            return "\n".join([l[indent:] for l in lines])
-        
-        def _await_done(await_timeout, delta):
-            start = CurrentTimeMillis()
-            while True:
-                if self._done: break
-                if CurrentTimeMillis() - start > await_timeout*1000: return False
-                time.sleep(delta)
-            self._done = False
-            return True
-        
-        _out, _err = [], []
-        def _decode(x):
-            return RemoveTrailingNewline(self._shell.Decode(x))
-        def _appender_out(x):
-            msg = _decode(x)
-            if msg == self._MARK: return
-            _out.append(msg)
-        def _appender_err(x):
-            _err.append(_decode(x))
-        self._shell.RegisterOnOut(_appender_out)
-        self._shell.RegisterOnErr(_appender_err)
-        if live_out is not None: self._shell.RegisterOnOut(lambda x: live_out(_decode(x)))
-        if live_err is not None: self._shell.RegisterOnErr(lambda x: live_err(_decode(x)))
-
-        self._silent = silent
-        self._shell.Write(_strip_indent(cmd))
-        start = CurrentTimeMillis()
-        while True:
-            try:
-                self._shell.Write("echo done")
-            except BrokenPipeError: break
-            if _await_done(await_timeout=0.5, delta=0.1): break
-            if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
-
-        self._shell.RemoveOnOut(_appender_out)
-        self._shell.RemoveOnErr(_appender_err)
-        return _out, _err
-    
-    def __enter__(self):
-        self._shell = TerminalProcess()
-        def _check(x):
-            if len(x) > len(self._MARK)+2: return
-            x = RemoveTrailingNewline(self._shell.Decode(x))
-            if x == self._MARK: self._done = True
-        self._shell.RegisterOnOut(_check)
-        def _tee(prefix):
-            def _cb(x):
-                if self._silent: return
-                msg = RemoveTrailingNewline(self._shell.Decode(x))
-                if len(msg) == 0: return
-                if msg == self._MARK: return
-                print(f"{prefix}{msg}")
-            return _cb
-        self._shell.RegisterOnErr(_tee("E: "))
-        self._shell.RegisterOnOut(_tee("I: "))
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self._shell.Dispose()
-        self._shell = None
-
-class TerminalProcess:
-    class Pipe:
-        def __init__(self, io:IO[bytes], lock: Condition = None) -> None:
-            self.IO = io
-            if lock is None: lock = Condition()
-            self.Lock = lock
-
-        def __enter__(self):
-            self.Lock.acquire()
-
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            self.Lock.release()
-
-    def __init__(self) -> None:
-        # https://stackoverflow.com/questions/41542960/run-interactive-bash-with-popen-and-a-dedicated-tty-python
-        out_master, out_slave = pty.openpty()
-        err_master, err_slave = pty.openpty()
-        self._fds = [out_master, err_master]
-
-        console = subprocess.Popen(
-            ["bash"],
-            stdin=subprocess.PIPE,
-            stdout=out_slave,
-            stderr=err_slave,
-            close_fds=True
-        )
-
-        self.ENCODING = "utf-8"
-        self._console = console
-        self._in = TerminalProcess.Pipe(console.stdin)
-        self._onCloseLock = Condition()
-        self._closed = False
-        self.pid = console.pid
-        self._err_reader = NonBlockingReader(err_master)
-        self._out_reader = NonBlockingReader(out_master)
-
-    def Send(self, payload: bytes):
-        stdin = self._in
-        with self._in:
-            stdin.IO.write(payload)
-            stdin.IO.flush()
-    
-    def Decode(self, payload: bytes):
-        return payload.decode(encoding=self.ENCODING)
-
-    def Write(self, msg: str):
-        self.Send(bytes('%s\n' % (msg), encoding=self.ENCODING))
-
-    def RegisterOnOut(self, callback: Callable[[bytes], None]):
-        self._out_reader.RegisterCallback(callback)
-
-    def RegisterOnErr(self, callback: Callable[[bytes], None]):
-        self._err_reader.RegisterCallback(callback)
-
-    def RemoveOnOut(self, callback: Callable[[bytes], None]):
-        self._out_reader.RemoveCallback(callback)
-
-    def RemoveOnErr(self, callback: Callable[[bytes], None]):
-        self._err_reader.RemoveCallback(callback)
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.Dispose()
-        return
-
-    def Dispose(self):
-        self._err_reader.Dispose()
-        self._out_reader.Dispose()
-        self._console.terminate()
-        for i, fd in enumerate(self._fds):
-            os.close(fd)
 
 class NonBlockingReader:
     def __init__(self, io_handle: int, on_close: Callable[[NonBlockingReader], None] = None, sep: bytes = b"\n") -> None:
@@ -521,3 +376,290 @@ class NonBlockingReader:
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         return self.Dispose()
+
+class TerminalProcess:
+    class Pipe:
+        def __init__(self, io:IO[bytes], lock: Condition = None) -> None:
+            self.IO = io
+            if lock is None: lock = Condition()
+            self.Lock = lock
+
+        def __enter__(self):
+            self.Lock.acquire()
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.Lock.release()
+
+    def __init__(self) -> None:
+        # https://stackoverflow.com/questions/41542960/run-interactive-bash-with-popen-and-a-dedicated-tty-python
+        out_master, out_slave = pty.openpty()
+        err_master, err_slave = pty.openpty()
+        self._fds = [out_master, err_master]
+
+        console = subprocess.Popen(
+            ["bash"],
+            stdin=subprocess.PIPE,
+            stdout=out_slave,
+            stderr=err_slave,
+            close_fds=True
+        )
+
+        self.ENCODING = "utf-8"
+        self._console = console
+        self._in = TerminalProcess.Pipe(console.stdin)
+        self._onCloseLock = Condition()
+        self._closed = False
+        self.pid = console.pid
+        self._err_reader = NonBlockingReader(err_master)
+        self._out_reader = NonBlockingReader(out_master)
+
+    def Send(self, payload: bytes):
+        stdin = self._in
+        with self._in:
+            stdin.IO.write(payload)
+            stdin.IO.flush()
+    
+    def Decode(self, payload: bytes):
+        return payload.decode(encoding=self.ENCODING)
+
+    def Write(self, msg: str):
+        self.Send(bytes('%s\n' % (msg), encoding=self.ENCODING))
+
+    def RegisterOnOut(self, callback: Callable[[bytes], None]):
+        self._out_reader.RegisterCallback(callback)
+
+    def RegisterOnErr(self, callback: Callable[[bytes], None]):
+        self._err_reader.RegisterCallback(callback)
+
+    def RemoveOnOut(self, callback: Callable[[bytes], None]):
+        self._out_reader.RemoveCallback(callback)
+
+    def RemoveOnErr(self, callback: Callable[[bytes], None]):
+        self._err_reader.RemoveCallback(callback)
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.Dispose()
+        return
+
+    def Dispose(self):
+        self._err_reader.Dispose()
+        self._out_reader.Dispose()
+        self._console.terminate()
+        for i, fd in enumerate(self._fds):
+            os.close(fd)
+
+@dataclass
+class ShellResult:
+    out: list[str]
+    err: list[str]
+
+class LiveShell:
+    def __init__(self) -> None:
+        self._MARK = f"done_{GenerateId()}"
+        self._done = False
+        self._err_callbacks = []
+        self._out_callbacks = []
+
+        self._shell = TerminalProcess()
+        def _tee(cb_lst: list[Callable[[str], None]], check=False):
+            def _cb(x):
+                msg = RemoveTrailingNewline(self._shell.Decode(x))
+                if len(msg) == 0: return
+                if msg == self._MARK:
+                    if check: self._done = True
+                    return
+                for f in cb_lst: f(msg)
+            return _cb
+        self._shell.RegisterOnErr(_tee(self._err_callbacks))
+        self._shell.RegisterOnOut(_tee(self._out_callbacks, check=True))
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.Dispose()
+
+    def Dispose(self):
+        if self._shell is None: return
+        self._shell.Dispose()
+        self._shell = None
+        self._err_callbacks.clear()
+        self._out_callbacks.clear()
+
+    def RegisterOnOut(self, callback: Callable[[str], None]):
+        self._out_callbacks.append(callback)
+    
+    def RegisterOnErr(self, callback: Callable[[str], None]):
+        self._err_callbacks.append(callback)
+
+    def RemoveOnOut(self, callback: Callable[[str], None]):
+        if callback in self._out_callbacks: self._out_callbacks.remove(callback)
+
+    def RemoveOnErr(self, callback: Callable[[str], None]):
+        if callback in self._err_callbacks: self._err_callbacks.remove(callback)
+
+    def ExecAsync(self, cmd: str):
+        self._shell.Write(RemoveLeadingIndent(cmd))
+
+    def AwaitDone(self, timeout: int|float = 15):
+        def _await_done(await_timeout, delta):
+            start = CurrentTimeMillis()
+            while True:
+                if self._done: break
+                if CurrentTimeMillis() - start > await_timeout*1000: return False
+                time.sleep(delta)
+            self._done = False
+            return True
+        
+        start = CurrentTimeMillis()
+        _d = 0.5
+        while True:
+            try:
+                self._shell.Write(f'echo "{self._MARK}"')
+            except BrokenPipeError: break
+            if _await_done(await_timeout=_d, delta=min(_d/5, 1)): break
+            _d = min(_d*10, 864000) # 10 days
+            if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
+
+    def Exec(self, cmd: str, timeout: int|None = 15, history: bool=False) -> ShellResult:
+        _out, _err = [], []
+        def _log_err(msg):
+            _err.append(msg)
+        def _log_out(msg):
+            _out.append(msg)
+        if history:
+            self.RegisterOnOut(_log_out)
+            self.RegisterOnErr(_log_err)
+
+        self.ExecAsync(cmd)
+        self.AwaitDone(timeout=timeout)
+        if history:
+            self.RemoveOnOut(_log_out)
+            self.RemoveOnErr(_log_err)
+        return ShellResult(out=_out, err=_err)
+
+class RemoteShell:
+    def __init__(self, server_path: Path) -> None:
+        ws = server_path.parent
+        with PipeClient(server_path) as p:
+            res = p.Transact(IpcRequest(endpoint="connect"), timeout=5)
+        if res.status != 200:
+            raise ConnectionError(f"server connect error: [{res.data.get('error')}]")
+
+        channel_path = Path(res.data.get("path"))
+        # Log.Info(f"connecting as [{channel_path.stem}]")
+        if channel_path is None:
+            raise ConnectionError("server didn't give channel path")
+        channel_path = ws/channel_path
+        out_cb, err_cb = [], []
+        MARK = f"done_{GenerateId()}"
+        self._done = False
+        def _make_callback(callback_list: list):
+            def _handler(channel: PipeServer, raw: str):
+                if raw == MARK:
+                    self._done = True
+                    return
+                for f in callback_list:
+                    f(raw)
+            return _handler
+
+        k = channel_path.stem
+        live_out = PipeServer(ws, _make_callback(out_cb), id=k+".bash_out")
+        live_err = PipeServer(ws, _make_callback(err_cb), id=k+".bash_err")
+        channel = PipeClient(channel_path)
+
+        err = None
+        for stream, path in [
+            ("out", live_out._server_path.name),
+            ("err", live_err._server_path.name),
+        ]:
+            res = channel.Transact(IpcRequest(endpoint="register_bash_listener", data=dict(
+                stream=stream,
+                channel=str(path),
+            )))
+            if res.status != 200:
+                err = f"failed to connect [{stream}] listener for shell [{res.data.get('error')}]"
+                break
+        if err:
+            live_out.Dispose()
+            live_err.Dispose()
+            channel.Dispose()
+            raise ConnectionError(err)
+        
+        self._err_pipe=live_err
+        self._out_pipe=live_out
+        self._channel=channel
+        self._out_callbacks=out_cb # care to not reassign these
+        self._err_callbacks=err_cb # care to not reassign these
+        self._MARK=MARK
+
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.Dispose()
+    
+    def RegisterOnOut(self, callback: Callable[[str], None]):
+        self._out_callbacks.append(callback)
+    
+    def RegisterOnErr(self, callback: Callable[[str], None]):
+        self._err_callbacks.append(callback)
+
+    def RemoveOnOut(self, callback: Callable[[str], None]):
+        if callback in self._out_callbacks: self._out_callbacks.remove(callback)
+
+    def RemoveOnErr(self, callback: Callable[[str], None]):
+        if callback in self._err_callbacks: self._err_callbacks.remove(callback)
+
+    def _send(self, cmd):
+        res = self._channel.Transact(IpcRequest(endpoint="bash", data={"script": cmd}))
+        if res.status not in {204, 200}:
+            return res.data.get("error")
+        else:
+            return
+
+    def ExecAsync(self, cmd: str):
+        err = self._send(RemoveLeadingIndent(cmd))
+        if err: raise ConnectionError(err)
+
+    def AwaitDone(self, timeout: int|float=15):
+        def _await_done(await_timeout, delta):
+            start = CurrentTimeMillis()
+            while True:
+                if self._done: break
+                if CurrentTimeMillis() - start > await_timeout*1000: return False
+                time.sleep(delta)
+            return True
+
+        start = CurrentTimeMillis()
+        _d = 0.5
+        while True:
+            err = self._send(f'echo "{self._MARK}"')
+            if err: raise ConnectionError(err)
+            if _await_done(await_timeout=_d, delta=min(_d/5, 1)): break
+            _d = min(_d*10, 864000) # 10 days
+            if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
+
+    def Exec(self, cmd: str, timeout: int|float|None=None, history: bool=False) -> ShellResult:
+        _out, _err = [], []
+        def _on_out(msg):
+            _out.append(msg)
+        def _on_err(msg):
+            _err.append(msg)
+        if history:
+            self.RegisterOnOut(_on_out)
+            self.RegisterOnErr(_on_err)
+        self.ExecAsync(cmd)
+        self.AwaitDone(timeout=timeout)
+        if history:
+            self.RemoveOnOut(_on_out)
+            self.RemoveOnErr(_on_err)
+        return ShellResult(out=_out, err=_err)
+
+    def Dispose(self):
+        self._err_pipe.Dispose()
+        self._out_pipe.Dispose()
+        self._channel.Dispose()

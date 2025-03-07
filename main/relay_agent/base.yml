@@ -1,0 +1,8 @@
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pyinstaller=6.11.1
+  - pip
+  - pip:
+    - numpy==2.2 # using pip packs glibc as well, I think. Sockeye has old glibc version

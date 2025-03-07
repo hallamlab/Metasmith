@@ -5,8 +5,8 @@ HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 NAME=metasmith
 DEV_USER=hallamlab
 _ver_file=$(find $HERE/src | grep version.txt)
-VER="$(cat $_ver_file).$(git branch --show-current)-$(git rev-parse --short HEAD)"
-# VER="$(cat $_ver_file)"
+# VER="$(cat $_ver_file).$(git branch --show-current)-$(git rev-parse --short HEAD)"
+VER="$(cat $_ver_file)"
 DOCKER_IMAGE=quay.io/$DEV_USER/$NAME
 
 # CONDA=conda
@@ -83,7 +83,16 @@ case $1 in
         mkdir -p $HERE/lib
         cd $HERE/lib
         TINI_VERSION=v0.19.0
-        ! [ -f tini ] && wget https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini
+        ! [ -f tini ] && wget https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini && chmod +x ./tini
+        if ! [ -d globusconnectpersonal-latest ]; then
+            wget -continue https://downloads.globus.org/globus-connect-personal/linux/stable/globusconnectpersonal-latest.tgz
+            tar -xvf globusconnectpersonal-latest.tgz
+            rm globusconnectpersonal-latest.tgz
+            mv globusconnectpersonal-* globusconnectpersonal-latest
+        fi
+        NEXTFLOW_VERSION=$(cat ../envs/base.yml | grep nextflow | cut -c14- | xargs)
+        echo "nextflow version: $NEXTFLOW_VERSION"
+        ! [ -f nextflow ] && wget https://github.com/nextflow-io/nextflow/releases/download/v${NEXTFLOW_VERSION}}/nextflow && chmod +x ./nextflow
         cd $HERE
 
         # build the docker container locally
@@ -137,9 +146,13 @@ case $1 in
             # -e XDG_CACHE_HOME="/ws"\
         shift
         mkdir -p ./scratch/docker
+        cd ./scratch/docker
+        # mkdir -p cache/.globus cache/.globusonline
         docker run -it --rm \
             -u $(id -u):$(id -g) \
             --mount type=bind,source="$HERE/scratch/docker",target="/ws"\
+            --mount type=bind,source="$HOME/.globus",target="/.globus"\
+            --mount type=bind,source="$HOME/.globusonline",target="/.globusonline"\
             --workdir="/ws" \
             $DOCKER_IMAGE:$VER /bin/bash
     ;;
@@ -151,7 +164,9 @@ case $1 in
         apptainer exec \
             --bind ./:/ws \
             --workdir /ws \
-            docker://$DOCKER_IMAGE:$VER /bin/bash
+            --no-home \
+            $HERE/$NAME.sif /bin/bash
+            # docker-daemon://$DOCKER_IMAGE:$VER /bin/bash
     ;;
 
     ###################################################
@@ -161,6 +176,19 @@ case $1 in
         shift
         export PYTHONPATH=$HERE/src:$PYTHONPATH
         python -m $NAME $@ deploy
+    ;;
+
+    -t2)
+        cd ./main/relay_agent/scratch/cache/mock
+        # mkdir -p cache/.globus cache/.globusonline
+        docker run -it --rm \
+            -u $(id -u):$(id -g) \
+            --mount type=bind,source="./work",target="/ws"\
+            --mount type=bind,source="./home",target="/msm_home"\
+            --mount type=bind,source="$HOME/.globus",target="/.globus"\
+            --mount type=bind,source="$HOME/.globusonline",target="/.globusonline"\
+            --workdir="/ws" \
+            $DOCKER_IMAGE:$VER /bin/bash
     ;;
 
     ###################################################

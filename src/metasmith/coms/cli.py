@@ -1,12 +1,12 @@
-import json
 import os, sys
 from pathlib import Path
 import argparse
 import inspect
-from dataclasses import dataclass
-import importlib
+import base64
+import json
 
 from ..constants import NAME, VERSION, GIT_URL, ENTRY_POINTS
+from ..logging import Log
 
 CLI_ENTRY = [e.split("=")[0].strip() for e in ENTRY_POINTS][0]
     
@@ -20,31 +20,31 @@ class CommandLineInterface:
     def _get_fn_name(self):
         return inspect.stack()[1][3]
 
-    def deploy(self, raw_args=None):
-        parser = ArgumentParser(
-            prog = f'{CLI_ENTRY} {self._get_fn_name()}',
-            description=f"Deploy an executor agent to a remote machine via ssh"
-        )
+    # def deploy(self, raw_args=None):
+    #     parser = ArgumentParser(
+    #         prog = f'{CLI_ENTRY} {self._get_fn_name()}',
+    #         description=f"Deploy an executor agent to a remote machine via ssh"
+    #     )
 
-        parser.add_argument("--config", required=True, metavar="yaml", help="path to configuration file")
+    #     parser.add_argument("--config", required=True, metavar="yaml", help="path to configuration file")
 
-        args = parser.parse_args(raw_args)
-        from ..agents.ssh import Deploy
-        Deploy(args.config)
+    #     args = parser.parse_args(raw_args)
+    #     from ..agents.presets import Deploy
+    #     Deploy(args.config)
 
-    def run(self, raw_args=None):
-        parser = ArgumentParser(
-            prog = f'{CLI_ENTRY} {self._get_fn_name()}',
-            description=f"Register data"
-        )
+    # def run(self, raw_args=None):
+    #     parser = ArgumentParser(
+    #         prog = f'{CLI_ENTRY} {self._get_fn_name()}',
+    #         description=f"Register data"
+    #     )
 
-        parser.add_argument("--request", required=True, metavar="yaml", help="yaml file describing requested data to produce")
-        parser.add_argument("--work", required=True, metavar="path", help="path to deployed metasmith workspace")
-        args = parser.parse_args(raw_args)
-        from ..workflow import Run
-        home = Path(args.work)
-        request = Path(args.request)
-        Run(home, request)
+    #     parser.add_argument("--request", required=True, metavar="yaml", help="yaml file describing requested data to produce")
+    #     parser.add_argument("--work", required=True, metavar="path", help="path to deployed metasmith workspace")
+    #     args = parser.parse_args(raw_args)
+    #     from ..workflow import Run
+    #     home = Path(args.work)
+    #     request = Path(args.request)
+    #     Run(home, request)
 
     def api(self, raw_args=None):
         parser = ArgumentParser(
@@ -54,9 +54,16 @@ class CommandLineInterface:
 
         from .api import HandleRequest
         parser.add_argument("endpoint")
-        parser.add_argument("--body", required=False, default="{}")
+        parser.add_argument("--arg", "-a", required=False, default=[], action='append', nargs='*', metavar="KEY=VALUE")
         args = parser.parse_args(raw_args)
-        body = json.loads(args.body)
+        body = {}
+        for a in args.arg:
+            a = a[0]
+            if "=" not in a:
+                Log.Error(f"invalid argument [{a}]")
+                continue
+            k, v = a.split("=")
+            body[k] = v
         HandleRequest(args.endpoint, body)
 
     def help(self, args=None):

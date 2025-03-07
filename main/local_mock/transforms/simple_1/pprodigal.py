@@ -1,21 +1,22 @@
 from pathlib import Path
-from metasmith import DataInstance, DataTypeLibrary, TransformInstance, ExecutionContext, ExecutionResult
+from metasmith.pythonapi import *
 
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 def protocol(context: ExecutionContext):
-    print("this is pprodigal!")
-    return ExecutionResult()
+    Log.Info("this is pprodigal!")
+    container = context.inputs[lib.GetType("metagenomics::oci_image_pprodigal")]
+    Log.Info(f"container: [{container}] exists [{container.exists()}]")
+    context.shell.Exec(f"touch orfs.faa")
+    return ExecutionResult(success=True)
 
-HERE = Path(__file__).parent
-lib = DataTypeLibrary.Load((HERE/"../../prototypes/metagenomics.yml").resolve())
+model = Transform()
+dep = model.AddRequirement(node=lib.GetType("metagenomics::oci_image_pprodigal"))
+dep = model.AddRequirement(node=lib.GetType("metagenomics::contigs"))
 
-TransformInstance.Register(
-    container="docker://quay.io/hallamlab/external_pprodigal:1.0.1",
-    protocol=protocol,
-    input_signature={
-        lib["contigs"],
-    },
-    output_signature={
-        DataInstance(Path("orfs.gbk"), lib["orfs_gbk"]),
-        DataInstance(Path("orfs.faa"), lib["orfs_faa"]),
+TransformInstance(
+    protocol = protocol,
+    model = model,
+    output_signature = {
+        model.AddProduct(node=lib.GetType("metagenomics::orfs_faa")): "orfs.faa",
     },
 )
