@@ -3,12 +3,8 @@
 # -- Project information
 
 from pathlib import Path
-# WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
-# for p in Path(__file__).parents:
-#     print(p)
-#     for f in p.iterdir():
-#         print(f"  - {f}")
-with open('./src/metasmith/version.txt') as f:
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
+with open(WORKSPACE_ROOT/'src/metasmith/version.txt') as f:
     version_string = f.read().strip()
 
 project = 'Metasmith'
