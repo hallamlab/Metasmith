@@ -4,6 +4,7 @@
 
 from pathlib import Path
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+print(Path(__file__))
 with open(WORKSPACE_ROOT/'src/metasmith/version.txt') as f:
     version_string = f.read().strip()
 
