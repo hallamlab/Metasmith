@@ -1,3 +1,4 @@
+import shutil
 import os, sys
 from pathlib import Path
 import time
@@ -18,9 +19,14 @@ def log(x, timestamp=True):
 
 def RunServer(workspace: Path):
     if (workspace/f"{MAIN_ID}.in").exists():
-        Log.Error(f"relay server already running in [{workspace}]")
-        os._exit(1)
-
+        channel_path = _connect_as_client(workspace/f"{MAIN_ID}.in")
+        if channel_path is not None:
+            Log.Error(f"relay server already running in [{workspace}]")
+            os._exit(1)
+        else:
+            Log.Error(f"removing stale connections at [{workspace}]")
+            for p in workspace.glob("*.in"):
+                if not p.is_dir(): p.unlink()
     try:
         pid = os.fork()
         if pid > 0:

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from socket import timeout
+from sre_constants import SUCCESS
 import tempfile
 import shutil
 from typing import Iterable
@@ -14,14 +15,13 @@ from ..logging import Log
 from ..coms.containers import Container, CONTAINER_RUNTIME
 from ..models.remote import Logistics, Source
 
-AGENT_SETUP_COMPLETE = f"setup_complete.{KeyGenerator.FromInt(2**42)}"
-
 @dataclass
 class Agent:
     setup_commands: Iterable[str] # must echo AGENT_SETUP_COMPLETE to indicate sucess
     cleanup_commands: Iterable[str]
     home: Source
     container: str = "docker://quay.io/hallamlab/metasmith:latest"
+    is_ssh: bool = False
 
     def Pack(self):
         return dict(
@@ -48,9 +48,12 @@ class Agent:
 
     def RunSetup(self, shell: LiveShell, timeout: int = None):
         for cmd in self.setup_commands:
-            res = shell.Exec(cmd, timeout=timeout, history=True)
-            if any(AGENT_SETUP_COMPLETE in x for x in res.out): return
-        assert False, f"Setup commands failed, since AGENT_SETUP_COMPLETE was not detected [{AGENT_SETUP_COMPLETE}]"
+            shell.Exec(cmd, timeout=timeout)
+        if self.is_ssh:
+            SUCCESS = f"ssh_connected_flag.{KeyGenerator.FromInt(2**42)}"
+            res = shell.Exec(f'[ ! -z "$SSH_CONNECTION" ] && echo "{SUCCESS}"', timeout=timeout, history=True)
+            if not any(SUCCESS in x for x in res.out):
+                assert False, f"ssh connection failed {res.err}"
     
     def RunCleanup(self, shell: LiveShell):
         for cmd in self.cleanup_commands:

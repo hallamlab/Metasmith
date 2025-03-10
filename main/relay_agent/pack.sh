@@ -13,6 +13,7 @@ case $1 in
             -t $DOCKER_IMAGE .
     ;;
     -p)
+        # use docker to force older glibc version
         SRC=../../src/metasmith
         mkdir -p ./relay/coms
         cp $SRC/coms/ipc.py         ./relay/coms/ipc.py
