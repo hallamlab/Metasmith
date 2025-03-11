@@ -52,7 +52,7 @@ class WorkflowPlan:
         given = [inst._key for inst in self.given]
         targets = [inst._key for inst in self.targets]
         steps = [step.transform.model.key for step in self.steps]
-        self._hash, self._key = KeyGenerator.FromStr("".join(given+targets+steps), l=5)
+        self._hash, self._key = KeyGenerator.FromStr("".join(given+targets+steps), l=8)
 
     def __len__(self):
         return len(self.steps)
@@ -278,14 +278,22 @@ class WorkflowTask:
             return res
     
     @classmethod
-    def Load(cls, path: Path|str):
+    def Load(cls, path: Path|str, alt_data_paths: list[Path|str]=None):
         path = Path(path)
         with open(path/"task.yml") as f:
             raw_task = yaml.safe_load(f)
         with open(path/"plan.yml") as f:
             raw_plan = yaml.safe_load(f)
         
-        data_libs = {n: DataInstanceLibrary.Load(path/f"data/{n}") for n in raw_task["data_libraries"]}
+        _data_lib_paths = [Path(p) for p in alt_data_paths] if alt_data_paths else []
+        _data_lib_paths += [path/"data"] # prefer alts first
+        def load_lib(lib_key: str):
+            for d in _data_lib_paths:
+                p = d/lib_key
+                if p.exists():
+                    return DataInstanceLibrary.Load(p)
+            raise FileNotFoundError(f"could not find data library [{lib_key}], tried {_data_lib_paths}")
+        data_libs = {n: load_lib(n) for n in raw_task["data_libraries"]}
         tr_libs = {n: TransformInstanceLibrary.Load(path/f"transforms/{n}") for n in raw_task["transform_libraries"]}
         _libraries = data_libs|tr_libs
         plan = WorkflowPlan.Unpack(raw_plan, _libraries)

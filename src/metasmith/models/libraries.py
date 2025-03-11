@@ -1,4 +1,5 @@
 from __future__ import annotations
+import shutil
 import os, sys
 from pathlib import Path
 import yaml
@@ -121,6 +122,9 @@ class DataInstance:
     def __hash__(self) -> int:
         return self._hash
     
+    def GetDType(self) -> tuple[str, str]:
+        return tuple(self.dtype_name.split("::"))
+
     def ResolvePath(self):
         return self.parent_lib.location/self.path
 
@@ -153,6 +157,7 @@ class DataInstanceLibrary:
         self.manifest: dict[Path, str] = {}
         self.types: dict[str, DataTypeLibrary] = {}
         self._dtype2name = {}
+        self.remote_src: Source|None = None
         if isinstance(location, DataInstanceLibrary):
             other = location
             self.location = other.location
@@ -217,7 +222,7 @@ class DataInstanceLibrary:
         @items: list of (source, destination, datatype)
         """
         assert method in {SourceType.DIRECT, SourceType.SYMLINK}
-        assert on_exist in {"skip", "replace", "error"}
+        assert on_exist in {"skip", "error", "clear", "update"}
         mover = Logistics()
         items = [(Path(src), Path(dest), dtype) for src, dest, dtype in items]
         # seen = {v for v in self.manifest.values()}
@@ -236,6 +241,11 @@ class DataInstanceLibrary:
                     continue
                 elif on_exist == "error":
                     raise FileExistsError(f"destination [{dest}] already exists")
+                elif on_exist == "clear":
+                    Log.Warn(f"clearing previous [{dest}]")
+                    shutil.rmtree(dest_path)
+                elif on_exist == "update":
+                    pass # default of mover
             mover.QueueTransfer(
                 src = Source.FromLocal(src),
                 dest = Source(address=dest_path, type=method),
@@ -255,7 +265,7 @@ class DataInstanceLibrary:
     def _calculate_key(self):
         me = yaml.dump(self.Pack())
         dtypes = yaml.dump({k:v.Pack() for k, v in self.types.items()})
-        self._hash, self._key = KeyGenerator.FromStr(me+dtypes, l=5)
+        self._hash, self._key = KeyGenerator.FromStr(me+dtypes, l=12)
         return self._key
     
     def GetKey(self):
@@ -272,15 +282,15 @@ class DataInstanceLibrary:
         return dict(
             schema=self.schema,
             manifest={str(k):str(v) for k, v in self.manifest.items()},
+            remote_src=self.remote_src.Pack() if self.remote_src is not None else None,
         )
 
     @classmethod
-    def Unpack(cls, location: Path, raw: dict, dtypes: dict[str, DataTypeLibrary]):
+    def Unpack(cls, location: Path, raw: dict, dtypes: dict[str, DataTypeLibrary], check_integrity: bool=False):
         manifest = {}
         for k, v in raw["manifest"].items():
-            if not (location/k).exists():
-                Log.Error(f"skipping [{k}], does not exist")
-                continue
+            if check_integrity:
+                assert (location/k).exists(), f"[{k}], does not exist"
             cls._get_type(v, dtypes) # check if datatype exists
             manifest[Path(k)] = v
         lib = cls(
@@ -288,6 +298,8 @@ class DataInstanceLibrary:
         )
         lib.schema = raw["schema"]
         lib.manifest = manifest
+        remote_src = raw.get("remote_src")
+        lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
         return lib
 
     def Save(self, update_types=False):
@@ -307,7 +319,7 @@ class DataInstanceLibrary:
             yaml.dump(self.Pack(), f)
     
     @classmethod
-    def Load(cls, path: Path|str):
+    def Load(cls, path: Path|str, check_integrity=False):
         path = Path(path)
         ext = cls._metadata_ext
         meta_path = path/cls._path_to_meta
@@ -326,13 +338,14 @@ class DataInstanceLibrary:
 
         with open(index_path) as f:
             d = yaml.safe_load(f)
-            self = cls.Unpack(location=path, raw=d, dtypes=dtypes)
+            self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
         return self
 
-    def PrepTransfer(self, dest: Source, label: str=None):
+    def PrepTransfer(self, dest: Source, mover: Logistics=None):
         self.Save()
-        mover = Logistics()
+        if mover is None:
+            mover = Logistics()
         mover.QueueTransfer(
             src=Source.FromLocal(self.location),
             dest=dest,
@@ -340,21 +353,65 @@ class DataInstanceLibrary:
         return mover
 
     def SaveAs(self, dest: Source, label: str=None):
-        mover = self.PrepTransfer(dest, label=label)
+        mover = self.PrepTransfer(dest)
         res = mover.ExecuteTransfers(label=label)
         assert len(res.completed) == 1, f"move failed"
         return res
 
     @classmethod
-    def LoadFrom(cls, src: Source, dest: Path, label: str=None):
-        mover = Logistics()
-        mover.QueueTransfer(
-            src=src,
-            dest=Source.FromLocal(dest),
-        )
-        res = mover.ExecuteTransfers(label=label)
-        assert len(res.completed) == 1, f"move failed"
-        return cls.Load(dest)
+    def LoadFrom(cls, src: Source, dest: Path|str, as_image=True, on_exist: str = "skip", label: str=None):
+        assert isinstance(src, Source)
+        assert on_exist in {"skip", "error", "clear", "update"}
+        if not isinstance(dest, Path):
+            dest = Path(dest)
+        if dest.exists():
+            if on_exist == "error":
+                raise FileExistsError(f"[{dest}] already exists")
+            elif on_exist == "update":
+                mover = Logistics()
+                if as_image:
+                    _src = src/cls._path_to_meta
+                    _dest = dest/cls._path_to_meta
+                else:
+                    _src, _dest = src, dest
+                mover.QueueTransfer(
+                    src=_src,
+                    dest=Source.FromLocal(_dest),
+                )
+                res = mover.ExecuteTransfers(label=label)
+                assert len(res.completed) == 1, f"move failed"
+            elif on_exist == "clear":
+                Log.Warn("clearing previously loaded library")
+                shutil.rmtree(dest)
+            elif on_exist == "skip":
+                pass
+        lib = cls.Load(dest, check_integrity=False)
+        if as_image:
+            lib.remote_src = src
+            lib.Save()
+        return lib
+    
+    def Actualize(self, extern_dest: Source=None, label: str=None):
+        if self.remote_src is None:
+            return self
+        _lib = None
+        try:
+            _lib = self.Load(self.location, check_integrity=True)
+            return _lib
+        except AssertionError:
+            pass
+        if _lib is None: # so that errors don't stack
+            mover = Logistics()
+            if extern_dest is None:
+                extern_dest = Source.FromLocal(self.location)
+            mover.QueueTransfer(
+                src=self.remote_src,
+                dest=extern_dest,
+            )
+            res = mover.ExecuteTransfers(label=label)
+            assert len(res.completed) == 1, f"failed to load library from [{self.remote_src}]"
+        _lib = self.Load(self.location, check_integrity=True)
+        return _lib
 
 # this should function like a view provided by the parent library
 @dataclass

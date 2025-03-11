@@ -21,9 +21,7 @@ class Api:
     def stage_workflow(self, body: dict):
         task_key = body.get("task_key")
         assert task_key, "[task_key] is required"
-        view = body.get("view", "false")
-        view = view.lower() in {"true", "1"}
-        StageWorkflow(task_key, view)
+        StageWorkflow(task_key)
 
     def execute_workflow(self, body: dict):
         key = body.get("key")
