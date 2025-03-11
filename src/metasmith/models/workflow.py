@@ -9,7 +9,6 @@ from .libraries import TransformInstance, TransformInstanceLibrary
 from .libraries import ExecutionContext, ExecutionResult
 from .remote import Logistics, Source, SourceType
 from .solver import Endpoint, Dependency, Transform, _solve_by_bounded_dfs
-from ..agents.presets import Agent
 from ..hashing import KeyGenerator
 from ..logging import Log
 
@@ -84,10 +83,7 @@ class WorkflowPlan:
         return cls.Unpack(raw)
 
     @classmethod
-    def Generate(
-        cls,
-        given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: list[Endpoint],
-    ):
+    def Generate(cls, given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: list[Endpoint]):
         given_map: dict[Endpoint, DataInstance] = {}
         for lib in given:
             for path, ep_name, ep in lib.Iterate():
@@ -133,7 +129,6 @@ class WorkflowPlan:
             _lib = inst2trlib[tr]
             for e, d in appl.produced.items():
                 p = tr.output_signature[d]
-                print(_lib.GetName(d))
                 _instance = DataInstance(
                     path = Path(p),
                     dtype = d, # we actually dont want lineage at this stage so that the hashes match
@@ -248,14 +243,12 @@ class WorkflowPlan:
 @dataclass
 class WorkflowTask:
     plan: WorkflowPlan
-    agent: Agent
     data_libraries: list[DataInstanceLibrary] = field(default_factory=list)
     transform_libraries: list[TransformInstanceLibrary] = field(default_factory=list)
     config: dict = field(default_factory=dict)
 
     def Pack(self):
         return dict(
-            agent=self.agent.Pack(),
             config=self.config,
             data_libraries=[lib.GetKey() for lib in self.data_libraries],
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
@@ -299,7 +292,6 @@ class WorkflowTask:
 
         return cls(
             plan=plan,
-            agent=Agent.Unpack(raw_task["agent"]),
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
             config=raw_task["config"],

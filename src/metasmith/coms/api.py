@@ -1,8 +1,8 @@
 from pathlib import Path
 
 from ..logging import Log
-from ..agents.bootstrap import DeployFromContainer, StageAndRunTransform
-from ..agents.workflow import ExecuteWorkflow, StageWorkflow
+from ..bootstrap import DeployFromContainer, StageAndRunTransform
+from ..agents import ExecuteWorkflow, StageWorkflow
 
 class Api:
     def deploy_from_container(self, body: dict):
@@ -19,12 +19,11 @@ class Api:
         StageAndRunTransform(workspace, step_index)
 
     def stage_workflow(self, body: dict):
-        task_dir = body.get("task_dir")
-        assert task_dir, "[task_dir] is required"
-        task_dir = Path(task_dir)
-        force = body.get("force", "false")
-        force = force.lower() in {"true", "1"}
-        StageWorkflow(task_dir, force)
+        task_key = body.get("task_key")
+        assert task_key, "[task_key] is required"
+        view = body.get("view", "false")
+        view = view.lower() in {"true", "1"}
+        StageWorkflow(task_key, view)
 
     def execute_workflow(self, body: dict):
         key = body.get("key")

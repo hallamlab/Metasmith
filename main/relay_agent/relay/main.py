@@ -7,7 +7,8 @@ from threading import Condition, Thread
 from datetime import datetime as dt
 from dataclasses import dataclass, field
 
-from .coms.ipc import CurrentTimeMillis, RemoveTrailingNewline, GenerateId, TerminalProcess, PipeServer, PipeClient, IpcRequest, IpcResponse
+from .coms.ipc import CurrentTimeMillis, RemoveTrailingNewline, GenerateId, \
+    TerminalProcess, PipeServer, PipeClient, IpcRequest, IpcResponse, ConnectionError
 from .logging import Log
 
 WS = Path(os.curdir).resolve()
@@ -19,7 +20,7 @@ def log(x, timestamp=True):
 
 def RunServer(workspace: Path):
     if (workspace/f"{MAIN_ID}.in").exists():
-        channel_path = _connect_as_client(workspace/f"{MAIN_ID}.in")
+        channel_path = _connect_as_client(workspace/f"{MAIN_ID}.in", timeout=3)
         if channel_path is not None:
             Log.Error(f"relay server already running in [{workspace}]")
             os._exit(1)
@@ -38,6 +39,12 @@ def RunServer(workspace: Path):
         return
     # forked child
 
+    connections: dict[str, Client] = {}
+    lock = Condition()
+    running = True
+    workspace = workspace.resolve()
+    workspace.mkdir(parents=True, exist_ok=True)
+    
     Log.SetLogFile(workspace/"log")
     _start_msg = "starting relay server"
     Log.Info("="*len(_start_msg))
@@ -120,12 +127,6 @@ def RunServer(workspace: Path):
                 listener.Dispose()
                 del self.listeners[key]
             self.channel.Dispose()
-        
-    connections: dict[str, Client] = {}
-    lock = Condition()
-    running = True
-    workspace = workspace.resolve()
-    workspace.mkdir(parents=True, exist_ok=True)
 
     def _handle_connection(client: Client, raw: str):
         channel = client.channel
@@ -229,16 +230,16 @@ def RunServer(workspace: Path):
         for id, client in list(connections.items()):
             client._dispose()
 
-def _connect_as_client(server_path: Path, silent=False):
+def _connect_as_client(server_path: Path, silent=False, timeout=3):
     if not server_path.exists():
         Log.Error(f"relay server not started in [{server_path}]")
         return
-    with PipeClient(server_path) as p:
-        try:
-            res = p.Transact(IpcRequest(endpoint="connect"), timeout=1)
-        except TimeoutError:
-            Log.Error("error timeout")
-            return
+    try:
+        with PipeClient(server_path, timeout=timeout) as p:
+            res = p.Transact(IpcRequest(endpoint="connect"), timeout=timeout)
+    except (TimeoutError, ConnectionError) as e:
+        Log.Error(f"{e}")
+        return
     if res.status != 200:
         Log.Error(f"error{res.data.get('error')}")
         return
