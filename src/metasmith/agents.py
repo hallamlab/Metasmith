@@ -15,7 +15,7 @@ from .coms.containers import Container, CONTAINER_RUNTIME
 from .coms.ipc import RemoteShell
 from .models.remote import Logistics, Source, SourceType, SshSource
 from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTask
-from .models.libraries import DataInstanceLibrary, DataInstance, TransformInstanceLibrary, TransformInstance
+from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstance
 from .models.solver import Endpoint, Dependency, Transform, _solve_by_bounded_dfs
 
 class AgentPaths:
@@ -475,4 +475,20 @@ def ExecuteWorkflow(key: str):
             """,
             timeout=None,
         )
-        time.sleep(1)
+
+        output_path = workspace/"results"
+        output = DataInstanceLibrary(output_path)
+        type_libs: dict[str, DataTypeLibrary] = {}
+        for lib in task.data_libraries:
+            type_libs.update(lib.types)
+        used_type_libs = set()
+        for x in task.plan.targets:
+            _namespace, _ = x.GetDType()
+            used_type_libs.add(_namespace)
+        to_add = []
+        for x in task.plan.targets:
+            to_add.append([output_path/x.path, x.path, f"{x.dtype_name}"])
+        for _namespace in used_type_libs:
+            output.AddTypeLibrary(_namespace, type_libs[_namespace])
+        output.Add(items=to_add, method=SourceType.DIRECT, on_exist="skip")
+        output.Save()

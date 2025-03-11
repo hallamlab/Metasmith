@@ -122,6 +122,9 @@ class DataInstance:
     def __hash__(self) -> int:
         return self._hash
     
+    def GetDType(self) -> tuple[str, str]:
+        return tuple(self.dtype_name.split("::"))
+
     def ResolvePath(self):
         return self.parent_lib.location/self.path
 
