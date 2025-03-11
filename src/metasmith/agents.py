@@ -286,6 +286,7 @@ class Agent:
             HERE = Path(__file__).parent
             _remote_file(HERE/"nextflow_config", resolved_msmhome/"lib/nextflow_config")
             self._run_cleanup(shell)
+            Log.Info(f"deployed to [{self.home.address}]")
 
     def GenerateWorkflow(self, given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: Iterable[Endpoint], config: dict=None):
         plan = WorkflowPlan.Generate(given, transforms, targets)
@@ -422,7 +423,7 @@ def StageWorkflow(task_key: str):
     shutil.copy(bootstrap_path, work_internals)
 
     _rel = f"{extern_work}".replace(f"{extern_root}/", "")
-    Log.Info(f"[{task.plan._key}] staged to [{_rel}]")
+    Log.Info(f"[{task.plan._key}] staged to [{{AGENT_HOME}}/{_rel}]")
     # if view:
     #     Log.Info(f"contents after staging:")
     #     with LiveShell() as shell:
@@ -474,3 +475,4 @@ def ExecuteWorkflow(key: str):
             """,
             timeout=None,
         )
+        time.sleep(1)
