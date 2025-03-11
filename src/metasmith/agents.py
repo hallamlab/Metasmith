@@ -67,7 +67,7 @@ class AgentShell:
         Log.Info(f"closing connection")
         self.agent._run_cleanup(self.shell)
         if self.agent._is_ssh():
-            self.shell.Exec("exit")
+            self.shell.ExecAsync("exit")
         self.shell.__exit__(exc_type, exc_val, exc_tb)
 
 class PausedShell:
@@ -289,7 +289,7 @@ class Agent:
         return task
 
     def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", view: bool=False):
-        assert on_exist in {"skip", "error", "clear", "overwrite"}
+        assert on_exist in {"skip", "error", "clear", "update"}
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
             remote_path = AgentPaths.to_task(task.plan._key, root=self.home.GetPath())
@@ -305,12 +305,12 @@ class Agent:
                     if on_exist == "skip":
                         return
                     if on_exist == "clear":
-                        Log.Warn(f"clearing previous")
+                        Log.Warn(f"clearing previously staged task")
                         _to_delete_src = remote_work_path
                         _to_delete = _to_delete_src.with_suffix(".to_delete")
                         sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
-                    elif on_exist == "overwrite":
-                        Log.Warn(f"overwriting previous")
+                    elif on_exist == "update":
+                        Log.Warn(f"updating previously staged task")
 
             Log.Info(f"sending metadata for workflow [{task.plan._key}]")
             task.SaveAs(self.home.ReplacePathWith(remote_path))
@@ -412,7 +412,22 @@ def ExecuteWorkflow(key: str):
 
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
     extern_home = agent.home.GetPath()
+    extern_workspace = AgentPaths.to_task(key, root=extern_home).parent.parent
     extern_nxf_exe = extern_home/"lib/nextflow"
+    Log.Info(f"workspace [{workspace}]")
+    Log.Info(f"external workspace [{extern_workspace}]")
+    Log.Info(f"nextflow executable [{extern_nxf_exe}]")
+
+    Log.Info(f"actualizing data if referencing remote sources")
+    for lib in task.transform_libraries+task.data_libraries:
+        _name = lib.location.name
+        if lib.remote_src is None:
+            Log.Info(f"[{_name}] is local")
+        else:
+            _extern_location = str(lib.location).replace(str(workspace), str(extern_workspace))
+            Log.Info(f"downloading [{lib.remote_src.address}]")
+            dest = Source.FromLocal(_extern_location)
+            lib.Actualize(extern_dest=dest, label=f"msm.{task.plan._key}.{_name}")
 
     Log.Info(f"connecting to relay for external shell")
     with RemoteShell(AgentPaths.to_relay_coms()) as extern_shell:
@@ -421,7 +436,7 @@ def ExecuteWorkflow(key: str):
         Log.Info(f"calling nextflow via relay")
         extern_shell.Exec(
             f"""
-            cd {extern_home}/runs/{key}
+            cd {extern_workspace}
             export NXF_HOME=./.nextflow
             {extern_nxf_exe} -c ./workflow.config.nf \
                 -log ./nxf_logs/log \
@@ -429,4 +444,5 @@ def ExecuteWorkflow(key: str):
                 -resume \
                 -work-dir ./nxf_work
             """,
+            timeout=None,
         )

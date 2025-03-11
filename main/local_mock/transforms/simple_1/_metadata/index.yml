@@ -1,4 +1,5 @@
 manifest:
   diamond.py: transforms::transform
   pprodigal.py: transforms::transform
+remote_src: null
 schema: '0.3'
