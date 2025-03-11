@@ -39,6 +39,11 @@ class AgentPaths:
     def to_relay_coms(cls, root: Path=None):
         if root is None: root = cls.HOME_ROOT
         return root/"relay/connections/main.in"
+    
+    @classmethod
+    def to_data(cls, root: Path=None):
+        if root is None: root = cls.HOME_ROOT
+        return root/"data"
 
 class AgentShell:
     def __init__(self, agent: Agent):
@@ -288,7 +293,7 @@ class Agent:
         task = WorkflowTask(plan=plan, data_libraries=given,transform_libraries=transforms, config=config)
         return task
 
-    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", view: bool=False):
+    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip"):
         assert on_exist in {"skip", "error", "clear", "update"}
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
@@ -315,7 +320,7 @@ class Agent:
             Log.Info(f"sending metadata for workflow [{task.plan._key}]")
             task.SaveAs(self.home.ReplacePathWith(remote_path))
             Log.Info(f"staging")
-            sh_remote.Exec(f"./msm api stage_workflow -a task_key={task.plan._key} -a view={view}")
+            sh_remote.Exec(f"./msm api stage_workflow -a task_key={task.plan._key}")
 
     def RunWorkflow(self, task: WorkflowTask|str):
         if isinstance(task, WorkflowTask):
@@ -329,17 +334,17 @@ class Agent:
 # ===========================================================================
 # calls to staged Agent
 
-def StageWorkflow(task_key: str, view=False):
+def StageWorkflow(task_key: str):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
-    task_dir = agent.home.GetPath()/AgentPaths.to_task(task_key)
-    assert task_dir.exists(), f"task dir not found [{task_dir}]"
-    task = WorkflowTask.Load(task_dir)
+    task_path = agent.home.GetPath()/AgentPaths.to_task(task_key)
+    assert task_path.exists(), f"task dir not found [{task_path}]"
+    task = WorkflowTask.Load(task_path)
     Log.Info(f"staging workflow [{task.plan._key}] with [{len(task.plan.given)}] given data instances")
 
     work_relative = AgentPaths.STAGED/task.plan._key
     work_dir = AgentPaths.WORK_ROOT/work_relative
     work_internals = work_dir/AgentPaths.INTERNALS
-    data_dir = AgentPaths.WORK_ROOT/"data"
+    data_dir = AgentPaths.to_data()
     data_dir.mkdir(parents=True, exist_ok=True)
     work_internals.mkdir(parents=True, exist_ok=True)
     with RemoteShell(AgentPaths.to_relay_coms()) as extern_shell:
@@ -367,8 +372,30 @@ def StageWorkflow(task_key: str, view=False):
     for l in lines:
         Log.Info(f"    {l}")
 
+    # data libraries
+    Log.Info(f"moving remote data libraries to [{data_dir}]")
+    def move_remote_libs(libs: list[DataInstanceLibrary], dest: Path):
+        processed_libs: list[DataInstanceLibrary] = []
+        mover = Logistics()
+        expected: list[Source] = []
+        for lib in libs:
+            if lib.remote_src is not None: 
+                lib_dest = dest/lib.location.name
+                if not lib_dest.exists():
+                    _dest = Source.FromLocal(lib_dest)
+                    lib.PrepTransfer(_dest, mover=mover)
+                    expected.append(_dest)
+                lib.location = lib_dest
+            processed_libs.append(lib)
+        res = mover.ExecuteTransfers()
+        _completed = {b.address for a, b in res.completed}
+        for x in expected:
+            assert x.address in _completed, f"failed to transfer [{x.address}]"
+        return processed_libs
+    task.data_libraries = move_remote_libs(task.data_libraries, data_dir)
+    task.SaveAs(Source.FromLocal(task_path))
+
     # nextflow
-    Log.Info(f"compiling nextflow script")
     task.plan.PrepareNextflow(
         work_dir=work_dir,
         external_work=extern_work,
@@ -380,7 +407,7 @@ def StageWorkflow(task_key: str, view=False):
         Log.Warn(f"nextflow preset not found [{preset_path}], using default")
         preset_path = nextflow_config_dir/"default.nf"
     else:
-        Log.Info(f"using preset [{preset_path.stem}]")
+        Log.Info(f"using nextflow preset [{preset_path.stem}]")
     with open(preset_path) as f:
         config_raw = "".join(f.readlines())
     nextflow_params = task.config.get("nextflow", {})
@@ -396,19 +423,17 @@ def StageWorkflow(task_key: str, view=False):
 
     _rel = f"{extern_work}".replace(f"{extern_root}/", "")
     Log.Info(f"[{task.plan._key}] staged to [{_rel}]")
-    if view:
-        Log.Info(f"contents after staging:")
-        with LiveShell() as shell:
-            shell.RegisterOnOut(Log.Info)
-            shell.RegisterOnErr(Log.Error)
-            shell.Exec(f"cd {work_dir} && find .")
+    # if view:
+    #     Log.Info(f"contents after staging:")
+    #     with LiveShell() as shell:
+    #         shell.RegisterOnOut(Log.Info)
+    #         shell.RegisterOnErr(Log.Error)
+    #         shell.Exec(f"cd {work_dir} && find .")
 
 def ExecuteWorkflow(key: str):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
     assert workspace.exists(), f"plan folder not found [{workspace}]"
-    task = WorkflowTask.Load(task_path)
-    Log.Info(f"executing workflow [{task.plan._key}] with [{len(task.plan.steps)}] steps")
 
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
     extern_home = agent.home.GetPath()
@@ -418,14 +443,17 @@ def ExecuteWorkflow(key: str):
     Log.Info(f"external workspace [{extern_workspace}]")
     Log.Info(f"nextflow executable [{extern_nxf_exe}]")
 
+    task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
+    Log.Info(f"executing workflow [{task.plan._key}] with [{len(task.plan.steps)}] steps")
+
     Log.Info(f"actualizing data if referencing remote sources")
     for lib in task.transform_libraries+task.data_libraries:
         _name = lib.location.name
         if lib.remote_src is None:
-            Log.Info(f"[{_name}] is local")
+            Log.Info(f"[{_name}] is at [{lib.location}]")
         else:
-            _extern_location = str(lib.location).replace(str(workspace), str(extern_workspace))
-            Log.Info(f"downloading [{lib.remote_src.address}]")
+            _extern_location = str(lib.location).replace(str(AgentPaths.HOME_ROOT), str(extern_home))
+            Log.Info(f"[{_name}] is remote [{lib.remote_src.address}] -> [{lib.location}]")
             dest = Source.FromLocal(_extern_location)
             lib.Actualize(extern_dest=dest, label=f"msm.{task.plan._key}.{_name}")
 

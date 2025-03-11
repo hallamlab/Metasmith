@@ -339,9 +339,10 @@ class DataInstanceLibrary:
         self.types = dtypes
         return self
 
-    def PrepTransfer(self, dest: Source):
+    def PrepTransfer(self, dest: Source, mover: Logistics=None):
         self.Save()
-        mover = Logistics()
+        if mover is None:
+            mover = Logistics()
         mover.QueueTransfer(
             src=Source.FromLocal(self.location),
             dest=dest,
@@ -390,19 +391,24 @@ class DataInstanceLibrary:
     def Actualize(self, extern_dest: Source=None, label: str=None):
         if self.remote_src is None:
             return self
-        mover = Logistics()
-        if extern_dest is None:
-            extern_dest = Source.FromLocal(self.location)
-        mover.QueueTransfer(
-            src=self.remote_src,
-            dest=extern_dest,
-        )
-        res = mover.ExecuteTransfers(label=label)
-        assert len(res.completed) == 1, f"failed to load library from [{self.remote_src}]"
-        lib = self.Load(self.location, check_integrity=True)
-        self.remote_src = None
-        self.Save()
-        return lib
+        _lib = None
+        try:
+            _lib = self.Load(self.location, check_integrity=True)
+            return _lib
+        except AssertionError:
+            pass
+        if _lib is None: # so that errors don't stack
+            mover = Logistics()
+            if extern_dest is None:
+                extern_dest = Source.FromLocal(self.location)
+            mover.QueueTransfer(
+                src=self.remote_src,
+                dest=extern_dest,
+            )
+            res = mover.ExecuteTransfers(label=label)
+            assert len(res.completed) == 1, f"failed to load library from [{self.remote_src}]"
+        _lib = self.Load(self.location, check_integrity=True)
+        return _lib
 
 # this should function like a view provided by the parent library
 @dataclass
