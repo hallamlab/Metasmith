@@ -175,7 +175,7 @@ class Source:
     def GetPath(self):
         return Path(self.address.split(":")[-1])
     
-    def WithPath(self, path: Path):
+    def ReplacePathWith(self, path: Path):
         prev_path = str(self.GetPath())
         new_address = self.address.replace(prev_path, str(path))
         return Source(address=new_address, type=self.type)

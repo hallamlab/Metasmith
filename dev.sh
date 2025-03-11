@@ -56,6 +56,15 @@ case $1 in
         sleep 2
         $CONDA env create --no-default-packages -n $NAME -f ./base.yml
     ;;
+    --git-prune-local) # remove local branches not on remote
+        git fetch -p
+        git branch -r \
+            | awk '{print $1}' \
+            | egrep -v -f /dev/fd/0 <(git branch -vv \
+            | grep origin) \
+            | awk '{print $1}' \
+            | xargs git branch -d
+    ;;
 
     ###################################################
     # build

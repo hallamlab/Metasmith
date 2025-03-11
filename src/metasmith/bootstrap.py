@@ -1,17 +1,16 @@
 import os
 from pathlib import Path
-from pkgutil import extend_path
 import time
 import shutil
 import yaml
 import traceback
 
-from ..logging import Log
-from ..models.libraries import DataTypeLibrary, ExecutionContext, ExecutionResult, TransformInstance, TransformInstanceLibrary
-from ..models.workflow import WorkflowTask
-from ..coms.ipc import LiveShell, RemoteShell
-from ..coms.containers import Container
-from ..serialization import StdTime
+from .logging import Log
+from .models.libraries import DataTypeLibrary, ExecutionContext, ExecutionResult, TransformInstance, TransformInstanceLibrary
+from .models.workflow import WorkflowTask
+from .coms.ipc import LiveShell, RemoteShell
+from .coms.containers import Container
+from .serialization import StdTime
 
 # CONTAINER = Container("docker://quay.io/hallamlab/metasmith:latest")
 # CONTAINER = Container("docker-daemon://quay.io/hallamlab/metasmith:0.2.dev-47c27e4")

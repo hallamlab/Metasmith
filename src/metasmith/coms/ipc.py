@@ -205,6 +205,7 @@ class PipeClient:
             random.seed(start)
             while self._client_path.exists():
                 delay = random.random()*0.1
+                print(delay)
                 time.sleep(delay)
                 if CurrentTimeMillis() - start > timeout*1000:
                     raise TimeoutError("Failed to connect to server")
@@ -213,7 +214,10 @@ class PipeClient:
                 with self._lock:
                     self._closed = True
             os.mkfifo(self._client_path)
-            self._server_channel = os.open(self._server_path, os.O_WRONLY)
+            try:
+                self._server_channel = os.open(self._server_path, os.O_WRONLY|os.O_NONBLOCK)
+            except (FileNotFoundError, OSError):
+                raise ConnectionError("server not found")
             self._client_channel = os.open(self._client_path, os.O_RDONLY|os.O_NONBLOCK)
             self._reader = NonBlockingReader(self._client_channel, on_close=_on_close)
             
