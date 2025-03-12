@@ -9,7 +9,7 @@ env {
 }
 
 process {
-    scratch = true              // use worker node's local hard drive
+    scratch = true                  // use worker node's local hard drive
     executor = 'slurm'
     clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurm_account}"
 
@@ -19,11 +19,11 @@ process {
     time = '2h'
     
     queueSize = 100
-    submitRateLimit = '10/1sec'  // this is aggressive, need to lower for production
-    pollInterval = '1 sec'      // same^
+    submitRateLimit = '10/1sec'     // this is aggressive, need to lower for production
+    pollInterval = '1 sec'          // same^
+    stageInMode = 'symlink'         // some intermediates are large reference databases and should not be copied
 
     // -----------------------------------------
     // notes
     // executor = 'hq'          // todo: consider https://github.com/It4innovations/hyperqueue
-    // stageInMode = 'copy'     // some intermediates are large reference databases and should not be copied
 }

@@ -266,7 +266,7 @@ class Logistics:
                     if dest.type == SourceType.SYMLINK:
                         shell.ExecAsync(f"ln -s {src.address} {dest.address}")
                     elif dest.type == SourceType.DIRECT:
-                        shell.ExecAsync(f"rsync -au --mkpath {src.address}/ {dest.address} 2>/dev/null || rsync -au {src.address} {dest.address}")
+                        shell.ExecAsync(f"rsync -ac --mkpath {src.address}/ {dest.address} 2>/dev/null || rsync -ac --mkpath {src.address} {dest.address}")
 
                 def _join():
                     shell.AwaitDone(timeout=None)
@@ -372,7 +372,7 @@ class Logistics:
                 for (src_host, dest_host), batch in batched_ssh.items():
                     for src_s, dest_s, _, _ in batch:
                         src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
-                        shell.ExecAsync(f"rsync -au --mkpath {src_addr}/ {dest_addr} 2>/dev/null || rsync -au {src_addr} {dest_addr}")
+                        shell.ExecAsync(f"rsync -ac --mkpath {src_addr}/ {dest_addr} 2>/dev/null || rsync -ac --mkpath {src_addr} {dest_addr}")
                 def _join():
                     shell.AwaitDone(timeout=None)
                     completed = []

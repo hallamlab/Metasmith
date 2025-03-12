@@ -7,8 +7,6 @@ from ..agents import ExecuteWorkflow, StageWorkflow
 class Api:
     def deploy_from_container(self, body: dict):
         deploy_path = Path(body.get("workspace", "/ws"))
-        if not deploy_path.exists():
-            deploy_path = Path("./")
         DeployFromContainer(deploy_path)
 
     def execute_transform(self, body: dict):

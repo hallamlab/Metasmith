@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import tempfile
 import shutil
 from typing import Iterable, Literal
+from numpy import isin
 import yaml
 import time
 
@@ -147,26 +148,28 @@ class Agent:
                 return shell.Exec(cmd, timeout=timeout, history=True)
 
             def _remote_file(x: str|Path, dest: Path, executable=False):
+                if not isinstance(dest, Path): dest = Path(dest)
+                assert not dest.is_absolute() or dest.is_relative_to(self.home.GetPath()), f"dest [{dest}] must be relative to [{self.home.GetPath()}]"
+                (tmpdir/dest).parent.mkdir(parents=True, exist_ok=True)
                 if isinstance(x, str):
                     x = RemoveLeadingIndent(x)
-                    fpath = tmpdir/f"{dest.name}"
+                    fpath = tmpdir/dest
                     with open(fpath, "w") as f:
                         f.write(x)
                     if executable: os.chmod(fpath, 0o755)
                 else:
-                    fpath = x
+                    shutil.copytree(x, tmpdir/dest)
+                Log.Info(f"staged [{dest}]")
+
+            def _sync_remote_files():
                 mover = Logistics()
                 mover.QueueTransfer(
-                    src=Source.FromLocal(fpath),
-                    dest=self.home.ReplacePathWith(dest)
+                    src=Source.FromLocal(tmpdir),
+                    dest=self.home,
                 )
-                Log.Info(f"deploying file [{dest}]")
+                Log.Info(f"deploying staged files")
                 res = mover.ExecuteTransfers()
-                if isinstance(x, Path):
-                    _err = f"Failed to deploy file [{x}] -> [{dest}]"
-                else:
-                    _err = f"Failed to deploy file to  [{dest}]"
-                assert len(res.completed) == 1, _err
+                assert len(res.completed) == 1, f"failed to deploy files"
 
             self._run_setup(shell)
             res = shell.Exec(f"""
@@ -210,7 +213,7 @@ class Agent:
                     {container.MakeRunCommand(local=f"{resolved_msmhome}/metasmith.sif")} $@
                 fi
                 """,
-                dest=resolved_msmhome/"msm_stub",
+                dest="msm_stub",
                 executable=True,
             )
 
@@ -221,7 +224,7 @@ class Agent:
                 HERE={HERE}
                 $HERE/msm_stub metasmith $@
                 """,
-                dest=resolved_msmhome/"msm",
+                dest="msm",
                 executable=True,
             )
 
@@ -234,15 +237,14 @@ class Agent:
             )
             _remote_file(
                 yaml.dump(_remote_copy.Pack()),
-                dest=AgentPaths.to_definition(resolved_msmhome),
+                dest=AgentPaths.to_definition(Path(".")),
             )
 
             bootstrap_container = Container(
                 image=self.container,
                 binds=[
-                    (Path("./.msm"), Path("/msm_home")),
                     (Path("./"), Path("/ws")),
-                    (resolved_msmhome, Path("/agent_home")),
+                    (resolved_msmhome, Path("/msm_home")),
                 ],
                 workdir=Path("/ws"),
                 runtime=CONTAINER_RUNTIME.APPTAINER,
@@ -251,40 +253,45 @@ class Agent:
             _remote_file(
                 f"""
                 #!/bin/bash
+
+                echo "cwd [$(pwd -P)]"
+                echo "setup internals ================="
+                INTERNALS="_metasmith"
+                [ -L $INTERNALS ] && mv $INTERNALS ${{INTERNALS}}.link
+                mkdir -p $INTERNALS
                 function run_container {{
                     if [ -e "{dev_src}" ]; then
                         echo "including dev binds"
-                        {bootstrap_container_dev.MakeRunCommand(local="./metasmith.sif")} $@
+                        {bootstrap_container_dev.MakeRunCommand(local="$INTERNALS/metasmith.sif")} $@
                     else
-                        {bootstrap_container.MakeRunCommand(local="./metasmith.sif")} $@
+                        {bootstrap_container.MakeRunCommand(local="$INTERNALS/metasmith.sif")} $@
                     fi
                 }}
-
                 echo "get container =================="
-                cp {resolved_msmhome}/metasmith.sif ./
-                mkdir -p ./.msm
+                cp {resolved_msmhome}/metasmith.sif $INTERNALS/metasmith.sif
                 echo "deploy ========================="
-                run_container metasmith api deploy_from_container -a workspace=./.msm
+                run_container metasmith api deploy_from_container -a workspace=$INTERNALS
                 echo "post deploy ===================="
                 find .
                 ls -lh .
                 echo "relay =========================="
-                ./.msm/relay/msm_relay start
+                $INTERNALS/relay/msm_relay start
                 echo "execute ========================"
                 run_container metasmith api execute_transform -a step_index=$1
                 echo "post execute ==================="
                 find .
                 ls -lh .
                 echo "exit ==========================="
-                ./.msm/relay/msm_relay stop
+                $INTERNALS/relay/msm_relay stop
                 sleep 1
                 """,
-                dest=resolved_msmhome/"lib/msm_bootstrap",
+                dest="lib/msm_bootstrap",
                 executable=True,
             )
 
             HERE = Path(__file__).parent
-            _remote_file(HERE/"nextflow_config", resolved_msmhome/"lib/nextflow_config")
+            _remote_file(HERE/"nextflow_config", "lib/nextflow_config")
+            _sync_remote_files()
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
@@ -394,7 +401,6 @@ def StageWorkflow(task_key: str):
             assert x.address in _completed, f"failed to transfer [{x.address}]"
         return processed_libs
     task.data_libraries = move_remote_libs(task.data_libraries, data_dir)
-    task.SaveAs(Source.FromLocal(task_path))
 
     # nextflow
     task.plan.PrepareNextflow(
@@ -458,8 +464,9 @@ def ExecuteWorkflow(key: str):
             dest = Source.FromLocal(_extern_location)
             lib.Actualize(extern_dest=dest, label=f"msm.{task.plan._key}.{_name}")
 
-    Log.Info(f"connecting to relay for external shell")
-    with RemoteShell(AgentPaths.to_relay_coms()) as extern_shell:
+    coms_path = AgentPaths.to_relay_coms()
+    Log.Info(f"connecting to relay for external shell [{coms_path}]")
+    with RemoteShell(coms_path) as extern_shell:
         extern_shell.RegisterOnOut(Log.Info)
         extern_shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow via relay")
@@ -467,6 +474,7 @@ def ExecuteWorkflow(key: str):
             f"""
             cd {extern_workspace}
             export NXF_HOME=./.nextflow
+            export PATH=/home/tony/workspace/tools/Metasmith/main/local_mock/mock:$PATH
             {extern_nxf_exe} -c ./workflow.config.nf \
                 -log ./nxf_logs/log \
                 run ./workflow.nf \
@@ -476,6 +484,7 @@ def ExecuteWorkflow(key: str):
             timeout=None,
         )
 
+        Log.Info(f"compiling results")
         output_path = workspace/"results"
         output = DataInstanceLibrary(output_path)
         type_libs: dict[str, DataTypeLibrary] = {}
@@ -483,6 +492,7 @@ def ExecuteWorkflow(key: str):
             type_libs.update(lib.types)
         used_type_libs = set()
         for x in task.plan.targets:
+            assert (output_path/x.path).exists()
             _namespace, _ = x.GetDType()
             used_type_libs.add(_namespace)
         to_add = []
@@ -492,3 +502,4 @@ def ExecuteWorkflow(key: str):
             output.AddTypeLibrary(_namespace, type_libs[_namespace])
         output.Add(items=to_add, method=SourceType.DIRECT, on_exist="skip")
         output.Save()
+        Log.Info(f"results for [{key}] at [{output_path}]")
