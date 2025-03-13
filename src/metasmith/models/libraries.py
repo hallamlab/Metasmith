@@ -263,7 +263,10 @@ class DataInstanceLibrary:
         return report
 
     def _calculate_key(self):
-        me = yaml.dump(self.Pack())
+        me_d = self.Pack()
+        for k in ["remote_src"]:
+            if k in me_d: del me_d[k]
+        me = yaml.dump(me_d)
         dtypes = yaml.dump({k:v.Pack() for k, v in self.types.items()})
         self._hash, self._key = KeyGenerator.FromStr(me+dtypes, l=12)
         return self._key
@@ -409,7 +412,7 @@ class DataInstanceLibrary:
                 dest=extern_dest,
             )
             res = mover.ExecuteTransfers(label=label)
-            assert len(res.completed) == 1, f"failed to load library from [{self.remote_src}]"
+            assert len(res.completed) == 1, f"failed to load library from [{self.remote_src}]; [{res.errors}]"
         _lib = self.Load(self.location, check_integrity=True)
         return _lib
 
@@ -520,7 +523,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
 class ExecutionContext:
     inputs: dict[Endpoint, Path]
     outputs: dict[Endpoint, Path]
-    shell: LiveShell = None
+    shell: LiveShell
 
 @dataclass
 class ExecutionResult:

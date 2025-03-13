@@ -7,7 +7,7 @@ from threading import Condition, Thread
 from datetime import datetime as dt
 from dataclasses import dataclass, field
 
-from .coms.ipc import CurrentTimeMillis, RemoveTrailingNewline, GenerateId, \
+from .coms.ipc import CurrentTimeMillis, RemoteShell, RemoveTrailingNewline, GenerateId, \
     TerminalProcess, PipeServer, PipeClient, IpcRequest, IpcResponse, ConnectionError
 from .logging import Log
 
@@ -285,3 +285,9 @@ def GetStatus(workspace: Path):
         Log.Info(f"number of clients [{len(_clients)}]")
         for client in _clients:
             Log.Info(f"  {client}")
+
+def Bounce(workspace: Path, cmd: str):
+    with RemoteShell(workspace/f"{MAIN_ID}.in") as shell:
+        shell.RegisterOnOut(print)
+        shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
+        shell.Exec(cmd, timeout=None)

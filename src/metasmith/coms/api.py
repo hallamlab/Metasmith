@@ -10,11 +10,11 @@ class Api:
         DeployFromContainer(deploy_path)
 
     def execute_transform(self, body: dict):
-        workspace = Path(body.get("workspace", "/ws")).resolve()
+        workspace = body.get("workspace")
+        assert workspace, "[workspace] is required"
         step_index = body.get("step_index")
         assert step_index, "[step_index] is required"
-        step_index = int(step_index)
-        StageAndRunTransform(workspace, step_index)
+        StageAndRunTransform(Path(workspace), int(step_index))
 
     def stage_workflow(self, body: dict):
         task_key = body.get("task_key")

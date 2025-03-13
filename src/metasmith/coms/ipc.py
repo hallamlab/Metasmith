@@ -205,7 +205,6 @@ class PipeClient:
             random.seed(start)
             while self._client_path.exists():
                 delay = random.random()*0.1
-                print(delay)
                 time.sleep(delay)
                 if CurrentTimeMillis() - start > timeout*1000:
                     raise TimeoutError("Failed to connect to server")
@@ -405,7 +404,8 @@ class TerminalProcess:
             stdin=subprocess.PIPE,
             stdout=out_slave,
             stderr=err_slave,
-            close_fds=True
+            close_fds=True,
+            start_new_session=True, # nextflow needs this
         )
 
         self.ENCODING = "utf-8"

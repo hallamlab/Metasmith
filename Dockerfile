@@ -37,5 +37,4 @@ RUN pip install /opt/metasmith.tar.gz
 
 COPY ./lib/globusconnectpersonal-latest /opt/globusconnectpersonal-latest
 COPY ./main/relay_agent/dist/relay /opt/msm_relay
-COPY ./lib/nextflow /opt/nextflow
 RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin /app

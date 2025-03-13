@@ -3,10 +3,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
 import yaml
+
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary
-from .libraries import ExecutionContext, ExecutionResult
 from .remote import Logistics, Source, SourceType
 from .solver import Endpoint, Dependency, Transform, _solve_by_bounded_dfs
 from ..hashing import KeyGenerator
@@ -160,10 +160,28 @@ class WorkflowPlan:
             steps=steps,
         )
     
-    def PrepareNextflow(self, work_dir: Path, external_work: Path):
+    def PrepareNextflow(self, work_dir: Path, external_work: Path, home_dir: Path, external_home: Path):
         TAB = " "*4
-        metasmith_dir = work_dir/"_metasmith"
-        external_metasmith_dir = external_work/metasmith_dir.name
+        def _strip_var(s: str):
+            return s[2:-1]
+        external_work_var = "${params.workspace}"
+        bootstrap_var = "${params.bootstrap}"
+        bootstrap = [
+            f"{_strip_var(bootstrap_var)} = '''",
+            f"CONTAINER={home_dir}",
+            f"DIRECT={external_home}",
+            "function bootstrap {",
+            TAB+f"if [ -e $CONTAINER ]; then",
+            TAB+TAB+f"$CONTAINER/lib/msm_bootstrap $@",
+            TAB+f"elif [ -e $DIRECT ]; then",
+            TAB+TAB+f"$DIRECT/lib/msm_bootstrap $@",
+            TAB+f"else",
+            TAB+TAB+'echo "critical error: could not find metasmith bootstrap script"',
+            TAB+f"fi",
+            "}",
+            f"'''",
+        ]
+
         wf_path = work_dir/"workflow.nf"
         def _path_as_external(p: Path):
             p_str = str(p)
@@ -188,7 +206,6 @@ class WorkflowPlan:
 
                 src += [
                     TAB+"input:",
-                    TAB+TAB+f'path bootstrap',
                     TAB+TAB+f'val step_index',
                 ] + [
                     TAB+TAB+f'path _{i+1:02} // {x.dtype_name} [{x.dtype}]' for i, x in enumerate(step.uses)
@@ -201,8 +218,8 @@ class WorkflowPlan:
                     "",
                     TAB+'script:',
                     TAB+'"""',
-                ] + [
-                    TAB+f'bash $bootstrap/msm_bootstrap $step_index',
+                    TAB+f'{bootstrap_var}',
+                    TAB+f'bootstrap {external_work_var} $step_index',
                     TAB+'"""',
                     "}"
                 ]
@@ -212,14 +229,13 @@ class WorkflowPlan:
             output_vars = ', '.join(output_vars)
             if len(step.produces) > 1:
                 output_vars = f"({output_vars})"
-            input_vars = ['bootstrap', f'{step.order}']+[f"_{x.dtype.key}" for x in step.uses]
+            input_vars = [f'{step.order}']+[f"_{x.dtype.key}" for x in step.uses]
             input_vars = ', '.join(input_vars)
             workflow_definition.append(TAB+f'{output_vars} = {name}({input_vars})')
 
         
         workflow_definition = [
             "workflow {",
-            TAB+f'bootstrap = Channel.fromPath("{external_metasmith_dir}")',
         ] + [
             "",
         ] + [
@@ -231,12 +247,16 @@ class WorkflowPlan:
         ]
 
         wf_contents = [
+            f"{_strip_var(external_work_var)} = '{external_work}'",
+        ] + bootstrap + [
+            "",
             "\n\n".join(process_definitions.values()),
-            "\n\n",
+            "",
+            "",
             "\n".join(workflow_definition),
-            "\n",
+            "",
         ]
-        wf_contents = ''.join(wf_contents)
+        wf_contents = '\n'.join(wf_contents)
         with open(wf_path, "w") as f:
             f.write(wf_contents)
 
