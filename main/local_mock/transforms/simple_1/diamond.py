@@ -5,8 +5,8 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 def protocol(context: ExecutionContext):
     Log.Info("this is diamond!")
     container = context.inputs[lib.GetType("metagenomics::oci_image_diamond")]
-    Log.Info(f"container: [{container}] exists [{container.exists()}]")
-    context.shell.Exec(f"touch annotations.csv")
+    Log.Info(f"container: [{container.local}] exists [{container.local.exists()}]")
+    context.external_shell.Exec(f"touch annotations.csv")
     return ExecutionResult(success=True)
 
 model = Transform()

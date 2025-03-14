@@ -192,8 +192,9 @@ case $1 in
         # mkdir -p cache/.globus cache/.globusonline
         docker run -it --rm \
             -u $(id -u):$(id -g) \
-            --mount type=bind,source="./work",target="/ws"\
-            --mount type=bind,source="./home",target="/msm_home"\
+            -e NXF_HOME="/ws/.nextflow" \
+            --mount type=bind,source="$HERE/main/local_mock/cache/local_home/runs/dwfuH8Cz",target="/ws"\
+            --mount type=bind,source="$HERE/main/local_mock/cache/local_home",target="/msm_home"\
             --mount type=bind,source="$HOME/.globus",target="/.globus"\
             --mount type=bind,source="$HOME/.globusonline",target="/.globusonline"\
             --workdir="/ws" \

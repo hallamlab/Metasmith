@@ -1,0 +1,23 @@
+#!/opt/conda/envs/metasmith_env/bin/python
+# this bounces "squeue" commands from inside a container
+
+import sys
+import time
+from pathlib import Path
+from metasmith.coms.ipc import RemoteShell
+from metasmith.agents.presets import Agent
+
+SERVER_PATH = Path("/msm_home/relay/connections/main.in")
+cwd = Path("./").resolve()
+WS = Path("/ws")
+assert cwd.is_relative_to(WS)
+tail = cwd.relative_to(WS)
+agent = Agent.Load(Path("/msm_home/lib/agent.yml"))
+external_ws = agent.home/tail
+
+with RemoteShell(SERVER_PATH) as shell:
+    shell.RegisterOnOut(print)
+    shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
+    args = [f'"{x}"' if "%" in x else x for x in sys.argv[1:]]
+    shell.Exec(f"cd {external_ws} && squeue {' '.join(args)}")
+    time.sleep(1) # don't know if or why this is needed...

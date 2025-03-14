@@ -7,13 +7,14 @@ import shutil
 from typing import Iterable, Literal
 import yaml
 import time
+import re
 
 from .hashing import KeyGenerator
 from .coms.ipc import LiveShell, ShellResult, RemoveLeadingIndent
 from .logging import Log
-from .coms.containers import Container, CONTAINER_RUNTIME
+from .coms.containers import Container, ContainerRuntime
 from .coms.ipc import RemoteShell
-from .models.remote import Logistics, Source, SourceType, SshSource
+from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTask
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstance
 from .models.solver import Endpoint, Dependency, Transform, _solve_by_bounded_dfs
@@ -26,9 +27,19 @@ class AgentPaths:
     TASK = Path("task")
 
     @classmethod
+    def to_staged(cls, root: Path=None):
+        if root is None: root = cls.HOME_ROOT
+        return root/cls.STAGED
+
+    @classmethod
     def to_task(cls, key: str, root: Path=None):
         if root is None: root = cls.HOME_ROOT
         return root/(cls.STAGED/key)/cls.INTERNALS/cls.TASK
+    
+    @classmethod
+    def to_bootstrap(cls, root: Path=None):
+        if root is None: root = cls.HOME_ROOT
+        return root/"lib/msm_bootstrap"
     
     @classmethod
     def to_definition(cls, root: Path=None):
@@ -36,9 +47,13 @@ class AgentPaths:
         return root/"lib/agent.yml"
     
     @classmethod
-    def to_relay_coms(cls, root: Path=None):
+    def to_relay(cls, root: Path=None):
         if root is None: root = cls.HOME_ROOT
-        return root/"relay/connections/main.in"
+        return root/"relay/msm_relay"
+    
+    @classmethod
+    def to_relay_coms(cls, root: Path=None):
+        return cls.to_relay(root).parent/"connections/main.in"
     
     @classmethod
     def to_data(cls, root: Path=None):
@@ -72,7 +87,7 @@ class AgentShell:
         Log.Info(f"closing connection")
         self.agent._run_cleanup(self.shell)
         if self.agent._is_ssh():
-            self.shell.ExecAsync("exit")
+            self.shell.Exec("exit")
         self.shell.__exit__(exc_type, exc_val, exc_tb)
 
 class PausedShell:
@@ -95,16 +110,20 @@ class Agent:
     home: Source
     setup_commands: list[str] = field(default_factory=list)
     container: str = "docker://quay.io/hallamlab/metasmith:latest"
+    globus_uuid: str = None
 
     def _is_ssh(self):
         return self.home.type == SourceType.SSH
 
     def Pack(self):
+        optional = {k:v for k, v in dict(
+            globus_uuid=self.globus_uuid,
+        ).items() if v is not None}
         return dict(
             setup_commands=list(self.setup_commands),
             home=self.home.Pack(),
             container=self.container,
-        )
+        ) | optional
     
     def Save(self, file_path: Path):
         with open(file_path, "w") as f:
@@ -123,7 +142,9 @@ class Agent:
 
     def _run_setup(self, shell: LiveShell, timeout: int = None):
         if self._is_ssh():
-            shell.Exec(f"ssh {SshSource.Parse(self.home.address).host}")
+            ssh_src = SshSource.Parse(self.home.address)
+            Log.Info(f"starting ssh to [{ssh_src.host}]")
+            shell.Exec(f"ssh {ssh_src.host}")
             SUCCESS = f"ssh_connected_flag.{KeyGenerator.FromInt(2**42)}"
             res = shell.Exec(f'[ ! -z "$SSH_CONNECTION" ] && echo "{SUCCESS}"', timeout=timeout, history=True)
             if not any(SUCCESS in x for x in res.out):
@@ -147,35 +168,37 @@ class Agent:
                 return shell.Exec(cmd, timeout=timeout, history=True)
 
             def _remote_file(x: str|Path, dest: Path, executable=False):
+                if not isinstance(dest, Path): dest = Path(dest)
+                assert not dest.is_absolute() or dest.is_relative_to(self.home.GetPath()), f"dest [{dest}] must be relative to [{self.home.GetPath()}]"
+                (tmpdir/dest).parent.mkdir(parents=True, exist_ok=True)
                 if isinstance(x, str):
                     x = RemoveLeadingIndent(x)
-                    fpath = tmpdir/f"{dest.name}"
+                    fpath = tmpdir/dest
                     with open(fpath, "w") as f:
                         f.write(x)
                     if executable: os.chmod(fpath, 0o755)
                 else:
-                    fpath = x
+                    shutil.copytree(x, tmpdir/dest)
+                Log.Info(f"staged [{dest}]")
+
+            def _sync_remote_files():
                 mover = Logistics()
                 mover.QueueTransfer(
-                    src=Source.FromLocal(fpath),
-                    dest=self.home.ReplacePathWith(dest)
+                    src=Source.FromLocal(tmpdir),
+                    dest=self.home,
                 )
-                Log.Info(f"deploying file [{dest}]")
+                Log.Info(f"deploying staged files")
                 res = mover.ExecuteTransfers()
-                if isinstance(x, Path):
-                    _err = f"Failed to deploy file [{x}] -> [{dest}]"
-                else:
-                    _err = f"Failed to deploy file to  [{dest}]"
-                assert len(res.completed) == 1, _err
+                assert len(res.completed) == 1, f"failed to deploy files"
 
             self._run_setup(shell)
             res = shell.Exec(f"""
                 realpath {self.home.GetPath()}
                 realpath ~
             """, history=True)
-            resolved_msmhome, resolved_home = [Path(x.strip()) for x in res.out]
+            resolved_agent_home, resolved_home = [Path(x.strip()) for x in res.out]
 
-            dev_src = resolved_msmhome/"dev/metasmith"
+            dev_src = "$AGENT_HOME/dev/metasmith"
             def make_dev_container(c: Container):
                 return Container(
                     image=c.image,
@@ -187,30 +210,31 @@ class Agent:
                 )
             container = Container(
                 image=self.container,
-                container_cache=resolved_msmhome, # just so the main container is saved here
+                container_cache=resolved_agent_home, # just so the main container is saved here
                 binds=[
-                    (resolved_msmhome, Path("/msm_home")),
+                    ("$AGENT_HOME", Path("/msm_home")),
                     (Path(resolved_home)/".globus", Path(resolved_home)/".globus"),
                     (Path(resolved_home)/".globusonline", Path(resolved_home)/".globusonline"),
                 ],
-                runtime=CONTAINER_RUNTIME.APPTAINER
+                runtime=ContainerRuntime.APPTAINER
             )
             container_dev = make_dev_container(container)
-            _cmds = [f"mkdir -p {p}" for p, _ in container.binds]
+            _cmds = [f"AGENT_HOME={resolved_agent_home}"]+[f"mkdir -p {p}" for p, _ in container.binds]
             do_step("\n".join(_cmds))
             do_step(f"[ -e {container._get_local_path()} ] || {container.MakePullCommand()}", timeout=None)
 
             _remote_file(
                 f"""
                 #!/bin/bash
+                AGENT_HOME={resolved_agent_home}
                 if [ -e "{dev_src}" ]; then
                     echo "including dev binds"
-                    {container_dev.MakeRunCommand(local=f"{resolved_msmhome}/metasmith.sif")} $@
+                    {container_dev.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif")} $@
                 else
-                    {container.MakeRunCommand(local=f"{resolved_msmhome}/metasmith.sif")} $@
+                    {container.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif")} $@
                 fi
                 """,
-                dest=resolved_msmhome/"msm_stub",
+                dest="msm_stub",
                 executable=True,
             )
 
@@ -221,70 +245,83 @@ class Agent:
                 HERE={HERE}
                 $HERE/msm_stub metasmith $@
                 """,
-                dest=resolved_msmhome/"msm",
+                dest="msm",
                 executable=True,
             )
 
-            do_step(f"cd {resolved_msmhome} && ./msm api deploy_from_container")
+            do_step(f"cd {resolved_agent_home} && ./msm api deploy_from_container")
 
-            _remote_copy = Agent(
-                setup_commands=self.setup_commands,
-                home=Source.FromLocal(resolved_msmhome),
-                container=self.container,
-            )
+            _remote_copy = Agent(**self.Pack())
+            _remote_copy.home = Source.FromLocal(resolved_agent_home)
             _remote_file(
                 yaml.dump(_remote_copy.Pack()),
-                dest=AgentPaths.to_definition(resolved_msmhome),
+                dest=AgentPaths.to_definition(Path(".")),
             )
 
             bootstrap_container = Container(
                 image=self.container,
                 binds=[
-                    (Path("./.msm"), Path("/msm_home")),
                     (Path("./"), Path("/ws")),
-                    (resolved_msmhome, Path("/agent_home")),
+                    ("$AGENT_HOME", Path("/msm_home")),
                 ],
                 workdir=Path("/ws"),
-                runtime=CONTAINER_RUNTIME.APPTAINER,
+                runtime=ContainerRuntime.APPTAINER,
             )
             bootstrap_container_dev = make_dev_container(bootstrap_container)
             _remote_file(
                 f"""
                 #!/bin/bash
+
+                AGENT_HOME={resolved_agent_home}
+                TASK_DIR=$1
+                STEP=$2
+                CWD=${{3:-$(pwd -P)}}
+                cd $CWD
+                if [ -e "{AgentPaths.HOME_ROOT}" ]; then
+                    echo "bootstrap called from container, bouncing to external [$@]"
+                    {AgentPaths.to_relay()} start
+                    REL_CWD=$(realpath --relative-to="{AgentPaths.HOME_ROOT}" $CWD)
+                    CMD="{AgentPaths.to_bootstrap(Path('$AGENT_HOME'))} $@ $AGENT_HOME/$REL_CWD"
+                    {AgentPaths.to_relay()} bounce "$CMD"
+                    exit
+                fi
+
+                echo "bootstrap ======================"
+                INTERNALS="_metasmith"
+                [ -z $STEP ] && echo "no step provided" && exit 1
+                echo "cwd [$(pwd -P)]"
+                echo "task [$TASK_DIR]"
+                echo "step [$STEP]"
                 function run_container {{
                     if [ -e "{dev_src}" ]; then
                         echo "including dev binds"
-                        {bootstrap_container_dev.MakeRunCommand(local="./metasmith.sif")} $@
+                        {bootstrap_container_dev.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif")} $@
                     else
-                        {bootstrap_container.MakeRunCommand(local="./metasmith.sif")} $@
+                        {bootstrap_container.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif")} $@
                     fi
                 }}
-
-                echo "get container =================="
-                cp {resolved_msmhome}/metasmith.sif ./
-                mkdir -p ./.msm
-                echo "deploy ========================="
-                run_container metasmith api deploy_from_container -a workspace=./.msm
-                echo "post deploy ===================="
+                echo "deploy relay ==================="
+                run_container metasmith api deploy_from_container -a workspace=$INTERNALS
+                echo "pre execute ===================="
                 find .
                 ls -lh .
                 echo "relay =========================="
-                ./.msm/relay/msm_relay start
+                $INTERNALS/relay/msm_relay start
                 echo "execute ========================"
-                run_container metasmith api execute_transform -a step_index=$1
+                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR
                 echo "post execute ==================="
                 find .
                 ls -lh .
-                echo "exit ==========================="
-                ./.msm/relay/msm_relay stop
-                sleep 1
+                echo "cleanup ========================"
+                $INTERNALS/relay/msm_relay stop
                 """,
-                dest=resolved_msmhome/"lib/msm_bootstrap",
+                dest=AgentPaths.to_bootstrap(Path(".")),
                 executable=True,
             )
 
             HERE = Path(__file__).parent
-            _remote_file(HERE/"nextflow_config", resolved_msmhome/"lib/nextflow_config")
+            _remote_file(HERE/"nextflow_config", "lib/nextflow_config")
+            _sync_remote_files()
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
@@ -330,17 +367,20 @@ class Agent:
             key = str(task)
         with AgentShell(self) as sh_remote:
             Log.Info(f"executing workflow")
-            sh_remote.Exec(f"./msm api execute_workflow -a key={key}")
+            sh_remote.Exec(f"./msm api execute_workflow -a key={key}", timeout=None)
 
 # ===========================================================================
 # calls to staged Agent
+
+_get_nextflow_preset = lambda config: config.get("nextflow", {}).get("preset", "default")
+_get_slurm_account = lambda config: config.get("nextflow", {}).get("slurm_account", "<no account given>")
 
 def StageWorkflow(task_key: str):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
     task_path = agent.home.GetPath()/AgentPaths.to_task(task_key)
     assert task_path.exists(), f"task dir not found [{task_path}]"
     task = WorkflowTask.Load(task_path)
-    Log.Info(f"staging workflow [{task.plan._key}] with [{len(task.plan.given)}] given data instances")
+    Log.Info(f"staging workflow [{task.plan._key}] with [{len(task.data_libraries)}] data libs and [{len(task.transform_libraries)}] transform libs")
 
     work_relative = AgentPaths.STAGED/task.plan._key
     work_dir = AgentPaths.WORK_ROOT/work_relative
@@ -365,13 +405,6 @@ def StageWorkflow(task_key: str):
     extern_data = extern_root/data_dir.name
     Log.Info(f"external work [{extern_work}]")
     Log.Info(f"external data [{extern_data}]")
-    params = task.config
-    params_yaml = yaml.dump(params)
-    Log.Info(f"additional params:")
-    lines = params_yaml.split("\n")
-    if lines[-1] == "": lines = lines[:-1]
-    for l in lines:
-        Log.Info(f"    {l}")
 
     # data libraries
     Log.Info(f"moving remote data libraries to [{data_dir}]")
@@ -394,16 +427,17 @@ def StageWorkflow(task_key: str):
             assert x.address in _completed, f"failed to transfer [{x.address}]"
         return processed_libs
     task.data_libraries = move_remote_libs(task.data_libraries, data_dir)
-    task.SaveAs(Source.FromLocal(task_path))
 
     # nextflow
     task.plan.PrepareNextflow(
         work_dir=work_dir,
         external_work=extern_work,
+        home_dir=AgentPaths.HOME_ROOT,
+        external_home=agent.home.GetPath(),
     )
-    nextflow_config_dir = Path("/msm_home/lib/nextflow_config")
-    nextflow_parameters = task.config.get("nextflow", {})
-    preset_path = nextflow_config_dir/f"{nextflow_parameters.get('preset', 'default')}.nf"
+    nextflow_config_dir = AgentPaths.HOME_ROOT/"lib/nextflow_config"
+    nextflow_preset = _get_nextflow_preset(task.config)
+    preset_path = nextflow_config_dir/f"{nextflow_preset}.nf"
     if not preset_path.exists():
         Log.Warn(f"nextflow preset not found [{preset_path}], using default")
         preset_path = nextflow_config_dir/"default.nf"
@@ -413,23 +447,13 @@ def StageWorkflow(task_key: str):
         config_raw = "".join(f.readlines())
     nextflow_params = task.config.get("nextflow", {})
     for k, v in nextflow_params.items():
+        Log.Info(f"setting nextflow param [{k}] from config") # don't show in case sensitive values
         config_raw = config_raw.replace(f"<{k}>", v)
     with open(work_dir/"workflow.config.nf", "w") as f:
         f.write(config_raw)
 
-    # bootstrap
-    bootstrap_path = AgentPaths.HOME_ROOT/"lib/msm_bootstrap"
-    Log.Info(f"preparing entrypoint [{bootstrap_path.name}]")
-    shutil.copy(bootstrap_path, work_internals)
-
     _rel = f"{extern_work}".replace(f"{extern_root}/", "")
     Log.Info(f"[{task.plan._key}] staged to [{{AGENT_HOME}}/{_rel}]")
-    # if view:
-    #     Log.Info(f"contents after staging:")
-    #     with LiveShell() as shell:
-    #         shell.RegisterOnOut(Log.Info)
-    #         shell.RegisterOnErr(Log.Error)
-    #         shell.Exec(f"cd {work_dir} && find .")
 
 def ExecuteWorkflow(key: str):
     task_path = AgentPaths.to_task(key)
@@ -439,35 +463,42 @@ def ExecuteWorkflow(key: str):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
     extern_home = agent.home.GetPath()
     extern_workspace = AgentPaths.to_task(key, root=extern_home).parent.parent
-    extern_nxf_exe = extern_home/"lib/nextflow"
     Log.Info(f"workspace [{workspace}]")
     Log.Info(f"external workspace [{extern_workspace}]")
-    Log.Info(f"nextflow executable [{extern_nxf_exe}]")
 
     task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
-    Log.Info(f"executing workflow [{task.plan._key}] with [{len(task.plan.steps)}] steps")
+    nextflow_preset = _get_nextflow_preset(task.config)
+    Log.Info(f"executing workflow [{task.plan._key}] with preset [{nextflow_preset}]")
+    Log.Info(f"preset [{nextflow_preset}]")
+    Log.Info(f"steps [{len(task.plan.steps)}]")
 
-    Log.Info(f"actualizing data if referencing remote sources")
+    if agent.globus_uuid is not None:
+        Log.Info(f"locating input data with ag`ent's globus endpoint [{agent.globus_uuid}]")
+        dest_base = GlobusSource(endpoint=agent.globus_uuid, path="/").AsSource()
+    else:
+        Log.Info(f"locating input data with personal globus endpoint")
+        dest_base = Source.FromLocal("/")
     for lib in task.transform_libraries+task.data_libraries:
         _name = lib.location.name
         if lib.remote_src is None:
             Log.Info(f"[{_name}] is at [{lib.location}]")
         else:
             _extern_location = str(lib.location).replace(str(AgentPaths.HOME_ROOT), str(extern_home))
-            Log.Info(f"[{_name}] is remote [{lib.remote_src.address}] -> [{lib.location}]")
-            dest = Source.FromLocal(_extern_location)
-            lib.Actualize(extern_dest=dest, label=f"msm.{task.plan._key}.{_name}")
+            Log.Info(f"[{_name}] at [{lib.location}] is remote [{lib.remote_src.address}], downloading to [{_extern_location}]")
+            dest = dest_base/_extern_location
+            lib.Actualize(extern_dest=dest, label=f"msm_staging.{_name}")
 
-    Log.Info(f"connecting to relay for external shell")
-    with RemoteShell(AgentPaths.to_relay_coms()) as extern_shell:
-        extern_shell.RegisterOnOut(Log.Info)
-        extern_shell.RegisterOnErr(Log.Error)
-        Log.Info(f"calling nextflow via relay")
-        extern_shell.Exec(
+    # need to call nf inside container
+    # nf needs java and is not a standalone executable
+    with LiveShell() as shell:
+        shell.RegisterOnOut(Log.Info)
+        shell.RegisterOnErr(Log.Error)
+        Log.Info(f"calling nextflow from container")
+        shell.Exec(
             f"""
-            cd {extern_workspace}
+            cd {workspace}
             export NXF_HOME=./.nextflow
-            {extern_nxf_exe} -c ./workflow.config.nf \
+            nextflow -c ./workflow.config.nf \
                 -log ./nxf_logs/log \
                 run ./workflow.nf \
                 -resume \
@@ -476,19 +507,23 @@ def ExecuteWorkflow(key: str):
             timeout=None,
         )
 
-        output_path = workspace/"results"
-        output = DataInstanceLibrary(output_path)
-        type_libs: dict[str, DataTypeLibrary] = {}
-        for lib in task.data_libraries:
-            type_libs.update(lib.types)
-        used_type_libs = set()
-        for x in task.plan.targets:
-            _namespace, _ = x.GetDType()
-            used_type_libs.add(_namespace)
-        to_add = []
-        for x in task.plan.targets:
-            to_add.append([output_path/x.path, x.path, f"{x.dtype_name}"])
-        for _namespace in used_type_libs:
-            output.AddTypeLibrary(_namespace, type_libs[_namespace])
-        output.Add(items=to_add, method=SourceType.DIRECT, on_exist="skip")
-        output.Save()
+    Log.Info(f"compiling results")
+    output_path = workspace/"results"
+    output = DataInstanceLibrary(output_path)
+    type_libs: dict[str, DataTypeLibrary] = {}
+    for lib in task.data_libraries:
+        type_libs.update(lib.types)
+    used_type_libs = set()
+    for x in task.plan.targets:
+        p = (output_path/x.path)
+        assert p.exists(), f"workflow failed to produce expected output [{x.dtype_name}] at [{p}]"
+        _namespace, _ = x.GetDType()
+        used_type_libs.add(_namespace)
+    to_add = []
+    for x in task.plan.targets:
+        to_add.append([output_path/x.path, x.path, f"{x.dtype_name}"])
+    for _namespace in used_type_libs:
+        output.AddTypeLibrary(_namespace, type_libs[_namespace])
+    output.Add(items=to_add, method=SourceType.DIRECT, on_exist="skip")
+    output.Save()
+    Log.Info(f"results for [{key}] at [{output_path}]")

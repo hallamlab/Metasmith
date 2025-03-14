@@ -5,8 +5,12 @@ import shutil
 import yaml
 import traceback
 
+from metasmith.hashing import KeyGenerator
+
 from .logging import Log
-from .models.libraries import DataTypeLibrary, ExecutionContext, ExecutionResult, TransformInstance, TransformInstanceLibrary
+from .agents import Agent, AgentPaths
+from .models.libraries import ContextPath, ExecutionContext, ExecutionResult
+from .models.libraries import DataTypeLibrary, TransformInstance, TransformInstanceLibrary
 from .models.workflow import WorkflowTask
 from .coms.ipc import LiveShell, RemoteShell
 from .coms.containers import Container
@@ -16,35 +20,28 @@ from .serialization import StdTime
 # CONTAINER = Container("docker-daemon://quay.io/hallamlab/metasmith:0.2.dev-47c27e4")
 
 def DeployFromContainer(workspace: Path):
-    relay_server = Path("/opt/msm_relay")
-    # deploy_root = workspace/".msm"
     deploy_root = workspace
-    for p in [ # these are coupled to StageAndRunTransform() below
+    Log.Info(f"deploying to [{deploy_root}]")
+    if not deploy_root.exists():
+        deploy_root.mkdir(parents=True, exist_ok=True)
+    folders = [
         "relay/connections",
-        "lib",
-    ]:
+    ]
+    for p in folders:
         (deploy_root/p).mkdir(parents=True, exist_ok=True)
 
-    Log.Info("deploying relay server")
+    relay_server = Path("/opt/msm_relay")
     relay_server_dest = deploy_root/"relay/msm_relay"
+    Log.Info(f"deploying relay server to [{relay_server_dest}]")
     if not relay_server_dest.exists():
         relay_server_dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(relay_server, relay_server_dest)
 
-    Log.Info("deploying nextflow executable")
-    nxf_exec = Path("/opt/nextflow")
-    nxf_exec_dest = deploy_root/"lib/nextflow"
-    if not nxf_exec_dest.exists():
-        nxf_exec_dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(nxf_exec, nxf_exec_dest)
-
     Log.Info("deployment complete")
 
 def StageAndRunTransform(workspace: Path, step_index: int):
-    os.chdir(workspace)
-
-    server_path = workspace/".msm/relay/connections/main.in"
-    MAX_WAIT = 10
+    server_path = AgentPaths.to_relay_coms(root=AgentPaths.INTERNALS)
+    MAX_WAIT = 3
     for i in range(MAX_WAIT):
         if server_path.exists(): break
         Log.Warn(f"waiting {i+1} of {MAX_WAIT} for relay to start")
@@ -52,15 +49,8 @@ def StageAndRunTransform(workspace: Path, step_index: int):
     assert server_path.exists(), f"server not started [{server_path}]"
 
     Log.Info("connecting to relay")
-    with \
-        RemoteShell(server_path) as shell, \
-        open(workspace/"relay_shell_history.log", "w") as cmd_log:
+    with RemoteShell(server_path) as shell:
         _paused = False
-        def _make_listener(logger):
-            def _listener(x: str):
-                if _paused: return
-                logger(x)
-            return _listener
         class PausedStdOut:
             def __enter__(self):
                 nonlocal _paused
@@ -69,54 +59,76 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                 nonlocal _paused
                 _paused = False
         
+        def _make_listener(logger):
+            def _listener(x: str):
+                if _paused: return
+                logger(x)
+            return _listener
         shell.RegisterOnOut(_make_listener(Log.Info))
         shell.RegisterOnErr(_make_listener(Log.Error))
         
-        Log.Info(f"cwd [{Path('.').resolve()}]")
+        Log.Info(f"loading agent config")
+        agent = Agent.Load(AgentPaths.to_definition())
+        agent_home = str(agent.home.GetPath())
+        Log.Info(f"agent home [{agent_home}]")
+        def _shorten_home(p: str):
+            return p.replace(agent_home, "{agent_home}")
+
         with PausedStdOut():
             res = shell.Exec("pwd -P", history=True)
         external_cwd = Path(res.out[0])
         Log.Info(f"external cwd [{external_cwd}]")
-
-        local_meta_path = Path("./_metasmith")
-        extern_meta_src = local_meta_path.readlink()
-        if local_meta_path.is_symlink():
-            Log.Info(f"staging task metadata")
-            shell.Exec(f"rm {local_meta_path} && cp -r {extern_meta_src} {local_meta_path}")
-
-        Log.Info(f"loading task metadata")
-        try_get_task = lambda: WorkflowTask.Load(local_meta_path/"task")
-        RETRY = 6
-        for i in range(RETRY):
-            to_wait = 2**i # total of 63 seconds
-            try:
-                task = try_get_task()
-                break
-            except:
-                Log.Info(f"failed to load task metadata, retry [{i+1} of {RETRY}] in [{to_wait}] seconds")
-                time.sleep(to_wait)
-        task = try_get_task()
-
+        task_key = workspace.name
+        task_path = AgentPaths.to_task(task_key)
+        Log.Info(f"loading task from [{task_path}]")
+        task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
         step = task.plan.steps[step_index-1]
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
-        Log.Info(f"step {step_index:02} [{step_name}]")
+        Log.Info(f"step [{step_index}:{step_name}]")
+
+        def _status(p: ContextPath):
+            return "✓" if p.local.exists() else "X"
+        container_binds = {}
+        def _parse_path(p: Path):
+            if p.is_symlink():
+                external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
+                tail = external.relative_to(agent_home)
+                local = AgentPaths.HOME_ROOT/tail
+            else:
+                local = p
+                external = external_cwd/p
+            k = external.parent
+            if k not in container_binds:
+                container_binds[k] = Path(f"/msm_data/{k.name}")
+            container = container_binds[k]/p
+            return ContextPath(local=local, external=external, container=container)
+        inputs = {}
         Log.Info("uses:")
         for inst in step.uses:
-            Log.Info(f"    {inst.dtype_name} at {inst.ResolvePath()}")
+            p = _parse_path(inst.path)
+            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}] at [{p.external}]"))
+            inputs[inst.dtype] = p
         Log.Info("produces:")
+        outputs = {}
         for inst in step.produces:
-            Log.Info(f"    {inst.dtype_name} at {inst.ResolvePath()}")
+            p = _parse_path(inst.path)
+            outputs[inst.dtype] = p
+            Log.Info(_shorten_home(f"    [{inst.dtype_name}] at [{p.external}]"))
 
         context = ExecutionContext(
-            inputs={inst.dtype: inst.ResolvePath() for inst in step.uses},
-            outputs={inst.dtype: inst.ResolvePath() for inst in step.produces},
-            shell=shell,
+            inputs=inputs,
+            outputs=outputs,
+            external_shell=shell,
+            external_cwd=external_cwd,
+            container_runtime=task.container_runtime,
         )
-        Log.Info(">"*30)
         Log.Info(f">>> executing protocol")
+        BREAK_LENGTH = 60
+        Log.Info(">"*BREAK_LENGTH)
         try:
             result = step.transform.protocol(context)
         except Exception as e:
+            Log.Info("<"*BREAK_LENGTH)
             Log.Info(f"<<< [{step_name}] failed with error")
             Log.Error(f"error while executing transform [{step_name}]")
             Log.Error(str(e))
@@ -125,5 +137,9 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             with open("traceback.temp", "r") as f:
                 Log.Error(f.read()[:-1])
             return ExecutionResult(False)
+        
+        Log.Info("<"*BREAK_LENGTH)
         Log.Info(f"<<< [{step_name}] reports {'success' if result.success else 'failure'}")
-        Log.Info("<"*30)
+        Log.Info(f"expected outputs:")
+        for inst in step.produces:
+            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}] at [{p.external}]"))

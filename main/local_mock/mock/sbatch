@@ -13,8 +13,18 @@ def CurrentTimeMillis():
 
 cache = HERE / "cache"
 cache.mkdir(exist_ok=True)
-fpath = cache / f"sbatch.{dt.now().strftime('%Y-%m-%d--%H-%M-%S')}"
+TS = dt.now().strftime('%Y-%m-%d--%H-%M-%S')
+fpath = cache / f"sbatch.{TS}"
 SID = f"{CurrentTimeMillis()}"[-6:]
+
+mock_temp = cache/f"temp.{TS}"
+mock_temp.mkdir(exist_ok=True, parents=True)
+entry = Path('./').resolve()/sys.argv[1]
+log_out = entry.with_suffix(".out")
+log_err = entry.with_suffix(".err")
+cmd = f"""\
+nohup bash -c "cd {mock_temp} && bash {entry} >{log_out} 2>{log_err}" >/dev/null 2>&1 &
+"""
 
 with open(fpath, "w") as f:
     with open(sys.argv[1], "r") as f2:
@@ -22,13 +32,11 @@ with open(fpath, "w") as f:
             f.write(l)
     f.write("# === command ===\n")
     f.write(" ".join(sys.argv) + "\n")
+    f.write(f"{cmd}" + "\n")
     f.write("# === slurm job id ===\n")
     f.write(f"{SID}\n")
     f.write("# === cwd ===\n")
     f.write(f"{Path('./').resolve()}\n")
 
-import subprocess
-entry = Path('./').resolve()/sys.argv[1]
-subprocess.Popen(["bash", entry], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-
+os.system(cmd)
 print(SID)
