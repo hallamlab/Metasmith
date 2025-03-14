@@ -4,7 +4,7 @@ from enum import Enum
 
 from ..coms.ipc import LiveShell
 
-class CONTAINER_RUNTIME(Enum):
+class ContainerRuntime(Enum):
     DOCKER = "docker"
     APPTAINER = "apptainer"
 
@@ -14,9 +14,9 @@ class Container:
     container_cache: Path = Path("./")
     workdir: Path|None = None
     binds: list[tuple[Path, Path]] = field(default_factory=list)
-    runtime: CONTAINER_RUNTIME = CONTAINER_RUNTIME.DOCKER
+    runtime: ContainerRuntime = ContainerRuntime.DOCKER
 
-    def SetRuntime(self, runtime: CONTAINER_RUNTIME):
+    def SetRuntime(self, runtime: ContainerRuntime):
         self.runtime = runtime
 
     def _get_local_path(self):
@@ -26,7 +26,7 @@ class Container:
         return self.container_cache/f"{name}.sif"
 
     def MakePullCommand(self):
-        if self.runtime == CONTAINER_RUNTIME.APPTAINER:
+        if self.runtime == ContainerRuntime.APPTAINER:
             return f"{self.runtime.value} pull {self._get_local_path()} {self.image}"
         else:
             return f"{self.runtime.value} pull {self.image}"
@@ -36,12 +36,12 @@ class Container:
         default_binds = [("./", "/ws")]
         binds = {str(d):str(s) for s, d in default_binds+self.binds}
         binds = [(s, d) for d, s in binds.items()]
-        if self.runtime == CONTAINER_RUNTIME.DOCKER:
+        if self.runtime == ContainerRuntime.DOCKER:
             others = ["--rm", "-u $(id -u):$(id -g)"]
             workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ""
             binds = [f'--mount type=bind,source="{src}",target="{dst}"' for src, dst in binds]
             binds = " ".join(binds)
-        elif self.runtime == CONTAINER_RUNTIME.APPTAINER:
+        elif self.runtime == ContainerRuntime.APPTAINER:
             others = ["--no-home"]
             workdir = f"--workdir {self.workdir}" if self.workdir is not None else ""
             binds = [f'{src}:{dst}' for src, dst in binds]

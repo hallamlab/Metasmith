@@ -24,8 +24,11 @@ class Log:
         _log_path = file_path
 
     @classmethod
-    def Info(cls, message):
-        line = f"{StdTime.Timestamp()}  | {message}"
+    def Info(cls, message, timestamp=True):
+        if timestamp:
+            line = f"{StdTime.Timestamp()}  | {message}"
+        else:
+            line = f"  | {message}"
         _log(line)
 
     @classmethod
@@ -39,6 +42,9 @@ class Log:
         _log(line, file=sys.stderr)
 
     @classmethod
-    def Error(cls, message):
-        line = f"{StdTime.Timestamp()} E| {message}"
+    def Error(cls, message, timestamp=True):
+        if timestamp:
+            line = f"{StdTime.Timestamp()} E| {message}"
+        else:
+            line = f" E| {message}"
         _log(line, file=sys.stderr)

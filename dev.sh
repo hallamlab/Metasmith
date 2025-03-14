@@ -56,6 +56,15 @@ case $1 in
         sleep 2
         $CONDA env create --no-default-packages -n $NAME -f ./base.yml
     ;;
+    --git-prune-local) # remove local branches not on remote
+        git fetch -p
+        git branch -r \
+            | awk '{print $1}' \
+            | egrep -v -f /dev/fd/0 <(git branch -vv \
+            | grep origin) \
+            | awk '{print $1}' \
+            | xargs git branch -d
+    ;;
 
     ###################################################
     # build
@@ -183,8 +192,9 @@ case $1 in
         # mkdir -p cache/.globus cache/.globusonline
         docker run -it --rm \
             -u $(id -u):$(id -g) \
-            --mount type=bind,source="./work",target="/ws"\
-            --mount type=bind,source="./home",target="/msm_home"\
+            -e NXF_HOME="/ws/.nextflow" \
+            --mount type=bind,source="$HERE/main/local_mock/cache/local_home/runs/dwfuH8Cz",target="/ws"\
+            --mount type=bind,source="$HERE/main/local_mock/cache/local_home",target="/msm_home"\
             --mount type=bind,source="$HOME/.globus",target="/.globus"\
             --mount type=bind,source="$HOME/.globusonline",target="/.globusonline"\
             --workdir="/ws" \

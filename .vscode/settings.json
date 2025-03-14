@@ -11,4 +11,5 @@
         "PYTHONPATH": "${workspaceFolder}/lib:${workspaceFolder}/src",
         "ws": "${workspaceFolder}",
     },
+    "esbonio.server.enabled": false,
 }
