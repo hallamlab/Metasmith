@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 from typing import Callable, Iterable
 from importlib import metadata, reload, __import__
 
+from ..serialization import IsText
 from ..coms.containers import ContainerRuntime, Container
-from ..coms.ipc import LiveShell
+from ..coms.ipc import LiveShell, RemoveLeadingIndent
 from .solver import Dependency, Endpoint, Transform
 from .remote import GlobusSource, Logistics, Source, SourceType
 from ..hashing import KeyGenerator
@@ -368,27 +369,33 @@ class DataInstanceLibrary:
         assert on_exist in {"skip", "error", "clear", "update"}
         if not isinstance(dest, Path):
             dest = Path(dest)
+
+        def _transfer():
+            mover = Logistics()
+            if as_image:
+                _src = src/cls._path_to_meta
+                _dest = dest/cls._path_to_meta
+            else:
+                _src, _dest = src, dest
+            mover.QueueTransfer(
+                src=_src,
+                dest=Source.FromLocal(_dest),
+            )
+            res = mover.ExecuteTransfers(label=label)
+            assert len(res.completed) == 1, f"move failed"
         if dest.exists():
             if on_exist == "error":
                 raise FileExistsError(f"[{dest}] already exists")
             elif on_exist == "update":
-                mover = Logistics()
-                if as_image:
-                    _src = src/cls._path_to_meta
-                    _dest = dest/cls._path_to_meta
-                else:
-                    _src, _dest = src, dest
-                mover.QueueTransfer(
-                    src=_src,
-                    dest=Source.FromLocal(_dest),
-                )
-                res = mover.ExecuteTransfers(label=label)
-                assert len(res.completed) == 1, f"move failed"
+                _transfer()
             elif on_exist == "clear":
                 Log.Warn("clearing previously loaded library")
                 shutil.rmtree(dest)
             elif on_exist == "skip":
                 pass
+        else:
+            _transfer()
+
         lib = cls.Load(dest, check_integrity=False)
         if as_image:
             lib.remote_src = src
@@ -531,13 +538,52 @@ class ExecutionContext:
     inputs: dict[Endpoint, ContextPath]
     outputs: dict[Endpoint, ContextPath]
     external_shell: LiveShell
+    external_cwd: Path
     container_runtime: ContainerRuntime
 
-    def ExecContainer(self, image: Endpoint, cmd: str):
+    def ExecWithContainer(self, image: Endpoint, cmd: str, binds: list[tuple[Path, Path]]=None):
         path = self.inputs[image]
-        container = Container(
+        image = path.external
+        if IsText(path.local):
+            with open(path.local) as f:
+                image = f.read() # using the uri
+        
+        _binds = set()
+        for _, p in list(self.inputs.items())+list(self.outputs.items()):
+            src = p.external.parent
+            dest = p.container.parent
+            _binds.add((src, dest))
+        if binds is None: binds = []
+        binds += sorted([(s, d) for s, d in _binds])
+        binds += [
+            (self.external_cwd, Path("/ws")),
+        ]
 
+        container_ws = Path("/ws")
+        container = Container(
+            image = image,
+            workdir = container_ws,
+            runtime = self.container_runtime,
+            binds = binds,
         )
+
+        cmd = RemoveLeadingIndent(cmd)
+        Log.Info(f"executing container [{image}] using [{container.runtime}]")
+        Log.Info(f"command:")
+        for line in cmd.split("\n"):
+            Log.Info(f"    {line}")
+        Log.Info(f"binds:")
+        for s, d in binds:
+            Log.Info(f"    {s} -> {d}")
+        _, _hash = KeyGenerator.FromStr(cmd, l=8)
+        cmd_file = f"_metasmith/container_cmd.{_hash}"
+        container_run = container.MakeRunCommand()
+        with open(cmd_file, "w") as f:
+            f.write(f"# {container_run}"+"\n")
+            f.write(cmd)
+        return self.external_shell.Exec(f"""\
+            {container_run} bash {container_ws/cmd_file}
+        """, timeout=None)
 
 @dataclass
 class ExecutionResult:

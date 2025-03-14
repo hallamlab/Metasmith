@@ -196,7 +196,7 @@ class Agent:
                 realpath {self.home.GetPath()}
                 realpath ~
             """, history=True)
-            resolved_msmhome, resolved_home = [Path(x.strip()) for x in res.out]
+            resolved_agent_home, resolved_home = [Path(x.strip()) for x in res.out]
 
             dev_src = "$AGENT_HOME/dev/metasmith"
             def make_dev_container(c: Container):
@@ -210,7 +210,7 @@ class Agent:
                 )
             container = Container(
                 image=self.container,
-                container_cache=resolved_msmhome, # just so the main container is saved here
+                container_cache=resolved_agent_home, # just so the main container is saved here
                 binds=[
                     ("$AGENT_HOME", Path("/msm_home")),
                     (Path(resolved_home)/".globus", Path(resolved_home)/".globus"),
@@ -219,14 +219,14 @@ class Agent:
                 runtime=ContainerRuntime.APPTAINER
             )
             container_dev = make_dev_container(container)
-            _cmds = [f"mkdir -p {p}" for p, _ in container.binds]
+            _cmds = [f"AGENT_HOME={resolved_agent_home}"]+[f"mkdir -p {p}" for p, _ in container.binds]
             do_step("\n".join(_cmds))
             do_step(f"[ -e {container._get_local_path()} ] || {container.MakePullCommand()}", timeout=None)
 
             _remote_file(
                 f"""
                 #!/bin/bash
-                AGENT_HOME={resolved_msmhome}
+                AGENT_HOME={resolved_agent_home}
                 if [ -e "{dev_src}" ]; then
                     echo "including dev binds"
                     {container_dev.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif")} $@
@@ -249,10 +249,10 @@ class Agent:
                 executable=True,
             )
 
-            do_step(f"cd {resolved_msmhome} && ./msm api deploy_from_container")
+            do_step(f"cd {resolved_agent_home} && ./msm api deploy_from_container")
 
             _remote_copy = Agent(**self.Pack())
-            _remote_copy.home = Source.FromLocal(resolved_msmhome)
+            _remote_copy.home = Source.FromLocal(resolved_agent_home)
             _remote_file(
                 yaml.dump(_remote_copy.Pack()),
                 dest=AgentPaths.to_definition(Path(".")),
@@ -272,7 +272,7 @@ class Agent:
                 f"""
                 #!/bin/bash
 
-                AGENT_HOME={resolved_msmhome}
+                AGENT_HOME={resolved_agent_home}
                 TASK_DIR=$1
                 STEP=$2
                 CWD=${{3:-$(pwd -P)}}
@@ -372,8 +372,8 @@ class Agent:
 # ===========================================================================
 # calls to staged Agent
 
-def _get_nextflow_preset(config: dict):
-    return config.get("nextflow", {}).get("preset", "default")
+_get_nextflow_preset = lambda config: config.get("nextflow", {}).get("preset", "default")
+_get_slurm_account = lambda config: config.get("nextflow", {}).get("slurm_account", "<no account given>")
 
 def StageWorkflow(task_key: str):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
@@ -405,13 +405,6 @@ def StageWorkflow(task_key: str):
     extern_data = extern_root/data_dir.name
     Log.Info(f"external work [{extern_work}]")
     Log.Info(f"external data [{extern_data}]")
-    params = task.config
-    params_yaml = yaml.dump(params)
-    Log.Info(f"additional params:")
-    lines = params_yaml.split("\n")
-    if lines[-1] == "": lines = lines[:-1]
-    for l in lines:
-        Log.Info(f"    {l}")
 
     # data libraries
     Log.Info(f"moving remote data libraries to [{data_dir}]")
@@ -454,23 +447,13 @@ def StageWorkflow(task_key: str):
         config_raw = "".join(f.readlines())
     nextflow_params = task.config.get("nextflow", {})
     for k, v in nextflow_params.items():
+        Log.Info(f"setting nextflow param [{k}] from config") # don't show in case sensitive values
         config_raw = config_raw.replace(f"<{k}>", v)
     with open(work_dir/"workflow.config.nf", "w") as f:
         f.write(config_raw)
 
-    # # bootstrap
-    # bootstrap_path = AgentPaths.to_bootstrap()
-    # Log.Info(f"preparing entrypoint [{bootstrap_path.name}]")
-    # shutil.copy(bootstrap_path, work_internals)
-
     _rel = f"{extern_work}".replace(f"{extern_root}/", "")
     Log.Info(f"[{task.plan._key}] staged to [{{AGENT_HOME}}/{_rel}]")
-    # if view:
-    #     Log.Info(f"contents after staging:")
-    #     with LiveShell() as shell:
-    #         shell.RegisterOnOut(Log.Info)
-    #         shell.RegisterOnErr(Log.Error)
-    #         shell.Exec(f"cd {work_dir} && find .")
 
 def ExecuteWorkflow(key: str):
     task_path = AgentPaths.to_task(key)

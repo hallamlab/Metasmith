@@ -5,9 +5,11 @@ import shutil
 import yaml
 import traceback
 
+from metasmith.hashing import KeyGenerator
+
 from .logging import Log
 from .agents import Agent, AgentPaths
-from .models.libraries import ExecutionContext, ExecutionResult
+from .models.libraries import ContextPath, ExecutionContext, ExecutionResult
 from .models.libraries import DataTypeLibrary, TransformInstance, TransformInstanceLibrary
 from .models.workflow import WorkflowTask
 from .coms.ipc import LiveShell, RemoteShell
@@ -49,11 +51,6 @@ def StageAndRunTransform(workspace: Path, step_index: int):
     Log.Info("connecting to relay")
     with RemoteShell(server_path) as shell:
         _paused = False
-        def _make_listener(logger):
-            def _listener(x: str):
-                if _paused: return
-                logger(x)
-            return _listener
         class PausedStdOut:
             def __enter__(self):
                 nonlocal _paused
@@ -62,66 +59,76 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                 nonlocal _paused
                 _paused = False
         
+        def _make_listener(logger):
+            def _listener(x: str):
+                if _paused: return
+                logger(x)
+            return _listener
         shell.RegisterOnOut(_make_listener(Log.Info))
         shell.RegisterOnErr(_make_listener(Log.Error))
         
+        Log.Info(f"loading agent config")
+        agent = Agent.Load(AgentPaths.to_definition())
+        agent_home = str(agent.home.GetPath())
+        Log.Info(f"agent home [{agent_home}]")
+        def _shorten_home(p: str):
+            return p.replace(agent_home, "{agent_home}")
+
         with PausedStdOut():
             res = shell.Exec("pwd -P", history=True)
         external_cwd = Path(res.out[0])
         Log.Info(f"external cwd [{external_cwd}]")
-        Log.Info(f"loading agent config")
-        agent = Agent.Load(AgentPaths.to_definition())
         task_key = workspace.name
         task_path = AgentPaths.to_task(task_key)
         Log.Info(f"loading task from [{task_path}]")
         task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
-
         step = task.plan.steps[step_index-1]
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
-        Log.Info(f"step {step_index:02} [{step_name}]")
-        Log.Info("uses:")
+        Log.Info(f"step [{step_index}:{step_name}]")
 
-        # need to rectify paths
-        # - for previous step outputs
-                # 2025-03-14_00-40-05  |     ✓ [metagenomics::oci_image_diamond] at [container.diamond.oci.uri -> {home}/data/zHXmpWcrgYaH/container.diamond.oci.uri]
-                # 2025-03-14_00-40-05  |     X [metagenomics::orfs_faa] at [orfs.faa -> /msm_home/runs/dwfuH8Cz/nxf_work/19/2272310d5eba7481fe8724313a77b6/orfs.faa]
-                # 2025-03-14_00-40-05  |     ✓ [metagenomics::protein_reference_diamond] at [reference.uniprot_sprot.dmnd -> {home}/data/zHXmpWcrgYaH/reference.uniprot_sprot.dmnd]
-        # - for containers
-
-        def _external_exists(p: Path):
-            FLAG = "exists123"
-            with PausedStdOut():
-                res = shell.Exec(f"[ -e {p} ] && echo {FLAG}", history=True)
-                return FLAG in res.out
-        def _status(p: Path, external=True):
-            exists = _external_exists(p) if external else p.exists()
-            return "✓" if exists else "X"
-        inputs = {}
-        for inst in step.uses:
-            p = inst.path
+        def _status(p: ContextPath):
+            return "✓" if p.local.exists() else "X"
+        container_binds = {}
+        def _parse_path(p: Path):
             if p.is_symlink():
-                p_info = f"{p} -> {p.readlink()}".replace(str(agent.home.GetPath()), "{home}")
+                external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
+                tail = external.relative_to(agent_home)
+                local = AgentPaths.HOME_ROOT/tail
             else:
-                p_info = f"{p}"
-            Log.Info(f"    {_status(p)} [{inst.dtype_name}] at [{p_info}]")
+                local = p
+                external = external_cwd/p
+            k = external.parent
+            if k not in container_binds:
+                container_binds[k] = Path(f"/msm_data/{k.name}")
+            container = container_binds[k]/p
+            return ContextPath(local=local, external=external, container=container)
+        inputs = {}
+        Log.Info("uses:")
+        for inst in step.uses:
+            p = _parse_path(inst.path)
+            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}] at [{p.external}]"))
             inputs[inst.dtype] = p
         Log.Info("produces:")
         outputs = {}
         for inst in step.produces:
-            outputs[inst.dtype] = inst.path
-            Log.Info(f"    [{inst.dtype_name}] at [{inst.path}]")
+            p = _parse_path(inst.path)
+            outputs[inst.dtype] = p
+            Log.Info(_shorten_home(f"    [{inst.dtype_name}] at [{p.external}]"))
 
         context = ExecutionContext(
             inputs=inputs,
             outputs=outputs,
             external_shell=shell,
+            external_cwd=external_cwd,
+            container_runtime=task.container_runtime,
         )
         Log.Info(f">>> executing protocol")
-        Log.Info(">"*30)
+        BREAK_LENGTH = 60
+        Log.Info(">"*BREAK_LENGTH)
         try:
             result = step.transform.protocol(context)
         except Exception as e:
-            Log.Info("<"*30)
+            Log.Info("<"*BREAK_LENGTH)
             Log.Info(f"<<< [{step_name}] failed with error")
             Log.Error(f"error while executing transform [{step_name}]")
             Log.Error(str(e))
@@ -131,9 +138,8 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                 Log.Error(f.read()[:-1])
             return ExecutionResult(False)
         
-        Log.Info("<"*30)
+        Log.Info("<"*BREAK_LENGTH)
         Log.Info(f"<<< [{step_name}] reports {'success' if result.success else 'failure'}")
         Log.Info(f"expected outputs:")
         for inst in step.produces:
-            Log.Info(f"    {_status(inst.path, external=False)} [{inst.dtype_name}] at [{inst.path}]")
-
+            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}] at [{p.external}]"))

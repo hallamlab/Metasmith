@@ -4,6 +4,8 @@ from tempfile import TemporaryDirectory
 from typing import Iterable
 import yaml
 
+from metasmith.coms.containers import ContainerRuntime
+
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary
@@ -238,8 +240,6 @@ class WorkflowPlan:
         workflow_definition = [
             "workflow {",
         ] + [
-            "",
-        ] + [
             TAB+f'_{x.dtype.key}'+f' = Channel.fromPath("{str(x.ResolvePath()).replace(str(home_dir), external_home_var)}") // {x.dtype_name} [{x.dtype}]' for x in self.given
         ] + [
             "",
@@ -267,14 +267,19 @@ class WorkflowTask:
     plan: WorkflowPlan
     data_libraries: list[DataInstanceLibrary] = field(default_factory=list)
     transform_libraries: list[TransformInstanceLibrary] = field(default_factory=list)
+    container_runtime: ContainerRuntime = ContainerRuntime.APPTAINER
     config: dict = field(default_factory=dict)
 
     def Pack(self):
+        optional = {}
+        if self.container_runtime is not None:
+            optional["container_runtime"] = self.container_runtime.name
+        if len(self.config) > 0:
+            optional["config"] = self.config
         return dict(
-            config=self.config,
             data_libraries=[lib.GetKey() for lib in self.data_libraries],
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
-        )
+        ) | optional
     
     def SaveAs(self, dest: Source):
         with TemporaryDirectory() as temp_dir:
@@ -320,9 +325,13 @@ class WorkflowTask:
         _libraries = data_libs|tr_libs
         plan = WorkflowPlan.Unpack(raw_plan, _libraries)
 
+        _runtime = raw_task.get("container_runtime")
+        if _runtime is not None:
+            _runtime = ContainerRuntime[_runtime]
         return cls(
             plan=plan,
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
-            config=raw_task["config"],
+            config=raw_task.get("config", {}),
+            container_runtime=_runtime,
         )
