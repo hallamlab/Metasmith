@@ -164,6 +164,7 @@ class WorkflowPlan:
         TAB = " "*4
         def _strip_var(s: str):
             return s[2:-1]
+        external_home_var = "${params.home}"
         external_work_var = "${params.workspace}"
         bootstrap_var = "${params.bootstrap}"
         bootstrap = [
@@ -185,11 +186,11 @@ class WorkflowPlan:
         wf_path = work_dir/"workflow.nf"
         def _path_as_external(p: Path):
             p_str = str(p)
-            if p_str.startswith(str(work_dir)):
-                sub = p_str[len(str(work_dir)):]
+            if p_str.startswith(str(home_dir)):
+                sub = p_str[len(str(home_dir)):]
                 if sub.startswith("/"):
                     sub = sub[1:]
-                p = external_work/sub
+                p = external_home/sub
             return p
         process_definitions = {}
         workflow_definition = []
@@ -239,7 +240,7 @@ class WorkflowPlan:
         ] + [
             "",
         ] + [
-            TAB+f'_{x.dtype.key}'+f' = Channel.fromPath("{_path_as_external(x.ResolvePath())}") // {x.dtype_name} [{x.dtype}]' for x in self.given
+            TAB+f'_{x.dtype.key}'+f' = Channel.fromPath("{str(x.ResolvePath()).replace(str(home_dir), external_home_var)}") // {x.dtype_name} [{x.dtype}]' for x in self.given
         ] + [
             "",
         ] + workflow_definition + [
@@ -247,7 +248,8 @@ class WorkflowPlan:
         ]
 
         wf_contents = [
-            f"{_strip_var(external_work_var)} = '{external_work}'",
+            f"{_strip_var(external_home_var)} = '{external_home}'",
+            f'{_strip_var(external_work_var)} = "{external_work}"'.replace(str(external_home), external_home_var),
         ] + bootstrap + [
             "",
             "\n\n".join(process_definitions.values()),

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Iterable
 from importlib import metadata, reload, __import__
 
+from ..coms.containers import ContainerRuntime, Container
 from ..coms.ipc import LiveShell
 from .solver import Dependency, Endpoint, Transform
 from .remote import GlobusSource, Logistics, Source, SourceType
@@ -520,10 +521,23 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         return cls(DataInstanceLibrary.LoadFrom(src, dest, label=label))
 
 @dataclass
+class ContextPath:
+    local: Path
+    external: Path
+    container: Path
+
+@dataclass
 class ExecutionContext:
-    inputs: dict[Endpoint, Path]
-    outputs: dict[Endpoint, Path]
-    shell: LiveShell
+    inputs: dict[Endpoint, ContextPath]
+    outputs: dict[Endpoint, ContextPath]
+    external_shell: LiveShell
+    container_runtime: ContainerRuntime
+
+    def ExecContainer(self, image: Endpoint, cmd: str):
+        path = self.inputs[image]
+        container = Container(
+
+        )
 
 @dataclass
 class ExecutionResult:

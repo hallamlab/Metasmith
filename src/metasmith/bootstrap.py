@@ -5,9 +5,8 @@ import shutil
 import yaml
 import traceback
 
-
 from .logging import Log
-from .agents import AgentPaths
+from .agents import Agent, AgentPaths
 from .models.libraries import ExecutionContext, ExecutionResult
 from .models.libraries import DataTypeLibrary, TransformInstance, TransformInstanceLibrary
 from .models.workflow import WorkflowTask
@@ -70,6 +69,8 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             res = shell.Exec("pwd -P", history=True)
         external_cwd = Path(res.out[0])
         Log.Info(f"external cwd [{external_cwd}]")
+        Log.Info(f"loading agent config")
+        agent = Agent.Load(AgentPaths.to_definition())
         task_key = workspace.name
         task_path = AgentPaths.to_task(task_key)
         Log.Info(f"loading task from [{task_path}]")
@@ -79,13 +80,27 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
         Log.Info(f"step {step_index:02} [{step_name}]")
         Log.Info("uses:")
-        def _status(p: Path):
-            return "✓" if p.exists() else "X"
+
+        # need to rectify paths
+        # - for previous step outputs
+                # 2025-03-14_00-40-05  |     ✓ [metagenomics::oci_image_diamond] at [container.diamond.oci.uri -> {home}/data/zHXmpWcrgYaH/container.diamond.oci.uri]
+                # 2025-03-14_00-40-05  |     X [metagenomics::orfs_faa] at [orfs.faa -> /msm_home/runs/dwfuH8Cz/nxf_work/19/2272310d5eba7481fe8724313a77b6/orfs.faa]
+                # 2025-03-14_00-40-05  |     ✓ [metagenomics::protein_reference_diamond] at [reference.uniprot_sprot.dmnd -> {home}/data/zHXmpWcrgYaH/reference.uniprot_sprot.dmnd]
+        # - for containers
+
+        def _external_exists(p: Path):
+            FLAG = "exists123"
+            with PausedStdOut():
+                res = shell.Exec(f"[ -e {p} ] && echo {FLAG}", history=True)
+                return FLAG in res.out
+        def _status(p: Path, external=True):
+            exists = _external_exists(p) if external else p.exists()
+            return "✓" if exists else "X"
         inputs = {}
         for inst in step.uses:
             p = inst.path
             if p.is_symlink():
-                p_info = f"{p} -> {p.readlink()}"
+                p_info = f"{p} -> {p.readlink()}".replace(str(agent.home.GetPath()), "{home}")
             else:
                 p_info = f"{p}"
             Log.Info(f"    {_status(p)} [{inst.dtype_name}] at [{p_info}]")
@@ -99,7 +114,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         context = ExecutionContext(
             inputs=inputs,
             outputs=outputs,
-            shell=shell,
+            external_shell=shell,
         )
         Log.Info(f">>> executing protocol")
         Log.Info(">"*30)
@@ -120,5 +135,5 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         Log.Info(f"<<< [{step_name}] reports {'success' if result.success else 'failure'}")
         Log.Info(f"expected outputs:")
         for inst in step.produces:
-            Log.Info(f"    {_status(inst.path)} [{inst.dtype_name}] at [{inst.path}]")
+            Log.Info(f"    {_status(inst.path, external=False)} [{inst.dtype_name}] at [{inst.path}]")
 

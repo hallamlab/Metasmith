@@ -3,7 +3,7 @@ from metasmith.pythonapi import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 def protocol(context: ExecutionContext):
-    context.shell.Exec(f"touch output.txt")
+    context.external_shell.Exec(f"touch output.txt")
     return ExecutionResult(success=True)
 
 model = Transform()

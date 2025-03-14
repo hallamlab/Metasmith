@@ -3,21 +3,12 @@
 
 import sys
 import time
-from pathlib import Path
 from metasmith.coms.ipc import RemoteShell
-from metasmith.agents import Agent
+from metasmith.agents import AgentPaths
 
-WS = Path("/ws")
-SERVER_PATH = WS/"relay/connections/main.in"
-cwd = Path("./").resolve()
-assert cwd.is_relative_to(WS)
-tail = cwd.relative_to(WS)
-agent = Agent.Load(Path("/msm_home/lib/agent.yml"))
-external_ws = agent.home/tail
-
-with RemoteShell(SERVER_PATH) as shell:
+with RemoteShell(AgentPaths.to_relay_coms()) as shell:
     shell.RegisterOnOut(print)
     shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
     args = [f'"{x}"' if "%" in x else x for x in sys.argv[1:]]
-    shell.Exec(f"cd {external_ws} && squeue {' '.join(args)}")
-    time.sleep(1) # don't know if or why this is needed...
+    shell.Exec(f"squeue {' '.join(args)}")
+    time.sleep(0.1) # don't know if or why this is needed...

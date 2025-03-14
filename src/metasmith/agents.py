@@ -5,14 +5,14 @@ from dataclasses import dataclass, field
 import tempfile
 import shutil
 from typing import Iterable, Literal
-from numpy import isin
 import yaml
 import time
+import re
 
 from .hashing import KeyGenerator
 from .coms.ipc import LiveShell, ShellResult, RemoveLeadingIndent
 from .logging import Log
-from .coms.containers import Container, CONTAINER_RUNTIME
+from .coms.containers import Container, ContainerRuntime
 from .coms.ipc import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTask
@@ -25,6 +25,11 @@ class AgentPaths:
     INTERNALS = Path("_metasmith")
     STAGED = Path("runs")
     TASK = Path("task")
+
+    @classmethod
+    def to_staged(cls, root: Path=None):
+        if root is None: root = cls.HOME_ROOT
+        return root/cls.STAGED
 
     @classmethod
     def to_task(cls, key: str, root: Path=None):
@@ -211,7 +216,7 @@ class Agent:
                     (Path(resolved_home)/".globus", Path(resolved_home)/".globus"),
                     (Path(resolved_home)/".globusonline", Path(resolved_home)/".globusonline"),
                 ],
-                runtime=CONTAINER_RUNTIME.APPTAINER
+                runtime=ContainerRuntime.APPTAINER
             )
             container_dev = make_dev_container(container)
             _cmds = [f"mkdir -p {p}" for p, _ in container.binds]
@@ -260,7 +265,7 @@ class Agent:
                     ("$AGENT_HOME", Path("/msm_home")),
                 ],
                 workdir=Path("/ws"),
-                runtime=CONTAINER_RUNTIME.APPTAINER,
+                runtime=ContainerRuntime.APPTAINER,
             )
             bootstrap_container_dev = make_dev_container(bootstrap_container)
             _remote_file(
@@ -367,12 +372,15 @@ class Agent:
 # ===========================================================================
 # calls to staged Agent
 
+def _get_nextflow_preset(config: dict):
+    return config.get("nextflow", {}).get("preset", "default")
+
 def StageWorkflow(task_key: str):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
     task_path = agent.home.GetPath()/AgentPaths.to_task(task_key)
     assert task_path.exists(), f"task dir not found [{task_path}]"
     task = WorkflowTask.Load(task_path)
-    Log.Info(f"staging workflow [{task.plan._key}] with [{len(task.plan.given)}] given data instances")
+    Log.Info(f"staging workflow [{task.plan._key}] with [{len(task.data_libraries)}] data libs and [{len(task.transform_libraries)}] transform libs")
 
     work_relative = AgentPaths.STAGED/task.plan._key
     work_dir = AgentPaths.WORK_ROOT/work_relative
@@ -434,9 +442,9 @@ def StageWorkflow(task_key: str):
         home_dir=AgentPaths.HOME_ROOT,
         external_home=agent.home.GetPath(),
     )
-    nextflow_config_dir = Path("/msm_home/lib/nextflow_config")
-    nextflow_parameters = task.config.get("nextflow", {})
-    preset_path = nextflow_config_dir/f"{nextflow_parameters.get('preset', 'default')}.nf"
+    nextflow_config_dir = AgentPaths.HOME_ROOT/"lib/nextflow_config"
+    nextflow_preset = _get_nextflow_preset(task.config)
+    preset_path = nextflow_config_dir/f"{nextflow_preset}.nf"
     if not preset_path.exists():
         Log.Warn(f"nextflow preset not found [{preset_path}], using default")
         preset_path = nextflow_config_dir/"default.nf"
@@ -476,10 +484,13 @@ def ExecuteWorkflow(key: str):
     Log.Info(f"external workspace [{extern_workspace}]")
 
     task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
-    Log.Info(f"executing workflow [{task.plan._key}] with [{len(task.plan.steps)}] steps")
+    nextflow_preset = _get_nextflow_preset(task.config)
+    Log.Info(f"executing workflow [{task.plan._key}] with preset [{nextflow_preset}]")
+    Log.Info(f"preset [{nextflow_preset}]")
+    Log.Info(f"steps [{len(task.plan.steps)}]")
 
     if agent.globus_uuid is not None:
-        Log.Info(f"locating input data with agent's globus endpoint [{agent.globus_uuid}]")
+        Log.Info(f"locating input data with ag`ent's globus endpoint [{agent.globus_uuid}]")
         dest_base = GlobusSource(endpoint=agent.globus_uuid, path="/").AsSource()
     else:
         Log.Info(f"locating input data with personal globus endpoint")
@@ -492,7 +503,7 @@ def ExecuteWorkflow(key: str):
             _extern_location = str(lib.location).replace(str(AgentPaths.HOME_ROOT), str(extern_home))
             Log.Info(f"[{_name}] at [{lib.location}] is remote [{lib.remote_src.address}], downloading to [{_extern_location}]")
             dest = dest_base/_extern_location
-            lib.Actualize(extern_dest=dest, label=f"msm.{task.plan._key}.{_name}")
+            lib.Actualize(extern_dest=dest, label=f"msm_staging.{_name}")
 
     # need to call nf inside container
     # nf needs java and is not a standalone executable
@@ -522,7 +533,7 @@ def ExecuteWorkflow(key: str):
     used_type_libs = set()
     for x in task.plan.targets:
         p = (output_path/x.path)
-        assert p.exists(), f"workflow failed to produce expected ouptut [{x.dtype_name}] at [{p}]"
+        assert p.exists(), f"workflow failed to produce expected output [{x.dtype_name}] at [{p}]"
         _namespace, _ = x.GetDType()
         used_type_libs.add(_namespace)
     to_add = []
