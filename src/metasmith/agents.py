@@ -473,7 +473,7 @@ def ExecuteWorkflow(key: str):
     Log.Info(f"steps [{len(task.plan.steps)}]")
 
     if agent.globus_uuid is not None:
-        Log.Info(f"locating input data with ag`ent's globus endpoint [{agent.globus_uuid}]")
+        Log.Info(f"locating input data with agent's globus endpoint [{agent.globus_uuid}]")
         dest_base = GlobusSource(endpoint=agent.globus_uuid, path="/").AsSource()
     else:
         Log.Info(f"locating input data with personal globus endpoint")
