@@ -13,3 +13,8 @@ __pycache__
 /lib
 !/lib/local
 .secret
+
+/conda_build
+/conda_recipe/*
+!/conda_recipe/compile_recipe.py
+!/conda_recipe/meta_template.yaml
