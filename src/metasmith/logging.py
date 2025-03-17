@@ -1,50 +1,88 @@
 import sys
-from .serialization import StdTime
 from pathlib import Path
+import logging
 
-_DEBUG = True
-_log_path: Path = None
-def _log(*args, **kwargs):
-    if _log_path is not None:
-        if kwargs.get("file") == sys.stderr:
-            log_file = _log_path.with_suffix(".err")
+from .serialization import StdTime
+
+DEFAULT_CONFIG = dict(
+    datefmt=StdTime.FORMAT,
+    level=logging.DEBUG,
+    encoding="latin1",
+)
+logging.basicConfig(**DEFAULT_CONFIG)
+
+for level, name in [
+    (logging.INFO,      " "),
+    (logging.DEBUG,     "D"),
+    (logging.WARNING,   "W"),
+    (logging.ERROR,     "E"),
+    (logging.CRITICAL,  "!"),
+]:
+    logging.addLevelName(level, name)
+
+class ConditionalFormatter(logging.Formatter):
+    def __init__(self, fmt_with_timestamp, fmt_without_timestamp):
+        super().__init__()
+        self.fmt_with_timestamp = fmt_with_timestamp
+        self.fmt_without_timestamp = fmt_without_timestamp
+        self.datefmt = StdTime.FORMAT
+
+    def format(self, record):
+        if getattr(record, 'include_timestamp', False):
+            self._style._fmt = self.fmt_with_timestamp
         else:
-            log_file = _log_path.with_suffix(".out")
-        if "file" in kwargs: del kwargs["file"]
-        with open(log_file, "a") as f:
-            print(*args, **kwargs, file=f, flush=True)
-    else:
-        print(*args, **kwargs, flush=True)
+            self._style._fmt = self.fmt_without_timestamp
+        return super().format(record)
+    
+class InfoFilter(logging.Filter):
+    def filter(self, record):
+        return record.levelno < logging.ERROR
 
-# todo: use logging module
+_formatter = ConditionalFormatter(
+    "%(asctime)s %(levelname)s| %(message)s",
+    "%(levelname)s| %(message)s",
+)
+_handler = logging.StreamHandler(stream=sys.stdout)
+_handler.setFormatter(_formatter)
+_handler.addFilter(InfoFilter())
+_handler_err = logging.StreamHandler(stream=sys.stderr)
+_handler_err.setLevel(logging.ERROR)
+_handler_err.setFormatter(_formatter)
+_logger = logging.getLogger()
+_logger.setLevel(logging.DEBUG)
+_logger.handlers.clear()
+_logger.addHandler(_handler)
+_logger.addHandler(_handler_err)
+
+_file_handlers: dict[Path, logging.FileHandler] = {}
 class Log:
     @classmethod
-    def SetLogFile(cls, file_path: Path):
-        global _log_path
-        _log_path = file_path
+    def AddLogFile(cls, file_path: Path):
+        _file_handler = logging.FileHandler(file_path)
+        _file_handlers[file_path] = _file_handler
+        _file_handler.setFormatter(_formatter)
+        _logger.addHandler(_file_handler)
+    
+    @classmethod
+    def RemoveLogFile(cls, file_path: Path):
+        if file_path not in _file_handlers:
+            return
+        _file_handler = _file_handlers[file_path]
+        _logger.removeHandler(_file_handler)
+        _file_handler.close()
 
     @classmethod
     def Info(cls, message, timestamp=True):
-        if timestamp:
-            line = f"{StdTime.Timestamp()}  | {message}"
-        else:
-            line = f"  | {message}"
-        _log(line)
+        _logger.info(message, extra=dict(include_timestamp=timestamp))
 
     @classmethod
     def Debug(cls, message):
-        line = f"{StdTime.Timestamp()} D| {message}"
-        if _DEBUG: _log(line)
+        _logger.debug(message)
 
     @classmethod
     def Warn(cls, message):
-        line = f"{StdTime.Timestamp()} W| {message}"
-        _log(line, file=sys.stderr)
+        _logger.warning(message)
 
     @classmethod
     def Error(cls, message, timestamp=True):
-        if timestamp:
-            line = f"{StdTime.Timestamp()} E| {message}"
-        else:
-            line = f" E| {message}"
-        _log(line, file=sys.stderr)
+        _logger.error(message, extra=dict(include_timestamp=timestamp))
