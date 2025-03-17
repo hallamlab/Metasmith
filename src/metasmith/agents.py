@@ -9,6 +9,7 @@ import yaml
 import time
 import re
 
+from .serialization import StdTime
 from .hashing import KeyGenerator
 from .coms.ipc import LiveShell, ShellResult, RemoveLeadingIndent
 from .logging import Log
@@ -463,6 +464,9 @@ def ExecuteWorkflow(key: str):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
     extern_home = agent.home.GetPath()
     extern_workspace = AgentPaths.to_task(key, root=extern_home).parent.parent
+    LOG_DIR = Path(f"_metasmith/logs.{StdTime.Timestamp()}")
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
     Log.Info(f"workspace [{workspace}]")
     Log.Info(f"external workspace [{extern_workspace}]")
 
@@ -499,7 +503,7 @@ def ExecuteWorkflow(key: str):
             cd {workspace}
             export NXF_HOME=./.nextflow
             nextflow -c ./workflow.config.nf \
-                -log ./nxf_logs/log \
+                -log {LOG_DIR}/nxf.log \
                 run ./workflow.nf \
                 -resume \
                 -work-dir ./nxf_work
