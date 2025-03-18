@@ -73,10 +73,10 @@ class AgentShell:
         def _on_err(x: str):
             if self.paused_err: return
             Log.Error(f"> {x}", timestamp=False)
-        self.shell.RegisterOnOut(_on_out)
-        self.shell.RegisterOnErr(_on_err)
         Log.Info(f"connecting to deployed agent")
         self.agent._run_setup(self.shell)
+        self.shell.RegisterOnOut(_on_out)
+        self.shell.RegisterOnErr(_on_err)
         self.shell.Exec(f"cd {agent.home.GetPath()}")
         Log.Info(f"starting relay service")
         self.shell.Exec(f"./relay/msm_relay start")
@@ -147,7 +147,13 @@ class Agent:
             Log.Info(f"starting ssh to [{ssh_src.host}]")
             shell.Exec(f"ssh {ssh_src.host}")
             SUCCESS = f"ssh_connected_flag.{KeyGenerator.FromInt(2**42)}"
+            on_out = lambda x: (Log.Info(f"{x}") if SUCCESS not in x else None)
+            on_err = lambda x: Log.Error(f"{x}")
+            shell.RegisterOnOut(on_out)
+            shell.RegisterOnErr(on_err)
             res = shell.Exec(f'[ ! -z "$SSH_CONNECTION" ] && echo "{SUCCESS}"', timeout=timeout, history=True)
+            shell.RemoveOnOut(on_out)
+            shell.RemoveOnErr(on_err)
             if not any(SUCCESS in x for x in res.out):
                 assert False, f"ssh connection failed {res.err}"
 
@@ -168,6 +174,7 @@ class Agent:
                     Log.Info(f">>> {x}")
                 return shell.Exec(cmd, timeout=timeout, history=True)
 
+            _staged = []
             def _remote_file(x: str|Path, dest: Path, executable=False):
                 if not isinstance(dest, Path): dest = Path(dest)
                 assert not dest.is_absolute() or dest.is_relative_to(self.home.GetPath()), f"dest [{dest}] must be relative to [{self.home.GetPath()}]"
@@ -180,6 +187,7 @@ class Agent:
                     if executable: os.chmod(fpath, 0o755)
                 else:
                     shutil.copytree(x, tmpdir/dest)
+                _staged.append(dest)
                 Log.Info(f"staged [{dest}]")
 
             def _sync_remote_files():
@@ -188,7 +196,7 @@ class Agent:
                     src=Source.FromLocal(tmpdir),
                     dest=self.home,
                 )
-                Log.Info(f"deploying staged files")
+                Log.Info(f"deploying [{len(_staged)}] staged files")
                 res = mover.ExecuteTransfers()
                 assert len(res.completed) == 1, f"failed to deploy files"
 
@@ -362,19 +370,54 @@ class Agent:
             sh_remote.Exec(f"./msm api stage_workflow -a task_key={task.plan._key}")
 
     def RunWorkflow(self, task: WorkflowTask|str):
-        if isinstance(task, WorkflowTask):
-            key = task.plan._key
-        else:
-            key = str(task)
-        with AgentShell(self) as sh_remote:
+        key = task.plan._key if isinstance(task, WorkflowTask) else str(task)
+        agent_shell = AgentShell(self)
+        with agent_shell as sh_remote:
             Log.Info(f"executing workflow")
-            sh_remote.Exec(f"./msm api execute_workflow -a key={key}", timeout=None)
+            task_path = AgentPaths.to_task(key, root=self.home.GetPath())
+            workspace = task_path.parent.parent
+            FLAG = "workspace exists"
+            with PausedShell(agent_shell): # this syntax is confusing, need to fix
+                res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True)
+            assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
+            LOG_DIR = Path(f"{AgentPaths.INTERNALS}/logs.{StdTime.Timestamp()}")
+            launcher_log = workspace/LOG_DIR/"main.raw.log"
+            sh_remote.Exec(
+                f"""
+                mkdir -p {launcher_log.parent}
+                nohup ./msm api run_workflow -a key={key} -a log_dir={LOG_DIR} >{launcher_log} 2>&1 &
+                """,
+            )
+
+    def CheckWorkflow(self, task: WorkflowTask|str, index: int=None):
+        key = task.plan._key if isinstance(task, WorkflowTask) else str(task)
+        with AgentShell(self) as sh_remote:
+            index_param = ""
+            if index is not None:
+                index_param = f"-a index={index}"
+            sh_remote.Exec(f"./msm api check_workflow -a key={key} {index_param}")
+
+    def GetResultSource(self, task: WorkflowTask|str, allow_globus: bool = True, check_exists: bool = False):
+        key = task.plan._key if isinstance(task, WorkflowTask) else str(task)
+        result_path = AgentPaths.to_staged(root=self.home.GetPath())/f"{key}/results"
+        if check_exists:
+            agent_shell = AgentShell(self)
+            with agent_shell as sh_remote:
+                FLAG = "results exist"
+                with PausedShell(agent_shell):
+                    res = sh_remote.Exec(f"[ -e {result_path} ] && echo '{FLAG}'", history=True)
+                assert FLAG in res.out, f"results not found at [{self.home.ReplacePathWith(result_path).address}]"
+
+        if self.globus_uuid is not None and allow_globus:
+            src = GlobusSource(endpoint=self.globus_uuid, path=result_path).AsSource()
+        else:
+            src = self.home.ReplacePathWith(result_path)
+        return src
 
 # ===========================================================================
 # calls to staged Agent
 
 _get_nextflow_preset = lambda config: config.get("nextflow", {}).get("preset", "default")
-_get_slurm_account = lambda config: config.get("nextflow", {}).get("slurm_account", "<no account given>")
 
 def StageWorkflow(task_key: str):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
@@ -456,23 +499,26 @@ def StageWorkflow(task_key: str):
     _rel = f"{extern_work}".replace(f"{extern_root}/", "")
     Log.Info(f"[{task.plan._key}] staged to [{{AGENT_HOME}}/{_rel}]")
 
-def ExecuteWorkflow(key: str):
+def RunWorkflow(key: str, log_dir: Path):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
-    assert workspace.exists(), f"plan folder not found [{workspace}]"
-
-    agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
-    extern_home = agent.home.GetPath()
-    extern_workspace = AgentPaths.to_task(key, root=extern_home).parent.parent
-    LOG_DIR = Path(f"_metasmith/logs.{StdTime.Timestamp()}")
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    Log.Info(f"workspace [{workspace}]")
-    Log.Info(f"external workspace [{extern_workspace}]")
+    assert workspace.exists(), f"task workspace not found [{workspace}]"
 
     task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
     nextflow_preset = _get_nextflow_preset(task.config)
-    Log.Info(f"executing workflow [{task.plan._key}] with preset [{nextflow_preset}]")
+    Log.Info(f"start time [{StdTime.Timestamp()}]")
+    Log.Info(f"running workflow [{task.plan._key}] with preset [{nextflow_preset}]")
+
+    Log.Info(f"loading agent metadata")
+    agent = Agent.Load(AgentPaths.to_definition())
+    extern_home = agent.home.GetPath()
+    extern_workspace = AgentPaths.to_task(key, root=extern_home).parent.parent
+    (workspace/log_dir).mkdir(parents=True, exist_ok=True)
+    MAIN_LOG = workspace/log_dir/"main.log"
+    Log.AddLogFile(MAIN_LOG)
+
+    Log.Info(f"workspace [{workspace}]")
+    Log.Info(f"external workspace [{extern_workspace}]")
     Log.Info(f"preset [{nextflow_preset}]")
     Log.Info(f"steps [{len(task.plan.steps)}]")
 
@@ -503,7 +549,7 @@ def ExecuteWorkflow(key: str):
             cd {workspace}
             export NXF_HOME=./.nextflow
             nextflow -c ./workflow.config.nf \
-                -log {LOG_DIR}/nxf.log \
+                -log {log_dir}/nxf.log \
                 run ./workflow.nf \
                 -resume \
                 -work-dir ./nxf_work
@@ -530,4 +576,70 @@ def ExecuteWorkflow(key: str):
         output.AddTypeLibrary(_namespace, type_libs[_namespace])
     output.Add(items=to_add, method=SourceType.DIRECT, on_exist="skip")
     output.Save()
-    Log.Info(f"results for [{key}] at [{output_path}]")
+    tail = output_path.relative_to(AgentPaths.HOME_ROOT)
+    external_results_path = extern_home/tail
+    Log.Info(f"results for [{key}] at [{external_results_path}]")
+
+    Log.Info(f"gathering log files")
+    nxf_ids = {}
+    nxf_id_len = 9 # 2 + "/" + 6
+    with open(MAIN_LOG, "r") as f:
+        for l in f:
+            candidates = re.findall(r"[\dabcdef]{2}/[\dabcdef]{6}\]\s[\w_]+\s\(", l)
+            if len(candidates) == 0: continue
+            hit = candidates[0]
+            nxf_id = hit[:nxf_id_len]
+            name = hit[nxf_id_len+2:-2]
+            nxf_ids[nxf_id] = name
+            
+    NXF_WORK = workspace/"nxf_work"
+    PROCESS_DEST = workspace/log_dir/"steps"
+    PROCESS_DEST.mkdir(parents=True, exist_ok=True)
+    for p in NXF_WORK.glob("*/*"):
+        p = p.relative_to(NXF_WORK)
+        nxf_id = str(p)[:nxf_id_len]
+        if nxf_id not in nxf_ids: continue
+        name = nxf_ids[nxf_id]
+        k = nxf_id.replace("/", "_")
+        dest = PROCESS_DEST/f"{name}.{k}.log"
+        src = NXF_WORK/p/".command.log"
+        if not src.exists():
+            Log.Warn(f"no log found for [{name}:{p}]")
+            continue
+        shutil.copy2(src, dest)
+    Log.Info(f"run completed at [{StdTime.Timestamp()}]")
+
+def CheckWorkflow(key: str, index: int=None):
+    task_path = AgentPaths.to_task(key)
+    workspace = task_path.parent.parent
+    assert workspace.exists(), f"task workspace not found [{workspace}], maybe it wasn't staged yet"
+
+    Log.Info(f"searching for logs")
+    internals = workspace/AgentPaths.INTERNALS
+    log_dirs = list((internals).glob("logs.*"))
+    log_dirs = sorted(log_dirs, key=lambda x: x.name)
+    if len(log_dirs) == 0:
+        Log.Warn(f"no logs found for [{key}]")
+        return
+    Log.Info(f"found [{len(log_dirs)}] runs")
+    for i, log_entry in enumerate(log_dirs):
+        n_str = f"{i+1}"
+        Log.Info(f"{' '*(5-len(n_str))}{n_str}: [{log_entry.name}]")
+
+    log_dir = log_dirs[-1]
+    msg = f"here is the main log of the latest run [{log_dir.name}]"
+    if index is not None:
+        if index < 1 or index > len(log_dirs):
+            Log.Warn(f"index [{index}] out of range")
+        else:
+            log_dir = log_dirs[index-1]
+            msg = f"here is the main log for run [{index}] [{log_dir.name}]"
+
+    Log.Info(msg)
+    Log.Info(f">"*len(msg))
+    Log.Info("")
+    with open(workspace/log_dir/"main.raw.log", "r") as f:
+        print(f.read())
+    Log.Info("")
+    Log.Info(f"<"*len(msg))
+    Log.Info(f"log folder at [{workspace/log_dir}]")

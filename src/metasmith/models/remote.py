@@ -214,6 +214,9 @@ class Source:
             "type": self.type.name,
         }
 
+class LogisticsException(Exception):
+    pass
+
 @dataclass
 class LogiscsResult:
     completed: list[tuple[Source, Source]]
@@ -248,7 +251,7 @@ class Logistics:
     def RemoveTransfer(self, src: Source, dest: Source):
         self._queue.remove((src, dest))
 
-    def ExecuteTransfers(self, label: str = None) -> LogiscsResult:
+    def ExecuteTransfers(self, label: str = None, wait_for_complete: bool=True) -> LogiscsResult:
         to_dispose: list[LiveShell] = []
         result = LogiscsResult(completed=[], errors=[])
 
@@ -310,11 +313,17 @@ class Logistics:
                     res = shell.Exec(cmd, history=True)
                     _kw = "Task ID: "
                     _task_ids = [x.replace(_kw, "") for x in res.out if x.startswith(_kw)]
-                    assert len(_task_ids) == 1, f"globus transfer failed to submit [{res.err}]"
+                    if len(_task_ids) != 1:
+                        Log.Error(f"globus transfer failed to submit")
+                        Log.Error(f"cmd: {cmd}")
+                        Log.Error(f"out: {res.out}")
+                        Log.Error(f"err: {res.err}")
+                        raise LogisticsException(f"globus transfer failed to submit")
                     _task_id = _task_ids[0]
                     tasks.append((_task_id, [(src, dest) for _, _, src, dest in batch]))
 
                 def _join():
+                    if not wait_for_complete: return []
                     completed = []
                     try:
                         _last_len = -1
