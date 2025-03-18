@@ -5,7 +5,7 @@ sys.path = [str(p) for p in set([
     HERE.joinpath("src")
 ]+sys.path)]
 import setuptools
-from metasmith.constants import NAME, VERSION, SHORT_SUMMARY, ENTRY_POINTS, GIT_URL
+from metasmith.constants import USER, NAME, VERSION, SHORT_SUMMARY, ENTRY_POINTS, GIT_URL
 
 with open("README.rst", "r", encoding="utf-8") as fh:
     long_description = fh.read()

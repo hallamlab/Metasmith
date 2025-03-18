@@ -391,6 +391,7 @@ class DataInstanceLibrary:
             elif on_exist == "clear":
                 Log.Warn("clearing previously loaded library")
                 shutil.rmtree(dest)
+                _transfer()
             elif on_exist == "skip":
                 pass
         else:
