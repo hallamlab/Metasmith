@@ -10,8 +10,9 @@ __pycache__
 /data
 /scratch
 /secrets
-/lib
+/lib/*
 !/lib/local
+!/lib/data_types
 .secret
 
 /conda_build
