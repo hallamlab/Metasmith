@@ -10,6 +10,12 @@ __pycache__
 /data
 /scratch
 /secrets
-/lib
+/lib/*
 !/lib/local
+!/lib/data_types
 .secret
+
+/conda_build
+/conda_recipe/*
+!/conda_recipe/compile_recipe.py
+!/conda_recipe/meta_template.yaml
