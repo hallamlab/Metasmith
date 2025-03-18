@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 import logging
+from typing import Callable
+import re
 
 from .serialization import StdTime
 
@@ -20,27 +22,36 @@ for level, name in [
 ]:
     logging.addLevelName(level, name)
 
-class ConditionalFormatter(logging.Formatter):
-    def __init__(self, fmt_with_timestamp, fmt_without_timestamp):
+class CustomFormatter(logging.Formatter):
+    def __init__(self, fmt_with_timestamp, fmt_without_timestamp, formatter=None):
         super().__init__()
         self.fmt_with_timestamp = fmt_with_timestamp
         self.fmt_without_timestamp = fmt_without_timestamp
         self.datefmt = StdTime.FORMAT
+        self._formatter: Callable[[str], str] = formatter
 
     def format(self, record):
-        if getattr(record, 'include_timestamp', False):
+        if getattr(record, 'include_timestamp', True):
             self._style._fmt = self.fmt_with_timestamp
         else:
             self._style._fmt = self.fmt_without_timestamp
-        return super().format(record)
+        msg = super().format(record)
+        if self._formatter is not None:
+            msg = self._formatter(msg)
+        return msg
     
 class InfoFilter(logging.Filter):
     def filter(self, record):
         return record.levelno < logging.ERROR
 
-_formatter = ConditionalFormatter(
+_formatter = CustomFormatter(
     "%(asctime)s %(levelname)s| %(message)s",
     "%(levelname)s| %(message)s",
+)
+_no_ansi_formatter = CustomFormatter(
+    "%(asctime)s %(levelname)s| %(message)s",
+    "%(levelname)s| %(message)s",
+    lambda m: re.sub(r"\x1b\[[\d;]*[mAK]", "", m)
 )
 _handler = logging.StreamHandler(stream=sys.stdout)
 _handler.setFormatter(_formatter)
@@ -57,10 +68,10 @@ _logger.addHandler(_handler_err)
 _file_handlers: dict[Path, logging.FileHandler] = {}
 class Log:
     @classmethod
-    def AddLogFile(cls, file_path: Path):
+    def AddLogFile(cls, file_path: Path, raw=False):
         _file_handler = logging.FileHandler(file_path)
         _file_handlers[file_path] = _file_handler
-        _file_handler.setFormatter(_formatter)
+        _file_handler.setFormatter(_formatter if raw else _no_ansi_formatter)
         _logger.addHandler(_file_handler)
     
     @classmethod

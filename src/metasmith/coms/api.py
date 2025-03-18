@@ -2,7 +2,7 @@ from pathlib import Path
 
 from ..logging import Log
 from ..bootstrap import DeployFromContainer, StageAndRunTransform
-from ..agents import ExecuteWorkflow, StageWorkflow
+from ..agents import RunWorkflow, StageWorkflow, CheckWorkflow
 
 class Api:
     def deploy_from_container(self, body: dict):
@@ -21,10 +21,24 @@ class Api:
         assert task_key, "[task_key] is required"
         StageWorkflow(task_key)
 
-    def execute_workflow(self, body: dict):
+    def run_workflow(self, body: dict):
         key = body.get("key")
         assert key, "[key] is required"
-        ExecuteWorkflow(key)
+        log_dir = Path(body.get("log_dir"))
+        assert log_dir, "[log_dir] is required"
+        RunWorkflow(key, log_dir)
+
+    def check_workflow(self, body: dict):
+        key = body.get("key")
+        assert key, "[key] is required"
+        index = body.get("index")
+        if index is not None:
+            try:
+                index = int(index)
+            except:
+                Log.Error(f"invalid [index] value [{index}]")
+                return
+        CheckWorkflow(key, index)
 
 _ENDPOINTS = {k:v for k, v in Api.__dict__.items() if k[0]!="_"} 
 def HandleRequest(endpoint: str, body: dict):
