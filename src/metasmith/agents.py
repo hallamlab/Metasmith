@@ -73,10 +73,10 @@ class AgentShell:
         def _on_err(x: str):
             if self.paused_err: return
             Log.Error(f"> {x}", timestamp=False)
-        self.shell.RegisterOnOut(_on_out)
-        self.shell.RegisterOnErr(_on_err)
         Log.Info(f"connecting to deployed agent")
         self.agent._run_setup(self.shell)
+        self.shell.RegisterOnOut(_on_out)
+        self.shell.RegisterOnErr(_on_err)
         self.shell.Exec(f"cd {agent.home.GetPath()}")
         Log.Info(f"starting relay service")
         self.shell.Exec(f"./relay/msm_relay start")
@@ -147,7 +147,13 @@ class Agent:
             Log.Info(f"starting ssh to [{ssh_src.host}]")
             shell.Exec(f"ssh {ssh_src.host}")
             SUCCESS = f"ssh_connected_flag.{KeyGenerator.FromInt(2**42)}"
+            on_out = lambda x: (Log.Info(f"{x}") if SUCCESS not in x else None)
+            on_err = lambda x: Log.Error(f"{x}")
+            shell.RegisterOnOut(on_out)
+            shell.RegisterOnErr(on_err)
             res = shell.Exec(f'[ ! -z "$SSH_CONNECTION" ] && echo "{SUCCESS}"', timeout=timeout, history=True)
+            shell.RemoveOnOut(on_out)
+            shell.RemoveOnErr(on_err)
             if not any(SUCCESS in x for x in res.out):
                 assert False, f"ssh connection failed {res.err}"
 
@@ -168,6 +174,7 @@ class Agent:
                     Log.Info(f">>> {x}")
                 return shell.Exec(cmd, timeout=timeout, history=True)
 
+            _staged = []
             def _remote_file(x: str|Path, dest: Path, executable=False):
                 if not isinstance(dest, Path): dest = Path(dest)
                 assert not dest.is_absolute() or dest.is_relative_to(self.home.GetPath()), f"dest [{dest}] must be relative to [{self.home.GetPath()}]"
@@ -180,6 +187,7 @@ class Agent:
                     if executable: os.chmod(fpath, 0o755)
                 else:
                     shutil.copytree(x, tmpdir/dest)
+                _staged.append(dest)
                 Log.Info(f"staged [{dest}]")
 
             def _sync_remote_files():
@@ -188,7 +196,7 @@ class Agent:
                     src=Source.FromLocal(tmpdir),
                     dest=self.home,
                 )
-                Log.Info(f"deploying staged files")
+                Log.Info(f"deploying [{len(_staged)}] staged files")
                 res = mover.ExecuteTransfers()
                 assert len(res.completed) == 1, f"failed to deploy files"
 
@@ -388,6 +396,23 @@ class Agent:
             if index is not None:
                 index_param = f"-a index={index}"
             sh_remote.Exec(f"./msm api check_workflow -a key={key} {index_param}")
+
+    def GetResultSource(self, task: WorkflowTask|str, allow_globus: bool = True, check_exists: bool = False):
+        key = task.plan._key if isinstance(task, WorkflowTask) else str(task)
+        result_path = AgentPaths.to_staged(root=self.home.GetPath())/f"{key}/results"
+        if check_exists:
+            agent_shell = AgentShell(self)
+            with agent_shell as sh_remote:
+                FLAG = "results exist"
+                with PausedShell(agent_shell):
+                    res = sh_remote.Exec(f"[ -e {result_path} ] && echo '{FLAG}'", history=True)
+                assert FLAG in res.out, f"results not found at [{self.home.ReplacePathWith(result_path).address}]"
+
+        if self.globus_uuid is not None and allow_globus:
+            src = GlobusSource(endpoint=self.globus_uuid, path=result_path).AsSource()
+        else:
+            src = self.home.ReplacePathWith(result_path)
+        return src
 
 # ===========================================================================
 # calls to staged Agent
