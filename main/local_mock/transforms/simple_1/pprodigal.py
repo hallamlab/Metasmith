@@ -1,5 +1,5 @@
 from pathlib import Path
-from metasmith.pythonapi import *
+from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 def protocol(context: ExecutionContext):

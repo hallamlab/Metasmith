@@ -1,5 +1,5 @@
 #!/bin/bash
-# dev script version 1.0 
+# dev script version 1.1
 
 HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 NAME=metasmith
@@ -199,6 +199,15 @@ case $1 in
             --mount type=bind,source="$HOME/.globusonline",target="/.globusonline"\
             --workdir="/ws" \
             $DOCKER_IMAGE:$VER /bin/bash
+    ;;
+
+    ###################################################
+    # docs
+    
+    --docs) # build docs
+        shift
+        cd $HERE/docs
+        sphinx-autobuild ./source ./build/html
     ;;
 
     ###################################################
