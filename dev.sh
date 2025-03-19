@@ -207,7 +207,7 @@ case $1 in
     --docs) # build docs
         shift
         cd $HERE/docs
-        sphinx-autobuild ./source ./build/html
+        sphinx-autobuild -a ./source ./build/html
     ;;
 
     ###################################################

@@ -1,8 +1,9 @@
+=========
 Metasmith
-===================================
+=========
 
 .. toctree::
-   :maxdepth: 2
-   :caption: asdf
+    :maxdepth: 2
 
-   minimal_example
+    tutorials/index
+    guides/index

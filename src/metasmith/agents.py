@@ -166,8 +166,17 @@ class Agent:
     def Deploy(self):
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
-            shell.RegisterOnOut(Log.Info)
-            shell.RegisterOnErr(Log.Error)
+            _paused = False
+            shell.RegisterOnOut(lambda x: (Log.Info(x) if not _paused else None))
+            shell.RegisterOnErr(lambda x: (Log.Error(x) if not _paused else None))
+            class PausedShell():
+                def __enter__(self):
+                    nonlocal _paused
+                    _paused = True
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    nonlocal _paused
+                    _paused = False
+
             def do_step(cmd: str, display_cmd: str=None, timeout=15):
                 if display_cmd is not None: Log.Info(f">>> {display_cmd}")
                 str_cmd = RemoveLeadingIndent(cmd)
@@ -202,10 +211,12 @@ class Agent:
                 assert len(res.completed) == 1, f"failed to deploy files"
 
             self._run_setup(shell)
-            res = shell.Exec(f"""
-                realpath {self.home.GetPath()}
-                realpath ~
-            """, history=True)
+            shell.Exec(f"mkdir -p {self.home.GetPath()}")
+            with PausedShell():
+                res = shell.Exec(f"""
+                    realpath {self.home.GetPath()}
+                    realpath ~
+                """, history=True)
             resolved_agent_home, resolved_home = [Path(x.strip()) for x in res.out]
 
             dev_src = "$AGENT_HOME/dev/metasmith"
@@ -567,7 +578,7 @@ def RunWorkflow(key: str, log_dir: Path):
     output_path = workspace/"results"
     output = DataInstanceLibrary(output_path)
     type_libs: dict[str, DataTypeLibrary] = {}
-    for lib in task.data_libraries:
+    for lib in task.transform_libraries:
         type_libs.update(lib.types)
     used_type_libs = set()
     for x in task.plan.targets:

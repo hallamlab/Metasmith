@@ -553,6 +553,7 @@ class LiveShell:
 
         _hash = self.ExecAsync(cmd)
         self.AwaitDone(timeout=timeout, _hash=_hash)
+        time.sleep(1)
         if history:
             self.RemoveOnOut(_log_out)
             self.RemoveOnErr(_log_err)
