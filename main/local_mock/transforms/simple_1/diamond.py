@@ -1,10 +1,10 @@
 from pathlib import Path
-from metasmith.pythonapi import *
+from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 def protocol(context: ExecutionContext):
     Log.Info("this is diamond!")
-    container = context.inputs[lib.GetType("metagenomics::oci_image_diamond")]
+    container = context._inputs[lib.GetType("metagenomics::oci_image_diamond")]
     Log.Info(f"container: [{container.local}] exists [{container.local.exists()}]")
     context.external_shell.Exec(f"touch annotations.csv")
     return ExecutionResult(success=True)

@@ -116,8 +116,8 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             Log.Info(_shorten_home(f"    [{inst.dtype_name}] at [{p.external}]"))
 
         context = ExecutionContext(
-            inputs=inputs,
-            outputs=outputs,
+            _inputs=inputs,
+            _outputs=outputs,
             external_shell=shell,
             external_cwd=external_cwd,
             container_runtime=task.container_runtime,
