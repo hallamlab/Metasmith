@@ -124,11 +124,12 @@ class WorkflowPlan:
         assert len(solutions) > 0, "failed to make plan!"
         solution = solutions[0]
 
-        _instance_map: dict[Endpoint, DataInstance] = given_map.copy()
+        _instance_map: dict[Endpoint, DataInstance] = {k.key:v for k, v in given_map.items()}
         steps: list[WorkflowStep] = []
         for i, appl in enumerate(solution.dependency_plan):
             tr = transform2inst[appl.transform]
             _lib = inst2trlib[tr]
+
             for e, d in appl.produced.items():
                 p = tr.output_signature[d]
                 _instance = DataInstance(
@@ -137,12 +138,12 @@ class WorkflowPlan:
                     dtype_name = _lib.GetName(d),
                     parent_lib = _lib,
                 )
-                _instance_map[e] = _instance
-            
+                _instance_map[e.key] = _instance
+
             step = WorkflowStep(
                 order=i+1,
-                uses=[_instance_map[e] for e in appl.used],
-                produces=[_instance_map[e] for e in appl.produced],
+                uses=[_instance_map[e.key] for e in appl.used],
+                produces=[_instance_map[e.key] for e in appl.produced],
                 transform=tr,
                 transform_library=_lib,
             )
@@ -153,7 +154,7 @@ class WorkflowPlan:
         for e in targets:
             d = target_e2d[e]
             _appl_e = _sol_produces_d2e[d]
-            _inst = _instance_map[_appl_e]
+            _inst = _instance_map[_appl_e.key]
             _sol_target_instances.append(_inst)
 
         return cls(

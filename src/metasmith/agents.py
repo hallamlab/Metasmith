@@ -168,10 +168,11 @@ class Agent:
             tmpdir = Path(tmpdir)
             shell.RegisterOnOut(Log.Info)
             shell.RegisterOnErr(Log.Error)
-            def do_step(cmd: str, timeout=15):
+            def do_step(cmd: str, display_cmd: str=None, timeout=15):
+                if display_cmd is not None: Log.Info(f">>> {display_cmd}")
                 str_cmd = RemoveLeadingIndent(cmd)
                 for x in str_cmd.split("\n"):
-                    Log.Info(f">>> {x}")
+                    if display_cmd is None: Log.Info(f">>> {x}")
                 return shell.Exec(cmd, timeout=timeout, history=True)
 
             _staged = []
@@ -230,7 +231,12 @@ class Agent:
             container_dev = make_dev_container(container)
             _cmds = [f"AGENT_HOME={resolved_agent_home}"]+[f"mkdir -p {p}" for p, _ in container.binds]
             do_step("\n".join(_cmds))
-            do_step(f"[ -e {container._get_local_path()} ] || {container.MakePullCommand()}", timeout=None)
+            _pull_cmd = container.MakePullCommand()
+            do_step(
+                cmd=f"[ -e {container._get_local_path()} ] || {_pull_cmd}",
+                display_cmd=f"{{if not exists}}: {_pull_cmd.replace(' '+str(resolved_agent_home), '')}",
+                timeout=None
+            )
 
             _remote_file(
                 f"""

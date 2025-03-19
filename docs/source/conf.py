@@ -39,3 +39,6 @@ html_theme = 'sphinx_rtd_theme'
 
 # -- Options for EPUB output
 epub_show_urls = 'footnote'
+
+# -- Options for myst-nb
+jupyter_execute_notebooks = "off" # myst uses the docs env to build, so we can't execute notebooks 

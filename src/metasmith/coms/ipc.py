@@ -463,7 +463,7 @@ class ShellResult:
 class LiveShell:
     def __init__(self) -> None:
         self._MARK = f"done_{GenerateId()}"
-        self._done = False
+        self._done_stack = set()
         self._err_callbacks = []
         self._out_callbacks = []
 
@@ -472,8 +472,9 @@ class LiveShell:
             def _cb(x):
                 msg = RemoveTrailingNewline(self._shell.Decode(x))
                 if len(msg) == 0: return
-                if msg == self._MARK:
-                    if check: self._done = True
+                if msg.startswith(self._MARK):
+                    _, k = msg.split(".")
+                    if k in self._done_stack: self._done_stack.remove(k)
                     return
                 for f in cb_lst: f(msg)
             return _cb
@@ -506,27 +507,39 @@ class LiveShell:
         if callback in self._err_callbacks: self._err_callbacks.remove(callback)
 
     def ExecAsync(self, cmd: str):
+        _hash = GenerateId()
+        self._done_stack.add(_hash)
         self._shell.Write(RemoveLeadingIndent(cmd))
+        return _hash
 
-    def AwaitDone(self, timeout: int|float = 15):
+    def AwaitDone(self, timeout: int|float = 15, _hash: str=None):
         def _await_done(await_timeout, delta):
             start = CurrentTimeMillis()
             while True:
-                if self._done: break
+                if len(self._done_stack)==0: break
+                if _hash is not None and _hash not in self._done_stack: break
                 if CurrentTimeMillis() - start > await_timeout*1000: return False
                 time.sleep(delta)
-            self._done = False
             return True
         
         start = CurrentTimeMillis()
         _d = 0.5
         while True:
             try:
-                self._shell.Write(f'echo "{self._MARK}"')
+                if len(self._done_stack)==0: break
+                if _hash is not None:
+                    if _hash not in self._done_stack: break
+                    _mark = _hash
+                else:
+                    _mark = next(iter(self._done_stack))
+                self._shell.Write(f'echo "{self._MARK}.{_mark}"')
             except BrokenPipeError: break
             if _await_done(await_timeout=_d, delta=min(_d/5, 1)): break
-            _d = min(_d*10, 864000) # 10 days
+            # _d = min(_d*2, 864000) # 10 days
             if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
+        if len(self._done_stack) > 0:
+                _mark = next(iter(self._done_stack))
+                self._shell.Write(f'echo "{self._MARK}.{_mark}"')
 
     def Exec(self, cmd: str, timeout: int|None = 15, history: bool=False) -> ShellResult:
         _out, _err = [], []
@@ -538,8 +551,8 @@ class LiveShell:
             self.RegisterOnOut(_log_out)
             self.RegisterOnErr(_log_err)
 
-        self.ExecAsync(cmd)
-        self.AwaitDone(timeout=timeout)
+        _hash = self.ExecAsync(cmd)
+        self.AwaitDone(timeout=timeout, _hash=_hash)
         if history:
             self.RemoveOnOut(_log_out)
             self.RemoveOnErr(_log_err)
@@ -560,11 +573,12 @@ class RemoteShell:
         channel_path = ws/channel_path
         out_cb, err_cb = [], []
         MARK = f"done_{GenerateId()}"
-        self._done = False
+        self._done_stack = set()
         def _make_callback(callback_list: list):
             def _handler(channel: PipeServer, raw: str):
-                if raw == MARK:
-                    self._done = True
+                if raw.startswith(MARK):
+                    _, k = raw.split(".")
+                    if k in self._done_stack: self._done_stack.remove(k)
                     return
                 for f in callback_list:
                     f(raw)
@@ -627,13 +641,17 @@ class RemoteShell:
 
     def ExecAsync(self, cmd: str):
         err = self._send(RemoveLeadingIndent(cmd))
+        _hash = GenerateId()
+        self._done_stack.add(_hash)
         if err: raise ConnectionError(err)
+        return _hash
 
-    def AwaitDone(self, timeout: int|float=15):
+    def AwaitDone(self, timeout: int|float=15, _hash: str=None):
         def _await_done(await_timeout, delta):
             start = CurrentTimeMillis()
             while True:
-                if self._done: break
+                if len(self._done_stack)==0: break
+                if _hash is not None and _hash not in self._done_stack: break
                 if CurrentTimeMillis() - start > await_timeout*1000: return False
                 time.sleep(delta)
             return True
@@ -641,11 +659,20 @@ class RemoteShell:
         start = CurrentTimeMillis()
         _d = 0.5
         while True:
-            err = self._send(f'echo "{self._MARK}"')
+            if len(self._done_stack)==0: break
+            if _hash is not None:
+                if _hash not in self._done_stack: break
+                _mark = _hash
+            else:
+                _mark = next(iter(self._done_stack))
+            err = self._send(f'echo "{self._MARK}.{_mark}"')
             if err: raise ConnectionError(err)
             if _await_done(await_timeout=_d, delta=min(_d/5, 1)): break
-            _d = min(_d*10, 864000) # 10 days
+            # _d = min(_d*2, 864000) # 10 days
             if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
+        if len(self._done_stack) > 0:
+            _mark = next(iter(self._done_stack))
+            self._send(f'echo "{self._MARK}.{_mark}"')
 
     def Exec(self, cmd: str, timeout: int|float|None=None, history: bool=False) -> ShellResult:
         _out, _err = [], []
@@ -656,8 +683,8 @@ class RemoteShell:
         if history:
             self.RegisterOnOut(_on_out)
             self.RegisterOnErr(_on_err)
-        self.ExecAsync(cmd)
-        self.AwaitDone(timeout=timeout)
+        _hash = self.ExecAsync(cmd)
+        self.AwaitDone(timeout=timeout, _hash=_hash)
         if history:
             self.RemoveOnOut(_on_out)
             self.RemoveOnErr(_on_err)

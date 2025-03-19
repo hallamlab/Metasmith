@@ -5,10 +5,10 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 def protocol(context: ExecutionContext):
     Log.Info("this is pprodigal!")
     container_key = lib.GetType("metagenomics::oci_image_pprodigal")
-    container = context.inputs[container_key]
+    container = context._inputs[container_key]
     Log.Info(f"container: [{container.local}] exists [{container.local.exists()}]")
-    contigs = context.inputs[lib.GetType("metagenomics::contigs")]
-    orfs = context.outputs[lib.GetType("metagenomics::orfs_faa")]
+    contigs = context._inputs[lib.GetType("metagenomics::contigs")]
+    orfs = context._outputs[lib.GetType("metagenomics::orfs_faa")]
     context.external_shell.Exec(
         cmd = """
         echo "hello from outside"

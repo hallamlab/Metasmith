@@ -35,6 +35,7 @@ if __name__ == "__main__":
                 "version.txt",
                 "nextflow_config/*",
                 "bin/*",
+                "example_resources/*",
             ],
             # examples
             # "package-name": ["*.txt"],
