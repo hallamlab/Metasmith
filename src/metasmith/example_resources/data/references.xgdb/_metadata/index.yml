@@ -1,0 +1,6 @@
+manifest:
+  blast.oci.uri: genomics::oci_image_blast
+  prodigal.oci.uri: genomics::oci_image_prodigal
+  swissprot_bcaa.faa: genomics::protein_reference_fasta
+remote_src: null
+schema: 0.5.1

@@ -7,7 +7,7 @@ sys.path = [str(p) for p in set([
 import setuptools
 from metasmith.constants import USER, NAME, VERSION, SHORT_SUMMARY, ENTRY_POINTS, GIT_URL
 
-with open("README.rst", "r", encoding="utf-8") as fh:
+with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 if __name__ == "__main__":
@@ -35,6 +35,7 @@ if __name__ == "__main__":
                 "version.txt",
                 "nextflow_config/*",
                 "bin/*",
+                "example_resources/*",
             ],
             # examples
             # "package-name": ["*.txt"],

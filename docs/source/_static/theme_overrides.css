@@ -1,0 +1,26 @@
+/* slightly less margins */
+.bd-page-width {
+    max-width: 80%;
+}
+
+/* ===================================================================== */
+/* less width for sidebar and give to main content */
+.bd-main .bd-content .bd-article-container {
+    max-width: 100%;
+}
+
+.bd-sidebar {
+    max-width: 20%;
+    min-width: 15em;
+}
+
+.bd-sidebar-secondary {
+    max-width: 25%;
+}
+
+/* realign the navbar links and make scale with sidebar */
+.navbar-header-items__start {
+    width: 20.5%;
+    min-width: 12em;
+}
+/* ===================================================================== */

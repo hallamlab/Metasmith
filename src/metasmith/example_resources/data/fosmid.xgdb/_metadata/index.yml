@@ -1,0 +1,4 @@
+manifest:
+  fosmid.fna: genomics::contigs
+remote_src: null
+schema: 0.5.1
