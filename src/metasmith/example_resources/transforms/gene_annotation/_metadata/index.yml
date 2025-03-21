@@ -2,4 +2,4 @@ manifest:
   blast.py: transforms::transform
   prodigal.py: transforms::transform
 remote_src: null
-schema: 0.5.1
+schema: 0.5.2
