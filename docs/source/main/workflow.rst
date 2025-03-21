@@ -96,5 +96,6 @@ Asking the agent to execute the workflow in its deployed workspace involves two 
 The workflow will execute asynchronously and its progress can be monitored with:
 
 .. code-block:: python
+    :linenos:
     
     smith.CheckWorkflow(task)
