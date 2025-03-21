@@ -5,16 +5,16 @@ ontology:
   version: 1.25
 schema: '1.0'
 types:
-  oci_image_diamond:
+  oci_image_blast:
     properties:
       data: software container
       format: OCI
-      provides: diamond
-  oci_image_pprodigal:
+      provides: blast
+  oci_image_prodigal:
     properties:
       data: software container
       format: OCI
-      provides: pprodigal
+      provides: prodigal
   protein_reference_fasta:
     properties:
       data: database reference
