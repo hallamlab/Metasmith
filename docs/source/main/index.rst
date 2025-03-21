@@ -1,10 +1,10 @@
-=============
-Documentation
-=============
+Usage
+############################################################
 
 .. toctree::
    :maxdepth: 2
 
-   workflow
+   install
    data
    transforms
+   workflow

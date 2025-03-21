@@ -1,12 +1,11 @@
-===============
 Adjacent Guides
 ===============
 
 .. toctree::
    :maxdepth: 2
 
-    virtual_envs
-    containers
-    ssh
-    vs_code
-    globus
+   ssh
+   ..  virtual_envs
+   ..  containers
+   ..  vs_code
+   ..  globus

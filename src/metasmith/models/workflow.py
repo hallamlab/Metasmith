@@ -164,6 +164,8 @@ class WorkflowPlan:
         )
     
     def PrepareNextflow(self, work_dir: Path, external_work: Path, home_dir: Path, external_home: Path):
+        # todo dynamic resources
+        # https://www.nextflow.io/docs/latest/process.html#dynamic-task-resources
         TAB = " "*4
         def _strip_var(s: str):
             return s[2:-1]
@@ -223,7 +225,7 @@ class WorkflowPlan:
                     TAB+'script:',
                     TAB+'"""',
                     TAB+f'{bootstrap_var}',
-                    TAB+f'bootstrap {external_work_var} $step_index',
+                    TAB+f'bootstrap {external_work_var}',
                     TAB+'"""',
                     "}"
                 ]

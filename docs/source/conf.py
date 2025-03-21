@@ -43,9 +43,12 @@ templates_path = ['_templates']
 html_theme = 'pydata_sphinx_theme' # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/index.html
 html_static_path = ['_static']
 html_title = f"{project} {version}"
-
+html_css_files = [
+    'theme_overrides.css',
+]
 html_theme_options = {
     "secondary_sidebar_items": ["page-toc"],
+    "navbar_align": "left",
     "icon_links": [
         {
             "name": "GitHub",
@@ -75,5 +78,3 @@ epub_show_urls = 'footnote'
 # -- Options for myst-nb
 nb_execution_mode = "off" # myst uses the docs env to build, so we can't execute notebooks 
 nb_remove_code_outputs = True
-
-
