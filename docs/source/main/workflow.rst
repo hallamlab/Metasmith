@@ -9,6 +9,10 @@ Workflows
 Tutorial: Genomics Annotation
 ===========================================================
 
+.. note::
+
+    `Looking for install instructions? <install.html>`_
+
 This section will show the minimal steps to generate and run a workflow with Metasmith
 using example data and transforms themed after genomics annotation.
 
