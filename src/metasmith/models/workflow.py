@@ -225,7 +225,8 @@ class WorkflowPlan:
                     TAB+'script:',
                     TAB+'"""',
                     TAB+f'{bootstrap_var}',
-                    TAB+f'bootstrap {external_work_var}',
+                    TAB+f'echo "$task.cpus $task.memory" >.command.resources',
+                    TAB+f'bootstrap {external_work_var} $step_index',
                     TAB+'"""',
                     "}"
                 ]

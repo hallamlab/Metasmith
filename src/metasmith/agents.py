@@ -275,8 +275,6 @@ class Agent:
                 executable=True,
             )
 
-            do_step(f"cd {resolved_agent_home} && ./msm api deploy_from_container")
-
             _remote_copy = Agent(**self.Pack())
             _remote_copy.home = Source.FromLocal(resolved_agent_home)
             _remote_file(
@@ -348,6 +346,9 @@ class Agent:
             HERE = Path(__file__).parent
             _remote_file(HERE/"nextflow_config", "lib/nextflow_config")
             _sync_remote_files()
+
+            do_step(f"cd {resolved_agent_home} && ./msm api deploy_from_container")
+
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
@@ -390,7 +391,7 @@ class Agent:
         key = task.plan._key if isinstance(task, WorkflowTask) else str(task)
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
-            Log.Info(f"executing workflow")
+            Log.Info(f"executing workflow [{key}]")
             task_path = AgentPaths.to_task(key, root=self.home.GetPath())
             workspace = task_path.parent.parent
             FLAG = "workspace exists"
