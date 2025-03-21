@@ -1,6 +1,0 @@
-manifest:
-  diamond.py: transforms::transform
-  make_diamond_db.py: transforms::transform
-  pprodigal.py: transforms::transform
-remote_src: null
-schema: 0.5.1

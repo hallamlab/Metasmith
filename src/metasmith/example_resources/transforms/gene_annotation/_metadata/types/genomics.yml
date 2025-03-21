@@ -13,18 +13,16 @@ types:
     properties:
       data: DNA sequence
       format: FASTA
-  oci_image_diamond:
+  oci_image_blast:
     properties:
       data: software container
       format: OCI
-      provides:
-      - diamond
-  oci_image_pprodigal:
+      provides: blast
+  oci_image_prodigal:
     properties:
       data: software container
       format: OCI
-      provides:
-      - pprodigal
+      provides: prodigal
   orf_annotations:
     properties:
       data: Protein features
@@ -33,7 +31,3 @@ types:
     properties:
       data: database reference
       format: .faa
-  protein_reference_diamond:
-    properties:
-      data: database reference
-      format: .dmnd

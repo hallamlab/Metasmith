@@ -344,7 +344,7 @@ class DataInstanceLibrary:
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
         return lib
 
-    def Save(self, update_types=False):
+    def Save(self, update_types=True):
         ext = self._metadata_ext
         types_path = self.location/self._path_to_types
         types_path.mkdir(parents=True, exist_ok=True)
