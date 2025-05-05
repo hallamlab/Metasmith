@@ -1,4 +1,5 @@
 manifest:
-  fosmid.fna: genomics::contigs
+  fosmid.fna: 
+    type: genomics::contigs
 remote_src: null
 schema: 0.5.1
