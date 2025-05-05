@@ -106,14 +106,15 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         Log.Info("uses:")
         for inst in step.uses:
             p = _parse_path(inst.path)
-            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}] at [{p.external}]"))
+            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
             inputs[inst.dtype] = p
         Log.Info("produces:")
         outputs = {}
+        space = " "
         for inst in step.produces:
             p = _parse_path(inst.path)
             outputs[inst.dtype] = p
-            Log.Info(_shorten_home(f"    [{inst.dtype_name}] at [{p.external}]"))
+            Log.Info(_shorten_home(f"    {space} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
 
         context = ExecutionContext(
             _inputs=inputs,
@@ -142,4 +143,4 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         Log.Info(f"<<< [{step_name}] reports {'success' if result.success else 'failure'}")
         Log.Info(f"expected outputs:")
         for inst in step.produces:
-            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}] at [{p.external}]"))
+            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))

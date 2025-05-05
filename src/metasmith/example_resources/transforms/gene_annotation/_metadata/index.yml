@@ -1,5 +1,7 @@
 manifest:
-  blast.py: transforms::transform
-  prodigal.py: transforms::transform
+  blast.py:
+    type: transforms::transform
+  prodigal.py:
+    type: transforms::transform
 remote_src: null
 schema: 0.5.2

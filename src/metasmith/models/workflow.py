@@ -43,11 +43,42 @@ class WorkflowStep:
             transform=tr,
             transform_library=lib,
         )
+@dataclass
+class WorkflowTarget:
+    instance: DataInstance
+    used_givens: list[DataInstance]
+    producing_step: WorkflowStep
+    _key: str = field(default_factory=lambda: "")
+
+    def __post_init__(self):
+        self.RecalculateKey()
+
+    def RecalculateKey(self):
+        self.instance.RecalculateKey()
+        self._key = self.instance._key
+
+    def Pack(self):
+        return dict(
+            instance=self.instance.Pack(),
+            parents=[dict(id=inst._key, path=str(inst.path)) for inst in self.used_givens],
+            producing_step=dict(order=self.producing_step.order, name=self.producing_step.transform.name),
+        )
+
+    @classmethod
+    def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary], given: dict[str, DataInstance], steps: dict[int, WorkflowStep]):
+        inst = DataInstance.Unpack(raw["instance"], libraries)
+        used_givens = [given[d["id"]] for d in raw["parents"]]
+        producing_step = steps[raw["producing_step"]["order"]]
+        return cls(
+            instance=inst,
+            used_givens=used_givens,
+            producing_step=producing_step,
+        )
 
 @dataclass
 class WorkflowPlan:
     given: list[DataInstance]
-    targets: list[DataInstance]
+    targets: list[WorkflowTarget] # target, used givens
     steps: list[WorkflowStep]
 
     def __post_init__(self):
@@ -60,7 +91,25 @@ class WorkflowPlan:
         return len(self.steps)
     
     def Pack(self):
+        dtypes: dict[str, tuple[str, Endpoint]] = {}
+        for inst in self.given:
+            dtypes[inst.dtype.key] = inst.dtype_name, inst.dtype
+        for target in self.targets:
+            dtypes[target.instance.dtype.key] = target.instance.dtype_name, target.instance.dtype
+        for step in self.steps:
+            for inst in step.uses:
+                dtypes[inst.dtype.key] = inst.dtype_name, inst.dtype
+            for inst in step.produces:
+                dtypes[inst.dtype.key] = inst.dtype_name, inst.dtype
+
+        def _pack_type(name: str, e: Endpoint):
+            d = e.Pack()
+            if len(e.parents)>0: d["parents"] = [p.key for p in e.parents]
+            d["name"] = name
+            return d
+
         return dict(
+            types={k: _pack_type(n, e) for k, (n, e) in dtypes.items()},
             given=[inst.Pack() for inst in self.given],
             targets=[inst.Pack() for inst in self.targets],
             steps=[step.Pack() for step in self.steps],
@@ -71,21 +120,52 @@ class WorkflowPlan:
             yaml.dump(self.Pack(), f)
 
     @classmethod
-    def Unpack(cls, raw: dict, libraries: dict[str, DataTypeLibrary]):
+    def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
+        all_types: dict[str, Endpoint] = {}
+        while len(all_types) < len(raw["types"]):
+            for k, v in raw["types"].items():
+                if k in all_types: continue
+                parent_keys = v.get("parents", [])
+                if any(p not in all_types for p in parent_keys): continue
+                parents = {all_types[p] for p in parent_keys}
+                proto = Endpoint.Unpack(dict(properties=v["properties"]))
+                all_types[k] = Endpoint(properties=proto.properties, parents=parents)
+
+        def _unpack_given(raw: dict):
+            inst = DataInstance.Unpack(raw, libraries)
+            inst.dtype = all_types[raw["type_id"]]
+            inst.RecalculateKey()
+            return inst
+        
+        def _unpack_step(raw: dict):
+            step = WorkflowStep.Unpack(raw, libraries)
+            for inst, r in zip(step.uses, raw["uses"]):
+                inst.dtype = all_types[r["type_id"]]
+                inst.RecalculateKey()
+            for inst, r in zip(step.produces, raw["produces"]):
+                inst.dtype = all_types[r["type_id"]]
+                inst.RecalculateKey()
+            return step
+
+        given=[_unpack_given(d) for d in raw["given"]]
+        given_map = {inst._key: inst for inst in given}
+        steps = [_unpack_step(d) for d in raw["steps"]]
+        step_map = {step.order: step for step in steps}
+
+        def _unpack_target(raw: dict):
+            target = WorkflowTarget.Unpack(raw, libraries, given_map, step_map)
+            target.instance.dtype = all_types[raw["instance"]["type_id"]]
+            target.RecalculateKey()
+            return target
+
         return cls(
-            given=[DataInstance.Unpack(inst, libraries) for inst in raw["given"]],
-            targets=[DataInstance.Unpack(inst, libraries) for inst in raw["targets"]],
-            steps=[WorkflowStep.Unpack(step, libraries) for step in raw["steps"]],
+            given=given,
+            targets=[_unpack_target(d) for d in raw["targets"]],
+            steps=steps,
         )
-    
-    @classmethod
-    def Load(cls, path: Path):
-        with open(path) as f:
-            raw = yaml.load(f)
-        return cls.Unpack(raw)
 
     @classmethod
-    def Generate(cls, given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: list[Endpoint]):
+    def Generate(cls, given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: Iterable[Endpoint]):
         given_map: dict[Endpoint, DataInstance] = {}
         for lib in given:
             for path, ep_name, ep in lib.Iterate():
@@ -124,8 +204,9 @@ class WorkflowPlan:
         assert len(solutions) > 0, "failed to make plan!"
         solution = solutions[0]
 
-        _instance_map: dict[Endpoint, DataInstance] = {k.key:v for k, v in given_map.items()}
+        instance_map: dict[Endpoint, DataInstance] = {k.key:v for k, v in given_map.items()}
         steps: list[WorkflowStep] = []
+        target_meta: dict[Endpoint, WorkflowTarget] = {}
         for i, appl in enumerate(solution.dependency_plan):
             tr = transform2inst[appl.transform]
             _lib = inst2trlib[tr]
@@ -134,32 +215,39 @@ class WorkflowPlan:
                 p = tr.output_signature[d]
                 _instance = DataInstance(
                     path = Path(p),
-                    dtype = d, # we actually dont want lineage at this stage so that the hashes match
+                    dtype = e, # we actually dont want lineage at this stage so that the hashes match
                     dtype_name = _lib.GetName(d),
                     parent_lib = _lib,
                 )
-                _instance_map[e.key] = _instance
+                instance_map[e.key] = _instance
 
             step = WorkflowStep(
                 order=i+1,
-                uses=[_instance_map[e.key] for e in appl.used],
-                produces=[_instance_map[e.key] for e in appl.produced],
+                uses=[instance_map[e.key] for e in appl.used],
+                produces=[instance_map[e.key] for e in appl.produced],
                 transform=tr,
                 transform_library=_lib,
             )
             steps.append(step)
 
-        _sol_produces_d2e = {d:e for e, d in solution.application.used.items()}
-        _sol_target_instances: list[DataInstance] = []
-        for e in targets:
-            d = target_e2d[e]
-            _appl_e = _sol_produces_d2e[d]
-            _inst = _instance_map[_appl_e.key]
-            _sol_target_instances.append(_inst)
+            for e, d in appl.produced.items():
+                for target in targets:
+                    if not e.IsA(target): continue
+                    if not target.parents.issubset(e.parents): continue
+                    _used_givens = []
+                    for p in target.parents:
+                        if p not in given_map: continue
+                        _used_givens.append(given_map[p])
+                    target_meta[target] = WorkflowTarget(
+                        instance=instance_map[e.key],
+                        used_givens=_used_givens,
+                        producing_step=step,
+                    )
+                    break
 
         return cls(
             given=list(given_map.values()),
-            targets=_sol_target_instances,
+            targets=list(target_meta.values()),
             steps=steps,
         )
     
@@ -197,41 +285,39 @@ class WorkflowPlan:
                     sub = sub[1:]
                 p = external_home/sub
             return p
-        process_definitions = {}
+        process_definitions = []
         workflow_definition = []
-        target_endpoints = {x for x in self.targets}
+        target_instances = {x.instance for x in self.targets}
         for step in self.steps:
-            name = f"{step.transform.name}__{step.transform.model.key}"
-            if name not in process_definitions:
-                src = [f"process {name}"+" {"]
-                to_pubish = [x for x in step.produces if x in target_endpoints]
-                for x in to_pubish:
-                    src.append(TAB+f'publishDir "$params.output", mode: "copy", pattern: "{x.path}"')
-                if len(to_pubish)>0:
-                    src.append("") # newline
+            name = f"s{step.order:04}_{step.transform.name}__{step.transform.model.key}"
+            src = [f"process {name}"+" {"]
+            to_pubish = [x for x in step.produces if x in target_instances]
+            for x in to_pubish:
+                src.append(TAB+f'publishDir "$params.output/{step.order:04}", mode: "copy", pattern: "{x.path}"')
+            if len(to_pubish)>0:
+                src.append("") # newline
 
-                src += [
-                    TAB+"input:",
-                    TAB+TAB+f'val step_index',
-                ] + [
-                    TAB+TAB+f'path _{i+1:02} // {x.dtype_name} [{x.dtype}]' for i, x in enumerate(step.uses)
-                ] + [
-                    "",
-                    TAB+"output:",
-                ] + [
-                    TAB+TAB+f'path "{x.path}"' for x in step.produces
-                ] + [
-                    "",
-                    TAB+'script:',
-                    TAB+'"""',
-                    TAB+f'{bootstrap_var}',
-                    TAB+f'echo "$task.cpus $task.memory" >.command.resources',
-                    TAB+f'bootstrap {external_work_var} $step_index',
-                    TAB+'"""',
-                    "}"
-                ]
-                process_definitions[name] = "\n".join(src)
-
+            src += [
+                TAB+"input:",
+                TAB+TAB+f'val step_index',
+            ] + [
+                TAB+TAB+f'path _{i+1:02} // {x.dtype_name} [{x.dtype}]' for i, x in enumerate(step.uses)
+            ] + [
+                "",
+                TAB+"output:",
+            ] + [
+                TAB+TAB+f'path "{x.path}"' for x in step.produces
+            ] + [
+                "",
+                TAB+'script:',
+                TAB+'"""',
+                TAB+f'{bootstrap_var}',
+                TAB+f'echo "$task.cpus $task.memory" >.command.resources',
+                TAB+f'bootstrap {external_work_var} $step_index',
+                TAB+'"""',
+                "}"
+            ]
+            process_definitions.append("\n".join(src))
             output_vars = [f"_{x.dtype.key}" for x in step.produces]
             output_vars = ', '.join(output_vars)
             if len(step.produces) > 1:
@@ -240,7 +326,6 @@ class WorkflowPlan:
             input_vars = ', '.join(input_vars)
             workflow_definition.append(TAB+f'{output_vars} = {name}({input_vars})')
 
-        
         workflow_definition = [
             "workflow {",
         ] + [
@@ -256,7 +341,7 @@ class WorkflowPlan:
             f'{_strip_var(external_work_var)} = "{external_work}"'.replace(str(external_home), external_home_var),
         ] + bootstrap + [
             "",
-            "\n\n".join(process_definitions.values()),
+            "\n\n".join(process_definitions),
             "",
             "",
             "\n".join(workflow_definition),
@@ -326,7 +411,7 @@ class WorkflowTask:
             raise FileNotFoundError(f"could not find data library [{lib_key}], tried {_data_lib_paths}")
         data_libs = {n: load_lib(n) for n in raw_task["data_libraries"]}
         tr_libs = {n: TransformInstanceLibrary.Load(path/f"transforms/{n}") for n in raw_task["transform_libraries"]}
-        _libraries = data_libs|tr_libs
+        _libraries: dict[str, DataInstanceLibrary] = data_libs|tr_libs
         plan = WorkflowPlan.Unpack(raw_plan, _libraries)
 
         _runtime = raw_task.get("container_runtime")
