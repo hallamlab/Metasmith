@@ -5,15 +5,7 @@ ontology:
   version: 1.25
 schema: 0.5.2
 types:
-  example_input:
-    properties:
-    - example_input
-    - metasmith
-  example_output:
-    properties:
-    - example_output
-    - metasmith
   transform:
     properties:
-    - metasmith
-    - transform
+      - metasmith
+      - transform

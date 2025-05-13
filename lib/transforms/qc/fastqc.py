@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
         cmd = f"""\
             fastqc \
                 --noextract
-                -o {out_path.container}fastqc \
+                -o {out_path.container}/fastqc \
                 {context.Get(reads).container}
             """,
     )
