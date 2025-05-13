@@ -1,0 +1,5 @@
+manifest:
+  fastqc.py: transforms::transform
+  longqc.py: transforms::transform
+remote_src: null
+schema: 0.5.2

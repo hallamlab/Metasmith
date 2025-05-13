@@ -7,12 +7,15 @@ __pycache__
 *.egg-info
 /lib/relay_agent/*.spec
 
+.zed/
+
 /data
 /scratch
 /secrets
 /lib/*
 !/lib/local
 !/lib/data_types
+!/lib/transforms
 .secret
 
 /conda_build
