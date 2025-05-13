@@ -1,7 +1,0 @@
-manifest:
-  fastqc.oci.uri:
-    type: std::oci_image_fastqc
-  longqc.oci.uri:
-    type: std::oci_image_longqc
-remote_src: null
-schema: 0.6.0
