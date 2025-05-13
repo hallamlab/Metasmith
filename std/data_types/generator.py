@@ -43,7 +43,5 @@ qc_data_types["oci_image_longqc"] = longqc_image
 
 # Save the library to a YAML file within a directory
 base_dir = Path(__file__).parent
-out_path = base_dir / "../qc.yml"
+out_path = base_dir / "std_types.yml"
 qc_data_types.Save(out_path)
-
-print(f"Saved QC data types library to: {out_path}")

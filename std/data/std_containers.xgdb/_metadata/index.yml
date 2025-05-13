@@ -1,7 +1,7 @@
 manifest:
   fastqc.oci.uri:
-    type: qc::oci_image_fastqc
+    type: std::oci_image_fastqc
   longqc.oci.uri:
-    type: qc::oci_image_longqc
+    type: std::oci_image_longqc
 remote_src: null
 schema: 0.6.0
