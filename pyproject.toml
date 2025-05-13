@@ -1,0 +1,12 @@
+[project]
+name = "metasmith"
+version = "0.7.0"
+description = "Metasmith organizes bioinformatics data into machine-readable structures that enable the automated generation of Nextflow workflows. Deployed agents can then execute these workflows on remote compute resources on the user’s behalf."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "basedpyright>=1.29.1",
+    "matplotlib>=3.10.3",
+ "numpy>=2.2.5",
+ "pyyaml>=6.0.2",
+]

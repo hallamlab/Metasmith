@@ -1,7 +1,12 @@
+from pathlib import Path
 from metasmith.models.libraries import DataTypeLibrary, TransformInstanceLibrary
 
-transforms = TransformInstanceLibrary("../qc")
-dtypes = DataTypeLibrary.Load("../../data_types/qc.yml")
+base_dir = Path(__file__).parent
+transforms_path = base_dir / "../qc"
+dtypes_path = base_dir / "../../data_types/qc.yml"
+
+transforms = TransformInstanceLibrary(transforms_path)
+dtypes = DataTypeLibrary.Load(dtypes_path)
 
 _ = transforms.AddTypeLibrary("qc", dtypes)
 _ = transforms.AddStub("fastqc")
