@@ -13,8 +13,6 @@ __pycache__
 /lib/*
 !/lib/local
 !/lib/data_types
-!/lib/transforms
-!/lib/data
 .secret
 
 /conda_build
