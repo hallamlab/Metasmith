@@ -1,11 +1,15 @@
 from pathlib import Path
-from metasmith.python_api import *
 
-lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+from ...models.libraries import ExecutionContext, ExecutionResult, TransformInstance, TransformInstanceLibrary
+from ...models.solver import Transform
+
+base_path = Path(__file__).parent
+lib = TransformInstanceLibrary.Load(base_path)
 model = Transform()
-reads     = model.AddRequirement(node=lib.GetType("qc::short_reads"))
-image     = model.AddRequirement(node=lib.GetType("qc::oci_image_longqc"))
-out       = model.AddProduct(lib.GetType("qc::read_stats"))
+
+reads  = model.AddRequirement(node=lib.GetType("std::short_reads"))
+image  = model.AddRequirement(node=lib.GetType("std::oci_image_longqc"))
+out    = model.AddProduct(lib.GetType("std::read_stats"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
@@ -14,7 +18,7 @@ def protocol(context: ExecutionContext):
         cmd = f"""\
             longqc sampleqc \
                 -x pb-sequel
-                -o {out_path.container}longqc \
+                -o {out_path.container} \
                 {context.Get(reads).container}
             """,
     )

@@ -1,0 +1,29 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: 0.6.0
+types:
+  long_reads:
+    properties:
+      data: DNA sequence
+      format: Sequence file
+  oci_image_fastqc:
+    properties:
+      data: OCI
+      format: Software container
+      provides: fastqc
+  oci_image_longqc:
+    properties:
+      data: OCI
+      format: Software container
+      provides: longqc
+  read_stats:
+    properties:
+      data: HTML
+      format: Read statistics
+  short_reads:
+    properties:
+      data: DNA sequence
+      format: Sequence file

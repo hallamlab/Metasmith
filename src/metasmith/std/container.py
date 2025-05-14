@@ -1,12 +1,12 @@
 from pathlib import Path
 
-from ..std.data_types import std_types
+from ..std.data_types import StdTypes
 from ..models.libraries import DataInstanceLibrary, DataTypeLibrary
 
-def std_images() -> DataInstanceLibrary:
+def StdContainers() -> DataInstanceLibrary:
     xgdb = DataInstanceLibrary("containers.xgdb")
 
-    dtypes = std_types()
+    dtypes = StdTypes()
     xgdb.AddTypeLibrary(namespace="std", lib=dtypes)
 
     base_dir = Path(__file__).parent

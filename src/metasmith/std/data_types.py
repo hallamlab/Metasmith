@@ -3,7 +3,7 @@ from pathlib import Path
 from ..models.solver import Endpoint
 from ..models.libraries import DataTypeLibrary
 
-def std_types() -> DataTypeLibrary:
+def StdTypes() -> DataTypeLibrary:
     short_reads = Endpoint.Unpack({
     "properties": {
         "format": "Sequence file",
