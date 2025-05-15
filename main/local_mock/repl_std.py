@@ -15,7 +15,7 @@
 
 # %%
 from pathlib import Path
-from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary, StdTypes
+from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 
 dtypes, containers, transforms = Std()
 containers.Save()
@@ -26,7 +26,7 @@ containers.Save()
 # %%
 base_file = Path().resolve()
 data = DataInstanceLibrary("inputs.xgdb")
-data.AddTypeLibrary("std", StdTypes())
+data.AddTypeLibrary("std", dtypes)
 data.Add(
     items = [
         (base_file / "sample_data/test_dataset.fastq", "data.fastq", "std::short_reads")
