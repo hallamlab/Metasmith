@@ -9,7 +9,9 @@
 # ---
 
 # %% [markdown]
-# Import required modules, load data types (endpoints), data instances (container definitions), and transforms into locals from Std. Save the `containers` DataInstanceLibrary for introspection
+# - Import required modules
+# - Load data types (endpoints), data instances (container definitions), and transforms into locals from Std
+# - Save the `containers` DataInstanceLibrary for introspection
 
 # %%
 from pathlib import Path

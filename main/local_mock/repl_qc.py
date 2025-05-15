@@ -18,7 +18,7 @@ import shutil
 
 
 # %% [markdown]
-# Run fastqc
+# # Run fastqc
 
 # %%
 base_file = Path().resolve()
@@ -58,7 +58,8 @@ print("\nFASTQC test passed!\n\n")
 
 
 # %% [markdown]
-# Run longqc
+# # Run longqc
+#
 # Note: `--user ...` is required since longqc by default makes the output directory owned by root
 
 # %%
