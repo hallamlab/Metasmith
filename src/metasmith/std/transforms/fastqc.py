@@ -16,9 +16,9 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""\
-            mkdir {out_path.container}/fastqc &&
+            mkdir -p {out_path.container}/fastqc && \
             fastqc \
-                --noextract
+                --noextract \
                 -o {out_path.container}/fastqc \
                 {context.Get(reads).container}
             """,

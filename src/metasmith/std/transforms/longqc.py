@@ -16,8 +16,8 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""\
-            longqc sampleqc \
-                -x pb-sequel
+            sampleqc \
+                -x pb-sequel \
                 -o {out_path.container} \
                 {context.Get(reads).container}
             """,
