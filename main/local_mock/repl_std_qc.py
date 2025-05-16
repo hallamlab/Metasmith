@@ -27,7 +27,7 @@ dataset_path = base_file / "sample_data/test_dataset.fastq"
 # Create a new DataInstanceLibrary to hold short read data
 
 # %%
-short_reads = DataInstanceLibrary("short_reads.xgdb")
+short_reads = DataInstanceLibrary("std_qc_short_reads.xgdb")
 short_reads.AddTypeLibrary("std", dtypes)
 short_reads.Add(
     items = [
@@ -40,7 +40,7 @@ short_reads.Add(
 # Deploy agent to generate and run workflow
 
 # %%
-path_to_agent_home = Path("./metasmith_home").resolve()
+path_to_agent_home = Path("./std_qc_out").resolve()
 smith = Agent(
     home = Source.FromLocal(path_to_agent_home),
 )
@@ -62,7 +62,7 @@ smith.CheckWorkflow(task)
 # Create a new DataInstanceLibrary to hold long read data
 
 # %%
-long_reads = DataInstanceLibrary("long_reads.xgdb")
+long_reads = DataInstanceLibrary("std_qc_long_reads.xgdb")
 long_reads.AddTypeLibrary("std", dtypes)
 long_reads.Add(
     items = [
