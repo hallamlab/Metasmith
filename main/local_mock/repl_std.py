@@ -11,7 +11,7 @@
 # %% [markdown]
 # - Import required modules
 # - Load data types (endpoints), data instances (container definitions), and transforms into locals from Std
-# - Save the `containers` DataInstanceLibrary for introspection
+# - Define local for test dataset
 
 # %%
 from pathlib import Path
@@ -19,18 +19,22 @@ from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 
 dtypes, containers, transforms = Std()
 
+base_file = Path().resolve()
+dataset_path = base_file / "sample_data/test_dataset.fastq"
+
+
 # %% [markdown]
-# Create a new DataInstanceLibrary to hold input data, and save it for introspection
+# Create a new DataInstanceLibrary to hold short read data
 
 # %%
-base_file = Path().resolve()
-data = DataInstanceLibrary("inputs.xgdb")
-data.AddTypeLibrary("std", dtypes)
-data.Add(
+short_reads = DataInstanceLibrary("short_reads.xgdb")
+short_reads.AddTypeLibrary("std", dtypes)
+short_reads.Add(
     items = [
-        (base_file / "sample_data/test_dataset.fastq", "data.fastq", "std::long_reads")
+        (dataset_path, "data.fastq", "std::short_reads")
     ]
 )
+
 
 # %% [markdown]
 # Deploy agent to generate and run workflow
@@ -43,12 +47,40 @@ smith = Agent(
 smith.Deploy()
 
 task = smith.GenerateWorkflow(
-    [containers, data],
+    [containers, short_reads],
     [transforms],
     [dtypes["read_stats"]]
 )
 
 smith.StageWorkflow(task, "clear")
 smith.RunWorkflow(task)
+smith.CheckWorkflow(task)
 
+
+
+# %% [markdown]
+# Create a new DataInstanceLibrary to hold long read data
+
+# %%
+long_reads = DataInstanceLibrary("long_reads.xgdb")
+long_reads.AddTypeLibrary("std", dtypes)
+long_reads.Add(
+    items = [
+        (dataset_path, "data.fastq", "std::long_reads")
+    ]
+)
+
+
+# %% [markdown]
+# Generate and run workflow
+
+# %%
+task = smith.GenerateWorkflow(
+    [containers, long_reads],
+    [transforms],
+    [dtypes["read_stats"]]
+)
+
+smith.StageWorkflow(task, "clear")
+smith.RunWorkflow(task)
 smith.CheckWorkflow(task)
