@@ -1,25 +1,24 @@
 from pathlib import Path
+from metasmith.python_api import *
 
-from ...models.libraries import ExecutionContext, ExecutionResult, TransformInstance, TransformInstanceLibrary
-from ...models.solver import Transform
-
-base_path = Path(__file__).parent
-lib = TransformInstanceLibrary.Load(base_path)
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-reads  = model.AddRequirement(node=lib.GetType("std::short_reads"))
-image  = model.AddRequirement(node=lib.GetType("std::oci_image_longqc"))
-out    = model.AddProduct(lib.GetType("std::read_stats"))
+reads   = model.AddRequirement(lib.GetType("std::long_reads"))
+image   = model.AddRequirement(lib.GetType("std::oci_image_longqc"))
+out     = model.AddProduct(lib.GetType("std::read_stats"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
+    reads_path = context.Get(reads)
     context.ExecWithContainer(
         image = image,
-        cmd = f"""\
-            sampleqc \
-                -x pb-sequel \
-                -o {out_path.container} \
-                {context.Get(reads).container}
+        cmd = f"""
+                cd {out_path.container.parent}
+                longQC.py sampleqc \
+                    -x pb-sequel \
+                    -o longqc_out/ \
+                    {reads_path.container}
             """,
     )
     return ExecutionResult(success=out_path.local.exists())
@@ -28,6 +27,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "longqc",
+        out: "longqc_out/",
     },
 )

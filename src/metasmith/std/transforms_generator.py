@@ -10,5 +10,5 @@ transforms = TransformInstanceLibrary(transforms_path)
 dtypes = StdTypes()
 
 # Always copy type library in case it has changed
-_ = transforms.AddTypeLibrary("std", dtypes)
+transforms.AddTypeLibrary("std", dtypes)
 transforms.Save()

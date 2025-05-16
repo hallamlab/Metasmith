@@ -18,7 +18,6 @@ from pathlib import Path
 from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 
 dtypes, containers, transforms = Std()
-containers.Save()
 
 # %% [markdown]
 # Create a new DataInstanceLibrary to hold input data, and save it for introspection
@@ -29,10 +28,9 @@ data = DataInstanceLibrary("inputs.xgdb")
 data.AddTypeLibrary("std", dtypes)
 data.Add(
     items = [
-        (base_file / "sample_data/test_dataset.fastq", "data.fastq", "std::short_reads")
+        (base_file / "sample_data/test_dataset.fastq", "data.fastq", "std::long_reads")
     ]
 )
-data.Save()
 
 # %% [markdown]
 # Deploy agent to generate and run workflow

@@ -7,7 +7,7 @@ schema: 0.6.0
 types:
   long_reads:
     properties:
-      data: DNA sequence
+      data: Long sequence
       format: Sequence file
   oci_image_fastqc:
     properties:
@@ -21,9 +21,9 @@ types:
       provides: longqc
   read_stats:
     properties:
-      data: HTML
+      data: Archive
       format: Read statistics
   short_reads:
     properties:
-      data: DNA sequence
+      data: Short sequence
       format: Sequence file

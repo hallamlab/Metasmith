@@ -1,1 +1,1 @@
-docker://cymbopogon/longqc:1.2.0
+docker://quay.io/hallamlab/metasmith_longqc:0.1.0
