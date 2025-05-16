@@ -40,7 +40,7 @@ short_reads.Add(
 # Deploy agent to generate and run workflow
 
 # %%
-path_to_agent_home = Path("./std_qc_out").resolve()
+path_to_agent_home = Path("./std_qc_home").resolve()
 smith = Agent(
     home = Source.FromLocal(path_to_agent_home),
 )
