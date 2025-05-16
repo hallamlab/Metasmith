@@ -18,7 +18,6 @@ from .remote import GlobusSource, Logistics, Source, SourceType
 from ..hashing import KeyGenerator
 from ..logging import Log
 from ..constants import VERSION
-from ..std.data_types import StdTypes
 
 def yaml_safe_load(p: Path):
     MAX = 5
@@ -215,6 +214,7 @@ class DataInstanceLibrary:
             else:
                 assert location.is_dir(), f"[{location}] must be a directory"
             self.location = location
+        from ..std.data_types import StdTypes
         self.AddTypeLibrary("std", StdTypes())
 
     def AddTypeLibrary(self, namespace: str, lib: DataTypeLibrary|Source, on_exist: str="clear"):
