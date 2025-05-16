@@ -4,7 +4,7 @@ from ..std.data_types import StdTypes
 from ..models.libraries import DataInstanceLibrary, DataTypeLibrary
 
 def StdContainers() -> DataInstanceLibrary:
-    xgdb = DataInstanceLibrary("containers.xgdb")
+    xgdb = DataInstanceLibrary("std_containers.xgdb")
 
     dtypes = StdTypes()
     xgdb.AddTypeLibrary(namespace="std", lib=dtypes)
