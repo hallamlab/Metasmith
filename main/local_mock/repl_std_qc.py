@@ -47,9 +47,9 @@ smith = Agent(
 smith.Deploy()
 
 task = smith.GenerateWorkflow(
-    [containers, short_reads],
-    [transforms],
-    [dtypes["read_stats"]]
+    given      = [containers, short_reads],
+    transforms = [transforms],
+    targets    = [dtypes["read_stats"]]
 )
 
 smith.StageWorkflow(task, "clear")
@@ -76,11 +76,10 @@ long_reads.Add(
 
 # %%
 task = smith.GenerateWorkflow(
-    [containers, long_reads],
-    [transforms],
-    [dtypes["read_stats"]]
+    given      = [containers, long_reads],
+    transforms = [transforms],
+    targets    = [dtypes["read_stats"]]
 )
-
 smith.StageWorkflow(task, "clear")
 smith.RunWorkflow(task)
 smith.CheckWorkflow(task)
