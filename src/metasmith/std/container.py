@@ -6,9 +6,6 @@ from ..models.libraries import DataInstanceLibrary, DataTypeLibrary
 def StdContainers() -> DataInstanceLibrary:
     xgdb = DataInstanceLibrary("std_containers.xgdb")
 
-    dtypes = StdTypes()
-    xgdb.AddTypeLibrary(namespace="std", lib=dtypes)
-
     base_dir = Path(__file__).parent
     fastqc_path = base_dir / "containers/fastqc"
     longqc_path = base_dir / "containers/longqc"
