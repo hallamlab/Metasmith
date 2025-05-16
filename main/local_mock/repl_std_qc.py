@@ -28,7 +28,6 @@ dataset_path = base_file / "sample_data/test_dataset.fastq"
 
 # %%
 short_reads = DataInstanceLibrary("std_qc_short_reads.xgdb")
-short_reads.AddTypeLibrary("std", dtypes)
 short_reads.Add(
     items = [
         (dataset_path, "data.fastq", "std::short_reads")
@@ -63,7 +62,6 @@ smith.CheckWorkflow(task)
 
 # %%
 long_reads = DataInstanceLibrary("std_qc_long_reads.xgdb")
-long_reads.AddTypeLibrary("std", dtypes)
 long_reads.Add(
     items = [
         (dataset_path, "data.fastq", "std::long_reads")
