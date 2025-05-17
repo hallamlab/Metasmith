@@ -59,19 +59,19 @@ smith.CheckWorkflow(task)
 # Fetch `long_reads`
 
 # %%
-# accession_long = DataInstanceLibrary("std_fasterq_accession_long.xgdb")
-# accession_long.Add(
-#     items = [
-#         (base_file / "sample_data/accession_long", "accession", "std::long_reads_accession")
-#     ]
-# )
+accession_long = DataInstanceLibrary("std_fasterq_accession_long.xgdb")
+accession_long.Add(
+    items = [
+        (base_file / "sample_data/accession_long", "accession", "std::long_reads_accession")
+    ]
+)
 
-# task = smith.GenerateWorkflow(
-#     given      = [containers, accession_long],
-#     transforms = [transforms],
-#     targets    = [dtypes["read_stats"]]
-# )
+task = smith.GenerateWorkflow(
+    given      = [containers, accession_long],
+    transforms = [transforms],
+    targets    = [dtypes["read_stats"]]
+)
 
-# smith.StageWorkflow(task, "clear")
-# smith.RunWorkflow(task)
-# smith.CheckWorkflow(task)
+smith.StageWorkflow(task, "clear")
+smith.RunWorkflow(task)
+smith.CheckWorkflow(task)
