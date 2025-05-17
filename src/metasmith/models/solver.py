@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 
 from ..hashing import KeyGenerator
-    
+
 class Namespace:
     def __init__(self, key_length=5, seed: int|None=None, key_from_order=False) -> None:
         self.node_signatures: dict[int, str] = {}
@@ -32,7 +32,7 @@ class Namespace:
         t = Transform(self)
         self.transforms[name] = t
         return t
-    
+
 _DEFAULT_NAMESPACE = Namespace()
 def _set_default_namespace(namespace: Namespace):
     global _DEFAULT_NAMESPACE
@@ -46,7 +46,7 @@ def _set_default_namespace(namespace: Namespace):
 
 #     def __hash__(self) -> int:
 #         return self.hash
-    
+
 #     def __eq__(self, __value: object) -> bool:
 #         K = "key"
 #         return hasattr(__value, K) and self.key == getattr(__value, K)
@@ -71,7 +71,7 @@ class Node:
 
     def __hash__(self) -> int:
         return self.hash
-    
+
     def __eq__(self, __value: object) -> bool:
         return isinstance(__value, Node) and self.hash == __value.hash
 
@@ -80,7 +80,7 @@ class Node:
 
     def __repr__(self) -> str:
         return f"{self}"
-    
+
     def IsA(self, other: Node) -> bool:
         # if other.key in self._diffs: return False
         # if other.key in self._sames: return True
@@ -97,7 +97,7 @@ class Node:
             sig = ",".join(sorted(self.properties))
             self._sig = f'{sig}:[{psig}]' if len(self.parents)>0 else sig
         return self._sig
-    
+
     def Clone(self, properties_only: bool=False):
         clone = self.__class__(
             properties=set(self.properties),
@@ -105,14 +105,14 @@ class Node:
             _sig=None if properties_only else self._sig,
         )
         return clone
-    
+
     def WithLineage(self, parents: Iterable[Node]):
         image = self.__class__(
             properties=self.properties,
             parents=set(parents),
         )
         return image
-    
+
     def AddAsDependency(self, transform: Transform, mapping: dict[Endpoint, Dependency]=None):
         if mapping is None: mapping = {}
         def _add(e: Node):
@@ -126,7 +126,7 @@ class Node:
     @classmethod
     def _json_dumps(cls, d):
         return json.dumps(d, separators=(',', ':'), sort_keys=True)
-    
+
     @classmethod
     def Unpack(cls, d: dict):
         NO_KEY = cls.NO_KEY
@@ -143,7 +143,7 @@ class Node:
                     assert type(v) in {list}
                     props.update(v)
                     continue
-                
+
                 if isinstance(v, list):
                     props.update(cls._json_dumps({k:x}) for x in v)
                 else:
@@ -254,7 +254,7 @@ class Transform:
             self._input_group_map[i] = self._input_group_map.get(i, [])+list(_parents)
         self._update_hash()
         return _dep
-    
+
     # just all possibilities regardless of lineage
     def Possibilities(self, have: set[Endpoint], constraints: dict[Dependency, Endpoint]=dict()) -> Generator[list[Endpoint], Any, None]:
         matches: list[list[Endpoint]] = []
@@ -281,7 +281,7 @@ class Transform:
                 if i >= len(matches): return False
         while _advance():
             yield [matches[i][j] for i, j in enumerate(indexes)]
-    
+
     # filter possibilities based on correct lineage
     def Valids(self, matches: Iterable[list[Endpoint]]):
         black_list: set[tuple[int, Endpoint]] = set()
@@ -294,12 +294,12 @@ class Transform:
                 k = (i, e)
                 if k in black_list: ok=False; break
                 if k in white_list: continue
-                
+
                 parents = self._input_group_map.get(i, [])
                 if len(parents) == 0: # no lineage req.
                     white_list.add(k)
                     continue
-                
+
                 for prototype in parents:
                     # parent must already be in choosen, since it must have been added
                     # as a req. before being used as a parent during setup
@@ -356,7 +356,7 @@ class Result:
 
     def __len__(self):
         return len(self.dependency_plan)
-    
+
 @dataclass
 class DependencyResult:
     plan: list[Application]
@@ -365,7 +365,7 @@ class DependencyResult:
     def __len__(self):
         return len(self.plan)
 
-# lineage is satisfied at depth 1 (parents of parents are not considered) 
+# lineage is satisfied at depth 1 (parents of parents are not considered)
 def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transforms: Iterable[Transform], horizon: int=64, _debug=False):
     @dataclass
     class State:
@@ -444,9 +444,10 @@ def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transfor
             for e in res.application.produced:
                 if e.IsA(target):
                     ep = e; break
-            assert isinstance(ep, Endpoint)
-            if not _satisfies_lineage(target, ep): return
-            candidates.append(DependencyResult(
+            if ep:
+                assert isinstance(ep, Endpoint)
+                if not _satisfies_lineage(target, ep): return
+                candidates.append(DependencyResult(
                 res.dependency_plan+[res.application],
                 ep,
             ))
@@ -487,7 +488,7 @@ def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transfor
                 req_p[proto] = e
 
             results = _solve_dep(State(s.have, s.needed|{req}, req, req_p, s.seen_signatures|{sig}, s.depth+1))
-            
+
             if len(results) == 0:
                 if _debug: debug_print(f"<<< FAIL", s.target, req)
                 return []
@@ -498,7 +499,7 @@ def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transfor
             valids: list[list[DependencyResult]] = []
             ii = 0
             def _gather(req_i: int, req: Dependency, res: DependencyResult, deps: dict, used: set[Endpoint], inputs: list[DependencyResult]):
-                nonlocal ii; ii += 1         
+                nonlocal ii; ii += 1
                 if _debug: debug_print(f"          ", deps)
                 if _debug: debug_print(f"    ___", req, req.parents)
                 if _debug: debug_print(f"        __", res.endpoint, list(res.endpoint.Iterparents()))
