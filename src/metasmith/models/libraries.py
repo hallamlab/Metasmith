@@ -196,7 +196,7 @@ class DataInstanceLibrary:
         library_key: str
         path: Path
 
-    def __init__(self, location: Path|str|DataInstanceLibrary) -> None:
+    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool = True) -> None:
         self.manifest: dict[Path, str] = {}
         self.types: dict[str, DataTypeLibrary] = {}
         self._dtype2name = {}
@@ -214,8 +214,9 @@ class DataInstanceLibrary:
             else:
                 assert location.is_dir(), f"[{location}] must be a directory"
             self.location = location
-        from ..std.data_types import StdTypes
-        self.AddTypeLibrary("std", StdTypes())
+        if include_std:
+            from ..std.data_types import StdTypes
+            self.AddTypeLibrary("std", StdTypes())
 
     def AddTypeLibrary(self, namespace: str, lib: DataTypeLibrary|Source, on_exist: str="clear"):
         assert on_exist in {"skip", "error", "clear"}
