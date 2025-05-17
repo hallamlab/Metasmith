@@ -37,7 +37,7 @@ smith.Deploy()
 # Fetch `short_reads`
 
 # %%
-accession_short = DataInstanceLibrary("std_fasterq_accession.xgdb")
+accession_short = DataInstanceLibrary("std_fasterq_accession_short.xgdb")
 accession_short.Add(
     items = [
         (base_file / "sample_data/accession_short", "accession", "std::fasterq_accession")
@@ -59,7 +59,7 @@ smith.CheckWorkflow(task)
 # Fetch `long_reads`
 
 # %%
-accession_long = DataInstanceLibrary("std_fasterq_accession.xgdb")
+accession_long = DataInstanceLibrary("std_fasterq_accession_long.xgdb")
 accession_long.Add(
     items = [
         (base_file / "sample_data/accession_long", "accession", "std::fasterq_accession")
