@@ -23,7 +23,13 @@ def StdTypes() -> DataTypeLibrary:
         }
     })
 
-    fasterq_accession = Endpoint.Unpack({
+    short_reads_accession = Endpoint.Unpack({
+        "properties": {
+            "format": "Plaintext file",
+            "data": "Accession number"
+        }
+    })
+    long_reads_accession = Endpoint.Unpack({
         "properties": {
             "format": "Plaintext file",
             "data": "Accession number"
@@ -58,7 +64,8 @@ def StdTypes() -> DataTypeLibrary:
     std_data_types["long_reads"] = long_reads
     std_data_types["read_stats"] = read_stats
 
-    std_data_types["fasterq_accession"] = fasterq_accession
+    std_data_types["short_reads_accession"] = short_reads_accession
+    std_data_types["long_reads_accession"] = long_reads_accession
 
     std_data_types["oci_image_fastqc"] = fastqc_image
     std_data_types["oci_image_longqc"] = longqc_image

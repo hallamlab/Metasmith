@@ -5,14 +5,14 @@ ontology:
   version: '1.25'
 schema: 0.6.0
 types:
-  fasterq_accession:
-    properties:
-      data: Accession number
-      format: Plaintext file
   long_reads:
     properties:
       data: Long sequence
       format: Sequence file
+  long_reads_accession:
+    properties:
+      data: Accession number
+      format: Plaintext file
   oci_image_fasterq_dump:
     properties:
       data: OCI
@@ -36,3 +36,7 @@ types:
     properties:
       data: Short sequence
       format: Sequence file
+  short_reads_accession:
+    properties:
+      data: Accession number
+      format: Plaintext file

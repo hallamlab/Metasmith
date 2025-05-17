@@ -40,14 +40,14 @@ smith.Deploy()
 accession_short = DataInstanceLibrary("std_fasterq_accession_short.xgdb")
 accession_short.Add(
     items = [
-        (base_file / "sample_data/accession_short", "accession", "std::fasterq_accession")
+        (base_file / "sample_data/accession_short", "accession", "std::short_reads_accession")
     ]
 )
 
 task = smith.GenerateWorkflow(
     given      = [containers, accession_short],
     transforms = [transforms],
-    targets    = [dtypes["short_reads"]]
+    targets    = [dtypes["read_stats"]]
 )
 
 smith.StageWorkflow(task, "clear")
@@ -62,14 +62,14 @@ smith.CheckWorkflow(task)
 accession_long = DataInstanceLibrary("std_fasterq_accession_long.xgdb")
 accession_long.Add(
     items = [
-        (base_file / "sample_data/accession_long", "accession", "std::fasterq_accession")
+        (base_file / "sample_data/accession_long", "accession", "std::long_reads_accession")
     ]
 )
 
 task = smith.GenerateWorkflow(
     given      = [containers, accession_long],
     transforms = [transforms],
-    targets    = [dtypes["long_reads"]]
+    targets    = [dtypes["read_stats"]]
 )
 
 smith.StageWorkflow(task, "clear")

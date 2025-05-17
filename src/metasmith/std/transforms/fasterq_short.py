@@ -4,7 +4,7 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-accession  = model.AddRequirement(lib.GetType("std::fasterq_accession"))
+accession  = model.AddRequirement(lib.GetType("std::short_reads_accession"))
 image      = model.AddRequirement(lib.GetType("std::oci_image_fasterq_dump"))
 out        = model.AddProduct(lib.GetType("std::short_reads"))
 
