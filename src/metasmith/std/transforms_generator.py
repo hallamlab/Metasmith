@@ -4,11 +4,8 @@ from ..std.data_types import StdTypes
 from ..models.libraries import DataTypeLibrary, TransformInstanceLibrary
 
 base_dir = Path(__file__).parent
-transforms_path = base_dir / "transforms"
-
-transforms = TransformInstanceLibrary(transforms_path)
+types_path = base_dir / "transforms/_metadata/types"
 dtypes = StdTypes()
 
-# Always copy type library in case it has changed
-transforms.AddTypeLibrary("std", dtypes)
-transforms.Save()
+# Copy type library
+dtypes.Save(types_path / "std.yml")

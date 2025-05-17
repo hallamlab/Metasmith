@@ -9,11 +9,13 @@ def StdContainers() -> DataInstanceLibrary:
     base_dir = Path(__file__).parent
     fastqc_path = base_dir / "containers/fastqc"
     longqc_path = base_dir / "containers/longqc"
+    fasterq_dump_path = base_dir / "containers/fasterq_dump"
 
     xgdb.Add(
         items = [
             (fastqc_path, "fastqc.oci.uri", "std::oci_image_fastqc"),
-            (longqc_path, "longqc.oci.uri", "std::oci_image_longqc")
+            (longqc_path, "longqc.oci.uri", "std::oci_image_longqc"),
+            (fasterq_dump_path, "fasterq_dump.oci.uri", "std::oci_image_fasterq_dump")
         ],
     )
 

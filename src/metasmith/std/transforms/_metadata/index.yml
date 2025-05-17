@@ -1,4 +1,8 @@
 manifest:
+  fasterq_long.py:
+    type: transforms::transform
+  fasterq_short.py:
+    type: transforms::transform
   fastqc.py:
     type: transforms::transform
   longqc.py:
