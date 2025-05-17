@@ -20,23 +20,10 @@ from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 dtypes, containers, transforms = Std()
 
 base_file = Path().resolve()
-accession_path = base_file / "sample_data/test_accession"
 
 
 # %% [markdown]
-# Create a new DataInstanceLibrary to hold accession number
-
-# %%
-accession = DataInstanceLibrary("std_fasterq_accession.xgdb")
-accession.Add(
-    items = [
-        (accession_path, "accession", "std::fasterq_accession")
-    ]
-)
-
-
-# %% [markdown]
-# Deploy agent
+# Set up agent
 
 # %%
 path_to_agent_home = Path("./std_fasterq_home").resolve()
@@ -47,11 +34,18 @@ smith.Deploy()
 
 
 # %% [markdown]
-# Create `short_reads`
+# Fetch `short_reads`
 
 # %%
+accession_short = DataInstanceLibrary("std_fasterq_accession.xgdb")
+accession_short.Add(
+    items = [
+        (base_file / "sample_data/accession_short", "accession", "std::fasterq_accession")
+    ]
+)
+
 task = smith.GenerateWorkflow(
-    given      = [containers, accession],
+    given      = [containers, accession_short],
     transforms = [transforms],
     targets    = [dtypes["short_reads"]]
 )
@@ -62,11 +56,18 @@ smith.CheckWorkflow(task)
 
 
 # %% [markdown]
-# Create `long_reads`
+# Fetch `long_reads`
 
 # %%
+accession_long = DataInstanceLibrary("std_fasterq_accession.xgdb")
+accession_long.Add(
+    items = [
+        (base_file / "sample_data/accession_long", "accession", "std::fasterq_accession")
+    ]
+)
+
 task = smith.GenerateWorkflow(
-    given      = [containers, accession],
+    given      = [containers, accession_long],
     transforms = [transforms],
     targets    = [dtypes["long_reads"]]
 )

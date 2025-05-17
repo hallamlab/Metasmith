@@ -31,7 +31,7 @@ subprocess.run(f"""
         biocontainers/fastqc:v0.11.9_cv8 \
             fastqc --noextract \
                 -o fastqc \
-                test_dataset.fastq
+                dataset.fastq
 """, shell=True, check=True)
 
 
@@ -42,7 +42,7 @@ subprocess.run(f"""
 output_dir = data_dir / "fastqc"
 assert(output_dir.is_dir())
 
-output_files = ["test_dataset_fastqc.html", "test_dataset_fastqc.zip"]
+output_files = ["dataset_fastqc.html", "dataset_fastqc.zip"]
 for f in output_files:
     f = output_dir / f
     assert(f.exists())
@@ -74,7 +74,7 @@ subprocess.run(f"""
             sampleqc \
                 -x pb-sequel \
                 -o longqc \
-                test_dataset.fastq
+                dataset.fastq
 """, shell=True, check=True)
 
 

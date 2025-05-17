@@ -20,7 +20,7 @@ from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 dtypes, containers, transforms = Std()
 
 base_file = Path().resolve()
-dataset_path = base_file / "sample_data/test_dataset.fastq"
+dataset_path = base_file / "sample_data/dataset.fastq"
 
 
 # %% [markdown]
