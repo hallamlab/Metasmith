@@ -26,13 +26,13 @@ def StdTypes() -> DataTypeLibrary:
     short_reads_accession = Endpoint.Unpack({
         "properties": {
             "format": "Plaintext file",
-            "data": "Accession number"
+            "data": "Accession number associated with short reads"
         }
     })
     long_reads_accession = Endpoint.Unpack({
         "properties": {
             "format": "Plaintext file",
-            "data": "Accession number"
+            "data": "Accession number associated with long reads"
         }
     })
 
