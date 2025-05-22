@@ -36,26 +36,26 @@ class AgentPaths:
     def to_task(cls, key: str, root: Path=None):
         if root is None: root = cls.HOME_ROOT
         return root/(cls.STAGED/key)/cls.INTERNALS/cls.TASK
-    
+
     @classmethod
     def to_bootstrap(cls, root: Path=None):
         if root is None: root = cls.HOME_ROOT
         return root/"lib/msm_bootstrap"
-    
+
     @classmethod
     def to_definition(cls, root: Path=None):
         if root is None: root = cls.HOME_ROOT
         return root/"lib/agent.yml"
-    
+
     @classmethod
     def to_relay(cls, root: Path=None):
         if root is None: root = cls.HOME_ROOT
         return root/"relay/msm_relay"
-    
+
     @classmethod
     def to_relay_coms(cls, root: Path=None):
         return cls.to_relay(root).parent/"connections/main.in"
-    
+
     @classmethod
     def to_data(cls, root: Path=None):
         if root is None: root = cls.HOME_ROOT
@@ -97,10 +97,10 @@ class PausedShell:
         self.originals = shell.paused_out, shell.paused_err
         self.shell.paused_out = True
         self.shell.paused_err = err
-    
+
     def __enter__(self):
         return self.shell
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         oo, oe = self.originals
         self.shell.paused_out = oo
@@ -125,7 +125,7 @@ class Agent:
             home=self.home.Pack(),
             container=self.container,
         ) | optional
-    
+
     def Save(self, file_path: Path):
         with open(file_path, "w") as f:
             yaml.dump(self.Pack(), f)
@@ -134,7 +134,7 @@ class Agent:
     def Unpack(cls, data):
         data["home"] = Source.Unpack(data["home"])
         return cls(**data)
-    
+
     @classmethod
     def Load(cls, file_path: Path):
         with open(file_path, "r") as f:
@@ -237,7 +237,7 @@ class Agent:
                     (Path(resolved_home)/".globus", Path(resolved_home)/".globus"),
                     (Path(resolved_home)/".globusonline", Path(resolved_home)/".globusonline"),
                 ],
-                runtime=ContainerRuntime.APPTAINER
+                runtime=ContainerRuntime.DOCKER
             )
             container_dev = make_dev_container(container)
             _cmds = [f"AGENT_HOME={resolved_agent_home}"]+[f"mkdir -p {p}" for p, _ in container.binds]
@@ -289,7 +289,7 @@ class Agent:
                     ("$AGENT_HOME", Path("/msm_home")),
                 ],
                 workdir=Path("/ws"),
-                runtime=ContainerRuntime.APPTAINER,
+                runtime=ContainerRuntime.DOCKER,
             )
             bootstrap_container_dev = make_dev_container(bootstrap_container)
             _remote_file(
@@ -475,7 +475,7 @@ def StageWorkflow(task_key: str):
         mover = Logistics()
         expected: list[Source] = []
         for lib in libs:
-            if lib.remote_src is not None: 
+            if lib.remote_src is not None:
                 lib_dest = dest/lib.location.name
                 if not lib_dest.exists():
                     _dest = Source.FromLocal(lib_dest)

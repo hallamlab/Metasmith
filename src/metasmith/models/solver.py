@@ -444,10 +444,9 @@ def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transfor
             for e in res.application.produced:
                 if e.IsA(target):
                     ep = e; break
-            if ep:
-                assert isinstance(ep, Endpoint)
-                if not _satisfies_lineage(target, ep): return
-                candidates.append(DependencyResult(
+            assert isinstance(ep, Endpoint)
+            if not _satisfies_lineage(target, ep): return
+            candidates.append(DependencyResult(
                 res.dependency_plan+[res.application],
                 ep,
             ))
