@@ -237,7 +237,7 @@ class Agent:
                     (Path(resolved_home)/".globus", Path(resolved_home)/".globus"),
                     (Path(resolved_home)/".globusonline", Path(resolved_home)/".globusonline"),
                 ],
-                runtime=ContainerRuntime.DOCKER
+                runtime=ContainerRuntime.APPTAINER
             )
             container_dev = make_dev_container(container)
             _cmds = [f"AGENT_HOME={resolved_agent_home}"]+[f"mkdir -p {p}" for p, _ in container.binds]
@@ -289,7 +289,7 @@ class Agent:
                     ("$AGENT_HOME", Path("/msm_home")),
                 ],
                 workdir=Path("/ws"),
-                runtime=ContainerRuntime.DOCKER,
+                runtime=ContainerRuntime.APPTAINER,
             )
             bootstrap_container_dev = make_dev_container(bootstrap_container)
             _remote_file(

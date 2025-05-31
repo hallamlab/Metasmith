@@ -1,21 +1,28 @@
 from pathlib import Path
+from typing import Tuple
 
-from ..std.data_types import StdTypes
-from ..models.libraries import DataInstanceLibrary, DataTypeLibrary
+from ..models.libraries import DataInstanceLibrary
 
 def StdContainers() -> DataInstanceLibrary:
     xgdb = DataInstanceLibrary("std_containers.xgdb")
 
     base_dir = Path(__file__).parent
-    fastqc_path = base_dir / "containers/fastqc"
-    longqc_path = base_dir / "containers/longqc"
-    fasterq_dump_path = base_dir / "containers/fasterq_dump"
+
+    def _container_item(name: str) -> Tuple[Path, str, str]:
+        return (base_dir / f"containers/{name}", f"{name}.oci.uri", f"std::oci_image_{name}")
 
     xgdb.Add(
         items = [
-            (fastqc_path, "fastqc.oci.uri", "std::oci_image_fastqc"),
-            (longqc_path, "longqc.oci.uri", "std::oci_image_longqc"),
-            (fasterq_dump_path, "fasterq_dump.oci.uri", "std::oci_image_fasterq_dump")
+            _container_item("fastqc"),
+            _container_item("longqc"),
+            _container_item("fasterq_dump"),
+            _container_item("filtlong"),
+            _container_item("flye"),
+            _container_item("trimmomatic"),
+            _container_item("megahit"),
+            _container_item("bwa"),
+            _container_item("samtools"),
+            _container_item("pilon"),
         ],
     )
 

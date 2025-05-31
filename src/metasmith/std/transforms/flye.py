@@ -3,9 +3,9 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-reads   = model.AddRequirement(lib.GetType("std::long_reads"))
-image   = model.AddRequirement(lib.GetType("std::oci_image_longqc"))
-out     = model.AddProduct(lib.GetType("std::read_stats"))
+reads   = model.AddRequirement(lib.GetType("std::long_reads_filtered"))
+image   = model.AddRequirement(lib.GetType("std::oci_image_flye"))
+out     = model.AddProduct(lib.GetType("std::long_reads_assembly"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
@@ -13,12 +13,10 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-                cd {out_path.container.parent}
-                longQC.py sampleqc \
-                    -x pb-sequel \
-                    -o longqc_out/ \
-                    {reads_path.container}
-            """,
+                flye \
+                    {reads_path.container} \
+                    --out-dir {out_path.container}
+        """
     )
     return ExecutionResult(success=out_path.local.exists())
 
@@ -26,6 +24,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "longqc_out/",
+        out: "long_reads_assembly/",
     },
 )

@@ -4,8 +4,8 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 reads   = model.AddRequirement(lib.GetType("std::long_reads"))
-image   = model.AddRequirement(lib.GetType("std::oci_image_longqc"))
-out     = model.AddProduct(lib.GetType("std::read_stats"))
+image   = model.AddRequirement(lib.GetType("std::oci_image_filtlong"))
+out     = model.AddProduct(lib.GetType("std::long_reads_filtered"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
@@ -13,12 +13,11 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-                cd {out_path.container.parent}
-                longQC.py sampleqc \
-                    -x pb-sequel \
-                    -o longqc_out/ \
-                    {reads_path.container}
-            """,
+                filtlong \
+                    {reads_path.container} \
+                    --keep-percent 90 \
+                    > {out_path.container}
+        """
     )
     return ExecutionResult(success=out_path.local.exists())
 
@@ -26,6 +25,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "longqc_out/",
+        out: "long_reads_filtered.fasta",
     },
 )

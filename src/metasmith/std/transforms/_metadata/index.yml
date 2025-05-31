@@ -7,5 +7,19 @@ manifest:
     type: transforms::transform
   longqc.py:
     type: transforms::transform
+  filtlong.py:
+    type: transforms::transform
+  flye.py:
+    type: transforms::transform
+  megahit.py:
+    type: transforms::transform
+  trimmomatic.py:
+    type: transforms::transform
+  bwa.py:
+    type: transforms::transform
+  samtools.py:
+    type: transforms::transform
+  pilon.py:
+    type: transforms::transform
 remote_src: null
 schema: 0.6.0
