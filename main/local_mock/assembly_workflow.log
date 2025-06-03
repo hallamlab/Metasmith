@@ -1,0 +1,41 @@
+2025-06-03_00-40-17  | >>> AGENT_HOME=/home/seb-hyland/Documents/Metasmith/std_assembly_home
+2025-06-03_00-40-17  | >>> mkdir -p $AGENT_HOME
+2025-06-03_00-40-17  | >>> mkdir -p /home/seb-hyland/.globus
+2025-06-03_00-40-17  | >>> mkdir -p /home/seb-hyland/.globusonline
+2025-06-03_00-40-17  | >>> {if not exists}: apptainer pull/metasmith.sif docker://quay.io/hallamlab/metasmith:latest
+2025-06-03_00-40-17  | staged [msm_stub]
+2025-06-03_00-40-17  | staged [msm]
+2025-06-03_00-40-17  | staged [lib/agent.yml]
+2025-06-03_00-40-17  | staged [lib/msm_bootstrap]
+2025-06-03_00-40-17  | staged [lib/nextflow_config]
+2025-06-03_00-40-17  | deploying [5] staged files
+2025-06-03_00-40-18  | >>> cd /home/seb-hyland/Documents/Metasmith/std_assembly_home && ./msm api deploy_from_container
+2025-06-03_00-40-18  | 2025-06-03_00-40-18  | api call to [deploy_from_container] with [{}]
+2025-06-03_00-40-18  | 2025-06-03_00-40-18  | deploying to [/ws]
+2025-06-03_00-40-18  | 2025-06-03_00-40-18  | deploying relay server to [/ws/relay/msm_relay]
+2025-06-03_00-40-18  | 2025-06-03_00-40-18  | deployment complete
+2025-06-03_00-40-18  | deployed to [/home/seb-hyland/Documents/Metasmith/std_assembly_home]
+
+
+Running workflows...
+====================
+
+Running workflow generation for long_reads_assembly:
+    fasterq_long    ----->    std::long_reads
+    filtlong        ----->    std::long_reads_filtered
+    flye            ----->    std::long_reads_assembly
+
+Running workflow generation for short_reads_assembly:
+    fasterq_short    ----->    std::short_reads
+    trimmomatic      ----->    std::short_reads_filtered
+    megahit          ----->    std::short_reads_assembly
+
+Running workflow generation for hybrid_assembly:
+    fasterq_long     ----->    std::long_reads
+    filtlong         ----->    std::long_reads_filtered
+    flye             ----->    std::long_reads_assembly
+    fasterq_short    ----->    std::short_reads
+    trimmomatic      ----->    std::short_reads_filtered
+    bwa              ----->    std::sequence_alignment_map
+    samtools         ----->    std::binary_alignment_map
+    pilon            ----->    std::hybrid_assembly
