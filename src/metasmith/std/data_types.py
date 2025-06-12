@@ -136,11 +136,11 @@ def StdTypes() -> DataTypeLibrary:
             "provides": ["megahit"]
         }
     })
-    std_data_types["oci_image_bwa"] = Endpoint.Unpack({
+    std_data_types["oci_image_minimap2"] = Endpoint.Unpack({
         "properties": {
             "format": "Software container",
             "data": "OCI",
-            "provides": ["bwa"]
+            "provides": ["minimap2"]
         }
     })
     std_data_types["oci_image_samtools"] = Endpoint.Unpack({

@@ -36,6 +36,6 @@ Running workflow generation for hybrid_assembly:
     flye             ----->    std::long_reads_assembly
     fasterq_short    ----->    std::short_reads
     trimmomatic      ----->    std::short_reads_filtered
-    bwa              ----->    std::sequence_alignment_map
+    minimap2              ----->    std::sequence_alignment_map
     samtools         ----->    std::binary_alignment_map
     pilon            ----->    std::hybrid_assembly

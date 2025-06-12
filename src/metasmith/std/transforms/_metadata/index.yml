@@ -1,6 +1,4 @@
 manifest:
-  bwa.py:
-    type: transforms::transform
   fasterq_long.py:
     type: transforms::transform
   fasterq_short.py:
@@ -14,6 +12,8 @@ manifest:
   longqc.py:
     type: transforms::transform
   megahit.py:
+    type: transforms::transform
+  minimap2.py:
     type: transforms::transform
   pilon.py:
     type: transforms::transform

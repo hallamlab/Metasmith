@@ -5,7 +5,7 @@ model = Transform()
 
 reads      = model.AddRequirement(lib.GetType("std::short_reads_filtered"))
 assembly   = model.AddRequirement(lib.GetType("std::long_reads_assembly"))
-image      = model.AddRequirement(lib.GetType("std::oci_image_bwa"))
+image      = model.AddRequirement(lib.GetType("std::oci_image_minimap2"))
 out        = model.AddProduct(lib.GetType("std::sequence_alignment_map"))
 
 def protocol(context: ExecutionContext):
@@ -15,8 +15,7 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-                bwa index {assembly_path_container}
-                bwa mem {assembly_path_container} {reads_path.container} > {out_path.container}
+            minimap2 -ax sr ${assembly_path_container} ${reads_path.container} > ${out_path.container}
         """
     )
     return ExecutionResult(success=out_path.local.exists())

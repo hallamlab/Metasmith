@@ -29,11 +29,6 @@ types:
     properties:
       data: Long reads filtered by filtlong
       format: Sequence file
-  oci_image_bwa:
-    properties:
-      data: OCI
-      format: Software container
-      provides: bwa
   oci_image_fasterq_dump:
     properties:
       data: OCI
@@ -64,6 +59,11 @@ types:
       data: OCI
       format: Software container
       provides: megahit
+  oci_image_minimap2:
+    properties:
+      data: OCI
+      format: Software container
+      provides: minimap2
   oci_image_pilon:
     properties:
       data: OCI

@@ -20,7 +20,7 @@ def StdContainers() -> DataInstanceLibrary:
             _container_item("flye"),
             _container_item("trimmomatic"),
             _container_item("megahit"),
-            _container_item("bwa"),
+            _container_item("minimap2"),
             _container_item("samtools"),
             _container_item("pilon"),
         ],
