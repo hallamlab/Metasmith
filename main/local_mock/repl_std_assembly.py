@@ -2,11 +2,10 @@ from pathlib import Path
 from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 
 dtypes, containers, transforms = Std()
-
 base_dir = Path.cwd()
 
 
-path_to_agent_home = Path("./std_assembly_home").resolve()
+path_to_agent_home = Path("./std_assembly_home")
 smith = Agent(
     home = Source.FromLocal(path_to_agent_home),
 )

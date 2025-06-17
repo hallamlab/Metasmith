@@ -25,6 +25,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "long_reads_filtered.fasta",
+        out: "long_reads_filtered.fastq",
     },
 )

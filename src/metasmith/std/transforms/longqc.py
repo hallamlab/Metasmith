@@ -14,9 +14,9 @@ def protocol(context: ExecutionContext):
         image = image,
         cmd = f"""
                 cd {out_path.container.parent}
-                longQC.py sampleqc \
+                MPLBACKEND=Agg longQC.py sampleqc \
                     -x pb-sequel \
-                    -o longqc_out/ \
+                    -o longqc_out \
                     {reads_path.container}
             """,
     )

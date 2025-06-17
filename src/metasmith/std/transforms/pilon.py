@@ -10,13 +10,8 @@ out     = model.AddProduct(lib.GetType("std::hybrid_assembly"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
-    assembly_path = context.Get(assembly).container / "assembly/assembly.fasta"
-    bam_dir = context.Get(bam)
-
-    # Assert a file matching the glob pattern exists
-    bam_matches = list(bam_dir.container.glob("*.sorted.bam"))
-    assert bam_matches, "No file in BAM input directory matches *.sorted.bam"
-    bam_path = bam_matches[0]
+    assembly_path = context.Get(assembly).container / "00-assembly/draft_assembly.fasta"
+    bam_dir = context.Get(bam).container
 
     context.ExecWithContainer(
         image = image,
@@ -26,8 +21,9 @@ def protocol(context: ExecutionContext):
                 java -jar \
                     /pilon/pilon.jar \
                         --genome {assembly_path} \
-                        --frags {bam_path} \
-                        --output hybrid_assembly
+                        --frags {bam_dir / "alignments.sorted.bam"} \
+                        --output pilon_out \
+                        --fix all
         """
     )
     return ExecutionResult(success=out_path.local.exists())

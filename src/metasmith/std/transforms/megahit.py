@@ -3,7 +3,7 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-reads   = model.AddRequirement(lib.GetType("std::short_reads_filtered"))
+reads   = model.AddRequirement(lib.GetType("std::short_reads_trimmed"))
 image   = model.AddRequirement(lib.GetType("std::oci_image_megahit"))
 out     = model.AddProduct(lib.GetType("std::short_reads_assembly"))
 

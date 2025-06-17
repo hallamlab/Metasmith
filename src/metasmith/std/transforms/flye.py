@@ -13,10 +13,10 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-                flye \
-                    --pacbio-raw \
-                    {reads_path.container} \
-                    --out-dir {out_path.container}"
+            flye \
+                --pacbio-raw \
+                {reads_path.container} \
+                --out-dir {out_path.container}
         """
     )
     return ExecutionResult(success=out_path.local.exists())

@@ -5,7 +5,7 @@ model = Transform()
 
 reads   = model.AddRequirement(lib.GetType("std::short_reads"))
 image   = model.AddRequirement(lib.GetType("std::oci_image_trimmomatic"))
-out     = model.AddProduct(lib.GetType("std::short_reads_filtered"))
+out     = model.AddProduct(lib.GetType("std::short_reads_trimmed"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
@@ -31,6 +31,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "short_reads_filtered.fastq",
+        out: "short_reads_trimmed.fastq",
     },
 )

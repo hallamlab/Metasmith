@@ -27,7 +27,7 @@ Running workflow generation for long_reads_assembly:
 
 Running workflow generation for short_reads_assembly:
     fasterq_short    ----->    std::short_reads
-    trimmomatic      ----->    std::short_reads_filtered
+    trimmomatic      ----->    std::short_reads_trimmed
     megahit          ----->    std::short_reads_assembly
 
 Running workflow generation for hybrid_assembly:
@@ -35,7 +35,7 @@ Running workflow generation for hybrid_assembly:
     filtlong         ----->    std::long_reads_filtered
     flye             ----->    std::long_reads_assembly
     fasterq_short    ----->    std::short_reads
-    trimmomatic      ----->    std::short_reads_filtered
-    minimap2              ----->    std::sequence_alignment_map
+    trimmomatic      ----->    std::short_reads_trimmed
+    minimap2         ----->    std::sequence_alignment_map
     samtools         ----->    std::binary_alignment_map
     pilon            ----->    std::hybrid_assembly
