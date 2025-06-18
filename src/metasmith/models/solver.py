@@ -52,6 +52,7 @@ def _set_default_namespace(namespace: Namespace):
 #         return hasattr(__value, K) and self.key == getattr(__value, K)
 
 class Node:
+    NO_KEY = "_"
     def __init__(
         self,
         properties: set[str],
@@ -97,19 +98,6 @@ class Node:
             self._sig = f'{sig}:[{psig}]' if len(self.parents)>0 else sig
         return self._sig
     
-    def _props_have_keys(self):
-        if len(self.properties)==0: return False
-        return next(iter(self.properties)).startswith("{")
-
-    def AddProperty(self, value: str, key: str=None):
-        if key is None:
-            assert not self._props_have_keys(), "this endpoint's properties have keys"
-            self.properties.add(self._json_dumps([value]))
-        else:
-            assert self._props_have_keys(), "this endpoint's properties do not have keys"
-            self.properties.add(self._json_dumps({key:value}))
-        return self
-    
     def Clone(self, properties_only: bool=False):
         clone = self.__class__(
             properties=set(self.properties),
@@ -127,7 +115,7 @@ class Node:
     
     def AddAsDependency(self, transform: Transform, mapping: dict[Endpoint, Dependency]=None):
         if mapping is None: mapping = {}
-        def _add(e: Endpoint):
+        def _add(e: Node):
             if e in mapping: return mapping[e]
             parent_deps = {_add(p) for p in e.parents}
             d = transform.AddRequirement(node=e, parents=parent_deps)
@@ -141,21 +129,27 @@ class Node:
     
     @classmethod
     def Unpack(cls, d: dict):
+        NO_KEY = cls.NO_KEY
         raw_props = d["properties"]
         props = set()
-        if isinstance(raw_props, list):
+        if type(raw_props) in {list, set}: # all properties didn't have keys
             for v in raw_props:
                 assert type(v) not in {list, dict}
-                props.add(cls._json_dumps([v]))
+                props.add(v)
         elif isinstance(raw_props, dict):
             for k, v in raw_props.items():
                 assert type(v) not in {dict}
+                if k == NO_KEY:
+                    assert type(v) in {list}
+                    props.update(v)
+                    continue
+                
                 if isinstance(v, list):
                     props.update(cls._json_dumps({k:x}) for x in v)
                 else:
                     props.add(cls._json_dumps({k:v}))
         else:
-            assert False, f"cant unpack type [{type(raw_props)}] instance [{raw_props}]"
+            assert False, f"unexpected format [{type(raw_props)}: {raw_props}]"
         m = cls(
             properties=props,
         )
@@ -167,28 +161,30 @@ class Node:
         return m
 
     def Pack(self, parents=False):
+        NO_KEY = self.NO_KEY
         props = sorted(list(self.properties))
-        if len(self.properties)==0:
-            props = []
-        elif next(iter(self.properties)).startswith("{"): # key val pairs
-            props = {}
-            for p in self.properties:
-                e = json.loads(p).items()
-                assert len(e)==1
-                k, v = next(iter(e))
-                if k in props:
-                    if not isinstance(props[k], list):
-                        props[k] = [props[k]]
-                    props[k].append(v)
-                else:
-                    props[k] = v
-        else:
-            def _unlist(s: str):
-                if s.startswith("[") and s.endswith("]"): return json.loads(s)[0]
-                return s
-            props = [_unlist(p) for p in props]
+        formatted_props = {}
+        def _try_keyval(p: str):
+            try:
+                e = json.loads(p)
+                if len(e)>1: return NO_KEY, p
+                k, v = next(iter(e.items()))
+                return k, v
+            except json.JSONDecodeError:
+                return NO_KEY, p
+        for p in props:
+            k, v = _try_keyval(p)
+            formatted_props[k] = formatted_props.get(k, [])+[v]
+        # collapse singletons, unless they didn't have a key
+        for k in list(formatted_props.keys()):
+            if k == NO_KEY: continue
+            if len(formatted_props[k])==1:
+                formatted_props[k] = formatted_props[k][0]
+        # if all didn't have keys, just save as list
+        if len(formatted_props) == 1 and NO_KEY in formatted_props:
+            formatted_props = formatted_props[NO_KEY]
         d = {
-            "properties": props,
+            "properties": formatted_props,
         }
         if len(self.parents)>0 and parents:
             d["parents"] = [x.Pack() for x in self.parents]
@@ -204,7 +200,7 @@ class Dependency(Node):
 
 # as in a free floating data type
 class Endpoint(Node):
-    def __init__(self, properties: set[str], parents: dict[Endpoint, Node]=dict()) -> None:
+    def __init__(self, properties: set[str], parents: set[Endpoint]|dict[Endpoint, Node]=dict()) -> None:
         if isinstance(parents, set):
             parents = {p:p for p in parents}
         super().__init__(properties=properties, parents=set(parents.keys()))

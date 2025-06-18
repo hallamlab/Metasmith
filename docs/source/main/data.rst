@@ -16,6 +16,7 @@ Data types are called Endpoints to avoid conflicts with python types and because
 exist at either end of `transforms <transforms.html>`_.
 
 .. code-block:: python
+    :linenos:
 
     from metasmith.python_api import Endpoint
 
@@ -35,6 +36,7 @@ Data Type Library
 Endpoints can be gathered into a :python:`DataTypeLibrary` and given a name for convenience.
 
 .. code-block:: python
+    :linenos:
 
     from metasmith.python_api import DataTypeLibrary
 
@@ -102,6 +104,7 @@ In YAML form, properties of endpoints can be key-value pairs...
 ... or simple lists
 
 .. code-block:: python
+    :linenos:
 
     dtypes = examples.DataTypeLibraries("template_list")
 
@@ -133,6 +136,7 @@ In YAML form, properties of endpoints can be key-value pairs...
 Below is a more realistic example themed after genomics.
 
 .. code-block:: python
+    :linenos:
 
     dtypes = examples.DataTypeLibraries("minimal_genomics")
 
@@ -284,6 +288,7 @@ Metasmith can also be moved using :python:`Logistics`.
 A :python:`DataInstanceLibrary` can be moved directly. The above is equivalent to:
 
 .. code-block:: python
+    :linenos:
     
     xgdb.SaveAs(Source.FromLocal("path/to/destination/example.xgdb"))
 

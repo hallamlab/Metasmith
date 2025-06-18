@@ -16,7 +16,7 @@ from .logging import Log
 from .coms.containers import Container, ContainerRuntime
 from .coms.ipc import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
-from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTask
+from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstance
 from .models.solver import Endpoint, Dependency, Transform, _solve_by_bounded_dfs
 
@@ -355,7 +355,7 @@ class Agent:
     def GenerateWorkflow(self, given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: Iterable[Endpoint], config: dict=None):
         plan = WorkflowPlan.Generate(given, transforms, targets)
         if config is None: config = {}
-        task = WorkflowTask(plan=plan, data_libraries=given,transform_libraries=transforms, config=config)
+        task = WorkflowTask(plan=plan, data_libraries=list(given),transform_libraries=list(transforms), config=config)
         return task
 
     def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip"):
@@ -391,7 +391,7 @@ class Agent:
         key = task.plan._key if isinstance(task, WorkflowTask) else str(task)
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
-            Log.Info(f"executing workflow [{key}]")
+            Log.Info(f"triggering execution of [{key}]")
             task_path = AgentPaths.to_task(key, root=self.home.GetPath())
             workspace = task_path.parent.parent
             FLAG = "workspace exists"
@@ -576,24 +576,41 @@ def RunWorkflow(key: str, log_dir: Path):
         )
 
     Log.Info(f"compiling results")
-    output_path = workspace/"results"
+    results_folder = "results"
+    output_path = workspace/results_folder
+    extern_output_path = extern_workspace/results_folder
     output = DataInstanceLibrary(output_path)
     type_libs: dict[str, DataTypeLibrary] = {}
     for lib in task.transform_libraries:
         type_libs.update(lib.types)
     used_type_libs = set()
-    for x in task.plan.targets:
-        p = (output_path/x.path)
-        assert p.exists(), f"workflow failed to produce expected output [{x.dtype_name}] at [{p}]"
-        _namespace, _ = x.GetDType()
+    def _get_target_path(target: WorkflowTarget):
+        p = f"{target.producing_step.order:04}/{target.instance.path}"
+        return output_path/p, extern_output_path/p
+    for target in task.plan.targets:
+        inst = target.instance
+        p, ex_p = _get_target_path(target)
+        assert p.exists(), f"workflow failed to produce expected output [{inst.dtype_name}] at [{ex_p}]"
+        _namespace, _ = inst.GetDType()
         used_type_libs.add(_namespace)
+        for p in target.used_givens:
+            for _namespace, lib in p.parent_lib.types.items():
+                if _namespace in used_type_libs: continue
+                used_type_libs.add(_namespace)
+                type_libs[_namespace] = lib
     to_add = []
-    for x in task.plan.targets:
-        to_add.append([output_path/x.path, x.path, f"{x.dtype_name}"])
+    parent_map: dict[Path, list[DataInstance]] = {}
+    for target in task.plan.targets:
+        inst = target.instance
+        p, ex_p = _get_target_path(target)
+        rel_p = p.relative_to(output_path)
+        to_add.append([p, rel_p, inst.dtype_name])
+        parent_map[rel_p] = target.used_givens
     for _namespace in used_type_libs:
         output.AddTypeLibrary(_namespace, type_libs[_namespace])
     output.Add(items=to_add, method=SourceType.DIRECT, on_exist="skip")
-    output.Save()
+    output.Save(parent_map)
+
     tail = output_path.relative_to(AgentPaths.HOME_ROOT)
     external_results_path = extern_home/tail
     Log.Info(f"results for [{key}] at [{external_results_path}]")
@@ -609,7 +626,6 @@ def RunWorkflow(key: str, log_dir: Path):
             nxf_id = hit[:nxf_id_len]
             name = hit[nxf_id_len+2:-2]
             nxf_ids[nxf_id] = name
-            
     NXF_WORK = workspace/"nxf_work"
     PROCESS_DEST = workspace/log_dir/"steps"
     PROCESS_DEST.mkdir(parents=True, exist_ok=True)
@@ -625,6 +641,17 @@ def RunWorkflow(key: str, log_dir: Path):
             Log.Warn(f"no log found for [{name}:{p}]")
             continue
         shutil.copy2(src, dest)
+
+    Log.Info(f"compiling metadata to results folder [{output_path}]")
+    output_metadata_path = output_path/f"{output._path_to_meta}"
+    (output_metadata_path/"plan.yml").symlink_to(f"../../{AgentPaths.INTERNALS}/task/plan.yml")
+    (output_metadata_path/"task.yml").symlink_to(f"../../{AgentPaths.INTERNALS}/task/task.yml")
+    (output_metadata_path/"logs").symlink_to(f"../../{log_dir}")
+    output_nxf_folder = output_metadata_path/"nextflow"
+    output_nxf_folder.mkdir(parents=True, exist_ok=True)
+    (output_nxf_folder/"workflow.nf").symlink_to(f"../../../workflow.nf")
+    (output_nxf_folder/"workflow.config.nf").symlink_to(f"../../../workflow.config.nf")
+
     Log.Info(f"run completed at [{StdTime.Timestamp()}]")
 
 def CheckWorkflow(key: str, index: int=None):
