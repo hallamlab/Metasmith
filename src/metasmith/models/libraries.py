@@ -589,6 +589,7 @@ class ExecutionContext:
     external_shell: RemoteShell # since metasmith will bootstrap into its own container
     external_cwd: Path
     container_runtime: ContainerRuntime
+    params: dict = field(default_factory=dict)
 
     def Get(self, key: Endpoint|Dependency):
         # this is wasteful, but .IsA() and hash use the parent info as well
