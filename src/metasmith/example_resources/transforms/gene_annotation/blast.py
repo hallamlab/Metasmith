@@ -15,6 +15,7 @@ def protocol(context: ExecutionContext):
         image = image,
         cmd = f"""\
             blastp \
+                -num_threads {context.params.get('num_threads', 1)} \
                 -query {context.Get(orfs).container} \
                 -subject {context.Get(refdb).container} \
                 -outfmt "6 {COLUMNS}" \

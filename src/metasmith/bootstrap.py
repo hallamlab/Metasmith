@@ -116,12 +116,30 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             outputs[inst.dtype] = p
             Log.Info(_shorten_home(f"    {space} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
 
+        params = {}
+        try:
+            with open(".command.resources") as f:
+                _cpus, _mem = f.readline().strip().split()
+                for k, v in [ # match nextflow task.{}
+                    ("cpus", _cpus),
+                    ("memory", _mem),
+                ]:
+                    if v.lower() == "null": continue
+                    try:
+                        v = int(v)
+                    except ValueError:
+                        continue
+                    params[k] = v
+        except Exception as e:
+            Log.Error(f"failed to read .command.resources: {e}")
+
         context = ExecutionContext(
             _inputs=inputs,
             _outputs=outputs,
             external_shell=shell,
             external_cwd=external_cwd,
             container_runtime=task.container_runtime,
+            params=params,
         )
         Log.Info(f">>> executing protocol")
         BREAK_LENGTH = 60
