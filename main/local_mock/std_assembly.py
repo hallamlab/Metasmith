@@ -5,7 +5,7 @@ dtypes, containers, transforms = Std()
 base_dir = Path.cwd()
 
 
-path_to_agent_home = Path("./std_assembly_home")
+path_to_agent_home = Path("./std_home")
 smith = Agent(
     home = Source.FromLocal(path_to_agent_home),
 )

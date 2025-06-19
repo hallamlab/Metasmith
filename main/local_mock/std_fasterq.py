@@ -20,33 +20,32 @@ from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 dtypes, containers, transforms = Std()
 
 base_file = Path().resolve()
-dataset_path = base_file / "sample_data/dataset.fastq"
 
 
 # %% [markdown]
-# Create a new DataInstanceLibrary to hold short read data
+# Set up agent
 
 # %%
-short_reads = DataInstanceLibrary("std_qc_short_reads.xgdb")
-short_reads.Add(
-    items = [
-        (dataset_path, "data.fastq", "std::short_reads")
-    ]
-)
-
-
-# %% [markdown]
-# Deploy agent to generate and run workflow
-
-# %%
-path_to_agent_home = Path("./std_qc_home").resolve()
+path_to_agent_home = Path("./std_home").resolve()
 smith = Agent(
     home = Source.FromLocal(path_to_agent_home),
 )
 smith.Deploy()
 
+
+# %% [markdown]
+# Fetch `short_reads`
+
+# %%
+accession_short = DataInstanceLibrary("std_fasterq_accession_short.xgdb")
+accession_short.Add(
+    items = [
+        (base_file / "sample_data/accession_short", "accession", "std::short_reads_accession")
+    ]
+)
+
 task = smith.GenerateWorkflow(
-    given      = [containers, short_reads],
+    given      = [containers, accession_short],
     transforms = [transforms],
     targets    = [dtypes["read_stats"]]
 )
@@ -56,28 +55,23 @@ smith.RunWorkflow(task)
 smith.CheckWorkflow(task)
 
 
-
 # %% [markdown]
-# Create a new DataInstanceLibrary to hold long read data
+# Fetch `long_reads`
 
 # %%
-long_reads = DataInstanceLibrary("std_qc_long_reads.xgdb")
-long_reads.Add(
+accession_long = DataInstanceLibrary("std_fasterq_accession_long.xgdb")
+accession_long.Add(
     items = [
-        (dataset_path, "data.fastq", "std::long_reads")
+        (base_file / "sample_data/accession_long.fastq", "accession", "std::long_reads")
     ]
 )
 
-
-# %% [markdown]
-# Generate and run workflow
-
-# %%
 task = smith.GenerateWorkflow(
-    given      = [containers, long_reads],
+    given      = [containers, accession_long],
     transforms = [transforms],
     targets    = [dtypes["read_stats"]]
 )
+
 smith.StageWorkflow(task, "clear")
 smith.RunWorkflow(task)
 smith.CheckWorkflow(task)

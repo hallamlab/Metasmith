@@ -11,11 +11,17 @@ def protocol(context: ExecutionContext):
     out_path = context.Get(out)
     sam_path = context.Get(sam)
     out_bam = out_path.container / "alignments.sorted.bam"
+
+    cpus = context.params.get("cpus")
+    cpus_string = ""
+    if cpus is not None:
+        cpus_string = f"-@ {cpus}"
+
     context.ExecWithContainer(
         image = image,
         cmd = f"""
                 mkdir -p {out_path.container}
-                samtools view -b {sam_path.container} | samtools sort -o {out_bam}
+                samtools view {cpus_string} -b {sam_path.container} | samtools sort {cpus_string} -o {out_bam}
                 samtools index {out_bam}
         """
     )

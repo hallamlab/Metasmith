@@ -10,11 +10,18 @@ out     = model.AddProduct(lib.GetType("std::short_reads_trimmed"))
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
     reads_path = context.Get(reads)
+
+    cpus = context.params.get("cpus")
+    cpus_string = ""
+    if cpus is not None:
+        cpus_string = f"-threads {cpus}"
+
     context.ExecWithContainer(
         image = image,
         cmd = f"""
                 trimmomatic \
                     SE \
+                    {cpus_string} \
                     -phred33 \
                     {reads_path.container} \
                     {out_path.container} \

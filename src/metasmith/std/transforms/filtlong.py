@@ -15,6 +15,7 @@ def protocol(context: ExecutionContext):
         cmd = f"""
                 filtlong \
                     {reads_path.container} \
+                    --min_length 1000 \
                     --keep_percent 90 \
                     > {out_path.container}
         """

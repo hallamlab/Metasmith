@@ -7,7 +7,7 @@ base_file = Path(__file__)
 base_dir = base_file.parent
 
 
-path_to_agent_home = Path("./std_assembly_home").resolve()
+path_to_agent_home = Path("./std_home").resolve()
 smith = Agent(
     home = Source.FromLocal(path_to_agent_home),
 )
