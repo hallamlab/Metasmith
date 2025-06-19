@@ -1,3 +1,4 @@
 *.xgdb
 *_home
 sample_data/*.fastq
+std_test.py
