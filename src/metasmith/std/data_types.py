@@ -174,5 +174,12 @@ def StdTypes() -> DataTypeLibrary:
             "provides": ["samtools"]
         }
     })
+    std_data_types["oci_image_prodigal"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Software container",
+            "data": "OCI",
+            "provides": ["prodigal"]
+        }
+    })
 
     return std_data_types
