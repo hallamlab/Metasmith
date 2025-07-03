@@ -31,5 +31,9 @@ manifest:
     type: transforms::transform
   busco.py:
     type: transforms::transform
+  miniasm.py:
+    type: transforms::transform
+  polypolish.py:
+    type: transforms::transform
 remote_src: null
 schema: 0.6.0
