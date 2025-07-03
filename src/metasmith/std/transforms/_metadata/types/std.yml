@@ -33,6 +33,18 @@ types:
       data: Sequence assembly
       format: Directory
       from: Long reads, improved by short reads
+  kofamscan_annotations:
+    properties:
+      data: Kofamscan-annotated genome
+      format: TSV file
+  kofamscan_ko_list:
+    properties:
+      data: KO list
+      format: TSV file
+  kofamscan_profile:
+    properties:
+      data: Kofamscan profile database
+      format: Directory OR .hmm
   long_reads:
     properties:
       data: Long sequence
@@ -50,6 +62,11 @@ types:
     properties:
       data: Long reads filtered by filtlong
       format: Sequence file
+  oci_image_bakta:
+    properties:
+      data: OCI
+      format: Software container
+      provides: bakta
   oci_image_fasterq_dump:
     properties:
       data: OCI
@@ -70,6 +87,11 @@ types:
       data: OCI
       format: Software container
       provides: flye
+  oci_image_kofamscan:
+    properties:
+      data: OCI
+      format: Software container
+      provides: kofamscan
   oci_image_longqc:
     properties:
       data: OCI

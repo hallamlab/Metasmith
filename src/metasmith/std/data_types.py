@@ -114,6 +114,24 @@ def StdTypes() -> DataTypeLibrary:
             "data": "BAKTA-annotated genome"
         }
     })
+    std_data_types["kofamscan_profile"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Directory OR .hmm",
+            "data": "Kofamscan profile database"
+        }
+    })
+    std_data_types["kofamscan_ko_list"] = Endpoint.Unpack({
+        "properties": {
+            "format": "TSV file",
+            "data": "KO list"
+        }
+    })
+    std_data_types["kofamscan_annotations"] = Endpoint.Unpack({
+        "properties": {
+            "format": "TSV file",
+            "data": "Kofamscan-annotated genome"
+        }
+    })
 
 
     std_data_types["oci_image_fastqc"] = Endpoint.Unpack({
@@ -191,6 +209,20 @@ def StdTypes() -> DataTypeLibrary:
             "format": "Software container",
             "data": "OCI",
             "provides": ["prodigal"]
+        }
+    })
+    std_data_types["oci_image_bakta"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Software container",
+            "data": "OCI",
+            "provides": ["bakta"]
+        }
+    })
+    std_data_types["oci_image_kofamscan"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Software container",
+            "data": "OCI",
+            "provides": ["kofamscan"]
         }
     })
 

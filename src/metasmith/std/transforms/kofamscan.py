@@ -3,28 +3,32 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-database   = model.AddRequirement(lib.GetType("std::bakta_database"))
+profile   = model.AddRequirement(lib.GetType("std::kofamscan_profile"))
+ko_list   = model.AddRequirement(lib.GetType("std::kofamscan_ko_list"))
 assembly   = model.AddRequirement(lib.GetType("std::assembly"))
-image   = model.AddRequirement(lib.GetType("std::oci_image_bakta"))
-out     = model.AddProduct(lib.GetType("std::bakta_annotations"))
+image   = model.AddRequirement(lib.GetType("std::oci_image_kofamscan"))
+out     = model.AddProduct(lib.GetType("std::kofamscan_annotations"))
 
 def protocol(context: ExecutionContext):
-    db_path = context.Get(database)
+    profile_path = context.Get(profile)
+    ko_list_path = context.Get(ko_list)
     assembly_path = context.Get(assembly)
     out_path = context.Get(out)
 
     cpus = context.params.get("cpus")
     cpus_string = ""
     if cpus is not None:
-        cpus_string = f"--threads {cpus}"
+        cpus_string = f"--cpu={cpus}"
 
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-                bakta \
-                    --db {db_path.container} \
+                exec_annotation \
+                    --profile={profile_path.container} \
+                    --ko-list={ko_list_path.container} \
                     {cpus_string} \
-                    --output {out_path.container} \
+                    --format detail \
+                    -o {out_path.container} \
                     {assembly_path.container}
         """
     )
@@ -34,6 +38,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "bakta_out/",
+        out: "kofamscan_out.tsv",
     },
 )
