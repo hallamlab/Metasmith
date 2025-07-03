@@ -4,12 +4,12 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 reference = model.AddRequirement(lib.GetType("std::cazy_ref"))
-assembly  = model.AddRequirement(lib.GetType("std::assembly"))
+cds  = model.AddRequirement(lib.GetType("std::coding_sequences"))
 image   = model.AddRequirement(lib.GetType("std::oci_image_fast_aligner"))
 out     = model.AddProduct(lib.GetType("std::cazy_annotations"))
 
 def protocol(context: ExecutionContext):
-    assembly_path = context.Get(assembly)
+    cds_path = context.Get(cds)
     reference_path = context.Get(reference)
     out_path = context.Get(out)
 
@@ -29,7 +29,7 @@ def protocol(context: ExecutionContext):
                     {cpus_string} \
                     -o {out_path.container} \
                     CAZy_db \
-                    {assembly_path.container}
+                    {cds_path.container}
         """
     )
     return ExecutionResult(success=out_path.local.exists())

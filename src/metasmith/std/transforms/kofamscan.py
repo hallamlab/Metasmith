@@ -5,14 +5,14 @@ model = Transform()
 
 profile   = model.AddRequirement(lib.GetType("std::kofamscan_profile"))
 ko_list   = model.AddRequirement(lib.GetType("std::kofamscan_ko_list"))
-assembly   = model.AddRequirement(lib.GetType("std::assembly"))
+cds   = model.AddRequirement(lib.GetType("std::coding_sequences"))
 image   = model.AddRequirement(lib.GetType("std::oci_image_kofamscan"))
 out     = model.AddProduct(lib.GetType("std::kofamscan_annotations"))
 
 def protocol(context: ExecutionContext):
     profile_path = context.Get(profile)
     ko_list_path = context.Get(ko_list)
-    assembly_path = context.Get(assembly)
+    cds_path = context.Get(cds)
     out_path = context.Get(out)
 
     cpus = context.params.get("cpus")
@@ -29,7 +29,7 @@ def protocol(context: ExecutionContext):
                     {cpus_string} \
                     --format detail \
                     -o {out_path.container} \
-                    {assembly_path.container}
+                    {cds_path.container}
         """
     )
     return ExecutionResult(success=out_path.local.exists())

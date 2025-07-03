@@ -39,7 +39,7 @@ types:
   coding_sequences:
     properties:
       data: Amino acid sequences of all CDS
-      format: FASTA
+      format: FAA
   gene_features:
     properties:
       data: CDS coordinates
