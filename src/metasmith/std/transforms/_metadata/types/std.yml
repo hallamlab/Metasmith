@@ -20,6 +20,22 @@ types:
     properties:
       data: Binary, compressed SAM file
       format: BAM
+  busco_annotations:
+    properties:
+      data: BUSCO alignment annotations
+      format: TSV
+  busco_ref:
+    properties:
+      data: BUSCO reference database
+      format: FASTA
+  cazy_annotations:
+    properties:
+      data: CAZY alignment annotations
+      format: TSV
+  cazy_ref:
+    properties:
+      data: CAZY reference database
+      format: FASTA
   coding_sequences:
     properties:
       data: Amino acid sequences of all CDS
@@ -36,15 +52,15 @@ types:
   kofamscan_annotations:
     properties:
       data: Kofamscan-annotated genome
-      format: TSV file
+      format: TSV
   kofamscan_ko_list:
     properties:
       data: KO list
-      format: TSV file
+      format: TSV
   kofamscan_profile:
     properties:
       data: Kofamscan profile database
-      format: Directory OR .hmm
+      format: Directory | .hmm
   long_reads:
     properties:
       data: Long sequence
@@ -67,6 +83,11 @@ types:
       data: OCI
       format: Software container
       provides: bakta
+  oci_image_fast_aligner:
+    properties:
+      data: OCI
+      format: Software container
+      provides: fastdb, fastal
   oci_image_fasterq_dump:
     properties:
       data: OCI

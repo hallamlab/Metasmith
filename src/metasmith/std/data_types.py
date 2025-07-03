@@ -92,7 +92,7 @@ def StdTypes() -> DataTypeLibrary:
 
     std_data_types["coding_sequences"] = Endpoint.Unpack({
         "properties": {
-            "format": "FASTA",
+            "format": "FAA",
             "data": "Amino acid sequences of all CDS"
         }
     })
@@ -116,20 +116,44 @@ def StdTypes() -> DataTypeLibrary:
     })
     std_data_types["kofamscan_profile"] = Endpoint.Unpack({
         "properties": {
-            "format": "Directory OR .hmm",
+            "format": "Directory | .hmm",
             "data": "Kofamscan profile database"
         }
     })
     std_data_types["kofamscan_ko_list"] = Endpoint.Unpack({
         "properties": {
-            "format": "TSV file",
+            "format": "TSV",
             "data": "KO list"
         }
     })
     std_data_types["kofamscan_annotations"] = Endpoint.Unpack({
         "properties": {
-            "format": "TSV file",
+            "format": "TSV",
             "data": "Kofamscan-annotated genome"
+        }
+    })
+    std_data_types["cazy_ref"] = Endpoint.Unpack({
+        "properties": {
+            "format": "FASTA",
+            "data": "CAZY reference database"
+        }
+    })
+    std_data_types["cazy_annotations"] = Endpoint.Unpack({
+        "properties": {
+            "format": "TSV",
+            "data": "CAZY alignment annotations"
+        }
+    })
+    std_data_types["busco_ref"] = Endpoint.Unpack({
+        "properties": {
+            "format": "FASTA",
+            "data": "BUSCO reference database"
+        }
+    })
+    std_data_types["busco_annotations"] = Endpoint.Unpack({
+        "properties": {
+            "format": "TSV",
+            "data": "BUSCO alignment annotations"
         }
     })
 
@@ -223,6 +247,13 @@ def StdTypes() -> DataTypeLibrary:
             "format": "Software container",
             "data": "OCI",
             "provides": ["kofamscan"]
+        }
+    })
+    std_data_types["oci_image_fast_aligner"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Software container",
+            "data": "OCI",
+            "provides": ["fastdb, fastal"]
         }
     })
 
