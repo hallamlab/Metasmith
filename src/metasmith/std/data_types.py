@@ -102,6 +102,18 @@ def StdTypes() -> DataTypeLibrary:
             "data": "CDS coordinates"
         }
     })
+    std_data_types["bakta_database"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Directory",
+            "data": "BAKTA database"
+        }
+    })
+    std_data_types["bakta_annotations"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Directory",
+            "data": "BAKTA-annotated genome"
+        }
+    })
 
 
     std_data_types["oci_image_fastqc"] = Endpoint.Unpack({

@@ -1,8 +1,8 @@
-from pathlib import Path
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
+
 assembly = model.AddRequirement(node=lib.GetType("std::assembly"))
 image    = model.AddRequirement(node=lib.GetType("std::oci_image_prodigal"))
 cds     = model.AddProduct(lib.GetType("std::coding_sequences"))

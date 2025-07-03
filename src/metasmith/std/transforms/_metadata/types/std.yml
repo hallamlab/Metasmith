@@ -8,6 +8,14 @@ types:
   assembly:
     properties:
       data: Sequence assembly
+  bakta_annotations:
+    properties:
+      data: BAKTA-annotated genome
+      format: Directory
+  bakta_database:
+    properties:
+      data: BAKTA database
+      format: Directory
   binary_alignment_map:
     properties:
       data: Binary, compressed SAM file
