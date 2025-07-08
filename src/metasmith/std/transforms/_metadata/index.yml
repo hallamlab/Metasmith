@@ -31,5 +31,7 @@ manifest:
     type: transforms::transform
   busco.py:
     type: transforms::transform
+  annotations.py:
+    type: transforms::transform
 remote_src: null
 schema: 0.6.0

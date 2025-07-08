@@ -156,6 +156,12 @@ def StdTypes() -> DataTypeLibrary:
             "data": "BUSCO alignment annotations"
         }
     })
+    std_data_types["functional_annotations"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Directory",
+            "data": "Compiled functional annotations from all sources"
+        }
+    })
 
 
     std_data_types["oci_image_fastqc"] = Endpoint.Unpack({

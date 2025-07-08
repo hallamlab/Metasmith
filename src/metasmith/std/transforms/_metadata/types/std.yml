@@ -40,6 +40,10 @@ types:
     properties:
       data: Amino acid sequences of all CDS
       format: FAA
+  functional_annotations:
+    properties:
+      data: Compiled functional annotations from all sources
+      format: Directory
   gene_features:
     properties:
       data: CDS coordinates
