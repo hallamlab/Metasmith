@@ -3,13 +3,17 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-database   = model.AddRequirement(lib.GetType("std::bakta_database"))
-assembly   = model.AddRequirement(lib.GetType("std::assembly"))
-image   = model.AddRequirement(lib.GetType("std::oci_image_bakta"))
-out     = model.AddProduct(lib.GetType("std::bakta_annotations"))
+database = model.AddRequirement(lib.GetType("std::bakta_database"))
+features = model.AddRequirement(lib.GetType("std::gene_features"))
+cds      = model.AddRequirement(lib.GetType("std::coding_sequences"))
+assembly = model.AddRequirement(lib.GetType("std::assembly"))
+image    = model.AddRequirement(lib.GetType("std::oci_image_bakta"))
+out      = model.AddProduct(lib.GetType("std::bakta_annotations"))
 
 def protocol(context: ExecutionContext):
     db_path = context.Get(database)
+    features_path = context.Get(features)
+    cds_path = context.Get(cds)
     assembly_path = context.Get(assembly)
     out_path = context.Get(out)
 
@@ -24,6 +28,10 @@ def protocol(context: ExecutionContext):
                 bakta \
                     --db {db_path.container} \
                     {cpus_string} \
+                    --skip-cds \
+                    --regions {features_path.container} \
+                    --proteins {cds_path.container} \
+                    --prefix bakta \
                     --output {out_path.container} \
                     {assembly_path.container}
         """
