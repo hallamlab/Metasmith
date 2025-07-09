@@ -44,7 +44,7 @@ class DataTypeOntology:
             if k.startswith("_"): continue
             d[k] = v
         return d
-    
+
     @classmethod
     def Unpack(cls, d: dict):
         return cls(**d)
@@ -73,19 +73,19 @@ class DataTypeLibrary:
 
     def __getitem__(self, key: str) -> Endpoint:
         return self.types[key]
-    
+
     def __setitem__(self, key: str, value: Endpoint):
         assert isinstance(value, Endpoint)
         assert isinstance(key, str)
         self.types[key] = value
-    
+
     def __contains__(self, key: str) -> bool:
         return key in self.types
-    
+
     def __iter__(self):
         for k, v in self.types.items():
             yield k, v
-    
+
     def __len__(self) -> int:
         return len(self.types)
 
@@ -145,7 +145,7 @@ class DataInstance:
 
     def __hash__(self) -> int:
         return self._hash
-    
+
     def RecalculateKey(self):
         self._hash, self._key = KeyGenerator.FromStr("".join([
             str(self.path),
@@ -168,7 +168,7 @@ class DataInstance:
             type=f"{self.parent_lib.GetKey()}::{self.dtype_name}",
             type_id=self.dtype.key,
         )
-    
+
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
         lib_key, namespace, dtype_name = raw["type"].split("::")
@@ -196,7 +196,7 @@ class DataInstanceLibrary:
         library_key: str
         path: Path
 
-    def __init__(self, location: Path|str|DataInstanceLibrary) -> None:
+    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool = True) -> None:
         self.manifest: dict[Path, str] = {}
         self.types: dict[str, DataTypeLibrary] = {}
         self._dtype2name = {}
@@ -214,6 +214,9 @@ class DataInstanceLibrary:
             else:
                 assert location.is_dir(), f"[{location}] must be a directory"
             self.location = location
+        if include_std:
+            from ..std.data_types import StdTypes
+            self.AddTypeLibrary("std", StdTypes())
 
     def AddTypeLibrary(self, namespace: str, lib: DataTypeLibrary|Source, on_exist: str="clear"):
         assert on_exist in {"skip", "error", "clear"}
@@ -253,7 +256,7 @@ class DataInstanceLibrary:
 
     def GetType(self, name: str):
         return self._get_type(name, self.types)
-    
+
     def GetName(self, dtype: Endpoint):
         if dtype in self._dtype2name: return self._dtype2name[dtype]
         for k, lib in self.types.items():
@@ -326,7 +329,7 @@ class DataInstanceLibrary:
         dtypes = yaml.dump({k:v.Pack() for k, v in self.types.items()})
         self._hash, self._key = KeyGenerator.FromStr(me+dtypes, l=12)
         return self._key
-    
+
     def GetKey(self):
         if not hasattr(self, "_key"):
             self._calculate_key()
@@ -421,7 +424,7 @@ class DataInstanceLibrary:
         index_path.parent.mkdir(parents=True, exist_ok=True)
         with open(index_path, "w") as f:
             yaml.dump(self.Pack(parents), f)
-    
+
     @classmethod
     def Load(cls, path: Path|str, check_integrity=False):
         path = Path(path)
@@ -500,7 +503,7 @@ class DataInstanceLibrary:
             lib.remote_src = src
             lib.Save()
         return lib
-    
+
     def Actualize(self, extern_dest: Source=None, label: str=None):
         if self.remote_src is None:
             return self
@@ -616,13 +619,13 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         for p in path.parents:
             if (p/DataInstanceLibrary._path_to_meta).exists():
                 return cls.Load(p)
-    
+
     def GetTransform(self, path: Path|str):
         path = self.location/path
         if path.suffix != ".py":
             path = path.with_suffix(".py")
         return TransformInstance.Load(path)
-    
+
     def IterateTransforms(self):
         for k, v, dtype in self.Iterate():
             tr = self.GetTransform(k)
@@ -663,7 +666,7 @@ class ExecutionContext:
         if IsText(path.local):
             with open(path.local) as f:
                 image = f.read() # using the uri
-        
+
         _binds = set()
         for _, p in list(self._inputs.items())+list(self._outputs.items()):
             src = p.external.parent

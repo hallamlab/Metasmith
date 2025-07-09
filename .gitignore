@@ -14,6 +14,7 @@ __pycache__
 !/lib/local
 !/lib/data_types
 .secret
+.DS_Store
 
 /conda_build
 /conda_recipe/*
