@@ -31,6 +31,8 @@ manifest:
     type: transforms::transform
   busco.py:
     type: transforms::transform
+  annotations.py:
+    type: transforms::transform
   miniasm.py:
     type: transforms::transform
   polypolish.py:
