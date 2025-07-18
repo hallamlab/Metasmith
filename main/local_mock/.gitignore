@@ -1,4 +1,7 @@
 *.xgdb
 *_home
 sample_data/*.fastq
+sample_data/*.fa
+sample_data/bakta_db/
+sample_data/profiles
 std_test.py

@@ -272,11 +272,11 @@ def StdTypes() -> DataTypeLibrary:
             "provides": ["kofamscan"]
         }
     })
-    std_data_types["oci_image_fast_aligner"] = Endpoint.Unpack({
+    std_data_types["oci_image_diamond"] = Endpoint.Unpack({
         "properties": {
             "format": "Software container",
             "data": "OCI",
-            "provides": ["fastdb, fastal"]
+            "provides": ["diamond"]
         }
     })
     std_data_types["oci_image_miniasm"] = Endpoint.Unpack({

@@ -98,11 +98,11 @@ types:
       data: OCI
       format: Software container
       provides: bakta
-  oci_image_fast_aligner:
+  oci_image_diamond:
     properties:
       data: OCI
       format: Software container
-      provides: fastdb, fastal
+      provides: diamond
   oci_image_fasterq_dump:
     properties:
       data: OCI

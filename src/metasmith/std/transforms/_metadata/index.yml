@@ -1,4 +1,12 @@
 manifest:
+  annotations.py:
+    type: transforms::transform
+  bakta.py:
+    type: transforms::transform
+  busco.py:
+    type: transforms::transform
+  cazy.py:
+    type: transforms::transform
   fasterq_long.py:
     type: transforms::transform
   fasterq_short.py:
@@ -9,6 +17,8 @@ manifest:
     type: transforms::transform
   flye.py:
     type: transforms::transform
+  kofamscan.py:
+    type: transforms::transform
   longqc.py:
     type: transforms::transform
   megahit.py:
@@ -17,21 +27,11 @@ manifest:
     type: transforms::transform
   pilon.py:
     type: transforms::transform
+  prodigal.py:
+    type: transforms::transform
   samtools.py:
     type: transforms::transform
   trimmomatic.py:
-    type: transforms::transform
-  prodigal.py:
-    type: transforms::transform
-  bakta.py:
-    type: transforms::transform
-  kofamscan.py:
-    type: transforms::transform
-  cazy.py:
-    type: transforms::transform
-  busco.py:
-    type: transforms::transform
-  annotations.py:
     type: transforms::transform
   miniasm.py:
     type: transforms::transform
