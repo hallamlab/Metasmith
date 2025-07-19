@@ -26,6 +26,7 @@ def StdContainers() -> DataInstanceLibrary:
             _container_item("diamond"),
             _container_item("kofamscan"),
             _container_item("prodigal"),
+            _container_item("biocontainers"),
         ],
     )
 

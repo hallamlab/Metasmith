@@ -30,7 +30,8 @@ def protocol(context: ExecutionContext):
                     --db cazy_db \
                     --out {out_path.container} \
                     --outfmt 6 \
-                    --query {cds_path.container}
+                    --query {cds_path.container} \
+                    --max-target-seqs 1
         """
     )
     return ExecutionResult(success=out_path.local.exists())

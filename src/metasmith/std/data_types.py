@@ -173,6 +173,12 @@ def StdTypes() -> DataTypeLibrary:
             "data": "BUSCO alignment annotations"
         }
     })
+    std_data_types["busco_map"] = Endpoint.Unpack({
+        "properties": {
+            "format": "info",
+            "data": "BUSCO mappings of ID to species"
+        }
+    })
     std_data_types["functional_annotations"] = Endpoint.Unpack({
         "properties": {
             "format": "Directory",
@@ -298,6 +304,13 @@ def StdTypes() -> DataTypeLibrary:
             "format": "Software container",
             "data": "OCI",
             "provides": ["polypolish"]
+        }
+    })
+    std_data_types["oci_image_biocontainers"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Software container",
+            "data": "OCI",
+            "provides": ["GNU coreutils"]
         }
     })
 

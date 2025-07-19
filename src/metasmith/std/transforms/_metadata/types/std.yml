@@ -24,6 +24,10 @@ types:
     properties:
       data: BUSCO alignment annotations
       format: TSV
+  busco_map:
+    properties:
+      data: BUSCO mappings of ID to species
+      format: info
   busco_ref:
     properties:
       data: BUSCO reference database
@@ -98,6 +102,11 @@ types:
       data: OCI
       format: Software container
       provides: bakta
+  oci_image_biocontainers:
+    properties:
+      data: OCI
+      format: Software container
+      provides: GNU coreutils
   oci_image_diamond:
     properties:
       data: OCI
