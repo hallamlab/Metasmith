@@ -3,9 +3,17 @@ manifest:
     type: transforms::transform
   bakta.py:
     type: transforms::transform
+  bakta_db_light.py:
+    type: transforms::transform
+  bakta_db_full.py:
+    type: transforms::transform
   busco.py:
     type: transforms::transform
+  busco_ref.py:
+    type: transforms::transform
   cazy.py:
+    type: transforms::transform
+  cazy_ref.py:
     type: transforms::transform
   fasterq_long.py:
     type: transforms::transform
@@ -18,6 +26,10 @@ manifest:
   flye.py:
     type: transforms::transform
   kofamscan.py:
+    type: transforms::transform
+  kofamscan_ko_list.py:
+    type: transforms::transform
+  kofamscan_profiles.py:
     type: transforms::transform
   longqc.py:
     type: transforms::transform

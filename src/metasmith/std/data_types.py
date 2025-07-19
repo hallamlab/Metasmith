@@ -121,8 +121,22 @@ def StdTypes() -> DataTypeLibrary:
     })
     std_data_types["bakta_database"] = Endpoint.Unpack({
         "properties": {
+            "data": "BAKTA database",
             "format": "Directory",
-            "data": "BAKTA database"
+        }
+    })
+    std_data_types["bakta_database_light"] = Endpoint.Unpack({
+        "properties": {
+            "data": "BAKTA database",
+            "format": "Directory",
+            "size": "light"
+        }
+    })
+    std_data_types["bakta_database_full"] = Endpoint.Unpack({
+        "properties": {
+            "data": "BAKTA database",
+            "format": "Directory",
+            "size": "full"
         }
     })
     std_data_types["bakta_annotations"] = Endpoint.Unpack({
@@ -306,7 +320,7 @@ def StdTypes() -> DataTypeLibrary:
             "provides": ["polypolish"]
         }
     })
-    std_data_types["oci_image_biocontainers"] = Endpoint.Unpack({
+    std_data_types["oci_image_ubuntu"] = Endpoint.Unpack({
         "properties": {
             "format": "Software container",
             "data": "OCI",

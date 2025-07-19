@@ -16,6 +16,16 @@ types:
     properties:
       data: BAKTA database
       format: Directory
+  bakta_database_full:
+    properties:
+      data: BAKTA database
+      format: Directory
+      size: full
+  bakta_database_light:
+    properties:
+      data: BAKTA database
+      format: Directory
+      size: light
   binary_alignment_map:
     properties:
       data: Binary, compressed SAM file
@@ -102,11 +112,6 @@ types:
       data: OCI
       format: Software container
       provides: bakta
-  oci_image_biocontainers:
-    properties:
-      data: OCI
-      format: Software container
-      provides: GNU coreutils
   oci_image_diamond:
     properties:
       data: OCI
@@ -172,6 +177,11 @@ types:
       data: OCI
       format: Software container
       provides: trimmomatic
+  oci_image_ubuntu:
+    properties:
+      data: OCI
+      format: Software container
+      provides: GNU coreutils
   read_stats:
     properties:
       data: Read statistics
