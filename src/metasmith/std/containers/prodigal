@@ -1,1 +1,1 @@
-docker://nanozoo/prodigal:2.6.3--2769024
+docker://quay.io/hallamlab/external_pprodigal:1.0.1
