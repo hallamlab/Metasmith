@@ -3,8 +3,8 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-image  = model.AddRequirement(lib.GetType("std::oci_image_biocontainers"))
-out    = model.AddProduct(lib.GetType("std::cazy_ref"))
+image  = model.AddRequirement(lib.GetType("std::oci_image_ubuntu"))
+out    = model.AddProduct(lib.GetType("std::kofamscan_profile"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)

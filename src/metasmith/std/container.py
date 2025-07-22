@@ -5,6 +5,7 @@ from ..models.libraries import DataInstanceLibrary
 def StdContainers() -> DataInstanceLibrary:
     base_dir = Path(__file__).parent
     xgdb = DataInstanceLibrary(base_dir / "std_containers.xgdb")
+    xgdb.Save()
 
 
     def _container_item(name: str) -> tuple[Path, str, str]:

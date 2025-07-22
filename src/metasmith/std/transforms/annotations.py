@@ -10,7 +10,7 @@ kofamscan = model.AddRequirement(lib.GetType("std::kofamscan_annotations"))
 cazy      = model.AddRequirement(lib.GetType("std::cazy_annotations"))
 busco     = model.AddRequirement(lib.GetType("std::busco_annotations"))
 busco_map = model.AddRequirement(lib.GetType("std::busco_map"))
-image     = model.AddRequirement(lib.GetType("std::oci_image_biocontainers"))
+image     = model.AddRequirement(lib.GetType("std::oci_image_ubuntu"))
 out       = model.AddProduct(lib.GetType("std::functional_annotations"))
 
 def protocol(context: ExecutionContext):

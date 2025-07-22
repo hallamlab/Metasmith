@@ -3,7 +3,7 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-image  = model.AddRequirement(lib.GetType("std::oci_image_biocontainers"))
+image  = model.AddRequirement(lib.GetType("std::oci_image_ubuntu"))
 out    = model.AddProduct(lib.GetType("std::kofamscan_ko_list"))
 
 def protocol(context: ExecutionContext):

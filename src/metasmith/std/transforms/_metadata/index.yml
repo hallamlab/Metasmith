@@ -3,9 +3,9 @@ manifest:
     type: transforms::transform
   bakta.py:
     type: transforms::transform
-  bakta_db_light.py:
-    type: transforms::transform
   bakta_db_full.py:
+    type: transforms::transform
+  bakta_db_light.py:
     type: transforms::transform
   busco.py:
     type: transforms::transform
@@ -35,19 +35,19 @@ manifest:
     type: transforms::transform
   megahit.py:
     type: transforms::transform
+  miniasm.py:
+    type: transforms::transform
   minimap2.py:
     type: transforms::transform
   pilon.py:
+    type: transforms::transform
+  polypolish.py:
     type: transforms::transform
   prodigal.py:
     type: transforms::transform
   samtools.py:
     type: transforms::transform
   trimmomatic.py:
-    type: transforms::transform
-  miniasm.py:
-    type: transforms::transform
-  polypolish.py:
     type: transforms::transform
 remote_src: null
 schema: 0.6.0

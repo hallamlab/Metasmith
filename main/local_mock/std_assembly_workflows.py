@@ -17,8 +17,7 @@ smith.Deploy()
 inputs = DataInstanceLibrary("std_assembly_data.xgdb")
 inputs.Add(
     items = [
-        (base_dir / "sample_data/empty", "emptyshort", "std::short_reads_accession"),
-        (base_dir / "sample_data/empty", "emptylong", "std::long_reads_accession"),
+        (base_dir / "empty", "emptyshort", "std::short_reads_accession"),
     ]
 )
 
@@ -39,6 +38,9 @@ for dtype in output_tests:
         transforms=[transforms],
         targets=[target]
     )
+    steps = task.plan.steps
+    for step in steps:
+        step.uses
 
     # Gather transforms and outputs
     print_outputs = [
