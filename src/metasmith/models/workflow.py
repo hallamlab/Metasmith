@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
+import graphviz
 import yaml
 
 from metasmith.coms.containers import ContainerRuntime
@@ -29,7 +31,7 @@ class WorkflowStep:
             produces=[inst.Pack() for inst in self.produces],
             transform=f"{self.transform_library.GetKey()}::{self.transform.name}",
         )
-    
+
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
         lib_key, transform_name = raw["transform"].split("::")
@@ -89,7 +91,7 @@ class WorkflowPlan:
 
     def __len__(self):
         return len(self.steps)
-    
+
     def Pack(self):
         dtypes: dict[str, tuple[str, Endpoint]] = {}
         for inst in self.given:
@@ -114,7 +116,7 @@ class WorkflowPlan:
             targets=[inst.Pack() for inst in self.targets],
             steps=[step.Pack() for step in self.steps],
         )
-    
+
     def Save(self, path: Path):
         with open(path, "w") as f:
             yaml.dump(self.Pack(), f)
@@ -136,7 +138,7 @@ class WorkflowPlan:
             inst.dtype = all_types[raw["type_id"]]
             inst.RecalculateKey()
             return inst
-        
+
         def _unpack_step(raw: dict):
             step = WorkflowStep.Unpack(raw, libraries)
             for inst, r in zip(step.uses, raw["uses"]):
@@ -250,7 +252,7 @@ class WorkflowPlan:
             targets=list(target_meta.values()),
             steps=steps,
         )
-    
+
     def PrepareNextflow(self, work_dir: Path, external_work: Path, home_dir: Path, external_home: Path):
         # todo dynamic resources
         # https://www.nextflow.io/docs/latest/process.html#dynamic-task-resources
@@ -369,7 +371,7 @@ class WorkflowTask:
             data_libraries=[lib.GetKey() for lib in self.data_libraries],
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
         ) | optional
-    
+
     def SaveAs(self, dest: Source):
         with TemporaryDirectory() as temp_dir:
             temp_dir = Path(temp_dir)
@@ -392,7 +394,45 @@ class WorkflowTask:
                 _mover._queue.extend(_temp_mover._queue)
             res = _mover.ExecuteTransfers()
             return res
-    
+
+
+    class NodeType(Enum):
+        TRANSFORM = 1
+        DATA      = 2
+    def RenderNode(self, type: NodeType, name: str) -> str:
+        match type:
+            case self.NodeType.TRANSFORM:
+                return f'"{name}" [shape="oval"]'
+            case self.NodeType.DATA:
+                return f'"{name}" [shape="box"]'
+
+    def AsDAG(self, *, font: str = 'Arial', hide_images: bool = True) -> str:
+        lines = ["digraph G {"]
+        lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
+        for step in self.plan.steps:
+            transform_name = step.transform.name
+            lines.append(self.RenderNode(self.NodeType.TRANSFORM, transform_name))
+            if hide_images:
+                inputs  = [u.dtype_name for u in step.uses if "oci_image" not in u.dtype_name]
+                outputs = [o.dtype_name for o in step.produces if "oci_image" not in o.dtype_name]
+            else:
+                inputs  = [u.dtype_name for u in step.uses]
+                outputs = [o.dtype_name for o in step.produces]
+            for name in inputs:
+                lines.append(self.RenderNode(self.NodeType.DATA, name))
+                lines.append(f'    "{name}" -> "{transform_name}";')
+            for name in outputs:
+                lines.append(self.RenderNode(self.NodeType.DATA, name))
+                lines.append(f'    "{transform_name}" -> "{name}";')
+        lines.append("}")
+        return "\n".join(lines)
+
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
+        dag_str = self.AsDAG(font=font, hide_images=hide_images)
+        src = graphviz.Source(dag_str, filename=path_base, format=format)
+        src.render(cleanup=True)
+
+
     @classmethod
     def Load(cls, path: Path|str, alt_data_paths: list[Path|str]=None):
         path = Path(path)
@@ -400,7 +440,7 @@ class WorkflowTask:
             raw_task = yaml.safe_load(f)
         with open(path/"plan.yml") as f:
             raw_plan = yaml.safe_load(f)
-        
+
         _data_lib_paths = [Path(p) for p in alt_data_paths] if alt_data_paths else []
         _data_lib_paths += [path/"data"] # prefer alts first
         def load_lib(lib_key: str):

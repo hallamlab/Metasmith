@@ -21,36 +21,40 @@ inputs.Add(
     ]
 )
 
-output_tests = [
-    "long_reads_assembly",
-    "short_reads_assembly",
-    "hybrid_assembly",
-]
+task = smith.GenerateWorkflow(
+    given=[containers, inputs],
+    transforms=[transforms],
+    targets=[dtypes["functional_annotations"]]
+)
+task.RenderDAG(base_dir / "dag", font="IBM Plex Mono", hide_images=True)
 
-print("\n\nRunning workflows...")
-print("====================")
-for dtype in output_tests:
-    target = dtypes[dtype]
-    print(f"\nRunning workflow generation for {dtype}:")
+# output_tests = [
+#     "long_reads_assembly",
+#     "short_reads_assembly",
+#     "hybrid_assembly",
+# ]
 
-    task = smith.GenerateWorkflow(
-        given=[containers, inputs],
-        transforms=[transforms],
-        targets=[target]
-    )
-    steps = task.plan.steps
-    for step in steps:
-        step.uses
+# print("\n\nRunning workflows...")
+# print("====================")
+# for dtype in output_tests:
+#     target = dtypes[dtype]
+#     print(f"\nRunning workflow generation for {dtype}:")
 
-    # Gather transforms and outputs
-    print_outputs = [
-        (step.transform.name, out.dtype_name)
-        for step in task.plan.steps
-        for out in step.produces
-    ]
+#     task = smith.GenerateWorkflow(
+#         given=[containers, inputs],
+#         transforms=[transforms],
+#         targets=[target]
+#     )
 
-    max_transform_width = max(len(transform) for transform, _ in print_outputs)
+#     # Gather transforms and outputs
+#     print_outputs = [
+#         (step.transform.name, out.dtype_name)
+#         for step in task.plan.steps
+#         for out in step.produces
+#     ]
 
-    # Print aligned output
-    for transform, output in print_outputs:
-        print(f"    {transform.ljust(max_transform_width)}    ----->    {output}")
+#     max_transform_width = max(len(transform) for transform, _ in print_outputs)
+
+#     # Print aligned output
+#     for transform, output in print_outputs:
+#         print(f"    {transform.ljust(max_transform_width)}    ----->    {output}")

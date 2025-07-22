@@ -137,6 +137,11 @@ types:
       data: OCI
       format: Software container
       provides: flye
+  oci_image_gfatools:
+    properties:
+      data: OCI
+      format: Software container
+      provides: gfatools
   oci_image_kofamscan:
     properties:
       data: OCI
@@ -152,6 +157,11 @@ types:
       data: OCI
       format: Software container
       provides: megahit
+  oci_image_miniasm:
+    properties:
+      data: OCI
+      format: Software container
+      provides: miniasm
   oci_image_minimap2:
     properties:
       data: OCI
@@ -162,6 +172,11 @@ types:
       data: OCI
       format: Software container
       provides: pilon
+  oci_image_polypolish:
+    properties:
+      data: OCI
+      format: Software container
+      provides: polypolish
   oci_image_prodigal:
     properties:
       data: OCI
