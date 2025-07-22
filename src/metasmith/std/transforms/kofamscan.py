@@ -5,9 +5,9 @@ model = Transform()
 
 profile   = model.AddRequirement(lib.GetType("std::kofamscan_profile"))
 ko_list   = model.AddRequirement(lib.GetType("std::kofamscan_ko_list"))
-cds   = model.AddRequirement(lib.GetType("std::coding_sequences"))
-image   = model.AddRequirement(lib.GetType("std::oci_image_kofamscan"))
-out     = model.AddProduct(lib.GetType("std::kofamscan_annotations"))
+cds       = model.AddRequirement(lib.GetType("std::coding_sequences"))
+image     = model.AddRequirement(lib.GetType("std::oci_image_kofamscan"))
+out       = model.AddProduct(lib.GetType("std::kofamscan_annotations"))
 
 def protocol(context: ExecutionContext):
     profile_path = context.Get(profile)
@@ -15,10 +15,10 @@ def protocol(context: ExecutionContext):
     cds_path = context.Get(cds)
     out_path = context.Get(out)
 
-    cpus = context.params.get("cpus")
     cpus_string = ""
-    if cpus is not None:
-        cpus_string = f"--cpu={cpus}"
+    # cpus = context.params.get("cpus")
+    # if cpus is not None:
+    #     cpus_string = f"--cpu={cpus}"
 
     context.ExecWithContainer(
         image = image,

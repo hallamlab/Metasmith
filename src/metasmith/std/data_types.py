@@ -121,8 +121,22 @@ def StdTypes() -> DataTypeLibrary:
     })
     std_data_types["bakta_database"] = Endpoint.Unpack({
         "properties": {
+            "data": "BAKTA database",
             "format": "Directory",
-            "data": "BAKTA database"
+        }
+    })
+    std_data_types["bakta_database_light"] = Endpoint.Unpack({
+        "properties": {
+            "data": "BAKTA database",
+            "format": "Directory",
+            "size": "light"
+        }
+    })
+    std_data_types["bakta_database_full"] = Endpoint.Unpack({
+        "properties": {
+            "data": "BAKTA database",
+            "format": "Directory",
+            "size": "full"
         }
     })
     std_data_types["bakta_annotations"] = Endpoint.Unpack({
@@ -171,6 +185,12 @@ def StdTypes() -> DataTypeLibrary:
         "properties": {
             "format": "TSV",
             "data": "BUSCO alignment annotations"
+        }
+    })
+    std_data_types["busco_map"] = Endpoint.Unpack({
+        "properties": {
+            "format": "info",
+            "data": "BUSCO mappings of ID to species"
         }
     })
     std_data_types["functional_annotations"] = Endpoint.Unpack({
@@ -272,11 +292,11 @@ def StdTypes() -> DataTypeLibrary:
             "provides": ["kofamscan"]
         }
     })
-    std_data_types["oci_image_fast_aligner"] = Endpoint.Unpack({
+    std_data_types["oci_image_diamond"] = Endpoint.Unpack({
         "properties": {
             "format": "Software container",
             "data": "OCI",
-            "provides": ["fastdb, fastal"]
+            "provides": ["diamond"]
         }
     })
     std_data_types["oci_image_miniasm"] = Endpoint.Unpack({
@@ -298,6 +318,13 @@ def StdTypes() -> DataTypeLibrary:
             "format": "Software container",
             "data": "OCI",
             "provides": ["polypolish"]
+        }
+    })
+    std_data_types["oci_image_ubuntu"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Software container",
+            "data": "OCI",
+            "provides": ["GNU coreutils"]
         }
     })
 

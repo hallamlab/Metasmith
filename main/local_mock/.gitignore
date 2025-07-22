@@ -1,4 +1,4 @@
 *.xgdb
 *_home
-sample_data/*.fastq
+sample_data/
 std_test.py

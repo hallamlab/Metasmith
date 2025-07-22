@@ -22,6 +22,11 @@ def StdContainers() -> DataInstanceLibrary:
             _container_item("minimap2"),
             _container_item("samtools"),
             _container_item("pilon"),
+            _container_item("bakta"),
+            _container_item("diamond"),
+            _container_item("kofamscan"),
+            _container_item("prodigal"),
+            _container_item("ubuntu"),
         ],
     )
 

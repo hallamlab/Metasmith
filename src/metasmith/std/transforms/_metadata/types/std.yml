@@ -16,6 +16,16 @@ types:
     properties:
       data: BAKTA database
       format: Directory
+  bakta_database_full:
+    properties:
+      data: BAKTA database
+      format: Directory
+      size: full
+  bakta_database_light:
+    properties:
+      data: BAKTA database
+      format: Directory
+      size: light
   binary_alignment_map:
     properties:
       data: Binary, compressed SAM file
@@ -24,6 +34,10 @@ types:
     properties:
       data: BUSCO alignment annotations
       format: TSV
+  busco_map:
+    properties:
+      data: BUSCO mappings of ID to species
+      format: info
   busco_ref:
     properties:
       data: BUSCO reference database
@@ -98,11 +112,11 @@ types:
       data: OCI
       format: Software container
       provides: bakta
-  oci_image_fast_aligner:
+  oci_image_diamond:
     properties:
       data: OCI
       format: Software container
-      provides: fastdb, fastal
+      provides: diamond
   oci_image_fasterq_dump:
     properties:
       data: OCI
@@ -163,6 +177,11 @@ types:
       data: OCI
       format: Software container
       provides: trimmomatic
+  oci_image_ubuntu:
+    properties:
+      data: OCI
+      format: Software container
+      provides: GNU coreutils
   read_stats:
     properties:
       data: Read statistics
