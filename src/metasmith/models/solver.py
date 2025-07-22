@@ -394,6 +394,7 @@ def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transfor
     _apply_cache: dict[str, Application] = {}
     def _apply(target: Transform, inputs: Iterable[tuple[Endpoint, Node]]):
         sig  = "".join(e.key+d.key for e, d in inputs)
+        sig += target.key
         if sig in _apply_cache:
             return _apply_cache[sig]
         appl = target.Apply(inputs)
