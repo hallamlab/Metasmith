@@ -23,6 +23,8 @@ manifest:
     type: transforms::transform
   filtlong.py:
     type: transforms::transform
+  filtlong_improved.py:
+    type: transforms::transform
   flye.py:
     type: transforms::transform
   kofamscan.py:

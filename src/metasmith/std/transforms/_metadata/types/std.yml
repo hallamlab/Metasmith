@@ -96,17 +96,9 @@ types:
     properties:
       data: Long reads filtered by filtlong
       format: Sequence file
-  long_reads_gfa:
+  miniasm_estimate:
     properties:
-      data: Miniasm assembly graph
-      format: GFA file
-  long_reads_miniasm:
-    properties:
-      format: Sequence file
-  long_reads_self_mappings:
-    properties:
-      data: All-vs-all read self-mappings via minimap2
-      format: Sequence file
+      format: Target bases estimated by miniasm
   oci_image_bakta:
     properties:
       data: OCI

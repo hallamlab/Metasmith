@@ -22,3 +22,7 @@ __pycache__
 !/conda_recipe/meta_template.yaml
 
 **/metasmith_home
+
+.pixi
+pixi.lock
+pixi.toml
