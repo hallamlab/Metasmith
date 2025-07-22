@@ -101,7 +101,7 @@ case $1 in
         fi
         NEXTFLOW_VERSION=$(cat ../envs/base.yml | grep nextflow | cut -c14- | xargs)
         echo "nextflow version: $NEXTFLOW_VERSION"
-        ! [ -f nextflow ] && wget https://github.com/nextflow-io/nextflow/releases/download/v${NEXTFLOW_VERSION}}/nextflow && chmod +x ./nextflow
+        ! [ -f nextflow ] && wget https://github.com/nextflow-io/nextflow/releases/download/v${NEXTFLOW_VERSION}/nextflow && chmod +x ./nextflow
         cd $HERE
 
         # build the docker container locally
@@ -142,7 +142,7 @@ case $1 in
         echo "remember to update the \"latest\" tag"
         echo "https://$DOCKER_IMAGE?tab=tags"
     ;;
-    
+
     ###################################################
     # run
 
@@ -203,7 +203,7 @@ case $1 in
 
     ###################################################
     # docs
-    
+
     --docs) # build docs
         shift
         cd $HERE/docs
