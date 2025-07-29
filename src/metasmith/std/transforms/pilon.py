@@ -10,7 +10,7 @@ out     = model.AddProduct(lib.GetType("std::hybrid_assembly"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
-    assembly_path = context.Get(assembly).container / "00-assembly/draft_assembly.fasta"
+    assembly_path = context.Get(assembly).container
     bam_dir = context.Get(bam).container
 
     cpus = context.params.get("cpus")
@@ -26,13 +26,11 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-                mkdir -p {out_path.container}
-                cd {out_path.container}
+                cd {out_path.container.parent}
                 java {memory_string} -jar \
                     /pilon/pilon.jar \
                         --genome {assembly_path} \
                         --frags {bam_dir / "alignments.sorted.bam"} \
-                        --output pilon_out \
                         {cpus_string} \
                         --fix all
         """
@@ -43,6 +41,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "pilon_out/",
+        out: "pilon_out/pilon.fasta",
     },
 )

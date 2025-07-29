@@ -10,7 +10,7 @@ out     = model.AddProduct(lib.GetType("std::assembly"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
-    assembly_path = context.Get(assembly).container / "00-assembly/draft_assembly.fasta"
+    assembly_path = context.Get(assembly).container
     sam_path = context.Get(sam)
 
     context.ExecWithContainer(
