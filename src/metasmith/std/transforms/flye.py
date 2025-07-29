@@ -11,11 +11,10 @@ def protocol(context: ExecutionContext):
     out_path = context.Get(out)
     reads_path = context.Get(reads)
 
-    params = context.params
-    cpus = context.params.get("cpus")
     cpus_string = ""
-    if cpus is not None:
-        cpus_string = f"--threads {cpus}"
+    # cpus = context.params.get("cpus")
+    # if cpus is not None:
+    #     cpus_string = f"--threads {cpus}"
 
     context.ExecWithContainer(
         image = image,
@@ -24,7 +23,6 @@ def protocol(context: ExecutionContext):
                 --pacbio-raw \
                 {reads_path.container} \
                 --out-dir {out_path.container} \
-                --threads {context.params} \
                 {cpus_string}
         """
     )

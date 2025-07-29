@@ -49,6 +49,8 @@ manifest:
     type: transforms::transform
   samtools.py:
     type: transforms::transform
+  self_mappings.py:
+    type: transforms::transform
   trimmomatic.py:
     type: transforms::transform
 remote_src: null

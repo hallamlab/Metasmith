@@ -129,11 +129,6 @@ types:
       data: OCI
       format: Software container
       provides: flye
-  oci_image_gfatools:
-    properties:
-      data: OCI
-      format: Software container
-      provides: gfatools
   oci_image_kofamscan:
     properties:
       data: OCI
@@ -193,6 +188,9 @@ types:
     properties:
       data: Read statistics
       format: Directory
+  self_mappings:
+    properties:
+      format: Self-to-self mappings with minimap2
   sequence_alignment_map:
     properties:
       data: Sequence Alignment/Map file listing read placements

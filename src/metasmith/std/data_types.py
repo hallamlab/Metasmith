@@ -16,6 +16,11 @@ def StdTypes() -> DataTypeLibrary:
             "data": "Long sequence"
         }
     })
+    std_data_types["self_mappings"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Self-to-self mappings with minimap2"
+        }
+    })
     std_data_types["miniasm_estimate"] = Endpoint.Unpack({
         "properties": {
             "format": "Target bases estimated by miniasm"
