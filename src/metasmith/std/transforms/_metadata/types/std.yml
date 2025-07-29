@@ -96,17 +96,9 @@ types:
     properties:
       data: Long reads filtered by filtlong
       format: Sequence file
-  long_reads_gfa:
+  miniasm_estimate:
     properties:
-      data: Miniasm assembly graph
-      format: GFA file
-  long_reads_miniasm:
-    properties:
-      format: Sequence file
-  long_reads_self_mappings:
-    properties:
-      data: All-vs-all read self-mappings via minimap2
-      format: Sequence file
+      format: Target bases estimated by miniasm
   oci_image_bakta:
     properties:
       data: OCI
@@ -137,11 +129,6 @@ types:
       data: OCI
       format: Software container
       provides: flye
-  oci_image_gfatools:
-    properties:
-      data: OCI
-      format: Software container
-      provides: gfatools
   oci_image_kofamscan:
     properties:
       data: OCI
@@ -201,6 +188,9 @@ types:
     properties:
       data: Read statistics
       format: Directory
+  self_mappings:
+    properties:
+      format: Self-to-self mappings with minimap2
   sequence_alignment_map:
     properties:
       data: Sequence Alignment/Map file listing read placements

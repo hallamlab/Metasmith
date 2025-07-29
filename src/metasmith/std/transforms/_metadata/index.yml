@@ -23,6 +23,8 @@ manifest:
     type: transforms::transform
   filtlong.py:
     type: transforms::transform
+  filtlong_improved.py:
+    type: transforms::transform
   flye.py:
     type: transforms::transform
   kofamscan.py:
@@ -46,6 +48,8 @@ manifest:
   prodigal.py:
     type: transforms::transform
   samtools.py:
+    type: transforms::transform
+  self_mappings.py:
     type: transforms::transform
   trimmomatic.py:
     type: transforms::transform

@@ -16,21 +16,14 @@ def StdTypes() -> DataTypeLibrary:
             "data": "Long sequence"
         }
     })
-    std_data_types["long_reads_miniasm"] = Endpoint.Unpack({
+    std_data_types["self_mappings"] = Endpoint.Unpack({
         "properties": {
-            "format": "Sequence file"
+            "format": "Self-to-self mappings with minimap2"
         }
     })
-    std_data_types["long_reads_gfa"] = Endpoint.Unpack({
+    std_data_types["miniasm_estimate"] = Endpoint.Unpack({
         "properties": {
-            "format": "GFA file",
-            "data": "Miniasm assembly graph"
-        }
-    })
-    std_data_types["long_reads_self_mappings"] = Endpoint.Unpack({
-        "properties": {
-            "format": "Sequence file",
-            "data": "All-vs-all read self-mappings via minimap2"
+            "format": "Target bases estimated by miniasm"
         }
     })
 
@@ -304,13 +297,6 @@ def StdTypes() -> DataTypeLibrary:
             "format": "Software container",
             "data": "OCI",
             "provides": ["miniasm"]
-        }
-    })
-    std_data_types["oci_image_gfatools"] = Endpoint.Unpack({
-        "properties": {
-            "format": "Software container",
-            "data": "OCI",
-            "provides": ["gfatools"]
         }
     })
     std_data_types["oci_image_polypolish"] = Endpoint.Unpack({

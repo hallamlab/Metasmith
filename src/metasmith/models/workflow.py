@@ -3,7 +3,6 @@ from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
-import graphviz
 import yaml
 
 from metasmith.coms.containers import ContainerRuntime
@@ -428,6 +427,7 @@ class WorkflowTask:
         return "\n".join(lines)
 
     def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
+        import graphviz
         dag_str = self.AsDAG(font=font, hide_images=hide_images)
         src = graphviz.Source(dag_str, filename=path_base, format=format)
         src.render(cleanup=True)
