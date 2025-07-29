@@ -366,7 +366,7 @@ class DependencyResult:
         return len(self.plan)
 
 # lineage is satisfied at depth 1 (parents of parents are not considered)
-def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transforms: Iterable[Transform], horizon: int=64, _debug=False):
+def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transforms: Iterable[Transform], horizon: int=64, _debug=True):
     @dataclass
     class State:
         have: dict[Endpoint, Dependency]
@@ -387,7 +387,7 @@ def _solve_by_bounded_dfs(given: Iterable[Endpoint], target: Transform, transfor
         log_path = Path("./cache/debug_log.txt")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log = open("./cache/debug_log.txt", "w")
-        debug_print = lambda *args: log.write(" ".join(str(a) for a in args)+"\n") if args[0] != "END" else log.close()
+        debug_print = lambda *args: (log.write(" ".join(str(a) for a in args)+"\n"), log.flush()) if args[0] != "END" else log.close()
     else:
         debug_print = lambda *args: None
 
