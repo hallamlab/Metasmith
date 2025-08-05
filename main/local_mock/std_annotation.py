@@ -18,7 +18,6 @@ from pathlib import Path
 from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 
 dtypes, containers, transforms = Std()
-
 base_file = Path().resolve()
 
 
@@ -36,7 +35,7 @@ smith.Deploy()
 # %% [markdown]
 
 # %%
-inputs = DataInstanceLibrary("std_fasterq_assembly.xgdb")
+inputs = DataInstanceLibrary("std_data.xgdb")
 inputs.Add(
     items = [
         (base_file / "sample_data/assembly.fna", "assembly", "std::assembly"),
@@ -46,9 +45,9 @@ inputs.Add(
         (base_file / "sample_data/bakta_db", "bakta_db", "std::bakta_database"),
         (base_file / "sample_data/bakta_out", "bakta_out", "std::bakta_annotations"),
         (base_file / "sample_data/cazy.fa", "cazy_db", "std::cazy_ref"),
-        (base_file / "sample_data/cazy.tsv", "cazy_annotations", "std::cazy_annotations"),
+        # (base_file / "sample_data/cazy.tsv", "cazy_annotations", "std::cazy_annotations"),
         (base_file / "sample_data/busco.faa", "busco_db", "std::busco_ref"),
-        (base_file / "sample_data/busco.tsv", "busco_annotations", "std::busco_annotations"),
+        # (base_file / "sample_data/busco.tsv", "busco_annotations", "std::busco_annotations"),
         (base_file / "sample_data/species.info", "busco_map", "std::busco_map"),
     ]
 )
@@ -56,7 +55,7 @@ inputs.Add(
 task = smith.GenerateWorkflow(
     given      = [containers, inputs],
     transforms = [transforms],
-    targets    = [dtypes["functional_annotations"]]
+    targets    = [dtypes["cazy_annotations"], dtypes["busco_annotations"]]
 )
 
 smith.StageWorkflow(task, "clear")
