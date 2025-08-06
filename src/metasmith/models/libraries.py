@@ -665,7 +665,7 @@ class ExecutionContext:
         image = path.external
         if IsText(path.local):
             with open(path.local) as f:
-                image = f.read() # using the uri
+                image = f.read().strip() # using the uri
 
         _binds = set()
         for _, p in list(self._inputs.items())+list(self._outputs.items()):
@@ -694,10 +694,12 @@ class ExecutionContext:
         Log.Info(f"binds:")
         for s, d in binds:
             Log.Info(f"    {s} -> {d}")
-        _full_cmd = f"{container.MakeRunCommand()} {cmd}"
-        Log.Info(f"raw command: [{_full_cmd}]")
-        return self.external_shell.Exec(_full_cmd, timeout=None, history=history)
-
+        _container_start = f"{container.MakeRunCommand()} bash"
+        Log.Info(f"container start: [{_container_start}]")
+        sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
+        result = self.external_shell.Exec(cmd, timeout=None, history=history)
+        eresult = self.external_shell.Exec("[ -n $APPTAINER_CONTAINER ] || [ -e /.dockerenv ] && exit", timeout=None, history=history)
+        return result
         # _, _hash = KeyGenerator.FromStr(cmd, l=8)
         # cmd_file = f"_metasmith/container_cmd.{_hash}"
         # container_run = container.MakeRunCommand()
