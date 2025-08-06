@@ -1,0 +1,5 @@
+manifest:
+  mre.py:
+    type: transforms::transform
+remote_src: null
+schema: 0.6.0
