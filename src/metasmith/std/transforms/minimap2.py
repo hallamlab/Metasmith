@@ -11,7 +11,7 @@ out        = model.AddProduct(lib.GetType("std::sequence_alignment_map"))
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
     reads_path = context.Get(reads)
-    assembly_path_container = context.Get(assembly).container / "00-assembly/draft_assembly.fasta"
+    assembly_path_container = context.Get(assembly).container
     context.ExecWithContainer(
         image = image,
         cmd = f"""

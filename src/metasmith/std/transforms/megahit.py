@@ -15,7 +15,7 @@ def protocol(context: ExecutionContext):
         cmd = f"""
                 megahit \
                     -r {reads_path.container} \
-                    -o {out_path.container}
+                    -o {out_path.container.parent}
         """
     )
     return ExecutionResult(success=out_path.local.exists())
@@ -24,6 +24,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "short_reads_assembly/",
+        out: "short_reads_assembly/final.contigs.fa",
     },
 )
