@@ -4,9 +4,9 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 database = model.AddRequirement(lib.GetType("std::bakta_database"))
-features = model.AddRequirement(lib.GetType("std::gene_features"))
-cds      = model.AddRequirement(lib.GetType("std::coding_sequences"))
 assembly = model.AddRequirement(lib.GetType("std::assembly"))
+features = model.AddRequirement(lib.GetType("std::gene_features"), parents={assembly})
+cds      = model.AddRequirement(lib.GetType("std::coding_sequences"), parents={assembly})
 image    = model.AddRequirement(lib.GetType("std::oci_image_bakta"))
 out      = model.AddProduct(lib.GetType("std::bakta_annotations"))
 
