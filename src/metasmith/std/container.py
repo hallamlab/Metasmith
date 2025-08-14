@@ -11,6 +11,9 @@ def StdContainers() -> DataInstanceLibrary:
     def _container_item(name: str) -> tuple[Path, str, str]:
         return (base_dir / f"containers/{name}", f"{name}.oci.uri", f"std::oci_image_{name}")
 
+    def _script_item(name: str) -> tuple[Path, str, str]:
+        return (base_dir / f"functional_analysis/{name}.py", f"{name}.py", f"std::{name}_script")
+
     xgdb.Add(
         items = [
             _container_item("fastqc"),
@@ -28,7 +31,10 @@ def StdContainers() -> DataInstanceLibrary:
             _container_item("diamond"),
             _container_item("kofamscan"),
             _container_item("prodigal"),
-            _container_item("ubuntu"),
+            _container_item("script_runner"),
+
+            _script_item("cazy_annotation"),
+            _script_item("busco_annotation"),
         ],
     )
 

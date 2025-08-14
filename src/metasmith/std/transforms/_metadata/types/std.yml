@@ -30,6 +30,11 @@ types:
     properties:
       data: Binary, compressed SAM file
       format: BAM
+  busco_annotation_script:
+    properties:
+      data: Python script
+      format: .py
+      provides: busco.py
   busco_annotations:
     properties:
       data: BUSCO alignment annotations
@@ -38,13 +43,26 @@ types:
     properties:
       data: BUSCO mappings of ID to species
       format: info
+  busco_raw:
+    properties:
+      data: Raw BUSCO alignment
+      format: TSV
   busco_ref:
     properties:
       data: BUSCO reference database
       format: FASTA
+  cazy_annotation_script:
+    properties:
+      data: Python script
+      format: .py
+      provides: cazy.py
   cazy_annotations:
     properties:
       data: CAZY alignment annotations
+      format: TSV
+  cazy_raw:
+    properties:
+      data: Raw CAZY alignment
       format: TSV
   cazy_ref:
     properties:
@@ -174,16 +192,19 @@ types:
       data: OCI
       format: Software container
       provides: samtools
+  oci_image_script_runner:
+    properties:
+      data: OCI
+      format: Software container
+      provides:
+      - GNU coreutils
+      - curl
+      - uv
   oci_image_trimmomatic:
     properties:
       data: OCI
       format: Software container
       provides: trimmomatic
-  oci_image_ubuntu:
-    properties:
-      data: OCI
-      format: Software container
-      provides: GNU coreutils
   read_stats:
     properties:
       data: Read statistics

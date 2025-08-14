@@ -162,6 +162,12 @@ def StdTypes() -> DataTypeLibrary:
             "data": "CAZY reference database"
         }
     })
+    std_data_types["cazy_raw"] = Endpoint.Unpack({
+        "properties": {
+            "format": "TSV",
+            "data": "Raw CAZY alignment"
+        }
+    })
     std_data_types["cazy_annotations"] = Endpoint.Unpack({
         "properties": {
             "format": "TSV",
@@ -172,6 +178,12 @@ def StdTypes() -> DataTypeLibrary:
         "properties": {
             "format": "FASTA",
             "data": "BUSCO reference database"
+        }
+    })
+    std_data_types["busco_raw"] = Endpoint.Unpack({
+        "properties": {
+            "format": "TSV",
+            "data": "Raw BUSCO alignment"
         }
     })
     std_data_types["busco_annotations"] = Endpoint.Unpack({
@@ -292,6 +304,20 @@ def StdTypes() -> DataTypeLibrary:
             "provides": ["diamond"]
         }
     })
+    std_data_types["cazy_annotation_script"] = Endpoint.Unpack({
+        "properties": {
+            "format": ".py",
+            "data": "Python script",
+            "provides": ["cazy.py"]
+        }
+    })
+    std_data_types["busco_annotation_script"] = Endpoint.Unpack({
+        "properties": {
+            "format": ".py",
+            "data": "Python script",
+            "provides": ["busco.py"]
+        }
+    })
     std_data_types["oci_image_miniasm"] = Endpoint.Unpack({
         "properties": {
             "format": "Software container",
@@ -306,11 +332,11 @@ def StdTypes() -> DataTypeLibrary:
             "provides": ["polypolish"]
         }
     })
-    std_data_types["oci_image_ubuntu"] = Endpoint.Unpack({
+    std_data_types["oci_image_script_runner"] = Endpoint.Unpack({
         "properties": {
             "format": "Software container",
             "data": "OCI",
-            "provides": ["GNU coreutils"]
+            "provides": ["uv", "GNU coreutils", "curl"]
         }
     })
 
