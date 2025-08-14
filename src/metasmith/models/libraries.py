@@ -531,7 +531,7 @@ class DataInstanceLibrary:
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult]
     model: Transform
-    output_signature: dict[Dependency, Path]
+    output_signature: dict[Dependency, Path|str]
     name: str = None
 
     def __post_init__(self):
@@ -619,6 +619,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         for p in path.parents:
             if (p/DataInstanceLibrary._path_to_meta).exists():
                 return cls.Load(p)
+        assert False
 
     def GetTransform(self, path: Path|str):
         path = self.location/path
@@ -648,8 +649,8 @@ class ContextPath:
 
 @dataclass
 class ExecutionContext:
-    _inputs: dict[Endpoint, ContextPath]
-    _outputs: dict[Endpoint, ContextPath]
+    _inputs: dict[Dependency, ContextPath]
+    _outputs: dict[Dependency, ContextPath]
     external_shell: RemoteShell # since metasmith will bootstrap into its own container
     external_cwd: Path
     container_runtime: ContainerRuntime
@@ -660,12 +661,13 @@ class ExecutionContext:
             if d.IsA(key): return p
         assert False, f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]"
 
-    def ExecWithContainer(self, image: Endpoint, cmd: str, binds: list[tuple[Path, Path]]=None, history: bool = True):
+    def ExecWithContainer(self, image: Dependency, cmd: str, binds: list[tuple[Path, Path]]=None, history: bool = True):
         path = self._inputs[image]
-        image = path.external
         if IsText(path.local):
             with open(path.local) as f:
-                image = f.read().strip() # using the uri
+                image_path = f.read().strip() # using the uri
+        else:
+            image_path = str(path.external)
 
         _binds = set()
         for _, p in list(self._inputs.items())+list(self._outputs.items()):
@@ -680,14 +682,14 @@ class ExecutionContext:
 
         container_ws = Path("/ws")
         container = Container(
-            image = image,
+            image = str(image_path),
             workdir = container_ws,
             runtime = self.container_runtime,
             binds = binds,
         )
 
         cmd = RemoveLeadingIndent(cmd)
-        Log.Info(f"executing container [{image}] using [{container.runtime}]")
+        Log.Info(f"executing container [{image_path}] using [{container.runtime}]")
         Log.Info(f"command:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
