@@ -1,0 +1,13 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+    echo "Usage: $0 <python_file> [args...]"
+    exit 1
+fi
+
+BASENAME=$(basename "$1")
+cp "$1" "/runner/$BASENAME"
+
+# Shift so "$@" is now only the passed args
+shift
+uv run "/runner/$BASENAME" "$@"

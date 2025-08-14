@@ -10,3 +10,5 @@ RUN uv init --python 3.13
 RUN uv add \
     polars \
     plotly
+
+COPY run_script /run_script
