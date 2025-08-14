@@ -90,13 +90,52 @@ def StdTypes() -> DataTypeLibrary:
     std_data_types["sequence_alignment_map"] = Endpoint.Unpack({
         "properties": {
             "format": "SAM",
-            "data": "Sequence Alignment/Map file listing read placements"
         }
     })
     std_data_types["binary_alignment_map"] = Endpoint.Unpack({
         "properties": {
             "format": "BAM",
-            "data": "Binary, compressed SAM file"
+        }
+    })
+    std_data_types["binary_alignment_map_csi"] = Endpoint.Unpack({
+        "properties": {
+            "format": "CSI",
+        }
+    })
+    std_data_types["sequence_alignment_map_short"] = Endpoint.Unpack({
+        "properties": {
+            "format": "SAM",
+            "data": "SAM with short reads"
+        }
+    })
+    std_data_types["binary_alignment_map_short"] = Endpoint.Unpack({
+        "properties": {
+            "format": "BAM",
+            "data": "BAM with short reads"
+        }
+    })
+    std_data_types["binary_alignment_map_csi_short"] = Endpoint.Unpack({
+        "properties": {
+            "format": "CSI",
+            "data": "CSI with short reads"
+        }
+    })
+    std_data_types["sequence_alignment_map_long"] = Endpoint.Unpack({
+        "properties": {
+            "format": "SAM",
+            "data": "SAM with long reads"
+        }
+    })
+    std_data_types["binary_alignment_map_long"] = Endpoint.Unpack({
+        "properties": {
+            "format": "BAM",
+            "data": "BAM with long reads"
+        }
+    })
+    std_data_types["binary_alignment_map_csi_long"] = Endpoint.Unpack({
+        "properties": {
+            "format": "CSI",
+            "data": "CSI with long reads"
         }
     })
 
