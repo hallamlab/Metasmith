@@ -14,7 +14,10 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""\
-            prodigal \
+            pprodigal \
+                -T {2} \
+                -C 10 \
+                -p meta \
                 -i {context.Get(assembly).container} \
                 -a {cds_path.container} \
                 -f gff \

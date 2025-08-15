@@ -12,17 +12,17 @@ def protocol(context: ExecutionContext):
     out_path = context.Get(out)
 
     cpus_string = ""
-    # cpus = context.params.get("cpus")
-    # if cpus is not None:
-    #     cpus_string = f"-t{cpus}"
+    cpus = context.params.get("cpus")
+    if cpus is not None:
+        cpus_string = f"-t {cpus}"
 
     context.ExecWithContainer(
         image = image_minimap2,
         cmd = f"""
-                minimap2 \
-                    -x ava-pb \
-                    {cpus_string} \
-                    {reads_path.container} {reads_path.container} | gzip -1 > {out_path.container}
+            minimap2 \
+                -x ava-pb \
+                {cpus_string} \
+                {reads_path.container} {reads_path.container} | gzip -1 > {out_path.container}
         """
     )
     return ExecutionResult(success=out_path.local.exists())

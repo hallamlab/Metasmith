@@ -1,1 +1,1 @@
-docker://quay.io/biocontainers/prodigal:2.60--1
+docker://quay.io/hallamlab/external_pprodigal:1.0.1
