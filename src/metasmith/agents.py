@@ -528,7 +528,8 @@ def RunWorkflow(key: str, log_dir: Path):
 
     task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
     nextflow_preset = _get_nextflow_preset(task.config)
-    Log.Info(f"start time [{StdTime.Timestamp()}]")
+    start_time = StdTime.Timestamp()
+    Log.Info(f"start time [{start_time}]")
     Log.Info(f"running workflow [{task.plan._key}] with preset [{nextflow_preset}]")
 
     Log.Info(f"loading agent metadata")
@@ -580,7 +581,7 @@ def RunWorkflow(key: str, log_dir: Path):
         )
 
     Log.Info(f"compiling results")
-    results_folder = "results"
+    results_folder = "results/latest"
     output_path = workspace/results_folder
     extern_output_path = extern_workspace/results_folder
     output = DataInstanceLibrary(output_path)
@@ -613,7 +614,9 @@ def RunWorkflow(key: str, log_dir: Path):
     for _namespace in used_type_libs:
         output.AddTypeLibrary(_namespace, type_libs[_namespace])
     output.Add(items=to_add, method=SourceType.DIRECT, on_exist="skip")
-    output.Save(parent_map)
+    for e_path, parents in parent_map.items():
+        output.AddParentsTo(e_path, parents)
+    output.Save()
 
     tail = output_path.relative_to(AgentPaths.HOME_ROOT)
     external_results_path = extern_home/tail
@@ -646,6 +649,7 @@ def RunWorkflow(key: str, log_dir: Path):
             continue
         shutil.copy2(src, dest)
 
+    output_path = output_path.rename(output_path.parent/start_time)
     Log.Info(f"compiling metadata to results folder [{output_path}]")
     output_metadata_path = output_path/f"{output._path_to_meta}"
     (output_metadata_path/"plan.yml").symlink_to(f"../../{AgentPaths.INTERNALS}/task/plan.yml")
@@ -655,7 +659,6 @@ def RunWorkflow(key: str, log_dir: Path):
     output_nxf_folder.mkdir(parents=True, exist_ok=True)
     (output_nxf_folder/"workflow.nf").symlink_to(f"../../../workflow.nf")
     (output_nxf_folder/"workflow.config.nf").symlink_to(f"../../../workflow.config.nf")
-
     Log.Info(f"run completed at [{StdTime.Timestamp()}]")
 
 def CheckWorkflow(key: str, index: int=None):

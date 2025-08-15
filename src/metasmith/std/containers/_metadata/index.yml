@@ -1,0 +1,35 @@
+manifest:
+  bakta.oci.uri:
+    type: std::oci_image_bakta
+  diamond.oci.uri:
+    type: std::oci_image_diamond
+  fasterq_dump.oci.uri:
+    type: std::oci_image_fasterq_dump
+  fastqc.oci.uri:
+    type: std::oci_image_fastqc
+  filtlong.oci.uri:
+    type: std::oci_image_filtlong
+  flye.oci.uri:
+    type: std::oci_image_flye
+  kofamscan.oci.uri:
+    type: std::oci_image_kofamscan
+  longqc.oci.uri:
+    type: std::oci_image_longqc
+  megahit.oci.uri:
+    type: std::oci_image_megahit
+  miniasm.oci.uri:
+    type: std::oci_image_miniasm
+  minimap2.oci.uri:
+    type: std::oci_image_minimap2
+  pilon.oci.uri:
+    type: std::oci_image_pilon
+  prodigal.oci.uri:
+    type: std::oci_image_prodigal
+  samtools.oci.uri:
+    type: std::oci_image_samtools
+  trimmomatic.oci.uri:
+    type: std::oci_image_trimmomatic
+  ubuntu.oci.uri:
+    type: std::oci_image_ubuntu
+remote_src: null
+schema: 0.6.0
