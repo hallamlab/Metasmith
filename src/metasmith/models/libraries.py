@@ -142,6 +142,7 @@ class DataInstance:
 
     def __post_init__(self):
         self.RecalculateKey()
+        assert not self.path.is_absolute()
 
     def __hash__(self) -> int:
         return self._hash
@@ -254,6 +255,12 @@ class DataInstanceLibrary:
         assert name in types_lib, f"datatype [{name}] not found in [{namespace}]"
         return types_lib[name]
 
+    def Get(self, path: str|Path):
+        p = Path(path)
+        e_name = self.manifest[p]
+        e = self.GetType(e_name)
+        return DataInstance(p, e, e_name, self)
+
     def GetType(self, name: str):
         return self._get_type(name, self.types)
 
@@ -321,6 +328,15 @@ class DataInstanceLibrary:
             report.append(dest)
         return report
 
+    def AddParentsTo(self, path: Path|str, parents: list[DataInstance]):
+        p = Path(path)
+        current = self.parents.get(p, [])
+        seen = {f"{x.library_key}/{x.path}" for x in current}
+        def _get_k(d: DataInstance):
+            return f"{d.parent_lib.GetKey()}/{d.path}"
+        current += [self.ParentMetadata(p.dtype, p.dtype_name, p.parent_lib.GetKey(), p.path) for p in parents if _get_k(p) not in seen]
+        self.parents[p] = current
+
     def _calculate_key(self):
         me_d = self.Pack()
         for k in ["remote_src"]:
@@ -354,13 +370,13 @@ class DataInstanceLibrary:
                 self.types[namespace] = new
         if save: self.Save(update_types=True)
 
-    def Pack(self, parents: dict[Path, list[DataInstance]]=None):
-        if parents is None: parents = {}
+    def Pack(self):
         def _pack_instance(path, dtype_name):
             d_parents = {}
-            for p in parents.get(path, []):
-                k = f"{p.parent_lib.GetKey()}/{p.path}"
-                v = p.dtype_name
+            for p in self.parents.get(path, []):
+                p.library_key
+                k = f"{p.library_key}/{p.path}"
+                v = p.name
                 d_parents[k] = v
             d = dict(
                 type=dtype_name,
@@ -408,8 +424,7 @@ class DataInstanceLibrary:
             if len(parents)>0: lib.parents[Path(k)] = parents
         return lib
 
-    def Save(self, parents: dict[Path, list[DataInstance]]=None, update_types=True):
-        if parents is None: parents = {}
+    def Save(self, update_types=True):
         ext = self._metadata_ext
         types_path = self.location/self._path_to_types
         types_path.mkdir(parents=True, exist_ok=True)
@@ -423,7 +438,7 @@ class DataInstanceLibrary:
         index_path = metadata_path/(self._index_name+ext)
         index_path.parent.mkdir(parents=True, exist_ok=True)
         with open(index_path, "w") as f:
-            yaml.dump(self.Pack(parents), f)
+            yaml.dump(self.Pack(), f)
 
     @classmethod
     def Load(cls, path: Path|str, check_integrity=False):
@@ -670,7 +685,7 @@ class ExecutionContext:
             image_path = str(path.external)
 
         _binds = set()
-        for _, p in list(self._inputs.items())+list(self._outputs.items()):
+        for _, p in list(self._inputs.items()):
             src = p.external.parent
             dest = p.container.parent
             _binds.add((src, dest))

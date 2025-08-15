@@ -89,7 +89,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         def _status(p: ContextPath):
             return "✓" if p.local.exists() else "X"
         container_binds = {}
-        def _parse_path(p: Path):
+        def _parse_path(p: Path, container_override=None):
             if p.is_symlink():
                 external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
                 tail = external.relative_to(agent_home)
@@ -97,10 +97,13 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             else:
                 local = p
                 external = external_cwd/p
-            k = external.parent
-            if k not in container_binds:
-                container_binds[k] = Path(f"/msm_data/{k.name}")
-            container = container_binds[k]/p
+            if container_override:
+                container = container_override
+            else:
+                k = external.parent
+                if k not in container_binds:
+                    container_binds[k] = Path(f"/msm_data/{k.name}")
+                container = container_binds[k]/p
             return ContextPath(local=local, external=external, container=container)
         inputs = {}
         Log.Info("uses:")
@@ -112,7 +115,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         outputs = {}
         space = " "
         for inst in step.produces:
-            p = _parse_path(inst.path)
+            p = _parse_path(inst.path, container_override=Path("/ws")/inst.path)
             outputs[inst.dtype] = p
             Log.Info(_shorten_home(f"    {space} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
 
