@@ -1,0 +1,87 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: 0.6.0
+types:
+  oci_image_bakta:
+    properties:
+      data: OCI
+      format: Software container
+      provides: bakta
+  oci_image_diamond:
+    properties:
+      data: OCI
+      format: Software container
+      provides: diamond
+  oci_image_fasterq_dump:
+    properties:
+      data: OCI
+      format: Software container
+      provides: fasterq_dump
+  oci_image_fastqc:
+    properties:
+      data: OCI
+      format: Software container
+      provides: fastqc
+  oci_image_filtlong:
+    properties:
+      data: OCI
+      format: Software container
+      provides: filtlong
+  oci_image_flye:
+    properties:
+      data: OCI
+      format: Software container
+      provides: flye
+  oci_image_kofamscan:
+    properties:
+      data: OCI
+      format: Software container
+      provides: kofamscan
+  oci_image_longqc:
+    properties:
+      data: OCI
+      format: Software container
+      provides: longqc
+  oci_image_megahit:
+    properties:
+      data: OCI
+      format: Software container
+      provides: megahit
+  oci_image_miniasm:
+    properties:
+      data: OCI
+      format: Software container
+      provides: miniasm
+  oci_image_minimap2:
+    properties:
+      data: OCI
+      format: Software container
+      provides: minimap2
+  oci_image_pilon:
+    properties:
+      data: OCI
+      format: Software container
+      provides: pilon
+  oci_image_prodigal:
+    properties:
+      data: OCI
+      format: Software container
+      provides: prodigal
+  oci_image_samtools:
+    properties:
+      data: OCI
+      format: Software container
+      provides: samtools
+  oci_image_trimmomatic:
+    properties:
+      data: OCI
+      format: Software container
+      provides: trimmomatic
+  oci_image_ubuntu:
+    properties:
+      data: OCI
+      format: Software container
+      provides: GNU coreutils
