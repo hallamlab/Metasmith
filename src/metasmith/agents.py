@@ -18,7 +18,7 @@ from .coms.ipc import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstance
-from .models.solver import Endpoint, Dependency, Transform, _solve_by_bounded_dfs
+from .models.solver import Endpoint
 
 class AgentPaths:
     WORK_ROOT = Path("/ws")
@@ -352,8 +352,12 @@ class Agent:
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
-    def GenerateWorkflow(self, given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: Iterable[Endpoint], config: dict=None):
-        plan = WorkflowPlan.Generate(given, transforms, targets)
+    def GenerateWorkflow(
+        self, given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: Iterable[Endpoint],
+        config: dict|None=None,
+        max_iter: int=1024, max_refine: int=256, seed: int=42,
+    ):
+        plan = WorkflowPlan.Generate(given, transforms, targets, max_iter=max_iter, max_refine=max_refine, seed=seed)
         if config is None: config = {}
         task = WorkflowTask(plan=plan, data_libraries=list(given),transform_libraries=list(transforms), config=config)
         return task
