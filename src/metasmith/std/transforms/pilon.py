@@ -4,8 +4,8 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 assembly  = model.AddRequirement(lib.GetType("std::long_reads_assembly"))
-bam       = model.AddRequirement(lib.GetType("std::binary_alignment_map_short"))
-csi       = model.AddRequirement(lib.GetType("std::binary_alignment_map_csi_short"))
+bam       = model.AddRequirement(lib.GetType("std::binary_alignment_map"))
+csi       = model.AddRequirement(lib.GetType("std::binary_alignment_map_csi"))
 image     = model.AddRequirement(lib.GetType("std::oci_image_pilon"))
 out       = model.AddProduct(lib.GetType("std::hybrid_assembly"))
 

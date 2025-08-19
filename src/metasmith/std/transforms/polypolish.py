@@ -4,7 +4,7 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 assembly  = model.AddRequirement(lib.GetType("std::long_reads_assembly"))
-sam       = model.AddRequirement(lib.GetType("std::sequence_alignment_map_long"))
+sam       = model.AddRequirement(lib.GetType("std::sequence_alignment_map"))
 image     = model.AddRequirement(lib.GetType("std::oci_image_polypolish"))
 out       = model.AddProduct(lib.GetType("std::assembly"))
 

@@ -29,7 +29,7 @@ manifest:
     type: std::oci_image_samtools
   trimmomatic.oci.uri:
     type: std::oci_image_trimmomatic
-  ubuntu.oci.uri:
-    type: std::oci_image_ubuntu
+  script_runner.oci.uri:
+    type: std::oci_image_script_runner
 remote_src: null
 schema: 0.6.0

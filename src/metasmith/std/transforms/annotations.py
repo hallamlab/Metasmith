@@ -11,7 +11,7 @@ kofamscan = model.AddRequirement(lib.GetType("std::kofamscan_annotations"), pare
 cazy      = model.AddRequirement(lib.GetType("std::cazy_annotations"), parents={assembly})
 busco     = model.AddRequirement(lib.GetType("std::busco_annotations"), parents={assembly})
 busco_map = model.AddRequirement(lib.GetType("std::busco_map"))
-image     = model.AddRequirement(lib.GetType("std::oci_image_ubuntu"))
+image     = model.AddRequirement(lib.GetType("std::oci_image_script_runner"))
 out       = model.AddProduct(lib.GetType("std::functional_annotations"))
 
 def protocol(context: ExecutionContext):

@@ -18,6 +18,11 @@ def StdTypes() -> DataTypeLibrary:
             "data": "Long sequence"
         }
     })
+    std_data_types["reads"] = Endpoint.Unpack({
+        "properties": {
+            "format": "Sequence file"
+        }
+    })
     std_data_types["self_mappings"] = Endpoint.Unpack({
         "properties": {
             "format": "Self-to-self mappings with minimap2"
@@ -51,13 +56,13 @@ def StdTypes() -> DataTypeLibrary:
 
     std_data_types["long_reads_filtered"] = Endpoint.Unpack({
         "properties": {
-            "format": "Sequence file",
+            "format": "Filtered sequence file",
             "data": "Long reads filtered by filtlong"
         }
     })
     std_data_types["short_reads_trimmed"] = Endpoint.Unpack({
         "properties": {
-            "format": "Sequence file",
+            "format": "Trimmed sequence file",
             "data": "Short reads trimmed by Trimmomatic"
         }
     })
@@ -102,42 +107,6 @@ def StdTypes() -> DataTypeLibrary:
     std_data_types["binary_alignment_map_csi"] = Endpoint.Unpack({
         "properties": {
             "format": "CSI",
-        }
-    })
-    std_data_types["sequence_alignment_map_short"] = Endpoint.Unpack({
-        "properties": {
-            "format": "SAM",
-            "data": "SAM with short reads"
-        }
-    })
-    std_data_types["binary_alignment_map_short"] = Endpoint.Unpack({
-        "properties": {
-            "format": "BAM",
-            "data": "BAM with short reads"
-        }
-    })
-    std_data_types["binary_alignment_map_csi_short"] = Endpoint.Unpack({
-        "properties": {
-            "format": "CSI",
-            "data": "CSI with short reads"
-        }
-    })
-    std_data_types["sequence_alignment_map_long"] = Endpoint.Unpack({
-        "properties": {
-            "format": "SAM",
-            "data": "SAM with long reads"
-        }
-    })
-    std_data_types["binary_alignment_map_long"] = Endpoint.Unpack({
-        "properties": {
-            "format": "BAM",
-            "data": "BAM with long reads"
-        }
-    })
-    std_data_types["binary_alignment_map_csi_long"] = Endpoint.Unpack({
-        "properties": {
-            "format": "CSI",
-            "data": "CSI with long reads"
         }
     })
 

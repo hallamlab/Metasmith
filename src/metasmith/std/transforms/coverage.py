@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
     out_path = context.Get(out)
 
     context.ExecWithContainer(
-        image = image,
+        image = image_samtools,
         cmd = f"""
                 mkdir /workdir/
                 cp {bam_path.container} /workdir/alignment.bam

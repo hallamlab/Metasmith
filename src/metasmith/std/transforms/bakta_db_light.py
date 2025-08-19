@@ -3,7 +3,7 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-image  = model.AddRequirement(lib.GetType("std::oci_image_ubuntu"))
+image  = model.AddRequirement(lib.GetType("std::oci_image_script_runner"))
 out    = model.AddProduct(lib.GetType("std::bakta_database_light"))
 
 def protocol(context: ExecutionContext):
