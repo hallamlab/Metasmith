@@ -4,7 +4,7 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 reads           = model.AddRequirement(lib.GetType("std::reads"))
-assembly        = model.AddRequirement(lib.GetType("std::assembly"))
+assembly        = model.AddRequirement(lib.GetType("std::assembly"), parents={reads})
 image_minimap2  = model.AddRequirement(lib.GetType("std::oci_image_minimap2"))
 image_samtools  = model.AddRequirement(lib.GetType("std::oci_image_samtools"))
 out_sam         = model.AddProduct(lib.GetType("std::sequence_alignment_map"))
