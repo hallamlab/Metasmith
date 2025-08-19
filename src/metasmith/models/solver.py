@@ -708,7 +708,10 @@ def solve_by_mcts(
                         e = step.used[p]
                         pe= step.used[lin_p] # type: ignore
                         lin_distances.append(_max_distance_to(e, pe))
-            lin_score = -sum(lin_distances)/len(lin_distances)
+            if len(lin_distances)>0:
+                lin_score = -sum(lin_distances)/len(lin_distances)
+            else:
+                lin_score = 0
             score = e_score*1000+lin_score
             _, k = KeyGenerator.FromStr(state.Signature(), l=4)
             vscore = score*state.valid
