@@ -3,8 +3,8 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-assembly = model.AddRequirement(node=lib.GetType("std::assembly"))
-image    = model.AddRequirement(node=lib.GetType("std::oci_image_prodigal"))
+assembly = model.AddRequirement(lib.GetType("std::assembly"))
+image    = model.AddRequirement(lib.GetType("std::oci_image_prodigal"))
 cds     = model.AddProduct(lib.GetType("std::coding_sequences"))
 gff     = model.AddProduct(lib.GetType("std::gene_features"))
 
@@ -14,8 +14,10 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""\
-            prodigal \
+            pprodigal \
+                -T {2} \
                 -C 10 \
+                -p meta \
                 -i {context.Get(assembly).container} \
                 -a {cds_path.container} \
                 -f gff \

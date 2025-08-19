@@ -11,7 +11,7 @@ from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary
 from .remote import Logistics, Source, SourceType
-from .solver import Endpoint, Dependency, Transform, _solve_by_bounded_dfs
+from .solver import Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
 from ..hashing import KeyGenerator
 from ..logging import Log
 
@@ -37,6 +37,7 @@ class WorkflowStep:
         lib = libraries[lib_key]
         assert isinstance(lib, TransformInstanceLibrary)
         tr = lib.GetTransform(transform_name)
+        assert tr is not None
         return cls(
             order=raw["order"],
             uses=[DataInstance.Unpack(inst, libraries) for inst in raw["uses"]],
@@ -81,6 +82,7 @@ class WorkflowPlan:
     given: list[DataInstance]
     targets: list[WorkflowTarget] # target, used givens
     steps: list[WorkflowStep]
+    _solver_result: SolverResult|None=None
 
     def __post_init__(self):
         given = [inst._key for inst in self.given]
@@ -166,7 +168,11 @@ class WorkflowPlan:
         )
 
     @classmethod
-    def Generate(cls, given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: Iterable[Endpoint]):
+    def Generate(
+        cls,
+        given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: Iterable[Endpoint],
+        max_iter: int=256, max_refine: int=256, seed: int=42,
+    ):
         given_map: dict[Endpoint, DataInstance] = {}
         for lib in given:
             for path, ep_name, ep in lib.Iterate():
@@ -181,9 +187,15 @@ class WorkflowPlan:
                 )
 
         target_e2d: dict[Endpoint, Dependency] = {}
+        def _add(tr: Transform, e: Endpoint) -> Dependency:
+            if e in target_e2d: return target_e2d[e]
+            parent_deps = {_add(tr, p) for p in e.parents} # type: ignore
+            d = tr.AddRequirement(e, parents=parent_deps)
+            target_e2d[e] = d
+            return d
         target_model = Transform()
         for t in targets:
-            t.AddAsDependency(target_model, target_e2d)
+            _add(target_model, t)
 
         transform2inst: dict[Transform, TransformInstance] = {}
         inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}
@@ -196,23 +208,26 @@ class WorkflowPlan:
                 transform2inst[model] = tr
                 inst2trlib[tr] = trlib
 
-        solutions = _solve_by_bounded_dfs(
+        result = solve_by_mcts(
             given=given_map.keys(),
             target=target_model,
             transforms=transform2inst.keys(),
+            max_iter=max_iter,
+            max_refine=max_refine,
+            seed=seed,
         )
 
-        assert len(solutions) > 0, "failed to make plan!"
-        solution = solutions[0]
+        assert result.complete, "failed to make plan!"
+        solution = result
 
-        instance_map: dict[Endpoint, DataInstance] = {k.key:v for k, v in given_map.items()}
+        instance_map: dict[Endpoint, DataInstance] = {k:v for k, v in given_map.items()}
         steps: list[WorkflowStep] = []
         target_meta: dict[Endpoint, WorkflowTarget] = {}
-        for i, appl in enumerate(solution.dependency_plan):
+        for i, appl in enumerate(solution.dependency_plan[1:-1]): # first is mock tr for given, last is for target
             tr = transform2inst[appl.transform]
             _lib = inst2trlib[tr]
 
-            for e, d in appl.produced.items():
+            for d, e in appl.produced.items():
                 p = tr.output_signature[d]
                 _instance = DataInstance(
                     path = Path(p),
@@ -220,18 +235,18 @@ class WorkflowPlan:
                     dtype_name = _lib.GetName(d),
                     parent_lib = _lib,
                 )
-                instance_map[e.key] = _instance
+                instance_map[e] = _instance
 
             step = WorkflowStep(
                 order=i+1,
-                uses=[instance_map[e.key] for e in appl.used],
-                produces=[instance_map[e.key] for e in appl.produced],
+                uses=[instance_map[e] for e in appl.used.values()],
+                produces=[instance_map[e] for e in appl.produced.values()],
                 transform=tr,
                 transform_library=_lib,
             )
             steps.append(step)
 
-            for e, d in appl.produced.items():
+            for d, e in appl.produced.items():
                 for target in targets:
                     if not e.IsA(target): continue
                     if not target.parents.issubset(e.parents): continue
@@ -240,7 +255,7 @@ class WorkflowPlan:
                         if p not in given_map: continue
                         _used_givens.append(given_map[p])
                     target_meta[target] = WorkflowTarget(
-                        instance=instance_map[e.key],
+                        instance=instance_map[e],
                         used_givens=_used_givens,
                         producing_step=step,
                     )
@@ -250,6 +265,7 @@ class WorkflowPlan:
             given=list(given_map.values()),
             targets=list(target_meta.values()),
             steps=steps,
+            _solver_result=result,
         )
 
     def PrepareNextflow(self, work_dir: Path, external_work: Path, home_dir: Path, external_home: Path):

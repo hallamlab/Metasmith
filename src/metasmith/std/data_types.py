@@ -1,6 +1,8 @@
 from ..models.solver import Endpoint
 from ..models.libraries import DataTypeLibrary
 
+# this is deprecated
+# dtypes are loaded from transforms and containers for fewer points of control
 def StdTypes() -> DataTypeLibrary:
     std_data_types = DataTypeLibrary()
 
