@@ -3,7 +3,7 @@ from polars import col, lit, Expr
 from helpers import parse_args
 
 input_file, output_file = parse_args(
-    ("cazy", "Raw CAZy output TSV"), ("out", "Cleaned and annotated CAZy output")
+    (("cazy", "Raw CAZy output TSV"), ("out", "Cleaned and annotated CAZy output"))
 )
 cazy_raw = pl.read_csv(input_file, has_header=False, separator="\t")
 
@@ -15,11 +15,11 @@ cazy_clean = (
             col("").filter(
                 col("")
                 .str.contains(
-                    lit(r"^(GH|GT|CBM|AA|PL|CE)\d+"), literal=False, strict=True
+                    r"^(GH|GT|CBM|AA|PL|CE)\d+", literal=False, strict=True
                 )
-                .alias("cazy_families")
             )
         )
+        .alias("cazy_families")
     )
     .with_columns(
         col("cazy_families")
@@ -44,7 +44,7 @@ cazy_clean = (
 
 
 def flattened(column: Expr) -> Expr:
-    column.list.join(lit(","))
+    return column.list.join(lit(","));
 
 
 cazy_final = (

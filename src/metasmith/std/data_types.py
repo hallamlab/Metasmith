@@ -340,14 +340,42 @@ def StdTypes() -> DataTypeLibrary:
         "properties": {
             "format": ".py",
             "data": "Python script",
-            "provides": ["cazy.py"]
+            "provides": ["cazy_annotation.py"]
+        }
+    })
+    std_data_types["cazy_visualize_script"] = Endpoint.Unpack({
+        "properties": {
+            "format": ".py",
+            "data": "Python script",
+            "provides": ["cazy_visualize.py"]
         }
     })
     std_data_types["busco_annotation_script"] = Endpoint.Unpack({
         "properties": {
             "format": ".py",
             "data": "Python script",
-            "provides": ["busco.py"]
+            "provides": ["busco_annotation.py"]
+        }
+    })
+    std_data_types["busco_visualize_script"] = Endpoint.Unpack({
+        "properties": {
+            "format": ".py",
+            "data": "Python script",
+            "provides": ["busco_visualize.py"]
+        }
+    })
+    std_data_types["helpers_script"] = Endpoint.Unpack({
+        "properties": {
+            "format": ".py",
+            "data": "Python script",
+            "provides": ["helpers.py"]
+        }
+    })
+    std_data_types["qc_table_script"] = Endpoint.Unpack({
+        "properties": {
+            "format": ".py",
+            "data": "Python script",
+            "provides": ["qc_table.py"]
         }
     })
     std_data_types["oci_image_miniasm"] = Endpoint.Unpack({

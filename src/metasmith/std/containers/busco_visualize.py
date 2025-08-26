@@ -1,18 +1,18 @@
 from plotly.graph_objects import Figure, Pie
 import polars as pl
-from polars import col, lit
+from polars import col
 from helpers import parse_args
 
-cazy_clean, output_file = parse_args((
-    ("cazy", "Annotated CAZy output TSV"),
-    ("out", "HTML visualization of CAZy enzyme class frequencies"),
+busco_clean, output_file = parse_args((
+    ("busco", "Annotated BUSCO output TSV"),
+    ("out", "HTML visualization of BUSCO enzyme class frequencies"),
 ))
 
-df = pl.read_csv(cazy_clean, separator='\t').with_columns(col("cazy_class_names").str.split(lit(',')).alias("class_list"))
-function_counts = df.explode("class_list").group_by("class_list").agg(pl.len().alias("count"))
+df = pl.read_csv(busco_clean, separator='\t').lazy().select(col("taxonomy").str.replace_all("_", " "))
+tax_counts = df.group_by("taxonomy").agg(pl.len().alias("count")).collect()
 
-taxonomies = function_counts.get_column("class_list").to_list()
-counts = function_counts.get_column("count").to_list()
+taxonomies = tax_counts.get_column("taxonomy").to_list()
+counts     = tax_counts.get_column("count").to_list()
 
 fig = Figure(data=[Pie(
     labels=taxonomies,
@@ -21,7 +21,7 @@ fig = Figure(data=[Pie(
     textinfo="percent",
     hole=0.9,
     title={
-        "text": "Enzyme Class Distribution",
+        "text": "Taxonomy Distribution",
     },
     textfont={
         "family": "JetBrainsMono Nerd Font, monospace"
