@@ -14,12 +14,11 @@
 # - Define local for test dataset
 
 # %%
-from os import read
 from pathlib import Path
 from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 
+# %%
 dtypes, containers, transforms = Std()
-
 base_file = Path().resolve()
 
 
@@ -44,23 +43,26 @@ inputs.Add(
         (base_file / "sample_data/long_reads_subsample.fastq", "long", "std::long_reads"),
         (base_file / "sample_data/ko_list", "ko_list", "std::kofamscan_ko_list"),
         (base_file / "sample_data/profiles/", "profiles/", "std::kofamscan_profile"),
-        (base_file / "sample_data/bakta_db", "bakta_db", "std::bakta_database"),
+        (base_file / "sample_data/bakta_db", "bakta_db", "std::bakta_database_full"),
         (base_file / "sample_data/cazy.fa", "cazy_db", "std::cazy_ref"),
-        (base_file / "sample_data/busco.faa", "busco_db", "std::busco_ref"),
+        (base_file / "sample_data/busco.faa", "busco_ref", "std::busco_ref"),
         (base_file / "sample_data/species.info", "busco_map", "std::busco_map"),
+        # (base_file / "sample_data/pilon.fasta", "pilon", "std::hybrid_assembly"),
         # (base_file / "sample_data/assembly.fasta", "assembly.fasta", "std::long_reads_assembly"),
     ]
 )
 
 # %%
-
-
 task = smith.GenerateWorkflow(
     given      = [containers, inputs],
     transforms = [transforms],
-    targets    = [dtypes["hybrid_assembly"]]
+    targets    = [dtypes["functional_annotations"].WithLineage([dtypes["hybrid_assembly"]])]
 )
 
+# %%
+for item in task.plan.steps:
+    print(item.transform.name)
+# %%
 
 from IPython.display import display_png
 task.RenderDAG("dag", format="png")
