@@ -14,7 +14,7 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""\
-            pprodigal \
+            prodigal \
                 -T {2} \
                 -C 10 \
                 -p meta \

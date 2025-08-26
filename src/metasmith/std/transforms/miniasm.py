@@ -13,11 +13,6 @@ def protocol(context: ExecutionContext):
     mappings_path = context.Get(mappings)
     out_path = context.Get(out)
 
-    cpus_string = ""
-    # cpus = context.params.get("cpus")
-    # if cpus is not None:
-    #     cpus_string = f"-t{cpus}"
-
     context.ExecWithContainer(
         image = image_miniasm,
         cmd = f"""

@@ -27,9 +27,9 @@ manifest:
     type: std::oci_image_prodigal
   samtools.oci.uri:
     type: std::oci_image_samtools
-  trimmomatic.oci.uri:
-    type: std::oci_image_trimmomatic
   script_runner.oci.uri:
     type: std::oci_image_script_runner
+  trimmomatic.oci.uri:
+    type: std::oci_image_trimmomatic
 remote_src: null
 schema: 0.6.0

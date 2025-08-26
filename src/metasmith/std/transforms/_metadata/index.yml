@@ -9,6 +9,8 @@ manifest:
     type: transforms::transform
   bam.py:
     type: transforms::transform
+  bam_self.py:
+    type: transforms::transform
   busco.py:
     type: transforms::transform
   busco_ref.py:

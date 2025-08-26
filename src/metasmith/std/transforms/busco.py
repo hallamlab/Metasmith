@@ -21,9 +21,9 @@ def protocol(context: ExecutionContext):
     out_path        = context.Get(out)
 
     cpus_string = ""
-    # cpus = context.params.get("cpus")
-    # if cpus is not None:
-    #     cpus_string = f"--threads {cpus}"
+    cpus = context.params.get("cpus")
+    if cpus is not None:
+        cpus_string = f"--threads {cpus}"
 
     context.ExecWithContainer(
         image = image_diamond,

@@ -17,10 +17,10 @@ def protocol(context: ExecutionContext):
     assembly_path = context.Get(assembly)
     out_path = context.Get(out)
 
-    # cpus = context.params.get("cpus")
-    # cpus_string = ""
-    # if cpus is not None:
-    #     cpus_string = f"--threads {cpus}"
+    cpus = context.params.get("cpus")
+    cpus_string = ""
+    if cpus is not None:
+        cpus_string = f"--threads {cpus}"
     cpus_string = ""
     context.ExecWithContainer(
         image = image,

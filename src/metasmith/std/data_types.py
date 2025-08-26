@@ -87,8 +87,12 @@ def StdTypes() -> DataTypeLibrary:
             "from": "Long reads, improved by short reads"
         }
     })
-    # TODO!
-    # Update other assembly types to split the actual assembly file and "rest"
+    std_data_types["polished_assembly"] = Endpoint.Unpack({
+        "properties": {
+            "data": "Sequence assembly",
+            "from": "Long reads, improved by short reads, with a miniasm estimation step"
+        }
+    })
     std_data_types["assembly"] = Endpoint.Unpack({
         "properties": {
             "data": "Sequence assembly"
@@ -107,6 +111,18 @@ def StdTypes() -> DataTypeLibrary:
     std_data_types["binary_alignment_map_csi"] = Endpoint.Unpack({
         "properties": {
             "format": "CSI",
+        }
+    })
+    std_data_types["binary_alignment_map_hybrid"] = Endpoint.Unpack({
+        "properties": {
+            "format": "BAM",
+            "target": "Hybrid assembly"
+        }
+    })
+    std_data_types["binary_alignment_map_csi_hybrid"] = Endpoint.Unpack({
+        "properties": {
+            "format": "CSI",
+            "target": "Hybrid assembly"
         }
     })
 

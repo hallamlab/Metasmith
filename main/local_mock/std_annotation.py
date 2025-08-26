@@ -14,6 +14,7 @@
 # - Define local for test dataset
 
 # %%
+from os import read
 from pathlib import Path
 from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 
@@ -36,28 +37,38 @@ smith.Deploy()
 # %% [markdown]
 
 # %%
-inputs = DataInstanceLibrary("std_fasterq_assembly.xgdb")
+inputs = DataInstanceLibrary("std_data.xgdb")
 inputs.Add(
     items = [
-        (base_file / "sample_data/assembly.fna", "assembly", "std::assembly"),
+        (base_file / "sample_data/short_reads_subsample.fastq", "short", "std::short_reads"),
+        (base_file / "sample_data/long_reads_subsample.fastq", "long", "std::long_reads"),
         (base_file / "sample_data/ko_list", "ko_list", "std::kofamscan_ko_list"),
-        (base_file / "sample_data/kofamscan.tsv", "kofamscan", "std::kofamscan_annotations"),
         (base_file / "sample_data/profiles/", "profiles/", "std::kofamscan_profile"),
         (base_file / "sample_data/bakta_db", "bakta_db", "std::bakta_database"),
-        (base_file / "sample_data/bakta_out", "bakta_out", "std::bakta_annotations"),
         (base_file / "sample_data/cazy.fa", "cazy_db", "std::cazy_ref"),
-        (base_file / "sample_data/cazy.tsv", "cazy_annotations", "std::cazy_annotations"),
         (base_file / "sample_data/busco.faa", "busco_db", "std::busco_ref"),
-        (base_file / "sample_data/busco.tsv", "busco_annotations", "std::busco_annotations"),
         (base_file / "sample_data/species.info", "busco_map", "std::busco_map"),
+        # (base_file / "sample_data/assembly.fasta", "assembly.fasta", "std::long_reads_assembly"),
     ]
 )
+
+# %%
+
 
 task = smith.GenerateWorkflow(
     given      = [containers, inputs],
     transforms = [transforms],
-    targets    = [dtypes["functional_annotations"]]
+    targets    = [dtypes["hybrid_assembly"]]
 )
 
+
+from IPython.display import display_png
+task.RenderDAG("dag", format="png")
+with open("dag.png", "rb") as f:
+    display_png(f.read(), raw=True)
+
+# %%
 smith.StageWorkflow(task, "clear")
 smith.RunWorkflow(task)
+# %%
+smith.CheckWorkflow(task)

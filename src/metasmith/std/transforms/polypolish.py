@@ -6,7 +6,7 @@ model = Transform()
 assembly  = model.AddRequirement(lib.GetType("std::long_reads_assembly"))
 sam       = model.AddRequirement(lib.GetType("std::sequence_alignment_map"))
 image     = model.AddRequirement(lib.GetType("std::oci_image_polypolish"))
-out       = model.AddProduct(lib.GetType("std::assembly"))
+out       = model.AddProduct(lib.GetType("std::polished_assembly"))
 
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
