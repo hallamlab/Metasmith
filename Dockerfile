@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/opt/conda/pkgs \
 ENV PATH /opt/conda/envs/${CONDA_ENV}/bin:/app:/opt/globusconnectpersonal-latest:$PATH
 
 # globus
-RUN mamba install -y -n ${CONDA_ENV} -c conda-forge tk tcl
+RUN mamba install -y -n ${CONDA_ENV} -c conda-forge tk
 
 # install src
 COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
@@ -41,12 +41,16 @@ COPY ./lib/globusconnectpersonal-latest /opt/globusconnectpersonal-latest
 COPY ./main/relay_agent/dist/relay /opt/msm_relay
 RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin /app
 
-# Port on which the notebook will be served
-EXPOSE 8888
-COPY ./metasmith_starter.ipynb /metasmith_starter.ipynb
-RUN pip install jupyterlab
+
+EXPOSE 8080
+WORKDIR /workspace
+COPY ./metasmith_starter.ipynb /workspace/metasmith_starter.ipynb
+RUN touch /workspace/empty
+RUN pip install jupyterlab jupyterlab-lsp python-lsp-server[all]
+
 CMD ["bash","-lc","jupyter lab \
-    --ip=0.0.0.0 \
+    --ip=127.0.0.1 \
     --port=8080 \
+    --allow-root \
     --no-browser \
-    --LabApp.default_url='/metasmith_starter.ipynb'"]
+    --LabApp.default_url='/lab/tree/metasmith_starter.ipynb'"]
