@@ -11,11 +11,17 @@ gff     = model.AddProduct(lib.GetType("std::gene_features"))
 def protocol(context: ExecutionContext):
     cds_path = context.Get(cds)
     gff_path = context.Get(gff)
+
+    cpus_string = ""
+    cpus = context.params.get("cpus")
+    if cpus is not None:
+        cpus_string = f"-T {cpus}"
+
     context.ExecWithContainer(
         image = image,
         cmd = f"""\
-            prodigal \
-                -T {2} \
+            pprodigal \
+                {cpus_string} \
                 -C 10 \
                 -p meta \
                 -i {context.Get(assembly).container} \

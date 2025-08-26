@@ -15,7 +15,7 @@ def protocol(context: ExecutionContext):
     bam_path = context.Get(bam).container
     csi_path = context.Get(csi).container
 
-    memory = context.params.get("cpus")
+    memory = context.params.get("memory")
     memory_string = ""
     if memory is not None:
         memory = int(memory * 0.9)

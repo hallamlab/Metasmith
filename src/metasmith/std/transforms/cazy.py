@@ -8,6 +8,7 @@ cds             = model.AddRequirement(lib.GetType("std::coding_sequences"))
 image_diamond   = model.AddRequirement(lib.GetType("std::oci_image_diamond"))
 image_runner    = model.AddRequirement(lib.GetType("std::oci_image_script_runner"))
 script          = model.AddRequirement(lib.GetType("std::cazy_annotation_script"))
+_helper_script   = model.AddRequirement(lib.GetType("std::helpers_script"))
 raw_out         = model.AddProduct(lib.GetType("std::cazy_raw"))
 out             = model.AddProduct(lib.GetType("std::cazy_annotations"))
 
@@ -42,8 +43,7 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image_runner,
         cmd = f"""
-                cp {script_path.container} /runner/cazy.py
-                uv run /runner/cazy.py {raw_out_path.container} {out_path.container}
+                python {script_path.container} {raw_out_path.container} {out_path.container}
         """
     )
     return ExecutionResult(success=out_path.local.exists())

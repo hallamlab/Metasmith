@@ -44,7 +44,7 @@ types:
     properties:
       data: Python script
       format: .py
-      provides: busco.py
+      provides: busco_annotation.py
   busco_annotations:
     properties:
       data: BUSCO alignment annotations
@@ -61,11 +61,16 @@ types:
     properties:
       data: BUSCO reference database
       format: FASTA
+  busco_visualize_script:
+    properties:
+      data: Python script
+      format: .py
+      provides: busco_visualize.py
   cazy_annotation_script:
     properties:
       data: Python script
       format: .py
-      provides: cazy.py
+      provides: cazy_annotation.py
   cazy_annotations:
     properties:
       data: CAZY alignment annotations
@@ -78,6 +83,11 @@ types:
     properties:
       data: CAZY reference database
       format: FASTA
+  cazy_visualize_script:
+    properties:
+      data: Python script
+      format: .py
+      provides: cazy_visualize.py
   coding_sequences:
     properties:
       data: Amino acid sequences of all CDS
@@ -90,6 +100,11 @@ types:
     properties:
       data: CDS coordinates
       format: GFF3
+  helpers_script:
+    properties:
+      data: Python script
+      format: .py
+      provides: helpers.py
   hybrid_assembly:
     properties:
       data: Sequence assembly
@@ -223,6 +238,11 @@ types:
     properties:
       data: Sequence assembly
       from: Long reads, improved by short reads, with a miniasm estimation step
+  qc_table_script:
+    properties:
+      data: Python script
+      format: .py
+      provides: qc_table.py
   read_stats:
     properties:
       data: Read statistics
