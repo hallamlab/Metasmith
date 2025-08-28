@@ -364,6 +364,13 @@ def StdTypes() -> DataTypeLibrary:
             "provides": ["busco_visualize.py"]
         }
     })
+    std_data_types["kofamscan_visualize_script"] = Endpoint.Unpack({
+        "properties": {
+            "format": ".py",
+            "data": "Python script",
+            "provides": ["kofamscan_visualize.py"]
+        }
+    })
     std_data_types["helpers_script"] = Endpoint.Unpack({
         "properties": {
             "format": ".py",

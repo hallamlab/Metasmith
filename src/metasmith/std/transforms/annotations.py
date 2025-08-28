@@ -13,10 +13,11 @@ cazy             = model.AddRequirement(lib.GetType("std::cazy_annotations"), pa
 busco_raw        = model.AddRequirement(lib.GetType("std::busco_raw"))
 busco            = model.AddRequirement(lib.GetType("std::busco_annotations"), parents={assembly})
 
-cazy_visualize   = model.AddRequirement(lib.GetType("std::cazy_visualize_script"))
-busco_visualize  = model.AddRequirement(lib.GetType("std::busco_visualize_script"))
-qc_table         = model.AddRequirement(lib.GetType("std::qc_table_script"))
-_helpers_script  = model.AddRequirement(lib.GetType("std::helpers_script"))
+cazy_visualize       = model.AddRequirement(lib.GetType("std::cazy_visualize_script"))
+busco_visualize      = model.AddRequirement(lib.GetType("std::busco_visualize_script"))
+kofamscan_visualize  = model.AddRequirement(lib.GetType("std::kofamscan_visualize_script"))
+qc_table             = model.AddRequirement(lib.GetType("std::qc_table_script"))
+_helpers_script      = model.AddRequirement(lib.GetType("std::helpers_script"))
 
 image         = model.AddRequirement(lib.GetType("std::oci_image_script_runner"))
 out           = model.AddProduct(lib.GetType("std::functional_annotations"))
@@ -34,9 +35,10 @@ def protocol(context: ExecutionContext):
     busco_raw_path = context.Get(busco_raw)
     out_path       = context.Get(out)
 
-    cazy_visualize_script   = context.Get(cazy_visualize)
-    busco_visualize_script  = context.Get(busco_visualize)
-    qc_table_script         = context.Get(qc_table)
+    cazy_visualize_script       = context.Get(cazy_visualize)
+    busco_visualize_script      = context.Get(busco_visualize)
+    kofamscan_visualize_script  = context.Get(kofamscan_visualize)
+    qc_table_script             = context.Get(qc_table)
 
     context.ExecWithContainer(
         image,
@@ -69,6 +71,7 @@ def protocol(context: ExecutionContext):
             mkdir visualizations/
             python {cazy_visualize_script.container} annotated_outputs/cazy.tsv visualizations/cazy.html
             python {busco_visualize_script.container} annotated_outputs/busco.tsv visualizations/busco.html
+            python {kofamscan_visualize_script.container} raw_outputs/kofamscan.tsv visualizations/kofamscan.html
         """
     )
     return ExecutionResult(success=out_path.local.exists())

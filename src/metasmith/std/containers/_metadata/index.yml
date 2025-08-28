@@ -23,6 +23,8 @@ manifest:
     type: std::helpers_script
   kofamscan.oci.uri:
     type: std::oci_image_kofamscan
+  kofamscan_visualize.py:
+    type: std::kofamscan_visualize_script
   longqc.oci.uri:
     type: std::oci_image_longqc
   megahit.oci.uri:

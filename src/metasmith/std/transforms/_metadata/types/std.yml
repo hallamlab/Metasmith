@@ -122,6 +122,11 @@ types:
     properties:
       data: Kofamscan profile database
       format: Directory | .hmm
+  kofamscan_visualize_script:
+    properties:
+      data: Python script
+      format: .py
+      provides: kofamscan_visualize.py
   long_reads:
     properties:
       data: Long sequence
