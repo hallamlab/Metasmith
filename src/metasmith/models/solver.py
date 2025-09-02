@@ -292,13 +292,21 @@ def solve_by_mcts(
                 if found:
                     demand2producer[c] = demand2producer.get(c, set())|{parent}
 
+    @dataclass
+    class DistNode:
+        step: Transform
+        dist: int
+        path: set[str] = field(default_factory=set)
     # estimate distance of nodes to target to provide guiding metric
     # filter out nodes that don't contribute to production of targets
     opportunity_scores: dict[Transform, int] = {}
     distance_scores: dict[Transform, int] = {}
-    todo: list[tuple[Transform, int]] = [(target, -1)]
+    todo: list[DistNode] = [DistNode(target, -1)]
     while len(todo)>0:
-        node, consumer_distance = todo.pop()
+        curr = todo.pop()
+        node, consumer_distance = curr.step, curr.dist
+        if node.key in curr.path: continue
+        path = curr.path|{node.key}
         dist = consumer_distance+1
         other_dist = distance_scores.get(node, -1)
         if dist>other_dist:
@@ -306,7 +314,7 @@ def solve_by_mcts(
         opportunity_scores[node] = opportunity_scores.get(node, 1)+dist
         for p in node.requires:
             for producer in demand2producer.get(p, []): # when tr requires a terminal endpoint that is not given
-                todo.append((producer, dist))
+                todo.append(DistNode(producer, dist, path))
     relavent_transforms = [tr for tr in transforms if tr in distance_scores]
     max_distance_score = max(distance_scores.values())
     
@@ -708,7 +716,10 @@ def solve_by_mcts(
                         e = step.used[p]
                         pe= step.used[lin_p] # type: ignore
                         lin_distances.append(_max_distance_to(e, pe))
-            lin_score = -sum(lin_distances)/len(lin_distances)
+            if len(lin_distances)>0:
+                lin_score = -sum(lin_distances)/len(lin_distances)
+            else:
+                lin_score = 0
             score = e_score*1000+lin_score
             _, k = KeyGenerator.FromStr(state.Signature(), l=4)
             vscore = score*state.valid

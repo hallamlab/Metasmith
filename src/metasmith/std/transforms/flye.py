@@ -23,8 +23,9 @@ def protocol(context: ExecutionContext):
             flye \
                 --pacbio-raw \
                 {reads_path.container} \
-                --out-dir {out_path.container.parent} \
+                --out-dir long_reads_assembly/ \
                 {cpus_string}
+            cp long_reads_assembly/assembly.fasta {out_path.container}
         """
     )
     return ExecutionResult(success=out_path.local.exists())
@@ -33,6 +34,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "long_reads_assembly/assembly.fasta",
+        out: "assembly.fasta",
     },
 )
