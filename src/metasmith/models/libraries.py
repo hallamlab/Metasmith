@@ -142,6 +142,7 @@ class DataInstance:
 
     def __post_init__(self):
         self.RecalculateKey()
+        assert not self.path.is_absolute()
 
     def __hash__(self) -> int:
         return self._hash
@@ -254,6 +255,12 @@ class DataInstanceLibrary:
         assert name in types_lib, f"datatype [{name}] not found in [{namespace}]"
         return types_lib[name]
 
+    def Get(self, path: str|Path):
+        p = Path(path)
+        e_name = self.manifest[p]
+        e = self.GetType(e_name)
+        return DataInstance(p, e, e_name, self)
+
     def GetType(self, name: str):
         return self._get_type(name, self.types)
 
@@ -321,6 +328,15 @@ class DataInstanceLibrary:
             report.append(dest)
         return report
 
+    def AddParentsTo(self, path: Path|str, parents: list[DataInstance]):
+        p = Path(path)
+        current = self.parents.get(p, [])
+        seen = {f"{x.library_key}/{x.path}" for x in current}
+        def _get_k(d: DataInstance):
+            return f"{d.parent_lib.GetKey()}/{d.path}"
+        current += [self.ParentMetadata(p.dtype, p.dtype_name, p.parent_lib.GetKey(), p.path) for p in parents if _get_k(p) not in seen]
+        self.parents[p] = current
+
     def _calculate_key(self):
         me_d = self.Pack()
         for k in ["remote_src"]:
@@ -354,13 +370,13 @@ class DataInstanceLibrary:
                 self.types[namespace] = new
         if save: self.Save(update_types=True)
 
-    def Pack(self, parents: dict[Path, list[DataInstance]]=None):
-        if parents is None: parents = {}
+    def Pack(self):
         def _pack_instance(path, dtype_name):
             d_parents = {}
-            for p in parents.get(path, []):
-                k = f"{p.parent_lib.GetKey()}/{p.path}"
-                v = p.dtype_name
+            for p in self.parents.get(path, []):
+                p.library_key
+                k = f"{p.library_key}/{p.path}"
+                v = p.name
                 d_parents[k] = v
             d = dict(
                 type=dtype_name,
@@ -408,8 +424,7 @@ class DataInstanceLibrary:
             if len(parents)>0: lib.parents[Path(k)] = parents
         return lib
 
-    def Save(self, parents: dict[Path, list[DataInstance]]=None, update_types=True):
-        if parents is None: parents = {}
+    def Save(self, update_types=True):
         ext = self._metadata_ext
         types_path = self.location/self._path_to_types
         types_path.mkdir(parents=True, exist_ok=True)
@@ -423,7 +438,7 @@ class DataInstanceLibrary:
         index_path = metadata_path/(self._index_name+ext)
         index_path.parent.mkdir(parents=True, exist_ok=True)
         with open(index_path, "w") as f:
-            yaml.dump(self.Pack(parents), f)
+            yaml.dump(self.Pack(), f)
 
     @classmethod
     def Load(cls, path: Path|str, check_integrity=False):
@@ -531,7 +546,7 @@ class DataInstanceLibrary:
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult]
     model: Transform
-    output_signature: dict[Dependency, Path]
+    output_signature: dict[Dependency, Path|str]
     name: str = None
 
     def __post_init__(self):
@@ -619,6 +634,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         for p in path.parents:
             if (p/DataInstanceLibrary._path_to_meta).exists():
                 return cls.Load(p)
+        assert False
 
     def GetTransform(self, path: Path|str):
         path = self.location/path
@@ -648,8 +664,8 @@ class ContextPath:
 
 @dataclass
 class ExecutionContext:
-    _inputs: dict[Endpoint, ContextPath]
-    _outputs: dict[Endpoint, ContextPath]
+    _inputs: dict[Dependency, ContextPath]
+    _outputs: dict[Dependency, ContextPath]
     external_shell: RemoteShell # since metasmith will bootstrap into its own container
     external_cwd: Path
     container_runtime: ContainerRuntime
@@ -660,15 +676,16 @@ class ExecutionContext:
             if d.IsA(key): return p
         assert False, f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]"
 
-    def ExecWithContainer(self, image: Endpoint, cmd: str, binds: list[tuple[Path, Path]]=None, history: bool = True):
+    def ExecWithContainer(self, image: Dependency, cmd: str, binds: list[tuple[Path, Path]]=None, history: bool = True):
         path = self._inputs[image]
-        image = path.external
         if IsText(path.local):
             with open(path.local) as f:
-                image = f.read().strip() # using the uri
+                image_path = f.read().strip() # using the uri
+        else:
+            image_path = str(path.external)
 
         _binds = set()
-        for _, p in list(self._inputs.items())+list(self._outputs.items()):
+        for _, p in list(self._inputs.items()):
             src = p.external.parent
             dest = p.container.parent
             _binds.add((src, dest))
@@ -680,14 +697,14 @@ class ExecutionContext:
 
         container_ws = Path("/ws")
         container = Container(
-            image = image,
+            image = str(image_path),
             workdir = container_ws,
             runtime = self.container_runtime,
             binds = binds,
         )
 
         cmd = RemoveLeadingIndent(cmd)
-        Log.Info(f"executing container [{image}] using [{container.runtime}]")
+        Log.Info(f"executing container [{image_path}] using [{container.runtime}]")
         Log.Info(f"command:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")

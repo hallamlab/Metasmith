@@ -13,9 +13,9 @@ def protocol(context: ExecutionContext):
     reads_path = context.Get(reads)
 
     cpus_string = ""
-    # cpus = context.params.get("cpus")
-    # if cpus is not None:
-    #     cpus_string = f"--threads {cpus}"
+    cpus = context.params.get("cpus")
+    if cpus is not None:
+        cpus_string = f"--threads {cpus}"
 
     context.ExecWithContainer(
         image = image,
@@ -23,8 +23,9 @@ def protocol(context: ExecutionContext):
             flye \
                 --pacbio-raw \
                 {reads_path.container} \
-                --out-dir {out_path.container.parent} \
+                --out-dir long_reads_assembly/ \
                 {cpus_string}
+            cp long_reads_assembly/assembly.fasta {out_path.container}
         """
     )
     return ExecutionResult(success=out_path.local.exists())
@@ -33,6 +34,6 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out: "long_reads_assembly/assembly.fasta",
+        out: "assembly.fasta",
     },
 )

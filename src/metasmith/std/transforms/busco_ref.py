@@ -3,9 +3,9 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-image      = model.AddRequirement(lib.GetType("std::oci_image_ubuntu"))
-out_map    = model.AddProduct(lib.GetType("std::busco_ref"))
-out_ref    = model.AddProduct(lib.GetType("std::busco_map"))
+image      = model.AddRequirement(lib.GetType("std::oci_image_script_runner"))
+out_ref    = model.AddProduct(lib.GetType("std::busco_ref"))
+out_map    = model.AddProduct(lib.GetType("std::busco_map"))
 
 def protocol(context: ExecutionContext):
     out_ref_path = context.Get(out_ref)

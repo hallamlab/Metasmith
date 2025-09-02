@@ -3,9 +3,9 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-assembly = model.AddRequirement(node=lib.GetType("std::assembly"))
-db       = model.AddRequirement(node=lib.GetType("std::bakta_database"))
-image    = model.AddRequirement(node=lib.GetType("std::oci_image_bakta"))
+assembly = model.AddRequirement(lib.GetType("std::assembly"))
+db       = model.AddRequirement(lib.GetType("std::bakta_database"))
+image    = model.AddRequirement(lib.GetType("std::oci_image_bakta"))
 cds      = model.AddProduct(lib.GetType("std::coding_sequences"))
 gff      = model.AddProduct(lib.GetType("std::gene_features"))
 

@@ -1,5 +1,5 @@
 // parameter defaults
-params.output = 'results'
+params.output = 'results/latest'
 params.slurm_account = '<slurm_account>' // task.config.nextflow.slurm_account
 
 env {
@@ -14,8 +14,8 @@ process {
     clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurm_account}"
 
     // resource defaults
-    cpu = 1
-    memory = '16 GB'
+    cpus = 8
+    memory = '32 GB'
     time = '24h'
     
     queueSize = 100

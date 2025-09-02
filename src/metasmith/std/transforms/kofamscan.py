@@ -16,9 +16,9 @@ def protocol(context: ExecutionContext):
     out_path = context.Get(out)
 
     cpus_string = ""
-    # cpus = context.params.get("cpus")
-    # if cpus is not None:
-    #     cpus_string = f"--cpu={cpus}"
+    cpus = context.params.get("cpus")
+    if cpus is not None:
+        cpus_string = f"--cpu={cpus}"
 
     context.ExecWithContainer(
         image = image,
