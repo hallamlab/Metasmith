@@ -45,7 +45,9 @@ inputs.Add(
         (base_file / "sample_data/profiles/", "profiles/", "std::kofamscan_profile"),
         (base_file / "sample_data/bakta_db", "bakta_db", "std::bakta_database_full"),
         (base_file / "sample_data/cazy.fa", "cazy_db", "std::cazy_ref"),
-        (base_file / "sample_data/busco.faa", "busco_ref", "std::busco_ref"),
+        # (base_file / "sample_data/cazy.tsv", "cazy_annotations", "std::cazy_annotations"),
+        (base_file / "sample_data/busco.faa", "busco_db", "std::busco_ref"),
+        # (base_file / "sample_data/busco.tsv", "busco_annotations", "std::busco_annotations"),
         (base_file / "sample_data/species.info", "busco_map", "std::busco_map"),
         # (base_file / "sample_data/pilon.fasta", "pilon", "std::hybrid_assembly"),
         # (base_file / "sample_data/assembly.fasta", "assembly.fasta", "std::long_reads_assembly"),
@@ -56,7 +58,7 @@ inputs.Add(
 task = smith.GenerateWorkflow(
     given      = [containers, inputs],
     transforms = [transforms],
-    targets    = [dtypes["functional_annotations"].WithLineage([dtypes["hybrid_assembly"]])]
+    targets    = [dtypes["cazy_annotations"], dtypes["busco_annotations"]]
 )
 
 # %%
