@@ -20,4 +20,5 @@ can then execute these workflows on remote compute resources on the user's behal
     :maxdepth: 2
 
     main/index
+    modules/index
     .. guides/index
