@@ -677,7 +677,7 @@ class ExecutionContext:
             if d.IsA(key): return p
         assert False, f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]"
 
-    def ExecWithContainer(self, image: Dependency, cmd: str, binds: list[tuple[Path, Path]]=None, history: bool = True):
+    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path, Path]]=None, history: bool=True):
         path = self._inputs[image]
         if IsText(path.local):
             with open(path.local) as f:
@@ -712,7 +712,7 @@ class ExecutionContext:
         Log.Info(f"binds:")
         for s, d in binds:
             Log.Info(f"    {s} -> {d}")
-        _container_start = f"{container.MakeRunCommand()} bash"
+        _container_start = f"{container.MakeRunCommand()} {shell}"
         Log.Info(f"container start: [{_container_start}]")
         sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
         result = self.external_shell.Exec(cmd, timeout=None, history=history)

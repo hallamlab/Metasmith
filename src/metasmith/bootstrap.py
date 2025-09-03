@@ -1,9 +1,8 @@
-import os
 from pathlib import Path
 import time
 import shutil
-import yaml
 import traceback
+import re
 
 from metasmith.hashing import KeyGenerator
 
@@ -122,14 +121,16 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         params = {}
         try:
             with open(".command.resources") as f:
-                _cpus, _mem = f.readline().strip().split()
+                _cpus, _mem = f.readline().strip().split("/")
                 for k, v in [ # match nextflow task.{}
                     ("cpus", _cpus),
                     ("memory", _mem),
                 ]:
                     if v.lower() == "null": continue
                     try:
-                        v = int(v)
+                        vals = re.findall(r"\d+", v)
+                        if len(vals)==0: continue
+                        v = int(vals[0])
                     except ValueError:
                         continue
                     params[k] = v

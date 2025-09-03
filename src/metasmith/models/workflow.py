@@ -333,7 +333,7 @@ class WorkflowPlan:
                 TAB+'script:',
                 TAB+'"""',
                 TAB+f'{bootstrap_var}',
-                TAB+f'echo "$task.cpus $task.memory" >.command.resources',
+                TAB+f'echo "$task.cpus/$task.memory" >.command.resources',
                 TAB+f'bootstrap {external_work_var} $step_index',
                 TAB+'"""',
                 "}"
@@ -385,7 +385,7 @@ class WorkflowTask:
         if config is None: _config = {}
         given = set()
         targets = []
-        steps = []
+        steps: list[WorkflowStep] = []
         data_libraries = {}
         transform_libraries = {}
         for t in tasks:
@@ -395,6 +395,8 @@ class WorkflowTask:
             data_libraries |= {l.GetKey():l for l in t.data_libraries}
             transform_libraries |= {l.GetKey():l for l in t.transform_libraries}
             if config is None: _config|=t.config
+        for i, s in enumerate(steps):
+            s.order = i+1
         return WorkflowTask(
             plan=WorkflowPlan(list(given), targets, steps),
             data_libraries=list(data_libraries.values()),
