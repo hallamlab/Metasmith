@@ -511,10 +511,13 @@ def StageWorkflow(task_key: str):
         Log.Info(f"using nextflow preset [{preset_path.stem}]")
     with open(preset_path) as f:
         config_raw = "".join(f.readlines())
-    nextflow_params = task.config.get("nextflow", {})
+    nextflow_params = dict(
+        cpus=4, memory="16 GB", time="3h",
+        queueSize=100, submitRateLimit="10/1sec", pollInterval="10sec", stageInMode="symlink",
+    )|task.config.get("nextflow", {})
     for k, v in nextflow_params.items():
         Log.Info(f"setting nextflow param [{k}] from config") # don't show in case sensitive values
-        config_raw = config_raw.replace(f"<{k}>", v)
+        config_raw = config_raw.replace(f"<{k}>", str(v))
     with open(work_dir/"workflow.config.nf", "w") as f:
         f.write(config_raw)
 

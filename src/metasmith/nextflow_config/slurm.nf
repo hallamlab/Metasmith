@@ -14,14 +14,14 @@ process {
     clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurm_account}"
 
     // resource defaults
-    cpus = 8
-    memory = '32 GB'
-    time = '24h'
+    cpus = <cpus>           // 4
+    memory = '<memory>'     // 16 GB
+    time = '<time>'         // 3h
     
-    queueSize = 100
-    submitRateLimit = '10/1sec'     // this may be too aggressive
-    pollInterval = '1 sec'          // same^
-    stageInMode = 'symlink'         // some intermediates are large reference databases and should not be copied
+    queueSize = <queueSize>                 // 100
+    submitRateLimit = '<submitRateLimit>'   // 10/1sec  | this may be too aggressive
+    pollInterval = '<pollInterval>'         // 10sec
+    stageInMode = '<stageInMode>'           // symlink  | some intermediates are large reference databases and should not be copied
 
     // -----------------------------------------
     // notes
