@@ -461,6 +461,7 @@ class DataInstanceLibrary:
         d = yaml_safe_load(index_path)
         self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
+        self._calculate_key()
         return self
 
     def PrepTransfer(self, dest: Source, mover: Logistics=None):

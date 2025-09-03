@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -85,6 +86,9 @@ class WorkflowPlan:
     _solver_result: SolverResult|None=None
 
     def __post_init__(self):
+        self._set_hash()
+
+    def _set_hash(self):
         given = [inst._key for inst in self.given]
         targets = [inst._key for inst in self.targets]
         steps = [step.transform.model.key for step in self.steps]
@@ -375,6 +379,29 @@ class WorkflowTask:
     transform_libraries: list[TransformInstanceLibrary] = field(default_factory=list)
     container_runtime: ContainerRuntime = ContainerRuntime.APPTAINER
     config: dict = field(default_factory=dict)
+
+    @classmethod
+    def Merge(cls, tasks: Iterable[WorkflowTask], config=None, container_runtime=ContainerRuntime.APPTAINER):
+        if config is None: _config = {}
+        given = set()
+        targets = []
+        steps = []
+        data_libraries = {}
+        transform_libraries = {}
+        for t in tasks:
+            given.update(t.plan.given)
+            targets += t.plan.targets
+            steps += t.plan.steps
+            data_libraries |= {l.GetKey():l for l in t.data_libraries}
+            transform_libraries |= {l.GetKey():l for l in t.transform_libraries}
+            if config is None: _config|=t.config
+        return WorkflowTask(
+            plan=WorkflowPlan(list(given), targets, steps),
+            data_libraries=list(data_libraries.values()),
+            transform_libraries=list(transform_libraries.values()),
+            config=_config if config is None else config,
+            container_runtime=container_runtime,
+        )
 
     def Pack(self):
         optional = {}
