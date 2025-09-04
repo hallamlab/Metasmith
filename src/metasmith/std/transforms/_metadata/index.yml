@@ -54,4 +54,4 @@ manifest:
   trimmomatic.py:
     type: transforms::transform
 remote_src: null
-schema: 0.7.0
+schema: 0.8.1

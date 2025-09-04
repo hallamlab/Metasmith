@@ -4,10 +4,10 @@ from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
+import re
 import yaml
 
-from metasmith.coms.containers import ContainerRuntime
-
+from ..coms.containers import ContainerRuntime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary
@@ -79,6 +79,13 @@ class WorkflowTarget:
         )
 
 @dataclass
+class NextflowGenContext:
+    work_dir: Path
+    external_work: Path
+    home_dir: Path
+    external_home: Path
+
+@dataclass
 class WorkflowPlan:
     given: list[DataInstance]
     targets: list[WorkflowTarget] # target, used givens
@@ -86,9 +93,9 @@ class WorkflowPlan:
     _solver_result: SolverResult|None=None
 
     def __post_init__(self):
-        self._set_hash()
+        self._update_hash()
 
-    def _set_hash(self):
+    def _update_hash(self):
         given = [inst._key for inst in self.given]
         targets = [inst._key for inst in self.targets]
         steps = [step.transform.model.key for step in self.steps]
@@ -236,7 +243,7 @@ class WorkflowPlan:
                 _instance = DataInstance(
                     path = Path(p),
                     dtype = e, # we actually dont want lineage at this stage so that the hashes match
-                    dtype_name = _lib.GetName(d),
+                    dtype_name = _lib.GetName(d), # type: ignore # Dependency not assignable to Endpoint
                     parent_lib = _lib,
                 )
                 instance_map[e] = _instance
@@ -257,7 +264,7 @@ class WorkflowPlan:
                     _used_givens = []
                     for p in target.parents:
                         if p not in given_map: continue
-                        _used_givens.append(given_map[p])
+                        _used_givens.append(given_map[p]) # type: ignore # Node not assignable to Endpoint
                     target_meta[target] = WorkflowTarget(
                         instance=instance_map[e],
                         used_givens=_used_givens,
@@ -272,7 +279,7 @@ class WorkflowPlan:
             _solver_result=result,
         )
 
-    def PrepareNextflow(self, work_dir: Path, external_work: Path, home_dir: Path, external_home: Path):
+    def PrepareNextflow(self, wf_path: Path, context: NextflowGenContext):
         # todo dynamic resources
         # https://www.nextflow.io/docs/latest/process.html#dynamic-task-resources
         TAB = " "*4
@@ -283,8 +290,8 @@ class WorkflowPlan:
         bootstrap_var = "${params.bootstrap}"
         bootstrap = [
             f"{_strip_var(bootstrap_var)} = '''",
-            f"CONTAINER={home_dir}",
-            f"DIRECT={external_home}",
+            f"CONTAINER={context.home_dir}",
+            f"DIRECT={context.external_home}",
             "function bootstrap {",
             TAB+f"if [ -e $CONTAINER ]; then",
             TAB+TAB+f"$CONTAINER/lib/msm_bootstrap $@",
@@ -297,24 +304,23 @@ class WorkflowPlan:
             f"'''",
         ]
 
-        wf_path = work_dir/"workflow.nf"
         def _path_as_external(p: Path):
             p_str = str(p)
-            if p_str.startswith(str(home_dir)):
-                sub = p_str[len(str(home_dir)):]
+            if p_str.startswith(str(context.home_dir)):
+                sub = p_str[len(str(context.home_dir)):]
                 if sub.startswith("/"):
                     sub = sub[1:]
-                p = external_home/sub
+                p = context.external_home/sub
             return p
         process_definitions = []
         workflow_definition = []
         target_instances = {x.instance for x in self.targets}
         for step in self.steps:
-            name = f"s{step.order:04}_{step.transform.name}__{step.transform.model.key}"
+            name = f"s{step.order:08}_{step.transform.name}__{step.transform.model.key}"
             src = [f"process {name}"+" {"]
             to_pubish = [x for x in step.produces if x in target_instances]
             for x in to_pubish:
-                src.append(TAB+f'publishDir "$params.output/{step.order:04}", mode: "copy", pattern: "{x.path}"')
+                src.append(TAB+f'publishDir "$params.output/{step.order:08}", mode: "copy", pattern: "{x.path}"')
             if len(to_pubish)>0:
                 src.append("") # newline
 
@@ -348,9 +354,9 @@ class WorkflowPlan:
             workflow_definition.append(TAB+f'{output_vars} = {name}({input_vars})')
 
         workflow_definition = [
-            "workflow {",
+            f"workflow {wf_path.stem} "+"{",
         ] + [
-            TAB+f'_{x.dtype.key}'+f' = Channel.fromPath("{str(x.ResolvePath()).replace(str(home_dir), external_home_var)}") // {x.dtype_name} [{x.dtype}]' for x in self.given
+            TAB+f'_{x.dtype.key}'+f' = Channel.fromPath("{str(x.ResolvePath()).replace(str(context.home_dir), external_home_var)}") // {x.dtype_name}' for x in self.given
         ] + [
             "",
         ] + workflow_definition + [
@@ -358,8 +364,8 @@ class WorkflowPlan:
         ]
 
         wf_contents = [
-            f"{_strip_var(external_home_var)} = '{external_home}'",
-            f'{_strip_var(external_work_var)} = "{external_work}"'.replace(str(external_home), external_home_var),
+            f"{_strip_var(external_home_var)} = '{context.external_home}'",
+            f'{_strip_var(external_work_var)} = "{context.external_work}"'.replace(str(context.external_home), external_home_var),
         ] + bootstrap + [
             "",
             "\n\n".join(process_definitions),
@@ -372,38 +378,127 @@ class WorkflowPlan:
         with open(wf_path, "w") as f:
             f.write(wf_contents)
 
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
+        import graphviz
+        class NodeType(Enum):
+            TRANSFORM = 1
+            DATA      = 2
+        def _render_node(type: NodeType, name: str) -> str:
+            match type:
+                case NodeType.TRANSFORM:
+                    return f'"{name}" [shape="oval"]'
+                case NodeType.DATA:
+                    return f'"{name}" [shape="box"]'
+
+        def _as_DAG(*, font: str = 'Arial', hide_images: bool = True) -> str:
+            lines = ["digraph G {"]
+            lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
+            for step in self.steps:
+                transform_name = step.transform.name
+                lines.append(_render_node(NodeType.TRANSFORM, transform_name))
+                if hide_images:
+                    inputs  = [u.dtype_name for u in step.uses if "oci_image" not in u.dtype_name]
+                    outputs = [o.dtype_name for o in step.produces if "oci_image" not in o.dtype_name]
+                else:
+                    inputs  = [u.dtype_name for u in step.uses]
+                    outputs = [o.dtype_name for o in step.produces]
+                for name in inputs:
+                    lines.append(_render_node(NodeType.DATA, name))
+                    lines.append(f'    "{name}" -> "{transform_name}";')
+                for name in outputs:
+                    lines.append(_render_node(NodeType.DATA, name))
+                    lines.append(f'    "{transform_name}" -> "{name}";')
+            lines.append("}")
+            return "\n".join(lines)
+        
+        dag_str = _as_DAG(font=font, hide_images=hide_images)
+        src = graphviz.Source(dag_str, filename=path_base, format=format)
+        src.render(cleanup=True)
+
 @dataclass
 class WorkflowTask:
-    plan: WorkflowPlan
+    plans: list[WorkflowPlan]
     data_libraries: list[DataInstanceLibrary] = field(default_factory=list)
     transform_libraries: list[TransformInstanceLibrary] = field(default_factory=list)
     container_runtime: ContainerRuntime = ContainerRuntime.APPTAINER
     config: dict = field(default_factory=dict)
 
+    def __post_init__(self):
+        self._update_hash()
+
+    def _update_hash(self):
+        self._hash, self._key = KeyGenerator.FromStr("".join(p._key for p in self.plans), l=8)
+
     @classmethod
     def Merge(cls, tasks: Iterable[WorkflowTask], config=None, container_runtime=ContainerRuntime.APPTAINER):
         if config is None: _config = {}
-        given = set()
-        targets = []
-        steps: list[WorkflowStep] = []
+        plans = []
         data_libraries = {}
         transform_libraries = {}
         for t in tasks:
-            given.update(t.plan.given)
-            targets += t.plan.targets
-            steps += t.plan.steps
+            plans += t.plans
             data_libraries |= {l.GetKey():l for l in t.data_libraries}
             transform_libraries |= {l.GetKey():l for l in t.transform_libraries}
             if config is None: _config|=t.config
-        for i, s in enumerate(steps):
+        for i, s in enumerate(s for p in plans for s in p.steps):
             s.order = i+1
         return WorkflowTask(
-            plan=WorkflowPlan(list(given), targets, steps),
+            plans=plans,
             data_libraries=list(data_libraries.values()),
             transform_libraries=list(transform_libraries.values()),
             config=_config if config is None else config,
             container_runtime=container_runtime,
         )
+
+    def PrepareNextflow(self, context: NextflowGenContext):
+        plans_dir = context.work_dir/"plans"
+        plans_dir.mkdir(exist_ok=True)
+        def batchify(iterable, n=1):
+            batch: list[WorkflowPlan] = []
+            for x in iterable:
+                if len(batch) >= n:
+                    yield batch
+                    batch = []
+                batch.append(x)
+            if len(batch) >= 0: yield batch
+
+        batch_paths: list[Path] = []
+        for bi, b in enumerate(batchify(self.plans, n=1000)):
+            plan_paths: list[Path] = []
+            for i, plan in enumerate(b):
+                wf_path = plans_dir/f"i{i:04}.nf"
+                plan_paths.append(wf_path)
+                plan.PrepareNextflow(wf_path, context)
+            b_path = plans_dir/f"b{bi:04}.nf"
+            batch_paths.append(b_path)
+            script = [
+                "include { "+p.stem+" } from './"+f"{p.stem}'"
+                for p in plan_paths
+            ] + [
+                f"workflow {b_path.stem}"+"{"
+            ] + [
+                f"{p.stem}()"
+                for p in plan_paths
+            ] + [
+                "}"
+            ]
+            with open(b_path, "w") as f:
+                f.write("\n".join(script))
+
+        entry_path = context.work_dir/"workflow.nf"
+        entry = [
+            "include { "+p.stem+" } from './"+f"{plans_dir.name}/{p.stem}'"
+            for p in batch_paths
+        ] + [
+            "workflow {"
+        ] + [
+            f"{p.stem}()"
+            for p in batch_paths
+        ] + [
+            "}"
+        ]
+        with open(entry_path, "w") as f:
+            f.write("\n".join(entry))
 
     def Pack(self):
         optional = {}
@@ -422,14 +517,19 @@ class WorkflowTask:
             _task_path = temp_dir/"task.yml"
             with open(_task_path, "w") as f:
                 yaml.dump(self.Pack(), f)
-            _plan_path = temp_dir/"plan.yml"
-            self.plan.Save(_plan_path)
+
+            plans_dir = temp_dir/"plans"
+            plans_dir.mkdir()
+            _plan_paths: list[Path] = []
+            for i, _plan in enumerate(self.plans):
+                _plan_path = plans_dir/f"{i:06}.yml"
+                _plan.Save(_plan_path)
+                _plan_paths.append(_plan_path.relative_to(temp_dir))
             _mover = Logistics()
-            for _path in [_task_path, _plan_path]:
-                _mover.QueueTransfer(
-                    src=Source(address=_path, type=SourceType.DIRECT),
-                    dest=dest/_path.name,
-                )
+            _mover.QueueTransfer(
+                src=Source(address=str(temp_dir), type=SourceType.DIRECT),
+                dest=dest,
+            )
             for lib in self.data_libraries:
                 _temp_mover = lib.PrepTransfer(dest/f"data/{lib.GetKey()}")
                 _mover._queue.extend(_temp_mover._queue)
@@ -439,52 +539,18 @@ class WorkflowTask:
             res = _mover.ExecuteTransfers()
             return res
 
-
-    class NodeType(Enum):
-        TRANSFORM = 1
-        DATA      = 2
-    def RenderNode(self, type: NodeType, name: str) -> str:
-        match type:
-            case self.NodeType.TRANSFORM:
-                return f'"{name}" [shape="oval"]'
-            case self.NodeType.DATA:
-                return f'"{name}" [shape="box"]'
-
-    def AsDAG(self, *, font: str = 'Arial', hide_images: bool = True) -> str:
-        lines = ["digraph G {"]
-        lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
-        for step in self.plan.steps:
-            transform_name = step.transform.name
-            lines.append(self.RenderNode(self.NodeType.TRANSFORM, transform_name))
-            if hide_images:
-                inputs  = [u.dtype_name for u in step.uses if "oci_image" not in u.dtype_name]
-                outputs = [o.dtype_name for o in step.produces if "oci_image" not in o.dtype_name]
-            else:
-                inputs  = [u.dtype_name for u in step.uses]
-                outputs = [o.dtype_name for o in step.produces]
-            for name in inputs:
-                lines.append(self.RenderNode(self.NodeType.DATA, name))
-                lines.append(f'    "{name}" -> "{transform_name}";')
-            for name in outputs:
-                lines.append(self.RenderNode(self.NodeType.DATA, name))
-                lines.append(f'    "{transform_name}" -> "{name}";')
-        lines.append("}")
-        return "\n".join(lines)
-
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
-        import graphviz
-        dag_str = self.AsDAG(font=font, hide_images=hide_images)
-        src = graphviz.Source(dag_str, filename=path_base, format=format)
-        src.render(cleanup=True)
-
-
     @classmethod
-    def Load(cls, path: Path|str, alt_data_paths: list[Path|str]=None):
+    def Load(cls, path: Path|str, alt_data_paths: list[Path|str]|None=None):
         path = Path(path)
         with open(path/"task.yml") as f:
             raw_task = yaml.safe_load(f)
-        with open(path/"plan.yml") as f:
-            raw_plan = yaml.safe_load(f)
+
+        raw_plans: list[dict] = []
+        plan_paths = list((path/"plans").iterdir())
+        plan_paths = sorted(plan_paths, key=lambda p: p.name) # ensures order of plans
+        for fpath in plan_paths:
+            with open(fpath) as f:
+                raw_plans.append(yaml.safe_load(f))
 
         _data_lib_paths = [Path(p) for p in alt_data_paths] if alt_data_paths else []
         _data_lib_paths += [path/"data"] # prefer alts first
@@ -497,13 +563,13 @@ class WorkflowTask:
         data_libs = {n: load_lib(n) for n in raw_task["data_libraries"]}
         tr_libs = {n: TransformInstanceLibrary.Load(path/f"transforms/{n}") for n in raw_task["transform_libraries"]}
         _libraries: dict[str, DataInstanceLibrary] = data_libs|tr_libs
-        plan = WorkflowPlan.Unpack(raw_plan, _libraries)
+        plans = [WorkflowPlan.Unpack(p, _libraries) for p in raw_plans]
 
         _runtime = raw_task.get("container_runtime")
         if _runtime is not None:
             _runtime = ContainerRuntime[_runtime]
         return cls(
-            plan=plan,
+            plans=plans,
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
             config=raw_task.get("config", {}),

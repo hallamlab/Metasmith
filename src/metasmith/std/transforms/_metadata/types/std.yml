@@ -3,7 +3,7 @@ ontology:
   name: EDAM
   strict: false
   version: '1.25'
-schema: 0.7.0
+schema: 0.8.1
 types:
   assembly:
     properties:
