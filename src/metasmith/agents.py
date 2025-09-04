@@ -696,7 +696,15 @@ def CheckWorkflow(key: str, index: int=None):
     Log.Info(msg)
     Log.Info(f">"*len(msg))
     Log.Info("")
+    
     with open(workspace/log_dir/"main.raw.log", "r") as f:
+        lines = f.readlines()
+        MAXL = 1000
+        HEAD = 10
+        if len(lines)>1000:
+            print("".join(lines[:HEAD]))
+            print("...")
+            print("".join(lines[-(MAXL-HEAD):]))
         print(f.read())
     Log.Info("")
     Log.Info(f"<"*len(msg))
