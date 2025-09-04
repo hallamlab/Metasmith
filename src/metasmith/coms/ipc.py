@@ -14,6 +14,7 @@ import random
 
 from ..hashing import KeyGenerator
 from ..serialization import StdTime
+from ..logging import Log
 
 def CurrentTimeMillis():
     return StdTime.CurrentTimeMillis()
@@ -372,7 +373,11 @@ class NonBlockingReader:
                 p.write(b"") # unblock reader
         except OSError:
             pass
-        self._worker.join()
+        
+        try:
+            self._worker.join()
+        except RuntimeError as e:
+            Log.Error(f"NonBlockingReader.Dispose() [{e}]")
 
     def __enter__(self):
         return self
@@ -453,7 +458,10 @@ class TerminalProcess:
         self._out_reader.Dispose()
         self._console.terminate()
         for i, fd in enumerate(self._fds):
-            os.close(fd)
+            try:
+                os.close(fd)
+            except OSError as e:
+                Log.Error(f"TerminalProcess.Dispose() fd:{i} [{e}]")
 
 @dataclass
 class ShellResult:

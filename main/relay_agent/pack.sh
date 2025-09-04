@@ -16,10 +16,10 @@ case $1 in
         # use docker to force older glibc version
         SRC=../../src/metasmith
         mkdir -p ./relay/coms
-        rsync -aup $SRC/coms/ipc.py         ./relay/coms/ipc.py
-        rsync -aup $SRC/serialization.py    ./relay/serialization.py
-        rsync -aup $SRC/hashing.py          ./relay/hashing.py
-        rsync -aup $SRC/logging.py          ./relay/logging.py
+        rsync -auc $SRC/coms/ipc.py         ./relay/coms/ipc.py
+        rsync -auc $SRC/serialization.py    ./relay/serialization.py
+        rsync -auc $SRC/hashing.py          ./relay/hashing.py
+        rsync -auc $SRC/logging.py          ./relay/logging.py
         rm -r ./dist ./build
         docker run -it --rm \
             -u $(id -u):$(id -g) \
