@@ -461,6 +461,7 @@ class DataInstanceLibrary:
         d = yaml_safe_load(index_path)
         self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
+        self._calculate_key()
         return self
 
     def PrepTransfer(self, dest: Source, mover: Logistics=None):
@@ -598,11 +599,9 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         if "transforms" not in self.types:
             transform_types = DataTypeLibrary(types=dict(
                 transform=Endpoint({"metasmith", "transform"}),
-                example_input=Endpoint({"metasmith", "example_input"}),
-                example_output=Endpoint({"metasmith", "example_output"}),
             ))
             self.AddTypeLibrary("transforms", transform_types)
-        self.Save()
+        self._transform_cache: dict[Path, TransformInstance] = {}
 
     def PruneTypes(self, save: bool=True, whitelist: set[str]=None):
         if whitelist is None: whitelist = set()
@@ -636,16 +635,20 @@ class TransformInstanceLibrary(DataInstanceLibrary):
                 return cls.Load(p)
         assert False
 
-    def GetTransform(self, path: Path|str):
+    def GetTransform(self, path: Path|str, reload=False):
         path = self.location/path
         if path.suffix != ".py":
             path = path.with_suffix(".py")
-        return TransformInstance.Load(path)
+        if reload or path not in self._transform_cache:
+            tr = TransformInstance.Load(path)
+            if tr is not None:
+                self._transform_cache[path] = tr
+        return self._transform_cache.get(path)
 
     def IterateTransforms(self):
         for k, v, dtype in self.Iterate():
             tr = self.GetTransform(k)
-            assert tr is not None
+            assert tr is not None, (v, k)
             yield k, v, tr
 
     @classmethod
@@ -676,7 +679,7 @@ class ExecutionContext:
             if d.IsA(key): return p
         assert False, f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]"
 
-    def ExecWithContainer(self, image: Dependency, cmd: str, binds: list[tuple[Path, Path]]=None, history: bool = True):
+    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path, Path]]=None, history: bool=True):
         path = self._inputs[image]
         if IsText(path.local):
             with open(path.local) as f:
@@ -711,7 +714,7 @@ class ExecutionContext:
         Log.Info(f"binds:")
         for s, d in binds:
             Log.Info(f"    {s} -> {d}")
-        _container_start = f"{container.MakeRunCommand()} bash"
+        _container_start = f"{container.MakeRunCommand()} {shell}"
         Log.Info(f"container start: [{_container_start}]")
         sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
         result = self.external_shell.Exec(cmd, timeout=None, history=history)
