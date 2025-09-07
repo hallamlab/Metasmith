@@ -9,4 +9,5 @@ env {
 
 process {
     cpus = <cpus>
+    errorStrategy = 'ignore'
 }

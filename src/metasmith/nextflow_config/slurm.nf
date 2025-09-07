@@ -12,6 +12,7 @@ process {
     scratch = true                  // use worker node's local hard drive
     executor = 'slurm'
     clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurm_account}"
+    errorStrategy = 'ignore'
 
     // resource defaults
     cpus = <cpus>           // 4
