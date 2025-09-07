@@ -700,10 +700,10 @@ def CheckWorkflow(key: str, index: int=None):
     with open(workspace/log_dir/"main.raw.log", "r") as f:
         lines = f.readlines()
         MAXL = 1000
-        HEAD = 10
+        HEAD = 20
         if len(lines)>1000:
             print("".join(lines[:HEAD]))
-            print("...")
+            print(f"... +{len(lines)-HEAD-MAXL}")
             print("".join(lines[-(MAXL-HEAD):]))
         print(f.read())
     Log.Info("")

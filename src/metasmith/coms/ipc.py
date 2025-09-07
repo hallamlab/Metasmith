@@ -110,11 +110,15 @@ class PipeServer:
             def _open():
                 return os.open(self._server_path, os.O_RDONLY|os.O_NONBLOCK)
             self._server_channel = _open()
-            def _reset(reader: NonBlockingReader):
-                if self._is_closing: return
-                self._server_channel = _open()
-                reader.Reset(self._server_channel)
-            self.reader = NonBlockingReader(self._server_channel, on_close=_reset)
+            # def _reset():
+            #     if self._is_closing: return
+            #     self._server_channel = _open()
+            #     # reader.Reset(self._server_channel)
+            # _reset()
+            def _on_close(x):
+                with self._lock:
+                    self._is_closing=True
+            self.reader = NonBlockingReader(self._server_channel, on_close=_on_close)
             self.reader.RegisterCallback(lambda x: callback(self, RemoveTrailingNewline(x.decode())))
             
             self._client_channel: int|None = None
@@ -126,7 +130,10 @@ class PipeServer:
                         self._client_channel = None
                     return False
                 if self._client_channel is None:
-                    self._client_channel = os.open(self._client_path, os.O_WRONLY)
+                    try:
+                        self._client_channel = os.open(self._client_path, os.O_WRONLY)
+                    except FileNotFoundError: # race conditioned
+                        return False
                 return True
 
             def try_send():
@@ -135,13 +142,14 @@ class PipeServer:
                 while len(self._buffer) > 0 and retries > 0:
                     msg = self._buffer.pop(0)
                     try:
+                        if self._client_channel is None: return
                         os.write(self._client_channel, (msg+"\n").encode())
                     except OSError:
                         self._buffer.insert(0, msg)
                         # the channel is likely pointing to the previous client
                         # which is now closed, so we need to get a new fd for pipe
                         self._client_channel = None
-                        prep_channel() 
+                        prep_channel()
                         retries -= 1
             
             def sender_process():
@@ -192,43 +200,61 @@ class PipeServer:
         return self.Dispose()
 
 class PipeClient:
-    def __init__(self, server_pipe: Path, timeout: int|float = 15) -> None:
+    def __init__(self, server_pipe: Path, timeout: int|float = 60) -> None:
         success = False
         try:
             self._id = server_pipe.stem
             io_dir = server_pipe.parent
             self._server_path = io_dir/f"{self._id}.in"
             self._client_path = io_dir/f"{self._id}.out"
+            self._server_channel=-1
             self._lock = Condition()
             self._closed = False
 
             start = CurrentTimeMillis()
-            random.seed(start)
-            while self._client_path.exists():
+            def _on_close(reader: NonBlockingReader):
+                with self._lock:
+                    self._closed = True
+            while True:
+                if not self._client_path.exists():
+                    try:
+                        os.mkfifo(self._client_path)
+                        break
+                    except FileExistsError:
+                        pass # race condition between processes possible
                 delay = random.random()*0.1
                 time.sleep(delay)
                 if CurrentTimeMillis() - start > timeout*1000:
                     raise TimeoutError("Failed to connect to server")
 
-            def _on_close(reader: NonBlockingReader):
-                with self._lock:
-                    self._closed = True
-            os.mkfifo(self._client_path)
             try:
                 self._server_channel = os.open(self._server_path, os.O_WRONLY|os.O_NONBLOCK)
             except (FileNotFoundError, OSError):
                 raise ConnectionError("server not found")
             self._client_channel = os.open(self._client_path, os.O_RDONLY|os.O_NONBLOCK)
             self._reader = NonBlockingReader(self._client_channel, on_close=_on_close)
+            # self._reader = NonBlockingReader(self._client_channel)
             
             self._last_message_id: str = None
-            self._last_response: IpcResponse = None
+            self._last_response: IpcResponse|None = None
             def _on_response(x):
                 res = IpcResponse.Parse(x.decode())
                 if res.message_id != self._last_message_id: return
                 self._last_response = res
             self._reader.RegisterCallback(_on_response)
             success = True
+
+            def _keep_alive():
+                while True:
+                    time.sleep(1)
+                    with self._lock:
+                        if self._closed: return
+                        try:
+                            self.Send(IpcRequest("ping").Serialize())
+                        except:
+                            pass
+            self._keep_alive_worker = Thread(target=_keep_alive)
+            self._keep_alive_worker.start()
         finally:
             if not success: self.Dispose()
 
@@ -247,28 +273,41 @@ class PipeClient:
                 raise TimeoutError("Failed to receive response")
             with self._lock:
                 self._lock.wait(0.1)
-                if self._closed: break
+                if self._closed:
+                    return IpcResponse(500, dict(error="connection closed"))
         return self._last_response
 
     def IsOpen(self):
         return self._client_path.exists()
 
     def Dispose(self):
+        try:
+            self.Send(IpcRequest("disconnect").Serialize())
+        except OSError:
+            pass
         def _try_close(fd):
             try:
                 os.close(fd)
             except OSError:
                 pass
+        with self._lock:
+            self._closed = True
         try:
-            with self._lock:
-                self._closed = True
+            self._keep_alive_worker.join(3)
+        except:
+            pass # doesn't really matter
+        try:
             self._reader.Dispose()
-            _try_close(self._server_channel)
+            if self._server_channel>=0: _try_close(self._server_channel)
             _try_close(self._client_channel)
         except AttributeError:
             pass
         finally:
-            if self._client_path.exists(): os.remove(self._client_path)
+            if self._client_path.exists():
+                try:
+                    os.remove(self._client_path)
+                except FileNotFoundError:
+                    pass # race conditioned between check and os.remove probably
 
     def __enter__(self):
         return self
@@ -276,21 +315,24 @@ class PipeClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         return self.Dispose()
 
+MAX_READERS = 256
+_readers = set()
 class NonBlockingReader:
     def __init__(self, io_handle: int, on_close: Callable[[NonBlockingReader], None] = None, sep: bytes = b"\n") -> None:
         self._callbacks = []
         self._lock = Condition()
-        self._notify_in, self._notify_out = os.pipe() # https://stackoverflow.com/a/57341500/13690762
+        self._notify_out, self._notify_in = os.pipe() # https://stackoverflow.com/a/57341500/13690762
         self._on_close = on_close
         self._sep = sep
         self._worker = None
-        self._is_closed = True
-        self.Reset(io_handle)
+        self._is_closed = False
+        self._io_handle = io_handle
+        self._start(io_handle)
 
-    def Reset(self, io_handle: int):
-        with self._lock:
-            if not self._is_closed: return # only reset if closed
-            self._is_closed = False
+    def _start(self, io_handle: int):
+        if len(_readers)>MAX_READERS:
+            raise ConnectionError("too many readers")
+        _readers.add(self)
 
         def reader(fd: int, callbacks: list[Callable[[bytes], None]]):
             _buffer = []
@@ -299,13 +341,12 @@ class NonBlockingReader:
                 changed = False
                 while True:
                     # https://stackoverflow.com/a/21429655/13690762
-                    r, _, _ = select.select([ fd, self._notify_out ], [], [], 60)
-                    if fd not in r: break # notify_out triggered
-                    chunk = os.read(fd, 4096)
-                    if len(chunk) == 0:
-                        with self._lock:
-                            self._is_closed = True
+                    r, _, _ = select.select([ fd, self._notify_out ], [], [], 60) # allows unblock with notify_out
+                    # Log.Debug(f"r* [{id(self)}] [closed: {self.IsClosed()}] [notified: {self._notify_out in r}] ")
+                    if self.IsClosed():
                         return []
+                    chunk = os.read(fd, 4096)
+                    if len(chunk) == 0: continue
                     _buffer.append(chunk)
                     changed = True
                     if self._sep in chunk: break # line complete
@@ -343,6 +384,7 @@ class NonBlockingReader:
                 try:
                     lines = list(_try_read())
                     for line in lines:
+                        # Log.Debug(f"--- {line}")
                         for cb in callbacks: cb(line)
                     reset_wait()
                 except OSError as e: # fd closed
@@ -351,10 +393,13 @@ class NonBlockingReader:
                     else: # likely a race condition
                         scaling_wait()
             if callable(self._on_close): self._on_close(self)
+            # Log.Debug(f"> close! [{self._is_closed}]")
 
+        # with self._lock:
+            # if not self._is_closed: return # already stopped
         self._worker = Thread(target=reader, args=[io_handle, self._callbacks])
         self._worker.start()
-        
+
     def RegisterCallback(self, callback: Callable[[bytes], None]):
         self._callbacks.append(callback)
 
@@ -366,18 +411,31 @@ class NonBlockingReader:
             return self._is_closed
 
     def Dispose(self):
-        with self._lock:
-            self._is_closed = True
         try:
-            with open(self._notify_in, "wb") as p:
-                p.write(b"") # unblock reader
-        except OSError:
-            pass
-        
-        try:
-            self._worker.join()
-        except RuntimeError as e:
-            Log.Error(f"NonBlockingReader.Dispose() [{e}]")
+            while True:
+                with self._lock:
+                    self._is_closed = True
+
+                if self._worker is None: break
+                if not self._worker.is_alive(): break
+                try:
+                    os.write(self._notify_in, b"dispose") # unblock reader
+                except OSError:
+                    pass
+                
+                try:
+                    self._worker.join(1)
+                except RuntimeError as e:
+                    Log.Error(f"NonBlockingReader.Dispose() [{e}]")
+
+            for fd in [self._notify_in, self._notify_out]:
+                try:
+                    os.close(fd)
+                except OSError as e:
+                    pass
+                #     Log.Error(f"NonBlockingReader.Dispose() fd:{fd} [{e}]")
+        finally:
+            _readers.remove(self)
 
     def __enter__(self):
         return self
@@ -402,7 +460,7 @@ class TerminalProcess:
         # https://stackoverflow.com/questions/41542960/run-interactive-bash-with-popen-and-a-dedicated-tty-python
         out_master, out_slave = pty.openpty()
         err_master, err_slave = pty.openpty()
-        self._fds = [out_master, err_master]
+        self._fds = [out_master, err_master, out_slave, err_slave]
 
         console = subprocess.Popen(
             ["bash"],
@@ -567,10 +625,19 @@ class LiveShell:
         return ShellResult(out=_out, err=_err)
 
 class RemoteShell:
-    def __init__(self, server_path: Path) -> None:
+    def __init__(self, server_path: Path, timeout=60) -> None:
         ws = server_path.parent
-        with PipeClient(server_path) as p:
-            res = p.Transact(IpcRequest(endpoint="connect"), timeout=5)
+        start = CurrentTimeMillis()
+        while True:
+            with PipeClient(server_path) as p:
+                remaining_time = max(1, timeout-(CurrentTimeMillis()-start))
+                res = p.Transact(IpcRequest(endpoint="connect"), timeout=remaining_time)
+            if res.status==429: # too many requests
+                time.sleep(2)
+                if (CurrentTimeMillis()-start)*1000>timeout:
+                    raise ConnectionError(f"timeout while waiting due to 429: too many requests")
+            else:
+                break
         if res.status != 200:
             raise ConnectionError(f"server connect error: [{res.data.get('error')}]")
 

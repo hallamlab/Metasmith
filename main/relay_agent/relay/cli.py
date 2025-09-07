@@ -1,6 +1,7 @@
 from pathlib import Path
 import argparse
 import inspect
+import subprocess
 import os, sys
 from pathlib import Path
 import argparse
@@ -13,8 +14,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.exit(2, '\n%s: error: %s\n' % (self.prog, message))
 
 def _add_io_arg(parser: ArgumentParser):
-    here = Path(sys.orig_argv[0]).parent
-    parser.add_argument("--io", default=here/"connections", required=False, metavar="PATH", type=Path)
+    # here = Path(sys.orig_argv[0]).parent
+    parser.add_argument("--io", default="./connections", required=False, metavar="PATH", type=Path)
     return parser
 
 def _make_parser(name: str, description: str):
@@ -31,9 +32,15 @@ class CommandLineInterface:
     
     def start(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "ensure relay is running")
+        parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
         args = parser.parse_args(raw_args)
-        from .main import RunServer
-        RunServer(args.io)
+        if args.connected:
+            args = parser.parse_args(raw_args)
+            from .main import RunServer
+            RunServer(args.io)
+        else:
+            cmd = f"nohup {sys.executable} {' '.join(sys.argv)} --connected >/dev/null 2>&1 &"
+            os.system(cmd)
 
     def stop(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "stop relay")
