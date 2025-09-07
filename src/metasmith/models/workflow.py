@@ -328,7 +328,7 @@ class WorkflowPlan:
                 TAB+"input:",
                 TAB+TAB+f'val step_index',
             ] + [
-                TAB+TAB+f'path _{i+1:02} // {x.dtype_name} [{x.dtype}]' for i, x in enumerate(step.uses)
+                TAB+TAB+f'path _{i+1:02} // {x.dtype_name}' for i, x in enumerate(step.uses)
             ] + [
                 "",
                 TAB+"output:",
@@ -464,8 +464,10 @@ class WorkflowTask:
 
         batch_paths: list[Path] = []
         for bi, b in enumerate(batchify(self.plans, n=1000)):
+            bi += 1 # 1 index
             plan_paths: list[Path] = []
             for i, plan in enumerate(b):
+                i += 1 # 1 index
                 wf_path = plans_dir/f"i{i:04}.nf"
                 plan_paths.append(wf_path)
                 plan.PrepareNextflow(wf_path, context)
