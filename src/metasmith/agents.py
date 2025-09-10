@@ -79,7 +79,7 @@ class AgentShell:
         self.shell.RegisterOnErr(_on_err)
         self.shell.Exec(f"cd {agent.home.GetPath()}")
         Log.Info(f"starting relay service")
-        self.shell.Exec(f"./relay/msm_relay start")
+        self.shell.Exec(f'./relay/msm_relay start')
 
     def __enter__(self):
         return self.shell
@@ -303,7 +303,6 @@ class Agent:
                 cd $CWD
                 if [ -e "{AgentPaths.HOME_ROOT}" ]; then
                     echo "bootstrap called from container, bouncing to external [$@]"
-                    {AgentPaths.to_relay()} start
                     REL_CWD=$(realpath --relative-to="{AgentPaths.HOME_ROOT}" $CWD)
                     CMD="{AgentPaths.to_bootstrap(Path('$AGENT_HOME'))} $@ $AGENT_HOME/$REL_CWD"
                     {AgentPaths.to_relay()} bounce "$CMD"
@@ -326,11 +325,12 @@ class Agent:
                 }}
                 echo "deploy relay ==================="
                 run_container metasmith api deploy_from_container -a workspace=$INTERNALS
+                find $INTERNALS/relay/
                 echo "pre execute ===================="
                 find .
                 ls -lh .
                 echo "relay =========================="
-                $INTERNALS/relay/msm_relay start
+                $INTERNALS/relay/msm_relay start --channels 3
                 echo "execute ========================"
                 run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR
                 echo "post execute ==================="
@@ -411,12 +411,12 @@ class Agent:
                 """,
             )
 
-    def CheckWorkflow(self, task: WorkflowTask|str, index: int=None):
+    def CheckWorkflow(self, task: WorkflowTask|str, run: int=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
         with AgentShell(self) as sh_remote:
-            index_param = ""
-            if index is not None:
-                index_param = f"-a index={index}"
+            index_param = "" # 1 indexed
+            if run is not None:
+                index_param = f"-a index={run}"
             sh_remote.Exec(f"./msm api check_workflow -a key={key} {index_param}")
 
     def GetResultSource(self, task: WorkflowTask|str, allow_globus: bool = True, check_exists: bool = False):
@@ -700,12 +700,14 @@ def CheckWorkflow(key: str, index: int=None):
     with open(workspace/log_dir/"main.raw.log", "r") as f:
         lines = f.readlines()
         MAXL = 1000
-        HEAD = 10
+        HEAD = 20
         if len(lines)>1000:
             print("".join(lines[:HEAD]))
-            print("...")
+            print(f"... +{len(lines)-HEAD-MAXL}")
             print("".join(lines[-(MAXL-HEAD):]))
-        print(f.read())
+        else:
+            print("".join(lines))
+
     Log.Info("")
     Log.Info(f"<"*len(msg))
     Log.Info(f"log folder at [{workspace/log_dir}]")

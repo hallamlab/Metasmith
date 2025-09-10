@@ -62,11 +62,30 @@ _handler_err.setFormatter(_formatter)
 _logger = logging.getLogger()
 _logger.setLevel(logging.DEBUG)
 _logger.handlers.clear()
-_logger.addHandler(_handler)
-_logger.addHandler(_handler_err)
+_to_stdout: bool = False
+def _stdout_off():
+    global _to_stdout
+    if _to_stdout:
+        _logger.removeHandler(_handler)
+        _logger.removeHandler(_handler_err)
+    _to_stdout = False
+def _stdout_on():
+    global _to_stdout
+    if not _to_stdout:
+        _logger.addHandler(_handler)
+        _logger.addHandler(_handler_err)
+    _to_stdout = True
+_stdout_on()
 
 _file_handlers: dict[Path, logging.FileHandler] = {}
 class Log:
+    @classmethod
+    def SetStdout(cls, on: bool):
+        if on:
+            _stdout_on()
+        else:
+            _stdout_off()
+
     @classmethod
     def AddLogFile(cls, file_path: Path, raw=False):
         _file_handler = logging.FileHandler(file_path)

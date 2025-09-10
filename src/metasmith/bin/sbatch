@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 import time
 import re
+import random
 from metasmith.coms.ipc import RemoteShell
 from metasmith.agents import Agent, AgentPaths
 
@@ -14,19 +15,27 @@ cwd_str = str(cwd)
 tail = next(re.finditer(r"/\w*/nxf_work/.*", cwd_str)).group()[1:] # from key, example WSFa2f/nxf_work/08/b8eb0c0fd0f5b02aed6c4cecefe08f
 external_cwd = AgentPaths.to_staged(root=agent.home.GetPath())/tail
 
-with RemoteShell(AgentPaths.to_relay_coms()) as shell:
-    # take this opportunity to fix the paths of the command.run script
-    res = shell.Exec(f"realpath {agent.home.GetPath()}", history=True)
-    assert len(res.err) == 0, "failed to resolve external workspace path"
-    resolved_agent_workspace = res.out[0]
-    command_run_path = Path(sys.argv[1])
-    with open(command_run_path, 'r') as f:
-        command_run = "".join(f.readlines())
-    command_run = command_run.replace(str(AgentPaths.HOME_ROOT), resolved_agent_workspace)
-    with open(command_run_path, 'w') as f:
-        f.write(command_run)
+def call():
+    with RemoteShell(AgentPaths.to_relay_coms()) as shell:
+        # take this opportunity to fix the paths of the command.run script
+        res = shell.Exec(f"realpath {agent.home.GetPath()}", history=True)
+        assert len(res.err) == 0, "failed to resolve external workspace path"
+        resolved_agent_workspace = res.out[0]
+        command_run_path = Path(sys.argv[1])
+        with open(command_run_path, 'r') as f:
+            command_run = "".join(f.readlines())
+        command_run = command_run.replace(str(AgentPaths.HOME_ROOT), resolved_agent_workspace)
+        with open(command_run_path, 'w') as f:
+            f.write(command_run)
+        shell.RegisterOnOut(print)
+        shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
+        shell.Exec(f"cd {external_cwd} && sbatch {' '.join(sys.argv[1:])}")
+        time.sleep(0.1) # don't know if or why this is needed...
 
-    shell.RegisterOnOut(print)
-    shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
-    shell.Exec(f"cd {external_cwd} && sbatch {' '.join(sys.argv[1:])}")
-    time.sleep(0.1) # don't know if or why this is needed...
+for retry in range(5):
+    try:
+        call()
+        break
+    except (TimeoutError, ConnectionError, FileNotFoundError):
+        dt = random.random()*(2**retry)+0.1
+        time.sleep(dt)

@@ -1,179 +1,308 @@
-import shutil
 import os, sys
+import signal
+from signal import Signals
 from pathlib import Path
 import time
-from typing import Callable
+from typing import Any, Callable
 from threading import Condition, Thread
 from datetime import datetime as dt
 from dataclasses import dataclass, field
+from enum import Enum
+import random
 
 from .coms.ipc import CurrentTimeMillis, RemoteShell, RemoveTrailingNewline, GenerateId, \
     TerminalProcess, PipeServer, PipeClient, IpcRequest, IpcResponse, ConnectionError
 from .logging import Log
 
 WS = Path(os.curdir).resolve()
-GRACE = 3*1000
 MAIN_ID = "main"
 
 def log(x, timestamp=True):
     Log.Info(x)
 
-def RunServer(workspace: Path):
-    if (workspace/f"{MAIN_ID}.in").exists():
-        channel_path = _connect_as_client(workspace/f"{MAIN_ID}.in", timeout=3)
-        if channel_path is not None:
-            Log.Error(f"relay server already running in [{workspace}]")
-            os._exit(1)
+class SERVER_STATUS(Enum):
+    DEAD = 0
+    ALIVE = 1
+    STALE = 2
+def _check_status(workspace: Path):
+    server_path = workspace/f"{MAIN_ID}.in"
+    res = None
+    if server_path.exists():
+        for i in range(-2, 4, 1): # <32s
+            try:
+                with PipeClient(server_path) as p:
+                    res = p.Transact(IpcRequest(endpoint="ping"), timeout=1)
+                break
+            except (ConnectionError, TimeoutError, OSError):
+                dt = random.random()*2**i
+                time.sleep(dt)
+        if res and res.IsValid() and res.status == 204:
+            return SERVER_STATUS.ALIVE
         else:
-            Log.Error(f"removing stale connections at [{workspace}]")
-            for p in workspace.glob("*.in"):
-                if not p.is_dir(): p.unlink()
-    try:
-        pid = os.fork()
-        if pid > 0:
-            Log.Info(f"relay server started with pid: [{pid}]")
-            # Exit parent process
-            return
-    except OSError as e:
-        Log.Error(f"fork failed: {e.errno} ({e.strerror})")
-        return
-    # forked child
+            return SERVER_STATUS.STALE
+    return SERVER_STATUS.DEAD
 
-    connections: dict[str, Client] = {}
-    lock = Condition()
+def RunServer(workspace: Path, channels: int):
+    workspace = workspace.absolute()
+    workspace.mkdir(parents=True, exist_ok=True)
+    status = _check_status(workspace)
+    if status == SERVER_STATUS.ALIVE:
+        Log.Error(f"relay server already running in [{workspace}]")
+        sys.exit(0)
+    Log.AddLogFile(workspace/"main.log")
+    Log.SetStdout(False)
+    Log.Info("")
+    Log.Info(f"MONITOR: pid [{os.getpid()}]")
+    child_pid = None
+    shutdown_callbacks: list[Callable] = []
+    def shutdown(code: int):
+        for f in shutdown_callbacks:
+            f()
+        Log.Info(f"exit | pid: [{os.getpid()}]")
+        sys.exit(code)
+    def _on_shutdown(signum, frame):
+        sig = Signals(signum).name
+        Log.Info(f"shutdown signal | pid: [{os.getpid()}], sig: [{sig}/{signum}]")
+        shutdown(0)
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
+    signal.signal(signal.SIGINT, _on_shutdown)
+    def _on_die(signum, frame):
+        sig = {9:"KILL", 15:"TERM", 2:"INT"}.get(signum, "")
+        if sig: sig = f" ({sig})"
+        Log.Warn(f"killed | pid: [{os.getpid()}], sig: [{signum}{sig}]")
+        sys.exit(1)
+    signal.signal(signal.SIGTERM, _on_die)
+
+    def _clean_stale(workspace: Path):
+        todo = list(workspace.glob("*.in")) + list(workspace.glob("*.out"))
+        if len(todo)==0: return
+        Log.Info(f"MONITOR: removing stale connections at [{workspace}]")
+        for p in todo:
+            if not p.is_dir(): p.unlink()
+    while True: # monitor
+        try:
+            status = _check_status(workspace)
+            if status == SERVER_STATUS.STALE:
+                _clean_stale(workspace)
+                if child_pid is not None:
+                    Log.Info(f"MONITOR: sending kill signal to [{child_pid}]")
+                    os.kill(pid, signal.SIGTERM)
+                    child_pid = None
+            if status != SERVER_STATUS.ALIVE:
+                _clean_stale(workspace)
+                Log.Info(f"MONITOR: starting new server process at [{workspace}]")
+                _rp, _wp = os.pipe()
+                _rc, _wc = os.pipe()
+                pid = os.fork()
+                if pid == 0:
+                    os.close(_rc)
+                    os.close(_wp)
+                    break # child leaves monitor loop to start server
+                else:
+                    os.close(_rp)
+                    os.close(_wc)
+                child_pid = int(os.read(_rc, 16))
+                Log.Info(f"MONITOR: child pid [{child_pid}]")
+                os.close(_rc)
+                os.write(_wp, f"{os.getpid()}".encode())
+                os.close(_wp)
+            time.sleep(5)
+        except OSError as e:
+            Log.Error(f"fork failed: {e.errno} ({e.strerror})")
+            continue
+        except KeyboardInterrupt:
+            Log.Info(f"MONITOR: exit [{child_pid}]")
+            return
+        
+    # forked child (instance of server)
+    os.write(_wc, f"{os.getpid()}".encode())
+    os.close(_wc)
+    monitor_pid = int(os.read(_rp, 16))
+    os.close(_rp)
+
+    # cant use Client type with connections
+    # bc fork, so cant do from __future__ import annotations
+    connections: dict[str, Any] = {} 
+    reaper_lock = Condition()
     running = True
+
     workspace = workspace.resolve()
     workspace.mkdir(parents=True, exist_ok=True)
-    
-    Log.SetLogFile(workspace/"log")
-    _start_msg = "starting relay server"
+    _start_msg = f"starting relay server with pid [{os.getpid()}], monitor [{monitor_pid}], and [{channels}] channels"
     Log.Info("="*len(_start_msg))
     Log.Info(_start_msg)
 
     @dataclass
     class Client:
-        key: str
-        birthtime: int
-        channel: PipeServer
-        terminal: TerminalProcess | None = None
-        listeners: dict[Path, tuple[str, Callable, PipeClient]] = field(default_factory=dict)
+        key: str = ""
+        last_used: int = 0
+        _seen_messages: set[str] = field(default_factory=set)
+
+        def __post_init__(self):
+            def _cb (channel: PipeServer, raw: str):
+                _handle_connection(self, raw)
+            self.channel = PipeServer(workspace, _cb, id = GenerateId(3))
+            self._terminal = None
+
+        def _get_terminal(self):
+            if self._terminal is None:
+                self._terminal = TerminalProcess()
+                def _make_listener(stream: str):
+                    def _callback(x: bytes):
+                        if self._terminal is None: return
+                        msg = RemoveTrailingNewline(self._terminal.Decode(x))
+                        self.channel.Send(IpcResponse(103, dict(stream=stream, content=msg)).Serialize())
+                    return _callback
+                self._terminal.RegisterOnOut(_make_listener("out"))
+                self._terminal.RegisterOnErr(_make_listener("err"))
+            return self._terminal
+
+        def _close_terminal(self):
+            if self._terminal is None: return
+            self._terminal.Dispose()
+            self._terminal = None
 
         def _err(self, msg: str):
             return dict(error = msg)
 
-        def shutdown(self, data: dict):
-            with lock:
-                nonlocal running
-                running = False
-            return 200, dict(message="shutting down")
+        def status(self, req: IpcRequest):
+            return 200, dict(
+                clients=[(c.channel._id, c.key) for c in server_channels],
+                monitor_pid=monitor_pid,
+                relay_pid=os.getpid(),
+                workspace=str(workspace),
+            )
 
-        def status(self, data: dict):
-            return 200, dict(clients=list(connections.keys()))
-
-        def echo(self, data: dict):
-            return 200, data
+        def ping(self, req: IpcRequest):
+            # Log.Debug(f"[{self.key}]:[{self.channel._id}]")
+            return 204, {}
         
-        def _ensure_terminal(self):
-            if self.terminal is None:
-                self.terminal = TerminalProcess()
+        def echo(self, req: IpcRequest):
+            data = req.data
+            return 200, data
 
-        def bash(self, data: dict):
+        def bash(self, req: IpcRequest):
+            if req.message_id in self._seen_messages:
+                return 204, {}
+            data = req.data
             cmd = data.get("script")
             if cmd is None: return 400, self._err(f"missing required field: [script]")
-            self._ensure_terminal()
             if len(cmd) == 0 or cmd[-1] != "\n": cmd += "\n"
-            self.terminal.Write(cmd)
-            return 204, dict()
+            self._get_terminal().Write(cmd)
+            return 204, {}
 
-        def register_bash_listener(self, data: dict):
-            stream = data.get("stream")
-            valid_streams = {"out", "err"}
-            if stream not in valid_streams: return 400, self._err(f"invalid stream [{stream}], not one of [{', '.join(valid_streams)}]")
-            raw_path = data.get("channel")
-            if raw_path is None: return 400, self._err(f"missing required field [channel] as server channel path")
-            channel_path = workspace/raw_path
-            if not channel_path.exists(): return 400, self._err(f"channel path does not exist [{channel_path}]")
-            channel = PipeClient(channel_path)
-            def _callback(x: bytes):
-                msg = RemoveTrailingNewline(self.terminal.Decode(x))
-                channel.Send(msg)
-            self._ensure_terminal()
-            if stream == "out":
-                self.terminal.RegisterOnOut(_callback)
-            elif stream == "err":
-                self.terminal.RegisterOnErr(_callback)
-            self.listeners[raw_path] = stream, _callback, channel
-            return 200, dict(message="listener registered", id=str(channel._id))
-
-        def remove_bash_listener(self, data: dict):
-            raw_path = data.get("channel")
-            if raw_path is None: return 400, self._err(f"missing required field [channel] as server channel path")
-            key = raw_path
-            if key not in self.listeners: return 404, self._err(f"listener not found")
-            stream, cb, channel = self.listeners[key]
-            channel.Dispose()
-            if stream == "out":
-                self.terminal.RemoveOnOut(cb)
-            else:
-                self.terminal.RemoveOnErr(cb)
-            del self.listeners[key]
-            return 200, dict(message="listener removed", id=str(channel._id))
+        def disconnect(self, req: IpcRequest):
+            self._close_terminal()
+            self._seen_messages.clear()
+            Log.Info(f"[{self.channel._id} {self.key}] disconnected | {len(connections)-1}/{len(server_channels)}")
+            return 204, dict(disconnect=True)
 
         def _dispose(self):
-            if self.terminal is not None:
-                self.terminal.Dispose()
-            for key in list(self.listeners.keys()):
-                _, _, listener = self.listeners[key]
-                listener.Dispose()
-                del self.listeners[key]
+            self._close_terminal()
             self.channel.Dispose()
 
     def _handle_connection(client: Client, raw: str):
+        with reaper_lock:
+            client.last_used = CurrentTimeMillis()
         channel = client.channel
-        log(f"request from: [{channel._id}]")
         req = IpcRequest.Parse(raw)
-        def _err(msg: str, status=400):
-            Log.Error(f"[{channel._id}]: {msg}")
+        def _err(msg: str|None, status=400, log=True):
+            if log: Log.Warn(f"[{client.channel._id}]: {msg}")
             return IpcResponse(status=status, data=dict(error=msg))
         def _handle() -> IpcResponse:
-            if not req.IsValid(): return _err(req.parse_error)
+            # Log.Debug(req)
+            if not req.IsValid() or not isinstance(req, IpcRequest): return _err(req.parse_error)
+            con_key = req.data.get("connection", "")
+            if not con_key: return _err("no connection key", status=401)
+            if con_key != client.key:
+                safe_eps = {"ping", "disconnect"}
+                return _err(f"wrong connection key. Used [{con_key}]. Expect [{client.key}]. [{req.endpoint}]", status=401, log=(req.endpoint not in safe_eps))
             ep_key = req.endpoint.lower()
             make_err_for_bad_ep = lambda: _err(f"invalid endpoint: [{ep_key}]", status=404)
             if ep_key.startswith("_"): return make_err_for_bad_ep()
             if not hasattr(client, ep_key): return make_err_for_bad_ep()
-            ep = getattr(client, ep_key)
+            # if ep_key != "ping": Log.Debug(f"[{client.key}] >>> {req}")
+            ep: Callable = getattr(client, ep_key)
             if not callable(ep): return make_err_for_bad_ep()
-            Log.Info(f"[{channel._id}]: calling [{ep_key}]")
-            status, data = ep(req.data)
+            # Log.Debug(f"[{client.key}]: calling [{ep_key}]")
+            status, data = ep(req)
+            client._seen_messages.add(req.message_id)
+            # if ep_key != "ping": Log.Debug(f"[{client.key}] <<< {status} {data}")
             return IpcResponse(
                 status=status, data=data
             )
         res = _handle()
         res.message_id = req.message_id
+        res.data["connection"] = client.key
         channel.Send(res.Serialize())
-        
+        if "disconnect" in res.data:
+            with reaper_lock:
+                del connections[client.key]
+                client.key = ""
+
+    
+    server_channels: list[Client] = []
+    for _ in range(channels):
+        try:
+            server_channels.append(Client())
+        except OSError as e:
+            if "out of pty devices" not in e.args:
+                raise e
+            shutdown(1)
+    def _client_shutdown():
+        Log.Info("closing client channels")
+        l = len(server_channels)
+        for i, client in enumerate(server_channels[::-1]):
+            Log.Info(f"  {i+1}/{l}: [{client.channel._id}]")
+            client._dispose()
+    shutdown_callbacks.append(_client_shutdown)
+
+    connection_history: dict[str, tuple[int, IpcResponse]] = {}
     def new_connection(channel: PipeServer, raw: str):
         req = IpcRequest.Parse(raw)
-        def _err(msg: str):
+        def _err(msg: str|None):
             return dict(error = msg)
         def _handle() -> IpcResponse:
-            log(f"new connection")
-            if not req.IsValid(): return IpcResponse(
+            if not req.IsValid() or not isinstance(req, IpcRequest): return IpcResponse(
                 status=400, data=_err(req.parse_error)
             )
+            if req.endpoint == "disconnect":
+                return IpcResponse(204) # not applicable
+            if req.endpoint == "ping":
+                return IpcResponse(204)
+            if req.endpoint == "get_monitor":
+                return IpcResponse(200, data=dict(pid=monitor_pid))
+            if req.endpoint == "shutdown":
+                with reaper_lock:
+                    nonlocal running
+                    running = False
+                    reaper_lock.notify_all()
+                return IpcResponse(204)
             if req.endpoint == "connect":
-                client = None
-                def _cb (channel: PipeServer, raw: str):
-                    if client is None: return
-                    _handle_connection(client, raw)
-                new_channel = PipeServer(workspace, _cb, id = GenerateId())
-                client = Client(new_channel._id, CurrentTimeMillis(), new_channel)
-                log(f"new client assigned to: [{new_channel._id}]")
-                connections[new_channel._id] = client
-                return IpcResponse(
-                    status=200, data=dict(path=str(new_channel._client_path.resolve().relative_to(workspace)))
-                )
+                with reaper_lock:
+                    connection_key = req.message_id
+                    if connection_key in connection_history: # repeat message
+                        _, r = connection_history[connection_key]
+                        return r
+
+                    if len(connections)>=len(server_channels):
+                        return IpcResponse(
+                            429, data=_err(f"too many concurrent requests [{len(connections)}]")
+                        )
+                    active_clients = list(connections.values())
+                    available_client = next(iter(c for c in server_channels if c not in active_clients))
+                    available_client.last_used = CurrentTimeMillis()
+                    available_client.key = connection_key
+                    # Log.Debug(f"{available_client.channel._id}/{connection_key} {connections.keys()}")
+                    connections[connection_key] = available_client
+                    Log.Info(f"[{available_client.channel._id} {connection_key}] connected | {len(connections)}/{len(server_channels)}")
+                    res = IpcResponse(
+                        status=200, data=dict(connection=connection_key, path=str(available_client.channel._client_path.resolve().relative_to(workspace)))
+                    )
+                    connection_history[connection_key] = available_client.last_used, res
+                return res
             else:
+                Log.Error(f"invalid call to [{req.endpoint}]")
                 return IpcResponse(
                     status=400, data=_err(f"invalid endpoint: [{req.endpoint}]")
                 )
@@ -181,110 +310,142 @@ def RunServer(workspace: Path):
         res.message_id = req.message_id
         channel.Send(res.Serialize())
 
-    main_channel = PipeServer(workspace, new_connection, overwrite=True, id=MAIN_ID)
+    GRACE = 5
+    HIST_TIME = 60
+    main_channel = PipeServer(io_dir=workspace, callback=new_connection, overwrite=True, id=MAIN_ID)
     def run():
-        log("ready")
-        while main_channel.IsOpen() and running:
-            try:
-                time.sleep(1)
-            except KeyboardInterrupt:
-                break
-
-    def check_reap():
-        now = CurrentTimeMillis()
-        for id, client in list(connections.items()):
-            start = client.birthtime
-            channel = client.channel
-            if now - start < GRACE: continue
-            if channel.IsOpen() and channel._client_path.exists(): continue
-            client._dispose()
-            del connections[id]
-            log(f"[{id}]: reaped")
-
-    lock = Condition()
-    def reaper_process():
-        while True:
-            with lock:
+        Log.Info("ready")
+        nonlocal running
+        while main_channel.IsOpen():
+            now = CurrentTimeMillis()
+            with reaper_lock:
+                # Log.Debug("="*12)
+                # Log.Debug(len(connections))
+                to_del = []
+                for k, (ts, c) in connection_history.items():
+                    if (now-ts)>HIST_TIME*1000: to_del.append(k)
+                for k in to_del: del connection_history[k]
+                # Log.Debug("."*12)
+                connected_channels = {c.channel._id:k for k, c in connections.items()}
+                to_del.clear()
+                for client in server_channels:
+                    # active = client.channel._id in connected_channels
+                    # same = client.key == connected_channels[client.channel._id] if active else True
+                    # Log.Debug(f"[{client.channel._id}] [{client.key if active else ' '*12}] [{' '*12 if same else connected_channels[client.channel._id]}] {(now - client.last_used)/1000:.2f}")
+                    if client.channel._id not in connected_channels: continue
+                    if client.key == connected_channels[client.channel._id]:
+                        _grace = GRACE*1000
+                        if now - client.last_used<_grace: continue
+                    to_del.append(client)
+                for client in to_del:
+                    client._close_terminal()
+                    del connections[client.key]
+                    Log.Info(f"[{client.channel._id} {client.key}] reaped | {len(connections)}/{len(server_channels)}")
+                    client.key = ""
+                # Log.Debug("="*12)
                 if not running: break
-                check_reap()
-            time.sleep(1)
-    reaper = Thread(target=reaper_process, args=[])
+                try:
+                    reaper_lock.wait(0.1 if len(connections)==len(server_channels) else GRACE)
+                except KeyboardInterrupt:
+                    running = False
+                    break
 
+    def _main_shutdown():
+        Log.Info("closing main channel")
+        main_channel.Dispose()
+    shutdown_callbacks.append(_main_shutdown)
     try:
-        reaper.start()
         run()
     finally:
-        log("", timestamp=False)
-        log("closing main channel")
-        main_channel.Dispose()
-
-        try:
-            log("stopping reaper")
-            with lock:
-                running = False
-            reaper.join()
-        except KeyboardInterrupt:
-            pass
-
-        log("closing client channels")
-        for id, client in list(connections.items()):
-            client._dispose()
+        shutdown(0)
 
 def _connect_as_client(server_path: Path, silent=False, timeout=3):
     if not server_path.exists():
         Log.Error(f"relay server not started in [{server_path}]")
         return
     try:
-        with PipeClient(server_path, timeout=timeout) as p:
+        with PipeClient(server_path) as p:
             res = p.Transact(IpcRequest(endpoint="connect"), timeout=timeout)
     except (TimeoutError, ConnectionError) as e:
         Log.Error(f"{e}")
         return
     if res.status != 200:
-        Log.Error(f"error{res.data.get('error')}")
+        Log.Error(f"error {res.data.get('error')}")
         return
+    if res.status == 429:
+        raise ConnectionError(res.data.get('error'))
 
-    channel_path = Path(res.data.get("path"))
-    if not silent: Log.Info(f"connecting to relay as [{channel_path.stem}]")
+    channel_path = Path(res.data["path"])
+    con: str = res.data["connection"]
+    if not silent: Log.Info(f"connecting to relay on [{channel_path.stem}] as [{con}]")
     if channel_path is None:
         Log.Error("error no channel path")
         return
-    return server_path.parent/channel_path
+    return server_path.parent/channel_path, con
 
 def StopServer(workspace: Path):
-    channel_path = _connect_as_client(workspace/f"{MAIN_ID}.in", silent=True)
-    if channel_path is None: return
-    with PipeClient(channel_path) as p:
+    delays = [2**i for i in range(-2, 4, 1)] # <32s
+    server_path = workspace/f"{MAIN_ID}.in"
+    if server_path.exists():
+        client = None
+        monitor_pid = None
         try:
-            res = p.Transact(IpcRequest(endpoint="shutdown"), timeout=2)
-        except TimeoutError:
-            Log.Error("error timeout")
-            return
-        if res.status != 200:
-            Log.Error(f"error: {res.data.get('error')}")
-            return
-        res_msg = res.data.get('message')
-        if res_msg == "shutting down":
-            Log.Info("Relay is shutting down")
-        else:
-            Log.Error(f"Relay stop request got unexpected status [{res.data.get('message')}]")
+            for dt in delays:
+                try:
+                    if not client:
+                        client = PipeClient(server_path)
+                        if not client: continue
+
+                    if not monitor_pid:
+                        res = client.Transact(IpcRequest(endpoint="get_monitor"), timeout=1)
+                        if res.status != 200:
+                            Log.Error(f"get_monitor: [{res.status}:{res.data}]")
+                            continue
+                        monitor_pid = res.data.get("pid")
+                        if monitor_pid:
+                            Log.Info(f"sending kill signal to monitor [{monitor_pid}]")
+                            os.kill(monitor_pid, signal.SIGINT)
+                        else:
+                            continue
+
+                    res = client.Transact(IpcRequest(endpoint="shutdown"), timeout=1)
+                    if res.status != 204:
+                        Log.Error(f"shutdown: [{res.status}:{res.data}]")
+                    else:
+                        Log.Info(f"shutdown request sent to relay")
+                        break
+                except (ConnectionError, TimeoutError, OSError):
+                    dt = random.random()*dt
+                    time.sleep(dt)
+        finally:
+            if client: client.Dispose()
+    else:
+        Log.Info(f"relay not running at [{workspace}]")
 
 def GetStatus(workspace: Path):
-    channel_path = _connect_as_client(workspace/f"{MAIN_ID}.in")
-    if channel_path is None: return
-    with PipeClient(channel_path) as p:
+    status = _check_status(workspace)
+    Log.Info(f"status: [{status.name}]")
+
+    res = _connect_as_client(workspace/f"{MAIN_ID}.in")
+    if res is None: return
+    channel_path, key = res
+    with PipeClient(channel_path, key) as p:
         try:
-            res = p.Transact(IpcRequest(endpoint="status"), timeout=2)
+            res = p.Transact(IpcRequest(endpoint="status", data=dict(connection=key)), timeout=2)
         except TimeoutError:
             Log.Error("error timeout")
             return
-        _clients = res.data.get("clients", [])
         if res.status != 200:
             Log.Error(f"error: {res.data.get('error')}")
             return
-        Log.Info(f"number of clients [{len(_clients)}]")
-        for client in _clients:
-            Log.Info(f"  {client}")
+        for k, v in res.data.items():
+            if k == "connection": continue
+            if k == "clients":
+                Log.Info(f"number of connections [{len([x for _, x in v if x])}]")
+                for channel, connection  in v:
+                    Log.Info(f"  {channel} : {connection}")
+            else:
+                Log.Info(f"{k}: [{v}]")
 
 def Bounce(workspace: Path, cmd: str):
     with RemoteShell(workspace/f"{MAIN_ID}.in") as shell:
