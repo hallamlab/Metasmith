@@ -8,6 +8,17 @@ env {
     XDG_CACHE_HOME = './temp/xdg_home'
 }
 
+executor {
+    queueSize = <queueSize>                 // 100
+    submitRateLimit = '<submitRateLimit>'   // 10/1sec  | this may be too aggressive
+    pollInterval = '<pollInterval>'         // 10sec
+    stageInMode = '<stageInMode>'           // symlink  | some intermediates are large reference databases and should not be copied
+
+    // -----------------------------------------
+    // notes
+    // executor = 'hq'          // todo: consider https://github.com/It4innovations/hyperqueue
+}
+
 process {
     scratch = true                  // use worker node's local hard drive
     executor = 'slurm'
@@ -18,13 +29,4 @@ process {
     cpus = <cpus>           // 4
     memory = '<memory>'     // 16 GB
     time = '<time>'         // 3h
-    
-    queueSize = <queueSize>                 // 100
-    submitRateLimit = '<submitRateLimit>'   // 10/1sec  | this may be too aggressive
-    pollInterval = '<pollInterval>'         // 10sec
-    stageInMode = '<stageInMode>'           // symlink  | some intermediates are large reference databases and should not be copied
-
-    // -----------------------------------------
-    // notes
-    // executor = 'hq'          // todo: consider https://github.com/It4innovations/hyperqueue
 }
