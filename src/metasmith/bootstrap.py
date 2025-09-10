@@ -1,9 +1,8 @@
-import os
 from pathlib import Path
 import time
 import shutil
-import yaml
 import traceback
+import re
 
 from metasmith.hashing import KeyGenerator
 
@@ -49,6 +48,13 @@ def StageAndRunTransform(workspace: Path, step_index: int):
     assert server_path.exists(), f"server not started [{server_path}]"
 
     Log.Info("connecting to relay")
+    Log.Info(f"loading agent config")
+    agent = Agent.Load(AgentPaths.to_definition())
+    agent_home = str(agent.home.GetPath())
+    Log.Info(f"agent home [{agent_home}]")
+    def _shorten_home(p: str):
+        return p.replace(agent_home, "{agent_home}")
+    
     with RemoteShell(server_path) as shell:
         _paused = False
         class PausedStdOut:
@@ -66,13 +72,6 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             return _listener
         shell.RegisterOnOut(_make_listener(Log.Info))
         shell.RegisterOnErr(_make_listener(Log.Error))
-        
-        Log.Info(f"loading agent config")
-        agent = Agent.Load(AgentPaths.to_definition())
-        agent_home = str(agent.home.GetPath())
-        Log.Info(f"agent home [{agent_home}]")
-        def _shorten_home(p: str):
-            return p.replace(agent_home, "{agent_home}")
 
         with PausedStdOut():
             res = shell.Exec("pwd -P", history=True)
@@ -82,14 +81,23 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         task_path = AgentPaths.to_task(task_key)
         Log.Info(f"loading task from [{task_path}]")
         task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
-        step = task.plan.steps[step_index-1]
+
+        _i = step_index-1
+        step = None
+        for p in task.plans:
+            if _i >= len(p.steps):
+                _i -= len(p.steps)
+                continue
+            step = p.steps[_i]
+            break
+        assert step is not None, step_index
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
         Log.Info(f"step [{step_index}:{step_name}]")
 
         def _status(p: ContextPath):
             return "✓" if p.local.exists() else "X"
         container_binds = {}
-        def _parse_path(p: Path):
+        def _parse_path(p: Path, container_override=None):
             if p.is_symlink():
                 external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
                 tail = external.relative_to(agent_home)
@@ -97,10 +105,13 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             else:
                 local = p
                 external = external_cwd/p
-            k = external.parent
-            if k not in container_binds:
-                container_binds[k] = Path(f"/msm_data/{k.name}")
-            container = container_binds[k]/p
+            if container_override:
+                container = container_override
+            else:
+                k = external.parent
+                if k not in container_binds:
+                    container_binds[k] = Path(f"/msm_data/{k.name}")
+                container = container_binds[k]/p
             return ContextPath(local=local, external=external, container=container)
         inputs = {}
         Log.Info("uses:")
@@ -112,9 +123,28 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         outputs = {}
         space = " "
         for inst in step.produces:
-            p = _parse_path(inst.path)
+            p = _parse_path(inst.path, container_override=Path("/ws")/inst.path)
             outputs[inst.dtype] = p
             Log.Info(_shorten_home(f"    {space} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
+
+        params = {}
+        try:
+            with open(".command.resources") as f:
+                _cpus, _mem = f.readline().strip().split("/")
+                for k, v in [ # match nextflow task.{}
+                    ("cpus", _cpus),
+                    ("memory", _mem),
+                ]:
+                    if v.lower() == "null": continue
+                    try:
+                        vals = re.findall(r"\d+", v)
+                        if len(vals)==0: continue
+                        v = int(vals[0])
+                    except ValueError:
+                        continue
+                    params[k] = v
+        except Exception as e:
+            Log.Error(f"failed to read .command.resources: {e}")
 
         context = ExecutionContext(
             _inputs=inputs,
@@ -122,6 +152,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             external_shell=shell,
             external_cwd=external_cwd,
             container_runtime=task.container_runtime,
+            params=params,
         )
         Log.Info(f">>> executing protocol")
         BREAK_LENGTH = 60

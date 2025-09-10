@@ -44,7 +44,7 @@ class DataTypeOntology:
             if k.startswith("_"): continue
             d[k] = v
         return d
-    
+
     @classmethod
     def Unpack(cls, d: dict):
         return cls(**d)
@@ -73,19 +73,19 @@ class DataTypeLibrary:
 
     def __getitem__(self, key: str) -> Endpoint:
         return self.types[key]
-    
+
     def __setitem__(self, key: str, value: Endpoint):
         assert isinstance(value, Endpoint)
         assert isinstance(key, str)
         self.types[key] = value
-    
+
     def __contains__(self, key: str) -> bool:
         return key in self.types
-    
+
     def __iter__(self):
         for k, v in self.types.items():
             yield k, v
-    
+
     def __len__(self) -> int:
         return len(self.types)
 
@@ -142,10 +142,11 @@ class DataInstance:
 
     def __post_init__(self):
         self.RecalculateKey()
+        assert not self.path.is_absolute()
 
     def __hash__(self) -> int:
         return self._hash
-    
+
     def RecalculateKey(self):
         self._hash, self._key = KeyGenerator.FromStr("".join([
             str(self.path),
@@ -168,7 +169,7 @@ class DataInstance:
             type=f"{self.parent_lib.GetKey()}::{self.dtype_name}",
             type_id=self.dtype.key,
         )
-    
+
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
         lib_key, namespace, dtype_name = raw["type"].split("::")
@@ -196,7 +197,7 @@ class DataInstanceLibrary:
         library_key: str
         path: Path
 
-    def __init__(self, location: Path|str|DataInstanceLibrary) -> None:
+    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool = True) -> None:
         self.manifest: dict[Path, str] = {}
         self.types: dict[str, DataTypeLibrary] = {}
         self._dtype2name = {}
@@ -214,6 +215,9 @@ class DataInstanceLibrary:
             else:
                 assert location.is_dir(), f"[{location}] must be a directory"
             self.location = location
+        if include_std:
+            from ..std.data_types import StdTypes
+            self.AddTypeLibrary("std", StdTypes())
 
     def AddTypeLibrary(self, namespace: str, lib: DataTypeLibrary|Source, on_exist: str="clear"):
         assert on_exist in {"skip", "error", "clear"}
@@ -251,9 +255,15 @@ class DataInstanceLibrary:
         assert name in types_lib, f"datatype [{name}] not found in [{namespace}]"
         return types_lib[name]
 
+    def Get(self, path: str|Path):
+        p = Path(path)
+        e_name = self.manifest[p]
+        e = self.GetType(e_name)
+        return DataInstance(p, e, e_name, self)
+
     def GetType(self, name: str):
         return self._get_type(name, self.types)
-    
+
     def GetName(self, dtype: Endpoint):
         if dtype in self._dtype2name: return self._dtype2name[dtype]
         for k, lib in self.types.items():
@@ -318,6 +328,15 @@ class DataInstanceLibrary:
             report.append(dest)
         return report
 
+    def AddParentsTo(self, path: Path|str, parents: list[DataInstance]):
+        p = Path(path)
+        current = self.parents.get(p, [])
+        seen = {f"{x.library_key}/{x.path}" for x in current}
+        def _get_k(d: DataInstance):
+            return f"{d.parent_lib.GetKey()}/{d.path}"
+        current += [self.ParentMetadata(p.dtype, p.dtype_name, p.parent_lib.GetKey(), p.path) for p in parents if _get_k(p) not in seen]
+        self.parents[p] = current
+
     def _calculate_key(self):
         me_d = self.Pack()
         for k in ["remote_src"]:
@@ -326,7 +345,7 @@ class DataInstanceLibrary:
         dtypes = yaml.dump({k:v.Pack() for k, v in self.types.items()})
         self._hash, self._key = KeyGenerator.FromStr(me+dtypes, l=12)
         return self._key
-    
+
     def GetKey(self):
         if not hasattr(self, "_key"):
             self._calculate_key()
@@ -351,13 +370,13 @@ class DataInstanceLibrary:
                 self.types[namespace] = new
         if save: self.Save(update_types=True)
 
-    def Pack(self, parents: dict[Path, list[DataInstance]]=None):
-        if parents is None: parents = {}
+    def Pack(self):
         def _pack_instance(path, dtype_name):
             d_parents = {}
-            for p in parents.get(path, []):
-                k = f"{p.parent_lib.GetKey()}/{p.path}"
-                v = p.dtype_name
+            for p in self.parents.get(path, []):
+                p.library_key
+                k = f"{p.library_key}/{p.path}"
+                v = p.name
                 d_parents[k] = v
             d = dict(
                 type=dtype_name,
@@ -405,8 +424,7 @@ class DataInstanceLibrary:
             if len(parents)>0: lib.parents[Path(k)] = parents
         return lib
 
-    def Save(self, parents: dict[Path, list[DataInstance]]=None, update_types=True):
-        if parents is None: parents = {}
+    def Save(self, update_types=True):
         ext = self._metadata_ext
         types_path = self.location/self._path_to_types
         types_path.mkdir(parents=True, exist_ok=True)
@@ -420,8 +438,8 @@ class DataInstanceLibrary:
         index_path = metadata_path/(self._index_name+ext)
         index_path.parent.mkdir(parents=True, exist_ok=True)
         with open(index_path, "w") as f:
-            yaml.dump(self.Pack(parents), f)
-    
+            yaml.dump(self.Pack(), f)
+
     @classmethod
     def Load(cls, path: Path|str, check_integrity=False):
         path = Path(path)
@@ -443,6 +461,7 @@ class DataInstanceLibrary:
         d = yaml_safe_load(index_path)
         self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
+        self._calculate_key()
         return self
 
     def PrepTransfer(self, dest: Source, mover: Logistics=None):
@@ -500,7 +519,7 @@ class DataInstanceLibrary:
             lib.remote_src = src
             lib.Save()
         return lib
-    
+
     def Actualize(self, extern_dest: Source=None, label: str=None):
         if self.remote_src is None:
             return self
@@ -528,7 +547,7 @@ class DataInstanceLibrary:
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult]
     model: Transform
-    output_signature: dict[Dependency, Path]
+    output_signature: dict[Dependency, Path|str]
     name: str = None
 
     def __post_init__(self):
@@ -580,11 +599,9 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         if "transforms" not in self.types:
             transform_types = DataTypeLibrary(types=dict(
                 transform=Endpoint({"metasmith", "transform"}),
-                example_input=Endpoint({"metasmith", "example_input"}),
-                example_output=Endpoint({"metasmith", "example_output"}),
             ))
             self.AddTypeLibrary("transforms", transform_types)
-        self.Save()
+        self._transform_cache: dict[Path, TransformInstance] = {}
 
     def PruneTypes(self, save: bool=True, whitelist: set[str]=None):
         if whitelist is None: whitelist = set()
@@ -616,17 +633,22 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         for p in path.parents:
             if (p/DataInstanceLibrary._path_to_meta).exists():
                 return cls.Load(p)
-    
-    def GetTransform(self, path: Path|str):
+        assert False
+
+    def GetTransform(self, path: Path|str, reload=False):
         path = self.location/path
         if path.suffix != ".py":
             path = path.with_suffix(".py")
-        return TransformInstance.Load(path)
-    
+        if reload or path not in self._transform_cache:
+            tr = TransformInstance.Load(path)
+            if tr is not None:
+                self._transform_cache[path] = tr
+        return self._transform_cache.get(path)
+
     def IterateTransforms(self):
         for k, v, dtype in self.Iterate():
             tr = self.GetTransform(k)
-            assert tr is not None
+            assert tr is not None, (v, k)
             yield k, v, tr
 
     @classmethod
@@ -645,26 +667,28 @@ class ContextPath:
 
 @dataclass
 class ExecutionContext:
-    _inputs: dict[Endpoint, ContextPath]
-    _outputs: dict[Endpoint, ContextPath]
+    _inputs: dict[Dependency, ContextPath]
+    _outputs: dict[Dependency, ContextPath]
     external_shell: RemoteShell # since metasmith will bootstrap into its own container
     external_cwd: Path
     container_runtime: ContainerRuntime
+    params: dict = field(default_factory=dict)
 
     def Get(self, key: Endpoint|Dependency):
         for d, p in itertools.chain(self._inputs.items(), self._outputs.items()):
             if d.IsA(key): return p
         assert False, f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]"
 
-    def ExecWithContainer(self, image: Endpoint, cmd: str, binds: list[tuple[Path, Path]]=None, history: bool = True):
+    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path, Path]]=None, history: bool=True):
         path = self._inputs[image]
-        image = path.external
         if IsText(path.local):
             with open(path.local) as f:
-                image = f.read() # using the uri
-        
+                image_path = f.read().strip() # using the uri
+        else:
+            image_path = str(path.external)
+
         _binds = set()
-        for _, p in list(self._inputs.items())+list(self._outputs.items()):
+        for _, p in list(self._inputs.items()):
             src = p.external.parent
             dest = p.container.parent
             _binds.add((src, dest))
@@ -676,24 +700,26 @@ class ExecutionContext:
 
         container_ws = Path("/ws")
         container = Container(
-            image = image,
+            image = str(image_path),
             workdir = container_ws,
             runtime = self.container_runtime,
             binds = binds,
         )
 
         cmd = RemoveLeadingIndent(cmd)
-        Log.Info(f"executing container [{image}] using [{container.runtime}]")
+        Log.Info(f"executing container [{image_path}] using [{container.runtime}]")
         Log.Info(f"command:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
         Log.Info(f"binds:")
         for s, d in binds:
             Log.Info(f"    {s} -> {d}")
-        _full_cmd = f"{container.MakeRunCommand()} {cmd}"
-        Log.Info(f"raw command: [{_full_cmd}]")
-        return self.external_shell.Exec(_full_cmd, timeout=None, history=history)
-
+        _container_start = f"{container.MakeRunCommand()} {shell}"
+        Log.Info(f"container start: [{_container_start}]")
+        sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
+        result = self.external_shell.Exec(cmd, timeout=None, history=history)
+        eresult = self.external_shell.Exec("[ -n $APPTAINER_CONTAINER ] || [ -e /.dockerenv ] && exit", timeout=None, history=history)
+        return result
         # _, _hash = KeyGenerator.FromStr(cmd, l=8)
         # cmd_file = f"_metasmith/container_cmd.{_hash}"
         # container_run = container.MakeRunCommand()

@@ -13,7 +13,7 @@ class Container:
     image: str
     container_cache: Path = Path("./")
     workdir: Path|None = None
-    binds: list[tuple[Path, Path]] = field(default_factory=list)
+    binds: list[tuple[Path|str, Path|str]] = field(default_factory=list)
     runtime: ContainerRuntime = ContainerRuntime.DOCKER
 
     def SetRuntime(self, runtime: ContainerRuntime):

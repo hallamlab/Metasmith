@@ -14,6 +14,7 @@ __pycache__
 !/lib/local
 !/lib/data_types
 .secret
+.DS_Store
 
 /conda_build
 /conda_recipe/*
@@ -21,3 +22,7 @@ __pycache__
 !/conda_recipe/meta_template.yaml
 
 **/metasmith_home
+
+.pixi
+pixi.lock
+pixi.toml

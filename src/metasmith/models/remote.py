@@ -218,7 +218,7 @@ class LogisticsException(Exception):
     pass
 
 @dataclass
-class LogiscsResult:
+class LogisticsResult:
     completed: list[tuple[Source, Source]]
     errors: list[str]
 
@@ -251,9 +251,9 @@ class Logistics:
     def RemoveTransfer(self, src: Source, dest: Source):
         self._queue.remove((src, dest))
 
-    def ExecuteTransfers(self, label: str = None, wait_for_complete: bool=True) -> LogiscsResult:
+    def ExecuteTransfers(self, label: str = None, wait_for_complete: bool=True) -> LogisticsResult:
         to_dispose: list[LiveShell] = []
-        result = LogiscsResult(completed=[], errors=[])
+        result = LogisticsResult(completed=[], errors=[])
 
         with TemporaryDirectory(prefix="msm.") as tmpdir:
             def _execute_local(todo: list[tuple[Source, Source]]):

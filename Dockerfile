@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y \
 COPY ./envs/base.yml /opt/base.yml
 # use an external cache for solved environments and install packages
 RUN --mount=type=cache,target=/opt/conda/pkgs \
-    mamba env create -n ${CONDA_ENV} --no-default-packages -f /opt/base.yml
+    mamba env create -n ${CONDA_ENV} -f /opt/base.yml
 # add bins to PATH so that the env appears "active"
 ENV PATH /opt/conda/envs/${CONDA_ENV}/bin:/app:/opt/globusconnectpersonal-latest:$PATH
 # install src
@@ -36,5 +36,5 @@ COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
 RUN pip install /opt/metasmith.tar.gz
 
 COPY ./lib/globusconnectpersonal-latest /opt/globusconnectpersonal-latest
-COPY ./main/relay_agent/dist/relay /opt/msm_relay
+COPY ./main/relay_agent/dist/msm_relay /opt/msm_relay
 RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin /app

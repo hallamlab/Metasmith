@@ -1,4 +1,4 @@
-Workflows
+Tutorial
 ############################################################
 
 .. role:: python(code)
@@ -6,19 +6,18 @@ Workflows
 
 .. _quickstart:
 
-Tutorial: Genomics Annotation
-===========================================================
-
 .. note::
 
     `Looking for install instructions? <install.html>`_
 
+Genomics Annotation
+============================================================
 This section will show the minimal steps to generate and run a workflow with Metasmith
 using example data and transforms themed after genomics annotation.
 
 .. code-block:: python
     :linenos:
-    
+
     from pathlib import Path
     from metasmith.python_api import *
     from metasmith import examples
@@ -67,7 +66,7 @@ We can now ask the agent to generate a workflow to produce the target data type 
 
 .. code-block:: python
     :linenos:
-    
+
     task = smith.GenerateWorkflow(
         given=[contigs, references],
         transforms=[transforms],
@@ -101,5 +100,5 @@ The workflow will execute asynchronously and its progress can be monitored with:
 
 .. code-block:: python
     :linenos:
-    
+
     smith.CheckWorkflow(task)
