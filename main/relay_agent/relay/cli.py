@@ -1,10 +1,12 @@
 from pathlib import Path
 import argparse
 import inspect
-import subprocess
+from multiprocessing import Process
 import os, sys
+import time
 from pathlib import Path
 import argparse
+import signal
 
 CLI_ENTRY = "relay"
     
@@ -14,8 +16,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.exit(2, '\n%s: error: %s\n' % (self.prog, message))
 
 def _add_io_arg(parser: ArgumentParser):
-    # here = Path(sys.orig_argv[0]).parent
-    parser.add_argument("--io", default="./connections", required=False, metavar="PATH", type=Path)
+    here = Path(sys.orig_argv[0]).parent.absolute()
+    parser.add_argument("--io", default=here/"connections", required=False, metavar="PATH", type=Path)
     return parser
 
 def _make_parser(name: str, description: str):
@@ -33,20 +35,51 @@ class CommandLineInterface:
     def start(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "ensure relay is running")
         parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
+        parser.add_argument("--channels", "-n", required=False, metavar="INT", type=int, default=8)
         args = parser.parse_args(raw_args)
+        assert args.channels<=16, f"too many channels [{args.channels}]"
+        from .main import RunServer, _check_status, SERVER_STATUS
+        workspace = Path(args.io)
+        status = _check_status(workspace)
+        if status == SERVER_STATUS.ALIVE:
+            print(f"relay server already running at [{workspace}]")
+            return
         if args.connected:
-            args = parser.parse_args(raw_args)
-            from .main import RunServer
-            RunServer(args.io)
+            RunServer(workspace=workspace, channels=args.channels)
         else:
-            cmd = f"nohup {sys.executable} {' '.join(sys.argv)} --connected >/dev/null 2>&1 &"
-            os.system(cmd)
+            print(f"starting relay server at [{workspace}]")
+            signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
+            pid = os.fork()
+            if pid != 0: # parent
+                server_channel = workspace/"main.in"
+                try:
+                    while not server_channel.exists():
+                        time.sleep(0.1)
+                except KeyboardInterrupt:
+                    pass
+                if not server_channel.exists():
+                    print(f"failed")
+                else:
+                    print(f"success")
+                # os._exit(0) # this should keep resources for forked child?
+            else: # child
+                RunServer(workspace=workspace, channels=args.channels)
 
     def stop(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "stop relay")
         args = parser.parse_args(raw_args)
         from .main import StopServer
         StopServer(args.io)
+        server_channel = Path(args.io)/"main.in"
+        try:
+            while server_channel.exists():
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            pass
+        if server_channel.exists():
+            print(f"failed")
+        else:
+            print(f"success")
 
     def status(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "get status of connections")

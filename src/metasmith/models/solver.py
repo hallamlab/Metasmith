@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Generator, Any, TypeVar, Generic
 import numpy as np
 import json
+from collections import deque
 
 from ..hashing import KeyGenerator
 

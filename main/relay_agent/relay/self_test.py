@@ -10,14 +10,18 @@ def run(workspace: Path):
         print("error", res.data.get("error"))
         return
     
-    channel = Path(res.data.get("path"))
+    channel = res.data.get("path")
     if channel is None:
         print("error", "no channel path")
         return
-    channel_path = workspace/channel
-    print(f"connecting as [{channel.stem}]")
+    channel_path = Path(workspace/channel)
+    key = res.data.get("connection")
+    if key is None:
+        print("error", "no connection key")
+        return
+    print(f"connecting to [{channel_path.stem}] as [{key}]")
     
-    with PipeClient(channel_path) as p:
+    with PipeClient(channel_path, key) as p:
         res = p.Transact(IpcRequest(endpoint="echo", data=dict(asdf=1)), timeout=2)
         print(f">>> echo")
         print(res)

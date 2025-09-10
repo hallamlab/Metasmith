@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import IO, Callable
+from typing import IO, Callable, Any
 from threading import Condition, Thread
 from dataclasses import dataclass, field
 import json
@@ -11,6 +11,7 @@ import select
 import pty
 import time
 import random
+from collections import deque
 
 from ..hashing import KeyGenerator
 from ..serialization import StdTime
@@ -45,21 +46,59 @@ def RemoveLeadingIndent(s: str):
     return cleaned
 
 _kg = KeyGenerator()
-def GenerateId():
-    return _kg.GenerateUID(12)
+def GenerateId(l: int=12):
+    return _kg.GenerateUID(l)
+def ResetGenerator():
+    global _kg
+    _kg = KeyGenerator()
 
 class ConnectionError(Exception):
     pass
 
+# @dataclass
+# class IpcMessageId:
+#     time: int
+#     hash: str
+
+#     @classmethod
+#     def Generate(cls):
+#         return cls(time=CurrentTimeMillis(), hash=GenerateId(3))
+
+# class IpcTimeline:
+#     def __init__(self) -> None:
+#         self._latest = 0
+#         self._seen = set()
+
+#     def Add(self, k: IpcMessageId):
+#         if k.time > self._latest:
+#             self._latest = k.time
+#             self._seen.clear()
+#             self._seen.add(k.hash)
+#         if k.time == self._latest:
+#             self._seen.add(k.hash)
+
+#     def __contains__(self, item: Any):
+#         if not isinstance(item, IpcMessageId): return False
+#         if item.time < self._latest: return True
+#         if item.time > self._latest: return False
+#         if item.time == self._latest: return item.hash in self._seen
+
+IPC_HASH_LEN = 16
 @dataclass
 class IpcModel:
+    # message_id: IpcMessageId = field(default_factory=IpcMessageId.Generate, kw_only=True)
     message_id: str = field(default_factory=GenerateId, kw_only=True)
     parse_error: str | None = field(default=None, kw_only=True)
 
     @classmethod
     def Parse(cls, raw: str):
+        if len(raw)<IPC_HASH_LEN: return IpcModel(parse_error="no hash")
         try:
-            d = json.loads(raw)
+            s = raw[:-IPC_HASH_LEN]
+            _, h1 = KeyGenerator.FromStr(s, IPC_HASH_LEN)
+            h2 = raw[-IPC_HASH_LEN:]
+            if h1 != h2: return IpcModel(parse_error=f"corrupted [{h1} != {h2}]")
+            d = json.loads(s)
             return cls(**d)
         except TypeError as e:
             emsg = str(e)
@@ -74,7 +113,7 @@ class IpcModel:
                 emsg = emsg.replace(k, v, 1)
             return IpcModel(parse_error=emsg)
         except json.JSONDecodeError as e:
-            return IpcModel(parse_error="invalid json")
+            return IpcModel(parse_error=f"invalid json [{raw}]")
 
     def IsValid(self):
         return self.parse_error is None
@@ -83,7 +122,13 @@ class IpcModel:
         bl = {"parse_error"}
         should_serialize = lambda k, v: not k.startswith("_") and not callable(v) and k not in bl
         d = {k:v for k, v in self.__dict__.items() if should_serialize(k, v)}
-        return json.dumps(d)
+
+        s = json.dumps(d)
+        _, h = KeyGenerator.FromStr(s, l=IPC_HASH_LEN)
+        return s+h
+    
+    def IsNew(self, timeline: IpcTimeline):
+        pass
 
 @dataclass
 class IpcRequest(IpcModel):
@@ -95,74 +140,60 @@ class IpcResponse(IpcModel):
     status: int
     data: dict = field(default_factory=dict)
 
+# should pre-create fifo for client
 class PipeServer:
-    def __init__(self, io_dir: Path, callback: Callable[[PipeServer, str], None], overwrite: bool = False, id: str = None) -> None:
+    def __init__(self, io_dir: Path, callback: Callable[[PipeServer, str], None], overwrite: bool=False, id: str|None = None) -> None:
         success = False
         try:
             self._id = "main" if id is None else id
             self._server_path = io_dir/f"{self._id}.in"
             self._client_path = io_dir/f"{self._id}.out"
-            if overwrite and self._server_path.exists(): os.remove(self._server_path)
             self._is_closing = False
             self._lock = Condition()
             
-            os.mkfifo(self._server_path)
-            def _open():
-                return os.open(self._server_path, os.O_RDONLY|os.O_NONBLOCK)
-            self._server_channel = _open()
-            # def _reset():
-            #     if self._is_closing: return
-            #     self._server_channel = _open()
-            #     # reader.Reset(self._server_channel)
-            # _reset()
+            for p in [self._server_path, self._client_path]:
+                if p.exists():
+                    if overwrite:
+                        os.remove(p)
+                        os.mkfifo(p)
+                else:
+                    os.mkfifo(p)
+
+            self._server_channel = os.open(self._server_path, os.O_RDONLY|os.O_NONBLOCK)
             def _on_close(x):
                 with self._lock:
                     self._is_closing=True
             self.reader = NonBlockingReader(self._server_channel, on_close=_on_close)
             self.reader.RegisterCallback(lambda x: callback(self, RemoveTrailingNewline(x.decode())))
-            
-            self._client_channel: int|None = None
-            self._buffer: list[str] = []
-            def prep_channel():
-                if not self._client_path.exists(): 
-                    if self._client_channel is not None:
-                        os.close(self._client_channel)
-                        self._client_channel = None
-                    return False
-                if self._client_channel is None:
-                    try:
-                        self._client_channel = os.open(self._client_path, os.O_WRONLY)
-                    except FileNotFoundError: # race conditioned
-                        return False
-                return True
 
+            self._client_channel: int|None = None
+            self._buffer = deque()
             def try_send():
-                if not prep_channel(): return
-                retries = 2
-                while len(self._buffer) > 0 and retries > 0:
-                    msg = self._buffer.pop(0)
+                while len(self._buffer)>0:
+                    with self._lock:
+                        if self._is_closing: return
+                    msg = self._buffer[0]
                     try:
-                        if self._client_channel is None: return
+                        if self._client_channel is None:
+                            self._client_channel = os.open(self._client_path, os.O_WRONLY|os.O_NONBLOCK)
                         os.write(self._client_channel, (msg+"\n").encode())
+                        self._buffer.popleft()
                     except OSError:
-                        self._buffer.insert(0, msg)
-                        # the channel is likely pointing to the previous client
-                        # which is now closed, so we need to get a new fd for pipe
                         self._client_channel = None
-                        prep_channel()
-                        retries -= 1
-            
+                        with self._lock:
+                            if self._is_closing: return
+                            self._lock.wait(0.1)
+                        return
             def sender_process():
                 while True:
                     with self._lock:
                         if self._is_closing: break
                         if len(self._buffer) == 0:
-                            self._lock.wait(1)
+                            self._lock.wait(10)
                         else:
                             try_send()
             self._sender = Thread(target=sender_process)
             self._sender.start()
-
             success = True
         finally:
             if not success: self.Dispose()
@@ -177,9 +208,10 @@ class PipeServer:
 
     def Dispose(self):
         def _try_close(fd):
+            if fd is None: return
             try:
                 os.close(fd)
-            except OSError:
+            except (OSError, TypeError):
                 pass
         try:
             with self._lock:
@@ -187,11 +219,17 @@ class PipeServer:
                 self._lock.notify_all()
             self.reader.Dispose()
             _try_close(self._server_channel)
+            _try_close(self._client_channel)
             self._sender.join()
         except AttributeError:
             pass
         finally:
-            if self._server_path.exists(): os.remove(self._server_path)
+            for p in [self._client_path, self._server_path]:
+                if not p.exists(): continue
+                try:
+                    os.remove(p)
+                except FileNotFoundError:
+                    pass # race conditioned between check and os.remove probably
 
     def __enter__(self):
         return self
@@ -200,7 +238,7 @@ class PipeServer:
         return self.Dispose()
 
 class PipeClient:
-    def __init__(self, server_pipe: Path, timeout: int|float = 60) -> None:
+    def __init__(self, server_pipe: Path, connection_key: str|None=None, on_push: Callable[[PipeClient, IpcResponse], None]|None = None) -> None:
         success = False
         try:
             self._id = server_pipe.stem
@@ -210,105 +248,125 @@ class PipeClient:
             self._server_channel=-1
             self._lock = Condition()
             self._closed = False
+            self._connection_key = connection_key
 
-            start = CurrentTimeMillis()
+            def _safe_do(f):
+                try:
+                    f()
+                    return True
+                except OSError:
+                    return False
+            delays = [2**i for i in range(-4, 0, 1)] # < 1sec
+            for dt in delays:
+                if self._server_path.exists() and self._client_path.exists():
+                    self._server_channel = os.open(self._server_path, os.O_WRONLY|os.O_NONBLOCK)
+                    self._client_channel = os.open(self._client_path, os.O_RDONLY|os.O_NONBLOCK)
+                with self._lock:
+                    if self._closed: return
+                    self._lock.wait(dt)
+            # start = CurrentTimeMillis()
+            # i = -6
+            # while self._client_path.exists() and self._server_path.exists():
+            #     try:
+            #         break
+            #     except FileNotFoundError:
+            #         pass # race condition
+            #     now = CurrentTimeMillis()
+            #     delay = 2**i
+            #     time.sleep(max(min(delay*1000, timeout*1000-(now-start)), 0))
+            #     i = min(0, i+1)
+            #     if CurrentTimeMillis() - start > timeout*1000:
+            #         raise TimeoutError("Failed to connect to server")
+
             def _on_close(reader: NonBlockingReader):
                 with self._lock:
                     self._closed = True
-            while True:
-                if not self._client_path.exists():
-                    try:
-                        os.mkfifo(self._client_path)
-                        break
-                    except FileExistsError:
-                        pass # race condition between processes possible
-                delay = random.random()*0.1
-                time.sleep(delay)
-                if CurrentTimeMillis() - start > timeout*1000:
-                    raise TimeoutError("Failed to connect to server")
-
-            try:
-                self._server_channel = os.open(self._server_path, os.O_WRONLY|os.O_NONBLOCK)
-            except (FileNotFoundError, OSError):
-                raise ConnectionError("server not found")
-            self._client_channel = os.open(self._client_path, os.O_RDONLY|os.O_NONBLOCK)
             self._reader = NonBlockingReader(self._client_channel, on_close=_on_close)
             # self._reader = NonBlockingReader(self._client_channel)
             
-            self._last_message_id: str = None
+            self._last_message_id: str|None = None
             self._last_response: IpcResponse|None = None
             def _on_response(x):
                 res = IpcResponse.Parse(x.decode())
+                if not isinstance(res, IpcResponse): return
+                # the http code analogy breaks here, but close enough
+                # https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/103
+                if res.status == 103 and on_push is not None: on_push(self, res)
                 if res.message_id != self._last_message_id: return
+                # print(res)
                 self._last_response = res
+                with self._lock:
+                    self._lock.notify_all()
             self._reader.RegisterCallback(_on_response)
             success = True
 
             def _keep_alive():
+                success = False
                 while True:
-                    time.sleep(1)
                     with self._lock:
                         if self._closed: return
-                        try:
-                            self.Send(IpcRequest("ping").Serialize())
-                        except:
-                            pass
+                        success = self.Send(IpcRequest(endpoint="ping", data=dict(connection=self._connection_key)).Serialize())
+                        self._lock.wait(1 if success else 0.1)
+
             self._keep_alive_worker = Thread(target=_keep_alive)
             self._keep_alive_worker.start()
         finally:
             if not success: self.Dispose()
 
     def Send(self, msg: str):
-        if self._closed: return
-        os.write(self._server_channel, (msg+"\n").encode())
+        try:
+            os.write(self._server_channel, (msg+"\n").encode())
+        except BrokenPipeError:
+            return False
+        return True
 
     def Transact(self, req: IpcRequest, timeout: int|float|None = 15) -> IpcResponse:
+        closed_res = IpcResponse(500, dict(error="connection closed"))
         self._last_response = None
         self._last_message_id = req.message_id
+        if self._connection_key: req.data["connection"] = self._connection_key
         msg = req.Serialize()
-        self.Send(msg)
         start = CurrentTimeMillis()
+        i, max_i = -3, 4 # 0.125 - 8
         while self._last_response is None:
+            with self._lock:
+                if self._closed:
+                    return closed_res
+                if not self.Send(msg): return closed_res
+                delay = 2**i
+                i = min(i+1, max_i)
+                self._lock.wait(delay)
             if timeout and CurrentTimeMillis() - start > timeout*1000:
                 raise TimeoutError("Failed to receive response")
-            with self._lock:
-                self._lock.wait(0.1)
-                if self._closed:
-                    return IpcResponse(500, dict(error="connection closed"))
         return self._last_response
 
-    def IsOpen(self):
-        return self._client_path.exists()
-
     def Dispose(self):
-        try:
-            self.Send(IpcRequest("disconnect").Serialize())
-        except OSError:
-            pass
-        def _try_close(fd):
-            try:
-                os.close(fd)
-            except OSError:
-                pass
         with self._lock:
             self._closed = True
+            d = dict(connection=self._connection_key) if self._connection_key else {}
+            try:
+                self.Send(IpcRequest(endpoint="disconnect", data=d).Serialize())
+            except OSError:
+                pass
+            self._lock.notify_all()
+
         try:
-            self._keep_alive_worker.join(3)
+            if hasattr(self, "_keep_alive_worker"):
+                self._keep_alive_worker.join(3)
         except:
             pass # doesn't really matter
-        try:
-            self._reader.Dispose()
-            if self._server_channel>=0: _try_close(self._server_channel)
-            _try_close(self._client_channel)
-        except AttributeError:
-            pass
-        finally:
-            if self._client_path.exists():
-                try:
-                    os.remove(self._client_path)
-                except FileNotFoundError:
-                    pass # race conditioned between check and os.remove probably
 
+        def _safe_do(f):
+            try:
+                f()
+            except (OSError, AttributeError):
+                pass
+        for f in [
+            lambda: self._reader.Dispose(),
+            lambda: os.close(self._server_channel),
+            lambda: os.close(self._server_channel),
+        ]:
+            _safe_do(f)
     def __enter__(self):
         return self
     
@@ -346,7 +404,10 @@ class NonBlockingReader:
                     if self.IsClosed():
                         return []
                     chunk = os.read(fd, 4096)
-                    if len(chunk) == 0: continue
+                    if len(chunk) == 0:
+                        with self._lock:
+                            self._lock.wait(0.1)
+                        continue
                     _buffer.append(chunk)
                     changed = True
                     if self._sep in chunk: break # line complete
@@ -435,7 +496,8 @@ class NonBlockingReader:
                     pass
                 #     Log.Error(f"NonBlockingReader.Dispose() fd:{fd} [{e}]")
         finally:
-            _readers.remove(self)
+            if self in _readers:
+                _readers.remove(self)
 
     def __enter__(self):
         return self
@@ -481,6 +543,7 @@ class TerminalProcess:
         self._out_reader = NonBlockingReader(out_master)
 
     def Send(self, payload: bytes):
+        if self._closed: raise ConnectionError("terminal disposed")
         stdin = self._in
         with self._in:
             stdin.IO.write(payload)
@@ -493,9 +556,11 @@ class TerminalProcess:
         self.Send(bytes('%s\n' % (msg), encoding=self.ENCODING))
 
     def RegisterOnOut(self, callback: Callable[[bytes], None]):
+        if self._closed: raise ConnectionError("terminal disposed")
         self._out_reader.RegisterCallback(callback)
 
     def RegisterOnErr(self, callback: Callable[[bytes], None]):
+        if self._closed: raise ConnectionError("terminal disposed")
         self._err_reader.RegisterCallback(callback)
 
     def RemoveOnOut(self, callback: Callable[[bytes], None]):
@@ -519,7 +584,9 @@ class TerminalProcess:
             try:
                 os.close(fd)
             except OSError as e:
-                Log.Error(f"TerminalProcess.Dispose() fd:{i} [{e}]")
+                if "Bad file descriptor" not in e.args:
+                    Log.Error(f"TerminalProcess.Dispose() fd:{i} [{e}]")
+        self._closed = True
 
 @dataclass
 class ShellResult:
@@ -625,69 +692,61 @@ class LiveShell:
         return ShellResult(out=_out, err=_err)
 
 class RemoteShell:
-    def __init__(self, server_path: Path, timeout=60) -> None:
-        ws = server_path.parent
-        start = CurrentTimeMillis()
-        while True:
-            with PipeClient(server_path) as p:
-                remaining_time = max(1, timeout-(CurrentTimeMillis()-start))
-                res = p.Transact(IpcRequest(endpoint="connect"), timeout=remaining_time)
-            if res.status==429: # too many requests
-                time.sleep(2)
-                if (CurrentTimeMillis()-start)*1000>timeout:
-                    raise ConnectionError(f"timeout while waiting due to 429: too many requests")
-            else:
-                break
-        if res.status != 200:
-            raise ConnectionError(f"server connect error: [{res.data.get('error')}]")
-
-        channel_path = Path(res.data.get("path"))
-        # Log.Info(f"connecting as [{channel_path.stem}]")
-        if channel_path is None:
-            raise ConnectionError("server didn't give channel path")
-        channel_path = ws/channel_path
-        out_cb, err_cb = [], []
-        MARK = f"done_{GenerateId()}"
+    def __init__(self, server_path: Path, timeout=15) -> None:
+        self._out_callbacks=[] # care to not reassign these
+        self._err_callbacks=[] # care to not reassign these
+        self._MARK=f"done_{GenerateId()}"
         self._done_stack = set()
-        def _make_callback(callback_list: list):
-            def _handler(channel: PipeServer, raw: str):
-                if raw.startswith(MARK):
-                    _, k = raw.split(".")
-                    if k in self._done_stack: self._done_stack.remove(k)
-                    return
-                for f in callback_list:
-                    f(raw)
-            return _handler
+        self._server_path, self._connect_timeout = server_path, timeout
+        self._channel = self._reset()
 
-        k = channel_path.stem
-        live_out = PipeServer(ws, _make_callback(out_cb), id=k+".bash_out")
-        live_err = PipeServer(ws, _make_callback(err_cb), id=k+".bash_err")
-        channel = PipeClient(channel_path)
+    def _reset(self):
+        def _on_push(con: PipeClient, msg: IpcResponse):
+            stream = msg.data.get("stream")
+            if stream not in {"out", "err"}: return
+            match stream:
+                case "out":
+                    cb_list = self._out_callbacks
+                case "err":
+                    cb_list = self._err_callbacks
+            content = msg.data.get("content", "")
+            if content.startswith(self._MARK):
+                # was echo ping from transaction
+                _, k = content.split(".")
+                if k in self._done_stack: self._done_stack.remove(k)
+                return
+            else:
+                # was output from terminal
+                for f in cb_list:
+                    f(content)
 
-        err = None
-        for stream, path in [
-            ("out", live_out._server_path.name),
-            ("err", live_err._server_path.name),
-        ]:
-            res = channel.Transact(IpcRequest(endpoint="register_bash_listener", data=dict(
-                stream=stream,
-                channel=str(path),
-            )))
-            if res.status != 200:
-                err = f"failed to connect [{stream}] listener for shell [{res.data.get('error')}]"
-                break
-        if err:
-            live_out.Dispose()
-            live_err.Dispose()
-            channel.Dispose()
-            raise ConnectionError(err)
-        
-        self._err_pipe=live_err
-        self._out_pipe=live_out
-        self._channel=channel
-        self._out_callbacks=out_cb # care to not reassign these
-        self._err_callbacks=err_cb # care to not reassign these
-        self._MARK=MARK
+        ws = self._server_path.parent
+        start = CurrentTimeMillis()
+        req_con = IpcRequest(endpoint="connect") # send the same message id
+        with PipeClient(self._server_path) as p:
+            while True:
+                remaining_time = max(1, self._connect_timeout-(CurrentTimeMillis()-start))
+                res = p.Transact(req_con, timeout=remaining_time)
+                if res.status==429: # too many requests
+                    dt = random.random()*1
+                    time.sleep(dt)
+                    if (CurrentTimeMillis()-start)*1000>self._connect_timeout:
+                        raise ConnectionError(f"timeout while waiting due to 429: too many requests")
+                    continue
+                if res.status != 200:
+                    raise ConnectionError(f"server connect error: [{res.data.get('error')}]")
+                _channel_path = res.data.get("path")
+                # Log.Info(f"connecting as [{channel_path.stem}]")
+                if _channel_path is None:
+                    raise ConnectionError("server didn't give channel path")
+                channel_path = Path(ws/_channel_path)
+                key = res.data.get("connection")
+                if key is None:
+                    raise ConnectionError("server didn't give connection key")
+                # attempt connect before disposing initial starter client
+                _channel = PipeClient(channel_path, key, _on_push)
+                break # sucess
+        return _channel
 
     def __enter__(self):
         return self
@@ -708,11 +767,16 @@ class RemoteShell:
         if callback in self._err_callbacks: self._err_callbacks.remove(callback)
 
     def _send(self, cmd):
-        res = self._channel.Transact(IpcRequest(endpoint="bash", data={"script": cmd}))
-        if res.status not in {204, 200}:
-            return res.data.get("error")
-        else:
-            return
+        while True:
+            res = self._channel.Transact(IpcRequest(endpoint="bash", data={"script": cmd}))
+            if res.status in {401}:
+                self._channel.Dispose()
+                self._channel = self._reset()
+                continue
+            if res.status in {204, 200}:
+                return 
+            else:
+                return  res.data.get("error")
 
     def ExecAsync(self, cmd: str):
         err = self._send(RemoveLeadingIndent(cmd))
@@ -721,7 +785,7 @@ class RemoteShell:
         if err: raise ConnectionError(err)
         return _hash
 
-    def AwaitDone(self, timeout: int|float=15, _hash: str=None):
+    def AwaitDone(self, timeout: int|float|None=15, _hash: str|None=None):
         def _await_done(await_timeout, delta):
             start = CurrentTimeMillis()
             while True:
@@ -766,6 +830,4 @@ class RemoteShell:
         return ShellResult(out=_out, err=_err)
 
     def Dispose(self):
-        self._err_pipe.Dispose()
-        self._out_pipe.Dispose()
         self._channel.Dispose()

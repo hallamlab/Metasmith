@@ -48,6 +48,13 @@ def StageAndRunTransform(workspace: Path, step_index: int):
     assert server_path.exists(), f"server not started [{server_path}]"
 
     Log.Info("connecting to relay")
+    Log.Info(f"loading agent config")
+    agent = Agent.Load(AgentPaths.to_definition())
+    agent_home = str(agent.home.GetPath())
+    Log.Info(f"agent home [{agent_home}]")
+    def _shorten_home(p: str):
+        return p.replace(agent_home, "{agent_home}")
+    
     with RemoteShell(server_path) as shell:
         _paused = False
         class PausedStdOut:
@@ -65,13 +72,6 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             return _listener
         shell.RegisterOnOut(_make_listener(Log.Info))
         shell.RegisterOnErr(_make_listener(Log.Error))
-        
-        Log.Info(f"loading agent config")
-        agent = Agent.Load(AgentPaths.to_definition())
-        agent_home = str(agent.home.GetPath())
-        Log.Info(f"agent home [{agent_home}]")
-        def _shorten_home(p: str):
-            return p.replace(agent_home, "{agent_home}")
 
         with PausedStdOut():
             res = shell.Exec("pwd -P", history=True)

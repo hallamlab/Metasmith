@@ -34,7 +34,7 @@ case $1 in
             --mount type=bind,source="$HERE",target="/ws"\
             --workdir /ws \
             $DOCKER_IMAGE \
-            pyinstaller relay.py --onefile --bootloader-ignore-signals 
+            pyinstaller msm_relay.py --onefile --bootloader-ignore-signals 
     ;;
     -t)
         docker run -it --rm \
