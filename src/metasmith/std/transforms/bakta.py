@@ -25,12 +25,9 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-                bakta \
+                MPLBACKEND=Agg bakta \
                     --db {db_path.container} \
                     {cpus_string} \
-                    --skip-cds \
-                    --regions {features_path.container} \
-                    --proteins {cds_path.container} \
                     --prefix bakta \
                     --output {out_path.container} \
                     {assembly_path.container}

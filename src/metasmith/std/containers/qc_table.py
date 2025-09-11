@@ -49,7 +49,7 @@ cazy_hitrate = cazy_annotation_entries / num_orfs
 
 
 # Generate TSV output
-output_header = "assembly_length\tcds_length\tpercent_genes\tnum_orfs\tbusco_hits\tbusco_hitrate\tcazy_hits\tcazy_hitrate"
+output_header = "assembly_length\tcds_length\tpercent_genes\tnum_orfs\tbusco_hits\tbusco_hitrate\tcazy_hits\tcazy_hitrate\n"
 output_content = f"{assembly_len}\t{cds_len}\t{percent_genes}\t{num_orfs}\t{busco_annotation_entries}\t{busco_hitrate}\t{cazy_annotation_entries}\t{cazy_hitrate}"
 with open(output_file, 'w') as out:
     out.writelines([output_header, output_content])
