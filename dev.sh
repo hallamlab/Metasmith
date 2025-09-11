@@ -106,12 +106,10 @@ case $1 in
 
         # build the docker container locally
         export DOCKER_BUILDKIT=1
-        # --network=host because I ran into a network error
         docker build \
             --build-arg="CONDA_ENV=${NAME}_env" \
             --build-arg="PACKAGE=${NAME}" \
             --build-arg="VERSION=${VER}" \
-            --network=host \
             -t $DOCKER_IMAGE:$VER .
     ;;
     -bs) # apptainer image *from docker*

@@ -18,6 +18,8 @@ ADD ./lib/tini /tini
 # singularity doesn't use the -s flag, and that causes warnings.
 # -g kills process group on ctrl+C
 ENTRYPOINT ["/tini", "-s", "-g", "--"]
+RUN apt-get update && apt-get install -y \
+    tk tcllib
 
 # https://mamba.readthedocs.io/en/latest/user_guide/mamba.html
 # create conda env from yaml config
@@ -25,13 +27,13 @@ COPY ./envs/base.yml /opt/base.yml
 # use an external cache for solved environments and install packages
 RUN --mount=type=cache,target=/opt/conda/pkgs \
     mamba env create -n ${CONDA_ENV} -f /opt/base.yml \
-    && mamba clean --all --yes \
-    && rm -rf /opt/conda/pkgs/cache
+    && mamba clean --all --yes
+
 # add bins to PATH so that the env appears "active"
 ENV PATH /opt/conda/envs/${CONDA_ENV}/bin:/app:/opt/globusconnectpersonal-latest:$PATH
 
 # globus
-RUN mamba install -y -n ${CONDA_ENV} -c conda-forge tk
+# RUN mamba install -y -n ${CONDA_ENV} -c conda-forge tk
 
 # install src
 COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
@@ -47,10 +49,3 @@ WORKDIR /workspace
 COPY ./metasmith_starter.ipynb /workspace/metasmith_starter.ipynb
 RUN touch /workspace/empty
 RUN pip install jupyterlab jupyterlab-lsp python-lsp-server[all]
-
-CMD ["bash","-lc","jupyter lab \
-    --ip=127.0.0.1 \
-    --port=8080 \
-    --allow-root \
-    --no-browser \
-    --LabApp.default_url='/lab/tree/metasmith_starter.ipynb'"]
