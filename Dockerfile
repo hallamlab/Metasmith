@@ -18,6 +18,8 @@ ADD ./lib/tini /tini
 # singularity doesn't use the -s flag, and that causes warnings.
 # -g kills process group on ctrl+C
 ENTRYPOINT ["/tini", "-s", "-g", "--"]
+
+# globus
 RUN apt-get update && apt-get install -y \
     tk tcllib
 
@@ -31,10 +33,6 @@ RUN --mount=type=cache,target=/opt/conda/pkgs \
 
 # add bins to PATH so that the env appears "active"
 ENV PATH /opt/conda/envs/${CONDA_ENV}/bin:/app:/opt/globusconnectpersonal-latest:$PATH
-
-# globus
-# RUN mamba install -y -n ${CONDA_ENV} -c conda-forge tk
-
 # install src
 COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
 RUN pip install /opt/metasmith.tar.gz
