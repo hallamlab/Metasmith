@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import random
 
-from .coms.ipc import CurrentTimeMillis, RemoteShell, RemoveTrailingNewline, GenerateId, \
+from .coms.ipc import CurrentTimeMillis, RemoteShell, RemoveTrailingNewline, GenerateId, ResetGenerator, \
     TerminalProcess, PipeServer, PipeClient, IpcRequest, IpcResponse, ConnectionError
 from .logging import Log
 
@@ -49,6 +49,12 @@ def RunServer(workspace: Path, channels: int):
     if status == SERVER_STATUS.ALIVE:
         Log.Error(f"relay server already running in [{workspace}]")
         sys.exit(0)
+    for f in workspace.iterdir():
+        if f.name.endswith("lock"): f.unlink()
+    ResetGenerator()
+    session_key = GenerateId(24)
+    session_lock = workspace/f"session-{session_key}.lock"
+    session_lock.touch()
     Log.AddLogFile(workspace/"main.log")
     Log.SetStdout(False)
     Log.Info("")
@@ -58,6 +64,7 @@ def RunServer(workspace: Path, channels: int):
     def shutdown(code: int):
         for f in shutdown_callbacks:
             f()
+        session_lock.unlink(missing_ok=True)
         Log.Info(f"exit | pid: [{os.getpid()}]")
         sys.exit(code)
     def _on_shutdown(signum, frame):
@@ -78,16 +85,43 @@ def RunServer(workspace: Path, channels: int):
         if len(todo)==0: return
         Log.Info(f"MONITOR: removing stale connections at [{workspace}]")
         for p in todo:
-            if not p.is_dir(): p.unlink()
+            if not p.is_dir(): p.unlink(missing_ok=True)
+
+    def _clean_fd(log_prefix=""):
+        to_del = []
+        open_fd = list(Path(f"/proc/{os.getpid()}/fd").iterdir())
+        for f in open_fd:
+            if not Path(os.path.realpath(f)).name.endswith("(deleted)"): to_del.append(f)
+        if len(to_del) < 128: return
+        Log.Info(f"{log_prefix}attempting to remove [{len(to_del)}] stale fd of [{len(open_fd)}]")
+        for f in to_del:
+            try:
+                fd = int(f.name)
+                os.close(fd)
+            except:
+                pass
+        time.sleep(1) # not sure if this is needed
+        open_fd = list(Path(f"/proc/{os.getpid()}/fd").iterdir())
+        Log.Info(f"{log_prefix}[{len(open_fd)}] fd remain")
+
     while True: # monitor
         try:
-            status = _check_status(workspace)
+            if not session_lock.exists():
+                shutdown(0)
+                return
+            _clean_fd("MONITOR: ")
+            if status is None: status = _check_status(workspace)
             if status == SERVER_STATUS.STALE:
-                _clean_stale(workspace)
                 if child_pid is not None:
                     Log.Info(f"MONITOR: sending kill signal to [{child_pid}]")
-                    os.kill(pid, signal.SIGTERM)
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except OSError as e:
+                        Log.Info(f"MONITOR: [{e}]")
                     child_pid = None
+                    for i in range(3):
+                        if not (workspace/"main.in").exists(): break
+                        time.sleep(0.5) # wait for child to exit
             if status != SERVER_STATUS.ALIVE:
                 _clean_stale(workspace)
                 Log.Info(f"MONITOR: starting new server process at [{workspace}]")
@@ -106,15 +140,19 @@ def RunServer(workspace: Path, channels: int):
                 os.close(_rc)
                 os.write(_wp, f"{os.getpid()}".encode())
                 os.close(_wp)
+            status = None
             time.sleep(5)
         except OSError as e:
             Log.Error(f"fork failed: {e.errno} ({e.strerror})")
+            time.sleep(15)
+            _clean_fd("MONITOR: ")
             continue
         except KeyboardInterrupt:
             Log.Info(f"MONITOR: exit [{child_pid}]")
             return
         
     # forked child (instance of server)
+    ResetGenerator()
     os.write(_wc, f"{os.getpid()}".encode())
     os.close(_wc)
     monitor_pid = int(os.read(_rp, 16))
@@ -171,6 +209,8 @@ def RunServer(workspace: Path, channels: int):
                 monitor_pid=monitor_pid,
                 relay_pid=os.getpid(),
                 workspace=str(workspace),
+                open_file_discriptors=len(list(Path(f"/proc/{os.getpid()}/fd").iterdir())),
+                lock=str(session_lock),
             )
 
         def ping(self, req: IpcRequest):
@@ -240,12 +280,12 @@ def RunServer(workspace: Path, channels: int):
                 del connections[client.key]
                 client.key = ""
 
-    
     server_channels: list[Client] = []
     for _ in range(channels):
         try:
             server_channels.append(Client())
         except OSError as e:
+            Log.Error(e)
             if "out of pty devices" not in e.args:
                 raise e
             shutdown(1)
@@ -344,6 +384,7 @@ def RunServer(workspace: Path, channels: int):
                     client.key = ""
                 # Log.Debug("="*12)
                 if not running: break
+                if not session_lock.exists(): break
                 try:
                     reaper_lock.wait(0.1 if len(connections)==len(server_channels) else GRACE)
                 except KeyboardInterrupt:

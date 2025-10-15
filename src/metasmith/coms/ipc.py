@@ -126,9 +126,6 @@ class IpcModel:
         s = json.dumps(d)
         _, h = KeyGenerator.FromStr(s, l=IPC_HASH_LEN)
         return s+h
-    
-    def IsNew(self, timeline: IpcTimeline):
-        pass
 
 @dataclass
 class IpcRequest(IpcModel):
@@ -250,20 +247,18 @@ class PipeClient:
             self._closed = False
             self._connection_key = connection_key
 
-            def _safe_do(f):
-                try:
-                    f()
-                    return True
-                except OSError:
-                    return False
             delays = [2**i for i in range(-4, 0, 1)] # < 1sec
+            success = False
             for dt in delays:
                 if self._server_path.exists() and self._client_path.exists():
                     self._server_channel = os.open(self._server_path, os.O_WRONLY|os.O_NONBLOCK)
                     self._client_channel = os.open(self._client_path, os.O_RDONLY|os.O_NONBLOCK)
+                    success = True
+                    break
                 with self._lock:
                     if self._closed: return
                     self._lock.wait(dt)
+            if not success: raise ConnectionError("failed to open channels")
             # start = CurrentTimeMillis()
             # i = -6
             # while self._client_path.exists() and self._server_path.exists():
@@ -486,8 +481,12 @@ class NonBlockingReader:
                 
                 try:
                     self._worker.join(1)
+                    break
                 except RuntimeError as e:
                     Log.Error(f"NonBlockingReader.Dispose() [{e}]")
+                    break
+                except TimeoutError:
+                    continue # try again
 
             for fd in [self._notify_in, self._notify_out]:
                 try:

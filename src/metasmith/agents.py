@@ -389,7 +389,7 @@ class Agent:
             Log.Info(f"sending metadata for workflow [{task._key}]")
             task.SaveAs(self.home.ReplacePathWith(remote_path))
             Log.Info(f"staging")
-            sh_remote.Exec(f"./msm api stage_workflow -a task_key={task._key}")
+            sh_remote.Exec(f"./msm api stage_workflow -a task_key={task._key}", timeout=None)
 
     def RunWorkflow(self, task: WorkflowTask|str):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
