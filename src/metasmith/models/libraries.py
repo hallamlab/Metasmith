@@ -216,8 +216,9 @@ class DataInstanceLibrary:
                 assert location.is_dir(), f"[{location}] must be a directory"
             self.location = location
         if include_std:
-            from ..std.data_types import StdTypes
-            self.AddTypeLibrary("std", StdTypes())
+            _here = Path(__file__).parent
+            std_types = DataTypeLibrary.Load(_here/"../std/dtypes.yml")
+            self.AddTypeLibrary("std", std_types)
 
     def AddTypeLibrary(self, namespace: str, lib: DataTypeLibrary|Source, on_exist: str="clear"):
         assert on_exist in {"skip", "error", "clear"}
@@ -287,6 +288,7 @@ class DataInstanceLibrary:
         @items: list of (source, destination, datatype)
         """
         assert transfer_method in {None, SourceType.DIRECT, SourceType.SYMLINK}
+        if transfer_method is None: Log.Warn("items will be added, but not explicitly transferred")
         assert on_exist in {"skip", "error", "clear", "update"}
         mover = Logistics()
         items = [(Path(src), Path(dest), dtype) for src, dest, dtype in items]
@@ -321,14 +323,16 @@ class DataInstanceLibrary:
         if transfer_method is not None:
             res = mover.ExecuteTransfers()
             completed |= {str(Path(s.address)) for s, d in res.completed}
-            for src, dest, dtype in items:
-                dest = Path(dest)
-                k = str(src)
+
+        for src, dest, dtype in items:
+            dest = Path(dest)
+            k = str(src)
+            if transfer_method is not None:
                 if k not in completed:
                     Log.Error(f"failed to add [{src}]")
                     continue
-                self.manifest[dest] = dtype
                 report.append(dest)
+            self.manifest[dest] = dtype
         return report
 
     def AddParentsTo(self, path: Path|str, parents: list[DataInstance]):
@@ -597,8 +601,8 @@ class TransformInstance:
             sys.path = original_path_var
 
 class TransformInstanceLibrary(DataInstanceLibrary):
-    def __init__(self, location: Path|str|DataInstanceLibrary) -> None:
-        super().__init__(location)
+    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool=True) -> None:
+        super().__init__(location, include_std=True)
         if "transforms" not in self.types:
             transform_types = DataTypeLibrary(types=dict(
                 transform=Endpoint({"metasmith", "transform"}),

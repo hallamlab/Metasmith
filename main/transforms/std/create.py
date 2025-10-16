@@ -14,7 +14,10 @@ def verify_and_sync(src: Path, dest: Path, items: list[tuple]):
     for f in src.iterdir():
         items_actual.add(f.name)
     items_planned = {dest for src, dest, tp in items}
-    assert items_actual == items_planned
+    missing = items_planned-items_actual
+    extra = items_actual-items_planned
+    assert len(missing)==0, missing
+    assert len(extra)==0, extra
     os.system(f"rsync -acP {src}/ {dest}")
     staged = set()
     for x in dest.iterdir():
@@ -23,12 +26,15 @@ def verify_and_sync(src: Path, dest: Path, items: list[tuple]):
     junk = staged-items_actual
     if len(junk)>0:
         for x in junk:
+            if x in {"__pycache__"}: continue
             print(f"cleaning [{x}]")
             os.system(f"rm -r {dest/x}")
 
 # -----------------------
 # std data types
+print(f"data types")
 dtypes = DataTypeLibrary.Load(HERE/"dtypes.yml")
+os.system(f"rsync -acP {HERE/'dtypes.yml'} {OUTPUT}")
 
 # -----------------------
 # containers
@@ -39,7 +45,7 @@ items: list[Any] = [
     (HERE/f"containers/{k}", k, v['type'])
     for k, v in d["manifest"].items()
 ]
-containers = DataInstanceLibrary(OUTPUT/"containers.xgdb")
+containers = DataInstanceLibrary(OUTPUT/"containers.xgdb", include_std=False)
 containers.AddTypeLibrary("std", dtypes)
 containers.Add(items, transfer_method=None)
 containers.Save()
@@ -48,7 +54,7 @@ verify_and_sync(HERE/"containers", containers.location, items)
 # -----------------------
 # transforms
 print(f"transforms")
-transforms = TransformInstanceLibrary(OUTPUT/"transforms.xgdb")
+transforms = TransformInstanceLibrary(OUTPUT/"transforms.xgdb", include_std=False)
 transforms.AddTypeLibrary("std", dtypes)
 def check_protocol_file(p: Path):
     assert p.is_file() and p.suffix == ".py"

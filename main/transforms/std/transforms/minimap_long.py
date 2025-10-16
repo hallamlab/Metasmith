@@ -3,13 +3,13 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-reads           = model.AddRequirement(lib.GetType("std::short_reads"))
-assembly        = model.AddRequirement(lib.GetType("std::long_reads_assembly"))
+reads           = model.AddRequirement(lib.GetType("std::long_reads"))
+assembly        = model.AddRequirement(lib.GetType("std::assembly"))
 image_minimap2  = model.AddRequirement(lib.GetType("std::oci_image_minimap2"))
 image_samtools  = model.AddRequirement(lib.GetType("std::oci_image_samtools"))
 out_sam         = model.AddProduct(lib.GetType("std::sequence_alignment_map"))
-out_bam         = model.AddProduct(lib.GetType("std::binary_alignment_map_hybrid"))
-out_bam_csi     = model.AddProduct(lib.GetType("std::binary_alignment_map_csi_hybrid"))
+out_bam         = model.AddProduct(lib.GetType("std::binary_alignment_map"))
+out_bam_csi     = model.AddProduct(lib.GetType("std::binary_alignment_map_csi"))
 
 def protocol(context: ExecutionContext):
     reads_path     = context.Get(reads)

@@ -26,3 +26,5 @@ __pycache__
 .pixi
 pixi.lock
 pixi.toml
+
+/src/metasmith/std/dtypes.yml

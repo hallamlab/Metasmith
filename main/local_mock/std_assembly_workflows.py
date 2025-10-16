@@ -1,32 +1,49 @@
 from pathlib import Path
+import os
 from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
 
 dtypes, containers, transforms = Std()
 
 base_file = Path(__file__)
-base_dir = base_file.parent
+base_dir = base_file.parent/"cache"
 
 
-path_to_agent_home = Path("./std_home").resolve()
+path_to_agent_home = (base_dir/"local_home").resolve()
 smith = Agent(
     home = Source.FromLocal(path_to_agent_home),
 )
-smith.Deploy()
-
+# smith.Deploy()
 
 inputs = DataInstanceLibrary("std_assembly_data.xgdb")
 inputs.Add(
     items = [
         (base_dir / "empty", "emptyshort", "std::short_reads_accession"),
+        (base_dir / "empty", "emptylong", "std::long_reads_accession"),
+        # (base_dir / "empty", "emptyasm", "std::assembly"),
     ]
 )
 
 task = smith.GenerateWorkflow(
     given=[containers, inputs],
     transforms=[transforms],
-    targets=[dtypes["functional_annotations"]]
+    targets=[
+        # dtypes["short_reads_assembly"],
+        # dtypes["long_reads_assembly"],
+        # dtypes["hybrid_assembly"],
+        dtypes["bakta_annotations"].WithLineage([dtypes["hybrid_assembly"]]),
+        # dtypes["functional_annotations"].WithLineage([dtypes["long_reads_assembly"]]),
+        # dtypes["functional_annotations"].WithLineage([dtypes["hybrid_assembly"]]),
+        # dtypes["per_contig_coverage"].WithLineage([dtypes["short_reads_assembly"]]),
+    ],
+    max_refine=256,
 )
-task.RenderDAG(base_dir / "dag", font="IBM Plex Mono", hide_images=True)
+task.plans[0].RenderDAG(base_dir / f"dag_{base_file.stem}", font="IBM Plex Mono", hide_images=True)
+
+for s in task.plans[0].steps:
+    print(s.order, s.transform.name)
+    for u in s.uses:
+        print(f"  {u.dtype.key} {u.dtype_name}")
+    print()
 
 # output_tests = [
 #     "long_reads_assembly",
