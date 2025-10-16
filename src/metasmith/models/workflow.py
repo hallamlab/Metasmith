@@ -379,14 +379,28 @@ class WorkflowPlan:
             f.write(wf_contents)
 
     def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
+        import logging
+        _log_level = logging.getLogger().level
+        logging.basicConfig(level=logging.ERROR, force=True)
         import graphviz
+        logging.basicConfig(level=_log_level, force=True)
+
+        todo = [(graphviz, 0)]
+        while len(todo)>0:
+            m, depth = todo.pop()
+            if hasattr(m, "log") and hasattr(m.log, "setLevel"):
+                m.log.setLevel(logging.ERROR)
+            if depth >= 2: continue
+            if hasattr(m, "__dict__"):
+                todo += [(x, depth+1) for x in m.__dict__.values()]
+
         class NodeType(Enum):
             TRANSFORM = 1
             DATA      = 2
         def _render_node(type: NodeType, name: str) -> str:
             match type:
                 case NodeType.TRANSFORM:
-                    return f'"{name}" [shape="oval"]'
+                    return f'"{name}" [shape="oval", style="filled", fillcolor="#CCCCCC"]'
                 case NodeType.DATA:
                     return f'"{name}" [shape="box"]'
 
@@ -413,7 +427,7 @@ class WorkflowPlan:
         
         dag_str = _as_DAG(font=font, hide_images=hide_images)
         src = graphviz.Source(dag_str, filename=path_base, format=format)
-        src.render(cleanup=True)
+        src.render(cleanup=True, quiet=True)
 
 @dataclass
 class WorkflowTask:
