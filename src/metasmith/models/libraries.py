@@ -282,11 +282,11 @@ class DataInstanceLibrary:
             else:
                 yield k, v, Endpoint(proto.properties, {p.dtype for p in self.parents[k]})
 
-    def Add(self, items: list[tuple[Path|str, Path|str, str]], method: SourceType=SourceType.DIRECT, on_exist: str="skip"):
+    def Add(self, items: list[tuple[Path|str, Path|str, str]], transfer_method: SourceType|None=SourceType.DIRECT, on_exist: str="skip"):
         """
         @items: list of (source, destination, datatype)
         """
-        assert method in {SourceType.DIRECT, SourceType.SYMLINK}
+        assert transfer_method in {None, SourceType.DIRECT, SourceType.SYMLINK}
         assert on_exist in {"skip", "error", "clear", "update"}
         mover = Logistics()
         items = [(Path(src), Path(dest), dtype) for src, dest, dtype in items]
@@ -311,21 +311,24 @@ class DataInstanceLibrary:
                     shutil.rmtree(dest_path)
                 elif on_exist == "update":
                     pass # default of mover
-            mover.QueueTransfer(
-                src = Source.FromLocal(src),
-                dest = Source(address=dest_path, type=method),
-            )
-        res = mover.ExecuteTransfers()
-        completed |= {str(Path(s.address)) for s, d in res.completed}
+            if transfer_method is not None:
+                mover.QueueTransfer(
+                    src = Source.FromLocal(src),
+                    dest = Source(address=str(dest_path), type=transfer_method),
+                )
+
         report: list[Path] = []
-        for src, dest, dtype in items:
-            dest = Path(dest)
-            k = str(src)
-            if k not in completed:
-                Log.Error(f"failed to add [{src}]")
-                continue
-            self.manifest[dest] = dtype
-            report.append(dest)
+        if transfer_method is not None:
+            res = mover.ExecuteTransfers()
+            completed |= {str(Path(s.address)) for s, d in res.completed}
+            for src, dest, dtype in items:
+                dest = Path(dest)
+                k = str(src)
+                if k not in completed:
+                    Log.Error(f"failed to add [{src}]")
+                    continue
+                self.manifest[dest] = dtype
+                report.append(dest)
         return report
 
     def AddParentsTo(self, path: Path|str, parents: list[DataInstance]):

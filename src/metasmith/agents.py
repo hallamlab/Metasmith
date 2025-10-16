@@ -621,7 +621,7 @@ def RunWorkflow(key: str, log_dir: Path):
         parent_map[rel_p] = target.used_givens
     for _namespace in used_type_libs:
         output.AddTypeLibrary(_namespace, type_libs[_namespace])
-    output.Add(items=to_add, method=SourceType.DIRECT, on_exist="skip")
+    output.Add(items=to_add, transfer_method=SourceType.DIRECT, on_exist="skip")
     for e_path, parents in parent_map.items():
         output.AddParentsTo(e_path, parents)
     output.Save()
