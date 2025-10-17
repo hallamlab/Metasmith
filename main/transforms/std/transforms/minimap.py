@@ -1,39 +1,76 @@
+from pathlib import Path
 from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
-reads           = model.AddRequirement(lib.GetType("std::short_reads"))
+REF_HIFI    = "std::hifi_reads"
+REF_NP      = "std::nanopore_reads"
+REF_SR      = "std::short_reads"
+for t in [REF_HIFI, REF_NP, REF_SR]:
+    lib.GetType(t) # fail now if types are wrong, not during job
+
+reads           = model.AddRequirement(lib.GetType("std::reads"))
 assembly        = model.AddRequirement(lib.GetType("std::assembly"))
 image_minimap2  = model.AddRequirement(lib.GetType("std::oci_image_minimap2"))
 image_samtools  = model.AddRequirement(lib.GetType("std::oci_image_samtools"))
-out_sam         = model.AddProduct(lib.GetType("std::sequence_alignment_map"))
+# out_sam         = model.AddProduct(lib.GetType("std::sequence_alignment_map"))
 out_bam         = model.AddProduct(lib.GetType("std::binary_alignment_map"))
 out_bam_csi     = model.AddProduct(lib.GetType("std::binary_alignment_map_csi"))
 
 def protocol(context: ExecutionContext):
     reads_path     = context.Get(reads)
     assembly_path  = context.Get(assembly)
-    out_sam_path   = context.Get(out_sam)
+    # out_sam_path   = context.Get(out_sam)
+    temp_sam_path = Path("./alignments.sam")
     out_bam_path   = context.Get(out_bam)
 
+    # https://lh3.github.io/minimap2/minimap2.html
+    # minimap2 options:
+    # -x sr                 short read preset
+    # -x map-hifi           pacbio hifi (type of read that is more accurate) long read preset
+    # -x map-ont            oxford nanopore long read preset
+    # --sr                  Enable short-read alignment heuristics, more sensitivity
+    # -2                    use two io threads, more peak memory
+    # -a                    SAM format
+    # --secondary=no        Whether to output secondary alignments [no]
+    # --sam-hit-only        In SAM, don’t output unmapped reads. !this results in report saying 100% reads mapped!
+    # --heap-sort=no|yes    Heap merge is faster for short reads, but slower for long reads. [no]
+
+    reads_meta = context.GetMeta(reads)
+    reads_type = reads_meta.endpoint
+    presets = [ # order matters, first match is chosen
+        (REF_SR,    "-x sr"),
+        (REF_HIFI,  "-x map-hifi"),
+        (REF_NP,    "-x map-ont"),
+   ] 
+    preset = "" # default
+    for tname, p in presets:
+        t = lib.GetType(tname)
+        if not reads_type.IsA(t): continue
+        preset = p
+        Log.Info(f"selected preset for [{tname}]")
+        break
+    if preset != "": Log.Info(f"using default parameters")
+
+    Log.Info("start minimap align")
+    cpus = context.params.get("cpus")
+    cpus_string = "" if cpus is None else f"-t {cpus}"
     context.ExecWithContainer(
         image = image_minimap2,
         cmd = f"""
-                minimap2 -ax map-pb {assembly_path.container} {reads_path.container} > {out_sam_path.container}
+            minimap2 {preset} -a -2 {cpus_string} {assembly_path.container} {reads_path.container} > {temp_sam_path}
         """
     )
 
-    cpus = context.params.get("cpus")
-    cpus_string = ""
-    if cpus is not None:
-        cpus_string = f"-@ {cpus}"
+    Log.Info("convert to BAM, sort and index")
+    cpus_string = "" if cpus is None else f"-@ {cpus}"
     context.ExecWithContainer(
         image = image_samtools,
         cmd = f"""
-                samtools view {cpus_string} -b {out_sam_path.container} \
-                    | samtools sort {cpus_string} -o {out_bam_path.container} -O bam
-                samtools index -c {out_bam_path.container}
+            samtools view {cpus_string} -b {temp_sam_path} \
+                | samtools sort {cpus_string} -o {out_bam_path.container} -O bam
+            samtools index -c {out_bam_path.container}
         """
     )
     return ExecutionResult(success=context.Get(out_bam_csi).local.exists())
@@ -42,7 +79,7 @@ TransformInstance(
     protocol = protocol,
     model = model,
     output_signature = {
-        out_sam:      "alignments.sam",
+        # out_sam:      "alignments.sam",
         out_bam:      "alignments.bam",
         out_bam_csi:  "alignments.bam.csi"
     },

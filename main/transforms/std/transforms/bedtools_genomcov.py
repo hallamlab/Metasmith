@@ -9,21 +9,34 @@ bam             = model.AddRequirement(lib.GetType("std::binary_alignment_map"),
 csi             = model.AddRequirement(lib.GetType("std::binary_alignment_map_csi"), parents={assembly, reads})
 image_samtools  = model.AddRequirement(lib.GetType("std::oci_image_bedtools"))
 out_contig      = model.AddProduct(lib.GetType("std::per_contig_coverage"))
-# out_bp          = model.AddProduct(lib.GetType("std::per_contig_coverage"))
+out_bp          = model.AddProduct(lib.GetType("std::per_bp_coverage"))
 
 def protocol(context: ExecutionContext):
     bam_path     = context.Get(bam)
     asm_path     = context.Get(assembly)
     cov_path     = context.Get(out_contig)
+    cov_bp_path  = context.Get(out_bp)
+    cpus         = context.params.get("cpus")
 
-    cov_tsv = "per_bp_coverage.tsv"
+    Log.Info("calculating coverage")
+    cov_tsv = cov_bp_path.local.stem # stem to remove .gz
+    _header = "\t".join(["contig", "start", "end", "fold_coverage"])
     context.ExecWithContainer(
         image = image_samtools,
         cmd = f"""
-            bedtools genomecov -ibam {bam_path.container} -bg >./{cov_tsv}
+            echo "{_header}" >{cov_tsv}
+            bedtools genomecov -ibam {bam_path.container} -bg >>{cov_tsv}
         """
     )
 
+    Log.Info("compressing")
+    cpus_string = ""
+    if cpus is not None:
+        cpus_string = f"-p {cpus}"
+    with LiveShell() as shell:
+        shell.Exec(f"pigz {cpus_string} -k {cov_tsv}", timeout=None)
+
+    Log.Info("summarizing per contig")
     contig2length = {}
     with open(asm_path.local) as fa:
             current = None
@@ -38,8 +51,9 @@ def protocol(context: ExecutionContext):
                 else:
                     length += len(l)-1 # minus 1 for "\n"
             _submit()
-    with open(f"./{cov_tsv}") as f:
+    with open(cov_tsv) as f:
         with open(cov_path.local, "w") as of:
+            of.write("\t".join(["contig", "fold_coverage", "contig_length"]))
             last_k = None
             entry = []
             def _submit():
@@ -52,6 +66,7 @@ def protocol(context: ExecutionContext):
                 of.write("\t".join(str(x) for x in [last_k, c, total])+"\n")
                 entry = []
 
+            f.readline() # header
             for l in f:
                 k, s, e, val = l[:-1].split("\t")
                 s, e, val = [int(x) for x in [s, e, val]]
@@ -67,5 +82,6 @@ TransformInstance(
     model = model,
     output_signature = {
         out_contig: "cov_per_contig.tsv",
+        out_bp:     "cov_per_bp.tsv.gz",
     },
 )

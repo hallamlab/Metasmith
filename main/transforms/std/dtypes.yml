@@ -136,11 +136,6 @@ types:
       data: Long sequence
       format: Sequence file
       read_quality: "nanopore"
-  sanger_reads:
-    properties:
-      data: Long sequence
-      format: Sequence file
-      read_quality: "sanger"
   long_reads_accession:
     properties:
       data: Accession number associated with long reads
