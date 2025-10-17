@@ -250,6 +250,8 @@ class DataInstanceLibrary:
 
     @classmethod
     def _get_type(cls, name: str, types: dict[str, DataTypeLibrary]):
+        if "::" not in name:
+            raise ValueError(f"[{name}] is not in the format of <namespace>::<type>")
         namespace, name = name.split("::")
         assert namespace in types, f"namespace [{namespace}] not found"
         types_lib = types[namespace]
@@ -349,8 +351,7 @@ class DataInstanceLibrary:
         for k in ["remote_src"]:
             if k in me_d: del me_d[k]
         me = yaml.dump(me_d)
-        dtypes = yaml.dump({k:v.Pack() for k, v in self.types.items()})
-        self._hash, self._key = KeyGenerator.FromStr(me+dtypes, l=12)
+        self._hash, self._key = KeyGenerator.FromStr(me, l=12)
         return self._key
 
     def GetKey(self):
@@ -389,11 +390,13 @@ class DataInstanceLibrary:
                 type=dtype_name,
             )
             if len(d_parents) > 0:
-                d["parents"] = d_parents
+                d["parents"] = dict(sorted(d_parents.items(), key=lambda t:t[0]))
             return d
+        man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
+        man = dict(sorted(man.items(), key=lambda t: t[0]))
         return dict(
             schema=self.schema,
-            manifest={str(k):_pack_instance(k, v) for k, v in self.manifest.items()},
+            manifest=man,
             remote_src=self.remote_src.Pack() if self.remote_src is not None else None,
         )
 
@@ -673,21 +676,32 @@ class ContextPath:
     container: Path
 
 @dataclass
+class ContextData:
+    path: ContextPath
+    endpoint: Endpoint
+    type_name: str
+
+@dataclass
 class ExecutionContext:
-    _inputs: dict[Dependency, ContextPath]
-    _outputs: dict[Dependency, ContextPath]
+    _inputs: dict[Dependency, ContextData]
+    _outputs: dict[Dependency, ContextData]
     external_shell: RemoteShell # since metasmith will bootstrap into its own container
     external_cwd: Path
     container_runtime: ContainerRuntime
     params: dict = field(default_factory=dict)
 
-    def Get(self, key: Endpoint|Dependency):
-        for d, p in itertools.chain(self._inputs.items(), self._outputs.items()):
-            if d.IsA(key): return p
-        assert False, f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]"
+    def GetMeta(self, key: Dependency):
+        if key in self._inputs:
+            return self._inputs[key]
+        if key in self._outputs:
+            return self._outputs[key]
+        raise KeyError(f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]")
+
+    def Get(self, key: Dependency):
+        return self.GetMeta(key).path
 
     def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path, Path]]=None, history: bool=True):
-        path = self._inputs[image]
+        path = self._inputs[image].path
         if IsText(path.local):
             with open(path.local) as f:
                 image_path = f.read().strip() # using the uri
@@ -695,7 +709,8 @@ class ExecutionContext:
             image_path = str(path.external)
 
         _binds = set()
-        for _, p in list(self._inputs.items()):
+        for _, v in list(self._inputs.items()):
+            p = v.path
             src = p.external.parent
             dest = p.container.parent
             _binds.add((src, dest))

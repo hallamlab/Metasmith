@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterable
 import re
+import itertools
 import yaml
 
 from ..coms.containers import ContainerRuntime
@@ -21,14 +22,17 @@ class WorkflowStep:
     order: int
     uses: list[DataInstance]
     produces: list[DataInstance]
+    dependency_map: dict[Dependency, DataInstance]
     transform: TransformInstance
     transform_library: TransformInstanceLibrary
+    _raw_dependency_map: dict|None = None
 
     def Pack(self):
         return dict(
             order=self.order,
             uses=[inst.Pack() for inst in self.uses],
             produces=[inst.Pack() for inst in self.produces],
+            dependency_map={k.key:v._key for k, v in self.dependency_map.items()},
             transform=f"{self.transform_library.GetKey()}::{self.transform.name}",
         )
 
@@ -43,9 +47,19 @@ class WorkflowStep:
             order=raw["order"],
             uses=[DataInstance.Unpack(inst, libraries) for inst in raw["uses"]],
             produces=[DataInstance.Unpack(inst, libraries) for inst in raw["produces"]],
+            dependency_map={}, # needs workflow plan to sort out
+            _raw_dependency_map = raw["dependency_map"],
             transform=tr,
             transform_library=lib,
         )
+    
+    def _resolve_dependency_map(self):
+        assert self._raw_dependency_map is not None
+        data = {d._key:d for d in itertools.chain(self.uses, self.produces)}
+        tr = self.transform.model
+        deps = {d.key:d for d in itertools.chain(tr.requires, tr.produces)}
+        self.dependency_map = {deps[k]:data[v] for k, v in self._raw_dependency_map.items()}
+
 @dataclass
 class WorkflowTarget:
     instance: DataInstance
@@ -153,12 +167,10 @@ class WorkflowPlan:
 
         def _unpack_step(raw: dict):
             step = WorkflowStep.Unpack(raw, libraries)
-            for inst, r in zip(step.uses, raw["uses"]):
+            for inst, r in itertools.chain(zip(step.uses, raw["uses"]), zip(step.produces, raw["produces"])):
                 inst.dtype = all_types[r["type_id"]]
                 inst.RecalculateKey()
-            for inst, r in zip(step.produces, raw["produces"]):
-                inst.dtype = all_types[r["type_id"]]
-                inst.RecalculateKey()
+            step._resolve_dependency_map()
             return step
 
         given=[_unpack_given(d) for d in raw["given"]]
@@ -252,6 +264,7 @@ class WorkflowPlan:
                 order=i+1,
                 uses=[instance_map[e] for e in appl.used.values()],
                 produces=[instance_map[e] for e in appl.produced.values()],
+                dependency_map={d:instance_map[e] for d, e in itertools.chain(appl.used.items(), appl.produced.items())},
                 transform=tr,
                 transform_library=_lib,
             )
@@ -379,11 +392,22 @@ class WorkflowPlan:
             f.write(wf_contents)
 
     def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
+        # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
+        # todo: propogate errors, those might be important...
         import logging
-        _log_level = logging.getLogger().level
-        logging.basicConfig(level=logging.ERROR, force=True)
+        _temp = logging.getLogger
+        class DummyLogger:
+            def debug(self, *args, **kwargs):
+                pass
+            def info(self, *args, **kwargs):
+                pass
+            def warn(self, *args, **kwargs):
+                pass
+            def error(self, *args, **kwargs):
+                pass
+        logging.getLogger = lambda *args, **kwargs: DummyLogger()
         import graphviz
-        logging.basicConfig(level=_log_level, force=True)
+        logging.getLogger = _temp
 
         todo = [(graphviz, 0)]
         while len(todo)>0:
@@ -442,6 +466,9 @@ class WorkflowTask:
 
     def _update_hash(self):
         self._hash, self._key = KeyGenerator.FromStr("".join(p._key for p in self.plans), l=8)
+
+    def GetKey(self):
+        return self._key
 
     @classmethod
     def Merge(cls, tasks: Iterable[WorkflowTask], config=None, container_runtime=ContainerRuntime.APPTAINER):

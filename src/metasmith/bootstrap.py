@@ -4,19 +4,15 @@ import shutil
 import traceback
 import re
 
-from metasmith.hashing import KeyGenerator
-
 from .logging import Log
 from .agents import Agent, AgentPaths
-from .models.libraries import ContextPath, ExecutionContext, ExecutionResult
-from .models.libraries import DataTypeLibrary, TransformInstance, TransformInstanceLibrary
+from .models.libraries import ContextPath, ContextData, ExecutionContext, ExecutionResult
+from .models.libraries import DataInstance, DataTypeLibrary, TransformInstance, TransformInstanceLibrary
+from .models.solver import Dependency, Endpoint
 from .models.workflow import WorkflowTask
 from .coms.ipc import LiveShell, RemoteShell
 from .coms.containers import Container
 from .serialization import StdTime
-
-# CONTAINER = Container("docker://quay.io/hallamlab/metasmith:latest")
-# CONTAINER = Container("docker-daemon://quay.io/hallamlab/metasmith:0.2.dev-47c27e4")
 
 def DeployFromContainer(workspace: Path):
     deploy_root = workspace
@@ -97,7 +93,8 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         def _status(p: ContextPath):
             return "✓" if p.local.exists() else "X"
         container_binds = {}
-        def _parse_path(p: Path, container_override=None):
+        def _parse_meta(inst: DataInstance, container_override=None):
+            p = inst.path
             if p.is_symlink():
                 external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
                 tail = external.relative_to(agent_home)
@@ -112,20 +109,28 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                 if k not in container_binds:
                     container_binds[k] = Path(f"/msm_data/{k.name}")
                 container = container_binds[k]/p
-            return ContextPath(local=local, external=external, container=container)
-        inputs = {}
+
+            return ContextData(
+                path=ContextPath(local=local, external=external, container=container),
+                endpoint=inst.dtype,
+                type_name=inst.dtype_name,
+            )
+        inputs:dict[Dependency, ContextData] = {}
         Log.Info("uses:")
+        data2dep = {i:d for d, i in step.dependency_map.items()}
         for inst in step.uses:
-            p = _parse_path(inst.path)
+            meta = _parse_meta(inst)
+            p = meta.path
             Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
-            inputs[inst.dtype] = p
+            inputs[data2dep[inst]] = meta
         Log.Info("produces:")
         outputs = {}
         space = " "
         for inst in step.produces:
-            p = _parse_path(inst.path, container_override=Path("/ws")/inst.path)
-            outputs[inst.dtype] = p
-            Log.Info(_shorten_home(f"    {space} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
+            meta = _parse_meta(inst, container_override=Path("/ws")/inst.path)
+            p = meta.path
+            outputs[data2dep[inst]] = meta
+            # Log.Info(_shorten_home(f"    {space} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
 
         params = {}
         try:
@@ -157,11 +162,20 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         Log.Info(f">>> executing protocol")
         BREAK_LENGTH = 60
         Log.Info(">"*BREAK_LENGTH)
+        
+        def print_exit(message: str|None=None):
+            Log.Info("<"*BREAK_LENGTH)
+            Log.Info(f"<<< [{step_name}] {message}")
+            Log.Info(f"expected outputs:")
+            for inst in step.produces:
+                meta = _parse_meta(inst, container_override=Path("/ws")/inst.path)
+                p = meta.path
+                Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
         try:
             result = step.transform.protocol(context)
+            print_exit(f"reports {'success' if result.success else 'failure'}")
         except Exception as e:
-            Log.Info("<"*BREAK_LENGTH)
-            Log.Info(f"<<< [{step_name}] failed with error")
+            print_exit("failed with error")
             Log.Error(f"error while executing transform [{step_name}]")
             Log.Error(str(e))
             with open("traceback.temp", "w") as f:
@@ -169,9 +183,3 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             with open("traceback.temp", "r") as f:
                 Log.Error(f.read()[:-1])
             return ExecutionResult(False)
-        
-        Log.Info("<"*BREAK_LENGTH)
-        Log.Info(f"<<< [{step_name}] reports {'success' if result.success else 'failure'}")
-        Log.Info(f"expected outputs:")
-        for inst in step.produces:
-            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
