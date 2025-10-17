@@ -126,6 +126,21 @@ types:
     properties:
       data: Long sequence
       format: Sequence file
+  hifi_reads:
+    properties:
+      data: Long sequence
+      format: Sequence file
+      read_quality: "hifi"
+  nanopore_reads:
+    properties:
+      data: Long sequence
+      format: Sequence file
+      read_quality: "nanopore"
+  sanger_reads:
+    properties:
+      data: Long sequence
+      format: Sequence file
+      read_quality: "sanger"
   long_reads_accession:
     properties:
       data: Accession number associated with long reads
@@ -239,6 +254,10 @@ types:
   per_contig_coverage:
     properties:
       data: read depth per contig in assembly
+      format: TSV
+  per_bp_coverage:
+    properties:
+      data: read depth per bp for each contig in assembly
       format: TSV
   polished_assembly:
     properties:
