@@ -1,6 +1,8 @@
 manifest:
   bakta.oci.uri:
     type: std::oci_image_bakta
+  bbtools.uri:
+    type: std::oci_image_bbtools
   bedtools.oci.uri:
     type: std::oci_image_bedtools
   busco_annotation.py:
@@ -43,5 +45,7 @@ manifest:
     type: std::oci_image_samtools
   script_runner.oci.uri:
     type: std::oci_image_script_runner
+  seqtk.uri:
+    type: std::oci_image_seqtk
   trimmomatic.oci.uri:
     type: std::oci_image_trimmomatic

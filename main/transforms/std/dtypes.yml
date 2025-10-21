@@ -158,6 +158,13 @@ types:
       data: OCI
       format: Software container
       provides: bakta
+  oci_image_bbtools:
+    properties:
+      data: OCI
+      format: Software container
+      provides: 
+      - bbtools
+      - pigz
   oci_image_bedtools:
     properties:
       data: OCI
@@ -241,6 +248,13 @@ types:
       - GNU coreutils
       - curl
       - uv
+  oci_image_seqtk:
+    properties:
+      data: OCI
+      format: Software container
+      provides:
+      - seqtk
+      - gzip
   oci_image_trimmomatic:
     properties:
       data: OCI
@@ -276,10 +290,23 @@ types:
   sequence_alignment_map:
     properties:
       format: SAM
+  paired_reads_forward:
+    properties:
+      data: Short sequence
+      format: Sequence file
+      layout: Paired end
+      read_direction: Forward
+  paired_reads_reverse:
+    properties:
+      data: Short sequence
+      format: Sequence file
+      layout: Paired end
+      read_direction: Reverse
   short_reads:
     properties:
       data: Short sequence
       format: Sequence file
+      layout: Interleaved
   short_reads_accession:
     properties:
       data: Accession number associated with short reads

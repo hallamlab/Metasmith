@@ -79,7 +79,7 @@ case $1 in
         python -m build
     ;;
     -bpi) # pip - test install
-        pip install $HERE/dist/$NAME-$VER-py3-none-any.whl
+        pip install $HERE/dist/$NAME-$VER-py3-none-any.whl --force-reinstall
     ;;
     -bpx) # pip - remove package
         pip uninstall -y $NAME
