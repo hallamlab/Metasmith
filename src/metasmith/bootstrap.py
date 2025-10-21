@@ -20,7 +20,7 @@ def DeployFromContainer(workspace: Path):
     if not deploy_root.exists():
         deploy_root.mkdir(parents=True, exist_ok=True)
     folders = [
-        "relay/connections",
+        "relay",
     ]
     for p in folders:
         (deploy_root/p).mkdir(parents=True, exist_ok=True)
@@ -35,7 +35,7 @@ def DeployFromContainer(workspace: Path):
     Log.Info("deployment complete")
 
 def StageAndRunTransform(workspace: Path, step_index: int):
-    server_path = AgentPaths.to_relay_coms(root=AgentPaths.INTERNALS)
+    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS)
     MAX_WAIT = 3
     for i in range(MAX_WAIT):
         if server_path.exists(): break

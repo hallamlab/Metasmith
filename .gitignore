@@ -28,3 +28,4 @@ pixi.lock
 pixi.toml
 
 /src/metasmith/std/dtypes.yml
+/main/relay_agent/0x*

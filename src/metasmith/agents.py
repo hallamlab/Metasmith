@@ -8,6 +8,7 @@ from typing import Iterable, Literal
 import yaml
 import time
 import re
+import uuid
 
 from .serialization import StdTime
 from .hashing import KeyGenerator
@@ -53,8 +54,9 @@ class AgentPaths:
         return root/"relay/msm_relay"
 
     @classmethod
-    def to_relay_coms(cls, root: Path=None):
-        return cls.to_relay(root).parent/"connections/main.in"
+    def to_local_relay_coms(cls, root: Path=None):
+        mac = hex(uuid.getnode())
+        return cls.to_relay(root).parent/f"{mac}/main.in"
 
     @classmethod
     def to_data(cls, root: Path=None):
@@ -454,7 +456,7 @@ def StageWorkflow(task_key: str):
     data_dir = AgentPaths.to_data()
     data_dir.mkdir(parents=True, exist_ok=True)
     work_internals.mkdir(parents=True, exist_ok=True)
-    with RemoteShell(AgentPaths.to_relay_coms()) as extern_shell:
+    with RemoteShell(AgentPaths.to_local_relay_coms()) as extern_shell:
         extern_shell.RegisterOnOut(lambda data: Log.Info(f"ex| {data}"))
         extern_shell.RegisterOnErr(lambda data: Log.Error(f"ex|  {data}"))
         res = extern_shell.Exec(

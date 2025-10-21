@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 import argparse
 import signal
+import uuid
+
 
 CLI_ENTRY = "relay"
     
@@ -17,7 +19,8 @@ class ArgumentParser(argparse.ArgumentParser):
 
 def _add_io_arg(parser: ArgumentParser):
     here = Path(sys.orig_argv[0]).parent.absolute()
-    parser.add_argument("--io", default=here/"connections", required=False, metavar="PATH", type=Path)
+    mac = hex(uuid.getnode())
+    parser.add_argument("--io", default=here/mac, required=False, metavar="PATH", type=Path)
     return parser
 
 def _make_parser(name: str, description: str):
