@@ -36,12 +36,18 @@ def protocol(context: ExecutionContext):
     # --secondary=no        Whether to output secondary alignments [no]
     # --sam-hit-only        In SAM, don’t output unmapped reads. !this results in report saying 100% reads mapped!
     # --heap-sort=no|yes    Heap merge is faster for short reads, but slower for long reads. [no]
-
+    #   Preset:
+    #     -x STR       preset (always applied before other options; see minimap2.1 for details) []
+    #                 - map-pb/map-ont: PacBio/Nanopore vs reference mapping
+    #                 - ava-pb/ava-ont: PacBio/Nanopore read overlap
+    #                 - asm5/asm10/asm20: asm-to-ref mapping, for ~0.1/1/5% sequence divergence
+    #                 - splice: long-read spliced alignment
+    #                 - sr: genomic short-read mapping
     reads_meta = context.GetMeta(reads)
     reads_type = reads_meta.endpoint
     presets = [ # order matters, first match is chosen
         (REF_SR,    "-x sr"),
-        (REF_HIFI,  "-x map-hifi"),
+        (REF_HIFI,  "-x asm10"), # https://github.com/lh3/minimap2/issues/739, but shouldn't we use the more stringent divergence? (using 1% here)
         (REF_NP,    "-x map-ont"),
    ] 
     preset = "" # default
@@ -51,7 +57,7 @@ def protocol(context: ExecutionContext):
         preset = p
         Log.Info(f"selected preset for [{tname}]")
         break
-    if preset != "": Log.Info(f"using default parameters")
+    if preset == "": Log.Info(f"using default parameters")
 
     Log.Info("start minimap align")
     cpus = context.params.get("cpus")

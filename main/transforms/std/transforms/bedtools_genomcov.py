@@ -53,12 +53,15 @@ def protocol(context: ExecutionContext):
             _submit()
     with open(cov_tsv) as f:
         with open(cov_path.local, "w") as of:
-            of.write("\t".join(["contig", "fold_coverage", "contig_length"]))
+            of.write("\t".join(["contig", "fold_coverage", "contig_length"])+"\n")
             last_k = None
             entry = []
+            seen = set()
             def _submit():
+                if last_k is None: return
                 nonlocal entry
                 total = contig2length[last_k]
+                seen.add(last_k)
                 c = 0.0
                 for span, val in entry:
                     c += (span/total)*val
@@ -71,10 +74,16 @@ def protocol(context: ExecutionContext):
                 k, s, e, val = l[:-1].split("\t")
                 s, e, val = [int(x) for x in [s, e, val]]
                 if k != last_k:
-                    if last_k is not None: _submit()
+                    _submit()
                     last_k = k
                 entry.append((e-s, val))
             _submit()
+
+            # write no coverage contigs
+            for k, l in contig2length.items():
+                if k in seen: continue
+                of.write("\t".join(str(x) for x in [k, 0, l])+"\n")
+
     return ExecutionResult(success=cov_path.local.exists())
 
 TransformInstance(
