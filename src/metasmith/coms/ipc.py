@@ -327,7 +327,7 @@ class PipeClient:
             return False
         return True
 
-    def Transact(self, req: IpcRequest, timeout: int|float|None = 15) -> IpcResponse:
+    def Transact(self, req: IpcRequest, timeout: int|float|None = 20) -> IpcResponse:
         closed_res = IpcResponse(500, dict(error="connection closed"))
         self._last_response = None
         self._last_message_id = req.message_id
@@ -704,7 +704,7 @@ class LiveShell:
         return ShellResult(out=_out, err=_err)
 
 class RemoteShell:
-    def __init__(self, server_path: Path, timeout=15) -> None:
+    def __init__(self, server_path: Path, timeout=20) -> None:
         self._out_callbacks=[] # care to not reassign these
         self._err_callbacks=[] # care to not reassign these
         self._MARK=f"done_{GenerateId()}"
@@ -822,8 +822,12 @@ class RemoteShell:
             else:
                 _mark = next(iter(self._done_stack))
             err = self._send(f'echo "{self._MARK}.{_mark}"')
-            if err: raise ConnectionError(err)
-            if _await_done(await_timeout=_d, delta=min(_d/5, 1)): break
+            if err: 
+                time.sleep(0.5)
+                continue
+                # raise ConnectionError(err)
+            else:
+                if _await_done(await_timeout=_d, delta=min(_d/5, 1)): break
             # _d = min(_d*2, 864000) # 10 days
             if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
         if len(self._done_stack) > 0:

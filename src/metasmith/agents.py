@@ -345,8 +345,9 @@ class Agent:
                 ls -lh .
                 echo "cleanup ========================"
                 $INTERNALS/relay/msm_relay status
-                $INTERNALS/relay/msm_relay logs
                 $INTERNALS/relay/msm_relay stop
+                sleep 1
+                $INTERNALS/relay/msm_relay logs
                 """,
                 dest=AgentPaths.to_bootstrap(Path(".")),
                 executable=True,

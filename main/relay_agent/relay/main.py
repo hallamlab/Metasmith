@@ -24,23 +24,42 @@ class SERVER_STATUS(Enum):
     DEAD = 0
     ALIVE = 1
     STALE = 2
-def _check_status(workspace: Path):
-    server_path = workspace/f"{MAIN_ID}.in"
-    res = None
-    if server_path.exists():
-        for i in range(-2, 4, 1): # <32s
+def _check_status(workspace: Path, full=False):
+    def check_minimal() -> SERVER_STATUS:
+        server_path = workspace/f"{MAIN_ID}.in"
+        res = None
+        if server_path.exists():
+            for i in range(-2, 3, 1): # <8s
+                try:
+                    with PipeClient(server_path) as p:
+                        res = p.Transact(IpcRequest(endpoint="ping"), timeout=1)
+                    break
+                except (ConnectionError, TimeoutError, OSError):
+                    dt = random.random()*2**i
+                    time.sleep(dt)
+            if res and res.IsValid() and res.status == 204:
+                return SERVER_STATUS.ALIVE
+            else:
+                return SERVER_STATUS.STALE
+        return SERVER_STATUS.DEAD
+    def check_full() -> SERVER_STATUS:
+        res = _connect_as_client(workspace/f"{MAIN_ID}.in")
+        if res is None: return SERVER_STATUS.STALE
+        channel_path, key = res
+        with PipeClient(channel_path, key) as p:
             try:
-                with PipeClient(server_path) as p:
-                    res = p.Transact(IpcRequest(endpoint="ping"), timeout=1)
-                break
-            except (ConnectionError, TimeoutError, OSError):
-                dt = random.random()*2**i
-                time.sleep(dt)
-        if res and res.IsValid() and res.status == 204:
+                res = p.Transact(IpcRequest(endpoint="status", data=dict(connection=key)), timeout=2)
+            except TimeoutError:
+                return SERVER_STATUS.STALE
+            if res.status != 200:
+                return SERVER_STATUS.STALE
             return SERVER_STATUS.ALIVE
-        else:
-            return SERVER_STATUS.STALE
-    return SERVER_STATUS.DEAD
+    status = check_minimal()
+    match status:
+        case SERVER_STATUS.ALIVE:
+            return check_full() if full else status
+        case _:
+            return status
 
 def RunServer(workspace: Path, channels: int):
     workspace = workspace.absolute()
@@ -87,12 +106,12 @@ def RunServer(workspace: Path, channels: int):
         for p in todo:
             if not p.is_dir(): p.unlink(missing_ok=True)
 
-    def _clean_fd(log_prefix=""):
+    def _clean_fd(log_prefix="") -> int:
         to_del = []
         open_fd = list(Path(f"/proc/{os.getpid()}/fd").iterdir())
         for f in open_fd:
-            if not Path(os.path.realpath(f)).name.endswith("(deleted)"): to_del.append(f)
-        if len(to_del) < 128: return
+            if Path(os.path.realpath(f)).name.endswith("(deleted)"): to_del.append(f)
+        if len(to_del) < 128: return len(open_fd)
         Log.Info(f"{log_prefix}attempting to remove [{len(to_del)}] stale fd of [{len(open_fd)}]")
         for f in to_del:
             try:
@@ -100,17 +119,19 @@ def RunServer(workspace: Path, channels: int):
                 os.close(fd)
             except:
                 pass
-        time.sleep(1) # not sure if this is needed
+        # time.sleep(1) # not sure if this is needed
         open_fd = list(Path(f"/proc/{os.getpid()}/fd").iterdir())
         Log.Info(f"{log_prefix}[{len(open_fd)}] fd remain")
+        return len(open_fd)
 
     while True: # monitor
         try:
             if not session_lock.exists():
                 shutdown(0)
                 return
-            _clean_fd("MONITOR: ")
-            if status is None: status = _check_status(workspace)
+            nfds = _clean_fd("MONITOR: ")
+            if nfds==0: status = SERVER_STATUS.DEAD
+            if status is None: status = _check_status(workspace, full=True)
             if status == SERVER_STATUS.STALE:
                 if child_pid is not None:
                     Log.Info(f"MONITOR: sending kill signal to [{child_pid}]")
