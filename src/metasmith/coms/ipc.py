@@ -12,6 +12,7 @@ import pty
 import time
 import random
 from collections import deque
+import hashlib
 
 from ..hashing import KeyGenerator
 from ..serialization import StdTime
@@ -95,9 +96,9 @@ class IpcModel:
         if len(raw)<IPC_HASH_LEN: return IpcModel(parse_error="no hash")
         try:
             s = raw[:-IPC_HASH_LEN]
-            _, h1 = KeyGenerator.FromStr(s, IPC_HASH_LEN)
+            h1 = hashlib.md5(s.encode("latin1")).hexdigest()[:IPC_HASH_LEN]
             h2 = raw[-IPC_HASH_LEN:]
-            if h1 != h2: return IpcModel(parse_error=f"corrupted [{h1} != {h2}]")
+            if h1 != h2: return IpcModel(parse_error=f"corrupted [{h1} != {h2}] [{s}]")
             d = json.loads(s)
             return cls(**d)
         except TypeError as e:
@@ -124,7 +125,7 @@ class IpcModel:
         d = {k:v for k, v in self.__dict__.items() if should_serialize(k, v)}
 
         s = json.dumps(d)
-        _, h = KeyGenerator.FromStr(s, l=IPC_HASH_LEN)
+        h = hashlib.md5(s.encode("latin1")).hexdigest()[:IPC_HASH_LEN]
         return s+h
 
 @dataclass
@@ -294,13 +295,20 @@ class PipeClient:
                     self._lock.notify_all()
             self._reader.RegisterCallback(_on_response)
             success = True
-
+            
+            self._last_sent = CurrentTimeMillis()
+            self._sending = False
             def _keep_alive():
-                success = False
                 while True:
                     with self._lock:
                         if self._closed: return
+                        sending = self._sending
+                    now = CurrentTimeMillis()
+                    if not sending and now - self._last_sent > 1000:
                         success = self.Send(IpcRequest(endpoint="ping", data=dict(connection=self._connection_key)).Serialize())
+                    else:
+                        success = False
+                    with self._lock:
                         self._lock.wait(1 if success else 0.1)
 
             self._keep_alive_worker = Thread(target=_keep_alive)
@@ -310,7 +318,11 @@ class PipeClient:
 
     def Send(self, msg: str):
         try:
-            os.write(self._server_channel, (msg+"\n").encode())
+            with self._lock:
+                self._sending = True
+                os.write(self._server_channel, (msg+"\n").encode())
+                self._last_sent = CurrentTimeMillis()
+                self._sending = False
         except BrokenPipeError:
             return False
         return True
@@ -327,9 +339,10 @@ class PipeClient:
             with self._lock:
                 if self._closed:
                     return closed_res
-                if not self.Send(msg): return closed_res
-                delay = 2**i
-                i = min(i+1, max_i)
+            if not self.Send(msg): return closed_res
+            delay = 2**i
+            i = min(i+1, max_i)
+            with self._lock:
                 self._lock.wait(delay)
             if timeout and CurrentTimeMillis() - start > timeout*1000:
                 raise TimeoutError("Failed to receive response")
@@ -725,7 +738,12 @@ class RemoteShell:
         with PipeClient(self._server_path) as p:
             while True:
                 remaining_time = max(1, self._connect_timeout-(CurrentTimeMillis()-start))
-                res = p.Transact(req_con, timeout=remaining_time)
+                try:
+                    res = p.Transact(req_con, timeout=remaining_time)
+                except (ConnectionError, TimeoutError):
+                    dt = (random.random()*0.3)+0.2
+                    time.sleep(dt)
+                    continue
                 if res.status==429: # too many requests
                     dt = random.random()*1
                     time.sleep(dt)

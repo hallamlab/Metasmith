@@ -16,7 +16,7 @@ tail = next(re.finditer(r"/\w*/nxf_work/.*", cwd_str)).group()[1:] # from key, e
 external_cwd = AgentPaths.to_staged(root=agent.home.GetPath())/tail
 
 def call():
-    with RemoteShell(AgentPaths.to_relay_coms()) as shell:
+    with RemoteShell(AgentPaths.to_local_relay_coms()) as shell:
         # take this opportunity to fix the paths of the command.run script
         res = shell.Exec(f"realpath {agent.home.GetPath()}", history=True)
         assert len(res.err) == 0, "failed to resolve external workspace path"

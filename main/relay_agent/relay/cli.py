@@ -1,14 +1,14 @@
 from pathlib import Path
 import argparse
 import inspect
-from multiprocessing import Process
+# from multiprocessing import Process
 import os, sys
 import time
 from pathlib import Path
 import argparse
 import signal
-import uuid
-
+import socket
+from .logging import Log
 
 CLI_ENTRY = "relay"
     
@@ -19,8 +19,8 @@ class ArgumentParser(argparse.ArgumentParser):
 
 def _add_io_arg(parser: ArgumentParser):
     here = Path(sys.orig_argv[0]).parent.absolute()
-    mac = hex(uuid.getnode())
-    parser.add_argument("--io", default=here/mac, required=False, metavar="PATH", type=Path)
+    host = socket.gethostname()
+    parser.add_argument("--io", default=here/host, required=False, metavar="PATH", type=Path)
     return parser
 
 def _make_parser(name: str, description: str):
@@ -45,12 +45,12 @@ class CommandLineInterface:
         workspace = Path(args.io)
         status = _check_status(workspace)
         if status == SERVER_STATUS.ALIVE:
-            print(f"relay server already running at [{workspace}]")
+            Log.Warn(f"relay server already running at [{workspace}]")
             return
         if args.connected:
             RunServer(workspace=workspace, channels=args.channels)
         else:
-            print(f"starting relay server at [{workspace}]")
+            Log.Info(f"starting relay server at [{workspace}]")
             signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
             pid = os.fork()
             if pid != 0: # parent
@@ -61,9 +61,9 @@ class CommandLineInterface:
                 except KeyboardInterrupt:
                     pass
                 if not server_channel.exists():
-                    print(f"failed")
+                    Log.Error(f"failed")
                 else:
-                    print(f"success")
+                    Log.Info(f"success")
                 # os._exit(0) # this should keep resources for forked child?
             else: # child
                 RunServer(workspace=workspace, channels=args.channels)
@@ -80,9 +80,9 @@ class CommandLineInterface:
         except KeyboardInterrupt:
             pass
         if server_channel.exists():
-            print(f"failed")
+            Log.Error(f"failed")
         else:
-            print(f"success")
+            Log.Info(f"success")
 
     def status(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "get status of connections")
@@ -102,6 +102,17 @@ class CommandLineInterface:
         args = parser.parse_args(raw_args)
         from .self_test import run as SelfTest
         SelfTest(args.io)
+
+    def logs(self, raw_args=None):
+        parser = _make_parser(self._get_fn_name(), "print logs")
+        args = parser.parse_args(raw_args)
+        logs_path = Path(args.io)/"main.log"
+        if not logs_path.exists():
+            Log.Error(f"no logs at [{logs_path}]")
+            return
+        with open(logs_path) as f:
+            for l in f:
+                print(l, end="")
 
     def help(self, args=None):
         help = [

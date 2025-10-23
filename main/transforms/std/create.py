@@ -47,7 +47,7 @@ items: list[Any] = [
 ]
 containers = DataInstanceLibrary(OUTPUT/"containers.xgdb", include_std=False)
 containers.AddTypeLibrary("std", dtypes)
-containers.Add(items, transfer_method=None)
+for s, d, t in items: containers.AddItem(d, t)
 containers.Save()
 verify_and_sync(HERE/"containers", containers.location, items)
 
@@ -63,7 +63,7 @@ procedures: list[Any] = [
     (p, p.name, "transforms::transform")
     for p in (HERE/"transforms").iterdir() if check_protocol_file(p)
 ]
-transforms.Add(procedures, transfer_method=None)
+for s, d, t in procedures: transforms.AddItem(d, t)
 transforms.Save()
 verify_and_sync(HERE/"transforms", transforms.location, procedures)
 

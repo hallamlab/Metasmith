@@ -118,14 +118,19 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         inputs:dict[Dependency, ContextData] = {}
         Log.Info("uses:")
         data2dep = {i:d for d, i in step.dependency_map.items()}
+        missing_input=False
         for inst in step.uses:
             meta = _parse_meta(inst)
             p = meta.path
+            missing_input = missing_input or not p.local.exists()
             Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
             inputs[data2dep[inst]] = meta
-        Log.Info("produces:")
-        outputs = {}
-        space = " "
+        if missing_input:
+            Log.Error("detected missing inputs, stopping")
+            return ExecutionResult(False)
+
+        # Log.Info("produces:")
+        outputs: dict[Dependency, ContextData] = {}
         for inst in step.produces:
             meta = _parse_meta(inst, container_override=Path("/ws")/inst.path)
             p = meta.path
@@ -134,7 +139,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
 
         params = {}
         try:
-            with open(".command.resources") as f:
+            with open(".command.metadata") as f:
                 _cpus, _mem = f.readline().strip().split("/")
                 for k, v in [ # match nextflow task.{}
                     ("cpus", _cpus),
@@ -149,21 +154,21 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                         continue
                     params[k] = v
         except Exception as e:
-            Log.Error(f"failed to read .command.resources: {e}")
+            Log.Error(f"failed to read .command.metadata: {e}")
 
         context = ExecutionContext(
             _inputs=inputs,
             _outputs=outputs,
             external_shell=shell,
             external_cwd=external_cwd,
-            container_runtime=task.container_runtime,
+            container_runtime=agent.runtime,
             params=params,
         )
         Log.Info(f">>> executing protocol")
         BREAK_LENGTH = 60
         Log.Info(">"*BREAK_LENGTH)
         
-        def print_exit(message: str|None=None):
+        def on_exit(sucess:bool, message: str|None=None):
             Log.Info("<"*BREAK_LENGTH)
             Log.Info(f"<<< [{step_name}] {message}")
             Log.Info(f"expected outputs:")
@@ -171,11 +176,18 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                 meta = _parse_meta(inst, container_override=Path("/ws")/inst.path)
                 p = meta.path
                 Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
+            if not sucess:
+                for k, v in outputs.items():
+                    p = v.path.local
+                    if not p.exists(): continue
+                    p.rename(p.with_suffix(f"{p.suffix}.failed")) # ensure that nextflow sees failure, since expected outputs gone
         try:
             result = step.transform.protocol(context)
-            print_exit(f"reports {'success' if result.success else 'failure'}")
+            on_exit(result.success, f"reports {'success' if result.success else 'failure'}")
+            if result.success: Path("./.command.success").touch()
+            return ExecutionResult(result.success)
         except Exception as e:
-            print_exit("failed with error")
+            on_exit(False, "failed with error")
             Log.Error(f"error while executing transform [{step_name}]")
             Log.Error(str(e))
             with open("traceback.temp", "w") as f:

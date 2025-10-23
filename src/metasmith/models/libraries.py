@@ -142,7 +142,7 @@ class DataInstance:
 
     def __post_init__(self):
         self.RecalculateKey()
-        assert not self.path.is_absolute()
+        # assert self.path.is_absolute(), f"path must be absolute [{self.path}]"
 
     def __hash__(self) -> int:
         return self._hash
@@ -152,21 +152,25 @@ class DataInstance:
             str(self.path),
             self.dtype.key,
             self.dtype_name,
-            self.parent_lib.GetKey(),
+            # self.parent_lib.GetKey(),
         ]), l=8)
         return self._key
 
-    def GetDType(self) -> tuple[str, str]:
+    def GetDataType(self) -> tuple[str, str]:
         ns, name = self.dtype_name.split("::")
         return ns, name
 
     def ResolvePath(self):
-        return self.parent_lib.location/self.path
+        if self.path.is_absolute():
+            return self.path
+        else:
+            return self.parent_lib.location/self.path
 
     def Pack(self):
         return dict(
             path=str(self.path),
             type=f"{self.parent_lib.GetKey()}::{self.dtype_name}",
+            # type=f"{self.dtype_name}",
             type_id=self.dtype.key,
         )
 
@@ -285,57 +289,63 @@ class DataInstanceLibrary:
             else:
                 yield k, v, Endpoint(proto.properties, {p.dtype for p in self.parents[k]})
 
-    def Add(self, items: list[tuple[Path|str, Path|str, str]], transfer_method: SourceType|None=SourceType.DIRECT, on_exist: str="skip"):
-        """
-        @items: list of (source, destination, datatype)
-        """
-        assert transfer_method in {None, SourceType.DIRECT, SourceType.SYMLINK}
-        if transfer_method is None: Log.Warn("items will be added, but not explicitly transferred")
-        assert on_exist in {"skip", "error", "clear", "update"}
-        mover = Logistics()
-        items = [(Path(src), Path(dest), dtype) for src, dest, dtype in items]
-        # seen = {v for v in self.manifest.values()}
-        completed = set()
-        for src, dest, dtype in items:
-            assert isinstance(dtype, str), f"datatype must be a string of <namespace>::<type> but got [{type(dtype)}]"
-            src, dest = Path(src), Path(dest)
-            assert src.exists(), f"[{src}] does not exist"
-            assert not dest.is_absolute(), f"destination [{dest}] must be relative"
-            # assert dtype not in seen, f"an instance of datatype [{dtype}] is already registered and so would not be distinguishable"
-            self.GetType(dtype) # check if datatype exists
-            dest_path = self.location/dest
-            if dest_path.exists():
-                if on_exist == "skip":
-                    completed.add(str(src))
-                    continue
-                elif on_exist == "error":
-                    raise FileExistsError(f"destination [{dest}] already exists")
-                elif on_exist == "clear":
-                    Log.Warn(f"clearing previous [{dest}]")
-                    shutil.rmtree(dest_path)
-                elif on_exist == "update":
-                    pass # default of mover
-            if transfer_method is not None:
-                mover.QueueTransfer(
-                    src = Source.FromLocal(src),
-                    dest = Source(address=str(dest_path), type=transfer_method),
-                )
+    def AddItem(self, path: Path|str, dtype: str):
+        path = Path(path)
+        assert path not in self.manifest, f"[{path}] already added"
+        type_model = self.GetType(dtype) # check if datatype exists
+        self.manifest[path] = dtype
 
-        report: list[Path] = []
-        if transfer_method is not None:
-            res = mover.ExecuteTransfers()
-            completed |= {str(Path(s.address)) for s, d in res.completed}
+    # def AddBulk(self, items: list[tuple[Path|str, Path|str, str]], transfer_method: SourceType|None=SourceType.DIRECT, on_exist: str="skip"):
+    #     """
+    #     @items: list of (source, destination, datatype)
+    #     """
+    #     assert transfer_method in {None, SourceType.DIRECT, SourceType.SYMLINK}
+    #     if transfer_method is None: Log.Warn("items will be added, but not explicitly transferred")
+    #     assert on_exist in {"skip", "error", "clear", "update"}
+    #     mover = Logistics()
+    #     items = [(Path(src), Path(dest), dtype) for src, dest, dtype in items]
+    #     # seen = {v for v in self.manifest.values()}
+    #     completed = set()
+    #     for src, dest, dtype in items:
+    #         assert isinstance(dtype, str), f"datatype must be a string of <namespace>::<type> but got [{type(dtype)}]"
+    #         src, dest = Path(src), Path(dest)
+    #         assert src.exists(), f"[{src}] does not exist"
+    #         assert not dest.is_absolute(), f"destination [{dest}] must be relative"
+    #         # assert dtype not in seen, f"an instance of datatype [{dtype}] is already registered and so would not be distinguishable"
+    #         self.GetType(dtype) # check if datatype exists
+    #         dest_path = self.location/dest
+    #         if dest_path.exists():
+    #             if on_exist == "skip":
+    #                 completed.add(str(src))
+    #                 continue
+    #             elif on_exist == "error":
+    #                 raise FileExistsError(f"destination [{dest}] already exists")
+    #             elif on_exist == "clear":
+    #                 Log.Warn(f"clearing previous [{dest}]")
+    #                 shutil.rmtree(dest_path)
+    #             elif on_exist == "update":
+    #                 pass # default of mover
+    #         if transfer_method is not None:
+    #             mover.QueueTransfer(
+    #                 src = Source.FromLocal(src),
+    #                 dest = Source(address=str(dest_path), type=transfer_method),
+    #             )
 
-        for src, dest, dtype in items:
-            dest = Path(dest)
-            k = str(src)
-            if transfer_method is not None:
-                if k not in completed:
-                    Log.Error(f"failed to add [{src}]")
-                    continue
-                report.append(dest)
-            self.manifest[dest] = dtype
-        return report
+    #     report: list[Path] = []
+    #     if transfer_method is not None:
+    #         res = mover.ExecuteTransfers()
+    #         completed |= {str(Path(s.address)) for s, d in res.completed}
+
+    #     for src, dest, dtype in items:
+    #         dest = Path(dest)
+    #         k = str(src)
+    #         if transfer_method is not None:
+    #             if k not in completed:
+    #                 Log.Error(f"failed to add [{src}]")
+    #                 continue
+    #             report.append(dest)
+    #         self.manifest[dest] = dtype
+    #     return report
 
     def AddParentsTo(self, path: Path|str, parents: list[DataInstance]):
         p = Path(path)
@@ -631,9 +641,12 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         example = HERE/"_example_transform.py"
         if path.suffix != ".py":
             path = path.parent/(path.name+".py")
-
-        results = self.Add([(example, path, "transforms::transform")], on_exist="skip" if exist_ok else "error")
-        assert len(results) == 1, f"failed to add transform at [{path}]"
+        if not exist_ok and path.exists:
+            raise FileExistsError(f"file exists [{path}]")
+        shutil.copy(example, path, follow_symlinks=True)
+        self.AddItem(path, "transforms::transform")
+        # results = self.AddBulk([(example, path, "transforms::transform")], on_exist="skip" if exist_ok else "error")
+        # assert len(results) == 1, f"failed to add transform at [{path}]"
         inst = TransformInstance.Load(self.location/path)
         return inst
 
@@ -729,7 +742,7 @@ class ExecutionContext:
         )
 
         cmd = RemoveLeadingIndent(cmd)
-        Log.Info(f"executing container [{image_path}] using [{container.runtime}]")
+        Log.Info(f"executing container [{image_path}] using [{container.runtime.name}]")
         Log.Info(f"command:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")

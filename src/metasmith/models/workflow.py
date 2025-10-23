@@ -3,12 +3,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Iterable
+from typing import Any, Generator, Iterable, TypeVar
 import re
 import itertools
 import yaml
 
-from ..coms.containers import ContainerRuntime
+from ..coms.containers import Container, ContainerRuntime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary
@@ -16,6 +16,8 @@ from .remote import Logistics, Source, SourceType
 from .solver import Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
 from ..hashing import KeyGenerator
 from ..logging import Log
+
+METADATA_FILE = ".command.metadata"
 
 @dataclass
 class WorkflowStep:
@@ -98,6 +100,15 @@ class NextflowGenContext:
     external_work: Path
     home_dir: Path
     external_home: Path
+    container_runtime: ContainerRuntime
+    external_home_var: str = "${params.home}"
+    external_work_var: str = "${params.workspace}"
+    bootstrap_var: str = "${params.bootstrap}"
+
+@dataclass
+class NextflowGenResult:
+    workflow_name: str
+    content: str
 
 @dataclass
 class WorkflowPlan:
@@ -246,6 +257,7 @@ class WorkflowPlan:
         instance_map: dict[Endpoint, DataInstance] = {k:v for k, v in given_map.items()}
         steps: list[WorkflowStep] = []
         target_meta: dict[Endpoint, WorkflowTarget] = {}
+        used_endpoints: set[Endpoint] = set()
         for i, appl in enumerate(solution.dependency_plan[1:-1]): # first is mock tr for given, last is for target
             tr = transform2inst[appl.transform]
             _lib = inst2trlib[tr]
@@ -260,6 +272,7 @@ class WorkflowPlan:
                 )
                 instance_map[e] = _instance
 
+            used_endpoints |= {e for e in appl.used.values()}
             step = WorkflowStep(
                 order=i+1,
                 uses=[instance_map[e] for e in appl.used.values()],
@@ -286,56 +299,48 @@ class WorkflowPlan:
                     break
 
         return cls(
-            given=list(given_map.values()),
+            given=[i for e, i in given_map.items() if e in used_endpoints],
             targets=list(target_meta.values()),
             steps=steps,
             _solver_result=result,
         )
 
-    def PrepareNextflow(self, wf_path: Path, context: NextflowGenContext):
+    def PrepareNextflow(self, wf_name: str, context: NextflowGenContext):
         # todo dynamic resources
         # https://www.nextflow.io/docs/latest/process.html#dynamic-task-resources
         TAB = " "*4
-        def _strip_var(s: str):
-            return s[2:-1]
-        external_home_var = "${params.home}"
-        external_work_var = "${params.workspace}"
-        bootstrap_var = "${params.bootstrap}"
-        bootstrap = [
-            f"{_strip_var(bootstrap_var)} = '''",
-            f"CONTAINER={context.home_dir}",
-            f"DIRECT={context.external_home}",
-            "function bootstrap {",
-            TAB+f"if [ -e $CONTAINER ]; then",
-            TAB+TAB+f"$CONTAINER/lib/msm_bootstrap $@",
-            TAB+f"elif [ -e $DIRECT ]; then",
-            TAB+TAB+f"$DIRECT/lib/msm_bootstrap $@",
-            TAB+f"else",
-            TAB+TAB+'echo "critical error: could not find metasmith bootstrap script"',
-            TAB+f"fi",
-            "}",
-            f"'''",
-        ]
-
-        def _path_as_external(p: Path):
-            p_str = str(p)
-            if p_str.startswith(str(context.home_dir)):
-                sub = p_str[len(str(context.home_dir)):]
-                if sub.startswith("/"):
-                    sub = sub[1:]
-                p = context.external_home/sub
-            return p
         process_definitions = []
         workflow_definition = []
         target_instances = {x.instance for x in self.targets}
+        _cwd = Path(".")
         for step in self.steps:
-            name = f"s{step.order:08}_{step.transform.name}__{step.transform.model.key}"
+            name = f"s{step.order:08}_{step.transform.model.key}__{step.transform.name}"
             src = [f"process {name}"+" {"]
             to_pubish = [x for x in step.produces if x in target_instances]
             for x in to_pubish:
                 src.append(TAB+f'publishDir "$params.output/{step.order:08}", mode: "copy", pattern: "{x.path}"')
             if len(to_pubish)>0:
                 src.append("") # newline
+
+            def _make_bind_var(i: int, is_assignment=False):
+                s = "\\$" if not is_assignment else ""
+                return f"{s}b{i+1:02}"
+            external_binds = set()
+            for inst in step.uses:
+                p = inst.path
+                if p.is_relative_to(_cwd): continue
+                external_binds.add(p.parent)
+            external_binds = list(external_binds)
+            external_binds_param =""
+            if len(external_binds)>0:
+                external_binds_param = Container(
+                    image="",
+                    binds=[
+                        (_make_bind_var(i), _make_bind_var(i))
+                        for i, _ in enumerate(external_binds)
+                    ],
+                    runtime=context.container_runtime,
+                ).MakeBindsParam(defaults=False)
 
             src += [
                 TAB+"input:",
@@ -351,9 +356,15 @@ class WorkflowPlan:
                 "",
                 TAB+'script:',
                 TAB+'"""',
-                TAB+f'{bootstrap_var}',
-                TAB+f'echo "$task.cpus/$task.memory" >.command.resources',
-                TAB+f'bootstrap {external_work_var} $step_index',
+                TAB+f'{context.bootstrap_var}',
+                TAB+f'echo "$task.cpus/$task.memory" >{METADATA_FILE}',
+            ] + [
+                TAB+f'{_make_bind_var(i, is_assignment=True)}="{p}"'
+                for i, p in enumerate(external_binds)
+            ] + [
+                TAB+f'echo "{external_binds_param}" >>{METADATA_FILE}',
+                TAB+f'bootstrap {context.external_work_var} $step_index',
+                TAB+f'[ -e .command.success ] && exit 0 || exit 1', # in case slurm silently kills proc from oom/timeout
                 TAB+'"""',
                 "}"
             ]
@@ -367,29 +378,24 @@ class WorkflowPlan:
             workflow_definition.append(TAB+f'{output_vars} = {name}({input_vars})')
 
         workflow_definition = [
-            f"workflow {wf_path.stem} "+"{",
+            f"workflow {wf_name} "+"{",
         ] + [
-            TAB+f'_{x.dtype.key}'+f' = Channel.fromPath("{str(x.ResolvePath()).replace(str(context.home_dir), external_home_var)}") // {x.dtype_name}' for x in self.given
+            TAB+f'_{x.dtype.key}'+f' = Channel.fromPath("{str(x.ResolvePath()).replace(str(context.home_dir), context.external_home_var)}") // {x.dtype_name}' for x in self.given
         ] + [
             "",
         ] + workflow_definition + [
             "}",
         ]
 
-        wf_contents = [
-            f"{_strip_var(external_home_var)} = '{context.external_home}'",
-            f'{_strip_var(external_work_var)} = "{context.external_work}"'.replace(str(context.external_home), external_home_var),
-        ] + bootstrap + [
-            "",
-            "\n\n".join(process_definitions),
-            "",
-            "",
-            "\n".join(workflow_definition),
-            "",
-        ]
-        wf_contents = '\n'.join(wf_contents)
-        with open(wf_path, "w") as f:
-            f.write(wf_contents)
+        return NextflowGenResult(
+            workflow_name=wf_name,
+            content="\n".join([
+                "\n\n".join(process_definitions),
+                "",
+                "\n".join(workflow_definition),
+                "",
+            ]),
+        )
 
     def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
         # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
@@ -458,7 +464,6 @@ class WorkflowTask:
     plans: list[WorkflowPlan]
     data_libraries: list[DataInstanceLibrary] = field(default_factory=list)
     transform_libraries: list[TransformInstanceLibrary] = field(default_factory=list)
-    container_runtime: ContainerRuntime = ContainerRuntime.APPTAINER
     config: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -471,10 +476,10 @@ class WorkflowTask:
         return self._key
 
     @classmethod
-    def Merge(cls, tasks: Iterable[WorkflowTask], config=None, container_runtime=ContainerRuntime.APPTAINER):
+    def Merge(cls, tasks: Iterable[WorkflowTask], config=None):
         if config is None: _config = {}
-        plans = []
-        data_libraries = {}
+        plans: list[WorkflowPlan] = []
+        data_libraries: dict[str, DataInstanceLibrary] = {}
         transform_libraries = {}
         for t in tasks:
             plans += t.plans
@@ -488,65 +493,117 @@ class WorkflowTask:
             data_libraries=list(data_libraries.values()),
             transform_libraries=list(transform_libraries.values()),
             config=_config if config is None else config,
-            container_runtime=container_runtime,
         )
 
     def PrepareNextflow(self, context: NextflowGenContext):
-        plans_dir = context.work_dir/"plans"
-        plans_dir.mkdir(exist_ok=True)
-        def batchify(iterable, n=1):
-            batch: list[WorkflowPlan] = []
+        TAB = "\t"
+        def _strip_var(s: str):
+            return s[2:-1]
+        bootstrap = [
+            f"{_strip_var(context.bootstrap_var)} = '''",
+            f"CONTAINER={context.home_dir}",
+            f"DIRECT={context.external_home}",
+            "function bootstrap {",
+            TAB+f"if [ -e $CONTAINER ]; then",
+            TAB+TAB+f"$CONTAINER/lib/msm_bootstrap $@",
+            TAB+f"elif [ -e $DIRECT ]; then",
+            TAB+TAB+f"$DIRECT/lib/msm_bootstrap $@",
+            TAB+f"else",
+            TAB+TAB+'echo "critical error: could not find metasmith bootstrap script"',
+            TAB+f"fi",
+            "}",
+            f"'''",
+            "",
+            "",
+        ]
+        HEADER = "\n".join([
+            f"{_strip_var(context.external_home_var)} = '{context.external_home}'",
+            f'{_strip_var(context.external_work_var)} = "{context.external_work}"'.replace(str(context.external_home), context.external_home_var),
+        ]+bootstrap)
+        MAX_FILE_SIZE = int(2**16 * 0.95) # nextflow is 65536
+
+        plan_defs = [p.PrepareNextflow(f"p{i+1:04}", context) for i, p in enumerate(self.plans)]
+        top_level: list[NextflowGenResult] = []
+        _group: list[NextflowGenResult] = []
+        def _submit_group():
+            if len(_group)==0: return
+            i = len(top_level)+1
+            wf_name = f"d1n{i:04}"
+            top_level.append(
+                NextflowGenResult(
+                    workflow_name=wf_name,
+                    content=HEADER+"\n".join([
+                        g.content for g in _group
+                    ]+[
+                        "",
+                        f"workflow {wf_name}"+"{",
+                    ] + [
+                        TAB+f"{g.workflow_name}()"
+                        for g in _group
+                    ] + [
+                        "}",
+                    ])
+                )
+            )
+            _group.clear()
+        for d in plan_defs:
+            gsize = sum(len(g.content)+(2*len(g.workflow_name)) for g in _group)+len(HEADER)
+            dsize = len(d.content)
+            if gsize+dsize>=MAX_FILE_SIZE:
+                _submit_group()
+            _group.append(d)
+        _submit_group()
+        
+        T = TypeVar("T")
+        def batchify(iterable: Iterable[T], n) -> Generator[list[T], Any, None]:
+            batch: list[T] = []
             for x in iterable:
                 if len(batch) >= n:
                     yield batch
                     batch = []
                 batch.append(x)
-            if len(batch) >= 0: yield batch
-
-        batch_paths: list[Path] = []
-        for bi, b in enumerate(batchify(self.plans, n=1000)):
-            bi += 1 # 1 index
-            plan_paths: list[Path] = []
-            for i, plan in enumerate(b):
-                i += 1 # 1 index
-                wf_path = plans_dir/f"i{i:04}.nf"
-                plan_paths.append(wf_path)
-                plan.PrepareNextflow(wf_path, context)
-            b_path = plans_dir/f"b{bi:04}.nf"
-            batch_paths.append(b_path)
-            script = [
-                "include { "+p.stem+" } from './"+f"{p.stem}'"
-                for p in plan_paths
-            ] + [
-                f"workflow {b_path.stem}"+"{"
-            ] + [
-                f"{p.stem}()"
-                for p in plan_paths
-            ] + [
-                "}"
-            ]
-            with open(b_path, "w") as f:
-                f.write("\n".join(script))
-
-        entry_path = context.work_dir/"workflow.nf"
-        entry = [
-            "include { "+p.stem+" } from './"+f"{plans_dir.name}/{p.stem}'"
-            for p in batch_paths
-        ] + [
-            "workflow {"
-        ] + [
-            f"{p.stem}()"
-            for p in batch_paths
-        ] + [
-            "}"
-        ]
-        with open(entry_path, "w") as f:
-            f.write("\n".join(entry))
+            if len(batch) > 0: yield batch
+        def create_batch(wf_name: str, batch: list[NextflowGenResult], lib_dir="."):
+            return NextflowGenResult(
+                workflow_name=wf_name,
+                content="\n".join(
+                    [
+                        "include { "+g.workflow_name+" } from '"+f"{lib_dir}/{g.workflow_name}'"
+                        for g in batch
+                    ] + [
+                        f"workflow {wf_name}"+"{",
+                    ] + [
+                        f"{g.workflow_name}()"
+                        for g in batch
+                    ] + [
+                        "}",
+                    ],
+                ),
+            )
+        committed_files: list[NextflowGenResult] = top_level.copy()
+        MAX_BATCH = 1000
+        depth = 2
+        while len(top_level)>MAX_BATCH:
+            _batches = list(batchify(top_level, MAX_BATCH))
+            top_level.clear()
+            for i, _batch in enumerate(_batches):
+                i += 1
+                wf_name = f"d{depth}n{i:04}"
+                b = create_batch(wf_name, _batch)
+                top_level.append(b)
+                committed_files.append(b)
+            depth += 1
+        plans_dir = context.work_dir/"plans"
+        plans_dir.mkdir(exist_ok=True)
+        for p in committed_files:
+            with open(plans_dir/f"{p.workflow_name}.nf", "w") as f:
+                f.write(p.content)
+        main = create_batch("", top_level, f"./{plans_dir.name}")
+        with open(context.work_dir/"workflow.nf", "w") as f:
+             f.write(main.content)
 
     def Pack(self):
         optional = {}
-        if self.container_runtime is not None:
-            optional["container_runtime"] = self.container_runtime.name
         if len(self.config) > 0:
             optional["config"] = self.config
         return dict(
@@ -559,15 +616,10 @@ class WorkflowTask:
             temp_dir = Path(temp_dir)
             _task_path = temp_dir/"task.yml"
             with open(_task_path, "w") as f:
-                yaml.dump(self.Pack(), f)
-
-            plans_dir = temp_dir/"plans"
-            plans_dir.mkdir()
-            _plan_paths: list[Path] = []
-            for i, _plan in enumerate(self.plans):
-                _plan_path = plans_dir/f"{i:06}.yml"
-                _plan.Save(_plan_path)
-                _plan_paths.append(_plan_path.relative_to(temp_dir))
+                yaml.dump(dict(
+                    task=self.Pack(),
+                    plans=[p.Pack() for p in self.plans],
+                ), f)
             _mover = Logistics()
             _mover.QueueTransfer(
                 src=Source(address=str(temp_dir), type=SourceType.DIRECT),
@@ -586,14 +638,9 @@ class WorkflowTask:
     def Load(cls, path: Path|str, alt_data_paths: list[Path|str]|None=None):
         path = Path(path)
         with open(path/"task.yml") as f:
-            raw_task = yaml.safe_load(f)
-
-        raw_plans: list[dict] = []
-        plan_paths = list((path/"plans").iterdir())
-        plan_paths = sorted(plan_paths, key=lambda p: p.name) # ensures order of plans
-        for fpath in plan_paths:
-            with open(fpath) as f:
-                raw_plans.append(yaml.safe_load(f))
+            d = yaml.safe_load(f)
+        raw_task = d["task"]
+        raw_plans = d["plans"]
 
         _data_lib_paths = [Path(p) for p in alt_data_paths] if alt_data_paths else []
         _data_lib_paths += [path/"data"] # prefer alts first
@@ -607,14 +654,9 @@ class WorkflowTask:
         tr_libs = {n: TransformInstanceLibrary.Load(path/f"transforms/{n}") for n in raw_task["transform_libraries"]}
         _libraries: dict[str, DataInstanceLibrary] = data_libs|tr_libs
         plans = [WorkflowPlan.Unpack(p, _libraries) for p in raw_plans]
-
-        _runtime = raw_task.get("container_runtime")
-        if _runtime is not None:
-            _runtime = ContainerRuntime[_runtime]
         return cls(
             plans=plans,
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
             config=raw_task.get("config", {}),
-            container_runtime=_runtime,
         )

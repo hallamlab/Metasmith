@@ -57,13 +57,13 @@ class CommandLineInterface:
         parser.add_argument("--arg", "-a", required=False, default=[], action='append', nargs='*', metavar="KEY=VALUE")
         args = parser.parse_args(raw_args)
         body = {}
-        for a in args.arg:
-            a = a[0]
-            if "=" not in a:
-                Log.Error(f"invalid argument [{a}]")
-                continue
-            k, v = a.split("=")
-            body[k] = v
+        for alst in args.arg:
+            for a in alst:
+                if "=" not in a:
+                    Log.Error(f"invalid argument [{a}]")
+                    continue
+                k, v = a.split("=")
+                body[k] = v
         HandleRequest(args.endpoint, body)
 
     def help(self, args=None):
