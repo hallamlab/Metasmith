@@ -1,11 +1,22 @@
 channels:
   - conda-forge
 dependencies:
-  - python=3.10
   - pyinstaller=6.11.1
+  - setuptools<81 # important, also [--exclude-module pkg_resources]; https://github.com/yt-dlp/yt-dlp/issues/13311
+  - python=3.12
+  - flask=3.1.2
+  - flask-socketio=5.5.1
+  - gevent=25.9.1
+  - python-engineio=4.12.3
+  - gunicorn=23.0.0
   - pip
   - pip:
     # why does numpy only work when installed thorugh pip???
     # otherwise:
     # ImportError: liblapack.so.3: cannot open shared object file: No such file or directory
     - numpy==2.2.5
+
+  # alternative to flask-socketio is flask-sock
+  # provides low level sockets, which would connect to unix file sockets
+  # but is low level, as in packet = read(length)
+  # -c delichon

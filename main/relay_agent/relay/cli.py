@@ -1,16 +1,24 @@
 from pathlib import Path
 import argparse
 import inspect
-# from multiprocessing import Process
 import os, sys
 import time
 from pathlib import Path
 import argparse
 import signal
 import socket
-from .logging import Log
 
-CLI_ENTRY = "relay"
+# may not be strictly used, but needed to tell pyinstaller to pack
+import gunicorn.app.base
+import gunicorn.glogging
+import gunicorn.workers.ggevent
+from engineio.async_drivers import gevent # the worker class
+
+from .logging import Log
+from .server import app as APP
+
+CLI_ENTRY = "msm_relay"
+WS = Path(sys.orig_argv[0]).parent.absolute()
     
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
@@ -18,9 +26,8 @@ class ArgumentParser(argparse.ArgumentParser):
         self.exit(2, '\n%s: error: %s\n' % (self.prog, message))
 
 def _add_io_arg(parser: ArgumentParser):
-    here = Path(sys.orig_argv[0]).parent.absolute()
     host = socket.gethostname()
-    parser.add_argument("--io", default=here/host, required=False, metavar="PATH", type=Path)
+    parser.add_argument("--io", default=WS/host, required=False, metavar="PATH", type=Path)
     return parser
 
 def _make_parser(name: str, description: str):
@@ -37,36 +44,40 @@ class CommandLineInterface:
     
     def start(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "ensure relay is running")
-        parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
-        parser.add_argument("--channels", "-n", required=False, metavar="INT", type=int, default=8)
+        # parser.add_argument("--channels", "-n", required=False, metavar="INT", type=int, default=8)
+        # parser.add_argument("--gunicorn-config", "-c", required=False, metavar="PATH", type=str, default=WS/"gunicorn.conf.py")
         args = parser.parse_args(raw_args)
-        assert args.channels<=16, f"too many channels [{args.channels}]"
-        from .main import RunServer, _check_status, SERVER_STATUS
         workspace = Path(args.io)
-        status = _check_status(workspace)
-        if status == SERVER_STATUS.ALIVE:
-            Log.Warn(f"relay server already running at [{workspace}]")
-            return
-        if args.connected:
-            RunServer(workspace=workspace, channels=args.channels)
-        else:
-            Log.Info(f"starting relay server at [{workspace}]")
-            signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
-            pid = os.fork()
-            if pid != 0: # parent
-                server_channel = workspace/"main.in"
-                try:
-                    while not server_channel.exists():
-                        time.sleep(0.1)
-                except KeyboardInterrupt:
-                    pass
-                if not server_channel.exists():
-                    Log.Error(f"failed")
-                else:
-                    Log.Info(f"success")
-                # os._exit(0) # this should keep resources for forked child?
-            else: # child
-                RunServer(workspace=workspace, channels=args.channels)
+        workspace.mkdir(parents=True, exist_ok=True)
+
+        class StandaloneApplication(gunicorn.app.base.BaseApplication):
+            def __init__(self, app, options=None):
+                self.options = options or {}
+                self.application = app
+                super().__init__()
+
+            def load_config(self):
+                config = {key: value for key, value in self.options.items()
+                        if key in self.cfg.settings and value is not None}
+                for key, value in config.items():
+                    self.cfg.set(key.lower(), value)
+
+            def load(self):
+                return self.application
+        
+        options = {
+            # 'bind': f'unix:{workspace}/main.sock:12001',
+            'bind': f'localhost:12001',
+            'errorlog': f'{workspace}/main.err',
+            'accesslog': f'{workspace}/main.log',
+            'preload': True,
+            'umask': 0o007,
+            'workers': 1,
+            'worker_class': 'gevent',
+            'worker_connections': 1000,
+            'timeout': 15, # worker timout, so need constant keepalive ping from client...
+        }
+        StandaloneApplication(APP, options).run()
 
     def stop(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "stop relay")

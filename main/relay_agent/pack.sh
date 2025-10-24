@@ -1,7 +1,7 @@
 HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 cd $HERE
 
-NAME=pyinstaller_build_env
+NAME=pyinstaller_builder
 DOCKER_IMAGE=quay.io/txyliu/$NAME
 
 case $1 in
@@ -16,6 +16,9 @@ case $1 in
         docker build \
             --build-arg="CONDA_ENV=${NAME}_env" \
             -t $DOCKER_IMAGE .
+    ;;
+    -bs)
+        apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE
     ;;
     -u)
         SRC=../../src/metasmith
@@ -32,17 +35,29 @@ case $1 in
         docker run -it --rm \
             -u $(id -u):$(id -g) \
             --mount type=bind,source="$HERE",target="/ws"\
+            --mount type=bind,source="$HERE/relay",target="/app/relay"\
             --workdir /ws \
             $DOCKER_IMAGE \
-            pyinstaller msm_relay.py --onefile --bootloader-ignore-signals 
+            bash -c "pyinstaller msm_relay.py \
+                --exclude-module pkg_resources \
+                --onefile --bootloader-ignore-signals"
     ;;
-    -t)
+    -rd)
         docker run -it --rm \
             -u $(id -u):$(id -g) \
             --mount type=bind,source="$HERE",target="/ws"\
             --workdir /ws \
             $DOCKER_IMAGE \
             bash
+    ;;
+    -r)
+        shift
+        python -m relay $@
+    ;;
+    -rx)
+        shift
+        cd $HERE/dist
+        ./msm_relay $@
     ;;
     *)
         echo "bad option"
