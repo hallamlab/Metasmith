@@ -1,12 +1,79 @@
 from pathlib import Path
+from metasmith.coms.ipc import RemoveLeadingIndent
+from metasmith.coms.terminals import LiveShell
 from metasmith.coms.via_ws import WsClient, WsRequest, WsResponse
 import socketio
 import time
-import gevent
+import asyncio
+from threading import Thread, Condition
+# import gevent
 # import socket
 from local.constants import WORKSPACE_ROOT
+from metasmith.logging import Log
 
-# sio = socketio.Client()
+import logging
+logging.getLogger('asyncio').setLevel(logging.WARNING) # avoid printing "Using selector: EpollSelector"
+async def main():
+    port = 8000
+    sio = socketio.AsyncClient()
+    try:
+        # @sio.event
+        # async def connect():
+        #     print(f"connected")
+
+        client_id = None
+        @sio.event
+        async def client(data):
+            nonlocal client_id
+            client_id = data.get("sid")
+            print(f"assigned to [{client_id}]")
+
+        @sio.event
+        async def std_out(data):
+            line = data.get("line")
+            Log.Info(line)
+
+        @sio.event
+        async def std_err(data):
+            line = data.get("line")
+            Log.Error(line)
+
+        await sio.connect(f'ws://localhost:{port}', transports=['websocket'])
+        while client_id is None:
+            await sio.sleep(0)
+        cmd = f"""\
+            counter=0
+            while true; do 
+                ((counter++))
+                echo "{client_id} $counter"
+                sleep 1
+            done
+        """
+        await sio.emit("bash", dict(sid=client_id, script=RemoveLeadingIndent(cmd)))
+        await sio.wait()  # Keeps the client running
+    except ConnectionError as e:
+        print(f"Connection failed: {e}")
+
+
+# with LiveShell() as shell:
+#     shell.RegisterOnOut(lambda x: print(x))
+#     shell.ExecAsync("while true; do echo 1; sleep 1; done")
+#     # shell.ExecAsync("echo asdf")
+#     time.sleep(3)
+
+def _run():
+    asyncio.run(main())
+worker = Thread(target=_run)
+worker.daemon = True
+worker.start()
+
+while True:
+    try:
+        time.sleep(1)
+    except KeyboardInterrupt:
+        break
+
+    
 # # sio.on("connect", lambda: print('connected'))
 # # sio.on("disconnect", lambda: print('dis'))
 # sio.on("message", lambda x: print(x))
@@ -38,29 +105,29 @@ from local.constants import WORKSPACE_ROOT
 # sio.disconnect()
 # exit(0)
 
-for i in range(1000):
-    ws = Path("./cache/ws_server_test")
-    client = WsClient(ws)
-    print(f"{i} start")
-    @client.Endpoint("bash_out")
-    def on_out(req: WsRequest):
-        # print(req.data.get("out"))
-        return
+# for i in range(1000):
+#     ws = Path("./cache/ws_server_test")
+#     client = WsClient(ws)
+#     print(f"{i} start")
+#     @client.Endpoint("bash_out")
+#     def on_out(req: WsRequest):
+#         # print(req.data.get("out"))
+#         return
 
-    @client.Endpoint("bash_err")
-    def on_err(req: WsRequest):
-        print(req)
-        return
+#     @client.Endpoint("bash_err")
+#     def on_err(req: WsRequest):
+#         print(req)
+#         return
 
-    res = client.Transact(
-        WsRequest(
-            endpoint="bash",
-            data=dict(script=f"""\
-                echo "asdf"
-            """),
-        )
-    )
-    # print(res.status)
-    gevent.sleep(1)
-    # client.Dispose()
-    break
+#     res = client.Transact(
+#         WsRequest(
+#             endpoint="bash",
+#             data=dict(script=f"""\
+#                 echo "asdf"
+#             """),
+#         )
+#     )
+#     # print(res.status)
+#     gevent.sleep(1)
+#     # client.Dispose()
+#     break

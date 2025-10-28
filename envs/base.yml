@@ -11,14 +11,16 @@ dependencies:
   - rsync=3.4.1
   - pigz=2.8
 
-  - flask=3.1.2
-  - flask-socketio=5.5.1
-  - gevent=25.9.1
-  - gunicorn=23.0.0
+  # - flask=3.1.2
+  # - flask-socketio=5.5.1
+  # - gunicorn=23.0.0
+  # - gevent=25.9.1
   - python-socketio=5.14.2
   - python-engineio=4.12.3
   - websocket-client=1.9.0
+  - uvicorn=0.38.0
   - requests=2.32.3
+  - aiohttp=3.13.1
   
   - pip
   - pip:

@@ -2,15 +2,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import IO, Callable, Any
-# from threading import Condition, Thread
-import gevent
-from gevent.lock import Semaphore as Condition
-from gevent import subprocess
+from threading import Condition, Thread
+import subprocess
+from time import sleep
+# from gevent import sleep
+# from gevent.lock import Semaphore as Condition
+# from gevent import subprocess
 from dataclasses import dataclass, field
-# import subprocess
 # import select
 import pty
-# import time
 # import random
 
 from ..logging import Log
@@ -105,7 +105,7 @@ class TerminalProcess:
         self._closed = True
 
 class LiveShell:
-    def __init__(self, sleep: Callable[[float], None]=gevent.sleep) -> None:
+    def __init__(self, sleep: Callable[[float], None]=sleep) -> None:
         self._MARK = f"done_{GenerateId()}"
         self._done_stack = set()
         self._err_callbacks = []

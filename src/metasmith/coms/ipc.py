@@ -2,14 +2,15 @@ from __future__ import annotations
 import os
 import re
 from typing import IO, Callable, Any
-import gevent
-from gevent.lock import Semaphore as Condition
-from gevent import Greenlet
-from gevent.select import select
+# import gevent
+# from gevent.lock import Semaphore as Condition
+# from gevent import Greenlet
+# from gevent.select import select
 
-# from threading import Condition, Thread
-# from select import select
-# import subprocess
+from threading import Condition, Thread
+from select import select
+import subprocess
+from time import sleep
 
 # from dataclasses import dataclass, field
 # import json
@@ -71,7 +72,7 @@ def AwaitCheck(check: Callable[[], bool], timeout: float):
         now = CurrentTimeMillis()
         remain = start+timeout-now
         if remain<=0: raise TimeoutError()
-        gevent.sleep(min(dt, remain))
+        sleep(min(dt, remain))
         dt *= 2
 
 MAX_READERS = 256
@@ -157,16 +158,16 @@ class NonBlockingReader:
                     if e.errno == 9: # Bad file descriptor
                         break
                     else: # likely a race condition
-                        # scaling_wait()
-                        gevent.sleep(1/100)
+                        scaling_wait()
+                        # gevent.sleep(1/100)
                 except KeyboardInterrupt:
                     with self._lock:
                         self._is_closed=True
                     break
             if callable(self._on_close): self._on_close(self)
 
-        # self._worker = Thread(target=reader, args=[io_handle, self._callbacks])
-        self._worker = Greenlet(reader, io_handle, self._callbacks)
+        self._worker = Thread(target=reader, args=[io_handle, self._callbacks])
+        # self._worker = Greenlet(reader, io_handle, self._callbacks)
         self._worker.start()
 
     def RegisterCallback(self, callback: Callable[[bytes], None]):
@@ -186,8 +187,8 @@ class NonBlockingReader:
                     self._is_closed = True
 
                 if self._worker is None: break
-                # if not self._worker.is_alive(): break
-                if self._worker.dead: break
+                if not self._worker.is_alive(): break
+                # if self._worker.dead: break
                 try:
                     os.write(self._notify_in, b"dispose") # unblock reader
                 except OSError:
