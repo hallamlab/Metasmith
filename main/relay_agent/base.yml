@@ -4,11 +4,16 @@ dependencies:
   - pyinstaller=6.11.1
   - setuptools<81 # important, also [--exclude-module pkg_resources]; https://github.com/yt-dlp/yt-dlp/issues/13311
   - python=3.12
+
   - flask=3.1.2
   - flask-socketio=5.5.1
   - gevent=25.9.1
-  - python-engineio=4.12.3
   - gunicorn=23.0.0
+  - python-socketio=5.14.2
+  - python-engineio=4.12.3
+  - websocket-client=1.9.0
+  - requests=2.32.3
+  
   - pip
   - pip:
     # why does numpy only work when installed thorugh pip???

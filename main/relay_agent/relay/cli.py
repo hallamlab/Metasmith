@@ -70,6 +70,7 @@ class CommandLineInterface:
             'bind': f'localhost:12001',
             'errorlog': f'{workspace}/main.err',
             'accesslog': f'{workspace}/main.log',
+            'pidfile': f"{workspace}/gunicorn.pid",
             'preload': True,
             'umask': 0o007,
             'workers': 1,

@@ -41,16 +41,16 @@ def protocol(context: ExecutionContext):
     with open(asm_path.local) as fa:
             current = None
             length = 0
-            def _submit():
+            def _submita():
                 contig2length[current] = length
             for l in fa:
                 if l[0] == ">":
-                    if current is not None: _submit()
+                    if current is not None: _submita()
                     current = l[1:-1].split(" ")[0]
                     length = 0
                 else:
                     length += len(l)-1 # minus 1 for "\n"
-            _submit()
+            _submita()
     with open(cov_tsv) as f:
         with open(cov_path.local, "w") as of:
             of.write("\t".join(["contig", "fold_coverage", "contig_length"])+"\n")

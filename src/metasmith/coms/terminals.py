@@ -2,13 +2,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import IO, Callable, Any
-from threading import Condition, Thread
+# from threading import Condition, Thread
+import gevent
+from gevent.lock import Semaphore as Condition
+from gevent import subprocess
 from dataclasses import dataclass, field
-import subprocess
-import select
+# import subprocess
+# import select
 import pty
-import time
-import random
+# import time
+# import random
 
 from ..logging import Log
 from .ipc import NonBlockingReader, GenerateId, ResetGenerator, RemoveTrailingNewline, RemoveLeadingIndent, CurrentTimeMillis
@@ -102,11 +105,12 @@ class TerminalProcess:
         self._closed = True
 
 class LiveShell:
-    def __init__(self) -> None:
+    def __init__(self, sleep: Callable[[float], None]=gevent.sleep) -> None:
         self._MARK = f"done_{GenerateId()}"
         self._done_stack = set()
         self._err_callbacks = []
         self._out_callbacks = []
+        self._sleep = sleep
 
         self._shell = TerminalProcess()
         def _tee(cb_lst: list[Callable[[str], None]], check=False):
@@ -160,7 +164,7 @@ class LiveShell:
                 if len(self._done_stack)==0: break
                 if _hash is not None and _hash not in self._done_stack: break
                 if CurrentTimeMillis() - start > await_timeout*1000: return False
-                time.sleep(delta)
+                self._sleep(delta)
             return True
         
         start = CurrentTimeMillis()

@@ -1,18 +1,24 @@
 from __future__ import annotations
 import os
 import re
-from pathlib import Path
 from typing import IO, Callable, Any
-from threading import Condition, Thread
-from dataclasses import dataclass, field
-import json
-import subprocess
-import select
-import pty
-import time
-import random
-from collections import deque
-import hashlib
+import gevent
+from gevent.lock import Semaphore as Condition
+from gevent import Greenlet
+from gevent.select import select
+
+# from threading import Condition, Thread
+# from select import select
+# import subprocess
+
+# from dataclasses import dataclass, field
+# import json
+# from pathlib import Path
+# import pty
+# import time
+# import random
+# from collections import deque
+# import hashlib
 
 from ..hashing import KeyGenerator
 from ..serialization import StdTime
@@ -65,11 +71,8 @@ def AwaitCheck(check: Callable[[], bool], timeout: float):
         now = CurrentTimeMillis()
         remain = start+timeout-now
         if remain<=0: raise TimeoutError()
-        time.sleep(min(dt, remain))
+        gevent.sleep(min(dt, remain))
         dt *= 2
-
-class ConnectionError(Exception):
-    pass
 
 MAX_READERS = 256
 _readers = set()
@@ -95,16 +98,20 @@ class NonBlockingReader:
             def _try_read():
                 nonlocal _buffer
                 changed = False
+                i=0
                 while True:
                     # https://stackoverflow.com/a/21429655/13690762
-                    r, _, _ = select.select([ fd, self._notify_out ], [], [], 60) # allows unblock with notify_out
+                    r, _, _ = select([ fd, self._notify_out ], [], [], 60) # allows unblock with notify_out
                     # Log.Debug(f"r* [{id(self)}] [closed: {self.IsClosed()}] [notified: {self._notify_out in r}] ")
                     if self.IsClosed():
                         return []
                     chunk = os.read(fd, 4096)
                     if len(chunk) == 0:
                         with self._lock:
+                            i+=1
+                            print(i, end="\r")
                             self._lock.wait(0.1)
+                            # gevent.sleep(1/100)
                         continue
                     _buffer.append(chunk)
                     changed = True
@@ -150,13 +157,16 @@ class NonBlockingReader:
                     if e.errno == 9: # Bad file descriptor
                         break
                     else: # likely a race condition
-                        scaling_wait()
+                        # scaling_wait()
+                        gevent.sleep(1/100)
+                except KeyboardInterrupt:
+                    with self._lock:
+                        self._is_closed=True
+                    break
             if callable(self._on_close): self._on_close(self)
-            # Log.Debug(f"> close! [{self._is_closed}]")
 
-        # with self._lock:
-            # if not self._is_closed: return # already stopped
-        self._worker = Thread(target=reader, args=[io_handle, self._callbacks])
+        # self._worker = Thread(target=reader, args=[io_handle, self._callbacks])
+        self._worker = Greenlet(reader, io_handle, self._callbacks)
         self._worker.start()
 
     def RegisterCallback(self, callback: Callable[[bytes], None]):
@@ -176,7 +186,8 @@ class NonBlockingReader:
                     self._is_closed = True
 
                 if self._worker is None: break
-                if not self._worker.is_alive(): break
+                # if not self._worker.is_alive(): break
+                if self._worker.dead: break
                 try:
                     os.write(self._notify_in, b"dispose") # unblock reader
                 except OSError:
