@@ -15,6 +15,7 @@ import uvicorn
 
 from metasmith.coms.via_ws import WsRequest, WsResponse, WsServer
 from metasmith.coms.terminals import LiveShell
+from metasmith.coms.via_ws import Sender, Reciever, CLIENT_TO_SERVER, SERVER_TO_CLIENT, WsRequest, WsResponse
 
 # from flask import Flask
 # from flask_socketio import SocketIO, emit
@@ -41,55 +42,73 @@ print(os.getpid())
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 app = socketio.ASGIApp(sio)
 
-connected_clients: dict[str, Client] = {}
+async def on_send(channel: str, raw: dict):
+    print(f"send [{channel}] [{raw}]")
+    await sio.emit(channel, raw)
+sender = Sender(on_send, SERVER_TO_CLIENT, CLIENT_TO_SERVER, lambda: True)
+reciever = Reciever(sender)
+async def inbound(sid, raw: dict):
+    print(sid, raw)
+    await reciever.NewRequest(raw)
+sio.on(CLIENT_TO_SERVER, inbound)
+async def ack(sid, raw: dict):
+    await sender.Acknowledge(raw)
+sio.on(SERVER_TO_CLIENT, ack)
 
-# Event handlers
-@sio.event
-async def connect(sid, environ):
-    """Handle client connection"""
-    print(f"Client connected: {sid}")
-    shell = LiveShell()
-    lines = deque()
-    shell.RegisterOnOut(lambda x: lines.append(('std_out', x)))
-    shell.RegisterOnErr(lambda x: lines.append(('std_err', x)))
-    async def check():
-        while True:
-            while len(lines)>0:
-                channel, x = lines.popleft()
-                await sio.emit(channel, data=dict(line=x), to=sid)
-            await sio.sleep(1)
-    task = asyncio.create_task(check())
-    connected_clients[sid] = Client(sid, shell, task)
-    await sio.emit('client', {'sid': sid}, to=sid)
+async def test(x: WsRequest):
+    print("respond test")
+    return WsResponse(200, dict(echo=x.data))
+reciever.AddHandler("test", test)
 
-@sio.event
-async def disconnect(sid):
-    """Handle client disconnection"""
-    print(f"Client disconnected: {sid}")
-    if sid in connected_clients:
-        c = connected_clients[sid]
-        c.shell.Dispose()
-        c.task.cancel()
-        try:
-            await c.task
-        except asyncio.CancelledError:
-            pass
-        del connected_clients[sid]
+# connected_clients: dict[str, Client] = {}
+
+# # Event handlers
+# @sio.event
+# async def connect(sid, environ):
+#     """Handle client connection"""
+#     print(f"Client connected: {sid}")
+#     shell = LiveShell()
+#     lines = deque()
+#     shell.RegisterOnOut(lambda x: lines.append(('std_out', x)))
+#     shell.RegisterOnErr(lambda x: lines.append(('std_err', x)))
+#     async def check():
+#         while True:
+#             while len(lines)>0:
+#                 channel, x = lines.popleft()
+#                 await sio.emit(channel, data=dict(line=x), to=sid)
+#             await sio.sleep(1)
+#     task = asyncio.create_task(check())
+#     connected_clients[sid] = Client(sid, shell, task)
+#     await sio.emit('client', {'sid': sid}, to=sid)
 
 # @sio.event
-# async def echo(sid, data):
-#     await sio.emit("echo", room=sid)
+# async def disconnect(sid):
+#     """Handle client disconnection"""
+#     print(f"Client disconnected: {sid}")
+#     if sid in connected_clients:
+#         c = connected_clients[sid]
+#         c.shell.Dispose()
+#         c.task.cancel()
+#         try:
+#             await c.task
+#         except asyncio.CancelledError:
+#             pass
+#         del connected_clients[sid]
+
+# # @sio.event
+# # async def echo(sid, data):
+# #     await sio.emit("echo", room=sid)
 
 
-@sio.event
-async def bash(sid, data):
-    # await sio.emit("echo", room=sid)
-    # print(sid, data)
-    client = connected_clients[sid]
-    script = data.get("script")
-    print(script)
-    if script is None: return
-    client.shell.ExecAsync(script)
+# @sio.event
+# async def bash(sid, data):
+#     # await sio.emit("echo", room=sid)
+#     # print(sid, data)
+#     client = connected_clients[sid]
+#     script = data.get("script")
+#     print(script)
+#     if script is None: return
+#     client.shell.ExecAsync(script)
 
 # # Background task example
 # async def background_task():

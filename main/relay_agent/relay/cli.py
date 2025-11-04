@@ -44,41 +44,40 @@ class CommandLineInterface:
     
     def start(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "ensure relay is running")
+        parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
         # parser.add_argument("--channels", "-n", required=False, metavar="INT", type=int, default=8)
         # parser.add_argument("--gunicorn-config", "-c", required=False, metavar="PATH", type=str, default=WS/"gunicorn.conf.py")
         args = parser.parse_args(raw_args)
         workspace = Path(args.io)
-        workspace.mkdir(parents=True, exist_ok=True)
+        # workspace.mkdir(parents=True, exist_ok=True)
 
-        class StandaloneApplication(gunicorn.app.base.BaseApplication):
-            def __init__(self, app, options=None):
-                self.options = options or {}
-                self.application = app
-                super().__init__()
+        from .api import RunServer, CheckStatus
+        from .server import SERVER_HEALTH
 
-            def load_config(self):
-                config = {key: value for key, value in self.options.items()
-                        if key in self.cfg.settings and value is not None}
-                for key, value in config.items():
-                    self.cfg.set(key.lower(), value)
-
-            def load(self):
-                return self.application
-        
-        options = {
-            # 'bind': f'unix:{workspace}/main.sock:12001',
-            'bind': f'localhost:12001',
-            'errorlog': f'{workspace}/main.err',
-            'accesslog': f'{workspace}/main.log',
-            'pidfile': f"{workspace}/gunicorn.pid",
-            'preload': True,
-            'umask': 0o007,
-            'workers': 1,
-            'worker_class': 'gevent',
-            'worker_connections': 1000,
-            'timeout': 15, # worker timout, so need constant keepalive ping from client...
-        }
-        StandaloneApplication(APP, options).run()
+        workspace = Path(args.io)
+        status = CheckStatus(workspace)
+        if status.health == SERVER_HEALTH.ALIVE:
+            Log.Warn(f"relay server already running at [{workspace}]")
+            return
+        if args.connected:
+            RunServer(workspace=workspace)
+        else:
+            Log.Info(f"starting relay server at [{workspace}]")
+            signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
+            pid = os.fork()
+            if pid != 0: # parent
+                try:
+                    while True:
+                        _status = CheckStatus(workspace)
+                        if _status.health == SERVER_HEALTH.ALIVE:
+                            Log.Info(f"success")
+                            return
+                        time.sleep(0.1)
+                except KeyboardInterrupt:
+                    pass
+                # os._exit(0) # this should keep resources for forked child?
+            else: # child
+                RunServer(workspace=workspace)
 
     def stop(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "stop relay")

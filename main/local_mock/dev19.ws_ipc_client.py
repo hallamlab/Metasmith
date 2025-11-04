@@ -10,6 +10,7 @@ from threading import Thread, Condition
 # import socket
 from local.constants import WORKSPACE_ROOT
 from metasmith.logging import Log
+from metasmith.coms.via_ws import Sender, Reciever, CLIENT_TO_SERVER, SERVER_TO_CLIENT, WsRequest, WsResponse, CurrentTimeMillis
 
 import logging
 logging.getLogger('asyncio').setLevel(logging.WARNING) # avoid printing "Using selector: EpollSelector"
@@ -21,39 +22,45 @@ async def main():
         # async def connect():
         #     print(f"connected")
 
-        client_id = None
-        @sio.event
-        async def client(data):
-            nonlocal client_id
-            client_id = data.get("sid")
-            print(f"assigned to [{client_id}]")
+        # client_id = None
+        # async def client(data):
+        #     nonlocal client_id
+        #     client_id = data.get("sid")
+        #     print(f"assigned to [{client_id}]")
+        # sio.on("client", client)
 
-        @sio.event
-        async def std_out(data):
-            line = data.get("line")
-            Log.Info(line)
+        # @sio.event
+        # async def std_out(data):
+        #     line = data.get("line")
+        #     Log.Info(line)
 
-        @sio.event
-        async def std_err(data):
-            line = data.get("line")
-            Log.Error(line)
+        # @sio.event
+        # async def std_err(data):
+        #     line = data.get("line")
+        #     Log.Error(line)
+        async def on_send(channel: str, raw: dict):
+            await sio.emit(channel, raw)
+        sender = Sender(on_send, CLIENT_TO_SERVER, SERVER_TO_CLIENT, lambda: sio.connected)
+        reciever = Reciever(sender)
+        async def inbound(raw: dict):
+            await reciever.NewRequest(raw)
+        sio.on(SERVER_TO_CLIENT, inbound)
+        async def ack(raw: dict):
+            # print(f"ack", raw)
+            await sender.Acknowledge(raw)
+        sio.on(CLIENT_TO_SERVER, ack)
 
+        async def test(x: WsRequest):
+            print(x)
+        reciever.AddHandler("response", test)
         await sio.connect(f'ws://localhost:{port}', transports=['websocket'])
-        while client_id is None:
-            await sio.sleep(0)
-        cmd = f"""\
-            counter=0
-            while true; do 
-                ((counter++))
-                echo "{client_id} $counter"
-                sleep 1
-            done
-        """
-        await sio.emit("bash", dict(sid=client_id, script=RemoveLeadingIndent(cmd)))
+        await sender.RobustSend(WsRequest("test", dict(a=1)))
         await sio.wait()  # Keeps the client running
+        # while True:
+        #     print(CurrentTimeMillis(), end="\r")
+        #     await asyncio.sleep(0)
     except ConnectionError as e:
         print(f"Connection failed: {e}")
-
 
 # with LiveShell() as shell:
 #     shell.RegisterOnOut(lambda x: print(x))
