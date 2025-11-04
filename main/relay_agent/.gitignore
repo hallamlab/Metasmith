@@ -4,7 +4,7 @@
 /relay/serialization.py
 /relay/logging.py
 /relay/hashing.py
-/relay/coms/ipc.py
+/relay/coms/*
 /**/secrets
 
 !/scratch

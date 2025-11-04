@@ -22,6 +22,7 @@ import numpy as np
 import json
 import socket
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from threading import Condition, Thread
 from queue import Queue
 
@@ -31,6 +32,7 @@ py_logging.getLogger('asyncio').setLevel(py_logging.WARNING) # avoid printing "U
 from ..logging import logging
 from .ipc import CurrentTimeMillis, GenerateId, ResetGenerator
 from .ipc import RemoveLeadingIndent, RemoveTrailingNewline
+ResetGenerator()
 
 @dataclass
 class WsMessage:
@@ -100,7 +102,7 @@ async def _exponential_fallback(do: Callable[[], P], should_break: Callable[[], 
             # raise TimeoutError("failed to send message")
             return False
         if await should_break(): return True
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.01)
 
 # may need to allow sending of multiple messages while waiting for ack
 class Sender:
@@ -110,12 +112,15 @@ class Sender:
         self._pending: set[str] = set()
         self._channels = outbound_channel, inbound_channel
 
-    async def RobustSend(self, message: WsRequest, timeout: float=5):
+    async def RobustSend(self, message: WsRequest, timeout: float=5, channel: str|None=None):
         raw = message.Pack()
         k = message.message_id
         self._pending.add(k)
         async def send():
-            c, _ = self._channels
+            if channel is None:
+                c, _ = self._channels
+            else:
+                c = channel
             await self._send(c, raw)
         async def should_break():
             if not self._is_service_live(): return True
@@ -207,7 +212,7 @@ class LockFile:
         workspace.mkdir(exist_ok=True, parents=True)
         host = socket.gethostname()
         self._file = workspace/f"{PORTF_PRE}.{host}.{port}.{PORTF_EXT}"
-        self._file.touch(0o444)
+        self._file.touch(0o644)
 
     def __enter__(self):
         return self
@@ -221,6 +226,7 @@ class LockFile:
     @classmethod
     def _get_candidates(cls, workspace: Path):
         candiates: list[Path] = []
+        if not workspace.exists(): return candiates
         for f in workspace.iterdir():
             if f.name.startswith(PORTF_PRE):
                 candiates.append(f)
@@ -239,6 +245,8 @@ class WsClient:
         self._state = CON_STATE.IDLE
         self._recieved: dict[str, WsResponse] = {}
         self._to_send: Queue[tuple[str, dict]] = Queue()
+        self._key = GenerateId(3)
+        self._thread_pool = ThreadPoolExecutor(3)
         
         async def queue_send(channel: str, raw: dict):
             if not self.IsAlive(): return
@@ -246,7 +254,6 @@ class WsClient:
             # self._con.emit(event=channel, data=raw)
         self.outbound = Sender(queue_send, CLIENT_TO_SERVER, SERVER_TO_CLIENT, is_service_live=lambda: self.IsAlive())
         self.inbound = Reciever(sender=self.outbound)
-
         async def on_response(req: WsRequest):
             def try_add_response():
                 with self._lock:
@@ -272,9 +279,25 @@ class WsClient:
             endpoint=RESPONSE_ENPOINT,
             handler=on_response
         )
+
+        self._buf_out: list[str] = []
+        self._buf_err: list[str] = []
+        async def on_stream(req: WsRequest):
+            c = req.data.get("channel")
+            if c is None: return
+            buf = req.data.get("buf")
+            if buf is None: return
+            match(c):
+                case "out":
+                    self._buf_out.append(buf)
+                case "err":
+                    self._buf_err.append(buf)
+        self.inbound.AddHandler(
+            endpoint="stream",
+            handler=on_stream
+        )
         
         self._worker: Thread|None = None
-        self._con: socketio.AsyncClient|None = None
         self._reset(timeout=timeout)
 
     def _reset(self, timeout: float=5):
@@ -284,6 +307,7 @@ class WsClient:
                     if self._state != CON_STATE.ACTIVE: return
                 await self.inbound.NewRequest(raw)
             sio.on(SERVER_TO_CLIENT, inbound)
+            sio.on(self._key, inbound)
             async def ack(raw: dict):
                 with self._lock:
                     if self._state != CON_STATE.ACTIVE: return
@@ -321,6 +345,7 @@ class WsClient:
             success = await connect()
             if not success: return
 
+            last_ping = 0
             while True:
                 with self._lock:
                     if self._state != CON_STATE.ACTIVE:
@@ -329,7 +354,11 @@ class WsClient:
                 while not self._to_send.empty():
                     c, raw = self._to_send.get()
                     await sio.emit(c, raw)
-                await asyncio.sleep(0)
+                now = CurrentTimeMillis()
+                if now-last_ping>=1000:
+                    await sio.emit(CLIENT_TO_SERVER, data=WsRequest("ping", dict(client=self._key)).Pack())
+                    last_ping = now
+                await asyncio.sleep(0.1)
 
         with self._lock:
             self._state = CON_STATE.STARTING
@@ -353,7 +382,10 @@ class WsClient:
                         raise ConnectionError()
             if now-start>=timeout*1000:
                 raise TimeoutError()
-            time.sleep(0)
+            time.sleep(0.1)
+
+    def GetKey(self):
+        return self._key
 
     def IsAlive(self):
         with self._lock:
@@ -365,6 +397,7 @@ class WsClient:
                 self._state = CON_STATE.DISPOSED
         if self._worker:
             self._worker.join()
+        self._thread_pool.shutdown()
 
     def Endpoint(self, endpoint: str):
         """decorator"""
@@ -383,16 +416,15 @@ class WsClient:
                 success = await self.outbound.RobustSend(req, timeout=timeout)
             asyncio.run(f())
             return success
-        worker = Thread(target=send, args=(req, timeout))
-        worker.daemon=True
-        worker.start()
-        worker.join()
+        future = self._thread_pool.submit(send, req, timeout)
+        future.result() # await send
         start = CurrentTimeMillis()
         while True:
             with self._lock:
+                if self._state != CON_STATE.ACTIVE: raise ConnectionError()
                 if k in self._recieved:
                     return self._recieved[k]
             now = CurrentTimeMillis()
             if (now-start)>timeout*1000:
-                raise TimeoutError
+                raise TimeoutError()
             time.sleep(0.001)

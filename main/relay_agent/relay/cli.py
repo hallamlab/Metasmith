@@ -8,14 +8,9 @@ import argparse
 import signal
 import socket
 
-# may not be strictly used, but needed to tell pyinstaller to pack
-import gunicorn.app.base
-import gunicorn.glogging
-import gunicorn.workers.ggevent
-from engineio.async_drivers import gevent # the worker class
-
 from .logging import Log
-from .server import app as APP
+from .server import SERVER_HEALTH, CheckStatus, RunServer, StopServer, LockFile
+from .coms.ipc import CurrentTimeMillis
 
 CLI_ENTRY = "msm_relay"
 WS = Path(sys.orig_argv[0]).parent.absolute()
@@ -27,7 +22,9 @@ class ArgumentParser(argparse.ArgumentParser):
 
 def _add_io_arg(parser: ArgumentParser):
     host = socket.gethostname()
-    parser.add_argument("--io", default=WS/host, required=False, metavar="PATH", type=Path)
+    ws = WS/host
+    ws.mkdir(exist_ok=True)
+    parser.add_argument("--io", default=ws, required=False, metavar="PATH", type=Path)
     return parser
 
 def _make_parser(name: str, description: str):
@@ -44,24 +41,20 @@ class CommandLineInterface:
     
     def start(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "ensure relay is running")
-        parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
+        # parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
         # parser.add_argument("--channels", "-n", required=False, metavar="INT", type=int, default=8)
         # parser.add_argument("--gunicorn-config", "-c", required=False, metavar="PATH", type=str, default=WS/"gunicorn.conf.py")
         args = parser.parse_args(raw_args)
         workspace = Path(args.io)
-        # workspace.mkdir(parents=True, exist_ok=True)
 
-        from .api import RunServer, CheckStatus
-        from .server import SERVER_HEALTH
-
-        workspace = Path(args.io)
+        # os.system("uvicorn ")
         status = CheckStatus(workspace)
         if status.health == SERVER_HEALTH.ALIVE:
             Log.Warn(f"relay server already running at [{workspace}]")
             return
-        if args.connected:
-            RunServer(workspace=workspace)
         else:
+            for f in LockFile._get_candidates(workspace):
+                f.unlink()
             Log.Info(f"starting relay server at [{workspace}]")
             signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
             pid = os.fork()
@@ -70,6 +63,7 @@ class CommandLineInterface:
                     while True:
                         _status = CheckStatus(workspace)
                         if _status.health == SERVER_HEALTH.ALIVE:
+                            Log.Info(f"pid [{_status.pid}]")
                             Log.Info(f"success")
                             return
                         time.sleep(0.1)
@@ -82,48 +76,60 @@ class CommandLineInterface:
     def stop(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "stop relay")
         args = parser.parse_args(raw_args)
-        from .main import StopServer
-        StopServer(args.io)
-        server_channel = Path(args.io)/"main.in"
-        try:
-            while server_channel.exists():
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            pass
-        if server_channel.exists():
-            Log.Error(f"failed")
-        else:
-            Log.Info(f"success")
+        workspace = Path(args.io)
+        candidate_lock_files = LockFile._get_candidates(workspace)
+        if len(candidate_lock_files)==0:
+            Log.Info(f"server not running at [{workspace}]")
+            return
+        StopServer(workspace)
+
+        start = CurrentTimeMillis()
+        timeout = 5
+        while True:
+            candidate_lock_files = LockFile._get_candidates(workspace)
+            if len(candidate_lock_files)==0:
+                Log.Info("shutdown success")
+                return
+            now = CurrentTimeMillis()
+            if now-start>=timeout*1000: break
+        candidate_lock_files = LockFile._get_candidates(workspace)
+        for f in candidate_lock_files:
+            f.unlink()
+        Log.Info("shutdown enforced")
 
     def status(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "get status of connections")
         args = parser.parse_args(raw_args)
-        from .main import GetStatus
-        GetStatus(args.io)
+        status = CheckStatus(args.io)
+        Log.Info("status:")
+        for k, v in status.__dict__.items():
+            if k.startswith("_"): continue
+            if callable(v): continue
+            Log.Info(f"  {k}: {v}")
 
-    def bounce(self, raw_args=None):
-        parser = _make_parser(self._get_fn_name(), "bounce command through relay")
-        parser.add_argument("cmd", metavar="STR")
-        args = parser.parse_args(raw_args)
-        from .main import Bounce
-        Bounce(args.io, args.cmd)
+    # def bounce(self, raw_args=None):
+    #     parser = _make_parser(self._get_fn_name(), "bounce command through relay")
+    #     parser.add_argument("cmd", metavar="STR")
+    #     args = parser.parse_args(raw_args)
+    #     from .main import Bounce
+    #     Bounce(args.io, args.cmd)
 
-    def test(self, raw_args=None):
-        parser = _make_parser(self._get_fn_name(), "run self test")
-        args = parser.parse_args(raw_args)
-        from .self_test import run as SelfTest
-        SelfTest(args.io)
+    # def test(self, raw_args=None):
+    #     parser = _make_parser(self._get_fn_name(), "run self test")
+    #     args = parser.parse_args(raw_args)
+    #     from .self_test import run as SelfTest
+    #     SelfTest(args.io)
 
-    def logs(self, raw_args=None):
-        parser = _make_parser(self._get_fn_name(), "print logs")
-        args = parser.parse_args(raw_args)
-        logs_path = Path(args.io)/"main.log"
-        if not logs_path.exists():
-            Log.Error(f"no logs at [{logs_path}]")
-            return
-        with open(logs_path) as f:
-            for l in f:
-                print(l, end="")
+    # def logs(self, raw_args=None):
+    #     parser = _make_parser(self._get_fn_name(), "print logs")
+    #     args = parser.parse_args(raw_args)
+    #     logs_path = Path(args.io)/"main.log"
+    #     if not logs_path.exists():
+    #         Log.Error(f"no logs at [{logs_path}]")
+    #         return
+    #     with open(logs_path) as f:
+    #         for l in f:
+    #             print(l, end="")
 
     def help(self, args=None):
         help = [

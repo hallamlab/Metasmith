@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from threading import Thread, Condition
 import time
-from attr import dataclass
+from dataclasses import dataclass
 import uvicorn
 
 from metasmith.coms.via_ws import WsRequest, WsResponse, LockFile
@@ -64,7 +64,7 @@ port = 8000
 workspace = Path("./cache/ws_server_test")
 lockf = LockFile(workspace, port)
 try:
-    uvicorn.run(app, host='0.0.0.0', port=port)
+    uvicorn.run(app, port=port)
 finally:
     lockf.Dispose()
 

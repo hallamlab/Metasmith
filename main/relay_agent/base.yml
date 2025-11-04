@@ -5,15 +5,16 @@ dependencies:
   - setuptools<81 # important, also [--exclude-module pkg_resources]; https://github.com/yt-dlp/yt-dlp/issues/13311
   - python=3.12
 
-  - flask=3.1.2
-  - flask-socketio=5.5.1
-  - gevent=25.9.1
-  - gunicorn=23.0.0
+  - fastapi=0.121 # for lifespan events, no endpoints
+  - uvicorn=0.38
+  - uvicorn-standard=0.38
+
   - python-socketio=5.14.2
   - python-engineio=4.12.3
   - websocket-client=1.9.0
   - requests=2.32.3
-  
+  - aiohttp=3.13.1
+
   - pip
   - pip:
     # why does numpy only work when installed thorugh pip???

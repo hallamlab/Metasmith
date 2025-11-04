@@ -22,8 +22,7 @@ case $1 in
     ;;
     -u)
         SRC=../../src/metasmith
-        mkdir -p ./relay/coms
-        rsync -auc $SRC/coms/ipc.py         ./relay/coms/ipc.py
+        rsync -auc $SRC/coms                ./relay
         rsync -auc $SRC/serialization.py    ./relay/serialization.py
         rsync -auc $SRC/hashing.py          ./relay/hashing.py
         rsync -auc $SRC/logging.py          ./relay/logging.py

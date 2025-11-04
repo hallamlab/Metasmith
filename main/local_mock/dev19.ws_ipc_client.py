@@ -14,24 +14,24 @@ from metasmith.coms.via_ws import Sender, Reciever, CLIENT_TO_SERVER, SERVER_TO_
 import logging
 logging.getLogger('asyncio').setLevel(logging.WARNING) # avoid printing "Using selector: EpollSelector"
 
-workspace = Path("./cache/ws_server_test")
+# workspace = Path("/home/tony/workspace/tools/Metasmith/main/relay_agent/dist/XPS-laptop")
+workspace = Path("/home/tony/workspace/tools/Metasmith/main/relay_agent/XPS-laptop")
+# workspace = Path("./cache/ws_server_test")
 
+client = WsClient(workspace)
+print("begin", client.GetKey())
+res = client.Transact(WsRequest(
+    endpoint="shell",
+    data=dict(
+        client=client.GetKey(),
+    ),
+))
+print(res)
 while True:
-    client = WsClient(workspace)
-    print("begin")
-    res = client.Transact(WsRequest(
-        "test", dict(a=1)
-    ))
-    print(res)
-    client.Dispose()
-
-    client = WsClient(workspace)
-    print("begin")
-    res = client.Transact(WsRequest(
-        "test", dict(a=1)
-    ))
-    print(res)
-    client.Dispose()
+    for x in client._buf_out:
+        print(x)
+    client._buf_out.clear()
+    time.sleep(0.1)
 
 # async def main():
 #     port = 8000
