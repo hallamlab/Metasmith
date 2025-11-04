@@ -13,7 +13,7 @@ import time
 from attr import dataclass
 import uvicorn
 
-from metasmith.coms.via_ws import WsRequest, WsResponse, WsServer
+from metasmith.coms.via_ws import WsRequest, WsResponse, LockFile
 from metasmith.coms.terminals import LiveShell
 from metasmith.coms.via_ws import Sender, Reciever, CLIENT_TO_SERVER, SERVER_TO_CLIENT, WsRequest, WsResponse
 
@@ -39,7 +39,7 @@ class Client:
 # print("Starting Socket.IO server on http://localhost:8000")
 print(os.getpid())
 # Create Async Socket.IO server
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+sio = socketio.AsyncServer(async_mode='asgi')
 app = socketio.ASGIApp(sio)
 
 async def on_send(channel: str, raw: dict):
@@ -59,6 +59,14 @@ async def test(x: WsRequest):
     print("respond test")
     return WsResponse(200, dict(echo=x.data))
 reciever.AddHandler("test", test)
+
+port = 8000
+workspace = Path("./cache/ws_server_test")
+lockf = LockFile(workspace, port)
+try:
+    uvicorn.run(app, host='0.0.0.0', port=port)
+finally:
+    lockf.Dispose()
 
 # connected_clients: dict[str, Client] = {}
 
@@ -124,7 +132,6 @@ reciever.AddHandler("test", test)
 #         })
 #         print(f"Sent server update #{count} to {len(connected_clients)} clients")
 # sio.start_background_task(background_task)
-uvicorn.run(app, host='0.0.0.0', port=8000)
 
 # worker = Thread(target=_serve)
 # worker.daemon = True

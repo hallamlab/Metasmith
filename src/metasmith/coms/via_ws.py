@@ -20,8 +20,13 @@ import signal
 import time
 import numpy as np
 import json
+import socket
 import hashlib
+from threading import Condition, Thread
 from queue import Queue
+
+import logging as py_logging
+py_logging.getLogger('asyncio').setLevel(py_logging.WARNING) # avoid printing "Using selector: EpollSelector"
 
 from ..logging import logging
 from .ipc import CurrentTimeMillis, GenerateId, ResetGenerator
@@ -193,33 +198,56 @@ class CON_STATE(Enum):
 SERVER_TO_CLIENT = "s2c"
 CLIENT_TO_SERVER = "c2s"
 PORTF_PRE, PORTF_EXT = "ws_port", "lock"
+
+class LockFile:
+    def __init__(self, workspace: Path, port: int) -> None:
+        candidates = self._get_candidates(workspace)
+        if len(candidates)>0:
+            raise FileExistsError(candidates[0])
+        workspace.mkdir(exist_ok=True, parents=True)
+        host = socket.gethostname()
+        self._file = workspace/f"{PORTF_PRE}.{host}.{port}.{PORTF_EXT}"
+        self._file.touch(0o444)
+
+    def __enter__(self):
+        return self
     
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.Dispose()
+
+    def Dispose(self):
+        if self._file.exists(): self._file.unlink()
+
+    @classmethod
+    def _get_candidates(cls, workspace: Path):
+        candiates: list[Path] = []
+        for f in workspace.iterdir():
+            if f.name.startswith(PORTF_PRE):
+                candiates.append(f)
+        return candiates
+
+    @classmethod
+    def GetPort(cls, workspace: Path):
+        candidates = cls._get_candidates(workspace)
+        pre, host, port, ext = candidates[0].name.split(".")
+        return int(port)
+
 class WsClient:
     def __init__(self, workspace: Path, timeout: float=15) -> None:
         self._workspace = workspace
         self._lock = Condition()
         self._state = CON_STATE.IDLE
         self._recieved: dict[str, WsResponse] = {}
-        self._to_send: Queue = Queue()
-
-        def get_port():
-            port = None
-            for f in self._workspace.iterdir():
-                if not (f.name.startswith(PORTF_PRE) and f.name.endswith(PORTF_EXT)): continue
-                toks = f.name.split(".")
-                port = int(toks[1]) # the middle of 3
-            if port is None:
-                return False
-            return port
+        self._to_send: Queue[tuple[str, dict]] = Queue()
         
-        def queue_send(channel: str, raw):
+        async def queue_send(channel: str, raw: dict):
             if not self.IsAlive(): return
             self._to_send.put_nowait((channel, raw))
             # self._con.emit(event=channel, data=raw)
-        self.outbound = Sender(on_send=lambda x: queue_send(CLIENT_TO_SERVER, x), is_service_live=lambda: self.IsAlive())
-        self.inbound = Reciever(on_ack=lambda x: queue_send(SERVER_TO_CLIENT, x), sender=self.outbound)
+        self.outbound = Sender(queue_send, CLIENT_TO_SERVER, SERVER_TO_CLIENT, is_service_live=lambda: self.IsAlive())
+        self.inbound = Reciever(sender=self.outbound)
 
-        def on_response(req: WsRequest):
+        async def on_response(req: WsRequest):
             def try_add_response():
                 with self._lock:
                     k = req.message_id
@@ -244,59 +272,88 @@ class WsClient:
             endpoint=RESPONSE_ENPOINT,
             handler=on_response
         )
-
-        async def main(port: int):
-            sio = socketio.AsyncClient(reconnection_attempts=3)
-
-            @sio.event
-            async def c2s(raw):
-                return self.outbound.Acknowledge(raw)
-            
-            @sio.event
-            async def s2c(raw):
-                return self.inbound.NewRequest(raw)
-
-        sio = socketio.Client(reconnection_attempts=3)
-        sio.on(CLIENT_TO_SERVER, lambda x: self.outbound.Acknowledge(x))
-        sio.on(SERVER_TO_CLIENT, lambda x: self.inbound.NewRequest(x))
-        self._con = sio
+        
+        self._worker: Thread|None = None
+        self._con: socketio.AsyncClient|None = None
         self._reset(timeout=timeout)
 
     def _reset(self, timeout: float=5):
-        def _try_connect():
-            port = None
-            for f in self._workspace.iterdir():
-                if not (f.name.startswith(PORTF_PRE) and f.name.endswith(PORTF_EXT)): continue
-                toks = f.name.split(".")
-                port = int(toks[1]) # the middle of 3
-            if port is None:
+        async def main(sio: socketio.AsyncClient):
+            async def inbound(raw: dict):
+                with self._lock:
+                    if self._state != CON_STATE.ACTIVE: return
+                await self.inbound.NewRequest(raw)
+            sio.on(SERVER_TO_CLIENT, inbound)
+            async def ack(raw: dict):
+                with self._lock:
+                    if self._state != CON_STATE.ACTIVE: return
+                await self.outbound.Acknowledge(raw)
+            sio.on(CLIENT_TO_SERVER, ack)
+
+            async def _try_connect(port: int):
+                try:
+                    await sio.connect(f'ws://localhost:{port}', transports=['websocket'])
+                except ConnectionError:
+                    return False
+                return True
+            connected = False
+            async def do():
+                nonlocal connected
+                connected = await _try_connect(LockFile.GetPort(self._workspace))
+            def is_disposed():
+                with self._lock:
+                    return self._state == CON_STATE.DISPOSED
+            async def should_break():
+                if is_disposed(): return True
+                if connected: return True
                 return False
-            try:
-                self._con.connect(f'ws://localhost:{port}', transports=['websocket'])
-            except ConnectionError:
-                return False
-            return True
-        connected = False
-        def do():
-            nonlocal connected
-            connected = _try_connect()
-        def is_disposed():
-            with self._lock:
-                return self._state == CON_STATE.DISPOSED
-        def should_break():
-            if is_disposed(): return True
-            if connected: return True
-            return False
-        success = False
-        try:
+            async def connect():
+                success = False
+                try:
+                    success = await _exponential_fallback(do=do, should_break=should_break, timeout=timeout)
+                finally:
+                    with self._lock:
+                        if success:
+                            self._state = CON_STATE.ACTIVE
+                        else:
+                            self._state = CON_STATE.IDLE
+                    return success
+            success = await connect()
+            if not success: return
+
+            while True:
+                with self._lock:
+                    if self._state != CON_STATE.ACTIVE:
+                        await sio.disconnect()
+                        return
+                while not self._to_send.empty():
+                    c, raw = self._to_send.get()
+                    await sio.emit(c, raw)
+                await asyncio.sleep(0)
+
+        with self._lock:
             self._state = CON_STATE.STARTING
-            success = _exponential_fallback(do=do, should_break=should_break, timeout=timeout)
-            if is_disposed(): return
-        finally:
-            if success:
-                self._state = CON_STATE.ACTIVE
-            else:
-                self._state = CON_STATE.IDLE
+        sio = socketio.AsyncClient(reconnection_attempts=3)
+        def _run():
+            asyncio.run(main(sio))
+        worker = Thread(target=_run)
+        worker.daemon = True
+        worker.start()
+        self._worker = worker
+    
+        start = CurrentTimeMillis()
+        while True:
+            now = CurrentTimeMillis()
+            with self._lock:
+                match(self._state):
+                    case CON_STATE.ACTIVE | CON_STATE.DISPOSED:
+                        return
+                    case CON_STATE.IDLE:
+                        # failed
+                        raise ConnectionError()
+            if now-start>=timeout*1000:
+                raise TimeoutError()
+            time.sleep(0)
 
     def IsAlive(self):
         with self._lock:
@@ -304,19 +361,32 @@ class WsClient:
 
     def Dispose(self):
         with self._lock:
-            self._disposed = True
             if self._state == CON_STATE.ACTIVE:
-                self._con.disconnect()
+                self._state = CON_STATE.DISPOSED
+        if self._worker:
+            self._worker.join()
 
     def Endpoint(self, endpoint: str):
         """decorator"""
         def _register_function(handler: Callable[[WsRequest], WsResponse|None]):
-            self.inbound.AddHandler(endpoint, handler)
+            async def async_wrapper(req: WsRequest):
+                return handler(req)
+            self.inbound.AddHandler(endpoint, async_wrapper)
         return _register_function
 
     def Transact(self, req: WsRequest, timeout: float=5):
         k = req.message_id
-        self.outbound.RobustSend(req, timeout=timeout)
+        def send(req, timeout):
+            success = False
+            async def f():
+                nonlocal success
+                success = await self.outbound.RobustSend(req, timeout=timeout)
+            asyncio.run(f())
+            return success
+        worker = Thread(target=send, args=(req, timeout))
+        worker.daemon=True
+        worker.start()
+        worker.join()
         start = CurrentTimeMillis()
         while True:
             with self._lock:
@@ -325,4 +395,4 @@ class WsClient:
             now = CurrentTimeMillis()
             if (now-start)>timeout*1000:
                 raise TimeoutError
-            gevent.sleep(1/1000)
+            time.sleep(0.001)

@@ -1,7 +1,7 @@
 from pathlib import Path
 from metasmith.coms.ipc import RemoveLeadingIndent
 from metasmith.coms.terminals import LiveShell
-from metasmith.coms.via_ws import WsClient, WsRequest, WsResponse
+from metasmith.coms.via_ws import WsClient, WsRequest, WsResponse, LockFile
 import socketio
 import time
 import asyncio
@@ -11,74 +11,93 @@ from threading import Thread, Condition
 from local.constants import WORKSPACE_ROOT
 from metasmith.logging import Log
 from metasmith.coms.via_ws import Sender, Reciever, CLIENT_TO_SERVER, SERVER_TO_CLIENT, WsRequest, WsResponse, CurrentTimeMillis
-
 import logging
 logging.getLogger('asyncio').setLevel(logging.WARNING) # avoid printing "Using selector: EpollSelector"
-async def main():
-    port = 8000
-    sio = socketio.AsyncClient()
-    try:
-        # @sio.event
-        # async def connect():
-        #     print(f"connected")
 
-        # client_id = None
-        # async def client(data):
-        #     nonlocal client_id
-        #     client_id = data.get("sid")
-        #     print(f"assigned to [{client_id}]")
-        # sio.on("client", client)
-
-        # @sio.event
-        # async def std_out(data):
-        #     line = data.get("line")
-        #     Log.Info(line)
-
-        # @sio.event
-        # async def std_err(data):
-        #     line = data.get("line")
-        #     Log.Error(line)
-        async def on_send(channel: str, raw: dict):
-            await sio.emit(channel, raw)
-        sender = Sender(on_send, CLIENT_TO_SERVER, SERVER_TO_CLIENT, lambda: sio.connected)
-        reciever = Reciever(sender)
-        async def inbound(raw: dict):
-            await reciever.NewRequest(raw)
-        sio.on(SERVER_TO_CLIENT, inbound)
-        async def ack(raw: dict):
-            # print(f"ack", raw)
-            await sender.Acknowledge(raw)
-        sio.on(CLIENT_TO_SERVER, ack)
-
-        async def test(x: WsRequest):
-            print(x)
-        reciever.AddHandler("response", test)
-        await sio.connect(f'ws://localhost:{port}', transports=['websocket'])
-        await sender.RobustSend(WsRequest("test", dict(a=1)))
-        await sio.wait()  # Keeps the client running
-        # while True:
-        #     print(CurrentTimeMillis(), end="\r")
-        #     await asyncio.sleep(0)
-    except ConnectionError as e:
-        print(f"Connection failed: {e}")
-
-# with LiveShell() as shell:
-#     shell.RegisterOnOut(lambda x: print(x))
-#     shell.ExecAsync("while true; do echo 1; sleep 1; done")
-#     # shell.ExecAsync("echo asdf")
-#     time.sleep(3)
-
-def _run():
-    asyncio.run(main())
-worker = Thread(target=_run)
-worker.daemon = True
-worker.start()
+workspace = Path("./cache/ws_server_test")
 
 while True:
-    try:
-        time.sleep(1)
-    except KeyboardInterrupt:
-        break
+    client = WsClient(workspace)
+    print("begin")
+    res = client.Transact(WsRequest(
+        "test", dict(a=1)
+    ))
+    print(res)
+    client.Dispose()
+
+    client = WsClient(workspace)
+    print("begin")
+    res = client.Transact(WsRequest(
+        "test", dict(a=1)
+    ))
+    print(res)
+    client.Dispose()
+
+# async def main():
+#     port = 8000
+#     sio = socketio.AsyncClient()
+#     try:
+#         # @sio.event
+#         # async def connect():
+#         #     print(f"connected")
+
+#         # client_id = None
+#         # async def client(data):
+#         #     nonlocal client_id
+#         #     client_id = data.get("sid")
+#         #     print(f"assigned to [{client_id}]")
+#         # sio.on("client", client)
+
+#         # @sio.event
+#         # async def std_out(data):
+#         #     line = data.get("line")
+#         #     Log.Info(line)
+
+#         # @sio.event
+#         # async def std_err(data):
+#         #     line = data.get("line")
+#         #     Log.Error(line)
+#         async def on_send(channel: str, raw: dict):
+#             await sio.emit(channel, raw)
+#         sender = Sender(on_send, CLIENT_TO_SERVER, SERVER_TO_CLIENT, lambda: sio.connected)
+#         reciever = Reciever(sender)
+#         async def inbound(raw: dict):
+#             await reciever.NewRequest(raw)
+#         sio.on(SERVER_TO_CLIENT, inbound)
+#         async def ack(raw: dict):
+#             # print(f"ack", raw)
+#             await sender.Acknowledge(raw)
+#         sio.on(CLIENT_TO_SERVER, ack)
+
+#         async def test(x: WsRequest):
+#             print(x)
+#         reciever.AddHandler("response", test)
+#         await sio.connect(f'ws://localhost:{port}', transports=['websocket'])
+#         await sender.RobustSend(WsRequest("test", dict(a=1)))
+#         await sio.wait()  # Keeps the client running
+#         # while True:
+#         #     print(CurrentTimeMillis(), end="\r")
+#         #     await asyncio.sleep(0)
+#     except ConnectionError as e:
+#         print(f"Connection failed: {e}")
+
+# # with LiveShell() as shell:
+# #     shell.RegisterOnOut(lambda x: print(x))
+# #     shell.ExecAsync("while true; do echo 1; sleep 1; done")
+# #     # shell.ExecAsync("echo asdf")
+# #     time.sleep(3)
+
+# def _run():
+#     asyncio.run(main())
+# worker = Thread(target=_run)
+# worker.daemon = True
+# worker.start()
+
+# while True:
+#     try:
+#         time.sleep(1)
+#     except KeyboardInterrupt:
+#         break
 
     
 # # sio.on("connect", lambda: print('connected'))
