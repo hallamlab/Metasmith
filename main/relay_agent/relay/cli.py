@@ -10,7 +10,7 @@ import socket
 
 from .logging import Log
 from .server import SERVER_HEALTH, CheckStatus, RunServer, StopServer, LockFile
-from .coms.ipc import CurrentTimeMillis
+from .coms.ipc import CurrentTimeMillis, ResetGenerator
 
 CLI_ENTRY = "msm_relay"
 WS = Path(sys.orig_argv[0]).parent.absolute()
@@ -58,6 +58,7 @@ class CommandLineInterface:
             Log.Info(f"starting relay server at [{workspace}]")
             signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
             pid = os.fork()
+            ResetGenerator()
             if pid != 0: # parent
                 try:
                     while True:
@@ -105,6 +106,8 @@ class CommandLineInterface:
         for k, v in status.__dict__.items():
             if k.startswith("_"): continue
             if callable(v): continue
+            if isinstance(v, SERVER_HEALTH):
+                v = v.name
             Log.Info(f"  {k}: {v}")
 
     # def bounce(self, raw_args=None):

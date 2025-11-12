@@ -1,7 +1,8 @@
 from pathlib import Path
 from metasmith.coms.ipc import RemoveLeadingIndent
 from metasmith.coms.terminals import LiveShell
-from metasmith.coms.via_ws import WsClient, WsRequest, WsResponse, LockFile
+from metasmith.coms.via_ws import CON_STATE, WsClient, WsRequest, WsResponse, LockFile
+from metasmith.coms.via_ws import RemoteShell
 import socketio
 import time
 import asyncio
@@ -18,20 +19,44 @@ logging.getLogger('asyncio').setLevel(logging.WARNING) # avoid printing "Using s
 workspace = Path("/home/tony/workspace/tools/Metasmith/main/relay_agent/XPS-laptop")
 # workspace = Path("./cache/ws_server_test")
 
-client = WsClient(workspace)
-print("begin", client.GetKey())
-res = client.Transact(WsRequest(
-    endpoint="shell",
-    data=dict(
-        client=client.GetKey(),
-    ),
-))
-print(res)
-while True:
-    for x in client._buf_out:
-        print(x)
-    client._buf_out.clear()
-    time.sleep(0.1)
+with RemoteShell(workspace) as shell:
+    shell.RegisterOnOut(lambda x: print(x))
+    shell.ExecAsync(f"date; sleep 3; echo start")
+    for i in range(5):
+        shell.ExecAsync(f"echo {i}")
+    x  = shell.Exec("date", history=True)
+    print(x)
+
+###########################
+# POC 2, idempotency
+
+# client = WsClient(workspace)
+# print("begin", client.GetKey())
+# res = client.Transact(WsRequest(
+#     endpoint="shell",
+#     data=dict(
+#         client=client.GetKey(),
+#         cmd="""\
+#             count=0
+#             while true; do
+#                 echo $count
+#                 ((count++))
+#                 sleep 0.3
+#             done
+#         """,
+#     ),
+# ))
+# print(res)
+# while client._state == CON_STATE.ACTIVE:
+#     for x in client._buf_out:
+#         print(x)
+#     client._buf_out.clear()
+#     time.sleep(0.1)
+# print("dead")
+# client.Dispose()
+
+###########################
+# POC 1, socketio
 
 # async def main():
 #     port = 8000

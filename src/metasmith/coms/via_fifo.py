@@ -10,7 +10,7 @@ import hashlib
 import time
 import random
 
-from .ipc import NonBlockingReader, GenerateId, ResetGenerator, CurrentTimeMillis, RemoveTrailingNewline, RemoveLeadingIndent
+from .ipc import NonBlockingReader, GenerateId, CurrentTimeMillis, RemoveTrailingNewline, RemoveLeadingIndent
 from .terminals import ShellResult
 
 IPC_HASH_LEN = 16

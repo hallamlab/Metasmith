@@ -21,6 +21,7 @@ import time
 import numpy as np
 import json
 import socket
+from socketio.exceptions import BadNamespaceError
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from threading import Condition, Thread
@@ -32,7 +33,7 @@ py_logging.getLogger('asyncio').setLevel(py_logging.WARNING) # avoid printing "U
 from ..logging import logging
 from .ipc import CurrentTimeMillis, GenerateId, ResetGenerator
 from .ipc import RemoveLeadingIndent, RemoveTrailingNewline
-ResetGenerator()
+from .terminals import ShellResult
 
 @dataclass
 class WsMessage:
@@ -239,13 +240,13 @@ class LockFile:
         return int(port)
 
 class WsClient:
-    def __init__(self, workspace: Path, timeout: float=15) -> None:
-        self._workspace = workspace
+    def __init__(self, server_path: Path, timeout: float=15) -> None:
+        self._server_path = server_path
         self._lock = Condition()
         self._state = CON_STATE.IDLE
         self._recieved: dict[str, WsResponse] = {}
         self._to_send: Queue[tuple[str, dict]] = Queue()
-        self._key = GenerateId(3)
+        self._key = GenerateId(8)
         self._thread_pool = ThreadPoolExecutor(3)
         
         async def queue_send(channel: str, raw: dict):
@@ -279,23 +280,6 @@ class WsClient:
             endpoint=RESPONSE_ENPOINT,
             handler=on_response
         )
-
-        self._buf_out: list[str] = []
-        self._buf_err: list[str] = []
-        async def on_stream(req: WsRequest):
-            c = req.data.get("channel")
-            if c is None: return
-            buf = req.data.get("buf")
-            if buf is None: return
-            match(c):
-                case "out":
-                    self._buf_out.append(buf)
-                case "err":
-                    self._buf_err.append(buf)
-        self.inbound.AddHandler(
-            endpoint="stream",
-            handler=on_stream
-        )
         
         self._worker: Thread|None = None
         self._reset(timeout=timeout)
@@ -323,7 +307,7 @@ class WsClient:
             connected = False
             async def do():
                 nonlocal connected
-                connected = await _try_connect(LockFile.GetPort(self._workspace))
+                connected = await _try_connect(LockFile.GetPort(self._server_path))
             def is_disposed():
                 with self._lock:
                     return self._state == CON_STATE.DISPOSED
@@ -355,8 +339,13 @@ class WsClient:
                     c, raw = self._to_send.get()
                     await sio.emit(c, raw)
                 now = CurrentTimeMillis()
-                if now-last_ping>=1000:
-                    await sio.emit(CLIENT_TO_SERVER, data=WsRequest("ping", dict(client=self._key)).Pack())
+                if now-last_ping>=200:
+                    try:
+                        await sio.emit(CLIENT_TO_SERVER, data=WsRequest("ping", dict(client=self._key)).Pack())
+                    except BadNamespaceError:
+                        with self._lock:
+                            self._state = CON_STATE.DISPOSED
+                            return # shutting down / disconnected
                     last_ping = now
                 await asyncio.sleep(0.1)
 
@@ -377,7 +366,7 @@ class WsClient:
                 match(self._state):
                     case CON_STATE.ACTIVE | CON_STATE.DISPOSED:
                         return
-                    case CON_STATE.IDLE:
+                    case CON_STATE.IDLE:    
                         # failed
                         raise ConnectionError()
             if now-start>=timeout*1000:
@@ -399,12 +388,13 @@ class WsClient:
             self._worker.join()
         self._thread_pool.shutdown()
 
-    def Endpoint(self, endpoint: str):
+    def Endpoint(self, endpoint: str|None=None):
         """decorator"""
         def _register_function(handler: Callable[[WsRequest], WsResponse|None]):
+            ep = handler.__name__ if endpoint is None else endpoint
             async def async_wrapper(req: WsRequest):
                 return handler(req)
-            self.inbound.AddHandler(endpoint, async_wrapper)
+            self.inbound.AddHandler(ep, async_wrapper)
         return _register_function
 
     def Transact(self, req: WsRequest, timeout: float=5):
@@ -428,3 +418,129 @@ class WsClient:
             if (now-start)>timeout*1000:
                 raise TimeoutError()
             time.sleep(0.001)
+
+class RemoteShell:
+    def __init__(self, server_path: Path, timeout: float=15) -> None:
+        self._out_callbacks=[] # care to not reassign these
+        self._err_callbacks=[] # care to not reassign these
+        self._MARK=f"done_{GenerateId()}"
+        self._done_stack = set()
+        self._server_path = server_path
+        self._connect_timeout = timeout
+        self._client = self._reset()
+
+    def _reset(self):
+        client = WsClient(self._server_path, self._connect_timeout)
+        @client.Endpoint()
+        def stream(req: WsRequest):
+            data = req.data
+            channel = data.get("channel")
+            if channel not in {"out", "err"}: return
+            buf = data.get("buf")
+            if not buf: return
+            match channel:
+                case "out":
+                    cb_list = self._out_callbacks
+                case "err":
+                    cb_list = self._err_callbacks
+            for content in buf:
+                if content.startswith(self._MARK):
+                    _, k = content.split(".")
+                    if k in self._done_stack: self._done_stack.remove(k)
+                    return
+                else:
+                    # was output from terminal
+                    for f in cb_list:
+                        f(content)
+        return client
+
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.Dispose()
+    
+    def RegisterOnOut(self, callback: Callable[[str], None]):
+        self._out_callbacks.append(callback)
+    
+    def RegisterOnErr(self, callback: Callable[[str], None]):
+        self._err_callbacks.append(callback)
+
+    def RemoveOnOut(self, callback: Callable[[str], None]):
+        if callback in self._out_callbacks: self._out_callbacks.remove(callback)
+
+    def RemoveOnErr(self, callback: Callable[[str], None]):
+        if callback in self._err_callbacks: self._err_callbacks.remove(callback)
+
+    def _send(self, cmd):
+        while True:
+            res = self._client.Transact(WsRequest(
+                endpoint="shell",
+                data=dict(
+                    client=self._client.GetKey(),
+                    script=cmd,
+
+                ),
+            ))
+            if res.status in {204, 200}:
+                return 
+            else:
+                return  res.data.get("error")
+
+    def ExecAsync(self, cmd: str):
+        err = self._send(RemoveLeadingIndent(cmd))
+        _hash = GenerateId()
+        self._done_stack.add(_hash)
+        if err: raise ConnectionError(err)
+        return _hash
+
+    def AwaitDone(self, timeout: int|float|None=15, _hash: str|None=None):
+        def _await_done(await_timeout, delta):
+            start = CurrentTimeMillis()
+            while True:
+                if len(self._done_stack)==0: break
+                if _hash is not None and _hash not in self._done_stack: break
+                if CurrentTimeMillis() - start > await_timeout*1000: return False
+                time.sleep(delta)
+            return True
+
+        start = CurrentTimeMillis()
+        _d = 0.5
+        while True:
+            if len(self._done_stack)==0: break
+            if _hash is not None:
+                if _hash not in self._done_stack: break
+                _mark = _hash
+            else:
+                _mark = next(iter(self._done_stack))
+            err = self._send(f'echo "{self._MARK}.{_mark}"')
+            if err: 
+                time.sleep(0.5)
+                continue
+                # raise ConnectionError(err)
+            else:
+                if _await_done(await_timeout=_d, delta=min(_d/5, 1)): break
+            # _d = min(_d*2, 864000) # 10 days
+            if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
+        if len(self._done_stack) > 0:
+            _mark = next(iter(self._done_stack))
+            self._send(f'echo "{self._MARK}.{_mark}"')
+
+    def Exec(self, cmd: str, timeout: int|float|None=None, history: bool=False) -> ShellResult:
+        _out, _err = [], []
+        def _on_out(msg):
+            _out.append(msg)
+        def _on_err(msg):
+            _err.append(msg)
+        if history:
+            self.RegisterOnOut(_on_out)
+            self.RegisterOnErr(_on_err)
+        _hash = self.ExecAsync(cmd)
+        self.AwaitDone(timeout=timeout, _hash=_hash)
+        if history:
+            self.RemoveOnOut(_on_out)
+            self.RemoveOnErr(_on_err)
+        return ShellResult(out=_out, err=_err)
+
+    def Dispose(self):
+        self._client.Dispose()

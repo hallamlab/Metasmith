@@ -6,11 +6,14 @@ from enum import Enum
 from typing import Callable
 from contextlib import asynccontextmanager
 import socketio
+from socketio.exceptions import BadNamespaceError
 from fastapi import FastAPI # just for lifespan manager
 import uvicorn
 import signal
 
 from .coms.via_ws import Sender, Reciever, CLIENT_TO_SERVER, SERVER_TO_CLIENT, WsClient, WsRequest, WsResponse, LockFile, P
+from .coms.ipc import CurrentTimeMillis
+from .coms.terminals import LiveShell
 from .logging import Log, _formatter
 
 class SERVER_HEALTH(Enum):
@@ -22,6 +25,21 @@ class SERVER_HEALTH(Enum):
 class ServerStatus:
     health: SERVER_HEALTH
     pid: int = -1
+    n_clients: int = 0
+
+@dataclass
+class Client:
+    key: str
+    # shell: LiveShell = field(default_factory=lambda: LiveShell(sleep=lambda t: asyncio.sleep(t)))
+    shell: LiveShell = field(default_factory=LiveShell)
+    last_active: int = field(default_factory=CurrentTimeMillis)
+    last_flush: int = field(default_factory=lambda: 0)
+    out: list[str] = field(default_factory=list)
+    err: list[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.shell.RegisterOnOut(lambda x: self.out.append(x))
+        self.shell.RegisterOnErr(lambda x: self.err.append(x))
 
 def RunServer(workspace: Path):    
     lockf: LockFile|None = None
@@ -40,7 +58,10 @@ def RunServer(workspace: Path):
 
     async def on_send(channel: str, raw: dict):
         # print(f"send [{channel}] [{raw}]")
-        await sio.emit(channel, raw)
+        try:
+            await sio.emit(channel, raw)
+        except BadNamespaceError:
+            pass # due to shutting down
     sender = Sender(on_send, SERVER_TO_CLIENT, CLIENT_TO_SERVER, lambda: True)
     reciever = Reciever(sender)
     async def inbound(sid, raw: dict):
@@ -60,50 +81,59 @@ def RunServer(workspace: Path):
     # =============================================
     # endpoints
 
+    clients: dict[str, Client] = {}
     @endpoint()
     async def status(req: WsRequest):
+        now = CurrentTimeMillis()
         return WsResponse(
             200, 
             data=dict(
                 address=address,
                 port=port,
                 pid=os.getpid(),
+                clients=[
+                    dict(
+                        key=c.key,
+                        last_active=now-c.last_active,
+                        last_flush=now-c.last_flush,
+                        out_buf_len = len(c.out),
+                        err_buf_len = len(c.err),
+                    )
+                    for c in clients.values()
+                ],
             )
         )
     
     @endpoint()
     async def shutdown(req: WsRequest):
+        for c in clients.values():
+            c.shell.Dispose()
         os.kill(os.getpid(), signal.SIGINT)
 
     @endpoint()
     async def ping(req: WsRequest):
         k = req.data.get("client")
         if k is None: return
+        c = clients.get(k)
+        if c is None: return
         # refresh terminal time for culling in shell ep
+        c.last_active = CurrentTimeMillis()
 
-    test_last_key = None
     @endpoint()
     async def shell(req: WsRequest):
         d = req.data
-        cmd = d.get("cmd")
         k = d.get("client")
-        nonlocal test_last_key
-        test_last_key = k
+        if k is None: return WsResponse(400, dict(err="[client] required"))
+        cmd = d.get("script")
+        if cmd is None: return WsResponse(400, dict(err="[script] required"))        
+        if k not in clients:
+            client = Client(k)
+            clients[k] = client
+        else:
+            client = clients[k]
+        client.shell.ExecAsync(cmd)
+        client.last_active = CurrentTimeMillis()
         return WsResponse(204)
-        # check for stale terminals
-        # remove registered callbacks
-
-    @endpoint()
-    async def register_on_out(req: WsRequest):
-        d = req.data
-        cmd = d.get("cmd")
-        k = d.get("client")
-    
-    @endpoint()
-    async def register_on_err(req: WsRequest):
-        d = req.data
-        cmd = d.get("cmd")
-        k = d.get("client")
 
     # =============================================
 
@@ -155,29 +185,67 @@ def RunServer(workspace: Path):
                 found = True
         assert found, "failed to retrieve assigned port"
 
-        i = 0
+        async def flush_buffer(channel, client: Client):
+            now = CurrentTimeMillis()
+            # sends no faster than this, but paced by outer loop
+            if now - client.last_flush <= 900: return
+            match(channel):
+                case "out":
+                    buf = client.out
+                case "err":
+                    buf = client.err
+            if len(buf)==0: return
+            l = len(buf)
+            success = await sender.RobustSend(
+                WsRequest(
+                    endpoint="stream",
+                    data=dict(channel=channel, buf=buf)
+                ),
+                channel=c.key,
+                timeout=1,
+            )
+            if success:
+                if l == len(buf): 
+                    buf.clear()
+                else:
+                    match(channel):
+                        case "out":
+                            client.out = buf[l:]
+                        case "err":
+                            client.err = buf[l:]
+            client.last_flush = now
+
         while True:
+            loop_start = CurrentTimeMillis()
             if lockf is not None:
                 if not lockf._file.exists(): 
                     os.kill(os.getpid(), signal.SIGINT)
                     lockf = None
-            # ----
-            # test
-            # private channel per client
-            i += 1
-            # success = await sender.RobustSend(WsRequest(
-            #     endpoint="stream",
-            #     data=dict(channel="out", buf=f"{i}")
-            # ), channel=test_last_key)
-            # print("sent", success, test_last_key)
-            # ----
+            # check for stale terminals
+            async def cull(c: Client):
+                now = CurrentTimeMillis()
+                if now - c.last_active <= 1000: return False
+                c.shell.Dispose()
+                return True
+            todo = list(clients.values())
+            for c in todo:
+                culled = await cull(c)
+                if culled: del clients[c.key]
+            # flush io buffers
+            to_send = []
+            for c in clients.values():
+                to_send.append(flush_buffer("out", c))
+                to_send.append(flush_buffer("err", c))
+            await asyncio.gather(*to_send)
 
-            await asyncio.sleep(0.1) # keep server alive
+            loop_delta = CurrentTimeMillis()-loop_start
+            remain = max(0, 1000-loop_delta)
+            await asyncio.sleep(remain/1000) # keep server alive
 
     async def safe():
         try:
             await main()
-        except (KeyboardInterrupt, asyncio.exceptions.CancelledError):
+        except (KeyboardInterrupt, asyncio.exceptions.CancelledError, BadNamespaceError):
             pass
     
     try:
@@ -201,10 +269,11 @@ def CheckStatus(workspace: Path):
             endpoint="status",
         )
     )
-
+    data = res.data
     return ServerStatus(
-        health=SERVER_HEALTH.ALIVE,
-        pid = res.data.get("pid", -1)
+        health = SERVER_HEALTH.ALIVE,
+        pid = data.get("pid", -1),
+        n_clients = len(data.get("clients", []))
     )
 
 def StopServer(workspace: Path):
