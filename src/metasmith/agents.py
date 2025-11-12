@@ -13,10 +13,10 @@ import uuid
 
 from .serialization import StdTime
 from .hashing import KeyGenerator
-from .coms.ipc import LiveShell, ShellResult, RemoveLeadingIndent
 from .logging import Log
 from .coms.containers import Container, ContainerRuntime
-from .coms.ipc import RemoteShell
+from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
+from .coms.via_ws import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, METADATA_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstance

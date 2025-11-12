@@ -12,7 +12,8 @@ import time
 
 from ..serialization import IsText
 from ..coms.containers import ContainerRuntime, Container
-from ..coms.ipc import LiveShell, RemoteShell, RemoveLeadingIndent
+# from ..coms.terminals import LiveShell
+from ..coms.via_ws import RemoteShell, RemoveLeadingIndent
 from .solver import Dependency, Endpoint, Transform
 from .remote import GlobusSource, Logistics, Source, SourceType
 from ..hashing import KeyGenerator

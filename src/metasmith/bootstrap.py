@@ -10,7 +10,8 @@ from .models.libraries import ContextPath, ContextData, ExecutionContext, Execut
 from .models.libraries import DataInstance, DataTypeLibrary, TransformInstance, TransformInstanceLibrary
 from .models.solver import Dependency, Endpoint
 from .models.workflow import WorkflowTask
-from .coms.ipc import LiveShell, RemoteShell
+from .coms.terminals import LiveShell
+from .coms.via_ws import RemoteShell
 from .coms.containers import Container
 from .serialization import StdTime
 

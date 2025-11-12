@@ -4,7 +4,7 @@
 import sys
 import time
 import random
-from metasmith.coms.ipc import RemoteShell
+from metasmith.coms.via_ws import RemoteShell
 from metasmith.agents import AgentPaths
 
 def call():
