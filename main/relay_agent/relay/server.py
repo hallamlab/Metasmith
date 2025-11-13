@@ -41,7 +41,13 @@ class Client:
         self.shell.RegisterOnOut(lambda x: self.out.append(x))
         self.shell.RegisterOnErr(lambda x: self.err.append(x))
 
-def RunServer(workspace: Path):    
+def RunServer(workspace: Path):
+    def log(x):
+        # return Log.Info(f"> {x}")
+        return Log.Info(x)
+    Log.AddLogFile(workspace/"main.log")
+    Log.SetStdout(False)
+
     lockf: LockFile|None = None
     address, port = None, None
     @asynccontextmanager
@@ -106,8 +112,11 @@ def RunServer(workspace: Path):
     
     @endpoint()
     async def shutdown(req: WsRequest):
+        log("stopping")
         for c in clients.values():
+            log(f"disposing [{c.key}]")
             c.shell.Dispose()
+        log("exit")
         os.kill(os.getpid(), signal.SIGINT)
 
     @endpoint()
@@ -129,12 +138,13 @@ def RunServer(workspace: Path):
         if k not in clients:
             client = Client(k)
             clients[k] = client
+            log(f"client [{k}]")
         else:
             client = clients[k]
         client.shell.ExecAsync(cmd)
         client.last_active = CurrentTimeMillis()
         return WsResponse(204)
-
+        
     # =============================================
 
     async def main():
@@ -144,12 +154,19 @@ def RunServer(workspace: Path):
             "formatters": {
                 "default": {
                     "()": "uvicorn.logging.DefaultFormatter",
-                    "fmt": _formatter._formatter,
+                    "fmt": "%(asctime)s %(levelname)s| %(message)s",
                     "use_colors": False,
                 },
             },
             "handlers": {
-                "default": {
+                "uvicorn": {
+                    "formatter": "default",
+                    "class": "logging.handlers.RotatingFileHandler",
+                    "filename": str(workspace/"uvicorn.log"),
+                    "backupCount": 5,
+                    "maxBytes": 104857600, # 100MB
+                },
+                "app": {
                     "formatter": "default",
                     "class": "logging.handlers.RotatingFileHandler",
                     "filename": str(workspace/"main.log"),
@@ -158,7 +175,8 @@ def RunServer(workspace: Path):
                 },
             },
             "loggers": {
-                "uvicorn": {"handlers": ["default"], "level": "INFO"},
+                "uvicorn": {"handlers": ["uvicorn"], "level": "INFO"},
+                f"{Log.GetName()}": {"handlers": ["app"], "level": "INFO"},
             },
             "root": {
                 "handlers": [],
@@ -168,7 +186,7 @@ def RunServer(workspace: Path):
         config = uvicorn.Config(app, port=0, access_log=False, lifespan="on", log_config=LOGGING_CONFIG)
         server = uvicorn.Server(config)
         asyncio.create_task(server.serve())
-
+        
         # Wait until the server has started and bound to a port
         while not server.started:
             await asyncio.sleep(0.1)
@@ -184,6 +202,9 @@ def RunServer(workspace: Path):
                 lockf = LockFile(workspace, _port)
                 found = True
         assert found, "failed to retrieve assigned port"
+        log(f"="*25)
+        log(f"server pid [{os.getpid()}]")
+        log(f"server connected to [{address}:{port}] at [{workspace}]")
 
         async def flush_buffer(channel, client: Client):
             now = CurrentTimeMillis()
@@ -218,7 +239,8 @@ def RunServer(workspace: Path):
         while True:
             loop_start = CurrentTimeMillis()
             if lockf is not None:
-                if not lockf._file.exists(): 
+                if not lockf._file.exists():
+                    log(f"force shutdown from deleted lock file at [{lockf._file}]")
                     os.kill(os.getpid(), signal.SIGINT)
                     lockf = None
             # check for stale terminals
@@ -230,7 +252,9 @@ def RunServer(workspace: Path):
             todo = list(clients.values())
             for c in todo:
                 culled = await cull(c)
-                if culled: del clients[c.key]
+                if culled:
+                    log(f"disconnected [{c.key}]")
+                    del clients[c.key]
             # flush io buffers
             to_send = []
             for c in clients.values():
@@ -251,7 +275,7 @@ def RunServer(workspace: Path):
     try:
         asyncio.run(safe())
     except KeyboardInterrupt:
-        pass
+        log(f"force shutdown from Ctrl+C")
 
 def _get_connection(workspace: Path, timeout=5):
     return WsClient(workspace, timeout=timeout)
@@ -287,17 +311,3 @@ def StopServer(workspace: Path):
         )
     except (ConnectionError, TimeoutError):
         return
-
-def Bounce(workspace: Path):
-    try:
-        client = _get_connection(workspace, timeout=1)
-        client.Transact(
-            WsRequest(
-                endpoint="shutdown",
-            ),
-            timeout=0
-        )
-        # client.
-    except (ConnectionError, TimeoutError):
-        return
-    pass

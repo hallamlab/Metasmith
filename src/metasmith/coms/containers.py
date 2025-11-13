@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from enum import Enum
 
-from ..coms.ipc import LiveShell
+from ..coms.terminals import LiveShell
 
 class ContainerRuntime(Enum):
     DOCKER = "docker"

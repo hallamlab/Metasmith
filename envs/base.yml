@@ -3,7 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - python=3.12
-  - nextflow=24.10.5
+  - nextflow=25.10.0
   - graphviz=13.1.1 # DAG renderer
   - python-graphviz=0.21 # Python bindings
   - pyyaml=6.0.2

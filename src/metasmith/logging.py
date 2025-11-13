@@ -59,7 +59,8 @@ _handler.addFilter(InfoFilter())
 _handler_err = logging.StreamHandler(stream=sys.stderr)
 _handler_err.setLevel(logging.ERROR)
 _handler_err.setFormatter(_formatter)
-_logger = logging.getLogger()
+_logger = logging.getLogger(__name__)
+_logger.propagate = False
 _logger.setLevel(logging.DEBUG)
 _logger.handlers.clear()
 _to_stdout: bool = False
@@ -116,3 +117,7 @@ class Log:
     @classmethod
     def Error(cls, message, timestamp=True):
         _logger.error(message, extra=dict(include_timestamp=timestamp))
+
+    @classmethod
+    def GetName(cls):
+        return __name__

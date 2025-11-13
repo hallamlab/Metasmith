@@ -11,6 +11,7 @@ import socket
 from .logging import Log
 from .server import SERVER_HEALTH, CheckStatus, RunServer, StopServer, LockFile
 from .coms.ipc import CurrentTimeMillis, ResetGenerator
+from .coms.via_ws import RemoteShell
 
 CLI_ENTRY = "msm_relay"
 WS = Path(sys.orig_argv[0]).parent.absolute()
@@ -110,29 +111,31 @@ class CommandLineInterface:
                 v = v.name
             Log.Info(f"  {k}: {v}")
 
-    # def bounce(self, raw_args=None):
-    #     parser = _make_parser(self._get_fn_name(), "bounce command through relay")
-    #     parser.add_argument("cmd", metavar="STR")
-    #     args = parser.parse_args(raw_args)
-    #     from .main import Bounce
-    #     Bounce(args.io, args.cmd)
+    def bounce(self, raw_args=None):
+        parser = _make_parser(self._get_fn_name(), "bounce command through relay")
+        parser.add_argument("cmd", metavar="STR")
+        args = parser.parse_args(raw_args)
+        with RemoteShell(args.io) as shell:
+            shell.RegisterOnOut(print)
+            shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
+            shell.Exec(args.cmd, timeout=None)
+
+    def logs(self, raw_args=None):
+        parser = _make_parser(self._get_fn_name(), "print logs")
+        args = parser.parse_args(raw_args)
+        logs_path = Path(args.io)/"main.log"
+        if not logs_path.exists():
+            Log.Error(f"no logs at [{logs_path}]")
+            return
+        with open(logs_path) as f:
+            for l in f:
+                print(l, end="")
 
     # def test(self, raw_args=None):
     #     parser = _make_parser(self._get_fn_name(), "run self test")
     #     args = parser.parse_args(raw_args)
     #     from .self_test import run as SelfTest
     #     SelfTest(args.io)
-
-    # def logs(self, raw_args=None):
-    #     parser = _make_parser(self._get_fn_name(), "print logs")
-    #     args = parser.parse_args(raw_args)
-    #     logs_path = Path(args.io)/"main.log"
-    #     if not logs_path.exists():
-    #         Log.Error(f"no logs at [{logs_path}]")
-    #         return
-    #     with open(logs_path) as f:
-    #         for l in f:
-    #             print(l, end="")
 
     def help(self, args=None):
         help = [

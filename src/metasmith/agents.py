@@ -57,7 +57,7 @@ class AgentPaths:
     @classmethod
     def to_local_relay_coms(cls, root: Path=None):
         host = socket.gethostname()
-        return cls.to_relay(root).parent/f"{host}/main.in"
+        return cls.to_relay(root).parent/f"{host}"
 
     @classmethod
     def to_data(cls, root: Path=None):
@@ -217,9 +217,9 @@ class Agent:
                 res = mover.ExecuteTransfers()
                 assert len(res.completed) == 1, f"failed to deploy files"
 
-            self._run_setup(shell)
-            shell.Exec(f"mkdir -p {self.home.GetPath()}")
             with PausedShell():
+                self._run_setup(shell)
+                shell.Exec(f"mkdir -p {self.home.GetPath()}")
                 res = shell.Exec(f"""
                     realpath {self.home.GetPath()}
                     realpath ~
@@ -258,11 +258,12 @@ class Agent:
                 f"""
                 #!/bin/bash
                 AGENT_HOME={resolved_agent_home}
-                BINDS="{container.MakeBindsParam()}"
+                BINDS="$BINDS {container.MakeBindsParam()}"
                 if [ -e "{dev_src}" ]; then
                     echo "including dev binds"
                     BINDS="$BINDS {dev_mock.MakeBindsParam(defaults=False)}"
                 fi
+                echo "binds [$BINDS]"
                 {container.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif", custom_bind_param="$BINDS")} $@
                 """,
                 dest="msm_stub",
@@ -337,7 +338,7 @@ class Agent:
                 find .
                 ls -lh .
                 echo "relay =========================="
-                $INTERNALS/relay/msm_relay start --channels 8
+                $INTERNALS/relay/msm_relay start
                 echo "execute ========================"
                 run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR
                 echo "post execute ==================="
@@ -401,8 +402,9 @@ class Agent:
             Log.Info(f"staging")
             sh_remote.Exec(f"./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths}", timeout=None)
 
-    def RunWorkflow(self, task: WorkflowTask|str):
-        key = task._key if isinstance(task, WorkflowTask) else str(task)
+    def RunWorkflow(self, task: WorkflowTask):
+        # key = task._key if isinstance(task, WorkflowTask) else str(task)
+        key = task.GetKey()
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
             Log.Info(f"triggering execution of [{key}]")
@@ -414,9 +416,22 @@ class Agent:
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
             LOG_DIR = Path(f"{AgentPaths.INTERNALS}/logs.{StdTime.Timestamp()}") # this timestamp is used as the start time below!
             launcher_log = workspace/LOG_DIR/"main.raw.log"
+            
+            binds = task.GetCommonInputFolders(method="external")
+            Log.Info(f"binds {binds}")
+            mock = Container(
+                image=self.container,
+                binds=[
+                    (p, p)
+                    for p in binds
+                ],
+                runtime=self.runtime,
+            )
+
             sh_remote.Exec(
                 f"""
                 mkdir -p {launcher_log.parent}
+                export BINDS="{mock.MakeBindsParam(defaults=False)}"
                 nohup ./msm api run_workflow -a key={key} -a log_dir={LOG_DIR} >{launcher_log} 2>&1 &
                 """,
             )
@@ -473,6 +488,7 @@ def StageWorkflow(task_key: str, verify: bool):
             """,
             history=True
         )
+        assert len(res.out) ==1, res.out
         extern_root, = [Path(x) for x in res.out]
         extern_work = extern_root/work_relative
         _rel = f"{extern_work}".replace(f"{extern_root}/", "")
@@ -622,6 +638,13 @@ def RunWorkflow(key: str, log_dir: Path):
 
     # need to call nf inside container
     # nf needs java and is not a standalone executable
+    #
+    # https://github.com/nextflow-io/nextflow/discussions/4711
+    # export NXF_ENABLE_VIRTUAL_THREADS=false
+    # https://seqera.io/blog/optimizing-nextflow-for-hpc-and-cloud-at-scale/
+    # export NXF_JVM_ARGS="-Xms2g -Xmx64g"
+    # causes memory error
+    # -with-report {log_dir}/nxf_report.html \
     with LiveShell() as shell:
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
@@ -636,9 +659,12 @@ def RunWorkflow(key: str, log_dir: Path):
             trap stop EXIT
 
             export NXF_HOME=./.nextflow
+            export NXF_ENABLE_VIRTUAL_THREADS=true
+            export NXF_JVM_ARGS="-Xms2g -Xmx64g"
             nextflow -c ./workflow.config.nf \
                 -log {log_dir}/nxf.log \
                 run ./workflow.nf \
+                -with-report {log_dir}/nxf_report.html \
                 -ansi-log false \
                 -resume \
                 -work-dir ./nxf_work &

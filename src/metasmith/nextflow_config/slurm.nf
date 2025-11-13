@@ -1,6 +1,8 @@
 // parameter defaults
 params.output = 'results/latest'
 params.slurm_account = '<slurm_account>' // task.config.nextflow.slurm_account
+filePorter.maxThreads = 10
+report.overwrite = true
 
 env {
     NUMBA_CACHE_DIR = './temp/numba_cache'
@@ -24,6 +26,7 @@ process {
     executor = 'slurm'
     clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurm_account}"
     errorStrategy = 'ignore'
+    array = <array>
 
     // resource defaults
     cpus = <cpus>           // 4

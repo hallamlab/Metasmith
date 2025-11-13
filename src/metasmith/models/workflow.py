@@ -4,7 +4,7 @@ from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Generator, Iterable, TypeVar
-import re
+import os
 import itertools
 import yaml
 
@@ -601,6 +601,42 @@ class WorkflowTask:
         main = create_batch("", top_level, f"./{plans_dir.name}")
         with open(context.work_dir/"workflow.nf", "w") as f:
              f.write(main.content)
+
+    def GetCommonInputFolders(self, method="external"):
+        """
+        @method is: external | internal | all
+        """
+        assert method in {"external", "internal", "all"}
+        roots: list[str] = []
+        def join(a, b):
+            return os.path.commonpath([a, b])
+
+        def update(p: str):
+            nonlocal roots
+            bi, best, result = None, None, ""
+            for i, r in enumerate(roots):
+                x = join(r, p)
+                if x == "/": continue
+                score = len(r)-len(x)
+                if best is None or score<best:
+                    bi, best, result = i, score, x
+            if bi is not None:
+                roots[bi] = result
+            else:
+                roots.append(p)
+
+        def should_keep(inst: DataInstance):
+            match(method):
+                case "external":
+                    return inst.path.is_absolute()
+                case "internal":
+                    return not inst.path.is_absolute()
+                case "all":
+                    return True
+        given = {inst.ResolvePath().parent for plan in self.plans for inst in plan.given if should_keep(inst)}
+        for path in given:
+            update(str(path.parent))
+        return roots
 
     def Pack(self):
         optional = {}
