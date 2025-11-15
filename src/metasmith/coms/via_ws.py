@@ -34,6 +34,7 @@ from ..logging import logging
 from .ipc import CurrentTimeMillis, GenerateId, ResetGenerator
 from .ipc import RemoveLeadingIndent, RemoveTrailingNewline
 from .terminals import ShellResult
+ResetGenerator()
 
 @dataclass
 class WsMessage:
@@ -79,11 +80,13 @@ class WsMessage:
 class WsRequest(WsMessage):
     endpoint: str
     data: dict = field(default_factory=dict)
+    target: str|None = None # used by client to filter out off-target messages
 
 @dataclass
 class WsResponse(WsMessage):
     status: int
     data: dict = field(default_factory=dict)
+    channel: str|None = None # used by server to respond to specific client's channel
 
 type P[T: Any] = CoroutineType[Any, Any, T]
 async def _exponential_fallback(do: Callable[[], P], should_break: Callable[[], P[bool]], timeout: float=5):
@@ -193,7 +196,7 @@ class Reciever:
                 endpoint=RESPONSE_ENPOINT,
                 data=d,
             )
-            await self._sender.RobustSend(res)
+            await self._sender.RobustSend(res, channel=raw_res.channel)
 
 class CON_STATE(Enum):
     IDLE = 0
@@ -290,7 +293,6 @@ class WsClient:
                 with self._lock:
                     if self._state != CON_STATE.ACTIVE: return
                 await self.inbound.NewRequest(raw)
-            sio.on(SERVER_TO_CLIENT, inbound)
             sio.on(self._key, inbound)
             async def ack(raw: dict):
                 with self._lock:
@@ -337,6 +339,9 @@ class WsClient:
                         return
                 while not self._to_send.empty():
                     c, raw = self._to_send.get()
+                    if 'data' in raw:
+                        d = raw['data']
+                        d['client'] = self._key
                     await sio.emit(c, raw)
                 now = CurrentTimeMillis()
                 if now-last_ping>=200:
@@ -393,6 +398,7 @@ class WsClient:
         def _register_function(handler: Callable[[WsRequest], WsResponse|None]):
             ep = handler.__name__ if endpoint is None else endpoint
             async def async_wrapper(req: WsRequest):
+                # if req.target != self._key: return
                 return handler(req)
             self.inbound.AddHandler(ep, async_wrapper)
         return _register_function
@@ -481,11 +487,11 @@ class RemoteShell:
                     script=cmd,
 
                 ),
-            ))
+            ), timeout=self._connect_timeout)
             if res.status in {204, 200}:
                 return 
             else:
-                return  res.data.get("error")
+                return res.data.get("error")
 
     def ExecAsync(self, cmd: str):
         err = self._send(RemoveLeadingIndent(cmd))

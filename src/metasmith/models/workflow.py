@@ -234,7 +234,7 @@ class WorkflowPlan:
         transform2inst: dict[Transform, TransformInstance] = {}
         inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}
         for trlib in transforms:
-            for path, name, tr in trlib.IterateTransforms():
+            for path, tr in trlib.IterateTransforms():
                 model = tr.model
                 if model in transform2inst:
                     Log.Warn(f"transform [{model}] of [{trlib}] is masked")
@@ -362,6 +362,7 @@ class WorkflowPlan:
                 TAB+f'{_make_bind_var(i, is_assignment=True)}="{p}"'
                 for i, p in enumerate(external_binds)
             ] + [
+                TAB+f'echo "step $step_index"',
                 TAB+f'echo "{external_binds_param}" >>{METADATA_FILE}',
                 TAB+f'bootstrap {context.external_work_var} $step_index',
                 TAB+f'[ -e .command.success ] && exit 0 || exit 1', # in case slurm silently kills proc from oom/timeout

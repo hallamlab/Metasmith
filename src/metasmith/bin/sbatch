@@ -8,6 +8,7 @@ import re
 import random
 from metasmith.coms.via_ws import RemoteShell
 from metasmith.agents import Agent, AgentPaths
+from metasmith.logging import Log
 
 agent = Agent.Load(AgentPaths.to_definition())
 cwd = Path("./").resolve() # example **/runs/WSFa2f/nxf_work/08/b8eb0c0fd0f5b02aed6c4cecefe08f
@@ -15,27 +16,39 @@ cwd_str = str(cwd)
 tail = next(re.finditer(r"/\w*/nxf_work/.*", cwd_str)).group()[1:] # from key, example WSFa2f/nxf_work/08/b8eb0c0fd0f5b02aed6c4cecefe08f
 external_cwd = AgentPaths.to_staged(root=agent.home.GetPath())/tail
 
+Log.SetStdout(on=False)
+Log.AddLogFile(Path("./.sbatch.log"))
+def err(msg: str):
+    Log.Error(msg)
+def out(msg: str):
+    Log.Info(msg)
+    print(msg) # pass through sbatch output
+
 def call():
     with RemoteShell(AgentPaths.to_local_relay_coms()) as shell:
         # take this opportunity to fix the paths of the command.run script
-        res = shell.Exec(f"realpath {agent.home.GetPath()}", history=True)
-        assert len(res.err) == 0, "failed to resolve external workspace path"
-        resolved_agent_workspace = res.out[0]
         command_run_path = Path(sys.argv[1])
         with open(command_run_path, 'r') as f:
             command_run = "".join(f.readlines())
-        command_run = command_run.replace(str(AgentPaths.HOME_ROOT), resolved_agent_workspace)
+        command_run = command_run.replace(str(AgentPaths.HOME_ROOT), str(agent.real_path))
         with open(command_run_path, 'w') as f:
             f.write(command_run)
-        shell.RegisterOnOut(print)
-        shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
+        shell.RegisterOnOut(out)
+        shell.RegisterOnErr(err)
         shell.Exec(f"cd {external_cwd} && sbatch {' '.join(sys.argv[1:])}")
-        time.sleep(0.1) # don't know if or why this is needed...
 
-for retry in range(5):
+success = False
+retries = 5
+for retry in range(retries):
     try:
         call()
+        success = True
         break
     except (TimeoutError, ConnectionError, FileNotFoundError):
         dt = random.random()*(2**retry)+0.1
         time.sleep(dt)
+
+if not success:
+    m = f"failed after [{retries}] attempts"
+    Log.Error(m)
+    print(m, file=sys.stderr)

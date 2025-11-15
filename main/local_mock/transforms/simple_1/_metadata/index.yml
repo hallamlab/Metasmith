@@ -1,5 +1,5 @@
 manifest:
-  diamond.py: transforms::transform
-  pprodigal.py: transforms::transform
+  /home/tony/workspace/tools/Metasmith/main/local_mock/transforms/simple_1/no_op.py:
+    type: transforms::transform
 remote_src: null
-schema: 0.5.2
+schema: 0.9.0

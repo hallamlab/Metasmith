@@ -63,7 +63,6 @@ def RunServer(workspace: Path):
     app = socketio.ASGIApp(sio, api_app)
 
     async def on_send(channel: str, raw: dict):
-        # print(f"send [{channel}] [{raw}]")
         try:
             await sio.emit(channel, raw)
         except BadNamespaceError:
@@ -90,6 +89,8 @@ def RunServer(workspace: Path):
     clients: dict[str, Client] = {}
     @endpoint()
     async def status(req: WsRequest):
+        k = req.data.get("client")
+        if k is None: return WsResponse(400, dict(err="[client] required"))
         now = CurrentTimeMillis()
         return WsResponse(
             200, 
@@ -107,7 +108,8 @@ def RunServer(workspace: Path):
                     )
                     for c in clients.values()
                 ],
-            )
+            ),
+            channel=k,
         )
     
     @endpoint()
@@ -134,16 +136,16 @@ def RunServer(workspace: Path):
         k = d.get("client")
         if k is None: return WsResponse(400, dict(err="[client] required"))
         cmd = d.get("script")
-        if cmd is None: return WsResponse(400, dict(err="[script] required"))        
+        if cmd is None: return WsResponse(400, dict(err="[script] required"), channel=k)
         if k not in clients:
             client = Client(k)
             clients[k] = client
-            log(f"client [{k}]")
+            log(f"shell client [{k}]")
         else:
             client = clients[k]
         client.shell.ExecAsync(cmd)
         client.last_active = CurrentTimeMillis()
-        return WsResponse(204)
+        return WsResponse(204, channel=k)
         
     # =============================================
 
@@ -220,9 +222,10 @@ def RunServer(workspace: Path):
             success = await sender.RobustSend(
                 WsRequest(
                     endpoint="stream",
-                    data=dict(channel=channel, buf=buf)
+                    data=dict(channel=channel, buf=buf),
+                    # target=client.key,
                 ),
-                channel=c.key,
+                channel=client.key,
                 timeout=1,
             )
             if success:

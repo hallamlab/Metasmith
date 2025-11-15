@@ -25,11 +25,12 @@ process {
     scratch = true                  // use worker node's local hard drive
     executor = 'slurm'
     clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurm_account}"
-    errorStrategy = 'ignore'
-    array = <array>
+    errorStrategy = { task.attempt<=3 ? 'retry' : 'ignore' }
+    // array = <array>
 
     // resource defaults
     cpus = <cpus>           // 4
-    memory = '<memory>'     // 16 GB
-    time = '<time>'         // 3h
+    memory = { <memory>.GB }     // 16 GB
+    time = { <time>.hour**(3*(task.attempt-1)) }         // 3h
+    maxRetries 3
 }

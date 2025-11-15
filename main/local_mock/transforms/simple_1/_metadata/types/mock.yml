@@ -5,15 +5,15 @@ ontology:
   version: '1.25'
 schema: 0.9.0
 types:
-  example_input:
+  a:
     properties:
-    - example_input
-    - metasmith
-  example_output:
+    - a
+    - test
+  b:
     properties:
-    - example_output
-    - metasmith
-  transform:
+    - b
+    - test
+  c:
     properties:
-    - metasmith
-    - transform
+    - c
+    - test

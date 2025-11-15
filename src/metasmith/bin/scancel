@@ -10,7 +10,7 @@ from metasmith.agents import AgentPaths
 from metasmith.logging import Log
 
 Log.SetStdout(on=False)
-Log.AddLogFile(Path("./squeue.log"))
+Log.AddLogFile(Path("./scancel.log"))
 def err(msg: str):
     print(msg, file=sys.stderr)
     Log.Error(msg)
@@ -25,7 +25,7 @@ def call():
         args = [f'"{x}"' if len(x)>0 and x[0]!="-" else x for x in sys.argv[1:]]
         Log.Info("args:")
         Log.Info(' '.join(args))
-        shell.Exec(f"squeue {' '.join(args)}")
+        shell.Exec(f"scancel {' '.join(args)}")
 
 for retry in range(5):
     try:

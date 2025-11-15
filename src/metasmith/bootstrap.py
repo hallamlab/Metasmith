@@ -52,7 +52,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
     def _shorten_home(p: str):
         return p.replace(agent_home, "{agent_home}")
     
-    with RemoteShell(server_path) as shell:
+    with RemoteShell(server_path, timeout=60) as shell:
         _paused = False
         class PausedStdOut:
             def __enter__(self):

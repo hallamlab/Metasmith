@@ -1,5 +1,6 @@
 from __future__ import annotations
 import itertools
+from math import e
 import shutil
 import os, sys
 from pathlib import Path
@@ -620,6 +621,8 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         if "transforms" not in self.types:
             transform_types = DataTypeLibrary(types=dict(
                 transform=Endpoint({"metasmith", "transform"}),
+                example_input=Endpoint({"metasmith", "example_input"}),
+                example_output=Endpoint({"metasmith", "example_output"}),
             ))
             self.AddTypeLibrary("transforms", transform_types)
         self._transform_cache: dict[Path, TransformInstance] = {}
@@ -627,7 +630,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
     def PruneTypes(self, save: bool=True, whitelist: set[str]=None):
         if whitelist is None: whitelist = set()
         indirect_whitelist = []
-        for path, name, tr in self.IterateTransforms():
+        for path, tr in self.IterateTransforms():
             indirect_whitelist += tr.model.requires
             indirect_whitelist += tr.model.produces
         def _in(x: Dependency):
@@ -638,13 +641,16 @@ class TransformInstanceLibrary(DataInstanceLibrary):
     def AddStub(self, path: Path|str, exist_ok: bool=True):
         path = Path(path)
         assert not path.is_absolute(), f"path must be relative"
+        path = self.location/path
         HERE = Path(__file__).parent
         example = HERE/"_example_transform.py"
         if path.suffix != ".py":
             path = path.parent/(path.name+".py")
-        if not exist_ok and path.exists:
-            raise FileExistsError(f"file exists [{path}]")
-        shutil.copy(example, path, follow_symlinks=True)
+        if path.exists():
+            if not exist_ok:
+                raise FileExistsError(f"file exists [{path}]")
+        else:
+            shutil.copy(example, path, follow_symlinks=True)
         self.AddItem(path, "transforms::transform")
         # results = self.AddBulk([(example, path, "transforms::transform")], on_exist="skip" if exist_ok else "error")
         # assert len(results) == 1, f"failed to add transform at [{path}]"
@@ -670,10 +676,10 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         return self._transform_cache.get(path)
 
     def IterateTransforms(self):
-        for k, v, dtype in self.Iterate():
+        for k, dtype_name, dtype in self.Iterate():
             tr = self.GetTransform(k)
-            assert tr is not None, (v, k)
-            yield k, v, tr
+            assert tr is not None, (dtype_name, k)
+            yield k, tr
 
     @classmethod
     def Load(cls, path: Path|str):

@@ -131,11 +131,11 @@ class CommandLineInterface:
             for l in f:
                 print(l, end="")
 
-    # def test(self, raw_args=None):
-    #     parser = _make_parser(self._get_fn_name(), "run self test")
-    #     args = parser.parse_args(raw_args)
-    #     from .self_test import run as SelfTest
-    #     SelfTest(args.io)
+    def test(self, raw_args=None):
+        parser = _make_parser(self._get_fn_name(), "run self test")
+        args = parser.parse_args(raw_args)
+        from .self_test import run as SelfTest
+        SelfTest(args.io)
 
     def help(self, args=None):
         help = [

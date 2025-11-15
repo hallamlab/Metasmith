@@ -157,7 +157,7 @@ class LiveShell:
         self._shell.Write(RemoveLeadingIndent(cmd))
         return _hash
 
-    def AwaitDone(self, timeout: int|float = 15, _hash: str=None):
+    def AwaitDone(self, timeout: int|float|None = 15, _hash: str=None):
         def _await_done(await_timeout, delta):
             start = CurrentTimeMillis()
             while True:
@@ -186,7 +186,7 @@ class LiveShell:
                 _mark = next(iter(self._done_stack))
                 self._shell.Write(f'echo "{self._MARK}.{_mark}"')
 
-    def Exec(self, cmd: str, timeout: int|None = 15, history: bool=False) -> ShellResult:
+    def Exec(self, cmd: str, timeout: int|None = None, history: bool=False) -> ShellResult:
         _out, _err = [], []
         def _log_err(msg):
             _err.append(msg)

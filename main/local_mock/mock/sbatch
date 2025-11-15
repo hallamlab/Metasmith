@@ -22,8 +22,14 @@ mock_temp.mkdir(exist_ok=True, parents=True)
 entry = Path('./').resolve()/sys.argv[1]
 log_out = entry.with_suffix(".out")
 log_err = entry.with_suffix(".err")
+
+running = cache/"running"
+if not running.exists(): running.mkdir(exist_ok=True)
+lock = running/SID
+lock.touch()
+
 cmd = f"""\
-nohup bash -c "cd {mock_temp} && bash {entry} >{log_out} 2>{log_err}" >/dev/null 2>&1 &
+nohup bash -c "cd {mock_temp} && bash {entry} >{log_out} 2>{log_err}; rm {lock}" >/dev/null 2>&1 &
 """
 
 with open(fpath, "w") as f:
@@ -39,4 +45,9 @@ with open(fpath, "w") as f:
     f.write(f"{Path('./').resolve()}\n")
 
 os.system(cmd)
-print(SID)
+
+# sbatch: NOTE: Your memory request of 32768.0M was likely submitted as 32.0G. Please note that Slurm interprets memory requests denominated in G as multiples of 1024M, not 1000M.
+# Submitted batch job 11198814
+MOCK_WARN = "sbatch: NOTE: Your memory request of 32768.0M was likely submitted as 32.0G. Please note that Slurm interprets memory requests denominated in G as multiples of 1024M, not 1000M."
+print(MOCK_WARN, file=sys.stderr)
+print(f"Submitted batch job {SID}")

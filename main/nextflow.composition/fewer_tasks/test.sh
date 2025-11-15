@@ -10,4 +10,4 @@ rm -r results
     # --bootstrap 
     # run ../test.2.nf \
 nextflow -C ../config.nf -log ./.nextflow_logs/log \
-    run ../test_large.nf
+    run ../$1.nf

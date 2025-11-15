@@ -7,7 +7,9 @@ env {
     XDG_CACHE_HOME = './temp/xdg_home'
 }
 
-apptainer.enabled = true
+process {
+    errorStrategy = 'ignore'
+}
 
 // process {
 //     scratch = true              // use worker node's local hard drive

@@ -35,6 +35,7 @@ class Container:
         default_binds = [("./", "/ws")] if defaults else []
         binds = {str(d):str(s) for s, d in default_binds+self.binds}
         binds = [(s, d) for d, s in binds.items()]
+        if len(binds)==0: return ""
         match self.runtime:
             case ContainerRuntime.DOCKER:
                 binds = [f'--mount type=bind,source="{src}",target="{dst}"' for src, dst in binds]
