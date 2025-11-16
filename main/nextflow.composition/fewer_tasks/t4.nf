@@ -81,8 +81,11 @@ workflow {
     tax = taxcls(bins)
     stats = bin_stats(bins)
     mags = compile_mag(bins, stats, tax)
-
-    // tax.map(x -> x.name).view()
     mags.map(x -> x.name).view()
-    // stats.view()
+    
+    // to implement binning
+    // have a "distributor" step run before each transform
+    // which gets all items in channel
+    // it should then "groupby" the items into input sets
+    // for each instance of the transform to run, using instances of a lineage constraint 
 }
