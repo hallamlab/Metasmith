@@ -6,8 +6,8 @@ cd ./cache
 #     run ../main.nf -resume
 
 # rm -rf .nextflow* work results
-rm -r results
+[ -e results ] && rm -r results
     # --bootstrap 
     # run ../test.2.nf \
-nextflow -C ../config.nf -log ./.nextflow_logs/log \
-    run ../$1.nf
+nextflow -C ../config.nf -log ./.nextflow_logs/log run ../$1.nf
+# nextflow -log ./.nextflow_logs/log run ../$1.nf

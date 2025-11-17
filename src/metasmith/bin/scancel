@@ -26,6 +26,7 @@ def call():
         Log.Info("args:")
         Log.Info(' '.join(args))
         shell.Exec(f"scancel {' '.join(args)}")
+    Log.Info('//')
 
 for retry in range(5):
     try:

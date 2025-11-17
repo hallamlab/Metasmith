@@ -186,7 +186,7 @@ class LiveShell:
                 _mark = next(iter(self._done_stack))
                 self._shell.Write(f'echo "{self._MARK}.{_mark}"')
 
-    def Exec(self, cmd: str, timeout: int|None = None, history: bool=False) -> ShellResult:
+    def Exec(self, cmd: str, timeout: float|None = None, history: bool=False) -> ShellResult:
         _out, _err = [], []
         def _log_err(msg):
             _err.append(msg)

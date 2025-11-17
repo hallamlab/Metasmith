@@ -35,7 +35,9 @@ def DeployFromContainer(workspace: Path):
 
     Log.Info("deployment complete")
 
-def StageAndRunTransform(workspace: Path, step_index: int):
+def StageAndRunTransform(workspace: Path, sample_index: int, step_index: int):
+    sample_index -= 1   # is 1 indexed for log legibility
+    step_index -= 1     # ^ same
     server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS)
     MAX_WAIT = 3
     for i in range(MAX_WAIT):
@@ -79,17 +81,10 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         Log.Info(f"loading task from [{task_path}]")
         task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
 
-        _i = step_index-1
-        step = None
-        for p in task.plans:
-            if _i >= len(p.steps):
-                _i -= len(p.steps)
-                continue
-            step = p.steps[_i]
-            break
-        assert step is not None, step_index
+        plans = [p for g in task.plans for p in g]
+        step = plans[sample_index].steps[step_index]
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
-        Log.Info(f"step [{step_index}:{step_name}]")
+        Log.Info(f"sample [{sample_index}] step [{step_index}:{step_name}]")
 
         def _status(p: ContextPath):
             return "✓" if p.local.exists() else "X"
@@ -154,6 +149,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                     except ValueError:
                         continue
                     params[k] = v
+                _ = f.readline() # binds
         except Exception as e:
             Log.Error(f"failed to read .command.metadata: {e}")
 

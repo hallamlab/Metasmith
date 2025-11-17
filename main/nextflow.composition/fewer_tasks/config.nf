@@ -8,7 +8,8 @@ env {
 }
 
 process {
-    errorStrategy = 'ignore'
+    // errorStrategy = 'retry'
+    errorStrategy = { task.attempt<=3 ? 'retry' : 'ignore' }
 }
 
 // process {

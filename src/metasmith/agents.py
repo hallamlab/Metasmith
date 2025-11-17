@@ -19,8 +19,9 @@ from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
 from .coms.via_ws import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, METADATA_FILE
-from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstance, ContextPath
+from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, DataInstanceLibraryView
 from .models.solver import Endpoint
+from .constants import VERSION
 
 class AgentPaths:
     WORK_ROOT = Path("/ws")
@@ -30,37 +31,37 @@ class AgentPaths:
     TASK = Path("task")
 
     @classmethod
-    def to_staged(cls, root: Path=None):
+    def to_staged(cls, root: Path|None=None):
         if root is None: root = cls.HOME_ROOT
         return root/cls.STAGED
 
     @classmethod
-    def to_task(cls, key: str, root: Path=None):
+    def to_task(cls, key: str, root: Path|None=None):
         if root is None: root = cls.HOME_ROOT
         return root/(cls.STAGED/key)/cls.INTERNALS/cls.TASK
 
     @classmethod
-    def to_bootstrap(cls, root: Path=None):
+    def to_bootstrap(cls, root: Path|None=None):
         if root is None: root = cls.HOME_ROOT
         return root/"lib/msm_bootstrap"
 
     @classmethod
-    def to_definition(cls, root: Path=None):
+    def to_definition(cls, root: Path|None=None):
         if root is None: root = cls.HOME_ROOT
         return root/"lib/agent.yml"
 
     @classmethod
-    def to_relay(cls, root: Path=None):
+    def to_relay(cls, root: Path|None=None):
         if root is None: root = cls.HOME_ROOT
         return root/"relay/msm_relay"
 
     @classmethod
-    def to_local_relay_coms(cls, root: Path=None):
+    def to_local_relay_coms(cls, root: Path|None=None):
         host = socket.gethostname()
         return cls.to_relay(root).parent/f"{host}"
 
     @classmethod
-    def to_data(cls, root: Path=None):
+    def to_data(cls, root: Path|None=None):
         if root is None: root = cls.HOME_ROOT
         return root/"data"
 
@@ -113,8 +114,8 @@ class PausedShell:
 class Agent:
     home: Source
     setup_commands: list[str] = field(default_factory=list)
-    container: str = "docker://quay.io/hallamlab/metasmith:latest"
-    globus_uuid: str = None
+    container: str = f"docker://quay.io/hallamlab/metasmith:{VERSION}"
+    globus_uuid: str|None = None
     runtime: ContainerRuntime=ContainerRuntime.APPTAINER
     real_path: Path|None = None
 
@@ -158,7 +159,7 @@ class Agent:
         assert self.real_path is not None, "not resolved"
         return self.real_path
 
-    def _run_setup(self, shell: LiveShell, timeout: int = None):
+    def _run_setup(self, shell: LiveShell, timeout: int|None = None):
         if self._is_ssh():
             ssh_src = SshSource.Parse(self.home.address)
             Log.Info(f"starting ssh to [{ssh_src.host}]")
@@ -194,7 +195,7 @@ class Agent:
                     nonlocal _paused
                     _paused = False
 
-            def do_step(cmd: str, display_cmd: str=None, timeout=15):
+            def do_step(cmd: str, display_cmd: str|None=None, timeout:float|None=15):
                 if display_cmd is not None: Log.Info(f">>> {display_cmd}")
                 str_cmd = RemoveLeadingIndent(cmd)
                 for x in str_cmd.split("\n"):
@@ -202,7 +203,7 @@ class Agent:
                 return shell.Exec(cmd, timeout=timeout, history=True)
 
             _staged = []
-            def _remote_file(x: str|Path, dest: Path, executable=False):
+            def _remote_file(x: str|Path, dest: str|Path, executable=False):
                 if not isinstance(dest, Path): dest = Path(dest)
                 assert not dest.is_absolute() or dest.is_relative_to(self.home.GetPath()), f"dest [{dest}] must be relative to [{self.home.GetPath()}]"
                 (tmpdir/dest).parent.mkdir(parents=True, exist_ok=True)
@@ -349,7 +350,7 @@ class Agent:
                 echo "cleanup ========================"
                 $INTERNALS/relay/msm_relay status
                 $INTERNALS/relay/msm_relay stop
-                sleep 1
+                echo "relay logs ====================="
                 $INTERNALS/relay/msm_relay logs
                 """,
                 dest=AgentPaths.to_bootstrap(Path(".")),
@@ -366,13 +367,40 @@ class Agent:
             Log.Info(f"deployed to [{self.home.address}]")
 
     def GenerateWorkflow(
-        self, given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: Iterable[Endpoint],
+        self, 
+        samples: list[DataInstanceLibraryView],
+        resources: list[DataInstanceLibrary],
+        transforms: list[TransformInstanceLibrary],
+        targets: list[Endpoint],
         config: dict|None=None,
         max_iter: int=1024, max_refine: int=256, seed: int=42,
     ):
-        plan = WorkflowPlan.Generate(given, transforms, targets, max_iter=max_iter, max_refine=max_refine, seed=seed)
+        resource_instances = [lib.Get(p) for lib in resources for p, n, m in lib.Iterate()]
+        existing_plans: list[WorkflowPlan] = []
+        plan_usage: dict[int, list[WorkflowPlan]] = {}
+        failures = []
+        for sample in samples:
+            found = False
+            for i, plan in enumerate(existing_plans):
+                alt_given: list[DataInstance] = [sample.Get(p) for p, n, m in sample.Iterate()]+resource_instances
+                apply_result = plan.TryApplyingTo(alt_given)
+                if apply_result is None: continue
+                found = True
+                plan_usage[i] = plan_usage[i]+[apply_result] # should already exist since this is checking for possibilty of reuse
+            if not found:
+                original = sample._original.manifest
+                masked_lib = sample._original
+                masked_lib.manifest = {k:p for k, p in original.items() if k in sample._mask}
+                gen_result = WorkflowPlan.Generate([masked_lib]+resources, transforms, targets, max_iter=max_iter, max_refine=max_refine, seed=seed)
+                masked_lib.manifest = original # reset the original manifest
+                if not isinstance(gen_result, WorkflowPlan): 
+                    failures.append((sample, gen_result))
+                    continue
+                plan_usage[len(existing_plans)] = [gen_result]
+                existing_plans.append(gen_result)
         if config is None: config = {}
-        task = WorkflowTask(plans=[plan], data_libraries=list(given),transform_libraries=list(transforms), config=config)
+        sample_libs = {v._original for v in samples}
+        task = WorkflowTask(plans=list(plan_usage.values()), data_libraries=list(sample_libs)+resources,transform_libraries=transforms, config=config)
         return task
 
     def _get_mock_container(self, task: WorkflowTask):
@@ -449,7 +477,7 @@ class Agent:
                 """,
             )
 
-    def CheckWorkflow(self, task: WorkflowTask|str, run: int=None):
+    def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
         with AgentShell(self) as sh_remote:
             index_param = "" # 1 indexed
@@ -512,7 +540,7 @@ def StageWorkflow(task_key: str, verify: bool):
         if not verify:
             Log.Info(f"skipping verification of external inputs paths")
         else:
-            given_paths = [inst.ResolvePath() for plan in task.plans for inst in plan.given]
+            given_paths = [inst.ResolvePath() for g in task.plans for plan in g for inst in plan.given]
             given_paths = [p for p in given_paths if not p.is_relative_to(AgentPaths.HOME_ROOT)]
             def batchify(iterable: Iterable, n):
                 batch: list[str] = []
@@ -633,11 +661,11 @@ def RunWorkflow(key: str, log_dir: Path):
     Log.Info(f"workspace [{workspace}]")
     Log.Info(f"external workspace [{extern_workspace}]")
     Log.Info(f"preset [{nextflow_preset}]")
-    Log.Info(f"plans [{len(task.plans)}] | steps [{sum(len(p.steps) for p in task.plans)}]")
+    Log.Info(f"plans [{len(task.plans)}] | steps [{sum(len(p.steps) for g in task.plans for p in g)}]")
 
     if agent.globus_uuid is not None:
         Log.Info(f"locating input data with agent's globus endpoint [{agent.globus_uuid}]")
-        dest_base = GlobusSource(endpoint=agent.globus_uuid, path="/").AsSource()
+        dest_base = GlobusSource(endpoint=agent.globus_uuid, path=Path("/")).AsSource()
     else:
         Log.Info(f"locating input data with personal globus endpoint")
         dest_base = Source.FromLocal("/")
@@ -660,6 +688,7 @@ def RunWorkflow(key: str, log_dir: Path):
     # export NXF_JVM_ARGS="-Xms2g -Xmx64g"
     # causes memory error
     # -with-report {log_dir}/nxf_report.html \
+    results_folder = "results"
     with LiveShell() as shell:
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
@@ -681,6 +710,7 @@ def RunWorkflow(key: str, log_dir: Path):
             nextflow -c ./workflow.config.nf \
                 -log {log_dir}/nxf.log \
                 run ./workflow.nf \
+                --output "{results_folder}" \
                 -with-report {log_dir}/nxf_report.html \
                 -ansi-log false \
                 -resume \
@@ -696,7 +726,6 @@ def RunWorkflow(key: str, log_dir: Path):
         )
 
     Log.Info(f"compiling results")
-    results_folder = "results/latest"
     output_path = workspace/results_folder
     extern_output_path = extern_workspace/results_folder
     output = DataInstanceLibrary(output_path)
@@ -704,17 +733,35 @@ def RunWorkflow(key: str, log_dir: Path):
     for lib in task.transform_libraries:
         type_libs.update(lib.types)
     used_type_libs = set()
-    def _get_target_path(target: WorkflowTarget):
-        p = f"{target.producing_step.order:08}/{target.instance.path}"
+    publish_locations: dict[tuple[int, DataInstance], str] = {}
+    sample=0
+    for b, batch in enumerate(task.plans):
+        for plan in batch:
+            sample += 1
+            for t in plan.targets:
+                s = t.producing_step
+                p = f"b{b+1:02}p{s.order:02}_{s.transform.name}/{sample:05}_{t.instance.path}"
+                publish_locations[(sample, t.instance)] = p
+    def _get_target_path(sample: int, target: WorkflowTarget):
+        p = publish_locations[(sample, target.instance)]
         return output_path/p, extern_output_path/p
-    produced_targets: list[WorkflowTarget] = []
-    for target in [t for p in task.plans for t in p.targets]:
+    def _iter_targets():
+        sample=0
+        for g in task.plans:
+            for p in g:
+                sample += 1
+                for t in p.targets:
+                    yield sample, t
+    produced_targets: list[tuple[int, WorkflowTarget]] = []
+    verified = 0
+    for sample, target in _iter_targets():
         inst = target.instance
-        p, ex_p = _get_target_path(target)
+        p, ex_p = _get_target_path(sample, target)
         if not p.exists():
             Log.Error(f"workflow failed to produce expected output [{inst.dtype_name}] at [{ex_p}]")
             continue
-        produced_targets.append(target)
+        verified += 1
+        produced_targets.append((sample, target))
         _namespace, _ = inst.GetDataType()
         used_type_libs.add(_namespace)
         for p in target.used_givens:
@@ -722,18 +769,16 @@ def RunWorkflow(key: str, log_dir: Path):
                 if _namespace in used_type_libs: continue
                 used_type_libs.add(_namespace)
                 type_libs[_namespace] = lib
+    Log.Info(f"samples with verified outputs: [{verified}] of [{sum(len(g) for g in task.plans)}]")
     for _namespace in used_type_libs:
         output.AddTypeLibrary(_namespace, type_libs[_namespace])
-    # to_add = []
     parent_map: dict[Path, list[DataInstance]] = {}
-    for target in produced_targets:
+    for sample, target in produced_targets:
         inst = target.instance
-        p, ex_p = _get_target_path(target)
-        output.AddItem(p, inst.dtype_name)
-        # rel_p = p.relative_to(output_path)
-        # to_add.append([p, rel_p, inst.dtype_name])
-        # parent_map[rel_p] = target.used_givens
-    # output.Add(items=to_add, transfer_method=SourceType.DIRECT, on_exist="skip")
+        p, _ = _get_target_path(sample, target)
+        rel_p = p.relative_to(output.location)
+        output.AddItem(rel_p, inst.dtype_name)
+        parent_map[rel_p] = target.used_givens
     for e_path, parents in parent_map.items():
         output.AddParentsTo(e_path, parents)
     output.Save()
@@ -742,6 +787,7 @@ def RunWorkflow(key: str, log_dir: Path):
     external_results_path = extern_home/tail
     Log.Info(f"results for [{key}] at [{external_results_path}]")
 
+    # this doesn't seem to work
     Log.Info(f"gathering log files")
     nxf_ids = set()
     nxf_id_len = 9 # 2 + "/" + 6
@@ -750,7 +796,7 @@ def RunWorkflow(key: str, log_dir: Path):
             candidates = re.findall(r"[\dabcdef]{2}/[\dabcdef]{6}\]", l)
             if len(candidates) == 0: continue
             hit = candidates[0]
-            nxf_id = hit[:nxf_id_len]
+            nxf_id = hit[1:-1] # the brackets
             nxf_ids.add(nxf_id)
     NXF_WORK = workspace/"nxf_work"
     PROCESS_DEST = workspace/log_dir/"steps"
@@ -777,15 +823,14 @@ def RunWorkflow(key: str, log_dir: Path):
             Log.Warn(f"no log found for [{name}:{p}]")
             continue
         shutil.move(src, dest)
-        src.symlink_to(dest)
+        src.symlink_to(f"../../../{dest.relative_to(workspace)}")
 
-    output_path = output_path.rename(output_path.parent/start_time)
     Log.Info(f"linking logs to results folder [{output_path}]")
     output_metadata_path = output_path/f"{output._path_to_meta}"
-    (output_metadata_path/"logs").symlink_to(f"../../../{log_dir}")
+    (output_metadata_path/f"{log_dir.name}").symlink_to(f"../../{log_dir}")
     Log.Info(f"run completed at [{StdTime.Timestamp()}]")
 
-def CheckWorkflow(key: str, index: int=None):
+def CheckWorkflow(key: str, index: int|None=None):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
     assert workspace.exists(), f"task workspace not found [{workspace}], maybe it wasn't staged yet"

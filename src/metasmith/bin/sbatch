@@ -24,18 +24,35 @@ def out(msg: str):
     Log.Info(msg)
     print(msg) # pass through sbatch output
 
+def fix_paths(file: Path):
+    if not file.exists(): return
+    todo = []
+    with open(file, 'r') as f:
+        lines = f.readlines()
+        content = "".join(lines)
+        if len(lines)>1 and lines[1].startswith("array=("):
+            child_jobs = lines[1][len("array=( "):-len(" )\n")].split(" ")
+            todo += [Path(p)/".command.run" for p in child_jobs]
+    content = content.replace(str(AgentPaths.HOME_ROOT), str(agent.real_path))
+    with open(file, 'w') as f:
+        f.write(content)
+    # if this was a gathered array job, we have to fix the paths for the actual jobs
+    for p in todo:
+        fix_paths(p)
+
+# take this opportunity to fix the paths of the command.run script
+command_run = Path(sys.argv[1])
+fix_paths(command_run)
+# and the command.sh script in the event of array jobs (see example at end of file)
+command_sh = command_run.parent/(command_run.stem+".sh")
+fix_paths(command_sh)
+
 def call():
     with RemoteShell(AgentPaths.to_local_relay_coms()) as shell:
-        # take this opportunity to fix the paths of the command.run script
-        command_run_path = Path(sys.argv[1])
-        with open(command_run_path, 'r') as f:
-            command_run = "".join(f.readlines())
-        command_run = command_run.replace(str(AgentPaths.HOME_ROOT), str(agent.real_path))
-        with open(command_run_path, 'w') as f:
-            f.write(command_run)
         shell.RegisterOnOut(out)
         shell.RegisterOnErr(err)
         shell.Exec(f"cd {external_cwd} && sbatch {' '.join(sys.argv[1:])}")
+    Log.Info('//')
 
 success = False
 retries = 5
@@ -52,3 +69,9 @@ if not success:
     m = f"failed after [{retries}] attempts"
     Log.Error(m)
     print(m, file=sys.stderr)
+
+# example .command.sh from array job
+# #!/bin/bash -ue
+# array=( /msm_home/runs/IZqUC9HE/nxf_work/ed/a8006fc40ad76993ebd2d9b87a7105 /msm_home/runs/IZqUC9HE/nxf_work/04/120f73bdc969106a946a09a2da6946 /msm_home/runs/IZqUC9HE/nxf_work/f5/183ca407ef03e1c7a0f3272ab53ef9 /msm_home/runs/IZqUC9HE/nxf_work/7b/5d446c2cf46c7bad573a6165d15f06 /msm_home/runs/IZqUC9HE/nxf_work/ca/80be46a791a2fe4a6dab82e4d7bd3c /msm_home/runs/IZqUC9HE/nxf_work/4e/ae06687de5c15820d0e18f7fb2a165 /msm_home/runs/IZqUC9HE/nxf_work/e1/374632ef266d3ae9770a5cc0dd1308 /msm_home/runs/IZqUC9HE/nxf_work/e9/73cf451d1cbf3edf00d753978bffaf /msm_home/runs/IZqUC9HE/nxf_work/c8/14ff83aedcf51e8757d28f162cc939 /msm_home/runs/IZqUC9HE/nxf_work/7d/50675a6787f9a034082508d5d008b3 )
+# export nxf_array_task_dir=${array[SLURM_ARRAY_TASK_ID]}
+# bash $nxf_array_task_dir/.command.run 2>&1 > $nxf_array_task_dir/.command.log

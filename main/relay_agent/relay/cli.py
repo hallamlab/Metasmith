@@ -123,13 +123,18 @@ class CommandLineInterface:
     def logs(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "print logs")
         args = parser.parse_args(raw_args)
-        logs_path = Path(args.io)/"main.log"
-        if not logs_path.exists():
-            Log.Error(f"no logs at [{logs_path}]")
-            return
-        with open(logs_path) as f:
-            for l in f:
-                print(l, end="")
+
+        def _logs(logs_path):
+            if not logs_path.exists():
+                Log.Error(f"no logs at [{logs_path}]")
+                return
+            with open(logs_path) as f:
+                for l in f:
+                    print(l, end="")
+        _logs(Path(args.io)/"main.log")
+        print("uvicorn :::::::::::::::::::::::::::::::::::::::")
+        _logs(Path(args.io)/"uvicorn.log")
+
 
     def test(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "run self test")

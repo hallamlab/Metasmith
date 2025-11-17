@@ -297,58 +297,6 @@ class DataInstanceLibrary:
         type_model = self.GetType(dtype) # check if datatype exists
         self.manifest[path] = dtype
 
-    # def AddBulk(self, items: list[tuple[Path|str, Path|str, str]], transfer_method: SourceType|None=SourceType.DIRECT, on_exist: str="skip"):
-    #     """
-    #     @items: list of (source, destination, datatype)
-    #     """
-    #     assert transfer_method in {None, SourceType.DIRECT, SourceType.SYMLINK}
-    #     if transfer_method is None: Log.Warn("items will be added, but not explicitly transferred")
-    #     assert on_exist in {"skip", "error", "clear", "update"}
-    #     mover = Logistics()
-    #     items = [(Path(src), Path(dest), dtype) for src, dest, dtype in items]
-    #     # seen = {v for v in self.manifest.values()}
-    #     completed = set()
-    #     for src, dest, dtype in items:
-    #         assert isinstance(dtype, str), f"datatype must be a string of <namespace>::<type> but got [{type(dtype)}]"
-    #         src, dest = Path(src), Path(dest)
-    #         assert src.exists(), f"[{src}] does not exist"
-    #         assert not dest.is_absolute(), f"destination [{dest}] must be relative"
-    #         # assert dtype not in seen, f"an instance of datatype [{dtype}] is already registered and so would not be distinguishable"
-    #         self.GetType(dtype) # check if datatype exists
-    #         dest_path = self.location/dest
-    #         if dest_path.exists():
-    #             if on_exist == "skip":
-    #                 completed.add(str(src))
-    #                 continue
-    #             elif on_exist == "error":
-    #                 raise FileExistsError(f"destination [{dest}] already exists")
-    #             elif on_exist == "clear":
-    #                 Log.Warn(f"clearing previous [{dest}]")
-    #                 shutil.rmtree(dest_path)
-    #             elif on_exist == "update":
-    #                 pass # default of mover
-    #         if transfer_method is not None:
-    #             mover.QueueTransfer(
-    #                 src = Source.FromLocal(src),
-    #                 dest = Source(address=str(dest_path), type=transfer_method),
-    #             )
-
-    #     report: list[Path] = []
-    #     if transfer_method is not None:
-    #         res = mover.ExecuteTransfers()
-    #         completed |= {str(Path(s.address)) for s, d in res.completed}
-
-    #     for src, dest, dtype in items:
-    #         dest = Path(dest)
-    #         k = str(src)
-    #         if transfer_method is not None:
-    #             if k not in completed:
-    #                 Log.Error(f"failed to add [{src}]")
-    #                 continue
-    #             report.append(dest)
-    #         self.manifest[dest] = dtype
-    #     return report
-
     def AddParentsTo(self, path: Path|str, parents: list[DataInstance]):
         p = Path(path)
         current = self.parents.get(p, [])
@@ -563,6 +511,24 @@ class DataInstanceLibrary:
             assert len(res.completed) == 1, f"failed to load library from [{self.remote_src}]; [{res.errors}]"
         _lib = self.Load(self.location, check_integrity=True)
         return _lib
+    
+    def AsView(self, mask: set[Path]):
+        return DataInstanceLibraryView(self, mask)
+
+class DataInstanceLibraryView:
+    def __init__(self, original: DataInstanceLibrary, mask: set[Path]) -> None:
+        self._original = original
+        self._mask = mask
+
+    def Get(self, path: str|Path):
+        p = Path(path)
+        assert p in self._mask
+        return self._original.Get(path)
+    
+    def Iterate(self):
+        for p, n, m in self._original.Iterate():
+            if p not in self._mask: continue
+            yield p, n, m
 
 # this should function like a view provided by the parent library
 @dataclass

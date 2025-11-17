@@ -19,13 +19,21 @@ def out(msg: str):
     print(msg) # pass through sbatch output
 
 def call():
+    printed = False
+    def notify(x, f):
+        nonlocal printed
+        printed = True
+        f(x)
     with RemoteShell(AgentPaths.to_local_relay_coms()) as shell:
-        shell.RegisterOnOut(out)
-        shell.RegisterOnErr(err)
+        shell.RegisterOnOut(lambda x: notify(x, out))
+        shell.RegisterOnErr(lambda x: notify(x, err))
         args = [f'"{x}"' if len(x)>0 and x[0]!="-" else x for x in sys.argv[1:]]
         Log.Info("args:")
         Log.Info(' '.join(args))
         shell.Exec(f"squeue {' '.join(args)}")
+    if not printed:
+        out("0              CD") # maybe nextflow needs at least 1 line, so we give dummy report
+    Log.Info('//')
 
 for retry in range(5):
     try:
