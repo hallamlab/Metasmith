@@ -87,6 +87,14 @@ case $1 in
         python ./conda_recipe/compile_recipe.py
         $HERE/conda_recipe/call_build.sh
     ;;
+    -brc) # build the container for building the relay
+        cd main/relay_agent
+        ./pack.sh -b
+    ;;
+    -br) # build the relay
+        cd main/relay_agent
+        ./pack.sh -p
+    ;;
     -bd) # docker
         # pre-download requirements
         mkdir -p $HERE/lib
@@ -117,7 +125,6 @@ case $1 in
     -bs) # apptainer image *from docker*
         apptainer build $NAME.sif docker-daemon://$DOCKER_IMAGE:$VER
     ;;
-
     ###################################################
     # upload
 
