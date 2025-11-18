@@ -8,5 +8,6 @@ env {
 }
 
 process {
-    cpus = 8
+    cpus = <cpus>
+    errorStrategy = 'ignore'
 }

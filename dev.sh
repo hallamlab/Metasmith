@@ -123,7 +123,7 @@ case $1 in
             -t $DOCKER_IMAGE:$VER .
     ;;
     -bs) # apptainer image *from docker*
-        apptainer build $NAME.sif docker-daemon://$DOCKER_IMAGE:$VER
+        apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$VER
     ;;
     ###################################################
     # upload

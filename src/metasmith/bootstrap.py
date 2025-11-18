@@ -1,9 +1,8 @@
-import os
 from pathlib import Path
 import time
 import shutil
-import yaml
 import traceback
+import re
 
 from metasmith.hashing import KeyGenerator
 
@@ -49,6 +48,13 @@ def StageAndRunTransform(workspace: Path, step_index: int):
     assert server_path.exists(), f"server not started [{server_path}]"
 
     Log.Info("connecting to relay")
+    Log.Info(f"loading agent config")
+    agent = Agent.Load(AgentPaths.to_definition())
+    agent_home = str(agent.home.GetPath())
+    Log.Info(f"agent home [{agent_home}]")
+    def _shorten_home(p: str):
+        return p.replace(agent_home, "{agent_home}")
+    
     with RemoteShell(server_path) as shell:
         _paused = False
         class PausedStdOut:
@@ -66,13 +72,6 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             return _listener
         shell.RegisterOnOut(_make_listener(Log.Info))
         shell.RegisterOnErr(_make_listener(Log.Error))
-        
-        Log.Info(f"loading agent config")
-        agent = Agent.Load(AgentPaths.to_definition())
-        agent_home = str(agent.home.GetPath())
-        Log.Info(f"agent home [{agent_home}]")
-        def _shorten_home(p: str):
-            return p.replace(agent_home, "{agent_home}")
 
         with PausedStdOut():
             res = shell.Exec("pwd -P", history=True)
@@ -82,7 +81,16 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         task_path = AgentPaths.to_task(task_key)
         Log.Info(f"loading task from [{task_path}]")
         task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
-        step = task.plan.steps[step_index-1]
+
+        _i = step_index-1
+        step = None
+        for p in task.plans:
+            if _i >= len(p.steps):
+                _i -= len(p.steps)
+                continue
+            step = p.steps[_i]
+            break
+        assert step is not None, step_index
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
         Log.Info(f"step [{step_index}:{step_name}]")
 
@@ -122,14 +130,16 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         params = {}
         try:
             with open(".command.resources") as f:
-                _cpus, _mem = f.readline().strip().split()
+                _cpus, _mem = f.readline().strip().split("/")
                 for k, v in [ # match nextflow task.{}
                     ("cpus", _cpus),
                     ("memory", _mem),
                 ]:
                     if v.lower() == "null": continue
                     try:
-                        v = int(v)
+                        vals = re.findall(r"\d+", v)
+                        if len(vals)==0: continue
+                        v = int(vals[0])
                     except ValueError:
                         continue
                     params[k] = v

@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['relay.py'],
+    ['msm_relay.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='relay',
+    name='msm_relay',
     debug=False,
     bootloader_ignore_signals=True,
     strip=False,

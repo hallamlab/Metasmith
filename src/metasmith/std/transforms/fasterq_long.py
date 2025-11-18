@@ -19,7 +19,8 @@ def protocol(context: ExecutionContext):
                     --split-spot \
                     -Z > dump.fastq
 
-        """
+        """,
+        shell="sh",
     )
     return ExecutionResult(success=out_path.local.exists())
 

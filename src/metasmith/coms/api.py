@@ -40,7 +40,7 @@ class Api:
                 return
         CheckWorkflow(key, index)
 
-_ENDPOINTS = {k:v for k, v in Api.__dict__.items() if k[0]!="_"} 
+_ENDPOINTS = {k:v for k, v in Api.__dict__.items() if k[0]!="_"}
 def HandleRequest(endpoint: str, body: dict):
     endpoint = endpoint.lower()
     if endpoint not in _ENDPOINTS:

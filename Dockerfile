@@ -24,9 +24,7 @@ ENTRYPOINT ["/tini", "-s", "-g", "--"]
 COPY ./envs/base.yml /opt/base.yml
 # use an external cache for solved environments and install packages
 RUN --mount=type=cache,target=/opt/conda/pkgs \
-    mamba env create -n ${CONDA_ENV} -f /opt/base.yml \
-    && mamba clean --all --yes \
-    && rm -rf /opt/conda/pkgs/cache
+    mamba env create -n ${CONDA_ENV} -f /opt/base.yml
 # add bins to PATH so that the env appears "active"
 ENV PATH /opt/conda/envs/${CONDA_ENV}/bin:/app:/opt/globusconnectpersonal-latest:$PATH
 
@@ -38,9 +36,8 @@ COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
 RUN pip install /opt/metasmith.tar.gz
 
 COPY ./lib/globusconnectpersonal-latest /opt/globusconnectpersonal-latest
-COPY ./main/relay_agent/dist/relay /opt/msm_relay
+COPY ./main/relay_agent/dist/msm_relay /opt/msm_relay
 RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin /app
-
 
 EXPOSE 8080
 WORKDIR /workspace

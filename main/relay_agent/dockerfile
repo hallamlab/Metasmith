@@ -1,6 +1,7 @@
 ARG CONDA_ENV=for_container
 
-FROM condaforge/miniforge3
+# version for ldd 2.31
+FROM condaforge/miniforge3:24.9.2-0
 # scope var from global
 ARG CONDA_ENV
 
