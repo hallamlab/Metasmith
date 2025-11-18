@@ -3,9 +3,17 @@ ontology:
   name: EDAM
   strict: false
   version: '1.25'
-schema: 0.6.0
+schema: 0.11.1
 types:
-  transform:
+  a:
     properties:
-    - metasmith
-    - transform
+    - a
+    - test
+  b:
+    properties:
+    - b
+    - test
+  c:
+    properties:
+    - c
+    - test

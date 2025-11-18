@@ -10,11 +10,13 @@ out     = model.AddProduct(lib.GetType("std::short_reads_assembly"))
 def protocol(context: ExecutionContext):
     out_path = context.Get(out)
     reads_path = context.Get(reads)
+    # https://github.com/voutcn/megahit
+    # --12          interleaved
     context.ExecWithContainer(
         image = image,
         cmd = f"""
                 megahit \
-                    -r {reads_path.container} \
+                    --12 {reads_path.container} \
                     -o {out_path.container.parent}
         """
     )

@@ -8,7 +8,7 @@ import re
 import json
 from tempfile import TemporaryDirectory
 
-from ..coms.ipc import LiveShell
+from ..coms.terminals import LiveShell
 from ..hashing import KeyGenerator
 from ..logging import Log
 

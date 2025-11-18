@@ -4,7 +4,7 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 reads           = model.AddRequirement(lib.GetType("std::long_reads"))
-mappings        = model.AddRequirement(lib.GetType("std::self_mappings"))
+mappings        = model.AddRequirement(lib.GetType("std::self_mappings"), parents={reads})
 image_miniasm   = model.AddRequirement(lib.GetType("std::oci_image_miniasm"))
 out             = model.AddProduct(lib.GetType("std::miniasm_estimate"))
 

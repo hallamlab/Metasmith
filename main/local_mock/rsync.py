@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-from metasmith.coms.ipc import LiveShell
-from lib.local.constants import WORKSPACE_ROOT
+from metasmith.coms.terminals import LiveShell
+from local.constants import WORKSPACE_ROOT
 
 
 # host = "sockeye"
@@ -11,18 +11,20 @@ from lib.local.constants import WORKSPACE_ROOT
 # host = "cosmos"
 # home = f"{host}:/home/tony/workspace/metasmith_home"
 
-# home = f"{WORKSPACE_ROOT}/main/local_mock/cache/local_home"
-home = f"{WORKSPACE_ROOT}/main/local_mock/std_home"
+# host = "fir"
+# home = f"{host}:/scratch/phyberos/metasmith"
 
+home = f"{WORKSPACE_ROOT}/main/local_mock/cache/local_home"
+# home = f"{WORKSPACE_ROOT}/main/local_mock/std_home"
 # home = f"{WORKSPACE_ROOT}/main/docs/metasmith_home"
 
 with LiveShell() as shell:
     shell.RegisterOnOut(lambda x: print(x))
     shell.RegisterOnErr(lambda x: print(f"E: {x}"))
-    # shell.Exec(f"rsync -ac --progress --mkpath {WORKSPACE_ROOT}/metasmith.sif {home}/metasmith.sif")
-    shell.Exec(f"rsync -acu --progress --mkpath {WORKSPACE_ROOT}/main/relay_agent/dist/relay {home}/relay/msm_relay")
-    shell.Exec(f"rsync -acu --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/ {home}/dev/metasmith")
-    shell.Exec(f"rsync -acu --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/nextflow_config {home}/lib/")
+    shell.Exec(f"rsync -ac --progress --mkpath {WORKSPACE_ROOT}/metasmith.sif {home}/metasmith.sif")
+    shell.Exec(f"rsync -ac --progress --mkpath {WORKSPACE_ROOT}/main/relay_agent/dist/msm_relay {home}/relay/msm_relay")
+    shell.Exec(f"rsync -ac --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/ {home}/dev/metasmith")
+    shell.Exec(f"rsync -ac --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/nextflow_config {home}/lib/")
 
 
 # In[2]:

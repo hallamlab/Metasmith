@@ -1,12 +1,11 @@
-import glob
 from pathlib import Path
 
-from .models.libraries import DataInstanceLibrary, DataTypeLibrary, TransformInstanceLibrary
+from ..models.libraries import DataInstanceLibrary, DataTypeLibrary, TransformInstanceLibrary
 
 def Std() -> tuple[DataTypeLibrary, DataInstanceLibrary, TransformInstanceLibrary]:
     base_dir = Path(__file__).parent
-    containers = DataInstanceLibrary.Load(base_dir / "std/containers")
-    transforms: TransformInstanceLibrary = TransformInstanceLibrary.Load(base_dir / "std/transforms")
+    containers = DataInstanceLibrary.Load(base_dir / "containers.xgdb")
+    transforms: TransformInstanceLibrary = TransformInstanceLibrary.Load(base_dir / "transforms.xgdb")
 
     assert len(transforms.types) == 2 # transforms, std
     dtypes: DataTypeLibrary = DataTypeLibrary()

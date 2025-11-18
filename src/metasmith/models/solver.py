@@ -38,6 +38,9 @@ class Node:
         return f"{self}"
 
     def IsA(self, other: Node) -> bool:
+        """
+        if x.IsA(y), then x can be used to replace y
+        """
         return other.properties.issubset(self.properties)
 
     def Signature(self):

@@ -68,15 +68,18 @@ case $1 in
 
     ###################################################
     # build
-
+    -bx) # update std xgdbs
+        python $HERE/main/transforms/std/create.py
+    ;;
     -bp) # pip
         # build pip package
         [ -d ./build ] && rm -r build
         [ -d ./dist ] && rm -r dist
+        python $HERE/main/transforms/std/create.py
         python -m build
     ;;
     -bpi) # pip - test install
-        pip install $HERE/dist/$NAME-$VER-py3-none-any.whl
+        pip install $HERE/dist/$NAME-$VER-py3-none-any.whl --force-reinstall
     ;;
     -bpx) # pip - remove package
         pip uninstall -y $NAME

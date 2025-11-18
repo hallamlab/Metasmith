@@ -1,0 +1,37 @@
+#!/opt/conda/envs/metasmith_env/bin/python
+# this bounces "squeue" commands from inside a container
+
+import sys
+import time
+import random
+from pathlib import Path
+from metasmith.coms.via_ws import RemoteShell
+from metasmith.agents import AgentPaths
+from metasmith.logging import Log
+
+Log.SetStdout(on=False)
+Log.AddLogFile(Path("./scancel.log"))
+def err(msg: str):
+    print(msg, file=sys.stderr)
+    Log.Error(msg)
+def out(msg: str):
+    Log.Info(msg)
+    print(msg) # pass through sbatch output
+
+def call():
+    with RemoteShell(AgentPaths.to_local_relay_coms()) as shell:
+        shell.RegisterOnOut(out)
+        shell.RegisterOnErr(err)
+        args = [f'"{x}"' if len(x)>0 and x[0]!="-" else x for x in sys.argv[1:]]
+        Log.Info("args:")
+        Log.Info(' '.join(args))
+        shell.Exec(f"scancel {' '.join(args)}")
+    Log.Info('//')
+
+for retry in range(5):
+    try:
+        call()
+        break
+    except (TimeoutError, ConnectionError, FileNotFoundError):
+        dt = random.random()*(2**retry)+0.1
+        time.sleep(dt)
