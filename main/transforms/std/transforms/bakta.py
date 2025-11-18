@@ -25,15 +25,13 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-                bakta \
-                    --db {db_path.container} \
-                    {cpus_string} \
-                    --skip-cds \
-                    --regions {features_path.container} \
-                    --proteins {cds_path.container} \
-                    --prefix bakta \
-                    --output {out_path.container} \
-                    {assembly_path.container}
+            export MPLBACKEND=Agg
+            bakta \
+                --db {db_path.container} \
+                {cpus_string} \
+                --prefix bakta \
+                --output {out_path.container} \
+                {assembly_path.container}
         """
     )
     return ExecutionResult(success=out_path.local.exists())
