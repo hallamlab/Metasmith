@@ -7,5 +7,6 @@ env {
 
 process {
     cpus = <cpus>
-    errorStrategy = { task.attempt<=3 ? 'retry' : 'ignore' }
+    errorStrategy = { task.attempt<=2 ? 'retry' : 'ignore' }
+    maxRetries = 5 // this must be larger than errorStrategy
 }

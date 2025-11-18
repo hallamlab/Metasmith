@@ -2,7 +2,7 @@
 
 // parameter defaults
 params.slurm_account = '<slurm_account>' // task.config.nextflow.slurm_account
-filePorter.maxThreads = 10
+filePorter.maxThreads = 2
 report.overwrite = true
 
 env {
@@ -30,14 +30,14 @@ executor {
     stageInMode = '<stageInMode>'           // symlink  | some intermediates are large reference databases and should not be copied
 
     retry {
-        maxAttempts = 999999 // controlled per process
+        maxAttempts = 99999 // controlled per process
         jitter = 0.25
         maxDelay = 30.second
         delay = 1.second
     }
     // -----------------------------------------
     // notes
-    // executor = 'hq'          // todo: consider https://github.com/It4innovations/hyperqueue
+    // executor = 'hq'                      // todo: consider https://github.com/It4innovations/hyperqueue
 }
 
 process {
@@ -45,16 +45,18 @@ process {
         mode = 'rellink'
     }
 
-    scratch = true                  // use worker node's local hard drive
+    scratch = true // use worker node's local hard drive
     executor = 'slurm'
     clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurm_account}"
-    errorStrategy = { task.attempt<=5 ? 'retry' : 'ignore' }
+    errorStrategy = { task.attempt==1 ? 'retry' : 'ignore' }
+    maxRetries = 5 // this must be larger than errorStrategy
     maxErrors = '-1' // quotes bypass groovy parser bug, should set to number of samples?
     array = <array>
 
     // resource defaults
-    cpus = <cpus>           // 4
-    memory = { <memory>.GB }     // 16 GB
-    // time = { <time>.hour**(3*(task.attempt-1)) }         // 3h
-    time = { <time>.hour }         // 3h
+    cpus = <cpus> // 4
+    memory = { <memory>.GB } // 16 GB
+    time = { task.attempt==1? <time>.hour : 2*<time>.hour } // 3h
+    // memory = { task.exitStatus in [137, 139, 140, 143]? (2**(2*(task.attempt-1)))*<memory>.GB : <memory>.GB } // 16 GB
+    // time = { task.exitStatus in [137, 140, 143, 144, 145]? (2**(2*(task.attempt-1)))*<time>.hour : <time>.hour } // 3h
 }

@@ -10,10 +10,8 @@ from .models.libraries import ContextPath, ContextData, ExecutionContext, Execut
 from .models.libraries import DataInstance, DataTypeLibrary, TransformInstance, TransformInstanceLibrary
 from .models.solver import Dependency, Endpoint
 from .models.workflow import WorkflowTask
-from .coms.terminals import LiveShell
-from .coms.via_ws import RemoteShell
-from .coms.containers import Container
-from .serialization import StdTime
+# from .coms.via_ws import RemoteShell
+from .coms.via_file_watcher import RemoteShell
 
 def DeployFromContainer(workspace: Path):
     deploy_root = workspace
@@ -136,11 +134,10 @@ def StageAndRunTransform(workspace: Path, sample_index: int, step_index: int):
         params = {}
         try:
             with open(".command.metadata") as f:
-                _cpus, _mem = f.readline().strip().split("/")
-                for k, v in [ # match nextflow task.{}
-                    ("cpus", _cpus),
-                    ("memory", _mem),
-                ]:
+                _vals = f.readline().strip().split("/")
+                for i, k in enumerate(["cpus", "memory", "attempt"]): # match nextflow task.{}
+                    if i>=len(_vals): break
+                    v = _vals[i]
                     if v.lower() == "null": continue
                     try:
                         vals = re.findall(r"\d+", v)

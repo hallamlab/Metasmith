@@ -10,6 +10,7 @@ import socket
 
 from .logging import Log
 from .server import SERVER_HEALTH, CheckStatus, RunServer, StopServer, LockFile
+from .watcher import RunWatcher
 from .coms.ipc import CurrentTimeMillis, ResetGenerator
 from .coms.via_ws import RemoteShell
 
@@ -40,9 +41,33 @@ class CommandLineInterface:
     def _get_fn_name(self):
         return inspect.stack()[1][3]
     
+    def watch(self, raw_args=None):
+        parser = _make_parser(self._get_fn_name(), "relay via file watcher")
+        args = parser.parse_args(raw_args)
+        workspace = Path(args.io)
+        while True:
+            try:
+                RunWatcher(workspace)
+                break
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                Log.Error(f"error [{e}], restarting")
+                time.sleep(1)
+        (workspace/"exit").unlink(missing_ok=True)
+        Log.SetStdout(on=True)
+        Log.Info(f"stopped watcher relay")
+
+    def unwatch(self, raw_args=None):
+        parser = _make_parser(self._get_fn_name(), "signal file watcher stop")
+        args = parser.parse_args(raw_args)
+        workspace = Path(args.io)
+        (workspace/"exit").touch()
+        Log.Info(f"signalled watcher to stop")
+
     def start(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "ensure relay is running")
-        # parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
+        parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
         # parser.add_argument("--channels", "-n", required=False, metavar="INT", type=int, default=8)
         # parser.add_argument("--gunicorn-config", "-c", required=False, metavar="PATH", type=str, default=WS/"gunicorn.conf.py")
         args = parser.parse_args(raw_args)
@@ -54,26 +79,29 @@ class CommandLineInterface:
             Log.Warn(f"relay server already running at [{workspace}]")
             return
         else:
-            for f in LockFile._get_candidates(workspace):
-                f.unlink()
             Log.Info(f"starting relay server at [{workspace}]")
-            signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
-            pid = os.fork()
-            ResetGenerator()
-            if pid != 0: # parent
-                try:
-                    while True:
-                        _status = CheckStatus(workspace)
-                        if _status.health == SERVER_HEALTH.ALIVE:
-                            Log.Info(f"pid [{_status.pid}]")
-                            Log.Info(f"success")
-                            return
-                        time.sleep(0.1)
-                except KeyboardInterrupt:
-                    pass
-                # os._exit(0) # this should keep resources for forked child?
-            else: # child
+            if args.connected:
                 RunServer(workspace=workspace)
+            else:
+                for f in LockFile._get_candidates(workspace):
+                    f.unlink()
+                signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
+                pid = os.fork()
+                ResetGenerator()
+                if pid != 0: # parent
+                    try:
+                        while True:
+                            _status = CheckStatus(workspace)
+                            if _status.health == SERVER_HEALTH.ALIVE:
+                                Log.Info(f"pid [{_status.pid}]")
+                                Log.Info(f"success")
+                                return
+                            time.sleep(0.1)
+                    except KeyboardInterrupt:
+                        pass
+                    # os._exit(0) # this should keep resources for forked child?
+                else: # child
+                    RunServer(workspace=workspace)
 
     def stop(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "stop relay")
@@ -132,9 +160,10 @@ class CommandLineInterface:
                 for l in f:
                     print(l, end="")
         _logs(Path(args.io)/"main.log")
-        print("uvicorn :::::::::::::::::::::::::::::::::::::::")
-        _logs(Path(args.io)/"uvicorn.log")
-
+        uvicorn_logs = Path(args.io)/"uvicorn.log"
+        if uvicorn_logs.exists():
+            print("uvicorn :::::::::::::::::::::::::::::::::::::::")
+            _logs(uvicorn_logs)
 
     def test(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "run self test")

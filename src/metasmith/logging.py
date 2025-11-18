@@ -1,3 +1,4 @@
+import logging.handlers
 import sys
 from pathlib import Path
 import logging
@@ -88,8 +89,14 @@ class Log:
             _stdout_off()
 
     @classmethod
-    def AddLogFile(cls, file_path: Path, raw=False):
-        _file_handler = logging.FileHandler(file_path)
+    def AddLogFile(cls, file_path: Path, raw=False, rotate=None):
+        if rotate is None:
+            _file_handler = logging.FileHandler(file_path)
+        else:
+            # 10 MB
+            rotate = int(rotate)
+            _file_handler = logging.handlers.RotatingFileHandler(file_path, maxBytes=10 * 1024 * 1024, backupCount=rotate)
+            
         _file_handlers[file_path] = _file_handler
         _file_handler.setFormatter(_formatter if raw else _no_ansi_formatter)
         _logger.addHandler(_file_handler)

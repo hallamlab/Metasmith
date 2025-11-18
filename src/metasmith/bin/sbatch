@@ -26,6 +26,7 @@ def out(msg: str):
 
 def fix_paths(file: Path):
     if not file.exists(): return
+    Log.Info(f"fixing path vars in [{file}]")
     todo = []
     with open(file, 'r') as f:
         lines = f.readlines()
@@ -42,6 +43,9 @@ def fix_paths(file: Path):
 
 # take this opportunity to fix the paths of the command.run script
 command_run = Path(sys.argv[1])
+args = ' '.join(sys.argv[1:])
+Log.Info("args:")
+Log.Info(f"{args}")
 fix_paths(command_run)
 # and the command.sh script in the event of array jobs (see example at end of file)
 command_sh = command_run.parent/(command_run.stem+".sh")

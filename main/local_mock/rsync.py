@@ -11,10 +11,10 @@ from local.constants import WORKSPACE_ROOT
 # host = "cosmos"
 # home = f"{host}:/home/tony/workspace/metasmith_home"
 
-host = "fir"
-home = f"{host}:/scratch/phyberos/metasmith"
+# host = "fir"
+# home = f"{host}:/scratch/phyberos/metasmith"
 
-# home = f"{WORKSPACE_ROOT}/main/local_mock/cache/local_home"
+home = f"{WORKSPACE_ROOT}/main/local_mock/cache/local_home"
 # home = f"{WORKSPACE_ROOT}/main/local_mock/std_home"
 # home = f"{WORKSPACE_ROOT}/main/docs/metasmith_home"
 

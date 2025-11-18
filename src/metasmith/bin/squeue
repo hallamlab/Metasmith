@@ -10,7 +10,7 @@ from metasmith.agents import AgentPaths
 from metasmith.logging import Log
 
 Log.SetStdout(on=False)
-Log.AddLogFile(Path("./squeue.log"))
+Log.AddLogFile(Path("./squeue.log"), rotate=3)
 def err(msg: str):
     print(msg, file=sys.stderr)
     Log.Error(msg)

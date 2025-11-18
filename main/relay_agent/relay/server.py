@@ -114,12 +114,19 @@ def RunServer(workspace: Path):
     
     @endpoint()
     async def shutdown(req: WsRequest):
+        d = req.data
+        k = d.get("client")
+        if k is None: return WsResponse(400, dict(err="[client] required"))
         log("stopping")
         for c in clients.values():
             log(f"disposing [{c.key}]")
             c.shell.Dispose()
-        log("exit")
-        os.kill(os.getpid(), signal.SIGINT)
+        async def defer_exit():
+            await asyncio.sleep(0.2)
+            log("exit")
+            os.kill(os.getpid(), signal.SIGINT)
+        asyncio.create_task(defer_exit())
+        return WsResponse(204, channel=k)
 
     @endpoint()
     async def ping(req: WsRequest):
@@ -140,13 +147,24 @@ def RunServer(workspace: Path):
         if k not in clients:
             client = Client(k)
             clients[k] = client
-            log(f"shell client [{k}]")
+            log(f"new client [{k}]")
         else:
             client = clients[k]
         client.shell.ExecAsync(cmd)
         client.last_active = CurrentTimeMillis()
+        log(f"shell by [{k}]")
         return WsResponse(204, channel=k)
-        
+    
+    @endpoint()
+    async def dispose(req: WsRequest):
+        d = req.data
+        k = d.get("client")
+        if k is None: return WsResponse(400, dict(err="[client] required"))
+        if k in clients:
+            clients[k].shell.Dispose()
+            del clients[k]
+            log(f"disposed [{k}]")
+
     # =============================================
 
     async def main():
@@ -249,14 +267,14 @@ def RunServer(workspace: Path):
             # check for stale terminals
             async def cull(c: Client):
                 now = CurrentTimeMillis()
-                if now - c.last_active <= 1000: return False
+                if now - c.last_active <= 1*1000: return False
                 c.shell.Dispose()
                 return True
             todo = list(clients.values())
             for c in todo:
                 culled = await cull(c)
                 if culled:
-                    log(f"disconnected [{c.key}]")
+                    log(f"culled [{c.key}]")
                     del clients[c.key]
             # flush io buffers
             to_send = []
@@ -309,8 +327,7 @@ def StopServer(workspace: Path):
         client.Transact(
             WsRequest(
                 endpoint="shutdown",
-            ),
-            timeout=0
+            )
         )
     except (ConnectionError, TimeoutError):
         return

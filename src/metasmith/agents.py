@@ -341,15 +341,15 @@ class Agent:
                 find .
                 ls -lh .
                 echo "relay =========================="
-                $INTERNALS/relay/msm_relay start
+                $INTERNALS/relay/msm_relay watch &
+                sleep 5
                 echo "execute ========================"
                 run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR
                 echo "post execute ==================="
                 find .
                 ls -lh .
                 echo "cleanup ========================"
-                $INTERNALS/relay/msm_relay status
-                $INTERNALS/relay/msm_relay stop
+                $INTERNALS/relay/msm_relay unwatch
                 echo "relay logs ====================="
                 $INTERNALS/relay/msm_relay logs
                 """,
@@ -624,7 +624,7 @@ def StageWorkflow(task_key: str, verify: bool):
     nextflow_params = task.config.get("nextflow", {})
     nextflow_defaults = dict(
         cpus=4, memory=16, time=3,
-        queueSize=100, array=1, submitRateLimit="10/1sec", pollInterval="10sec", stageInMode="symlink",
+        queueSize=1000, array=100, submitRateLimit="2/1sec", pollInterval="60sec", stageInMode="symlink",
     )
     for k, v in (nextflow_defaults|nextflow_params).items():
         if k == "preset": continue
@@ -772,10 +772,20 @@ def RunWorkflow(key: str, log_dir: Path):
     Log.Info(f"samples with verified outputs: [{verified}] of [{sum(len(g) for g in task.plans)}]")
     for _namespace in used_type_libs:
         output.AddTypeLibrary(_namespace, type_libs[_namespace])
+
+    def fix_symlink(p: Path):
+        dest = p.resolve()
+        if dest.is_relative_to(workspace): # workspace is a container path (/msm_home/...)
+            rel_dest = dest.relative_to(workspace)
+        rel_home = Path("../../")
+        new_link = (p.parent/f"{p.name}.tmp")
+        new_link.symlink_to(rel_home/rel_dest)
+        new_link.rename(p)
     parent_map: dict[Path, list[DataInstance]] = {}
     for sample, target in produced_targets:
         inst = target.instance
         p, _ = _get_target_path(sample, target)
+        if p.is_symlink(): fix_symlink(p)
         rel_p = p.relative_to(output.location)
         output.AddItem(rel_p, inst.dtype_name)
         parent_map[rel_p] = target.used_givens

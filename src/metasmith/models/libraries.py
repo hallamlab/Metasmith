@@ -14,7 +14,9 @@ import time
 from ..serialization import IsText
 from ..coms.containers import ContainerRuntime, Container
 # from ..coms.terminals import LiveShell
-from ..coms.via_ws import RemoteShell, RemoveLeadingIndent
+# from ..coms.via_ws import RemoteShell
+from ..coms.terminals import RemoveLeadingIndent
+from ..coms.via_file_watcher import RemoteShell
 from .solver import Dependency, Endpoint, Transform
 from .remote import GlobusSource, Logistics, Source, SourceType
 from ..hashing import KeyGenerator
@@ -701,12 +703,12 @@ class ExecutionContext:
             dest = p.container.parent
             _binds.add((src, dest))
         if binds is None: binds = []
+        container_ws = Path("/ws")
         binds += sorted([(s, d) for s, d in _binds])
         binds += [
-            (self.external_cwd, Path("/ws")),
+            (self.external_cwd, container_ws),
         ]
 
-        container_ws = Path("/ws")
         container = Container(
             image = str(image_path),
             workdir = container_ws,
@@ -716,7 +718,15 @@ class ExecutionContext:
 
         cmd = RemoveLeadingIndent(cmd)
         Log.Info(f"executing container [{image_path}] using [{container.runtime.name}]")
-        Log.Info(f"command:")
+        h, k = KeyGenerator.FromStr(cmd)
+        _bounce_script = Path(f"./_metasmith/.bounce.{k}")
+        with open(_bounce_script, "w") as f:
+            script = [
+                "cd /ws",
+                cmd
+            ]
+            f.write("\n".join(script))
+        Log.Info(f"command with bounce at [{_bounce_script}]:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
         Log.Info(f"binds:")
@@ -724,9 +734,9 @@ class ExecutionContext:
             Log.Info(f"    {s} -> {d}")
         _container_start = f"{container.MakeRunCommand()} {shell}"
         Log.Info(f"container start: [{_container_start}]")
-        sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
-        result = self.external_shell.Exec(cmd, timeout=None, history=history)
-        eresult = self.external_shell.Exec("[ -n $APPTAINER_CONTAINER ] || [ -e /.dockerenv ] && exit", timeout=None, history=history)
+        # sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
+        result = self.external_shell.Exec(f"{_container_start} {container_ws/_bounce_script}", timeout=None, history=history)
+        # eresult = self.external_shell.Exec("[ -n $APPTAINER_CONTAINER ] || [ -e /.dockerenv ] && exit", timeout=None, history=history)
         return result
         # _, _hash = KeyGenerator.FromStr(cmd, l=8)
         # cmd_file = f"_metasmith/container_cmd.{_hash}"

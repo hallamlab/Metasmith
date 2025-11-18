@@ -489,7 +489,7 @@ class WorkflowTask:
 
             src += [
                 TAB+"input:",
-                TAB+TAB+f'tuple '+','.join(['val(sample)']+[f'path(_{i+1:02})' for i, x in enumerate(step.uses)]),
+                TAB+TAB+f'tuple '+','.join(['val(sample)']+[f'path(_{i+1:02})' for i, x in enumerate(step.uses)])
             ] + [
                 "",
                 TAB+"output:",
@@ -500,7 +500,7 @@ class WorkflowTask:
                 "",
                 TAB+'"""',
                 TAB+f'{context.bootstrap_var}',
-                TAB+f'echo "$task.cpus/$task.memory" >{METADATA_FILE}',
+                TAB+f'echo "$task.cpus/$task.memory/$task.attempt" >{METADATA_FILE}',
             ] + [
                 TAB+f'{_make_bind_var(i, is_assignment=True)}="{p}"'
                 for i, p in enumerate(external_binds)

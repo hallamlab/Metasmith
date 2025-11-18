@@ -335,6 +335,7 @@ class WsClient:
             while True:
                 with self._lock:
                     if self._state != CON_STATE.ACTIVE:
+                        await sio.emit(CLIENT_TO_SERVER, data=WsRequest("dispose", dict(client=self._key)).Pack())
                         await sio.disconnect()
                         return
                 while not self._to_send.empty():
@@ -348,17 +349,24 @@ class WsClient:
                     try:
                         await sio.emit(CLIENT_TO_SERVER, data=WsRequest("ping", dict(client=self._key)).Pack())
                     except BadNamespaceError:
-                        with self._lock:
-                            self._state = CON_STATE.DISPOSED
-                            return # shutting down / disconnected
+                        break # shutting down / disconnected
                     last_ping = now
                 await asyncio.sleep(0.1)
+
+        if self._worker is not None:
+            with self._lock:
+                self._state = CON_STATE.DISPOSED
+            self._worker.join()
 
         with self._lock:
             self._state = CON_STATE.STARTING
         sio = socketio.AsyncClient(reconnection_attempts=3)
         def _run():
-            asyncio.run(main(sio))
+            try:
+                asyncio.run(main(sio))
+            except BadNamespaceError: # connection gone
+                with self._lock:
+                    self._state = CON_STATE.DISPOSED
         worker = Thread(target=_run)
         worker.daemon = True
         worker.start()
@@ -368,7 +376,7 @@ class WsClient:
         while True:
             now = CurrentTimeMillis()
             with self._lock:
-                match(self._state):
+                match self._state:
                     case CON_STATE.ACTIVE | CON_STATE.DISPOSED:
                         return
                     case CON_STATE.IDLE:    
@@ -412,18 +420,34 @@ class WsClient:
                 success = await self.outbound.RobustSend(req, timeout=timeout)
             asyncio.run(f())
             return success
-        future = self._thread_pool.submit(send, req, timeout)
-        future.result() # await send
         start = CurrentTimeMillis()
+        class STATUS(Enum):
+            SUCCESS = 0,
+            FAIL = 1
+            DISCONNECTED = 2
+        def _try() -> STATUS:
+            future = self._thread_pool.submit(send, req, timeout)
+            success = future.result() # await send
+            if not success: return STATUS.FAIL
+            while True:
+                with self._lock:
+                    if self._state != CON_STATE.ACTIVE: return STATUS.DISCONNECTED
+                    if k in self._recieved: return STATUS.SUCCESS
+                now = CurrentTimeMillis()
+                if (now-start)>timeout*1000:
+                    raise TimeoutError()
+                time.sleep(0.001)
         while True:
-            with self._lock:
-                if self._state != CON_STATE.ACTIVE: raise ConnectionError()
-                if k in self._recieved:
+            status = _try()
+            match status:
+                case STATUS.SUCCESS:
                     return self._recieved[k]
-            now = CurrentTimeMillis()
-            if (now-start)>timeout*1000:
-                raise TimeoutError()
-            time.sleep(0.001)
+                case STATUS.FAIL:
+                    continue
+                case STATUS.DISCONNECTED:
+                    remain = CurrentTimeMillis()-start
+                    self._reset(remain/1000)
+                    continue
 
 class RemoteShell:
     def __init__(self, server_path: Path, timeout: float=15) -> None:
