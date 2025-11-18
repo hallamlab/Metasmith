@@ -120,7 +120,8 @@ case $1 in
             --build-arg="PACKAGE=${NAME}" \
             --build-arg="VERSION=${VER}" \
             --network=host \
-            -t $DOCKER_IMAGE:$VER .
+            -t $DOCKER_IMAGE:$VER . \
+        && docker inspect --format='{{.Size}}' $DOCKER_IMAGE:$VER | numfmt --to=si
     ;;
     -bs) # apptainer image *from docker*
         apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$VER
