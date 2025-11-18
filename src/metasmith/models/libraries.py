@@ -1,5 +1,6 @@
 from __future__ import annotations
 import itertools
+from math import e
 import shutil
 import os, sys
 from pathlib import Path
@@ -12,7 +13,10 @@ import time
 
 from ..serialization import IsText
 from ..coms.containers import ContainerRuntime, Container
-from ..coms.ipc import LiveShell, RemoteShell, RemoveLeadingIndent
+# from ..coms.terminals import LiveShell
+# from ..coms.via_ws import RemoteShell
+from ..coms.terminals import RemoveLeadingIndent
+from ..coms.via_file_watcher import RemoteShell
 from .solver import Dependency, Endpoint, Transform
 from .remote import GlobusSource, Logistics, Source, SourceType
 from ..hashing import KeyGenerator
@@ -142,7 +146,7 @@ class DataInstance:
 
     def __post_init__(self):
         self.RecalculateKey()
-        assert not self.path.is_absolute()
+        # assert self.path.is_absolute(), f"path must be absolute [{self.path}]"
 
     def __hash__(self) -> int:
         return self._hash
@@ -152,21 +156,25 @@ class DataInstance:
             str(self.path),
             self.dtype.key,
             self.dtype_name,
-            self.parent_lib.GetKey(),
+            # self.parent_lib.GetKey(),
         ]), l=8)
         return self._key
 
-    def GetDType(self) -> tuple[str, str]:
+    def GetDataType(self) -> tuple[str, str]:
         ns, name = self.dtype_name.split("::")
         return ns, name
 
     def ResolvePath(self):
-        return self.parent_lib.location/self.path
+        if self.path.is_absolute():
+            return self.path
+        else:
+            return self.parent_lib.location/self.path
 
     def Pack(self):
         return dict(
             path=str(self.path),
             type=f"{self.parent_lib.GetKey()}::{self.dtype_name}",
+            # type=f"{self.dtype_name}",
             type_id=self.dtype.key,
         )
 
@@ -216,8 +224,9 @@ class DataInstanceLibrary:
                 assert location.is_dir(), f"[{location}] must be a directory"
             self.location = location
         if include_std:
-            from ..std.data_types import StdTypes
-            self.AddTypeLibrary("std", StdTypes())
+            _here = Path(__file__).parent
+            std_types = DataTypeLibrary.Load(_here/"../std/dtypes.yml")
+            self.AddTypeLibrary("std", std_types)
 
     def AddTypeLibrary(self, namespace: str, lib: DataTypeLibrary|Source, on_exist: str="clear"):
         assert on_exist in {"skip", "error", "clear"}
@@ -249,6 +258,8 @@ class DataInstanceLibrary:
 
     @classmethod
     def _get_type(cls, name: str, types: dict[str, DataTypeLibrary]):
+        if "::" not in name:
+            raise ValueError(f"[{name}] is not in the format of <namespace>::<type>")
         namespace, name = name.split("::")
         assert namespace in types, f"namespace [{namespace}] not found"
         types_lib = types[namespace]
@@ -282,51 +293,11 @@ class DataInstanceLibrary:
             else:
                 yield k, v, Endpoint(proto.properties, {p.dtype for p in self.parents[k]})
 
-    def Add(self, items: list[tuple[Path|str, Path|str, str]], method: SourceType=SourceType.DIRECT, on_exist: str="skip"):
-        """
-        @items: list of (source, destination, datatype)
-        """
-        assert method in {SourceType.DIRECT, SourceType.SYMLINK}
-        assert on_exist in {"skip", "error", "clear", "update"}
-        mover = Logistics()
-        items = [(Path(src), Path(dest), dtype) for src, dest, dtype in items]
-        # seen = {v for v in self.manifest.values()}
-        completed = set()
-        for src, dest, dtype in items:
-            assert isinstance(dtype, str), f"datatype must be a string of <namespace>::<type> but got [{type(dtype)}]"
-            src, dest = Path(src), Path(dest)
-            assert src.exists(), f"[{src}] does not exist"
-            assert not dest.is_absolute(), f"destination [{dest}] must be relative"
-            # assert dtype not in seen, f"an instance of datatype [{dtype}] is already registered and so would not be distinguishable"
-            self.GetType(dtype) # check if datatype exists
-            dest_path = self.location/dest
-            if dest_path.exists():
-                if on_exist == "skip":
-                    completed.add(str(src))
-                    continue
-                elif on_exist == "error":
-                    raise FileExistsError(f"destination [{dest}] already exists")
-                elif on_exist == "clear":
-                    Log.Warn(f"clearing previous [{dest}]")
-                    shutil.rmtree(dest_path)
-                elif on_exist == "update":
-                    pass # default of mover
-            mover.QueueTransfer(
-                src = Source.FromLocal(src),
-                dest = Source(address=dest_path, type=method),
-            )
-        res = mover.ExecuteTransfers()
-        completed |= {str(Path(s.address)) for s, d in res.completed}
-        report: list[Path] = []
-        for src, dest, dtype in items:
-            dest = Path(dest)
-            k = str(src)
-            if k not in completed:
-                Log.Error(f"failed to add [{src}]")
-                continue
-            self.manifest[dest] = dtype
-            report.append(dest)
-        return report
+    def AddItem(self, path: Path|str, dtype: str):
+        path = Path(path)
+        assert path not in self.manifest, f"[{path}] already added"
+        type_model = self.GetType(dtype) # check if datatype exists
+        self.manifest[path] = dtype
 
     def AddParentsTo(self, path: Path|str, parents: list[DataInstance]):
         p = Path(path)
@@ -342,8 +313,7 @@ class DataInstanceLibrary:
         for k in ["remote_src"]:
             if k in me_d: del me_d[k]
         me = yaml.dump(me_d)
-        dtypes = yaml.dump({k:v.Pack() for k, v in self.types.items()})
-        self._hash, self._key = KeyGenerator.FromStr(me+dtypes, l=12)
+        self._hash, self._key = KeyGenerator.FromStr(me, l=12)
         return self._key
 
     def GetKey(self):
@@ -382,11 +352,13 @@ class DataInstanceLibrary:
                 type=dtype_name,
             )
             if len(d_parents) > 0:
-                d["parents"] = d_parents
+                d["parents"] = dict(sorted(d_parents.items(), key=lambda t:t[0]))
             return d
+        man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
+        man = dict(sorted(man.items(), key=lambda t: t[0]))
         return dict(
             schema=self.schema,
-            manifest={str(k):_pack_instance(k, v) for k, v in self.manifest.items()},
+            manifest=man,
             remote_src=self.remote_src.Pack() if self.remote_src is not None else None,
         )
 
@@ -541,6 +513,24 @@ class DataInstanceLibrary:
             assert len(res.completed) == 1, f"failed to load library from [{self.remote_src}]; [{res.errors}]"
         _lib = self.Load(self.location, check_integrity=True)
         return _lib
+    
+    def AsView(self, mask: set[Path]):
+        return DataInstanceLibraryView(self, mask)
+
+class DataInstanceLibraryView:
+    def __init__(self, original: DataInstanceLibrary, mask: set[Path]) -> None:
+        self._original = original
+        self._mask = mask
+
+    def Get(self, path: str|Path):
+        p = Path(path)
+        assert p in self._mask
+        return self._original.Get(path)
+    
+    def Iterate(self):
+        for p, n, m in self._original.Iterate():
+            if p not in self._mask: continue
+            yield p, n, m
 
 # this should function like a view provided by the parent library
 @dataclass
@@ -594,11 +584,13 @@ class TransformInstance:
             sys.path = original_path_var
 
 class TransformInstanceLibrary(DataInstanceLibrary):
-    def __init__(self, location: Path|str|DataInstanceLibrary) -> None:
-        super().__init__(location)
+    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool=True) -> None:
+        super().__init__(location, include_std=True)
         if "transforms" not in self.types:
             transform_types = DataTypeLibrary(types=dict(
                 transform=Endpoint({"metasmith", "transform"}),
+                example_input=Endpoint({"metasmith", "example_input"}),
+                example_output=Endpoint({"metasmith", "example_output"}),
             ))
             self.AddTypeLibrary("transforms", transform_types)
         self._transform_cache: dict[Path, TransformInstance] = {}
@@ -606,7 +598,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
     def PruneTypes(self, save: bool=True, whitelist: set[str]=None):
         if whitelist is None: whitelist = set()
         indirect_whitelist = []
-        for path, name, tr in self.IterateTransforms():
+        for path, tr in self.IterateTransforms():
             indirect_whitelist += tr.model.requires
             indirect_whitelist += tr.model.produces
         def _in(x: Dependency):
@@ -617,13 +609,19 @@ class TransformInstanceLibrary(DataInstanceLibrary):
     def AddStub(self, path: Path|str, exist_ok: bool=True):
         path = Path(path)
         assert not path.is_absolute(), f"path must be relative"
+        path = self.location/path
         HERE = Path(__file__).parent
         example = HERE/"_example_transform.py"
         if path.suffix != ".py":
             path = path.parent/(path.name+".py")
-
-        results = self.Add([(example, path, "transforms::transform")], on_exist="skip" if exist_ok else "error")
-        assert len(results) == 1, f"failed to add transform at [{path}]"
+        if path.exists():
+            if not exist_ok:
+                raise FileExistsError(f"file exists [{path}]")
+        else:
+            shutil.copy(example, path, follow_symlinks=True)
+        self.AddItem(path, "transforms::transform")
+        # results = self.AddBulk([(example, path, "transforms::transform")], on_exist="skip" if exist_ok else "error")
+        # assert len(results) == 1, f"failed to add transform at [{path}]"
         inst = TransformInstance.Load(self.location/path)
         return inst
 
@@ -646,10 +644,10 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         return self._transform_cache.get(path)
 
     def IterateTransforms(self):
-        for k, v, dtype in self.Iterate():
+        for k, dtype_name, dtype in self.Iterate():
             tr = self.GetTransform(k)
-            assert tr is not None, (v, k)
-            yield k, v, tr
+            assert tr is not None, (dtype_name, k)
+            yield k, tr
 
     @classmethod
     def Load(cls, path: Path|str):
@@ -666,21 +664,32 @@ class ContextPath:
     container: Path
 
 @dataclass
+class ContextData:
+    path: ContextPath
+    endpoint: Endpoint
+    type_name: str
+
+@dataclass
 class ExecutionContext:
-    _inputs: dict[Dependency, ContextPath]
-    _outputs: dict[Dependency, ContextPath]
+    _inputs: dict[Dependency, ContextData]
+    _outputs: dict[Dependency, ContextData]
     external_shell: RemoteShell # since metasmith will bootstrap into its own container
     external_cwd: Path
     container_runtime: ContainerRuntime
     params: dict = field(default_factory=dict)
 
-    def Get(self, key: Endpoint|Dependency):
-        for d, p in itertools.chain(self._inputs.items(), self._outputs.items()):
-            if d.IsA(key): return p
-        assert False, f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]"
+    def GetMeta(self, key: Dependency):
+        if key in self._inputs:
+            return self._inputs[key]
+        if key in self._outputs:
+            return self._outputs[key]
+        raise KeyError(f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]")
+
+    def Get(self, key: Dependency):
+        return self.GetMeta(key).path
 
     def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path, Path]]=None, history: bool=True):
-        path = self._inputs[image]
+        path = self._inputs[image].path
         if IsText(path.local):
             with open(path.local) as f:
                 image_path = f.read().strip() # using the uri
@@ -688,17 +697,18 @@ class ExecutionContext:
             image_path = str(path.external)
 
         _binds = set()
-        for _, p in list(self._inputs.items()):
+        for _, v in list(self._inputs.items()):
+            p = v.path
             src = p.external.parent
             dest = p.container.parent
             _binds.add((src, dest))
         if binds is None: binds = []
+        container_ws = Path("/ws")
         binds += sorted([(s, d) for s, d in _binds])
         binds += [
-            (self.external_cwd, Path("/ws")),
+            (self.external_cwd, container_ws),
         ]
 
-        container_ws = Path("/ws")
         container = Container(
             image = str(image_path),
             workdir = container_ws,
@@ -707,8 +717,16 @@ class ExecutionContext:
         )
 
         cmd = RemoveLeadingIndent(cmd)
-        Log.Info(f"executing container [{image_path}] using [{container.runtime}]")
-        Log.Info(f"command:")
+        Log.Info(f"executing container [{image_path}] using [{container.runtime.name}]")
+        h, k = KeyGenerator.FromStr(cmd)
+        _bounce_script = Path(f"./_metasmith/.bounce.{k}")
+        with open(_bounce_script, "w") as f:
+            script = [
+                "cd /ws",
+                cmd
+            ]
+            f.write("\n".join(script))
+        Log.Info(f"command with bounce at [{_bounce_script}]:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
         Log.Info(f"binds:")
@@ -716,9 +734,9 @@ class ExecutionContext:
             Log.Info(f"    {s} -> {d}")
         _container_start = f"{container.MakeRunCommand()} {shell}"
         Log.Info(f"container start: [{_container_start}]")
-        sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
-        result = self.external_shell.Exec(cmd, timeout=None, history=history)
-        eresult = self.external_shell.Exec("[ -n $APPTAINER_CONTAINER ] || [ -e /.dockerenv ] && exit", timeout=None, history=history)
+        # sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
+        result = self.external_shell.Exec(f"{_container_start} {container_ws/_bounce_script}", timeout=None, history=history)
+        # eresult = self.external_shell.Exec("[ -n $APPTAINER_CONTAINER ] || [ -e /.dockerenv ] && exit", timeout=None, history=history)
         return result
         # _, _hash = KeyGenerator.FromStr(cmd, l=8)
         # cmd_file = f"_metasmith/container_cmd.{_hash}"

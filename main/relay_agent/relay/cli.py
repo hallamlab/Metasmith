@@ -1,14 +1,21 @@
 from pathlib import Path
 import argparse
 import inspect
-from multiprocessing import Process
 import os, sys
 import time
 from pathlib import Path
 import argparse
 import signal
+import socket
 
-CLI_ENTRY = "relay"
+from .logging import Log
+from .server import SERVER_HEALTH, CheckStatus, RunServer, StopServer, LockFile
+from .watcher import RunWatcher
+from .coms.ipc import CurrentTimeMillis, ResetGenerator
+from .coms.via_ws import RemoteShell
+
+CLI_ENTRY = "msm_relay"
+WS = Path(sys.orig_argv[0]).parent.absolute()
     
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
@@ -16,8 +23,10 @@ class ArgumentParser(argparse.ArgumentParser):
         self.exit(2, '\n%s: error: %s\n' % (self.prog, message))
 
 def _add_io_arg(parser: ArgumentParser):
-    here = Path(sys.orig_argv[0]).parent.absolute()
-    parser.add_argument("--io", default=here/"connections", required=False, metavar="PATH", type=Path)
+    host = socket.gethostname()
+    ws = WS/host
+    ws.mkdir(exist_ok=True)
+    parser.add_argument("--io", default=ws, required=False, metavar="PATH", type=Path)
     return parser
 
 def _make_parser(name: str, description: str):
@@ -32,67 +41,129 @@ class CommandLineInterface:
     def _get_fn_name(self):
         return inspect.stack()[1][3]
     
+    def watch(self, raw_args=None):
+        parser = _make_parser(self._get_fn_name(), "relay via file watcher")
+        args = parser.parse_args(raw_args)
+        workspace = Path(args.io)
+        while True:
+            try:
+                RunWatcher(workspace)
+                break
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                Log.Error(f"error [{e}], restarting")
+                time.sleep(1)
+        (workspace/"exit").unlink(missing_ok=True)
+        Log.SetStdout(on=True)
+        Log.Info(f"stopped watcher relay")
+
+    def unwatch(self, raw_args=None):
+        parser = _make_parser(self._get_fn_name(), "signal file watcher stop")
+        args = parser.parse_args(raw_args)
+        workspace = Path(args.io)
+        (workspace/"exit").touch()
+        Log.Info(f"signalled watcher to stop")
+
     def start(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "ensure relay is running")
         parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
-        parser.add_argument("--channels", "-n", required=False, metavar="INT", type=int, default=8)
+        # parser.add_argument("--channels", "-n", required=False, metavar="INT", type=int, default=8)
+        # parser.add_argument("--gunicorn-config", "-c", required=False, metavar="PATH", type=str, default=WS/"gunicorn.conf.py")
         args = parser.parse_args(raw_args)
-        assert args.channels<=16, f"too many channels [{args.channels}]"
-        from .main import RunServer, _check_status, SERVER_STATUS
         workspace = Path(args.io)
-        status = _check_status(workspace)
-        if status == SERVER_STATUS.ALIVE:
-            print(f"relay server already running at [{workspace}]")
+
+        # os.system("uvicorn ")
+        status = CheckStatus(workspace)
+        if status.health == SERVER_HEALTH.ALIVE:
+            Log.Warn(f"relay server already running at [{workspace}]")
             return
-        if args.connected:
-            RunServer(workspace=workspace, channels=args.channels)
         else:
-            print(f"starting relay server at [{workspace}]")
-            signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
-            pid = os.fork()
-            if pid != 0: # parent
-                server_channel = workspace/"main.in"
-                try:
-                    while not server_channel.exists():
-                        time.sleep(0.1)
-                except KeyboardInterrupt:
-                    pass
-                if not server_channel.exists():
-                    print(f"failed")
-                else:
-                    print(f"success")
-                # os._exit(0) # this should keep resources for forked child?
-            else: # child
-                RunServer(workspace=workspace, channels=args.channels)
+            Log.Info(f"starting relay server at [{workspace}]")
+            if args.connected:
+                RunServer(workspace=workspace)
+            else:
+                for f in LockFile._get_candidates(workspace):
+                    f.unlink()
+                signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
+                pid = os.fork()
+                ResetGenerator()
+                if pid != 0: # parent
+                    try:
+                        while True:
+                            _status = CheckStatus(workspace)
+                            if _status.health == SERVER_HEALTH.ALIVE:
+                                Log.Info(f"pid [{_status.pid}]")
+                                Log.Info(f"success")
+                                return
+                            time.sleep(0.1)
+                    except KeyboardInterrupt:
+                        pass
+                    # os._exit(0) # this should keep resources for forked child?
+                else: # child
+                    RunServer(workspace=workspace)
 
     def stop(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "stop relay")
         args = parser.parse_args(raw_args)
-        from .main import StopServer
-        StopServer(args.io)
-        server_channel = Path(args.io)/"main.in"
-        try:
-            while server_channel.exists():
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            pass
-        if server_channel.exists():
-            print(f"failed")
-        else:
-            print(f"success")
+        workspace = Path(args.io)
+        candidate_lock_files = LockFile._get_candidates(workspace)
+        if len(candidate_lock_files)==0:
+            Log.Info(f"server not running at [{workspace}]")
+            return
+        StopServer(workspace)
+
+        start = CurrentTimeMillis()
+        timeout = 5
+        while True:
+            candidate_lock_files = LockFile._get_candidates(workspace)
+            if len(candidate_lock_files)==0:
+                Log.Info("shutdown success")
+                return
+            now = CurrentTimeMillis()
+            if now-start>=timeout*1000: break
+        candidate_lock_files = LockFile._get_candidates(workspace)
+        for f in candidate_lock_files:
+            f.unlink()
+        Log.Info("shutdown enforced")
 
     def status(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "get status of connections")
         args = parser.parse_args(raw_args)
-        from .main import GetStatus
-        GetStatus(args.io)
+        status = CheckStatus(args.io)
+        Log.Info("status:")
+        for k, v in status.__dict__.items():
+            if k.startswith("_"): continue
+            if callable(v): continue
+            if isinstance(v, SERVER_HEALTH):
+                v = v.name
+            Log.Info(f"  {k}: {v}")
 
     def bounce(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "bounce command through relay")
         parser.add_argument("cmd", metavar="STR")
         args = parser.parse_args(raw_args)
-        from .main import Bounce
-        Bounce(args.io, args.cmd)
+        with RemoteShell(args.io) as shell:
+            shell.RegisterOnOut(print)
+            shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
+            shell.Exec(args.cmd, timeout=None)
+
+    def logs(self, raw_args=None):
+        parser = _make_parser(self._get_fn_name(), "print logs")
+        args = parser.parse_args(raw_args)
+
+        def _logs(logs_path):
+            if not logs_path.exists():
+                Log.Error(f"no logs at [{logs_path}]")
+                return
+            with open(logs_path) as f:
+                for l in f:
+                    print(l, end="")
+        _logs(Path(args.io)/"main.log")
+        uvicorn_logs = Path(args.io)/"uvicorn.log"
+        if uvicorn_logs.exists():
+            print("uvicorn :::::::::::::::::::::::::::::::::::::::")
+            _logs(uvicorn_logs)
 
     def test(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "run self test")

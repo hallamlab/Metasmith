@@ -1,3 +1,5 @@
+import ipaddress
+import subprocess
 import os, sys
 from pathlib import Path
 import argparse
@@ -9,7 +11,7 @@ from ..constants import NAME, VERSION, GIT_URL, ENTRY_POINTS
 from ..logging import Log
 
 CLI_ENTRY = [e.split("=")[0].strip() for e in ENTRY_POINTS][0]
-    
+
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         self.print_help(sys.stderr)
@@ -57,14 +59,37 @@ class CommandLineInterface:
         parser.add_argument("--arg", "-a", required=False, default=[], action='append', nargs='*', metavar="KEY=VALUE")
         args = parser.parse_args(raw_args)
         body = {}
-        for a in args.arg:
-            a = a[0]
-            if "=" not in a:
-                Log.Error(f"invalid argument [{a}]")
-                continue
-            k, v = a.split("=")
-            body[k] = v
+        for alst in args.arg:
+            for a in alst:
+                if "=" not in a:
+                    Log.Error(f"invalid argument [{a}]")
+                    continue
+                k, v = a.split("=")
+                body[k] = v
         HandleRequest(args.endpoint, body)
+
+    def notebook(self, raw_args=None):
+        parser = ArgumentParser(
+            description=f"Function to start Metasmith in Jupyter Lab"
+        )
+        def ip_type(val: str) -> str:
+            try:
+                ipaddress.ip_address(val)
+                return val
+            except ValueError:
+                raise argparse.ArgumentTypeError(f"Invalid IP address: {val}")
+        parser.add_argument("--ip", required=False, type=ip_type, default="0.0.0.0", help="IP address to serve the notebook")
+        parser.add_argument("--port", required=False, type=int, default=8080, help="Port to serve the notebook")
+        args = parser.parse_args(raw_args)
+        subprocess.run([
+            "jupyter",
+            "lab",
+            f"--ip={args.ip}",
+            f"--port={args.port}",
+            "--allow-root",
+            "--no-browser",
+            "--LabApp.default_url='/lab/tree/metasmith_starter.ipynb'",
+        ], text=True)
 
     def help(self, args=None):
         help = [
@@ -90,6 +115,6 @@ def main():
         return
 
     COMMANDS.get(# calls command function with args
-        sys.argv[1], 
+        sys.argv[1],
         CommandLineInterface.help # default
     )(cli, sys.argv[2:]) # cli is instance of "self"

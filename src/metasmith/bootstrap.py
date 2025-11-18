@@ -4,19 +4,14 @@ import shutil
 import traceback
 import re
 
-from metasmith.hashing import KeyGenerator
-
 from .logging import Log
 from .agents import Agent, AgentPaths
-from .models.libraries import ContextPath, ExecutionContext, ExecutionResult
-from .models.libraries import DataTypeLibrary, TransformInstance, TransformInstanceLibrary
+from .models.libraries import ContextPath, ContextData, ExecutionContext, ExecutionResult
+from .models.libraries import DataInstance, DataTypeLibrary, TransformInstance, TransformInstanceLibrary
+from .models.solver import Dependency, Endpoint
 from .models.workflow import WorkflowTask
-from .coms.ipc import LiveShell, RemoteShell
-from .coms.containers import Container
-from .serialization import StdTime
-
-# CONTAINER = Container("docker://quay.io/hallamlab/metasmith:latest")
-# CONTAINER = Container("docker-daemon://quay.io/hallamlab/metasmith:0.2.dev-47c27e4")
+# from .coms.via_ws import RemoteShell
+from .coms.via_file_watcher import RemoteShell
 
 def DeployFromContainer(workspace: Path):
     deploy_root = workspace
@@ -24,7 +19,7 @@ def DeployFromContainer(workspace: Path):
     if not deploy_root.exists():
         deploy_root.mkdir(parents=True, exist_ok=True)
     folders = [
-        "relay/connections",
+        "relay",
     ]
     for p in folders:
         (deploy_root/p).mkdir(parents=True, exist_ok=True)
@@ -38,8 +33,10 @@ def DeployFromContainer(workspace: Path):
 
     Log.Info("deployment complete")
 
-def StageAndRunTransform(workspace: Path, step_index: int):
-    server_path = AgentPaths.to_relay_coms(root=AgentPaths.INTERNALS)
+def StageAndRunTransform(workspace: Path, sample_index: int, step_index: int):
+    sample_index -= 1   # is 1 indexed for log legibility
+    step_index -= 1     # ^ same
+    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS)
     MAX_WAIT = 3
     for i in range(MAX_WAIT):
         if server_path.exists(): break
@@ -55,7 +52,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
     def _shorten_home(p: str):
         return p.replace(agent_home, "{agent_home}")
     
-    with RemoteShell(server_path) as shell:
+    with RemoteShell(server_path, timeout=60) as shell:
         _paused = False
         class PausedStdOut:
             def __enter__(self):
@@ -82,22 +79,16 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         Log.Info(f"loading task from [{task_path}]")
         task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
 
-        _i = step_index-1
-        step = None
-        for p in task.plans:
-            if _i >= len(p.steps):
-                _i -= len(p.steps)
-                continue
-            step = p.steps[_i]
-            break
-        assert step is not None, step_index
+        plans = [p for g in task.plans for p in g]
+        step = plans[sample_index].steps[step_index]
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
-        Log.Info(f"step [{step_index}:{step_name}]")
+        Log.Info(f"sample [{sample_index}] step [{step_index}:{step_name}]")
 
         def _status(p: ContextPath):
             return "✓" if p.local.exists() else "X"
         container_binds = {}
-        def _parse_path(p: Path, container_override=None):
+        def _parse_meta(inst: DataInstance, container_override=None):
+            p = inst.path
             if p.is_symlink():
                 external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
                 tail = external.relative_to(agent_home)
@@ -112,29 +103,41 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                 if k not in container_binds:
                     container_binds[k] = Path(f"/msm_data/{k.name}")
                 container = container_binds[k]/p
-            return ContextPath(local=local, external=external, container=container)
-        inputs = {}
+
+            return ContextData(
+                path=ContextPath(local=local, external=external, container=container),
+                endpoint=inst.dtype,
+                type_name=inst.dtype_name,
+            )
+        inputs:dict[Dependency, ContextData] = {}
         Log.Info("uses:")
+        data2dep = {i:d for d, i in step.dependency_map.items()}
+        missing_input=False
         for inst in step.uses:
-            p = _parse_path(inst.path)
+            meta = _parse_meta(inst)
+            p = meta.path
+            missing_input = missing_input or not p.local.exists()
             Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
-            inputs[inst.dtype] = p
-        Log.Info("produces:")
-        outputs = {}
-        space = " "
+            inputs[data2dep[inst]] = meta
+        if missing_input:
+            Log.Error("detected missing inputs, stopping")
+            return ExecutionResult(False)
+
+        # Log.Info("produces:")
+        outputs: dict[Dependency, ContextData] = {}
         for inst in step.produces:
-            p = _parse_path(inst.path, container_override=Path("/ws")/inst.path)
-            outputs[inst.dtype] = p
-            Log.Info(_shorten_home(f"    {space} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
+            meta = _parse_meta(inst, container_override=Path("/ws")/inst.path)
+            p = meta.path
+            outputs[data2dep[inst]] = meta
+            # Log.Info(_shorten_home(f"    {space} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
 
         params = {}
         try:
-            with open(".command.resources") as f:
-                _cpus, _mem = f.readline().strip().split("/")
-                for k, v in [ # match nextflow task.{}
-                    ("cpus", _cpus),
-                    ("memory", _mem),
-                ]:
+            with open(".command.metadata") as f:
+                _vals = f.readline().strip().split("/")
+                for i, k in enumerate(["cpus", "memory", "attempt"]): # match nextflow task.{}
+                    if i>=len(_vals): break
+                    v = _vals[i]
                     if v.lower() == "null": continue
                     try:
                         vals = re.findall(r"\d+", v)
@@ -143,25 +146,42 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                     except ValueError:
                         continue
                     params[k] = v
+                _ = f.readline() # binds
         except Exception as e:
-            Log.Error(f"failed to read .command.resources: {e}")
+            Log.Error(f"failed to read .command.metadata: {e}")
 
         context = ExecutionContext(
             _inputs=inputs,
             _outputs=outputs,
             external_shell=shell,
             external_cwd=external_cwd,
-            container_runtime=task.container_runtime,
+            container_runtime=agent.runtime,
             params=params,
         )
         Log.Info(f">>> executing protocol")
         BREAK_LENGTH = 60
         Log.Info(">"*BREAK_LENGTH)
+        
+        def on_exit(sucess:bool, message: str|None=None):
+            Log.Info("<"*BREAK_LENGTH)
+            Log.Info(f"<<< [{step_name}] {message}")
+            Log.Info(f"expected outputs:")
+            for inst in step.produces:
+                meta = _parse_meta(inst, container_override=Path("/ws")/inst.path)
+                p = meta.path
+                Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
+            if not sucess:
+                for k, v in outputs.items():
+                    p = v.path.local
+                    if not p.exists(): continue
+                    p.rename(p.with_suffix(f"{p.suffix}.failed")) # ensure that nextflow sees failure, since expected outputs gone
         try:
             result = step.transform.protocol(context)
+            on_exit(result.success, f"reports {'success' if result.success else 'failure'}")
+            if result.success: Path("./.command.success").touch()
+            return ExecutionResult(result.success)
         except Exception as e:
-            Log.Info("<"*BREAK_LENGTH)
-            Log.Info(f"<<< [{step_name}] failed with error")
+            on_exit(False, "failed with error")
             Log.Error(f"error while executing transform [{step_name}]")
             Log.Error(str(e))
             with open("traceback.temp", "w") as f:
@@ -169,9 +189,3 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             with open("traceback.temp", "r") as f:
                 Log.Error(f.read()[:-1])
             return ExecutionResult(False)
-        
-        Log.Info("<"*BREAK_LENGTH)
-        Log.Info(f"<<< [{step_name}] reports {'success' if result.success else 'failure'}")
-        Log.Info(f"expected outputs:")
-        for inst in step.produces:
-            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))

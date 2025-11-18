@@ -6,8 +6,9 @@ from pathlib import Path
 import time
 import re
 import random
-from metasmith.coms.ipc import RemoteShell
+from metasmith.coms.via_ws import RemoteShell
 from metasmith.agents import Agent, AgentPaths
+from metasmith.logging import Log
 
 agent = Agent.Load(AgentPaths.to_definition())
 cwd = Path("./").resolve() # example **/runs/WSFa2f/nxf_work/08/b8eb0c0fd0f5b02aed6c4cecefe08f
@@ -15,27 +16,66 @@ cwd_str = str(cwd)
 tail = next(re.finditer(r"/\w*/nxf_work/.*", cwd_str)).group()[1:] # from key, example WSFa2f/nxf_work/08/b8eb0c0fd0f5b02aed6c4cecefe08f
 external_cwd = AgentPaths.to_staged(root=agent.home.GetPath())/tail
 
-def call():
-    with RemoteShell(AgentPaths.to_relay_coms()) as shell:
-        # take this opportunity to fix the paths of the command.run script
-        res = shell.Exec(f"realpath {agent.home.GetPath()}", history=True)
-        assert len(res.err) == 0, "failed to resolve external workspace path"
-        resolved_agent_workspace = res.out[0]
-        command_run_path = Path(sys.argv[1])
-        with open(command_run_path, 'r') as f:
-            command_run = "".join(f.readlines())
-        command_run = command_run.replace(str(AgentPaths.HOME_ROOT), resolved_agent_workspace)
-        with open(command_run_path, 'w') as f:
-            f.write(command_run)
-        shell.RegisterOnOut(print)
-        shell.RegisterOnErr(lambda x: print(x, file=sys.stderr))
-        shell.Exec(f"cd {external_cwd} && sbatch {' '.join(sys.argv[1:])}")
-        time.sleep(0.1) # don't know if or why this is needed...
+Log.SetStdout(on=False)
+Log.AddLogFile(Path("./.sbatch.log"))
+def err(msg: str):
+    Log.Error(msg)
+def out(msg: str):
+    Log.Info(msg)
+    print(msg) # pass through sbatch output
 
-for retry in range(5):
+def fix_paths(file: Path):
+    if not file.exists(): return
+    Log.Info(f"fixing path vars in [{file}]")
+    todo = []
+    with open(file, 'r') as f:
+        lines = f.readlines()
+        content = "".join(lines)
+        if len(lines)>1 and lines[1].startswith("array=("):
+            child_jobs = lines[1][len("array=( "):-len(" )\n")].split(" ")
+            todo += [Path(p)/".command.run" for p in child_jobs]
+    content = content.replace(str(AgentPaths.HOME_ROOT), str(agent.real_path))
+    with open(file, 'w') as f:
+        f.write(content)
+    # if this was a gathered array job, we have to fix the paths for the actual jobs
+    for p in todo:
+        fix_paths(p)
+
+# take this opportunity to fix the paths of the command.run script
+command_run = Path(sys.argv[1])
+args = ' '.join(sys.argv[1:])
+Log.Info("args:")
+Log.Info(f"{args}")
+fix_paths(command_run)
+# and the command.sh script in the event of array jobs (see example at end of file)
+command_sh = command_run.parent/(command_run.stem+".sh")
+fix_paths(command_sh)
+
+def call():
+    with RemoteShell(AgentPaths.to_local_relay_coms()) as shell:
+        shell.RegisterOnOut(out)
+        shell.RegisterOnErr(err)
+        shell.Exec(f"cd {external_cwd} && sbatch {' '.join(sys.argv[1:])}")
+    Log.Info('//')
+
+success = False
+retries = 5
+for retry in range(retries):
     try:
         call()
+        success = True
         break
     except (TimeoutError, ConnectionError, FileNotFoundError):
         dt = random.random()*(2**retry)+0.1
         time.sleep(dt)
+
+if not success:
+    m = f"failed after [{retries}] attempts"
+    Log.Error(m)
+    print(m, file=sys.stderr)
+
+# example .command.sh from array job
+# #!/bin/bash -ue
+# array=( /msm_home/runs/IZqUC9HE/nxf_work/ed/a8006fc40ad76993ebd2d9b87a7105 /msm_home/runs/IZqUC9HE/nxf_work/04/120f73bdc969106a946a09a2da6946 /msm_home/runs/IZqUC9HE/nxf_work/f5/183ca407ef03e1c7a0f3272ab53ef9 /msm_home/runs/IZqUC9HE/nxf_work/7b/5d446c2cf46c7bad573a6165d15f06 /msm_home/runs/IZqUC9HE/nxf_work/ca/80be46a791a2fe4a6dab82e4d7bd3c /msm_home/runs/IZqUC9HE/nxf_work/4e/ae06687de5c15820d0e18f7fb2a165 /msm_home/runs/IZqUC9HE/nxf_work/e1/374632ef266d3ae9770a5cc0dd1308 /msm_home/runs/IZqUC9HE/nxf_work/e9/73cf451d1cbf3edf00d753978bffaf /msm_home/runs/IZqUC9HE/nxf_work/c8/14ff83aedcf51e8757d28f162cc939 /msm_home/runs/IZqUC9HE/nxf_work/7d/50675a6787f9a034082508d5d008b3 )
+# export nxf_array_task_dir=${array[SLURM_ARRAY_TASK_ID]}
+# bash $nxf_array_task_dir/.command.run 2>&1 > $nxf_array_task_dir/.command.log

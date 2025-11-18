@@ -14,19 +14,22 @@ class Api:
         assert workspace, "[workspace] is required"
         step_index = body.get("step_index")
         assert step_index, "[step_index] is required"
-        StageAndRunTransform(Path(workspace), int(step_index))
+        sample, step = [int(x) for x in step_index.split("/")]
+        res = StageAndRunTransform(Path(workspace), sample, step)
+        exit(res.success)
 
     def stage_workflow(self, body: dict):
         task_key = body.get("task_key")
         assert task_key, "[task_key] is required"
-        StageWorkflow(task_key)
+        verify = body.get("verify", "False").title()=="True"
+        StageWorkflow(task_key, verify)
 
     def run_workflow(self, body: dict):
         key = body.get("key")
         assert key, "[key] is required"
-        log_dir = Path(body.get("log_dir"))
+        log_dir = body.get("log_dir")
         assert log_dir, "[log_dir] is required"
-        RunWorkflow(key, log_dir)
+        RunWorkflow(key, Path(log_dir))
 
     def check_workflow(self, body: dict):
         key = body.get("key")
@@ -40,7 +43,7 @@ class Api:
                 return
         CheckWorkflow(key, index)
 
-_ENDPOINTS = {k:v for k, v in Api.__dict__.items() if k[0]!="_"} 
+_ENDPOINTS = {k:v for k, v in Api.__dict__.items() if k[0]!="_"}
 def HandleRequest(endpoint: str, body: dict):
     endpoint = endpoint.lower()
     if endpoint not in _ENDPOINTS:

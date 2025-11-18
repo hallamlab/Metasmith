@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from enum import Enum
 
-from ..coms.ipc import LiveShell
+from ..coms.terminals import LiveShell
 
 class ContainerRuntime(Enum):
     DOCKER = "docker"
@@ -31,26 +31,39 @@ class Container:
         else:
             return f"{self.runtime.value} pull {self.image}"
 
-    def MakeRunCommand(self, local: bool|str = False):
-        image = self.image
-        default_binds = [("./", "/ws")]
+    def MakeBindsParam(self, defaults:bool=True):
+        default_binds = [("./", "/ws")] if defaults else []
         binds = {str(d):str(s) for s, d in default_binds+self.binds}
         binds = [(s, d) for d, s in binds.items()]
-        if self.runtime == ContainerRuntime.DOCKER:
-            others = ["--rm", "-u $(id -u):$(id -g)"]
-            workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ""
-            binds = [f'--mount type=bind,source="{src}",target="{dst}"' for src, dst in binds]
-            binds = " ".join(binds)
-        elif self.runtime == ContainerRuntime.APPTAINER:
-            others = ["--no-home"]
-            workdir = f"--workdir {self.workdir}" if self.workdir is not None else ""
-            binds = [f'{src}:{dst}' for src, dst in binds]
-            binds = f'--bind {",".join(binds)}'
-            if not isinstance(local, bool):
-                image = local
-            elif local:
-                image = self._get_local_path()
+        if len(binds)==0: return ""
+        match self.runtime:
+            case ContainerRuntime.DOCKER:
+                binds = [f'--mount type=bind,source="{src}",target="{dst}"' for src, dst in binds]
+                binds = " ".join(binds)
+            case ContainerRuntime.APPTAINER:
+                binds = [f'{src}:{dst}' for src, dst in binds]
+                binds = f'--bind {",".join(binds)}'
+            case _: # default
+                raise TypeError(f"unsupported runtime [{self.runtime}]")
+        return binds
 
+    def MakeRunCommand(self, local: bool|str = False, custom_bind_param: str|None=None):
+        image = self.image
+        binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
+        match self.runtime:
+            case ContainerRuntime.DOCKER:
+                others = ["--rm", "-u $(id -u):$(id -g)"]
+                workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ""
+            case ContainerRuntime.APPTAINER:
+                others = ["--no-home"]
+                workdir = f"--workdir {self.workdir}" if self.workdir is not None else ""
+                binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
+                if not isinstance(local, bool):
+                    image = local
+                elif local:
+                    image = self._get_local_path()
+            case _: # default
+                raise TypeError(f"unsupported runtime [{self.runtime}]")
         toks = [
             f"{self.runtime.value}",
             "run",

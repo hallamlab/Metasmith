@@ -1,0 +1,53 @@
+manifest:
+  bakta.oci.uri:
+    type: std::oci_image_bakta
+  bbtools.uri:
+    type: std::oci_image_bbtools
+  bedtools.oci.uri:
+    type: std::oci_image_bedtools
+  busco_annotation.py:
+    type: std::busco_annotation_script
+  busco_visualize.py:
+    type: std::busco_visualize_script
+  cazy_annotation.py:
+    type: std::cazy_annotation_script
+  cazy_visualize.py:
+    type: std::cazy_visualize_script
+  diamond.oci.uri:
+    type: std::oci_image_diamond
+  fasterq_dump.oci.uri:
+    type: std::oci_image_fasterq_dump
+  fastqc.oci.uri:
+    type: std::oci_image_fastqc
+  filtlong.oci.uri:
+    type: std::oci_image_filtlong
+  flye.oci.uri:
+    type: std::oci_image_flye
+  helpers.py:
+    type: std::helpers_script
+  kofamscan.oci.uri:
+    type: std::oci_image_kofamscan
+  kofamscan_visualize.py:
+    type: std::kofamscan_visualize_script
+  longqc.oci.uri:
+    type: std::oci_image_longqc
+  megahit.oci.uri:
+    type: std::oci_image_megahit
+  miniasm.oci.uri:
+    type: std::oci_image_miniasm
+  minimap2.oci.uri:
+    type: std::oci_image_minimap2
+  pilon.oci.uri:
+    type: std::oci_image_pilon
+  prodigal.oci.uri:
+    type: std::oci_image_prodigal
+  qc_table.py:
+    type: std::qc_table_script
+  samtools.oci.uri:
+    type: std::oci_image_samtools
+  script_runner.oci.uri:
+    type: std::oci_image_script_runner
+  seqtk.uri:
+    type: std::oci_image_seqtk
+  trimmomatic.oci.uri:
+    type: std::oci_image_trimmomatic

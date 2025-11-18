@@ -39,17 +39,17 @@ smith.Deploy()
 inputs = DataInstanceLibrary("std_data.xgdb")
 inputs.Add(
     items = [
-        (base_file / "sample_data/short_reads_subsample.fastq", "short", "std::short_reads"),
-        (base_file / "sample_data/long_reads_subsample.fastq", "long", "std::long_reads"),
+        (base_file / "sample_data/short_reads_subsample.fastq", "short.fastq", "std::short_reads"),
+        (base_file / "sample_data/long_reads_subsample.fastq", "long.fastq", "std::long_reads"),
         (base_file / "sample_data/ko_list", "ko_list", "std::kofamscan_ko_list"),
         (base_file / "sample_data/profiles/", "profiles/", "std::kofamscan_profile"),
-        (base_file / "sample_data/bakta_db", "bakta_db", "std::bakta_database_full"),
+        (base_file / "sample_data/bakta_db", "bakta_db", "std::bakta_database_light"),
         (base_file / "sample_data/cazy.fa", "cazy_db", "std::cazy_ref"),
         # (base_file / "sample_data/cazy.tsv", "cazy_annotations", "std::cazy_annotations"),
         (base_file / "sample_data/busco.faa", "busco_db", "std::busco_ref"),
         # (base_file / "sample_data/busco.tsv", "busco_annotations", "std::busco_annotations"),
         (base_file / "sample_data/species.info", "busco_map", "std::busco_map"),
-        # (base_file / "sample_data/pilon.fasta", "pilon", "std::hybrid_assembly"),
+        (base_file / "sample_data/pilon.fasta", "pilon", "std::hybrid_assembly"),
         # (base_file / "sample_data/assembly.fasta", "assembly.fasta", "std::long_reads_assembly"),
     ]
 )

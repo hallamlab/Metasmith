@@ -68,15 +68,18 @@ case $1 in
 
     ###################################################
     # build
-
+    -bx) # update std xgdbs
+        python $HERE/main/transforms/std/create.py
+    ;;
     -bp) # pip
         # build pip package
         [ -d ./build ] && rm -r build
         [ -d ./dist ] && rm -r dist
+        python $HERE/main/transforms/std/create.py
         python -m build
     ;;
     -bpi) # pip - test install
-        pip install $HERE/dist/$NAME-$VER-py3-none-any.whl
+        pip install $HERE/dist/$NAME-$VER-py3-none-any.whl --force-reinstall
     ;;
     -bpx) # pip - remove package
         pip uninstall -y $NAME
@@ -86,6 +89,14 @@ case $1 in
         rm -r $HERE/conda_build
         python ./conda_recipe/compile_recipe.py
         $HERE/conda_recipe/call_build.sh
+    ;;
+    -brc) # build the container for building the relay
+        cd main/relay_agent
+        ./pack.sh -b
+    ;;
+    -br) # build the relay
+        cd main/relay_agent
+        ./pack.sh -p
     ;;
     -bd) # docker
         # pre-download requirements
@@ -101,21 +112,23 @@ case $1 in
         fi
         NEXTFLOW_VERSION=$(cat ../envs/base.yml | grep nextflow | cut -c14- | xargs)
         echo "nextflow version: $NEXTFLOW_VERSION"
-        ! [ -f nextflow ] && wget https://github.com/nextflow-io/nextflow/releases/download/v${NEXTFLOW_VERSION}}/nextflow && chmod +x ./nextflow
+        ! [ -f nextflow ] && wget https://github.com/nextflow-io/nextflow/releases/download/v${NEXTFLOW_VERSION}/nextflow && chmod +x ./nextflow
         cd $HERE
 
         # build the docker container locally
         export DOCKER_BUILDKIT=1
+        # --network=host because I ran into a network error
         docker build \
             --build-arg="CONDA_ENV=${NAME}_env" \
             --build-arg="PACKAGE=${NAME}" \
             --build-arg="VERSION=${VER}" \
-            -t $DOCKER_IMAGE:$VER .
+            --network=host \
+            -t $DOCKER_IMAGE:$VER . \
+        && docker inspect --format='{{.Size}}' $DOCKER_IMAGE:$VER | numfmt --to=si
     ;;
     -bs) # apptainer image *from docker*
         apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$VER
     ;;
-
     ###################################################
     # upload
 
@@ -142,7 +155,7 @@ case $1 in
         echo "remember to update the \"latest\" tag"
         echo "https://$DOCKER_IMAGE?tab=tags"
     ;;
-    
+
     ###################################################
     # run
 
@@ -203,7 +216,7 @@ case $1 in
 
     ###################################################
     # docs
-    
+
     --docs) # build docs
         shift
         cd $HERE/docs

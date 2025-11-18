@@ -1,6 +1,4 @@
 // parameter defaults
-params.output = 'results/latest'
-
 env {
     NUMBA_CACHE_DIR = './temp/numba_cache'
     MPLCONFIGDIR = './temp/matplotlib'
@@ -9,5 +7,6 @@ env {
 
 process {
     cpus = <cpus>
-    errorStrategy = 'ignore'
+    errorStrategy = { task.attempt<=2 ? 'retry' : 'ignore' }
+    maxRetries = 5 // this must be larger than errorStrategy
 }

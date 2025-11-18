@@ -3,7 +3,7 @@ from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-dep     = model.AddRequirement(node=lib.GetType("transforms::example_input"))
+dep     = model.AddRequirement(lib.GetType("transforms::example_input"))
 out     = model.AddProduct(lib.GetType("transforms::example_output"))
 
 def protocol(context: ExecutionContext):
