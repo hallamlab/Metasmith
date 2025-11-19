@@ -1,5 +1,7 @@
 manifest:
   /home/tony/workspace/tools/Metasmith/main/local_mock/transforms/simple_1/no_op.py:
     type: transforms::transform
+  /home/tony/workspace/tools/Metasmith/main/local_mock/transforms/simple_1/no_op_no_fail.py:
+    type: transforms::transform
 remote_src: null
 schema: 0.11.1

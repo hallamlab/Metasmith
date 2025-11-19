@@ -98,6 +98,9 @@ case $1 in
         cd main/relay_agent
         ./pack.sh -p
     ;;
+    -bl) # build the standard library
+        python main/transforms/std/create.py
+    ;;
     -bd) # docker
         # pre-download requirements
         mkdir -p $HERE/lib
@@ -198,6 +201,11 @@ case $1 in
         shift
         export PYTHONPATH=$HERE/src:$PYTHONPATH
         python -m $NAME $@ deploy
+    ;;
+
+    -td) # inject updates to an agent home for dev binds
+        shift
+        python main/local_mock/rsync.py $@
     ;;
 
     -t2)

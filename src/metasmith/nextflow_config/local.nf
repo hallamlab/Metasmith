@@ -1,12 +1,39 @@
+// https://www.nextflow.io/docs/latest/reference/config.html
+
 // parameter defaults
+params {
+    executor {
+        cpus = 4
+    }
+
+    process {
+        tries = 2
+    }
+}
+
+filePorter.maxThreads = 2
+report.overwrite = true
+
+// set some cache paths
 env {
     NUMBA_CACHE_DIR = './temp/numba_cache'
     MPLCONFIGDIR = './temp/matplotlib'
     XDG_CACHE_HOME = './temp/xdg_home'
 }
 
+executor {
+    cpus = params.executor.cpus
+}
+
 process {
-    cpus = <cpus>
-    errorStrategy = { task.attempt<=2 ? 'retry' : 'ignore' }
-    maxRetries = 5 // this must be larger than errorStrategy
+    executor = 'local'
+    publishDir {
+        mode = 'symlink'                    // rellink doesn't seem to work...
+    }
+
+    errorStrategy = {                       // retry up to limit, then ignore, nextflow defaults to crashing
+        task.attempt<params.process.tries? 'retry' : 'ignore'
+    }
+    maxRetries = params.process.tries+2     // this must be larger than errorStrategy
+    maxErrors = '-1'                        // quotes bypass groovy parser bug, should set to number of samples?
 }

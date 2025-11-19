@@ -1,10 +1,29 @@
 // https://www.nextflow.io/docs/latest/reference/config.html
 
 // parameter defaults
-params.slurm_account = '<slurm_account>' // task.config.nextflow.slurm_account
+params {
+    slurm_account = '<slurm_account>'
+
+    executor {
+        queueSize = 100
+        submitRateLimit = '2/1sec'
+        pollInterval = '10sec'
+        stageInMode = 'symlink'             // some intermediates are large reference databases and should not be copied
+    }
+
+    process {
+        tries = 2
+        array = 20
+        cpus = 4
+        memory = '16 GB'                    // https://www.nextflow.io/docs/latest/reference/stdlib-types.html#memoryunit
+        time = '6hours'                     // https://www.nextflow.io/docs/latest/reference/stdlib-types.html#duration
+    }
+}
+
 filePorter.maxThreads = 2
 report.overwrite = true
 
+// set some cache paths
 env {
     NUMBA_CACHE_DIR = './temp/numba_cache'
     MPLCONFIGDIR = './temp/matplotlib'
@@ -12,6 +31,7 @@ env {
 }
 
 // report file path is dynamic, so needs to be passed in as argument at runtime
+//      otherwise:
 // report.enabled = true
 
 workflow {
@@ -24,39 +44,46 @@ workflow {
 }
 
 executor {
-    queueSize = <queueSize>                 // 100
-    submitRateLimit = '<submitRateLimit>'   // 10/1sec  | this may be too aggressive
-    pollInterval = '<pollInterval>'         // 10sec
-    stageInMode = '<stageInMode>'           // symlink  | some intermediates are large reference databases and should not be copied
+    queueSize = params.executor.queueSize
+    submitRateLimit = params.executor.submitRateLimit
+    pollInterval = params.executor.pollInterval
+    stageInMode = params.executor.stageInMode
 
     retry {
-        maxAttempts = 99999 // controlled per process
+        maxAttempts = 99999                 // controlled per process
         jitter = 0.25
         maxDelay = 30.second
         delay = 1.second
     }
-    // -----------------------------------------
-    // notes
+    
     // executor = 'hq'                      // todo: consider https://github.com/It4innovations/hyperqueue
 }
 
 process {
+    executor = 'slurm'
     publishDir {
-        mode = 'rellink'
+        mode = 'symlink'                    // rellink doesn't seem to work...
     }
 
-    scratch = true // use worker node's local hard drive
-    executor = 'slurm'
+    scratch = true                          // use worker node's local hard drive
+    // --nodes=1: one compute node per job submission
+    // --ntasks=1: this seems to affect some parallelization behaviour of SLURM,
+    //      but we will request N cpus ourselves, so 1 is meant to prevent SLURM
+    //      from doing something unexpected, like duplicating jobs.
+    //      not sure if this is needed
     clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurm_account}"
-    errorStrategy = { task.attempt==1 ? 'retry' : 'ignore' }
-    maxRetries = 5 // this must be larger than errorStrategy
-    maxErrors = '-1' // quotes bypass groovy parser bug, should set to number of samples?
-    array = <array>
+    errorStrategy = {                       // retry up to limit, then ignore, nextflow defaults to crashing
+        task.attempt<params.process.tries? 'retry' : 'ignore'
+    }
+    maxRetries = params.process.tries+2     // this must be larger than errorStrategy
+    maxErrors = '-1'                        // quotes bypass groovy parser bug, should set to number of samples?
+    array = params.process.array            // batch jobs for the same tool
 
-    // resource defaults
-    cpus = <cpus> // 4
-    memory = { <memory>.GB } // 16 GB
-    time = { task.attempt==1? <time>.hour : 2*<time>.hour } // 3h
-    // memory = { task.exitStatus in [137, 139, 140, 143]? (2**(2*(task.attempt-1)))*<memory>.GB : <memory>.GB } // 16 GB
-    // time = { task.exitStatus in [137, 140, 143, 144, 145]? (2**(2*(task.attempt-1)))*<time>.hour : <time>.hour } // 3h
+    cpus = params.process.cpus
+    memory = {                              // difficult to combine smarts for time and memory; error codes not reliable
+        params.process.memory as MemoryUnit
+    }
+    time = {                                // limit scaling of request time since can also fail for other reasons
+        task.attempt==1? params.process.time : 2*(params.process.time as Duration)
+    }
 }

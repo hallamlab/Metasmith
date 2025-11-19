@@ -82,7 +82,7 @@ def StageAndRunTransform(workspace: Path, sample_index: int, step_index: int):
         plans = [p for g in task.plans for p in g]
         step = plans[sample_index].steps[step_index]
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
-        Log.Info(f"sample [{sample_index}] step [{step_index}:{step_name}]")
+        Log.Info(f"step [{step_index}:{step_name}] sample [{sample_index}]")
 
         def _status(p: ContextPath):
             return "✓" if p.local.exists() else "X"

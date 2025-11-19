@@ -97,6 +97,7 @@ class WorkflowTarget:
 
 @dataclass
 class NextflowGenContext:
+    workflow_file: str
     work_dir: Path
     external_work: Path
     home_dir: Path
@@ -413,7 +414,6 @@ class WorkflowTask:
     plans: list[list[WorkflowPlan]]
     data_libraries: list[DataInstanceLibrary] = field(default_factory=list)
     transform_libraries: list[TransformInstanceLibrary] = field(default_factory=list)
-    config: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self._update_hash()
@@ -505,7 +505,8 @@ class WorkflowTask:
                 TAB+f'{_make_bind_var(i, is_assignment=True)}="{p}"'
                 for i, p in enumerate(external_binds)
             ] + [
-                TAB+f'echo "sample $sample, step {step.order}"',
+                TAB+f'echo "batch {batch}, step {step.order}, sample $sample"',    # this is used to extract logs in agent.RunWorkflow()
+                TAB+f'echo "{step.transform.name}"',
                 TAB+f'echo "{external_binds_param}" >>{METADATA_FILE}',
                 TAB+f'bootstrap {context.external_work_var} "$sample/{step.order}"',
                 TAB+f'[ -e .command.success ] && exit 0 || exit 1', # in case slurm silently kills proc from oom/timeout
@@ -574,7 +575,7 @@ class WorkflowTask:
                 f.write("\n".join([HEADER]+src_process+content))
             wf_names.append(wf_name)
 
-        with open(context.work_dir/"workflow.nf", "w") as f:
+        with open(context.work_dir/context.workflow_file, "w") as f:
             lib_dir = plans_dir.relative_to(context.work_dir)
             src = [
                 "include { "+wf_name+" } from '"+f"./{lib_dir}/{wf_name}'"
@@ -626,13 +627,10 @@ class WorkflowTask:
         return roots
 
     def Pack(self):
-        optional = {}
-        if len(self.config) > 0:
-            optional["config"] = self.config
         return dict(
             data_libraries=[lib.GetKey() for lib in self.data_libraries],
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
-        ) | optional
+        )
 
     def SaveAs(self, dest: Source):
         with TemporaryDirectory() as temp_dir:
@@ -654,7 +652,7 @@ class WorkflowTask:
             for lib in self.transform_libraries:
                 _temp_mover = lib.PrepTransfer(dest/f"transforms/{lib.GetKey()}")
                 _mover._queue.extend(_temp_mover._queue)
-            res = _mover.ExecuteTransfers()
+            res = _mover.ExecuteTransfers(wait_for_complete=True)
             return res
 
     @classmethod
@@ -681,5 +679,4 @@ class WorkflowTask:
             plans=plans,
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
-            config=raw_task.get("config", {}),
         )

@@ -13,7 +13,11 @@ types:
     properties:
     - b
     - test
-  c:
+  x:
     properties:
-    - c
     - test
+    - x
+  y:
+    properties:
+    - test
+    - y

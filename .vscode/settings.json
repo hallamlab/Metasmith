@@ -7,6 +7,9 @@
         "${workspaceFolder}/lib",
         "${workspaceFolder}/src",
     ],
+    "python.analysis.exclude": [
+        "**/cache",
+    ],
     "terminal.integrated.env.linux": {
         "PYTHONPATH": "${workspaceFolder}/lib:${workspaceFolder}/src",
         "ws": "${workspaceFolder}",
