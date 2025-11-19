@@ -81,7 +81,8 @@ process {
 
     cpus = params.process.cpus
     memory = {                              // difficult to combine smarts for time and memory; error codes not reliable
-        params.process.memory as MemoryUnit
+        task.attempt==1? params.process.memory : 2*(params.process.memory as MemoryUnit)
+        
     }
     time = {                                // limit scaling of request time since can also fail for other reasons
         task.attempt==1? params.process.time : 2*(params.process.time as Duration)
