@@ -97,7 +97,10 @@ class AgentShell:
         Log.Info(f"closing connection")
         self.agent._run_cleanup(self.shell)
         if self.agent._is_ssh():
-            self.shell.Exec("exit")
+            try:
+                self.shell.Exec("exit", timeout=5)
+            except (KeyboardInterrupt, TimeoutError):
+                pass
         self.shell.__exit__(exc_type, exc_val, exc_tb)
 
 class PausedShell:
@@ -497,9 +500,9 @@ class Agent:
                                     for k in stacks[:-1]:
                                         _d_curr[k] = {}
                                         _d_curr = _d_curr[k]
+                                    _d_curr[stacks[-1]] = v
                             else:
-                                _d_curr = parsed
-                            _d_curr[k] = v
+                                parsed[k] = v
                         return parsed
 
                     with open(params_local, "w") as f:
@@ -733,8 +736,8 @@ def RunWorkflow(key: str, log_dir: Path):
                 rm ./PID
                 [ -e squeue.log ] && mv squeue.log {log_dir}
                 [ -e scancel.log ] && mv scancel.log {log_dir}
-                [ -e {AgentPaths.NXF_CONFIG} ] && mv {AgentPaths.NXF_CONFIG} {log_dir}
-                [ -e {AgentPaths.NXF_PARAMS} ] && mv {AgentPaths.NXF_PARAMS} {log_dir}
+                [ -e {AgentPaths.NXF_CONFIG} ] && cp {AgentPaths.NXF_CONFIG} {log_dir}
+                [ -e {AgentPaths.NXF_PARAMS} ] && cp {AgentPaths.NXF_PARAMS} {log_dir}
                 if [ -e {nxf_dag} ]; then
                     dot -Tsvg {nxf_dag} -o {log_dir}/nxf_dag.svg
                 fi
@@ -744,7 +747,7 @@ def RunWorkflow(key: str, log_dir: Path):
 
             export NXF_HOME=./.nextflow
             export NXF_ENABLE_VIRTUAL_THREADS=true
-            export NXF_JVM_ARGS="-Xms2g -Xmx64g"
+            export NXF_JVM_ARGS="-Xms16g -Xmx64g"
             nextflow \
                 -config ./{AgentPaths.NXF_CONFIG} \
                 -log {log_dir}/nxf.log \
@@ -767,7 +770,7 @@ def RunWorkflow(key: str, log_dir: Path):
             """,
             timeout=None,
         )
-
+Path().symlink_to
 
     if nxf_report.exists():
         raw_task_meta = None

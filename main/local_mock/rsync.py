@@ -15,7 +15,7 @@ switch = {
     "local" :   f"{WORKSPACE_ROOT}/main/local_mock/cache/local_home",
     "sockeye":  f"sockeye:~/scratch/metasmith_home",
     "cosmos":   f"cosmos:/home/tony/workspace/metasmith_home",
-    "fir":      f"cosmos:/scratch/phyberos/metasmith",
+    "fir":      f"fir:/scratch/phyberos/metasmith",
 }
 if k not in switch:
     print(f"[{k}] is not registered")

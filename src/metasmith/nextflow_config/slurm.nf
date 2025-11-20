@@ -2,11 +2,11 @@
 
 // parameter defaults
 params {
-    slurm_account = '<slurm_account>'
+    slurmAccount = '<slurm_account>'
 
     executor {
         queueSize = 100
-        submitRateLimit = '2/1sec'
+        submitRateLimit = '1/5sec'
         pollInterval = '10sec'
         stageInMode = 'symlink'             // some intermediates are large reference databases and should not be copied
     }
@@ -22,6 +22,7 @@ params {
 
 filePorter.maxThreads = 2
 report.overwrite = true
+timeline.overwrite = true
 
 // set some cache paths
 env {
@@ -61,6 +62,7 @@ executor {
 
 process {
     executor = 'slurm'
+    poolSize = 64                           // concurrent threads for pool, default is 64.
     publishDir {
         mode = 'symlink'                    // rellink doesn't seem to work...
     }
@@ -71,7 +73,7 @@ process {
     //      but we will request N cpus ourselves, so 1 is meant to prevent SLURM
     //      from doing something unexpected, like duplicating jobs.
     //      not sure if this is needed
-    clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurm_account}"
+    clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurmAccount}"
     errorStrategy = {                       // retry up to limit, then ignore, nextflow defaults to crashing
         task.attempt<params.process.tries? 'retry' : 'ignore'
     }

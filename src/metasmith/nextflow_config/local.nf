@@ -13,6 +13,7 @@ params {
 
 filePorter.maxThreads = 2
 report.overwrite = true
+timeline.overwrite = true
 
 // set some cache paths
 env {
@@ -22,6 +23,7 @@ env {
 }
 
 executor {
+    poolSize = 64                           // concurrent threads for pool, default is 64.
     cpus = params.executor.cpus
 }
 

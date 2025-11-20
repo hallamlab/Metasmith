@@ -326,7 +326,7 @@ class DataInstanceLibrary:
             self._calculate_key()
         return self._hash
 
-    def PruneTypes(self, save: bool=True, whitelist: set[str]=None):
+    def PruneTypes(self, save: bool=True, whitelist: set[str]|None=None):
         used_types = set(self.manifest.values())
         if whitelist is not None: used_types |= whitelist
         for namespace, lib in list(self.types.items()):
@@ -436,7 +436,7 @@ class DataInstanceLibrary:
         self._calculate_key()
         return self
 
-    def PrepTransfer(self, dest: Source, mover: Logistics=None):
+    def PrepTransfer(self, dest: Source, mover: Logistics|None=None):
         self.Save()
         if mover is None:
             mover = Logistics()
@@ -446,14 +446,14 @@ class DataInstanceLibrary:
         )
         return mover
 
-    def SaveAs(self, dest: Source, label: str=None):
+    def SaveAs(self, dest: Source, label: str|None=None):
         mover = self.PrepTransfer(dest)
         res = mover.ExecuteTransfers(label=label)
         assert len(res.completed) == 1, f"move failed"
         return res
 
     @classmethod
-    def LoadFrom(cls, src: Source, dest: Path|str, as_image=True, on_exist: str = "skip", label: str=None):
+    def LoadFrom(cls, src: Source, dest: Path|str, as_image=True, on_exist: str = "skip", label: str|None=None):
         assert isinstance(src, Source)
         assert on_exist in {"skip", "error", "clear", "update"}
         if not isinstance(dest, Path):
@@ -492,7 +492,7 @@ class DataInstanceLibrary:
             lib.Save()
         return lib
 
-    def Actualize(self, extern_dest: Source=None, label: str=None):
+    def Actualize(self, extern_dest: Source|None=None, label: str|None=None):
         if self.remote_src is None:
             return self
         _lib = None
@@ -538,7 +538,7 @@ class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult]
     model: Transform
     output_signature: dict[Dependency, Path|str]
-    name: str = None
+    name: str|None = None
 
     def __post_init__(self):
         for k, vt in [
@@ -565,7 +565,7 @@ class TransformInstance:
 
     @classmethod
     def Load(cls, definition: Path) -> TransformInstance|None:
-        cls._last_loaded_transform: TransformInstance = None
+        cls._last_loaded_transform: TransformInstance | None = None
 
         original_path_var = sys.path
         sys.path = [str(definition.parent)]+sys.path
@@ -595,7 +595,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
             self.AddTypeLibrary("transforms", transform_types)
         self._transform_cache: dict[Path, TransformInstance] = {}
 
-    def PruneTypes(self, save: bool=True, whitelist: set[str]=None):
+    def PruneTypes(self, save: bool=True, whitelist: set[str]|None=None):
         if whitelist is None: whitelist = set()
         indirect_whitelist = []
         for path, tr in self.IterateTransforms():
@@ -654,7 +654,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         return cls(DataInstanceLibrary.Load(path))
 
     @classmethod
-    def LoadFrom(cls, src: Source, dest: Path, label: str=None):
+    def LoadFrom(cls, src: Source, dest: Path, label: str|None=None):
         return cls(DataInstanceLibrary.LoadFrom(src, dest, label=label))
 
 @dataclass
@@ -688,7 +688,7 @@ class ExecutionContext:
     def Get(self, key: Dependency):
         return self.GetMeta(key).path
 
-    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path, Path]]=None, history: bool=True):
+    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path, Path]]|None=None, history: bool=True):
         path = self._inputs[image].path
         if IsText(path.local):
             with open(path.local) as f:
