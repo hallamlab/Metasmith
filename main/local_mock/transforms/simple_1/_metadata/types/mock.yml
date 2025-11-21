@@ -3,7 +3,7 @@ ontology:
   name: EDAM
   strict: false
   version: '1.25'
-schema: 0.11.1
+schema: 0.11.2
 types:
   a:
     properties:
@@ -13,7 +13,15 @@ types:
     properties:
     - b
     - test
-  c:
+  target:
     properties:
-    - c
+    - target
     - test
+  x:
+    properties:
+    - test
+    - x
+  y:
+    properties:
+    - test
+    - y

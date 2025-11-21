@@ -6,10 +6,10 @@ import tempfile
 import shutil
 from typing import Iterable, Literal
 import yaml
-import time
+import json
 import socket
 import re
-import uuid
+import pandas as pd
 
 from .serialization import StdTime
 from .hashing import KeyGenerator
@@ -20,6 +20,7 @@ from .coms.via_ws import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, METADATA_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, DataInstanceLibraryView
+from .models.libraries import TransformInstance, Resources
 from .models.solver import Endpoint
 from .constants import VERSION
 
@@ -29,6 +30,11 @@ class AgentPaths:
     INTERNALS = Path("_metasmith")
     STAGED = Path("runs")
     TASK = Path("task")
+    MAIN_LOG_FILE = "main.log"
+    LAUNCHER_FILE = "start.sh"
+    NXF_WORKFLOW = "workflow.nf"
+    NXF_CONFIG = "workflow.config.nf"
+    NXF_PARAMS = "workflow.params.yml"
 
     @classmethod
     def to_staged(cls, root: Path|None=None):
@@ -92,7 +98,10 @@ class AgentShell:
         Log.Info(f"closing connection")
         self.agent._run_cleanup(self.shell)
         if self.agent._is_ssh():
-            self.shell.Exec("exit")
+            try:
+                self.shell.Exec("exit", timeout=5)
+            except (KeyboardInterrupt, TimeoutError):
+                pass
         self.shell.__exit__(exc_type, exc_val, exc_tb)
 
 class PausedShell:
@@ -110,6 +119,8 @@ class PausedShell:
         self.shell.paused_out = oo
         self.shell.paused_err = oe
 
+ResourceOverrides = dict[tuple[int, int]|Literal["all"]|TransformInstance, Resources|dict[int, Resources]]
+_HERE = Path(os.path.realpath(__file__)).parent
 @dataclass
 class Agent:
     home: Source
@@ -372,7 +383,6 @@ class Agent:
         resources: list[DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary],
         targets: list[Endpoint],
-        config: dict|None=None,
         max_iter: int=1024, max_refine: int=256, seed: int=42,
     ):
         resource_instances = [lib.Get(p) for lib in resources for p, n, m in lib.Iterate()]
@@ -398,9 +408,8 @@ class Agent:
                     continue
                 plan_usage[len(existing_plans)] = [gen_result]
                 existing_plans.append(gen_result)
-        if config is None: config = {}
         sample_libs = {v._original for v in samples}
-        task = WorkflowTask(plans=list(plan_usage.values()), data_libraries=list(sample_libs)+resources,transform_libraries=transforms, config=config)
+        task = WorkflowTask(plans=list(plan_usage.values()), data_libraries=list(sample_libs)+resources,transform_libraries=transforms)
         return task
 
     def _get_mock_container(self, task: WorkflowTask):
@@ -415,8 +424,9 @@ class Agent:
         )
         return mock
 
-    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", verify_external_paths: bool=True):
-        assert on_exist in {"skip", "error", "clear", "update"}
+    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", verify_external_paths: bool=False):
+        VALID_ON_EXIST = {"skip", "error", "clear", "update_all", "update_workflow", "update_data"}
+        assert on_exist in VALID_ON_EXIST
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
             remote_path = AgentPaths.to_task(task._key, root=self.home.GetPath())
@@ -426,21 +436,30 @@ class Agent:
                 res = sh_remote.Exec(f'[ -e {remote_work_path} ] && echo "{FLAG}"', history=True)
                 if FLAG in res.out:
                     _msg = f"task already staged at [{remote_work_path}]"
-                    if on_exist == "error":
-                        raise FileExistsError(_msg)
-                    Log.Warn(_msg)
-                    if on_exist == "skip":
-                        return
-                    if on_exist == "clear":
-                        Log.Warn(f"clearing previously staged task")
-                        _to_delete_src = remote_work_path
-                        _to_delete = _to_delete_src.with_suffix(".to_delete")
-                        sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
-                    elif on_exist == "update":
-                        Log.Warn(f"updating previously staged task")
+                    if on_exist not in {"error"}:
+                        Log.Warn(_msg)
+                    task_stage_partial = False
+                    match on_exist:
+                        case "error":
+                            raise FileExistsError(_msg)
+                        case "skip":
+                            return
+                        case "clear":
+                            Log.Warn(f"clearing previously staged task")
+                            _to_delete_src = remote_work_path
+                            _to_delete = _to_delete_src.with_suffix(".to_delete")
+                            sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
+                        case "update_all":
+                            Log.Warn(f"updating previously staged task")
+                        case "update_data":
+                            Log.Warn(f"resending data for previously staged task")
+                            task_stage_partial = "data_only"
+                        case "update_workflow":
+                            Log.Warn(f"recompiling workflow for previously staged task")
+                            task_stage_partial = "transforms_only"
 
             Log.Info(f"sending metadata for workflow [{task._key}]")
-            task.SaveAs(self.home.ReplacePathWith(remote_path))
+            task.SaveAs(self.home.ReplacePathWith(remote_path), partial=task_stage_partial)
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
             binds = mock.MakeBindsParam(defaults=False)
@@ -451,31 +470,115 @@ class Agent:
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths}
             """, timeout=None)
 
-    def RunWorkflow(self, task: WorkflowTask):
-        # key = task._key if isinstance(task, WorkflowTask) else str(task)
-        key = task.GetKey()
+    def GetNxfConfigPresets(self, folder: Path = _HERE/"nextflow_config"):
+        if not folder.exists(): raise FileNotFoundError(folder)
+        presets: dict[str, Path] = {}
+        for f in folder.iterdir():
+            if f.is_dir(): continue
+            if not f.name.endswith(".nf"): continue
+            presets[f.stem] = f.absolute()
+        return presets
+
+    def RunWorkflow(
+            self, 
+            task: WorkflowTask|str, 
+            config_file: Path|None=None, 
+            params: dict|Path|str|None=None, 
+            resource_overrides: ResourceOverrides|None=None,
+        ):
+        if config_file is None: config_file = self.GetNxfConfigPresets()["local"]
+        key = task.GetKey() if isinstance(task, WorkflowTask) else task
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
-            Log.Info(f"triggering execution of [{key}]")
             task_path = AgentPaths.to_task(key, root=self.home.GetPath())
             workspace = task_path.parent.parent
             FLAG = "workspace exists"
             with PausedShell(agent_shell): # this syntax is confusing, need to fix
                 res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True)
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
-            LOG_DIR = Path(f"{AgentPaths.INTERNALS}/logs.{StdTime.Timestamp()}") # this timestamp is used as the start time below!
-            launcher_log = workspace/LOG_DIR/"main.raw.log"
-            mock = self._get_mock_container(task)
-            binds = mock.MakeBindsParam(defaults=False)
-            if len(mock.binds)>0:
-                Log.Info(f"external binds {[a for a, b in mock.binds]}")
-            sh_remote.Exec(
-                f"""
-                mkdir -p {launcher_log.parent}
-                export BINDS="{binds}"
-                nohup ./msm api run_workflow -a key={key} -a log_dir={LOG_DIR} >{launcher_log} 2>&1 &
-                """,
-            )
+
+            Log.Info(f"sending config and params")
+            mover = Logistics()
+            rel_ws = workspace.relative_to(self.home.GetPath())
+            ws_dest = self.home/rel_ws
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_dir = Path(temp_dir)
+                # params
+                if params is not None:
+                    if isinstance(params, dict):
+                        params_local = temp_dir/AgentPaths.NXF_PARAMS
+                        # lets underscores signify nested dictionaries
+                        # so "{process_tries=3}" becomes { process={ tries=3 } } 
+                        def _parse(d: dict):
+                            parsed = {}
+                            for k, v in d.items():
+                                k = str(k)
+                                if isinstance(v, dict):
+                                    v = _parse(v)
+                                if "_" in k:
+                                    stacks = [x for x in k.split("_") if x != ""]
+                                    if len(stacks)>1:
+                                        _d_curr = parsed
+                                        for k in stacks[:-1]:
+                                            _d_curr[k] = {}
+                                            _d_curr = _d_curr[k]
+                                        _d_curr[stacks[-1]] = v
+                                else:
+                                    parsed[k] = v
+                            return parsed
+
+                        with open(params_local, "w") as f:
+                            yaml.safe_dump(_parse(params), f)
+                        params_source = Source.FromLocal(params_local)
+                    elif isinstance(params, Path):
+                        params_source = Source.FromLocal(params)
+                    mover.QueueTransfer(src=params_source, dest=ws_dest/AgentPaths.NXF_PARAMS)
+                # resource overrides
+                if resource_overrides is not None:
+                    local_config = temp_dir/config_file.name
+                    shutil.copy(config_file, local_config)
+                    with open(local_config, "a") as f:
+                        TAB="\t"
+                        lines = [
+                            "",
+                            "process {"
+                        ]
+                        for tr, res in resource_overrides.items():
+                            if tr=="all":
+                                key = f".*"
+                            elif isinstance(tr, tuple):
+                                b, p = tr
+                                key = f"b{b:02}p{p:02}__.*"
+                            else:
+                                key = f".*__{tr.name}"
+
+                            if isinstance(res, Resources):
+                                lines += [
+                                    TAB+f"withName: '{key}' "+"{",
+                                ]+[TAB+TAB+x for x in res.AsNextflowFormat(is_config=True)]+[
+                                    TAB+"}",
+                                ]
+                            elif isinstance(res, dict):
+                                for b, r in res.items():
+                                    assert isinstance(tr, TransformInstance), f"expected [{tr}] to be a TransformInstance"
+                                    key = f"b{b:02}p.*__{tr.name}"
+                                    lines += [
+                                        TAB+f"withName: '{key}' "+"{",
+                                    ]+[TAB+TAB+x for x in r.AsNextflowFormat(is_config=True)]+[
+                                        TAB+"}",
+                                    ]
+                            else:
+                                raise TypeError(f"resouce specification in unexpected format: [{type(res)}]")
+                        lines += [
+                            "}",
+                            "",
+                        ]
+                        f.write("\n".join(lines))
+                    mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
+                mover.ExecuteTransfers(wait_for_complete=True)
+
+            Log.Info(f"triggering execution of [{key}]")
+            sh_remote.Exec(f"{workspace/AgentPaths.LAUNCHER_FILE}")
 
     def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
@@ -505,14 +608,16 @@ class Agent:
 # ===========================================================================
 # calls to staged Agent
 
-_get_nextflow_preset = lambda config: config.get("nextflow", {}).get("preset", "default")
-
 def StageWorkflow(task_key: str, verify: bool):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
     task_path = agent.home.GetPath()/AgentPaths.to_task(task_key)
     assert task_path.exists(), f"task dir not found [{task_path}]"
     task = WorkflowTask.Load(task_path)
-    Log.Info(f"staging workflow [{task._key}] with [{len(task.data_libraries)}] data libs and [{len(task.transform_libraries)}] transform libs")
+    Log.Info(f"staging workflow [{task._key}] with:")
+    Log.Info(f"  [{len(task.data_libraries)}] data libraries")
+    Log.Info(f"  [{len(task.transform_libraries)}] transform libraries")
+    Log.Info(f"  [{len(task.plans)}] variants (batches)")
+    Log.Info(f"  [{sum(len(p.steps) for g in task.plans for p in g)}] total steps")
 
     work_relative = AgentPaths.STAGED/task._key
     work_dir = AgentPaths.WORK_ROOT/work_relative
@@ -605,62 +710,59 @@ def StageWorkflow(task_key: str, verify: bool):
     # nextflow
     Log.Info(f"compiling nextflow script")
     task.PrepareNextflow(NextflowGenContext(
+        workflow_file=AgentPaths.NXF_WORKFLOW,
         work_dir=work_dir,
         external_work=extern_work,
         home_dir=AgentPaths.HOME_ROOT,
         external_home=agent.home.GetPath(),
         container_runtime=agent.runtime,
     ))
-    nextflow_config_dir = AgentPaths.HOME_ROOT/"lib/nextflow_config"
-    nextflow_preset = _get_nextflow_preset(task.config)
-    preset_path = nextflow_config_dir/f"{nextflow_preset}.nf"
-    if not preset_path.exists():
-        Log.Warn(f"nextflow preset not found [{preset_path}], using default")
-        preset_path = nextflow_config_dir/"default.nf"
-    else:
-        Log.Info(f"using nextflow preset [{preset_path.stem}]")
-    with open(preset_path) as f:
-        config_raw = "".join(f.readlines())
-    nextflow_params = task.config.get("nextflow", {})
-    nextflow_defaults = dict(
-        cpus=4, memory=16, time=3,
-        queueSize=1000, array=100, submitRateLimit="2/1sec", pollInterval="60sec", stageInMode="symlink",
-    )
-    for k, v in (nextflow_defaults|nextflow_params).items():
-        if k == "preset": continue
-        var = f"<{k}>"
-        if var not in config_raw: 
-            if k in nextflow_params:
-                Log.Warn(f"    [{k}] was not used")
-            continue
-        config_raw = config_raw.replace(var, str(v))
-    with open(work_dir/"workflow.config.nf", "w") as f:
-        f.write(config_raw)
     Log.Info(f"[{task._key}] staged to [{workspace_str}]")
 
+    # launcher
+    launcher_path = work_dir/AgentPaths.LAUNCHER_FILE
+    Log.Info(f"creating launcher script at [{launcher_path}]")
+    mock = agent._get_mock_container(task)
+    binds = mock.MakeBindsParam(defaults=False)
+    if len(mock.binds)>0:
+        Log.Info(f"external binds {[a for a, b in mock.binds]}")
+    with open(launcher_path, "w") as f:
+        f.write("\n".join([
+            f'#!/bin/bash',
+            'cd $( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )',
+            f'TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")',
+            f'LOG_DIR="./{AgentPaths.INTERNALS}/logs.$TIMESTAMP"',
+            f'LOG_LATEST="./{AgentPaths.INTERNALS}/logs.latest"',
+            f'mkdir -p $LOG_DIR',
+            f'[ -e $LOG_LATEST ] && rm "$LOG_LATEST"; ln -s "./logs.$TIMESTAMP" "$LOG_LATEST"',
+            f'[ -e {AgentPaths.NXF_PARAMS} ] || touch {AgentPaths.NXF_PARAMS}',
+            f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
+            f'echo "start time was [$TIMESTAMP]"',
+            f'export BINDS="{binds}"',
+            f'nohup ../../msm api run_workflow -a key={task_key} -a log_dir=$LOG_DIR >$LOG_DIR/agent.log 2>&1 &',
+        ]))
+    os.chmod(launcher_path, 0o754)
+        
 def RunWorkflow(key: str, log_dir: Path):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
     assert workspace.exists(), f"task workspace not found [{workspace}]"
 
     task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
-    nextflow_preset = _get_nextflow_preset(task.config)
-    # start_time = StdTime.Timestamp()
     start_time = log_dir.name.split(".")[-1]
-    Log.Info(f"start time [{start_time}]")
-    Log.Info(f"running workflow [{task._key}] with preset [{nextflow_preset}]")
+    Log.Info(f"running workflow [{task._key}]")
+    Log.Info(f"start time was [{start_time}]")
 
     Log.Info(f"loading agent metadata")
     agent = Agent.Load(AgentPaths.to_definition())
     extern_home = agent.home.GetPath()
     extern_workspace = AgentPaths.to_task(key, root=extern_home).parent.parent
     (workspace/log_dir).mkdir(parents=True, exist_ok=True)
-    MAIN_LOG = workspace/log_dir/"main.log"
+    MAIN_LOG = workspace/log_dir/AgentPaths.MAIN_LOG_FILE # this is the stdout captured by launcher
     Log.AddLogFile(MAIN_LOG)
 
     Log.Info(f"workspace [{workspace}]")
     Log.Info(f"external workspace [{extern_workspace}]")
-    Log.Info(f"preset [{nextflow_preset}]")
     Log.Info(f"plans [{len(task.plans)}] | steps [{sum(len(p.steps) for g in task.plans for p in g)}]")
 
     if agent.globus_uuid is not None:
@@ -686,9 +788,9 @@ def RunWorkflow(key: str, log_dir: Path):
     # export NXF_ENABLE_VIRTUAL_THREADS=false
     # https://seqera.io/blog/optimizing-nextflow-for-hpc-and-cloud-at-scale/
     # export NXF_JVM_ARGS="-Xms2g -Xmx64g"
-    # causes memory error
-    # -with-report {log_dir}/nxf_report.html \
     results_folder = "results"
+    nxf_report = log_dir/"nxf_report.html"
+    nxf_dag = log_dir/"nxf_dag.dot"
     with LiveShell() as shell:
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
@@ -700,18 +802,28 @@ def RunWorkflow(key: str, log_dir: Path):
                 rm ./PID
                 [ -e squeue.log ] && mv squeue.log {log_dir}
                 [ -e scancel.log ] && mv scancel.log {log_dir}
+                [ -e {AgentPaths.NXF_CONFIG} ] && cp {AgentPaths.NXF_CONFIG} {log_dir}
+                [ -e {AgentPaths.NXF_PARAMS} ] && cp {AgentPaths.NXF_PARAMS} {log_dir}
+                if [ -e {nxf_dag} ]; then
+                    dot -Tsvg {nxf_dag} -o {log_dir}/nxf_dag.svg
+                fi
                 exit 1
             }}
             trap stop EXIT
 
             export NXF_HOME=./.nextflow
             export NXF_ENABLE_VIRTUAL_THREADS=true
-            export NXF_JVM_ARGS="-Xms2g -Xmx64g"
-            nextflow -c ./workflow.config.nf \
+            export NXF_JVM_ARGS="-Xms16g -Xmx64g"
+            nextflow \
+                -config ./{AgentPaths.NXF_CONFIG} \
                 -log {log_dir}/nxf.log \
-                run ./workflow.nf \
+                run ./{AgentPaths.NXF_WORKFLOW} \
+                -params-file ./{AgentPaths.NXF_PARAMS} \
                 --output "{results_folder}" \
-                -with-report {log_dir}/nxf_report.html \
+                -with-report {nxf_report} \
+                -with-dag {nxf_dag} \
+                -with-timeline {log_dir}/nxf_timeline.html \
+                -with-trace {log_dir}/nxf_trace.tsv \
                 -ansi-log false \
                 -resume \
                 -work-dir ./nxf_work &
@@ -724,6 +836,31 @@ def RunWorkflow(key: str, log_dir: Path):
             """,
             timeout=None,
         )
+
+    if nxf_report.exists():
+        raw_task_meta = None
+        with open(nxf_report) as f:
+            found = False
+            for l in f:
+                if l.strip().startswith('window.data = { "trace":['): 
+                    found = True
+                    continue
+                if not found: 
+                    continue
+                raw_task_meta = json.loads('{ "trace":[' + l[:-2]).get("trace")
+                break
+        if raw_task_meta is not None:
+            try:
+                df_tasks = pd.DataFrame(raw_task_meta)
+                nxf_task_meta = log_dir/"nxf_tasks.csv"
+                df_tasks.to_csv(nxf_task_meta, index=False)
+                Log.Info(f"extracting task metadata to [{nxf_task_meta}]")
+            except Exception as e:
+                Log.Error(f"failed to parse task metadata from [{nxf_report}] [{e}]")
+        else:
+            Log.Warn(f"failed to find task metadata table within [{nxf_report}]")
+    else:
+        Log.Warn(f"no report at [{nxf_report}]")
 
     Log.Info(f"compiling results")
     output_path = workspace/results_folder
@@ -797,16 +934,17 @@ def RunWorkflow(key: str, log_dir: Path):
     external_results_path = extern_home/tail
     Log.Info(f"results for [{key}] at [{external_results_path}]")
 
-    # this doesn't seem to work
     Log.Info(f"gathering log files")
     nxf_ids = set()
     nxf_id_len = 9 # 2 + "/" + 6
+    # careful, we are also logging to here, so printing may cause infinite loop
+    # as new lines are generated
     with open(MAIN_LOG, "r") as f:
         for l in f:
-            candidates = re.findall(r"[\dabcdef]{2}/[\dabcdef]{6}\]", l)
+            candidates = re.findall(r"\[[\dabcdef]{2}/[\dabcdef]{6}\]", l)
             if len(candidates) == 0: continue
             hit = candidates[0]
-            nxf_id = hit[1:-1] # the brackets
+            nxf_id = hit[1:-1] # remove the brackets
             nxf_ids.add(nxf_id)
     NXF_WORK = workspace/"nxf_work"
     PROCESS_DEST = workspace/log_dir/"steps"
@@ -815,29 +953,27 @@ def RunWorkflow(key: str, log_dir: Path):
         p = p.relative_to(NXF_WORK)
         nxf_id = str(p)[:nxf_id_len]
         if nxf_id not in nxf_ids: continue
-        name = nxf_id
         log_path = NXF_WORK/p/".command.out"
         if not log_path.exists(): continue
         if log_path.is_symlink(): continue
-        with open(log_path) as f:
-            first_line = f.readline()
-            if "step" not in first_line: continue
-            try:
-                i = int(first_line.replace("step ", "")[:-1])
-            except:
-                continue
-            name = f"{i:08}"
-        dest = PROCESS_DEST/f"{name}.log"
-        src = log_path
-        if not src.exists():
-            Log.Warn(f"no log found for [{name}:{p}]")
-            continue
-        shutil.move(src, dest)
-        src.symlink_to(f"../../../{dest.relative_to(workspace)}")
+        try:
+            with open(log_path) as f:
+                first_line = f.readline()
+                if not re.match(r"batch\s?\d+,?\s?step\s?\d+,?\s?sample\s?\d+", first_line): continue
+                batch, step, sample = [int(x) for x in re.findall(r"\d+", first_line)]
+                transform = task.plans[batch-1][0].steps[step-1].transform
+            dest = PROCESS_DEST/f"b{batch:02}p{step:02}__{transform.name}({sample})_{nxf_id.replace('/', '-')}.log"
+            src = log_path
+            dest.symlink_to(f"../../../{src.relative_to(workspace)}")
+        except:
+            continue # if anything happens, abandon hope
 
-    Log.Info(f"linking logs to results folder [{output_path}]")
+    Log.Info(f"linking logs [{log_dir}] to results folder [{output_path}]")
     output_metadata_path = output_path/f"{output._path_to_meta}"
     (output_metadata_path/f"{log_dir.name}").symlink_to(f"../../{log_dir}")
+    latest_link = (output_metadata_path/f"logs.latest")
+    if latest_link.exists(): latest_link.unlink()
+    latest_link.symlink_to(f"../../{log_dir}")
     Log.Info(f"run completed at [{StdTime.Timestamp()}]")
 
 def CheckWorkflow(key: str, index: int|None=None):
@@ -870,7 +1006,7 @@ def CheckWorkflow(key: str, index: int|None=None):
     Log.Info(f">"*len(msg))
     Log.Info("")
     
-    with open(workspace/log_dir/"main.raw.log", "r") as f:
+    with open(workspace/log_dir/AgentPaths.MAIN_LOG_FILE, "r") as f:
         lines = f.readlines()
         MAXL = 1000
         HEAD = 20

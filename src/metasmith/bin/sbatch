@@ -20,6 +20,8 @@ Log.SetStdout(on=False)
 Log.AddLogFile(Path("./.sbatch.log"))
 def err(msg: str):
     Log.Error(msg)
+    print(msg, file=sys.stdout) # pass through sbatch err
+
 def out(msg: str):
     Log.Info(msg)
     print(msg) # pass through sbatch output

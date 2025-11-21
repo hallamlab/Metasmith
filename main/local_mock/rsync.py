@@ -3,21 +3,26 @@
 
 from metasmith.coms.terminals import LiveShell
 from local.constants import WORKSPACE_ROOT
+import sys
 
+DEFAULT_HOME = "local"
+if len(sys.argv)==1:
+    k = DEFAULT_HOME
+else:
+    k = sys.argv[1]
 
-# host = "sockeye"
-# home = f"{host}:~/scratch/metasmith_home"
+switch = {
+    "local" :   f"{WORKSPACE_ROOT}/main/local_mock/cache/local_home",
+    "sockeye":  f"sockeye:~/scratch/metasmith_home",
+    "cosmos":   f"cosmos:/home/tony/workspace/metasmith_home",
+    "fir":      f"fir:/scratch/phyberos/metasmith",
+}
+if k not in switch:
+    print(f"[{k}] is not registered")
+    k = DEFAULT_HOME
+home = switch[k]
 
-# host = "cosmos"
-# home = f"{host}:/home/tony/workspace/metasmith_home"
-
-# host = "fir"
-# home = f"{host}:/scratch/phyberos/metasmith"
-
-home = f"{WORKSPACE_ROOT}/main/local_mock/cache/local_home"
-# home = f"{WORKSPACE_ROOT}/main/local_mock/std_home"
-# home = f"{WORKSPACE_ROOT}/main/docs/metasmith_home"
-
+print(f"injecting updates to [{home}]")
 with LiveShell() as shell:
     shell.RegisterOnOut(lambda x: print(x))
     shell.RegisterOnErr(lambda x: print(f"E: {x}"))
