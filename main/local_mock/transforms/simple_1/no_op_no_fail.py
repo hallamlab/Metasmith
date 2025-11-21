@@ -4,7 +4,7 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 dep     = model.AddRequirement(lib.GetType("mock::x"))
-out     = model.AddProduct(lib.GetType("mock::y"))
+out     = model.AddProduct(lib.GetType("mock::target"))
 
 def protocol(context: ExecutionContext):
     import time
@@ -24,4 +24,9 @@ TransformInstance(
     output_signature = {
         out: "output.txt",
     },
+    resources = Resources(
+        cpus = 4,
+        memory = Size.GB(16),
+        duration = Duration(days=1, hours=12, minutes=30),
+    )
 )

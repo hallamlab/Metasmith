@@ -1,6 +1,6 @@
 from .models.libraries import Endpoint, DataTypeLibrary, DataInstanceLibrary
 from .models.libraries import Transform, TransformInstance, TransformInstanceLibrary
-from .models.libraries import ExecutionContext, ExecutionResult
+from .models.libraries import ExecutionContext, ExecutionResult, Resources, Size, Duration
 from .models.remote import Source, SshSource, GlobusSource, HttpSource, SourceType
 from .models.remote import Logistics, LogisticsResult, LogisticsException
 from .logging import Log

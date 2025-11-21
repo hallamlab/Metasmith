@@ -10,6 +10,7 @@ from typing import Callable, Iterable
 from importlib import reload, __import__
 import tempfile
 import time
+from datetime import timedelta
 
 from ..serialization import IsText
 from ..coms.containers import ContainerRuntime, Container
@@ -532,6 +533,97 @@ class DataInstanceLibraryView:
             if p not in self._mask: continue
             yield p, n, m
 
+@dataclass
+class Size:
+    value_gb: float
+    strict: bool=False
+
+    def __str__(self) -> str:
+        return self.AsNextflowFormat()
+
+    @classmethod
+    def TB(cls, val: float):
+        return cls(value_gb=val*1024)
+
+    @classmethod
+    def GB(cls, val: float, strict: bool=False):
+        return cls(value_gb=val)
+
+    @classmethod
+    def MB(cls, val: float, strict: bool=False):
+        return cls(value_gb=val/1024)
+
+    @classmethod
+    def KB(cls, val: float, strict: bool=False):
+        return cls(value_gb=val/(1024**2))
+    
+    def SetStrict(self):
+        self.strict=True
+        return self
+
+    def AsNextflowFormat(self):
+        return f"'{self.value_gb:0.2f} GB'"
+
+class Duration:
+    def __init__(self, days: float=0, seconds: float=0, microseconds: float=0,
+                milliseconds: float=0, minutes: float=0, hours: float=0, weeks: float=0) -> None:
+        self._delta = timedelta(
+            days=days, seconds=seconds, microseconds=microseconds,
+            milliseconds=milliseconds, minutes=minutes, hours=hours, weeks=weeks
+        )
+        self.strict=False
+    
+    def __str__(self) -> str:
+        return self.AsNextflowFormat()
+
+    def SetStrict(self):
+        self.strict=True
+        return self
+
+    def AsNextflowFormat(self):
+        delta = self._delta
+        total_seconds = delta.total_seconds()
+        days = delta.days
+        hours, remainder = divmod(delta.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        microseconds = delta.microseconds
+        return f"'{days}day{'s' if days!=1 else ''} {hours}hours {minutes}minutes {seconds}seconds'"
+
+@dataclass
+class Resources:
+    cpus: int|None = None
+    memory: Size|None = None
+    duration: Duration|None = None
+
+    def AsNextflowFormat(self, is_config=False):
+        def _parse_res(r:int|Duration|Size|None, var: str, field: str, norm: str, strict: str=""):
+            if r is None: return None
+            rval = str(r)
+            if not isinstance(r, int):
+                is_strict = r.strict
+            else:
+                is_strict = False
+            if is_strict:
+                val = strict.replace(var, rval)
+            else:
+                val = norm.replace(var, rval)
+            joiner = " = " if is_config else " " # why is nextflow inconsistent like this??
+            return f"{field}{joiner}{val}"
+        return [x for x in [
+            _parse_res(self.cpus, "<x>", "cpus", "<x>"),
+            _parse_res(
+                self.memory, "<x>", "memory",
+                "{"+f" task.attempt==1? <x> : 2*(<x> as MemoryUnit) "+"}",
+                "<x>",
+            ),
+            _parse_res(
+                self.duration, "<x>", "time",
+                "{"+f" task.attempt==1? <x> : 2*(<x> as Duration) "+"}",
+                "<x>",
+            ),
+        ] if x is not None]
+
+
 # this should function like a view provided by the parent library
 @dataclass
 class TransformInstance:
@@ -539,6 +631,7 @@ class TransformInstance:
     model: Transform
     output_signature: dict[Dependency, Path|str]
     name: str|None = None
+    resources: Resources|None = None
 
     def __post_init__(self):
         for k, vt in [
@@ -633,7 +726,10 @@ class TransformInstanceLibrary(DataInstanceLibrary):
                 return cls.Load(p)
         assert False
 
-    def GetTransform(self, path: Path|str, reload=False):
+    def __getitem__(self, transform: Path|str):
+        return self.GetTransform(transform)
+
+    def GetTransform(self, path: Path|str, reload=False) -> TransformInstance:
         path = self.location/path
         if path.suffix != ".py":
             path = path.with_suffix(".py")
@@ -641,7 +737,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
             tr = TransformInstance.Load(path)
             if tr is not None:
                 self._transform_cache[path] = tr
-        return self._transform_cache.get(path)
+        return self._transform_cache[path]
 
     def IterateTransforms(self):
         for k, dtype_name, dtype in self.Iterate():

@@ -3,10 +3,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Generator, Iterable, TypeVar
+from typing import Any, Generator, Iterable, Literal, TypeVar
 import os
 import itertools
-from numpy import resize
 import yaml
 
 from ..coms.containers import Container, ContainerRuntime
@@ -389,7 +388,7 @@ class WorkflowPlan:
             lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
             for step in self.steps:
                 transform_name = step.transform.name
-                lines.append(_render_node(NodeType.TRANSFORM, transform_name))
+                lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
                 if hide_images:
                     inputs  = [u.dtype_name for u in step.uses if "oci_image" not in u.dtype_name]
                     outputs = [o.dtype_name for o in step.produces if "oci_image" not in o.dtype_name]
@@ -464,9 +463,10 @@ class WorkflowTask:
             to_pubish = [x for x in step.produces if x in target_instances]
             for x in to_pubish:
                 src.append(TAB+f'publishDir "$params.output/{k}_{step.transform.name}", pattern: "{x.path}"'+', saveAs: {f -> String.format("%05d_%s", sample, f)}')
-            if len(to_pubish)>0:
-                src.append("") # newline
-
+            src += [
+                TAB+f"tag '{step.transform.GetKey()}'",
+            ]
+            
             def _make_bind_var(i: int, is_assignment=False):
                 s = "\\$" if not is_assignment else ""
                 return f"{s}b{i+1}"
@@ -487,17 +487,24 @@ class WorkflowTask:
                     runtime=context.container_runtime,
                 ).MakeBindsParam(defaults=False)
 
+            res = step.transform.resources
+            if res is not None: 
+                src += [TAB+x for x in res.AsNextflowFormat()]
+            duration_is_strict = res is not None and res.duration is not None and res.duration.strict
+            memory_is_strict = res is not None and res.memory is not None and res.memory.strict
+            if duration_is_strict and memory_is_strict:
+                src += [
+                    TAB+"errorStrategy 'ignore'" # no point in retrying if not changing resource requests
+                ]
             src += [
                 TAB+"input:",
                 TAB+TAB+f'tuple '+','.join(['val(sample)']+[f'path(_{i+1:02})' for i, x in enumerate(step.uses)])
             ] + [
-                "",
                 TAB+"output:",
             ] + [
                 TAB+TAB+f'tuple val("$sample"),path("{x.path}")'
                 for x in step.produces
             ] + [
-                "",
                 TAB+'"""',
                 TAB+f'{context.bootstrap_var}',
                 TAB+f'echo "$task.cpus/$task.memory/$task.attempt" >{METADATA_FILE}',
@@ -505,10 +512,10 @@ class WorkflowTask:
                 TAB+f'{_make_bind_var(i, is_assignment=True)}="{p}"'
                 for i, p in enumerate(external_binds)
             ] + [
+                TAB+f'echo "{external_binds_param}" >>{METADATA_FILE}',
                 TAB+f'echo "batch {batch}, step {step.order}, sample $sample"',    # this is used to extract logs in agent.RunWorkflow()
                 TAB+f'echo "{step.transform.name}"',
-                TAB+f'echo "{external_binds_param}" >>{METADATA_FILE}',
-                TAB+f'bootstrap {context.external_work_var} "$sample/{step.order}"',
+                TAB+f'bootstrap {context.external_work_var} "{batch}/{step.order}"',
                 TAB+f'[ -e .command.success ] && exit 0 || exit 1', # in case slurm silently kills proc from oom/timeout
                 TAB+'"""',
                 "}",
@@ -632,7 +639,8 @@ class WorkflowTask:
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
         )
 
-    def SaveAs(self, dest: Source):
+    def SaveAs(self, dest: Source, partial: str|Literal[False]=False):
+        assert partial in {"data_only", "transforms_only", False}
         with TemporaryDirectory() as temp_dir:
             temp_dir = Path(temp_dir)
             _task_path = temp_dir/"task.yml"
@@ -646,12 +654,14 @@ class WorkflowTask:
                 src=Source(address=str(temp_dir), type=SourceType.DIRECT),
                 dest=dest,
             )
-            for lib in self.data_libraries:
-                _temp_mover = lib.PrepTransfer(dest/f"data/{lib.GetKey()}")
-                _mover._queue.extend(_temp_mover._queue)
-            for lib in self.transform_libraries:
-                _temp_mover = lib.PrepTransfer(dest/f"transforms/{lib.GetKey()}")
-                _mover._queue.extend(_temp_mover._queue)
+            if partial != "transforms_only":
+                for lib in self.data_libraries:
+                    _temp_mover = lib.PrepTransfer(dest/f"data/{lib.GetKey()}")
+                    _mover._queue.extend(_temp_mover._queue)
+            if partial != "data_only":
+                for lib in self.transform_libraries:
+                    _temp_mover = lib.PrepTransfer(dest/f"transforms/{lib.GetKey()}")
+                    _mover._queue.extend(_temp_mover._queue)
             res = _mover.ExecuteTransfers(wait_for_complete=True)
             return res
 

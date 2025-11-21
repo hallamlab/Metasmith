@@ -4,7 +4,7 @@ from metasmith.python_api import *
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 dep     = model.AddRequirement(lib.GetType("mock::a"))
-out     = model.AddProduct(lib.GetType("mock::b"))
+out     = model.AddProduct(lib.GetType("mock::target"))
 
 def protocol(context: ExecutionContext):
     if context.params.get("attempt", -1)<2:

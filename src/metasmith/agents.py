@@ -20,6 +20,7 @@ from .coms.via_ws import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, METADATA_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, DataInstanceLibraryView
+from .models.libraries import TransformInstance, Resources
 from .models.solver import Endpoint
 from .constants import VERSION
 
@@ -118,6 +119,7 @@ class PausedShell:
         self.shell.paused_out = oo
         self.shell.paused_err = oe
 
+ResourceOverrides = dict[tuple[int, int]|Literal["all"]|TransformInstance, Resources|dict[int, Resources]]
 _HERE = Path(os.path.realpath(__file__)).parent
 @dataclass
 class Agent:
@@ -422,8 +424,9 @@ class Agent:
         )
         return mock
 
-    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", verify_external_paths: bool=True):
-        assert on_exist in {"skip", "error", "clear", "update"}
+    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", verify_external_paths: bool=False):
+        VALID_ON_EXIST = {"skip", "error", "clear", "update_all", "update_workflow", "update_data"}
+        assert on_exist in VALID_ON_EXIST
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
             remote_path = AgentPaths.to_task(task._key, root=self.home.GetPath())
@@ -433,21 +436,30 @@ class Agent:
                 res = sh_remote.Exec(f'[ -e {remote_work_path} ] && echo "{FLAG}"', history=True)
                 if FLAG in res.out:
                     _msg = f"task already staged at [{remote_work_path}]"
-                    if on_exist == "error":
-                        raise FileExistsError(_msg)
-                    Log.Warn(_msg)
-                    if on_exist == "skip":
-                        return
-                    if on_exist == "clear":
-                        Log.Warn(f"clearing previously staged task")
-                        _to_delete_src = remote_work_path
-                        _to_delete = _to_delete_src.with_suffix(".to_delete")
-                        sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
-                    elif on_exist == "update":
-                        Log.Warn(f"updating previously staged task")
+                    if on_exist not in {"error"}:
+                        Log.Warn(_msg)
+                    task_stage_partial = False
+                    match on_exist:
+                        case "error":
+                            raise FileExistsError(_msg)
+                        case "skip":
+                            return
+                        case "clear":
+                            Log.Warn(f"clearing previously staged task")
+                            _to_delete_src = remote_work_path
+                            _to_delete = _to_delete_src.with_suffix(".to_delete")
+                            sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
+                        case "update_all":
+                            Log.Warn(f"updating previously staged task")
+                        case "update_data":
+                            Log.Warn(f"resending data for previously staged task")
+                            task_stage_partial = "data_only"
+                        case "update_workflow":
+                            Log.Warn(f"recompiling workflow for previously staged task")
+                            task_stage_partial = "transforms_only"
 
             Log.Info(f"sending metadata for workflow [{task._key}]")
-            task.SaveAs(self.home.ReplacePathWith(remote_path))
+            task.SaveAs(self.home.ReplacePathWith(remote_path), partial=task_stage_partial)
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
             binds = mock.MakeBindsParam(defaults=False)
@@ -467,8 +479,15 @@ class Agent:
             presets[f.stem] = f.absolute()
         return presets
 
-    def RunWorkflow(self, task: WorkflowTask, config_file: Path, params: dict|Path|str):
-        key = task.GetKey()
+    def RunWorkflow(
+            self, 
+            task: WorkflowTask|str, 
+            config_file: Path|None=None, 
+            params: dict|Path|str|None=None, 
+            resource_overrides: ResourceOverrides|None=None,
+        ):
+        if config_file is None: config_file = self.GetNxfConfigPresets()["local"]
+        key = task.GetKey() if isinstance(task, WorkflowTask) else task
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
             task_path = AgentPaths.to_task(key, root=self.home.GetPath())
@@ -483,38 +502,79 @@ class Agent:
             rel_ws = workspace.relative_to(self.home.GetPath())
             ws_dest = self.home/rel_ws
             with tempfile.TemporaryDirectory() as temp_dir:
-                if isinstance(params, dict):
-                    params_local = Path(temp_dir)/AgentPaths.NXF_PARAMS
-                    # lets underscores signify nested dictionaries
-                    # so "{process_tries=3}" becomes { process={ tries=3 } } 
-                    def _parse(d: dict):
-                        parsed = {}
-                        for k, v in d.items():
-                            k = str(k)
-                            if isinstance(v, dict):
-                                v = _parse(v)
-                            if "_" in k:
-                                stacks = [x for x in k.split("_") if x != ""]
-                                if len(stacks)>1:
-                                    _d_curr = parsed
-                                    for k in stacks[:-1]:
-                                        _d_curr[k] = {}
-                                        _d_curr = _d_curr[k]
-                                    _d_curr[stacks[-1]] = v
-                            else:
-                                parsed[k] = v
-                        return parsed
+                temp_dir = Path(temp_dir)
+                # params
+                if params is not None:
+                    if isinstance(params, dict):
+                        params_local = temp_dir/AgentPaths.NXF_PARAMS
+                        # lets underscores signify nested dictionaries
+                        # so "{process_tries=3}" becomes { process={ tries=3 } } 
+                        def _parse(d: dict):
+                            parsed = {}
+                            for k, v in d.items():
+                                k = str(k)
+                                if isinstance(v, dict):
+                                    v = _parse(v)
+                                if "_" in k:
+                                    stacks = [x for x in k.split("_") if x != ""]
+                                    if len(stacks)>1:
+                                        _d_curr = parsed
+                                        for k in stacks[:-1]:
+                                            _d_curr[k] = {}
+                                            _d_curr = _d_curr[k]
+                                        _d_curr[stacks[-1]] = v
+                                else:
+                                    parsed[k] = v
+                            return parsed
 
-                    with open(params_local, "w") as f:
-                        yaml.safe_dump(_parse(params), f)
-                    params_source = Source.FromLocal(params_local)
-                else:
-                    params_source = Source.FromLocal(params)
-                for s, d in [
-                    (params_source, ws_dest/AgentPaths.NXF_PARAMS),
-                    (Source.FromLocal(config_file), ws_dest/AgentPaths.NXF_CONFIG),
-                ]:
-                    mover.QueueTransfer(src=s, dest=d)
+                        with open(params_local, "w") as f:
+                            yaml.safe_dump(_parse(params), f)
+                        params_source = Source.FromLocal(params_local)
+                    elif isinstance(params, Path):
+                        params_source = Source.FromLocal(params)
+                    mover.QueueTransfer(src=params_source, dest=ws_dest/AgentPaths.NXF_PARAMS)
+                # resource overrides
+                if resource_overrides is not None:
+                    local_config = temp_dir/config_file.name
+                    shutil.copy(config_file, local_config)
+                    with open(local_config, "a") as f:
+                        TAB="\t"
+                        lines = [
+                            "",
+                            "process {"
+                        ]
+                        for tr, res in resource_overrides.items():
+                            if tr=="all":
+                                key = f".*"
+                            elif isinstance(tr, tuple):
+                                b, p = tr
+                                key = f"b{b:02}p{p:02}__.*"
+                            else:
+                                key = f".*__{tr.name}"
+
+                            if isinstance(res, Resources):
+                                lines += [
+                                    TAB+f"withName: '{key}' "+"{",
+                                ]+[TAB+TAB+x for x in res.AsNextflowFormat(is_config=True)]+[
+                                    TAB+"}",
+                                ]
+                            elif isinstance(res, dict):
+                                for b, r in res.items():
+                                    assert isinstance(tr, TransformInstance), f"expected [{tr}] to be a TransformInstance"
+                                    key = f"b{b:02}p.*__{tr.name}"
+                                    lines += [
+                                        TAB+f"withName: '{key}' "+"{",
+                                    ]+[TAB+TAB+x for x in r.AsNextflowFormat(is_config=True)]+[
+                                        TAB+"}",
+                                    ]
+                            else:
+                                raise TypeError(f"resouce specification in unexpected format: [{type(res)}]")
+                        lines += [
+                            "}",
+                            "",
+                        ]
+                        f.write("\n".join(lines))
+                    mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
                 mover.ExecuteTransfers(wait_for_complete=True)
 
             Log.Info(f"triggering execution of [{key}]")
@@ -553,7 +613,11 @@ def StageWorkflow(task_key: str, verify: bool):
     task_path = agent.home.GetPath()/AgentPaths.to_task(task_key)
     assert task_path.exists(), f"task dir not found [{task_path}]"
     task = WorkflowTask.Load(task_path)
-    Log.Info(f"staging workflow [{task._key}] with [{len(task.data_libraries)}] data libs and [{len(task.transform_libraries)}] transform libs")
+    Log.Info(f"staging workflow [{task._key}] with:")
+    Log.Info(f"  [{len(task.data_libraries)}] data libraries")
+    Log.Info(f"  [{len(task.transform_libraries)}] transform libraries")
+    Log.Info(f"  [{len(task.plans)}] variants (batches)")
+    Log.Info(f"  [{sum(len(p.steps) for g in task.plans for p in g)}] total steps")
 
     work_relative = AgentPaths.STAGED/task._key
     work_dir = AgentPaths.WORK_ROOT/work_relative
@@ -668,11 +732,13 @@ def StageWorkflow(task_key: str, verify: bool):
             'cd $( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )',
             f'TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")',
             f'LOG_DIR="./{AgentPaths.INTERNALS}/logs.$TIMESTAMP"',
-            f'export BINDS="{binds}"',
+            f'LOG_LATEST="./{AgentPaths.INTERNALS}/logs.latest"',
             f'mkdir -p $LOG_DIR',
+            f'[ -e $LOG_LATEST ] && rm "$LOG_LATEST"; ln -s "./logs.$TIMESTAMP" "$LOG_LATEST"',
             f'[ -e {AgentPaths.NXF_PARAMS} ] || touch {AgentPaths.NXF_PARAMS}',
             f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
             f'echo "start time was [$TIMESTAMP]"',
+            f'export BINDS="{binds}"',
             f'nohup ../../msm api run_workflow -a key={task_key} -a log_dir=$LOG_DIR >$LOG_DIR/agent.log 2>&1 &',
         ]))
     os.chmod(launcher_path, 0o754)
@@ -770,7 +836,6 @@ def RunWorkflow(key: str, log_dir: Path):
             """,
             timeout=None,
         )
-Path().symlink_to
 
     if nxf_report.exists():
         raw_task_meta = None
@@ -906,6 +971,9 @@ Path().symlink_to
     Log.Info(f"linking logs [{log_dir}] to results folder [{output_path}]")
     output_metadata_path = output_path/f"{output._path_to_meta}"
     (output_metadata_path/f"{log_dir.name}").symlink_to(f"../../{log_dir}")
+    latest_link = (output_metadata_path/f"logs.latest")
+    if latest_link.exists(): latest_link.unlink()
+    latest_link.symlink_to(f"../../{log_dir}")
     Log.Info(f"run completed at [{StdTime.Timestamp()}]")
 
 def CheckWorkflow(key: str, index: int|None=None):
