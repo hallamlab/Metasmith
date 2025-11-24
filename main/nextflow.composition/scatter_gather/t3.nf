@@ -1,82 +1,4 @@
-process s1 {
-	input:
-		tuple val(index),path(a)
-	output:
-		tuple val(index),path("*b")
-		tuple val(index),path("*c")
-    script:
-        """
-        touch 1b
-        touch 2b
-
-        touch 1c
-        touch 2c
-        """
-}
-
-process s2 {
-	input:
-		tuple val(index),path(b)
-	output:
-		tuple val(index),path("*f")
-    script:
-        def k = index['b']
-        def dt = (index['b']-1)/2
-        // [ $dt -eq 0 ] && [ ${task.attempt} -eq 1 ] && exit 1
-        // [ $k -eq 1 ] && exit 1
-        """
-        sleep $dt
-        touch ${b.name}1f
-        touch ${b.name}2f
-        """
-}
-
-// process t1 {
-// 	input:
-// 		tuple val(index),path(b)
-// 	output:
-// 		tuple val(index),path("*d")
-//     script:
-//         def dt = (index['b']-1)
-//         """
-//         sleep $dt
-//         touch 1d
-//         """
-// }
-
-// process t2 {
-// 	input:
-// 		tuple val(index),path(b)
-// 	output:
-// 		tuple val(index),path("*e")
-//     script:
-//         """
-//         touch 1e
-//         """
-// }
-
-// process s2 {
-//     input:
-// 		tuple val(sample),path(b)
-// 	output:
-// 		tuple val("$sample"),path("*d")
-//     """
-//     touch ${sample}.1d
-//     touch ${sample}.2d
-//     """
-// }
-
-// process g2 {
-// 	input:
-// 		tuple HashMap(sample),path(d),path(b)
-// 	output:
-// 		tuple HashMap(sample),path("*y")
-//     """
-//     touch ${sample}.1y
-//     """
-// }
-
-def in = (f) -> {
+def in(f) {
 	return Channel.fromPath(f)
     .splitCsv(header: false)
     .map((row) -> {
@@ -85,13 +7,12 @@ def in = (f) -> {
     })
 }
 
-def pending_tasks = [:] // for $group
-def using = (stream, targets) -> {
+def _using(stream, targets, globals) {
     def (name, _stream) = stream
     return tuple(name, _stream.map((item) -> {
         def index = item[0]
         for (target : targets) {
-            def pending_targets = pending_tasks.get(target, [])
+            def pending_targets = globals.pending_tasks.get(target, [])
             pending_targets.add(index)
         }
         // println("using: $name to $targets ${index}")
@@ -99,20 +20,19 @@ def using = (stream, targets) -> {
     }))
 }
 
-def index_history = [:] // for $group
-def post = (stream, name) -> {
+def _post(stream, name, globals) {
     def completed = 0
     return tuple(name, stream.flatMap((index, group) -> {
-        pending_targets = pending_tasks[name]
+        pending_targets = globals.pending_tasks[name]
         pending_targets?.remove(index)
         if (pending_targets?.size()==0) {
-            pending_tasks?.remove(name)
+            globals.pending_tasks?.remove(name)
         }
         // println("post: <$name> ${index} $pending_targets")
         if (!(group instanceof List)) {
             group = [group]
         }
-        def hist = index_history.get(name, []) // sets if $name not in index_history
+        def hist = globals.index_history.get(name, []) // sets if $name not in index_history
         return group.collect((item) -> { // map
             completed+=1
             index = [:]+index // copy the hashmap
@@ -125,7 +45,7 @@ def post = (stream, name) -> {
     }))
 }
 
-def combine_indexes = (indexes) -> {
+def combine_indexes(indexes) {
     def combined_index = [:]
     def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) // reduce
     for (key : keys) {
@@ -142,7 +62,7 @@ def combine_indexes = (indexes) -> {
     return combined_index
 }
 
-def group = (streams, by) -> {
+def _group(streams, by, globals) {
     def get_parent = (pk, indexes) -> {
         def parent_values = indexes.collect((index) -> index[pk]).unique()
         return parent_values
@@ -176,9 +96,9 @@ def group = (streams, by) -> {
                 def group_k = index[by]
                 def group = pending_groups.get(group_k, [])
                 group.add(tuple(index, value))
-                pending_targets = pending_tasks[name]?.clone() // clones for thread safety
+                pending_targets = globals.pending_tasks[name]?.clone() // clones for thread safety
                 size_valid = pending_targets==null? true : pending_targets.collect((i) -> i[by]).every((k) -> k!=group_k)
-                expected_size = !size_valid? -1 : index_history[name].clone().collect(i -> i[by]).findAll(v -> v==group_k).size()
+                expected_size = !size_valid? -1 : globals.index_history[name].clone().collect(i -> i[by]).findAll(v -> v==group_k).size()
             }
             // println("req: stream $name by $by $is_final_call $size_valid $expected_size") // debug 
             if (size_valid) {
@@ -247,7 +167,7 @@ def group = (streams, by) -> {
     })
 }
 
-def cross = (streams) -> {
+def xross(streams) {
     return streams
     .collect((stream) -> { // map
         def (name, _stream) = stream
@@ -266,62 +186,11 @@ def cross = (streams) -> {
     })
 }
 
-def batch = (streams, n) -> {
+def batch(streams, n) {
     // todo
 }
 
-def strip_paths = (item) -> {
+def strip_paths(item) {
     def values = item[1..-1]
     return tuple(item[0], *values.collect(x -> x.collect(p -> p.name)))
 }
-
-workflow {
-	a = post(in("../inputs.a1"), "a")
-    (b, c) = s1(group([using(a, ['b', 'c'])], 'a'))
-    // (b, c) = s1(pass(using(a, ['b', 'c'])))
-    b = post(b, 'b')
-    c = post(c, 'c')
-    
-    f = s2(group([using(b, ['f'])], 'b'))
-    // f = s2(pass(using(b, ['f'])))
-    f = post(f, 'f')
-    // f.view()
-
-    // d.merge(e).view()
-    // d.view()
-
-    // group([f, b, a, c], 'f').view(v -> ">>> final: ${strip_paths(v)}")
-    // cross([a, b]).view(v -> ">>> final: $v")
-    cross([a, b]).view(v -> ">>> final: ${strip_paths(v)}")
-
-
-}
-
-// def j(ch_a, ch_b) {
-//     // https://www.nextflow.io/docs/latest/reference/operator.html#cross
-//     // cross only emits those with matching keys
-//     return ch_b.cross(ch_a).map({ [it[0][0], *it[1][1..-1], *it[0][1..-1]] })
-// }
-
-// process no_op {
-// 	input:
-// 		// tuple val(sample),path(_01),path(_02),path(_03)
-// 		tuple val(sample),path(_01)
-
-// 	output:
-// 		tuple val("$sample"),path("*.out.noop")
-
-//     """
-//     echo "$sample,$_01" >${sample}.out.noop
-//     """
-// }
-
-// process gather {
-// 	input:
-// 		tuple val(sample),path(_01),path(_02),path(_03)
-// 	output:
-// 		tuple val("$sample"),path("*.out.gather")
-//     """
-//     touch ${sample}__${_01.name}__${_02.name}__${_03.name}.out.gather
-//     """
-// }
