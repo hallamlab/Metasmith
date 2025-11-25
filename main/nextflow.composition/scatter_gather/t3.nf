@@ -7,42 +7,49 @@ def in(f) {
     })
 }
 
-def _using(stream, targets, globals) {
-    def (name, _stream) = stream
-    return tuple(name, _stream.map((item) -> {
-        def index = item[0]
-        for (target : targets) {
-            def pending_targets = globals.pending_tasks.get(target, [])
-            pending_targets.add(index)
-        }
-        // println("using: $name to $targets ${index}")
-        return item
-    }))
+def _using(streams, targets, globals) {
+    return streams.collect((stream) -> {
+        def (name, _stream) = stream
+        return tuple(name, _stream.map((item) -> {
+            def index = item[0]
+            for (target : targets) {
+                def pending_targets = globals.pending_tasks.get(target, [])
+                pending_targets.add(index)
+            }
+            // println("using: $name to $targets ${index}")
+            return item
+        }))
+    })
 }
 
-def _post(stream, name, globals) {
-    def completed = 0
-    return tuple(name, stream.flatMap((index, group) -> {
-        pending_targets = globals.pending_tasks[name]
-        pending_targets?.remove(index)
-        if (pending_targets?.size()==0) {
-            globals.pending_tasks?.remove(name)
-        }
-        // println("post: <$name> ${index} $pending_targets")
-        if (!(group instanceof List)) {
-            group = [group]
-        }
-        def hist = globals.index_history.get(name, []) // sets if $name not in index_history
-        return group.collect((item) -> { // map
-            completed+=1
-            index = [:]+index // copy the hashmap
-            index[name] = completed
-            hist.add(index)
-            return [index, item]
-        })
-        // println("post: $k $hist")
-        // return x
-    }))
+def _post(streams, names, globals) {
+    // def (stream, name) = [streams, names]
+    return [names, streams].transpose().collect((name, stream) -> {
+        def completed = 0
+        return tuple(name, stream.flatMap((index, group) -> {
+            pending_targets = globals.pending_tasks[name]
+            if (pending_targets!=null && index in pending_targets) {
+                pending_targets.remove(index)
+            }
+            if (name in globals.pending_tasks && pending_targets?.size()==0) {
+                globals.pending_tasks.remove(name)
+            }
+            // println("post: <$name> ${index} $pending_targets")
+            if (!(group instanceof List)) {
+                group = [group]
+            }
+            def hist = globals.index_history.get(name, []) // sets if $name not in index_history
+            return group.collect((item) -> { // map
+                completed+=1
+                index = [:]+index // copy the hashmap
+                index[name] = completed
+                hist.add(index)
+                return [index, item]
+            })
+            // println("post: $k $hist")
+            // return x
+        }))
+    })
 }
 
 def combine_indexes(indexes) {
@@ -62,7 +69,7 @@ def combine_indexes(indexes) {
     return combined_index
 }
 
-def _group(streams, by, globals) {
+def _group(by, streams, globals) {
     def get_parent = (pk, indexes) -> {
         def parent_values = indexes.collect((index) -> index[pk]).unique()
         return parent_values
@@ -186,8 +193,18 @@ def xross(streams) {
     })
 }
 
-def batch(streams, n) {
-    // todo
+def batch(n, channel) {
+    return channel.collate(n).map((group) -> {
+        def indexes = []
+        def values = []
+        for (item : group) {
+            def index = item[0]
+            def value = item[1..-1]
+            indexes.add(index)
+            values.add(value)
+        }
+        return tuple(indexes, values, values.flatten())
+    })
 }
 
 def strip_paths(item) {
