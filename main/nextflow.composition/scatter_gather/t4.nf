@@ -1,21 +1,22 @@
-include { in; _using; _post; _group; xross; batch; combine_indexes } from './t3'
-include { strip_paths } from './t3'
+include {in} from './utils'
+// include { in; _using; _post; _group; xross; batch; combine_indexes } from './t3'
+// include { strip_paths } from './t3'
 
-class Globals {
-    static pending_tasks = [:];
-    static index_history = [:]; 
-} 
+// class Globals {
+//     static pending_tasks = [:];
+//     static index_history = [:]; 
+// } 
 
-def using = (stream, targets) -> _using(stream, targets, Globals)
-def post = (streams, names) -> _post(streams, names, Globals)
-def group = (by, streams) -> _group(by, streams, Globals)
+// def using = (stream, targets) -> _using(stream, targets, Globals)
+// def post = (streams, names) -> _post(streams, names, Globals)
+// def group = (by, streams) -> _group(by, streams, Globals)
 
 process s1 {
 	input:
-		tuple val(index),path(a)
+        tuple val(index),path(a)
 	output:
-		tuple val(index),path("*b")
-		tuple val(index),path("*c")
+        tuple val(index),path("*b")
+        tuple val(index),path("*c")
     script:
         // def dt = (index['a']-1)
         // sleep $dt
@@ -30,15 +31,16 @@ process s1 {
 
 process s2 {
 	input:
-		tuple val(index),path(b)
+        tuple val(index),path(b)
 	output:
-		tuple val(index),path("*f")
+        tuple val(index),path("*f")
     script:
         // def k = index['b']
         def dt = (index['b']-1)
         // [ $dt -eq 0 ] && [ ${task.attempt} -eq 1 ] && exit 1
         // [ $k -eq 1 ] && exit 1
         """
+        echo $dt
         sleep $dt
         touch ${b.name}1f
         touch ${b.name}2f
@@ -47,9 +49,9 @@ process s2 {
 
 process p1 {
     input:
-		tuple val(index),path(f)
+        tuple val(index),path(f)
 	output:
-		tuple val(index),path("*h")
+        tuple val(index),path("*h")
     script:
         """
         touch ${f.name}1h
@@ -58,9 +60,9 @@ process p1 {
 
 process g1 {
     input:
-		tuple val(index),path(f),path(b),path(c)
+        tuple val(index),path(f),path(b),path(c)
 	output:
-		tuple val(index),path("*g")
+        tuple val(index),path("*g")
     script:
         // echo ${a}>>1g
         """
@@ -71,50 +73,53 @@ process g1 {
 }
 
 process b1 {
-    input:
-		tuple val(indexes),val(struct),path(files)
+  input:
+        tuple val(indexes),val(struct),path(files)
     output:
-		tuple val(indexes),path("*i")
+        tuple val(indexes),path("*i")
+        tuple val(indexes),path("*j")
     script:
         """
-        echo ${struct}>>1i
+        IFS=',' read -ra indexes <<< "$indexes"
+        for i in \$indexes; do
+            echo \$i>>1i
+        done
+        for v in $struct; do
+            echo \$v>>1j
+        done
         """
 }
 
 workflow {
-	// a = post(in("../inputs.a1"), "a")
-    (a) = post([in("../inputs.a1")], ["a"])
+    END = Channel.fromList([null]) // cant create channels in groovy
+    o = new Orchestrator(END)
+    // in("../inputs.a1")
+    (a) = o.post([in("../inputs.a1")], ["a"])
 
     k = ['b', 'c']
-    // this spreads the "multiChannelOutput" class into a list
-    // [*process()]
-    (b, c) = post([*s1(group('a', using([a], k)))], k)
-
-    
-    // b[1].view()
-    // input:
-    // indexes, group sturcture, flattened files for input
-    b1(batch(2, group('b', using([b], ['b'])))).view()
+    //   // this spreads the "multiChannelOutput" class into a list
+    //   // [*process()]
+    (b, c) = o.post([*s1(o.group('a', o.using([a], k)))], k)
+      
+    //   // b[1].view()
+    //   // batch(2, group('b', using([b], ['b']))).view()
+    //   b1(batch(2, group('b', using([b], ['b']))))
     // b1(b[1].collate(2))
 
 
     // logistics processes
     // batch outputs normal
 
+    k = ['f']
+    (f) = o.post([*s2(o.group('b', o.using([b], k)))], k)
 
+    k = ['h']
+    (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
+    // h[1].view()
 
-
-
-
-    // k = ['f']
-    // (f) = post([*s2(group('b', using([b], k)))], k)
-
-    // k = ['h']
-    // (h) = post([*p1(group('f', using([f], k)))], k)
-
-    // k = ['g']
-    // (g) = post([*g1(group('f', using([f, h, c], k)))], k)
-    // // g[1].view()
+    k = ['g']
+    (g) = o.post([*g1(o.group('h', o.using([h, f, c], k)))], k)
+    g[1].view()
 
     // x = xross([a, b])
 
