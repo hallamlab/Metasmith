@@ -1,25 +1,29 @@
 class Orchestrator {
-    Map pending_tasks
-    Map index_history
+    private Map pending_tasks
+    private Map index_history
+    private Map children
     private def one_null
 
     Orchestrator(one_null) {
         this.pending_tasks = [:]
         this.index_history = [:]
+        this.children = [:]
         this.one_null = one_null
     }
 
     private synchronized def registerPendingTarget(String target, Map index) {
-        def pending_targets = this.pending_tasks.get(target, []) // this also sets if not exist
+        def pending_targets = this.pending_tasks.get(target, [] as Set) // this also sets if not exist
         pending_targets.add(index)
     }
 
     private synchronized def removePendingTarget(String target, Map index) {
+        if (!(target in this.pending_tasks)) return
         def pending_targets = this.pending_tasks[target]
-        if (pending_targets!=null && index in pending_targets) {
+        if (pending_targets==null) return
+        if (index in pending_targets) {
             pending_targets.remove(index)
         }
-        if (target in this.pending_tasks && pending_targets?.size()==0) {
+        if (pending_targets.size()==0) {
             this.pending_tasks.remove(target)
         }
     }
@@ -29,11 +33,16 @@ class Orchestrator {
         hist.add(index)
     }
 
-    private synchronized def getExpectedSize(String grouping_by, String name, int group_k) {
+    private synchronized def getExpectedSize(String grouping_by, String name, group_ks) {
         def pending_targets = this.pending_tasks[name]
-        def size_valid = pending_targets==null? true : pending_targets.collect((i) -> i[grouping_by]).every((k) -> k!=group_k)
-        def expected_size = !size_valid? -1 : this.index_history[name].collect(i -> i[grouping_by]).findAll(v -> v==group_k).size()
+        def size_valid = pending_targets==null? true : pending_targets.collect(i -> i[grouping_by]).every(ks -> ks.every(k -> !(k in group_ks)))
+        def expected_size = !size_valid? -1 : this.index_history[name].collect(i -> i[grouping_by]).findAll(ks -> ks.any(k -> (k in group_ks))).size()
         return new Tuple2(size_valid, expected_size)
+    }
+
+    private synchronized def registerChild(String parent, int p, String child, int c) {
+        def children = this.children.get(new Tuple2(parent, p), [])
+        children.add(new Tuple2(child, c)) 
     }
 
     public def using(streams, targets) {
@@ -63,7 +72,7 @@ class Orchestrator {
                 return group.collect((item) -> { // map
                     completed+=1
                     index = [:]+index // copy the hashmap
-                    index[name] = completed
+                    index[name] = [completed]
                     this.registerIndexHistory(name, index)
                     return [index, item]
                 })
@@ -81,12 +90,15 @@ class Orchestrator {
             // if any is missing, use the remainder
             // if remainder different, skip
             // if remainder same, add
-            def candidates = indexes.collect(index -> index[key]).findAll(x -> x!=null).unique() // collect == map, findAll == filter
-            if (candidates.size()==1) {
-                combined_index[key] = candidates[0]
-            } else if (candidates.size()>1) {
-                combined_index[key] = 0
-            }
+            // def candidates = 
+            combined_index[key] = indexes
+            .collect(index -> index[key])
+            .inject([], (all, values) -> values==null? all : all+values)
+            .unique() // collect == map, findAll == filter
+            // if (candidates.size()==1) {
+            // } else if (candidates.size()>1) {
+            //     combined_index[key] = 0
+            // }
         }
         return combined_index
     }
@@ -97,6 +109,7 @@ class Orchestrator {
             return parent_values
         }
 
+        def pending_groups = [:]
         return streams
         .collect((stream) -> { // map
             // The following enables groups to be emitted immediately when ready.
@@ -114,50 +127,79 @@ class Orchestrator {
             if (_stream==null) { // stream was not a tuple
                 throw new IllegalArgumentException("channel was not properly setup using post()")
             }
-            def pending_groups = [:]
             return _stream.concat(this.one_null)
             .flatMap((item) -> {
-                def is_final_call = item==null
-                def (size_valid, expected_size) = [false, -1]
-                if (!is_final_call) { // otherwise item is null
+                if (item==null) { // this is the final call. There is no item
+                    // last chance, flush remaining groups
+                    return pending_groups
+                    .collect((key, value) -> {
+                        def (_name, k) = key
+                        return _name==name? new Tuple3(k, name, value) : null
+                    })
+                    .findAll(x -> x!=null)
+                } else {
                     def (index, value) = item
-                    def group_k = index[by]
+                    def UNGROUPED = 0
+                    def group_v = (by in index)? index[by] : [UNGROUPED]
+                    def group_k = new Tuple2(name, group_v)
+                    if (name==by) {
+                        // since this is the channel dictating the groups, it is the index
+                        // each item is thus unique and so can return immediately.
+                        return [new Tuple3(group_v, name, [new Tuple2(index, value)])]
+                        // def to_return = [new Tuple3(group_v, name, [new Tuple2(index, value)])]
+                        // // We can scan the pending groups 
+                        // def parent_channels = index.keySet()
+                        // for (entry : pending_groups) {
+                        //     def (parent_channel, _) = entry.key
+                        //     if (!(parent_channel in parent_channels)) continue
+                        //     def expected_parent = index[parent_channel]
+                        //     for (parent : entry.value) {
+                        //         def (parent_index, pv) = parent
+                        //         if (expected_parent in parent_index) {
+                        //             to_return.add(new Tuple3(group_v, parent_channel, [new Tuple2(paren_index, pv)]))
+                        //         }
+                        //     }
+                        // }
+                    }
+
+                    def (size_valid, expected_size) = [false, -1]
                     def group = pending_groups.get(group_k, [])
                     group.add(new Tuple2(index, value))
-
-                    println("$name by $by $group_k i: $index")
-
-                    if (group_k!=null) {
-                        (size_valid, expected_size) = this.getExpectedSize(by, name, group_k)
+                    pending_groups[group_k] = group
+                    if (group_k!=0) {
+                        (size_valid, expected_size) = this.getExpectedSize(by, name, group_v)
                     }
-                }
-                // println("req: stream $name by $by $is_final_call $size_valid $expected_size") // debug 
-                if (size_valid) {
-                    for (k : pending_groups.keySet()) {
-                        def candidate_group = pending_groups[k]
-                        if (expected_size>0 && candidate_group.size()>=expected_size) {
-                            pending_groups.remove(k)
-                            return [new Tuple3(k, name, candidate_group)]
+
+                    // println("req: stream $name by $by $is_final_call $size_valid $expected_size") // debug 
+                    if (size_valid) {
+                        for (key : pending_groups.keySet()) {
+                            def (_name, k) = key
+                            if (_name != name) continue
+                            def candidate_group = pending_groups[key]
+                            if (expected_size>0 && candidate_group.size()>=expected_size) {
+                                pending_groups.remove(key)
+                                return [new Tuple3(k, name, candidate_group)]
+                            }
                         }
                     }
-                } 
-                if (is_final_call) {
-                    // println("  reqf: stream $name by $by $pending_groups") // debug
-                    return pending_groups.collect((key, value) -> new Tuple3(key, name, value))
+                    return []
                 }
-                return []
             })
-            // .view(v -> "^ $by $name $v")
-            .map(item -> [item])
+            // .view(v -> "^ $name by $by ${v[0]}")
+            .flatMap((keys, channel, values) -> {
+                return keys.collect(k -> [new Tuple3(k, channel, values)])
+            })
         })
         .inject((result, channel) -> { // reduce (to channel)
             // cant use ${combine(by: 0)} since when k not in index,
             // it should be treated as wildcard, not a specific value
-            // println(">$by ${result.count()} ${channel.count()}<")
             return result
             .combine(channel)
             .filter((_result) -> {
-                return _result.collect(x -> x[0]).findAll(x -> x!=null).unique().size()==1
+                // println("  $by ${_result.size()}")
+                return _result
+                .collect(x -> x[0])
+                // .findAll(x -> x!=null).unique().size()==1
             })
 
         })
@@ -168,6 +210,10 @@ class Orchestrator {
             def names = _result.collect(channel -> channel[1])
             def indexes = groups.collect(channel -> channel.collect(group -> group[0]))
             def index_of_by = [names, indexes].transpose().findAll((n, i) -> n==by).collect((n, i) -> i).flatten()[0]
+
+            // if (by=='h') {
+            //     println("  $names $index_of_by ")
+            // }
             // Using the $by as an "anchor", channels that are children of $by
             // have been matched by the combine().filter() above.
             // Parents of $by have been collected as a single group.

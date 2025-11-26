@@ -36,7 +36,7 @@ process s2 {
         tuple val(index),path("*f")
     script:
         // def k = index['b']
-        def dt = (index['b']-1)
+        def dt = (index['b'][0]-1)
         // [ $dt -eq 0 ] && [ ${task.attempt} -eq 1 ] && exit 1
         // [ $k -eq 1 ] && exit 1
         """
@@ -60,14 +60,15 @@ process p1 {
 
 process g1 {
     input:
-        tuple val(index),path(f),path(b),path(c)
+        // tuple val(index),path(f),path(b),path(c)
+        tuple val(index),path(f),path(b)
 	output:
         tuple val(index),path("*g")
     script:
         // echo ${a}>>1g
+        // echo ${c}>>1g
         """
         echo ${b}>>1g
-        echo ${c}>>1g
         echo ${f}>>1g
         """
 }
@@ -118,8 +119,10 @@ workflow {
     // h[1].view()
 
     k = ['g']
-    (g) = o.post([*g1(o.group('h', o.using([h, f, c], k)))], k)
-    g[1].view()
+    x = o.group('f', o.using([h, f, b], k))
+    // x.view()
+    // (g) = o.post([*g1(o.group('h', o.using([h, f], k)))], k)
+    // g[1].view()
 
     // x = xross([a, b])
 
