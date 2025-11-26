@@ -59,7 +59,7 @@ class Orchestrator {
         })
     }
 
-    public def post(streams, names) {
+    public List post(streams, names) {
         // def (stream, name) = [streams, names]
         return [names, streams].transpose().collect((name, stream) -> {
             def completed = 0
@@ -81,7 +81,6 @@ class Orchestrator {
             }))
         })
     }
-
     
     private def combineIndexes(indexes) {
         def combined_index = [:]
@@ -103,15 +102,70 @@ class Orchestrator {
         return combined_index
     }
 
-    public def group(by, streams) {
-        def get_parent = (pk, indexes) -> {
-            def parent_values = indexes.collect((index) -> index[pk]).unique()
-            return parent_values
+    private class SynchronizedHashGroup {
+        private Map map
+
+        SynchronizedHashGroup() {
+            this.map = [:]
         }
 
-        def pending_groups = [:]
-        return streams
-        .collect((stream) -> { // map
+        public synchronized void register(k, v) {
+            this.map[k] = this.map.get(k, [])+[v]
+        }
+
+        public synchronized def get(k) {
+            return this.map[k].clone()
+        }
+    }
+    
+    public def group(to_group, by, to_split) {
+        // using stream $by as in index
+        // $to_group are grouped
+        // $to_split are duplicatd
+        // for each item in $by
+        assert by.size() == 1
+        def (by_name, by_stream) = by[0]
+
+        def finished_parents = new SynchronizedHashGroup()
+        def parent_channels = to_split.collect(t -> t[0])
+        // since $parents are produced before $by
+        // the parents for each $by will be available
+        def stream_parents = to_split
+        .collect((stream) -> {
+            def (name, _stream) = stream
+            return _stream.map((item) -> {
+                finished_parents.register(name, item)
+                return null // parents are returned with each item of $by
+            })
+        })
+        .inject(
+            by_stream.map((item) -> {
+                def (index, value) = item
+                def group_k = index[by_name]
+                def _parent_streams = parent_channels.collect((parent_name) -> {
+                    def parent_items = finished_parents.get(parent_name)
+                    .collect(pitem -> {
+                        def (pi, pv) = pitem
+                        def is_parent = index[parent_name].any(v -> v in pi[parent_name])
+                        return is_parent? new Tuple2(pi, pv) : null
+                    })
+                    .findAll(x -> x!=null)
+                    return new Tuple3(group_k, parent_name, parent_items)
+                })
+                return [
+                    new Tuple3(group_k, by_name, [new Tuple2(index, value)]),
+                    *_parent_streams
+                ]
+            }),
+            (result, channel) -> {
+                return result.mix(channel)
+            }
+        )
+        // .view(v -> "^ $v")
+        .filter(x -> x!=null)
+
+        return to_group
+        .collect((stream) -> {
             // The following enables groups to be emitted immediately when ready.
             // As tasks are queued, they are added to a pending list via ${using()}
             // and promise a named output stream.
@@ -123,121 +177,68 @@ class Orchestrator {
             // Here, we buffer each item in $pending_groups until the group size matches
             // the expected size calculated from $index_history.
             // $flatMap enables remainders to be emmitted at end
+            def pending_groups = [:]
             def (name, _stream) = stream
-            if (_stream==null) { // stream was not a tuple
-                throw new IllegalArgumentException("channel was not properly setup using post()")
-            }
             return _stream.concat(this.one_null)
             .flatMap((item) -> {
                 if (item==null) { // this is the final call. There is no item
                     // last chance, flush remaining groups
                     return pending_groups
                     .collect((key, value) -> {
-                        def (_name, k) = key
-                        return _name==name? new Tuple3(k, name, value) : null
+                        return new Tuple3(key, name, value)
                     })
-                    .findAll(x -> x!=null)
                 } else {
                     def (index, value) = item
-                    def UNGROUPED = 0
-                    def group_v = (by in index)? index[by] : [UNGROUPED]
-                    def group_k = new Tuple2(name, group_v)
-                    if (name==by) {
-                        // since this is the channel dictating the groups, it is the index
-                        // each item is thus unique and so can return immediately.
-                        return [new Tuple3(group_v, name, [new Tuple2(index, value)])]
-                        // def to_return = [new Tuple3(group_v, name, [new Tuple2(index, value)])]
-                        // // We can scan the pending groups 
-                        // def parent_channels = index.keySet()
-                        // for (entry : pending_groups) {
-                        //     def (parent_channel, _) = entry.key
-                        //     if (!(parent_channel in parent_channels)) continue
-                        //     def expected_parent = index[parent_channel]
-                        //     for (parent : entry.value) {
-                        //         def (parent_index, pv) = parent
-                        //         if (expected_parent in parent_index) {
-                        //             to_return.add(new Tuple3(group_v, parent_channel, [new Tuple2(paren_index, pv)]))
-                        //         }
-                        //     }
-                        // }
-                    }
-
-                    def (size_valid, expected_size) = [false, -1]
+                    assert by_name in index
+                    def group_k = index[by_name]
                     def group = pending_groups.get(group_k, [])
                     group.add(new Tuple2(index, value))
                     pending_groups[group_k] = group
-                    if (group_k!=0) {
-                        (size_valid, expected_size) = this.getExpectedSize(by, name, group_v)
-                    }
-
+                    def (size_valid, expected_size) = this.getExpectedSize(by_name, name, group_k)
                     // println("req: stream $name by $by $is_final_call $size_valid $expected_size") // debug 
                     if (size_valid) {
                         for (key : pending_groups.keySet()) {
-                            def (_name, k) = key
-                            if (_name != name) continue
                             def candidate_group = pending_groups[key]
                             if (expected_size>0 && candidate_group.size()>=expected_size) {
                                 pending_groups.remove(key)
-                                return [new Tuple3(k, name, candidate_group)]
+                                return [new Tuple3(key, name, candidate_group)]
                             }
                         }
                     }
                     return []
                 }
             })
-            // .view(v -> "^ $name by $by ${v[0]}")
-            .flatMap((keys, channel, values) -> {
-                return keys.collect(k -> [new Tuple3(k, channel, values)])
-            })
+            .map(x -> [x]) // see combine() below
         })
-        .inject((result, channel) -> { // reduce (to channel)
+        .inject(stream_parents, (result, channel) -> { // reduce (to channel)
             // cant use ${combine(by: 0)} since when k not in index,
             // it should be treated as wildcard, not a specific value
+            // x = Channel.fromList([[['a', 1]], [['a', 2]]])
+            // y = Channel.fromList([[['b', 3]], [['b', 4]]])
+            // x.combine(y).view()
+            // [['a', 1], ['b', 3]]
+            // [['a', 1], ['b', 4]]
+            // [['a', 2], ['b', 3]]
+            // [['a', 2], ['b', 4]]
             return result
             .combine(channel)
             .filter((_result) -> {
-                // println("  $by ${_result.size()}")
-                return _result
+                def xx = _result
                 .collect(x -> x[0])
-                // .findAll(x -> x!=null).unique().size()==1
+                return xx
+                .findAll(x -> x!=null).unique().size()==1
             })
 
         })
-        // .view(v -> "x $v")
+        // .view(v -> by_name=='f'? "^ $v" : null)
         .map((_result) -> { // we are a channel now, so we can map()
             // each channel is [key, name, group]
             def groups = _result.collect(channel -> channel[-1]) 
             def names = _result.collect(channel -> channel[1])
             def indexes = groups.collect(channel -> channel.collect(group -> group[0]))
-            def index_of_by = [names, indexes].transpose().findAll((n, i) -> n==by).collect((n, i) -> i).flatten()[0]
+            def index_of_by = [names, indexes].transpose().findAll((n, i) -> n==by_name).collect((n, i) -> i).flatten()[0]
 
-            // if (by=='h') {
-            //     println("  $names $index_of_by ")
-            // }
-            // Using the $by as an "anchor", channels that are children of $by
-            // have been matched by the combine().filter() above.
-            // Parents of $by have been collected as a single group.
-            // Here, we see if any channel is a parent and if so,
-            // we find the actual parent instance and return that instead of the whold group
-            def parents = [names, indexes].transpose()
-            .findAll((name, ind) -> name!=by) // only look at channels that are not $by 
-            .collect((name, ind) -> { // find the parent instance, if exists
-                return new Tuple2(name, index_of_by[name])
-            })
-            .findAll((name, v) -> v!=null)
-            .inject([:], (parents_table, parent) -> { // aggregate parent instances into lookup table
-                def (k, v) = parent
-                parents_table[k] = v
-                return parents_table
-            })
-            groups = [names, groups].transpose()
-            .collect((name, channel) -> {
-                def parent = parents[name]
-                // return only the parent if available
-                return channel.findAll((index, value) -> {
-                    return parent==null || index[name]==parent
-                })
-            })
+            // println(" ^ $by_name${children.size()} $names $indexes")
             def common_index = this.combineIndexes(groups.collect(channel -> channel.collect(group -> group[0])).flatten())
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
             return [common_index, *values]
