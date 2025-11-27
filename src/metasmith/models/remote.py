@@ -251,7 +251,7 @@ class Logistics:
     def RemoveTransfer(self, src: Source, dest: Source):
         self._queue.remove((src, dest))
 
-    def ExecuteTransfers(self, label: str = None, wait_for_complete: bool=True) -> LogisticsResult:
+    def ExecuteTransfers(self, label: str|None = None, wait_for_complete: bool=True) -> LogisticsResult:
         to_dispose: list[LiveShell] = []
         result = LogisticsResult(completed=[], errors=[])
 

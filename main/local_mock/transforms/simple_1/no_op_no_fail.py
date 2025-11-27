@@ -3,19 +3,13 @@ from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-dep     = model.AddRequirement(lib.GetType("mock::a"))
+dep     = model.AddRequirement(lib.GetType("mock::x"))
 out     = model.AddProduct(lib.GetType("mock::target"))
 
 def protocol(context: ExecutionContext):
-    if context.params.get("attempt", -1)<2:
-        assert False, "fail for testing retry"
     import time
     out_path = context.Get(out)
     in_path = context.Get(dep)
-
-    if "1" in in_path.local.name:
-        assert False, "fail for testing ignore"
-
     with open(in_path.local) as f:
         dt = f.readline()
         if dt.endswith("\t"): dt = dt[:-1]
@@ -30,4 +24,9 @@ TransformInstance(
     output_signature = {
         out: "output.txt",
     },
+    resources = Resources(
+        cpus = 4,
+        memory = Size.GB(16),
+        duration = Duration(days=1, hours=12, minutes=30),
+    )
 )

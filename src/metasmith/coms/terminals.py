@@ -23,7 +23,7 @@ class ShellResult:
     
 class TerminalProcess:
     class Pipe:
-        def __init__(self, io:IO[bytes], lock: Condition = None) -> None:
+        def __init__(self, io:IO[bytes], lock: Condition|None = None) -> None:
             self.IO = io
             if lock is None: lock = Condition()
             self.Lock = lock
@@ -51,6 +51,7 @@ class TerminalProcess:
 
         self.ENCODING = "utf-8"
         self._console = console
+        assert console.stdin is not None
         self._in = TerminalProcess.Pipe(console.stdin)
         self._onCloseLock = Condition()
         self._closed = False
@@ -115,6 +116,7 @@ class LiveShell:
         self._shell = TerminalProcess()
         def _tee(cb_lst: list[Callable[[str], None]], check=False):
             def _cb(x):
+                if self._shell is None: return
                 msg = RemoveTrailingNewline(self._shell.Decode(x))
                 if len(msg) == 0: return
                 if msg.startswith(self._MARK):
@@ -152,12 +154,13 @@ class LiveShell:
         if callback in self._err_callbacks: self._err_callbacks.remove(callback)
 
     def ExecAsync(self, cmd: str):
+        if self._shell is None: return
         _hash = GenerateId()
         self._done_stack.add(_hash)
         self._shell.Write(RemoveLeadingIndent(cmd))
         return _hash
 
-    def AwaitDone(self, timeout: int|float|None = 15, _hash: str=None):
+    def AwaitDone(self, timeout: int|float|None = 15, _hash: str|None=None):
         def _await_done(await_timeout, delta):
             start = CurrentTimeMillis()
             while True:
@@ -177,14 +180,16 @@ class LiveShell:
                     _mark = _hash
                 else:
                     _mark = next(iter(self._done_stack))
+                if self._shell is None: return
                 self._shell.Write(f'echo "{self._MARK}.{_mark}"')
             except BrokenPipeError: break
             if _await_done(await_timeout=_d, delta=min(_d/5, 1)): break
             # _d = min(_d*2, 864000) # 10 days
             if timeout is not None and CurrentTimeMillis() - start > timeout*1000: break
         if len(self._done_stack) > 0:
-                _mark = next(iter(self._done_stack))
-                self._shell.Write(f'echo "{self._MARK}.{_mark}"')
+            _mark = next(iter(self._done_stack))
+            if self._shell is None: return
+            self._shell.Write(f'echo "{self._MARK}.{_mark}"')
 
     def Exec(self, cmd: str, timeout: float|None = None, history: bool=False) -> ShellResult:
         _out, _err = [], []
