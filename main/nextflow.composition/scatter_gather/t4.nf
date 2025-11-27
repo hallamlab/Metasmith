@@ -60,8 +60,7 @@ process p1 {
 
 process g1 {
     input:
-        // tuple val(index),path(f),path(b),path(c)
-        tuple val(index),path(f),path(b)
+        tuple val(index),path(f),path(b),path(c)
 	output:
         tuple val(index),path("*g")
     script:
@@ -92,10 +91,6 @@ process b1 {
 }
 
 workflow {
-
-
-
-
     END = Channel.fromList([null]) // cant create channels in groovy
     o = new Orchestrator(END)
     // in("../inputs.a1")
@@ -104,7 +99,7 @@ workflow {
     k = ['b', 'c']
     //   // this spreads the "multiChannelOutput" class into a list
     //   // [*process()]
-    (b, c) = o.post([*s1(o.group([], o.using([a], k), []))], k)
+    (b, c) = o.post([*s1(o.group('a', o.using([a], k)))], k)
       
     // //   // b[1].view()
     // //   // batch(2, group('b', using([b], ['b']))).view()
@@ -116,27 +111,19 @@ workflow {
     // // batch outputs normal
 
     k = ['f']
-    (f) = o.post([*s2(o.group([], o.using([b], k), []))], k)
+    (f) = o.post([*s2(o.group('b', o.using([b], k)))], k)
 
     k = ['h']
-    (h) = o.post([*p1(o.group(
-        [],
-        o.using([f], k),
-        [],
-    ))], k)
+    (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
     // h[1].view()
 
     k = ['g']
-    x = o.group(
-        o.using([h], k),
-        o.using([f], k),
-        o.using([b], k),
-    )
-    // x.view()
+    x = o.group('f', o.using([b, f, c], k))
     (g) = o.post([*g1(x)], k)
-    g[1].view()
+    // g[1].view()
 
-    // x = xross([a, b])
+    // o.xross(o.using([c, f], ['x'])).view()
+    o.unify(o.using([h, f], ['x'])).view()
 
 
     // b = post(b, 'b')

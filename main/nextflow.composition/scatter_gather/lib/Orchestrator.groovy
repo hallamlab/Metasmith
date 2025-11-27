@@ -1,13 +1,13 @@
 class Orchestrator {
     private Map pending_tasks
     private Map index_history
-    private Map children
+    private Map child2parent
     private def one_null
 
     Orchestrator(one_null) {
         this.pending_tasks = [:]
         this.index_history = [:]
-        this.children = [:]
+        this.child2parent = [:]
         this.one_null = one_null
     }
 
@@ -40,12 +40,11 @@ class Orchestrator {
         return new Tuple2(size_valid, expected_size)
     }
 
-    private synchronized def registerChild(String parent, int p, String child, int c) {
-        def children = this.children.get(new Tuple2(parent, p), [])
-        children.add(new Tuple2(child, c)) 
-    }
-
     public def using(streams, targets) {
+        def parents = streams.collect((k, s) -> k)
+        for (t : targets) {
+            this.child2parent[t] = this.child2parent.get(t, [])+parents
+        }
         return streams.collect((stream) -> {
             def (name, _stream) = stream
             return new Tuple2(name, _stream.map((item) -> {
@@ -118,14 +117,35 @@ class Orchestrator {
         }
     }
     
-    public def group(to_group, by, to_split) {
+    private boolean isParent(String parent, String child) {
+        if (parent==child) return false
+        if (!(child in this.child2parent)) return false
+        def parents = this.child2parent[child]
+        if (parent in parents) return true
+        return parents.any(p -> this.isParent(parent, p)) 
+    }
+
+    public def group(by, streams) {
+        def original_order = streams.collect(s -> s[0]).withIndex().collectEntries((item, i) -> [item, i])
+        def by_channel = streams.find(s -> s[0]==by)
+        def (by_name, by_stream) = by_channel
+        def to_split = streams.findAll(stream -> {
+            def (name, _stream) = stream
+            // parents that are guarenteed to be produced before
+            // should be split
+            return this.isParent(name, by_name)
+        })
+        def to_group = streams.findAll(stream -> {
+            def (name, _stream) = stream
+            // group those that are not to be split (and not the by_channel)
+            // group is more relaxed and can also cross, if not part of lineage
+            return name!=by_name && to_split.every(s -> s[0]!=name)
+        })
+
         // using stream $by as in index
         // $to_group are grouped
         // $to_split are duplicatd
         // for each item in $by
-        assert by.size() == 1
-        def (by_name, by_stream) = by[0]
-
         def finished_parents = new SynchronizedHashGroup()
         def parent_channels = to_split.collect(t -> t[0])
         // since $parents are produced before $by
@@ -146,8 +166,8 @@ class Orchestrator {
                     def parent_items = finished_parents.get(parent_name)
                     .collect(pitem -> {
                         def (pi, pv) = pitem
-                        def is_parent = index[parent_name].any(v -> v in pi[parent_name])
-                        return is_parent? new Tuple2(pi, pv) : null
+                        def _is_parent = index[parent_name].any(v -> v in pi[parent_name])
+                        return _is_parent? new Tuple2(pi, pv) : null
                     })
                     .findAll(x -> x!=null)
                     return new Tuple3(group_k, parent_name, parent_items)
@@ -189,7 +209,6 @@ class Orchestrator {
                     })
                 } else {
                     def (index, value) = item
-                    assert by_name in index
                     def group_k = index[by_name]
                     def group = pending_groups.get(group_k, [])
                     group.add(new Tuple2(index, value))
@@ -233,15 +252,52 @@ class Orchestrator {
         // .view(v -> by_name=='f'? "^ $v" : null)
         .map((_result) -> { // we are a channel now, so we can map()
             // each channel is [key, name, group]
+            _result = _result.sort((a, b) -> { // back to original order
+                return original_order[a[1]] <=> original_order[b[1]]
+            })
             def groups = _result.collect(channel -> channel[-1]) 
-            def names = _result.collect(channel -> channel[1])
-            def indexes = groups.collect(channel -> channel.collect(group -> group[0]))
-            def index_of_by = [names, indexes].transpose().findAll((n, i) -> n==by_name).collect((n, i) -> i).flatten()[0]
-
-            // println(" ^ $by_name${children.size()} $names $indexes")
             def common_index = this.combineIndexes(groups.collect(channel -> channel.collect(group -> group[0])).flatten())
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
             return [common_index, *values]
+        })
+    }
+
+    public unify(streams) {
+        return streams
+        .collect((stream) -> { // map
+            def (name, _stream) = stream
+            return _stream.collect(flat: false).map(x -> [x])
+            // .view(v -> "  .${v}")
+
+        })
+        .inject((result, channel) -> { // reduce (to channel)
+            return result
+            .combine(channel)
+            // .view(v -> "  .${v}")
+        })
+        .map((_result) -> {
+            def indexes = _result.collect(channel -> channel.collect(item -> item[0])).flatten()
+            def values = _result.collect(channel -> channel.collect(item -> item[-1]))
+            return [this.combineIndexes(indexes), *values]
+        })
+    }
+
+    public def xross(streams) {
+        return streams
+        .collect((stream) -> { // map
+            def (name, _stream) = stream
+            return _stream
+            .map(item -> [item])
+
+        })
+        .inject((result, channel) -> { // reduce (to channel)
+            return result
+            .combine(channel)
+        })
+        .map((_result) -> {
+            def indexes = _result.collect(item -> item[0])
+            def values = _result.collect(item -> [item[-1]])
+            return [combineIndexes(indexes), *values]
         })
     }
 }
