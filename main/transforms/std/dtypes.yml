@@ -29,9 +29,11 @@ types:
   binary_alignment_map:
     properties:
       format: BAM
+      data: reads to assembly mappings
   binary_alignment_map_csi:
     properties:
       format: CSI
+      data: reads to assembly mappings
   binary_alignment_map_csi_hybrid:
     properties:
       format: CSI
@@ -291,7 +293,12 @@ types:
       format: Sequence file
   self_mappings:
     properties:
-      format: Self-to-self mappings with minimap2
+      format: BAM
+      data: Self-to-self mappings with minimap2
+  self_mappings_csi:
+    properties:
+      format: CSI
+      data: Self-to-self mappings with minimap2
   sequence_alignment_map:
     properties:
       format: SAM
