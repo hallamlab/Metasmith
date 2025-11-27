@@ -379,7 +379,7 @@ class Agent:
 
     def GenerateWorkflow(
         self, 
-        samples: list[DataInstanceLibraryView],
+        samples: list[DataInstanceLibraryView|DataInstanceLibrary],
         resources: list[DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary],
         targets: list[Endpoint],
@@ -389,6 +389,7 @@ class Agent:
         existing_plans: list[WorkflowPlan] = []
         plan_usage: dict[int, list[WorkflowPlan]] = {}
         failures = []
+        samples = [DataInstanceLibraryView(s) if isinstance(s, DataInstanceLibrary) else s for s in samples]
         for sample in samples:
             found = False
             for i, plan in enumerate(existing_plans):
@@ -410,6 +411,8 @@ class Agent:
                 existing_plans.append(gen_result)
         sample_libs = {v._original for v in samples}
         task = WorkflowTask(plans=list(plan_usage.values()), data_libraries=list(sample_libs)+resources,transform_libraries=transforms)
+        if len(failures)>0:
+            Log.Warn(f"{len(failures)} of {len(samples)} failed!")
         return task
 
     def _get_mock_container(self, task: WorkflowTask):
@@ -428,6 +431,7 @@ class Agent:
         VALID_ON_EXIST = {"skip", "error", "clear", "update_all", "update_workflow", "update_data"}
         assert on_exist in VALID_ON_EXIST
         agent_shell = AgentShell(self)
+        task_stage_partial = False
         with agent_shell as sh_remote:
             remote_path = AgentPaths.to_task(task._key, root=self.home.GetPath())
             remote_work_path = remote_path.parent.parent
@@ -438,7 +442,6 @@ class Agent:
                     _msg = f"task already staged at [{remote_work_path}]"
                     if on_exist not in {"error"}:
                         Log.Warn(_msg)
-                    task_stage_partial = False
                     match on_exist:
                         case "error":
                             raise FileExistsError(_msg)
@@ -504,35 +507,36 @@ class Agent:
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_dir = Path(temp_dir)
                 # params
-                if params is not None:
-                    if isinstance(params, dict):
-                        params_local = temp_dir/AgentPaths.NXF_PARAMS
-                        # lets underscores signify nested dictionaries
-                        # so "{process_tries=3}" becomes { process={ tries=3 } } 
-                        def _parse(d: dict):
-                            parsed = {}
-                            for k, v in d.items():
-                                k = str(k)
-                                if isinstance(v, dict):
-                                    v = _parse(v)
-                                if "_" in k:
-                                    stacks = [x for x in k.split("_") if x != ""]
-                                    if len(stacks)>1:
-                                        _d_curr = parsed
-                                        for k in stacks[:-1]:
-                                            _d_curr[k] = {}
-                                            _d_curr = _d_curr[k]
-                                        _d_curr[stacks[-1]] = v
-                                else:
-                                    parsed[k] = v
-                            return parsed
+                if params is None:
+                    params = dict(nothing=None)
+                if isinstance(params, dict):
+                    params_local = temp_dir/AgentPaths.NXF_PARAMS
+                    # lets underscores signify nested dictionaries
+                    # so "{process_tries=3}" becomes { process={ tries=3 } } 
+                    def _parse(d: dict):
+                        parsed = {}
+                        for k, v in d.items():
+                            k = str(k)
+                            if isinstance(v, dict):
+                                v = _parse(v)
+                            if "_" in k:
+                                stacks = [x for x in k.split("_") if x != ""]
+                                if len(stacks)>1:
+                                    _d_curr = parsed
+                                    for k in stacks[:-1]:
+                                        _d_curr[k] = {}
+                                        _d_curr = _d_curr[k]
+                                    _d_curr[stacks[-1]] = v
+                            else:
+                                parsed[k] = v
+                        return parsed
 
-                        with open(params_local, "w") as f:
-                            yaml.safe_dump(_parse(params), f)
-                        params_source = Source.FromLocal(params_local)
-                    elif isinstance(params, Path):
-                        params_source = Source.FromLocal(params)
-                    mover.QueueTransfer(src=params_source, dest=ws_dest/AgentPaths.NXF_PARAMS)
+                    with open(params_local, "w") as f:
+                        yaml.safe_dump(_parse(params), f)
+                    params_source = Source.FromLocal(params_local)
+                elif isinstance(params, Path):
+                    params_source = Source.FromLocal(params)
+                mover.QueueTransfer(src=params_source, dest=ws_dest/AgentPaths.NXF_PARAMS)
                 # resource overrides
                 if resource_overrides is not None:
                     local_config = temp_dir/config_file.name

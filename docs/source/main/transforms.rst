@@ -89,6 +89,11 @@ At this point, the directory structure of :python:`transforms` should look like 
         output_signature = {
             out: "output.txt",
         },
+        resources = Resources(
+            cpus = 4,
+            memory = Size.GB(16),
+            duration = Duration(days=1, hours=12, minutes=30),
+        )
     )
 
 - Data types are provided by the parent library, which is obtained on line 4

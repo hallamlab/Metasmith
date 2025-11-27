@@ -10,15 +10,25 @@ dependencies:
   - numpy=2.2.5
   - rsync=3.4.1
   - pigz=2.8
-  - pandas=2.3.3
-  - openpyxl=3.1.5
-
+  
+  # networking (mostly for relay)
   - python-socketio=5.14.2
   - python-engineio=4.12.3
   - websocket-client=1.9.0
   - requests=2.32.3
   - aiohttp=3.13.1
   
+  # UI via jupyterlab
+  - jupyterlab=4.5.0
+  - jupyterlab-lsp=5.2.0
+  - python-lsp-server=1.13.2
+
+  # common tools (not strictly dependencies)
+  - pandas=2.3.3
+  - openpyxl=3.1.5
+  - plotly=6.5.0
+  - scipy=1.16.3
+
   - pip
   - pip:
       - globus-cli==3.32.0

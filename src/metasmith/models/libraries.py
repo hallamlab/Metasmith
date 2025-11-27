@@ -519,7 +519,9 @@ class DataInstanceLibrary:
         return DataInstanceLibraryView(self, mask)
 
 class DataInstanceLibraryView:
-    def __init__(self, original: DataInstanceLibrary, mask: set[Path]) -> None:
+    def __init__(self, original: DataInstanceLibrary, mask: set[Path]|None=None) -> None:
+        if mask is None:
+            mask = set(original.manifest)
         self._original = original
         self._mask = mask
 
