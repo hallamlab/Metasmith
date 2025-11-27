@@ -20,7 +20,7 @@ dependencies:
   
   # UI via jupyterlab
   - jupyterlab=4.5.0
-  - jupyterlab-lsp=2.3.0
+  - jupyterlab-lsp=5.2.0
   - python-lsp-server=1.13.2
 
   # common tools (not strictly dependencies)
