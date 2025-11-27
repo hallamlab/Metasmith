@@ -3,9 +3,9 @@ from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-orfs    = model.AddRequirement(node=lib.GetType("genomics::aa_sequences"))
-refdb   = model.AddRequirement(node=lib.GetType("genomics::protein_reference_fasta"))
-image   = model.AddRequirement(node=lib.GetType("genomics::oci_image_blast"))
+orfs    = model.AddRequirement(lib.GetType("genomics::aa_sequences"))
+refdb   = model.AddRequirement(lib.GetType("genomics::protein_reference_fasta"))
+image   = model.AddRequirement(lib.GetType("genomics::oci_image_blast"))
 annot   = model.AddProduct(lib.GetType("genomics::orf_annotations"))
 
 def protocol(context: ExecutionContext):

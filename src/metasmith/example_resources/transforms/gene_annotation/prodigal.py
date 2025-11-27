@@ -3,8 +3,8 @@ from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-contigs = model.AddRequirement(node=lib.GetType("genomics::contigs"))
-image   = model.AddRequirement(node=lib.GetType("genomics::oci_image_prodigal"))
+contigs = model.AddRequirement(lib.GetType("genomics::contigs"))
+image   = model.AddRequirement(lib.GetType("genomics::oci_image_prodigal"))
 orfs    = model.AddProduct(lib.GetType("genomics::aa_sequences"))
 
 def protocol(context: ExecutionContext):

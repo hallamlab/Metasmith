@@ -64,7 +64,28 @@ Next we will create an agent to manage workflows on our behalf and deploy it to 
 .. note::
     `The location can be remote. <data.html#logistics>`_
 
-We can now ask the agent to generate a workflow to produce the target data type from given data instances.
+
+The agent is able to generate workflows that connect input and output data ``Endpoints``.
+Let's see what ``Endpoints`` are available.
+
+.. code-block:: python
+    :linenos:
+
+    for k in dtypes.types:
+        print(k)
+
+.. code-block::
+
+    aa_sequences
+    contigs
+    oci_image_blast
+    oci_image_prodigal
+    orf_annotations
+    protein_reference_fasta
+
+We can now ask the agent to generate a workflow to produce a target data type from given data instances.
+Here ``contigs`` is a ``DataInstanceLibrary`` that contains the input files to the workflow.
+`See how to create your own inputs here <data.html#data-instances>`_
 
 .. code-block:: python
     :linenos:
@@ -78,19 +99,17 @@ We can now ask the agent to generate a workflow to produce the target data type 
         ]
     )
 
-This is the workflow that the agent has generated:
+Take a peek of the workflow using the following code.
 
-.. code-block::
+.. code-block:: python
+    :linenos:
 
-    step 1: prodigal
-        uses:   ['fosmid.fna', 'prodigal.oci.uri']
-        makes:  ['orfs.faa']
+    task.plans[0][0].RenderDAG("./dag", format="png")
 
-    step 2: blast
-        uses:   ['orfs.faa', 'swissprot_bcaa.faa', 'blast.oci.uri']
-        makes:  ['annotations.csv']
+.. image:: /_static/example_metagenomics_dag.svg
+   :align: center
 
-
+|
 Asking the agent to execute the workflow in its deployed workspace involves two commands.
 
 .. code-block:: python
@@ -105,3 +124,7 @@ The workflow will execute asynchronously and its progress can be monitored with:
     :linenos:
 
     smith.CheckWorkflow(task)
+
+.. note::
+
+    Learn how to run `available standard analyses here. <../modules/index.html>`_

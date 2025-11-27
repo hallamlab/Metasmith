@@ -3,7 +3,7 @@ ontology:
   name: EDAM
   strict: false
   version: '1.25'
-schema: 0.11.2
+schema: 0.11.3
 types:
   example_input:
     properties:

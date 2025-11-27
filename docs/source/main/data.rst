@@ -208,25 +208,26 @@ Data type libraries must be added as namespaces to an XGDB before data instances
     dtypes = examples.DataTypeLibraries("minimal_genomics")
     xgdb.AddTypeLibrary("genomics", dtypes)
 
-Data instances are moved to the XGDB folder once added. The following information is required when adding new
-data instances:
+The following information is required when adding new data instances:
 
 #. The path to the original file or folder
-#. The desired new path relative to the XGDB once added
 #. The type of the data instance in the form :python:`"namespace::type"`
 
 .. code-block:: python
     :linenos:
 
-    xgdb.Add(
-        items = [
-            ("/path/to/original/file", "contigs.fna", "genomics::contigs"),
-            ("/path/to/original/file", "orfs.faa", "genomics::aa_sequences"),
-        ],
-    )
+    xgdb.AddItem("/path/to/original/contigs.fna", "genomics::contigs")
+    xgdb.AddItem("/path/to/original/orfs.faa", "genomics::aa_sequences")
     xgdb.Save()
 
-This creats the following directory structure:
+Once added, softlinks can by automatically generated for each input file within the XGDB.
+A prefix is added to ensure that file names are unique.
+
+.. code-block:: python
+    :linenos:
+    inputs.Consolidate()
+
+This creates the following directory structure:
 
 .. code-block::
 
@@ -235,8 +236,8 @@ This creats the following directory structure:
     │   ├── index.yml
     │   └── types/
     │       └── genomics.yml
-    ├── contigs.fna
-    └── orfs.faa
+    ├── 1_contigs.fna           (symlink)
+    └── 2_orfs.faa              (symlink)
 
 _metasmith/index.yml:
 
@@ -245,8 +246,8 @@ _metasmith/index.yml:
 
     # ...
     manifest:
-        contigs.fna: genomics::contigs
-        orfs.faa: genomics::aa_sequences
+        /path/to/original/contigs.fna: genomics::contigs
+        /path/to/original/orfs.faa: genomics::aa_sequences
     # ...
 
 _metasmith/types/genomics.yml:
@@ -256,13 +257,13 @@ _metasmith/types/genomics.yml:
 
     # ...
     types:
-        aa_sequences:
-            properties:
-                data: Amino acid sequence
-                format: FASTA
         contigs:
             properties:
                 data: DNA sequence
+                format: FASTA
+        aa_sequences:
+            properties:
+                data: Amino acid sequence
                 format: FASTA
     # ...    
 

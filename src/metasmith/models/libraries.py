@@ -493,6 +493,19 @@ class DataInstanceLibrary:
             lib.Save()
         return lib
 
+    def Consolidate(self):
+        digits = len(f"{len(self.manifest)}")
+        new_paths: dict[Path, Path] = {}
+        for i, p in enumerate(self.manifest):
+            if not p.is_absolute(): continue
+            local_link = Path(f"{i+1:0{digits}}_{p.name}")
+            new_paths[p] = local_link
+            lp = self.location/local_link
+            if lp.exists(): continue
+            lp.symlink_to(p, p.is_dir())
+        # self.manifest = {new_paths.get(k, k):v for k, v in self.manifest.items()}
+        return new_paths
+
     def Actualize(self, extern_dest: Source|None=None, label: str|None=None):
         if self.remote_src is None:
             return self
