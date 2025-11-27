@@ -68,7 +68,7 @@ class CommandLineInterface:
                 body[k] = v
         HandleRequest(args.endpoint, body)
 
-    def notebook(self, raw_args=None):
+    def lab(self, raw_args=None):
         parser = ArgumentParser(
             description=f"Function to start Metasmith in Jupyter Lab"
         )
@@ -81,15 +81,18 @@ class CommandLineInterface:
         parser.add_argument("--ip", required=False, type=ip_type, default="0.0.0.0", help="IP address to serve the notebook")
         parser.add_argument("--port", required=False, type=int, default=8080, help="Port to serve the notebook")
         args = parser.parse_args(raw_args)
-        subprocess.run([
-            "jupyter",
-            "lab",
-            f"--ip={args.ip}",
-            f"--port={args.port}",
-            "--allow-root",
-            "--no-browser",
-            "--LabApp.default_url='/lab/tree/metasmith_starter.ipynb'",
-        ], text=True)
+        try:
+            subprocess.run([
+                "jupyter",
+                "lab",
+                f"--ip={args.ip}",
+                f"--port={args.port}",
+                "--allow-root",
+                "--no-browser",
+                "--LabApp.default_url='/lab/tree/metasmith_starter.ipynb'",
+            ], text=True)
+        except KeyboardInterrupt:
+            pass
 
     def help(self, args=None):
         help = [
