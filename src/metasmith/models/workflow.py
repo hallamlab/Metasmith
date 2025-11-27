@@ -502,7 +502,7 @@ class WorkflowTask:
             ] + [
                 TAB+"output:",
             ] + [
-                TAB+TAB+f'tuple val("$sample"),path("{x.path}")'
+                TAB+TAB+f'tuple val(sample),path("{x.path}")'
                 for x in step.produces
             ] + [
                 TAB+'"""',
@@ -558,10 +558,11 @@ class WorkflowTask:
                         if inst not in used_given: continue
                         k = step.order, dep
                         input_channels[k] = input_channels.get(k, [])+[inst]
-            prepared_given: list[Path] = []
+            prepared_given: set[Path] = set()
             for k, lst in input_channels.items():
                 n = inputs_dir/f"{lst[0].dtype.key}"
-                prepared_given.append(n)
+                if n in prepared_given: continue
+                prepared_given.add(n)
                 with open(n, "w") as f:
                     for x in lst:
                         f.write(f"{x.ResolvePath()}"+"\n")

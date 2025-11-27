@@ -5,7 +5,7 @@ Assembly & Annotation
    :language: python
 
 .. note::
-    This is not a guide for getting started with Metasmith. See `the tutorial <workflow.html>`_ instead.
+    This is not a guide for getting started with Metasmith. See `the tutorial <../main/workflow.html>`_ instead.
 
 
 Usage
@@ -28,7 +28,8 @@ You can use these APIs when generating a workflow. For example:
     :linenos:
 
     smith.GenerateWorkflow(
-        given      = [containers, inputs],
+        samples    = [inputs],
+        resources  = [containers],
         transforms = [transforms],
         targets    = [dtypes["functional_annotation"]]
     )
@@ -60,15 +61,15 @@ Annotation
 Databases
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- :python:`bakta_database`: the BAKTA database, hosted `here<https://zenodo.org/records/14916843>`_
+- :python:`bakta_database`: the BAKTA database, hosted `here <https://zenodo.org/records/14916843>`_
 
   - :python:`bakta_database_light`: the lightweight BAKTA database
   - :python:`bakta_database_full`: the default BAKTA database
 
 - Kofamscan
 
-  - :python:`kofamscan_profile`: the Kofamscan profile database, hosted `here    <https://www.genome.jp/ftp/db/kofam/>`_
-  - :python:`kofamscan_ko_list`: the Kofamscan KO identifier database, hosted `here<https://www.genome.jp/ftp/db/kofam/>`_
+  - :python:`kofamscan_profile`: the Kofamscan profile database, hosted `here <https://www.genome.jp/ftp/db/kofam/>`_
+  - :python:`kofamscan_ko_list`: the Kofamscan KO identifier database, hosted `here <https://www.genome.jp/ftp/db/kofam/>`_
 
 - :python:`cazy_ref`: the CAZy database, hosted `here <https://www.cazy.org/>`_
 

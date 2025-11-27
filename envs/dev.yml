@@ -7,7 +7,6 @@ dependencies:
   - conda-build
   - boa
   - anaconda-client
-  - imagemagick
   - pip
   - pip:
     - twine

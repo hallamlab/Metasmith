@@ -44,11 +44,10 @@ case $1 in
 
     --idev) # with dev tools for packaging
         cd $HERE/envs
-        echo "creating new conda env: $NAME"
+        echo "updating conda env: $2"
         echo "WARNING: you will need to install docker and apptainer individually"
         sleep 2
-        $CONDA env create --no-default-packages -n $NAME -f ./base.yml \
-        && $CONDA env update -n $NAME -f ./dev.yml
+        $CONDA env update -n $2 -f ./dev.yml
     ;;
     --ibase) # base only
         cd $HERE/envs

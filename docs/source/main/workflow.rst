@@ -9,6 +9,8 @@ Tutorial
 .. note::
 
     `Looking for install instructions? <install.html>`_
+    
+    `More workflow examples here. <../modules/index.html>`_
 
 Genomics Annotation
 ============================================================
@@ -68,7 +70,8 @@ We can now ask the agent to generate a workflow to produce the target data type 
     :linenos:
 
     task = smith.GenerateWorkflow(
-        given=[contigs, references],
+        samples=[contigs],
+        resources=[references],
         transforms=[transforms],
         targets=[
             dtypes["orf_annotations"].WithLineage([dtypes["contigs"]]),

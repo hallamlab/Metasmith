@@ -1,6 +1,9 @@
 cache
 *.sif
 __pycache__
+.ipynb_checkpoints
+.virtual_documents
+/*.ipynb
 
 **/build/
 **/dist/
