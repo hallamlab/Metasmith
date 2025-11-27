@@ -118,12 +118,14 @@ workflow {
     // h[1].view()
 
     k = ['g']
-    x = o.group('f', o.using([b, f, c], k))
-    (g) = o.post([*g1(x)], k)
-    // g[1].view()
+    (g) = o.post([*g1(o.group('f', o.using([b, f, c], k)))], k)
+    // x = o.group('f', o.using([b, f, c], k))
+    // (g) = o.post([*o.batch(g1, x, 3)], k)
+    g[1].view()
+
 
     // o.xross(o.using([c, f], ['x'])).view()
-    o.unify(o.using([h, f], ['x'])).view()
+    // o.unify(o.using([h, f], ['x'])).view()
 
 
     // b = post(b, 'b')

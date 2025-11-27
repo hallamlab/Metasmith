@@ -262,7 +262,14 @@ class Orchestrator {
         })
     }
 
-    public unify(streams) {
+    // public def batch(proc, channel, n) {
+    //     // need to thread the structure of the batch through the process...
+    //     // this is for gtdbtk
+    //     return proc(channel.collate(n))
+    //     .debatch
+    // }
+
+    public def unify(streams) {
         return streams
         .collect((stream) -> { // map
             def (name, _stream) = stream
