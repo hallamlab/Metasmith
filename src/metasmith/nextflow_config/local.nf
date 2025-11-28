@@ -3,7 +3,7 @@
 // parameter defaults
 params {
     executor {
-        cpus = 4
+        cpus = 8
     }
 
     process {
@@ -30,6 +30,8 @@ executor {
 process {
     executor = 'local'
     publishDir {
+        pattern = 'nothing'                 // don't publish
+        path = params.output                // this just cant be null
         mode = 'symlink'                    // rellink doesn't seem to work...
     }
 

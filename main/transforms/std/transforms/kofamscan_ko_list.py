@@ -11,7 +11,7 @@ def protocol(context: ExecutionContext):
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-                cd {out_path.container.parents}
+                cd {out_path.container.parent}
                 curl -L -o ko_list.txt.gz https://www.genome.jp/ftp/db/kofam/ko_list.gz
                 gunzip ko_list.txt.gz
         """

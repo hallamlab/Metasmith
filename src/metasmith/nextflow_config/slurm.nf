@@ -64,6 +64,8 @@ process {
     executor = 'slurm'
     poolSize = 64                           // concurrent threads for pool, default is 64.
     publishDir {
+        pattern = 'nothing'                 // don't publish
+        path = params.output                // this just cant be null
         mode = 'symlink'                    // rellink doesn't seem to work...
     }
 
