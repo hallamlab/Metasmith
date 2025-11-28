@@ -6,6 +6,7 @@ import argparse
 import inspect
 import base64
 import json
+import shutil
 
 from ..constants import NAME, VERSION, GIT_URL, ENTRY_POINTS
 from ..logging import Log
@@ -80,6 +81,8 @@ class CommandLineInterface:
                 raise argparse.ArgumentTypeError(f"Invalid IP address: {val}")
         parser.add_argument("--ip", required=False, type=ip_type, default="0.0.0.0", help="IP address to serve the notebook")
         parser.add_argument("--port", required=False, type=int, default=8080, help="Port to serve the notebook")
+        HERE = Path(os.path.realpath(__file__)).parent
+        shutil.copy(HERE/"../example_resources/metasmith_starter.ipynb", "./metasmith_starter.ipynb")
         args = parser.parse_args(raw_args)
         try:
             subprocess.run([

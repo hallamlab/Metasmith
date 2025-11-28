@@ -538,9 +538,10 @@ class Agent:
                     params_source = Source.FromLocal(params)
                 mover.QueueTransfer(src=params_source, dest=ws_dest/AgentPaths.NXF_PARAMS)
                 # resource overrides
+                local_config = temp_dir/config_file.name
+                shutil.copy(config_file, local_config)
+                mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
                 if resource_overrides is not None:
-                    local_config = temp_dir/config_file.name
-                    shutil.copy(config_file, local_config)
                     with open(local_config, "a") as f:
                         TAB="\t"
                         lines = [
@@ -578,7 +579,6 @@ class Agent:
                             "",
                         ]
                         f.write("\n".join(lines))
-                    mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
                 mover.ExecuteTransfers(wait_for_complete=True)
 
             Log.Info(f"triggering execution of [{key}]")
