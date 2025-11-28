@@ -60,32 +60,31 @@ process p1 {
 
 process g1 {
     input:
-        tuple val(index),path(f),path(b),path(c)
+        tuple val(index),path(b),path(f),path(c)
 	output:
         tuple val(index),path("*g")
     script:
         // echo ${a}>>1g
         // echo ${c}>>1g
         """
-        echo ${b}>>1g
-        echo ${f}>>1g
+        touch ${f.name}1g
         """
 }
 
 process b1 {
   input:
-        tuple val(indexes),val(struct),path(files)
+        tuple val(index),path(g)
     output:
-        tuple val(indexes),path("*i")
-        tuple val(indexes),path("*j")
+        tuple val(index),path("*i")
     script:
+        def n = index.size()+1
+        // sleep $n
         """
-        IFS=',' read -ra indexes <<< "$indexes"
-        for i in \$indexes; do
-            echo \$i>>1i
-        done
-        for v in $struct; do
-            echo \$v>>1j
+        IFS=',' read -ra g <<< "$g"
+        echo "$index" >x
+        echo "$g" >>x
+        for arri in {1..$n}; do
+            echo \$arri>>\${arri}i
         done
         """
 }
@@ -118,11 +117,22 @@ workflow {
     // h[1].view()
 
     k = ['g']
-    (g) = o.post([*g1(o.group('f', o.using([b, f, c], k)))], k)
+    gx = o.group('f', o.using([b, f, c], k))
+    // gx.view(v -> "  . $v")
+    (g) = o.post([*g1(gx)], k)
     // x = o.group('f', o.using([b, f, c], k))
     // (g) = o.post([*o.batch(g1, x, 3)], k)
-    g[1].view()
+    // g[1].view()
 
+    k = ['x']
+    // x = o.post([*o.debatch(b1(o.batch(o.group('g', o.using([g], k)), 3)))], k)
+    // x.view()
+    (y) = o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k)
+    // y[1].view()
+
+    // x = o.post([*o.batch(b1, o.group('g', o.using([g], k)), 3)], k)
+    // x.view()
+    // o.batch(b1, o.group('g', o.using([g], k)), 3).view()
 
     // o.xross(o.using([c, f], ['x'])).view()
     // o.unify(o.using([h, f], ['x'])).view()

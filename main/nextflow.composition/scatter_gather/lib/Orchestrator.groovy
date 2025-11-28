@@ -262,12 +262,24 @@ class Orchestrator {
         })
     }
 
-    // public def batch(proc, channel, n) {
-    //     // need to thread the structure of the batch through the process...
-    //     // this is for gtdbtk
-    //     return proc(channel.collate(n))
-    //     .debatch
-    // }
+    public def batch(channel, n) {
+        // return proc(channel)
+        return channel.collate(n).map(group -> {
+            def streams = group.transpose()
+            def indexes = streams[0]
+            def values = streams[1..-1].collect(x -> x.flatten())
+            return [indexes, *values]
+        })
+    }
+
+    public def debatch(channels) {
+        return channels.collect(output -> {
+            output.flatMap(streams -> {
+                def groups = streams.transpose()
+                return groups
+            })
+        })
+    }
 
     public def unify(streams) {
         return streams
