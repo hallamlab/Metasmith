@@ -35,15 +35,6 @@ env {
 //      otherwise:
 // report.enabled = true
 
-workflow {
-    failOnIgnore = false
-    output {
-        enabled = true
-        ignoreErrors = false
-        mode = 'rellink'
-    }
-}
-
 executor {
     queueSize = params.executor.queueSize
     submitRateLimit = params.executor.submitRateLimit
@@ -60,14 +51,18 @@ executor {
     // executor = 'hq'                      // todo: consider https://github.com/It4innovations/hyperqueue
 }
 
+workflow {
+    failOnIgnore = false
+    output {
+        enabled = true
+        ignoreErrors = false
+        mode = 'rellink'
+    }
+}
+
 process {
     executor = 'slurm'
     poolSize = 64                           // concurrent threads for pool, default is 64.
-    publishDir {
-        pattern = 'nothing'                 // don't publish
-        path = params.output                // this just cant be null
-        mode = 'symlink'                    // rellink doesn't seem to work...
-    }
 
     scratch = true                          // use worker node's local hard drive
     // --nodes=1: one compute node per job submission

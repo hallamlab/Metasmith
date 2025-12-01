@@ -1,3 +1,5 @@
+import groovy.json.JsonOutput
+
 class Orchestrator {
     private Map pending_tasks
     private Map index_history
@@ -317,6 +319,17 @@ class Orchestrator {
             def indexes = _result.collect(item -> item[0])
             def values = _result.collect(item -> [item[-1]])
             return [combineIndexes(indexes), *values]
+        })
+    }
+
+    public static String JsonforEcho(map) {
+        return JsonOutput.toJson(map).replace(/"/,"\\\"")    
+    }
+
+    public def publish(stream) {
+        def (name, _stream) = stream
+        return _stream.map((index, item) -> {
+            return new Tuple2(JsonOutput.toJson(index), item)
         })
     }
 }

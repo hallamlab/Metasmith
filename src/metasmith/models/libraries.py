@@ -22,7 +22,7 @@ from .solver import Dependency, Endpoint, Transform
 from .remote import GlobusSource, Logistics, Source, SourceType
 from ..hashing import KeyGenerator
 from ..logging import Log
-from ..constants import VERSION
+from ..constants import VERSION, MODULE_PATH
 
 def yaml_safe_load(p: Path):
     MAX = 5
@@ -602,7 +602,13 @@ class Duration:
         hours, remainder = divmod(delta.seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
         microseconds = delta.microseconds
-        return f"'{days}day{'s' if days!=1 else ''} {hours}hours {minutes}minutes {seconds}seconds'"
+        sd = f"{days}day{'s' if days!=1 else ''}"
+        sh = f"{hours}hours"
+        sm = f"{minutes}minutes"
+        ss = f"{seconds}seconds"
+        s = [x for x, v in zip([sd, sh, sm, ss], [days, hours, minutes, seconds]) if v>0]
+        if len(s) == 0: s = [ss]
+        return f"'{' '.join(s)}'"
 
 @dataclass
 class Resources:
@@ -642,13 +648,19 @@ class Resources:
 # this should function like a view provided by the parent library
 @dataclass
 class TransformInstance:
-    protocol: Callable[[ExecutionContext], ExecutionResult]
+    protocol: Callable[[ExecutionContext], ExecutionResult|list[ExecutionResult]]
     model: Transform
-    output_signature: dict[Dependency, Path|str]
+    output_signature: dict[Dependency, str]
+    group_by: Dependency
     name: str|None = None
     resources: Resources|None = None
+    batch_size: int = 1
+    _key: str = ""
+    _hash: int = -1
 
     def __post_init__(self):
+        assert self.batch_size>0
+        assert self.group_by in self.model.requires
         for k, vt in [
             ("protocol", Callable),
             ("model", Transform),
@@ -657,9 +669,9 @@ class TransformInstance:
             v = getattr(self, k)
             assert isinstance(v, vt), f"[{k}] must be of type [{vt}] but got [{type(v)}]"
         for k in list(self.output_signature.keys()):
-            self.output_signature[k] = Path(self.output_signature[k])
+            self.output_signature[k] = self.output_signature[k]
         for d, p in self.output_signature.items():
-            assert isinstance(d, Dependency), f"output signature value must be of type [Dependency] but got [{type(d)}]"
+            assert isinstance(d, Dependency), f"output signature key must be of type [Dependency] but got [{type(d)}]"
             assert d in self.model.produces, f"output signature value must be added to model"
         for dep in self.model.produces:
             assert dep in self.output_signature, f"model output missing in signature [{dep}]"
@@ -718,8 +730,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         path = Path(path)
         assert not path.is_absolute(), f"path must be relative"
         path = self.location/path
-        HERE = Path(__file__).parent
-        example = HERE/"_example_transform.py"
+        example = MODULE_PATH/"models/_example_transform.py"
         if path.suffix != ".py":
             path = path.parent/(path.name+".py")
         if path.exists():
@@ -776,31 +787,55 @@ class ContextPath:
 
 @dataclass
 class ContextData:
-    path: ContextPath
+    input_group: list[ContextPath]
     endpoint: Endpoint
     type_name: str
+    path: ContextPath = field(default_factory=lambda: ContextPath(Path(), Path(), Path()))
+    
+    def __post_init__(self) -> None:
+        assert len(self.input_group)>0
+        self.path = self.input_group[0]
 
 @dataclass
+class ExecutionResult:
+    success: bool = True
+    manifest: list[dict[Dependency, Path]] = field(default_factory=list)
+
+# work as if batch of 1 item
+# until explicitly batch iterated
+@dataclass
 class ExecutionContext:
-    _inputs: dict[Dependency, ContextData]
-    _outputs: dict[Dependency, ContextData]
+    _inputs: list[dict[Dependency, ContextData]]
+    _get_output_paths: Callable[[Dependency, int, int], ContextPath]
     external_shell: RemoteShell # since metasmith will bootstrap into its own container
     external_cwd: Path
     container_runtime: ContainerRuntime
     params: dict = field(default_factory=dict)
+    _batch_index: int = 0
 
     def GetMeta(self, key: Dependency):
-        if key in self._inputs:
-            return self._inputs[key]
-        if key in self._outputs:
-            return self._outputs[key]
-        raise KeyError(f"key [{key}] not found in [{list(self._inputs.keys())}] or [{list(self._outputs.keys())}]")
+        d = self._inputs[self._batch_index]
+        if key in d:
+            return d[key]
+        raise KeyError(f"key [{key}:{key.key}] not found in [{set(str(x)+':'+x.key for x in d.keys())}]")
 
-    def Get(self, key: Dependency):
+    def Input(self, key: Dependency):
         return self.GetMeta(key).path
+    
+    def InputGroup(self, key: Dependency):
+        return self.GetMeta(key).input_group
 
-    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path, Path]]|None=None, history: bool=True):
-        path = self._inputs[image].path
+    def Output(self, key: Dependency, i: int=0, batch: int=0):
+        return self._get_output_paths(key, i, batch)  
+
+    def AsBatch(self):
+        while self._batch_index < len(self._inputs):
+            yield self
+            self._batch_index += 1
+        self._batch_index = 0
+
+    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, history: bool=True):
+        path = self._inputs[self._batch_index][image].path
         if IsText(path.local):
             with open(path.local) as f:
                 image_path = f.read().strip() # using the uri
@@ -808,7 +843,7 @@ class ExecutionContext:
             image_path = str(path.external)
 
         _binds = set()
-        for _, v in list(self._inputs.items()):
+        for _, v in list(self._inputs[self._batch_index].items()):
             p = v.path
             src = p.external.parent
             dest = p.container.parent
@@ -858,7 +893,3 @@ class ExecutionContext:
         # return self.external_shell.Exec(f"""\
         #     {container_run} bash {container_ws/cmd_file}
         # """, timeout=None, history=history)
-
-@dataclass
-class ExecutionResult:
-    success: bool = False

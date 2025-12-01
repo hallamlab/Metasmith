@@ -10,6 +10,7 @@ import json
 import socket
 import re
 import pandas as pd
+from glob import glob
 
 from .serialization import StdTime
 from .hashing import KeyGenerator
@@ -18,11 +19,11 @@ from .coms.containers import Container, ContainerRuntime
 from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
 from .coms.via_ws import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
-from .models.workflow import WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, METADATA_FILE
+from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, DataInstanceLibraryView
 from .models.libraries import TransformInstance, Resources
 from .models.solver import Endpoint
-from .constants import VERSION
+from .constants import VERSION, MODULE_PATH
 
 class AgentPaths:
     WORK_ROOT = Path("/ws")
@@ -120,7 +121,6 @@ class PausedShell:
         self.shell.paused_err = oe
 
 ResourceOverrides = dict[tuple[int, int]|Literal["all"]|TransformInstance, Resources|dict[int, Resources]]
-_HERE = Path(os.path.realpath(__file__)).parent
 @dataclass
 class Agent:
     home: Source
@@ -273,11 +273,10 @@ class Agent:
             _pull_cmd = container.MakePullCommand()
             do_step(
                 cmd=f"[ -e {container._get_local_path()} ] || {_pull_cmd}",
-                display_cmd=f"{{if not exists}}: {_pull_cmd.replace(' '+str(resolved_agent_home), '')}",
+                display_cmd=f"{{if not exists}}: {_pull_cmd.replace(str(resolved_agent_home), '$AGENT_HOME')}",
                 timeout=None
             )
 
-            HERE='$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )'
             _remote_file(
                 f"""
                 #!/bin/bash
@@ -340,9 +339,12 @@ class Agent:
                         echo "including dev binds"
                         BINDS="$BINDS {dev_mock.MakeBindsParam(defaults=False)}"
                     fi
-                    if [ -e "./{METADATA_FILE}" ]; then
-                        BINDS="$BINDS $(sed -n '2{{p;q}}' ./{METADATA_FILE})"
+                    if [ -e "./{BIND_FILE}" ]; then
+                        echo "including linked data binds"
+                        BINDS="$BINDS $(cat ./{BIND_FILE})"
                     fi
+                    echo "final binds:"
+                    echo "$BINDS"
                     {bootstrap_container.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif", custom_bind_param="$BINDS")} $@
                 }}
                 echo "deploy relay ==================="
@@ -368,12 +370,8 @@ class Agent:
                 executable=True,
             )
 
-            HERE = Path(__file__).parent
-            _remote_file(HERE/"nextflow_config", "lib/nextflow_config")
             _sync_remote_files()
-
             do_step(f"cd {resolved_agent_home} && ./msm api deploy_from_container")
-
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
@@ -389,8 +387,8 @@ class Agent:
         existing_plans: list[WorkflowPlan] = []
         plan_usage: dict[int, list[WorkflowPlan]] = {}
         failures = []
-        samples = [DataInstanceLibraryView(s) if isinstance(s, DataInstanceLibrary) else s for s in samples]
-        for sample in samples:
+        _samples: list[DataInstanceLibraryView] = [DataInstanceLibraryView(s) if isinstance(s, DataInstanceLibrary) else s for s in samples]
+        for sample in _samples:
             found = False
             for i, plan in enumerate(existing_plans):
                 alt_given: list[DataInstance] = [sample.Get(p) for p, n, m in sample.Iterate()]+resource_instances
@@ -409,7 +407,7 @@ class Agent:
                     continue
                 plan_usage[len(existing_plans)] = [gen_result]
                 existing_plans.append(gen_result)
-        sample_libs = {v._original for v in samples}
+        sample_libs = {v._original for v in _samples}
         task = WorkflowTask(plans=list(plan_usage.values()), data_libraries=list(sample_libs)+resources,transform_libraries=transforms)
         if len(failures)>0:
             Log.Warn(f"{len(failures)} of {len(samples)} failed!")
@@ -473,7 +471,7 @@ class Agent:
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths}
             """, timeout=None)
 
-    def GetNxfConfigPresets(self, folder: Path = _HERE/"nextflow_config"):
+    def GetNxfConfigPresets(self, folder: Path = MODULE_PATH/"nextflow_config"):
         if not folder.exists(): raise FileNotFoundError(folder)
         presets: dict[str, Path] = {}
         for f in folder.iterdir():
@@ -490,10 +488,10 @@ class Agent:
             resource_overrides: ResourceOverrides|None=None,
         ):
         if config_file is None: config_file = self.GetNxfConfigPresets()["local"]
-        key = task.GetKey() if isinstance(task, WorkflowTask) else task
+        task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
-            task_path = AgentPaths.to_task(key, root=self.home.GetPath())
+            task_path = AgentPaths.to_task(task_key, root=self.home.GetPath())
             workspace = task_path.parent.parent
             FLAG = "workspace exists"
             with PausedShell(agent_shell): # this syntax is confusing, need to fix
@@ -541,6 +539,11 @@ class Agent:
                 local_config = temp_dir/config_file.name
                 shutil.copy(config_file, local_config)
                 mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
+                # lines = [
+                #     # "",
+                #     # "lineage.enabled = true",
+                #     # "lineage.store.location = 'nxf_lineage'",
+                # ]
                 if resource_overrides is not None:
                     with open(local_config, "a") as f:
                         TAB="\t"
@@ -552,8 +555,8 @@ class Agent:
                             if tr=="all":
                                 key = f".*"
                             elif isinstance(tr, tuple):
-                                b, p = tr
-                                key = f"b{b:02}p{p:02}__.*"
+                                v, p = tr
+                                key = f"v{v:02}p{p:02}__.*"
                             else:
                                 key = f".*__{tr.name}"
 
@@ -566,7 +569,7 @@ class Agent:
                             elif isinstance(res, dict):
                                 for b, r in res.items():
                                     assert isinstance(tr, TransformInstance), f"expected [{tr}] to be a TransformInstance"
-                                    key = f"b{b:02}p.*__{tr.name}"
+                                    key = f"v{b:02}p.*__{tr.name}"
                                     lines += [
                                         TAB+f"withName: '{key}' "+"{",
                                     ]+[TAB+TAB+x for x in r.AsNextflowFormat(is_config=True)]+[
@@ -581,7 +584,7 @@ class Agent:
                         f.write("\n".join(lines))
                 mover.ExecuteTransfers(wait_for_complete=True)
 
-            Log.Info(f"triggering execution of [{key}]")
+            Log.Info(f"triggering execution of [{task_key}]")
             sh_remote.Exec(f"{workspace/AgentPaths.LAUNCHER_FILE}")
 
     def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
@@ -721,7 +724,10 @@ def StageWorkflow(task_key: str, verify: bool):
         external_home=agent.home.GetPath(),
         container_runtime=agent.runtime,
     ))
-    Log.Info(f"[{task._key}] staged to [{workspace_str}]")
+    nxflib_dir = work_dir/"lib"
+    nxflib_dir.mkdir(parents=True, exist_ok=True)
+    orchestrator_lib = MODULE_PATH/"nextflow_config/Orchestrator.groovy"
+    shutil.copy(orchestrator_lib, nxflib_dir/orchestrator_lib.name)
 
     # launcher
     launcher_path = work_dir/AgentPaths.LAUNCHER_FILE
@@ -746,6 +752,7 @@ def StageWorkflow(task_key: str, verify: bool):
             f'nohup ../../msm api run_workflow -a key={task_key} -a log_dir=$LOG_DIR >$LOG_DIR/agent.log 2>&1 &',
         ]))
     os.chmod(launcher_path, 0o754)
+    Log.Info(f"[{task._key}] staged to [{workspace_str}]")
         
 def RunWorkflow(key: str, log_dir: Path):
     task_path = AgentPaths.to_task(key)
@@ -818,6 +825,7 @@ def RunWorkflow(key: str, log_dir: Path):
             export NXF_HOME=./.nextflow
             export NXF_ENABLE_VIRTUAL_THREADS=true
             export NXF_JVM_ARGS="-Xms16g -Xmx64g"
+            export NXF_OFFLINE=TRUE
             nextflow \
                 -config ./{AgentPaths.NXF_CONFIG} \
                 -log {log_dir}/nxf.log \
@@ -828,6 +836,7 @@ def RunWorkflow(key: str, log_dir: Path):
                 -with-dag {nxf_dag} \
                 -with-timeline {log_dir}/nxf_timeline.html \
                 -with-trace {log_dir}/nxf_trace.tsv \
+                -lib ./lib \
                 -ansi-log false \
                 -resume \
                 -work-dir ./nxf_work &
@@ -870,73 +879,62 @@ def RunWorkflow(key: str, log_dir: Path):
     output_path = workspace/results_folder
     extern_output_path = extern_workspace/results_folder
     output = DataInstanceLibrary(output_path)
-    type_libs: dict[str, DataTypeLibrary] = {}
-    for lib in task.transform_libraries:
-        type_libs.update(lib.types)
-    used_type_libs = set()
-    publish_locations: dict[tuple[int, DataInstance], str] = {}
-    sample=0
-    for b, batch in enumerate(task.plans):
-        for plan in batch:
-            sample += 1
-            for t in plan.targets:
-                s = t.producing_step
-                p = f"b{b+1:02}p{s.order:02}_{s.transform.name}/{sample:05}_{t.instance.path}"
-                publish_locations[(sample, t.instance)] = p
-    def _get_target_path(sample: int, target: WorkflowTarget):
-        p = publish_locations[(sample, target.instance)]
-        return output_path/p, extern_output_path/p
-    def _iter_targets():
-        sample=0
-        for g in task.plans:
-            for p in g:
-                sample += 1
-                for t in p.targets:
-                    yield sample, t
-    produced_targets: list[tuple[int, WorkflowTarget]] = []
-    verified = 0
-    for sample, target in _iter_targets():
-        inst = target.instance
-        p, ex_p = _get_target_path(sample, target)
-        if not p.exists():
-            Log.Error(f"workflow failed to produce expected output [{inst.dtype_name}] at [{ex_p}]")
-            continue
-        verified += 1
-        produced_targets.append((sample, target))
-        _namespace, _ = inst.GetDataType()
-        used_type_libs.add(_namespace)
-        for p in target.used_givens:
-            for _namespace, lib in p.parent_lib.types.items():
-                if _namespace in used_type_libs: continue
-                used_type_libs.add(_namespace)
-                type_libs[_namespace] = lib
-    Log.Info(f"samples with verified outputs: [{verified}] of [{sum(len(g) for g in task.plans)}]")
-    for _namespace in used_type_libs:
-        output.AddTypeLibrary(_namespace, type_libs[_namespace])
-
-    def fix_symlink(p: Path):
-        dest = p.resolve()
-        if dest.is_relative_to(workspace): # workspace is a container path (/msm_home/...)
-            rel_dest = dest.relative_to(workspace)
-        rel_home = Path("../../")
-        new_link = (p.parent/f"{p.name}.tmp")
-        new_link.symlink_to(rel_home/rel_dest)
-        new_link.rename(p)
-    parent_map: dict[Path, list[DataInstance]] = {}
-    for sample, target in produced_targets:
-        inst = target.instance
-        p, _ = _get_target_path(sample, target)
-        if p.is_symlink(): fix_symlink(p)
-        rel_p = p.relative_to(output.location)
-        output.AddItem(rel_p, inst.dtype_name)
-        parent_map[rel_p] = target.used_givens
-    for e_path, parents in parent_map.items():
-        output.AddParentsTo(e_path, parents)
+    output_dtypes = DataTypeLibrary()
+    output.AddTypeLibrary(task.GetKey(), output_dtypes)
+    k2inst: dict[str, DataInstance] = {}
+    for variant in task.plans:
+        for plan in variant:
+            for step in plan.steps:
+                for inst in step.dependency_map.values():
+                    k2inst[inst.dtype.key] = inst
+    kv2path: dict[tuple[str, int], tuple[Path, dict]] = {}
+    for in_manifest in (output_path.parent/"inputs").iterdir():
+        k = in_manifest.name
+        with open(in_manifest) as f:
+            for i, l in enumerate(f):
+                i += 1
+                p = Path(l[:-1])
+                kv2path[(k, i)] = p, {}
+    for manifest in glob(str(output_path/"*.manifest.csv")):
+        inst_k = Path(manifest).name.split(".")[-3] # TAB+TAB+f"index {{ path '{wfn}-{out_name}.{inst.dtype.key}.manifest.csv' }}",
+        with open(manifest) as f:
+            for l in f:
+                try:
+                    l = l[1:-2] # "..."\n
+                    lin, path = l.split('","')
+                    lind: dict = json.loads(lin)
+                    kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
+                    kv2path[kv] = Path(path), lind
+                except Exception as e:
+                    Log.Error(e)
+    relavent_k = {k for k, v in kv2path}
+    path2i = {p:i for i, (p, _) in enumerate(kv2path.values())}
+    output_manifest = []
+    output_lineage = []
+    for i, ((ck, cv), (path, lineage)) in enumerate(kv2path.items()):
+        cinst = k2inst[ck]
+        pes = {Endpoint(k2inst[pk].dtype.properties) for pk in lineage if pk in relavent_k}
+        ce = Endpoint(cinst.dtype.properties, parents=pes)
+        dname = f"{i+1:0{len(str(len(kv2path)))}}_{cinst.dtype_name.split('::')[-1]}"
+        output_dtypes.types[dname] = ce
+        output.AddItem(path, f"{task.GetKey()}::{dname}")
+        if path.is_relative_to(output_path): path = path.relative_to(output_path)
+        for pk, pvs in lineage.items():
+            if pk not in relavent_k: continue
+            if pk == ck: continue
+            for pv in pvs:
+                ppath, _ = kv2path[(pk, pv)]
+                pi = path2i[ppath]
+                output_lineage.append((i, pi))
+        output_manifest.append((i, ck, cinst.dtype_name,  dname, path))
     output.Save()
-
+    _df = pd.DataFrame(output_manifest, columns="i, type_key, type_name, name, path".split(", "))
+    _df.to_csv(output_path/"msm_manifest.csv", index=False)
+    _df = pd.DataFrame(output_lineage, columns="child, parent".split(", "))
+    _df.to_csv(output_path/"msm_lineage.csv", index=False)
     tail = output_path.relative_to(AgentPaths.HOME_ROOT)
     external_results_path = extern_home/tail
-    Log.Info(f"results for [{key}] at [{external_results_path}]")
+    Log.Info(f"[{len(output_manifest)}] outputs for [{key}] at [{external_results_path}]")
 
     Log.Info(f"gathering log files")
     nxf_ids = set()
@@ -963,10 +961,10 @@ def RunWorkflow(key: str, log_dir: Path):
         try:
             with open(log_path) as f:
                 first_line = f.readline()
-                if not re.match(r"batch\s?\d+,?\s?step\s?\d+,?\s?sample\s?\d+", first_line): continue
-                batch, step, sample = [int(x) for x in re.findall(r"\d+", first_line)]
-                transform = task.plans[batch-1][0].steps[step-1].transform
-            dest = PROCESS_DEST/f"b{batch:02}p{step:02}__{transform.name}({sample})_{nxf_id.replace('/', '-')}.log"
+                if not re.match(r"variant\s?\d+,?\s?step\s?\d+", first_line): continue
+                variant, step = [int(x) for x in re.findall(r"\d+", first_line)][:2]
+                transform = task.plans[variant-1][0].steps[step-1].transform
+            dest = PROCESS_DEST/f"v{variant:02}p{step:02}__{transform.name}_{nxf_id.replace('/', '-')}.log"
             src = log_path
             dest.symlink_to(f"../../../{src.relative_to(workspace)}")
         except:

@@ -7,7 +7,7 @@ dep     = model.AddRequirement(lib.GetType("transforms::example_input"))
 out     = model.AddProduct(lib.GetType("transforms::example_output"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Get(out)
+    out_path = context.Input(out)
     context.external_shell.Exec(f"touch {out_path.external}")
     return ExecutionResult(success=out_path.local.exists())
 

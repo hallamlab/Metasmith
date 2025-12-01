@@ -89,7 +89,9 @@ process b1 {
         """
 }
 
-workflow {
+workflow t4 {
+    main:
+
     END = Channel.fromList([null]) // cant create channels in groovy
     o = new Orchestrator(END)
     // in("../inputs.a1")
@@ -158,4 +160,8 @@ workflow {
     // g.view()
     // cross([a, b]).view(v -> ">>> final: $v")
     // cross([a, b]).view(v -> ">>> final: ${strip_paths(v)}")
+
+    emit:
+    g = g[1]
+    y = y[1]
 }

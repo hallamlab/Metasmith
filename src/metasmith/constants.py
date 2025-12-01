@@ -1,6 +1,8 @@
+import os
 from pathlib import Path
 
-NAME = Path(__file__).parent.name.lower()
+MODULE_PATH = Path(os.path.realpath(__file__)).parent
+NAME = MODULE_PATH.name.lower()
 USER = "hallamlab" # github id
 GIT_URL = f"https://github.com/{USER}/{NAME}"
 SHORT_SUMMARY = "Automated generation of workflows for Nextflow executed using agents"
@@ -11,5 +13,5 @@ ENTRY_POINTS = [
     f"msm={_cli_call}",
 ]
 
-with open(Path(__file__).parent/"version.txt") as f:
+with open(MODULE_PATH/"version.txt") as f:
     VERSION = f.read().strip()

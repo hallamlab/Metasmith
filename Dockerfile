@@ -40,14 +40,14 @@ COPY ./main/relay_agent/dist/msm_relay /opt/msm_relay
 RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin /app
 
 EXPOSE 8080
-WORKDIR /workspace
-COPY ./metasmith_starter.ipynb /workspace/metasmith_starter.ipynb
-RUN touch /workspace/empty
-RUN pip install jupyterlab jupyterlab-lsp python-lsp-server[all]
+# WORKDIR /workspace
+# COPY ./metasmith_starter.ipynb /workspace/metasmith_starter.ipynb
+# RUN touch /workspace/empty
+# RUN pip install jupyterlab jupyterlab-lsp python-lsp-server[all]
 
-CMD ["bash","-lc","jupyter lab \
-    --ip=127.0.0.1 \
-    --port=8080 \
-    --allow-root \
-    --no-browser \
-    --LabApp.default_url='/lab/tree/metasmith_starter.ipynb'"]
+# CMD ["bash","-lc","jupyter lab \
+#     --ip=127.0.0.1 \
+#     --port=8080 \
+#     --allow-root \
+#     --no-browser \
+#     --LabApp.default_url='/lab/tree/metasmith_starter.ipynb'"]

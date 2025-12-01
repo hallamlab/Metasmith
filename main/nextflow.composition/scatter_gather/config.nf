@@ -9,6 +9,12 @@ env {
     XDG_CACHE_HOME = './temp/xdg_home'
 }
 
+workflow {
+    output {
+        mode='rellink'
+    }
+}
+
 process {
     // errorStrategy = 'retry'
     errorStrategy = { task.attempt<2 ? 'retry' : 'ignore' }

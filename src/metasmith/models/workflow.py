@@ -18,6 +18,7 @@ from ..hashing import KeyGenerator
 from ..logging import Log
 
 METADATA_FILE = ".command.metadata"
+BIND_FILE = ".command.binds"
 
 @dataclass
 class WorkflowStep:
@@ -442,10 +443,12 @@ class WorkflowTask:
             TAB+f"fi",
             "}",
             f"'''",
-            f"index = Channel.fromList(1..{total_samples})",
-            "def In(f) {",
-            TAB+"data = Channel.fromPath(f).splitCsv(header: false).map({row -> file(row[0])})",
-            TAB+"return index.merge(data)",
+            "",
+            "def in(f) {",
+            TAB+"return Channel.fromPath(f).splitCsv(header: false).map(row -> {",
+            TAB+TAB+"def i = [:] // this will be filld by post()",
+            TAB+TAB+"return tuple(i, file(row[0]))",
+            TAB+"})",
             "}",
             "",
             "",
@@ -456,14 +459,17 @@ class WorkflowTask:
         ]+bootstrap)
         MAX_FILE_SIZE = int(2**16 * 0.95) # nextflow is 65536
 
-        def prepare_step(batch: int, step: WorkflowStep, target_instances: set[DataInstance]):
-            k = f"b{batch:02}p{step.order:02}"
-            name = f"{k}__{step.transform.name}"
-            src = [f"process {name}"+" {"]
-            to_pubish = [x for x in step.produces if x in target_instances]
-            for x in to_pubish:
-                src.append(TAB+f'publishDir "$params.output/{k}_{step.transform.name}", pattern: "{x.path}"'+', saveAs: {f -> String.format("%05d_%s", sample, f)}')
+        def prepare_step(variant: int, step: WorkflowStep, target_instances: set[DataInstance]):
+            k = f"v{variant:02}p{step.order:02}"
+            process_name = f"{k}__{step.transform.name}"
+            src = [f"process {process_name}"+" {"]
+            # to_pubish = [x for x in step.produces if x in target_instances]
+            # def add_prefix(p: Path):
+            #     return p.parent/f"*.msm_out.{p.name}"
             src += [
+                # f'publishDir "$params.output/{k}_{step.transform.name}", pattern: "{add_prefix(x.path)}"'
+                # for x in to_pubish
+            ] + [
                 TAB+f"tag '{step.transform.GetKey()}'",
             ]
             
@@ -494,34 +500,40 @@ class WorkflowTask:
             memory_is_strict = res is not None and res.memory is not None and res.memory.strict
             if duration_is_strict and memory_is_strict:
                 src += [
-                    TAB+"errorStrategy 'ignore'" # no point in retrying if not changing resource requests
+                    "errorStrategy 'ignore'" # no point in retrying if not changing resource requests
                 ]
             src += [
-                TAB+"input:",
-                TAB+TAB+f'tuple '+','.join(['val(sample)']+[f'path(_{i+1:02})' for i, x in enumerate(step.uses)])
+                "input:",
+                TAB+f'tuple '+','.join(['val(index)']+[f'path(_{i+1:02})' for i, x in enumerate(step.uses)])
             ] + [
-                TAB+"output:",
+                "output:",
             ] + [
-                TAB+TAB+f'tuple val(sample),path("{x.path}")'
+                # TAB+f'tuple val(index),path("{add_prefix(x.path)}")'
+                TAB+f'tuple val(index),path("*.{x.path}")'
                 for x in step.produces
             ] + [
-                TAB+'"""',
-                TAB+f'{context.bootstrap_var}',
-                TAB+f'echo "$task.cpus/$task.memory/$task.attempt" >{METADATA_FILE}',
+                "script:",
+                '"""',
+                f'echo "variant {variant}, step {step.order}, sample $index"',    # this is used to extract logs in agent.RunWorkflow()
+                f'echo "{step.transform.name}"',
+                f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
+                f'echo "lin ${{Orchestrator.JsonforEcho(index)}}">>{METADATA_FILE}',
             ] + [
-                TAB+f'{_make_bind_var(i, is_assignment=True)}="{p}"'
+                f'echo "i{i+1:02} $_{i+1:02}">>{METADATA_FILE}'
+                for i, x in enumerate(step.uses)
+            ] + [
+                f'{_make_bind_var(i, is_assignment=True)}="{p}"'
                 for i, p in enumerate(external_binds)
             ] + [
-                TAB+f'echo "{external_binds_param}" >>{METADATA_FILE}',
-                TAB+f'echo "batch {batch}, step {step.order}, sample $sample"',    # this is used to extract logs in agent.RunWorkflow()
-                TAB+f'echo "{step.transform.name}"',
-                TAB+f'bootstrap {context.external_work_var} "{batch}/{step.order}"',
-                TAB+f'[ -e .command.success ] && exit 0 || exit 1', # in case slurm silently kills proc from oom/timeout
-                TAB+'"""',
+                f'echo "{external_binds_param}" >{BIND_FILE}',
+                f'{context.bootstrap_var}',
+                f'bootstrap {context.external_work_var} "{variant}/{step.order}"',
+                f'[ -e .command.success ] && exit 0 || exit 1', # in case slurm silently kills proc from oom/timeout
+                '"""',
                 "}",
                 ""
             ]
-            return name, "\n".join(src)
+            return process_name, "\n".join(src)
 
         def ensure_local_folder(n):
             d = context.work_dir/n
@@ -531,24 +543,48 @@ class WorkflowTask:
         inputs_dir = ensure_local_folder("inputs")
         plans_dir = ensure_local_folder("plans")
         wf_names = []
+        published_channels: dict[str, list[tuple[str, DataInstance]]] = {}
         for i, plan_set in enumerate(self.plans):
+            # goal:
+            # k = ['h']
+            # (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
+            # or this for when batching
+            # (y) = o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k)
+            wf_name = f"v{i+1:02}"
             archtype = plan_set[0]
             targets = {x.instance for x in archtype.targets}
             src_process = []
-            src_wf = []
+            wf_main = []
+            wf_emit = []
             for step in archtype.steps:
-                name, src = prepare_step(i+1, step, targets)
+                process_name, src = prepare_step(i+1, step, targets)
                 src_process.append(src)
-                produced = ",".join(f"_{x.dtype.key}" for x in step.produces)
-                if len(step.produces)>1:
-                    produced = f"({produced})"
+                produced = ", ".join(f"_{x.dtype.key}" for x in step.produces)
                 if len(step.uses)>0:
-                    used_first = f"_{step.uses[0].dtype.key}"
-                    used_remain = ").join(".join(f"_{x.dtype.key}" for x in step.uses[1:])
-                    used = f"{used_first}.join({used_remain})" if len(step.uses)>1 else used_first
+                    gb = step.dependency_map[step.transform.group_by].dtype.key
+                    using_symbols = ", ".join(f"_{x.dtype.key}" for x in step.uses)
+                    used = f"o.group('{gb}', o.using([{using_symbols}], k))"
                 else:
                     used = ""
-                src_wf.append(produced+f" = {name}({used})")
+                produced_k = [f"'{x.dtype.key}'" for x in step.produces]
+                produced_k = ", ".join(produced_k)
+                wf_main.append(f"k = [{produced_k}]")
+                if step.transform.batch_size==1:
+                    wf_main.append(
+                        f"({produced}) = o.post([*{process_name}({used})], k)"
+                    )
+                else:
+                    wf_main.append(
+                        f"({produced}) = o.post(o.debatch([*{process_name}(o.batch({used}, {step.transform.batch_size}))]), k)"
+                    )
+                to_pubish = [x for x in step.produces if x in targets]
+                for inst in to_pubish:
+                    k = f"_{inst.dtype.key}"
+                    wf_emit += [
+                        f"{k} = o.publish({k})"
+                    ]
+                    published_channels[wf_name] = published_channels.get(wf_name, [])+[(k, inst)]
+
             input_channels: dict[tuple[int, Dependency], list[DataInstance]] = {}
             for plan in plan_set:
                 _given = set(plan.given)
@@ -564,18 +600,28 @@ class WorkflowTask:
                 if n in prepared_given: continue
                 prepared_given.add(n)
                 with open(n, "w") as f:
-                    for x in lst:
+                    unique_lst = set(lst)
+                    if len(unique_lst)==1:
+                        to_write = [lst[0]]
+                    else:
+                        to_write = lst
+                    for x in to_write:
                         f.write(f"{x.ResolvePath()}"+"\n")
             
-            wf_name = f"b{i+1:02}"
             content = [
                 f"workflow {wf_name}"+" {",
+                "main:",
+                f'o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy',
             ] + [
-                TAB+f'_{p.name} = In("{p.relative_to(context.work_dir)}")'
+                f'(_{p.name}) = o.post([in("{p.relative_to(context.work_dir)}")], ["{p.name}"])'
                 for p in prepared_given
             ] + [
-                TAB+line
-                for line in src_wf
+                line for line in wf_main
+            ] + [
+                "",
+                "emit:",
+            ] + [
+                line for line in wf_emit
             ] + [
                 "}",
             ]
@@ -585,14 +631,37 @@ class WorkflowTask:
 
         with open(context.work_dir/context.workflow_file, "w") as f:
             lib_dir = plans_dir.relative_to(context.work_dir)
+            publish_src = []
+            output_src = []
+            for wfn, ch, inst in [(wfn, ch, inst) for wfn, channels in published_channels.items() for (ch, inst) in channels]:
+                ch_name = f"{wfn}{ch}"
+                publish_src.append(f"{ch_name} = {wfn}.{ch}")
+                out_name = inst.dtype_name.replace(' ', '_').replace("::", "-")
+                output_src += [
+                    TAB+f"{ch_name}"+"{",
+                    TAB+TAB+f"path '{wfn}-{out_name}'",
+                    TAB+TAB+f"index {{ path '{wfn}-{out_name}.{inst.dtype.key}.manifest.csv' }}",
+                    TAB+"}",
+                ]
             src = [
                 "include { "+wf_name+" } from '"+f"./{lib_dir}/{wf_name}'"
                 for wf_name in wf_names
             ] + [
-                f"workflow "+"{",
+                "workflow {",
+                "main:"
             ] + [
-                f"{wf_name}()"
+                f"{wf_name} = {wf_name}()"
                 for wf_name in wf_names
+            ] + [
+                "publish:",
+            ] + [
+                line for line in publish_src
+            ] + [
+                "}",
+                "",
+                "output {",
+            ] + [
+                line for line in output_src
             ] + [
                 "}",
             ]

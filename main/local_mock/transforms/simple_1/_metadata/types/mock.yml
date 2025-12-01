@@ -3,15 +3,23 @@ ontology:
   name: EDAM
   strict: false
   version: '1.25'
-schema: 0.11.3
+schema: 0.11.4
 types:
   a:
     properties:
     - a
     - test
+  b:
+    properties:
+    - b
+    - test
   gathered:
     properties:
     - gathered
+    - test
+  scattered:
+    properties:
+    - scattered
     - test
   target:
     properties:
@@ -21,7 +29,3 @@ types:
     properties:
     - test
     - x
-  x_split:
-    properties:
-    - test
-    - x_split

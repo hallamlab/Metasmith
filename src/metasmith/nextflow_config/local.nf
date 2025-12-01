@@ -27,13 +27,17 @@ executor {
     cpus = params.executor.cpus
 }
 
+workflow {
+    failOnIgnore = false
+    output {
+        enabled = true
+        ignoreErrors = false
+        mode = 'rellink'
+    }
+}
+
 process {
     executor = 'local'
-    publishDir {
-        pattern = 'nothing'                 // don't publish
-        path = params.output                // this just cant be null
-        mode = 'symlink'                    // rellink doesn't seem to work...
-    }
 
     errorStrategy = {                       // retry up to limit, then ignore, nextflow defaults to crashing
         task.attempt<params.process.tries? 'retry' : 'ignore'

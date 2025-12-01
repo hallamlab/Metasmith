@@ -3,13 +3,15 @@ import time
 import shutil
 import traceback
 import re
+from glob import glob
+import json
 
 from .logging import Log
 from .agents import Agent, AgentPaths
 from .models.libraries import ContextPath, ContextData, ExecutionContext, ExecutionResult
 from .models.libraries import DataInstance, DataTypeLibrary, TransformInstance, TransformInstanceLibrary
 from .models.solver import Dependency, Endpoint
-from .models.workflow import WorkflowTask
+from .models.workflow import WorkflowTask, METADATA_FILE
 # from .coms.via_ws import RemoteShell
 from .coms.via_file_watcher import RemoteShell
 
@@ -33,7 +35,7 @@ def DeployFromContainer(workspace: Path):
 
     Log.Info("deployment complete")
 
-def StageAndRunTransform(workspace: Path, batch_index: int, step_index: int):
+def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
     server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS)
     MAX_WAIT = 3
     for i in range(MAX_WAIT):
@@ -77,63 +79,21 @@ def StageAndRunTransform(workspace: Path, batch_index: int, step_index: int):
         Log.Info(f"loading task from [{task_path}]")
         task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
 
-        batch = task.plans[batch_index-1]       # is 1 indexed for log legibility
-        archetype = batch[0]                    # all plans in batch have identical steps; take first as archetype
+        variant = task.plans[variant_index-1]       # is 1 indexed for log legibility
+        archetype = variant[0]                    # all plans in variant have identical steps; take first as archetype
         step = archetype.steps[step_index-1]    # also 1 indexed for log legibility
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
-        Log.Info(f"batch [{batch_index}] step [{step_index}:{step_name}]")
-
-        def _status(p: ContextPath):
-            return "✓" if p.local.exists() else "X"
-        container_binds = {}
-        def _parse_meta(inst: DataInstance, container_override=None):
-            p = inst.path
-            if p.is_symlink():
-                external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
-                tail = external.relative_to(agent_home)
-                local = AgentPaths.HOME_ROOT/tail
-            else:
-                local = p
-                external = external_cwd/p
-            if container_override:
-                container = container_override
-            else:
-                k = external.parent
-                if k not in container_binds:
-                    container_binds[k] = Path(f"/msm_data/{k.name}")
-                container = container_binds[k]/p
-
-            return ContextData(
-                path=ContextPath(local=local, external=external, container=container),
-                endpoint=inst.dtype,
-                type_name=inst.dtype_name,
-            )
-        inputs:dict[Dependency, ContextData] = {}
-        Log.Info("uses:")
-        data2dep = {i:d for d, i in step.dependency_map.items()}
-        missing_input=False
-        for inst in step.uses:
-            meta = _parse_meta(inst)
-            p = meta.path
-            missing_input = missing_input or not p.local.exists()
-            Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
-            inputs[data2dep[inst]] = meta
-        if missing_input:
-            Log.Error("detected missing inputs, stopping")
-            return ExecutionResult(False)
-
-        # Log.Info("produces:")
-        outputs: dict[Dependency, ContextData] = {}
-        for inst in step.produces:
-            meta = _parse_meta(inst, container_override=Path("/ws")/inst.path)
-            p = meta.path
-            outputs[data2dep[inst]] = meta
-            # Log.Info(_shorten_home(f"    {space} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
+        Log.Info(f"variant [{variant_index}] step [{step_index}:{step_name}]")
 
         params = {}
+        raw_meta = {}
         try:
-            with open(".command.metadata") as f:
-                _vals = f.readline().strip().split("/")
+            with open(METADATA_FILE) as f:
+                for l in f:
+                    if l.endswith("\n"): l = l[:-1]
+                    k = l[:len("###")]
+                    raw_meta[k] = l[len("### "):]
+                _vals = raw_meta["res"].strip().split("/")
                 for i, k in enumerate(["cpus", "memory", "attempt"]): # match nextflow task.{}
                     if i>=len(_vals): break
                     v = _vals[i]
@@ -145,13 +105,95 @@ def StageAndRunTransform(workspace: Path, batch_index: int, step_index: int):
                     except ValueError:
                         continue
                     params[k] = v
-                _ = f.readline() # binds
         except Exception as e:
-            Log.Error(f"failed to read .command.metadata: {e}")
+            Log.Error(f"failed to read [{METADATA_FILE}]: {e}")
+        lineages = raw_meta["lin"]
+        # (?=...) is look ahead
+        # \g<0> is the matching group
+        # lineage = re.sub(r"\w+(?=:)", r'"\g<0>"', lineage)
+        lineages = json.loads(lineages)
+        if not isinstance(lineages, list): lineages = [lineages]
+        group_by_inst = step.dependency_map[step.transform.group_by]
+        output_indexes = ["_".join(f"{x}" for x in lin[group_by_inst.dtype.key]) for lin in lineages]
+
+        input2files: dict[DataInstance, list[Path]] = {}
+        for i, inst in enumerate(step.uses):
+            k = f"i{i+1:02}"
+            if k not in raw_meta: continue
+            # The lookbehind `(?<!...)` asserts that the pattern inside
+            # does not precede the current position.
+            file_group: list[str] = re.split(r"(?<!\\)\s", raw_meta[k])
+            input2files[inst] = [Path(re.sub(r"\\\s", " ", f)) for f in file_group]
+
+        def _status(p: ContextPath):
+            return "✓" if p.local.exists() else "X"
+        container_binds = {}
+        def _parse_path(p: Path, container_override=None):
+            if p.is_symlink():
+                external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
+                if external.is_relative_to(agent_home):
+                    tail = external.relative_to(agent_home)
+                    local = AgentPaths.HOME_ROOT/tail
+                else:
+                    local = p
+            else:
+                local = p
+                external = external_cwd/p
+            if container_override:
+                container = container_override
+            else:
+                k = external.parent
+                if k not in container_binds:
+                    container_binds[k] = Path(f"/msm_data/{k.name}")
+                container = container_binds[k]/p
+            return ContextPath(local=local, external=external, container=container)
+        # def _parse_meta(inst: DataInstance, container_override=None):
+        #     default = Path("<not in metadata file>")
+        #     input_group = input2file.get(inst, [default])
+        #     paths = []
+        #     for p in input_group:
+        #         paths.append(_parse_path(p, container_override))
+        #     return ContextData(
+        #         input_group=paths,
+        #         endpoint=inst.dtype,
+        #         type_name=inst.dtype_name,
+        #     )
+        inputs: list[dict[Dependency, ContextData]] = []
+        Log.Info("uses:")
+        data2dep = {inst:dep for dep, inst in step.dependency_map.items()}
+        missing_input=False
+        for batch, batch_lineage in enumerate(lineages):
+            if len(lineages)>1:
+                Log.Info(f"  > batch [{batch+1}]:")
+            g: dict[Dependency, ContextData] = {}
+            for inst in step.uses:
+                Log.Info(f"    [{inst.dtype_name}/{inst.dtype.key}] at:")
+                remaining_files = input2files[inst]
+                group_size = len(batch_lineage[inst.dtype.key])
+                input_group = [_parse_path(p) for p in remaining_files[:group_size]]
+                input2files[inst] = remaining_files[group_size:]
+                for p in input_group:
+                    missing_input = missing_input or not p.local.exists()
+                    Log.Info(_shorten_home(f"        {_status(p)} [{p.local}]"))
+                g[data2dep[inst]] = ContextData(
+                    input_group=input_group,
+                    endpoint=inst.dtype,
+                    type_name=inst.dtype_name,
+                )
+            inputs.append(g)
+        if missing_input:
+            Log.Error("detected missing inputs, stopping")
+            return ExecutionResult(False)
+
+        output_signature = step.transform.output_signature
+        def _get_output_paths(key: Dependency, i: int, batch: int):
+            pattern = output_signature[key]
+            dest = Path(f"{output_indexes[batch]}-{i+1}.{pattern}")
+            return _parse_path(dest, container_override=Path("/ws")/dest)
 
         context = ExecutionContext(
             _inputs=inputs,
-            _outputs=outputs,
+            _get_output_paths=_get_output_paths,
             external_shell=shell,
             external_cwd=external_cwd,
             container_runtime=agent.runtime,
@@ -161,26 +203,44 @@ def StageAndRunTransform(workspace: Path, batch_index: int, step_index: int):
         BREAK_LENGTH = 60
         Log.Info(">"*BREAK_LENGTH)
         
-        def on_exit(sucess:bool, message: str|None=None):
+        def on_exit(result: ExecutionResult, message: str|None=None):
             Log.Info("<"*BREAK_LENGTH)
             Log.Info(f"<<< [{step_name}] {message}")
-            Log.Info(f"expected outputs:")
-            for inst in step.produces:
-                meta = _parse_meta(inst, container_override=Path("/ws")/inst.path)
-                p = meta.path
-                Log.Info(_shorten_home(f"    {_status(p)} [{inst.dtype_name}/{inst.dtype.key}] at [{p.external}]"))
-            if not sucess:
-                for k, v in outputs.items():
-                    p = v.path.local
-                    if not p.exists(): continue
-                    p.rename(p.with_suffix(f"{p.suffix}.failed")) # ensure that nextflow sees failure, since expected outputs gone
+            if len(result.manifest)==0:
+                Log.Warn(f"no registered outputs")
+            output_signature = step.transform.output_signature
+            renamed = {}
+            for i, entry in enumerate(result.manifest):
+                Log.Info(f"output [{i+1}] of [{len(result.manifest)}]")
+                to_rename = []
+                ok = True
+                for dep, path in output_signature.items():
+                    inst = step.dependency_map[dep]
+                    dep_desc = f"{inst.dtype_name}:{inst.dtype.key}"
+                    if dep not in entry:
+                        Log.Warn(f"    X [{dep_desc}]")
+                        ok = False
+                        continue
+                    p = entry[dep]
+                    if not p.exists():
+                        Log.Warn(f"    X [{dep_desc}] from [{_shorten_home(str(p))}]")
+                        ok = False
+                        continue
+                    new_name = Path(f"{output_indexes[0]}-{i+1}.{path}") # todo
+                    to_rename.append((p, new_name))
+                    Log.Info(f"    ✓ [{dep_desc}] at [{new_name}] from [{_shorten_home(str(p))}]")
+                if not ok: continue
+                for p, new in to_rename:
+                    renamed[p] = new
+                    p.rename(new)
         try:
             result = step.transform.protocol(context)
-            on_exit(result.success, f"reports {'success' if result.success else 'failure'}")
-            if result.success: Path("./.command.success").touch()
+            if isinstance(result, list): result = result[0] # todo
+            on_exit(result, f"reports {'success' if result.success else 'failure'}")
+            if result.success: Path(".command.success").touch()
             return ExecutionResult(result.success)
         except Exception as e:
-            on_exit(False, "failed with error")
+            on_exit(ExecutionResult(False), "failed with error")
             Log.Error(f"error while executing transform [{step_name}]")
             Log.Error(str(e))
             with open("traceback.temp", "w") as f:
