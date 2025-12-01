@@ -34,6 +34,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=assembly,
     model = model,
     output_signature = {
         cds: "cds.faa",

@@ -26,6 +26,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=image,
     model = model,
     output_signature = {
         out_ref: "busco_ref.fasta",

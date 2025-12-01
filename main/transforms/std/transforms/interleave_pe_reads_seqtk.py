@@ -23,6 +23,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=forward,
     model = model,
     output_signature = {
         out: "interleaved_reads.fq.gz",

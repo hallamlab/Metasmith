@@ -26,6 +26,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=accession,
     model = model,
     output_signature = {
         out: "dump.fastq",

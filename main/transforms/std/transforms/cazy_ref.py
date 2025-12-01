@@ -18,6 +18,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=image,
     model = model,
     output_signature = {
         out: "cazy_ref.fasta",

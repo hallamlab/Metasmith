@@ -83,6 +83,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=reads,
     model = model,
     output_signature = {
         # out_sam:      "alignments.sam",

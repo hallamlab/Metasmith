@@ -36,6 +36,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=cds,
     model = model,
     output_signature = {
         out: "kofamscan_out.tsv",

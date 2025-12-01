@@ -88,6 +88,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=assembly,
     model = model,
     output_signature = {
         out_contig: "cov_per_contig.tsv",

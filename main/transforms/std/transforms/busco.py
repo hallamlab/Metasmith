@@ -52,6 +52,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=cds,
     model = model,
     output_signature = {
         raw_out:  "busco_raw.tsv",

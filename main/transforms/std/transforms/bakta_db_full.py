@@ -21,6 +21,7 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(
     protocol = protocol,
+    group_by=image,
     model = model,
     output_signature = {
         out: "bakta_db/",
