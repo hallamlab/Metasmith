@@ -659,8 +659,8 @@ class TransformInstance:
     _hash: int = -1
 
     def __post_init__(self):
-        assert self.batch_size>0
-        assert self.group_by in self.model.requires
+        assert self.batch_size>0, self.model
+        assert self.group_by in self.model.requires, self.model
         for k, vt in [
             ("protocol", Callable),
             ("model", Transform),
