@@ -13,11 +13,11 @@ raw_out         = model.AddProduct(lib.GetType("std::cazy_raw"))
 out             = model.AddProduct(lib.GetType("std::cazy_annotations"))
 
 def protocol(context: ExecutionContext):
-    cds_path        = context.Get(cds)
-    reference_path  = context.Get(reference)
-    raw_out_path    = context.Get(raw_out)
-    out_path        = context.Get(out)
-    script_path     = context.Get(script)
+    cds_path        = context.Input(cds)
+    reference_path  = context.Input(reference)
+    raw_out_path    = context.Input(raw_out)
+    out_path        = context.Input(out)
+    script_path     = context.Input(script)
 
     cpus_string = ""
     cpus = context.params.get("cpus")

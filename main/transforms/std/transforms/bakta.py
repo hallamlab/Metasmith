@@ -11,11 +11,11 @@ image    = model.AddRequirement(lib.GetType("std::oci_image_bakta"))
 out      = model.AddProduct(lib.GetType("std::bakta_annotations"))
 
 def protocol(context: ExecutionContext):
-    db_path = context.Get(database)
-    features_path = context.Get(features)
-    cds_path = context.Get(cds)
-    assembly_path = context.Get(assembly)
-    out_path = context.Get(out)
+    db_path = context.Input(database)
+    features_path = context.Input(features)
+    cds_path = context.Input(cds)
+    assembly_path = context.Input(assembly)
+    out_path = context.Input(out)
 
     cpus = context.params.get("cpus")
     cpus_string = ""

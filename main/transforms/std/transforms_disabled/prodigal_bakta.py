@@ -10,10 +10,10 @@ cds      = model.AddProduct(lib.GetType("std::coding_sequences"))
 gff      = model.AddProduct(lib.GetType("std::gene_features"))
 
 def protocol(context: ExecutionContext):
-    assembly_path  = context.Get(assembly)
-    db_path  = context.Get(db)
-    cds_path  = context.Get(cds)
-    gff_path  = context.Get(gff)
+    assembly_path  = context.Input(assembly)
+    db_path  = context.Input(db)
+    cds_path  = context.Input(cds)
+    gff_path  = context.Input(gff)
     context.ExecWithContainer(
         image = image,
         cmd = f"""

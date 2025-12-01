@@ -12,10 +12,10 @@ image       = model.AddRequirement(lib.GetType("std::oci_image_pilon"))
 out         = model.AddProduct(lib.GetType("std::hybrid_assembly"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Get(out)
-    assembly_path = context.Get(assembly).container
-    bam_path = context.Get(bam).container
-    csi_path = context.Get(csi).container
+    out_path = context.Input(out)
+    assembly_path = context.Input(assembly).container
+    bam_path = context.Input(bam).container
+    csi_path = context.Input(csi).container
 
     memory = context.params.get("memory")
     memory_string = ""

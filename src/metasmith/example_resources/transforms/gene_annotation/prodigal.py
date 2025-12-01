@@ -8,12 +8,12 @@ image   = model.AddRequirement(lib.GetType("genomics::oci_image_prodigal"))
 orfs    = model.AddProduct(lib.GetType("genomics::aa_sequences"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Get(orfs)
+    out_path = context.Input(orfs)
     context.ExecWithContainer(
         image = image,
         cmd = f"""\
             prodigal \
-                -i {context.Get(contigs).container} \
+                -i {context.Input(contigs).container} \
                 -a {out_path.container} \
                 -f gff \
                 -o {out_path.container.with_suffix('.gff')} \

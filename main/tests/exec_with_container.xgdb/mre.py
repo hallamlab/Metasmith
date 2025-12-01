@@ -9,7 +9,7 @@ out        = model.AddProduct(lib.GetType("std::assembly"))
 
 # You would expect two different containers, but you actually end up with SINGULARITY_CONTAINER being the same for both.
 def protocol(context: ExecutionContext):
-    out_path = context.Get(out)
+    out_path = context.Input(out)
     context.ExecWithContainer(
         image = image,
         cmd = f"""

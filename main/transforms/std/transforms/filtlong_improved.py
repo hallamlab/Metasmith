@@ -9,9 +9,9 @@ image      = model.AddRequirement(lib.GetType("std::oci_image_filtlong"))
 out        = model.AddProduct(lib.GetType("std::long_reads_filtered"))
 
 def protocol(context: ExecutionContext):
-    reads_path = context.Get(reads)
-    estimate_path = context.Get(estimate)
-    out_path = context.Get(out)
+    reads_path = context.Input(reads)
+    estimate_path = context.Input(estimate)
+    out_path = context.Input(out)
     context.ExecWithContainer(
         image = image,
         cmd = f"""

@@ -8,8 +8,8 @@ image      = model.AddRequirement(lib.GetType("std::oci_image_fasterq_dump"))
 out        = model.AddProduct(lib.GetType("std::long_reads"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Get(out)
-    accession_path = context.Get(accession)
+    out_path = context.Input(out)
+    accession_path = context.Input(accession)
     context.ExecWithContainer(
         image = image,
         cmd = f"""

@@ -9,9 +9,9 @@ image_samtools  = model.AddRequirement(lib.GetType("std::oci_image_samtools"))
 out             = model.AddProduct(lib.GetType("std::per_contig_coverage"))
 
 def protocol(context: ExecutionContext):
-    bam_path = context.Get(bam)
-    csi_path = context.Get(csi)
-    out_path = context.Get(out)
+    bam_path = context.Input(bam)
+    csi_path = context.Input(csi)
+    out_path = context.Input(out)
 
     context.ExecWithContainer(
         image = image_samtools,

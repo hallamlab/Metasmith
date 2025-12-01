@@ -8,8 +8,8 @@ image   = model.AddRequirement(lib.GetType("std::oci_image_trimmomatic"))
 out     = model.AddProduct(lib.GetType("std::short_reads_trimmed"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Get(out)
-    reads_path = context.Get(reads)
+    out_path = context.Input(out)
+    reads_path = context.Input(reads)
 
     cpus = context.params.get("cpus")
     cpus_string = ""

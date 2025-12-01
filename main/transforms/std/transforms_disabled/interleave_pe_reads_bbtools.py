@@ -9,9 +9,9 @@ image       = model.AddRequirement(lib.GetType("std::oci_image_bbtools"))
 out         = model.AddProduct(lib.GetType("std::short_reads"))
 
 def protocol(context: ExecutionContext):
-    forward_path    = context.Get(forward)
-    reverse_path    = context.Get(reverse)
-    out_path        = context.Get(out)
+    forward_path    = context.Input(forward)
+    reverse_path    = context.Input(reverse)
+    out_path        = context.Input(out)
 
     mem_gb = context.params.get("mem_gb")
     mem_str = f"-Xmx{mem_gb}g" if mem_gb is not None else ""

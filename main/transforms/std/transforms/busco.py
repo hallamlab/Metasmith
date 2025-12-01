@@ -14,12 +14,12 @@ raw_out        = model.AddProduct(lib.GetType("std::busco_raw"))
 out            = model.AddProduct(lib.GetType("std::busco_annotations"))
 
 def protocol(context: ExecutionContext):
-    cds_path        = context.Get(cds)
-    reference_path  = context.Get(reference)
-    map_path        = context.Get(map)
-    script_path     = context.Get(script)
-    raw_out_path    = context.Get(raw_out)
-    out_path        = context.Get(out)
+    cds_path        = context.Input(cds)
+    reference_path  = context.Input(reference)
+    map_path        = context.Input(map)
+    script_path     = context.Input(script)
+    raw_out_path    = context.Input(raw_out)
+    out_path        = context.Input(out)
 
     cpus_string = ""
     cpus = context.params.get("cpus")

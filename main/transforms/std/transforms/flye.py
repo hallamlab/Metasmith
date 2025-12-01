@@ -9,8 +9,8 @@ image   = model.AddRequirement(lib.GetType("std::oci_image_flye"))
 out     = model.AddProduct(lib.GetType("std::long_reads_assembly"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Get(out)
-    reads_path = context.Get(reads)
+    out_path = context.Input(out)
+    reads_path = context.Input(reads)
 
     cpus_string = ""
     cpus = context.params.get("cpus")

@@ -8,8 +8,8 @@ image   = model.AddRequirement(lib.GetType("std::oci_image_megahit"))
 out     = model.AddProduct(lib.GetType("std::short_reads_assembly"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Get(out)
-    reads_path = context.Get(reads)
+    out_path = context.Input(out)
+    reads_path = context.Input(reads)
     # https://github.com/voutcn/megahit
     # --12          interleaved
     context.ExecWithContainer(

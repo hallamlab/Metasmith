@@ -10,10 +10,10 @@ image     = model.AddRequirement(lib.GetType("std::oci_image_kofamscan"))
 out       = model.AddProduct(lib.GetType("std::kofamscan_annotations"))
 
 def protocol(context: ExecutionContext):
-    profile_path = context.Get(profile)
-    ko_list_path = context.Get(ko_list)
-    cds_path = context.Get(cds)
-    out_path = context.Get(out)
+    profile_path = context.Input(profile)
+    ko_list_path = context.Input(ko_list)
+    cds_path = context.Input(cds)
+    out_path = context.Input(out)
 
     cpus_string = ""
     cpus = context.params.get("cpus")

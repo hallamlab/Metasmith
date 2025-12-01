@@ -9,9 +9,9 @@ image     = model.AddRequirement(lib.GetType("std::oci_image_polypolish"))
 out       = model.AddProduct(lib.GetType("std::polished_assembly"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Get(out)
-    assembly_path = context.Get(assembly).container
-    sam_path = context.Get(sam)
+    out_path = context.Input(out)
+    assembly_path = context.Input(assembly).container
+    sam_path = context.Input(sam)
 
     context.ExecWithContainer(
         image = image,

@@ -9,15 +9,15 @@ image   = model.AddRequirement(lib.GetType("genomics::oci_image_blast"))
 annot   = model.AddProduct(lib.GetType("genomics::orf_annotations"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Get(annot)
+    out_path = context.Input(annot)
     COLUMNS = f"qseqid sseqid bitscore evalue pident"
     context.ExecWithContainer(
         image = image,
         cmd = f"""\
             blastp \
                 -num_threads {context.params.get('num_threads', 1)} \
-                -query {context.Get(orfs).container} \
-                -subject {context.Get(refdb).container} \
+                -query {context.Input(orfs).container} \
+                -subject {context.Input(refdb).container} \
                 -outfmt "6 {COLUMNS}" \
                 -out {out_path.container} \
             """,

@@ -12,10 +12,10 @@ out_bam         = model.AddProduct(lib.GetType("std::binary_alignment_map"))
 out_bam_csi     = model.AddProduct(lib.GetType("std::binary_alignment_map_csi"))
 
 def protocol(context: ExecutionContext):
-    reads_path     = context.Get(reads)
-    assembly_path  = context.Get(assembly)
-    out_sam_path   = context.Get(out_sam)
-    out_bam_path   = context.Get(out_bam)
+    reads_path     = context.Input(reads)
+    assembly_path  = context.Input(assembly)
+    out_sam_path   = context.Input(out_sam)
+    out_bam_path   = context.Input(out_bam)
 
     context.ExecWithContainer(
         image = image_minimap2,
@@ -37,7 +37,7 @@ def protocol(context: ExecutionContext):
                 samtools index -c {out_bam_path.container}
         """
     )
-    return ExecutionResult(success=context.Get(out_bam_csi).local.exists())
+    return ExecutionResult(success=context.Input(out_bam_csi).local.exists())
 
 TransformInstance(
     protocol = protocol,

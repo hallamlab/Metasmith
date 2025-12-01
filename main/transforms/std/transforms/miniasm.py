@@ -9,9 +9,9 @@ image_miniasm   = model.AddRequirement(lib.GetType("std::oci_image_miniasm"))
 out             = model.AddProduct(lib.GetType("std::miniasm_estimate"))
 
 def protocol(context: ExecutionContext):
-    reads_path = context.Get(reads)
-    mappings_path = context.Get(mappings)
-    out_path = context.Get(out)
+    reads_path = context.Input(reads)
+    mappings_path = context.Input(mappings)
+    out_path = context.Input(out)
 
     context.ExecWithContainer(
         image = image_miniasm,
