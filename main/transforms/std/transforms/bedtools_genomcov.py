@@ -14,8 +14,8 @@ out_bp          = model.AddProduct(lib.GetType("std::per_bp_coverage"))
 def protocol(context: ExecutionContext):
     bam_path     = context.Input(bam)
     asm_path     = context.Input(assembly)
-    cov_path     = context.Input(out_contig)
-    cov_bp_path  = context.Input(out_bp)
+    cov_path     = context.Output(out_contig)
+    cov_bp_path  = context.Output(out_bp)
     cpus         = context.params.get("cpus")
 
     Log.Info("calculating coverage")

@@ -12,7 +12,7 @@ image       = model.AddRequirement(lib.GetType("std::oci_image_pilon"))
 out         = model.AddProduct(lib.GetType("std::hybrid_assembly"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Input(out)
+    out_path = context.Output(out)
     assembly_path = context.Input(assembly).container
     bam_path = context.Input(bam).container
     csi_path = context.Input(csi).container

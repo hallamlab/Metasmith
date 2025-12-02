@@ -15,7 +15,7 @@ def protocol(context: ExecutionContext):
     features_path = context.Input(features)
     cds_path = context.Input(cds)
     assembly_path = context.Input(assembly)
-    out_path = context.Input(out)
+    out_path = context.Output(out)
 
     cpus = context.params.get("cpus")
     cpus_string = ""

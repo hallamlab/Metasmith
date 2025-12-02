@@ -8,8 +8,8 @@ out_ref    = model.AddProduct(lib.GetType("std::busco_ref"))
 out_map    = model.AddProduct(lib.GetType("std::busco_map"))
 
 def protocol(context: ExecutionContext):
-    out_ref_path = context.Input(out_ref)
-    out_map_path = context.Input(out_map)
+    out_ref_path = context.Output(out_ref)
+    out_map_path = context.Output(out_map)
     context.ExecWithContainer(
         image = image,
         cmd = f"""

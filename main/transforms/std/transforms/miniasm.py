@@ -11,7 +11,7 @@ out             = model.AddProduct(lib.GetType("std::miniasm_estimate"))
 def protocol(context: ExecutionContext):
     reads_path = context.Input(reads)
     mappings_path = context.Input(mappings)
-    out_path = context.Input(out)
+    out_path = context.Output(out)
 
     context.ExecWithContainer(
         image = image_miniasm,

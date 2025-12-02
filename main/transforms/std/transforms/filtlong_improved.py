@@ -11,7 +11,7 @@ out        = model.AddProduct(lib.GetType("std::long_reads_filtered"))
 def protocol(context: ExecutionContext):
     reads_path = context.Input(reads)
     estimate_path = context.Input(estimate)
-    out_path = context.Input(out)
+    out_path = context.Output(out)
     context.ExecWithContainer(
         image = image,
         cmd = f"""

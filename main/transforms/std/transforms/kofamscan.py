@@ -13,7 +13,7 @@ def protocol(context: ExecutionContext):
     profile_path = context.Input(profile)
     ko_list_path = context.Input(ko_list)
     cds_path = context.Input(cds)
-    out_path = context.Input(out)
+    out_path = context.Output(out)
 
     cpus_string = ""
     cpus = context.params.get("cpus")

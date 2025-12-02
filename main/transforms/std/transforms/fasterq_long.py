@@ -8,7 +8,7 @@ image      = model.AddRequirement(lib.GetType("std::oci_image_fasterq_dump"))
 out        = model.AddProduct(lib.GetType("std::long_reads"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Input(out)
+    out_path = context.Output(out)
     accession_path = context.Input(accession)
     context.ExecWithContainer(
         image = image,
@@ -29,6 +29,6 @@ TransformInstance(
     group_by=accession,
     model = model,
     output_signature = {
-        out: "dump.fastq",
+        out: "reads.fq",
     },
 )

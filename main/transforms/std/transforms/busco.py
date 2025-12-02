@@ -18,8 +18,8 @@ def protocol(context: ExecutionContext):
     reference_path  = context.Input(reference)
     map_path        = context.Input(map)
     script_path     = context.Input(script)
-    raw_out_path    = context.Input(raw_out)
-    out_path        = context.Input(out)
+    raw_out_path    = context.Output(raw_out)
+    out_path        = context.Output(out)
 
     cpus_string = ""
     cpus = context.params.get("cpus")

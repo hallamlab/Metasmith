@@ -7,7 +7,7 @@ image  = model.AddRequirement(lib.GetType("std::oci_image_script_runner"))
 out    = model.AddProduct(lib.GetType("std::cazy_ref"))
 
 def protocol(context: ExecutionContext):
-    out_path = context.Input(out)
+    out_path = context.Output(out)
     context.ExecWithContainer(
         image = image,
         cmd = f"""

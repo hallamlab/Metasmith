@@ -9,8 +9,8 @@ cds     = model.AddProduct(lib.GetType("std::coding_sequences"))
 gff     = model.AddProduct(lib.GetType("std::gene_features"))
 
 def protocol(context: ExecutionContext):
-    cds_path = context.Input(cds)
-    gff_path = context.Input(gff)
+    cds_path = context.Output(cds)
+    gff_path = context.Output(gff)
 
     cpus_string = ""
     cpus = context.params.get("cpus")

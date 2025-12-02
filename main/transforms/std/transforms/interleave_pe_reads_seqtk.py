@@ -11,7 +11,7 @@ out         = model.AddProduct(lib.GetType("std::short_reads"))
 def protocol(context: ExecutionContext):
     forward_path    = context.Input(forward)
     reverse_path    = context.Input(reverse)
-    out_path        = context.Input(out)
+    out_path        = context.Output(out)
 
     context.ExecWithContainer(
         image = image,
