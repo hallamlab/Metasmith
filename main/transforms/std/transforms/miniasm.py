@@ -26,7 +26,12 @@ def protocol(context: ExecutionContext):
                 echo $TARGET_BASES > {out_path.container}
         """
     )
-    return ExecutionResult(success=out_path.local.exists())
+    return ExecutionResult(
+        manifest=[{
+            out: out_path.local,
+        }],
+        success=out_path.local.exists()
+    )
 
 TransformInstance(
     protocol = protocol,
@@ -35,4 +40,9 @@ TransformInstance(
     output_signature = {
         out: "miniasm_estimate"
     },
+    resources=Resources(
+        cpus=1,
+        memory=Size.GB(16),
+        duration=Duration(hours=3),
+    ),
 )

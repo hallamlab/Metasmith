@@ -30,7 +30,13 @@ def protocol(context: ExecutionContext):
                 -o {gff_path.container}
             """,
     )
-    return ExecutionResult(success=cds_path.local.exists() and gff_path.local.exists())
+    return ExecutionResult(
+        manifest=[{
+            cds: cds_path.local,
+            gff: gff_path.local,
+        }],
+        success=cds_path.local.exists() and gff_path.local.exists()
+    )
 
 TransformInstance(
     protocol = protocol,
@@ -38,6 +44,11 @@ TransformInstance(
     model = model,
     output_signature = {
         cds: "cds.faa",
-        gff: "output.gff"
+        gff: "orfs.gff"
     },
+    resources=Resources(
+        cpus=4,
+        memory=Size.GB(16),
+        duration=Duration(hours=3),
+    ),
 )

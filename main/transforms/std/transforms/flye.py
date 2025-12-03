@@ -28,7 +28,12 @@ def protocol(context: ExecutionContext):
             cp long_reads_assembly/assembly.fasta {out_path.container}
         """
     )
-    return ExecutionResult(success=out_path.local.exists())
+    return ExecutionResult(
+        manifest=[{
+            out: out_path.local,
+        }],
+        success=out_path.local.exists()
+    )
 
 TransformInstance(
     protocol = protocol,
@@ -37,4 +42,9 @@ TransformInstance(
     output_signature = {
         out: "assembly.fasta",
     },
+    resources=Resources(
+        cpus=8,
+        memory=Size.GB(24),
+        duration=Duration(hours=12),
+    ),
 )

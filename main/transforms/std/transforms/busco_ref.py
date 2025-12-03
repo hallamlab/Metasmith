@@ -22,7 +22,13 @@ def protocol(context: ExecutionContext):
                 cp out/bacteria_odb12/info/species.info {out_map_path.container}
         """
     )
-    return ExecutionResult(success=out_ref_path.local.exists() and out_map_path.local.exists())
+    return ExecutionResult(
+        manifest=[{
+            out_ref: out_ref_path.local,
+            out_map: out_map_path.local,
+        }],
+        success=out_ref_path.local.exists() and out_map_path.local.exists()
+    )
 
 TransformInstance(
     protocol = protocol,
@@ -32,4 +38,9 @@ TransformInstance(
         out_ref: "busco_ref.fasta",
         out_map: "busco_map.info",
     },
+    resources=Resources(
+        cpus=1,
+        memory=Size.GB(8),
+        duration=Duration(hours=3),
+    ),
 )

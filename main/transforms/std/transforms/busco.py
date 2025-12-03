@@ -48,7 +48,12 @@ def protocol(context: ExecutionContext):
             python {script_path.container} {raw_out_path.container} {map_path.container} {out_path.container}
         """
     )
-    return ExecutionResult(success=out_path.local.exists())
+    return ExecutionResult(
+        manifest=[{
+            out: out_path.local,
+        }],
+        success=out_path.local.exists()
+    )
 
 TransformInstance(
     protocol = protocol,
@@ -58,4 +63,9 @@ TransformInstance(
         raw_out:  "busco_raw.tsv",
         out:      "busco_alignment.tsv",
     },
+    resources=Resources(
+        cpus=4,
+        memory=Size.GB(16),
+        duration=Duration(hours=6),
+    ),
 )

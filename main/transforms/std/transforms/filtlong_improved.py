@@ -22,7 +22,12 @@ def protocol(context: ExecutionContext):
                     > {out_path.container}
         """
     )
-    return ExecutionResult(success=out_path.local.exists())
+    return ExecutionResult(
+        manifest=[{
+            out: out_path.local,
+        }],
+        success=out_path.local.exists()
+    )
 
 TransformInstance(
     protocol = protocol,
@@ -31,4 +36,9 @@ TransformInstance(
     output_signature = {
         out: "long_reads_filtered.fastq",
     },
+    resources=Resources(
+        cpus=1,
+        memory=Size.GB(16),
+        duration=Duration(hours=3),
+    ),
 )

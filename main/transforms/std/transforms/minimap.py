@@ -79,7 +79,13 @@ def protocol(context: ExecutionContext):
             samtools index -c {out_bam_path.container}
         """
     )
-    return ExecutionResult(success=context.Output(out_bam_csi).local.exists())
+    return ExecutionResult(
+        manifest=[{
+            out_bam: out_bam_path.local,
+            out_bam_csi: context.Output(out_bam_csi).local,
+        }],
+        success=context.Output(out_bam_csi).local.exists()
+    )
 
 TransformInstance(
     protocol = protocol,
@@ -90,4 +96,9 @@ TransformInstance(
         out_bam:      "alignments.bam",
         out_bam_csi:  "alignments.bam.csi"
     },
+    resources=Resources(
+        cpus=8,
+        memory=Size.GB(32),
+        duration=Duration(hours=12),
+    ),
 )

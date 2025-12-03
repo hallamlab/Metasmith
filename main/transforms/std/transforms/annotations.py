@@ -33,7 +33,7 @@ def protocol(context: ExecutionContext):
     cazy_raw_path  = context.Input(cazy_raw)
     busco_path     = context.Input(busco)
     busco_raw_path = context.Input(busco_raw)
-    out_path       = context.Input(out)
+    out_path       = context.Output(out)
 
     cazy_visualize_script       = context.Input(cazy_visualize)
     busco_visualize_script      = context.Input(busco_visualize)

@@ -17,15 +17,25 @@ def protocol(context: ExecutionContext):
                 fasterq-dump \
                     $(cat {accession_path.container}) \
                     --split-spot \
-                    -Z > dump.fastq
+                    -Z > {out_path.container.name}
 
         """,
         shell="sh",
     )
-    return ExecutionResult(success=out_path.local.exists())
+    return ExecutionResult(
+        manifest=[{
+            out: out_path.local,
+        }],
+        success=out_path.local.exists()
+    )
 
 TransformInstance(
     protocol = protocol,
+    resources=Resources(
+        cpus=1,
+        memory=Size.GB(16),
+        duration=Duration(hours=12),
+    ),
     group_by=accession,
     model = model,
     output_signature = {
