@@ -25,14 +25,23 @@ class Container:
             name = name.split(":")[0]
         return self.container_cache/f"{name}.sif"
 
+    def _get_image(self):
+        image = self.image
+        if self.runtime == ContainerRuntime.DOCKER:
+            DOCKER_DOMAIN = "docker://"
+            assert self.image.startswith(DOCKER_DOMAIN), f"can't use non-docker image [{self.image}] with docker runtime"
+            image = image.replace(DOCKER_DOMAIN, "")
+        return image
+
     def MakePullCommand(self):
+        image = self._get_image()
         if self.runtime == ContainerRuntime.APPTAINER:
-            return f"{self.runtime.value} pull {self._get_local_path()} {self.image}"
+            return f"{self.runtime.value} pull {self._get_local_path()} {image}"
         else:
-            return f"{self.runtime.value} pull {self.image}"
+            return f"{self.runtime.value} pull {image}"
 
     def MakeBindsParam(self, defaults:bool=True):
-        default_binds = [("./", "/ws")] if defaults else []
+        default_binds = [("./", "/ws"), ("/tmp", "/tmp")] if defaults else []
         binds = {str(d):str(s) for s, d in default_binds+self.binds}
         binds = [(s, d) for d, s in binds.items()]
         if len(binds)==0: return ""
@@ -48,11 +57,11 @@ class Container:
         return binds
 
     def MakeRunCommand(self, local: bool|str = False, custom_bind_param: str|None=None):
-        image = self.image
+        image = self._get_image()
         binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
         match self.runtime:
             case ContainerRuntime.DOCKER:
-                others = ["--rm", "-u $(id -u):$(id -g)"]
+                others = ["--rm", "-u $(id -u):$(id -g)", "--network=host"]
                 workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ""
             case ContainerRuntime.APPTAINER:
                 others = ["--no-home"]

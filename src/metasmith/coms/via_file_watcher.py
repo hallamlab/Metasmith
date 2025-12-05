@@ -43,10 +43,22 @@ class Job:
         for _ in range(int(timeout*10)):
             if donef.exists(): break
             sleep(0.1)
+        
+        code = 1
         if not donef.exists():
             pid = self._get_pid(pidf)
-            os.kill(pid, signal.SIGTERM)
-            sleep(0.5)
+            try:
+                os.kill(pid, signal.SIGTERM)
+                sleep(0.5)
+            except ProcessLookupError:
+                pass
+        else:
+            with open(donef) as f:
+                code = f.readline().strip()
+            try:
+                code = int(code)
+            except:
+                code = 1
 
         to_del = [
             self.out_log,
@@ -56,6 +68,7 @@ class Job:
             to_del += [donef, pidf]
         for p in to_del:
             p.unlink(missing_ok=True)
+        return code
 
 class RemoteShell:
     def __init__(self, watcher_path: Path, timeout: int=3) -> None:
@@ -109,7 +122,7 @@ class RemoteShell:
 
         def check_log(log_path: Path, start: int, callbacks: list[Callable]):
             if not log_path.exists(): return start
-            with open(log_path, "r") as f:
+            with open(log_path, "r", errors='replace') as f:
                 f.seek(start)
                 lines = f.readlines()
             i = start

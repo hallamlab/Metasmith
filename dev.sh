@@ -174,6 +174,7 @@ case $1 in
         # mkdir -p cache/.globus cache/.globusonline
         docker run -it --rm \
             -u $(id -u):$(id -g) \
+            --mount type=bind,source="/tmp",target="/tmp"\
             --mount type=bind,source="$HERE/scratch/docker",target="/ws"\
             --mount type=bind,source="$HOME/.globus",target="/.globus"\
             --mount type=bind,source="$HOME/.globusonline",target="/.globusonline"\

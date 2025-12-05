@@ -8,6 +8,7 @@ from collections import deque
 from ..hashing import KeyGenerator
 
 class Node:
+    PROPERTY_FIELD = "properties"
     NO_KEY = "_"
     def __init__(
         self,
@@ -73,7 +74,7 @@ class Node:
     @classmethod
     def Unpack(cls, d: dict):
         NO_KEY = cls.NO_KEY
-        raw_props = d["properties"]
+        raw_props = d[cls.PROPERTY_FIELD]
         props = set()
         if type(raw_props) in {list, set}: # all properties didn't have keys
             for v in raw_props:
@@ -86,7 +87,9 @@ class Node:
                     assert type(v) in {list}
                     props.update(v)
                     continue
-
+                if isinstance(v, list):
+                    if len(v)==1:
+                        v = v[0]
                 if isinstance(v, list):
                     props.update(cls._json_dumps({k:x}) for x in v)
                 else:

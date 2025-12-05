@@ -1,15 +1,15 @@
 from pathlib import Path
 
-from .coms.via_ws import WsRequest, WsClient, RemoteShell
+from .coms.via_file_watcher import RemoteShell
 
 def run(workspace: Path):
-    p = WsClient(workspace)
-    try:
-        res = p.Transact(WsRequest(endpoint="status"), timeout=2)
-    finally:
-        p.Dispose()
-    print(f">>> status")
-    print(res)
+    # p = WsClient(workspace)
+    # try:
+    #     res = p.Transact(WsRequest(endpoint="status"), timeout=2)
+    # finally:
+    #     p.Dispose()
+    # print(f">>> status")
+    # print(res)
 
     print(f">>> bash")
     with RemoteShell(workspace) as shell:

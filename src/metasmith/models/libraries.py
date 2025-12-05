@@ -1,6 +1,7 @@
 from __future__ import annotations
 import itertools
 from math import e
+from pydoc import Helper
 import shutil
 import os, sys
 from pathlib import Path
@@ -14,10 +15,8 @@ from datetime import timedelta
 
 from ..serialization import IsText
 from ..coms.containers import ContainerRuntime, Container
-# from ..coms.terminals import LiveShell
-# from ..coms.via_ws import RemoteShell
 from ..coms.terminals import RemoveLeadingIndent
-from ..coms.via_file_watcher import RemoteShell
+from ..coms.via_file_watcher import RemoteShell, GenerateId
 from .solver import Dependency, Endpoint, Transform
 from .remote import GlobusSource, Logistics, Source, SourceType
 from ..hashing import KeyGenerator
@@ -96,8 +95,31 @@ class DataTypeLibrary:
 
     @classmethod
     def Unpack(cls, d: dict):
+        raw_types = {}
+        def pluralize(vv):
+            def _fix(_v):
+                if isinstance(_v, set): return _v
+                if isinstance(_v, list): return set(_v)
+                return {_v}
+            return {k:_fix(v) for k, v in vv.items()}
+        for k, v in d["types"].items():
+            extends = v.get("extends", [])
+            if isinstance(extends, str): extends = [extends]
+            props = v[Endpoint.PROPERTY_FIELD]
+            if isinstance(props, list) or isinstance(props, set):
+                props = set(props)
+                for pk in extends:
+                    props |= raw_types[pk][Endpoint.PROPERTY_FIELD]
+                raw_types[k] = props
+            else:                    
+                props = pluralize(v[Endpoint.PROPERTY_FIELD])
+                for pk in extends:
+                    p_props = raw_types[pk][Endpoint.PROPERTY_FIELD]
+                    props = {k:v|p_props.get(k, set()) for k, v in props.items()}
+                props = {k:list(v) for k, v in props.items()}
+            raw_types[k] = {Endpoint.PROPERTY_FIELD:props}
         params: dict = dict(
-            types={k: Endpoint.Unpack(v) for k, v in d["types"].items()},
+            types={k: Endpoint.Unpack(v) for k, v in raw_types.items()},
         )
         if "schema" in d:
             params["schema"] = str(d["schema"])
@@ -206,7 +228,7 @@ class DataInstanceLibrary:
         library_key: str
         path: Path
 
-    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool = True) -> None:
+    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool = False) -> None:
         self.manifest: dict[Path, str] = {}
         self.types: dict[str, DataTypeLibrary] = {}
         self._dtype2name = {}
@@ -357,11 +379,12 @@ class DataInstanceLibrary:
             return d
         man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
         man = dict(sorted(man.items(), key=lambda t: t[0]))
-        return dict(
+        packed = dict(
             schema=self.schema,
             manifest=man,
             remote_src=self.remote_src.Pack() if self.remote_src is not None else None,
         )
+        return {k:v for k, v in packed.items() if v is not None}
 
     @classmethod
     def Unpack(cls, location: Path, raw: dict, dtypes: dict[str, DataTypeLibrary], check_integrity: bool=False):
@@ -657,7 +680,6 @@ class TransformInstance:
     batch_size: int = 1
     _key: str = ""
     _hash: int = -1
-
     def __post_init__(self):
         assert self.batch_size>0, self.model
         assert self.group_by in self.model.requires, self.model
@@ -704,13 +726,13 @@ class TransformInstance:
             sys.path = original_path_var
 
 class TransformInstanceLibrary(DataInstanceLibrary):
-    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool=True) -> None:
-        super().__init__(location, include_std=True)
+    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool=False) -> None:
+        super().__init__(location, include_std=include_std)
         if "transforms" not in self.types:
             transform_types = DataTypeLibrary(types=dict(
                 transform=Endpoint({"metasmith", "transform"}),
-                example_input=Endpoint({"metasmith", "example_input"}),
-                example_output=Endpoint({"metasmith", "example_output"}),
+                example_input=Endpoint({"metasmith", "example input"}),
+                example_output=Endpoint({"metasmith", "example output"}),
             ))
             self.AddTypeLibrary("transforms", transform_types)
         self._transform_cache: dict[Path, TransformInstance] = {}
@@ -801,6 +823,9 @@ class ExecutionResult:
     success: bool = True
     manifest: list[dict[Dependency, Path]] = field(default_factory=list)
 
+class ExecutionFailed(Exception):
+    pass
+
 # work as if batch of 1 item
 # until explicitly batch iterated
 @dataclass
@@ -834,6 +859,13 @@ class ExecutionContext:
             self._batch_index += 1
         self._batch_index = 0
 
+    def LocalShell(self, cmd: str):
+        cmd = RemoveLeadingIndent(cmd)
+        Log.Info(f"invoked local shell, calling os.system() with:")
+        for line in cmd.split("\n"):
+            Log.Info(f"    {line}")
+        os.system(cmd)
+
     def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, history: bool=True):
         path = self._inputs[self._batch_index][image].path
         if IsText(path.local):
@@ -844,10 +876,10 @@ class ExecutionContext:
 
         _binds = set()
         for _, v in list(self._inputs[self._batch_index].items()):
-            p = v.path
-            src = p.external.parent
-            dest = p.container.parent
-            _binds.add((src, dest))
+            for p in v.input_group:
+                src = p.external.parent
+                dest = p.container.parent
+                _binds.add((src, dest))
         if binds is None: binds = []
         container_ws = Path("/ws")
         binds += sorted([(s, d) for s, d in _binds])
@@ -866,10 +898,16 @@ class ExecutionContext:
         Log.Info(f"executing container [{image_path}] using [{container.runtime.name}]")
         h, k = KeyGenerator.FromStr(cmd)
         _bounce_script = Path(f"./_metasmith/.bounce.{k}")
+        exit_codef = Path(f"exitcode.{GenerateId()}")
         with open(_bounce_script, "w") as f:
             script = [
                 "cd /ws",
-                cmd
+                "on_exit() {",
+                f"    echo $? > {exit_codef}",
+                "}",
+                "trap on_exit EXIT",
+                "set -e",
+                cmd,
             ]
             f.write("\n".join(script))
         Log.Info(f"command with bounce at [{_bounce_script}]:")
@@ -880,16 +918,17 @@ class ExecutionContext:
             Log.Info(f"    {s} -> {d}")
         _container_start = f"{container.MakeRunCommand()} {shell}"
         Log.Info(f"container start: [{_container_start}]")
-        # sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
         result = self.external_shell.Exec(f"{_container_start} {container_ws/_bounce_script}", timeout=None, history=history)
+        try:
+            with open(exit_codef) as f:
+                exit_code = f.readline().strip()
+                exit_code = int(exit_code)
+        except:
+            exit_code = 1
+        Log.Info(f"exit code: [{exit_code}]")
+        if exit_codef.exists(): exit_codef.unlink()
+        if exit_code != 0:
+            raise ExecutionFailed("a non-zero exit code ocurred while running script in container")
+        # sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
         # eresult = self.external_shell.Exec("[ -n $APPTAINER_CONTAINER ] || [ -e /.dockerenv ] && exit", timeout=None, history=history)
         return result
-        # _, _hash = KeyGenerator.FromStr(cmd, l=8)
-        # cmd_file = f"_metasmith/container_cmd.{_hash}"
-        # container_run = container.MakeRunCommand()
-        # with open(cmd_file, "w") as f:
-        #     f.write(f"# {container_run}"+"\n")
-        #     f.write(cmd)
-        # return self.external_shell.Exec(f"""\
-        #     {container_run} bash {container_ws/cmd_file}
-        # """, timeout=None, history=history)

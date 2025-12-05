@@ -7,7 +7,7 @@ params {
     }
 
     process {
-        tries = 2
+        tries = 1
     }
 }
 

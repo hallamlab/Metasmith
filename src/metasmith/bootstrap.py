@@ -5,6 +5,7 @@ import traceback
 import re
 from glob import glob
 import json
+import os
 
 from .logging import Log
 from .agents import Agent, AgentPaths
@@ -12,7 +13,6 @@ from .models.libraries import ContextPath, ContextData, ExecutionContext, Execut
 from .models.libraries import DataInstance, DataTypeLibrary, TransformInstance, TransformInstanceLibrary
 from .models.solver import Dependency, Endpoint
 from .models.workflow import WorkflowTask, METADATA_FILE
-# from .coms.via_ws import RemoteShell
 from .coms.via_file_watcher import RemoteShell
 
 def DeployFromContainer(workspace: Path):
@@ -36,6 +36,7 @@ def DeployFromContainer(workspace: Path):
     Log.Info("deployment complete")
 
 def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
+    Log.Info(f"cwd [{os.getcwd()}]")
     server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS)
     MAX_WAIT = 3
     for i in range(MAX_WAIT):
@@ -44,7 +45,6 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
         time.sleep(1)
     assert server_path.exists(), f"server not started [{server_path}]"
 
-    Log.Info("connecting to relay")
     Log.Info(f"loading agent config")
     agent = Agent.Load(AgentPaths.to_definition())
     agent_home = str(agent.home.GetPath())
@@ -52,6 +52,7 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
     def _shorten_home(p: str):
         return p.replace(agent_home, "{agent_home}")
     
+    Log.Info(f"connecting to relay [{server_path}]")
     with RemoteShell(server_path, timeout=60) as shell:
         _paused = False
         class PausedStdOut:
@@ -124,10 +125,10 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
             # does not precede the current position.
             file_group: list[str] = re.split(r"(?<!\\)\s", raw_meta[k])
             input2files[inst] = [Path(re.sub(r"\\\s", " ", f)) for f in file_group]
+            # Log.Debug(f"{k} {inst.dtype_name} {input2files[inst]}")
 
         def _status(p: ContextPath):
             return "✓" if p.local.exists() else "X"
-        container_binds = {}
         def _parse_path(p: Path, container_override=None):
             if p.is_symlink():
                 external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
@@ -139,25 +140,12 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
             else:
                 local = p
                 external = external_cwd/p
+
             if container_override:
                 container = container_override
             else:
-                k = external.parent
-                if k not in container_binds:
-                    container_binds[k] = Path(f"/msm_data/{k.name}")
-                container = container_binds[k]/p
+                container = local
             return ContextPath(local=local, external=external, container=container)
-        # def _parse_meta(inst: DataInstance, container_override=None):
-        #     default = Path("<not in metadata file>")
-        #     input_group = input2file.get(inst, [default])
-        #     paths = []
-        #     for p in input_group:
-        #         paths.append(_parse_path(p, container_override))
-        #     return ContextData(
-        #         input_group=paths,
-        #         endpoint=inst.dtype,
-        #         type_name=inst.dtype_name,
-        #     )
         inputs: list[dict[Dependency, ContextData]] = []
         Log.Info("uses:")
         data2dep = {inst:dep for dep, inst in step.dependency_map.items()}
@@ -170,7 +158,9 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
                 Log.Info(f"    [{inst.dtype_name}/{inst.dtype.key}] at:")
                 remaining_files = input2files[inst]
                 group_size = len(batch_lineage[inst.dtype.key])
+                # Log.Debug(f"{inst.dtype_name} {group_size} {remaining_files}")
                 input_group = [_parse_path(p) for p in remaining_files[:group_size]]
+                # Log.Debug(f"{inst.dtype_name} {group_size} {[p.container for p in input_group]}")
                 input2files[inst] = remaining_files[group_size:]
                 for p in input_group:
                     missing_input = missing_input or not p.local.exists()

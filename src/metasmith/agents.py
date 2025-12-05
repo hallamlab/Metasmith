@@ -17,7 +17,7 @@ from .hashing import KeyGenerator
 from .logging import Log
 from .coms.containers import Container, ContainerRuntime
 from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
-from .coms.via_ws import RemoteShell
+from .coms.via_file_watcher import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, DataInstanceLibraryView
@@ -120,7 +120,7 @@ class PausedShell:
         self.shell.paused_out = oo
         self.shell.paused_err = oe
 
-ResourceOverrides = dict[tuple[int, int]|Literal["all"]|TransformInstance, Resources|dict[int, Resources]]
+ResourceOverrides = dict[tuple[int, int]|Literal["all"]|Literal["*"]|TransformInstance, Resources|dict[int, Resources]]
 @dataclass
 class Agent:
     home: Source
@@ -354,15 +354,14 @@ class Agent:
                 find .
                 ls -lh .
                 echo "relay =========================="
-                $INTERNALS/relay/msm_relay watch &
-                sleep 5
+                $INTERNALS/relay/msm_relay start --local
                 echo "execute ========================"
                 run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR
                 echo "post execute ==================="
                 find .
                 ls -lh .
                 echo "cleanup ========================"
-                $INTERNALS/relay/msm_relay unwatch
+                $INTERNALS/relay/msm_relay stop
                 echo "relay logs ====================="
                 $INTERNALS/relay/msm_relay logs
                 """,
@@ -427,7 +426,8 @@ class Agent:
 
     def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", verify_external_paths: bool=False):
         VALID_ON_EXIST = {"skip", "error", "clear", "update_all", "update_workflow", "update_data"}
-        assert on_exist in VALID_ON_EXIST
+        assert on_exist in VALID_ON_EXIST, f"on_exist option [{on_exist}] is not one of {VALID_ON_EXIST}"
+        Log.Info(f"staging workflow [{task.GetKey()}]")
         agent_shell = AgentShell(self)
         task_stage_partial = False
         with agent_shell as sh_remote:
@@ -552,7 +552,7 @@ class Agent:
                             "process {"
                         ]
                         for tr, res in resource_overrides.items():
-                            if tr=="all":
+                            if tr=="all" or tr=="*":
                                 key = f".*"
                             elif isinstance(tr, tuple):
                                 v, p = tr
@@ -623,7 +623,7 @@ def StageWorkflow(task_key: str, verify: bool):
     Log.Info(f"staging workflow [{task._key}] with:")
     Log.Info(f"  [{len(task.data_libraries)}] data libraries")
     Log.Info(f"  [{len(task.transform_libraries)}] transform libraries")
-    Log.Info(f"  [{len(task.plans)}] variants (batches)")
+    Log.Info(f"  [{len(task.plans)}] variants")
     Log.Info(f"  [{sum(len(p.steps) for g in task.plans for p in g)}] total steps")
 
     work_relative = AgentPaths.STAGED/task._key
@@ -806,11 +806,13 @@ def RunWorkflow(key: str, log_dir: Path):
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow from container")
+        # export NXF_JVM_ARGS="-Xms16g -Xmx64g"
         shell.Exec(
             f"""
             cd {workspace}
+            PIDF=./PID.lock
             stop() {{
-                rm ./PID
+                [[ -e "$PIDF" ]] && rm $PIDF
                 [ -e squeue.log ] && mv squeue.log {log_dir}
                 [ -e scancel.log ] && mv scancel.log {log_dir}
                 [ -e {AgentPaths.NXF_CONFIG} ] && cp {AgentPaths.NXF_CONFIG} {log_dir}
@@ -818,14 +820,14 @@ def RunWorkflow(key: str, log_dir: Path):
                 if [ -e {nxf_dag} ]; then
                     dot -Tsvg {nxf_dag} -o {log_dir}/nxf_dag.svg
                 fi
-                exit 1
+                exit 0
             }}
             trap stop EXIT
 
             export NXF_HOME=./.nextflow
             export NXF_ENABLE_VIRTUAL_THREADS=true
-            export NXF_JVM_ARGS="-Xms16g -Xmx64g"
-            export NXF_OFFLINE=TRUE
+            export NXF_OFFLINE=TRUE # don't go online and search for latest version
+            export NXF_OPTS="-XX:ActiveProcessorCount=1" # precaution against "unable to create native thread"
             nextflow \
                 -config ./{AgentPaths.NXF_CONFIG} \
                 -log {log_dir}/nxf.log \
@@ -843,9 +845,18 @@ def RunWorkflow(key: str, log_dir: Path):
 
             PID=$!
             echo "nextflow PID is [$PID]"
-            echo $PID >./PID
-            wait $PID
-            rm ./PID
+            echo $PID >$PIDF
+            while true; do
+                if ! [[ -d "/proc/$PID" ]]; then
+                    break
+                fi
+                if ! [[ -e "$PIDF" ]]; then
+                    kill $PID
+                    wait $PID
+                    break
+                fi
+                sleep 1
+            done
             """,
             timeout=None,
         )
@@ -955,7 +966,7 @@ def RunWorkflow(key: str, log_dir: Path):
         p = p.relative_to(NXF_WORK)
         nxf_id = str(p)[:nxf_id_len]
         if nxf_id not in nxf_ids: continue
-        log_path = NXF_WORK/p/".command.out"
+        log_path = NXF_WORK/p/".command.log"
         if not log_path.exists(): continue
         if log_path.is_symlink(): continue
         try:

@@ -7,26 +7,28 @@ from pathlib import Path
 import argparse
 import signal
 import socket
+import getpass
+import shutil
 
 from .logging import Log
-from .server import SERVER_HEALTH, CheckStatus, RunServer, StopServer, LockFile
-from .watcher import RunWatcher
+# from .server import SERVER_HEALTH, CheckStatus, RunServer, StopServer, LockFile
+from .watcher import RunWatcher, StopWatcher, CheckStatus, Wipe
 from .coms.ipc import CurrentTimeMillis, ResetGenerator
-from .coms.via_ws import RemoteShell
+# from .coms.via_ws import RemoteShell
+from .coms.via_file_watcher import RemoteShell
 
 CLI_ENTRY = "msm_relay"
 WS = Path(sys.orig_argv[0]).parent.absolute()
-    
+host = socket.gethostname()
+default_ws = WS/host
+
 class ArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         self.print_help(sys.stderr)
         self.exit(2, '\n%s: error: %s\n' % (self.prog, message))
 
 def _add_io_arg(parser: ArgumentParser):
-    host = socket.gethostname()
-    ws = WS/host
-    ws.mkdir(exist_ok=True)
-    parser.add_argument("--io", default=ws, required=False, metavar="PATH", type=Path)
+    parser.add_argument("--io", default=default_ws, required=False, metavar="PATH", type=Path)
     return parser
 
 def _make_parser(name: str, description: str):
@@ -40,51 +42,36 @@ def _make_parser(name: str, description: str):
 class CommandLineInterface:
     def _get_fn_name(self):
         return inspect.stack()[1][3]
-    
-    def watch(self, raw_args=None):
-        parser = _make_parser(self._get_fn_name(), "relay via file watcher")
-        args = parser.parse_args(raw_args)
-        workspace = Path(args.io)
-        while True:
-            try:
-                RunWatcher(workspace)
-                break
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                Log.Error(f"error [{e}], restarting")
-                time.sleep(1)
-        (workspace/"exit").unlink(missing_ok=True)
-        Log.SetStdout(on=True)
-        Log.Info(f"stopped watcher relay")
-
-    def unwatch(self, raw_args=None):
-        parser = _make_parser(self._get_fn_name(), "signal file watcher stop")
-        args = parser.parse_args(raw_args)
-        workspace = Path(args.io)
-        (workspace/"exit").touch()
-        Log.Info(f"signalled watcher to stop")
 
     def start(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "ensure relay is running")
         parser.add_argument("--connected", "-c", action="store_true", required=False, default=False)
+        parser.add_argument("--local", "-l", action="store_true", required=False, default=False)
         # parser.add_argument("--channels", "-n", required=False, metavar="INT", type=int, default=8)
         # parser.add_argument("--gunicorn-config", "-c", required=False, metavar="PATH", type=str, default=WS/"gunicorn.conf.py")
         args = parser.parse_args(raw_args)
         workspace = Path(args.io)
-
         # os.system("uvicorn ")
         status = CheckStatus(workspace)
-        if status.health == SERVER_HEALTH.ALIVE:
+        if status.alive:
             Log.Warn(f"relay server already running at [{workspace}]")
             return
         else:
-            Log.Info(f"starting relay server at [{workspace}]")
+            if workspace == default_ws and not args.local:
+                host = socket.gethostname()
+                username = getpass.getuser()
+                local = workspace
+                workspace = Path(f"/tmp/msm_{host}_{username}")
+                if local.is_symlink():
+                    local.unlink()
+                if local.exists():
+                    shutil.rmtree(local)
+                local.symlink_to(workspace)
+
+            workspace.mkdir(exist_ok=True)
             if args.connected:
-                RunServer(workspace=workspace)
+                RunWatcher(workspace=workspace)
             else:
-                for f in LockFile._get_candidates(workspace):
-                    f.unlink()
                 signal.signal(signal.SIGCHLD, signal.SIG_IGN) # no zombie children
                 pid = os.fork()
                 ResetGenerator()
@@ -92,7 +79,7 @@ class CommandLineInterface:
                     try:
                         while True:
                             _status = CheckStatus(workspace)
-                            if _status.health == SERVER_HEALTH.ALIVE:
+                            if _status.alive:
                                 Log.Info(f"pid [{_status.pid}]")
                                 Log.Info(f"success")
                                 return
@@ -101,30 +88,27 @@ class CommandLineInterface:
                         pass
                     # os._exit(0) # this should keep resources for forked child?
                 else: # child
-                    RunServer(workspace=workspace)
+                    RunWatcher(workspace=workspace)
 
     def stop(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "stop relay")
         args = parser.parse_args(raw_args)
         workspace = Path(args.io)
-        candidate_lock_files = LockFile._get_candidates(workspace)
-        if len(candidate_lock_files)==0:
+        status = CheckStatus(workspace)
+        if not status.alive:
             Log.Info(f"server not running at [{workspace}]")
             return
-        StopServer(workspace)
-
+        StopWatcher(workspace)
         start = CurrentTimeMillis()
         timeout = 5
         while True:
-            candidate_lock_files = LockFile._get_candidates(workspace)
-            if len(candidate_lock_files)==0:
+            _status = CheckStatus(workspace)
+            if not _status.alive:
                 Log.Info("shutdown success")
                 return
             now = CurrentTimeMillis()
             if now-start>=timeout*1000: break
-        candidate_lock_files = LockFile._get_candidates(workspace)
-        for f in candidate_lock_files:
-            f.unlink()
+        Wipe(workspace)
         Log.Info("shutdown enforced")
 
     def status(self, raw_args=None):
@@ -135,8 +119,6 @@ class CommandLineInterface:
         for k, v in status.__dict__.items():
             if k.startswith("_"): continue
             if callable(v): continue
-            if isinstance(v, SERVER_HEALTH):
-                v = v.name
             Log.Info(f"  {k}: {v}")
 
     def bounce(self, raw_args=None):

@@ -120,9 +120,9 @@ class WorkflowPlan:
 
     def _update_hash(self):
         given = [inst._key for inst in self.given]
-        targets = [inst._key for inst in self.targets]
+        # targets = [inst._key for inst in self.targets]
         steps = [step.transform.model.key for step in self.steps]
-        self._hash, self._key = KeyGenerator.FromStr("".join(given+targets+steps), l=8)
+        self._hash, self._key = KeyGenerator.FromStr("".join(given+steps), l=8)
 
     def __hash__(self) -> int:
         return self._hash
@@ -251,7 +251,7 @@ class WorkflowPlan:
         for lib in given:
             for path, ep_name, ep in lib.Iterate():
                 if ep in given_map:
-                    Log.Warn(f"[{ep}] of [{lib}] is masked")
+                    Log.Warn(f"[{ep}] of [{lib.location}] is masked")
                     continue
                 given_map[ep] = DataInstance(
                     path=path,

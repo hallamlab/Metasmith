@@ -10,6 +10,7 @@ import shutil
 
 from ..constants import MODULE_PATH, NAME, VERSION, GIT_URL, ENTRY_POINTS
 from ..logging import Log
+from ..models.build_libraries import Build
 
 CLI_ENTRY = [e.split("=")[0].strip() for e in ENTRY_POINTS][0]
 
@@ -71,7 +72,8 @@ class CommandLineInterface:
 
     def lab(self, raw_args=None):
         parser = ArgumentParser(
-            description=f"Function to start Metasmith in Jupyter Lab"
+            prog = f'{CLI_ENTRY} {self._get_fn_name()}',
+            description=f"run Jupyter Lab with starter notebook"
         )
         def ip_type(val: str) -> str:
             try:
@@ -95,6 +97,29 @@ class CommandLineInterface:
             ], text=True)
         except KeyboardInterrupt:
             pass
+
+    def build(self, raw_args=None):
+        parser = ArgumentParser(
+            prog = f'{CLI_ENTRY} {self._get_fn_name()}',
+            description=f"build libraries"
+        )
+        parser.add_argument("-t", "--types", nargs='*', required=False, default=[],
+            help="data types")
+        parser.add_argument("-r", "--transforms", nargs='*', required=False, default=[],
+            help="transforms")
+        parser.add_argument("-u", "--uniques", nargs='*', required=False, default=[],
+            help="folder where: folder=namespace, file name=type name")
+        # parser.add_argument("-d", "--data", nargs='*', required=False, default=[],
+        #     help="data")
+        args = parser.parse_args(raw_args)
+        def parse(arg):
+            return [Path(x) for x in arg]
+        Build(
+            data_type_dirs=parse(args.types),
+            transform_dirs=parse(args.transforms),
+            unique_dirs=parse(args.uniques),
+            # data_dirs=flatten(args.data),
+        )
 
     def help(self, args=None):
         help = [

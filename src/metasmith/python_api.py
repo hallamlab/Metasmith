@@ -5,7 +5,7 @@ from .models.remote import Source, SshSource, GlobusSource, HttpSource, SourceTy
 from .models.remote import Logistics, LogisticsResult, LogisticsException
 from .logging import Log
 from .coms.terminals import LiveShell
-from .coms.via_ws import RemoteShell
+from .coms.via_file_watcher import RemoteShell
 from .coms.containers import ContainerRuntime
 from .agents import Agent, AgentPaths, WorkflowTask
 from .logging import Log

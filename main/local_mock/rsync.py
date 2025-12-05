@@ -13,9 +13,11 @@ else:
 
 switch = {
     "local" :   f"{WORKSPACE_ROOT}/main/local_mock/cache/local_home",
+    "lib":      f"/home/tony/workspace/tools/MetasmithLibraries/tests/cache/local_home",
     "sockeye":  f"sockeye:~/scratch/metasmith_home",
     "cosmos":   f"cosmos:/home/tony/workspace/metasmith_home",
     "fir":      f"fir:/scratch/phyberos/metasmith",
+    "chamois":  f"chamois:/home/tliu/metasmith",
 }
 if k not in switch:
     print(f"[{k}] is not registered")
