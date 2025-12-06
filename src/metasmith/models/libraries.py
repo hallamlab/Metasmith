@@ -673,7 +673,7 @@ class Resources:
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult|list[ExecutionResult]]
     model: Transform
-    output_signature: dict[Dependency, str]
+    output_signature: list[dict[Dependency, str]]
     group_by: Dependency
     name: str|None = None
     resources: Resources|None = None
@@ -686,17 +686,17 @@ class TransformInstance:
         for k, vt in [
             ("protocol", Callable),
             ("model", Transform),
-            ("output_signature", dict),
+            ("output_signature", list),
         ]:
             v = getattr(self, k)
             assert isinstance(v, vt), f"[{k}] must be of type [{vt}] but got [{type(v)}]"
-        for k in list(self.output_signature.keys()):
-            self.output_signature[k] = self.output_signature[k]
-        for d, p in self.output_signature.items():
-            assert isinstance(d, Dependency), f"output signature key must be of type [Dependency] but got [{type(d)}]"
-            assert d in self.model.produces, f"output signature value must be added to model"
-        for dep in self.model.produces:
-            assert dep in self.output_signature, f"model output missing in signature [{dep}]"
+        assert len(self.output_signature) == len(self.model.produces), f"output signature length must match model produces length [{len(self.output_signature)} != {len(self.model.produces)}]"
+        for sig_group, m_group in zip(self.output_signature, self.model.produces):
+            for d, p in sig_group.items():
+                assert isinstance(d, Dependency), f"output signature key must be of type [Dependency] but got [{type(d)}]"
+                assert d in m_group, f"output signature value must be added to model"
+            for dep in m_group:
+                assert dep in sig_group, f"model output missing in signature [{dep}]"
         TransformInstance._last_loaded_transform = self
 
     def GetKey(self):
@@ -729,11 +729,11 @@ class TransformInstanceLibrary(DataInstanceLibrary):
     def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool=False) -> None:
         super().__init__(location, include_std=include_std)
         if "transforms" not in self.types:
-            transform_types = DataTypeLibrary(types=dict(
-                transform=Endpoint({"metasmith", "transform"}),
-                example_input=Endpoint({"metasmith", "example input"}),
-                example_output=Endpoint({"metasmith", "example output"}),
-            ))
+            transform_types = DataTypeLibrary(types={
+                "transform":        Endpoint({"metasmith", "transform"}),
+                "example input":    Endpoint({"metasmith", "example input"}),
+                "example output":   Endpoint({"metasmith", "example output"}),
+            })
             self.AddTypeLibrary("transforms", transform_types)
         self._transform_cache: dict[Path, TransformInstance] = {}
 

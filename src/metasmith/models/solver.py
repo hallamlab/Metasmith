@@ -155,13 +155,14 @@ class Transform:
     def __init__(self) -> None:
         super().__init__()
         self.requires: list[Dependency] = list()
-        self.produces: list[Dependency] = list()
+        self.produces: list[list[Dependency]] = [[]]
+        self._group: int = 0
         self._update_hash()
 
     def __str__(self) -> str:
         def _props(d: Dependency):
             return "{"+"-".join(sorted(d.properties))+"}"
-        return f"{','.join(_props(r) for r in self.requires)}->{','.join(_props(p) for p in self.produces)}"
+        return f"{','.join(_props(r) for r in self.requires)}->{'|'.join(','.join(_props(p) for p in g) for g in self.produces)}"
 
     def __repr__(self) -> str:
         return str(self)
@@ -175,8 +176,19 @@ class Transform:
     def AddRequirement(self, example: Node|None=None, properties: Iterable[str]|None=None, parents: set[Dependency]|None=None):
         return self._add_dependency(destination=self.requires, example=example, properties=properties, parents=parents)
 
+    def _get_product_group(self):
+        if self._group >= len(self.produces):
+            self.produces.append([])
+        return self.produces[self._group]
+
+    def NewProductGroup(self):
+        prod = self._get_product_group()
+        if len(prod) > 0:
+            self._group += 1
+
     def AddProduct(self, example: Node|None=None, properties: Iterable[str]|None=None, parents: set[Dependency]|None=None):
-        return self._add_dependency(destination=self.produces, example=example, properties=properties, parents=parents)
+        prod = self._get_product_group()
+        return self._add_dependency(destination=prod, example=example, properties=properties, parents=parents)
 
     def _add_dependency(self, destination: list[Dependency], example: Node|None=None, properties: Iterable[str]|None=None, parents: set[Dependency]|None=None):
         assert example is not None or properties is not None
@@ -195,10 +207,19 @@ class Transform:
         return _dep
 
 @dataclass
+class SolverState:
+    k: int
+    steps: list[Application]
+    production: dict[Dependency, list[Endpoint]] # product dep to produced endpoint
+    have: set[Endpoint]
+    candidate_transforms: set[Transform] # may not be valid, holds use count
+
+@dataclass
 class Application:
+    initial_state: int
     transform: Transform
     used: dict[Dependency, Endpoint]
-    produced: dict[Dependency, Endpoint]
+    produced: list[dict[Dependency, Endpoint]]
     score: list[float] = field(default_factory=list)
     _iteration: int = -1
     _sig: str|None = None
@@ -214,13 +235,6 @@ class Application:
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Application): return False
         return self._hash == value._hash
-
-@dataclass
-class SolverState:
-    steps: list[Application]
-    production: dict[Dependency, list[Endpoint]] # product dep to produced endpoint
-    have: set[Endpoint]
-    candidate_transforms: set[Transform] # may not be valid, holds use count
 
 @dataclass
 class RefinerState:
@@ -247,11 +261,11 @@ class Solution:
     complete: bool
     dependency_plan: list[Application]
     _frontier: list[Application]
-    _history: list[SolverState]
-    _refiner_history: list[RefinerState]
-    _heuristics: dict[str, dict[str, float]]
+    _history: list[list[SolverState]]
+    _refiner_histories: list[list[RefinerState]]
+    _heuristics: dict[str, dict|list]
     _iterations: int
-    _refiner_iterations: tuple[int, int] # found at, total expanded
+    _refiner_iterations: list[tuple[int, int]] # found at, total expanded
     _relavent_transforms: list[Transform]
     
 def solve_by_mcts(
@@ -267,10 +281,35 @@ def solve_by_mcts(
     # monte carlo tree search
 
     given_tr = Transform()
-    given_appl = Application(given_tr, used={}, produced={})
+    _last_state_k = -1
+    _state2child = {}
+    def new_state_k(source: int):
+        nonlocal _last_state_k
+        _last_state_k += 1
+        _state2child[source] = _state2child.get(source, [])+[_last_state_k]
+        return _last_state_k
+    def get_all_children(state: int):
+        todo = [state]
+        seen: set[int] = set()
+        while len(todo)>0:
+            s = todo.pop()
+            if s in seen: continue
+            seen.add(s)
+            todo += _state2child.get(s, [])
+        return seen
+
+    starting_state = SolverState(
+        k=new_state_k(-1),
+        steps=[],
+        production={},
+        have=set(),
+        candidate_transforms=set(),
+    )
+    # given_appl = Application(starting_state, given_tr, used={}, produced=[{}])
+    given_appl = Application(initial_state=starting_state.k, transform=given_tr, used={}, produced=[{}])
     for e in given:
         p = given_tr.AddProduct(properties=e.properties)
-        given_appl.produced[p] = e
+        given_appl.produced[0][p] = e
     def _iter_transforms():
         yield given_tr
         for tr in transforms: yield tr
@@ -280,9 +319,10 @@ def solve_by_mcts(
     for parent in _iter_transforms():
         for child in _iter_transforms():
             if parent == child: continue
-            for p in parent.produces:
-                if not any(p.IsA(c) for c in child.requires): continue
-                product2consumer[p] = product2consumer.get(p, set())|{child}
+            for pgroup in parent.produces:
+                for p in pgroup:
+                    if not any(p.IsA(c) for c in child.requires): continue
+                    product2consumer[p] = product2consumer.get(p, set())|{child}
     # requirement prototype of consumer
     # to production prototype of producer
     demand2product: dict[Dependency, set[Dependency]] = {}
@@ -292,10 +332,11 @@ def solve_by_mcts(
             if parent == child: continue
             for c in child.requires:
                 found = False
-                for p in parent.produces:
-                    if not p.IsA(c): continue
-                    demand2product[c] = demand2product.get(c, set())|{p}
-                    found = True
+                for pgroup in parent.produces:
+                    for p in pgroup:
+                        if not p.IsA(c): continue
+                        demand2product[c] = demand2product.get(c, set())|{p}
+                        found = True
                 if found:
                     demand2producer[c] = demand2producer.get(c, set())|{parent}
 
@@ -324,7 +365,10 @@ def solve_by_mcts(
                 todo.append(DistNode(producer, dist, path))
     relavent_transforms = [tr for tr in transforms if tr in distance_scores]
     max_distance_score = max(distance_scores.values())
-    
+    # for telemetry
+    D2T_KEY = "distance to target"
+    d2t_report = {k.key:float(v) for k, v in distance_scores.items()}
+
     def _prune_irrelavent_values(d: dict, value_whitelist: set):
         for k, v in d.items():
             d[k] = value_whitelist.intersection(v)
@@ -333,20 +377,23 @@ def solve_by_mcts(
     rts = set(relavent_transforms)|{given_tr, target}
     _prune_irrelavent_values(product2consumer, rts)
     _prune_irrelavent_values(demand2producer, rts)
-    rtsp = {p for t in rts for p in t.produces}
+    rtsp = {p for t in rts for g in t.produces for p in g}
     _prune_irrelavent_values(demand2product, rtsp)
 
     # should not perform mutations
+    # produces list[possiblities] where each possibility is a list[Dependency]
     def generate_applications_of_transform(
+        state_k: int,
         production: dict[Dependency, list[Endpoint]],
         blacklist: set[str],
         tr: Transform,
-        mock_produced: dict[Dependency, Endpoint]|None=None
+        mock_produced: list[dict[Dependency, Endpoint]]|None=None
     ) -> list[Application]:
+        # production = state.production
         if len(tr.requires)==0:
-            appl = Application(tr, used={}, produced={})
+            appl = Application(initial_state=state_k, transform=tr, used={}, produced=[{}])
             if appl.Signature() in blacklist: return []
-            appl.produced = {p:Endpoint(properties=p.properties) for p in tr.produces}
+            appl.produced = [{p:Endpoint(properties=p.properties) for p in pgroup} for pgroup in tr.produces]
             return [appl]
         
         # if mock_produced is given, do not check for lineage,
@@ -396,14 +443,14 @@ def solve_by_mcts(
             # print("_  ", used)
             if handle_lineage and not _satisfies_lineage(e, p, used): continue
             if p_i >= len(tr.requires)-1:
-                appl = Application(tr, used, {})
-                if appl.Signature() in blacklist: continue
+                appl = Application(initial_state=state_k, transform=tr, used=used, produced=[{}])
+                if appl.Signature() in blacklist: continue # just check first
                 if handle_lineage:
                     lineage: set = {ancestor for e in used.values() for ancestor in e.parents}
                     lineage.update(used.values())
-                    appl.produced = {product:Endpoint(product.properties, parents=lineage) for product in tr.produces}
+                    appl.produced = [{p:Endpoint(p.properties, parents=lineage) for p in pgroup} for pgroup in tr.produces]
                 else:
-                    appl.produced = mock_produced
+                    appl.produced = [mock for _, mock in zip(tr.produces, mock_produced)]
                 viable_input_sets.append(appl)
                 continue # at leaf (end of required dependencies)
             next_i = p_i+1
@@ -411,131 +458,15 @@ def solve_by_mcts(
                 (next_i, e, used) for e in matches[tr.requires[next_i]]
             ]
         return viable_input_sets
-    
-    @dataclass
-    class MctsResult:
-        complete: bool
-        state: SolverState
-        _frontier: list[Application]
-        _history: list[SolverState]
-        _iterations: int
-    def mcts(max_iter: int):
-        def is_solved(state: SolverState):
-            last_transform = state.steps[-1].transform
-            return last_transform == target
-
-        def score_node(node: Application):
-            dist = distance_scores[node.transform]
-            dist = 1-dist/max_distance_score
-            opportunity = opportunity_scores[node.transform]
-            opportunity = 1-(1/(1+opportunity/10))
-            node.score = [dist, opportunity]
-            return node
-
-        def select_node(frontier: list[Application]):
-            probs = [75, 20, 5] # dist, opportunity, explore
-            total_prob = sum(probs)
-            probs = [x/total_prob for x in probs]
-            p_i = np.random.choice(list(range(len(probs))), 1, p=probs)[0]
-            if p_i<len(probs)-1: # exploit
-                scores = np.array([s.score[p_i] for s in frontier])
-                K = 1
-                k = min(K, scores.shape[0])
-                candidate_indexes = np.argpartition(scores, -k)[-k:]
-                i: int = np.random.choice(candidate_indexes)
-            else: # explore
-                i = np.random.randint(0, len(frontier))
-            return i
-
-        def remove_node(frontier: list[Application], index: int):
-            frontier[index], frontier[-1] = frontier[-1], frontier[index]
-            return frontier.pop() # O(1) vs O(m) for arr.remove()
-
-        def expand_node(state: SolverState, appl: Application):
-            candidate_transforms = state.candidate_transforms.copy() # was free transform
-            for p in appl.transform.produces:
-                if p not in product2consumer: continue
-                for linked in product2consumer[p]:
-                    candidate_transforms.add(linked)
-            production = state.production.copy()
-            for p, e in appl.produced.items():
-                production[p] = production.get(p, [])+[e]
-            return SolverState(
-                steps=state.steps+[appl],
-                have=state.have|set(appl.produced.values()),
-                candidate_transforms=candidate_transforms,
-                production=production,
-            )
-
-        free_transforms = [t for t in relavent_transforms if len(t.requires)==0]
-        def generate_child_nodes(state: SolverState):
-            def _iter_transforms():
-                for tr in state.candidate_transforms:
-                    yield tr
-                for tr in free_transforms:
-                    yield tr
-            for tr in _iter_transforms():
-                # print("$ ", tr)
-                for appl in generate_applications_of_transform(state.production, frontier_signatures, tr):
-                    yield appl
-
-        current_state = SolverState(
-            steps=[],
-            production={},
-            have=set(),
-            candidate_transforms=set(),
-        )
-        start = score_node(given_appl)
-        frontier: list[Application] = [start]
-        frontier_signatures: set[str] = {s.Signature() for s in frontier}
-        history: list[SolverState] = []
-        i: int = 0
-        while len(frontier)>0 and i < max_iter:
-            i += 1
-            nodei = select_node(frontier)
-            node = remove_node(frontier, nodei)
-            node._iteration = i
-            current_state = expand_node(current_state, node)
-            # print(i, f"[{len(frontier)}]", node.transform)
-            # for k in current_state.candidate_transforms:
-            #     print("-", k)
-            history.append(current_state)
-            if is_solved(current_state):
-                return MctsResult(
-                    complete=True,
-                    state=current_state,
-                    _frontier=frontier,
-                    _history=history,
-                    _iterations=i,
-                )
-            applied_transforms: set[Transform] = set()
-            for child in generate_child_nodes(current_state):
-                # print(f"c", child.transform)
-                child = score_node(child)
-                child._iteration = -i
-                frontier_signatures.add(child.Signature())
-                applied_transforms.add(child.transform)
-                frontier.append(child)
-            current_state.candidate_transforms -= applied_transforms # all possibilities per tr explored
-            # for s in frontier:
-            #     print(f"f", s.transform)
-            # print()
-
-        return MctsResult(
-            complete=False,
-            state=current_state,
-            _frontier=frontier,
-            _history=history,
-            _iterations=i,
-        )
-
+        
     # ---
     # prune spurious nodes, assumes last step is target
     def prune_steps(steps: list[Application]) -> list[Application]:
         e2source: dict[Endpoint, Application] = {}
         for step in steps:
-            for e in step.produced.values():
-                e2source[e] = step
+            for pgroup in step.produced:
+                for e in pgroup.values():
+                    e2source[e] = step
     
         @dataclass
         class PruneNode:
@@ -560,7 +491,8 @@ def solve_by_mcts(
         todo: list[PruneNode] = [start]
         seen: dict[str, PruneNode] = {}
         while len(todo)>0:
-            node = todo.pop(0)
+            todo[-1], todo[0] = todo[0], todo[-1] # otherwise, pop(0) is O(n)
+            node = todo.pop()
             key = node.GetKey()
             if key in seen: continue
             seen[key] = node
@@ -591,10 +523,11 @@ def solve_by_mcts(
                 else:
                     step_depth = 1
                 order[step.Signature()] = step_depth
-                for e in step.produced.values():
-                    if e in order: continue
-                    order[e.key] = step_depth+1
-                _have |= {e for e in step.produced.values()}
+                for pgroup in step.produced:
+                    for e in pgroup.values():
+                        if e in order: continue
+                        order[e.key] = step_depth+1
+                _have |= {e for e in pgroup.values() for pgroup in step.produced}
         max_depth = max(order.values())+1
         for step in steps:
             k = step.Signature()
@@ -605,27 +538,26 @@ def solve_by_mcts(
     def order_steps(order: dict[str, int], steps: list[Application]):
         return sorted(steps, key=lambda s: order[s.Signature()]*10000+len(s.used))
     
-    solution = mcts(
-        max_iter=max_iter
-    )
-    D2T_KEY = "distance to target"
-    d2t_report = {k.key:float(v) for k, v in distance_scores.items()}
-    if not solution.complete:
-        return Solution(
-            complete=False,
-            dependency_plan=[],
-            _frontier=solution._frontier,
-            _history=solution._history,
-            _refiner_history=[],
-            _heuristics={
-                D2T_KEY: d2t_report,
-            },
-            _iterations=solution._iterations,
-            _refiner_iterations=0,
-            _relavent_transforms=relavent_transforms,
-        )
+    # solution: MctsResult = mcts(
+    #     max_iter=max_iter
+    # )
 
-    pruned_steps = prune_steps(solution.state.steps)
+    # if not solution.complete:
+    #     return Solution(
+    #         complete=False,
+    #         dependency_plans=[],
+    #         _frontier=solution._frontier,
+    #         _history=solution._history,
+    #         _refiner_histories=[],
+    #         _heuristics={
+    #             D2T_KEY: d2t_report,
+    #         },
+    #         _iterations=solution._iterations,
+    #         _refiner_iterations=[(0, 0)],
+    #         _relavent_transforms=relavent_transforms,
+    #     )
+
+    # pruned_step_groups = [prune_steps(state.steps) for state in solution.state]
 
     @dataclass
     class RefinerResult:
@@ -638,8 +570,9 @@ def solve_by_mcts(
             produced_from: dict[Endpoint, list[Endpoint]] = {}
             for appl in state.steps:
                 _from = list(appl.used.values())
-                for e in appl.produced.values():
-                    produced_from[e] = _from
+                for pgroup in appl.produced:
+                    for e in pgroup.values():
+                        produced_from[e] = _from
             def _has_ancestor(e: Endpoint, a: Endpoint):
                 todo = [e]
                 seen = {e}
@@ -655,20 +588,49 @@ def solve_by_mcts(
                 yield given_appl
                 for step in state.steps:
                     yield step
+
+            def _get_target():
+                _targeti = -1
+                for i, s in enumerate(state.steps):
+                    if all(len(g) == 0 for g in s.produced):
+                        _targeti = i
+                        break
+                if _targeti == -1: return None
+                return state.steps[_targeti]
+
             # checks lineage constaint and no loops
-            def _is_valid():
+            def _is_valid(target_appl: Application):
+                # print(">>>")
                 e2appl: dict[Endpoint, list[Application]] = {}
                 for appl in _iter_steps():
                     for e in appl.used.values():
                         e2appl[e] = e2appl.get(e, [])+[appl]
                 todo = [(given_appl, set())]
+                produced: set[Endpoint] = set()
                 while len(todo)>0:
                     current, history = todo.pop()
-                    if current.Signature() in history: return False # looped
-                    history = history|{current.Signature()}
-                    for e in current.produced.values():
-                        for appl in e2appl.get(e, []):
-                            todo.append((appl, history))
+
+                    # print("  .")
+                    # print(f"  {current.transform}")
+                    # for d, e in current.used.items():
+                    #     print(f"    {d} {e}")
+                    # # print(f"        ---")
+                    # for pgroup in current.produced:
+                    #     print(f"    .")
+                    #     for d, e in pgroup.items():
+                    #         print(f"    {d} {e}")
+                    # if current.Signature() in history: return False # looped
+                    # history = history|{current.Signature()}
+                    # for pgroup in current.produced:
+                    #     produced.update(pgroup.values())
+                    #     for e in pgroup.values():
+                    #         for appl in e2appl.get(e, []):
+                    #             todo.append((appl, history))
+
+                # no loops from the start, but do we actually get to the end?
+                missing = set(target_appl.used.values()) - produced
+                if len(missing)>0: return False
+
                 # if here, then no loops
                 # now check lineage
                 for step in _iter_steps():
@@ -677,7 +639,13 @@ def solve_by_mcts(
                             lineage_constraint_e = step.used[pproto] # type: ignore
                             if not _has_ancestor(e, lineage_constraint_e): return False
                 return True
-            state.valid = _is_valid()
+            target_appl = _get_target()
+            if target_appl is None:
+                state.valid = False
+            else:
+                state.valid = _is_valid(target_appl)
+            # print(f"<<< {state.valid}")
+
                 
         def score_node(state: RefinerState):
             validate_node(state)
@@ -700,8 +668,9 @@ def solve_by_mcts(
 
             _product2producer: dict[Endpoint, Application] = {}
             for step in _steps:
-                for e in step.produced.values():
-                    _product2producer[e] = step
+                for pgroup in step.produced:
+                    for e in pgroup.values():
+                        _product2producer[e] = step
             def _max_distance_to(e: Endpoint, a: Endpoint):
                 todo = [(e, 0)]
                 seen = set()
@@ -728,7 +697,7 @@ def solve_by_mcts(
             else:
                 lin_score = 0
             score = e_score*1000+lin_score
-            _, k = KeyGenerator.FromStr(state.Signature(), l=4)
+            # _, k = KeyGenerator.FromStr(state.Signature(), l=4)
             vscore = score*state.valid
             state.scores = [score, vscore]
         
@@ -749,20 +718,23 @@ def solve_by_mcts(
         
         def remove_node(frontier: list[RefinerState], index: int):
             frontier[index], frontier[-1] = frontier[-1], frontier[index]
-            return frontier.pop() # O(1) vs O(m) for arr.remove()
+            return frontier.pop() # O(1) vs O(n) for arr.remove()
 
         def expand_node(state: RefinerState):
             current_applications = {s.Signature() for s in state.steps}
             production: dict[Dependency, list[Endpoint]] = {}
             for step in state.steps:
-                for p, e in step.produced.items():
-                    production[p] = production.get(p, [])+[e]
+                for pgroup in step.produced:
+                    for p, e in pgroup.items():
+                        production[p] = production.get(p, [])+[e]
             for step in state.steps:
                 # reuse the current endpoints and simply look for alternate edge comparisons
                 # lineage constraint checked separately
                 for appl in generate_applications_of_transform(
-                    production, current_applications,
-                    step.transform,
+                    state_k=step.initial_state,
+                    production=production,
+                    blacklist=current_applications,
+                    tr=step.transform,
                     mock_produced=step.produced, # rectify later
                 ):
                     appl._iteration = step._iteration
@@ -775,6 +747,7 @@ def solve_by_mcts(
         def rectify(solution: list[Application]):
             steps = [
                 Application(
+                    initial_state=step.initial_state,
                     transform=step.transform,
                     used=step.used.copy(),
                     produced=step.produced.copy(),
@@ -786,7 +759,7 @@ def solve_by_mcts(
             # prune steps, place target step last, as required
             _targeti = -1
             for i, s in enumerate(steps):
-                if len(s.produced) == 0:
+                if all(len(g) == 0 for g in s.produced):
                     _targeti = i
                     break
             assert _targeti >= 0
@@ -809,12 +782,16 @@ def solve_by_mcts(
                     lineage.add(e)
                     lineage.update(e.parents) # type: ignore
                 # fix lineage of endpoints
-                for p in appl.transform.produces:
-                    e = appl.produced[p]
-                    new_e = Endpoint(e.properties, parents=lineage)
-                    appl.produced[p] = new_e
-                    endpoint_map[e] = new_e
-                    rev_emap[new_e] = e
+                new_produced = []
+                for pgroup in appl.produced:
+                    new_pgroup = {}
+                    for p, e in pgroup.items():
+                        new_e = Endpoint(e.properties, parents=lineage)
+                        new_pgroup[p] = new_e
+                        endpoint_map[e] = new_e
+                        rev_emap[new_e] = e
+                    new_produced.append(new_pgroup)
+                appl.produced = new_produced
                 # force regenerate signature
                 appl._sig = None
                 appl._hash = None
@@ -865,22 +842,228 @@ def solve_by_mcts(
             _found_on=refined._iteration,
         )
 
-    refined = refine_mcts(pruned_steps, max_refine)
-    _steps = refined.steps
-    node_order = get_order(_steps)
-    ordered_steps = order_steps(node_order, _steps)
+    @dataclass
+    class MctsResult:
+        complete: bool
+        state: SolverState
+        _frontier: list[Application]
+        _history: list[list[SolverState]]
+        _refiner_histories: list[list[RefinerState]]
+        _iterations: int
+        _refiner_iterations: list[tuple[int, int]]
+        _production_depths: list[dict[str, float]]
+    def mcts(max_iter: int):
+        def is_solved(state: SolverState):
+            last_transform = state.steps[-1].transform
+            return last_transform == target
+
+        def score_node(appl: Application):
+            dist = distance_scores[appl.transform]
+            dist = 1-dist/max_distance_score
+            opportunity = opportunity_scores[appl.transform]
+            opportunity = 1-(1/(1+opportunity/10))
+            appl.score = [dist, opportunity]
+            return appl
+
+        def select_node(frontier: list[Application]):
+            probs = [75, 20, 5] # dist, opportunity, explore
+            total_prob = sum(probs)
+            probs = [x/total_prob for x in probs]
+            p_i = np.random.choice(list(range(len(probs))), 1, p=probs)[0]
+            if p_i<len(probs)-1: # exploit
+                scores = np.array([s.score[p_i] for s in frontier])
+                K = 1
+                k = min(K, scores.shape[0])
+                candidate_indexes = np.argpartition(scores, -k)[-k:]
+                i: int = np.random.choice(candidate_indexes)
+            else: # explore
+                i = np.random.randint(0, len(frontier))
+            return i
+
+        def remove_node(frontier: list[Application], index: int):
+            frontier[index], frontier[-1] = frontier[-1], frontier[index]
+            return frontier.pop() # O(1) vs O(m) for arr.remove()
+
+        def expand_node(state: SolverState, appl: Application) -> list[SolverState]:
+            possibilities = []
+            if len(appl.produced)>1:
+                state_ks = [new_state_k(state.k) for _ in appl.produced]
+            else:
+                state_ks = [state.k]
+            for group, state_k in zip(appl.produced, state_ks):
+                candidate_transforms = state.candidate_transforms.copy() # was free transform
+                production = state.production.copy()
+                for dep, ep in group.items():
+                    if dep not in product2consumer: continue
+                    for linked in product2consumer[dep]:
+                        candidate_transforms.add(linked)
+                for dep, ep in group.items():
+                    production[dep] = production.get(dep, [])+[ep]
+                if len(appl.produced)>1:
+                    appl_variant = Application(
+                        initial_state=state_k,
+                        transform=appl.transform,
+                        used=appl.used,
+                        produced=[group], # limit to each each possibility 
+                        score=appl.score,
+                    )
+                else:
+                    appl_variant = appl # nothing to limit
+                possibilities.append(SolverState(
+                    k=state_k,
+                    steps=state.steps+[appl_variant],
+                    have=state.have|set(group.values()),
+                    candidate_transforms=candidate_transforms,
+                    production=production,
+                ))
+            return possibilities
+
+        free_transforms = [t for t in relavent_transforms if len(t.requires)==0]
+        def generate_child_nodes(state: SolverState, frontier_signatures: set[str]):
+            def _iter_transforms():
+                for tr in state.candidate_transforms:
+                    yield tr
+                for tr in free_transforms:
+                    yield tr
+            for tr in _iter_transforms():
+                # print("$ ", tr)
+                for appl in generate_applications_of_transform(
+                    state_k=state.k,
+                    production=state.production,
+                    blacklist=frontier_signatures,
+                    tr=tr
+                ):
+                    yield appl
+
+        def merge_states(source: SolverState, alt: SolverState) -> SolverState:
+            source_states = {s.initial_state for s in source.steps}
+            joined_steps: list[Application] = [s for s in alt.steps if s.initial_state in source_states]
+            to_join: list[Application] = [s for s in alt.steps if s.initial_state not in source_states]
+            to_join.reverse() # from target to given
+            for step in to_join:
+                print(step.transform)
+
+            return source
+            
+
+
+        # pseudocode:
+        # Solver state captures available endpoints and applied transforms.
+        # Branching produces alternate states
+        # Current states is list of alternate states.
+        # Frontier is list of applications of transforms
+        # Each application specifies the state on which to be applied 
+        #   if state no longer exists, application is applied to all branched children 
+        # At start, there is only 1 state and frontier contains only 1 application,
+        #   which is a transform that adds the given endpoints to the state
+        # At each iteration:
+        #   select application from frontier based on eploit vs explore
+        #   exploit has 2 modes: 
+        #       get closer to target
+        #       or increase the number of available endpoints (opportunity)
+        #   apply application to all valid current states
+        #   update current branching factor (number of current states)
+        #   if a state is solved, stop considering it
+        #   >>> if there are no more current states, return solved states
+        #   add new applications to frontier based on new states
+        #   update current states to only those that are not solved
+        # notes:
+        # - each node in the graph that the solver traverses
+        #   is itself a graph representing the workflow.
+        #   that is, the solver is not searching the workflow graph,
+        #   but rather the space of possible workflow graphs.
+        current_states = [starting_state]
+        frontier: list[Application] = [score_node(given_appl)]
+        frontier_signatures: set[str] = {s.Signature() for s in frontier}
+        history: list[list[SolverState]] = []
+        solved_state: SolverState|None = None
+        _refiner_iterations = []
+        _refiner_histories = []
+        _production_depths = []
+        i: int = 0
+        while len(frontier)>0 and i < max_iter:
+            i += 1
+            nodei = select_node(frontier)
+            node = remove_node(frontier, nodei)
+            node._iteration = i
+
+            valid_state_ks = get_all_children(node.initial_state)
+            source_states = [s for s in current_states if s.k in valid_state_ks]
+            carry_over = [s for s in current_states if s.k not in valid_state_ks]
+            next_states = [s for g in [expand_node(s, node) for s in source_states] for s in g]
+            history.append(carry_over+next_states)
+            remain: list[SolverState] = []
+            for s in next_states:
+                if is_solved(s):
+                    s.steps = prune_steps(s.steps)
+                    refined = refine_mcts(s.steps, max_refine)
+                    _refiner_histories.append(refined._history)
+                    _refiner_iterations.append((refined._found_on, refined._iterations))
+                    _order = get_order(refined.steps)
+                    _production_depths.append({k:float(v) for k, v in _order.items()})
+                    s.steps = order_steps(_order, refined.steps)
+                    solved_state = merge_states(solved_state, s) if solved_state is not None else s
+                else:
+                    remain.append(s)
+
+            if len(remain)+len(carry_over) == 0:
+                # while len(solved_states)>1:
+                #     a, b, rest = solved_states[0], solved_states[1], solved_states[2:]
+                #     m = merge_states(a, b)
+                #     solved_states = [m]+rest
+                if solved_state is None: break
+                return MctsResult(
+                    complete=True,
+                    state=solved_state,
+                    _frontier=frontier,
+                    _history=history,
+                    _iterations=i,
+                    _refiner_iterations=_refiner_iterations,
+                    _refiner_histories=_refiner_histories,
+                    _production_depths=_production_depths,
+                )
+            for state in remain: # applications for carry over should have already been added
+                applied_transforms: set[Transform] = set()
+                for child in generate_child_nodes(state, frontier_signatures):
+                    # print(f"c", child.transform)
+                    child = score_node(child)
+                    child._iteration = -i
+                    frontier_signatures.add(child.Signature())
+                    applied_transforms.add(child.transform)
+                    frontier.append(child)
+                state.candidate_transforms -= applied_transforms # all possibilities per tr explored
+            current_states = carry_over+remain
+            
+        return MctsResult(
+            complete=False,
+            state=solved_state if solved_state is not None else current_states[0],
+            _frontier=frontier,
+            _history=history,
+            _iterations=i,
+            _refiner_iterations=_refiner_iterations,
+            _refiner_histories=_refiner_histories,
+            _production_depths=_production_depths,
+        )
+
+    # refined = [refine_mcts(s, max_refine) for s in pruned_step_groups]
+    # node_orders = [get_order(r.steps) for r in refined]
+    # ordered_steps = [order_steps(o, r.steps) for o, r in zip(node_orders, refined)]
+    # ordered_steps = [r.steps for r in refined]
+    
+    solution = mcts(max_iter=max_iter)
 
     return Solution(
         complete=True,
-        dependency_plan=ordered_steps,
+        dependency_plan=solution.state.steps,
         _frontier=solution._frontier,
         _history=solution._history,
-        _refiner_history=refined._history,
+        _refiner_histories=solution._refiner_histories,
         _heuristics={
-            "production depth": {k:float(v) for k, v in node_order.items()},
+            "production depth": solution._production_depths,
             D2T_KEY: d2t_report,
         },
         _iterations=solution._iterations,
-        _refiner_iterations=(refined._found_on, refined._iterations),
+        _refiner_iterations=solution._refiner_iterations,
         _relavent_transforms=relavent_transforms,
     )
+    

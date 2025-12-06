@@ -1,0 +1,10 @@
+manifest:
+  /home/tony/workspace/tools/Metasmith/main/local_mock/transforms/branching/a_no_op.py:
+    type: transforms::transform
+  /home/tony/workspace/tools/Metasmith/main/local_mock/transforms/branching/b_no_op.py:
+    type: transforms::transform
+  /home/tony/workspace/tools/Metasmith/main/local_mock/transforms/branching/branch.py:
+    type: transforms::transform
+  /home/tony/workspace/tools/Metasmith/main/local_mock/transforms/branching/gather.py:
+    type: transforms::transform
+schema: 0.11.4
