@@ -977,7 +977,7 @@ def solve_by_mcts(
                     yield appl
 
         def merge_states(source: SolverState, alt: SolverState) -> SolverState:
-            print(f"{source.k} << {alt.k}")
+            # print(f"{source.k} << {alt.k}")
             e2consumer: dict[Endpoint, list[Application]] = {}
             for step in alt.steps:
                 for d, e in step.used.items():
@@ -1065,7 +1065,7 @@ def solve_by_mcts(
                 parents |= {p for e in src_step.used.values() for p in e.parents} # type: ignore
                 parents |= {p for e in alt_step.used.values() for p in e.parents} # type: ignore
                 merged_pgroup = src_step.produced.copy()
-                print(f"  {src_step.transform} {len(src_step.produced)}")
+                # print(f"  {src_step.transform} {len(src_step.produced)}")
                 for mp in alt_step.produced:
                     mk = set(mp)
                     if any(mk==set(pgroup) for pgroup in src_step.produced): continue
