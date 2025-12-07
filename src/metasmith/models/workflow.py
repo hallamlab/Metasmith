@@ -24,7 +24,7 @@ BIND_FILE = ".command.binds"
 class WorkflowStep:
     order: int
     uses: list[DataInstance]
-    produces: list[DataInstance]
+    produces: list[list[DataInstance]]
     dependency_map: dict[Dependency, DataInstance]
     transform: TransformInstance
     transform_library: TransformInstanceLibrary
@@ -34,7 +34,7 @@ class WorkflowStep:
         return dict(
             order=self.order,
             uses=[inst.Pack() for inst in self.uses],
-            produces=[inst.Pack() for inst in self.produces],
+            produces=[[inst.Pack() for inst in g] for g in self.produces],
             dependency_map={k.key:v._key for k, v in self.dependency_map.items()},
             transform=f"{self.transform_library.GetKey()}::{self.transform.name}",
         )
@@ -49,7 +49,7 @@ class WorkflowStep:
         return cls(
             order=raw["order"],
             uses=[DataInstance.Unpack(inst, libraries) for inst in raw["uses"]],
-            produces=[DataInstance.Unpack(inst, libraries) for inst in raw["produces"]],
+            produces=[[DataInstance.Unpack(inst, libraries) for inst in g] for g in raw["produces"]],
             dependency_map={}, # needs workflow plan to sort out
             _raw_dependency_map = raw["dependency_map"],
             transform=tr,
@@ -58,9 +58,9 @@ class WorkflowStep:
     
     def _resolve_dependency_map(self):
         assert self._raw_dependency_map is not None
-        data = {d._key:d for d in itertools.chain(self.uses, self.produces)}
+        data = {d._key:d for d in itertools.chain(self.uses, [d for g in self.produces for d in g])}
         tr = self.transform.model
-        deps = {d.key:d for d in itertools.chain(tr.requires, tr.produces)}
+        deps = {d.key:d for d in itertools.chain(tr.requires, [d for g in tr.produces for d in g])}
         self.dependency_map = {deps[k]:data[v] for k, v in self._raw_dependency_map.items()}
 
 @dataclass
@@ -139,8 +139,9 @@ class WorkflowPlan:
         for step in self.steps:
             for inst in step.uses:
                 dtypes[inst.dtype.key] = inst.dtype_name, inst.dtype
-            for inst in step.produces:
-                dtypes[inst.dtype.key] = inst.dtype_name, inst.dtype
+            for g in step.produces:
+                for inst in g:
+                    dtypes[inst.dtype.key] = inst.dtype_name, inst.dtype
 
         def _pack_type(name: str, e: Endpoint):
             d = e.Pack()
@@ -218,7 +219,7 @@ class WorkflowPlan:
 
         def _unpack_step(raw: dict):
             step = WorkflowStep.Unpack(raw, libraries)
-            for inst, r in itertools.chain(zip(step.uses, raw["uses"]), zip(step.produces, raw["produces"])):
+            for inst, r in itertools.chain(zip(step.uses, raw["uses"]), zip([d for g in step.produces for d in g], raw["produces"])):
                 inst.dtype = all_types[r["type_id"]]
                 inst.RecalculateKey()
             step._resolve_dependency_map()
@@ -244,21 +245,24 @@ class WorkflowPlan:
     @classmethod
     def Generate(
         cls,
-        given: Iterable[DataInstanceLibrary], transforms: Iterable[TransformInstanceLibrary], targets: Iterable[Endpoint],
+        given: Iterable[Iterable[DataInstanceLibrary]],
+        transforms: Iterable[TransformInstanceLibrary],
+        targets: Iterable[Endpoint],
         max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
         given_map: dict[Endpoint, DataInstance] = {}
-        for lib in given:
-            for path, ep_name, ep in lib.Iterate():
-                if ep in given_map:
-                    Log.Warn(f"[{ep}] of [{lib.location}] is masked")
-                    continue
-                given_map[ep] = DataInstance(
-                    path=path,
-                    dtype=ep,
-                    dtype_name=ep_name,
-                    parent_lib=lib,
-                )
+        for group in given:
+            for lib in group:
+                for path, ep_name, ep in lib.Iterate():
+                    if ep in given_map:
+                        Log.Warn(f"[{ep}] of [{lib.location}] is masked")
+                        continue
+                    given_map[ep] = DataInstance(
+                        path=path,
+                        dtype=ep,
+                        dtype_name=ep_name,
+                        parent_lib=lib,
+                    )
 
         target_e2d: dict[Endpoint, Dependency] = {}
         def _add(tr: Transform, e: Endpoint) -> Dependency:
@@ -304,41 +308,43 @@ class WorkflowPlan:
             tr = transform2inst[appl.transform]
             _lib = inst2trlib[tr]
 
-            for d, e in appl.produced.items():
-                p = tr.output_signature[d]
-                _instance = DataInstance(
-                    path = Path(p),
-                    dtype = e, # we actually dont want lineage at this stage so that the hashes match
-                    dtype_name = _lib.GetName(d), # type: ignore # Dependency not assignable to Endpoint
-                    parent_lib = _lib,
-                )
-                instance_map[e] = _instance
+            for pgroup, sig in zip(appl.produced, tr.output_signature):
+                for d, e in pgroup.items():
+                    p = sig[d]
+                    _instance = DataInstance(
+                        path = Path(p),
+                        dtype = e, # we actually dont want lineage at this stage so that the hashes match
+                        dtype_name = _lib.GetName(d), # type: ignore # Dependency not assignable to Endpoint
+                        parent_lib = _lib,
+                    )
+                    instance_map[e] = _instance
 
             used_endpoints |= {e for e in appl.used.values()}
             step = WorkflowStep(
                 order=i+1,
                 uses=[instance_map[e] for e in appl.used.values()],
-                produces=[instance_map[e] for e in appl.produced.values()],
-                dependency_map={d:instance_map[e] for d, e in itertools.chain(appl.used.items(), appl.produced.items())},
+                produces=[[instance_map[e] for e in pgroup.values()] for pgroup in appl.produced],
+                dependency_map={d:instance_map[e] for d, e in itertools.chain(appl.used.items(), [(d, e) for pgroup in appl.produced for d, e in pgroup.items()])},
                 transform=tr,
                 transform_library=_lib,
             )
             steps.append(step)
 
-            for d, e in appl.produced.items():
-                for target in targets:
-                    if not e.IsA(target): continue
-                    if not target.parents.issubset(e.parents): continue
-                    _used_givens = []
-                    for p in target.parents:
-                        if p not in given_map: continue
-                        _used_givens.append(given_map[p]) # type: ignore # Node not assignable to Endpoint
-                    target_meta[target] = WorkflowTarget(
-                        instance=instance_map[e],
-                        used_givens=_used_givens,
-                        producing_step=step,
-                    )
-                    break
+            for pgroup in appl.produced:
+                for d, e in pgroup.items():
+                    for target in targets:
+                        if not e.IsA(target): continue
+                        if not target.parents.issubset(e.parents): continue
+                        _used_givens = []
+                        for p in target.parents:
+                            if p not in given_map: continue
+                            _used_givens.append(given_map[p]) # type: ignore # Node not assignable to Endpoint
+                        target_meta[target] = WorkflowTarget(
+                            instance=instance_map[e],
+                            used_givens=_used_givens,
+                            producing_step=step,
+                        )
+                        break
 
         return cls(
             given=[i for e, i in given_map.items() if e in used_endpoints],
@@ -392,10 +398,10 @@ class WorkflowPlan:
                 lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
                 if hide_images:
                     inputs  = [u.dtype_name for u in step.uses if "oci_image" not in u.dtype_name]
-                    outputs = [o.dtype_name for o in step.produces if "oci_image" not in o.dtype_name]
+                    outputs = [o.dtype_name for g in step.produces for o in g if "oci_image" not in o.dtype_name]
                 else:
                     inputs  = [u.dtype_name for u in step.uses]
-                    outputs = [o.dtype_name for o in step.produces]
+                    outputs = [o.dtype_name for g in step.produces for o in g]
                 for name in inputs:
                     lines.append(_render_node(NodeType.DATA, name))
                     lines.append(f'    "{name}" -> "{transform_name}";')
@@ -510,7 +516,7 @@ class WorkflowTask:
             ] + [
                 # TAB+f'tuple val(index),path("{add_prefix(x.path)}")'
                 TAB+f'tuple val(index),path("*.{x.path}")'
-                for x in step.produces
+                for g in step.produces for x in g
             ] + [
                 "script:",
                 '"""',
@@ -559,14 +565,14 @@ class WorkflowTask:
             for step in archtype.steps:
                 process_name, src = prepare_step(i+1, step, targets)
                 src_process.append(src)
-                produced = ", ".join(f"_{x.dtype.key}" for x in step.produces)
+                produced = ", ".join(f"_{x.dtype.key}" for g in step.produces for x in g)
                 if len(step.uses)>0:
                     gb = step.dependency_map[step.transform.group_by].dtype.key
                     using_symbols = ", ".join(f"_{x.dtype.key}" for x in step.uses)
                     used = f"o.group('{gb}', o.using([{using_symbols}], k))"
                 else:
                     used = ""
-                produced_k = [f"'{x.dtype.key}'" for x in step.produces]
+                produced_k = [f"'{x.dtype.key}'" for g in step.produces for x in g]
                 produced_k = ", ".join(produced_k)
                 wf_main.append(f"k = [{produced_k}]")
                 if step.transform.batch_size==1:

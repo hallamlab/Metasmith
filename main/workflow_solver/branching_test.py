@@ -308,7 +308,7 @@ def branching_3():
         transforms=transforms,
     )
     print(sol.complete, len(sol.dependency_plan), sol._iterations)
-    sol.RenderDAG("./cache/br3")
+    sol.RenderDAG("./cache/br3", format="png")
     assert sol.complete
     # for i, states in enumerate(sol._history):
     #     print(f">>> {i} | states: {len(states)}")
@@ -347,8 +347,8 @@ def branching_3():
 # trivial()
 # simple()
 # branching_1()
-branching_2()
-# branching_3()
+# branching_2()
+branching_3()
 
 # test when branching is not needed
 # add joining during mcts

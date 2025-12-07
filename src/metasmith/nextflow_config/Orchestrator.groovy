@@ -64,22 +64,25 @@ class Orchestrator {
         // def (stream, name) = [streams, names]
         return [names, streams].transpose().collect((name, stream) -> {
             def completed = 0
-            return new Tuple2(name, stream.flatMap((index, group) -> {
-                this.removePendingTarget(name, index)
-                // println("post: <$name> ${index} $pending_targets")
-                if (!(group instanceof List)) {
-                    group = [group]
-                }
-                return group.collect((item) -> { // map
-                    completed+=1
-                    index = [:]+index // copy the hashmap
-                    index[name] = [completed]
-                    this.registerIndexHistory(name, index)
-                    return [index, item]
+            return new Tuple2(
+                name,
+                stream.flatMap((index, group) -> {
+                    this.removePendingTarget(name, index)
+                    // println("post: <$name> ${index} $pending_targets")
+                    if (!(group instanceof List)) {
+                        group = [group]
+                    }
+                    return group.collect((item) -> { // map
+                        completed+=1
+                        index = [:]+index // copy the hashmap
+                        index[name] = [completed]
+                        this.registerIndexHistory(name, index)
+                        return [index, item]
+                    })
+                    // println("post: $k $hist")
+                    // return x
                 })
-                // println("post: $k $hist")
-                // return x
-            }))
+            )
         })
     }
     
@@ -283,44 +286,56 @@ class Orchestrator {
         })
     }
 
-    public def unify(streams) {
-        return streams
-        .collect((stream) -> { // map
-            def (name, _stream) = stream
-            return _stream.collect(flat: false).map(x -> [x])
-            // .view(v -> "  .${v}")
-
-        })
-        .inject((result, channel) -> { // reduce (to channel)
-            return result
-            .combine(channel)
-            // .view(v -> "  .${v}")
-        })
-        .map((_result) -> {
-            def indexes = _result.collect(channel -> channel.collect(item -> item[0])).flatten()
-            def values = _result.collect(channel -> channel.collect(item -> item[-1]))
-            return [this.combineIndexes(indexes), *values]
-        })
+    public def mix(streams, name) {
+        return new Tuple2(
+            name,
+            streams.collect((stream) -> { // map
+                def (name, _stream) = stream
+                return _stream.inject((result, channel) -> { // reduce (to channel)
+                    return result.mix(channel)
+                })
+            })
+        )
     }
 
-    public def xross(streams) {
-        return streams
-        .collect((stream) -> { // map
-            def (name, _stream) = stream
-            return _stream
-            .map(item -> [item])
+    // public def unify(streams) {
+    //     return streams
+    //     .collect((stream) -> { // map
+    //         def (name, _stream) = stream
+    //         return _stream.collect(flat: false).map(x -> [x])
+    //         // .view(v -> "  .${v}")
 
-        })
-        .inject((result, channel) -> { // reduce (to channel)
-            return result
-            .combine(channel)
-        })
-        .map((_result) -> {
-            def indexes = _result.collect(item -> item[0])
-            def values = _result.collect(item -> [item[-1]])
-            return [combineIndexes(indexes), *values]
-        })
-    }
+    //     })
+    //     .inject((result, channel) -> { // reduce (to channel)
+    //         return result
+    //         .combine(channel)
+    //         // .view(v -> "  .${v}")
+    //     })
+    //     .map((_result) -> {
+    //         def indexes = _result.collect(channel -> channel.collect(item -> item[0])).flatten()
+    //         def values = _result.collect(channel -> channel.collect(item -> item[-1]))
+    //         return [this.combineIndexes(indexes), *values]
+    //     })
+    // }
+
+    // public def xross(streams) {
+    //     return streams
+    //     .collect((stream) -> { // map
+    //         def (name, _stream) = stream
+    //         return _stream
+    //         .map(item -> [item])
+
+    //     })
+    //     .inject((result, channel) -> { // reduce (to channel)
+    //         return result
+    //         .combine(channel)
+    //     })
+    //     .map((_result) -> {
+    //         def indexes = _result.collect(item -> item[0])
+    //         def values = _result.collect(item -> [item[-1]])
+    //         return [combineIndexes(indexes), *values]
+    //     })
+    // }
 
     public static String JsonforEcho(map) {
         return JsonOutput.toJson(map).replace(/"/,"\\\"")    
