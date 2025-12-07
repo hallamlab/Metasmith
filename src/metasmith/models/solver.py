@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from typing import Iterable, Generator, Any, TypeVar, Generic
 import numpy as np
 import json
+from pathlib import Path
+from enum import Enum
 from collections import deque
 
 from ..hashing import KeyGenerator
@@ -216,7 +218,7 @@ class SolverState:
 
 @dataclass
 class Application:
-    initial_state: int
+    initial_timeline: int
     transform: Transform
     used: dict[Dependency, Endpoint]
     produced: list[dict[Dependency, Endpoint]]
@@ -267,6 +269,64 @@ class Solution:
     _iterations: int
     _refiner_iterations: list[tuple[int, int]] # found at, total expanded
     _relavent_transforms: list[Transform]
+
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
+        # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
+        # todo: propogate errors, those might be important...
+        import logging
+        _temp = logging.getLogger
+        class DummyLogger:
+            def debug(self, *args, **kwargs):
+                pass
+            def info(self, *args, **kwargs):
+                pass
+            def warn(self, *args, **kwargs):
+                pass
+            def error(self, *args, **kwargs):
+                pass
+        logging.getLogger = lambda *args, **kwargs: DummyLogger()
+        import graphviz
+        logging.getLogger = _temp
+
+        todo = [(graphviz, 0)]
+        while len(todo)>0:
+            m, depth = todo.pop()
+            if hasattr(m, "log") and hasattr(m.log, "setLevel"):
+                m.log.setLevel(logging.ERROR)
+            if depth >= 2: continue
+            if hasattr(m, "__dict__"):
+                todo += [(x, depth+1) for x in m.__dict__.values()]
+
+        class NodeType(Enum):
+            TRANSFORM = 1
+            DATA      = 2
+        def _render_node(type: NodeType, name: str) -> str:
+            match type:
+                case NodeType.TRANSFORM:
+                    return f'"{name}" [shape="oval", style="filled", fillcolor="#CCCCCC"]'
+                case NodeType.DATA:
+                    return f'"{name}" [shape="box"]'
+
+        def _as_DAG(*, font: str = 'Arial') -> str:
+            lines = ["digraph G {"]
+            lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
+            for i, step in enumerate(self.dependency_plan):
+                transform_name = f"{i+1} {step.transform}"
+                lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
+                inputs  = [f"{u}" for u in step.used.values()]
+                outputs = [f"{o}" for pgroup in step.produced for o in pgroup.values()]
+                for name in inputs:
+                    lines.append(_render_node(NodeType.DATA, name))
+                    lines.append(f'    "{name}" -> "{transform_name}";')
+                for name in outputs:
+                    lines.append(_render_node(NodeType.DATA, name))
+                    lines.append(f'    "{transform_name}" -> "{name}";')
+            lines.append("}")
+            return "\n".join(lines)
+        
+        dag_str = _as_DAG(font=font)
+        src = graphviz.Source(dag_str, filename=path_base, format=format)
+        src.render(cleanup=True, quiet=True)
     
 def solve_by_mcts(
     given: Iterable[Endpoint],
@@ -306,7 +366,7 @@ def solve_by_mcts(
         candidate_transforms=set(),
     )
     # given_appl = Application(starting_state, given_tr, used={}, produced=[{}])
-    given_appl = Application(initial_state=starting_state.k, transform=given_tr, used={}, produced=[{}])
+    given_appl = Application(initial_timeline=starting_state.k, transform=given_tr, used={}, produced=[{}])
     for e in given:
         p = given_tr.AddProduct(properties=e.properties)
         given_appl.produced[0][p] = e
@@ -391,7 +451,7 @@ def solve_by_mcts(
     ) -> list[Application]:
         # production = state.production
         if len(tr.requires)==0:
-            appl = Application(initial_state=state_k, transform=tr, used={}, produced=[{}])
+            appl = Application(initial_timeline=state_k, transform=tr, used={}, produced=[{}])
             if appl.Signature() in blacklist: return []
             appl.produced = [{p:Endpoint(properties=p.properties) for p in pgroup} for pgroup in tr.produces]
             return [appl]
@@ -443,7 +503,7 @@ def solve_by_mcts(
             # print("_  ", used)
             if handle_lineage and not _satisfies_lineage(e, p, used): continue
             if p_i >= len(tr.requires)-1:
-                appl = Application(initial_state=state_k, transform=tr, used=used, produced=[{}])
+                appl = Application(initial_timeline=state_k, transform=tr, used=used, produced=[{}])
                 if appl.Signature() in blacklist: continue # just check first
                 if handle_lineage:
                     lineage: set = {ancestor for e in used.values() for ancestor in e.parents}
@@ -488,11 +548,11 @@ def solve_by_mcts(
                     yield appl
 
         start = PruneNode(steps[-1]) # last should be target
-        todo: list[PruneNode] = [start]
+        todo: deque[PruneNode] = deque()
+        todo.append(start)
         seen: dict[str, PruneNode] = {}
         while len(todo)>0:
-            todo[-1], todo[0] = todo[0], todo[-1] # otherwise, pop(0) is O(n)
-            node = todo.pop()
+            node = todo.popleft()
             key = node.GetKey()
             if key in seen: continue
             seen[key] = node
@@ -527,7 +587,7 @@ def solve_by_mcts(
                     for e in pgroup.values():
                         if e in order: continue
                         order[e.key] = step_depth+1
-                _have |= {e for e in pgroup.values() for pgroup in step.produced}
+                _have |= {e for pgroup in step.produced for e in pgroup.values()}
         max_depth = max(order.values())+1
         for step in steps:
             k = step.Signature()
@@ -537,28 +597,75 @@ def solve_by_mcts(
     
     def order_steps(order: dict[str, int], steps: list[Application]):
         return sorted(steps, key=lambda s: order[s.Signature()]*10000+len(s.used))
+
+    # produce new set of endpoints so hashes are valid
+    # and prune steps
+    def rectify(solution: list[Application], prune=True, insert_given=True):
+        steps = [given_appl]+solution if insert_given else solution
+        steps = [
+            Application(
+                initial_timeline=step.initial_timeline,
+                transform=step.transform,
+                used=step.used.copy(),
+                produced=step.produced.copy(),
+                score=step.score,
+                _iteration=step._iteration,
+            ) for step in steps
+        ]
+
+        # prune steps, place target step last, as required
+        _targeti = -1
+        for i, s in enumerate(steps):
+            if all(len(g) == 0 for g in s.produced):
+                _targeti = i
+                break
+        assert _targeti >= 0
+        steps[_targeti], steps[-1] = steps[-1], steps[_targeti]
+        if prune:
+            steps = prune_steps(steps) # may be dangerous, since endpoint hashes are not yet fixed
+
+        _product2consumer: dict[Endpoint, list[Application]] = {}
+        for step in steps:
+            for e in step.used.values():
+                _product2consumer[e] = _product2consumer.get(e, [])+[step]
+
+        endpoint_map: dict[Endpoint, Endpoint] = {}
+        rev_emap: dict[Endpoint, Endpoint] = {}
+        def _fix_endpoints(appl: Application):
+            lineage: set[Endpoint] = set()
+            for p in appl.transform.requires:
+                e = appl.used[p]
+                e = endpoint_map.get(e, e)
+                appl.used[p] = e # update to new endpoint
+                lineage.add(e)
+                lineage.update(e.parents) # type: ignore
+            # fix lineage of endpoints
+            new_produced = []
+            for pgroup in appl.produced:
+                new_pgroup = {}
+                for p, e in pgroup.items():
+                    new_e = Endpoint(e.properties, parents=lineage)
+                    new_pgroup[p] = new_e
+                    endpoint_map[e] = new_e
+                    rev_emap[new_e] = e
+                new_produced.append(new_pgroup)
+            appl.produced = new_produced
+            # force regenerate signature
+            appl._sig = None
+            appl._hash = None
+        
+        node_order = get_order(steps)
+        todo: list[Application] = steps.copy()
+        order = [node_order[s.Signature()] for s in todo]
+        while len(todo)>0:
+            si: int = np.argpartition(order, 0)[0] # this saves a sort, I guess...
+            todo[si], todo[-1] = todo[-1], todo[si]
+            order[si], order[-1] = order[-1], order[si]
+            order.pop()
+            appl = todo.pop()
+            _fix_endpoints(appl) # mutates appl
+        return steps
     
-    # solution: MctsResult = mcts(
-    #     max_iter=max_iter
-    # )
-
-    # if not solution.complete:
-    #     return Solution(
-    #         complete=False,
-    #         dependency_plans=[],
-    #         _frontier=solution._frontier,
-    #         _history=solution._history,
-    #         _refiner_histories=[],
-    #         _heuristics={
-    #             D2T_KEY: d2t_report,
-    #         },
-    #         _iterations=solution._iterations,
-    #         _refiner_iterations=[(0, 0)],
-    #         _relavent_transforms=relavent_transforms,
-    #     )
-
-    # pruned_step_groups = [prune_steps(state.steps) for state in solution.state]
-
     @dataclass
     class RefinerResult:
         steps: list[Application]
@@ -731,7 +838,7 @@ def solve_by_mcts(
                 # reuse the current endpoints and simply look for alternate edge comparisons
                 # lineage constraint checked separately
                 for appl in generate_applications_of_transform(
-                    state_k=step.initial_state,
+                    state_k=step.initial_timeline,
                     production=production,
                     blacklist=current_applications,
                     tr=step.transform,
@@ -741,72 +848,6 @@ def solve_by_mcts(
                     alt_sol = [s for s in state.steps if s.Signature() != step.Signature()]+[appl]
                     alt_state = RefinerState(steps=alt_sol)
                     yield alt_state
-        
-        # produce new set of endpoints so hashes are valid
-        # and prune steps
-        def rectify(solution: list[Application]):
-            steps = [
-                Application(
-                    initial_state=step.initial_state,
-                    transform=step.transform,
-                    used=step.used.copy(),
-                    produced=step.produced.copy(),
-                    score=step.score,
-                    _iteration=step._iteration,
-                ) for step in [given_appl]+solution
-            ]
-
-            # prune steps, place target step last, as required
-            _targeti = -1
-            for i, s in enumerate(steps):
-                if all(len(g) == 0 for g in s.produced):
-                    _targeti = i
-                    break
-            assert _targeti >= 0
-            steps[_targeti], steps[-1] = steps[-1], steps[_targeti]
-            steps = prune_steps(steps) # may be dangerous, since endpoint hashes are not yet fixed
-
-            _product2consumer: dict[Endpoint, list[Application]] = {}
-            for step in steps:
-                for e in step.used.values():
-                    _product2consumer[e] = _product2consumer.get(e, [])+[step]
-
-            endpoint_map: dict[Endpoint, Endpoint] = {}
-            rev_emap: dict[Endpoint, Endpoint] = {}
-            def _fix_endpoints(appl: Application):
-                lineage: set[Endpoint] = set()
-                for p in appl.transform.requires:
-                    e = appl.used[p]
-                    e = endpoint_map.get(e, e)
-                    appl.used[p] = e # update to new endpoint
-                    lineage.add(e)
-                    lineage.update(e.parents) # type: ignore
-                # fix lineage of endpoints
-                new_produced = []
-                for pgroup in appl.produced:
-                    new_pgroup = {}
-                    for p, e in pgroup.items():
-                        new_e = Endpoint(e.properties, parents=lineage)
-                        new_pgroup[p] = new_e
-                        endpoint_map[e] = new_e
-                        rev_emap[new_e] = e
-                    new_produced.append(new_pgroup)
-                appl.produced = new_produced
-                # force regenerate signature
-                appl._sig = None
-                appl._hash = None
-            
-            node_order = get_order(steps)
-            todo: list[Application] = steps.copy()
-            order = [node_order[s.Signature()] for s in todo]
-            while len(todo)>0:
-                si: int = np.argpartition(order, 0)[0]
-                todo[si], todo[-1] = todo[-1], todo[si]
-                order[si], order[-1] = order[-1], order[si]
-                order.pop()
-                appl = todo.pop()
-                _fix_endpoints(appl) # mutates appl
-            return steps
 
         initial_state = RefinerState(
             steps=initial_solution,
@@ -901,7 +942,7 @@ def solve_by_mcts(
                     production[dep] = production.get(dep, [])+[ep]
                 if len(appl.produced)>1:
                     appl_variant = Application(
-                        initial_state=state_k,
+                        initial_timeline=state_k,
                         transform=appl.transform,
                         used=appl.used,
                         produced=[group], # limit to each each possibility 
@@ -936,16 +977,122 @@ def solve_by_mcts(
                     yield appl
 
         def merge_states(source: SolverState, alt: SolverState) -> SolverState:
-            source_states = {s.initial_state for s in source.steps}
-            joined_steps: list[Application] = [s for s in alt.steps if s.initial_state in source_states]
-            to_join: list[Application] = [s for s in alt.steps if s.initial_state not in source_states]
-            to_join.reverse() # from target to given
-            for step in to_join:
-                print(step.transform)
-
-            return source
+            print(f"{source.k} << {alt.k}")
+            e2consumer: dict[Endpoint, list[Application]] = {}
+            for step in alt.steps:
+                for d, e in step.used.items():
+                    e2consumer[e] = e2consumer.get(e, [])+[step]
+            e2producer: dict[Endpoint, Application] = {}
+            for step in alt.steps:
+                for pgroup in step.produced:
+                    for d, e in pgroup.items():
+                        e2producer[e] = step
+            _lin_cache = {}
+            def _get_lineage_constraints(step0: Application):
+                todo = [step0]
+                lineage_constraints: set[Endpoint] = set()
+                produced: set[Endpoint] = set()
+                while len(todo)>0:
+                    step = todo.pop()
+                    if step in _lin_cache:
+                        new_lin, new_p = _lin_cache[step]
+                        lineage_constraints.update(new_lin)
+                        produced.update(new_p)
+                        continue
+                    for d in step.used:
+                        for p in d.parents:
+                            lineage_constraints.add(step.used[p]) # type: ignore
+                    for pgroup in step.produced:
+                        for d, e in pgroup.items():
+                            produced.add(e)
+                            for appl in e2consumer[e]:
+                                todo.append(appl)
+                _lin_cache[step0] = lineage_constraints, produced
+                return lineage_constraints-produced
             
+            def _get_substitute(alt_step: Application):
+                candidates = source_tr2appl.get(alt_step.transform, [])
+                lins = _get_lineage_constraints(alt_step)
+                for src_step in candidates:
+                    if len(lins)==0:
+                        lin_ok = True
+                    else:
+                        parents = set(src_step.used.values())
+                        parents|={g for p in parents for g in p.parents} # type: ignore
+                        lin_ok = all(any(p.IsA(lin) for p in parents) for lin in lins)
+                    if lin_ok:
+                        return src_step
+                return None
 
+            source_timelines = {s.initial_timeline for s in source.steps}
+            alt_timelines = {s.initial_timeline for s in alt.steps}
+            source_tr2appl: dict[Transform, list[Application]] = {}
+            for step in source.steps:
+                if step.initial_timeline in alt_timelines: continue
+                source_tr2appl[step.transform] = source_tr2appl.get(step.transform, [])+[step]
+            to_check = [s for s in alt.steps if s.initial_timeline not in source_timelines]
+            to_check.reverse() # target -> given
+            to_merge: list[tuple[Application, Application]] = []
+            to_add_from_alt: list[Application] = []
+            # check applications not from the same timeline:
+            # for each alt step
+            # if there is a transform in src where if swapped with alt step,
+            # lineage constraints of downstream in alt are satisfied,
+            # then src step can be merged with alt step
+            for step in to_check:
+                src_step = _get_substitute(step)
+                if src_step is None:
+                    to_add_from_alt.append(step)
+                else:
+                    to_merge.append((step, src_step))
+            to_add_from_alt.reverse() # given -> target
+            to_merge.reverse() # given -> target
+            common_steps: list[Application] = [s for s in alt.steps if s.initial_timeline in source_timelines]
+            _merged = {src_step for _, src_step in to_merge}
+            to_add_from_src: list[Application] = [s for s in source.steps if s.initial_timeline not in alt_timelines and s not in _merged]
+            merged_steps: list[Application] = []
+            swapped_endpoints: dict[Endpoint, Endpoint] = {}
+            # merge steps by pointing used from alt to that of souce
+            # and combining the production groups if step caused the branching
+            for alt_step, src_step in to_merge:
+                for ad, ae in alt_step.used.items():
+                    se = src_step.used[ad]
+                    se = swapped_endpoints.get(se, se) # in case used merged endpoint
+                    src_step.used[ad] = se
+                    swapped_endpoints[ae] = se # register for to_add_from_alt
+                parents: set[Endpoint] = set(src_step.used.values())
+                parents |= set(alt_step.used.values())
+                parents |= {p for e in src_step.used.values() for p in e.parents} # type: ignore
+                parents |= {p for e in alt_step.used.values() for p in e.parents} # type: ignore
+                merged_pgroup = src_step.produced.copy()
+                print(f"  {src_step.transform} {len(src_step.produced)}")
+                for mp in alt_step.produced:
+                    mk = set(mp)
+                    if any(mk==set(pgroup) for pgroup in src_step.produced): continue
+                    merged_pgroup.append(mp)
+                for pgroup in merged_pgroup:
+                    for d in pgroup:
+                        e = Endpoint(
+                            properties=pgroup[d].properties,
+                            parents=parents,
+                        )
+                        swapped_endpoints[pgroup[d]] = e
+                        pgroup[d] = e
+                src_step.produced = merged_pgroup
+                src_step._sig = None
+                src_step.Signature() # recalculate hash
+                merged_steps.append(src_step)
+            # connect the merged endpoints
+            for step in to_add_from_alt:
+                for pgroup in step.produced:
+                    for d in pgroup:
+                        e = pgroup[d]
+                        pgroup[d] = swapped_endpoints.get(e, e)
+            source.k = alt.k
+            source.steps = common_steps+to_add_from_src+to_add_from_alt+merged_steps
+            order = get_order(source.steps)
+            source.steps = order_steps(order, source.steps)
+            return source
 
         # pseudocode:
         # Solver state captures available endpoints and applied transforms.
@@ -972,7 +1119,7 @@ def solve_by_mcts(
         #   is itself a graph representing the workflow.
         #   that is, the solver is not searching the workflow graph,
         #   but rather the space of possible workflow graphs.
-        current_states = [starting_state]
+        current_timelines = [starting_state]
         frontier: list[Application] = [score_node(given_appl)]
         frontier_signatures: set[str] = {s.Signature() for s in frontier}
         history: list[list[SolverState]] = []
@@ -987,9 +1134,9 @@ def solve_by_mcts(
             node = remove_node(frontier, nodei)
             node._iteration = i
 
-            valid_state_ks = get_all_children(node.initial_state)
-            source_states = [s for s in current_states if s.k in valid_state_ks]
-            carry_over = [s for s in current_states if s.k not in valid_state_ks]
+            valid_timeline_ks = get_all_children(node.initial_timeline)
+            source_states = [s for s in current_timelines if s.k in valid_timeline_ks]
+            carry_over = [s for s in current_timelines if s.k not in valid_timeline_ks]
             next_states = [s for g in [expand_node(s, node) for s in source_states] for s in g]
             history.append(carry_over+next_states)
             remain: list[SolverState] = []
@@ -1007,10 +1154,6 @@ def solve_by_mcts(
                     remain.append(s)
 
             if len(remain)+len(carry_over) == 0:
-                # while len(solved_states)>1:
-                #     a, b, rest = solved_states[0], solved_states[1], solved_states[2:]
-                #     m = merge_states(a, b)
-                #     solved_states = [m]+rest
                 if solved_state is None: break
                 return MctsResult(
                     complete=True,
@@ -1032,11 +1175,11 @@ def solve_by_mcts(
                     applied_transforms.add(child.transform)
                     frontier.append(child)
                 state.candidate_transforms -= applied_transforms # all possibilities per tr explored
-            current_states = carry_over+remain
+            current_timelines = carry_over+remain
             
         return MctsResult(
             complete=False,
-            state=solved_state if solved_state is not None else current_states[0],
+            state=solved_state if solved_state is not None else current_timelines[0],
             _frontier=frontier,
             _history=history,
             _iterations=i,
