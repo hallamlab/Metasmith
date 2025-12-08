@@ -40,9 +40,8 @@ class Container:
         else:
             return f"{self.runtime.value} pull {image}"
 
-    def MakeBindsParam(self, defaults:bool=True):
-        default_binds = [("./", "/ws"), ("/tmp", "/tmp")] if defaults else []
-        binds = {str(d):str(s) for s, d in default_binds+self.binds}
+    def MakeBindsParam(self):
+        binds = {str(d):str(s) for s, d in self.binds}
         binds = [(s, d) for d, s in binds.items()]
         if len(binds)==0: return ""
         match self.runtime:

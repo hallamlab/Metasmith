@@ -4,12 +4,14 @@ class Orchestrator {
     private Map pending_tasks
     private Map index_history
     private Map child2parent
+    private Map counters
     private def one_null
 
     Orchestrator(one_null) {
         this.pending_tasks = [:]
         this.index_history = [:]
         this.child2parent = [:]
+        this.counters = [:]
         this.one_null = one_null
     }
 
@@ -42,6 +44,12 @@ class Orchestrator {
         return new Tuple2(size_valid, expected_size)
     }
 
+    private synchronized def updateCount(String k) {
+        def count = this.counters[k]
+        this.counters[k] = count!=null? count+1 : 1
+        return this.counters[k]
+    }
+
     public def using(streams, targets) {
         def parents = streams.collect((k, s) -> k)
         for (t : targets) {
@@ -63,7 +71,6 @@ class Orchestrator {
     public List post(streams, names) {
         // def (stream, name) = [streams, names]
         return [names, streams].transpose().collect((name, stream) -> {
-            def completed = 0
             return new Tuple2(
                 name,
                 stream.flatMap((index, group) -> {
@@ -73,7 +80,7 @@ class Orchestrator {
                         group = [group]
                     }
                     return group.collect((item) -> { // map
-                        completed+=1
+                        def completed = this.updateCount(name)
                         index = [:]+index // copy the hashmap
                         index[name] = [completed]
                         this.registerIndexHistory(name, index)
@@ -286,14 +293,14 @@ class Orchestrator {
         })
     }
 
-    public def mix(streams, name) {
+    public def mix(streams) {
+        def (name, _) = streams[0]
         return new Tuple2(
             name,
-            streams.collect((stream) -> { // map
-                def (name, _stream) = stream
-                return _stream.inject((result, channel) -> { // reduce (to channel)
-                    return result.mix(channel)
-                })
+            streams
+            .collect((_name, _stream) -> _stream)
+            .inject((result, _stream) -> {
+                return result.mix(_stream)
             })
         )
     }

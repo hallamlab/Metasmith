@@ -8,20 +8,25 @@ types:
   a:
     properties:
     - a
+    - ext=.txt
     - test
   b:
     properties:
     - b
+    - ext=.txt
     - test
   start:
     properties:
+    - ext=.txt
     - start
     - test
   target:
     properties:
+    - ext=.txt
     - target
     - test
   x:
     properties:
+    - ext=.txt
     - test
     - x

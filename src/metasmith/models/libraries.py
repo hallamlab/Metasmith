@@ -1,7 +1,5 @@
 from __future__ import annotations
 import itertools
-from math import e
-from pydoc import Helper
 import shutil
 import os, sys
 from pathlib import Path
@@ -21,7 +19,7 @@ from .solver import Dependency, Endpoint, Transform
 from .remote import GlobusSource, Logistics, Source, SourceType
 from ..hashing import KeyGenerator
 from ..logging import Log
-from ..constants import VERSION, MODULE_PATH
+from ..constants import VERSION, MODULE_PATH, AgentPaths
 
 def yaml_safe_load(p: Path):
     MAX = 5
@@ -115,7 +113,7 @@ class DataTypeLibrary:
                 props = pluralize(v[Endpoint.PROPERTY_FIELD])
                 for pk in extends:
                     p_props = raw_types[pk][Endpoint.PROPERTY_FIELD]
-                    props = {k:v|p_props.get(k, set()) for k, v in props.items()}
+                    props = {k:v|set(p_props.get(k, set())) for k, v in props.items()}
                 props = {k:list(v) for k, v in props.items()}
             raw_types[k] = {Endpoint.PROPERTY_FIELD:props}
         params: dict = dict(
@@ -251,6 +249,11 @@ class DataInstanceLibrary:
             std_types = DataTypeLibrary.Load(_here/"../std/dtypes.yml")
             self.AddTypeLibrary("std", std_types)
 
+    def Purge(self):
+        if self.location.exists():
+            shutil.rmtree(self.location)
+        self.location.mkdir(exist_ok=True)
+
     def AddTypeLibrary(self, namespace: str, lib: DataTypeLibrary|Source, on_exist: str="clear"):
         assert on_exist in {"skip", "error", "clear"}
         if namespace in self.types:
@@ -316,13 +319,39 @@ class DataInstanceLibrary:
             else:
                 yield k, v, Endpoint(proto.properties, {p.dtype for p in self.parents[k]})
 
-    def AddItem(self, path: Path|str, dtype: str):
+    def AsSamples(self):
+        parents = set()
+        for g in self.parents.values():
+            for p in g:
+                parents.add(p.path)
+        for k in self.manifest:
+            if k in parents: continue
+            _ps = {p.path for p in self.parents.get(k, [])}
+            yield DataInstanceLibraryView(original=self, mask={k}|_ps)
+
+    def AddItem(self, path: Path|str, dtype: str, parents: Iterable[Path]|None=None):
+        if parents is None:
+            parents = []
+        for p in parents:
+            if not p.is_absolute(): p = self.location/p
+            assert p.exists(), f"parent [{p}] doesn't exist"
         path = Path(path)
         assert path not in self.manifest, f"[{path}] already added"
         type_model = self.GetType(dtype) # check if datatype exists
         self.manifest[path] = dtype
+        self.AddParentsTo(path, [self.Get(p) for p in parents])
+        return path
 
-    def AddParentsTo(self, path: Path|str, parents: list[DataInstance]):
+    def AddValue(self, name: str, value: str, dtype: str, parents: Iterable[Path]|None=None):
+        path = Path(name)
+        path = self.AddItem(path=path, dtype=dtype, parents=parents) # perform checks first
+        with open(self.location/path, "w") as f:
+            f.write(value)
+        return path
+
+    def AddParentsTo(self, path: Path|str, parents: Iterable[DataInstance]):
+        if all(False for _ in parents):
+            return # there were no parents
         p = Path(path)
         current = self.parents.get(p, [])
         seen = {f"{x.library_key}/{x.path}" for x in current}
@@ -349,17 +378,20 @@ class DataInstanceLibrary:
             self._calculate_key()
         return self._hash
 
-    def PruneTypes(self, save: bool=True, whitelist: set[str]|None=None):
-        used_types = set(self.manifest.values())
-        if whitelist is not None: used_types |= whitelist
+    def PruneTypes(self, save: bool=True, whitelist: set[str|Dependency|Endpoint]|None=None):
+        used_type_names = set(self.manifest.values())
+        if whitelist is None: whitelist = set() 
+        wl_names = {x for x in whitelist if isinstance(x, str)}
+        wl_types = {x for x in whitelist if not isinstance(x, str)}
+        used_type_names |= wl_names
         for namespace, lib in list(self.types.items()):
             lib_types = {f"{namespace}::{dtype}" for dtype in lib.types}
-            _used = used_types.intersection(lib_types)
+            _used = used_type_names.intersection(lib_types)
             if len(_used) == 0:
                 del self.types[namespace]
             else:
                 new = DataTypeLibrary.Unpack(lib.Pack())
-                new.types = {k:v for k, v in lib.types.items() if f"{namespace}::{k}" in _used}
+                new.types = {k:v for k, v in lib.types.items() if f"{namespace}::{k}" in _used or v in wl_types}
                 self.types[namespace] = new
         if save: self.Save(update_types=True)
 
@@ -462,6 +494,8 @@ class DataInstanceLibrary:
 
     def PrepTransfer(self, dest: Source, mover: Logistics|None=None):
         self.Save()
+        for p, name, dtype in self.Iterate():
+            assert p.is_absolute() or (self.location/p).exists(), f"file not found [{p}]"
         if mover is None:
             mover = Logistics()
         mover.QueueTransfer(
@@ -673,7 +707,6 @@ class Resources:
 class TransformInstance:
     protocol: Callable[[ExecutionContext], ExecutionResult|list[ExecutionResult]]
     model: Transform
-    output_signature: list[dict[Dependency, str]]
     group_by: Dependency
     name: str|None = None
     resources: Resources|None = None
@@ -686,17 +719,16 @@ class TransformInstance:
         for k, vt in [
             ("protocol", Callable),
             ("model", Transform),
-            ("output_signature", list),
         ]:
             v = getattr(self, k)
             assert isinstance(v, vt), f"[{k}] must be of type [{vt}] but got [{type(v)}]"
-        assert len(self.output_signature) == len(self.model.produces), f"output signature length must match model produces length [{len(self.output_signature)} != {len(self.model.produces)}]"
-        for sig_group, m_group in zip(self.output_signature, self.model.produces):
-            for d, p in sig_group.items():
-                assert isinstance(d, Dependency), f"output signature key must be of type [Dependency] but got [{type(d)}]"
-                assert d in m_group, f"output signature value must be added to model"
-            for dep in m_group:
-                assert dep in sig_group, f"model output missing in signature [{dep}]"
+        # assert len(self.output_signature) == len(self.model.produces), f"output signature length must match model produces length [{len(self.output_signature)} != {len(self.model.produces)}]"
+        # for sig_group, m_group in zip(self.output_signature, self.model.produces):
+        #     for d, p in sig_group.items():
+        #         assert isinstance(d, Dependency), f"output signature key must be of type [Dependency] but got [{type(d)}]"
+        #         assert d in m_group, f"output signature value must be added to model"
+        #     for dep in m_group:
+        #         assert dep in sig_group, f"model output missing in signature [{dep}]"
         TransformInstance._last_loaded_transform = self
 
     def GetKey(self):
@@ -737,16 +769,14 @@ class TransformInstanceLibrary(DataInstanceLibrary):
             self.AddTypeLibrary("transforms", transform_types)
         self._transform_cache: dict[Path, TransformInstance] = {}
 
-    def PruneTypes(self, save: bool=True, whitelist: set[str]|None=None):
-        if whitelist is None: whitelist = set()
-        indirect_whitelist = []
+    def PruneTypes(self, save: bool=True):
+        indirect_whitelist: list[Dependency] = []
         for path, tr in self.IterateTransforms():
             indirect_whitelist += tr.model.requires
-            indirect_whitelist += tr.model.produces
+            indirect_whitelist += [i for g in tr.model.produces for i in g]
         def _in(x: Dependency):
             return any(x.properties == d.properties for g in self.types.values() for d in g.types.values())
-        whitelist |= {x for x in indirect_whitelist if _in(x)}
-        super().PruneTypes(save=save, whitelist=whitelist)
+        super().PruneTypes(save=save, whitelist={x for x in indirect_whitelist if _in(x)})
 
     def AddStub(self, path: Path|str, exist_ok: bool=True):
         path = Path(path)
@@ -834,6 +864,7 @@ class ExecutionContext:
     _get_output_paths: Callable[[Dependency, int, int], ContextPath]
     external_shell: RemoteShell # since metasmith will bootstrap into its own container
     external_cwd: Path
+    external_agent_home: Path
     container_runtime: ContainerRuntime
     params: dict = field(default_factory=dict)
     _batch_index: int = 0
@@ -874,18 +905,37 @@ class ExecutionContext:
         else:
             image_path = str(path.external)
 
-        _binds = set()
+        _binds: list[tuple[Path, Path]] = []
         for _, v in list(self._inputs[self._batch_index].items()):
             for p in v.input_group:
+                if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
                 src = p.external.parent
-                dest = p.container.parent
-                _binds.add((src, dest))
+                if not p.container.is_absolute():
+                    dest = src
+                else:
+                    dest = p.container.parent
+                if not src.is_absolute() or not dest.is_absolute(): continue
+
+                found = False
+                for i, (a, b) in enumerate(_binds):
+                    ac = Path(os.path.commonpath([a, src]))
+                    bc = Path(os.path.commonpath([b, dest]))
+                    THRES = 3 # '/', '1', '2' >> /1/2
+                    if len(ac.parts)>=THRES:
+                        found = True
+                        break
+                if found:
+                    _binds[i] = ac, bc
+                else:
+                    _binds.append((src, dest))
         if binds is None: binds = []
         container_ws = Path("/ws")
-        binds += sorted([(s, d) for s, d in _binds])
         binds += [
+            ("/tmp", "/tmp"),
+            (self.external_agent_home, AgentPaths.HOME_ROOT),
             (self.external_cwd, container_ws),
         ]
+        binds += sorted([(s, d) for s, d in _binds])
 
         container = Container(
             image = str(image_path),

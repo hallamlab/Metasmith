@@ -28,12 +28,4 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=dep,
-    output_signature=[
-        {
-            outa: "output.a.txt",
-        },
-        {
-            outb: "output.b.txt",
-        },
-    ],
 )

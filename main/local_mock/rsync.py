@@ -28,7 +28,7 @@ print(f"injecting updates to [{home}]")
 with LiveShell() as shell:
     shell.RegisterOnOut(lambda x: print(x))
     shell.RegisterOnErr(lambda x: print(f"E: {x}"))
-    shell.Exec(f"rsync -ac --progress --mkpath {WORKSPACE_ROOT}/metasmith.sif {home}/metasmith.sif")
+    shell.Exec(f"rsync -au --progress --mkpath {WORKSPACE_ROOT}/metasmith.sif {home}/metasmith.sif")
     shell.Exec(f"rsync -ac --progress --mkpath {WORKSPACE_ROOT}/main/relay_agent/dist/msm_relay {home}/relay/msm_relay")
     shell.Exec(f"rsync -ac --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/ {home}/dev/metasmith")
     shell.Exec(f"rsync -ac --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/nextflow_config {home}/lib/")

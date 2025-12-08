@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Generator, Any, TypeVar, Generic
 import numpy as np
 import json
+import re
 from pathlib import Path
 from enum import Enum
 from collections import deque
@@ -53,6 +54,10 @@ class Node:
             _, sig = KeyGenerator.FromStr(sig)
             self._sig = f'{sig}:[{psig}]' if len(self.parents)>0 else sig
         return self._sig
+
+    def RefreshHash(self):
+        self._sig = None
+        self.hash, self.key = KeyGenerator.FromStr(self.Signature())
 
     def Clone(self, properties_only: bool=False):
         clone = self.__class__(
@@ -138,6 +143,12 @@ class Node:
         if len(self.parents)>0 and parents:
             d["parents"] = [x.Pack() for x in self.parents]
         return d
+
+    def GetPreferredFileExtension(self):
+        for p in self.properties:
+            for hit in re.finditer(r'(ext=|"ext":")([\.\w\s]*[\w])', p):
+                return str(hit.group(2))
+        return ""
 
 # of a Transform
 class Dependency(Node):
@@ -270,7 +281,7 @@ class Solution:
     _refiner_iterations: list[tuple[int, int]] # found at, total expanded
     _relavent_transforms: list[Transform]
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', keys: bool = True):
         # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
         # todo: propogate errors, those might be important...
         import logging
@@ -311,10 +322,17 @@ class Solution:
             lines = ["digraph G {"]
             lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
             for i, step in enumerate(self.dependency_plan):
-                transform_name = f"{i+1} {step.transform}"
+                if keys:
+                    transform_name = f"{i+1} {step.transform.key}"
+                else:
+                    transform_name = f"{i+1} {step.transform}"
                 lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
-                inputs  = [f"{u}" for u in step.used.values()]
-                outputs = [f"{o}" for pgroup in step.produced for o in pgroup.values()]
+                if keys:
+                    inputs  = [f"{u.key}" for u in step.used.values()]
+                    outputs = [f"{o.key}" for pgroup in step.produced for o in pgroup.values()]
+                else:
+                    inputs  = [f"{u}" for u in step.used.values()]
+                    outputs = [f"{o}" for pgroup in step.produced for o in pgroup.values()]
                 for name in inputs:
                     lines.append(_render_node(NodeType.DATA, name))
                     lines.append(f'    "{name}" -> "{transform_name}";')
@@ -329,7 +347,7 @@ class Solution:
         src.render(cleanup=True, quiet=True)
     
 def solve_by_mcts(
-    given: Iterable[Endpoint],
+    given: list[set[Endpoint]],
     transforms: Iterable[Transform],
     target: Transform,
     seed: int=42,
@@ -341,6 +359,19 @@ def solve_by_mcts(
     # monte carlo tree search
 
     given_tr = Transform()
+    given_appl = Application(initial_timeline=0, transform=given_tr, used={}, produced=[])
+    inherent_parents: set[Endpoint] = set()
+    assert len(given)>0, "nothing given"
+    for i, group in enumerate(given):
+        assert len(group)>0, f"input group [{i}] was empty"
+        if i>0: given_tr.NewProductGroup()
+        pgroup = {}
+        for e in group:
+            d = given_tr.AddProduct(e)
+            pgroup[d] = e
+            inherent_parents.update(e.parents) # type: ignore
+        given_appl.produced.append(pgroup)
+
     _last_state_k = -1
     _state2child = {}
     def new_state_k(source: int):
@@ -366,10 +397,13 @@ def solve_by_mcts(
         candidate_transforms=set(),
     )
     # given_appl = Application(starting_state, given_tr, used={}, produced=[{}])
-    given_appl = Application(initial_timeline=starting_state.k, transform=given_tr, used={}, produced=[{}])
-    for e in given:
-        p = given_tr.AddProduct(properties=e.properties)
-        given_appl.produced[0][p] = e
+
+    # given_appl = Application(initial_timeline=starting_state.k, transform=given, used={}, produced=[{}])
+    # for pg in given.produces:
+    # for e in given:
+        # p = given_tr.AddProduct(properties=e.properties)
+        # given_appl.produced[0][p] = e
+    given_tr = given_appl.transform
     def _iter_transforms():
         yield given_tr
         for tr in transforms: yield tr
@@ -566,7 +600,7 @@ def solve_by_mcts(
     # order nodes by steps to create
     def get_order(steps: list[Application]):
         seen: set[str] = set()
-        _have: set[Endpoint] = {e for e in given}
+        _have: set[Endpoint] = set()
         order: dict[str, int] = {e.key:0 for e in _have}
         while len(seen)<len(steps):
             reachable: set[Application] = set()
@@ -644,7 +678,12 @@ def solve_by_mcts(
             for pgroup in appl.produced:
                 new_pgroup = {}
                 for p, e in pgroup.items():
-                    new_e = Endpoint(e.properties, parents=lineage)
+                    if e in endpoint_map:
+                        new_e = endpoint_map[e]
+                        new_e.parents|=lineage|(e.parents&inherent_parents)
+                        new_e.RefreshHash()
+                    else:
+                        new_e = Endpoint(e.properties, parents=lineage|(e.parents&inherent_parents)) # type: ignore
                     new_pgroup[p] = new_e
                     endpoint_map[e] = new_e
                     rev_emap[new_e] = e
@@ -653,6 +692,7 @@ def solve_by_mcts(
             # force regenerate signature
             appl._sig = None
             appl._hash = None
+            appl.Signature()
         
         node_order = get_order(steps)
         todo: list[Application] = steps.copy()
@@ -726,13 +766,13 @@ def solve_by_mcts(
                     #     print(f"    .")
                     #     for d, e in pgroup.items():
                     #         print(f"    {d} {e}")
-                    # if current.Signature() in history: return False # looped
-                    # history = history|{current.Signature()}
-                    # for pgroup in current.produced:
-                    #     produced.update(pgroup.values())
-                    #     for e in pgroup.values():
-                    #         for appl in e2appl.get(e, []):
-                    #             todo.append((appl, history))
+                    if current.Signature() in history: return False # looped
+                    history = history|{current.Signature()}
+                    for pgroup in current.produced:
+                        produced.update(pgroup.values())
+                        for e in pgroup.values():
+                            for appl in e2appl.get(e, []):
+                                todo.append((appl, history))
 
                 # no loops from the start, but do we actually get to the end?
                 missing = set(target_appl.used.values()) - produced
@@ -1005,7 +1045,7 @@ def solve_by_mcts(
                     for pgroup in step.produced:
                         for d, e in pgroup.items():
                             produced.add(e)
-                            for appl in e2consumer[e]:
+                            for appl in e2consumer.get(e, []):
                                 todo.append(appl)
                 _lin_cache[step0] = lineage_constraints, produced
                 return lineage_constraints-produced
@@ -1054,44 +1094,43 @@ def solve_by_mcts(
             swapped_endpoints: dict[Endpoint, Endpoint] = {}
             # merge steps by pointing used from alt to that of souce
             # and combining the production groups if step caused the branching
+            _g = {x for g in given for x in g}
             for alt_step, src_step in to_merge:
+                # print(f"{src_step.transform} <<< {alt_step.transform}")
                 for ad, ae in alt_step.used.items():
                     se = src_step.used[ad]
                     se = swapped_endpoints.get(se, se) # in case used merged endpoint
                     src_step.used[ad] = se
+                    # print(f"  {se} -<- {ae}")
                     swapped_endpoints[ae] = se # register for to_add_from_alt
-                parents: set[Endpoint] = set(src_step.used.values())
-                parents |= set(alt_step.used.values())
-                parents |= {p for e in src_step.used.values() for p in e.parents} # type: ignore
-                parents |= {p for e in alt_step.used.values() for p in e.parents} # type: ignore
                 merged_pgroup = src_step.produced.copy()
                 # print(f"  {src_step.transform} {len(src_step.produced)}")
                 for mp in alt_step.produced:
                     mk = set(mp)
                     if any(mk==set(pgroup) for pgroup in src_step.produced): continue
                     merged_pgroup.append(mp)
-                for pgroup in merged_pgroup:
-                    for d in pgroup:
-                        e = Endpoint(
-                            properties=pgroup[d].properties,
-                            parents=parents,
-                        )
-                        swapped_endpoints[pgroup[d]] = e
-                        pgroup[d] = e
                 src_step.produced = merged_pgroup
                 src_step._sig = None
                 src_step.Signature() # recalculate hash
                 merged_steps.append(src_step)
-            # connect the merged endpoints
-            for step in to_add_from_alt:
+            for step in merged_steps: # fix potential swaps in outputs
                 for pgroup in step.produced:
                     for d in pgroup:
                         e = pgroup[d]
                         pgroup[d] = swapped_endpoints.get(e, e)
+            # connect the merged endpoints
+            for step in to_add_from_alt:
+                # print(f" _ {step.transform}")
+                for pgroup in step.produced:
+                    for d in pgroup:
+                        e = pgroup[d]
+                        pgroup[d] = swapped_endpoints.get(e, e)
+                        # print(f" _   {pgroup[d]} -<-{e}")
             source.k = alt.k
             source.steps = common_steps+to_add_from_src+to_add_from_alt+merged_steps
             order = get_order(source.steps)
             source.steps = order_steps(order, source.steps)
+            source.steps = rectify(source.steps, prune=False, insert_given=False)
             return source
 
         # pseudocode:
@@ -1142,6 +1181,9 @@ def solve_by_mcts(
             remain: list[SolverState] = []
             for s in next_states:
                 if is_solved(s):
+                    # this must be done here so that assumption of only 1 producer per ep is true
+                    # after merging, workflow will have, well, merges where multiple steps produce
+                    # the same ep
                     s.steps = prune_steps(s.steps)
                     refined = refine_mcts(s.steps, max_refine)
                     _refiner_histories.append(refined._history)
@@ -1188,11 +1230,6 @@ def solve_by_mcts(
             _production_depths=_production_depths,
         )
 
-    # refined = [refine_mcts(s, max_refine) for s in pruned_step_groups]
-    # node_orders = [get_order(r.steps) for r in refined]
-    # ordered_steps = [order_steps(o, r.steps) for o, r in zip(node_orders, refined)]
-    # ordered_steps = [r.steps for r in refined]
-    
     solution = mcts(max_iter=max_iter)
 
     return Solution(

@@ -3,7 +3,6 @@ import time
 import shutil
 import traceback
 import re
-from glob import glob
 import json
 import os
 
@@ -12,7 +11,8 @@ from .agents import Agent, AgentPaths
 from .models.libraries import ContextPath, ContextData, ExecutionContext, ExecutionResult
 from .models.libraries import DataInstance, DataTypeLibrary, TransformInstance, TransformInstanceLibrary
 from .models.solver import Dependency, Endpoint
-from .models.workflow import WorkflowTask, METADATA_FILE
+from .hashing import KeyGenerator
+from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
 from .coms.via_file_watcher import RemoteShell
 
 def DeployFromContainer(workspace: Path):
@@ -35,7 +35,7 @@ def DeployFromContainer(workspace: Path):
 
     Log.Info("deployment complete")
 
-def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
+def StageAndRunTransform(workspace: Path, step_index: int):
     Log.Info(f"cwd [{os.getcwd()}]")
     server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS)
     MAX_WAIT = 3
@@ -80,11 +80,9 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
         Log.Info(f"loading task from [{task_path}]")
         task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
 
-        variant = task.plans[variant_index-1]       # is 1 indexed for log legibility
-        archetype = variant[0]                    # all plans in variant have identical steps; take first as archetype
-        step = archetype.steps[step_index-1]    # also 1 indexed for log legibility
+        step = task.plan.steps[step_index-1]    # also 1 indexed for log legibility
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
-        Log.Info(f"variant [{variant_index}] step [{step_index}:{step_name}]")
+        Log.Info(f"step [{step_index}:{step_name}]")
 
         params = {}
         raw_meta = {}
@@ -115,16 +113,45 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
         lineages = json.loads(lineages)
         if not isinstance(lineages, list): lineages = [lineages]
         group_by_inst = step.dependency_map[step.transform.group_by]
-        output_indexes = ["_".join(f"{x}" for x in lin[group_by_inst.dtype.key]) for lin in lineages]
+        _dtypes = {x.dtype for x in group_by_inst}
+        if len(_dtypes)>1:
+            Log.Warn(f"unexpected plural group by [{group_by_inst}]")
+        group_by_inst = group_by_inst[0]
+        output_indexes = ["#".join(f"{x}" for x in lin[group_by_inst.dtype.key]) for lin in lineages]
 
-        input2files: dict[DataInstance, list[Path]] = {}
-        for i, inst in enumerate(step.uses):
+        input_map: dict[Endpoint, list[DataInstance]] = {}
+        for k in raw_meta["inp"].split(","):
+            insts = [x for x in step.uses if x.dtype.key == k]
+            input_map[insts[0].dtype] = insts
+        input2dep: dict[Endpoint, Dependency] = {}
+        for e, d in zip(input_map, step.transform.model.requires):
+            input2dep[e] = d
+        output_map: list[dict[Endpoint, list[DataInstance]]] = []
+        dep2output: list[dict[Dependency, Endpoint]] = []
+        for graw, inst_group, dep_group in zip(raw_meta["out"].split(";"), step.produces, step.transform.model.produces):
+            group = {}
+            dgroup = {}
+            for k, dep in zip(graw.split(","), dep_group):
+                insts = [x for x in inst_group if x.dtype.key == k]
+                e = insts[0].dtype
+                group[e] = insts
+                dgroup[dep] = e
+            output_map.append(group)
+            dep2output.append(dgroup)
+        alldep2output = {d:e for x in dep2output for d,e in x.items()}
+        alloutput_map: dict[Endpoint, list[DataInstance]] = {}
+        for x in output_map:
+            for k, lst in x.items():
+                alloutput_map[k] = alloutput_map.get(k, [])+lst
+
+        input2files: dict[Endpoint, list[Path]] = {}
+        for i, e in enumerate(input_map):
             k = f"i{i+1:02}"
             if k not in raw_meta: continue
             # The lookbehind `(?<!...)` asserts that the pattern inside
             # does not precede the current position.
             file_group: list[str] = re.split(r"(?<!\\)\s", raw_meta[k])
-            input2files[inst] = [Path(re.sub(r"\\\s", " ", f)) for f in file_group]
+            input2files[e] = [Path(re.sub(r"\\\s", " ", f)) for f in file_group]
             # Log.Debug(f"{k} {inst.dtype_name} {input2files[inst]}")
 
         def _status(p: ContextPath):
@@ -148,37 +175,41 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
             return ContextPath(local=local, external=external, container=container)
         inputs: list[dict[Dependency, ContextData]] = []
         Log.Info("uses:")
-        data2dep = {inst:dep for dep, inst in step.dependency_map.items()}
         missing_input=False
         for batch, batch_lineage in enumerate(lineages):
             if len(lineages)>1:
                 Log.Info(f"  > batch [{batch+1}]:")
             g: dict[Dependency, ContextData] = {}
-            for inst in step.uses:
-                Log.Info(f"    [{inst.dtype_name}/{inst.dtype.key}] at:")
-                remaining_files = input2files[inst]
-                group_size = len(batch_lineage[inst.dtype.key])
+            for e in input_map:
+                insts = input_map[e]
+                inst_names = {x.dtype_name for x in insts}
+                Log.Info(f"    [{e.key} {'/'.join(inst_names)}] at:")
+                remaining_files = input2files[e]
+                group_size = len(batch_lineage[e.key])
                 # Log.Debug(f"{inst.dtype_name} {group_size} {remaining_files}")
                 input_group = [_parse_path(p) for p in remaining_files[:group_size]]
                 # Log.Debug(f"{inst.dtype_name} {group_size} {[p.container for p in input_group]}")
-                input2files[inst] = remaining_files[group_size:]
+                input2files[e] = remaining_files[group_size:]
                 for p in input_group:
                     missing_input = missing_input or not p.local.exists()
                     Log.Info(_shorten_home(f"        {_status(p)} [{p.local}]"))
-                g[data2dep[inst]] = ContextData(
+                g[input2dep[e]] = ContextData(
                     input_group=input_group,
-                    endpoint=inst.dtype,
-                    type_name=inst.dtype_name,
+                    endpoint=e,
+                    type_name=insts[0].dtype_name,
                 )
             inputs.append(g)
         if missing_input:
             Log.Error("detected missing inputs, stopping")
             return ExecutionResult(False)
 
-        output_signature = step.transform.output_signature
+        kg = KeyGenerator()
+        # output_signature = step.transform.output_signature
         def _get_output_paths(key: Dependency, i: int, batch: int):
-            pattern = output_signature[key]
-            dest = Path(f"{output_indexes[batch]}-{i+1}.{pattern}")
+            d2e = dep2output[batch]
+            dtype = d2e[key]
+            pattern = dtype.key
+            dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}.{dtype.GetPreferredFileExtension()}")
             return _parse_path(dest, container_override=Path("/ws")/dest)
 
         context = ExecutionContext(
@@ -186,6 +217,7 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
             _get_output_paths=_get_output_paths,
             external_shell=shell,
             external_cwd=external_cwd,
+            external_agent_home=Path(agent_home),
             container_runtime=agent.runtime,
             params=params,
         )
@@ -196,39 +228,46 @@ def StageAndRunTransform(workspace: Path, variant_index: int, step_index: int):
         def on_exit(result: ExecutionResult, message: str|None=None):
             Log.Info("<"*BREAK_LENGTH)
             Log.Info(f"<<< [{step_name}] {message}")
-            if len(result.manifest)==0:
+            empty = False
+            if sum(len(x) for x in result.manifest)==0:
                 Log.Warn(f"no registered outputs")
-            output_signature = step.transform.output_signature
-            renamed = {}
-            for i, entry in enumerate(result.manifest):
-                Log.Info(f"output [{i+1}] of [{len(result.manifest)}]")
-                to_rename = []
-                ok = True
-                for dep, path in output_signature.items():
-                    inst = step.dependency_map[dep]
-                    dep_desc = f"{inst.dtype_name}:{inst.dtype.key}"
-                    if dep not in entry:
-                        Log.Warn(f"    X [{dep_desc}]")
-                        ok = False
-                        continue
-                    p = entry[dep]
-                    if not p.exists():
-                        Log.Warn(f"    X [{dep_desc}] from [{_shorten_home(str(p))}]")
-                        ok = False
-                        continue
-                    new_name = Path(f"{output_indexes[0]}-{i+1}.{path}") # todo
-                    to_rename.append((p, new_name))
-                    Log.Info(f"    ✓ [{dep_desc}] at [{new_name}] from [{_shorten_home(str(p))}]")
-                if not ok: continue
-                for p, new in to_rename:
-                    renamed[p] = new
-                    p.rename(new)
+                result.manifest = [{}]
+                empty = True
+            seen_deps: set[Dependency] = set()
+            dep2branch = {}
+            for i, manifest in enumerate(result.manifest):
+                if empty: break
+                Log.Info(f"branch [{i+1}] of [{len(result.manifest)}]")
+                for d, p in manifest.items():
+                    dep2branch[d] = i
+                    e = alldep2output[d]
+                    insts = alloutput_map[e]
+                    inst_names = {x.dtype_name for x in insts}
+                    Log.Info(f"    ✓ [{e.key} {'/'.join(inst_names)}] produced at [{_shorten_home(str(p))}]")
+                    seen_deps.add(d)
+            missings = []
+            for g in step.transform.model.produces:
+                for d in g:
+                    if d in seen_deps: continue
+                    e = alldep2output[d]
+                    insts = alloutput_map[e]
+                    inst_names = {x.dtype_name for x in insts}
+                    missings.append(f"    X [{e.key} {'/'.join(inst_names)}]")
+            if len(missings)>0:
+                Log.Info(f"missing outputs:")
+                for m in missings:
+                    Log.Info(m)
         try:
-            result = step.transform.protocol(context)
-            if isinstance(result, list): result = result[0] # todo
-            on_exit(result, f"reports {'success' if result.success else 'failure'}")
-            if result.success: Path(".command.success").touch()
-            return ExecutionResult(result.success)
+            results = step.transform.protocol(context)
+            if not isinstance(results, list):
+                results = [results]
+            for i, result in enumerate(results):
+                if len(results)>1:
+                    Log.Info(f"batch [{i+1}] of [{len(results)}]")
+                on_exit(result, f"reports {'success' if result.success else 'failure'}")
+            success = any(r.success for r in results)
+            if success: Path(".command.success").touch()
+            return ExecutionResult(success)
         except Exception as e:
             on_exit(ExecutionResult(False), "failed with error")
             Log.Error(f"error while executing transform [{step_name}]")

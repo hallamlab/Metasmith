@@ -10,7 +10,7 @@ import yaml
 
 from ..coms.containers import Container, ContainerRuntime
 from .libraries import DataTypeLibrary
-from .libraries import DataInstanceLibrary, DataInstance
+from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary
 from .remote import Logistics, Source, SourceType
 from .solver import Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
@@ -25,7 +25,7 @@ class WorkflowStep:
     order: int
     uses: list[DataInstance]
     produces: list[list[DataInstance]]
-    dependency_map: dict[Dependency, DataInstance]
+    dependency_map: dict[Dependency, list[DataInstance]]
     transform: TransformInstance
     transform_library: TransformInstanceLibrary
     _raw_dependency_map: dict|None = None
@@ -35,7 +35,7 @@ class WorkflowStep:
             order=self.order,
             uses=[inst.Pack() for inst in self.uses],
             produces=[[inst.Pack() for inst in g] for g in self.produces],
-            dependency_map={k.key:v._key for k, v in self.dependency_map.items()},
+            dependency_map={k.key:[v._key for v in lst] for k, lst in self.dependency_map.items()},
             transform=f"{self.transform_library.GetKey()}::{self.transform.name}",
         )
 
@@ -61,7 +61,7 @@ class WorkflowStep:
         data = {d._key:d for d in itertools.chain(self.uses, [d for g in self.produces for d in g])}
         tr = self.transform.model
         deps = {d.key:d for d in itertools.chain(tr.requires, [d for g in tr.produces for d in g])}
-        self.dependency_map = {deps[k]:data[v] for k, v in self._raw_dependency_map.items()}
+        self.dependency_map = {deps[k]:[data[v] for v in lst] for k, lst in self._raw_dependency_map.items()}
 
 @dataclass
 class WorkflowTarget:
@@ -119,10 +119,10 @@ class WorkflowPlan:
         self._update_hash()
 
     def _update_hash(self):
-        given = [inst._key for inst in self.given]
+        # given = [inst._key for inst in self.given]
         # targets = [inst._key for inst in self.targets]
         steps = [step.transform.model.key for step in self.steps]
-        self._hash, self._key = KeyGenerator.FromStr("".join(given+steps), l=8)
+        self._hash, self._key = KeyGenerator.FromStr("".join(steps), l=8)
 
     def __hash__(self) -> int:
         return self._hash
@@ -160,49 +160,50 @@ class WorkflowPlan:
         with open(path, "w") as f:
             yaml.dump(self.Pack(), f)
 
-    def TryApplyingTo(self, alt_given: list[DataInstance]):
-        my_given = set(self.given)
-        used = {x for s in self.steps for x in s.uses if x in my_given}
-        viability = {} # number of times an inst in alt can be used
-        possible_substitutions = {} # candiates replacements for each original given
-        for alt in alt_given:
-            count = 0
-            for original in used:
-                if not alt.dtype.IsA(original.dtype): continue
-                count += 1
-                possible_substitutions[original] = possible_substitutions.get(original, [])+[alt]
-            viability[alt] = count
+    # def TryApplyingTo(self, alt_given: list[DataInstance]):
+    #     my_given = set(self.given)
+    #     used = {x for s in self.steps for x in s.uses if x in my_given}
+    #     viability = {} # number of times an inst in alt can be used
+    #     possible_substitutions = {} # candiates replacements for each original given
+    #     for alt in alt_given:
+    #         count = 0
+    #         for original in used:
+    #             if not alt.dtype.IsA(original.dtype): continue
+    #             count += 1
+    #             possible_substitutions[original] = possible_substitutions.get(original, [])+[alt]
+    #         viability[alt] = count
 
-        replacement_plan: dict[DataInstance, DataInstance] = {}
-        for original in used:
-            if original not in possible_substitutions: return
-            candidates = possible_substitutions[original]
-            candidates = sorted(list(zip(candidates, [viability[c] for c in candidates])), key=lambda t: t[-1], reverse=True)
-            replacement_plan[original], _ = candidates[0]
+    #     replacement_plan: dict[DataInstance, DataInstance] = {}
+    #     for original in used:
+    #         if original not in possible_substitutions: return
+    #         candidates = possible_substitutions[original]
+    #         candidates = sorted(list(zip(candidates, [viability[c] for c in candidates])), key=lambda t: t[-1], reverse=True)
+    #         replacement_plan[original], _ = candidates[0]
 
-        new_steps: list[WorkflowStep] = []
-        for step in self.steps:
-            new_steps.append(WorkflowStep(
-                order = step.order,
-                uses = [replacement_plan.get(x, x) for x in step.uses],
-                produces = step.produces,
-                dependency_map = {d:replacement_plan.get(x, x) for d, x in step.dependency_map.items()},
-                transform=step.transform,
-                transform_library=step.transform_library,
-                _raw_dependency_map = {d:replacement_plan.get(x, x) for d, x in step._raw_dependency_map.items()} if step._raw_dependency_map is not None else None,
-            ))
-        return WorkflowPlan(
-            alt_given,
-            targets=self.targets,
-            steps=new_steps,
-            _solver_result=self._solver_result,
-            _archetype_translation = replacement_plan
-        )
+    #     new_steps: list[WorkflowStep] = []
+    #     for step in self.steps:
+    #         new_steps.append(WorkflowStep(
+    #             order = step.order,
+    #             uses = [replacement_plan.get(x, x) for x in step.uses],
+    #             produces = step.produces,
+    #             dependency_map = {d:replacement_plan.get(x, x) for d, x in step.dependency_map.items()},
+    #             transform=step.transform,
+    #             transform_library=step.transform_library,
+    #             _raw_dependency_map = {d:replacement_plan.get(x, x) for d, x in step._raw_dependency_map.items()} if step._raw_dependency_map is not None else None,
+    #         ))
+    #     return WorkflowPlan(
+    #         alt_given,
+    #         targets=self.targets,
+    #         steps=new_steps,
+    #         _solver_result=self._solver_result,
+    #         _archetype_translation = replacement_plan
+    #     )
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
         all_types: dict[str, Endpoint] = {}
         while len(all_types) < len(raw["types"]):
+            changed = False
             for k, v in raw["types"].items():
                 if k in all_types: continue
                 parent_keys = v.get("parents", [])
@@ -210,6 +211,8 @@ class WorkflowPlan:
                 parents = {all_types[p] for p in parent_keys}
                 proto = Endpoint.Unpack(dict(properties=v["properties"]))
                 all_types[k] = Endpoint(properties=proto.properties, parents=parents)
+                changed = True
+            if not changed: break
 
         def _unpack_given(raw: dict):
             inst = DataInstance.Unpack(raw, libraries)
@@ -219,7 +222,13 @@ class WorkflowPlan:
 
         def _unpack_step(raw: dict):
             step = WorkflowStep.Unpack(raw, libraries)
-            for inst, r in itertools.chain(zip(step.uses, raw["uses"]), zip([d for g in step.produces for d in g], raw["produces"])):
+            def _iter():
+                for inst, r in zip(step.uses, raw["uses"]):
+                    yield inst, r
+                for g, rg in zip(step.produces, raw["produces"]):
+                    for inst, r in zip(g, rg):
+                        yield inst, r
+            for inst, r in _iter():
                 inst.dtype = all_types[r["type_id"]]
                 inst.RecalculateKey()
             step._resolve_dependency_map()
@@ -245,24 +254,26 @@ class WorkflowPlan:
     @classmethod
     def Generate(
         cls,
-        given: Iterable[Iterable[DataInstanceLibrary]],
-        transforms: Iterable[TransformInstanceLibrary],
+        given: list[list[DataInstanceLibraryView]],
+        transforms: list[TransformInstanceLibrary],
         targets: Iterable[Endpoint],
         max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
-        given_map: dict[Endpoint, DataInstance] = {}
+        given_map: dict[Endpoint, list[DataInstance]] = {}
+        given_endpoints: list[set[Endpoint]] = []
         for group in given:
+            eps = set()
             for lib in group:
                 for path, ep_name, ep in lib.Iterate():
-                    if ep in given_map:
-                        Log.Warn(f"[{ep}] of [{lib.location}] is masked")
-                        continue
-                    given_map[ep] = DataInstance(
+                    given_map[ep] = given_map.get(ep, [])+[DataInstance(
                         path=path,
                         dtype=ep,
                         dtype_name=ep_name,
-                        parent_lib=lib,
-                    )
+                        parent_lib=lib._original,
+                    )]
+                    eps.add(ep)
+            if len(given_endpoints)>0 and all(g==eps for g in given_endpoints): continue
+            given_endpoints.append(eps)
 
         target_e2d: dict[Endpoint, Dependency] = {}
         def _add(tr: Transform, e: Endpoint) -> Dependency:
@@ -287,49 +298,62 @@ class WorkflowPlan:
                 inst2trlib[tr] = trlib
 
         result = solve_by_mcts(
-            given=given_map.keys(),
+            given=given_endpoints,
             target=target_model,
             transforms=transform2inst.keys(),
             max_iter=max_iter,
             max_refine=max_refine,
             seed=seed,
         )
+        # result.RenderDAG("./dag")
+
+        # remap given inputs if changed by solver
+        result_given = result.dependency_plan[0]
+        for pgroup in result_given.produced:
+            for d in pgroup:
+                e = pgroup[d]
+                if e in given_map: continue
+                for ge in given_map:
+                    if not e.properties==ge.properties: continue
+                    given_map[e] = given_map[ge]
+                    del given_map[ge]
+                    break
 
         # assert result.complete, "failed to make plan!"
         if not result.complete:
             return result
         solution = result
 
-        instance_map: dict[Endpoint, DataInstance] = {k:v for k, v in given_map.items()}
+        instance_map: dict[Endpoint, set[DataInstance]] = {k:set(v) for k, v in given_map.items()}
         steps: list[WorkflowStep] = []
-        target_meta: dict[Endpoint, WorkflowTarget] = {}
+        target_meta: dict[Endpoint, list[WorkflowTarget]] = {}
         used_endpoints: set[Endpoint] = set()
         for i, appl in enumerate(solution.dependency_plan[1:-1]): # first is mock tr for given, last is for target
             tr = transform2inst[appl.transform]
             _lib = inst2trlib[tr]
 
-            for pgroup, sig in zip(appl.produced, tr.output_signature):
+            for pgroup in appl.produced:
                 for d, e in pgroup.items():
-                    p = sig[d]
                     _instance = DataInstance(
-                        path = Path(p),
+                        path = Path(e.key+e.GetPreferredFileExtension()),
                         dtype = e, # we actually dont want lineage at this stage so that the hashes match
                         dtype_name = _lib.GetName(d), # type: ignore # Dependency not assignable to Endpoint
                         parent_lib = _lib,
                     )
-                    instance_map[e] = _instance
+                    instance_map[e] = instance_map.get(e, set())|{_instance}
 
             used_endpoints |= {e for e in appl.used.values()}
             step = WorkflowStep(
                 order=i+1,
-                uses=[instance_map[e] for e in appl.used.values()],
-                produces=[[instance_map[e] for e in pgroup.values()] for pgroup in appl.produced],
-                dependency_map={d:instance_map[e] for d, e in itertools.chain(appl.used.items(), [(d, e) for pgroup in appl.produced for d, e in pgroup.items()])},
+                uses=[inst for e in appl.used.values() for inst in instance_map[e]],
+                produces=[[inst for e in pgroup.values() for inst in instance_map[e]] for pgroup in appl.produced],
+                dependency_map={d:list(instance_map[e]) for d, e in itertools.chain(appl.used.items(), [(d, e) for pgroup in appl.produced for d, e in pgroup.items()])},
                 transform=tr,
                 transform_library=_lib,
             )
             steps.append(step)
 
+        for appl in solution.dependency_plan:
             for pgroup in appl.produced:
                 for d, e in pgroup.items():
                     for target in targets:
@@ -339,21 +363,25 @@ class WorkflowPlan:
                         for p in target.parents:
                             if p not in given_map: continue
                             _used_givens.append(given_map[p]) # type: ignore # Node not assignable to Endpoint
-                        target_meta[target] = WorkflowTarget(
-                            instance=instance_map[e],
-                            used_givens=_used_givens,
-                            producing_step=step,
-                        )
+                        used_endpoints.add(e)
+                        for t in instance_map[e]:
+                            target_meta[target] = target_meta.get(target, [])+[
+                                WorkflowTarget(
+                                    instance=t,
+                                    used_givens=_used_givens,
+                                    producing_step=step,
+                                )
+                            ]
                         break
 
         return cls(
-            given=[i for e, i in given_map.items() if e in used_endpoints],
-            targets=list(target_meta.values()),
+            given=[i for e, lst in given_map.items() for i in lst if e in used_endpoints],
+            targets=[x for g in target_meta.values() for x in g],
             steps=steps,
             _solver_result=result,
         )
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', hide_images: bool = True):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}):
         # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
         # todo: propogate errors, those might be important...
         import logging
@@ -389,35 +417,71 @@ class WorkflowPlan:
                     return f'"{name}" [shape="oval", style="filled", fillcolor="#CCCCCC"]'
                 case NodeType.DATA:
                     return f'"{name}" [shape="box"]'
-
-        def _as_DAG(*, font: str = 'Arial', hide_images: bool = True) -> str:
+        def _get_ns(name: str):
+            if "::" in name: 
+                ns, d = name.split("::", maxsplit=1)
+                return ns
+            else:
+                return name
+        def _as_DAG(*, font: str = 'Arial') -> str:
             lines = ["digraph G {"]
             lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
+            lines.append(_render_node(NodeType.TRANSFORM, "given"))
+            k2name = {x.dtype:x.dtype_name for x in self.given}
+            # for x in self.given:
+            #     print(x.dtype_name, x.dtype)
+            parents: set[Endpoint] = set()
+            for e in k2name:
+                for p in e.parents:
+                    parents.add(p) # type: ignore
+            shown_parents = set()
+            for p in parents:
+                if p not in k2name: continue
+                inst = k2name[p]
+                if _get_ns(inst) in blacklist_namespaces: continue
+                shown_parents.add(inst)
+            for e, inst in k2name.items():
+                if _get_ns(inst) in blacklist_namespaces: continue
+                for p in e.parents:
+                    if p not in k2name: continue
+                    pinst = k2name[p] # type: ignore
+                    if pinst not in shown_parents: continue
+                    lines.append(f'    "{pinst}" -> "{inst}";')
+                lines.append(f'    "given" -> "{inst}";')
+            seen = set()
             for step in self.steps:
                 transform_name = step.transform.name
                 lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
-                if hide_images:
-                    inputs  = [u.dtype_name for u in step.uses if "oci_image" not in u.dtype_name]
-                    outputs = [o.dtype_name for g in step.produces for o in g if "oci_image" not in o.dtype_name]
-                else:
-                    inputs  = [u.dtype_name for u in step.uses]
-                    outputs = [o.dtype_name for g in step.produces for o in g]
+                uses = {x.dtype:x for x in step.uses}
+                produces = {x.dtype:x for o in step.produces for x in o}
+                inputs  = [x.dtype_name for x in uses.values() if _get_ns(x.dtype_name) not in blacklist_namespaces]
+                outputs = [x.dtype_name for x in produces.values() if _get_ns(x.dtype_name) not in blacklist_namespaces]
                 for name in inputs:
                     lines.append(_render_node(NodeType.DATA, name))
-                    lines.append(f'    "{name}" -> "{transform_name}";')
+                    x = f'    "{name}" -> "{transform_name}";'
+                    if x not in seen: lines.append(x)
+                    seen.add(x)
                 for name in outputs:
                     lines.append(_render_node(NodeType.DATA, name))
-                    lines.append(f'    "{transform_name}" -> "{name}";')
+                    x = f'    "{transform_name}" -> "{name}";'
+                    if x not in seen: lines.append(x)
+                    seen.add(x)
+            lines.append(_render_node(NodeType.TRANSFORM, "target"))
+            # for x in self.targets:
+            #     print(x.instance.dtype_name, x.instance.dtype)
+            for target in {x.instance.dtype_name for x in self.targets}:
+                lines.append(f'    "{target}" -> "target";')
             lines.append("}")
             return "\n".join(lines)
         
-        dag_str = _as_DAG(font=font, hide_images=hide_images)
+        dag_str = _as_DAG(font=font)
         src = graphviz.Source(dag_str, filename=path_base, format=format)
         src.render(cleanup=True, quiet=True)
 
 @dataclass
 class WorkflowTask:
-    plans: list[list[WorkflowPlan]]
+    ok: bool
+    plan: WorkflowPlan
     data_libraries: list[DataInstanceLibrary] = field(default_factory=list)
     transform_libraries: list[TransformInstanceLibrary] = field(default_factory=list)
 
@@ -425,13 +489,13 @@ class WorkflowTask:
         self._update_hash()
 
     def _update_hash(self):
-        self._hash, self._key = KeyGenerator.FromStr("".join(p._key for g in self.plans for p in g), l=8)
+        # self._hash, self._key = KeyGenerator.FromStr("".join(p._key for g in self.plans for p in g), l=8)
+        self._hash, self._key = self.plan._hash, self.plan._key
 
     def GetKey(self):
         return self._key
 
     def PrepareNextflow(self, context: NextflowGenContext):
-        total_samples = sum(len(g) for g in self.plans)
         TAB = "\t"
         def _strip_var(s: str):
             return s[2:-1]
@@ -465,17 +529,42 @@ class WorkflowTask:
         ]+bootstrap)
         MAX_FILE_SIZE = int(2**16 * 0.95) # nextflow is 65536
 
-        def prepare_step(variant: int, step: WorkflowStep, target_instances: set[DataInstance]):
-            k = f"v{variant:02}p{step.order:02}"
+        _archetypes: dict[DataInstance, DataInstance] = {}
+        def get_archetype(candidates: list[DataInstance]):
+            a = None
+            for c in candidates:
+                if c not in _archetypes: continue
+                a = _archetypes[c]
+            if a is None:
+                a = candidates[0]
+            for c in candidates:
+                _archetypes[c] = a
+            return a
+        # except for given data instances
+        # intermediates are "collapsed"
+        # we do not know the arity as steps can produce multiples instances,
+        # at which point nextflow will branch automatically and flow into gropby junctions, etc.
+        def get_io_signature(step: WorkflowStep):
+            used_archetypes: list[DataInstance] = []
+            for d in step.transform.model.requires:
+                insts = step.dependency_map[d]
+                archetype = get_archetype(insts)
+                used_archetypes.append(archetype)
+            produced_archetypes: list[list[DataInstance]] = []
+            for dg in step.transform.model.produces:
+                g = []
+                for d in dg:
+                    insts = step.dependency_map[d]
+                    archetype = get_archetype(insts)
+                    g.append(archetype)
+                produced_archetypes.append(g)
+            return used_archetypes, produced_archetypes
+
+        def prepare_step(step: WorkflowStep):
+            k = f"p{step.order:02}"
             process_name = f"{k}__{step.transform.name}"
             src = [f"process {process_name}"+" {"]
-            # to_pubish = [x for x in step.produces if x in target_instances]
-            # def add_prefix(p: Path):
-            #     return p.parent/f"*.msm_out.{p.name}"
             src += [
-                # f'publishDir "$params.output/{k}_{step.transform.name}", pattern: "{add_prefix(x.path)}"'
-                # for x in to_pubish
-            ] + [
                 TAB+f"tag '{step.transform.GetKey()}'",
             ]
             
@@ -497,7 +586,7 @@ class WorkflowTask:
                         for i, _ in enumerate(external_binds)
                     ],
                     runtime=context.container_runtime,
-                ).MakeBindsParam(defaults=False)
+                ).MakeBindsParam()
 
             res = step.transform.resources
             if res is not None: 
@@ -508,32 +597,36 @@ class WorkflowTask:
                 src += [
                     "errorStrategy 'ignore'" # no point in retrying if not changing resource requests
                 ]
+            used_archetypes, produced_archetypes = get_io_signature(step)
+
             src += [
                 "input:",
-                TAB+f'tuple '+','.join(['val(index)']+[f'path(_{i+1:02})' for i, x in enumerate(step.uses)])
+                TAB+f'tuple '+','.join(['val(index)']+[f'path(_{i+1:02})' for i, x in enumerate(used_archetypes)])
             ] + [
                 "output:",
             ] + [
                 # TAB+f'tuple val(index),path("{add_prefix(x.path)}")'
-                TAB+f'tuple val(index),path("*.{x.path}")'
-                for g in step.produces for x in g
+                TAB+f'tuple val(index),path("*.{x.dtype.key}.{x.dtype.GetPreferredFileExtension()}")'
+                for g in produced_archetypes for x in g
             ] + [
                 "script:",
                 '"""',
-                f'echo "variant {variant}, step {step.order}, sample $index"',    # this is used to extract logs in agent.RunWorkflow()
+                f'echo "step {step.order}, sample $index"',    # this is used to extract logs in agent.RunWorkflow()
                 f'echo "{step.transform.name}"',
                 f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
-                f'echo "lin ${{Orchestrator.JsonforEcho(index)}}">>{METADATA_FILE}',
+                f'echo "lin ${{Orchestrator.JsonforEcho(index)}}" >>{METADATA_FILE}',
+                f'echo "inp {','.join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
+                f'echo "out {';'.join(','.join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
             ] + [
                 f'echo "i{i+1:02} $_{i+1:02}">>{METADATA_FILE}'
-                for i, x in enumerate(step.uses)
+                for i, x in enumerate(used_archetypes)
             ] + [
                 f'{_make_bind_var(i, is_assignment=True)}="{p}"'
                 for i, p in enumerate(external_binds)
             ] + [
                 f'echo "{external_binds_param}" >{BIND_FILE}',
                 f'{context.bootstrap_var}',
-                f'bootstrap {context.external_work_var} "{variant}/{step.order}"',
+                f'bootstrap {context.external_work_var} "{step.order}"',
                 f'[ -e .command.success ] && exit 0 || exit 1', # in case slurm silently kills proc from oom/timeout
                 '"""',
                 "}",
@@ -545,133 +638,155 @@ class WorkflowTask:
             d = context.work_dir/n
             d.mkdir(exist_ok=True)
             return d
-            
+        
+        the_plan = self.plan
+        _given = set(the_plan.given)
+        used_given = {x for s in the_plan.steps for x in s.uses if x in _given}
+        given_endpoints = {x.dtype for x in used_given}
+
+        # find merges
         inputs_dir = ensure_local_folder("inputs")
-        plans_dir = ensure_local_folder("plans")
-        wf_names = []
-        published_channels: dict[str, list[tuple[str, DataInstance]]] = {}
-        for i, plan_set in enumerate(self.plans):
-            # goal:
-            # k = ['h']
-            # (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
-            # or this for when batching
-            # (y) = o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k)
-            wf_name = f"v{i+1:02}"
-            archtype = plan_set[0]
-            targets = {x.instance for x in archtype.targets}
-            src_process = []
-            wf_main = []
-            wf_emit = []
-            for step in archtype.steps:
-                process_name, src = prepare_step(i+1, step, targets)
-                src_process.append(src)
-                produced = ", ".join(f"_{x.dtype.key}" for g in step.produces for x in g)
-                if len(step.uses)>0:
-                    gb = step.dependency_map[step.transform.group_by].dtype.key
-                    using_symbols = ", ".join(f"_{x.dtype.key}" for x in step.uses)
-                    used = f"o.group('{gb}', o.using([{using_symbols}], k))"
+        e2producer: dict[Endpoint, list[WorkflowStep]] = {}
+        for step in the_plan.steps:
+            for pg in step.produces:
+                for inst in pg:
+                    e2producer[inst.dtype] = e2producer.get(inst.dtype, [])+[step]
+        final_steps_for_merging: dict[int, set[Endpoint]] = {}
+        for e, steps in e2producer.items():
+            if e not in given_endpoints and len(steps)<2: continue
+            k = max(s.order for s in steps)
+            final_steps_for_merging[k] = final_steps_for_merging.get(k, set())|{e}
+        output_copies: dict[str, int] = {}
+        to_merge_names: dict[Endpoint, list[str]] = {}
+        def get_prod_name(x: Endpoint, force_singular=False):
+            k = x.key
+            arity = len(e2producer.get(x, []))+int(x in given_endpoints)
+            if not force_singular and arity>1:
+                i = output_copies.get(k, 0)+1
+                output_copies[k] = i
+                name = f"{k}_{i}"
+                to_merge_names[x] = to_merge_names.get(x, [])+[name]
+            else:
+                name = f"{k}"
+            return name
+        
+        # goal:
+        # (_tK9GI0FH) = o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]) // lib::pangenome_heatmap.py
+        # (_7A15qSzL) = o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]) // containers::python_for_data_science.oci
+        # (_urCt2PG9) = o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]) // sequences::gbk
+        input_channels: dict[Endpoint, list[DataInstance]] = {}
+        for step in the_plan.steps:
+            for dep, lst in step.dependency_map.items():
+                for inst in lst:
+                    if inst not in used_given: continue
+                    k = inst.dtype
+                    input_channels[k] = input_channels.get(k, [])+[inst]
+        prepared_given: set[tuple[Path, str, str]] = set()
+        for _, lst in input_channels.items():
+            inst = get_archetype(lst)
+            p = inputs_dir/f"{get_prod_name(inst.dtype, force_singular=True)}"
+            v = get_prod_name(inst.dtype)
+            n = inst.dtype_name
+            k = p, v, n
+            if k in prepared_given: continue
+            prepared_given.add(k)
+            with open(p, "w") as f:
+                unique_lst = set(lst)
+                if len(unique_lst)==1:
+                    to_write = [inst]
                 else:
-                    used = ""
-                produced_k = [f"'{x.dtype.key}'" for g in step.produces for x in g]
-                produced_k = ", ".join(produced_k)
-                wf_main.append(f"k = [{produced_k}]")
-                if step.transform.batch_size==1:
+                    to_write = lst
+                for x in to_write:
+                    f.write(f"{x.ResolvePath()}"+"\n")
+        # goal:
+        # k = ['h']
+        # (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
+        # or this for when batching
+        # (y) = o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k)
+        targets = {x.instance for x in the_plan.targets}
+        src_process = []
+        wf_main = []
+        wf_publish = set()       
+        published_channels: dict[str, DataInstance] = {}
+        for step in the_plan.steps:
+            process_name, src = prepare_step(step)
+            src_process.append(src)
+            used_archetypes, produced_archetypes = get_io_signature(step)
+            produced_names = [get_prod_name(x.dtype) for g in produced_archetypes for x in g]
+            produced_snames = [get_prod_name(x.dtype, force_singular=True) for g in produced_archetypes for x in g]
+            produced = ", ".join(f"_{x}" for x in produced_names)
+            if len(used_archetypes)>0:
+                _inst = step.dependency_map[step.transform.group_by]
+                _dtypes = {x.dtype.key for x in _inst}
+                if len(_dtypes)>1:
+                    Log.Warn(f"unexpected plural groupby instance refernce for [{step.transform.name}:{step.transform.group_by}]: [{_inst}]")
+                _inst = _inst[0]
+                gb = _inst.dtype.key
+                using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
+                used = f"o.group('{gb}', o.using([{using_symbols}], k))"
+            else:
+                used = ""
+            produced_k = [f"'{x}'" for x in produced_snames]
+            produced_k = ", ".join(produced_k)
+            wf_main.append(f"k = [{produced_k}]")
+            if step.transform.batch_size==1:
+                wf_main.append(
+                    f"({produced}) = o.post([*{process_name}({used})], k)"
+                )
+            else:
+                wf_main.append(
+                    f"({produced}) = o.post(o.debatch([*{process_name}(o.batch({used}, {step.transform.batch_size}))]), k)"
+                )
+            if step.order in final_steps_for_merging:
+                for e in final_steps_for_merging[step.order]:
+                    names = to_merge_names[e]
+                    to_mix = [f"_{x}" for x in names]
+                    name = get_prod_name(e, force_singular=True)
                     wf_main.append(
-                        f"({produced}) = o.post([*{process_name}({used})], k)"
+                        f"_{name} = o.mix([{', '.join(to_mix)}])"
                     )
-                else:
-                    wf_main.append(
-                        f"({produced}) = o.post(o.debatch([*{process_name}(o.batch({used}, {step.transform.batch_size}))]), k)"
-                    )
-                to_pubish = [x for x in step.produces if x in targets]
-                for inst in to_pubish:
-                    k = f"_{inst.dtype.key}"
-                    wf_emit += [
-                        f"{k} = o.publish({k})"
-                    ]
-                    published_channels[wf_name] = published_channels.get(wf_name, [])+[(k, inst)]
-
-            input_channels: dict[tuple[int, Dependency], list[DataInstance]] = {}
-            for plan in plan_set:
-                _given = set(plan.given)
-                used_given = {x for s in plan.steps for x in s.uses if x in _given}
-                for step in plan.steps:
-                    for dep, inst in step.dependency_map.items():
-                        if inst not in used_given: continue
-                        k = step.order, dep
-                        input_channels[k] = input_channels.get(k, [])+[inst]
-            prepared_given: set[Path] = set()
-            for k, lst in input_channels.items():
-                n = inputs_dir/f"{lst[0].dtype.key}"
-                if n in prepared_given: continue
-                prepared_given.add(n)
-                with open(n, "w") as f:
-                    unique_lst = set(lst)
-                    if len(unique_lst)==1:
-                        to_write = [lst[0]]
-                    else:
-                        to_write = lst
-                    for x in to_write:
-                        f.write(f"{x.ResolvePath()}"+"\n")
+            to_pubish = [x for g in produced_archetypes for x in g if x in targets]
+            for inst in to_pubish:
+                k = inst.dtype.key
+                wf_publish.add(k)
+                published_channels[k] = inst
+        wf_output = []
+        for ch, inst in published_channels.items():
+            out_name = inst.dtype_name.replace(' ', '_').replace("::", "-")
+            wf_output += [
+                TAB+f"_{ch}"+"{",
+                TAB+TAB+f"path '{out_name}'",
+                TAB+TAB+f"index {{ path '_manifests/{out_name}.{inst.dtype.key}.csv' }}",
+                TAB+"}",
+            ]
             
-            content = [
-                f"workflow {wf_name}"+" {",
-                "main:",
-                f'o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy',
-            ] + [
-                f'(_{p.name}) = o.post([in("{p.relative_to(context.work_dir)}")], ["{p.name}"])'
-                for p in prepared_given
-            ] + [
-                line for line in wf_main
-            ] + [
-                "",
-                "emit:",
-            ] + [
-                line for line in wf_emit
-            ] + [
-                "}",
-            ]
-            with open(plans_dir/f"{wf_name}.nf", "w") as f:
-                f.write("\n".join([HEADER]+src_process+content))
-            wf_names.append(wf_name)
-
+        content = [
+            f"workflow"+" {",
+            "main:",
+            f'o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy',
+        ] + [
+            f'(_{v}) = o.post([in("{p.relative_to(context.work_dir)}")], ["{p.name}"]) // {n}'
+            for p, v, n in prepared_given
+        ] + [
+            line for line in wf_main
+        ] + [
+            "",
+            "publish:",
+        ] + [
+            f"_{k} = o.publish(_{k})"
+            for k in wf_publish
+        ] + [
+            "}",
+            "",
+            "output {",
+        ] + [
+            line for line in wf_output
+        ] + [
+            "}",
+        ]
+        
         with open(context.work_dir/context.workflow_file, "w") as f:
-            lib_dir = plans_dir.relative_to(context.work_dir)
-            publish_src = []
-            output_src = []
-            for wfn, ch, inst in [(wfn, ch, inst) for wfn, channels in published_channels.items() for (ch, inst) in channels]:
-                ch_name = f"{wfn}{ch}"
-                publish_src.append(f"{ch_name} = {wfn}.{ch}")
-                out_name = inst.dtype_name.replace(' ', '_').replace("::", "-")
-                output_src += [
-                    TAB+f"{ch_name}"+"{",
-                    TAB+TAB+f"path '{wfn}-{out_name}'",
-                    TAB+TAB+f"index {{ path '{wfn}-{out_name}.{inst.dtype.key}.manifest.csv' }}",
-                    TAB+"}",
-                ]
-            src = [
-                "include { "+wf_name+" } from '"+f"./{lib_dir}/{wf_name}'"
-                for wf_name in wf_names
-            ] + [
-                "workflow {",
-                "main:"
-            ] + [
-                f"{wf_name} = {wf_name}()"
-                for wf_name in wf_names
-            ] + [
-                "publish:",
-            ] + [
-                line for line in publish_src
-            ] + [
-                "}",
-                "",
-                "output {",
-            ] + [
-                line for line in output_src
-            ] + [
-                "}",
-            ]
-            f.write("\n".join(src))
+            f.write("\n".join([HEADER]+src_process+content))
 
     def GetCommonInputFolders(self, method="external"):
         """
@@ -704,13 +819,14 @@ class WorkflowTask:
                     return not inst.path.is_absolute()
                 case "all":
                     return True
-        given = {inst.ResolvePath().parent for g in self.plans for plan in g for inst in plan.given if should_keep(inst)}
+        given = {inst.ResolvePath().parent for inst in self.plan.given if should_keep(inst)}
         for path in given:
             update(str(path.parent))
         return roots
 
     def Pack(self):
         return dict(
+            ok=self.ok,
             data_libraries=[lib.GetKey() for lib in self.data_libraries],
             transform_libraries=[lib.GetKey() for lib in self.transform_libraries],
         )
@@ -723,7 +839,7 @@ class WorkflowTask:
             with open(_task_path, "w") as f:
                 yaml.dump(dict(
                     task=self.Pack(),
-                    plans=[[p.Pack() for p in g] for g in self.plans],
+                    plan=self.plan.Pack(),
                 ), f)
             _mover = Logistics()
             _mover.QueueTransfer(
@@ -747,7 +863,7 @@ class WorkflowTask:
         with open(path/"task.yml") as f:
             d = yaml.safe_load(f)
         raw_task = d["task"]
-        raw_plans = d["plans"]
+        raw_plan = d["plan"]
 
         _data_lib_paths = [Path(p) for p in alt_data_paths] if alt_data_paths else []
         _data_lib_paths += [path/"data"] # prefer alts first
@@ -760,9 +876,10 @@ class WorkflowTask:
         data_libs = {n: load_lib(n) for n in raw_task["data_libraries"]}
         tr_libs = {n: TransformInstanceLibrary.Load(path/f"transforms/{n}") for n in raw_task["transform_libraries"]}
         _libraries: dict[str, DataInstanceLibrary] = data_libs|tr_libs
-        plans = [[WorkflowPlan.Unpack(p, _libraries) for p in g] for g in raw_plans]
+        plan =  WorkflowPlan.Unpack(raw_plan, _libraries)
         return cls(
-            plans=plans,
+            ok=raw_task["ok"],
+            plan=plan,
             data_libraries=[data_libs[n] for n in raw_task["data_libraries"]],
             transform_libraries=[tr_libs[n] for n in raw_task["transform_libraries"]],
         )

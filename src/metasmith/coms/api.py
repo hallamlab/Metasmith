@@ -14,8 +14,7 @@ class Api:
         assert workspace, "[workspace] is required"
         step_index = body.get("step_index")
         assert step_index, "[step_index] is required"
-        sample, step = [int(x) for x in step_index.split("/")]
-        res = StageAndRunTransform(Path(workspace), sample, step)
+        res = StageAndRunTransform(Path(workspace), int(step_index))
         exit(res.success)
 
     def stage_workflow(self, body: dict):

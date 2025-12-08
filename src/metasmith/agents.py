@@ -9,6 +9,7 @@ import yaml
 import json
 import socket
 import re
+import time
 import pandas as pd
 from glob import glob
 
@@ -22,55 +23,8 @@ from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSourc
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, DataInstanceLibraryView
 from .models.libraries import TransformInstance, Resources
-from .models.solver import Endpoint
-from .constants import VERSION, MODULE_PATH
-
-class AgentPaths:
-    WORK_ROOT = Path("/ws")
-    HOME_ROOT = Path("/msm_home")
-    INTERNALS = Path("_metasmith")
-    STAGED = Path("runs")
-    TASK = Path("task")
-    MAIN_LOG_FILE = "main.log"
-    LAUNCHER_FILE = "start.sh"
-    NXF_WORKFLOW = "workflow.nf"
-    NXF_CONFIG = "workflow.config.nf"
-    NXF_PARAMS = "workflow.params.yml"
-
-    @classmethod
-    def to_staged(cls, root: Path|None=None):
-        if root is None: root = cls.HOME_ROOT
-        return root/cls.STAGED
-
-    @classmethod
-    def to_task(cls, key: str, root: Path|None=None):
-        if root is None: root = cls.HOME_ROOT
-        return root/(cls.STAGED/key)/cls.INTERNALS/cls.TASK
-
-    @classmethod
-    def to_bootstrap(cls, root: Path|None=None):
-        if root is None: root = cls.HOME_ROOT
-        return root/"lib/msm_bootstrap"
-
-    @classmethod
-    def to_definition(cls, root: Path|None=None):
-        if root is None: root = cls.HOME_ROOT
-        return root/"lib/agent.yml"
-
-    @classmethod
-    def to_relay(cls, root: Path|None=None):
-        if root is None: root = cls.HOME_ROOT
-        return root/"relay/msm_relay"
-
-    @classmethod
-    def to_local_relay_coms(cls, root: Path|None=None):
-        host = socket.gethostname()
-        return cls.to_relay(root).parent/f"{host}"
-
-    @classmethod
-    def to_data(cls, root: Path|None=None):
-        if root is None: root = cls.HOME_ROOT
-        return root/"data"
+from .models.solver import Endpoint, Solution
+from .constants import VERSION, MODULE_PATH, AgentPaths
 
 class AgentShell:
     def __init__(self, agent: Agent):
@@ -120,7 +74,7 @@ class PausedShell:
         self.shell.paused_out = oo
         self.shell.paused_err = oe
 
-ResourceOverrides = dict[tuple[int, int]|Literal["all"]|Literal["*"]|TransformInstance, Resources|dict[int, Resources]]
+ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|TransformInstance, Resources]
 @dataclass
 class Agent:
     home: Source
@@ -138,7 +92,7 @@ class Agent:
             globus_uuid=self.globus_uuid,
             real_path=self.real_path,
         ).items() if v is not None}
-        if isinstance(self.runtime, str): print(f"##### [{self.runtime}]")
+        # if isinstance(self.runtime, str): print(f"##### [{self.runtime}]")
         return dict(
             setup_commands=list(self.setup_commands),
             home=self.home.Pack(),
@@ -284,7 +238,7 @@ class Agent:
                 BINDS="$BINDS {container.MakeBindsParam()}"
                 if [ -e "{dev_src}" ]; then
                     echo "including dev binds"
-                    BINDS="$BINDS {dev_mock.MakeBindsParam(defaults=False)}"
+                    BINDS="$BINDS {dev_mock.MakeBindsParam()}"
                 fi
                 echo "binds [$BINDS]"
                 {container.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif", custom_bind_param="$BINDS")} metasmith $@
@@ -304,7 +258,7 @@ class Agent:
             bootstrap_container = Container(
                 image=self.container,
                 binds=[
-                    (Path("./"), Path("/ws")),
+                    ("$(pwd -P)", Path("/ws")),
                     ("$AGENT_HOME", Path("/msm_home")),
                 ],
                 workdir=Path("/ws"),
@@ -337,7 +291,7 @@ class Agent:
                     BINDS="{bootstrap_container.MakeBindsParam()}"
                     if [ -e "{dev_src}" ]; then
                         echo "including dev binds"
-                        BINDS="$BINDS {dev_mock.MakeBindsParam(defaults=False)}"
+                        BINDS="$BINDS {dev_mock.MakeBindsParam()}"
                     fi
                     if [ -e "./{BIND_FILE}" ]; then
                         echo "including linked data binds"
@@ -376,41 +330,28 @@ class Agent:
 
     def GenerateWorkflow(
         self, 
-        samples: list[DataInstanceLibraryView|DataInstanceLibrary],
+        samples: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         resources: list[DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary],
         targets: list[Endpoint],
         max_iter: int=1024, max_refine: int=256, seed: int=42,
     ):
-        resource_instances = [lib.Get(p) for lib in resources for p, n, m in lib.Iterate()]
-        existing_plans: list[WorkflowPlan] = []
-        plan_usage: dict[int, list[WorkflowPlan]] = {}
-        failures = []
-        _samples: list[DataInstanceLibraryView] = [DataInstanceLibraryView(s) if isinstance(s, DataInstanceLibrary) else s for s in samples]
-        for sample in _samples:
-            found = False
-            for i, plan in enumerate(existing_plans):
-                alt_given: list[DataInstance] = [sample.Get(p) for p, n, m in sample.Iterate()]+resource_instances
-                apply_result = plan.TryApplyingTo(alt_given)
-                if apply_result is None: continue
-                found = True
-                plan_usage[i] = plan_usage[i]+[apply_result] # should already exist since this is checking for possibilty of reuse
-            if not found:
-                original = sample._original.manifest
-                masked_lib = sample._original
-                masked_lib.manifest = {k:p for k, p in original.items() if k in sample._mask}
-                gen_result = WorkflowPlan.Generate([masked_lib]+resources, transforms, targets, max_iter=max_iter, max_refine=max_refine, seed=seed)
-                masked_lib.manifest = original # reset the original manifest
-                if not isinstance(gen_result, WorkflowPlan): 
-                    failures.append((sample, gen_result))
-                    continue
-                plan_usage[len(existing_plans)] = [gen_result]
-                existing_plans.append(gen_result)
+        res_views = [DataInstanceLibraryView(lib) for lib in resources]
+        _samples = [DataInstanceLibraryView(sample) if not isinstance(sample, DataInstanceLibraryView) else sample for sample in samples]
+        gen_result = WorkflowPlan.Generate(
+            [
+                [sample]+res_views
+                for sample in _samples
+            ], 
+            transforms,
+            targets,
+            max_iter=max_iter, max_refine=max_refine, seed=seed
+        )
         sample_libs = {v._original for v in _samples}
-        task = WorkflowTask(plans=list(plan_usage.values()), data_libraries=list(sample_libs)+resources,transform_libraries=transforms)
-        if len(failures)>0:
-            Log.Warn(f"{len(failures)} of {len(samples)} failed!")
-        return task
+        if isinstance(gen_result, Solution):
+            return WorkflowTask(ok=False, plan=WorkflowPlan(given=[], targets=[], steps=[], _solver_result=gen_result))
+        else:
+            return WorkflowTask(ok=True, plan=gen_result, data_libraries=list(sample_libs)+resources,transform_libraries=transforms)
 
     def _get_mock_container(self, task: WorkflowTask):
         binds = task.GetCommonInputFolders(method="external")
@@ -463,7 +404,7 @@ class Agent:
             task.SaveAs(self.home.ReplacePathWith(remote_path), partial=task_stage_partial)
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
-            binds = mock.MakeBindsParam(defaults=False)
+            binds = mock.MakeBindsParam()
             if len(mock.binds)>0:
                 Log.Info(f"external binds {[a for a, b in mock.binds]}")
             sh_remote.Exec(f"""\
@@ -554,9 +495,9 @@ class Agent:
                         for tr, res in resource_overrides.items():
                             if tr=="all" or tr=="*":
                                 key = f".*"
-                            elif isinstance(tr, tuple):
-                                v, p = tr
-                                key = f"v{v:02}p{p:02}__.*"
+                            elif isinstance(tr, int):
+                                p = tr
+                                key = f"p{p:02}__.*"
                             else:
                                 key = f".*__{tr.name}"
 
@@ -566,15 +507,6 @@ class Agent:
                                 ]+[TAB+TAB+x for x in res.AsNextflowFormat(is_config=True)]+[
                                     TAB+"}",
                                 ]
-                            elif isinstance(res, dict):
-                                for b, r in res.items():
-                                    assert isinstance(tr, TransformInstance), f"expected [{tr}] to be a TransformInstance"
-                                    key = f"v{b:02}p.*__{tr.name}"
-                                    lines += [
-                                        TAB+f"withName: '{key}' "+"{",
-                                    ]+[TAB+TAB+x for x in r.AsNextflowFormat(is_config=True)]+[
-                                        TAB+"}",
-                                    ]
                             else:
                                 raise TypeError(f"resouce specification in unexpected format: [{type(res)}]")
                         lines += [
@@ -623,8 +555,7 @@ def StageWorkflow(task_key: str, verify: bool):
     Log.Info(f"staging workflow [{task._key}] with:")
     Log.Info(f"  [{len(task.data_libraries)}] data libraries")
     Log.Info(f"  [{len(task.transform_libraries)}] transform libraries")
-    Log.Info(f"  [{len(task.plans)}] variants")
-    Log.Info(f"  [{sum(len(p.steps) for g in task.plans for p in g)}] total steps")
+    Log.Info(f"  [{len(task.plan.steps)}] total steps")
 
     work_relative = AgentPaths.STAGED/task._key
     work_dir = AgentPaths.WORK_ROOT/work_relative
@@ -633,16 +564,6 @@ def StageWorkflow(task_key: str, verify: bool):
     data_dir.mkdir(parents=True, exist_ok=True)
     work_internals.mkdir(parents=True, exist_ok=True)
     with RemoteShell(AgentPaths.to_local_relay_coms(), timeout=60) as extern_shell:
-        # extern_shell.RegisterOnOut(lambda data: Log.Info(f"ex| {data}"))
-        # extern_shell.RegisterOnErr(lambda data: Log.Error(f"ex|  {data}"))
-        # res = extern_shell.Exec(
-        #     f"""
-        #     realpath {agent.home.GetPath()}
-        #     """,
-        #     history=True
-        # )
-        # assert len(res.out) ==1, res.out
-        # extern_root, = [Path(x) for x in res.out]
         extern_root = agent.real_path
         assert extern_root is not None
         extern_work = extern_root/work_relative
@@ -652,7 +573,7 @@ def StageWorkflow(task_key: str, verify: bool):
         if not verify:
             Log.Info(f"skipping verification of external inputs paths")
         else:
-            given_paths = [inst.ResolvePath() for g in task.plans for plan in g for inst in plan.given]
+            given_paths = [inst.ResolvePath() for inst in task.plan.given]
             given_paths = [p for p in given_paths if not p.is_relative_to(AgentPaths.HOME_ROOT)]
             def batchify(iterable: Iterable, n):
                 batch: list[str] = []
@@ -733,7 +654,7 @@ def StageWorkflow(task_key: str, verify: bool):
     launcher_path = work_dir/AgentPaths.LAUNCHER_FILE
     Log.Info(f"creating launcher script at [{launcher_path}]")
     mock = agent._get_mock_container(task)
-    binds = mock.MakeBindsParam(defaults=False)
+    binds = mock.MakeBindsParam()
     if len(mock.binds)>0:
         Log.Info(f"external binds {[a for a, b in mock.binds]}")
     with open(launcher_path, "w") as f:
@@ -752,6 +673,9 @@ def StageWorkflow(task_key: str, verify: bool):
             f'nohup ../../msm api run_workflow -a key={task_key} -a log_dir=$LOG_DIR >$LOG_DIR/agent.log 2>&1 &',
         ]))
     os.chmod(launcher_path, 0o754)
+
+    Log.Info(f"drawing DAG")
+    task.plan.RenderDAG(f"{work_dir}/workflow.dag")
     Log.Info(f"[{task._key}] staged to [{workspace_str}]")
         
 def RunWorkflow(key: str, log_dir: Path):
@@ -774,7 +698,7 @@ def RunWorkflow(key: str, log_dir: Path):
 
     Log.Info(f"workspace [{workspace}]")
     Log.Info(f"external workspace [{extern_workspace}]")
-    Log.Info(f"plans [{len(task.plans)}] | steps [{sum(len(p.steps) for g in task.plans for p in g)}]")
+    Log.Info(f"steps [{len(task.plan.steps)}]")
 
     if agent.globus_uuid is not None:
         Log.Info(f"locating input data with agent's globus endpoint [{agent.globus_uuid}]")
@@ -801,7 +725,10 @@ def RunWorkflow(key: str, log_dir: Path):
     # export NXF_JVM_ARGS="-Xms2g -Xmx64g"
     results_folder = "results"
     nxf_report = log_dir/"nxf_report.html"
-    nxf_dag = log_dir/"nxf_dag.dot"
+    nxf_dag = log_dir/"workflow.dag_nxf.dot"
+    output_path = workspace/results_folder
+    manifests_path = output_path/"_manifests"
+    manifests_path.mkdir(parents=True, exist_ok=True)
     with LiveShell() as shell:
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
@@ -818,7 +745,8 @@ def RunWorkflow(key: str, log_dir: Path):
                 [ -e {AgentPaths.NXF_CONFIG} ] && cp {AgentPaths.NXF_CONFIG} {log_dir}
                 [ -e {AgentPaths.NXF_PARAMS} ] && cp {AgentPaths.NXF_PARAMS} {log_dir}
                 if [ -e {nxf_dag} ]; then
-                    dot -Tsvg {nxf_dag} -o {log_dir}/nxf_dag.svg
+                    dot -Tsvg {nxf_dag} -o {nxf_dag.stem}.svg
+                    rm {nxf_dag}
                 fi
                 exit 0
             }}
@@ -842,7 +770,6 @@ def RunWorkflow(key: str, log_dir: Path):
                 -ansi-log false \
                 -resume \
                 -work-dir ./nxf_work &
-
             PID=$!
             echo "nextflow PID is [$PID]"
             echo $PID >$PIDF
@@ -861,6 +788,7 @@ def RunWorkflow(key: str, log_dir: Path):
             timeout=None,
         )
 
+    nxf_report = workspace/nxf_report
     if nxf_report.exists():
         raw_task_meta = None
         with open(nxf_report) as f:
@@ -876,7 +804,7 @@ def RunWorkflow(key: str, log_dir: Path):
         if raw_task_meta is not None:
             try:
                 df_tasks = pd.DataFrame(raw_task_meta)
-                nxf_task_meta = log_dir/"nxf_tasks.csv"
+                nxf_task_meta = workspace/log_dir/"nxf_tasks.csv"
                 df_tasks.to_csv(nxf_task_meta, index=False)
                 Log.Info(f"extracting task metadata to [{nxf_task_meta}]")
             except Exception as e:
@@ -887,17 +815,15 @@ def RunWorkflow(key: str, log_dir: Path):
         Log.Warn(f"no report at [{nxf_report}]")
 
     Log.Info(f"compiling results")
-    output_path = workspace/results_folder
     extern_output_path = extern_workspace/results_folder
     output = DataInstanceLibrary(output_path)
     output_dtypes = DataTypeLibrary()
     output.AddTypeLibrary(task.GetKey(), output_dtypes)
     k2inst: dict[str, DataInstance] = {}
-    for variant in task.plans:
-        for plan in variant:
-            for step in plan.steps:
-                for inst in step.dependency_map.values():
-                    k2inst[inst.dtype.key] = inst
+    for step in task.plan.steps:
+        for insts in step.dependency_map.values():
+            for inst in insts:
+                k2inst[inst.dtype.key] = inst
     kv2path: dict[tuple[str, int], tuple[Path, dict]] = {}
     for in_manifest in (output_path.parent/"inputs").iterdir():
         k = in_manifest.name
@@ -906,8 +832,10 @@ def RunWorkflow(key: str, log_dir: Path):
                 i += 1
                 p = Path(l[:-1])
                 kv2path[(k, i)] = p, {}
-    for manifest in glob(str(output_path/"*.manifest.csv")):
-        inst_k = Path(manifest).name.split(".")[-3] # TAB+TAB+f"index {{ path '{wfn}-{out_name}.{inst.dtype.key}.manifest.csv' }}",
+    for manifest in glob(str(manifests_path/"*")):
+        manifest = Path(manifest)
+        if manifest.name == "given.csv": continue
+        inst_k = manifest.name.split(".")[-2] # TAB+TAB+f"index {{ path 'msm_manifest.{out_name}.{inst.dtype.key}.csv' }}",
         with open(manifest) as f:
             for l in f:
                 try:
@@ -934,15 +862,19 @@ def RunWorkflow(key: str, log_dir: Path):
             if pk not in relavent_k: continue
             if pk == ck: continue
             for pv in pvs:
-                ppath, _ = kv2path[(pk, pv)]
+                k = (pk, pv)
+                if k not in kv2path: continue # likely due to a merge between branches
+                ppath, _ = kv2path[k]
                 pi = path2i[ppath]
                 output_lineage.append((i, pi))
         output_manifest.append((i, ck, cinst.dtype_name,  dname, path))
     output.Save()
+    output_manifest = sorted(output_manifest)
     _df = pd.DataFrame(output_manifest, columns="i, type_key, type_name, name, path".split(", "))
-    _df.to_csv(output_path/"msm_manifest.csv", index=False)
+    _df.to_csv(manifests_path/"given.csv", index=False)
+    output_lineage = sorted(output_lineage)
     _df = pd.DataFrame(output_lineage, columns="child, parent".split(", "))
-    _df.to_csv(output_path/"msm_lineage.csv", index=False)
+    _df.to_csv(manifests_path/"lineage.csv", index=False)
     tail = output_path.relative_to(AgentPaths.HOME_ROOT)
     external_results_path = extern_home/tail
     Log.Info(f"[{len(output_manifest)}] outputs for [{key}] at [{external_results_path}]")
@@ -972,10 +904,10 @@ def RunWorkflow(key: str, log_dir: Path):
         try:
             with open(log_path) as f:
                 first_line = f.readline()
-                if not re.match(r"variant\s?\d+,?\s?step\s?\d+", first_line): continue
-                variant, step = [int(x) for x in re.findall(r"\d+", first_line)][:2]
-                transform = task.plans[variant-1][0].steps[step-1].transform
-            dest = PROCESS_DEST/f"v{variant:02}p{step:02}__{transform.name}_{nxf_id.replace('/', '-')}.log"
+                if not re.match(r"step\s?\d+", first_line): continue
+                step = [int(x) for x in re.findall(r"\d+", first_line)][0]
+                transform = task.plan.steps[step-1].transform
+            dest = PROCESS_DEST/f"p{step:02}__{transform.name}_{nxf_id.replace('/', '-')}.log"
             src = log_path
             dest.symlink_to(f"../../../{src.relative_to(workspace)}")
         except:

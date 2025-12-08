@@ -1,5 +1,5 @@
 from metasmith.models.solver import solve_by_mcts
-from metasmith.models.solver import Transform, Endpoint, Solution
+from metasmith.models.solver import Transform, Endpoint, Solution, Application
 from metasmith.models.workflow import WorkflowPlan
 
 def trivial():
@@ -14,13 +14,13 @@ def trivial():
     t.AddProduct(properties={"b"})
     transforms.append(t)
 
-    have = [
-        Endpoint(properties={"given"}),
-    ]
+    have = {
+        Endpoint(properties={"given"})
+    }
 
     target = Transform()
     target.AddRequirement(properties={"given"})
-    sol = solve_by_mcts(given=have, target=target, transforms=transforms)
+    sol = solve_by_mcts(given=[have], target=target, transforms=transforms)
     print(sol.complete, sol._iterations)
     assert sol.complete
 
@@ -43,15 +43,85 @@ def simple():
     t.AddProduct(properties={"tax"})
     transforms.append(t)
 
-    have = [
+    have = {
         Endpoint(properties={"assembly"}),
-    ]
+    }
 
     target = Transform()
     a = target.AddRequirement(properties={"bins"})
     b = target.AddRequirement(properties={"tax"}, parents={a})
-    sol = solve_by_mcts(given=have, target=target, transforms=transforms)
+    sol = solve_by_mcts(given=[have], target=target, transforms=transforms)
     print(sol.complete, sol._iterations)
+    assert sol.complete
+
+def simple_2():
+    transforms = []
+    t = Transform()
+    t.AddRequirement(properties={"a"})
+    t.AddProduct(properties={"x"})
+    transforms.append(t)
+
+    t = Transform() # bins <-> tax
+    t.AddRequirement(properties={"b"})
+    t.AddProduct(properties={"x"})
+    transforms.append(t)
+
+    target = Transform()
+    a = target.AddRequirement(properties={"x"})
+    sol = solve_by_mcts(given=[
+        {
+            Endpoint(properties={"a"}),
+        },
+        {
+            Endpoint(properties={"b"}),
+        },
+    ], target=target, transforms=transforms)
+    print(sol.complete, sol._iterations)
+    sol.RenderDAG("./cache/s2")
+    assert sol.complete
+
+def loop_1():
+    transforms = []
+    t = Transform()
+    t.AddRequirement(properties={"start"})
+    t.AddProduct(properties={"a"})
+    transforms.append(t)
+
+    t = Transform()
+    t.AddRequirement(properties={"a"})
+    t.AddProduct(properties={"b"})
+    transforms.append(t)
+
+    t = Transform()
+    t.AddRequirement(properties={"b"})
+    t.AddProduct(properties={"a"})
+    transforms.append(t)
+
+    t = Transform()
+    t.AddRequirement(properties={"b"})
+    t.AddProduct(properties={"c"})
+    transforms.append(t)
+
+    t = Transform()
+    t.AddRequirement(properties={"c"})
+    t.AddProduct(properties={"b"})
+    transforms.append(t)
+
+    t = Transform()
+    t.AddRequirement(properties={"c"})
+    t.AddProduct(properties={"target"})
+    transforms.append(t)
+
+    target = Transform()
+    a = target.AddRequirement(properties={"a"})
+    target.AddRequirement(properties={"target"}, parents={a})
+    sol = solve_by_mcts(given=[
+        {
+            Endpoint(properties={"c"}),
+        },
+    ], target=target, transforms=transforms)
+    print(sol.complete, sol._iterations)
+    sol.RenderDAG("./cache/l1", keys=False)
     assert sol.complete
 
 def branching_1():
@@ -94,11 +164,11 @@ def branching_1():
     tr.AddProduct(properties={"target"})
     transforms.append(tr)
 
-    given = [Endpoint(properties={"start"})]
+    given = {Endpoint(properties={"start"})}
     target = Transform()
     target.AddRequirement(properties={"target"})
     sol = solve_by_mcts(
-        given=given,
+        given=[given],
         target=target,
         transforms=transforms,
     )
@@ -195,11 +265,11 @@ def branching_2():
     tr.AddProduct(properties={"target"})
     transforms.append(tr)
 
-    given = [Endpoint(properties={"start"})]
+    given = {Endpoint(properties={"start"})}
     target = Transform()
     target.AddRequirement(properties={"target"})
     sol = solve_by_mcts(
-        given=given,
+        given=[given],
         target=target,
         transforms=transforms,
     )
@@ -299,16 +369,16 @@ def branching_3():
     tr.AddProduct(properties={"target"})
     transforms.append(tr)
 
-    given = [Endpoint(properties={"start"})]
+    given = {Endpoint(properties={"start"})}
     target = Transform()
     target.AddRequirement(properties={"target"})
     sol = solve_by_mcts(
-        given=given,
+        given=[given],
         target=target,
         transforms=transforms,
     )
     print(sol.complete, len(sol.dependency_plan), sol._iterations)
-    sol.RenderDAG("./cache/br3", format="png")
+    sol.RenderDAG("./cache/br3", format="svg")
     assert sol.complete
     # for i, states in enumerate(sol._history):
     #     print(f">>> {i} | states: {len(states)}")
@@ -344,11 +414,53 @@ def branching_3():
     #         for d, e in pgroup.items():
     #             print(f"        {d} {e}")
 
+def branching_4():
+    transforms = []
+
+    tr = Transform()
+    tr.AddRequirement(properties={"start"})
+    tr.AddProduct(properties={"x", "a"})
+    tr.NewProductGroup()
+    tr.AddProduct(properties={"x", "b"})
+    transforms.append(tr)
+
+    tr = Transform()
+    tr.AddRequirement(properties={"a"})
+    tr.AddProduct(properties={"b"})
+    transforms.append(tr)
+
+    tr = Transform()
+    tr.AddRequirement(properties={"b"})
+    # tr.AddRequirement(properties={"x"})
+    tr.AddProduct(properties={"target"})
+    transforms.append(tr)
+
+    estart = Endpoint(properties={"start"})
+    target = Transform()
+    target.AddRequirement(properties={"b"})
+    sol = solve_by_mcts(
+        given=[
+            {Endpoint(properties={"a"})},
+            {Endpoint(properties={"b"})},
+        ],
+        # given = [
+        #     {estart}
+        # ],
+        target=target,
+        transforms=transforms,
+    )
+    print(sol.complete, len(sol.dependency_plan), sol._iterations)
+    sol.RenderDAG("./cache/br4", format="svg", keys=False)
+    assert sol.complete
+
 # trivial()
 # simple()
+# simple_2()
+# loop_1()
 # branching_1()
 # branching_2()
-branching_3()
+# branching_3()
+branching_4()
 
 # test when branching is not needed
 # add joining during mcts
