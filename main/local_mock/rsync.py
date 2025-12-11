@@ -1,7 +1,7 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+from pathlib import Path
 from metasmith.coms.terminals import LiveShell
+from metasmith.coms.containers import Container, ContainerRuntime
+from metasmith.constants import AgentPaths, VERSION
 from local.constants import WORKSPACE_ROOT
 import sys
 
@@ -28,7 +28,12 @@ print(f"injecting updates to [{home}]")
 with LiveShell() as shell:
     shell.RegisterOnOut(lambda x: print(x))
     shell.RegisterOnErr(lambda x: print(f"E: {x}"))
-    shell.Exec(f"rsync -au --progress --mkpath {WORKSPACE_ROOT}/metasmith.sif {home}/metasmith.sif")
+    lpath = Container(
+        image=f"docker://quay.io/hallamlab/metasmith:{VERSION}",
+        container_cache=Path(home)/AgentPaths.CONTAINER_CACHE,
+        runtime=ContainerRuntime.APPTAINER
+    ).GetLocalPath()
+    shell.Exec(f"rsync -au --progress --mkpath {WORKSPACE_ROOT}/metasmith.sif {lpath}")
     shell.Exec(f"rsync -ac --progress --mkpath {WORKSPACE_ROOT}/main/relay_agent/dist/msm_relay {home}/relay/msm_relay")
     shell.Exec(f"rsync -ac --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/ {home}/dev/metasmith")
     shell.Exec(f"rsync -ac --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/nextflow_config {home}/lib/")

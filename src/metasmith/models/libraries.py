@@ -925,14 +925,14 @@ class ExecutionContext:
             Log.Info(f"    {line}")
         os.system(cmd)
 
-    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, history: bool=True):
+    def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None):
         path = self._inputs[self._batch_index][image].path
         if IsText(path.local):
             with open(path.local) as f:
                 image_path = f.read().strip() # using the uri
         else:
             image_path = str(path.external)
-
+    
         _binds: list[tuple[Path, Path]] = []
         for _, v in list(self._inputs[self._batch_index].items()):
             for p in v.input_group:
@@ -964,16 +964,29 @@ class ExecutionContext:
             (self.external_cwd, container_ws),
         ]
         binds += sorted([(s, d) for s, d in _binds])
-
+        
         container = Container(
             image = str(image_path),
             workdir = container_ws,
             runtime = self.container_runtime,
             binds = binds,
+            container_cache = self.external_agent_home/AgentPaths.CONTAINER_CACHE,
         )
+        return container
+
+    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, history: bool=True):
+        container = self.GetContainerModel(image, binds)
+        assert container.workdir is not None # for typing
+        use_cache = False
+        cached_path = container.GetLocalPath()
+        if cached_path is not None:
+            FLAG = "cached image exists"
+            res = self.external_shell.Exec(f'[ -e {cached_path} ] && echo "{FLAG}"', history=True)
+            if FLAG in res.out:
+                use_cache = True
 
         cmd = RemoveLeadingIndent(cmd)
-        Log.Info(f"executing container [{image_path}] using [{container.runtime.name}]")
+        Log.Info(f"executing container [{container.image}] using [{container.runtime.name}]")
         h, k = KeyGenerator.FromStr(cmd)
         _bounce_script = Path(f"./_metasmith/.bounce.{k}")
         exit_codef = Path(f"exitcode.{GenerateId()}")
@@ -992,12 +1005,12 @@ class ExecutionContext:
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
         Log.Info(f"binds:")
-        for s, d in binds:
+        for s, d in container.binds:
             Log.Info(f"    {s} -> {d}")
-        _container_start = f"{container.MakeRunCommand()} {shell}"
+        _container_start = f"{container.MakeRunCommand(local=use_cache)} {shell}"
         Log.Info(f"container start: [{_container_start}]")
         result = self.external_shell.Exec(
-            f"{_container_start} {container_ws/_bounce_script}",
+            f"{_container_start} {container.workdir/_bounce_script}",
             timeout=None, history=history
         )
         try:

@@ -20,6 +20,7 @@ with open(MODULE_PATH/"version.txt") as f:
 class AgentPaths:
     WORK_ROOT = Path("/ws")
     HOME_ROOT = Path("/msm_home")
+    CONTAINER_CACHE = Path("container_images")
     INTERNALS = Path("_metasmith")
     STAGED = Path("runs")
     TASK = Path("task")

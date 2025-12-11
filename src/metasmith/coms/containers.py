@@ -19,12 +19,6 @@ class Container:
     def SetRuntime(self, runtime: ContainerRuntime):
         self.runtime = runtime
 
-    def _get_local_path(self):
-        name = self.image.split("/")[-1]
-        if ":" in name:
-            name = name.split(":")[0]
-        return self.container_cache/f"{name}.sif"
-
     def _get_image(self):
         image = self.image
         if self.runtime == ContainerRuntime.DOCKER:
@@ -33,10 +27,17 @@ class Container:
             image = image.replace(DOCKER_DOMAIN, "")
         return image
 
+    def GetLocalPath(self):
+        # todo: docker-daemon local?
+        match self.runtime:
+            case ContainerRuntime.APPTAINER:
+                name = self.image.replace("/", "_")
+                return self.container_cache/f"{name}.sif"
+
     def MakePullCommand(self):
         image = self._get_image()
         if self.runtime == ContainerRuntime.APPTAINER:
-            return f"{self.runtime.value} pull {self._get_local_path()} {image}"
+            return f"{self.runtime.value} pull {self.GetLocalPath()} {image}"
         else:
             return f"{self.runtime.value} pull {image}"
 
@@ -69,7 +70,7 @@ class Container:
                 if not isinstance(local, bool):
                     image = local
                 elif local:
-                    image = self._get_local_path()
+                    image = self.GetLocalPath()
             case _: # default
                 raise TypeError(f"unsupported runtime [{self.runtime}]")
         toks = [

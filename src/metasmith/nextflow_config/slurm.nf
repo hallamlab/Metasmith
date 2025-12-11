@@ -73,6 +73,15 @@ process {
         task.attempt<params.process.tries? 'retry' : 'ignore'
     }
 
+    cpus = params.process.cpus
+    memory = {                              // difficult to combine smarts for time and memory; error codes not reliable
+        task.attempt==1? params.process.memory : 2*(params.process.memory as MemoryUnit)
+        
+    }
+    time = {                                // limit scaling of request time since can also fail for other reasons
+        task.attempt==1? params.process.time : 2*(params.process.time as Duration)
+    }
+    
     withLabel: '!xlocalx' {
         executor = 'slurm'
         scratch = true                          // use worker node's local hard drive
@@ -86,15 +95,6 @@ process {
         maxRetries = params.process.tries+2     // this must be larger than errorStrategy
         maxErrors = '-1'                        // quotes bypass groovy parser bug, should set to number of samples?
         array = params.process.array            // batch jobs for the same tool
-
-        cpus = params.process.cpus
-        memory = {                              // difficult to combine smarts for time and memory; error codes not reliable
-            task.attempt==1? params.process.memory : 2*(params.process.memory as MemoryUnit)
-            
-        }
-        time = {                                // limit scaling of request time since can also fail for other reasons
-            task.attempt==1? params.process.time : 2*(params.process.time as Duration)
-        }
     }
 
     withLabel: 'xlocalx' {

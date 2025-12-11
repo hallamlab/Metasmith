@@ -219,7 +219,7 @@ class Agent:
 
             container = Container(
                 image=self.container,
-                container_cache=resolved_agent_home, # just so the main container is saved here
+                container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
                 binds=[
                     ("$(pwd -P)", Path("/ws")),
                     ("$AGENT_HOME", Path("/msm_home")),
@@ -231,12 +231,14 @@ class Agent:
             )
             _cmds = [f"AGENT_HOME={resolved_agent_home}"]+[f"mkdir -p {p}" for p, _ in container.binds]
             do_step("\n".join(_cmds))
-            _pull_cmd = container.MakePullCommand()
-            do_step(
-                cmd=f"[ -e {container._get_local_path()} ] || {_pull_cmd}",
-                display_cmd=f"{{if not exists}}: {_pull_cmd.replace(str(resolved_agent_home), '$AGENT_HOME')}",
-                timeout=None
-            )
+            _local_path = container.GetLocalPath()
+            if _local_path:
+                _pull_cmd = container.MakePullCommand()
+                do_step(
+                    cmd=f'mkdir -p "{_local_path.parent}" && [ -e {_local_path} ] || {_pull_cmd}',
+                    display_cmd=f"{{if not exists}}: {_pull_cmd.replace(str(resolved_agent_home), '$AGENT_HOME')}",
+                    timeout=None
+                )
 
             _remote_file(
                 f"""
@@ -248,7 +250,7 @@ class Agent:
                     BINDS="$BINDS {dev_mock.MakeBindsParam()}"
                 fi
                 echo "binds [$BINDS]"
-                {container.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif", custom_bind_param="$BINDS")} metasmith $@
+                {container.MakeRunCommand(local=True, custom_bind_param="$BINDS")} metasmith $@
                 """,
                 dest="msm",
                 executable=True,
@@ -270,6 +272,7 @@ class Agent:
                 ],
                 workdir=Path("/ws"),
                 runtime=self.runtime,
+                container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE
             )
             _remote_file(
                 f"""
@@ -306,7 +309,7 @@ class Agent:
                     fi
                     echo "final binds:"
                     echo "$BINDS"
-                    {bootstrap_container.MakeRunCommand(local=f"$AGENT_HOME/metasmith.sif", custom_bind_param="$BINDS")} $@
+                    {bootstrap_container.MakeRunCommand(local=True, custom_bind_param="$BINDS")} $@
                 }}
                 echo "deploy relay ==================="
                 run_container metasmith api deploy_from_container -a workspace=$INTERNALS
