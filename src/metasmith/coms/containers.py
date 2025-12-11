@@ -12,7 +12,7 @@ class ContainerRuntime(Enum):
 class Container:
     image: str
     container_cache: Path = Path("./")
-    workdir: Path|None = None
+    workdir: Path|str|None = None
     binds: list[tuple[Path|str, Path|str]] = field(default_factory=list)
     runtime: ContainerRuntime = ContainerRuntime.DOCKER
 
@@ -60,10 +60,10 @@ class Container:
         binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
         match self.runtime:
             case ContainerRuntime.DOCKER:
-                others = ["--rm", "-u $(id -u):$(id -g)", "--network=host"]
+                others = ["--rm", "-u $(id -u):$(id -g)", "--network=host", '-e TMPDIR=${TMPDIR-"/tmp"}']
                 workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ""
             case ContainerRuntime.APPTAINER:
-                others = ["--no-home"]
+                others = ["--no-home", "--cleanenv", '--env TMPDIR=${TMPDIR-"/tmp"}']
                 workdir = f"--workdir {self.workdir}" if self.workdir is not None else ""
                 binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
                 if not isinstance(local, bool):

@@ -53,7 +53,7 @@ def StageAndRunTransform(workspace: Path, step_index: int):
         return p.replace(agent_home, "{agent_home}")
     
     Log.Info(f"connecting to relay [{server_path}]")
-    with RemoteShell(server_path, timeout=60) as shell:
+    with RemoteShell(server_path, timeout=60, setup_commands=agent.setup_commands) as shell:
         _paused = False
         class PausedStdOut:
             def __enter__(self):
@@ -200,7 +200,9 @@ def StageAndRunTransform(workspace: Path, step_index: int):
                 )
             inputs.append(g)
         if missing_input:
-            Log.Error("detected missing inputs, stopping")
+            m = "detected missing inputs, stopping"
+            Log.Error(m)
+            Log.Info(m)
             return ExecutionResult(False)
 
         kg = KeyGenerator()
@@ -209,8 +211,13 @@ def StageAndRunTransform(workspace: Path, step_index: int):
             d2e = dep2output[batch]
             dtype = d2e[key]
             pattern = dtype.key
-            dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}.{dtype.GetPreferredFileExtension()}")
+            dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}{dtype.GetPreferredFileExtension()}")
             return _parse_path(dest, container_override=Path("/ws")/dest)
+
+        if len(agent.setup_commands)>0:
+            Log.Info("setup commands for external shell:")
+            for line in agent.setup_commands:
+                Log.Info(f"    {line}")
 
         context = ExecutionContext(
             _inputs=inputs,

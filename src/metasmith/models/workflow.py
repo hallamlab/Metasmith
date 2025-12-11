@@ -297,6 +297,10 @@ class WorkflowPlan:
                 transform2inst[model] = tr
                 inst2trlib[tr] = trlib
 
+        _pl1 = "" if len(given)==1 else "s"
+        _pl2 = "" if len(given_endpoints)==1 else "s"
+        Log.Info(f"solving plan for [{len(given)}] sample{_pl1} as [{len(given_endpoints)}] unique case{_pl2}")
+
         result = solve_by_mcts(
             given=given_endpoints,
             target=target_model,
@@ -312,12 +316,19 @@ class WorkflowPlan:
         for pgroup in result_given.produced:
             for d in pgroup:
                 e = pgroup[d]
-                if e in given_map: continue
-                for ge in given_map:
-                    if not e.properties==ge.properties: continue
-                    given_map[e] = given_map[ge]
-                    del given_map[ge]
-                    break
+                # the given (input) endpoints are added as dependencies
+                # to the transform that models inputs
+                # this allows given_map[d]
+                # when a given endpoint is used directly, but some other branch requires a conversion
+                # d may not be in given_map
+                if e in given_map:
+                    current = set(given_map[e])
+                    given_map[e] += [x for x in given_map.get(d, []) if x not in current] # type: ignore
+                else:
+                    for ge in list(given_map):
+                        if not e.properties==ge.properties: continue
+                        given_map[e] = given_map[ge]
+                        # del given_map[ge]
 
         # assert result.complete, "failed to make plan!"
         if not result.complete:
@@ -565,7 +576,10 @@ class WorkflowTask:
             process_name = f"{k}__{step.transform.name}"
             src = [f"process {process_name}"+" {"]
             src += [
-                TAB+f"tag '{step.transform.GetKey()}'",
+                TAB+f"label 'x{step.transform.GetKey()}x'",
+            ] + [
+                TAB+f"label 'x{x}x'"
+                for x in step.transform.labels
             ]
             
             def _make_bind_var(i: int, is_assignment=False):
@@ -606,7 +620,7 @@ class WorkflowTask:
                 "output:",
             ] + [
                 # TAB+f'tuple val(index),path("{add_prefix(x.path)}")'
-                TAB+f'tuple val(index),path("*.{x.dtype.key}.{x.dtype.GetPreferredFileExtension()}")'
+                TAB+f'tuple val(index),path("*.{x.dtype.key}{x.dtype.GetPreferredFileExtension()}")'
                 for g in produced_archetypes for x in g
             ] + [
                 "script:",
@@ -674,21 +688,23 @@ class WorkflowTask:
         # (_tK9GI0FH) = o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]) // lib::pangenome_heatmap.py
         # (_7A15qSzL) = o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]) // containers::python_for_data_science.oci
         # (_urCt2PG9) = o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]) // sequences::gbk
-        input_channels: dict[Endpoint, list[DataInstance]] = {}
+        input_channels: dict[Dependency, list[DataInstance]] = {}
         for step in the_plan.steps:
             for dep, lst in step.dependency_map.items():
                 for inst in lst:
                     if inst not in used_given: continue
-                    k = inst.dtype
-                    input_channels[k] = input_channels.get(k, [])+[inst]
+                    # k = inst.dtype
+                    input_channels[dep] = input_channels.get(dep, [])+[inst]
         prepared_given: set[tuple[Path, str, str]] = set()
+        _seen_paths = set()
         for _, lst in input_channels.items():
             inst = get_archetype(lst)
             p = inputs_dir/f"{get_prod_name(inst.dtype, force_singular=True)}"
+            if p in _seen_paths: continue
+            _seen_paths.add(p)
             v = get_prod_name(inst.dtype)
             n = inst.dtype_name
             k = p, v, n
-            if k in prepared_given: continue
             prepared_given.add(k)
             with open(p, "w") as f:
                 unique_lst = set(lst)

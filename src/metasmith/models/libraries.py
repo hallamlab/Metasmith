@@ -113,7 +113,7 @@ class DataTypeLibrary:
                 props = pluralize(v[Endpoint.PROPERTY_FIELD])
                 for pk in extends:
                     p_props = raw_types[pk][Endpoint.PROPERTY_FIELD]
-                    props = {k:v|set(p_props.get(k, set())) for k, v in props.items()}
+                    props.update(p_props)
                 props = {k:list(v) for k, v in props.items()}
             raw_types[k] = {Endpoint.PROPERTY_FIELD:props}
         params: dict = dict(
@@ -563,7 +563,7 @@ class DataInstanceLibrary:
         # self.manifest = {new_paths.get(k, k):v for k, v in self.manifest.items()}
         return new_paths
 
-    def Actualize(self, extern_dest: Source|None=None, label: str|None=None):
+    def ActualizeRemote(self, extern_dest: Source|None=None, label: str|None=None):
         if self.remote_src is None:
             return self
         _lib = None
@@ -585,6 +585,33 @@ class DataInstanceLibrary:
         _lib = self.Load(self.location, check_integrity=True)
         return _lib
     
+    def LocalizeContents(self):
+        to_move = {}
+        for path in self.manifest:
+            if not path.is_absolute(): continue
+            k = path.name
+            to_move[k] = to_move.get(k, [])+[path]
+        mover = Logistics()
+        moved: list[tuple[Path, Path]] = []
+        for dest, srcs in to_move.items():
+            dest = Path(dest)
+            plural = len(srcs)>1
+            for i, src in enumerate(srcs):
+                if plural:
+                    dest_path = self.location/f"{dest.stem}_{i+1}{dest.suffix}"
+                else:
+                    dest_path = self.location/f"{dest.stem}{dest.suffix}"
+                mover.QueueTransfer(src=Source.FromLocal(src), dest=Source.FromLocal(dest_path))
+                moved.append((Path(src), dest_path.relative_to(self.location)))
+        mover.ExecuteTransfers()
+        for src, dest in moved:
+            self.manifest[dest] = self.manifest[src]
+            del self.manifest[src]
+            if src in self.parents:
+                self.parents[dest] = self.parents[src]
+                del self.parents[src]
+        return moved
+
     def AsView(self, mask: set[Path]):
         return DataInstanceLibraryView(self, mask)
 
@@ -711,6 +738,7 @@ class TransformInstance:
     name: str|None = None
     resources: Resources|None = None
     batch_size: int = 1
+    labels: list[str] = field(default_factory=list)
     _key: str = ""
     _hash: int = -1
     def __post_init__(self):
@@ -931,7 +959,7 @@ class ExecutionContext:
         if binds is None: binds = []
         container_ws = Path("/ws")
         binds += [
-            ("/tmp", "/tmp"),
+            ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
             (self.external_agent_home, AgentPaths.HOME_ROOT),
             (self.external_cwd, container_ws),
         ]
@@ -968,7 +996,10 @@ class ExecutionContext:
             Log.Info(f"    {s} -> {d}")
         _container_start = f"{container.MakeRunCommand()} {shell}"
         Log.Info(f"container start: [{_container_start}]")
-        result = self.external_shell.Exec(f"{_container_start} {container_ws/_bounce_script}", timeout=None, history=history)
+        result = self.external_shell.Exec(
+            f"{_container_start} {container_ws/_bounce_script}",
+            timeout=None, history=history
+        )
         try:
             with open(exit_codef) as f:
                 exit_code = f.readline().strip()

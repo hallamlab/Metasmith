@@ -71,11 +71,12 @@ class Job:
         return code
 
 class RemoteShell:
-    def __init__(self, watcher_path: Path, timeout: int=3) -> None:
+    def __init__(self, watcher_path: Path, timeout: int=3, setup_commands: list[str]|None = None) -> None:
         self._out_callbacks: list[Callable[[str], None]] = []
         self._err_callbacks: list[Callable[[str], None]] = []
         self._watcher_path = watcher_path
         self._active_jobs: dict[str, Job] = {}
+        self._setup_commands: list[str] = setup_commands if setup_commands else []
         self._timeout = timeout
         assert watcher_path.exists(), watcher_path
 
@@ -102,6 +103,10 @@ class RemoteShell:
         k = GenerateId()
         script_path = self._watcher_path/f"{k}.compile"
         with open(script_path, "w") as f:
+            for line in self._setup_commands:
+                if not line.endswith("\n"):
+                    line += "\n"
+                f.write(line)
             f.write(script)
         self._active_jobs[k] = Job(
             key = k,

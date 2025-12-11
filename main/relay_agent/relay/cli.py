@@ -61,7 +61,8 @@ class CommandLineInterface:
                 host = socket.gethostname()
                 username = getpass.getuser()
                 local = workspace
-                workspace = Path(f"/tmp/msm_{host}_{username}")
+                tmp = os.environ.get("TMPDIR", "/tmp")
+                workspace = Path(tmp)/f"msm_{host}_{username}"
                 if local.is_symlink():
                     local.unlink()
                 if local.exists():

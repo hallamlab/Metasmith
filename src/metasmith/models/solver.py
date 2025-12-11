@@ -147,7 +147,9 @@ class Node:
     def GetPreferredFileExtension(self):
         for p in self.properties:
             for hit in re.finditer(r'(ext=|"ext":")([\.\w\s]*[\w])', p):
-                return str(hit.group(2))
+                ext = str(hit.group(2))
+                if not ext.startswith("."): ext = f".{ext}"
+                return ext
         return ""
 
 # of a Transform
@@ -459,6 +461,8 @@ def solve_by_mcts(
                 todo.append(DistNode(producer, dist, path))
     relavent_transforms = [tr for tr in transforms if tr in distance_scores]
     max_distance_score = max(distance_scores.values())
+    # assert given_appl in distance_scores, "there appears to be no transforms that consume any given endpoints"
+
     # for telemetry
     D2T_KEY = "distance to target"
     d2t_report = {k.key:float(v) for k, v in distance_scores.items()}

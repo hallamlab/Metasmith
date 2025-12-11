@@ -1,8 +1,7 @@
 from pathlib import Path
-import yaml
 
-from ..models.solver import Endpoint
 from ..models.libraries import DataInstanceLibrary, DataTypeLibrary, TransformInstanceLibrary
+from ..logging import Log
 
 def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: list[Path]):
 
@@ -28,16 +27,20 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
             if f.suffix not in {".yml", ".yaml"}: continue
             if not file_ok(f): continue
             dtypes[namespace]=DataTypeLibrary.Load(f)
+            Log.Info(f"adding [{len(dtypes[namespace].types)}] types from [{namespace}]")
 
     for d in unique_dirs:
         if not dir_ok(d): continue
         lib = DataInstanceLibrary(d)
         namespace = d.name
         lib.AddTypeLibrary(namespace, dtypes[namespace])
+        c = 0
         for f in d.iterdir():
             if not file_ok(f) and not dir_ok(f): continue
             lib.AddItem(f.name, f"{namespace}::{f.name}")
+            c += 1
         lib.PruneTypes() # saves
+        Log.Info(f"compiled [{c}] data resources from [{namespace}]")
 
     for d in transform_dirs:
         if not dir_ok(d): continue
@@ -53,3 +56,4 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
         if count>0:
             lib.Save()
             lib.PruneTypes() # saves
+            Log.Info(f"compiled [{count}] transforms from [{d.name}]")

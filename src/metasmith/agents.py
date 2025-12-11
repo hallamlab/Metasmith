@@ -130,8 +130,11 @@ class Agent:
             Log.Info(f"starting ssh to [{ssh_src.host}]")
             shell.Exec(f"ssh {ssh_src.host}")
             SUCCESS = f"ssh_connected_flag.{KeyGenerator.FromInt(2**42)}"
-            on_out = lambda x: (Log.Info(f"{x}") if SUCCESS not in x else None)
-            on_err = lambda x: Log.Error(f"{x}")
+            def on_out(x):
+                if SUCCESS in x: return
+                Log.Info(f"{x}")
+            def on_err(x):
+                Log.Error(f"{x}")
             shell.RegisterOnOut(on_out)
             shell.RegisterOnErr(on_err)
             res = shell.Exec(f'[ ! -z "$SSH_CONNECTION" ] && echo "{SUCCESS}"', timeout=timeout, history=True)
@@ -195,11 +198,13 @@ class Agent:
 
             with PausedShell():
                 self._run_setup(shell)
-                shell.Exec(f"mkdir -p {self.home.GetPath()}")
+            shell.Exec(f"mkdir -p {self.home.GetPath()}")
+            with PausedShell():
                 res = shell.Exec(f"""
                     realpath {self.home.GetPath()}
                     realpath ~
                 """, history=True)
+            assert len(res.out)==2, res.out
             resolved_agent_home, resolved_home = [Path(x.strip()) for x in res.out]
 
             dev_src = "$AGENT_HOME/dev/metasmith"
@@ -216,7 +221,9 @@ class Agent:
                 image=self.container,
                 container_cache=resolved_agent_home, # just so the main container is saved here
                 binds=[
+                    ("$(pwd -P)", Path("/ws")),
                     ("$AGENT_HOME", Path("/msm_home")),
+                    ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
                     (Path(resolved_home)/".globus", Path(resolved_home)/".globus"),
                     (Path(resolved_home)/".globusonline", Path(resolved_home)/".globusonline"),
                 ],
@@ -324,7 +331,7 @@ class Agent:
             )
 
             _sync_remote_files()
-            do_step(f"cd {resolved_agent_home} && ./msm api deploy_from_container")
+            do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT}")
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
@@ -661,6 +668,9 @@ def StageWorkflow(task_key: str, verify: bool):
         f.write("\n".join([
             f'#!/bin/bash',
             'cd $( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )',
+            "# >>> agent setup commands",
+        ]+agent.setup_commands+[
+            "# <<<",
             f'TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")',
             f'LOG_DIR="./{AgentPaths.INTERNALS}/logs.$TIMESTAMP"',
             f'LOG_LATEST="./{AgentPaths.INTERNALS}/logs.latest"',
@@ -714,7 +724,7 @@ def RunWorkflow(key: str, log_dir: Path):
             _extern_location = str(lib.location).replace(str(AgentPaths.HOME_ROOT), str(extern_home))
             Log.Info(f"[{_name}] at [{lib.location}] is remote [{lib.remote_src.address}], downloading to [{_extern_location}]")
             dest = dest_base/_extern_location
-            lib.Actualize(extern_dest=dest, label=f"msm_staging.{_name}")
+            lib.ActualizeRemote(extern_dest=dest, label=f"msm_staging.{_name}")
 
     # need to call nf inside container
     # nf needs java and is not a standalone executable

@@ -23,7 +23,6 @@ env {
 }
 
 executor {
-    poolSize = 64                           // concurrent threads for pool, default is 64.
     cpus = params.executor.cpus
 }
 
