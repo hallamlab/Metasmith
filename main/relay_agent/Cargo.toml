@@ -1,0 +1,13 @@
+[package]
+name = "msm_relay"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+gethostname = "0.4"
+users = "0.11" # for getting $USER
+nix = "0.28" # For signaling processes (SIGTERM)
+log = "0.4" # Standard logging facade
+chrono = "0.4" # timestamps
+lazy_static = "1.4" # For thread-safe global access to the log file handle
