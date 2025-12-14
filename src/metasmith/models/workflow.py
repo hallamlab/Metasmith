@@ -410,6 +410,11 @@ class WorkflowPlan:
         import graphviz
         logging.getLogger = _temp
 
+        path_base = Path(path_base)
+        ext = path_base.suffix
+        if ext:
+            format = ext.replace(".", "")
+            path_base = path_base.with_suffix("")
         todo = [(graphviz, 0)]
         while len(todo)>0:
             m, depth = todo.pop()
@@ -488,6 +493,7 @@ class WorkflowPlan:
         dag_str = _as_DAG(font=font)
         src = graphviz.Source(dag_str, filename=path_base, format=format)
         src.render(cleanup=True, quiet=True)
+        return path_base.with_suffix(f".{format}")
 
 @dataclass
 class WorkflowTask:

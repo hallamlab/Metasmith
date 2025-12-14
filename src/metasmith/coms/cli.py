@@ -83,8 +83,19 @@ class CommandLineInterface:
                 raise argparse.ArgumentTypeError(f"Invalid IP address: {val}")
         parser.add_argument("--ip", required=False, type=ip_type, default="0.0.0.0", help="IP address to serve the notebook")
         parser.add_argument("--port", required=False, type=int, default=8080, help="Port to serve the notebook")
-        shutil.copy(MODULE_PATH/"example_resources/metasmith_starter.ipynb", "./metasmith_starter.ipynb")
         args = parser.parse_args(raw_args)
+        
+        os.environ["JUPYTERLAB_SETTINGS_DIR"] = "./jupyter_settings"
+        starter_path = Path("metasmith_starter.ipynb")
+        if not starter_path.exists():
+            shutil.copy(MODULE_PATH/"example_resources/metasmith_starter.ipynb", "./metasmith_starter.ipynb")
+        lib_path = Path("MetasmithLibraries")
+        if not lib_path.exists():
+            subprocess.run([
+                "git",
+                "clone",
+                "https://github.com/hallamlab/MetasmithLibraries.git",
+            ], text=True)
         try:
             subprocess.run([
                 "jupyter",

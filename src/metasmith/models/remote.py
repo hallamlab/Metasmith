@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+import shutil
 import time
 from urllib.parse import urlparse, parse_qs
 import re
@@ -13,7 +14,7 @@ from ..hashing import KeyGenerator
 from ..logging import Log
 
 _globus_domain2uuid: dict[str, str] = {}
-_globus_local_id: str = None
+_globus_local_id: str|None = None
 def _get_globus_local_id():
     global _globus_local_id
     if _globus_local_id is None:
@@ -60,15 +61,19 @@ class GlobusSource:
         url = urlparse(address)
         if url.netloc == "app.globus.org":
             qs = parse_qs(url.query)
-            _ep = _try_get(qs, ["origin_id", "destination_id"])[0]
-            _path = _try_get(qs, ["origin_path", "destination_path"])[0]
+            _ep = _try_get(qs, ["origin_id", "destination_id"])
+            assert _ep is not None, "unrecognized globus link format"
+            _ep = _ep[0]
+            _path = _try_get(qs, ["origin_path", "destination_path"])
+            assert _path is not None, "unrecognized globus link format"
+            _path = _path[0]
             return cls(endpoint=_ep, path=Path(_path))
         elif re.match(r"^g-[\w\.]+\.data\.globus\.org$", url.netloc):
             if url.netloc in _globus_domain2uuid:
-                return cls(_globus_domain2uuid[url.netloc], url.path)
+                return cls(_globus_domain2uuid[url.netloc], Path(url.path))
             with LiveShell() as shell:
                 res = shell.Exec(f"globus endpoint search {url.netloc} -F json", history=True)
-                assert len(err) == 0, "\n".join(res.err)
+                assert len(res.err) == 0, "\n".join(res.err)
                 data = json.loads("\n".join(res.out))["DATA"]
                 assert len(data)>0, f"No endpoint found for [{url.netloc}]"
                 uuid = data[0]["id"]
@@ -80,7 +85,7 @@ class GlobusSource:
     def FromLocalPath(cls, path: Path|str):
         path = Path(path)
         assert path.is_absolute(), f"Path must be absolute [{path}]"
-        return cls(_get_globus_local_id(), str(path))
+        return cls(_get_globus_local_id(), path)
     
     @classmethod
     def FromSource(cls, source: Source):
@@ -267,7 +272,16 @@ class Logistics:
                     if dest.type == SourceType.SYMLINK:
                         shell.ExecAsync(f"ln -s {src.address} {dest.address}")
                     elif dest.type == SourceType.DIRECT:
-                        shell.ExecAsync(f"rsync -ac --mkpath {src.address}/ {dest.address} 2>/dev/null || rsync -ac {src.address} {dest.address}")
+                        src_path = src.GetPath()
+                        dest_path = dest.GetPath()
+                        sa = f"{src.address}/" if src_path.is_dir() else src.address
+                        cmd = ""
+                        if src_path.exists() and dest_path.exists() and (src_path.is_dir() != dest_path.is_dir()):
+                            cmd += f'rm -r "{dest_path}" && '
+                        if not dest_path.parent.exists():
+                            cmd += f'mkdir -p "{dest_path.parent}" && '
+                        cmd += f'rsync -auXP "{sa}" "{dest_path}"'
+                        shell.ExecAsync(cmd)
 
                 def _join():
                     shell.AwaitDone(timeout=None)
@@ -286,7 +300,7 @@ class Logistics:
                     else:
                         path = Path(s.address)
                         assert path.is_absolute()
-                        return GlobusSource(endpoint=_get_globus_local_id(), path=str(path))
+                        return GlobusSource(endpoint=_get_globus_local_id(), path=path)
                 batched_globus: dict[tuple[str, str], list[tuple[GlobusSource, GlobusSource, Source, Source]]] = {}
                 for src, dest in todo:
                     try:
@@ -358,7 +372,7 @@ class Logistics:
                     else:
                         path = Path(s.address)
                         assert path.is_absolute()
-                        return SshSource(host="", path=str(path))
+                        return SshSource(host="", path=path)
 
                 batched_ssh: dict[tuple[str, str], list[tuple[SshSource, SshSource, Source, Source]]] = {}
                 for src, dest in todo:
@@ -373,18 +387,50 @@ class Logistics:
                     batch.append((src_s, dest_s, src, dest))
                     batched_ssh[key] = batch
 
+                src_is_dir = {}
+                # prepare for rsync, since it doesn't work if dir <-> file and dest.parent not exists
+                for (src_host, dest_host), batch in batched_ssh.items():
+                    with LiveShell() as remote_shell:
+                        remote = src_host if src_host != "" else dest_host
+                        remote_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh {remote}: {x}"))
+                        res = remote_shell.Exec(f"ssh {remote}; echo exited", history=True)
+                        if "exited" in res.out:
+                            Log.Error(f"failed to ssh into {remote}")
+                            continue
+                        for src_s, dest_s, _, _ in batch:
+                            src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
+                            if src_host != "": # case: remote -> local
+                                # delete if src.is_dir() != dest.is_dir()
+                                res = remote_shell.Exec(f'[[ -e "{src_s.path}" ]] && ([[ -d $(realpath "{src_s.path}") ]] && echo "dir" || echo "file")', history=True)
+                                if any(x in res.out for x in {"file", "dir"}):
+                                    src_is_dir[(src_host, src_s.path)] = "dir" in res.out
+                                    if dest_s.path.exists():
+                                        if dest_s.path.is_dir() == "dir" in res.out: # is_dir works on symlinks to dirs
+                                            shutil.rmtree(dest_s.path)
+                                # mkdir dest path
+                                dest_s.path.parent.mkdir(exist_ok=True, parents=True)
+                            else: # case: local -> remote
+                                # delete if src.is_dir() != dest.is_dir()
+                                src_is_dir[(src_host, src_s.path)] = src_s.path.is_dir()
+                                if src_s.path.exists():
+                                    check = "-f" if src_s.path.is_dir() else "-d"
+                                    remote_shell.Exec(f'[[ {check} $(realpath "{dest_s.path}") ]] && rm -r "{dest_s.path}"')
+                                # mkdir dest path
+                                remote_shell.Exec(f'mkdir -p "{dest_s.path.parent}"')
                 shell = LiveShell()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"ssh: {x}"))
                 to_dispose.append(shell)
                 for (src_host, dest_host), batch in batched_ssh.items():
                     for src_s, dest_s, _, _ in batch:
                         src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
-                        shell.ExecAsync(f"rsync -ac --mkpath {src_addr}/ {dest_addr} 2>/dev/null || rsync -ac {src_addr} {dest_addr}")
+                        s_resolved = f"{src_addr}"
+                        if src_is_dir[(src_host, src_s.path)]: s_resolved += "/"
+                        shell.ExecAsync(f"rsync -auXP {s_resolved} {dest_addr}")
                 def _join():
                     shell.AwaitDone(timeout=None)
                     completed = []
                     for (src_host, dest_host), batch in batched_ssh.items():
-                        def _check(path: str):
+                        def _check(path: Path):
                             if dest_host != "":
                                 FLAG = "ok"
                                 res = shell.Exec(f'[ -e {path} ] && echo "{FLAG}"', history=True)

@@ -12,10 +12,19 @@ case $1 in
         done
     ;;
     -b)
-        export DOCKER_BUILDKIT=1
-        docker build \
-            --build-arg="CONDA_ENV=${NAME}_env" \
-            -t $DOCKER_IMAGE .
+
+        build () {
+            local platform="$1"
+            echo $platform
+            export DOCKER_BUILDKIT=1
+            docker build \
+                --platform linux/$platform \
+                --build-arg="CONDA_ENV=${NAME}_env" \
+                -t $DOCKER_IMAGE .
+        }
+        # build arm64
+        build amd64
+
     ;;
     -bs)
         apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE
@@ -31,15 +40,24 @@ case $1 in
         $HERE/pack.sh -u
         rm -r ./dist ./build
         # use docker to force older glibc version
-        docker run -it --rm \
+
+        pack () {
+            local platform="$1"
+            echo $platform
+            docker run -it --rm \
+            --platform linux/$platform \
             -u $(id -u):$(id -g) \
-            --mount type=bind,source="$HERE",target="/ws"\
-            --mount type=bind,source="$HERE/relay",target="/app/relay"\
-            --workdir /ws \
-            $DOCKER_IMAGE \
-            bash -c "pyinstaller msm_relay.py \
-                --exclude-module pkg_resources \
-                --onefile --bootloader-ignore-signals"
+                --mount type=bind,source="$HERE",target="/ws"\
+                --mount type=bind,source="$HERE/relay",target="/app/relay"\
+                --workdir /ws \
+                $DOCKER_IMAGE \
+                bash -c "pyinstaller msm_relay.py \
+                    --distpath /ws/msm_relay.$platform \
+                    --exclude-module pkg_resources \
+                    --onefile --bootloader-ignore-signals"
+        }
+        # pack arm64
+        pack amd64
     ;;
     -rd)
         docker run -it --rm \

@@ -11,10 +11,8 @@ import getpass
 import shutil
 
 from .logging import Log
-# from .server import SERVER_HEALTH, CheckStatus, RunServer, StopServer, LockFile
 from .watcher import RunWatcher, StopWatcher, CheckStatus, Wipe
 from .coms.ipc import CurrentTimeMillis, ResetGenerator
-# from .coms.via_ws import RemoteShell
 from .coms.via_file_watcher import RemoteShell
 
 CLI_ENTRY = "msm_relay"
@@ -143,10 +141,6 @@ class CommandLineInterface:
                 for l in f:
                     print(l, end="")
         _logs(Path(args.io)/"main.log")
-        uvicorn_logs = Path(args.io)/"uvicorn.log"
-        if uvicorn_logs.exists():
-            print("uvicorn :::::::::::::::::::::::::::::::::::::::")
-            _logs(uvicorn_logs)
 
     def test(self, raw_args=None):
         parser = _make_parser(self._get_fn_name(), "run self test")

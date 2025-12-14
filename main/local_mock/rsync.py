@@ -33,10 +33,15 @@ with LiveShell() as shell:
         container_cache=Path(home)/AgentPaths.CONTAINER_CACHE,
         runtime=ContainerRuntime.APPTAINER
     ).GetLocalPath()
-    shell.Exec(f"rsync -au --progress --mkpath {WORKSPACE_ROOT}/metasmith.sif {lpath}")
-    shell.Exec(f"rsync -ac --progress --mkpath {WORKSPACE_ROOT}/main/relay_agent/dist/msm_relay {home}/relay/msm_relay")
-    shell.Exec(f"rsync -ac --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/ {home}/dev/metasmith")
-    shell.Exec(f"rsync -ac --progress --mkpath --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/nextflow_config {home}/lib/")
+    shell.Exec(f"rsync -au --progress {WORKSPACE_ROOT}/metasmith.sif {lpath}")
+    shell.Exec(f"rsync -ac --progress {WORKSPACE_ROOT}/main/relay_agent/msm_relay.amd64/msm_relay {home}/relay/msm_relay")
+    if ":" in home: # is remote
+        host, path = home.split(":")
+        pre = f'ssh {host} mkdir -p "{path}/dev" && '
+    else:
+        pre = ""
+    shell.Exec(f"{pre}rsync -ac --progress --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/ {home}/dev/metasmith")
+    shell.Exec(f"rsync -ac --progress --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/nextflow_config {home}/lib/")
 
 
 # In[2]:

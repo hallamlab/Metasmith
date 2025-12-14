@@ -200,7 +200,10 @@ case $1 in
     -t)
         shift
         export PYTHONPATH=$HERE/src:$PYTHONPATH
-        python -m $NAME $@ deploy
+        ws=$HERE/scratch/starter
+        mkdir -p $ws
+        cd $ws
+        python -m $NAME $@ lab
     ;;
 
     -td) # inject updates to an agent home for dev binds

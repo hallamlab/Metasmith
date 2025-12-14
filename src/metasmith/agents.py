@@ -688,7 +688,7 @@ def StageWorkflow(task_key: str, verify: bool):
     os.chmod(launcher_path, 0o754)
 
     Log.Info(f"drawing DAG")
-    task.plan.RenderDAG(f"{work_dir}/workflow.dag")
+    task.plan.RenderDAG(f"{work_dir}/workflow.dag.svg")
     Log.Info(f"[{task._key}] staged to [{workspace_str}]")
         
 def RunWorkflow(key: str, log_dir: Path):

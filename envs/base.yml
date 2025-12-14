@@ -12,6 +12,7 @@ dependencies:
   - pigz=2.8
   - unzip=6.0
   - git=2.52.0 # to pull transform libraries
+  - tk=8.6.13 # for globus
 
   # # relay now just uses files
   # # networking (mostly for relay)
@@ -25,6 +26,7 @@ dependencies:
   - jupyterlab=4.5.0
   - jupyterlab-lsp=5.2.0
   - python-lsp-server=1.13.2
+  - jupyterlab-unfold=0.3.4
 
   # common tools (not strictly dependencies)
   - pandas=2.3.3
@@ -37,3 +39,4 @@ dependencies:
       - globus-cli==3.32.0
       - globus-sdk==3.46.0
       - ipynbname==2025.8.0.0
+      - theme-darcula==4.0.0

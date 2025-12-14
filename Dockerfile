@@ -19,6 +19,12 @@ ADD ./lib/tini /tini
 # -g kills process group on ctrl+C
 ENTRYPOINT ["/tini", "-s", "-g", "--"]
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        openssh-client \
+        tmux \
+    && rm -rf /var/lib/apt/lists/*
+
 # https://mamba.readthedocs.io/en/latest/user_guide/mamba.html
 # create conda env from yaml config
 COPY ./envs/base.yml /opt/base.yml
@@ -26,17 +32,14 @@ COPY ./envs/base.yml /opt/base.yml
 RUN --mount=type=cache,target=/opt/conda/pkgs \
     mamba env create -n ${CONDA_ENV} -f /opt/base.yml
 # add bins to PATH so that the env appears "active"
-ENV PATH /opt/conda/envs/${CONDA_ENV}/bin:/app:/opt/globusconnectpersonal-latest:$PATH
-
-# globus
-RUN mamba install -y -n ${CONDA_ENV} -c conda-forge tk
+ENV PATH=/opt/conda/envs/${CONDA_ENV}/bin:/app:/opt/globusconnectpersonal-latest:$PATH
 
 # install src
 COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
 RUN pip install /opt/metasmith.tar.gz
 
 COPY ./lib/globusconnectpersonal-latest /opt/globusconnectpersonal-latest
-COPY ./main/relay_agent/dist/msm_relay /opt/msm_relay
+COPY ./main/relay_agent/msm_relay.amd64/msm_relay /opt/msm_relay
 RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin /app
 
 EXPOSE 8080
