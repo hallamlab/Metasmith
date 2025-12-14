@@ -80,7 +80,7 @@ fn wipe_workspace(workspace: &Path) -> bool {
             // Use remove_file, as iterdir() likely returns files/symlinks/empty dirs.
             // If we encounter a non-empty directory, it will fail, which is usually fine.
             if path.is_dir() {
-                if let Err(e) = fs::remove_dir(path) {
+                if let Err(e) = fs::remove_dir(&path) {
                     Logger::error(&format!("  - Warning: Could not remove directory {}: {}", path.display(), e));
                     // If it's a non-empty directory, we let the outer logic handle it,
                     // but we can't delete it with remove_dir.
@@ -97,7 +97,7 @@ fn wipe_workspace(workspace: &Path) -> bool {
     safe_wait
 }
 
-fn wipe(workspace: PathBuf) {
+fn wipe(workspace: &PathBuf) {
     Logger::info("Cleaning up previous workspace");
     // Equivalent to: if Wipe(workspace): time.sleep(1)
     if wipe_workspace(&workspace) {
@@ -109,8 +109,9 @@ fn wipe(workspace: PathBuf) {
 // This function is equivalent to Python's RunWatcher class or function
 // Note the 'pub' keyword is crucial to make it visible outside this file
 pub fn run_watcher(workspace: &PathBuf, cwd: &PathBuf) {
-    Logger::init_log_file(&workspace);
-    wipe();
+    Logger::init_log_file(&workspace)
+        .expect("FATAL: Failed to initialize main log file. Check workspace permissions?");
+    wipe(&workspace);
 
     
 

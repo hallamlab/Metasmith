@@ -1,8 +1,6 @@
 mod watcher;
 mod logger;
 
-use logger::Logger;
-
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::env;
