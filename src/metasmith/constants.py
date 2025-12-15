@@ -56,8 +56,9 @@ class AgentPaths:
         return root/"relay/msm_relay"
 
     @classmethod
-    def to_local_relay_coms(cls, root: Path|None=None):
-        host = socket.gethostname()
+    def to_local_relay_coms(cls, root: Path|None=None, host: str|None=None):
+        if not host:
+            host = socket.gethostname()
         return cls.to_relay(root).parent/f"{host}"
 
     @classmethod

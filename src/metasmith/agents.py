@@ -150,6 +150,7 @@ class Agent:
         pass
 
     def Deploy(self):
+        Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}]")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
             _paused = False
@@ -200,12 +201,16 @@ class Agent:
                 self._run_setup(shell)
             shell.Exec(f"mkdir -p {self.home.GetPath()}")
             with PausedShell():
-                res = shell.Exec(f"""
-                    realpath {self.home.GetPath()}
-                    realpath ~
-                """, history=True)
-            assert len(res.out)==2, res.out
-            resolved_agent_home, resolved_home = [Path(x.strip()) for x in res.out]
+                cmds = [
+                    f'realpath {self.home.GetPath()}',
+                    f'realpath ~',
+                    f'hostname',
+                ]
+                res = shell.Exec('\n'.join(cmds), history=True)
+            assert len(res.out)==len(cmds), res.out
+            resolved_agent_home, resolved_home, hostname = [x.strip() for x in res.out]
+            resolved_agent_home = Path(resolved_agent_home)
+            resolved_home = Path(resolved_home)
 
             dev_src = "$AGENT_HOME/dev/metasmith"
             dev_mock = Container(
@@ -224,12 +229,16 @@ class Agent:
                     ("$(pwd -P)", Path("/ws")),
                     ("$AGENT_HOME", Path("/msm_home")),
                     ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
-                    (Path(resolved_home)/".globus", Path(resolved_home)/".globus"),
-                    (Path(resolved_home)/".globusonline", Path(resolved_home)/".globusonline"),
+                    (resolved_home/".globus", resolved_home/".globus"),
+                    (resolved_home/".globusonline", resolved_home/".globusonline"),
                 ],
                 runtime=self.runtime,
             )
-            _cmds = [f"AGENT_HOME={resolved_agent_home}"]+[f"mkdir -p {p}" for p, _ in container.binds]
+            _cmds = [
+                f"AGENT_HOME={resolved_agent_home}"
+            ] + [
+                f"mkdir -p {p}" for p, _ in container.binds
+            ]
             do_step("\n".join(_cmds))
             _local_path = container.GetLocalPath()
             if _local_path:
@@ -287,7 +296,7 @@ class Agent:
                     echo "bootstrap called from container, bouncing to external [$@]"
                     REL_CWD=$(realpath --relative-to="{AgentPaths.HOME_ROOT}" $CWD)
                     CMD="{AgentPaths.to_bootstrap(Path('$AGENT_HOME'))} $@ $AGENT_HOME/$REL_CWD"
-                    {AgentPaths.to_relay()} bounce "$CMD"
+                    /app/msm_relay.x86_64-linux --io {AgentPaths.to_relay().parent/hostname} bounce "$CMD"
                     exit
                 fi
 
@@ -312,7 +321,7 @@ class Agent:
                     {bootstrap_container.MakeRunCommand(local=True, custom_bind_param="$BINDS")} $@
                 }}
                 echo "deploy relay ==================="
-                run_container metasmith api deploy_from_container -a workspace=$INTERNALS
+                run_container metasmith api deploy_from_container -a workspace=$INTERNALS architecture=$(uname -m) system=$(uname -s)
                 find $INTERNALS/relay/
                 echo "pre execute ===================="
                 find .
@@ -320,7 +329,7 @@ class Agent:
                 echo "relay =========================="
                 $INTERNALS/relay/msm_relay start --local
                 echo "execute ========================"
-                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR
+                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR host=$(hostname)
                 echo "post execute ==================="
                 find .
                 ls -lh .
@@ -334,7 +343,7 @@ class Agent:
             )
 
             _sync_remote_files()
-            do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT}")
+            do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
@@ -419,7 +428,7 @@ class Agent:
                 Log.Info(f"external binds {[a for a, b in mock.binds]}")
             sh_remote.Exec(f"""\
                 export BINDS="{binds}"
-                ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths}
+                ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname)
             """, timeout=None)
 
     def GetNxfConfigPresets(self, folder: Path = MODULE_PATH/"nextflow_config"):
@@ -557,7 +566,7 @@ class Agent:
 # ===========================================================================
 # calls to staged Agent
 
-def StageWorkflow(task_key: str, verify: bool):
+def StageWorkflow(task_key: str, verify: bool, host: str):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
     task_path = agent.home.GetPath()/AgentPaths.to_task(task_key)
     assert task_path.exists(), f"task dir not found [{task_path}]"
@@ -573,7 +582,7 @@ def StageWorkflow(task_key: str, verify: bool):
     data_dir = AgentPaths.to_data()
     data_dir.mkdir(parents=True, exist_ok=True)
     work_internals.mkdir(parents=True, exist_ok=True)
-    with RemoteShell(AgentPaths.to_local_relay_coms(), timeout=60) as extern_shell:
+    with RemoteShell(AgentPaths.to_local_relay_coms(host=host), timeout=60) as extern_shell:
         extern_root = agent.real_path
         assert extern_root is not None
         extern_work = extern_root/work_relative

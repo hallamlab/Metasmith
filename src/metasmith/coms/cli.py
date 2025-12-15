@@ -85,27 +85,41 @@ class CommandLineInterface:
         parser.add_argument("--port", required=False, type=int, default=8080, help="Port to serve the notebook")
         args = parser.parse_args(raw_args)
         
-        os.environ["JUPYTERLAB_SETTINGS_DIR"] = "./jupyter_settings"
+        settings_path = Path("jupyterlab_settings")
+        os.environ["JUPYTERLAB_SETTINGS_DIR"] = str(settings_path)
         starter_path = Path("metasmith_starter.ipynb")
-        if not starter_path.exists():
-            shutil.copy(MODULE_PATH/"example_resources/metasmith_starter.ipynb", "./metasmith_starter.ipynb")
         lib_path = Path("MetasmithLibraries")
+
+        is_first_time = not any(p.exists() for p in [starter_path, settings_path, lib_path])
+        if not starter_path.exists():
+            shutil.copy(MODULE_PATH/"example_resources/metasmith_starter.ipynb", starter_path)
+        if not settings_path.exists():
+            shutil.copytree(MODULE_PATH/"jupyter_lab/settings", settings_path)
+        libraries_url = "https://github.com/hallamlab/MetasmithLibraries.git"
         if not lib_path.exists():
+            Log.Info(f"running [git clone {libraries_url}]")
             subprocess.run([
                 "git",
                 "clone",
-                "https://github.com/hallamlab/MetasmithLibraries.git",
+                libraries_url,
             ], text=True)
+
         try:
-            subprocess.run([
+            Log.Info(f"Metasmith {VERSION} is starting Jupyter lab...")
+            cmds = [
                 "jupyter",
                 "lab",
                 f"--ip={args.ip}",
                 f"--port={args.port}",
                 "--allow-root",
                 "--no-browser",
-                "--LabApp.default_url='/lab/tree/metasmith_starter.ipynb'",
-            ], text=True)
+                "--ContentsManager.allow_hidden=True",
+            ]
+            if is_first_time:
+                cmds += [
+                    "--LabApp.default_url='/lab/tree/metasmith_starter.ipynb'",
+                ]
+            subprocess.run(cmds, text=True)
         except KeyboardInterrupt:
             pass
 

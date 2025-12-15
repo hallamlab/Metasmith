@@ -33,10 +33,10 @@ if __name__ == "__main__":
         package_data={
             "":[ # "" is all packages
                 "version.txt",
-                "nextflow_config/*",
-                "bin/*",
-                "example_resources/*",
-                "std/**"
+                "nextflow_config/**",
+                "bin/**",
+                "example_resources/**",
+                "jupyter_lab/**",
             ],
             # examples
             # "package-name": ["*.txt"],

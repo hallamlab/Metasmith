@@ -67,14 +67,10 @@ case $1 in
 
     ###################################################
     # build
-    -bx) # update std xgdbs
-        python $HERE/main/transforms/std/create.py
-    ;;
     -bp) # pip
         # build pip package
         [ -d ./build ] && rm -r build
         [ -d ./dist ] && rm -r dist
-        python $HERE/main/transforms/std/create.py
         python -m build
     ;;
     -bpi) # pip - test install
@@ -96,9 +92,6 @@ case $1 in
     -br) # build the relay
         cd main/relay_agent
         ./pack.sh -p
-    ;;
-    -bl) # build the standard library
-        python main/transforms/std/create.py
     ;;
     -bd) # docker
         # pre-download requirements

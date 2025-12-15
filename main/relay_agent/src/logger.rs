@@ -57,7 +57,7 @@ impl Logger {
         let now = Local::now();
         let timestamp = now.format("%Y-%m-%d %H:%M:%S").to_string();
         
-        let log_line = format!("[{}] [{}] {}\n", timestamp, level, message);
+        let log_line = format!("{} {}| {}\n", timestamp, level, message);
 
         // Lock the file handle and write the line
         let mut log_file_guard = LOG_FILE.lock().unwrap();
@@ -69,9 +69,32 @@ impl Logger {
         }
     }
 
-    // Equivalent to Log::RemoveLogFile (closing the file)
-    pub fn close_log_file() {
-        let mut log_file_guard = LOG_FILE.lock().unwrap();
-        *log_file_guard = None; // Drop the file handle, causing it to close
+    /// Explicitly flushes any buffered data to the log file and then closes the file handle.
+    ///
+    /// This is safer than just closing, as it ensures all recent logs are written
+    /// before termination.
+    pub fn flush_and_close_log_file() {
+        // 1. Lock the global logging handle Mutex
+        let mut log_file_guard = match LOG_FILE.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // If the Mutex is poisoned, try to recover the inner data
+                eprintln!("Warning: LOG_FILE Mutex was poisoned. Proceeding with cleanup.");
+                poisoned.into_inner()
+            }
+        };
+
+        // 2. Access the file and flush it
+        if let Some(file) = log_file_guard.as_mut() {
+            // Call the flush method on the mutable reference to the File
+            if let Err(e) = file.flush() {
+                // Report failure to flush to stderr
+                eprintln!("FATAL: Failed to flush log file before closing: {}", e);
+            }
+        }
+        
+        // 3. Close the file: Set the Option to None.
+        // This causes the File object to be dropped, which closes the file handle.
+        *log_file_guard = None; 
     }
 }

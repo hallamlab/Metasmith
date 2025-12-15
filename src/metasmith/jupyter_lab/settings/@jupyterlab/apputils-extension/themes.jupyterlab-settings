@@ -1,0 +1,15 @@
+{
+    "adaptive-theme": false,
+    "overrides": {
+        "code-font-family": null,
+        "code-font-size": null,
+        "content-font-family": null,
+        "content-font-size1": null,
+        "ui-font-family": null,
+        "ui-font-size1": null
+    },
+    "preferred-dark-theme": "JupyterLab Dark",
+    "preferred-light-theme": "JupyterLab Light",
+    "theme": "Material Darcula",
+    "theme-scrollbars": false
+}

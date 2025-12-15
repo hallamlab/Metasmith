@@ -52,7 +52,7 @@ case $1 in
     -r)
         shift
         mkdir -p ./scratch/ws
-        cp $HERE/target/x86_64-unknown-linux-musl/release/msm_relay ./scratch/ws
+        rsync -au $HERE/target/x86_64-unknown-linux-musl/release/msm_relay ./scratch/ws/msm_relay
         cd ./scratch/ws
         ./msm_relay $@
     ;;

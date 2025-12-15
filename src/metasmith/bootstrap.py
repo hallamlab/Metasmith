@@ -7,7 +7,8 @@ import json
 import os
 
 from .logging import Log
-from .agents import Agent, AgentPaths
+from .constants import AgentPaths
+from .agents import Agent
 from .models.libraries import ContextPath, ContextData, ExecutionContext, ExecutionResult
 from .models.libraries import DataInstance, DataTypeLibrary, TransformInstance, TransformInstanceLibrary
 from .models.solver import Dependency, Endpoint
@@ -15,9 +16,17 @@ from .hashing import KeyGenerator
 from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
 from .coms.via_file_watcher import RemoteShell
 
-def DeployFromContainer(workspace: Path):
+def DeployFromContainer(workspace: Path, architecture: str, system: str):
     deploy_root = workspace
     Log.Info(f"deploying to [{deploy_root}]")
+    architecture = architecture.lower()
+    system = system.lower()
+    Log.Info(f"platform [{architecture}/{system}]")
+    SUPPORTED_ARCHITECTURES = {"x86_64", "arm64"}
+    SUPPORTED_SYSTEMS = {"linux", "darwin"}
+    assert architecture in SUPPORTED_ARCHITECTURES, f"[{architecture}] not supported, valid architectures are [{SUPPORTED_ARCHITECTURES}]"
+    assert system in SUPPORTED_SYSTEMS, f"[{system}] not supported, valid operating systems are [{SUPPORTED_SYSTEMS}]"
+
     if not deploy_root.exists():
         deploy_root.mkdir(parents=True, exist_ok=True)
     folders = [
@@ -26,7 +35,7 @@ def DeployFromContainer(workspace: Path):
     for p in folders:
         (deploy_root/p).mkdir(parents=True, exist_ok=True)
 
-    relay_server = Path("/opt/msm_relay")
+    relay_server = Path(f"/app/msm_relay.{architecture}-{system}")
     relay_server_dest = deploy_root/"relay/msm_relay"
     Log.Info(f"deploying relay server to [{relay_server_dest}]")
     if not relay_server_dest.exists():
@@ -35,9 +44,9 @@ def DeployFromContainer(workspace: Path):
 
     Log.Info("deployment complete")
 
-def StageAndRunTransform(workspace: Path, step_index: int):
+def StageAndRunTransform(workspace: Path, step_index: int, host: str):
     Log.Info(f"cwd [{os.getcwd()}]")
-    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS)
+    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS, host=host)
     MAX_WAIT = 3
     for i in range(MAX_WAIT):
         if server_path.exists(): break

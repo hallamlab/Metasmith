@@ -39,7 +39,10 @@ COPY ./dist/*.tar.gz /opt/metasmith.tar.gz
 RUN pip install /opt/metasmith.tar.gz
 
 COPY ./lib/globusconnectpersonal-latest /opt/globusconnectpersonal-latest
-COPY ./main/relay_agent/msm_relay.amd64/msm_relay /opt/msm_relay
+COPY ./main/relay_agent/target/x86_64-unknown-linux-musl/release/msm_relay /app/msm_relay.x86_64-linux
+COPY ./main/relay_agent/target/aarch64-unknown-linux-musl/release/msm_relay /app/msm_relay.arm64-linux
+COPY ./main/relay_agent/target/x86_64-apple-darwin/release/msm_relay /app/msm_relay.x86_64-darwin
+COPY ./main/relay_agent/target/aarch64-apple-darwin/release/msm_relay /app/msm_relay.arm64-darwin
 RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin /app
 
 EXPOSE 8080

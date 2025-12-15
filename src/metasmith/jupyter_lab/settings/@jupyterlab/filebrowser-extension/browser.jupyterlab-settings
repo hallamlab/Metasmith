@@ -1,0 +1,19 @@
+{
+    "navigateToCurrentDirectory": false,
+    "useFuzzyFilter": true,
+    "filterDirectories": true,
+    "showLastModifiedColumn": true,
+    "showFileSizeColumn": false,
+    "showHiddenFiles": true,
+    "showFileCheckboxes": false,
+    "showFullPath": false,
+    "sortNotebooksFirst": false,
+    "singleClickNavigation": false,
+    "autoOpenUploads": true,
+    "maxAutoOpenSizeMB": 50,
+    "allowFileUploads": true,
+    "breadcrumbs": {
+        "minimumLeftItems": 0,
+        "minimumRightItems": 2
+    }
+}

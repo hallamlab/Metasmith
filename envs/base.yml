@@ -27,16 +27,17 @@ dependencies:
   - jupyterlab-lsp=5.2.0
   - python-lsp-server=1.13.2
   - jupyterlab-unfold=0.3.4
+  - theme-material-darcula=1.0.3
 
   # common tools (not strictly dependencies)
   - pandas=2.3.3
   - openpyxl=3.1.5  # for pandas to read excel files
   - plotly=6.5.0
   - scipy=1.16.3
+  
+  # globus
+  - globus-cli=3.40.0
+  - globus-sdk=4.1.0
 
-  - pip
-  - pip:
-      - globus-cli==3.32.0
-      - globus-sdk==3.46.0
-      - ipynbname==2025.8.0.0
-      - theme-darcula==4.0.0
+# there can NOT be any pip dependencies,
+# since those will not be installed with the conda package

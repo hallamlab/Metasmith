@@ -7,21 +7,29 @@ from ..agents import RunWorkflow, StageWorkflow, CheckWorkflow
 class Api:
     def deploy_from_container(self, body: dict):
         deploy_path = Path(body.get("workspace", "/ws"))
-        DeployFromContainer(deploy_path)
+        architecture = body.get("architecture")
+        assert architecture, "[architecture] is required"
+        system = body.get("system")
+        assert system, "[system] is required"
+        DeployFromContainer(deploy_path, architecture, system)
 
     def execute_transform(self, body: dict):
         workspace = body.get("workspace")
         assert workspace, "[workspace] is required"
         step_index = body.get("step_index")
         assert step_index, "[step_index] is required"
-        res = StageAndRunTransform(Path(workspace), int(step_index))
+        host = body.get("host")
+        assert host, "[host] is required"
+        res = StageAndRunTransform(Path(workspace), int(step_index), host)
         exit(res.success)
 
     def stage_workflow(self, body: dict):
         task_key = body.get("task_key")
         assert task_key, "[task_key] is required"
         verify = body.get("verify", "False").title()=="True"
-        StageWorkflow(task_key, verify)
+        host = body.get("host")
+        assert host, "[host] is required"
+        StageWorkflow(task_key, verify, host)
 
     def run_workflow(self, body: dict):
         key = body.get("key")

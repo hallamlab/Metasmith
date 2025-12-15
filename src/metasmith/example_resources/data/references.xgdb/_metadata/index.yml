@@ -1,9 +1,0 @@
-manifest:
-  blast.oci.uri:
-    type: genomics::oci_image_blast
-  prodigal.oci.uri:
-    type: genomics::oci_image_prodigal
-  swissprot_bcaa.faa:
-    type: genomics::protein_reference_fasta
-remote_src: null
-schema: 0.5.1
