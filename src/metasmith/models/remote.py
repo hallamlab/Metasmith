@@ -280,7 +280,7 @@ class Logistics:
                             cmd += f'rm -r "{dest_path}" && '
                         if not dest_path.parent.exists():
                             cmd += f'mkdir -p "{dest_path.parent}" && '
-                        cmd += f'rsync -auXP "{sa}" "{dest_path}"'
+                        cmd += f'rsync -auP "{sa}" "{dest_path}"'
                         shell.ExecAsync(cmd)
 
                 def _join():
@@ -425,7 +425,7 @@ class Logistics:
                         src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
                         s_resolved = f"{src_addr}"
                         if src_is_dir[(src_host, src_s.path)]: s_resolved += "/"
-                        shell.ExecAsync(f"rsync -auXP {s_resolved} {dest_addr}")
+                        shell.ExecAsync(f"rsync -auP {s_resolved} {dest_addr}")
                 def _join():
                     shell.AwaitDone(timeout=None)
                     completed = []
