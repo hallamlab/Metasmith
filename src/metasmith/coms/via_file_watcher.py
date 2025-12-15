@@ -144,12 +144,14 @@ class RemoteShell:
         while not is_done():
             finished = []
             for k, j in self._active_jobs.items():
+                if j.done_path.exists():
+                    finished.append(k)
+            if len(finished)>0: sleep(dt)
+            for k, j in self._active_jobs.items():
                 j.out_i = check_log(j.out_log, j.out_i, self._out_callbacks)
                 j.err_i = check_log(j.err_log, j.err_i, self._err_callbacks)
-                if j.done_path.exists():
-                    j.Dispose(self._timeout)
-                    finished.append(k)
             for k in finished:
+                self._active_jobs[k].Dispose()
                 del self._active_jobs[k]
             now = CurrentTimeMillis()
             if timeout is not None and now-start>timeout*1000: break

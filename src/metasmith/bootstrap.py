@@ -81,7 +81,8 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
         shell.RegisterOnErr(_make_listener(Log.Error))
 
         with PausedStdOut():
-            res = shell.Exec("pwd -P", history=True)
+            res = shell.Exec("pwd -P && sleep 1", history=True)
+        assert len(res.out)==1, res
         external_cwd = Path(res.out[0])
         Log.Info(f"external cwd [{external_cwd}]")
         task_key = workspace.name

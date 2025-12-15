@@ -36,10 +36,13 @@ class Container:
 
     def MakePullCommand(self):
         image = self._get_image()
-        if self.runtime == ContainerRuntime.APPTAINER:
-            return f"{self.runtime.value} pull {self.GetLocalPath()} {image}"
-        else:
-            return f"{self.runtime.value} pull {image}"
+        match self.runtime:
+            case ContainerRuntime.APPTAINER:
+                return f"{self.runtime.value} pull {self.GetLocalPath()} {image}"
+            case ContainerRuntime.DOCKER:
+                return f"{self.runtime.value} pull --platform=linux/amd64 {image}"
+            case _:
+                return f"{self.runtime.value} pull {image}"
 
     def MakeBindsParam(self):
         binds = {str(d):str(s) for s, d in self.binds}
