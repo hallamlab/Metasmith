@@ -195,6 +195,8 @@ class Agent:
                 )
                 Log.Info(f"deploying [{len(_staged)}] staged files")
                 res = mover.ExecuteTransfers()
+                for e in res.errors:
+                    Log.Error(e)
                 assert len(res.completed) == 1, f"failed to deploy files"
 
             with PausedShell():
