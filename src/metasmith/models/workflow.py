@@ -493,7 +493,7 @@ class WorkflowPlan:
         dag_str = _as_DAG(font=font)
         src = graphviz.Source(dag_str, filename=path_base, format=format)
         src.render(cleanup=True, quiet=True)
-        return path_base.with_suffix(f".{format}")
+        return path_base.parent/(path_base.name+f".{format}")
 
 @dataclass
 class WorkflowTask:
@@ -778,7 +778,7 @@ class WorkflowTask:
             wf_output += [
                 TAB+f"_{ch}"+"{",
                 TAB+TAB+f"path '{out_name}'",
-                TAB+TAB+f"index {{ path '_manifests/{out_name}.{inst.dtype.key}.csv' }}",
+                TAB+TAB+f"index {{ path '_manifests/{out_name}.{inst.dtype.key}.json' }}",
                 TAB+"}",
             ]
             

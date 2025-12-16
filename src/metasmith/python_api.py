@@ -9,3 +9,4 @@ from .coms.via_file_watcher import RemoteShell
 from .coms.containers import ContainerRuntime, Container
 from .agents import Agent, AgentPaths, WorkflowTask
 from .constants import VERSION as METASMITH_VERSION
+from .coms.jupyter import ipynbButtonLink

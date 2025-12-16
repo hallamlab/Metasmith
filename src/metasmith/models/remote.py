@@ -256,7 +256,7 @@ class Logistics:
     def RemoveTransfer(self, src: Source, dest: Source):
         self._queue.remove((src, dest))
 
-    def ExecuteTransfers(self, label: str|None = None, wait_for_complete: bool=True) -> LogisticsResult:
+    def ExecuteTransfers(self, label: str|None = None, wait_for_complete: bool=True, resolve_symlinks: bool=False) -> LogisticsResult:
         to_dispose: list[LiveShell] = []
         result = LogisticsResult(completed=[], errors=[])
 
@@ -280,7 +280,8 @@ class Logistics:
                             cmd += f'rm -r "{dest_path}" && '
                         if not dest_path.parent.exists():
                             cmd += f'mkdir -p "{dest_path.parent}" && '
-                        cmd += f'rsync -auP "{sa}" "{dest_path}"'
+                        rs = "-L" if resolve_symlinks else ""
+                        cmd += f'rsync -auP {rs} "{sa}" "{dest_path}"'
                         shell.ExecAsync(cmd)
 
                 def _join():
@@ -425,7 +426,8 @@ class Logistics:
                         src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
                         s_resolved = f"{src_addr}"
                         if src_is_dir[(src_host, src_s.path)]: s_resolved += "/"
-                        shell.ExecAsync(f"rsync -auP {s_resolved} {dest_addr}")
+                        rs = "-L" if resolve_symlinks else ""
+                        shell.ExecAsync(f'rsync -auP {rs} "{s_resolved}" "{dest_addr}"')
                 def _join():
                     shell.AwaitDone(timeout=None)
                     completed = []
@@ -454,7 +456,8 @@ class Logistics:
                 to_dispose.append(shell)
                 for src, dest in todo:
                     dest_path = Path(dest.address)
-                    shell.ExecAsync(f"mkdir -p {dest_path.parent} && curl -C - --silent -o {dest_path} {src.address}")
+                    if dest_path.exists(): continue
+                    shell.ExecAsync(f"mkdir -p {dest_path.parent} && curl --silent -L -o {dest_path} {src.address}")
                 def _join():
                     shell.AwaitDone(timeout=None)
                     completed = []

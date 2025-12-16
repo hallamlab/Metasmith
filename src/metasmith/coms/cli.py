@@ -71,6 +71,7 @@ class CommandLineInterface:
         HandleRequest(args.endpoint, body)
 
     def lab(self, raw_args=None):
+        Log.Info(f"Metasmith {VERSION}")
         parser = ArgumentParser(
             prog = f'{CLI_ENTRY} {self._get_fn_name()}',
             description=f"run Jupyter Lab with starter notebook"
@@ -87,17 +88,29 @@ class CommandLineInterface:
         
         settings_path = Path("jupyterlab_settings")
         os.environ["JUPYTERLAB_SETTINGS_DIR"] = str(settings_path)
-        starter_path = Path("metasmith_starter.ipynb")
+        examples_path = Path("example_resources")
         lib_path = Path("MetasmithLibraries")
+        is_first_time = not any(p.exists() for p in [examples_path, settings_path, lib_path])
 
-        is_first_time = not any(p.exists() for p in [starter_path, settings_path, lib_path])
-        if not starter_path.exists():
-            shutil.copy(MODULE_PATH/"example_resources/metasmith_starter.ipynb", starter_path)
         if not settings_path.exists():
-            shutil.copytree(MODULE_PATH/"jupyter_lab/settings", settings_path)
-        libraries_url = "https://github.com/hallamlab/MetasmithLibraries.git"
+            Log.Info(f"loading JupyterLab presets...")
+            subprocess.run([
+                "rsync",
+                "-auP",
+                f"{MODULE_PATH}/jupyter_lab/settings/",
+                f"{settings_path}",
+            ], text=True)
+        if not examples_path.exists():
+            Log.Info(f"loading tutorials...")
+            subprocess.run([
+                "rsync",
+                "-auP",
+                f"{MODULE_PATH}/example_resources/",
+                f"./{examples_path}",
+            ], text=True)
         if not lib_path.exists():
-            Log.Info(f"running [git clone {libraries_url}]")
+            libraries_url = "https://github.com/hallamlab/MetasmithLibraries.git"
+            Log.Info(f"downloading standard library from [{libraries_url}]...")
             subprocess.run([
                 "git",
                 "clone",
@@ -105,7 +118,7 @@ class CommandLineInterface:
             ], text=True)
 
         try:
-            Log.Info(f"Metasmith {VERSION} is starting Jupyter lab...")
+            Log.Info(f"starting Jupyter lab...")
             cmds = [
                 "jupyter",
                 "lab",
@@ -117,7 +130,7 @@ class CommandLineInterface:
             ]
             if is_first_time:
                 cmds += [
-                    "--LabApp.default_url='/lab/tree/metasmith_starter.ipynb'",
+                    "--LabApp.default_url='/lab/tree/example_resources/tutorials/deploy_locally.ipynb'",
                 ]
             subprocess.run(cmds, text=True)
         except KeyboardInterrupt:

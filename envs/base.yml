@@ -13,6 +13,7 @@ dependencies:
   - unzip=6.0
   - git=2.52.0 # to pull transform libraries
   - tk=8.6.13 # for globus
+  - git # to pull transforms
 
   # # relay now just uses files
   # # networking (mostly for relay)

@@ -1,5 +1,4 @@
 from __future__ import annotations
-import itertools
 import shutil
 import os, sys
 from pathlib import Path
@@ -65,7 +64,7 @@ class DataTypeOntologies:
 
 @dataclass
 class DataTypeLibrary:
-    schema: str = VERSION
+    schema: str = "v1"
     ontology: DataTypeOntology = field(default_factory=lambda: DataTypeOntologies.EDAM)
     types: dict[str, Endpoint] = field(default_factory=dict)
 
@@ -213,7 +212,7 @@ class DataInstance:
         )
 
 class DataInstanceLibrary:
-    schema: str = VERSION
+    schema: str = "v1"
     _path_to_meta: Path = Path("./_metadata")
     _path_to_types: Path = Path("./_metadata/types")
     _index_name: str = "index"
@@ -511,7 +510,7 @@ class DataInstanceLibrary:
         return res
 
     @classmethod
-    def LoadFrom(cls, src: Source, dest: Path|str, as_image=True, on_exist: str = "skip", label: str|None=None):
+    def LoadFrom(cls, src: Source, dest: Path|str, as_image=True, on_exist: str = "skip", label: str|None=None, resolve_symlinks: bool=True):
         assert isinstance(src, Source)
         assert on_exist in {"skip", "error", "clear", "update"}
         if not isinstance(dest, Path):
@@ -528,7 +527,7 @@ class DataInstanceLibrary:
                 src=_src,
                 dest=Source.FromLocal(_dest),
             )
-            res = mover.ExecuteTransfers(label=label)
+            res = mover.ExecuteTransfers(label=label, resolve_symlinks=resolve_symlinks)
             assert len(res.completed) == 1, f"move failed"
         if dest.exists():
             if on_exist == "error":

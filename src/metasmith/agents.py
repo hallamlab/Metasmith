@@ -149,7 +149,7 @@ class Agent:
     def _run_cleanup(self, shell: LiveShell):
         pass
 
-    def Deploy(self):
+    def Deploy(self, assertive: bool=False):
         Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}]")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
@@ -201,7 +201,13 @@ class Agent:
 
             with PausedShell():
                 self._run_setup(shell)
-            shell.Exec(f"mkdir -p {self.home.GetPath()}")
+                _FLAG = "already exists"
+                res = shell.Exec(f'[[ -e "{self.home.GetPath()}" ]] && echo "{_FLAG}"', history=True)
+                if _FLAG in res.out and not assertive: 
+                    Log.Info(f"[{self.home.address}] already exists, use Deploy(assertive=True) to deploy anyways")
+                    return
+
+            shell.Exec(f'mkdir -p "{self.home.GetPath()}"')
             with PausedShell():
                 cmds = [
                     f'realpath {self.home.GetPath()}',
@@ -766,6 +772,7 @@ def RunWorkflow(key: str, log_dir: Path):
                 [[ -e "$PIDF" ]] && rm $PIDF
                 [ -e squeue.log ] && mv squeue.log {log_dir}
                 [ -e scancel.log ] && mv scancel.log {log_dir}
+                [ -e {AgentPaths.NXF_WORKFLOW} ] && cp {AgentPaths.NXF_WORKFLOW} {log_dir}
                 [ -e {AgentPaths.NXF_CONFIG} ] && cp {AgentPaths.NXF_CONFIG} {log_dir}
                 [ -e {AgentPaths.NXF_PARAMS} ] && cp {AgentPaths.NXF_PARAMS} {log_dir}
                 if [ -e {nxf_dag} ]; then
@@ -858,30 +865,27 @@ def RunWorkflow(key: str, log_dir: Path):
                 kv2path[(k, i)] = p, {}
     for manifest in glob(str(manifests_path/"*")):
         manifest = Path(manifest)
-        if manifest.name == "given.csv": continue
-        inst_k = manifest.name.split(".")[-2] # TAB+TAB+f"index {{ path 'msm_manifest.{out_name}.{inst.dtype.key}.csv' }}",
-        with open(manifest) as f:
-            for l in f:
+        if manifest.suffix != ".json": continue
+        inst_k = manifest.name.split(".")[-2] # TAB+TAB+f"index {{ path 'msm_manifest.{out_name}.{inst.dtype.key}.raw' }}",
+        _rows = []
+        with open(manifest) as j:
+            entries = json.load(j)
+            for lin, path in entries:
                 try:
-                    l = l[1:-2] # "..."\n
-                    lin, path = l.split('","')
+                    path = Path(path)
                     lind: dict = json.loads(lin)
                     kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
-                    kv2path[kv] = Path(path), lind
+                    kv2path[kv] = path, lind
+                    _rows.append((path.relative_to(output_path), inst_k, json.dumps(lind, separators=(',', ':'))))
                 except Exception as e:
                     Log.Error(e)
+        _df = pd.DataFrame(_rows, columns=["path", "lineage_key", "lineage_json"])
+        _df.to_csv(manifest.parent/f"{manifest.stem}.csv", index=False)
     relavent_k = {k for k, v in kv2path}
     path2i = {p:i for i, (p, _) in enumerate(kv2path.values())}
-    output_manifest = []
+    given_manifest = []
     output_lineage = []
     for i, ((ck, cv), (path, lineage)) in enumerate(kv2path.items()):
-        cinst = k2inst[ck]
-        pes = {Endpoint(k2inst[pk].dtype.properties) for pk in lineage if pk in relavent_k}
-        ce = Endpoint(cinst.dtype.properties, parents=pes)
-        dname = f"{i+1:0{len(str(len(kv2path)))}}_{cinst.dtype_name.split('::')[-1]}"
-        output_dtypes.types[dname] = ce
-        output.AddItem(path, f"{task.GetKey()}::{dname}")
-        if path.is_relative_to(output_path): path = path.relative_to(output_path)
         for pk, pvs in lineage.items():
             if pk not in relavent_k: continue
             if pk == ck: continue
@@ -891,17 +895,25 @@ def RunWorkflow(key: str, log_dir: Path):
                 ppath, _ = kv2path[k]
                 pi = path2i[ppath]
                 output_lineage.append((i, pi))
-        output_manifest.append((i, ck, cinst.dtype_name,  dname, path))
+        cinst = k2inst[ck]
+        if path.is_relative_to(output_path): 
+            pes = {Endpoint(k2inst[pk].dtype.properties) for pk in lineage if pk in relavent_k}
+            ce = Endpoint(cinst.dtype.properties, parents=pes)
+            dname = f"{len(output_dtypes.types)+1:0{len(str(len(kv2path)))}}_{cinst.dtype_name.split('::')[-1]}"
+            output_dtypes.types[dname] = ce
+            output.AddItem(path.relative_to(output_path), f"{task.GetKey()}::{dname}")
+        else:
+            given_manifest.append((ck, cinst.dtype_name, path))
     output.Save()
-    output_manifest = sorted(output_manifest)
-    _df = pd.DataFrame(output_manifest, columns="i, type_key, type_name, name, path".split(", "))
+        
+    _df = pd.DataFrame(given_manifest, columns="type_key, type_name, path".split(", "))
     _df.to_csv(manifests_path/"given.csv", index=False)
     output_lineage = sorted(output_lineage)
     _df = pd.DataFrame(output_lineage, columns="child, parent".split(", "))
     _df.to_csv(manifests_path/"lineage.csv", index=False)
     tail = output_path.relative_to(AgentPaths.HOME_ROOT)
     external_results_path = extern_home/tail
-    Log.Info(f"[{len(output_manifest)}] outputs for [{key}] at [{external_results_path}]")
+    Log.Info(f"[{len(output.manifest)}] outputs for [{key}] at [{external_results_path}]")
 
     Log.Info(f"gathering log files")
     nxf_ids = set()
@@ -952,7 +964,8 @@ def CheckWorkflow(key: str, index: int|None=None):
 
     Log.Info(f"searching for logs")
     internals = workspace/AgentPaths.INTERNALS
-    log_dirs = list((internals).glob("logs.*"))
+    log_scan_result = list((internals).glob("logs.*"))
+    log_dirs = [p for p in log_scan_result if "latest" not in p.name]
     log_dirs = sorted(log_dirs, key=lambda x: x.name)
     if len(log_dirs) == 0:
         Log.Warn(f"no logs found for [{key}]")
