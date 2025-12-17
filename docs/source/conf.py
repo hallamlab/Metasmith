@@ -14,7 +14,6 @@ from constants import GIT_URL, USER, NAME
 
 project = NAME.title()
 copyright = '2025, Hallam Lab'
-author = 'Tony X. Liu, Steven Hallam'
 
 release = version_string
 version = version_string
@@ -46,9 +45,19 @@ html_title = f"{project} {version}"
 html_css_files = [
     'theme_overrides.css',
 ]
+# the left panel
+# page: what to show
+html_sidebars = {
+    '**': ['sidebar-nav-bs.html'], # index pages are just ignored...
+}
+
 html_theme_options = {
-    "secondary_sidebar_items": ["page-toc"],
-    "navbar_align": "left",
+    # the right panel
+    "secondary_sidebar_items": {
+        "**": ["page-toc"],
+        "index": [],
+    },
+    "navbar_align": "left", # the sections across the header
     "icon_links": [
         {
             "name": "GitHub",

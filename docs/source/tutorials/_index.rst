@@ -1,7 +1,10 @@
-Workflows
+Tutorials
 ############################################################
 
 .. toctree::
    :maxdepth: 3
 
-   assembly_annotation
+   deploying_locally
+   .. data
+   .. transforms
+   .. workflow

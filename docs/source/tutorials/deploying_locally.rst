@@ -1,4 +1,4 @@
-Tutorial
+Deploying locally
 ############################################################
 
 .. role:: python(code)

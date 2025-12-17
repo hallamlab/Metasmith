@@ -1,9 +1,10 @@
-Adjacent Guides
+Setup
 ===============
 
 .. toctree::
    :maxdepth: 2
 
+   install
    ssh
    ..  virtual_envs
    ..  containers
