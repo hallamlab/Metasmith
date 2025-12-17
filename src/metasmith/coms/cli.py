@@ -130,7 +130,7 @@ class CommandLineInterface:
             ]
             if is_first_time:
                 cmds += [
-                    "--LabApp.default_url='/lab/tree/example_resources/tutorials/deploy_locally.ipynb'",
+                    "--LabApp.default_url='/lab/tree/example_resources/tutorials/deploying_locally.ipynb'",
                 ]
             subprocess.run(cmds, text=True)
         except KeyboardInterrupt:
