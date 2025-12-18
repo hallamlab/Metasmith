@@ -4,54 +4,144 @@ Getting Started
 .. role:: bash(code)
    :language: bash
 
+.. important::
+
+    Metasmith does not need to be installed again on remote machines.
+    To execute a workflow remotely, `deploy an agent <deployment.html>`_ using your local installation.
+
 Prerequisites
 ============================================================
 
 Operating System
 ------------------------------------------------------------
 
-- Linux is the recommended operating system.
-- MacOS is supported, but Apptainer can not be installed on Mac. See :ref:`Container Runtime`.
-- Windows is only supported through `WSL <https://learn.microsoft.com/en-us/windows/wsl/>`_.
+Linux and MacOS running on x86_64 (Intel/AMD CPUs) or arm64 (Apple silicon) architectures are supported.
 
-.. _Container Runtime:
-Container Runtime
-------------------------------------------------------------
+Windows users can use either `WSL <https://learn.microsoft.com/en-us/windows/wsl/>`_, or Docker (see installation instructions below).
 
-To maximize reproducibility and portability, Metasmith relies on `OCI <https://en.wikipedia.org/wiki/Open_Container_Initiative>`_
-compliant containers to standardize the compute environment for itself and the tools that it runs. One of the following must be installed:
+.. tip::
 
-- `Apptainer <https://apptainer.org/>`_ is recommended due to its compatibility with research compute infrastructure.
-- `Docker <https://docs.docker.com/get-docker/>`_ (experimental). On Linux, please also `do this to enable docker without "sudo" <https://docs.docker.com/engine/install/linux-postinstall/>`_
+    You can check your OS and CPU architecture with:
+    
+    .. code-block:: console
+        :caption: UNIX Terminal
 
+        $ uname -s -m
+
+    Which should print "Linux"/"Darwin" and "amd64"/"arm64" if your system is supported.
+
+Installation
+============================================================
+
+Metasmith is available through multiple channels. Pick one of the following. 
 
 Conda
 ------------------------------------------------------------
 
 :bash:`Conda` is a package manager that both provides a distribution channel and automates the install of Metasmith. Alternatively,
-we recommend :bash:`mamba`, which is a more performant drop-in replacement for :bash:`conda`.
+we recommend :bash:`mamba`, which is a significantly more performant drop-in replacement for :bash:`conda`.
 
-- `Conda <https://docs.conda.io/en/latest/>`_
-- `Mamba <https://github.com/conda-forge/miniforge>`_ (recommended)
+.. button-link:: https://github.com/conda-forge/miniforge
+    :color: primary
 
-Installation
-============================================================
+    **Install Mamba**
 
-Using conda/mamba:
+.. button-link:: https://docs.conda.io/en/latest/
+    :color: primary
 
-.. code-block:: bash
+    **Install Conda**
+    
+.. code-block:: console
+    :caption: Terminal
 
-    conda install -c hallamlab -c bioconda metasmith
+    $ mamba create -n msm_env -c hallamlab -c bioconda metasmith
+    $ mamba activate msm_env
+    (msm_env)$ msm
 
-This then provides access to metasmith through python
+.. code-block:: console
+    :caption: expected output:
 
-.. code-block:: python
-    :linenos:
+    metasmith v#.#.#
+    https://github.com/hallamlab/metasmith
+    ...
 
-    from metasmith.python_api import *
-    print(METASMITH_VERSION)
+Docker
+------------------------------------------------------------
+
+.. Warning::
+
+    Experimental feature
+
+`Docker <https://www.docker.com/>`_ is a runtime for software packaged into `containers <https://opencontainers.org/>`_
+along with nearly all of their dependencies. Containers are "pulled" as "images" which can then be executed.
+
+.. button-link:: https://docs.docker.com/get-docker
+    :color: primary
+    
+    **Install Docker Desktop**
+
+.. code-block:: console
+    :caption: Terminal
+
+    $ docker pull --platform=linux/amd64 quay.io/hallamlab/metasmith
+    $ docker run \
+        --platform=linux/amd64 \
+        -it --rm \
+        -u $(id -u):$(id -g) \
+        --mount type=bind,source="${TMPDIR-/tmp}",target="/tmp" \
+        --mount type=bind,source="$(pwd -P)",target="/ws" \
+        --workdir="/ws" \
+        quay.io/hallamlab/metasmith \
+        msm
+
+.. code-block:: console
+    :caption: expected output:
+
+    ...
+    metasmith v#.#.#
+    https://github.com/hallamlab/metasmith
+    ...
+
+Apptainer
+------------------------------------------------------------
+
+.. Warning::
+
+    Experimental feature
+
+`Apptainer <https://apptainer.org/>`_ is an alternative to Docker designd for research computing on grid infrastructure.
+It is only available for **Linux machines**.
+
+
+.. button-link:: https://apptainer.org/docs/admin/main/installation.html
+    :color: primary
+
+    **Install Apptainer**
+
+.. code-block:: console
+    :caption: Terminal
+
+    $ apptainer pull docker://quay.io/hallamlab/metasmith
+    $ apptainer run \
+        --bind "${TMPDIR-/tmp}":/tmp,"$(pwd -P)":/ws \
+        --workdir /ws \
+        docker://quay.io/hallamlab/metasmith \
+        msm
+
+.. code-block:: console
+    :caption: expected output:
+
+    ...
+    metasmith v#.#.#
+    https://github.com/hallamlab/metasmith
+    ...
+
 
 Next Steps
 ============================================================
 
-It is now possible try the `quickstart example <workflow.html#_quickstart>`_. Or continue with the rest of the documentation at a slower pace. 
+.. button-link:: /tutorials/deploying_locally.html
+    :color: primary
+
+    **Try the tutorial**
+

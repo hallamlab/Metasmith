@@ -24,3 +24,19 @@
     min-width: 12em;
 }
 /* ===================================================================== */
+
+/* Make top navbar links bolder and larger */
+.bd-header .navbar-nav .nav-link {
+    font-weight: 700 !important;   /* Makes text bold */
+    font-size: 1.1rem !important;  /* Increases size (default is ~1rem) */
+    color: var(--pst-color-text-base) !important;
+    letter-spacing: 0.02em;        /* Adds slight breathing room */
+}
+
+/* Optional: Make the active page link even more distinct */
+.bd-header .navbar-nav .nav-item.active .nav-link {
+    color: var(--pst-color-primary) !important; /* Uses your theme's primary color */
+    border-bottom: 2px solid var(--pst-color-primary);
+}
+
+/* ===================================================================== */

@@ -84,6 +84,7 @@ class CommandLineInterface:
                 raise argparse.ArgumentTypeError(f"Invalid IP address: {val}")
         parser.add_argument("--ip", required=False, type=ip_type, default="0.0.0.0", help="IP address to serve the notebook")
         parser.add_argument("--port", required=False, type=int, default=8080, help="Port to serve the notebook")
+        parser.add_argument("--tutorial", required=False, type=str, default=None, help="Open the selected tutorial notebook")
         args = parser.parse_args(raw_args)
         
         settings_path = Path("jupyterlab_settings")
@@ -128,10 +129,14 @@ class CommandLineInterface:
                 "--no-browser",
                 "--ContentsManager.allow_hidden=True",
             ]
-            if is_first_time:
-                cmds += [
-                    "--LabApp.default_url='/lab/tree/example_resources/tutorials/deploying_locally.ipynb'",
-                ]
+            tutorial_notebook = str(args.tutorial)
+            if tutorial_notebook:
+                if not tutorial_notebook.endswith(".ipynb"): tutorial_notebook += ".ipynb"
+                path =  MODULE_PATH/f'example_resources/tutorials/{tutorial_notebook}'
+                if path.exists():
+                    cmds += [
+                        f"--LabApp.default_url='/lab/tree/example_resources/tutorials/{tutorial_notebook}'",
+                    ]
             subprocess.run(cmds, text=True)
         except KeyboardInterrupt:
             pass

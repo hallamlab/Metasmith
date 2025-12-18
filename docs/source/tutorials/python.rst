@@ -1,2 +1,5 @@
-Deploying across SSH
+.. role:: python(code)
+   :language: python
+
+Python basics
 ############################################################

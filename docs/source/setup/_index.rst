@@ -2,10 +2,10 @@ Setup
 ===============
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
 
    install
-   ssh
+   deployment
    ..  virtual_envs
    ..  containers
    ..  vs_code

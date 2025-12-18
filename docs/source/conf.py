@@ -28,6 +28,7 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx_copybutton',
     'myst_nb',
+    'sphinx_design',
 ]
 
 intersphinx_mapping = {
@@ -58,6 +59,7 @@ html_theme_options = {
         "index": [],
     },
     "navbar_align": "left", # the sections across the header
+    "show_prev_next": False,
     "icon_links": [
         {
             "name": "GitHub",

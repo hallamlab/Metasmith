@@ -1,138 +1,138 @@
-Deploying locally
-############################################################
-
 .. role:: python(code)
    :language: python
 
-.. _quickstart:
+My first agent
+############################################################
 
-.. note::
+This tutorial will demonstrate a minimal use case for running analyses with Metasmith.
 
-    `Looking for install instructions? <install.html>`_
-    
-    `More workflow examples here. <../modules/index.html>`_
-
-Genomics Annotation
+Prerequisites
 ============================================================
-This section will demonstrate a typical protocol to generate and run a workflow with Metasmith
-for genomics annotation.
 
-Metasmith comes bundled with a jupyter lab. Let's start it now.
+- `Metasmith is installed </setup/install.html>`_
+- `Docker or Apptainer is installed </setup/deployment.html#Locally>`_, since we will be deploying an agent locally
 
-.. code-block:: bash
+Setup
+============================================================
 
-    msm lab 
+.. code-block:: console
+    :caption: Terminal
 
-In the output, look for a link that starts with ``http://127.0.0.1:8080/lab/...``, this will take you
-to the jupyter lab UI, where a starter notebook will be waiting for you.
+    $ msm lab --tutorial deploying_locally
 
-To begin, import the tools and structures needed from the Metasmith python API. We will also load some resources from the standard library using `Std()`.
+.. button-link:: http://127.0.0.1:8080
+    :color: primary
+    
+    **Connect to Jupyter Lab**
+
+.. code-block::
+
+    example_resources/
+    └── tutorials/
+        └── deploying_locally.ipynb
 
 .. code-block:: python
+    :caption: Jupyter
     :linenos:
 
     from pathlib import Path
-    from metasmith.python_api import Agent, Source, Std, DataInstanceLibrary
-    from metasmith.python_api import Resources, Size, Duration
+    from metasmith.python_api import Agent, ContainerRuntime
+    from metasmith.python_api import DataTypeLibrary, DataInstanceLibrary, TransformInstanceLibrary
+    from metasmith.python_api import Source, SshSource, HttpSource, Logistics
+    from metasmith.python_api import Resources, Size
+    from metasmith.python_api import ipynbButtonLink
 
-    dtypes, containers, transforms = Std()
+    WORKSPACE = Path("../../").resolve() # back twice since we are in example_resources/tutorials
+    WORKSPACE
 
-- :python:`dtypes` is a :python:`DataTypeLibrary`, `more here <data.html#data-types>`_
-- :python:`containers` is a :python:`DataInstanceLibraries`, `more here <data.html#data-instances>`_
-- :python:`transforms` is a :python:`TransformInstanceLibrary`, `more here <transforms.html>`_
-
-Metasmith executes workflows through agents on your behalf. Each agent is given a workspace. Let's make one called "smith".
+1 - Deploy an agent
+============================================================
 
 .. code-block:: python
+    :linenos:
 
+    agent_home = Source.FromLocal(WORKSPACE/"msm_home")
     smith = Agent(
-        home = Source.FromLocal(Path("./local_home").resolve()),
+        home = agent_home,
+        runtime=ContainerRuntime.DOCKER,
     )
+
     smith.Deploy()
 
-.. note::
-    `The location can be remote. <data.html#logistics>`_
-
-For this demo, we will use long reads from the model organism *Eschichia coli* EPI300, but we only have its SRA accession "SRR35110061". For now, all inputs must be files so let's create one with the EPI300 accession number.
-
-.. code-block:: python
-
-    inputs_folder = Path("./std_assembly_data")
-    inputs_accession_file = Path("./epi300.acc")
-    with open(inputs_accession_file, "w") as f:
-        f.write("SRR35110061")
-
-We need to register the input into Metasmith's ecosystem by givging it a datatype. This lists all data types with "accession" in its name.
-
-.. code-block:: python
-
-    for k in dtypes.types:
-        if "accession" not in k: continue
-        print(k)
-
-Using the ``long_reads_accession`` datatype, create a ``DataInstanceLibrary``. This structure keeps track of multiple files and is essentially a filesystem folder managed by Metasmith.
-`More on DataInstanceLibrary usage here <data.html#data-instances>`_
+2 - Register inputs
+============================================================
 
 .. code-block:: python
     :linenos:
 
-    inputs = DataInstanceLibrary(inputs_folder)
-    inputs.AddItem(inputs_accession_file.resolve(), "std::long_reads_accession")
+    local_input_file = WORKSPACE/"epi300.gbk"
+
+    mover = Logistics()
+    mover.QueueTransfer(
+        src=HttpSource(url="https://github.com/hallamlab/MetasmithLibraries/releases/download/data.epi300.1/epi300.gbk").AsSource(),
+        dest=Source.FromLocal(local_input_file),
+    )
+    mover.ExecuteTransfers()
+
+.. code-block:: python
+    :linenos:
+
+    MLIB = WORKSPACE/"MetasmithLibraries"
+    CACHE = WORKSPACE/"cache"
+    in_dir = CACHE/"inputs/pangenome3.xgdb"
+
+    inputs = DataInstanceLibrary(in_dir)
+    inputs.Purge()
+    inputs.AddTypeLibrary("ncbi", DataTypeLibrary.Load(MLIB/"data_types/ncbi.yml"))
+    inputs.AddTypeLibrary("sequences", DataTypeLibrary.Load(MLIB/"data_types/sequences.yml"))
+    inputs.AddTypeLibrary("pangenome", DataTypeLibrary.Load(MLIB/"data_types/pangenome.yml"))
+
+    group = inputs.AddValue("pangenome", "e coli", "pangenome::pangenome")
+    inputs.AddValue("DH10b", "GCF_000019425.1", "ncbi::accession", parents={group})
+    inputs.AddValue("K12", "GCF_000005845.2", "ncbi::accession", parents={group})
+    inputs.AddItem(WORKSPACE/"epi300.gbk", "sequences::gbk", parents={group})
+    inputs.LocalizeContents()
     inputs.Save()
 
-
-Let's see what annotations are available. We will use "busco_annotations" since it will be the fastest to process.
-
-.. code-block:: python
-    :linenos:
-
-    for k in dtypes.types:
-        if "annotations" not in k: continue
-        print(k)
-
-We can now ask the metasmith agent to generate a workflow that produces "busco_annotations" from a "long_reads_accession" using available resources and transform steps. The generated workflow with references to requried inputs are stored in `task`.  
+3 - Generate workflow
+============================================================
 
 .. code-block:: python
     :linenos:
+
+    resources = [
+        DataInstanceLibrary.Load(MLIB/f"resources/{n}")
+        for n in ["containers", "lib"]
+    ]
+
+    transforms = [
+        TransformInstanceLibrary.Load(MLIB/f"transforms/{n}")
+        for n in ["logistics", "pangenome"]
+    ]
 
     task = smith.GenerateWorkflow(
-        samples=[inputs],
-        resources=[containers],
-        transforms=[transforms],
-        targets=[
-            dtypes["busco_annotations"],
-        ],
+        samples=inputs.AsSamples(),
+        resources=resources,
+        transforms=transforms,
+        targets=[inputs.GetType("pangenome::heatmap")]
     )
-
-The generated plan can be viewed with graphviz. We should inspect it and ensure it is sensible.
 
 .. code-block:: python
     :linenos:
 
-    from IPython.display import Image
-    dagf = Path("dag")
-    task.plans[0][0].RenderDAG(dagf, format="png")
-    Image(filename=f"{dagf}.png")
+    print(f'generated plan has [{len(task.plan.steps)}] steps')
 
-.. image:: /_static/example_metagenomics_dag.svg
-   :align: center
+    workflow_dag = task.plan.RenderDAG(CACHE/f"{task.GetKey()}.dag.svg")
+    url = f'../../{workflow_dag.relative_to(WORKSPACE)}'
+    ipynbButtonLink(url, "view workflow diagram")
 
-|
-
-Staging the task transfers required files over to the agent's workspace.
+4 - Execute workflow
+============================================================
 
 .. code-block:: python
     :linenos:
 
     smith.StageWorkflow(task, on_exist="clear")
-
-Before starting the run, let's alter some resource constraints and specify the local executor.
-
-.. code-block:: python
-    :linenos:
-
-    for path, tr in transforms.IterateTransforms():
-    print(tr.name)
 
 .. code-block:: python
     :linenos:
@@ -142,24 +142,33 @@ Before starting the run, let's alter some resource constraints and specify the l
         config_file=smith.GetNxfConfigPresets()["local"],
         resource_overrides={
             "all": Resources(
-                cpus=8,
-            ),
-            transforms["busco_ref"]: Resources(
-                cpus=2,
-            ),
-            transforms["fasterq_long"]: Resources(
-                cpus=2,
-            ),
+                memory=Size.GB(2),
+            )
         }
     )
-
-The task will execute asynchronously and its progress can be checked with:
 
 .. code-block:: python
     :linenos:
 
     smith.CheckWorkflow(task)
 
-.. note::
+5 - Receive outputs
+============================================================
 
-    Learn how to run `available standard analyses here. <../modules/index.html>`_
+.. code-block:: python
+    :linenos:
+
+    results_path = smith.GetResultSource(task).GetPath()
+    results = DataInstanceLibrary.Load(results_path)
+
+.. code-block:: python
+    :linenos:
+
+    to_show = [
+        "_metadata/logs.latest/nxf_report.html",
+        "_metadata/logs.latest/nxf_timeline.html",
+    ] + [path for path, type_name, endpoint in results.Iterate()]
+
+    for file in to_show:
+        url = Path(results_url)/file
+        ipynbButtonLink(f'{url}', f'view {url.parent.name}/{url.name}')

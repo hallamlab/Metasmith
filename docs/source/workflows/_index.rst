@@ -1,4 +1,4 @@
-Workflows
+The standard library
 ############################################################
 
 .. toctree::
