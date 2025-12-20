@@ -4,7 +4,8 @@
 My first agent
 ############################################################
 
-This tutorial will demonstrate a minimal use case for running analyses with Metasmith.
+This tutorial will demonstrate the minimal steps for using Metasmith.
+As an example, we will perform pangenome analysis using mixed inputs.
 
 Prerequisites
 ============================================================
@@ -15,9 +16,16 @@ Prerequisites
 Setup
 ============================================================
 
+To access the notebook for this tutorial, Metasmith can setup a workkspace, download example resources (\< 10 MB),
+and host a Jupyter lab server.
+
+The following will create a workspace folder, then start the jupyter lab environment with this tutorial notebook.
+Once Jupyter lab is started, come back to this page and press the connect button below.
+
 .. code-block:: console
     :caption: Terminal
 
+    $ mkdir -p metasmith_ws && cd metasmith_ws
     $ msm lab --tutorial deploying_locally
 
 .. button-link:: http://127.0.0.1:8080
@@ -25,11 +33,17 @@ Setup
     
     **Connect to Jupyter Lab**
 
+The notebook should have been opened automatically. The notebook can also be found manually at the following file path.
+The panel on the left provides a view of the filesystem.
+
 .. code-block::
 
-    example_resources/
-    └── tutorials/
-        └── deploying_locally.ipynb
+    metasmith_ws/
+    └── example_resources/
+        └── tutorials/
+            └── deploying_locally.ipynb
+
+The first cell of the Jupyter notebook loads the required modules for the tutorial.
 
 .. code-block:: python
     :caption: Jupyter
@@ -42,11 +56,36 @@ Setup
     from metasmith.python_api import Resources, Size
     from metasmith.python_api import ipynbButtonLink
 
-    WORKSPACE = Path("../../").resolve() # back twice since we are in example_resources/tutorials
+    WORKSPACE = Path("../../").resolve() # workspace is up 2 folders since we are in example_resources/tutorials
     WORKSPACE
+
+.. tip::
+    `Introduction to Python <tutorials/python.html>`_
+
+    `Introduction to Jupyter <tutorials/jupyter.html>`_
 
 1 - Deploy an agent
 ============================================================
+
+Agents, in this context, are virtual workers that perform complex tasks on the user's behalf.
+To spwan an agent, Metasmith creates then deploys the agent to a home directory in which it will live.
+For this tutorial, the agent will live locally (on the same machine that Metasmith is installed on). 
+
+.. tip::
+    More on `deploying agents <setup/deployment.html>`_, including to remote machines
+
+Metasmith outsources the steps that compose an overall analysis
+pipeline to external software tools. To ensure that these tools can be reliably executed by an agent, 
+self-contained software environments called "containers" are used. A container runtime downloads and manages
+the lifetime of these containers. 
+
+Metasmith can use the following container runtimes:
+
+- :python:`DOCKER`
+- :python:`APPTAINER`
+
+Let's create an agent called :python:`smith` and give him a home in the current workspace under :python:`msm_home`.
+We will instruct :python:`smith` to manage containers with :python:`DOCKER`.
 
 .. code-block:: python
     :linenos:
@@ -62,6 +101,9 @@ Setup
 2 - Register inputs
 ============================================================
 
+Pangenome analysis seeks to compare a panel of genomes at the level of genes. Three E. coli genomes will be used as input.
+We will download one of them now, and provide NCBI acession numbers for the other two.
+
 .. code-block:: python
     :linenos:
 
@@ -74,28 +116,55 @@ Setup
     )
     mover.ExecuteTransfers()
 
+.. tip::
+    More on `logistics <usage/logistics.html>`_
+
+Metasmith accepts inputs in the form of files that become registered as :python:`DataInstances` 
+within a managed folder called a :python:`DataInstanceLibrary`. Registering an input
+involves attaching a :python:`DataType` that describes how it can be used.
+Computational steps specify a :python:`DataType` for each of their inputs such that any 
+:python:`DataInstance` with a matching :python:`DataType` can be consumed. Registering
+inputs as typed :python:`DataInstances` enables Metasmith to determine which tools are capable of
+consuming it.
+
 .. code-block:: python
     :linenos:
 
-    MLIB = WORKSPACE/"MetasmithLibraries"
-    CACHE = WORKSPACE/"cache"
-    in_dir = CACHE/"inputs/pangenome3.xgdb"
+    MLIB = WORKSPACE/"MetasmithLibraries" # save path to the downloaded standard library of tools
 
-    inputs = DataInstanceLibrary(in_dir)
-    inputs.Purge()
+    inputs = DataInstanceLibrary(WORKSPACE/"inputs/pangenome3.xgdb")
+    inputs.Purge() # clear the input folder, in case this is not the first time this cell was ran
+
+    # add data types
     inputs.AddTypeLibrary("ncbi", DataTypeLibrary.Load(MLIB/"data_types/ncbi.yml"))
     inputs.AddTypeLibrary("sequences", DataTypeLibrary.Load(MLIB/"data_types/sequences.yml"))
     inputs.AddTypeLibrary("pangenome", DataTypeLibrary.Load(MLIB/"data_types/pangenome.yml"))
 
+    # register inputs
     group = inputs.AddValue("pangenome", "e coli", "pangenome::pangenome")
     inputs.AddValue("DH10b", "GCF_000019425.1", "ncbi::accession", parents={group})
     inputs.AddValue("K12", "GCF_000005845.2", "ncbi::accession", parents={group})
     inputs.AddItem(WORKSPACE/"epi300.gbk", "sequences::gbk", parents={group})
-    inputs.LocalizeContents()
     inputs.Save()
+
+.. tip::
+    More on `DataTypes, DataInstances, and DataInstanceLibraries <usage/data.html>`_
 
 3 - Generate workflow
 ============================================================
+
+Since computational steps transform input :python:`DataInstances` into output :python:`DataInstances`,
+they are called :python:`TransformInstances` and are organized into special :python:`DataInstanceLibraries`
+called a :python:`TransformInstanceLibrary`. :python:`TransformInstances` can be chained into workflows by
+matching the :python:`DataType` of the upstream output to the :python:`DataType` of the downstream input.
+The protocol of a :python:`TransformInstance` is called a :python:`Transform` and it may appear multiple times
+within a workflow.
+
+When we can give an agent a :python:`DataInstanceLibrary` of inputs, a :python:`TransformInstanceLibrary` of
+available tools, and target :python:`DataTypes` to produce, it is able to generate a workflow to produce
+the target :python:`DataInstances` from the given :python:`DataInstanceLibrary` using the provided
+:python:`TransformInstanceLibrary`, as long as a solution exists. Here, we request the that an output of type 
+:python:`pangenome::heatmap` be produced.
 
 .. code-block:: python
     :linenos:
@@ -117,22 +186,61 @@ Setup
         targets=[inputs.GetType("pangenome::heatmap")]
     )
 
+.. tip::
+    More on
+    
+    - `Transforms, and TransformInstances, and TransformInstanceLibraries <usage/transforms.html>`_
+    - `generating workflows <usage/workflow_generation.html>`_
+
+Each :python:`task` has a code name or :python:`key` composed of case sensitive letters and numbers that is calculated from the inputs
+and workflow steps. A :python:`task` contains all the context required to execute a workflow.
+
+.. code-block:: python
+    :linenos:
+    print(f'this workflow is called [{len(task.GetKey())}]')
+
+The steps of the workflow can be rendered as a directed acyclic graph (DAG) or more commonly known as a flowchart.
+As indicated in its namesake, a DAG is a specific type of flowchart that has 2 properties:
+
+- "directed" indicates that for any two connected steps, data always flows from one to the other and never in reverse.
+- "acyclic" promises an implicit ording of steps such that once a step is performed, it will never be needed again.
+
+Let's take a look at the DAG for this generated workflow.
+
 .. code-block:: python
     :linenos:
 
     print(f'generated plan has [{len(task.plan.steps)}] steps')
 
-    workflow_dag = task.plan.RenderDAG(CACHE/f"{task.GetKey()}.dag.svg")
-    url = f'../../{workflow_dag.relative_to(WORKSPACE)}'
-    ipynbButtonLink(url, "view workflow diagram")
+    workflow_diagram_path = task.plan.RenderDAG(WORKSPACE/f"{task.GetKey()}.dag.svg")
+    ipynbButtonLink(workflow_diagram_path.relative_to(WORKSPACE), "view workflow diagram")
 
 4 - Execute workflow
 ============================================================
+
+To execute the workflow, it must first be staged to the agent's home.
+This involves sending over the inputs, transform protocols, and translated nextflow workflow definition.
 
 .. code-block:: python
     :linenos:
 
     smith.StageWorkflow(task, on_exist="clear")
+
+Since the agent home is local, you can view the results directly in the panel on the left.
+
+.. code-block::
+
+    metasmith_ws/
+    └──msm_home/
+        ├── lib/
+        ├── relay/
+        ├── runs/
+        │   └── ... # look the tasks's key
+        └── msm
+
+A nextflow configuration is generated just before a run is triggered.
+We will use the "local" preset and lower the memory requirement to 2GB for all steps.
+The default resource estimates are liberal, but we know our task will only need to work with three genomes.
 
 .. code-block:: python
     :linenos:
@@ -147,19 +255,48 @@ Setup
         }
     )
 
+.. tip::
+    More on `configuration <usage/nextflow.html>`_
+    
+    - `Transforms, and TransformInstances, and TransformInstanceLibraries <usage/transforms.html>`_
+    - `generating workflows <usage/workflow_generation.html>`_
+
+.. note::
+
+    Multiple runs can be triggered, but nextflow will fail if consecutive runs are triggered too soon.
+
+Once a task is running, the main log output can be viewed like so:
+
 .. code-block:: python
     :linenos:
 
     smith.CheckWorkflow(task)
 
+.. note::
+
+    The logs of the latest run will be shown by default. Older logs can be selected.
+    The following selects the first run, regardless of how many there are in total.
+
+    .. code-block:: python
+        :linenos:
+
+        smith.CheckWorkflow(task, run=1)
+
+
 5 - Receive outputs
 ============================================================
+
+We can ask for the location of a task from the agent and use it to load
+the produced :python:`DataInstanceLibrary` that contains the workflow's outputs.
 
 .. code-block:: python
     :linenos:
 
     results_path = smith.GetResultSource(task).GetPath()
     results = DataInstanceLibrary.Load(results_path)
+
+Once loaded, we can iterate through the results to find the heatmap since there should only be one
+output. We also make links to the main report files.
 
 .. code-block:: python
     :linenos:
@@ -170,5 +307,5 @@ Setup
     ] + [path for path, type_name, endpoint in results.Iterate()]
 
     for file in to_show:
-        url = Path(results_url)/file
-        ipynbButtonLink(f'{url}', f'view {url.parent.name}/{url.name}')
+        path = results_path.relative_to(WORKSPACE)/file
+        ipynbButtonLink(f'/files/{path}', f'view {path.parent.name}/{path.name}')

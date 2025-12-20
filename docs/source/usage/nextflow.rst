@@ -1,2 +1,2 @@
-Remote execution
+Nextflow integration
 ############################################################

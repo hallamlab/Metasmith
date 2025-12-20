@@ -32,53 +32,26 @@ again if executing workflows on remote machines.
 .. code-block:: python
     :linenos:
 
-    from metasmith.python_api import Agent
     smith = Agent(...)  # spawn an agent called "smith"
     smith.Deploy()      # deploy agent smith
-
-.. tip::
-    `All you need to know about python in order to use Metasmith <tutorials/python.html>`_
-
-    More on `spawning an agent and deploying to various platforms <setup/deployment.html>`_
 
 2 - Register inputs
 -----------------------------------------------------------
 
-Metasmith accepts inputs in the form of files that become registered as :python:`DataInstances` 
-within a managed folder called a :python:`DataInstanceLibrary`. Registering an input
-involves attaching a :python:`DataType` that describes how it can be used.
-Computational steps specify a :python:`DataType` for each of their inputs such that any 
-:python:`DataInstance` with a matching :python:`DataType` can be consumed. Registering
-inputs as typed :python:`DataInstances` enables Metasmith to determine which tools are capable of
-consuming it.
+Metasmith uses a type system to model how data can be consumed by protocols. 
+Inputs must be registered by assigning a type to them.
 
 .. code-block:: python
     :linenos:
 
-    from metasmith.python_api import DataInstanceLibrary
     inputs = DataInstanceLibrary(...)   # create a managed folder for inputs
     inputs.AddItem(                     # register an input file...
         path="/path/to/genome.fasta",   # ...from this file path
         dtype="sequences::genome"       # ...as a genomic sequence
     )
 
-.. tip::
-    More on `DataTypes, DataInstances, and DataInstanceLibraries <usage/data.html>`_
-
 3 - Generate workflow
 -----------------------------------------------------------
-
-Since computational steps transform input :python:`DataInstances` into output :python:`DataInstances`,
-they are called :python:`TransformInstances` and are organized into special :python:`DataInstanceLibraries`
-called a :python:`TransformInstanceLibrary`. :python:`TransformInstances` can be chained into workflows by
-matching the :python:`DataType` of the upstream output to the :python:`DataType` of the downstream input.
-The protocol of a :python:`TransformInstance` is called a :python:`Transform` and it may appear multiple times
-within a workflow.
-
-When we can give an agent a :python:`DataInstanceLibrary` of inputs, a :python:`TransformInstanceLibrary` of
-available tools, and target :python:`DataTypes` to produce, it is able to generate a workflow to produce
-the target :python:`DataInstances` from the given :python:`DataInstanceLibrary` using the provided
-:python:`TransformInstanceLibrary`, as long as a solution exists.
 
 .. code-block:: python
     :linenos:
@@ -147,6 +120,6 @@ Documentation
     :maxdepth: 2
     
     setup/_index
-    usage/_index
     tutorials/_index
+    usage/_index
     workflows/_index

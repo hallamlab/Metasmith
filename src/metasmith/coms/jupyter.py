@@ -1,6 +1,6 @@
 from IPython.display import display, SVG, HTML
 
-def ipynbButtonLink(url: str, text: str, color: str="#1976D2", on_hover_color: str="#1565C0", size: str="16px"):
+def ipynbButtonLink(url, text: str, color: str="#1976D2", on_hover_color: str="#1565C0", size: str="16px"):
     # font-weight: bold;
     html_button = f"""
     <style>

@@ -1,4 +1,4 @@
-Usage
+API reference
 ############################################################
 
 .. toctree::
@@ -9,4 +9,5 @@ Usage
    logistics
    transforms
    workflow_generation
+   nextflow
    workflow_execution
