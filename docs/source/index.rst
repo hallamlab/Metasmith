@@ -32,8 +32,8 @@ again if executing workflows on remote machines.
 .. code-block:: python
     :linenos:
 
-    smith = Agent(...)  # spawn an agent called "smith"
-    smith.Deploy()      # deploy agent smith
+    smith = Agent(...)
+    smith.Deploy()
 
 2 - Register inputs
 -----------------------------------------------------------
@@ -44,44 +44,37 @@ Inputs must be registered by assigning a type to them.
 .. code-block:: python
     :linenos:
 
-    inputs = DataInstanceLibrary(...)   # create a managed folder for inputs
-    inputs.AddItem(                     # register an input file...
-        path="/path/to/genome.fasta",   # ...from this file path
-        dtype="sequences::genome"       # ...as a genomic sequence
+    inputs = DataInstanceLibrary(...) 
+    inputs.AddItem(
+        <file path>,
+        <data type>,
     )
 
 3 - Generate workflow
 -----------------------------------------------------------
 
+Protocols describe transformations between data types. By providing the inputs and a list of
+available transformations, we can ask the agent to generate a workflow to produce target data types
+by chaining multiple protocols together.
+
 .. code-block:: python
     :linenos:
 
     task = smith.GenerateWorkflow(
-        samples=inputs.AsSamples(),                     # for each of these inputs...
-        resources=resources,                            # ...and these supplementary files
-        transforms=transforms,                          # ...using these tools
-        targets=[inputs.GetType("pangenome::heatmap")]  # make a figure after performing pangenome analysis
+        <inputs>,
+        <transforms>,
+        <targets>,
     )
 
-The :python:`samples` format is a convenience for repeating the workflow across a batch of inputs.
-Each :python:`sample` is guaranteed to be processed while inputs given as :python:`resources` will only be used if necessary.
-
 .. tip::
-    More on
-    
-    - `Transforms, and TransformInstances, and TransformInstanceLibraries <usage/transforms.html>`_
-    - `generating workflows <usage/workflow_generation.html>`_
     
     Browse the `standard library <workflows/_index.html>`_ of transforms.
 
 4 - Execute workflow
 -----------------------------------------------------------
 
-We can prepare an agent to execute the generated workflow by asking it to stage the input
-:python:`DataInstances` and required :python:`TransformInstances` on to the machine it is deployed to.
-Staging also translates the workflow into a syntax that Nextflow can execute. After the workflow is staged,
-the agent can be asked to execute the workflow using Nextflow. Software dependencies for each tool is provided
-as input :python:`DataInstances` such as containers or executable binaries.
+Staging a workflow translates it into Nextflow's syntax and prepares default
+configurations for various platforms. When ready, execution is delegated to Nextflow.
 
 .. code-block:: python
     :linenos:
@@ -90,21 +83,18 @@ as input :python:`DataInstances` such as containers or executable binaries.
     smith.RunWorkflow(task)
     smith.CheckWorkflow(task)
 
-.. tip::
-    More on `executing workflows, configurations, and expected results <usage/workflow_execution.html>`_
-
 5 - Receive outputs
 -----------------------------------------------------------
 
-Successful execution of a workflow produces a :python:`DataInstanceLibrary` that can be directly
-used as the input to another workflow or downloaded from the deployed agent for interpretation.
+Produced outputs are presented as a structured data product, but exists as a simple folder
+to maintain accessibility by both humans and machines.
 
 .. code-block:: python
     :linenos:
 
     outputs = DataInstanceLibrary.LoadFrom(
-        src=smith.GetResultSource(task),
-        dest="/where/results/will/be/downloaded/to",
+        smith.GetResultSource(task),
+        ...
     )
 
 Getting started
