@@ -34,7 +34,17 @@ with LiveShell() as shell:
         runtime=ContainerRuntime.APPTAINER
     ).GetLocalPath()
     shell.Exec(f"rsync -au --progress {WORKSPACE_ROOT}/metasmith.sif {lpath}")
-    shell.Exec(f"rsync -ac --progress {WORKSPACE_ROOT}/main/relay_agent/msm_relay.amd64/msm_relay {home}/relay/msm_relay")
+    
+    # for dist in [
+    #     "target/x86_64-unknown-linux-musl/release",
+    #     "target/x86_64-apple-darwin/release",
+    #     "target/aarch64-apple-darwin/release",
+    #     "target/aarch64-unknown-linux-musl/release",
+    # ]:
+    #     shell.Exec(f"rsync -ac --progress {WORKSPACE_ROOT}/main/relay_agent/{dist}/msm_relay {home}/relay/msm_relay")
+        
+    dist = "target/x86_64-unknown-linux-musl/release"
+    shell.Exec(f"rsync -ac --progress {WORKSPACE_ROOT}/main/relay_agent/{dist}/msm_relay {home}/relay/msm_relay")
     if ":" in home: # is remote
         host, path = home.split(":")
         pre = f'ssh {host} mkdir -p "{path}/dev" && '

@@ -8,6 +8,7 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
     # print(data_type_dirs)
     # print(transform_dirs)
     # print(unique_dirs)
+    DISABLE = '_disabled'
 
     def dir_ok(d: Path):
         if not d.is_dir(): return False
@@ -23,6 +24,9 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
     for d in data_type_dirs:
         if not dir_ok(d): continue
         for f in d.iterdir():
+            if f.name.startswith(DISABLE):
+                Log.Warn(f"skipping: [{f.stem}]")
+                continue
             namespace = f.stem
             if f.suffix not in {".yml", ".yaml"}: continue
             if not file_ok(f): continue
@@ -36,6 +40,9 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
         lib.AddTypeLibrary(namespace, dtypes[namespace])
         c = 0
         for f in d.iterdir():
+            if f.name.startswith(DISABLE):
+                Log.Warn(f"skipping: [{f.stem}]")
+                continue
             if not file_ok(f) and not dir_ok(f): continue
             lib.AddItem(f.name, f"{namespace}::{f.name}")
             c += 1
@@ -49,6 +56,9 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
             lib.AddTypeLibrary(k, dlib)
         count = 0
         for f in d.iterdir():
+            if f.name.startswith(DISABLE):
+                Log.Warn(f"skipping: [{d.name}/{f.stem}]")
+                continue
             if f.suffix != ".py": continue
             if not file_ok(f): continue
             count += 1

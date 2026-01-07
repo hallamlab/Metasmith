@@ -99,22 +99,26 @@ class DataTypeLibrary:
                 if isinstance(_v, list): return set(_v)
                 return {_v}
             return {k:_fix(v) for k, v in vv.items()}
-        for k, v in d["types"].items():
-            extends = v.get("extends", [])
+        for type_name, type_raw in d["types"].items():
+            extends = type_raw.get("extends", [])
             if isinstance(extends, str): extends = [extends]
-            props = v[Endpoint.PROPERTY_FIELD]
+            assert Endpoint.PROPERTY_FIELD in type_raw, f"[{type_name}] is missing [{Endpoint.PROPERTY_FIELD}]"
+            props = type_raw[Endpoint.PROPERTY_FIELD]
             if isinstance(props, list) or isinstance(props, set):
                 props = set(props)
                 for pk in extends:
                     props |= raw_types[pk][Endpoint.PROPERTY_FIELD]
-                raw_types[k] = props
-            else:                    
-                props = pluralize(v[Endpoint.PROPERTY_FIELD])
-                for pk in extends:
-                    p_props = raw_types[pk][Endpoint.PROPERTY_FIELD]
-                    props.update(p_props)
+                raw_types[type_name] = props
+            else:
+                props = {}
+                todo = [pluralize(type_raw[Endpoint.PROPERTY_FIELD])]+[
+                    raw_types[pk][Endpoint.PROPERTY_FIELD]
+                    for pk in extends
+                ]
+                for vk, vv in [entry for _props in todo for entry in _props.items()]:
+                    props[vk] = props.get(type_name, set())|set(vv)
                 props = {k:list(v) for k, v in props.items()}
-            raw_types[k] = {Endpoint.PROPERTY_FIELD:props}
+            raw_types[type_name] = {Endpoint.PROPERTY_FIELD:props}
         params: dict = dict(
             types={k: Endpoint.Unpack(v) for k, v in raw_types.items()},
         )
@@ -295,10 +299,13 @@ class DataInstanceLibrary:
         p = Path(path)
         e_name = self.manifest[p]
         e = self.GetType(e_name)
+        if p in self.parents:
+            e = Endpoint(e.properties, {x.dtype for x in self.parents[p]})
         return DataInstance(p, e, e_name, self)
 
     def GetType(self, name: str):
-        return self._get_type(name, self.types)
+        e = self._get_type(name, self.types)
+        return e
 
     def GetName(self, dtype: Endpoint):
         if dtype in self._dtype2name: return self._dtype2name[dtype]
@@ -627,9 +634,9 @@ class DataInstanceLibraryView:
         return self._original.Get(path)
     
     def Iterate(self):
-        for p, n, m in self._original.Iterate():
-            if p not in self._mask: continue
-            yield p, n, m
+        for p in self._mask:
+            inst = self._original.Get(p)
+            yield p, inst.dtype_name, inst.dtype
 
 @dataclass
 class Size:

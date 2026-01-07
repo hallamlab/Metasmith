@@ -271,6 +271,7 @@ class WorkflowPlan:
                         dtype_name=ep_name,
                         parent_lib=lib._original,
                     )]
+                    # print(ep_name, ep.parents)
                     eps.add(ep)
             if len(given_endpoints)>0 and all(g==eps for g in given_endpoints): continue
             given_endpoints.append(eps)
@@ -591,13 +592,13 @@ class WorkflowTask:
             def _make_bind_var(i: int, is_assignment=False):
                 s = "\\$" if not is_assignment else ""
                 return f"{s}b{i+1}"
-            external_binds = set()
+            raw_external_binds = set()
             for inst in step.uses:
                 p = inst.path
                 if p.is_relative_to(Path(".")): continue
-                external_binds.add(p.parent)
-            external_binds = list(external_binds)
-            external_binds_param =""
+                raw_external_binds.add(p.parent)
+            external_binds = self._get_common_folders(raw_external_binds)
+            external_binds_param = ""
             if len(external_binds)>0:
                 external_binds_param = Container(
                     image="",
@@ -810,11 +811,7 @@ class WorkflowTask:
         with open(context.work_dir/context.workflow_file, "w") as f:
             f.write("\n".join([HEADER]+src_process+content))
 
-    def GetCommonInputFolders(self, method="external"):
-        """
-        @method is: external | internal | all
-        """
-        assert method in {"external", "internal", "all"}
+    def _get_common_folders(self, folders:Iterable[Path]):
         roots: list[str] = []
         def join(a, b):
             return os.path.commonpath([a, b])
@@ -833,6 +830,15 @@ class WorkflowTask:
             else:
                 roots.append(p)
 
+        for path in folders:
+            update(str(path))
+        return [Path(p) for p in roots]
+
+    def GetCommonInputFolders(self, method="external"):
+        """
+        @method is: external | internal | all
+        """
+        assert method in {"external", "internal", "all"}
         def should_keep(inst: DataInstance):
             match(method):
                 case "external":
@@ -842,9 +848,7 @@ class WorkflowTask:
                 case "all":
                     return True
         given = {inst.ResolvePath().parent for inst in self.plan.given if should_keep(inst)}
-        for path in given:
-            update(str(path.parent))
-        return roots
+        return self._get_common_folders(given)
 
     def Pack(self):
         return dict(

@@ -225,7 +225,6 @@ class Agent:
                 image=self.container,
                 binds=[
                     (dev_src, Path("/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith")),
-                    (Path(dev_src)/"bin", Path("/app")),
                 ],
                 runtime=self.runtime,
             )
