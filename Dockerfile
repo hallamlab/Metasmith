@@ -43,7 +43,7 @@ COPY ./main/relay_agent/target/x86_64-unknown-linux-musl/release/msm_relay /app/
 COPY ./main/relay_agent/target/aarch64-unknown-linux-musl/release/msm_relay /app/msm_relay.arm64-linux
 COPY ./main/relay_agent/target/x86_64-apple-darwin/release/msm_relay /app/msm_relay.x86_64-darwin
 COPY ./main/relay_agent/target/aarch64-apple-darwin/release/msm_relay /app/msm_relay.arm64-darwin
-# RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin /app
+RUN ln -s /opt/conda/envs/${CONDA_ENV}/lib/python3.12/site-packages/metasmith/bin/* /app
 
 EXPOSE 8080
 # WORKDIR /workspace

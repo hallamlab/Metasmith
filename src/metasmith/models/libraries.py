@@ -1,6 +1,7 @@
 from __future__ import annotations
-import shutil
 import os, sys
+import subprocess
+import shutil
 from pathlib import Path
 import yaml
 from dataclasses import dataclass, field
@@ -926,10 +927,10 @@ class ExecutionContext:
 
     def LocalShell(self, cmd: str):
         cmd = RemoveLeadingIndent(cmd)
-        Log.Info(f"invoked local shell, calling os.system() with:")
+        Log.Info(f"invoked local shell, calling subprocess.run() with:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
-        os.system(cmd)
+        subprocess.run(cmd, shell=True, executable='/bin/bash')
 
     def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None):
         path = self._inputs[self._batch_index][image].path

@@ -3,7 +3,7 @@ from metasmith.coms.terminals import LiveShell
 from metasmith.coms.containers import Container, ContainerRuntime
 from metasmith.constants import AgentPaths, VERSION
 from local.constants import WORKSPACE_ROOT
-import sys
+import sys, os
 
 DEFAULT_HOME = "local"
 if len(sys.argv)==1:
@@ -21,6 +21,7 @@ switch = {
 }
 if k not in switch:
     print(f"[{k}] is not registered")
+    sys.exit(1)
     k = DEFAULT_HOME
 home = switch[k]
 
@@ -49,7 +50,7 @@ with LiveShell() as shell:
         host, path = home.split(":")
         pre = f'ssh {host} mkdir -p "{path}/dev" && '
     else:
-        pre = ""
+        pre = f'mkdir -p "{home}/dev" && '
     shell.Exec(f"{pre}rsync -ac --progress --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/ {home}/dev/metasmith")
     shell.Exec(f"rsync -ac --progress --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/nextflow_config {home}/lib/")
 

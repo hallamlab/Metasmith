@@ -256,6 +256,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                 if empty: break
                 Log.Info(f"branch [{i+1}] of [{len(result.manifest)}]")
                 for d, p in manifest.items():
+                    if not p.exists(): continue
                     dep2branch[d] = i
                     e = alldep2output[d]
                     insts = alloutput_map[e]

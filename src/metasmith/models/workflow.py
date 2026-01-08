@@ -7,6 +7,7 @@ from typing import Any, Generator, Iterable, Literal, TypeVar
 import os
 import itertools
 import yaml
+import json
 
 from ..coms.containers import Container, ContainerRuntime
 from .libraries import DataTypeLibrary
@@ -532,11 +533,22 @@ class WorkflowTask:
             "}",
             f"'''",
             "",
-            "def in(f) {",
-            TAB+"return Channel.fromPath(f).splitCsv(header: false).map(row -> {",
-            TAB+TAB+"def i = [:] // this will be filld by post()",
-            TAB+TAB+"return tuple(i, file(row[0]))",
-            TAB+"})",
+            "import groovy.json.JsonSlurper",
+            "def in(f, l) {",
+            "   def rows = Channel.fromPath(f).splitCsv(header: false)",
+            "   if (f in l) {",
+            "       rows = Channel.fromList(l[f]).merge(rows)",
+            "   }",
+            "   return rows.map((row) -> {",
+            "       def i = [:]",
+            "       def x = ''",
+            "       if (row.size()>1) {",
+            "           (i, x) = row",
+            "       } else {",
+            "           x = row[0]",
+            "       }",
+            "       return tuple(i, file(x))",
+            "    })",
             "}",
             "",
             "",
@@ -702,8 +714,15 @@ class WorkflowTask:
                     if inst not in used_given: continue
                     # k = inst.dtype
                     input_channels[dep] = input_channels.get(dep, [])+[inst]
+
+        given2order = {}
+        for i, x in enumerate(the_plan.given):
+            given2order[x] = i
         prepared_given: set[tuple[Path, str, str]] = set()
         _seen_paths = set()
+        _given_by_prod_name: dict[str, list[DataInstance]] = {}
+        _path2prod_name = {}
+        _path2index_number = {}
         for _, lst in input_channels.items():
             inst = get_archetype(lst)
             p = inputs_dir/f"{get_prod_name(inst.dtype, force_singular=True)}"
@@ -718,9 +737,30 @@ class WorkflowTask:
                 if len(unique_lst)==1:
                     to_write = [inst]
                 else:
-                    to_write = lst
-                for x in to_write:
-                    f.write(f"{x.ResolvePath()}"+"\n")
+                    to_write = sorted(lst, key=lambda x: given2order[x])
+                _given_by_prod_name[v] = to_write
+                for i, x in enumerate(to_write):
+                    _path = x.ResolvePath()
+                    _path2prod_name[_path] = v
+                    _path2index_number[_path] = i+1
+                    f.write(f"{_path}"+"\n")
+        
+        _given_lineage = {}
+        for prod_name, to_write in _given_by_prod_name.items():
+            _indexes = []
+            for x in to_write:
+                _index = {}
+                for p in [x.parent_lib.Get(p.path).ResolvePath() for p in x.parent_lib.parents.get(x.path, [])]:
+                    _prod_name = _path2prod_name[p]
+                    i = _path2index_number[p]
+                    _index[_prod_name] = _index.get(_prod_name, [])+[i]
+                _indexes.append(_index)
+            if all(len(idx)>0 for idx in _indexes):
+                _given_lineage[str(inputs_dir.relative_to(context.work_dir)/prod_name)] = _indexes
+        LINEAGE_FILE = "workflow.lineage_of_given.json"
+        with open(context.work_dir/LINEAGE_FILE, "w") as f:
+            json.dump(_given_lineage, f, separators=(',', ':'))
+
         # goal:
         # k = ['h']
         # (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
@@ -783,13 +823,15 @@ class WorkflowTask:
                 TAB+"}",
             ]
             
+        sorted_prepared_given = sorted(prepared_given, key=lambda t: t[-1])
         content = [
             f"workflow"+" {",
             "main:",
             f'o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy',
+            f'l = new JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
         ] + [
-            f'(_{v}) = o.post([in("{p.relative_to(context.work_dir)}")], ["{p.name}"]) // {n}'
-            for p, v, n in prepared_given
+            f'(_{v}) = o.post([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]) // {n}'
+            for p, v, n in sorted_prepared_given
         ] + [
             line for line in wf_main
         ] + [
