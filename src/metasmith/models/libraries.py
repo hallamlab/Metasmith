@@ -1016,6 +1016,8 @@ class ExecutionContext:
             Log.Info(f"    {s} -> {d}")
         _container_start = f"{container.MakeRunCommand(local=use_cache)} {shell}"
         Log.Info(f"container start: [{_container_start}]")
+        BREAK_LENGTH = 45-6
+        Log.Info("->->->"+"-"*BREAK_LENGTH)
         result = self.external_shell.Exec(
             f"{_container_start} {container.workdir/_bounce_script}",
             timeout=None, history=history
@@ -1026,7 +1028,8 @@ class ExecutionContext:
                 exit_code = int(exit_code)
         except:
             exit_code = 1
-        Log.Info(f"exit code: [{exit_code}]")
+        Log.Info("-<-<-<"+"-"*BREAK_LENGTH)
+        Log.Info(f"container exit code: [{exit_code}]")
         if exit_codef.exists(): exit_codef.unlink()
         if exit_code != 0:
             raise ExecutionFailed("a non-zero exit code ocurred while running script in container")
