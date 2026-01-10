@@ -714,6 +714,7 @@ def RunWorkflow(key: str, log_dir: Path):
 
     task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
     start_time = log_dir.name.split(".")[-1]
+    Log.Info(f"Metasmith version [{VERSION}]")
     Log.Info(f"running workflow [{task._key}]")
     Log.Info(f"start time was [{start_time}]")
 
@@ -727,7 +728,9 @@ def RunWorkflow(key: str, log_dir: Path):
 
     Log.Info(f"workspace [{workspace}]")
     Log.Info(f"external workspace [{extern_workspace}]")
-    Log.Info(f"steps [{len(task.plan.steps)}]")
+    Log.Info(f"workflow steps [{len(task.plan.steps)}]")
+    samples = max(len(instances) for step in task.plan.steps for instances in step.dependency_map.values())
+    Log.Info(f"samples estimate [{samples}]")
 
     if agent.globus_uuid is not None:
         Log.Info(f"locating input data with agent's globus endpoint [{agent.globus_uuid}]")
@@ -847,13 +850,22 @@ def RunWorkflow(key: str, log_dir: Path):
     Log.Info(f"compiling results")
     extern_output_path = extern_workspace/results_folder
     output = DataInstanceLibrary(output_path)
-    output_dtypes = DataTypeLibrary()
-    output.AddTypeLibrary(task.GetKey(), output_dtypes)
+    tlibs = {}
+    path2inst: dict[Path, DataInstance] = {}
+    for lib in task.data_libraries:
+        for namespace, tlib in lib.types.items():
+            tlibs[namespace] = tlib
+        for path, name, model in lib.Iterate():
+            inst = lib.Get(path)
+            path2inst[inst.ResolvePath()] = inst
+    for namespace, tlib in tlibs.items():
+        output.AddTypeLibrary(namespace=namespace, lib=tlib)
     k2inst: dict[str, DataInstance] = {}
     for step in task.plan.steps:
         for insts in step.dependency_map.values():
             for inst in insts:
                 k2inst[inst.dtype.key] = inst
+    # this is a mappping of the (k, v) assinged by the orchestrator during nextflow
     kv2path: dict[tuple[str, int], tuple[Path, dict]] = {}
     for in_manifest in (output_path.parent/"inputs").iterdir():
         k = in_manifest.name
@@ -866,7 +878,7 @@ def RunWorkflow(key: str, log_dir: Path):
         manifest = Path(manifest)
         if manifest.suffix != ".json": continue
         inst_k = manifest.name.split(".")[-2] # TAB+TAB+f"index {{ path 'msm_manifest.{out_name}.{inst.dtype.key}.raw' }}",
-        _rows = []
+        _parsed_entries = []
         with open(manifest) as j:
             entries = json.load(j)
             for lin, path in entries:
@@ -875,44 +887,51 @@ def RunWorkflow(key: str, log_dir: Path):
                     lind: dict = json.loads(lin)
                     kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
                     kv2path[kv] = path, lind
-                    _rows.append((path.relative_to(output_path), inst_k, json.dumps(lind, separators=(',', ':'))))
+                    _parsed_entries.append({
+                        "instance_key": kv[0],
+                        "instance_index": kv[1],
+                        "path": str(path.relative_to(output_path)),
+                        "lineage": lind,
+                    })
                 except Exception as e:
                     Log.Error(e)
-        _df = pd.DataFrame(_rows, columns=["path", "lineage_key", "lineage_json"])
-        _df.to_csv(manifest.parent/f"{manifest.stem}.csv", index=False)
+        with open(manifest, "w") as j:
+            json.dump(_parsed_entries, j, indent=2)
     relavent_k = {k for k, v in kv2path}
-    path2i = {p:i for i, (p, _) in enumerate(kv2path.values())}
     given_manifest = []
-    output_lineage = []
+    n_outputs = 0
     for i, ((ck, cv), (path, lineage)) in enumerate(kv2path.items()):
-        for pk, pvs in lineage.items():
-            if pk not in relavent_k: continue
-            if pk == ck: continue
-            for pv in pvs:
-                k = (pk, pv)
-                if k not in kv2path: continue # likely due to a merge between branches
-                ppath, _ = kv2path[k]
-                pi = path2i[ppath]
-                output_lineage.append((i, pi))
         cinst = k2inst[ck]
-        if path.is_relative_to(output_path): 
-            pes = {Endpoint(k2inst[pk].dtype.properties) for pk in lineage if pk in relavent_k}
-            ce = Endpoint(cinst.dtype.properties, parents=pes)
-            dname = f"{len(output_dtypes.types)+1:0{len(str(len(kv2path)))}}_{cinst.dtype_name.split('::')[-1]}"
-            output_dtypes.types[dname] = ce
-            output.AddItem(path.relative_to(output_path), f"{task.GetKey()}::{dname}")
+        if path.is_relative_to(output_path): # is output
+            parents = []
+            for pk, pvs in lineage.items():
+                if pk not in relavent_k: continue
+                if pk == ck: continue
+                for pv in pvs:
+                    k = (pk, pv)
+                    if k not in kv2path: continue # likely due to a merge between branches
+                    ppath, _ = kv2path[k]
+                    _inst = path2inst[ppath]
+                    _path = _inst.ResolvePath()
+                    parents.append(_path)
+                    if _path in output: continue
+                    output.AddItem(path=_path, dtype=_inst.dtype_name)
+            n_outputs+=1
+            output.AddItem(
+                path=path.relative_to(output_path),
+                dtype=cinst.dtype_name,
+                parents=parents,
+            )
         else:
-            given_manifest.append((ck, cinst.dtype_name, path))
+            given_manifest.append((ck, cv, cinst.dtype_name, path))
+    output.PruneTypes(save=False)
     output.Save()
         
-    _df = pd.DataFrame(given_manifest, columns="type_key, type_name, path".split(", "))
+    _df = pd.DataFrame(given_manifest, columns="instance_key, instance_index, type_name, path".split(", "))
     _df.to_csv(manifests_path/"given.csv", index=False)
-    output_lineage = sorted(output_lineage)
-    _df = pd.DataFrame(output_lineage, columns="child, parent".split(", "))
-    _df.to_csv(manifests_path/"lineage.csv", index=False)
     tail = output_path.relative_to(AgentPaths.HOME_ROOT)
     external_results_path = extern_home/tail
-    Log.Info(f"[{len(output.manifest)}] outputs for [{key}] at [{external_results_path}]")
+    Log.Info(f"[{n_outputs}] outputs for [{key}] at [{external_results_path}]")
 
     Log.Info(f"gathering log files")
     nxf_ids = set()
