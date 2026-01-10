@@ -112,9 +112,11 @@ class DataTypeLibrary:
                 raw_types[type_name] = props
             else:
                 props = {}
-                todo = [pluralize(type_raw[Endpoint.PROPERTY_FIELD])]+[
+                todo = [
                     raw_types[pk][Endpoint.PROPERTY_FIELD]
                     for pk in extends
+                ]+[
+                    pluralize(type_raw[Endpoint.PROPERTY_FIELD])
                 ]
                 for vk, vv in [entry for _props in todo for entry in _props.items()]:
                     props[vk] = props.get(type_name, set())|set(vv)
@@ -253,6 +255,9 @@ class DataInstanceLibrary:
             std_types = DataTypeLibrary.Load(_here/"../std/dtypes.yml")
             self.AddTypeLibrary("std", std_types)
 
+    def __contains__(self, other):
+        return other in self.manifest
+
     def Purge(self):
         if self.location.exists():
             shutil.rmtree(self.location)
@@ -356,6 +361,49 @@ class DataInstanceLibrary:
             f.write(value)
         return path
 
+    def Remove(self, path: Path):
+        assert path in self.manifest, f"not found [{path}]"
+        try:
+            K = Path("./test")
+            self.manifest[K] = ""
+            del self.manifest[K]
+        except RuntimeError:
+            assert False, f"can not make changes while iterating library"
+        
+        del self.manifest[path]
+        if path in self.parents:
+            del self.parents[path]
+
+    def Rename(self, path: Path, new: Path, _save=True):
+        """
+        Rename data instance in library and the file system.
+        *library will be corrupted if change is not saved
+        """
+        assert path in self.manifest, f"not found [{path}]"
+        assert path.is_absolute() == new.is_absolute(), f"can not mix relative and absolute paths [{path}, {new}]"
+        assert new not in self.manifest, f"already exists [{new}]"
+        try:
+            K = Path("./test")
+            self.manifest[K] = ""
+            del self.manifest[K]
+        except RuntimeError:
+            assert False, f"can not make changes while iterating library"
+        abs_path = path
+        if not path.is_absolute():
+            abs_path = self.Get(path).ResolvePath()
+        assert abs_path.exists(), f"file not exists [{abs_path}]"
+        if not new.is_absolute():
+            _new = self.location/new
+        else:
+            _new = new
+        abs_path.rename(_new)
+        self.manifest[new] = self.manifest[path]
+        del self.manifest[path]
+        if path in self.parents:
+            self.parents[new] = self.parents[path]
+            del self.parents[path]
+        if _save: self.Save()
+
     def AddParentsTo(self, path: Path|str, parents: Iterable[DataInstance]):
         if all(False for _ in parents):
             return # there were no parents
@@ -407,7 +455,7 @@ class DataInstanceLibrary:
             d_parents = {}
             for p in self.parents.get(path, []):
                 p.library_key
-                k = f"{p.library_key}/{p.path}"
+                k = f"{p.library_key}@{p.path}"
                 v = p.name
                 d_parents[k] = v
             d = dict(
@@ -447,9 +495,8 @@ class DataInstanceLibrary:
                 namespace, dtype_name = p_name.split("::")
                 _lib = dtypes[namespace]
                 dtype = _lib.types[dtype_name]
-                _parts = Path(p_path).parts
-                lib_key = _parts[0]
-                p_path = Path(*_parts[1:])
+                lib_key, p_path = p_path.split("@", maxsplit=1)
+                p_path = Path(p_path)
                 parents.append(DataInstanceLibrary.ParentMetadata(
                     dtype=dtype,
                     name=p_name,
