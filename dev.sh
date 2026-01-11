@@ -124,6 +124,12 @@ case $1 in
     -bs) # apptainer image *from docker*
         apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$VER
     ;;
+    --update_container)
+        $HERE/dev.sh -bp && $HERE/dev.sh -bd && $HERE/dev.sh -ud && $HERE/dev.sh -bs
+    ;;
+    --update_conda)
+        $HERE/dev.sh -bc && $HERE/dev.sh -uc
+    ;;
     ###################################################
     # upload
 
