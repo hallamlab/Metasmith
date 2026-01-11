@@ -14,7 +14,7 @@ from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary
 from .remote import Logistics, Source, SourceType
-from .solver import Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
+from .solver import Application, Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
 from ..hashing import KeyGenerator
 from ..logging import Log
 
@@ -67,32 +67,20 @@ class WorkflowStep:
 @dataclass
 class WorkflowTarget:
     instance: DataInstance
-    used_givens: list[DataInstance]
     producing_step: WorkflowStep
-    _key: str = field(default_factory=lambda: "")
-
-    def __post_init__(self):
-        self.RecalculateKey()
-
-    def RecalculateKey(self):
-        self.instance.RecalculateKey()
-        self._key = self.instance._key
 
     def Pack(self):
         return dict(
             instance=self.instance.Pack(),
-            parents=[dict(id=inst._key, path=str(inst.path)) for inst in self.used_givens],
             producing_step=dict(order=self.producing_step.order, name=self.producing_step.transform.name),
         )
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary], given: dict[str, DataInstance], steps: dict[int, WorkflowStep]):
         inst = DataInstance.Unpack(raw["instance"], libraries)
-        used_givens = [given[d["id"]] for d in raw["parents"]]
         producing_step = steps[raw["producing_step"]["order"]]
         return cls(
             instance=inst,
-            used_givens=used_givens,
             producing_step=producing_step,
         )
 
@@ -243,7 +231,6 @@ class WorkflowPlan:
         def _unpack_target(raw: dict):
             target = WorkflowTarget.Unpack(raw, libraries, given_map, step_map)
             target.instance.dtype = all_types[raw["instance"]["type_id"]]
-            target.RecalculateKey()
             return target
 
         return cls(
@@ -257,7 +244,7 @@ class WorkflowPlan:
         cls,
         given: list[list[DataInstanceLibraryView]],
         transforms: list[TransformInstanceLibrary],
-        targets: Iterable[Endpoint],
+        targets: dict[Endpoint, str],
         max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
         given_map: dict[Endpoint, list[DataInstance]] = {}
@@ -338,22 +325,34 @@ class WorkflowPlan:
         solution = result
 
         instance_map: dict[Endpoint, set[DataInstance]] = {k:set(v) for k, v in given_map.items()}
-        steps: list[WorkflowStep] = []
-        target_meta: dict[Endpoint, list[WorkflowTarget]] = {}
+        steps: dict[Application, WorkflowStep] = {}
         used_endpoints: set[Endpoint] = set()
+        target_meta: dict[Endpoint, list[WorkflowTarget]] = {}
+        target_appl = solution.dependency_plan[-1]
+        target_endpoints = {e for e in target_appl.used.values()}
         for i, appl in enumerate(solution.dependency_plan[1:-1]): # first is mock tr for given, last is for target
             tr = transform2inst[appl.transform]
             _lib = inst2trlib[tr]
 
-            for pgroup in appl.produced:
+            _insts: dict[tuple, DataInstance] = {}
+            for j, pgroup in enumerate(appl.produced):
                 for d, e in pgroup.items():
+                    dtname = None
+                    for x in targets:
+                        if e.IsA(x):
+                            dtname = targets[x]
+                            break
+                    if dtname is None:
+                        dtname = _lib.GetName(d) # type: ignore # Dependency not assignable to Endpoint
+
                     _instance = DataInstance(
                         path = Path(e.key+e.GetPreferredFileExtension()),
                         dtype = e, # we actually dont want lineage at this stage so that the hashes match
-                        dtype_name = _lib.GetName(d), # type: ignore # Dependency not assignable to Endpoint
+                        dtype_name = dtname, 
                         parent_lib = _lib,
                     )
                     instance_map[e] = instance_map.get(e, set())|{_instance}
+                    _insts[(j, d, e)] = _instance
 
             used_endpoints |= {e for e in appl.used.values()}
             step = WorkflowStep(
@@ -364,33 +363,22 @@ class WorkflowPlan:
                 transform=tr,
                 transform_library=_lib,
             )
-            steps.append(step)
-
-        for appl in solution.dependency_plan:
-            for pgroup in appl.produced:
+            steps[appl] = step
+            for j, pgroup in enumerate(appl.produced):
                 for d, e in pgroup.items():
-                    for target in targets:
-                        if not e.IsA(target): continue
-                        if not target.parents.issubset(e.parents): continue
-                        _used_givens = []
-                        for p in target.parents:
-                            if p not in given_map: continue
-                            _used_givens.append(given_map[p]) # type: ignore # Node not assignable to Endpoint
-                        used_endpoints.add(e)
-                        for t in instance_map[e]:
-                            target_meta[target] = target_meta.get(target, [])+[
-                                WorkflowTarget(
-                                    instance=t,
-                                    used_givens=_used_givens,
-                                    producing_step=step,
-                                )
-                            ]
-                        break
+                    if e not in target_endpoints: continue
+                    t = _insts[(j, d, e)]
+                    target_meta[e] = target_meta.get(e, [])+[
+                        WorkflowTarget(
+                            instance=t,
+                            producing_step=step,
+                        )   
+                    ]
 
         return cls(
             given=[i for e, lst in given_map.items() for i in lst if e in used_endpoints],
             targets=[x for g in target_meta.values() for x in g],
-            steps=steps,
+            steps=[s for a, s in steps.items()],
             _solver_result=result,
         )
 
@@ -535,19 +523,18 @@ class WorkflowTask:
             "",
             "import groovy.json.JsonSlurper",
             "def in(f, l) {",
-            "   def rows = Channel.fromPath(f).splitCsv(header: false)",
-            "   if (f in l) {",
-            "       rows = Channel.fromList(l[f]).merge(rows)",
-            "   }",
-            "   return rows.map((row) -> {",
-            "       def i = [:]",
-            "       def x = ''",
-            "       if (row.size()>1) {",
-            "           (i, x) = row",
-            "       } else {",
-            "           x = row[0]",
-            "       }",
-            "       return tuple(i, file(x))",
+            "    def rows = Channel.fromPath(f).splitCsv(header: false)",
+            "    if (f in l) {",
+            "        rows = Channel.fromList(l[f]).merge(rows)",
+            "    }",
+            "    return rows.map((row) -> {",
+            "        if (row.size()>1) {",
+            "            def (ri, rx) = row",
+            "            return tuple(ri, file(rx))",
+            "        } else {",
+            "            def i = [:]",
+            "            return tuple(i, file(row[0]))",
+            "        }",
             "    })",
             "}",
             "",
@@ -756,7 +743,8 @@ class WorkflowTask:
                     _index[_prod_name] = _index.get(_prod_name, [])+[i]
                 _indexes.append(_index)
             if all(len(idx)>0 for idx in _indexes):
-                _given_lineage[str(inputs_dir.relative_to(context.work_dir)/prod_name)] = _indexes
+                k = prod_name.split('_')[0] # in case this will be merged and has a "_1" suffix
+                _given_lineage[str(inputs_dir.relative_to(context.work_dir)/k)] = _indexes
         LINEAGE_FILE = "workflow.lineage_of_given.json"
         with open(context.work_dir/LINEAGE_FILE, "w") as f:
             json.dump(_given_lineage, f, separators=(',', ':'))
@@ -766,7 +754,7 @@ class WorkflowTask:
         # (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
         # or this for when batching
         # (y) = o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k)
-        targets = {x.instance for x in the_plan.targets}
+        target_endpoints = {x.instance.dtype for x in the_plan.targets}
         src_process = []
         wf_main = []
         wf_publish = set()       
@@ -808,7 +796,8 @@ class WorkflowTask:
                     wf_main.append(
                         f"_{name} = o.mix([{', '.join(to_mix)}])"
                     )
-            to_pubish = [x for g in produced_archetypes for x in g if x in targets]
+            
+            to_pubish = [x for g in produced_archetypes for x in g if x.dtype in target_endpoints]
             for inst in to_pubish:
                 k = inst.dtype.key
                 wf_publish.add(k)

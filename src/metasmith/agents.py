@@ -359,9 +359,25 @@ class Agent:
         samples: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         resources: list[DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary],
-        targets: list[Endpoint],
+        targets: list[str]|set[str],
         max_iter: int=1024, max_refine: int=256, seed: int=42,
     ):
+        assert len(targets)>0, "[targets] can not be empty"
+        target_models: dict[Endpoint, str] = {}
+        for dtype_name in targets:
+            assert "::" in dtype_name, 'type name must be in the form of "namespace::type_name"'
+            ns, _ = dtype_name.split("::")
+            found = False
+            for trlib in transforms:
+                if ns not in trlib.types: continue
+                model = trlib.GetType(dtype_name)
+                assert model not in target_models, f"[{dtype_name}] is a duplicate of [{target_models[model]}]"
+                target_models[model] = dtype_name
+                Log.Info(f"[{dtype_name}] resolved by [{trlib.location}]")
+                found = True
+                break
+            assert found, f"no transforms had the namespace [{ns}]"
+
         res_views = [DataInstanceLibraryView(lib) for lib in resources]
         _samples = [DataInstanceLibraryView(sample) if not isinstance(sample, DataInstanceLibraryView) else sample for sample in samples]
         gen_result = WorkflowPlan.Generate(
@@ -370,7 +386,7 @@ class Agent:
                 for sample in _samples
             ], 
             transforms,
-            targets,
+            target_models,
             max_iter=max_iter, max_refine=max_refine, seed=seed
         )
         sample_libs = {v._original for v in _samples}
