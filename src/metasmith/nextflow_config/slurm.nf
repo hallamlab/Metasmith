@@ -9,7 +9,12 @@ params {
         submitRateLimit = '1/5sec'
         pollInterval = '10sec'
         stageInMode = 'symlink'             // some intermediates are large reference databases and should not be copied
-        cpus = 4                            // for local steps
+    }
+
+    localExecutor {
+        queueSize = 4
+        memory = '8 GB'
+        cpus = 8                            // for local steps
     }
 
     process {
@@ -55,7 +60,9 @@ executor {
     }
 
     local {
-        cpus = params.executor.cpus
+        cpus = params.localExecutor.cpus
+        memory = params.localExecutor.memory
+        queueSize = params.localExecutor.queueSize
     }
 }
 

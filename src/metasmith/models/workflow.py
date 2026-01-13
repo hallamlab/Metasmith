@@ -259,9 +259,8 @@ class WorkflowPlan:
                         dtype_name=ep_name,
                         parent_lib=lib._original,
                     )]
-                    # print(ep_name, ep.parents)
                     eps.add(ep)
-            if len(given_endpoints)>0 and all(g==eps for g in given_endpoints): continue
+            if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
             given_endpoints.append(eps)
 
         target_e2d: dict[Endpoint, Dependency] = {}
@@ -619,6 +618,10 @@ class WorkflowTask:
                 ]
             used_archetypes, produced_archetypes = get_io_signature(step)
 
+            if len(produced_archetypes)>1: # if there is branching, outputs must be set to optional
+                optional = ", optional: true"
+            else:
+                optional = ""
             src += [
                 "input:",
                 TAB+f'tuple '+','.join(['val(index)']+[f'path(_{i+1:02})' for i, x in enumerate(used_archetypes)])
@@ -626,8 +629,8 @@ class WorkflowTask:
                 "output:",
             ] + [
                 # TAB+f'tuple val(index),path("{add_prefix(x.path)}")'
-                TAB+f'tuple val(index),path("*.{x.dtype.key}{x.dtype.GetPreferredFileExtension()}")'
-                for g in produced_archetypes for x in g
+                TAB+f'tuple val(index),path("*.{x.dtype.key}-{branch+1}{x.dtype.GetPreferredFileExtension()}"){optional}'
+                for branch, g in enumerate(produced_archetypes) for x in g
             ] + [
                 "script:",
                 '"""',
@@ -646,7 +649,7 @@ class WorkflowTask:
             ] + [
                 f'echo "{external_binds_param}" >{BIND_FILE}',
                 f'{context.bootstrap_var}',
-                f'bootstrap {context.external_work_var} "{step.order}"',
+                f'bootstrap {context.external_work_var} "{step.order}" ${{params.hostName}}',
                 f'[ -e .command.success ] && exit 0 || exit 1', # in case slurm silently kills proc from oom/timeout
                 '"""',
                 "}",

@@ -297,13 +297,14 @@ class Agent:
                 AGENT_HOME={resolved_agent_home}
                 TASK_DIR=$1
                 STEP=$2
-                CWD=${{3:-$(pwd -P)}}
+                HOST_NAME=$3
+                CWD=${{4:-$(pwd -P)}}
                 cd $CWD
                 if [ -e "{AgentPaths.HOME_ROOT}" ]; then
                     echo "bootstrap called from container, bouncing to external [$@]"
                     REL_CWD=$(realpath --relative-to="{AgentPaths.HOME_ROOT}" $CWD)
                     CMD="{AgentPaths.to_bootstrap(Path('$AGENT_HOME'))} $@ $AGENT_HOME/$REL_CWD"
-                    /app/msm_relay.x86_64-linux --io {AgentPaths.to_relay().parent/hostname} bounce "$CMD"
+                    /app/msm_relay.x86_64-linux --io {AgentPaths.to_relay().parent}/$HOST_NAME bounce "$CMD"
                     exit
                 fi
 
@@ -715,7 +716,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
             f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
             f'echo "start time was [$TIMESTAMP]"',
             f'export BINDS="{binds}"',
-            f'nohup ../../msm api run_workflow -a key={task_key} -a log_dir=$LOG_DIR >$LOG_DIR/agent.log 2>&1 &',
+            f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR >$LOG_DIR/agent.log 2>&1 &',
         ]))
     os.chmod(launcher_path, 0o754)
 
@@ -723,7 +724,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     task.plan.RenderDAG(f"{work_dir}/workflow.dag.svg")
     Log.Info(f"[{task._key}] staged to [{workspace_str}]")
         
-def RunWorkflow(key: str, log_dir: Path):
+def RunWorkflow(key: str, log_dir: Path, host:str):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
     assert workspace.exists(), f"task workspace not found [{workspace}]"
@@ -775,6 +776,7 @@ def RunWorkflow(key: str, log_dir: Path):
     nxf_report = log_dir/"nxf_report.html"
     nxf_dag = log_dir/"workflow.dag_nxf.dot"
     output_path = workspace/results_folder
+    if output_path.exists(): shutil.rmtree(output_path)
     manifests_path = output_path/"_manifests"
     manifests_path.mkdir(parents=True, exist_ok=True)
     with LiveShell() as shell:
@@ -810,6 +812,7 @@ def RunWorkflow(key: str, log_dir: Path):
                 -log {log_dir}/nxf.log \
                 run ./{AgentPaths.NXF_WORKFLOW} \
                 -params-file ./{AgentPaths.NXF_PARAMS} \
+                --hostName "{host}" \
                 --output "{results_folder}" \
                 -with-report {nxf_report} \
                 -with-dag {nxf_dag} \
@@ -866,11 +869,21 @@ def RunWorkflow(key: str, log_dir: Path):
     Log.Info(f"compiling results")
     extern_output_path = extern_workspace/results_folder
     output = DataInstanceLibrary(output_path)
-    tlibs = {}
+    tlibs: dict[str, DataTypeLibrary] = {}
     path2inst: dict[Path, DataInstance] = {}
-    for lib in task.data_libraries:
+    for lib in task.transform_libraries:
         for namespace, tlib in lib.types.items():
             tlibs[namespace] = tlib
+    for lib in task.data_libraries:
+        for namespace, tlib in lib.types.items():
+            if namespace in tlibs:
+                _lib = tlibs[namespace]
+                for k, e in tlib.types.items():
+                    if k in _lib: continue
+                    _lib[k] = e
+            else:
+                _lib = tlib
+            tlibs[namespace] = _lib
         for path, name, model in lib.Iterate():
             inst = lib.Get(path)
             path2inst[inst.ResolvePath()] = inst

@@ -4,6 +4,8 @@
 params {
     executor {
         cpus = 8
+        memory = '8 GB'
+        queueSize = 4
     }
 
     process {
@@ -24,6 +26,8 @@ env {
 
 executor {
     cpus = params.executor.cpus
+    memory = params.executor.memory
+    queueSize = params.executor.queueSize
 }
 
 workflow {

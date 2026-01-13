@@ -36,7 +36,9 @@ class Api:
         assert key, "[key] is required"
         log_dir = body.get("log_dir")
         assert log_dir, "[log_dir] is required"
-        RunWorkflow(key, Path(log_dir))
+        host = body.get("host")
+        assert host, "[host] is required"
+        RunWorkflow(key, Path(log_dir), host)
 
     def check_workflow(self, body: dict):
         key = body.get("key")
