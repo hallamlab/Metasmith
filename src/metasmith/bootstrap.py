@@ -218,10 +218,15 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
         kg = KeyGenerator()
         # output_signature = step.transform.output_signature
         def _get_output_paths(key: Dependency, i: int, batch: int):
-            d2e = dep2output[batch]
-            dtype = d2e[key]
+            found = False
+            for branch, d2e in enumerate(dep2output):
+                if key in d2e:
+                    dtype = d2e[key]
+                    found = True
+                    break
+            assert found, f"[{key}] not found in [{dep2output}]"
             pattern = dtype.key
-            dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}{dtype.GetPreferredFileExtension()}")
+            dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}-{branch+1}{dtype.GetPreferredFileExtension()}")
             return _parse_path(dest, container_override=Path("/ws")/dest)
 
         if len(agent.setup_commands)>0:
@@ -254,7 +259,8 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             dep2branch = {}
             for i, manifest in enumerate(result.manifest):
                 if empty: break
-                Log.Info(f"branch [{i+1}] of [{len(result.manifest)}]")
+                if len(manifest)>0:
+                    Log.Info(f"branch [{i+1}] of [{len(result.manifest)}]")
                 for d, p in manifest.items():
                     if not p.exists(): continue
                     dep2branch[d] = i
@@ -264,13 +270,13 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                     Log.Info(f"    ✓ [{e.key} {'/'.join(inst_names)}] produced at [{_shorten_home(str(p))}]")
                     seen_deps.add(d)
             missings = []
-            for g in step.transform.model.produces:
+            for i, g in enumerate(step.transform.model.produces):
                 for d in g:
                     if d in seen_deps: continue
                     e = alldep2output[d]
                     insts = alloutput_map[e]
                     inst_names = {x.dtype_name for x in insts}
-                    missings.append(f"    X [{e.key} {'/'.join(inst_names)}]")
+                    missings.append(f"    X branch [{i+1}] [{e.key} {'/'.join(inst_names)}]")
             if len(missings)>0:
                 Log.Info(f"missing outputs:")
                 for m in missings:
