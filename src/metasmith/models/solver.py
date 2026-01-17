@@ -1021,7 +1021,7 @@ def solve_by_mcts(
                     yield appl
 
         def merge_states(source: SolverState, alt: SolverState) -> SolverState:
-            # print(f"{source.k} << {alt.k}")
+            print(f"{source.k} << {alt.k}")
             e2consumer: dict[Endpoint, list[Application]] = {}
             for step in alt.steps:
                 for d, e in step.used.items():
@@ -1056,6 +1056,7 @@ def solve_by_mcts(
             
             def _get_substitute(alt_step: Application):
                 candidates = source_tr2appl.get(alt_step.transform, [])
+                print("  ", len(candidates))
                 lins = _get_lineage_constraints(alt_step)
                 for src_step in candidates:
                     if len(lins)==0:
@@ -1076,6 +1077,7 @@ def solve_by_mcts(
                 source_tr2appl[step.transform] = source_tr2appl.get(step.transform, [])+[step]
             to_check = [s for s in alt.steps if s.initial_timeline not in source_timelines]
             to_check.reverse() # target -> given
+
             to_merge: list[tuple[Application, Application]] = []
             to_add_from_alt: list[Application] = []
             # check applications not from the same timeline:
@@ -1084,7 +1086,10 @@ def solve_by_mcts(
             # lineage constraints of downstream in alt are satisfied,
             # then src step can be merged with alt step
             for step in to_check:
+                print(step.transform)
                 src_step = _get_substitute(step)
+                print("+" if src_step is None else "x")
+                print()
                 if src_step is None:
                     to_add_from_alt.append(step)
                 else:
@@ -1098,14 +1103,14 @@ def solve_by_mcts(
             swapped_endpoints: dict[Endpoint, Endpoint] = {}
             # merge steps by pointing used from alt to that of souce
             # and combining the production groups if step caused the branching
-            _g = {x for g in given for x in g}
+            print("---")
             for alt_step, src_step in to_merge:
-                # print(f"{src_step.transform} <<< {alt_step.transform}")
+                print(f"{src_step.transform} <<< {alt_step.transform}")
                 for ad, ae in alt_step.used.items():
                     se = src_step.used[ad]
                     se = swapped_endpoints.get(se, se) # in case used merged endpoint
                     src_step.used[ad] = se
-                    # print(f"  {se} -<- {ae}")
+                    print(f"  {se} -<- {ae}")
                     swapped_endpoints[ae] = se # register for to_add_from_alt
                 merged_pgroup = src_step.produced.copy()
                 # print(f"  {src_step.transform} {len(src_step.produced)}")

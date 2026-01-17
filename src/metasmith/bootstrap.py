@@ -138,21 +138,19 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             input2dep[e] = d
         output_map: list[dict[Endpoint, list[DataInstance]]] = []
         dep2output: list[dict[Dependency, Endpoint]] = []
-        for graw, inst_group, dep_group in zip(raw_meta["out"].split(";"), step.produces, step.transform.model.produces):
+        for graw, dep_group in zip(raw_meta["out"].split(";"), step.transform.model.produces):
             group = {}
             dgroup = {}
+            inst_group = [e for d in dep_group for e in step.dependency_map[d]]
             for k, dep in zip(graw.split(","), dep_group):
                 insts = [x for x in inst_group if x.dtype.key == k]
-                e = insts[0].dtype
+                if len(insts)==0: continue
                 group[e] = insts
+                e = insts[0].dtype
                 dgroup[dep] = e
             output_map.append(group)
             dep2output.append(dgroup)
         alldep2output = {d:e for x in dep2output for d,e in x.items()}
-        alloutput_map: dict[Endpoint, list[DataInstance]] = {}
-        for x in output_map:
-            for k, lst in x.items():
-                alloutput_map[k] = alloutput_map.get(k, [])+lst
 
         input2files: dict[Endpoint, list[Path]] = {}
         for i, e in enumerate(input_map):
@@ -243,12 +241,12 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             container_runtime=agent.runtime,
             params=params,
         )
-        Log.Info(f">>> executing protocol")
         BREAK_LENGTH = 60
-        Log.Info(">"*BREAK_LENGTH)
+        Log.Info(f">>> executing")
+        Log.Info(f">>> protocol "+">"*BREAK_LENGTH)
         
         def on_exit(result: ExecutionResult, message: str|None=None):
-            Log.Info("<"*BREAK_LENGTH)
+            Log.Info(f"<<< protocol "+"<"*BREAK_LENGTH)
             Log.Info(f"<<< [{step_name}] {message}")
             empty = False
             if sum(len(x) for x in result.manifest)==0:
@@ -256,30 +254,33 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                 result.manifest = [{}]
                 empty = True
             seen_deps: set[Dependency] = set()
-            dep2branch = {}
             for i, manifest in enumerate(result.manifest):
                 if empty: break
                 if len(manifest)>0:
                     Log.Info(f"branch [{i+1}] of [{len(result.manifest)}]")
                 for d, p in manifest.items():
                     if not p.exists(): continue
-                    dep2branch[d] = i
                     e = alldep2output[d]
-                    insts = alloutput_map[e]
+                    insts = step.dependency_map[d]
                     inst_names = {x.dtype_name for x in insts}
                     Log.Info(f"    ✓ [{e.key} {'/'.join(inst_names)}] produced at [{_shorten_home(str(p))}]")
                     seen_deps.add(d)
             missings = []
             for i, g in enumerate(step.transform.model.produces):
+                mg = []
+                seen = False
                 for d in g:
-                    if d in seen_deps: continue
+                    if d in seen_deps: 
+                        seen = True
+                        continue
                     e = alldep2output[d]
-                    insts = alloutput_map[e]
-                    inst_names = {x.dtype_name for x in insts}
-                    missings.append(f"    X branch [{i+1}] [{e.key} {'/'.join(inst_names)}]")
-            if len(missings)>0:
+                    # insts = alloutput_map[e]
+                    # inst_names = {x.dtype_name for x in insts}
+                    mg.append(f"    X branch [{i+1}] [{e.key} {d}]")
+                if seen: missings.append(mg)
+            if any(len(g)>0 for g in missings):
                 Log.Info(f"missing outputs:")
-                for m in missings:
+                for m in [m for g in missings for m in g]:
                     Log.Info(m)
         try:
             results = step.transform.protocol(context)

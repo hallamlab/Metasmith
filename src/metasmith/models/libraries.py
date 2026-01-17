@@ -10,6 +10,7 @@ from importlib import reload, __import__
 import tempfile
 import time
 from datetime import timedelta
+import json
 
 from ..serialization import IsText
 from ..coms.containers import ContainerRuntime, Container
@@ -354,8 +355,10 @@ class DataInstanceLibrary:
         self.AddParentsTo(path, [self.Get(p) for p in parents])
         return path
 
-    def AddValue(self, name: str, value: str, dtype: str, parents: Iterable[Path]|None=None):
+    def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
         path = Path(name)
+        if isinstance(value, dict):
+            value = json.dumps(value)
         path = self.AddItem(path=path, dtype=dtype, parents=parents) # perform checks first
         with open(self.location/path, "w") as f:
             f.write(value)
@@ -831,10 +834,13 @@ class TransformInstance:
             if cls._last_loaded_transform is not None:
                 tr = cls._last_loaded_transform
                 tr.name = definition.stem
-                with open(definition) as f:
-                    raw = "".join(f.readlines())
-                    h, k = KeyGenerator.FromStr(raw, l=5)
-                    tr._hash, tr._key = h, k
+                # with open(definition) as f:
+                #     raw = "".join(f.readlines())
+                #     h, k = KeyGenerator.FromStr(raw, l=5)
+                #     tr._hash, tr._key = h, k
+                # use the transform model hash, 
+                # since updates to script should be able to use the existing nxf cache
+                tr._hash, tr._key = tr.model.hash, tr.model.key
                 return cls._last_loaded_transform
         finally:
             sys.path = original_path_var
@@ -1062,9 +1068,10 @@ class ExecutionContext:
         for s, d in container.binds:
             Log.Info(f"    {s} -> {d}")
         _container_start = f"{container.MakeRunCommand(local=use_cache)} {shell}"
-        Log.Info(f"container start: [{_container_start}]")
-        BREAK_LENGTH = 45-6
-        Log.Info("->->->"+"-"*BREAK_LENGTH)
+        Log.Info(f"-> container start: [{_container_start}]")
+        BREAK_LENGTH = 60
+        msg = "-> container ->"
+        Log.Info(msg+"-"*(BREAK_LENGTH-len(msg)))
         result = self.external_shell.Exec(
             f"{_container_start} {container.workdir/_bounce_script}",
             timeout=None, history=history
@@ -1075,8 +1082,8 @@ class ExecutionContext:
                 exit_code = int(exit_code)
         except:
             exit_code = 1
-        Log.Info("-<-<-<"+"-"*BREAK_LENGTH)
-        Log.Info(f"container exit code: [{exit_code}]")
+        msg = f"<- container exit [{exit_code}] <-"
+        Log.Info(msg+"-"*(BREAK_LENGTH-len(msg)))
         if exit_codef.exists(): exit_codef.unlink()
         if exit_code != 0:
             raise ExecutionFailed("a non-zero exit code ocurred while running script in container")

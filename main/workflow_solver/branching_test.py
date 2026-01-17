@@ -453,6 +453,139 @@ def branching_4():
     sol.RenderDAG("./cache/br4", format="svg", keys=False)
     assert sol.complete
 
+def branching_5():
+    transforms = []
+
+    tr = Transform()
+    tr.AddRequirement(properties={"start"})
+    tr.AddProduct(properties={"x", "a"})
+    tr.NewProductGroup()
+    tr.AddProduct(properties={"x", "a", "b"}) # what if groupings go both ways?
+    transforms.append(tr)
+    tr.NewProductGroup()
+    tr.AddProduct(properties={"x", "b"})
+    transforms.append(tr)
+
+    tr = Transform()
+    tr.AddRequirement(properties={"a"})
+    tr.AddProduct(properties={"target"})
+    transforms.append(tr)
+
+    tr = Transform()
+    tr.AddRequirement(properties={"b"})
+    tr.AddProduct(properties={"target"})
+    transforms.append(tr)
+
+    estart = Endpoint(properties={"start"})
+    target = Transform()
+    target.AddRequirement(properties={"target"})
+    sol = solve_by_mcts(
+        given=[
+            {Endpoint(properties={"start"})},
+        ],
+        # given = [
+        #     {estart}
+        # ],
+        target=target,
+        transforms=transforms,
+    )
+    print(sol.complete, len(sol.dependency_plan), sol._iterations)
+    sol.RenderDAG("./cache/br5", format="svg", keys=False)
+    assert sol.complete
+
+def branching_6():
+    transforms = []
+
+    tr = Transform()
+    tr.AddRequirement(properties={"start"})
+    tr.AddProduct(properties={"read_meta"})
+    transforms.append(tr)
+
+    tr = Transform()
+    tr.AddRequirement(properties={"read_meta"})
+    tr.AddProduct(properties={"sra"})
+    transforms.append(tr)
+
+    tr = Transform()
+    x = tr.AddRequirement(properties={"read_meta"})
+    tr.AddRequirement(properties={"sra"}, parents={x})
+    # tr.AddProduct(properties={"reads", "long", "single"})
+    # tr.NewProductGroup()
+    tr.AddProduct(properties={"reads", "short", "single"})
+    tr.NewProductGroup()
+    tr.AddProduct(properties={"reads", "short", "paired"})
+    transforms.append(tr)
+
+    tr = Transform()
+    tr.AddRequirement(properties={"reads", "short"})
+    tr.AddProduct(properties={"read_qc"})
+    transforms.append(tr)
+
+    tr = Transform()
+    tr.AddRequirement(properties={"reads", "long"})
+    tr.AddProduct(properties={"read_qc"})
+    transforms.append(tr)
+
+    tr = Transform()
+    tr.AddRequirement(properties={"reads", "long"})
+    tr.AddProduct(properties={"clean_reads", "long"})
+    transforms.append(tr)
+
+    tr = Transform()
+    meta = tr.AddRequirement(properties={"read_meta"})
+    reads = tr.AddRequirement(properties={"reads", "short"}, parents={meta})
+    tr.AddRequirement(properties={"read_qc"}, parents={reads})
+    tr.AddProduct(properties={"clean_reads", "short"})
+    transforms.append(tr)
+
+    tr = Transform()
+    x = tr.AddRequirement(properties={"reads", "long"})
+    tr.AddRequirement(properties={"clean_reads", "long"}, parents={x})
+    tr.AddRequirement(properties={"read_qc"}, parents={x})
+    tr.AddProduct(properties={"assembly"})
+    transforms.append(tr)
+
+    tr = Transform()
+    meta = tr.AddRequirement(properties={"read_meta"})
+    tr.AddRequirement(properties={"clean_reads", "short"}, parents={meta})
+    tr.AddProduct(properties={"assembly"})
+    transforms.append(tr)
+
+    tr = Transform()
+    meta = tr.AddRequirement(properties={"read_meta"})
+    tr.AddRequirement(properties={"assembly"}, parents={meta})
+    tr.AddProduct(properties={"target"})
+    transforms.append(tr)
+
+    tr = Transform()
+    meta = tr.AddRequirement(properties={"read_meta"})
+    tr.AddRequirement(properties={"clean_reads"}, parents={meta})
+    tr.AddRequirement(properties={"read_qc"}, parents={meta})
+    tr.AddRequirement(properties={"assembly"}, parents={meta})
+    tr.AddProduct(properties={"assembly_stats"})
+    transforms.append(tr)
+
+    target = Transform()
+    # target.AddRequirement(properties={"read_qc"})
+    target.AddRequirement(properties={"clean_reads"})
+    # target.AddRequirement(properties={"assembly"})
+    # target.AddRequirement(properties={"assembly_stats"})
+    # target.AddRequirement(properties={"target"})
+    sol = solve_by_mcts(
+        given=[
+            {Endpoint(properties={"start"})},
+        ],
+        # given = [
+        #     {estart}
+        # ],
+        target=target,
+        transforms=transforms,
+    )
+    print(sol.complete, len(sol.dependency_plan), sol._iterations)
+    sol.RenderDAG("./cache/br6", format="svg", keys=False)
+    assert sol.complete
+
+
 # trivial()
 # simple()
 # simple_2()
@@ -460,7 +593,9 @@ def branching_4():
 # branching_1()
 # branching_2()
 # branching_3()
-branching_4()
+# branching_4()
+# branching_5()
+branching_6()
 
 # test when branching is not needed
 # add joining during mcts

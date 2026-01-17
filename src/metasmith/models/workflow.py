@@ -124,7 +124,8 @@ class WorkflowPlan:
         for inst in self.given:
             dtypes[inst.dtype.key] = inst.dtype_name, inst.dtype
         for target in self.targets:
-            dtypes[target.instance.dtype.key] = target.instance.dtype_name, target.instance.dtype
+            inst = target.instance
+            dtypes[inst.dtype.key] = inst.dtype_name, inst.dtype
         for step in self.steps:
             for inst in step.uses:
                 dtypes[inst.dtype.key] = inst.dtype_name, inst.dtype
@@ -134,12 +135,28 @@ class WorkflowPlan:
 
         def _pack_type(name: str, e: Endpoint):
             d = e.Pack()
-            if len(e.parents)>0: d["parents"] = [p.key for p in e.parents]
+            to_add: list[tuple[str, str, Endpoint]] = []
+            if len(e.parents)>0:
+                d["parents"] = [p.key for p in e.parents]
+                for p in e.parents:
+                    if p.key in dtypes: continue
+                    _n, _e = f"parent_{p.key}", p
+                    dtypes[p.key] = _n, _e # type: ignore # p is Node
+                    to_add.append((p.key, _n, _e)) # type: ignore # p is Node
             d["name"] = name
-            return d
+            return d, to_add
+        
+        packed_types: dict[str, dict] = {}
+        todo = [(k, n, e) for k, (n, e) in dtypes.items()]
+        while len(todo)>0:
+            k, n, e = todo.pop()
+            t, to_add = _pack_type(n, e)
+            packed_types[k] = t
+            for _k, _n, _e in to_add:
+                todo.append((_k, _n, _e))
 
         return dict(
-            types={k: _pack_type(n, e) for k, (n, e) in dtypes.items()},
+            types=packed_types,
             given=[inst.Pack() for inst in self.given],
             targets=[inst.Pack() for inst in self.targets],
             steps=[step.Pack() for step in self.steps],
@@ -148,45 +165,6 @@ class WorkflowPlan:
     def Save(self, path: Path):
         with open(path, "w") as f:
             yaml.dump(self.Pack(), f)
-
-    # def TryApplyingTo(self, alt_given: list[DataInstance]):
-    #     my_given = set(self.given)
-    #     used = {x for s in self.steps for x in s.uses if x in my_given}
-    #     viability = {} # number of times an inst in alt can be used
-    #     possible_substitutions = {} # candiates replacements for each original given
-    #     for alt in alt_given:
-    #         count = 0
-    #         for original in used:
-    #             if not alt.dtype.IsA(original.dtype): continue
-    #             count += 1
-    #             possible_substitutions[original] = possible_substitutions.get(original, [])+[alt]
-    #         viability[alt] = count
-
-    #     replacement_plan: dict[DataInstance, DataInstance] = {}
-    #     for original in used:
-    #         if original not in possible_substitutions: return
-    #         candidates = possible_substitutions[original]
-    #         candidates = sorted(list(zip(candidates, [viability[c] for c in candidates])), key=lambda t: t[-1], reverse=True)
-    #         replacement_plan[original], _ = candidates[0]
-
-    #     new_steps: list[WorkflowStep] = []
-    #     for step in self.steps:
-    #         new_steps.append(WorkflowStep(
-    #             order = step.order,
-    #             uses = [replacement_plan.get(x, x) for x in step.uses],
-    #             produces = step.produces,
-    #             dependency_map = {d:replacement_plan.get(x, x) for d, x in step.dependency_map.items()},
-    #             transform=step.transform,
-    #             transform_library=step.transform_library,
-    #             _raw_dependency_map = {d:replacement_plan.get(x, x) for d, x in step._raw_dependency_map.items()} if step._raw_dependency_map is not None else None,
-    #         ))
-    #     return WorkflowPlan(
-    #         alt_given,
-    #         targets=self.targets,
-    #         steps=new_steps,
-    #         _solver_result=self._solver_result,
-    #         _archetype_translation = replacement_plan
-    #     )
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
@@ -323,6 +301,29 @@ class WorkflowPlan:
             return result
         solution = result
 
+
+        # for i, appl in enumerate(solution.dependency_plan):
+        #     if appl.transform in transform2inst:
+        #         tr = transform2inst[appl.transform]
+        #         name = tr.name
+        #     else:
+        #         name = ""
+        #     print(i+1, name)
+        #     for d, e in appl.used.items():
+        #         if '{"Format":"OCI"}' in e.properties: continue
+        #         print(e.key, d)
+        #     print(" -->")
+        #     for g in appl.produced:
+        #         for d, e in g.items():
+        #             print(e.key, d)
+        #     print()
+        #     print()
+
+
+        # print("---")
+        # print()
+        # print()
+
         instance_map: dict[Endpoint, set[DataInstance]] = {k:set(v) for k, v in given_map.items()}
         steps: dict[Application, WorkflowStep] = {}
         used_endpoints: set[Endpoint] = set()
@@ -342,7 +343,8 @@ class WorkflowPlan:
                             dtname = targets[x]
                             break
                     if dtname is None:
-                        dtname = _lib.GetName(d) # type: ignore # Dependency not assignable to Endpoint
+                        dk = Endpoint(d.properties)
+                        dtname = _lib.GetName(dk)
 
                     _instance = DataInstance(
                         path = Path(e.key+e.GetPreferredFileExtension()),
@@ -352,6 +354,10 @@ class WorkflowPlan:
                     )
                     instance_map[e] = instance_map.get(e, set())|{_instance}
                     _insts[(j, d, e)] = _instance
+
+            # print(f">> {tr.name}")
+            # for e in appl.used.values():
+            #     print(f"   {e in instance_map}", e)
 
             used_endpoints |= {e for e in appl.used.values()}
             step = WorkflowStep(
@@ -430,7 +436,12 @@ class WorkflowPlan:
                 return name
         def _as_DAG(*, font: str = 'Arial') -> str:
             lines = ["digraph G {"]
-            lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
+            
+            lines += [
+                f'graph [fontname="{font}"];',
+                f'node  [fontname="{font}"];',
+                f'edge  [fontname="{font}"];',
+            ]
             lines.append(_render_node(NodeType.TRANSFORM, "given"))
             k2name = {x.dtype:x.dtype_name for x in self.given}
             # for x in self.given:
@@ -451,31 +462,50 @@ class WorkflowPlan:
                     if p not in k2name: continue
                     pinst = k2name[p] # type: ignore
                     if pinst not in shown_parents: continue
-                    lines.append(f'    "{pinst}" -> "{inst}";')
-                lines.append(f'    "given" -> "{inst}";')
+                    lines.append(f'    "{pinst}":s:c -> "{inst}":n:c;')
+                lines.append(f'    "given":s:c -> "{inst}":n:c;')
             seen = set()
+            def _join(names):
+                MAXN = 3
+                if len(names)>MAXN:
+                    _names = names[:MAXN]+["..."]
+                else:
+                    _names = names
+                return "/".join(_names)
             for step in self.steps:
                 transform_name = step.transform.name
                 lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
-                uses = {x.dtype:x for x in step.uses}
-                produces = {x.dtype:x for o in step.produces for x in o}
-                inputs  = [x.dtype_name for x in uses.values() if _get_ns(x.dtype_name) not in blacklist_namespaces]
-                outputs = [x.dtype_name for x in produces.values() if _get_ns(x.dtype_name) not in blacklist_namespaces]
+                inputs, outputs = [], []
+                for acc, deps in [
+                    (inputs, step.transform.model.requires),
+                    (outputs, [d for g in step.transform.model.produces for d in g]),
+                ]:
+                    for d in deps:
+                        insts = step.dependency_map[d]
+                        inst_names = [x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces]
+                        if len(inst_names)==0: continue
+                        acc.append(_join(inst_names))
+                inputs = []
+                for d in step.transform.model.requires:
+                    insts = step.dependency_map[d]
+                    inst_names = {x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces}
+                    if len(inst_names)==0: continue
+                    inputs.append(_join(inst_names))
                 for name in inputs:
                     lines.append(_render_node(NodeType.DATA, name))
-                    x = f'    "{name}" -> "{transform_name}";'
+                    x = f'    "{name}":s:c -> "{transform_name}":n:c;'
                     if x not in seen: lines.append(x)
                     seen.add(x)
                 for name in outputs:
                     lines.append(_render_node(NodeType.DATA, name))
-                    x = f'    "{transform_name}" -> "{name}";'
+                    x = f'    "{transform_name}":s:c -> "{name}":n:c;'
                     if x not in seen: lines.append(x)
                     seen.add(x)
             lines.append(_render_node(NodeType.TRANSFORM, "target"))
             # for x in self.targets:
             #     print(x.instance.dtype_name, x.instance.dtype)
             for target in {x.instance.dtype_name for x in self.targets}:
-                lines.append(f'    "{target}" -> "target";')
+                lines.append(f'    "{target}":s:c -> "target":n:c;')
             lines.append("}")
             return "\n".join(lines)
         
@@ -697,12 +727,14 @@ class WorkflowTask:
         # (_tK9GI0FH) = o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]) // lib::pangenome_heatmap.py
         # (_7A15qSzL) = o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]) // containers::python_for_data_science.oci
         # (_urCt2PG9) = o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]) // sequences::gbk
+        _seen = set()
         input_channels: dict[Dependency, list[DataInstance]] = {}
         for step in the_plan.steps:
             for dep, lst in step.dependency_map.items():
                 for inst in lst:
                     if inst not in used_given: continue
-                    # k = inst.dtype
+                    if inst in _seen: continue
+                    _seen.add(inst)
                     input_channels[dep] = input_channels.get(dep, [])+[inst]
 
         given2order = {}
@@ -741,6 +773,7 @@ class WorkflowTask:
             for x in to_write:
                 _index = {}
                 for p in [x.parent_lib.Get(p.path).ResolvePath() for p in x.parent_lib.parents.get(x.path, [])]:
+                    if p not in _path2prod_name: continue # spurious parent, not used in wf
                     _prod_name = _path2prod_name[p]
                     i = _path2index_number[p]
                     _index[_prod_name] = _index.get(_prod_name, [])+[i]
