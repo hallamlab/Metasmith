@@ -10,7 +10,7 @@ class Orchestrator {
     Orchestrator(one_null) {
         this.pending_tasks = [:]
         this.index_history = [:]
-        this.child2parent = [:]
+        this.child2parent = [:]     // this is just a topological map (keys only), the indexes link actual instances
         this.counters = [:]
         this.one_null = one_null
     }
@@ -51,9 +51,9 @@ class Orchestrator {
     }
 
     public def using(streams, targets) {
-        def parents = streams.collect((k, s) -> k)
+        def parents = streams.collect((k, s) -> k) as Set
         for (t : targets) {
-            this.child2parent[t] = this.child2parent.get(t, [])+parents
+            this.child2parent[t] = this.child2parent.get(t, [] as Set)+parents
         }
         return streams.collect((stream) -> {
             def (name, _stream) = stream
@@ -92,7 +92,7 @@ class Orchestrator {
             )
         })
     }
-    
+
     private def combineIndexes(indexes) {
         def combined_index = [:]
         def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) // reduce
@@ -141,11 +141,15 @@ class Orchestrator {
         def original_order = streams.collect(s -> s[0]).withIndex().collectEntries((item, i) -> [item, i])
         def by_channel = streams.find(s -> s[0]==by)
         def (by_name, by_stream) = by_channel
+        // println("g $by_name :: $this.child2parent")
+
         def to_split = streams.findAll(stream -> {
             def (name, _stream) = stream
             // parents that are guarenteed to be produced before
             // should be split
-            return this.isParent(name, by_name)
+            def _is_parent = this.isParent(name, by_name)
+            // println("     c.$by_name p.$name $_is_parent")
+            return _is_parent
         })
         def to_group = streams.findAll(stream -> {
             def (name, _stream) = stream
@@ -174,11 +178,14 @@ class Orchestrator {
             by_stream.map((item) -> {
                 def (index, value) = item
                 def group_k = index[by_name]
+                // println(">>>  $by_name=$group_k // $index // $value")
+                // println("     $to_split")
                 def _parent_streams = parent_channels.collect((parent_name) -> {
                     def parent_items = finished_parents.get(parent_name)
                     .collect(pitem -> {
                         def (pi, pv) = pitem
                         def _is_parent = index[parent_name].any(v -> v in pi[parent_name])
+                        // println("   - $by_name=$group_k // $_is_parent // $pi // $pv")
                         return _is_parent? new Tuple2(pi, pv) : null
                     })
                     .findAll(x -> x!=null)
@@ -226,7 +233,7 @@ class Orchestrator {
                     group.add(new Tuple2(index, value))
                     pending_groups[group_k] = group
                     def (size_valid, expected_size) = this.getExpectedSize(by_name, name, group_k)
-                    // println("req: stream $name by $by $is_final_call $size_valid $expected_size") // debug 
+                    // println("  - req: stream $name by $by $size_valid $expected_size") // debug 
                     if (size_valid) {
                         for (key : pending_groups.keySet()) {
                             def candidate_group = pending_groups[key]
@@ -268,6 +275,10 @@ class Orchestrator {
                 return original_order[a[1]] <=> original_order[b[1]]
             })
             def groups = _result.collect(channel -> channel[-1]) 
+            groups.collect(channel -> channel.collect(xx -> {
+                def (key, name, gg) = xx
+                // println(" . by $by_name // $key // $name // $gg")
+            }))
             def common_index = this.combineIndexes(groups.collect(channel -> channel.collect(group -> group[0])).flatten())
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
             return [common_index, *values]

@@ -181,6 +181,18 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             else:
                 container = local
             return ContextPath(local=local, external=external, container=container)
+        def _get_formatted_size(p: Path):
+            if not p.exists():
+                return "/"
+            try:
+                size_bytes = p.stat().st_size
+                for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                    if size_bytes < 1024.0:
+                        return f"{size_bytes:0.2f} {unit}"
+                    size_bytes /= 1024.0
+                return f"{size_bytes:0.2f} PB" # Fallback for Petabytes
+            except:
+                return "/"
         inputs: list[dict[Dependency, ContextData]] = []
         Log.Info("uses:")
         missing_input=False
@@ -200,7 +212,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                 input2files[e] = remaining_files[group_size:]
                 for p in input_group:
                     missing_input = missing_input or not p.local.exists()
-                    Log.Info(_shorten_home(f"        {_status(p)} [{p.local}]"))
+                    Log.Info(_shorten_home(f"        {_status(p)} [{_get_formatted_size(p.local)}] [{p.local}]"))
                 g[input2dep[e]] = ContextData(
                     input_group=input_group,
                     endpoint=e,
@@ -263,7 +275,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                     e = alldep2output[d]
                     insts = step.dependency_map[d]
                     inst_names = {x.dtype_name for x in insts}
-                    Log.Info(f"    ✓ [{e.key} {'/'.join(inst_names)}] produced at [{_shorten_home(str(p))}]")
+                    Log.Info(f"    ✓ [{_get_formatted_size(p)}] [{e.key} {'/'.join(inst_names)}] produced at [{_shorten_home(str(p))}]")
                     seen_deps.add(d)
             missings = []
             for i, g in enumerate(step.transform.model.produces):
@@ -276,7 +288,8 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                     e = alldep2output[d]
                     # insts = alloutput_map[e]
                     # inst_names = {x.dtype_name for x in insts}
-                    mg.append(f"    X branch [{i+1}] [{e.key} {d}]")
+                    dmeta = context.Output(d)
+                    mg.append(f"    X branch [{i+1}] [{dmeta.local}] [{d}]")
                 if seen: missings.append(mg)
             if any(len(g)>0 for g in missings):
                 Log.Info(f"missing outputs:")

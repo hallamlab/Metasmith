@@ -346,8 +346,9 @@ class DataInstanceLibrary:
         if parents is None:
             parents = []
         for p in parents:
-            if not p.is_absolute(): p = self.location/p
-            assert p.exists(), f"parent [{p}] doesn't exist"
+            assert p in self.manifest
+            # if not p.is_absolute(): p = self.location/p
+            # assert p.exists(), f"parent [{p}] doesn't exist"
         path = Path(path)
         assert path not in self.manifest, f"[{path}] already added"
         type_model = self.GetType(dtype) # check if datatype exists
@@ -455,8 +456,13 @@ class DataInstanceLibrary:
 
     def Pack(self):
         def _pack_instance(path, dtype_name):
+            grandparents = set()
+            for p in self.parents.get(path, []):
+                for gp in self.parents.get(p.path, []):
+                    grandparents.add(gp.path)
             d_parents = {}
             for p in self.parents.get(path, []):
+                if p.path in grandparents: continue
                 p.library_key
                 k = f"{p.library_key}@{p.path}"
                 v = p.name
@@ -493,20 +499,24 @@ class DataInstanceLibrary:
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
         for k, v in raw["manifest"].items():
-            parents: list[DataInstanceLibrary.ParentMetadata] = []
+            parents: dict[Path, DataInstanceLibrary.ParentMetadata] = {}
             for p_path, p_name in v.get("parents", {}).items():
+                for gp in lib.parents.get(p_path, []):
+                    # each entry should have the aggregated parents, so this should be sufficient
+                    # as in, gp also contains great gp and older.
+                    parents[gp.path] = gp
                 namespace, dtype_name = p_name.split("::")
                 _lib = dtypes[namespace]
                 dtype = _lib.types[dtype_name]
                 lib_key, p_path = p_path.split("@", maxsplit=1)
                 p_path = Path(p_path)
-                parents.append(DataInstanceLibrary.ParentMetadata(
+                parents[p_path] = DataInstanceLibrary.ParentMetadata(
                     dtype=dtype,
                     name=p_name,
                     library_key=lib_key,
                     path=p_path,
-                ))
-            if len(parents)>0: lib.parents[Path(k)] = parents
+                )
+            if len(parents)>0: lib.parents[Path(k)] = [p for p in parents.values()]
         return lib
 
     def Save(self, update_types=True):
@@ -669,13 +679,17 @@ class DataInstanceLibrary:
                 del self.parents[src]
         return moved
 
-    def AsView(self, mask: set[Path]):
-        return DataInstanceLibraryView(self, mask)
+    def AsView(self, mask: set[Path], invert=False):
+        """if invert=True, then items in mask are excluded"""
+        return DataInstanceLibraryView(self, mask, invert)
 
 class DataInstanceLibraryView:
-    def __init__(self, original: DataInstanceLibrary, mask: set[Path]|None=None) -> None:
+    def __init__(self, original: DataInstanceLibrary, mask: set[Path]|None=None, invert=False) -> None:
         if mask is None:
             mask = set(original.manifest)
+        if invert:
+            oset = set(original.manifest)
+            mask = oset-mask
         self._original = original
         self._mask = mask
 
@@ -771,20 +785,32 @@ class Resources:
                 val = norm.replace(var, rval)
             joiner = " = " if is_config else " " # why is nextflow inconsistent like this??
             return f"{field}{joiner}{val}"
+        # return [x for x in [
+        #     _parse_res(self.cpus, "<x>", "cpus", "<x>"),
+        #     _parse_res(
+        #         self.memory, "<x>", "memory",
+        #         "{"+f" task.attempt==1? <x> : 2*(<x> as MemoryUnit) "+"}",
+        #         "<x>",
+        #     ),
+        #     _parse_res(
+        #         self.duration, "<x>", "time",
+        #         "{"+f" task.attempt==1? <x> : 2*(<x> as Duration) "+"}",
+        #         "<x>",
+        #     ),
+        # ] if x is not None]
         return [x for x in [
             _parse_res(self.cpus, "<x>", "cpus", "<x>"),
             _parse_res(
                 self.memory, "<x>", "memory",
-                "{"+f" task.attempt==1? <x> : 2*(<x> as MemoryUnit) "+"}",
+                "{"+f" (2**(task.attempt-1)) * (<x> as MemoryUnit) "+"}",
                 "<x>",
             ),
             _parse_res(
                 self.duration, "<x>", "time",
-                "{"+f" task.attempt==1? <x> : 2*(<x> as Duration) "+"}",
+                "{"+f" (2**(task.attempt-1)) * (<x> as Duration) "+"}",
                 "<x>",
             ),
         ] if x is not None]
-
 
 # this should function like a view provided by the parent library
 @dataclass
@@ -796,6 +822,7 @@ class TransformInstance:
     resources: Resources|None = None
     batch_size: int = 1
     labels: list[str] = field(default_factory=list)
+    _path: Path = field(default_factory=Path)
     _key: str = ""
     _hash: int = -1
     def __post_init__(self):
@@ -823,17 +850,18 @@ class TransformInstance:
         return self._hash # from definition file upon load
 
     @classmethod
-    def Load(cls, definition: Path) -> TransformInstance|None:
+    def Load(cls, parent_lib: Path, definition: Path) -> TransformInstance|None:
         cls._last_loaded_transform: TransformInstance | None = None
 
         original_path_var = sys.path
-        sys.path = [str(definition.parent)]+sys.path
+        sys.path = [str(parent_lib/definition.parent)]+sys.path
         try:
             m = __import__(f"{definition.stem}")
             reload(m)
             if cls._last_loaded_transform is not None:
                 tr = cls._last_loaded_transform
                 tr.name = definition.stem
+                tr._path = definition
                 # with open(definition) as f:
                 #     raw = "".join(f.readlines())
                 #     h, k = KeyGenerator.FromStr(raw, l=5)
@@ -881,7 +909,7 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         self.AddItem(path, "transforms::transform")
         # results = self.AddBulk([(example, path, "transforms::transform")], on_exist="skip" if exist_ok else "error")
         # assert len(results) == 1, f"failed to add transform at [{path}]"
-        inst = TransformInstance.Load(self.location/path)
+        inst = TransformInstance.Load(self.location, path)
         return inst
 
     @classmethod
@@ -896,11 +924,11 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         return self.GetTransform(transform)
 
     def GetTransform(self, path: Path|str, reload=False) -> TransformInstance:
-        path = self.location/path
+        path = Path(path)
         if path.suffix != ".py":
             path = path.with_suffix(".py")
         if reload or path not in self._transform_cache:
-            tr = TransformInstance.Load(path)
+            tr = TransformInstance.Load(self.location, path)
             if tr is not None:
                 self._transform_cache[path] = tr
         return self._transform_cache[path]
@@ -1086,7 +1114,9 @@ class ExecutionContext:
         Log.Info(msg+"-"*(BREAK_LENGTH-len(msg)))
         if exit_codef.exists(): exit_codef.unlink()
         if exit_code != 0:
-            raise ExecutionFailed("a non-zero exit code ocurred while running script in container")
+            Log.Error("a non-zero exit code ocurred while running script in container")
+            time.sleep(5)
+            sys.exit(exit_code)
         # sresult = self.external_shell.Exec(_container_start, timeout=None, history=history)
         # eresult = self.external_shell.Exec("[ -n $APPTAINER_CONTAINER ] || [ -e /.dockerenv ] && exit", timeout=None, history=history)
         return result

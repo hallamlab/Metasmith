@@ -37,15 +37,15 @@ class WorkflowStep:
             uses=[inst.Pack() for inst in self.uses],
             produces=[[inst.Pack() for inst in g] for g in self.produces],
             dependency_map={k.key:[v._key for v in lst] for k, lst in self.dependency_map.items()},
-            transform=f"{self.transform_library.GetKey()}::{self.transform.name}",
+            transform=f"{self.transform_library.GetKey()}::{self.transform._path}",
         )
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
-        lib_key, transform_name = raw["transform"].split("::")
+        lib_key, transform_path = raw["transform"].split("::")
         lib = libraries[lib_key]
         assert isinstance(lib, TransformInstanceLibrary)
-        tr = lib.GetTransform(transform_name)
+        tr = lib.GetTransform(transform_path)
         assert tr is not None
         return cls(
             order=raw["order"],
@@ -66,11 +66,13 @@ class WorkflowStep:
 
 @dataclass
 class WorkflowTarget:
+    name: str
     instance: DataInstance
     producing_step: WorkflowStep
 
     def Pack(self):
         return dict(
+            name=self.name,
             instance=self.instance.Pack(),
             producing_step=dict(order=self.producing_step.order, name=self.producing_step.transform.name),
         )
@@ -80,6 +82,7 @@ class WorkflowTarget:
         inst = DataInstance.Unpack(raw["instance"], libraries)
         producing_step = steps[raw["producing_step"]["order"]]
         return cls(
+            name=raw["name"],
             instance=inst,
             producing_step=producing_step,
         )
@@ -92,6 +95,7 @@ class NextflowGenContext:
     home_dir: Path
     external_home: Path
     container_runtime: ContainerRuntime
+    resources_file: str
     external_home_var: str = "${params.home}"
     external_work_var: str = "${params.workspace}"
     bootstrap_var: str = "${params.bootstrap_def}"
@@ -282,6 +286,7 @@ class WorkflowPlan:
         for pgroup in result_given.produced:
             for d in pgroup:
                 e = pgroup[d]
+                # for e in result.merged_endpoints.get(ek, [ek]):
                 # the given (input) endpoints are added as dependencies
                 # to the transform that models inputs
                 # this allows given_map[d]
@@ -294,13 +299,31 @@ class WorkflowPlan:
                     for ge in list(given_map):
                         if not e.properties==ge.properties: continue
                         given_map[e] = given_map[ge]
-                        # del given_map[ge]
+                        break
+
+        for e, me in result.merged_endpoints.items():
+            if len(me)<2: continue
+            if e not in given_map: continue
+            _to_add = []
+            for x in me:
+                if x==e: continue
+                for oe in given_map[x]:
+                    oe.dtype = e
+                    oe.RecalculateKey()
+                    _to_add.append(oe)
+            given_map[e] += _to_add
 
         # assert result.complete, "failed to make plan!"
         if not result.complete:
             return result
         solution = result
 
+        # for e, lst in given_map.items():
+        #     if '{"Format":"OCI"}' in e.properties: continue
+        #     print(e.key)
+        #     for x in lst:
+        #         print(x.dtype_name, x.path)
+        #     print()
 
         # for i, appl in enumerate(solution.dependency_plan):
         #     if appl.transform in transform2inst:
@@ -311,11 +334,11 @@ class WorkflowPlan:
         #     print(i+1, name)
         #     for d, e in appl.used.items():
         #         if '{"Format":"OCI"}' in e.properties: continue
-        #         print(e.key, d)
+        #         print(e.key, [x.key for x in solution.merged_endpoints.get(e, [])], d)
         #     print(" -->")
-        #     for g in appl.produced:
+        #     for i, g in enumerate(appl.produced):
         #         for d, e in g.items():
-        #             print(e.key, d)
+        #             print(i, e.key, d)
         #     print()
         #     print()
 
@@ -328,23 +351,26 @@ class WorkflowPlan:
         steps: dict[Application, WorkflowStep] = {}
         used_endpoints: set[Endpoint] = set()
         target_meta: dict[Endpoint, list[WorkflowTarget]] = {}
-        target_appl = solution.dependency_plan[-1]
-        target_endpoints = {e for e in target_appl.used.values()}
-        for i, appl in enumerate(solution.dependency_plan[1:-1]): # first is mock tr for given, last is for target
+        target_appls = [a for a in solution.dependency_plan if sum(len(g) for g in a.produced)==0]
+        # target_appl = solution.dependency_plan[-1]
+        target_endpoints = {e for appl in target_appls for e in appl.used.values()}
+        applies = [a for a in solution.dependency_plan if len(a.used)>0 and sum(len(g) for g in a.produced)>0]
+        # applies = solution.dependency_plan[1:-1]
+        for i, appl in enumerate(applies):
             tr = transform2inst[appl.transform]
             _lib = inst2trlib[tr]
 
             _insts: dict[tuple, DataInstance] = {}
             for j, pgroup in enumerate(appl.produced):
                 for d, e in pgroup.items():
-                    dtname = None
-                    for x in targets:
-                        if e.IsA(x):
-                            dtname = targets[x]
-                            break
-                    if dtname is None:
-                        dk = Endpoint(d.properties)
-                        dtname = _lib.GetName(dk)
+                    # dtname = None
+                    # for x in targets:
+                    #     if e.IsA(x):
+                    #         dtname = targets[x]
+                    #         break
+                    # if dtname is None:
+                    dk = Endpoint(d.properties)
+                    dtname = _lib.GetName(dk)
 
                     _instance = DataInstance(
                         path = Path(e.key+e.GetPreferredFileExtension()),
@@ -357,6 +383,7 @@ class WorkflowPlan:
 
             # print(f">> {tr.name}")
             # for e in appl.used.values():
+            #     if '{"Format":"OCI"}' in e.properties: continue
             #     print(f"   {e in instance_map}", e)
 
             used_endpoints |= {e for e in appl.used.values()}
@@ -372,16 +399,22 @@ class WorkflowPlan:
             for j, pgroup in enumerate(appl.produced):
                 for d, e in pgroup.items():
                     if e not in target_endpoints: continue
+                    dtname = None
+                    for x in targets:
+                        if e.IsA(x):
+                            dtname = targets[x]
+                    assert dtname is not None
                     t = _insts[(j, d, e)]
                     target_meta[e] = target_meta.get(e, [])+[
                         WorkflowTarget(
+                            name=dtname,
                             instance=t,
                             producing_step=step,
                         )   
                     ]
 
         return cls(
-            given=[i for e, lst in given_map.items() for i in lst if e in used_endpoints],
+            given=list({i for e, lst in given_map.items() for i in lst if e in used_endpoints}),
             targets=[x for g in target_meta.values() for x in g],
             steps=[s for a, s in steps.items()],
             _solver_result=result,
@@ -435,6 +468,14 @@ class WorkflowPlan:
             else:
                 return name
         def _as_DAG(*, font: str = 'Arial') -> str:
+            # def _join(names):
+            #     MAXN = 3
+            #     if len(names)>MAXN:
+            #         _names = list(names)[:MAXN]+["..."]
+            #     else:
+            #         _names = names
+            #     return "/".join(_names)
+    
             lines = ["digraph G {"]
             
             lines += [
@@ -443,37 +484,38 @@ class WorkflowPlan:
                 f'edge  [fontname="{font}"];',
             ]
             lines.append(_render_node(NodeType.TRANSFORM, "given"))
-            k2name = {x.dtype:x.dtype_name for x in self.given}
+            k2names: dict[Endpoint, set[str]] = {}
+            for x in self.given:
+                if _get_ns(x.dtype_name) in blacklist_namespaces: continue
+                k = x.dtype
+                k2names[k] = k2names.get(k, set())|{x.dtype_name}
             # for x in self.given:
             #     print(x.dtype_name, x.dtype)
             parents: set[Endpoint] = set()
-            for e in k2name:
+            for e in k2names:
                 for p in e.parents:
                     parents.add(p) # type: ignore
-            shown_parents = set()
+            shown_parents: set[str] = set()
             for p in parents:
-                if p not in k2name: continue
-                inst = k2name[p]
-                if _get_ns(inst) in blacklist_namespaces: continue
-                shown_parents.add(inst)
-            for e, inst in k2name.items():
-                if _get_ns(inst) in blacklist_namespaces: continue
-                for p in e.parents:
-                    if p not in k2name: continue
-                    pinst = k2name[p] # type: ignore
-                    if pinst not in shown_parents: continue
-                    lines.append(f'    "{pinst}":s:c -> "{inst}":n:c;')
-                lines.append(f'    "given":s:c -> "{inst}":n:c;')
+                if p not in k2names: continue
+                for inst in k2names[p]:
+                    if _get_ns(inst) in blacklist_namespaces: continue
+                    shown_parents.add(inst)
+            for e, insts_all in k2names.items():
+                insts = [i for i in insts_all if _get_ns(i) not in blacklist_namespaces]
+                if len(insts)==0: continue
+                for inst_name in insts:
+                    for p in e.parents:
+                        if p not in k2names: continue
+                        pinsts = k2names[p] # type: ignore
+                        pinsts = [i for i in pinsts if i in shown_parents]
+                        for pname in pinsts:
+                            lines.append(f'    "{pname}" -> "{inst_name}";')
+                    lines.append(f'    "given" -> "{inst_name}";')
             seen = set()
-            def _join(names):
-                MAXN = 3
-                if len(names)>MAXN:
-                    _names = names[:MAXN]+["..."]
-                else:
-                    _names = names
-                return "/".join(_names)
+            e2name = {}
             for step in self.steps:
-                transform_name = step.transform.name
+                transform_name = f"{step.order} {step.transform.name}"
                 lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
                 inputs, outputs = [], []
                 for acc, deps in [
@@ -482,30 +524,40 @@ class WorkflowPlan:
                 ]:
                     for d in deps:
                         insts = step.dependency_map[d]
-                        inst_names = [x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces]
+                        inst_names = {x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces}
                         if len(inst_names)==0: continue
-                        acc.append(_join(inst_names))
-                inputs = []
-                for d in step.transform.model.requires:
-                    insts = step.dependency_map[d]
-                    inst_names = {x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces}
-                    if len(inst_names)==0: continue
-                    inputs.append(_join(inst_names))
+                        # _name = _join(inst_names)
+                        # acc.append(_name)
+                        acc += list(inst_names)
+                        for inst in insts:
+                            e2name[inst.dtype] = inst.dtype_name
+                # inputs = []
+                # for d in step.transform.model.requires:
+                #     insts = step.dependency_map[d]
+                #     inst_names = {x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces}
+                #     if len(inst_names)==0: continue
+                #     inputs.append(_join(inst_names))
                 for name in inputs:
                     lines.append(_render_node(NodeType.DATA, name))
-                    x = f'    "{name}":s:c -> "{transform_name}":n:c;'
+                    x = f'    "{name}" -> "{transform_name}";'
                     if x not in seen: lines.append(x)
                     seen.add(x)
                 for name in outputs:
                     lines.append(_render_node(NodeType.DATA, name))
-                    x = f'    "{transform_name}":s:c -> "{name}":n:c;'
+                    x = f'    "{transform_name}" -> "{name}";'
                     if x not in seen: lines.append(x)
                     seen.add(x)
             lines.append(_render_node(NodeType.TRANSFORM, "target"))
             # for x in self.targets:
             #     print(x.instance.dtype_name, x.instance.dtype)
+            # target_names = {}
+            # for target in self.targets:
+            #     e = target.instance.dtype
+            #     target_names[e] = target_names.get(e, set())|{target.instance.dtype_name}
             for target in {x.instance.dtype_name for x in self.targets}:
-                lines.append(f'    "{target}":s:c -> "target":n:c;')
+            # for e, names in target_names.items():
+            #     target = _join(names)
+                lines.append(f'    "{target}" -> "target";')
             lines.append("}")
             return "\n".join(lines)
         
@@ -608,7 +660,9 @@ class WorkflowTask:
 
         def prepare_step(step: WorkflowStep):
             k = f"p{step.order:02}"
-            process_name = f"{k}__{step.transform.name}"
+            process_name = str(step.transform.name)
+            process_name = process_name.replace('/', '_')
+            process_name = f"{k}__{process_name}"
             src = [f"process {process_name}"+" {"]
             src += [
                 TAB+f"label 'x{step.transform.GetKey()}x'",
@@ -638,12 +692,13 @@ class WorkflowTask:
                 ).MakeBindsParam()
 
             res = step.transform.resources
+            src_res = [] # goes to config to not mess with caching
             if res is not None: 
-                src += [TAB+x for x in res.AsNextflowFormat()]
+                src_res += [x for x in res.AsNextflowFormat(is_config=True)] # config!
             duration_is_strict = res is not None and res.duration is not None and res.duration.strict
             memory_is_strict = res is not None and res.memory is not None and res.memory.strict
             if duration_is_strict and memory_is_strict:
-                src += [
+                src_res += [
                     "errorStrategy 'ignore'" # no point in retrying if not changing resource requests
                 ]
             used_archetypes, produced_archetypes = get_io_signature(step)
@@ -685,7 +740,7 @@ class WorkflowTask:
                 "}",
                 ""
             ]
-            return process_name, "\n".join(src)
+            return process_name, "\n".join(src), src_res
 
         def ensure_local_folder(n):
             d = context.work_dir/n
@@ -718,7 +773,9 @@ class WorkflowTask:
                 i = output_copies.get(k, 0)+1
                 output_copies[k] = i
                 name = f"{k}_{i}"
-                to_merge_names[x] = to_merge_names.get(x, [])+[name]
+                _curr = to_merge_names.get(x, [])
+                if name not in _curr: _curr.append(name)
+                to_merge_names[x] = _curr
             else:
                 name = f"{k}"
             return name
@@ -727,33 +784,45 @@ class WorkflowTask:
         # (_tK9GI0FH) = o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]) // lib::pangenome_heatmap.py
         # (_7A15qSzL) = o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]) // containers::python_for_data_science.oci
         # (_urCt2PG9) = o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]) // sequences::gbk
-        _seen = set()
-        input_channels: dict[Dependency, list[DataInstance]] = {}
-        for step in the_plan.steps:
-            for dep, lst in step.dependency_map.items():
-                for inst in lst:
-                    if inst not in used_given: continue
-                    if inst in _seen: continue
-                    _seen.add(inst)
-                    input_channels[dep] = input_channels.get(dep, [])+[inst]
+        # _seen = set()
+        unsorted_input_channels: dict[Endpoint, list[DataInstance]] = {}
+        _child2parents: dict[Endpoint, set[Endpoint]] = {}
+        for inst in the_plan.given:
+            e = inst.dtype
+            unsorted_input_channels[e] = unsorted_input_channels.get(e, [])+[inst]
+            _child2parents[e] = _child2parents.get(e, set())|e.parents # type: ignore
+        input_channels: dict[Endpoint, list[DataInstance]] = {}
+        # sort givens by lineage
+        # parents must be registered (and processed) first!
+        while len(_child2parents)>0:
+            to_add = []
+            for ce, pes in _child2parents.items():
+                if len(pes)>0: continue
+                to_add.append(ce)
+            to_add = sorted(to_add, key=lambda e: unsorted_input_channels[e][0].dtype_name)
+            for e in to_add:
+                input_channels[e] = unsorted_input_channels[e]
+                del _child2parents[e]
+            added = set(to_add)
+            for e in _child2parents:
+                _child2parents[e] = _child2parents[e]-added
 
         given2order = {}
         for i, x in enumerate(the_plan.given):
             given2order[x] = i
-        prepared_given: set[tuple[Path, str, str]] = set()
+        prepared_given: list[tuple[Path, str, str]] = []
         _seen_paths = set()
         _given_by_prod_name: dict[str, list[DataInstance]] = {}
         _path2prod_name = {}
         _path2index_number = {}
-        for _, lst in input_channels.items():
+        for i, (_, lst) in enumerate(input_channels.items()):
             inst = get_archetype(lst)
             p = inputs_dir/f"{get_prod_name(inst.dtype, force_singular=True)}"
             if p in _seen_paths: continue
             _seen_paths.add(p)
             v = get_prod_name(inst.dtype)
-            n = inst.dtype_name
-            k = p, v, n
-            prepared_given.add(k)
+            k = p, v, "/".join({i.dtype_name for i in lst})
+            prepared_given.append(k)
             with open(p, "w") as f:
                 unique_lst = set(lst)
                 if len(unique_lst)==1:
@@ -768,6 +837,7 @@ class WorkflowTask:
                     f.write(f"{_path}"+"\n")
         
         _given_lineage = {}
+        given_lineage_by_keys = {}
         for prod_name, to_write in _given_by_prod_name.items():
             _indexes = []
             for x in to_write:
@@ -781,6 +851,7 @@ class WorkflowTask:
             if all(len(idx)>0 for idx in _indexes):
                 k = prod_name.split('_')[0] # in case this will be merged and has a "_1" suffix
                 _given_lineage[str(inputs_dir.relative_to(context.work_dir)/k)] = _indexes
+                given_lineage_by_keys[k] = given_lineage_by_keys.get(k, set())|{k for x in _indexes for k in x.keys()}
         LINEAGE_FILE = "workflow.lineage_of_given.json"
         with open(context.work_dir/LINEAGE_FILE, "w") as f:
             json.dump(_given_lineage, f, separators=(',', ':'))
@@ -795,8 +866,10 @@ class WorkflowTask:
         wf_main = []
         wf_publish = set()       
         published_channels: dict[str, DataInstance] = {}
+        resources = {}
         for step in the_plan.steps:
-            process_name, src = prepare_step(step)
+            process_name, src, src_res = prepare_step(step)
+            resources[process_name] = src_res
             src_process.append(src)
             used_archetypes, produced_archetypes = get_io_signature(step)
             produced_names = [get_prod_name(x.dtype) for g in produced_archetypes for x in g]
@@ -838,25 +911,51 @@ class WorkflowTask:
                 k = inst.dtype.key
                 wf_publish.add(k)
                 published_channels[k] = inst
+
+        with open(context.work_dir/context.resources_file, "w") as f:
+            _src = [
+                "process {"
+            ]
+            for name, lines in resources.items():
+                _src += [
+                    TAB+f"withName: '{name}' "+"{"
+                ] + [
+                    TAB+TAB+l for l in lines
+                ] + [
+                    TAB+"}"
+                ]
+            _src.append("}")
+            for line in _src:
+                f.write(line+"\n")
+
         wf_output = []
+        _e2target = {x.instance.dtype:x for x in the_plan.targets}
         for ch, inst in published_channels.items():
-            out_name = inst.dtype_name.replace(' ', '_').replace("::", "-")
+            spec_name, out_name = [
+                n.replace(' ', '_').replace("::", "-")
+                for n in [
+                    inst.dtype_name,
+                    _e2target[inst.dtype].name
+                ]
+            ]
             wf_output += [
                 TAB+f"_{ch}"+"{",
                 TAB+TAB+f"path '{out_name}'",
-                TAB+TAB+f"index {{ path '_manifests/{out_name}.{inst.dtype.key}.json' }}",
+                TAB+TAB+f"index {{ path '_manifests/{spec_name}.{inst.dtype.key}.json' }}",
                 TAB+"}",
             ]
             
-        sorted_prepared_given = sorted(prepared_given, key=lambda t: t[-1])
         content = [
             f"workflow"+" {",
             "main:",
             f'o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy',
             f'l = new JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
         ] + [
+            f'o.child2parent["{k}"] = ([{", ".join(f'"{x}"' for x in vset)}] as Set)'
+            for k, vset in given_lineage_by_keys.items()
+        ] + [
             f'(_{v}) = o.post([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]) // {n}'
-            for p, v, n in sorted_prepared_given
+            for p, v, n in prepared_given # this must be (and is) sorted in lineage order
         ] + [
             line for line in wf_main
         ] + [

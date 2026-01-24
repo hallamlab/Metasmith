@@ -55,14 +55,17 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
         for k, dlib in dtypes.items():
             lib.AddTypeLibrary(k, dlib)
         count = 0
-        for f in d.iterdir():
-            if f.name.startswith(DISABLE):
-                Log.Warn(f"skipping: [{d.name}/{f.stem}]")
+        # for f in d.iterdir():
+        for f in d.glob("**/*.py"):
+            rel_f = f.relative_to(d)
+            if DISABLE in str(f):
+                # Log.Warn(f"skipping: [{d.name}/{f.stem}]")
+                Log.Warn(f"skipping: [{rel_f}]")
                 continue
             if f.suffix != ".py": continue
             if not file_ok(f): continue
             count += 1
-            lib.AddItem(f.name, "transforms::transform")
+            lib.AddItem(rel_f, "transforms::transform")
         if count>0:
             lib.Save()
             lib.PruneTypes() # saves

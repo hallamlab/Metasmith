@@ -28,6 +28,7 @@ class AgentPaths:
     LAUNCHER_FILE = "start.sh"
     NXF_WORKFLOW = "workflow.nf"
     NXF_CONFIG = "workflow.config.nf"
+    NXF_RES = "workflow.resources.nf"
     NXF_PARAMS = "workflow.params.yml"
 
     @classmethod

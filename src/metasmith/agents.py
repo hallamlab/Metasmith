@@ -443,7 +443,7 @@ class Agent:
                             Log.Warn(f"recompiling workflow for previously staged task")
                             task_stage_partial = "transforms_only"
 
-            Log.Info(f"sending metadata for workflow [{task._key}]")
+            Log.Info(f"sending context for workflow [{task._key}]")
             task.SaveAs(self.home.ReplacePathWith(remote_path), partial=task_stage_partial)
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
@@ -687,6 +687,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
         home_dir=AgentPaths.HOME_ROOT,
         external_home=agent.home.GetPath(),
         container_runtime=agent.runtime,
+        resources_file=AgentPaths.NXF_RES,
     ))
     nxflib_dir = work_dir/"lib"
     nxflib_dir.mkdir(parents=True, exist_ok=True)
@@ -784,6 +785,7 @@ def RunWorkflow(key: str, log_dir: Path, host:str):
         shell.RegisterOnErr(Log.Error)
         Log.Info(f"calling nextflow from container")
         # export NXF_JVM_ARGS="-Xms16g -Xmx64g"
+        # -dump-hashes \
         shell.Exec(
             f"""
             cd {workspace}
@@ -794,6 +796,7 @@ def RunWorkflow(key: str, log_dir: Path, host:str):
                 [ -e scancel.log ] && mv scancel.log {log_dir}
                 [ -e {AgentPaths.NXF_WORKFLOW} ] && cp {AgentPaths.NXF_WORKFLOW} {log_dir}
                 [ -e {AgentPaths.NXF_CONFIG} ] && cp {AgentPaths.NXF_CONFIG} {log_dir}
+                [ -e {AgentPaths.NXF_RES} ] && cp {AgentPaths.NXF_RES} {log_dir}
                 [ -e {AgentPaths.NXF_PARAMS} ] && cp {AgentPaths.NXF_PARAMS} {log_dir}
                 if [ -e {nxf_dag} ]; then
                     dot -Tsvg {nxf_dag} -o {nxf_dag.stem}.svg
@@ -808,6 +811,7 @@ def RunWorkflow(key: str, log_dir: Path, host:str):
             export NXF_OFFLINE=TRUE # don't go online and search for latest version
             export NXF_OPTS="-XX:ActiveProcessorCount=1" # precaution against "unable to create native thread"
             nextflow \
+                -config ./{AgentPaths.NXF_RES} \
                 -config ./{AgentPaths.NXF_CONFIG} \
                 -log {log_dir}/nxf.log \
                 run ./{AgentPaths.NXF_WORKFLOW} \
@@ -929,30 +933,51 @@ def RunWorkflow(key: str, log_dir: Path, host:str):
     relavent_k = {k for k, v in kv2path}
     given_manifest = []
     n_outputs = 0
-    for i, ((ck, cv), (path, lineage)) in enumerate(kv2path.items()):
-        cinst = k2inst[ck]
-        if path.is_relative_to(output_path): # is output
-            parents = []
-            for pk, pvs in lineage.items():
-                if pk not in relavent_k: continue
-                if pk == ck: continue
-                for pv in pvs:
-                    k = (pk, pv)
-                    if k not in kv2path: continue # likely due to a merge between branches
-                    ppath, _ = kv2path[k]
-                    _inst = path2inst[ppath]
-                    _path = _inst.ResolvePath()
-                    parents.append(_path)
-                    if _path in output: continue
-                    output.AddItem(path=_path, dtype=_inst.dtype_name)
-            n_outputs+=1
-            output.AddItem(
-                path=path.relative_to(output_path),
-                dtype=cinst.dtype_name,
-                parents=parents,
-            )
-        else:
-            given_manifest.append((ck, cv, cinst.dtype_name, path))
+    todo = dict(enumerate(kv2path.items()))
+    while len(todo)>0:
+        to_del = []
+        for i, ((ck, cv), (path, lineage)) in todo.items():
+            cinst = k2inst[ck]
+            if path.is_relative_to(output_path): # is output
+                parents = []
+                ok = True
+                for pk, pvs in lineage.items():
+                    if pk not in relavent_k: continue
+                    if pk == ck: continue
+                    for pv in pvs:
+                        k = (pk, pv)
+                        if k not in kv2path: continue # likely due to a merge between branches
+                        ppath, _ = kv2path[k]
+                        if ppath not in path2inst:
+                            ok = False
+                            break
+                        _inst = path2inst[ppath]
+                        _path = _inst.ResolvePath()
+                        parents.append((_path, _inst.dtype_name))
+                        if _path in output: continue
+                    if not ok: break
+                if not ok: continue
+                _parents = []
+                for _path, _name in parents:
+                    if _path not in output.manifest:
+                        output.AddItem(path=_path, dtype=_name)
+                    _parents.append(_path)
+                n_outputs+=1
+                _path = path.relative_to(output_path)
+                _path = output.AddItem(
+                    path=_path,
+                    dtype=cinst.dtype_name,
+                    parents=_parents,
+                )
+                _inst = output.Get(_path)
+                _path = _inst.ResolvePath()
+                path2inst[_path] = _inst
+            else:
+                given_manifest.append((ck, cv, cinst.dtype_name, path))
+            to_del.append(i)
+        assert len(to_del)>0
+        for i in to_del:
+            del todo[i]
     output.PruneTypes(save=False)
     output.Save()
         

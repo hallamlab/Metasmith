@@ -43,21 +43,19 @@ env {
 // report.enabled = true
 
 executor {
-    slurm {
-        queueSize = params.executor.queueSize
-        submitRateLimit = params.executor.submitRateLimit
-        pollInterval = params.executor.pollInterval
-        stageInMode = params.executor.stageInMode
+    queueSize = params.executor.queueSize
+    submitRateLimit = params.executor.submitRateLimit
+    pollInterval = params.executor.pollInterval
+    stageInMode = params.executor.stageInMode
 
-        retry {
-            maxAttempts = 99999                 // controlled per process
-            jitter = 0.25
-            maxDelay = 30.second
-            delay = 1.second
-        }
-        
-        // executor = 'hq'                      // todo: consider https://github.com/It4innovations/hyperqueue
+    retry {
+        maxAttempts = 99999                 // controlled per process
+        jitter = 0.25
+        maxDelay = 30.second
+        delay = 1.second
     }
+    
+    // executor = 'hq'                      // todo: consider https://github.com/It4innovations/hyperqueue
 
     local {
         cpus = params.localExecutor.cpus
@@ -76,6 +74,8 @@ workflow {
 }
 
 process {
+    cache = 'lenient'
+
     errorStrategy = {                       // retry up to limit, then ignore, nextflow defaults to crashing
         task.attempt<params.process.tries? 'retry' : 'ignore'
     }
@@ -89,20 +89,18 @@ process {
         task.attempt==1? params.process.time : 2*(params.process.time as Duration)
     }
     
-    withLabel: '!xlocalx' {
-        executor = 'slurm'
-        scratch = true                          // use worker node's local hard drive
-        // --nodes=1: one compute node per job submission
-        // --ntasks=1: this seems to affect some parallelization behaviour of SLURM,
-        //      but we will request N cpus ourselves, so 1 is meant to prevent SLURM
-        //      from doing something unexpected, like duplicating jobs.
-        //      not sure if this is needed
-        clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurmAccount}"
+    executor = 'slurm'
+    scratch = true                          // use worker node's local hard drive
+    // --nodes=1: one compute node per job submission
+    // --ntasks=1: this seems to affect some parallelization behaviour of SLURM,
+    //      but we will request N cpus ourselves, so 1 is meant to prevent SLURM
+    //      from doing something unexpected, like duplicating jobs.
+    //      not sure if this is needed
+    clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurmAccount}"
 
-        maxRetries = params.process.tries+2     // this must be larger than errorStrategy
-        maxErrors = '-1'                        // quotes bypass groovy parser bug, should set to number of samples?
-        array = params.process.array            // batch jobs for the same tool
-    }
+    maxRetries = params.process.tries+2     // this must be larger than errorStrategy
+    maxErrors = '-1'                        // quotes bypass groovy parser bug, should set to number of samples?
+    array = params.process.array            // batch jobs for the same tool
 
     withLabel: 'xlocalx' {
         executor = 'local'

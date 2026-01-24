@@ -275,6 +275,7 @@ class RefinerState:
 class Solution:
     complete: bool
     dependency_plan: list[Application]
+    merged_endpoints: dict[Endpoint, set[Endpoint]]
     _frontier: list[Application]
     _history: list[list[SolverState]]
     _refiner_histories: list[list[RefinerState]]
@@ -461,7 +462,7 @@ def solve_by_mcts(
                 todo.append(DistNode(producer, dist, path))
     relavent_transforms = [tr for tr in transforms if tr in distance_scores]
     max_distance_score = max(distance_scores.values())
-    # assert given_appl in distance_scores, "there appears to be no transforms that consume any given endpoints"
+    assert given_appl.transform in distance_scores, "no path possible"
 
     # for telemetry
     D2T_KEY = "distance to target"
@@ -931,6 +932,7 @@ def solve_by_mcts(
     class MctsResult:
         complete: bool
         state: SolverState
+        merged_endpoints: dict[Endpoint, set[Endpoint]]
         _frontier: list[Application]
         _history: list[list[SolverState]]
         _refiner_histories: list[list[RefinerState]]
@@ -1020,8 +1022,9 @@ def solve_by_mcts(
                 ):
                     yield appl
 
+        merged_endpoints: dict[Endpoint, set[Endpoint]] = {}
         def merge_states(source: SolverState, alt: SolverState) -> SolverState:
-            print(f"{source.k} << {alt.k}")
+            # print(f"{source.k} << {alt.k}")
             e2consumer: dict[Endpoint, list[Application]] = {}
             for step in alt.steps:
                 for d, e in step.used.items():
@@ -1031,42 +1034,69 @@ def solve_by_mcts(
                 for pgroup in step.produced:
                     for d, e in pgroup.items():
                         e2producer[e] = step
-            _lin_cache = {}
-            def _get_lineage_constraints(step0: Application):
-                todo = [step0]
-                lineage_constraints: set[Endpoint] = set()
-                produced: set[Endpoint] = set()
-                while len(todo)>0:
-                    step = todo.pop()
-                    if step in _lin_cache:
-                        new_lin, new_p = _lin_cache[step]
-                        lineage_constraints.update(new_lin)
-                        produced.update(new_p)
-                        continue
-                    for d in step.used:
-                        for p in d.parents:
-                            lineage_constraints.add(step.used[p]) # type: ignore
-                    for pgroup in step.produced:
-                        for d, e in pgroup.items():
-                            produced.add(e)
-                            for appl in e2consumer.get(e, []):
-                                todo.append(appl)
-                _lin_cache[step0] = lineage_constraints, produced
-                return lineage_constraints-produced
+            # _lin_cache = {}
+            # def _get_lineage_constraints(step0: Application):
+            #     todo = [step0]
+            #     lineage_constraints: set[Endpoint] = set()
+            #     produced: set[Endpoint] = set()
+            #     while len(todo)>0:
+            #         step = todo.pop()
+            #         if step in _lin_cache:
+            #             new_lin, new_p = _lin_cache[step]
+            #             lineage_constraints.update(new_lin)
+            #             produced.update(new_p)
+            #             continue
+            #         for d in step.used:
+            #             for p in d.parents:
+            #                 lineage_constraints.add(step.used[p]) # type: ignore
+            #         for pgroup in step.produced:
+            #             for d, e in pgroup.items():
+            #                 produced.add(e)
+            #                 for appl in e2consumer.get(e, []):
+            #                     todo.append(appl)
+            #     _lin_cache[step0] = lineage_constraints, produced
+            #     return lineage_constraints-produced
             
             def _get_substitute(alt_step: Application):
+                # first, get steps with substitutable signatures as candidates
                 candidates = source_tr2appl.get(alt_step.transform, [])
-                print("  ", len(candidates))
-                lins = _get_lineage_constraints(alt_step)
+                # print("  ", len(candidates))
+                # for each candidate to merge into,
+                # check that if endpoints are substituted, all steps that use
+                # any of the swapped endpoints are still valid
                 for src_step in candidates:
-                    if len(lins)==0:
-                        lin_ok = True
-                    else:
-                        parents = set(src_step.used.values())
-                        parents|={g for p in parents for g in p.parents} # type: ignore
-                        lin_ok = all(any(p.IsA(lin) for p in parents) for lin in lins)
-                    if lin_ok:
-                        return src_step
+                    subs: list[tuple[Endpoint, Endpoint]] = []
+                    for d, se in src_step.used.items():
+                        ae = alt_step.used[d]
+                        subs.append((ae, se))
+                    src_pool, alt_pool = [], []
+                    for sg, ag in zip(src_step.produced, alt_step.produced):
+                        added = set()
+                        # note that in the current interface,
+                        # output groups with shared dependencies within a single transform
+                        # is impossible...
+                        for d, se in sg.items():
+                            if d not in ag: # ... so this if will trigger or not trigger for entire loop
+                                src_pool.append(se)
+                                continue
+                            ae = ag[d]
+                            subs.append((ae, se))
+                            added.add(d)
+                        for d, ae in ag.items():
+                            if d not in added: # ... same here
+                                alt_pool.append(ae)
+
+                    ok = True
+                    for ae, se in subs:
+                        if ae not in e2consumer: continue
+                        for appl in e2consumer[ae]:
+                            if appl == alt_step: continue
+                            for d, e in appl.used.items():
+                                if e != ae: continue
+                                if not se.IsA(d):
+                                    ok = False
+                                    break
+                    if ok: return src_step
                 return None
 
             source_timelines = {s.initial_timeline for s in source.steps}
@@ -1086,10 +1116,11 @@ def solve_by_mcts(
             # lineage constraints of downstream in alt are satisfied,
             # then src step can be merged with alt step
             for step in to_check:
-                print(step.transform)
+                # print(step.transform)
+                # print(step.transform.key, len(step.transform.requires), sum(len(g) for g in step.produced))
                 src_step = _get_substitute(step)
-                print("+" if src_step is None else "x")
-                print()
+                # print("+" if src_step is None else "x")
+                # print()
                 if src_step is None:
                     to_add_from_alt.append(step)
                 else:
@@ -1103,15 +1134,15 @@ def solve_by_mcts(
             swapped_endpoints: dict[Endpoint, Endpoint] = {}
             # merge steps by pointing used from alt to that of souce
             # and combining the production groups if step caused the branching
-            print("---")
             for alt_step, src_step in to_merge:
-                print(f"{src_step.transform} <<< {alt_step.transform}")
+                # print(f"{src_step.transform} <<< {alt_step.transform}")
                 for ad, ae in alt_step.used.items():
                     se = src_step.used[ad]
                     se = swapped_endpoints.get(se, se) # in case used merged endpoint
                     src_step.used[ad] = se
-                    print(f"  {se} -<- {ae}")
+                    # print(f"  {se} -<- {ae}")
                     swapped_endpoints[ae] = se # register for to_add_from_alt
+                    merged_endpoints[se] = merged_endpoints.get(se, {se})|{ae}
                 merged_pgroup = src_step.produced.copy()
                 # print(f"  {src_step.transform} {len(src_step.produced)}")
                 for mp in alt_step.produced:
@@ -1127,6 +1158,7 @@ def solve_by_mcts(
                     for d in pgroup:
                         e = pgroup[d]
                         pgroup[d] = swapped_endpoints.get(e, e)
+
             # connect the merged endpoints
             for step in to_add_from_alt:
                 # print(f" _ {step.transform}")
@@ -1206,9 +1238,11 @@ def solve_by_mcts(
 
             if len(remain)+len(carry_over) == 0:
                 if solved_state is None: break
+                s = solved_state
                 return MctsResult(
                     complete=True,
                     state=solved_state,
+                    merged_endpoints=merged_endpoints,
                     _frontier=frontier,
                     _history=history,
                     _iterations=i,
@@ -1231,6 +1265,7 @@ def solve_by_mcts(
         return MctsResult(
             complete=False,
             state=solved_state if solved_state is not None else current_timelines[0],
+            merged_endpoints=merged_endpoints,
             _frontier=frontier,
             _history=history,
             _iterations=i,
@@ -1244,6 +1279,7 @@ def solve_by_mcts(
     return Solution(
         complete=True,
         dependency_plan=solution.state.steps,
+        merged_endpoints=solution.merged_endpoints,
         _frontier=solution._frontier,
         _history=solution._history,
         _refiner_histories=solution._refiner_histories,

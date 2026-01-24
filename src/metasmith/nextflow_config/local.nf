@@ -40,6 +40,8 @@ workflow {
 }
 
 process {
+    cache = 'lenient'
+
     executor = 'local'
 
     errorStrategy = {                       // retry up to limit, then ignore, nextflow defaults to crashing

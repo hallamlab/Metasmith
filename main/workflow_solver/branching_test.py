@@ -509,8 +509,8 @@ def branching_6():
     tr = Transform()
     x = tr.AddRequirement(properties={"read_meta"})
     tr.AddRequirement(properties={"sra"}, parents={x})
-    # tr.AddProduct(properties={"reads", "long", "single"})
-    # tr.NewProductGroup()
+    tr.AddProduct(properties={"reads", "long", "single"})
+    tr.NewProductGroup()
     tr.AddProduct(properties={"reads", "short", "single"})
     tr.NewProductGroup()
     tr.AddProduct(properties={"reads", "short", "paired"})
@@ -566,10 +566,11 @@ def branching_6():
     transforms.append(tr)
 
     target = Transform()
+    # target.AddRequirement(properties={"reads"})
     # target.AddRequirement(properties={"read_qc"})
-    target.AddRequirement(properties={"clean_reads"})
+    # target.AddRequirement(properties={"clean_reads"})
     # target.AddRequirement(properties={"assembly"})
-    # target.AddRequirement(properties={"assembly_stats"})
+    target.AddRequirement(properties={"assembly_stats"})
     # target.AddRequirement(properties={"target"})
     sol = solve_by_mcts(
         given=[
