@@ -23,7 +23,7 @@ from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSourc
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, DataInstanceLibraryView
 from .models.libraries import TransformInstance, Resources
-from .models.solver import Endpoint, Solution
+from .models.solver import Dependency, Endpoint, Solution, Transform
 from .constants import VERSION, MODULE_PATH, AgentPaths
 
 class AgentShell:
@@ -73,6 +73,19 @@ class PausedShell:
         oo, oe = self.originals
         self.shell.paused_out = oo
         self.shell.paused_err = oe
+
+class TargetBuilder:
+    def __init__(self) -> None:
+        self.targets: dict[str, set[str]] = {}
+
+    def Add(self, target_type: str, parents: set[str]|None=None):
+        if parents is None: parents = set()
+        assert "::" in target_type, f'expected @type to in the form of "namespace::type_name" but got [{target_type}]'
+        for p in parents:
+            assert p in self.targets, f'[{p}] needs to be added before use as a parent'
+        assert target_type not in self.targets, f'[{target_type}] already added'
+        self.targets[target_type] = parents.copy()
+        return target_type
 
 ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|TransformInstance, Resources]
 @dataclass
@@ -360,34 +373,46 @@ class Agent:
         samples: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         resources: list[DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary],
-        targets: list[str]|set[str],
+        targets: TargetBuilder,
         max_iter: int=1024, max_refine: int=256, seed: int=42,
     ):
-        assert len(targets)>0, "[targets] can not be empty"
-        target_models: dict[Endpoint, str] = {}
-        for dtype_name in targets:
-            assert "::" in dtype_name, 'type name must be in the form of "namespace::type_name"'
+        assert len(targets.targets)>0, "[targets] can not be empty"
+        
+        def _get_endpoint(dtype_name: str):
             ns, _ = dtype_name.split("::")
-            found = False
             for trlib in transforms:
                 if ns not in trlib.types: continue
-                model = trlib.GetType(dtype_name)
-                assert model not in target_models, f"[{dtype_name}] is a duplicate of [{target_models[model]}]"
-                target_models[model] = dtype_name
-                Log.Info(f"[{dtype_name}] resolved by [{trlib.location}]")
-                found = True
-                break
-            assert found, f"no transforms had the namespace [{ns}]"
+                e = trlib.GetType(dtype_name)
+                N = 3
+                lpath = trlib.location
+                if len(lpath.parts)>N:
+                    loc = "..."+"/".join(lpath.parts[-3:])
+                else:
+                    loc = f"{lpath}"
+                Log.Info(f"[{dtype_name}] resolved by [{loc}]")
+                return e
+            assert False, f"no transforms had the namespace [{ns}]"
+
+        target_model = Transform()
+        _dtname2dep: dict[str, Dependency] = {}
+        target_names: dict[Endpoint, str] = {}
+        for dtype_name, parents in targets.targets.items():
+            e = _get_endpoint(dtype_name)
+            assert e not in target_names, f"[{dtype_name}] is a duplicate of [{target_names[e]}]"
+            d = target_model.AddRequirement(example=e, parents={_dtname2dep[p] for p in parents})
+            _dtname2dep[dtype_name] = d
+            target_names[e] = dtype_name
 
         res_views = [DataInstanceLibraryView(lib) for lib in resources]
         _samples = [DataInstanceLibraryView(sample) if not isinstance(sample, DataInstanceLibraryView) else sample for sample in samples]
         gen_result = WorkflowPlan.Generate(
-            [
+            given=[
                 [sample]+res_views
                 for sample in _samples
             ], 
-            transforms,
-            target_models,
+            transforms=transforms,
+            target_names=target_names,
+            target_model=target_model,
             max_iter=max_iter, max_refine=max_refine, seed=seed
         )
         sample_libs = {v._original for v in _samples}

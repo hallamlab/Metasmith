@@ -68,5 +68,5 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
             lib.AddItem(rel_f, "transforms::transform")
         if count>0:
             lib.Save()
-            lib.PruneTypes() # saves
+            lib.PruneTypes(save=True) # saves
             Log.Info(f"compiled [{count}] transforms from [{d.name}]")

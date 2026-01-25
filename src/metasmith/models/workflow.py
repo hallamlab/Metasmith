@@ -227,7 +227,8 @@ class WorkflowPlan:
         cls,
         given: list[list[DataInstanceLibraryView]],
         transforms: list[TransformInstanceLibrary],
-        targets: dict[Endpoint, str],
+        target_names: dict[Endpoint, str],
+        target_model: Transform,
         max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
         given_map: dict[Endpoint, list[DataInstance]] = {}
@@ -246,16 +247,16 @@ class WorkflowPlan:
             if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
             given_endpoints.append(eps)
 
-        target_e2d: dict[Endpoint, Dependency] = {}
-        def _add(tr: Transform, e: Endpoint) -> Dependency:
-            if e in target_e2d: return target_e2d[e]
-            parent_deps = {_add(tr, p) for p in e.parents} # type: ignore
-            d = tr.AddRequirement(e, parents=parent_deps)
-            target_e2d[e] = d
-            return d
-        target_model = Transform()
-        for t in targets:
-            _add(target_model, t)
+        # target_e2d: dict[Endpoint, Dependency] = {}
+        # def _add(tr: Transform, e: Endpoint) -> Dependency:
+        #     if e in target_e2d: return target_e2d[e]
+        #     parent_deps = {_add(tr, p) for p in e.parents} # type: ignore
+        #     d = tr.AddRequirement(e, parents=parent_deps)
+        #     target_e2d[e] = d
+        #     return d
+        # target_model = Transform()
+        # for t in targets:
+        #     _add(target_model, t)
 
         transform2inst: dict[Transform, TransformInstance] = {}
         inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}
@@ -401,9 +402,9 @@ class WorkflowPlan:
                 for d, e in pgroup.items():
                     if e not in target_endpoints: continue
                     dtname = None
-                    for x in targets:
+                    for x in target_names:
                         if e.IsA(x):
-                            dtname = targets[x]
+                            dtname = target_names[x]
                     assert dtname is not None
                     t = _insts[(j, d, e)]
                     target_meta[e] = target_meta.get(e, [])+[
