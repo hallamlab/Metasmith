@@ -26,7 +26,7 @@ class Api:
     def stage_workflow(self, body: dict):
         task_key = body.get("task_key")
         assert task_key, "[task_key] is required"
-        verify = body.get("verify", "False").title()=="True"
+        verify = body.get("verify", "False").strip().title()=="True"
         host = body.get("host")
         assert host, "[host] is required"
         StageWorkflow(task_key, verify, host)
@@ -38,7 +38,12 @@ class Api:
         assert log_dir, "[log_dir] is required"
         host = body.get("host")
         assert host, "[host] is required"
-        RunWorkflow(key, Path(log_dir), host)
+        stub_delay = body.get("stub_delay", "0").strip()
+        try:
+            stub_delay = float(stub_delay)
+        except:
+            stub_delay = 0
+        RunWorkflow(key, Path(log_dir), host, stub_delay)
 
     def check_workflow(self, body: dict):
         key = body.get("key")

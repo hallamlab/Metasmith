@@ -242,7 +242,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                 _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=8)
                 _hashes[batch] = _hash
             _hash = _hashes[batch]
-            dest = Path(f"{_hash}-{batch+1}-{i+1}.{dtype.key}{dtype.GetPreferredFileExtension()}")
+            dest = Path(f"{_hash}-{batch+1}-{i+1}-{branch+1}.{dtype.key}{dtype.GetPreferredFileExtension()}")
             # dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}-{branch+1}{dtype.GetPreferredFileExtension()}")
             return _parse_path(dest, container_override=Path("/ws")/dest)
 

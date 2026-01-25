@@ -108,6 +108,9 @@ workflow t5 {
     // x = [["a"], ["$c"], ["b"]]
     // println("${x.unique()}")
 
+    x = ['b':[3, 2, 1], 'a':[1, 2, 3], 'c':[2, 1, 3]].sort().collectEntries((k, v) -> [k, v.sort()])
+    // println("1234567"[0..3])
+    println("${new Random().nextInt(3)+1}")
 
     // p = "/msm_home/runs/jNnaM8ZN/_metasmith/task/data/A7ZRjTx9d2kZ/SRR21655586.json"
     // ph = p.md5()[0..14]
@@ -126,26 +129,26 @@ workflow t5 {
 
     // sleep(15)
 
-    o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy
-    l = new JsonSlurper().parseText(file("../l6.json").text)
-    // o.child2parent["a"] = (["p"] as Set)
-    (p) = o.postIn([in("../inputs.p", l)], ["p"])
-    (a) = o.postIn([in("../inputs.a2", l)], ["a"])
+    // o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy
+    // l = new JsonSlurper().parseText(file("../l6.json").text)
+    // // o.child2parent["a"] = (["p"] as Set)
+    // (p) = o.postIn([in("../inputs.p", l)], ["p"])
+    // (a) = o.postIn([in("../inputs.a2", l)], ["a"])
 
-    // o.group('a', [a]).view(v -> ">>> final: ${strip_paths(v)}")
+    // // o.group('a', [a]).view(v -> ">>> final: ${strip_paths(v)}")
 
 
-    k = ['b']
-    (b) = o.post([*s1(o.group('a', o.using([a], k)))], k)
+    // k = ['b']
+    // (b) = o.post([*s1(o.group('a', o.using([a], k)))], k)
 
-    k = ['c']
-    (c) = o.post([*s2(o.group('b', o.using([b], k)))], k)
+    // k = ['c']
+    // (c) = o.post([*s2(o.group('b', o.using([b], k)))], k)
 
-    k = ['d']
-    // (d) = o.post([*s3(o.group('b', o.using([a, b, c], k)))], k)
-    (d) = o.post([*s3p(o.group('b', o.using([a, b, c, p], k)))], k)
-    d[1].view((i, v) -> ">>> $i // ${v.name}")
-    x = a
+    // k = ['d']
+    // // (d) = o.post([*s3(o.group('b', o.using([a, b, c], k)))], k)
+    // (d) = o.post([*s3p(o.group('b', o.using([a, b, c, p], k)))], k)
+    // d[1].view((i, v) -> ">>> $i // ${v.name}")
+    // x = a
 
 
     
@@ -153,10 +156,10 @@ workflow t5 {
     // // cross([a, b]).view(v -> ">>> final: $v")
     // // cross([a, b]).view(v -> ">>> final: ${strip_paths(v)}")
 
-    emit:
+    // emit:
     // g = g[1]
     // y = y[1]
-    x = x[1]
+    // x = x[1]
 }
 
 

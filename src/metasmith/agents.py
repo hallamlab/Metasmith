@@ -470,7 +470,11 @@ class Agent:
             config_file: Path|None=None, 
             params: dict|Path|str|None=None, 
             resource_overrides: ResourceOverrides|None=None,
-        ):
+            stub_delay: float=0,
+        ) -> None:
+        is_dry_run = stub_delay>0
+        if is_dry_run:
+            Log.Info(f"starting dry run")
         if config_file is None: config_file = self.GetNxfConfigPresets()["local"]
         task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
         agent_shell = AgentShell(self)
@@ -559,8 +563,12 @@ class Agent:
                         f.write("\n".join(lines))
                 mover.ExecuteTransfers(wait_for_complete=True)
 
-            Log.Info(f"triggering execution of [{task_key}]")
-            sh_remote.Exec(f"{workspace/AgentPaths.LAUNCHER_FILE}")
+            if is_dry_run:
+                m = "dry run"
+            else:
+                m = "execution"
+            Log.Info(f"triggering {m} of [{task_key}]")
+            sh_remote.Exec(f"{workspace/AgentPaths.LAUNCHER_FILE} {stub_delay:0.3f}")
 
     def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
@@ -717,7 +725,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
             f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
             f'echo "start time was [$TIMESTAMP]"',
             f'export BINDS="{binds}"',
-            f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR >$LOG_DIR/agent.log 2>&1 &',
+            f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} >$LOG_DIR/agent.log 2>&1 &',
         ]))
     os.chmod(launcher_path, 0o754)
 
@@ -725,7 +733,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     task.plan.RenderDAG(f"{work_dir}/workflow.dag.svg")
     Log.Info(f"[{task._key}] staged to [{workspace_str}]")
         
-def RunWorkflow(key: str, log_dir: Path, host:str):
+def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
     assert workspace.exists(), f"task workspace not found [{workspace}]"
@@ -786,6 +794,7 @@ def RunWorkflow(key: str, log_dir: Path, host:str):
         Log.Info(f"calling nextflow from container")
         # export NXF_JVM_ARGS="-Xms16g -Xmx64g"
         # -dump-hashes \
+        stub_param = f"-stub --testSpread={stub_delay:0.3f}" if stub_delay>0 else ""
         shell.Exec(
             f"""
             cd {workspace}
@@ -822,6 +831,7 @@ def RunWorkflow(key: str, log_dir: Path, host:str):
                 -with-dag {nxf_dag} \
                 -with-timeline {log_dir}/nxf_timeline.html \
                 -with-trace {log_dir}/nxf_trace.tsv \
+                {stub_param} \
                 -lib ./lib \
                 -ansi-log false \
                 -resume \

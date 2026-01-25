@@ -623,6 +623,7 @@ class WorkflowTask:
             "",
         ]
         HEADER = "\n".join([
+            "params.testSpread=1",
             f"{_strip_var(context.external_home_var)} = '{context.external_home}'",
             f'{_strip_var(context.external_work_var)} = "{context.external_work}"'.replace(str(context.external_home), context.external_home_var),
         ]+bootstrap)
@@ -715,7 +716,7 @@ class WorkflowTask:
                 "output:",
             ] + [
                 # TAB+f'tuple val(index),path("{add_prefix(x.path)}")'
-                TAB+f'tuple val(index),path("*.{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"){optional}'
+                TAB+f'tuple val(index),path("*-{branch+1}.{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"){optional}'
                 for branch, g in enumerate(produced_archetypes) for x in g
             ] + [
                 "script:",
@@ -738,6 +739,18 @@ class WorkflowTask:
                 f'bootstrap {context.external_work_var} "{step.order}" ${{params.hostName}}',
                 f'[ -e .command.success ] && exit 0 || exit 1', # in case slurm silently kills proc from oom/timeout
                 '"""',
+                'stub:',
+                'def dt = new Random().nextFloat()*params.testSpread',
+                f'def branch = new Random().nextInt({len(produced_archetypes)})',
+                'def hash = "${index.sort().collectEntries((k, v) -> [k, v.sort()])}".md5()[0..3]', # 4 characters
+                f'"""',
+                f'sleep $dt',
+            ] + [
+                f'(( $branch == {branch} )) && touch "test-$hash-{branch+1}.{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
+                for branch, g in enumerate(produced_archetypes) for x in g
+            ] + [
+                f'echo done', # prevents the failure code from previous block
+                f'"""',
                 "}",
                 ""
             ]
