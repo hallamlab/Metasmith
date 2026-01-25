@@ -22,11 +22,22 @@ class Orchestrator {
         if (!(target in this.pending_tasks)) return
         def pending_targets = this.pending_tasks[target]
         if (pending_targets==null) return
-        if (index in pending_targets) {
-            pending_targets.remove(index)
-        }
+        // println("  - rm $target // $index // $pending_targets")
+        // use the linage in the index to figure out which inputs were
+        // used to produce the output (@index) and remove these from pending_tasks
+        pending_targets = pending_targets.collect((candidate) -> {
+            for (c : candidate) {
+                if (!(c.key in index) || !index[c.key].containsAll(c.value)) {
+                    return null
+                }
+            }
+            return candidate
+        })
+        .findAll(x -> x!=null)
         if (pending_targets.size()==0) {
             this.pending_tasks.remove(target)
+        } else {
+            this.pending_tasks[target] = pending_targets
         }
     }
 
@@ -38,6 +49,7 @@ class Orchestrator {
     private synchronized def getExpectedSize(String grouping_by, String name, group_ks) {
         def pending_targets = this.pending_tasks[name]
         def size_valid = pending_targets==null? true : pending_targets.collect(i -> i[grouping_by]).every(ks -> ks.every(k -> !(k in group_ks)))
+        // println("  * $grouping_by $name $group_ks // $pending_targets")
         def expected_size = !size_valid? -1 : this.index_history[name].collect(i -> i[grouping_by]).findAll(ks -> ks.any(k -> (k in group_ks))).size()
         return new Tuple2(size_valid, expected_size)
     }
@@ -210,29 +222,30 @@ class Orchestrator {
                         return new Tuple3(key, name, value)
                     })
                 } else {
+                    // register this group
                     def (index, value) = item
                     def group_k = index[by_name]
                     def group = pending_groups.get(group_k, [])
                     group.add(new Tuple2(index, value))
                     pending_groups[group_k] = group
-                    def (size_valid, expected_size) = this.getExpectedSize(by_name, name, group_k)
-                    // println("  - req: stream $name by $by $size_valid $expected_size") // debug 
 
-                    // if (size_valid && expected_size>0 && group.size()>=expected_size) {
-                    //     pending_groups.remove(group_k)
-                    //     return [new Tuple3(group_k, name, group)]
-                    // }
-
-                    if (size_valid) {
-                        for (key : pending_groups.keySet()) {
-                            def candidate_group = pending_groups[key]
-                            if (expected_size>0 && candidate_group.size()>=expected_size) {
-                                pending_groups.remove(key)
-                                return [new Tuple3(key, name, candidate_group)]
-                            }
+                    // check at most N for every item finished in this stream
+                    // and emit if complete, letting it "catch up" by N-1
+                    // without this limit, all items from pending_groups may be checked
+                    // which is something like O(n^2) vs the size of this stream?
+                    def N = 2
+                    def to_check = pending_groups.keySet().findAll(k -> k!=group_k).take(N-1) + [group_k]
+                    return to_check.collect(key -> {
+                        def candidate_group = pending_groups[key]
+                        def (size_valid, expected_size) = this.getExpectedSize(by_name, name, key)
+                        if (expected_size>0 && candidate_group.size()>=expected_size) {
+                            pending_groups.remove(key)
+                            return new Tuple3(key, name, candidate_group)
+                        } else {
+                            return null
                         }
-                    }
-                    return []
+                    })
+                    .findAll(x -> x!=null)
                 }
             })
             .map(x -> [x]) // see combine() below

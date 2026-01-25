@@ -21,9 +21,13 @@ process s1 {
 	output:
         tuple val(index),path("*b")
     script:
-        def dt = (index['p'][0]-1)
+        def n = a.name[-1].toInteger()
+        def dt = (n-1)
+        // def x = n*2 - 1
+        // def y = n*2
         """
         sleep $dt
+        echo ${a.name}
         touch ${a.name}.${p.name}.b
         """
 }
@@ -35,11 +39,11 @@ process s2 {
         tuple val(index),path("*c")
     script:
         // def k = index['b']
-        def dt = (index['b'][0]-1)
+        // def dt = (index['b'][0]-1)
         // [ $dt -eq 0 ] && [ ${task.attempt} -eq 1 ] && exit 1
         // [ $k -eq 1 ] && exit 1
+        // echo $dt
         """
-        echo $dt
         touch ${b.name}.${p.name}.c
         """
 }
@@ -65,17 +69,28 @@ workflow t5 {
     o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy
     l = new JsonSlurper().parseText(file("../l5.json").text)
     o.child2parent["a"] = (["p"] as Set)
-    (p) = o.post([in("../inputs.p", l)], ["p"])
-    (a) = o.post([in("../inputs.a", l)], ["a"])
+    (p) = o.postIn([in("../inputs.p", l)], ["p"])
+    (a) = o.postIn([in("../inputs.a", l)], ["a"])
+
+    // x = ['a':[1], 'b':[2]]
+    // for (e : x) {
+    //     println("$e.key $e.value")
+    // }
+
+    // a[1].view()
 
     k = ['b']
     (b) = o.post([*s1(o.group('p', o.using([a, p], k)))], k)
 
+    // b[1].view()
+
     k = ['c']
-    // (c) = o.post([*s2(o.group('p', o.using([b, p], k)))], k)
-    (c) = o.post([*s2(o.group('p', o.using([b], k)))], k)
-    c[1].view()
-    x = c
+    (c) = o.post([*s2(o.group('p', o.using([b, p], k)))], k)
+    // (c) = o.post([*s2(o.group('p', o.using([b], k)))], k)
+    c[1].view((i, v) -> ">>> $i // ${v.name}").collect(x -> {
+        // println(o.pending_tasks)
+    })
+    x = p
 
     // k = ['b', 'c']
     // //   // this spreads the "multiChannelOutput" class into a list
