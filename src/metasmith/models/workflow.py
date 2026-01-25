@@ -8,6 +8,7 @@ import os
 import itertools
 import yaml
 import json
+from hashlib import md5
 
 from ..coms.containers import Container, ContainerRuntime
 from .libraries import DataTypeLibrary
@@ -714,7 +715,7 @@ class WorkflowTask:
                 "output:",
             ] + [
                 # TAB+f'tuple val(index),path("{add_prefix(x.path)}")'
-                TAB+f'tuple val(index),path("*.{x.dtype.key}-{branch+1}{x.dtype.GetPreferredFileExtension()}"){optional}'
+                TAB+f'tuple val(index),path("*.{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"){optional}'
                 for branch, g in enumerate(produced_archetypes) for x in g
             ] + [
                 "script:",
@@ -814,7 +815,6 @@ class WorkflowTask:
         _seen_paths = set()
         _given_by_prod_name: dict[str, list[DataInstance]] = {}
         _path2prod_name = {}
-        _path2index_number = {}
         for i, (_, lst) in enumerate(input_channels.items()):
             inst = get_archetype(lst)
             p = inputs_dir/f"{get_prod_name(inst.dtype, force_singular=True)}"
@@ -833,7 +833,6 @@ class WorkflowTask:
                 for i, x in enumerate(to_write):
                     _path = x.ResolvePath()
                     _path2prod_name[_path] = v
-                    _path2index_number[_path] = i+1
                     f.write(f"{_path}"+"\n")
         
         _given_lineage = {}
@@ -845,8 +844,9 @@ class WorkflowTask:
                 for p in [x.parent_lib.Get(p.path).ResolvePath() for p in x.parent_lib.parents.get(x.path, [])]:
                     if p not in _path2prod_name: continue # spurious parent, not used in wf
                     _prod_name = _path2prod_name[p]
-                    i = _path2index_number[p]
-                    _index[_prod_name] = _index.get(_prod_name, [])+[i]
+                    _hash = md5(str(p).encode()).hexdigest()
+                    _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
+                    _index[_prod_name] = _index.get(_prod_name, [])+[_hash]
                 _indexes.append(_index)
             if all(len(idx)>0 for idx in _indexes):
                 k = prod_name.split('_')[0] # in case this will be merged and has a "_1" suffix
@@ -954,7 +954,7 @@ class WorkflowTask:
             f'o.child2parent["{k}"] = ([{", ".join(f'"{x}"' for x in vset)}] as Set)'
             for k, vset in given_lineage_by_keys.items()
         ] + [
-            f'(_{v}) = o.post([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]) // {n}'
+            f'(_{v}) = o.postIn([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]) // {n}'
             for p, v, n in prepared_given # this must be (and is) sorted in lineage order
         ] + [
             line for line in wf_main

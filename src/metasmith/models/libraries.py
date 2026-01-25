@@ -997,8 +997,8 @@ class ExecutionContext:
     def InputGroup(self, key: Dependency):
         return self.GetMeta(key).input_group
 
-    def Output(self, key: Dependency, i: int=0, batch: int=0):
-        return self._get_output_paths(key, i, batch)  
+    def Output(self, key: Dependency, i: int=0):
+        return self._get_output_paths(key, i, self._batch_index)  
 
     def AsBatch(self):
         while self._batch_index < len(self._inputs):

@@ -9,6 +9,7 @@ cd ./cache
 [ -e results ] && rm -r results
     # --bootstrap 
     # run ../test.2.nf \
+    # -resume \
 nextflow \
     -C ../config.nf \
     -log ./.nextflow_logs/log \

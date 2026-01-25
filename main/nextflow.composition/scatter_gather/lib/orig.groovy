@@ -4,12 +4,14 @@ class Orchestrator {
     private Map pending_tasks
     private Map index_history
     private Map child2parent
+    private Map counters
     private def one_null
 
     Orchestrator(one_null) {
         this.pending_tasks = [:]
         this.index_history = [:]
         this.child2parent = [:]     // this is just a topological map (keys only), the indexes link actual instances
+        this.counters = [:]
         this.one_null = one_null
     }
 
@@ -42,6 +44,12 @@ class Orchestrator {
         return new Tuple2(size_valid, expected_size)
     }
 
+    private synchronized def updateCount(String k) {
+        def count = this.counters[k]
+        this.counters[k] = count!=null? count+1 : 1
+        return this.counters[k]
+    }
+
     public def using(streams, targets) {
         def parents = streams.collect((k, s) -> k) as Set
         for (t : targets) {
@@ -60,30 +68,21 @@ class Orchestrator {
         })
     }
 
-    public List _post(streams, names, fullHash) {
+    public List post(streams, names) {
         // def (stream, name) = [streams, names]
-        // todo: use hashes of file names instead of completion order, since order is not deterministic
-        // and non-deterministic processes cant be hashed by nexflow
         return [names, streams].transpose().collect((name, stream) -> {
             return new Tuple2(
                 name,
                 stream.flatMap((index, group) -> {
                     this.removePendingTarget(name, index)
+                    // println("post: <$name> ${index} $pending_targets")
                     if (!(group instanceof List)) {
                         group = [group]
                     }
                     return group.collect((item) -> { // map
-                        def LIMIT = 14 // 0..14 is 15 characters and enables sign to be ignored
-                        def hash = ""
-                        if (fullHash) {
-                            hash = "$item".md5()[0..LIMIT]
-                        } else {
-                            hash = "${item.name}".md5()[0..LIMIT]
-                        }
-                        def v = Long.parseLong(hash, 16)
-                        // println("post: <$name> $v $hash $item")
+                        def completed = this.updateCount(name)
                         index = [:]+index // copy the hashmap
-                        index[name] = [v]
+                        index[name] = [completed]
                         this.registerIndexHistory(name, index)
                         return [index, item]
                     })
@@ -92,14 +91,6 @@ class Orchestrator {
                 })
             )
         })
-    }
-
-    public List post(streams, names) {
-        return this._post(streams, names, false)
-    }
-
-    public List postIn(streams, names) {
-        return this._post(streams, names, true)
     }
 
     private def combineIndexes(indexes) {
@@ -150,45 +141,70 @@ class Orchestrator {
         def original_order = streams.collect(s -> s[0]).withIndex().collectEntries((item, i) -> [item, i])
         def by_channel = streams.find(s -> s[0]==by)
         def (by_name, by_stream) = by_channel
-        // println("g $by_name")
+        // println("g $by_name :: $this.child2parent")
 
+        def to_split = streams.findAll(stream -> {
+            def (name, _stream) = stream
+            // parents that are guarenteed to be produced before
+            // should be split
+            def _is_parent = this.isParent(name, by_name)
+            // println("     c.$by_name p.$name $_is_parent")
+            return _is_parent
+        })
         def to_group = streams.findAll(stream -> {
             def (name, _stream) = stream
-            return name!=by_name
+            // group those that are not to be split (and not the by_channel)
+            // group is more relaxed and can also cross, if not part of lineage
+            return name!=by_name && to_split.every(s -> s[0]!=name)
         })
-        def by_parsed = by_stream.map(item -> {
-            def (index, value) = item
-            def group_k = index[by_name]
-            return [
-                new Tuple3(group_k, by_name, [new Tuple2(index, value)])
-            ]
+
+        // using stream $by as in index
+        // $to_group are grouped
+        // $to_split are duplicatd
+        // for each item in $by
+        def finished_parents = new SynchronizedHashGroup()
+        def parent_channels = to_split.collect(t -> t[0])
+        // since $parents are produced before $by
+        // the parents for each $by will be available
+        def stream_parents = to_split
+        .collect((stream) -> {
+            def (name, _stream) = stream
+            return _stream.map((item) -> {
+                finished_parents.register(name, item)
+                return null // parents are returned with each item of $by
+            })
         })
+        .inject(
+            by_stream.map((item) -> {
+                def (index, value) = item
+                def group_k = index[by_name]
+                // println(">>>  $by_name=$group_k // $index // $value")
+                // println("     $to_split")
+                def _parent_streams = parent_channels.collect((parent_name) -> {
+                    def parent_items = finished_parents.get(parent_name)
+                    .collect(pitem -> {
+                        def (pi, pv) = pitem
+                        def _is_parent = index[parent_name].any(v -> v in pi[parent_name])
+                        // println("   - $by_name=$group_k // $_is_parent // $pi // $pv")
+                        return _is_parent? new Tuple2(pi, pv) : null
+                    })
+                    .findAll(x -> x!=null)
+                    return new Tuple3(group_k, parent_name, parent_items)
+                })
+                return [
+                    new Tuple3(group_k, by_name, [new Tuple2(index, value)]),
+                    *_parent_streams
+                ]
+            }),
+            (result, channel) -> {
+                return result.mix(channel)
+            }
+        )
+        // .view(v -> "^ $v")
+        .filter(x -> x!=null)
 
         return to_group
         .collect((stream) -> {
-            // if a given stream is a parent, we use the by_stream as an index
-            // and emit parents as they complete with the corresponding item of the by_stream
-            def (name, _stream) = stream
-            def _is_parent = this.isParent(name, by_name)
-            if (_is_parent) {
-                return _stream.map((item) -> {
-                    def (_index, _value) = item
-                    def k = _index[name]
-                    return new Tuple2(k, item)
-                })
-                .combine(by_stream.map((item) -> {
-                    def (_index, _value) = item
-                    def k = _index[name]
-                    return new Tuple2(k, _index[by]) // instead of a value, we pass through the "by index"
-                }), by: 0)
-                .map((combined) -> {
-                    def (_, item, key) = combined // first is key of parent, used to sync with by
-                    // println("$by // $name  // $key // $item")
-                    return [new Tuple3(key, name, [item])]
-                })
-            }
-            // else not parent...
-
             // The following enables groups to be emitted immediately when ready.
             // As tasks are queued, they are added to a pending list via ${using()}
             // and promise a named output stream.
@@ -201,6 +217,7 @@ class Orchestrator {
             // the expected size calculated from $index_history.
             // $flatMap enables remainders to be emmitted at end
             def pending_groups = [:]
+            def (name, _stream) = stream
             return _stream.concat(this.one_null)
             .flatMap((item) -> {
                 if (item==null) { // this is the final call. There is no item
@@ -217,12 +234,6 @@ class Orchestrator {
                     pending_groups[group_k] = group
                     def (size_valid, expected_size) = this.getExpectedSize(by_name, name, group_k)
                     // println("  - req: stream $name by $by $size_valid $expected_size") // debug 
-
-                    // if (size_valid && expected_size>0 && group.size()>=expected_size) {
-                    //     pending_groups.remove(group_k)
-                    //     return [new Tuple3(group_k, name, group)]
-                    // }
-
                     if (size_valid) {
                         for (key : pending_groups.keySet()) {
                             def candidate_group = pending_groups[key]
@@ -237,7 +248,7 @@ class Orchestrator {
             })
             .map(x -> [x]) // see combine() below
         })
-        .inject(by_parsed, (result, channel) -> { // reduce (to channel)
+        .inject(stream_parents, (result, channel) -> { // reduce (to channel)
             // cant use ${combine(by: 0)} since when k not in index,
             // it should be treated as wildcard, not a specific value
             // x = Channel.fromList([[['a', 1]], [['a', 2]]])
@@ -250,13 +261,14 @@ class Orchestrator {
             return result
             .combine(channel)
             .filter((_result) -> {
-                return _result
+                def xx = _result
                 .collect(x -> x[0])
-                .findAll(x -> x!=null)
-                .unique().size()==1
+                return xx
+                .findAll(x -> x!=null).unique().size()==1
             })
+
         })
-        // .view(v -> by_name=='b'? "^ $v" : null)
+        // .view(v -> by_name=='f'? "^ $v" : null)
         .map((_result) -> { // we are a channel now, so we can map()
             // each channel is [key, name, group]
             _result = _result.sort((a, b) -> { // back to original order
@@ -265,7 +277,7 @@ class Orchestrator {
             def groups = _result.collect(channel -> channel[-1]) 
             groups.collect(channel -> channel.collect(xx -> {
                 def (key, name, gg) = xx
-                // println(" . $by_name // $key // $name // $gg")
+                // println(" . by $by_name // $key // $name // $gg")
             }))
             def common_index = this.combineIndexes(groups.collect(channel -> channel.collect(group -> group[0])).flatten())
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))

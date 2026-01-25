@@ -127,7 +127,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
         if len(_dtypes)>1:
             Log.Warn(f"unexpected plural group by [{group_by_inst}]")
         group_by_inst = group_by_inst[0]
-        output_indexes = ["#".join(f"{x}" for x in lin[group_by_inst.dtype.key]) for lin in lineages]
+        # output_indexes = ["#".join(f"{x}" for x in lin[group_by_inst.dtype.key]) for lin in lineages]
 
         input_map: dict[Endpoint, list[DataInstance]] = {}
         for k in raw_meta["inp"].split(","):
@@ -225,8 +225,9 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             Log.Info(m)
             return ExecutionResult(False)
 
-        kg = KeyGenerator()
+        # kg = KeyGenerator()
         # output_signature = step.transform.output_signature
+        _hashes = {}
         def _get_output_paths(key: Dependency, i: int, batch: int):
             found = False
             for branch, d2e in enumerate(dep2output):
@@ -235,8 +236,14 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                     found = True
                     break
             assert found, f"[{key}] not found in [{dep2output}]"
-            pattern = dtype.key
-            dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}-{branch+1}{dtype.GetPreferredFileExtension()}")
+            if batch not in _hashes:
+                lin = lineages[batch]
+                slin = {k:sorted(lin[k]) for k in sorted(lin.keys())}
+                _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=8)
+                _hashes[batch] = _hash
+            _hash = _hashes[batch]
+            dest = Path(f"{_hash}-{batch+1}-{i+1}.{dtype.key}{dtype.GetPreferredFileExtension()}")
+            # dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}-{branch+1}{dtype.GetPreferredFileExtension()}")
             return _parse_path(dest, container_override=Path("/ws")/dest)
 
         if len(agent.setup_commands)>0:
@@ -285,11 +292,11 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                     if d in seen_deps: 
                         seen = True
                         continue
-                    e = alldep2output[d]
-                    # insts = alloutput_map[e]
-                    # inst_names = {x.dtype_name for x in insts}
+                    insts = step.dependency_map.get(d, [])
+                    inst_names = {x.dtype_name for x in insts}
+                    iname = '/'.join(inst_names) if len(inst_names)>0 else "no expected instances"
                     dmeta = context.Output(d)
-                    mg.append(f"    X branch [{i+1}] [{dmeta.local}] [{d}]")
+                    mg.append(f"    X branch [{i+1}] [{dmeta.local}] [{iname}]")
                 if seen: missings.append(mg)
             if any(len(g)>0 for g in missings):
                 Log.Info(f"missing outputs:")

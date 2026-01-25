@@ -63,7 +63,7 @@ process s3 {
 workflow t5 {
     main:
     o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy
-    l = new JsonSlurper().parseText(file("../workflow.lineage_of_given.json").text)
+    l = new JsonSlurper().parseText(file("../l5.json").text)
     o.child2parent["a"] = (["p"] as Set)
     (p) = o.post([in("../inputs.p", l)], ["p"])
     (a) = o.post([in("../inputs.a", l)], ["a"])
