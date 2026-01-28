@@ -18,6 +18,7 @@ params {
     }
 
     process {
+        scratch = '${SLURM_TMPDIR:-${TMPDIR:-/tmp}}'
         tries = 2
         array = 20
         cpus = 4
@@ -90,7 +91,7 @@ process {
     }
     
     executor = 'slurm'
-    scratch = true                          // use worker node's local hard drive
+    scratch = params.process.scratch        // use worker node's local hard drive, if set
     // --nodes=1: one compute node per job submission
     // --ntasks=1: this seems to affect some parallelization behaviour of SLURM,
     //      but we will request N cpus ourselves, so 1 is meant to prevent SLURM

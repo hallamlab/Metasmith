@@ -31,7 +31,7 @@ class Container:
         # todo: docker-daemon local?
         match self.runtime:
             case ContainerRuntime.APPTAINER:
-                name = self.image.replace("/", "_")
+                name = self.image.replace("://", "..").replace(":", "..").replace("/", "_")
                 return self.container_cache/f"{name}.sif"
 
     def MakePullCommand(self):

@@ -7,9 +7,8 @@ import shutil
 from typing import Iterable, Literal
 import yaml
 import json
-import socket
 import re
-import time
+from hashlib import md5
 import pandas as pd
 from glob import glob
 
@@ -938,10 +937,11 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     for in_manifest in (output_path.parent/"inputs").iterdir():
         k = in_manifest.name
         with open(in_manifest) as f:
-            for i, l in enumerate(f):
-                i += 1
+            for l in f:
                 p = Path(l[:-1])
-                kv2path[(k, i)] = p, {}
+                _hash = md5(str(p).encode()).hexdigest()
+                _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
+                kv2path[(k, _hash)] = p, {}
     for manifest in glob(str(manifests_path/"*")):
         manifest = Path(manifest)
         if manifest.suffix != ".json": continue
