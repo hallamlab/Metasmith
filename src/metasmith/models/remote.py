@@ -207,6 +207,23 @@ class Source:
         return Source(address=str(path), type=t)
 
     @classmethod
+    def FromSsh(cls, host: str, path: Path|str):
+        return SshSource(host=host, path=Path(path)).AsSource()
+    
+    @classmethod
+    def FromHttp(cls, url: str):
+        return HttpSource(url=url).AsSource()
+        
+    @classmethod
+    def FromGlobus(cls, url: str):
+        """
+        @url is the link provided by the globus file manager web UI
+        example:
+        https://app.globus.org/file-manager?origin_id=1357abcd-efef-acac-3535-1234567890ab&origin_path=%2F
+        """
+        return GlobusSource.Parse(address=url).AsSource()
+    
+    @classmethod
     def Unpack(cls, d: dict):
         return cls(
             address=d["address"],
