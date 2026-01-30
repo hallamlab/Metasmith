@@ -897,7 +897,7 @@ class WorkflowTask:
                 _inst = _inst[0]
                 gb = _inst.dtype.key
                 using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
-                used = f"o.group('{gb}', o.using([{using_symbols}], k))"
+                used = f"o.group('{gb}', [{using_symbols}], k)"
             else:
                 used = ""
             produced_k = [f"'{x}'" for x in produced_snames]

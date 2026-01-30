@@ -14,6 +14,7 @@ class Orchestrator {
     }
 
     private synchronized def registerPendingTarget(String target, Map index) {
+        // println("  <<ADD $target // $index")
         def pending_targets = this.pending_tasks.get(target, [] as Set) // this also sets if not exist
         pending_targets.add(index)
     }
@@ -23,17 +24,18 @@ class Orchestrator {
         def pending_targets = this.pending_tasks[target]
         if (pending_targets==null) return
         // println("  - rm $target // $index // $pending_targets")
-        // use the linage in the index to figure out which inputs were
-        // used to produce the output (@index) and remove these from pending_tasks
-        pending_targets = pending_targets.collect((candidate) -> {
-            for (c : candidate) {
-                if (!(c.key in index) || !index[c.key].containsAll(c.value)) {
-                    return null
-                }
-            }
-            return candidate
-        })
-        .findAll(x -> x!=null)
+        pending_targets.remove(index)
+        // // use the linage in the index to figure out which inputs were
+        // // used to produce the output (@index) and remove these from pending_tasks
+        // pending_targets = pending_targets.collect((candidate_index) -> {
+        //     for (c : candidate_index) {
+        //         if (!(c.key in index) || !index[c.key].containsAll(c.value)) {
+        //             return null
+        //         }
+        //     }
+        //     return candidate_index
+        // })
+        // .findAll(x -> x!=null)
         if (pending_targets.size()==0) {
             this.pending_tasks.remove(target)
         } else {
@@ -49,27 +51,9 @@ class Orchestrator {
     private synchronized def getExpectedSize(String grouping_by, String name, group_ks) {
         def pending_targets = this.pending_tasks[name]
         def size_valid = pending_targets==null? true : pending_targets.collect(i -> i[grouping_by]).every(ks -> ks.every(k -> !(k in group_ks)))
-        // println("  * $grouping_by $name $group_ks // $pending_targets")
         def expected_size = !size_valid? -1 : this.index_history[name].collect(i -> i[grouping_by]).findAll(ks -> ks.any(k -> (k in group_ks))).size()
+        // println("  * $grouping_by $name $group_ks // $size_valid/$expected_size // $pending_targets")
         return new Tuple2(size_valid, expected_size)
-    }
-
-    public def using(streams, targets) {
-        def parents = streams.collect((k, s) -> k) as Set
-        for (t : targets) {
-            this.child2parent[t] = this.child2parent.get(t, [] as Set)+parents
-        }
-        return streams.collect((stream) -> {
-            def (name, _stream) = stream
-            return new Tuple2(name, _stream.map((item) -> {
-                def index = item[0]
-                for (target : targets) {
-                    this.registerPendingTarget(target, index)
-                }
-                // println("using: $name to $targets ${index}")
-                return item
-            }))
-        })
     }
 
     public List _post(streams, names, fullHash) {
@@ -158,7 +142,12 @@ class Orchestrator {
         return parents.any(p -> this.isParent(parent, p)) 
     }
 
-    public def group(by, streams) {
+    public def group(by, streams, targets) {
+        def parents = streams.collect((k, s) -> k) as Set
+        for (t : targets) {
+            this.child2parent[t] = this.child2parent.get(t, [] as Set)+parents
+        }
+
         def original_order = streams.collect(s -> s[0]).withIndex().collectEntries((item, i) -> [item, i])
         def by_channel = streams.find(s -> s[0]==by)
         def (by_name, by_stream) = by_channel
@@ -238,7 +227,7 @@ class Orchestrator {
                     return to_check.collect(key -> {
                         def candidate_group = pending_groups[key]
                         def (size_valid, expected_size) = this.getExpectedSize(by_name, name, key)
-                        if (expected_size>0 && candidate_group.size()>=expected_size) {
+                        if (size_valid && expected_size>0 && candidate_group.size()>=expected_size) {
                             pending_groups.remove(key)
                             return new Tuple3(key, name, candidate_group)
                         } else {
@@ -282,6 +271,9 @@ class Orchestrator {
             }))
             def common_index = this.combineIndexes(groups.collect(channel -> channel.collect(group -> group[0])).flatten())
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
+            for (target : targets) {
+                this.registerPendingTarget(target, common_index)
+            }
             return [common_index, *values]
         })
     }

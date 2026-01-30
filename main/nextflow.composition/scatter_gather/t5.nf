@@ -80,12 +80,12 @@ workflow t5 {
     // a[1].view()
 
     k = ['b']
-    (b) = o.post([*s1(o.group('p', o.using([a, p], k)))], k)
+    (b) = o.post([*s1(o.group('p', [a, p], k))], k)
 
     // b[1].view()
 
     k = ['c']
-    (c) = o.post([*s2(o.group('p', o.using([b, p], k)))], k)
+    (c) = o.post([*s2(o.group('p', [b, p], k))], k)
     // (c) = o.post([*s2(o.group('p', o.using([b], k)))], k)
     c[1].view((i, v) -> ">>> $i // ${v.name}").collect(x -> {
         // println(o.pending_tasks)
