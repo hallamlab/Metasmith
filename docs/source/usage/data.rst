@@ -2,17 +2,42 @@ Representing data
 ############################################################
 
 .. role:: python(code)
-   :language: python
+    :language: python
 
 Data Types
 ============================================================
 
+Motivations
+------------------------------------------------------------
+
+The interoperability problem that Metasmith seeks to solve can be summarized as determining
+if the output of one computational step can be immediately used as the input of another. The
+base case to be considered consists of three components: an upstream step, which produces an
+intermediate data product, that is then consumed by a downstream step. 
+In bioinformatics, the conventional approach is to forego types and link the steps
+using the literal files that are produced. We will call this the "topology-centric" approach
+because interoperability is encoded by the connections between tools and intermediate files.
+The alternative proposed by Metasmith is to attach types to the inputs and outputs of each step.
+Outputs from the upstream step can be used as the inputs of the downstream step if the types match.
+We will call this the "contract-centric" approach because interoperability in each step's contract,
+which describe the required inputs and promised outputs.
+
+There are three key features that motivate the use of a contract-centric approach over a
+topology-centric approach.
+
+1. The contract of each step can be defined in isolation of other steps. While not sufficient on its own, this sets up the foundation for modular systems.
+2. Tools are means to an end. Obtaining correct results are often more important than the specific methods used. In this way, the contract-centric approach favours the user over the machine as it describes the data explicitly and leaves Metasmith to infer the topology. By contrast, the topology-centric approach describes the methods explicitly but leaves the no information about what is produced. For example,  "a file produced by flye, megahit, spades, and hifiasm" is harder to comprehend than "a nucleotide sequence encoded in FASTA format".
+
+Definitions
+------------------------------------------------------------
+
 Metasmith describes data types using set of properties, which enables
 comparions between data to leverage set operations. For example, if we have two types: A = {1, 2} and 
 B = {1, 2, 3}, then B may replace A since B can provide all properties that A can provide. Formally,
-if A is a subset of B (A ⊆ B), then A is substitutable by B.
+if A is a subset of B (A ⊆ B), then A is substitutable by B. Practically, if the properties of an output A
+is a subset of the properties of required input B, then A can be used as the input B.
 
-Data types are called Endpoints to avoid conflicts with python types and because they
+Data type objects within the Metasmith API are called Endpoints to avoid conflicts with python types and because they
 exist at either end of `transforms <transforms.html>`_.
 
 .. code-block:: python

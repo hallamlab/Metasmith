@@ -5,8 +5,6 @@ Setup
    :maxdepth: 3
 
    install
+   tutorials
    deployment
-   ..  virtual_envs
-   ..  containers
-   ..  vs_code
-   ..  globus
+   ssh

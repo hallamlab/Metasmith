@@ -70,6 +70,26 @@ class CommandLineInterface:
                 body[k] = v
         HandleRequest(args.endpoint, body)
 
+    def get(self, raw_args=None):
+        Log.Info(f"Metasmith {VERSION}")
+        parser = ArgumentParser(
+            prog = f'{CLI_ENTRY} {self._get_fn_name()}',
+            description=f"get tutorial resources"
+        )
+        parser.add_argument("name", type=Path, help="name of the resource")
+        args = parser.parse_args(raw_args)
+        path = MODULE_PATH/f"example_resources/{args.name}"
+        if not path.exists():
+            Log.Error(f"the resource doesn't exist [{path}]")
+            return
+        
+        if Path(path.name).exists():
+            Log.Error(f"[./{path.name}] already exists")
+            return
+        
+        shutil.copy(path, path.name)
+        Log.Info(f"copied [{path.name}] from [{path}]")
+
     def lab(self, raw_args=None):
         Log.Info(f"Metasmith {VERSION}")
         parser = ArgumentParser(

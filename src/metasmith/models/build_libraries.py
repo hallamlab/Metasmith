@@ -37,7 +37,7 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
         if not dir_ok(d): continue
         lib = DataInstanceLibrary(d)
         namespace = d.name
-        lib.AddTypeLibrary(namespace, dtypes[namespace])
+        lib.AddTypeLibrary(namespace=namespace, lib=dtypes[namespace])
         c = 0
         for f in d.iterdir():
             if f.name.startswith(DISABLE):
@@ -46,14 +46,14 @@ def Build(data_type_dirs: list[Path], transform_dirs: list[Path], unique_dirs: l
             if not file_ok(f) and not dir_ok(f): continue
             lib.AddItem(f.name, f"{namespace}::{f.name}")
             c += 1
-        lib.PruneTypes() # saves
+        lib.Save()
         Log.Info(f"compiled [{c}] data resources from [{namespace}]")
 
     for d in transform_dirs:
         if not dir_ok(d): continue
         lib = TransformInstanceLibrary(d)
         for k, dlib in dtypes.items():
-            lib.AddTypeLibrary(k, dlib)
+            lib.AddTypeLibrary(namespace=k, lib=dlib)
         count = 0
         # for f in d.iterdir():
         for f in d.glob("**/*.py"):

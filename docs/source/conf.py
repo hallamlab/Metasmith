@@ -89,3 +89,6 @@ epub_show_urls = 'footnote'
 # -- Options for myst-nb
 nb_execution_mode = "off" # myst uses the docs env to build, so we can't execute notebooks 
 nb_remove_code_outputs = True
+
+# -- sphinx_copybutton
+copybutton_prompt_text = "$ " # prevents this from being copied

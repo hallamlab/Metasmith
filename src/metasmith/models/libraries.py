@@ -17,7 +17,7 @@ from ..coms.containers import ContainerRuntime, Container
 from ..coms.terminals import RemoveLeadingIndent
 from ..coms.via_file_watcher import RemoteShell, GenerateId
 from .solver import Dependency, Endpoint, Transform
-from .remote import GlobusSource, Logistics, Source, SourceType
+from .remote import Logistics, Source, SourceType
 from ..hashing import KeyGenerator
 from ..logging import Log
 from ..constants import VERSION, MODULE_PATH, AgentPaths
@@ -233,7 +233,7 @@ class DataInstanceLibrary:
         library_key: str
         path: Path
 
-    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool = False) -> None:
+    def __init__(self, location: Path|str|DataInstanceLibrary) -> None:
         self.manifest: dict[Path, str] = {}
         self.types: dict[str, DataTypeLibrary] = {}
         self._dtype2name = {}
@@ -251,10 +251,6 @@ class DataInstanceLibrary:
             else:
                 assert location.is_dir(), f"[{location}] must be a directory"
             self.location = location
-        if include_std:
-            _here = Path(__file__).parent
-            std_types = DataTypeLibrary.Load(_here/"../std/dtypes.yml")
-            self.AddTypeLibrary("std", std_types)
 
     def __contains__(self, other):
         return other in self.manifest
@@ -264,13 +260,21 @@ class DataInstanceLibrary:
             shutil.rmtree(self.location)
         self.location.mkdir(exist_ok=True)
 
-    def AddTypeLibrary(self, namespace: str, lib: DataTypeLibrary|Source, on_exist: str="clear"):
-        assert on_exist in {"skip", "error", "clear"}
+    def AddTypeLibrary(self, lib: DataTypeLibrary|Source|Path|str, namespace: str|None=None, on_exist: str="skip"):
+        assert on_exist in {"skip", "error", "overwrite"}
+        if isinstance(lib, Path) or isinstance(lib, str):
+            lib = Source.FromLocal(lib)
+        if namespace is None:
+            assert not isinstance(lib, DataTypeLibrary), f"namespace can not be left empty when a DataTypeLibrary is given directly"
+            namespace = lib.GetPath().name
+
         if namespace in self.types:
+            msg = f"[{namespace}] already exists"
             if on_exist == "skip":
+                Log.Warn(msg)
                 return self.types[namespace]
             elif on_exist == "error":
-                raise AssertionError(f"namespace [{namespace}] already exists")
+                raise AssertionError(msg)
             else: # on_exist == "clear":
                 pass # just overwrite
 
@@ -332,15 +336,24 @@ class DataInstanceLibrary:
             else:
                 yield k, v, Endpoint(proto.properties, {p.dtype for p in self.parents[k]})
 
-    def AsSamples(self):
-        parents = set()
-        for g in self.parents.values():
-            for p in g:
-                parents.add(p.path)
-        for k in self.manifest:
-            if k in parents: continue
-            _ps = {p.path for p in self.parents.get(k, [])}
-            yield DataInstanceLibraryView(original=self, mask={k}|_ps)
+    def AsSamples(self, index_types: str|Iterable[str], exact: bool=False):
+        if isinstance(index_types, str):
+            index_types=[index_types]
+
+        if exact:
+            _wl = set(index_types)
+            def _accept(name: str):
+                return name in _wl
+        else:
+            _wl = [self.GetType(n) for n in index_types]
+            def _accept(name: str):
+                model = self.GetType(name)
+                return any(model.IsA(e) for e in _wl)
+
+        for path, name in self.manifest.items():
+            if not _accept(name): continue
+            _ps = {p.path for p in self.parents.get(path, [])}
+            yield DataInstanceLibraryView(original=self, mask={path}|_ps)
 
     def AddItem(self, path: Path|str, dtype: str, parents: Iterable[Path]|None=None):
         if parents is None:
@@ -858,31 +871,31 @@ class TransformInstance:
         try:
             m = __import__(f"{definition.stem}")
             reload(m)
-            if cls._last_loaded_transform is not None:
-                tr = cls._last_loaded_transform
-                tr.name = definition.stem
-                tr._path = definition
-                # with open(definition) as f:
-                #     raw = "".join(f.readlines())
-                #     h, k = KeyGenerator.FromStr(raw, l=5)
-                #     tr._hash, tr._key = h, k
-                # use the transform model hash, 
-                # since updates to script should be able to use the existing nxf cache
-                tr._hash, tr._key = tr.model.hash, tr.model.key
-                return cls._last_loaded_transform
+            assert cls._last_loaded_transform is not None
+            tr = cls._last_loaded_transform
+            tr.name = definition.stem
+            tr._path = definition
+            # with open(definition) as f:
+            #     raw = "".join(f.readlines())
+            #     h, k = KeyGenerator.FromStr(raw, l=5)
+            #     tr._hash, tr._key = h, k
+            # use the transform model hash, 
+            # since updates to script should be able to use the existing nxf cache
+            tr._hash, tr._key = tr.model.hash, tr.model.key
+            return cls._last_loaded_transform
         finally:
             sys.path = original_path_var
 
 class TransformInstanceLibrary(DataInstanceLibrary):
-    def __init__(self, location: Path|str|DataInstanceLibrary, include_std: bool=False) -> None:
-        super().__init__(location, include_std=include_std)
+    def __init__(self, location: Path|str|DataInstanceLibrary) -> None:
+        super().__init__(location)
         if "transforms" not in self.types:
             transform_types = DataTypeLibrary(types={
                 "transform":        Endpoint({"metasmith", "transform"}),
                 "example input":    Endpoint({"metasmith", "example input"}),
                 "example output":   Endpoint({"metasmith", "example output"}),
             })
-            self.AddTypeLibrary("transforms", transform_types)
+            self.AddTypeLibrary(namespace="transforms", lib=transform_types)
         self._transform_cache: dict[Path, TransformInstance] = {}
 
     def PruneTypes(self, save: bool=True):
@@ -906,9 +919,10 @@ class TransformInstanceLibrary(DataInstanceLibrary):
                 raise FileExistsError(f"file exists [{path}]")
         else:
             shutil.copy(example, path, follow_symlinks=True)
-        self.AddItem(path, "transforms::transform")
+        self.AddItem(path.relative_to(self.location), "transforms::transform")
         # results = self.AddBulk([(example, path, "transforms::transform")], on_exist="skip" if exist_ok else "error")
         # assert len(results) == 1, f"failed to add transform at [{path}]"
+        self.Save()
         inst = TransformInstance.Load(self.location, path)
         return inst
 
@@ -929,8 +943,8 @@ class TransformInstanceLibrary(DataInstanceLibrary):
             path = path.with_suffix(".py")
         if reload or path not in self._transform_cache:
             tr = TransformInstance.Load(self.location, path)
-            if tr is not None:
-                self._transform_cache[path] = tr
+            assert tr is not None
+            self._transform_cache[path] = tr
         return self._transform_cache[path]
 
     def IterateTransforms(self):

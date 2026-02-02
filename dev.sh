@@ -199,7 +199,7 @@ case $1 in
     -t)
         shift
         export PYTHONPATH=$HERE/src:$PYTHONPATH
-        ws=$HERE/scratch/starter
+        ws=$HERE/scratch/test_ws
         mkdir -p $ws
         cd $ws
         python -m $NAME lab $@

@@ -2,7 +2,7 @@ Transforms
 ############################################################
 
 .. role:: python(code)
-   :language: python
+    :language: python
 
 The manipulation of raw data to interpretable insights typically involves a series of computational steps,
 each of which transforms inputs of specific data types to outputs of other data types. Metasmith can be

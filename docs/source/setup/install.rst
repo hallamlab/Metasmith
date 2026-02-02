@@ -1,8 +1,8 @@
-Getting Started
-############################################################
-
 .. role:: bash(code)
    :language: bash
+
+Installing Metasmith
+############################################################
 
 .. important::
 
@@ -83,7 +83,6 @@ along with nearly all of their dependencies. Containers are "pulled" as "images"
 .. code-block:: console
     :caption: Terminal
 
-    $ docker pull --platform=linux/amd64 quay.io/hallamlab/metasmith
     $ docker run \
         --platform=linux/amd64 \
         -it --rm \
@@ -105,10 +104,6 @@ along with nearly all of their dependencies. Containers are "pulled" as "images"
 Apptainer
 ------------------------------------------------------------
 
-.. Warning::
-
-    Experimental feature
-
 `Apptainer <https://apptainer.org/>`_ is an alternative to Docker designd for research computing on grid infrastructure.
 It is only available for **Linux machines**.
 
@@ -121,7 +116,6 @@ It is only available for **Linux machines**.
 .. code-block:: console
     :caption: Terminal
 
-    $ apptainer pull docker://quay.io/hallamlab/metasmith
     $ apptainer run \
         --bind "${TMPDIR-/tmp}":/tmp,"$(pwd -P)":/ws \
         --workdir /ws \
@@ -140,8 +134,7 @@ It is only available for **Linux machines**.
 Next Steps
 ============================================================
 
-.. button-link:: /tutorials/deploying_locally.html
+.. button-link:: tutorials.html
     :color: primary
 
-    **Try the tutorial**
-
+    **Try a tutorial**

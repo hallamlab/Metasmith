@@ -4,7 +4,6 @@ API reference
 .. toctree::
    :maxdepth: 3
 
-   deployment
    data
    logistics
    transforms

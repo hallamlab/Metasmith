@@ -1,6 +1,7 @@
 .. role:: python(code)
-   :language: python
+    :language: python
 
 Workflow generation
 ############################################################
 
+.. todo: mock runs with stub=1

@@ -86,7 +86,7 @@ class TargetBuilder:
         self.targets[target_type] = parents.copy()
         return target_type
 
-ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|TransformInstance, Resources]
+ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|str|TransformInstance, Resources]
 @dataclass
 class Agent:
     home: Source
@@ -370,7 +370,7 @@ class Agent:
     def GenerateWorkflow(
         self, 
         samples: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
-        resources: list[DataInstanceLibrary],
+        resources: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary],
         targets: TargetBuilder,
         max_iter: int=1024, max_refine: int=256, seed: int=42,
@@ -402,8 +402,8 @@ class Agent:
             _dtname2dep[dtype_name] = d
             target_names[e] = dtype_name
 
-        res_views = [DataInstanceLibraryView(lib) for lib in resources]
-        _samples = [DataInstanceLibraryView(sample) if not isinstance(sample, DataInstanceLibraryView) else sample for sample in samples]
+        res_views = [lib if isinstance(lib, DataInstanceLibraryView) else DataInstanceLibraryView(lib) for lib in resources]
+        _samples = [sample if isinstance(sample, DataInstanceLibraryView) else DataInstanceLibraryView(sample) for sample in samples]
         gen_result = WorkflowPlan.Generate(
             given=[
                 [sample]+res_views
@@ -418,7 +418,8 @@ class Agent:
         if isinstance(gen_result, Solution):
             return WorkflowTask(ok=False, plan=WorkflowPlan(given=[], targets=[], steps=[], _solver_result=gen_result))
         else:
-            return WorkflowTask(ok=True, plan=gen_result, data_libraries=list(sample_libs)+resources,transform_libraries=transforms)
+            orig_resources = [lib if isinstance(lib, DataInstanceLibrary) else lib._original for lib in resources]
+            return WorkflowTask(ok=True, plan=gen_result, data_libraries=list(sample_libs)+orig_resources,transform_libraries=transforms)
 
     def _get_mock_container(self, task: WorkflowTask):
         binds = task.GetCommonInputFolders(method="external")
@@ -569,6 +570,8 @@ class Agent:
                             elif isinstance(tr, int):
                                 p = tr
                                 key = f"p{p:02}__.*"
+                            elif isinstance(tr, str):
+                                key = f".*__{tr}"
                             else:
                                 key = f".*__{tr.name}"
 

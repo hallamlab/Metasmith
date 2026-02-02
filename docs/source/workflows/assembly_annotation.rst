@@ -2,7 +2,7 @@ Assembly & Annotation
 ############################################################
 
 .. role:: python(code)
-   :language: python
+    :language: python
 
 .. note::
     This is not a guide for getting started with Metasmith. See `the tutorial <../main/workflow.html>`_ instead.

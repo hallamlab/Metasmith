@@ -8,19 +8,25 @@
     </style>
 
 .. role:: python(code)
-   :language: python
+    :language: python
 
 Overview
 ############################################################
 
-Metasmith organizes bioinformatics data into machine-readable structures that enable the automated
-generation of `Nextflow <https://www.nextflow.io/docs/latest/index.html>`_ workflows. Deployed agents
-can then autonomously execute these workflows locally or on remote machines.
+Metasmith provides a type system to describe bioinformatics data products
+based on how it can be generated or consumed by computational tools.
+This enables a solver to generate 
+`Nextflow <https://www.nextflow.io/docs/latest/index.html>`_ workflows
+from target types, given data, and available tools. Generated workflows
+can then be executed directly or on remote machines using containerization.
 
+.. button-link:: /setup/install.html
+    :color: primary
+
+    **Install Metasmith**
+    
 Usage in 5 steps
 ============================================================
-
-Metasmith provides a python interface designed for `Jupyter notebooks <https://jupyter.org/>`_.
 
 1 - Deploy an agent
 -----------------------------------------------------------
@@ -96,12 +102,6 @@ to maintain accessibility by both humans and machines.
         smith.GetResultSource(task),
         ...
     )
-
-Getting started
------------------------------------------------------------
-
-After `installing Metasmith <setup/install.html>`_, try 
-`this tutorial <tutorials/deploying_locally.html>`_ for a basic demo of the 5 steps described above.
 
 Documentation
 ############################################################

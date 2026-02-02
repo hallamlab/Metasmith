@@ -1,6 +1,15 @@
 from IPython.display import display, SVG, HTML
+from pathlib import Path
 
-def ipynbButtonLink(url, text: str, color: str="#1976D2", on_hover_color: str="#1565C0", size: str="16px"):
+def ipynbButtonLink(url, text: str|None=None, color: str="#1976D2", on_hover_color: str="#1565C0", size: str="16px", external=False):
+    if not external:
+        url = Path(url).relative_to(Path(".").absolute(), walk_up=True)
+        if text is None:
+            text = url.name
+    else:
+        if text is None:
+            text = url
+
     # font-weight: bold;
     html_button = f"""
     <style>
