@@ -88,19 +88,18 @@ consuming it.
 .. code-block:: python
     :linenos:
 
-    inputs = DataInstanceLibrary(WORKSPACE/"inputs/3pangenome.xgdb")
-    inputs.Purge() # clear the input folder, in case this is not the first time this cell was ran
+    in_dir = WORKSPACE/"3pangenome.xgdb"
+    inputs = DataInstanceLibrary(in_dir)
+    inputs.Purge()  # clear the input folder, in case this is not the first time this cell was ran
+    inputs.AddTypeLibrary(MLIB/"data_types/ncbi.yml")
+    inputs.AddTypeLibrary(MLIB/"data_types/sequences.yml")
+    inputs.AddTypeLibrary(MLIB/"data_types/pangenome.yml")
 
-    # add data types
-    inputs.AddTypeLibrary("ncbi", DataTypeLibrary.Load(MLIB/"data_types/ncbi.yml"))
-    inputs.AddTypeLibrary("sequences", DataTypeLibrary.Load(MLIB/"data_types/sequences.yml"))
-    inputs.AddTypeLibrary("pangenome", DataTypeLibrary.Load(MLIB/"data_types/pangenome.yml"))
-
-    # register inputs
     group = inputs.AddValue("pangenome", "e coli", "pangenome::pangenome")
     inputs.AddValue("DH10b", "GCF_000019425.1", "ncbi::accession", parents={group})
     inputs.AddValue("K12", "GCF_000005845.2", "ncbi::accession", parents={group})
     inputs.AddItem(WORKSPACE/"epi300.gbk", "sequences::gbk", parents={group})
+    inputs.LocalizeContents()
     inputs.Save()
 
 .. tip::
@@ -113,11 +112,11 @@ consuming it.
     .. code-block:: python
         :linenos:
 
-        input_dir = Path(WORKSPACE/"inputs/3pangenome.xgdb")
+        in_dir = Path(WORKSPACE"/3pangenome.xgdb")
         try:
-            inputs = DataInstanceLibrary.Load(input_dir)
+            inputs = DataInstanceLibrary.Load(in_dir)
         except:
-            inputs = DataInstanceLibrary(input_dir)
+            inputs = DataInstanceLibrary(in_dir)
             inputs.Purge() # just to be safe
             inputs.AddTypeLibrary(...)
             ...
@@ -198,8 +197,6 @@ Let's take a look at the DAG for this generated workflow.
    :align: center
    :width: 70%
    :alt: the generated pangenome workflow
-
-   The generated pangenome workflow
 
 .. important::
 
@@ -311,13 +308,12 @@ output. We also make links to the main report files.
 .. code-block:: python
     :linenos:
 
-    to_show = [
-        "_metadata/logs.latest/nxf_report.html",
-        "_metadata/logs.latest/nxf_timeline.html",
-    ] + [path for path, type_name, endpoint in results.Iterate()]
+    ipynbButtonLink(results_path/"_metadata/logs.latest/nxf_report.html")
+    ipynbButtonLink(results_path/"_metadata/logs.latest/nxf_timeline.html")
 
-    for path in to_show:
-        ipynbButtonLink(path, f'view {path.parent.name}/{path.name}')
+    for path, type_name, endpoint in results.Iterate():
+        if path.is_absolute(): continue # inputs have absolute paths
+        ipynbButtonLink(results_path/path, f'view {type_name} {path.name}')
 
 Next steps
 ============================================================

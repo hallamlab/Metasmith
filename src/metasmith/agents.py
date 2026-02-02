@@ -434,7 +434,7 @@ class Agent:
         return mock
 
     def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", verify_external_paths: bool=False):
-        VALID_ON_EXIST = {"skip", "error", "clear", "update_all", "update_workflow", "update_data"}
+        VALID_ON_EXIST = {"skip", "error", "clear", "update", "update_workflow", "update_data"}
         assert on_exist in VALID_ON_EXIST, f"on_exist option [{on_exist}] is not one of {VALID_ON_EXIST}"
         Log.Info(f"staging workflow [{task.GetKey()}]")
         agent_shell = AgentShell(self)
@@ -459,7 +459,7 @@ class Agent:
                             _to_delete_src = remote_work_path
                             _to_delete = _to_delete_src.with_suffix(".to_delete")
                             sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
-                        case "update_all":
+                        case "update":
                             Log.Warn(f"updating previously staged task")
                         case "update_data":
                             Log.Warn(f"resending data for previously staged task")

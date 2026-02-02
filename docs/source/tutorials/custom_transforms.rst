@@ -14,6 +14,13 @@ The Jupyter notebook for this tutorial can be obtained by:
 
     $ msm get tutorials/custom_transforms.ipynb
 
+The completed fastANI transform can be obtained by:
+
+.. code-block:: bash
+    :caption: Terminal
+
+    $ msm get transforms/fastani.py
+
 Prerequisites
 ============================================================
 
@@ -400,7 +407,7 @@ The full :python:`fastani.py`.
 Testing
 ============================================================
 
-Our :python:`TransformInstanceLibrary` will now save sucessfully.
+Our :python:`TransformInstanceLibrary` should now save sucessfully.
 
 .. code-block:: python
     :caption: Jupyter
@@ -420,7 +427,7 @@ To test fastANI, we will need to prepare inputs and the container image.
     :caption: Jupyter
     :linenos:
 
-    inputs_path = WORKSPACE/"ani_test_inputs"
+    inputs_path = WORKSPACE/"ani_test_inputs.xgdb"
     try:
         inputs = DataInstanceLibrary.Load(inputs_path)
     except:
@@ -483,6 +490,69 @@ Let's generate the workflow and inspect the plan.
     dag = task.plan.RenderDAG(WORKSPACE/"ani_dag.svg")
     ipynbButtonLink(dag)
 
+.. figure:: /_static/dag_ani.svg
+   :align: center
+   :width: 70%
+   :alt: the generated fastANI workflow
+
+Finally, we can stage and run fastANI. The following also includes a bit of
+resource tweaks to let the three download steps execute concurrently. 
+
+.. code-block:: python
+    :caption: Jupyter
+    :linenos:
+        
+    smith.StageWorkflow(task, on_exist="update")
+
+    smith.RunWorkflow(
+        task,
+        config_file=smith.GetNxfConfigPresets()["local"],
+        params= dict(
+            executor=dict(
+                cpus=14,
+                queueSize=3, # explicitly set 3 jobs to run in parallel
+            ),
+            process=dict(
+                tries=1,
+            ),
+        ),
+        resource_overrides={
+            "*": Resources(
+                memory=Size.GB(1),
+            ),
+            "fastani": Resources(
+                cpus=14, # give fastANI all the threads
+            )
+        }
+    )
+
+.. tip::
+
+    It is possible to perform a dry run by setting :python:`stub_delay` to a positive number.
+    This will have nextflow execute mock protocols for each process.
+
+    .. code-block:: python
+        :linenos:
+
+        smith.RunWorkflow(
+            # ...
+            stub_delay=3.0,
+        )
+
+Once complete, we can have a look at the results.
+
+.. code-block:: python
+    :caption: Jupyter
+    :linenos:
+        
+    results_path = smith.GetResultSource(task).GetPath()
+    results = DataInstanceLibrary.Load(results_path)
+
+    ipynbButtonLink(results_path/"_metadata/logs.latest/nxf_report.html")
+
+    for path, type_name, endpoint in results.Iterate():
+        if path.is_absolute(): continue # inputs have absolute paths
+        ipynbButtonLink(results_path/path, f'view {type_name} {path.name}')
 
 Next steps
 ============================================================
