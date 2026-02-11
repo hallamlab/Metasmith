@@ -21,71 +21,49 @@ process s1 {
         // def dt = (index['a']-1)
         // sleep $dt
         """
-        touch ${a.name}1b
-        touch ${a.name}2b
+        touch 1-${a.name}.1b
+        touch 1-${a.name}.2b
+        touch 1-${a.name}.1c
+        """
+}
 
-        touch ${a.name}1c
-        touch ${a.name}2c
+process b1 {
+    input:
+        tuple val(index),path(a),path(b)
+    output:
+        tuple val(index),path("*i")
+        tuple val(index),path("*j")
+    script:
+        def n = index.size()+1
+        // def ib = b.collect(x -> "\"${x.name}\"").join(' ')
+        def ia = a.collect(x -> "\"${x.name}\"").join(' ')
+        // sleep $n
+        // echo "\$inputs" >inputs
+        // IFS=',' read -ra g <<< "$b"
+        """
+        echo "$index" >index
+        items=($ia)
+        i=0
+        for x in "\${items[@]}"; do
+            (( i=i+1 ))
+            if (( i == 2 )); then
+                continue
+            fi
+            echo "\$x" > \${i}-\$x.1i
+            echo "\$x" > \${i}-\$x.2i
+            echo "\$x" > \${i}-\$x.j
+        done
         """
 }
 
 process s2 {
 	input:
-        tuple val(index),path(b)
+        tuple val(index),path(a),path(c),path(i),path(j)
 	output:
         tuple val(index),path("*f")
     script:
-        // def k = index['b']
-        def dt = (index['b'][0]-1)
-        // [ $dt -eq 0 ] && [ ${task.attempt} -eq 1 ] && exit 1
-        // [ $k -eq 1 ] && exit 1
         """
-        echo $dt
-        sleep $dt
-        touch ${b.name}1f
-        touch ${b.name}2f
-        """
-}
-
-process p1 {
-    input:
-        tuple val(index),path(f)
-	output:
-        tuple val(index),path("*h")
-    script:
-        """
-        touch ${f.name}1h
-        """
-}
-
-process g1 {
-    input:
-        tuple val(index),path(b),path(f),path(c)
-	output:
-        tuple val(index),path("*g")
-    script:
-        // echo ${a}>>1g
-        // echo ${c}>>1g
-        """
-        touch ${f.name}1g
-        """
-}
-
-process b1 {
-  input:
-        tuple val(index),path(g)
-    output:
-        tuple val(index),path("*i")
-    script:
-        def n = index.size()+1
-        // sleep $n
-        """
-        IFS=',' read -ra g <<< "$g"
-        echo "$index" >x
-        echo "$g" >>x
-        for arri in {1..$n}; do
-            echo \$arri>>\${arri}i
-        done
+        touch 1-${a.name}--${c.name}--${j.name}1f
         """
 }
 
@@ -94,50 +72,35 @@ workflow t4 {
 
     END = Channel.fromList([null]) // cant create channels in groovy
     o = new Orchestrator(END)
-    // in("../inputs.a1")
-    (a) = o.post([in("../inputs.a1")], ["a"])
+    (a) = o.postIn([in("../inputs.a")], ["a"])
 
     k = ['b', 'c']
     //   // this spreads the "multiChannelOutput" class into a list
     //   // [*process()]
-    (b, c) = o.post([*s1(o.group('a', o.using([a], k)))], k)
-      
+    (b, c) = o.post([*s1(o.group('a', [a], k, 1))], k)
+    
+
+    k = ['i', 'j']
+    // x = o.post([*o.debatch(b1(o.batch(o.group('g', [g], k)), 3)))], k)
+    // x.view()
+    (i, j) = o.post([*b1(o.group('a', [a, b], k, 3))], k)
+
+    k = ['f']
+    //   // this spreads the "multiChannelOutput" class into a list
+    //   // [*process()]
+    (f) = o.post([*s2(o.group('a', [a, c, i, j], k, 1))], k)
+
+
+    x = f
+
+    f[1].view(v -> ">>> ${v.name}")
     // //   // b[1].view()
     // //   // batch(2, group('b', using([b], ['b']))).view()
     // //   b1(batch(2, group('b', using([b], ['b']))))
     // // b1(b[1].collate(2))
 
-
-    // // logistics processes
-    // // batch outputs normal
-
-    k = ['f']
-    (f) = o.post([*s2(o.group('b', o.using([b], k)))], k)
-
-    k = ['h']
-    (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
-    // h[1].view()
-
-    k = ['g']
-    gx = o.group('f', o.using([b, f, c], k))
-    // gx.view(v -> "  . $v")
-    (g) = o.post([*g1(gx)], k)
-    // x = o.group('f', o.using([b, f, c], k))
-    // (g) = o.post([*o.batch(g1, x, 3)], k)
-    // g[1].view()
-
-    k = ['x']
-    // x = o.post([*o.debatch(b1(o.batch(o.group('g', o.using([g], k)), 3)))], k)
-    // x.view()
-    (y) = o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k)
-    // y[1].view()
-
-    // x = o.post([*o.batch(b1, o.group('g', o.using([g], k)), 3)], k)
-    // x.view()
-    // o.batch(b1, o.group('g', o.using([g], k)), 3).view()
-
-    // o.xross(o.using([c, f], ['x'])).view()
-    // o.unify(o.using([h, f], ['x'])).view()
+    // o.xross([c, f], ['x'])).view()
+    // o.unify([h, f], ['x'])).view()
 
 
     // b = post(b, 'b')
@@ -162,6 +125,11 @@ workflow t4 {
     // cross([a, b]).view(v -> ">>> final: ${strip_paths(v)}")
 
     emit:
-    g = g[1]
-    y = y[1]
+    x = x[1]
+    // g = g[1]
+    // y = y[1]
+}
+
+workflow {
+    t4()
 }
