@@ -117,9 +117,6 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
         except Exception as e:
             Log.Error(f"failed to read [{METADATA_FILE}]: {e}")
         lineages = raw_meta["lin"]
-        # (?=...) is look ahead
-        # \g<0> is the matching group
-        # lineage = re.sub(r"\w+(?=:)", r'"\g<0>"', lineage)
         lineages = json.loads(lineages)
         if not isinstance(lineages, list): lineages = [lineages]
         group_by_inst = step.dependency_map[step.transform.group_by]
@@ -152,15 +149,15 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             dep2output.append(dgroup)
         alldep2output = {d:e for x in dep2output for d,e in x.items()}
 
-        input2files: dict[Endpoint, list[Path]] = {}
-        for i, e in enumerate(input_map):
-            k = f"i{i+1:02}"
-            if k not in raw_meta: continue
-            # The lookbehind `(?<!...)` asserts that the pattern inside
-            # does not precede the current position.
-            file_group: list[str] = re.split(r"(?<!\\)\s", raw_meta[k])
-            input2files[e] = [Path(re.sub(r"\\\s", " ", f)) for f in file_group]
-            # Log.Debug(f"{k} {inst.dtype_name} {input2files[inst]}")
+        # input2files: dict[Endpoint, list[Path]] = {}
+        # for i, e in enumerate(input_map):
+        #     k = f"i{i+1:02}"
+        #     if k not in raw_meta: continue
+        #     # The lookbehind `(?<!...)` asserts that the pattern inside
+        #     # does not precede the current position.
+        #     file_group: list[str] = re.split(r"(?<!\\)\s", raw_meta[k])
+        #     input2files[e] = [Path(re.sub(r"\\\s", " ", f)) for f in file_group]
+        #     # Log.Debug(f"{k} {inst.dtype_name} {input2files[inst]}")
 
         def _status(p: ContextPath):
             return "✓" if p.local.exists() else "X"
@@ -200,16 +197,18 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             if len(lineages)>1:
                 Log.Info(f"  > batch [{batch+1}]:")
             g: dict[Dependency, ContextData] = {}
-            for e in input_map:
+            file_groups = batch_lineage['FILES']
+            for e, file_names in zip(input_map, file_groups):
                 insts = input_map[e]
                 inst_names = {x.dtype_name for x in insts}
                 Log.Info(f"    [{e.key} {'/'.join(inst_names)}] at:")
-                remaining_files = input2files[e]
-                group_size = len(batch_lineage[e.key])
-                # Log.Debug(f"{inst.dtype_name} {group_size} {remaining_files}")
-                input_group = [_parse_path(p) for p in remaining_files[:group_size]]
-                # Log.Debug(f"{inst.dtype_name} {group_size} {[p.container for p in input_group]}")
-                input2files[e] = remaining_files[group_size:]
+                input_group = [_parse_path(Path(p)) for p in file_names] 
+                # remaining_files = input2files[e]
+                # group_size = len(batch_lineage[e.key])
+                # # Log.Debug(f"{inst.dtype_name} {group_size} {remaining_files}")
+                # input_group = [_parse_path(p) for p in remaining_files[:group_size]]
+                # # Log.Debug(f"{inst.dtype_name} {group_size} {[p.container for p in input_group]}")
+                # input2files[e] = remaining_files[group_size:]
                 for p in input_group:
                     missing_input = missing_input or not p.local.exists()
                     Log.Info(_shorten_home(f"        {_status(p)} [{_get_formatted_size(p.local)}] [{p.local}]"))
@@ -242,7 +241,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                 _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=8)
                 _hashes[batch] = _hash
             _hash = _hashes[batch]
-            dest = Path(f"{_hash}-{batch+1}-{i+1}-{branch+1}.{dtype.key}{dtype.GetPreferredFileExtension()}")
+            dest = Path(f"{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{dtype.GetPreferredFileExtension()}")
             # dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}-{branch+1}{dtype.GetPreferredFileExtension()}")
             return _parse_path(dest, container_override=Path("/ws")/dest)
 

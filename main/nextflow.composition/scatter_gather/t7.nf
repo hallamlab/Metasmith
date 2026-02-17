@@ -17,26 +17,28 @@ def in(f, l) {
 
 process s1 {
 	input:
-        tuple val(index),path(a),path(p)
+        tuple val(index),path(a)
 	output:
         tuple val(index),path("*b")
+        tuple val(index),path("*c")
     script:
-        def n = a.name[-1].toInteger()
-        def dt = (n-1)
+        // def n = a.name[-1].toInteger()
+        // def dt = (n-1)
         // def x = n*2 - 1
         // def y = n*2
         // sleep $dt
         """
-        echo ${a.name}
-        touch ${a.name}.${p.name}.b
+        touch ${a.name}.b
+        touch ${a.name}.1c
+        touch ${a.name}.2c
         """
 }
 
 process s2 {
 	input:
-        tuple val(index),path(b),path(p)
+        tuple val(index),path(b)
 	output:
-        tuple val(index),path("*c")
+        tuple val(index),path("*d")
     script:
         // def k = index['b']
         // def dt = (index['b'][0]-1)
@@ -44,23 +46,23 @@ process s2 {
         // [ $k -eq 1 ] && exit 1
         // echo $dt
         """
-        touch ${b.name}.${p.name}.c
+        touch ${b.name}.d
         """
 }
 
 process s3 {
 	input:
-        tuple val(index),path(b)
+        tuple val(index),path(c)
 	output:
-        tuple val(index),path("*c")
+        tuple val(index),path("*e")
     script:
         // def k = index['b']
-        def dt = (index['b'][0]-1)
+        // def dt = (index['b'][0]-1)
         // [ $dt -eq 0 ] && [ ${task.attempt} -eq 1 ] && exit 1
         // [ $k -eq 1 ] && exit 1
         // echo $dt
         """
-        touch ${b.name}.${p.name}.c
+        touch ${c.name}.e
         """
 }
 
@@ -69,7 +71,7 @@ workflow t5 {
     o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy
     l = new JsonSlurper().parseText(file("../l5.json").text)
     o.child2parent["a"] = (["p"] as Set)
-    (p) = o.postIn([in("../inputs.p", l)], ["p"])
+    // (p) = o.postIn([in("../inputs.p", l)], ["p"])
     (a) = o.postIn([in("../inputs.a", l)], ["a"])
 
     // x = ['a':[1], 'b':[2]]
@@ -79,18 +81,22 @@ workflow t5 {
 
     // a[1].view()
 
-    k = ['b']
-    (b) = o.post([*s1(o.group('p', [a, p], k))], k)
+    k = ['b', 'c']
+    (b, c) = o.post([*s1(o.group('a', [a], k))], k)
 
     // b[1].view()
 
-    k = ['c']
-    (c) = o.post([*s2(o.group('p', [b, p], k))], k)
+    k = ['d']
+    (d) = o.post([*s2(o.group('b', [b], k))], k)
+
+    k = ['e']
+    (e) = o.post([*s3(o.group('c', [c], k))], k)
+
+
     // (c) = o.post([*s2(o.group('p', o.using([b], k)))], k)
-    c[1].view((i, v) -> ">>> $i // ${v.name}").collect(x -> {
-        // println(o.pending_tasks)
-    })
-    x = p
+    d[1].view((i, v) -> "D>> ${v.name}")
+    e[1].view((i, v) -> "E>> ${v.name}")
+    x = a
 
     // k = ['b', 'c']
     // //   // this spreads the "multiChannelOutput" class into a list
