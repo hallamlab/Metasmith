@@ -76,7 +76,7 @@ class Container:
                     image = local
                 elif local:
                     image = self.GetLocalPath()
-                run = 'run'
+                run = 'exec'
             case _: # default
                 raise TypeError(f'unsupported runtime [{self.runtime}]')
         toks = [
