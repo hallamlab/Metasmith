@@ -65,21 +65,23 @@ class Container:
         match self.runtime:
             case ContainerRuntime.DOCKER:
                 # todo: detect if image for matching platform exists first before forcing amd64
-                others = ["--platform=linux/amd64", "--rm", "-u $(id -u):$(id -g)", "--network=host", '-e TMPDIR=${TMPDIR-"/tmp"}']
-                workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ""
+                others = ['--platform=linux/amd64', '--rm', '-u $(id -u):$(id -g)', '--network=host', '-e TMPDIR=${TMPDIR-"/tmp"}', '--entrypoint=""']
+                workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ''
+                run = 'run'
             case ContainerRuntime.APPTAINER:
-                others = ["--no-home", "--cleanenv", '--env TMPDIR=${TMPDIR-"/tmp"}']
-                workdir = f"--workdir {self.workdir}" if self.workdir is not None else ""
+                others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}']
+                workdir = f'--workdir "{self.workdir}"' if self.workdir is not None else ''
                 binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
                 if not isinstance(local, bool):
                     image = local
                 elif local:
                     image = self.GetLocalPath()
+                run = 'exec'
             case _: # default
-                raise TypeError(f"unsupported runtime [{self.runtime}]")
+                raise TypeError(f'unsupported runtime [{self.runtime}]')
         toks = [
             f"{self.runtime.value}",
-            "run",
+            run,
             *others,
             workdir,
             binds,

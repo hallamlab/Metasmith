@@ -57,9 +57,11 @@ class Orchestrator {
     }
 
     public List _post(streams, names, fullHash) {
-        // def (stream, name) = [streams, names]
-        // todo: use hashes of file names instead of completion order, since order is not deterministic
-        // and non-deterministic processes cant be hashed by nexflow
+        // streams is a list of each of the channels produced:
+        // output:
+        //      tuple val(index),path("*i") <- stream 1
+        //      tuple val(index),path("*j") <- stream 2
+        // the index is then copied for multiple files
         return [names, streams].transpose().collect((name, stream) -> {
             return new Tuple2(
                 name,
@@ -91,7 +93,7 @@ class Orchestrator {
     }
 
     public List post(streams, names) {
-        return this._post(streams, names, false)
+        return this._post(_debatch(streams), names, false)
     }
 
     public List postIn(streams, names) {
@@ -142,7 +144,7 @@ class Orchestrator {
         return parents.any(p -> this.isParent(parent, p)) 
     }
 
-    public def group(by, streams, targets) {
+    public def group(by, streams, targets, batch_size) {
         def parents = streams.collect((k, s) -> k) as Set
         for (t : targets) {
             this.child2parent[t] = this.child2parent.get(t, [] as Set)+parents
@@ -165,7 +167,7 @@ class Orchestrator {
             ]
         })
 
-        return to_group
+        return _batch(batch_size, to_group
         .collect((stream) -> {
             // if a given stream is a parent, we use the by_stream as an index
             // and emit parents as they complete with the corresponding item of the by_stream
@@ -275,24 +277,49 @@ class Orchestrator {
                 this.registerPendingTarget(target, common_index)
             }
             return [common_index, *values]
-        })
+        }))
     }
 
-    public def batch(channel, n) {
+    public def _batch(size, channel) {
         // return proc(channel)
-        return channel.collate(n).map(group -> {
-            def streams = group.transpose()
+        return channel.collate(size).map(batch -> {
+            def streams = batch.collect(item -> {
+                def index = item[0]
+                def values = item[1..-1]
+                index['FILES'] = values.collect(path -> path.name)
+                return item
+            }).transpose()
             def indexes = streams[0]
-            def values = streams[1..-1].collect(x -> x.flatten())
+            // careful, this unique() could remove real file collisions as well!
+            // this is needed for cases where reference dbs are passed multiple times per batch
+            def values = streams[1..-1].collect(stream -> stream.flatten().unique())
             return [indexes, *values]
         })
     }
 
-    public def debatch(channels) {
-        return channels.collect(output -> {
-            output.flatMap(streams -> {
-                def groups = streams.transpose()
-                return groups
+    public def _debatch(streams) {
+        // streams is a list of each of the channels produced:
+        // output:
+        //      tuple val(index),path("*i") <- stream 1
+        //      tuple val(index),path("*j") <- stream 2
+        // * this is identical to _post()
+        return streams.collect(stream -> {
+            return stream.flatMap((indexes, bag) -> {
+                // since process was batched, bag is a mix of groups and batches
+                // while index is a list of indexes
+                indexes = (indexes instanceof List)? indexes : [indexes]
+                indexes = indexes.collect(index -> {
+                    index.remove('FILES')
+                    return index
+                })
+                bag = (bag instanceof List)? bag : [bag]
+                def batches = bag.groupBy(path -> {
+                    return (path.name.split('-', 2)[0] as Integer) - 1
+                })
+                // println("${bag.collect(x -> x.name)}")
+                return batches.collect((i, group) -> {
+                    return new Tuple2(indexes[i], group)
+                })
             })
         })
     }
