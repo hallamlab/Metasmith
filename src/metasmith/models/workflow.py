@@ -705,6 +705,10 @@ class WorkflowTask:
                     "errorStrategy 'ignore'" # no point in retrying if not changing resource requests
                 ]
             used_archetypes, produced_archetypes = get_io_signature(step)
+            mock_outputs = [
+                f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
+                for branch, g in enumerate(produced_archetypes) for x in g
+            ]
 
             if len(produced_archetypes)>1: # if there is branching, outputs must be set to optional
                 optional = ", optional: true"
@@ -717,7 +721,7 @@ class WorkflowTask:
                 "output:",
             ] + [
                 # TAB+f'tuple val(index),path("{add_prefix(x.path)}")'
-                TAB+f'tuple val(index),path("*-{branch+1}.{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"){optional}'
+                TAB+f'tuple val(index),path("*-{branch+1}.*-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"){optional}'
                 for branch, g in enumerate(produced_archetypes) for x in g
             ] + [
                 "script:",
@@ -728,9 +732,9 @@ class WorkflowTask:
                 f'echo "lin ${{Orchestrator.JsonforEcho(index)}}" >>{METADATA_FILE}',
                 f'echo "inp {','.join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
                 f'echo "out {';'.join(','.join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
-            ] + [
-                f'echo "i{i+1:02} $_{i+1:02}">>{METADATA_FILE}'
-                for i, x in enumerate(used_archetypes)
+            # ] + [
+            #     f'echo "i{i+1:02} $_{i+1:02}">>{METADATA_FILE}'
+            #     for i, x in enumerate(used_archetypes)
             ] + [
                 f'{_make_bind_var(i, is_assignment=True)}="{p}"'
                 for i, p in enumerate(external_binds)
@@ -742,15 +746,10 @@ class WorkflowTask:
                 '"""',
                 'stub:',
                 'def dt = new Random().nextFloat()*params.testSpread',
-                f'def branch = new Random().nextInt({len(produced_archetypes)})',
-                'def hash = "${index.sort().collectEntries((k, v) -> [k, v.sort()])}".md5()[0..3]', # 4 characters
+                'def hash = "${index[0].sort().collectEntries((k, v) -> [k, v.sort()])}".md5()[0..3]', # 4 characters
                 f'"""',
                 f'sleep $dt',
-            ] + [
-                f'(( $branch == {branch} )) && touch "test-$hash-{branch+1}.{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
-                for branch, g in enumerate(produced_archetypes) for x in g
-            ] + [
-                f'echo done', # prevents the failure code from previous block
+                f'touch {" ".join(mock_outputs)}',
                 f'"""',
                 "}",
                 ""
@@ -897,20 +896,15 @@ class WorkflowTask:
                 _inst = _inst[0]
                 gb = _inst.dtype.key
                 using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
-                used = f"o.group('{gb}', [{using_symbols}], k)"
+                used = f"o.group('{gb}', [{using_symbols}], k, {step.transform.batch_size})"
             else:
                 used = ""
             produced_k = [f"'{x}'" for x in produced_snames]
             produced_k = ", ".join(produced_k)
             wf_main.append(f"k = [{produced_k}]")
-            if step.transform.batch_size==1:
-                wf_main.append(
-                    f"({produced}) = o.post([*{process_name}({used})], k)"
-                )
-            else:
-                wf_main.append(
-                    f"({produced}) = o.post(o.debatch([*{process_name}(o.batch({used}, {step.transform.batch_size}))]), k)"
-                )
+            wf_main.append(
+                f"({produced}) = o.post([*{process_name}({used})], k)"
+            )
             if step.order in final_steps_for_merging:
                 for e in final_steps_for_merging[step.order]:
                     names = to_merge_names[e]
