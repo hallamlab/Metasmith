@@ -20,7 +20,7 @@ This enables a solver to generate
 from target types, given data, and available tools. Generated workflows
 can then be executed directly or on remote machines using containerization.
 
-.. button-link:: /setup/install.html
+.. button-link:: ./setup/install.html
     :color: primary
 
     **Install Metasmith**
