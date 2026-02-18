@@ -350,9 +350,21 @@ class DataInstanceLibrary:
                 model = self.GetType(name)
                 return any(model.IsA(e) for e in _wl)
 
+        def _get_all_ancestors(path: Path) -> set[Path]:
+            """Recursively collect all ancestor paths."""
+            ancestors = set()
+            to_check = [path]
+            while to_check:
+                current = to_check.pop()
+                for p in self.parents.get(current, []):
+                    if p.path not in ancestors:
+                        ancestors.add(p.path)
+                        to_check.append(p.path)
+            return ancestors
+
         for path, name in self.manifest.items():
             if not _accept(name): continue
-            _ps = {p.path for p in self.parents.get(path, [])}
+            _ps = _get_all_ancestors(path)
             yield DataInstanceLibraryView(original=self, mask={path}|_ps)
 
     def AddItem(self, path: Path|str, dtype: str, parents: Iterable[Path]|None=None):
