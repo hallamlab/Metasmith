@@ -523,25 +523,38 @@ class DataInstanceLibrary:
         lib.manifest = manifest
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
+        # First pass: Build immediate parents for all items
         for k, v in raw["manifest"].items():
             parents: dict[Path, DataInstanceLibrary.ParentMetadata] = {}
-            for p_path, p_name in v.get("parents", {}).items():
-                for gp in lib.parents.get(p_path, []):
-                    # each entry should have the aggregated parents, so this should be sufficient
-                    # as in, gp also contains great gp and older.
-                    parents[gp.path] = gp
+            for p_key, p_name in v.get("parents", {}).items():
+                lib_key, p_path_str = p_key.split("@", maxsplit=1)
+                p_path = Path(p_path_str)
                 namespace, dtype_name = p_name.split("::")
                 _lib = dtypes[namespace]
                 dtype = _lib.types[dtype_name]
-                lib_key, p_path = p_path.split("@", maxsplit=1)
-                p_path = Path(p_path)
                 parents[p_path] = DataInstanceLibrary.ParentMetadata(
                     dtype=dtype,
                     name=p_name,
                     library_key=lib_key,
                     path=p_path,
                 )
-            if len(parents)>0: lib.parents[Path(k)] = [p for p in parents.values()]
+            if len(parents) > 0:
+                lib.parents[Path(k)] = list(parents.values())
+
+        # Second pass: Aggregate grandparents (now all immediate parents are populated)
+        for k in raw["manifest"].keys():
+            k_path = Path(k)
+            if k_path not in lib.parents:
+                continue
+            ancestors: dict[Path, DataInstanceLibrary.ParentMetadata] = {}
+            for p in lib.parents[k_path]:
+                ancestors[p.path] = p
+                # Recursively collect all ancestors
+                for gp in lib.parents.get(p.path, []):
+                    if gp.path not in ancestors:
+                        ancestors[gp.path] = gp
+            lib.parents[k_path] = list(ancestors.values())
+
         return lib
 
     def Save(self, update_types=True):

@@ -1,0 +1,1 @@
+# Metasmith test package
