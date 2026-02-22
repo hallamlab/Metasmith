@@ -222,41 +222,15 @@ def local_agent(local_agent_home, docker_image):
 
 
 @pytest.fixture
-def mock_samples_flat(temp_dir, mock_types) -> DataInstanceLibrary:
-    """Create 3 assembly samples WITHOUT lineage parents.
-
-    Unlike mock_samples, these assemblies have no reads/metadata parents,
-    avoiding the PrepareNextflow infinite loop when parent endpoints
-    aren't in the given set.
-    """
-    lib_path = temp_dir / "samples_flat.xgdb"
-    lib = DataInstanceLibrary(lib_path)
-    lib.AddTypeLibrary(mock_types, namespace="mock")
-
-    for i in range(3):
-        sample_id = f"sample_{i:02d}"
-        sample_dir = lib.location / sample_id
-        sample_dir.mkdir(parents=True, exist_ok=True)
-        (sample_dir / "assembly.fa").write_text(f">contig_{i}\nACGTACGT\n")
-        lib.AddItem(Path(f"{sample_id}/assembly.fa"), "mock::assembly")
-
-    lib.Save()
-    return lib
-
-
-@pytest.fixture
-def simple_workflow_task(mock_samples_flat, mock_types, temp_dir):
-    """Pre-generated WorkflowTask (assembly -> bam) for staging tests.
-
-    Uses flat samples (no lineage) to avoid PrepareNextflow parent-sorting issues.
-    """
+def simple_workflow_task(mock_samples, mock_types, temp_dir):
+    """Pre-generated WorkflowTask (assembly -> bam) for staging tests."""
     from metasmith.models.workflow import WorkflowPlan, WorkflowTask
     from metasmith.testing.mock_transforms import identity_transform
 
     transforms = identity_transform("mock::assembly", "mock::bam")
     tr_lib = create_transform_library(temp_dir / "simple_tr", mock_types, transforms)
 
-    given = [[sv] for sv in mock_samples_flat.AsSamples("mock::assembly")]
+    given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
     target_model = Transform()
     target_model.AddRequirement(properties={"bam"})
     target_names = {Endpoint(properties={"bam"}): "bam"}
@@ -272,7 +246,7 @@ def simple_workflow_task(mock_samples_flat, mock_types, temp_dir):
     return WorkflowTask(
         ok=True,
         plan=plan,
-        data_libraries=[mock_samples_flat],
+        data_libraries=[mock_samples],
         transform_libraries=[tr_lib],
     )
 

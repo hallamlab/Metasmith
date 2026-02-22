@@ -415,6 +415,25 @@ class WorkflowPlan:
                         )   
                     ]
 
+        # expand used_endpoints to include all transitive lineage ancestors
+        # that exist in given_map, so PrepareNextflow's topological sort
+        # can resolve the full parent chain
+        def _collect_ancestor_endpoints(endpoints: set[Endpoint], pool: set[Endpoint]) -> set[Endpoint]:
+            result = set(endpoints)
+            frontier = set(endpoints)
+            while frontier:
+                next_frontier = set()
+                for ep in frontier:
+                    for parent in ep.parents:
+                        if parent not in result and parent in pool:
+                            result.add(parent)
+                            next_frontier.add(parent)
+                frontier = next_frontier
+            return result
+
+        given_pool = set(given_map.keys())
+        used_endpoints = _collect_ancestor_endpoints(used_endpoints, given_pool)
+
         return cls(
             given=list({i for e, lst in given_map.items() for i in lst if e in used_endpoints}),
             targets=[x for g in target_meta.values() for x in g],
