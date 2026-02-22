@@ -161,6 +161,127 @@ types:
     return TransformInstanceLibrary.Load(tr_path)
 
 
+# -----------------------------------------------------------------------
+# Docker / Agent fixtures
+# -----------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def docker_available():
+    """Check Docker daemon is available, skip if not."""
+    try:
+        result = subprocess.run(
+            ["docker", "info"], capture_output=True, timeout=10
+        )
+        if result.returncode != 0:
+            pytest.skip("Docker daemon not available")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pytest.skip("Docker not installed")
+
+
+@pytest.fixture(scope="session")
+def docker_image(docker_available):
+    """Build or reuse test Docker image. Session-scoped for speed."""
+    from metasmith.testing.docker_builder import (
+        build_docker_image,
+        get_git_version,
+        get_docker_tag,
+        image_exists,
+    )
+
+    version = get_git_version()
+    tag = get_docker_tag(version)
+
+    if not image_exists(tag):
+        build_docker_image(tag=tag, version=version)
+
+    return tag
+
+
+@pytest.fixture
+def local_agent_home(tmp_path):
+    """Temp agent home with standard directory structure."""
+    home = tmp_path / "agent_home"
+    for subdir in ["runs", "data", "lib", "relay"]:
+        (home / subdir).mkdir(parents=True)
+    return home
+
+
+@pytest.fixture
+def local_agent(local_agent_home, docker_image):
+    """Agent configured for local Docker execution."""
+    from metasmith.agents import Agent
+    from metasmith.models.remote import Source
+
+    agent = Agent(
+        home=Source.FromLocal(local_agent_home),
+        container=docker_image,
+        runtime=ContainerRuntime.DOCKER,
+    )
+    return agent
+
+
+@pytest.fixture
+def mock_samples_flat(temp_dir, mock_types) -> DataInstanceLibrary:
+    """Create 3 assembly samples WITHOUT lineage parents.
+
+    Unlike mock_samples, these assemblies have no reads/metadata parents,
+    avoiding the PrepareNextflow infinite loop when parent endpoints
+    aren't in the given set.
+    """
+    lib_path = temp_dir / "samples_flat.xgdb"
+    lib = DataInstanceLibrary(lib_path)
+    lib.AddTypeLibrary(mock_types, namespace="mock")
+
+    for i in range(3):
+        sample_id = f"sample_{i:02d}"
+        sample_dir = lib.location / sample_id
+        sample_dir.mkdir(parents=True, exist_ok=True)
+        (sample_dir / "assembly.fa").write_text(f">contig_{i}\nACGTACGT\n")
+        lib.AddItem(Path(f"{sample_id}/assembly.fa"), "mock::assembly")
+
+    lib.Save()
+    return lib
+
+
+@pytest.fixture
+def simple_workflow_task(mock_samples_flat, mock_types, temp_dir):
+    """Pre-generated WorkflowTask (assembly -> bam) for staging tests.
+
+    Uses flat samples (no lineage) to avoid PrepareNextflow parent-sorting issues.
+    """
+    from metasmith.models.workflow import WorkflowPlan, WorkflowTask
+    from metasmith.testing.mock_transforms import identity_transform
+
+    transforms = identity_transform("mock::assembly", "mock::bam")
+    tr_lib = create_transform_library(temp_dir / "simple_tr", mock_types, transforms)
+
+    given = [[sv] for sv in mock_samples_flat.AsSamples("mock::assembly")]
+    target_model = Transform()
+    target_model.AddRequirement(properties={"bam"})
+    target_names = {Endpoint(properties={"bam"}): "bam"}
+
+    plan = WorkflowPlan.Generate(
+        given=given,
+        transforms=[tr_lib],
+        target_names=target_names,
+        target_model=target_model,
+    )
+
+    assert isinstance(plan, WorkflowPlan)
+    return WorkflowTask(
+        ok=True,
+        plan=plan,
+        data_libraries=[mock_samples_flat],
+        transform_libraries=[tr_lib],
+    )
+
+
+# -----------------------------------------------------------------------
+# Legacy transform code fixtures (kept for backward compatibility)
+# -----------------------------------------------------------------------
+
+
 @pytest.fixture
 def alignment_transform_code() -> str:
     """Transform code for alignment: reads + assembly -> bam.

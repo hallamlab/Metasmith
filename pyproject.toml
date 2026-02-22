@@ -3,3 +3,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+markers = [
+    "docker: tests requiring Docker daemon",
+    "nextflow: tests requiring Nextflow execution inside Docker",
+    "slow: tests that take more than 30 seconds",
+]
