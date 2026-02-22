@@ -205,6 +205,13 @@ case $1 in
         python -m $NAME lab $@
     ;;
 
+    -tt)
+        shift
+        cd $HERE
+        export PYTHONPATH=$HERE/src:$PYTHONPATH
+        pytest $@
+    ;;
+
     -td) # inject updates to an agent home for dev binds
         shift
         python main/local_mock/rsync.py $@

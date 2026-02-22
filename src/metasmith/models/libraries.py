@@ -311,8 +311,33 @@ class DataInstanceLibrary:
         e_name = self.manifest[p]
         e = self.GetType(e_name)
         if p in self.parents:
-            e = Endpoint(e.properties, {x.dtype for x in self.parents[p]})
+            # Build parent endpoints with their own lineage chains
+            parent_endpoints = set()
+            for parent_meta in self.parents[p]:
+                parent_ep = self._build_endpoint_with_lineage(parent_meta.path)
+                parent_endpoints.add(parent_ep)
+            e = Endpoint(e.properties, parent_endpoints)
         return DataInstance(p, e, e_name, self)
+
+    def _build_endpoint_with_lineage(self, path: Path, _seen: set[Path] | None = None) -> Endpoint:
+        """Recursively build an endpoint with its full parent chain."""
+        if _seen is None:
+            _seen = set()
+        if path in _seen:
+            # Avoid infinite recursion
+            e_name = self.manifest[path]
+            return self.GetType(e_name)
+        _seen.add(path)
+
+        e_name = self.manifest[path]
+        e = self.GetType(e_name)
+        if path in self.parents:
+            parent_endpoints = set()
+            for parent_meta in self.parents[path]:
+                parent_ep = self._build_endpoint_with_lineage(parent_meta.path, _seen)
+                parent_endpoints.add(parent_ep)
+            e = Endpoint(e.properties, parent_endpoints)
+        return e
 
     def GetType(self, name: str):
         e = self._get_type(name, self.types)
@@ -362,10 +387,21 @@ class DataInstanceLibrary:
                         to_check.append(p.path)
             return ancestors
 
+        def _get_all_descendants(ancestor_paths: set[Path]) -> set[Path]:
+            """Get all items that have any of the given paths as an ancestor."""
+            descendants = set()
+            for item_path in self.manifest.keys():
+                item_ancestors = _get_all_ancestors(item_path)
+                if item_ancestors & ancestor_paths:  # If they share any ancestor
+                    descendants.add(item_path)
+            return descendants
+
         for path, name in self.manifest.items():
             if not _accept(name): continue
-            _ps = _get_all_ancestors(path)
-            yield DataInstanceLibraryView(original=self, mask={path}|_ps)
+            ancestors = _get_all_ancestors(path)
+            # Include index, ancestors, and all siblings (items sharing ancestors)
+            siblings = _get_all_descendants(ancestors | {path})
+            yield DataInstanceLibraryView(original=self, mask={path} | ancestors | siblings)
 
     def AddItem(self, path: Path|str, dtype: str, parents: Iterable[Path]|None=None):
         if parents is None:

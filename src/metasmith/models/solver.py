@@ -1194,7 +1194,7 @@ def solve_by_mcts(
             source.steps = common_steps+to_add_from_src+to_add_from_alt+merged_steps
             order = get_order(source.steps)
             source.steps = order_steps(order, source.steps)
-            source.steps = rectify(source.steps, prune=True, insert_given=False)
+            source.steps = rectify(source.steps, prune=False, insert_given=False)
             return source
 
         # pseudocode:
