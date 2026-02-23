@@ -311,8 +311,33 @@ class DataInstanceLibrary:
         e_name = self.manifest[p]
         e = self.GetType(e_name)
         if p in self.parents:
-            e = Endpoint(e.properties, {x.dtype for x in self.parents[p]})
+            # Build parent endpoints with their own lineage chains
+            parent_endpoints = set()
+            for parent_meta in self.parents[p]:
+                parent_ep = self._build_endpoint_with_lineage(parent_meta.path)
+                parent_endpoints.add(parent_ep)
+            e = Endpoint(e.properties, parent_endpoints)
         return DataInstance(p, e, e_name, self)
+
+    def _build_endpoint_with_lineage(self, path: Path, _seen: set[Path] | None = None) -> Endpoint:
+        """Recursively build an endpoint with its full parent chain."""
+        if _seen is None:
+            _seen = set()
+        if path in _seen:
+            # Avoid infinite recursion
+            e_name = self.manifest[path]
+            return self.GetType(e_name)
+        _seen.add(path)
+
+        e_name = self.manifest[path]
+        e = self.GetType(e_name)
+        if path in self.parents:
+            parent_endpoints = set()
+            for parent_meta in self.parents[path]:
+                parent_ep = self._build_endpoint_with_lineage(parent_meta.path, _seen)
+                parent_endpoints.add(parent_ep)
+            e = Endpoint(e.properties, parent_endpoints)
+        return e
 
     def GetType(self, name: str):
         e = self._get_type(name, self.types)
@@ -350,10 +375,71 @@ class DataInstanceLibrary:
                 model = self.GetType(name)
                 return any(model.IsA(e) for e in _wl)
 
+        def _get_all_ancestors(path: Path) -> set[Path]:
+            """Recursively collect all ancestor paths."""
+            ancestors = set()
+            to_check = [path]
+            while to_check:
+                current = to_check.pop()
+                for p in self.parents.get(current, []):
+                    if p.path not in ancestors:
+                        ancestors.add(p.path)
+                        to_check.append(p.path)
+            return ancestors
+
+        def _get_all_descendants(ancestor_paths: set[Path]) -> set[Path]:
+            """Get all items that have any of the given paths as an ancestor."""
+            descendants = set()
+            for item_path in self.manifest.keys():
+                item_ancestors = _get_all_ancestors(item_path)
+                if item_ancestors & ancestor_paths:  # If they share any ancestor
+                    descendants.add(item_path)
+            return descendants
+
         for path, name in self.manifest.items():
             if not _accept(name): continue
-            _ps = {p.path for p in self.parents.get(path, [])}
-            yield DataInstanceLibraryView(original=self, mask={path}|_ps)
+            ancestors = _get_all_ancestors(path)
+            # Include index, ancestors, and all siblings (items sharing ancestors)
+            siblings = _get_all_descendants(ancestors | {path})
+            yield DataInstanceLibraryView(original=self, mask={path} | ancestors | siblings)
+
+    def Trace(self, from_type: str, to_type: str):
+        """Trace lineage relationships between data types.
+
+        Yields (from_instance, to_instance) pairs where from_instance is of
+        from_type and to_instance is of to_type, connected through lineage.
+        Works in both directions: ancestor (follow parents) and descendant
+        (reverse lookup).
+
+        Args:
+            from_type: Source data type name (e.g. "mock::assembly")
+            to_type: Target data type name (e.g. "mock::reads")
+
+        Yields:
+            Tuple of (DataInstance, DataInstance) pairs
+        """
+        # Build reverse index: path -> list of paths that have it as ancestor
+        children_of: dict[Path, list[Path]] = {}
+        for path, parents_list in self.parents.items():
+            for p in parents_list:
+                children_of.setdefault(p.path, []).append(path)
+
+        for from_path, from_name in self.manifest.items():
+            if from_name != from_type:
+                continue
+            from_inst = self.Get(from_path)
+
+            # Check ancestors (to_type is an ancestor of from_type)
+            for parent_meta in self.parents.get(from_path, []):
+                if parent_meta.name == to_type:
+                    to_inst = self.Get(parent_meta.path)
+                    yield (from_inst, to_inst)
+
+            # Check descendants (to_type is a descendant of from_type)
+            for child_path in children_of.get(from_path, []):
+                if self.manifest.get(child_path) == to_type:
+                    to_inst = self.Get(child_path)
+                    yield (from_inst, to_inst)
 
     def AddItem(self, path: Path|str, dtype: str, parents: Iterable[Path]|None=None):
         if parents is None:
@@ -511,25 +597,38 @@ class DataInstanceLibrary:
         lib.manifest = manifest
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
+        # First pass: Build immediate parents for all items
         for k, v in raw["manifest"].items():
             parents: dict[Path, DataInstanceLibrary.ParentMetadata] = {}
-            for p_path, p_name in v.get("parents", {}).items():
-                for gp in lib.parents.get(p_path, []):
-                    # each entry should have the aggregated parents, so this should be sufficient
-                    # as in, gp also contains great gp and older.
-                    parents[gp.path] = gp
+            for p_key, p_name in v.get("parents", {}).items():
+                lib_key, p_path_str = p_key.split("@", maxsplit=1)
+                p_path = Path(p_path_str)
                 namespace, dtype_name = p_name.split("::")
                 _lib = dtypes[namespace]
                 dtype = _lib.types[dtype_name]
-                lib_key, p_path = p_path.split("@", maxsplit=1)
-                p_path = Path(p_path)
                 parents[p_path] = DataInstanceLibrary.ParentMetadata(
                     dtype=dtype,
                     name=p_name,
                     library_key=lib_key,
                     path=p_path,
                 )
-            if len(parents)>0: lib.parents[Path(k)] = [p for p in parents.values()]
+            if len(parents) > 0:
+                lib.parents[Path(k)] = list(parents.values())
+
+        # Second pass: Aggregate grandparents (now all immediate parents are populated)
+        for k in raw["manifest"].keys():
+            k_path = Path(k)
+            if k_path not in lib.parents:
+                continue
+            ancestors: dict[Path, DataInstanceLibrary.ParentMetadata] = {}
+            for p in lib.parents[k_path]:
+                ancestors[p.path] = p
+                # Recursively collect all ancestors
+                for gp in lib.parents.get(p.path, []):
+                    if gp.path not in ancestors:
+                        ancestors[gp.path] = gp
+            lib.parents[k_path] = list(ancestors.values())
+
         return lib
 
     def Save(self, update_types=True):
