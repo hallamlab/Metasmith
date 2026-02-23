@@ -59,6 +59,10 @@ def mock_types(temp_dir) -> Path:
     types["maxbin2_bins"] = Endpoint(properties={"bins", "method:maxbin2"})
     types["concoct_bins"] = Endpoint(properties={"bins", "method:concoct"})
 
+    # Shared-input types
+    types["container"] = Endpoint(properties={"container"})
+    types["annotated"] = Endpoint(properties={"annotated"})
+
     # Branching outputs
     types["branch_a"] = Endpoint(properties={"branch_a"})
     types["branch_b"] = Endpoint(properties={"branch_b"})

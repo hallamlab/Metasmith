@@ -43,7 +43,8 @@ def get_docker_tag(version: str|None = None) -> str:
     """
     if version is None:
         version = get_git_version()
-    return f"quay.io/hallamlab/metasmith:{version}"
+    # Docker tags cannot contain '+', replace with '-'
+    return f"quay.io/hallamlab/metasmith:{version.replace('+', '-')}"
 
 
 def image_exists(tag: str) -> bool:

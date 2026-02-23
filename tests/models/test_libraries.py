@@ -292,3 +292,329 @@ class TestDataInstanceLibrarySaveLoad:
             f"assembly should have reads as parent, got: {asm_ancestors}"
         assert meta_path in asm_ancestors, \
             f"assembly should have metadata as grandparent, got: {asm_ancestors}"
+
+
+class TestDataInstanceLibraryTrace:
+    """Tests for DataInstanceLibrary.Trace method."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        d = tempfile.mkdtemp()
+        yield Path(d)
+        shutil.rmtree(d)
+
+    @pytest.fixture
+    def mock_types(self, temp_dir) -> Path:
+        """Create a DataTypeLibrary with mock workflow types."""
+        types = DataTypeLibrary()
+        types["metadata"] = Endpoint(properties={"metadata"})
+        types["reads"] = Endpoint(properties={"reads"})
+        types["assembly"] = Endpoint(properties={"assembly"})
+        types["qc_stats"] = Endpoint(properties={"qc_stats"})
+        types["bam"] = Endpoint(properties={"bam"})
+        types_path = temp_dir / "mock_types.yml"
+        types.Save(types_path)
+        return types_path
+
+    def _make_lib(self, temp_dir, mock_types, name="lib"):
+        lib_path = temp_dir / name
+        lib = DataInstanceLibrary(lib_path)
+        lib.AddTypeLibrary(mock_types, namespace="mock")
+        return lib, lib_path
+
+    def _make_file(self, lib_path, rel_path):
+        p = lib_path / rel_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("")
+
+    # --- Basic tracing ---
+
+    def test_trace_child_to_parent(self, temp_dir, mock_types):
+        """Trace from reads to metadata (direct parent)."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        paths = {}
+        for i in range(3):
+            self._make_file(lib_path, f"s{i}/meta.json")
+            self._make_file(lib_path, f"s{i}/reads.fq")
+            m = lib.AddItem(Path(f"s{i}/meta.json"), "mock::metadata")
+            r = lib.AddItem(Path(f"s{i}/reads.fq"), "mock::reads", parents=[m])
+            paths[i] = (m, r)
+
+        results = list(lib.Trace("mock::reads", "mock::metadata"))
+        assert len(results) == 3
+        for reads_inst, meta_inst in results:
+            assert reads_inst.dtype_name == "mock::reads"
+            assert meta_inst.dtype_name == "mock::metadata"
+
+    def test_trace_parent_to_child(self, temp_dir, mock_types):
+        """Trace from metadata to reads (descendant direction)."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        for i in range(3):
+            self._make_file(lib_path, f"s{i}/meta.json")
+            self._make_file(lib_path, f"s{i}/reads.fq")
+            m = lib.AddItem(Path(f"s{i}/meta.json"), "mock::metadata")
+            lib.AddItem(Path(f"s{i}/reads.fq"), "mock::reads", parents=[m])
+
+        results = list(lib.Trace("mock::metadata", "mock::reads"))
+        assert len(results) == 3
+        for meta_inst, reads_inst in results:
+            assert meta_inst.dtype_name == "mock::metadata"
+            assert reads_inst.dtype_name == "mock::reads"
+
+    def test_trace_grandchild_to_grandparent(self, temp_dir, mock_types):
+        """Trace from assembly to metadata (skipping reads). Works because parents stores transitive closure."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        for i in range(2):
+            self._make_file(lib_path, f"s{i}/meta.json")
+            self._make_file(lib_path, f"s{i}/reads.fq")
+            self._make_file(lib_path, f"s{i}/asm.fa")
+            m = lib.AddItem(Path(f"s{i}/meta.json"), "mock::metadata")
+            r = lib.AddItem(Path(f"s{i}/reads.fq"), "mock::reads", parents=[m])
+            lib.AddItem(Path(f"s{i}/asm.fa"), "mock::assembly", parents=[r])
+
+        # Save/load to get transitive closure in parents
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        results = list(loaded.Trace("mock::assembly", "mock::metadata"))
+        assert len(results) == 2
+        for asm_inst, meta_inst in results:
+            assert asm_inst.dtype_name == "mock::assembly"
+            assert meta_inst.dtype_name == "mock::metadata"
+
+    def test_trace_no_relationship(self, temp_dir, mock_types):
+        """Trace between unrelated types yields empty results."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        # metadata and assembly with no lineage connection
+        self._make_file(lib_path, "meta.json")
+        self._make_file(lib_path, "asm.fa")
+        lib.AddItem(Path("meta.json"), "mock::metadata")
+        lib.AddItem(Path("asm.fa"), "mock::assembly")
+
+        results = list(lib.Trace("mock::assembly", "mock::metadata"))
+        assert len(results) == 0
+
+    def test_trace_same_type(self, temp_dir, mock_types):
+        """Trace from a type to itself yields nothing (items aren't their own parent)."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        self._make_file(lib_path, "meta1.json")
+        self._make_file(lib_path, "meta2.json")
+        lib.AddItem(Path("meta1.json"), "mock::metadata")
+        lib.AddItem(Path("meta2.json"), "mock::metadata")
+
+        results = list(lib.Trace("mock::metadata", "mock::metadata"))
+        assert len(results) == 0
+
+    # --- Many samples ---
+
+    def test_trace_many_samples_linear(self, temp_dir, mock_types):
+        """10 samples, each with lineage metadata -> reads -> assembly."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        sample_map = {}
+        for i in range(10):
+            for f in ["meta.json", "reads.fq", "asm.fa"]:
+                self._make_file(lib_path, f"s{i}/{f}")
+            m = lib.AddItem(Path(f"s{i}/meta.json"), "mock::metadata")
+            r = lib.AddItem(Path(f"s{i}/reads.fq"), "mock::reads", parents=[m])
+            a = lib.AddItem(Path(f"s{i}/asm.fa"), "mock::assembly", parents=[r])
+            sample_map[i] = (m, r, a)
+
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        results = list(loaded.Trace("mock::assembly", "mock::metadata"))
+        assert len(results) == 10
+
+    def test_trace_many_samples_no_cross_contamination(self, temp_dir, mock_types):
+        """10 samples, verify each assembly traces back to its OWN metadata."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        sample_map = {}
+        for i in range(10):
+            for f in ["meta.json", "reads.fq", "asm.fa"]:
+                self._make_file(lib_path, f"s{i}/{f}")
+            m = lib.AddItem(Path(f"s{i}/meta.json"), "mock::metadata")
+            r = lib.AddItem(Path(f"s{i}/reads.fq"), "mock::reads", parents=[m])
+            a = lib.AddItem(Path(f"s{i}/asm.fa"), "mock::assembly", parents=[r])
+            sample_map[str(a)] = str(m)
+
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        results = list(loaded.Trace("mock::assembly", "mock::metadata"))
+        assert len(results) == 10
+        for asm_inst, meta_inst in results:
+            assert sample_map[str(asm_inst.path)] == str(meta_inst.path), \
+                f"assembly {asm_inst.path} should map to {sample_map[str(asm_inst.path)]}, got {meta_inst.path}"
+
+    # --- Complex lineage ---
+
+    def test_trace_diamond_dependency(self, temp_dir, mock_types):
+        """Diamond: metadata -> reads -> {assembly, qc_stats}, assembly + reads -> bam."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        for f in ["meta.json", "reads.fq", "asm.fa", "qc.json", "out.bam"]:
+            self._make_file(lib_path, f"s1/{f}")
+        m = lib.AddItem(Path("s1/meta.json"), "mock::metadata")
+        r = lib.AddItem(Path("s1/reads.fq"), "mock::reads", parents=[m])
+        a = lib.AddItem(Path("s1/asm.fa"), "mock::assembly", parents=[r])
+        q = lib.AddItem(Path("s1/qc.json"), "mock::qc_stats", parents=[r])
+        b = lib.AddItem(Path("s1/out.bam"), "mock::bam", parents=[a, r])
+
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        # bam -> metadata (transitive through reads or assembly)
+        results = list(loaded.Trace("mock::bam", "mock::metadata"))
+        assert len(results) == 1
+
+        # bam -> reads
+        results = list(loaded.Trace("mock::bam", "mock::reads"))
+        assert len(results) == 1
+
+        # bam -> assembly
+        results = list(loaded.Trace("mock::bam", "mock::assembly"))
+        assert len(results) == 1
+
+        # bam -> qc_stats: no direct lineage (different branch)
+        results = list(loaded.Trace("mock::bam", "mock::qc_stats"))
+        assert len(results) == 0
+
+    def test_trace_fan_out(self, temp_dir, mock_types):
+        """One parent produces multiple different output types."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        for f in ["reads.fq", "asm.fa", "qc.json"]:
+            self._make_file(lib_path, f)
+        r = lib.AddItem(Path("reads.fq"), "mock::reads")
+        lib.AddItem(Path("asm.fa"), "mock::assembly", parents=[r])
+        lib.AddItem(Path("qc.json"), "mock::qc_stats", parents=[r])
+
+        # reads -> assembly
+        results = list(lib.Trace("mock::reads", "mock::assembly"))
+        assert len(results) == 1
+
+        # reads -> qc_stats
+        results = list(lib.Trace("mock::reads", "mock::qc_stats"))
+        assert len(results) == 1
+
+    def test_trace_fan_in_merge(self, temp_dir, mock_types):
+        """Multiple parent types feed into one output."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        for f in ["reads.fq", "asm.fa", "out.bam"]:
+            self._make_file(lib_path, f)
+        r = lib.AddItem(Path("reads.fq"), "mock::reads")
+        a = lib.AddItem(Path("asm.fa"), "mock::assembly")
+        lib.AddItem(Path("out.bam"), "mock::bam", parents=[r, a])
+
+        # bam -> reads
+        results = list(lib.Trace("mock::bam", "mock::reads"))
+        assert len(results) == 1
+
+        # bam -> assembly
+        results = list(lib.Trace("mock::bam", "mock::assembly"))
+        assert len(results) == 1
+
+    def test_trace_many_samples_with_batching_pattern(self, temp_dir, mock_types):
+        """12 samples with full lineage, verify all directions and no cross-contamination."""
+        # Use binning namespace types
+        binning_types = DataTypeLibrary()
+        binning_types["read_metadata"] = Endpoint(properties={"read_metadata"})
+        binning_types["reads"] = Endpoint(properties={"reads"})
+        binning_types["assembly"] = Endpoint(properties={"assembly"})
+        binning_types["bam"] = Endpoint(properties={"bam"})
+        types_path = temp_dir / "binning_types.yml"
+        binning_types.Save(types_path)
+
+        lib_path = temp_dir / "lib"
+        lib = DataInstanceLibrary(lib_path)
+        lib.AddTypeLibrary(types_path, namespace="binning")
+
+        sample_map = {}
+        for i in range(12):
+            for f in ["meta.json", "reads.fq", "asm.fa", "out.bam"]:
+                self._make_file(lib_path, f"s{i}/{f}")
+            m = lib.AddItem(Path(f"s{i}/meta.json"), "binning::read_metadata")
+            r = lib.AddItem(Path(f"s{i}/reads.fq"), "binning::reads", parents=[m])
+            a = lib.AddItem(Path(f"s{i}/asm.fa"), "binning::assembly", parents=[r])
+            b = lib.AddItem(Path(f"s{i}/out.bam"), "binning::bam", parents=[a])
+            sample_map[i] = {"meta": m, "reads": r, "asm": a, "bam": b}
+
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        # bam -> reads (12 pairs)
+        results = list(loaded.Trace("binning::bam", "binning::reads"))
+        assert len(results) == 12
+
+        # bam -> read_metadata (12 pairs)
+        results = list(loaded.Trace("binning::bam", "binning::read_metadata"))
+        assert len(results) == 12
+
+        # reads -> bam (reverse, 12 pairs)
+        results = list(loaded.Trace("binning::reads", "binning::bam"))
+        assert len(results) == 12
+
+        # Verify no cross-contamination for bam -> read_metadata
+        bam_to_meta = {str(b.path): str(m.path) for b, m in loaded.Trace("binning::bam", "binning::read_metadata")}
+        for i in range(12):
+            bam_path = str(sample_map[i]["bam"])
+            meta_path = str(sample_map[i]["meta"])
+            assert bam_to_meta[bam_path] == meta_path, \
+                f"sample {i}: bam {bam_path} should map to {meta_path}, got {bam_to_meta[bam_path]}"
+
+    # --- After save/load round-trip ---
+
+    def test_trace_after_save_load(self, temp_dir, mock_types):
+        """Trace works correctly after save/load round-trip."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        for f in ["meta.json", "reads.fq", "asm.fa"]:
+            self._make_file(lib_path, f"s1/{f}")
+        m = lib.AddItem(Path("s1/meta.json"), "mock::metadata")
+        r = lib.AddItem(Path("s1/reads.fq"), "mock::reads", parents=[m])
+        lib.AddItem(Path("s1/asm.fa"), "mock::assembly", parents=[r])
+
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        # assembly -> metadata (transitive)
+        results = list(loaded.Trace("mock::assembly", "mock::metadata"))
+        assert len(results) == 1
+        assert results[0][0].dtype_name == "mock::assembly"
+        assert results[0][1].dtype_name == "mock::metadata"
+
+        # metadata -> assembly (reverse)
+        results = list(loaded.Trace("mock::metadata", "mock::assembly"))
+        assert len(results) == 1
+
+    def test_trace_many_samples_after_save_load(self, temp_dir, mock_types):
+        """8 samples with full lineage chain, save/load, verify all trace directions."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        sample_map = {}
+        for i in range(8):
+            for f in ["meta.json", "reads.fq", "asm.fa", "out.bam"]:
+                self._make_file(lib_path, f"s{i}/{f}")
+            m = lib.AddItem(Path(f"s{i}/meta.json"), "mock::metadata")
+            r = lib.AddItem(Path(f"s{i}/reads.fq"), "mock::reads", parents=[m])
+            a = lib.AddItem(Path(f"s{i}/asm.fa"), "mock::assembly", parents=[r])
+            b = lib.AddItem(Path(f"s{i}/out.bam"), "mock::bam", parents=[a])
+            sample_map[i] = {"meta": m, "reads": r, "asm": a, "bam": b}
+
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        # Forward: bam -> metadata
+        results = list(loaded.Trace("mock::bam", "mock::metadata"))
+        assert len(results) == 8
+
+        # Forward: bam -> reads
+        results = list(loaded.Trace("mock::bam", "mock::reads"))
+        assert len(results) == 8
+
+        # Reverse: metadata -> bam
+        results = list(loaded.Trace("mock::metadata", "mock::bam"))
+        assert len(results) == 8
+
+        # Verify correct pairing (no cross-contamination)
+        bam_to_meta = {str(b.path): str(m.path) for b, m in loaded.Trace("mock::bam", "mock::metadata")}
+        for i in range(8):
+            bam_path = str(sample_map[i]["bam"])
+            meta_path = str(sample_map[i]["meta"])
+            assert bam_to_meta[bam_path] == meta_path

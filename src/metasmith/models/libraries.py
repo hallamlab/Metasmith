@@ -403,6 +403,44 @@ class DataInstanceLibrary:
             siblings = _get_all_descendants(ancestors | {path})
             yield DataInstanceLibraryView(original=self, mask={path} | ancestors | siblings)
 
+    def Trace(self, from_type: str, to_type: str):
+        """Trace lineage relationships between data types.
+
+        Yields (from_instance, to_instance) pairs where from_instance is of
+        from_type and to_instance is of to_type, connected through lineage.
+        Works in both directions: ancestor (follow parents) and descendant
+        (reverse lookup).
+
+        Args:
+            from_type: Source data type name (e.g. "mock::assembly")
+            to_type: Target data type name (e.g. "mock::reads")
+
+        Yields:
+            Tuple of (DataInstance, DataInstance) pairs
+        """
+        # Build reverse index: path -> list of paths that have it as ancestor
+        children_of: dict[Path, list[Path]] = {}
+        for path, parents_list in self.parents.items():
+            for p in parents_list:
+                children_of.setdefault(p.path, []).append(path)
+
+        for from_path, from_name in self.manifest.items():
+            if from_name != from_type:
+                continue
+            from_inst = self.Get(from_path)
+
+            # Check ancestors (to_type is an ancestor of from_type)
+            for parent_meta in self.parents.get(from_path, []):
+                if parent_meta.name == to_type:
+                    to_inst = self.Get(parent_meta.path)
+                    yield (from_inst, to_inst)
+
+            # Check descendants (to_type is a descendant of from_type)
+            for child_path in children_of.get(from_path, []):
+                if self.manifest.get(child_path) == to_type:
+                    to_inst = self.Get(child_path)
+                    yield (from_inst, to_inst)
+
     def AddItem(self, path: Path|str, dtype: str, parents: Iterable[Path]|None=None):
         if parents is None:
             parents = []

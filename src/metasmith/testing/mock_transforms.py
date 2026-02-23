@@ -227,6 +227,45 @@ TransformInstance(protocol=protocol, model=model, group_by=dep_a)
     }
 
 
+def shared_input_transform() -> dict[str, str]:
+    """Shared-input transform: container + assembly -> annotated.
+
+    Container is declared as parent of assembly, so the Orchestrator
+    treats it as a shared/broadcast input (via group()'s parent branch
+    -> .combine()). This replicates the proteinbert topology where a
+    single container instance is broadcast to all per-sample assemblies.
+    """
+    return {
+        "annotate_with_container": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+container = model.AddRequirement(lib.GetType("mock::container"))
+asm = model.AddRequirement(lib.GetType("mock::assembly"), parents={container})
+out = model.AddProduct(lib.GetType("mock::annotated"))
+
+def protocol(context: ExecutionContext):
+    out_path = Path("annotated.txt")
+    out_path.write_text("annotated content")
+    return ExecutionResult(manifest=[{out: out_path}], success=True)
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=asm,
+)
+'''
+    }
+
+
 def failing_transform() -> dict[str, str]:
     """Transform that raises an exception for error-path testing."""
     return {
