@@ -284,10 +284,10 @@ class Orchestrator {
         // return proc(channel)
         return channel.collate(size).map(batch -> {
             def streams = batch.collect(item -> {
-                def index = item[0]
+                def index = [:]+item[0] // copy to avoid mutating the map stored in pending_tasks
                 def values = item[1..-1]
                 index['FILES'] = values.collect(path -> path.name)
-                return item
+                return [index, *values]
             }).transpose()
             def indexes = streams[0]
             // careful, this unique() could remove real file collisions as well!
@@ -307,12 +307,17 @@ class Orchestrator {
             return stream.flatMap((indexes, bag) -> {
                 // since process was batched, bag is a mix of groups and batches
                 // while index is a list of indexes
-                indexes = (indexes instanceof List)? indexes : [indexes]
+                def is_batched = indexes instanceof List
+                indexes = is_batched ? indexes : [indexes]
                 indexes = indexes.collect(index -> {
                     index.remove('FILES')
                     return index
                 })
                 bag = (bag instanceof List)? bag : [bag]
+                if (!is_batched) {
+                    // Non-batched: return the single item directly without numeric-prefix parsing
+                    return [new Tuple2(indexes[0], bag.size() == 1 ? bag[0] : bag)]
+                }
                 def batches = bag.groupBy(path -> {
                     return (path.name.split('-', 2)[0] as Integer) - 1
                 })
