@@ -1,0 +1,476 @@
+"""Integration tests: Trace on workflow results via real Nextflow execution.
+
+Tests verify the full pipeline works end-to-end:
+1. Orchestrator.groovy correctly maintains lineage through Nextflow execution
+2. CollectResults correctly builds a DataInstanceLibrary with parent relationships
+3. Trace() works correctly on the resulting library
+
+Tests use Nextflow stub mode (processes create empty output files).
+"""
+
+import shutil
+import subprocess
+import pytest
+from pathlib import Path
+
+from metasmith.agents import CollectResults
+from metasmith.constants import MODULE_PATH, AgentPaths
+from metasmith.coms.containers import ContainerRuntime
+from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
+from metasmith.models.solver import Endpoint, Transform
+from metasmith.models.workflow import WorkflowPlan, WorkflowTask, NextflowGenContext
+from metasmith.testing.mock_transforms import (
+    alignment_transform,
+    binner_transforms,
+    branching_transforms,
+    identity_transform,
+)
+
+from .conftest import create_transform_library
+
+pytestmark = [pytest.mark.docker, pytest.mark.slow]
+
+ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
+
+
+def run_stub_workflow(
+    task: WorkflowTask,
+    work_dir: Path,
+    docker_image: str,
+    timeout: int = 180,
+) -> DataInstanceLibrary:
+    """Run a stub workflow and collect results.
+
+    1. Calls PrepareNextflow to generate workflow.nf, inputs/, lineage JSON
+    2. Copies Orchestrator.groovy into lib/
+    3. Runs nextflow in stub mode inside Docker
+    4. Calls CollectResults on the output
+    5. Saves, loads (triggers transitive closure), returns loaded library
+    """
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    context = NextflowGenContext(
+        workflow_file=AgentPaths.NXF_WORKFLOW,
+        work_dir=work_dir,
+        external_work=work_dir,
+        home_dir=work_dir,
+        external_home=work_dir,
+        container_runtime=ContainerRuntime.DOCKER,
+        resources_file=AgentPaths.NXF_RES,
+    )
+    task.PrepareNextflow(context)
+
+    # Copy Orchestrator.groovy into lib/
+    lib_dir = work_dir / "lib"
+    lib_dir.mkdir(exist_ok=True)
+    shutil.copy(ORCHESTRATOR_SRC, lib_dir / "Orchestrator.groovy")
+
+    # Run nextflow in stub mode inside Docker.
+    # Mount the tmp root at the same path so container paths == host paths.
+    # This ensures both work_dir and input data paths are accessible.
+    tmp_root = work_dir
+    while tmp_root.parent != tmp_root and tmp_root.parent != Path("/tmp"):
+        tmp_root = tmp_root.parent
+    # tmp_root is now /tmp/pytest-of-XXX or similar
+    result = subprocess.run(
+        [
+            "docker", "run", "--rm",
+            "-v", f"{tmp_root}:{tmp_root}",
+            "-w", str(work_dir),
+            docker_image,
+            "nextflow", "run", AgentPaths.NXF_WORKFLOW,
+            "-stub",
+            "-lib", "./lib",
+            "-ansi-log", "false",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    assert result.returncode == 0, (
+        f"Nextflow stub run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    )
+
+    # Fix file ownership (Docker runs as root)
+    subprocess.run(
+        ["docker", "run", "--rm",
+         "-v", f"{tmp_root}:{tmp_root}",
+         docker_image,
+         "chmod", "-R", "a+rw", str(work_dir)],
+        capture_output=True, timeout=30,
+    )
+
+    # Collect results
+    output_path = work_dir / "results"
+    inputs_dir = work_dir / "inputs"
+    manifests_path = output_path / "_manifests"
+    manifests_path.mkdir(parents=True, exist_ok=True)
+
+    output = CollectResults(
+        task=task,
+        output_path=output_path,
+        inputs_dir=inputs_dir,
+        manifests_path=manifests_path,
+    )
+
+    # Save and reload to trigger transitive closure
+    output.Save()
+    loaded = DataInstanceLibrary.Load(output.location)
+    return loaded
+
+
+def _make_samples(
+    temp_dir, mock_types, n_samples=3,
+    types: list[tuple[str, str]] | None = None,
+) -> DataInstanceLibrary:
+    """Create n samples with configurable lineage.
+
+    Args:
+        temp_dir: Directory for the library.
+        mock_types: Path to mock types YAML.
+        n_samples: Number of samples.
+        types: List of (type_name, file_ext) tuples defining the lineage chain.
+            Each type's parent is the previous type in the list.
+            Defaults to sample_metadata -> reads -> assembly.
+    """
+    if types is None:
+        types = [
+            ("mock::sample_metadata", "json"),
+            ("mock::reads", "fq"),
+            ("mock::assembly", "fa"),
+        ]
+
+    lib_path = temp_dir / "samples.xgdb"
+    lib = DataInstanceLibrary(lib_path)
+    lib.AddTypeLibrary(mock_types, namespace="mock")
+
+    for i in range(n_samples):
+        sample_id = f"sample_{i:02d}"
+        sample_dir = lib.location / sample_id
+        sample_dir.mkdir(parents=True, exist_ok=True)
+
+        prev_path = None
+        for type_name, ext in types:
+            short_name = type_name.split("::")[-1]
+            fname = f"{short_name}.{ext}"
+            (sample_dir / fname).write_text(f"mock {short_name} {i}")
+            parents = [prev_path] if prev_path is not None else []
+            prev_path = lib.AddItem(
+                Path(f"{sample_id}/{fname}"), type_name, parents=parents
+            )
+
+    lib.Save()
+    return lib
+
+
+def _make_task(
+    samples: DataInstanceLibrary,
+    mock_types: Path,
+    temp_dir: Path,
+    transforms: dict[str, str],
+    target_properties: list[set[str]],
+    target_names: dict[Endpoint, str],
+    given_type: str = "mock::assembly",
+) -> WorkflowTask:
+    """Build a WorkflowTask from transforms and samples."""
+    tr_lib = create_transform_library(temp_dir / "transforms", mock_types, transforms)
+
+    given = [[sv] for sv in samples.AsSamples(given_type)]
+    target_model = Transform()
+    for props in target_properties:
+        target_model.AddRequirement(properties=props)
+
+    plan = WorkflowPlan.Generate(
+        given=given,
+        transforms=[tr_lib],
+        target_names=target_names,
+        target_model=target_model,
+    )
+
+    assert isinstance(plan, WorkflowPlan)
+    return WorkflowTask(
+        ok=True,
+        plan=plan,
+        data_libraries=[samples],
+        transform_libraries=[tr_lib],
+    )
+
+
+# ---------------------------------------------------------------------------
+# TestTraceLinearChain
+# ---------------------------------------------------------------------------
+
+
+class TestTraceLinearChain:
+    """Single transform, 1 output per input.
+
+    Topology: reads + assembly -> bam (alignment).
+    Given lineage: sample_metadata -> reads -> assembly.
+    """
+
+    @pytest.fixture
+    def result_lib(self, tmp_path, mock_types, docker_image):
+        samples = _make_samples(tmp_path / "data", mock_types, n_samples=3)
+        transforms = alignment_transform()
+        task = _make_task(
+            samples=samples,
+            mock_types=mock_types,
+            temp_dir=tmp_path / "task",
+            transforms=transforms,
+            target_properties=[{"bam"}],
+            target_names={Endpoint(properties={"bam"}): "bam"},
+        )
+        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+
+    def test_output_to_immediate_input(self, result_lib):
+        """Trace output->input (direct parent) yields 3 pairs."""
+        pairs = list(result_lib.Trace("mock::bam", "mock::assembly"))
+        assert len(pairs) == 3
+
+    def test_output_to_transitive_ancestor(self, result_lib):
+        """Trace output->root ancestor yields 3 pairs."""
+        pairs = list(result_lib.Trace("mock::bam", "mock::reads"))
+        assert len(pairs) == 3
+
+    def test_reverse_input_to_output(self, result_lib):
+        """Trace input->output (descendant) yields 3 pairs."""
+        pairs = list(result_lib.Trace("mock::assembly", "mock::bam"))
+        assert len(pairs) == 3
+
+    def test_no_cross_sample_contamination(self, result_lib):
+        """Each output traces only to its own sample's inputs."""
+        for bam_inst, asm_inst in result_lib.Trace("mock::bam", "mock::assembly"):
+            # Extract sample ID from path
+            bam_sample = str(bam_inst.path).split("/")[0] if "/" in str(bam_inst.path) else None
+            asm_sample = str(asm_inst.path).split("/")[0] if "/" in str(asm_inst.path) else None
+            # Both should belong to the same sample
+            if bam_sample and asm_sample:
+                assert bam_sample == asm_sample, (
+                    f"Cross-sample contamination: bam={bam_inst.path} traces to asm={asm_inst.path}"
+                )
+
+
+# ---------------------------------------------------------------------------
+# TestTraceFanOutMerge
+# ---------------------------------------------------------------------------
+
+
+class TestTraceFanOutMerge:
+    """Branching into parallel paths then merging.
+
+    Topology: assembly -> {branch_a, branch_b}, then branch_a + branch_b -> merged.
+
+    Note: Intermediate types (branch_a, branch_b) are not persisted in the
+    result library — only given inputs and target outputs are retained.
+    The merged output traces directly to its given ancestor (assembly).
+    """
+
+    @pytest.fixture
+    def result_lib(self, tmp_path, mock_types, docker_image):
+        samples = _make_samples(
+            tmp_path / "data", mock_types, n_samples=3,
+            types=[("mock::assembly", "fa")],
+        )
+        transforms = branching_transforms()
+        task = _make_task(
+            samples=samples,
+            mock_types=mock_types,
+            temp_dir=tmp_path / "task",
+            transforms=transforms,
+            target_properties=[{"merged"}],
+            target_names={Endpoint(properties={"merged"}): "merged"},
+        )
+        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+
+    def test_merged_output_exists(self, result_lib):
+        """Merged outputs are present in the result library."""
+        merged_items = [
+            p for p, n in result_lib.manifest.items()
+            if n == "mock::merged"
+        ]
+        assert len(merged_items) == 3
+
+    def test_merged_has_assembly_ancestor(self, result_lib):
+        """Each merged output has at least one assembly ancestor."""
+        pairs = list(result_lib.Trace("mock::merged", "mock::assembly"))
+        assert len(pairs) >= 3
+
+    def test_assembly_traces_to_merged(self, result_lib):
+        """Reverse trace: assembly->merged (descendant direction)."""
+        pairs = list(result_lib.Trace("mock::assembly", "mock::merged"))
+        assert len(pairs) >= 3
+
+    def test_intermediates_not_in_output(self, result_lib):
+        """Intermediate branch types are not persisted in results."""
+        type_names = set(result_lib.manifest.values())
+        assert "mock::branch_a" not in type_names
+        assert "mock::branch_b" not in type_names
+
+
+# ---------------------------------------------------------------------------
+# TestTraceMultiStepDiamond
+# ---------------------------------------------------------------------------
+
+
+class TestTraceMultiStepDiamond:
+    """Multi-step chain with fan-out at the end.
+
+    Topology: reads + assembly -> bam (alignment), assembly + bam -> {metabat2, maxbin2, concoct}_bins.
+    Given lineage: sample_metadata -> reads -> assembly.
+    """
+
+    @pytest.fixture
+    def result_lib(self, tmp_path, mock_types, docker_image):
+        samples = _make_samples(tmp_path / "data", mock_types, n_samples=3)
+        transforms = alignment_transform() | binner_transforms()
+        task = _make_task(
+            samples=samples,
+            mock_types=mock_types,
+            temp_dir=tmp_path / "task",
+            transforms=transforms,
+            target_properties=[
+                {"bins", "method:metabat2"},
+                {"bins", "method:maxbin2"},
+                {"bins", "method:concoct"},
+            ],
+            target_names={
+                Endpoint(properties={"bins", "method:metabat2"}): "metabat2_bins",
+                Endpoint(properties={"bins", "method:maxbin2"}): "maxbin2_bins",
+                Endpoint(properties={"bins", "method:concoct"}): "concoct_bins",
+            },
+        )
+        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+
+    def test_final_output_to_root(self, result_lib):
+        """Trace bins->reads (deep transitive) yields 3 pairs per output type."""
+        for bin_type in ["mock::metabat2_bins", "mock::maxbin2_bins", "mock::concoct_bins"]:
+            pairs = list(result_lib.Trace(bin_type, "mock::reads"))
+            assert len(pairs) == 3, f"{bin_type}->reads: expected 3, got {len(pairs)}"
+
+    def test_final_output_to_given_input(self, result_lib):
+        """Trace bins->assembly (direct given parent) yields 3 pairs per output type."""
+        for bin_type in ["mock::metabat2_bins", "mock::maxbin2_bins", "mock::concoct_bins"]:
+            pairs = list(result_lib.Trace(bin_type, "mock::assembly"))
+            assert len(pairs) == 3, f"{bin_type}->assembly: expected 3, got {len(pairs)}"
+
+    def test_different_bin_types_same_count(self, result_lib):
+        """All 3 binner outputs produce the same number of results."""
+        counts = {}
+        for bin_type in ["mock::metabat2_bins", "mock::maxbin2_bins", "mock::concoct_bins"]:
+            pairs = list(result_lib.Trace(bin_type, "mock::assembly"))
+            counts[bin_type] = len(pairs)
+        assert all(c == 3 for c in counts.values()), f"Uneven counts: {counts}"
+
+    def test_no_cross_sample_contamination_multi_output(self, result_lib):
+        """All output types correctly paired per sample."""
+        for bin_type in ["mock::metabat2_bins", "mock::maxbin2_bins", "mock::concoct_bins"]:
+            for bin_inst, asm_inst in result_lib.Trace(bin_type, "mock::assembly"):
+                bin_sample = str(bin_inst.path).split("/")[0] if "/" in str(bin_inst.path) else None
+                asm_sample = str(asm_inst.path).split("/")[0] if "/" in str(asm_inst.path) else None
+                if bin_sample and asm_sample:
+                    assert bin_sample == asm_sample, (
+                        f"Cross-sample: {bin_type} {bin_inst.path} -> asm {asm_inst.path}"
+                    )
+
+
+# ---------------------------------------------------------------------------
+# TestTraceScaling
+# ---------------------------------------------------------------------------
+
+
+class TestTraceScaling:
+    """Many samples with linear chain."""
+
+    N_SAMPLES = 8
+
+    @pytest.fixture
+    def result_lib(self, tmp_path, mock_types, docker_image):
+        samples = _make_samples(tmp_path / "data", mock_types, n_samples=self.N_SAMPLES)
+        transforms = alignment_transform()
+        task = _make_task(
+            samples=samples,
+            mock_types=mock_types,
+            temp_dir=tmp_path / "task",
+            transforms=transforms,
+            target_properties=[{"bam"}],
+            target_names={Endpoint(properties={"bam"}): "bam"},
+        )
+        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+
+    def test_many_samples_correct_count(self, result_lib):
+        """All N pairs returned."""
+        pairs = list(result_lib.Trace("mock::bam", "mock::assembly"))
+        assert len(pairs) == self.N_SAMPLES
+
+    def test_many_samples_correct_pairing(self, result_lib):
+        """Every pair correctly matched."""
+        for bam_inst, asm_inst in result_lib.Trace("mock::bam", "mock::assembly"):
+            bam_sample = str(bam_inst.path).split("/")[0] if "/" in str(bam_inst.path) else None
+            asm_sample = str(asm_inst.path).split("/")[0] if "/" in str(asm_inst.path) else None
+            if bam_sample and asm_sample:
+                assert bam_sample == asm_sample
+
+
+# ---------------------------------------------------------------------------
+# TestTracePersistence
+# ---------------------------------------------------------------------------
+
+
+class TestTracePersistence:
+    """Save/load round-trip on real results."""
+
+    @pytest.fixture
+    def result_lib(self, tmp_path, mock_types, docker_image):
+        samples = _make_samples(tmp_path / "data", mock_types, n_samples=3)
+        transforms = alignment_transform()
+        task = _make_task(
+            samples=samples,
+            mock_types=mock_types,
+            temp_dir=tmp_path / "task",
+            transforms=transforms,
+            target_properties=[{"bam"}],
+            target_names={Endpoint(properties={"bam"}): "bam"},
+        )
+        return run_stub_workflow(task, tmp_path / "ws", docker_image)
+
+    def test_trace_survives_save_load(self, result_lib, tmp_path):
+        """Save, load, verify Trace results identical."""
+        original_pairs = set(
+            (str(a.path), str(b.path))
+            for a, b in result_lib.Trace("mock::bam", "mock::assembly")
+        )
+        assert len(original_pairs) == 3
+
+        # Save to new location and reload
+        dest = tmp_path / "roundtrip1.xgdb"
+        shutil.copytree(result_lib.location, dest)
+        reloaded = DataInstanceLibrary.Load(dest)
+
+        reloaded_pairs = set(
+            (str(a.path), str(b.path))
+            for a, b in reloaded.Trace("mock::bam", "mock::assembly")
+        )
+        assert original_pairs == reloaded_pairs
+
+    def test_trace_survives_double_roundtrip(self, result_lib, tmp_path):
+        """Save/load twice, Trace still identical."""
+        original_pairs = set(
+            (str(a.path), str(b.path))
+            for a, b in result_lib.Trace("mock::bam", "mock::assembly")
+        )
+
+        # First round-trip
+        dest1 = tmp_path / "roundtrip_a.xgdb"
+        shutil.copytree(result_lib.location, dest1)
+        lib1 = DataInstanceLibrary.Load(dest1)
+
+        # Second round-trip
+        dest2 = tmp_path / "roundtrip_b.xgdb"
+        shutil.copytree(lib1.location, dest2)
+        lib2 = DataInstanceLibrary.Load(dest2)
+
+        final_pairs = set(
+            (str(a.path), str(b.path))
+            for a, b in lib2.Trace("mock::bam", "mock::assembly")
+        )
+        assert original_pairs == final_pairs
