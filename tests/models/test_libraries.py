@@ -618,3 +618,240 @@ class TestDataInstanceLibraryTrace:
             bam_path = str(sample_map[i]["bam"])
             meta_path = str(sample_map[i]["meta"])
             assert bam_to_meta[bam_path] == meta_path
+
+
+class TestDataInstanceLibraryRenameByParent:
+    """Tests for DataInstanceLibrary.RenameByParent method."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        d = tempfile.mkdtemp()
+        yield Path(d)
+        shutil.rmtree(d)
+
+    @pytest.fixture
+    def mock_types(self, temp_dir) -> Path:
+        types = DataTypeLibrary()
+        types["metadata"] = Endpoint(properties={"metadata"})
+        types["reads"] = Endpoint(properties={"reads"})
+        types["assembly"] = Endpoint(properties={"assembly"})
+        types["qc_stats"] = Endpoint(properties={"qc_stats"})
+        types["bam"] = Endpoint(properties={"bam"})
+        types_path = temp_dir / "mock_types.yml"
+        types.Save(types_path)
+        return types_path
+
+    def _make_lib(self, temp_dir, mock_types, name="lib"):
+        lib_path = temp_dir / name
+        lib = DataInstanceLibrary(lib_path)
+        lib.AddTypeLibrary(mock_types, namespace="mock")
+        return lib, lib_path
+
+    def _make_file(self, lib_path, rel_path):
+        p = lib_path / rel_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("content")
+
+    # --- Basic rename ---
+
+    def test_basic_rename(self, temp_dir, mock_types):
+        """1 sample: metadata -> reads -> assembly. Rename by mock::metadata gives metadata's stem."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        self._make_file(lib_path, "s1/sample_A.json")
+        self._make_file(lib_path, "s1/abc123.fq")
+        self._make_file(lib_path, "s1/def456.fa")
+        m = lib.AddItem(Path("s1/sample_A.json"), "mock::metadata")
+        r = lib.AddItem(Path("s1/abc123.fq"), "mock::reads", parents=[m])
+        a = lib.AddItem(Path("s1/def456.fa"), "mock::assembly", parents=[r])
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        loaded.RenameByParent("mock::metadata")
+
+        assert Path("s1/sample_A.fq") in loaded.manifest
+        assert Path("s1/sample_A.fa") in loaded.manifest
+        assert Path("s1/sample_A.json") in loaded.manifest  # parent type item unchanged
+        assert loaded.manifest[Path("s1/sample_A.fq")] == "mock::reads"
+        assert loaded.manifest[Path("s1/sample_A.fa")] == "mock::assembly"
+
+    def test_preserves_extensions(self, temp_dir, mock_types):
+        """Files with different extensions all keep their suffixes."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        self._make_file(lib_path, "my_sample.json")
+        self._make_file(lib_path, "hash1.fq")
+        self._make_file(lib_path, "hash2.fa")
+        self._make_file(lib_path, "hash3.bam")
+        m = lib.AddItem(Path("my_sample.json"), "mock::metadata")
+        r = lib.AddItem(Path("hash1.fq"), "mock::reads", parents=[m])
+        a = lib.AddItem(Path("hash2.fa"), "mock::assembly", parents=[m])
+        b = lib.AddItem(Path("hash3.bam"), "mock::bam", parents=[m])
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        loaded.RenameByParent("mock::metadata")
+
+        assert Path("my_sample.fq") in loaded.manifest
+        assert Path("my_sample.fa") in loaded.manifest
+        assert Path("my_sample.bam") in loaded.manifest
+
+    def test_skips_parent_type_items(self, temp_dir, mock_types):
+        """Items of the parent type itself are not renamed."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        self._make_file(lib_path, "sample.json")
+        self._make_file(lib_path, "hash.fq")
+        m = lib.AddItem(Path("sample.json"), "mock::metadata")
+        r = lib.AddItem(Path("hash.fq"), "mock::reads", parents=[m])
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        loaded.RenameByParent("mock::metadata")
+
+        # metadata item path unchanged
+        assert Path("sample.json") in loaded.manifest
+        assert loaded.manifest[Path("sample.json")] == "mock::metadata"
+
+    def test_skips_items_without_matching_parent(self, temp_dir, mock_types):
+        """Orphan items (no parent of given type) are unchanged."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        self._make_file(lib_path, "orphan.fa")
+        self._make_file(lib_path, "sample.json")
+        self._make_file(lib_path, "linked.fq")
+        lib.AddItem(Path("orphan.fa"), "mock::assembly")  # no parent
+        m = lib.AddItem(Path("sample.json"), "mock::metadata")
+        lib.AddItem(Path("linked.fq"), "mock::reads", parents=[m])
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        loaded.RenameByParent("mock::metadata")
+
+        assert Path("orphan.fa") in loaded.manifest  # unchanged
+
+    def test_multiple_samples_no_collision(self, temp_dir, mock_types):
+        """3 samples with unique metadata stems in separate dirs → clean rename."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        for i, name in enumerate(["alpha", "beta", "gamma"]):
+            self._make_file(lib_path, f"s{i}/{name}.json")
+            self._make_file(lib_path, f"s{i}/hash{i}.fq")
+            m = lib.AddItem(Path(f"s{i}/{name}.json"), "mock::metadata")
+            lib.AddItem(Path(f"s{i}/hash{i}.fq"), "mock::reads", parents=[m])
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        loaded.RenameByParent("mock::metadata")
+
+        assert Path("s0/alpha.fq") in loaded.manifest
+        assert Path("s1/beta.fq") in loaded.manifest
+        assert Path("s2/gamma.fq") in loaded.manifest
+
+    def test_collision_adds_hash(self, temp_dir, mock_types):
+        """2 items with same parent stem in same directory → both get _<hash> suffix."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        self._make_file(lib_path, "sample.json")
+        self._make_file(lib_path, "hash1.fa")
+        self._make_file(lib_path, "hash2.fq")
+        m = lib.AddItem(Path("sample.json"), "mock::metadata")
+        # Both children would want to be named "sample.*" but .fa and .fq have different suffixes
+        # so no collision. Let's create a real collision with same suffix.
+        a1 = lib.AddItem(Path("hash1.fa"), "mock::assembly", parents=[m])
+        a2 = lib.AddItem(Path("hash2.fq"), "mock::reads", parents=[m])
+
+        # Actually for a real collision we need same target filename. Use same extension items.
+        # Let me use a different setup: two assemblies with same parent in same dir.
+        # But manifest keys must be unique. Let's use qc_stats too.
+        lib2, lib_path2 = self._make_lib(temp_dir, mock_types, name="lib2")
+        self._make_file(lib_path2, "sample.json")
+        self._make_file(lib_path2, "hash1.json")  # reads with .json extension - will collide with sample.json
+        m = lib2.AddItem(Path("sample.json"), "mock::metadata")
+        r = lib2.AddItem(Path("hash1.json"), "mock::reads", parents=[m])
+        lib2.Save()
+        loaded = DataInstanceLibrary.Load(lib_path2)
+
+        loaded.RenameByParent("mock::metadata")
+
+        # hash1.json wants to become sample.json, but that's already occupied by metadata
+        # So it should get a hash suffix
+        renamed_reads = [p for p in loaded.manifest if loaded.manifest[p] == "mock::reads"]
+        assert len(renamed_reads) == 1
+        name = renamed_reads[0].name
+        assert name.startswith("sample_") and name.endswith(".json")
+        assert name != "sample.json"  # has hash appended
+
+    def test_no_collision_across_directories(self, temp_dir, mock_types):
+        """Same parent stems in different directories → no hash needed."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        # Two samples with same metadata stem but in different dirs
+        for d in ["dir1", "dir2"]:
+            self._make_file(lib_path, f"{d}/sample.json")
+            self._make_file(lib_path, f"{d}/hash.fq")
+            m = lib.AddItem(Path(f"{d}/sample.json"), "mock::metadata")
+            lib.AddItem(Path(f"{d}/hash.fq"), "mock::reads", parents=[m])
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        loaded.RenameByParent("mock::metadata")
+
+        # Both should be cleanly renamed without hash
+        assert Path("dir1/sample.fq") in loaded.manifest
+        assert Path("dir2/sample.fq") in loaded.manifest
+
+    def test_filesystem_reflects_rename(self, temp_dir, mock_types):
+        """Old files gone, new files present on disk."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        self._make_file(lib_path, "sample_A.json")
+        self._make_file(lib_path, "abc123.fq")
+        m = lib.AddItem(Path("sample_A.json"), "mock::metadata")
+        lib.AddItem(Path("abc123.fq"), "mock::reads", parents=[m])
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        loaded.RenameByParent("mock::metadata")
+
+        assert not (lib_path / "abc123.fq").exists()
+        assert (lib_path / "sample_A.fq").exists()
+        assert (lib_path / "sample_A.json").exists()  # parent unchanged
+
+    def test_save_load_roundtrip(self, temp_dir, mock_types):
+        """After rename, save/load preserves manifest and lineage."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        self._make_file(lib_path, "s1/sample_A.json")
+        self._make_file(lib_path, "s1/hash1.fq")
+        self._make_file(lib_path, "s1/hash2.fa")
+        m = lib.AddItem(Path("s1/sample_A.json"), "mock::metadata")
+        r = lib.AddItem(Path("s1/hash1.fq"), "mock::reads", parents=[m])
+        a = lib.AddItem(Path("s1/hash2.fa"), "mock::assembly", parents=[r])
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        loaded.RenameByParent("mock::metadata")
+
+        # Load again and verify
+        reloaded = DataInstanceLibrary.Load(lib_path)
+        assert Path("s1/sample_A.fq") in reloaded.manifest
+        assert Path("s1/sample_A.fa") in reloaded.manifest
+        assert reloaded.manifest[Path("s1/sample_A.fq")] == "mock::reads"
+        assert reloaded.manifest[Path("s1/sample_A.fa")] == "mock::assembly"
+
+        # Verify lineage is preserved
+        assert Path("s1/sample_A.fq") in reloaded.parents
+        parent_names = {p.name for p in reloaded.parents[Path("s1/sample_A.fq")]}
+        assert "mock::metadata" in parent_names
+
+    def test_manifest_unchanged_on_error(self, temp_dir, mock_types):
+        """If a filesystem rename fails, manifest is unchanged (transactional safety)."""
+        lib, lib_path = self._make_lib(temp_dir, mock_types)
+        self._make_file(lib_path, "sample.json")
+        self._make_file(lib_path, "hash1.fq")
+        m = lib.AddItem(Path("sample.json"), "mock::metadata")
+        lib.AddItem(Path("hash1.fq"), "mock::reads", parents=[m])
+        lib.Save()
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        # Remove the file to cause a rename error
+        (lib_path / "hash1.fq").unlink()
+
+        original_manifest = dict(loaded.manifest)
+        with pytest.raises(Exception):
+            loaded.RenameByParent("mock::metadata")
+
+        # Manifest should be unchanged
+        assert loaded.manifest == original_manifest

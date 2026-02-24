@@ -507,6 +507,82 @@ class DataInstanceLibrary:
             del self.parents[path]
         if _save: self.Save()
 
+    def RenameByParent(self, parent_type: str):
+        """
+        Rename all items in the library based on the path stem of their parent of the given type.
+        Uses a transactional approach: plans all renames, executes filesystem moves, then commits manifest atomically.
+        """
+        # Phase A — Plan (read-only)
+        rename_plan: list[tuple[Path, Path]] = []  # (old_path, proposed_new_path)
+
+        for item_path, item_type in self.manifest.items():
+            if item_type == parent_type:
+                continue
+            if item_path not in self.parents:
+                continue
+            matching_parents = [p for p in self.parents[item_path] if p.name == parent_type]
+            if not matching_parents:
+                continue
+            matching_parents.sort(key=lambda p: str(p.path))
+            parent = matching_parents[0]
+            new_path = item_path.parent / (parent.path.stem + item_path.suffix)
+            rename_plan.append((item_path, new_path))
+
+        # Detect collisions: group by (directory, new_filename)
+        # Also account for non-renamed items that occupy target paths
+        occupied_paths = {p for p in self.manifest if p not in {old for old, _ in rename_plan}}
+        final_plan: list[tuple[Path, Path]] = []
+        seen: dict[Path, list[int]] = {}  # new_path -> list of indices in rename_plan
+        for i, (old, new) in enumerate(rename_plan):
+            seen.setdefault(new, []).append(i)
+
+        for new_path, indices in seen.items():
+            needs_hash = len(indices) > 1 or new_path in occupied_paths
+            for idx in indices:
+                old, proposed = rename_plan[idx]
+                if needs_hash:
+                    _, hash_str = KeyGenerator.FromStr(str(old), l=8)
+                    final_new = old.parent / (proposed.stem + "_" + hash_str + proposed.suffix)
+                else:
+                    final_new = proposed
+                if old != final_new:
+                    final_plan.append((old, final_new))
+
+        if not final_plan:
+            return
+
+        # Execute filesystem moves
+        completed: list[tuple[Path, Path]] = []
+        try:
+            for old, new in final_plan:
+                abs_old = old if old.is_absolute() else self.location / old
+                abs_new = new if new.is_absolute() else self.location / new
+                abs_new.parent.mkdir(parents=True, exist_ok=True)
+                abs_old.rename(abs_new)
+                completed.append((old, new))
+        except Exception:
+            # Rollback: move completed renames back to originals
+            for orig, renamed in completed:
+                abs_renamed = renamed if renamed.is_absolute() else self.location / renamed
+                abs_orig = orig if orig.is_absolute() else self.location / orig
+                if abs_renamed.exists():
+                    abs_renamed.rename(abs_orig)
+            raise
+
+        # Commit manifest atomically
+        for old, new in final_plan:
+            self.manifest[new] = self.manifest[old]
+            del self.manifest[old]
+            if old in self.parents:
+                self.parents[new] = self.parents[old]
+                del self.parents[old]
+            # Update parent references that point to old path
+            for key, parent_list in self.parents.items():
+                for pm in parent_list:
+                    if pm.path == old:
+                        pm.path = new
+        self.Save()
+
     def AddParentsTo(self, path: Path|str, parents: Iterable[DataInstance]):
         if all(False for _ in parents):
             return # there were no parents
