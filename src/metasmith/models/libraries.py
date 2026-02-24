@@ -239,6 +239,7 @@ class DataInstanceLibrary:
         self._dtype2name = {}
         self.remote_src: Source|None = None
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
+        self._endpoint_cache: dict[Path, Endpoint] = {}
         if isinstance(location, DataInstanceLibrary):
             other = location
             self.location = other.location
@@ -327,6 +328,8 @@ class DataInstanceLibrary:
             # Avoid infinite recursion
             e_name = self.manifest[path]
             return self.GetType(e_name)
+        if path in self._endpoint_cache:
+            return self._endpoint_cache[path]
         _seen.add(path)
 
         e_name = self.manifest[path]
@@ -337,6 +340,7 @@ class DataInstanceLibrary:
                 parent_ep = self._build_endpoint_with_lineage(parent_meta.path, _seen)
                 parent_endpoints.add(parent_ep)
             e = Endpoint(e.properties, parent_endpoints)
+        self._endpoint_cache[path] = e
         return e
 
     def GetType(self, name: str):
@@ -387,13 +391,22 @@ class DataInstanceLibrary:
                         to_check.append(p.path)
             return ancestors
 
+        # Build children_of reverse index once — O(N×P)
+        children_of: dict[Path, set[Path]] = {}
+        for item_path, parent_list in self.parents.items():
+            for pm in parent_list:
+                children_of.setdefault(pm.path, set()).add(item_path)
+
         def _get_all_descendants(ancestor_paths: set[Path]) -> set[Path]:
-            """Get all items that have any of the given paths as an ancestor."""
+            """BFS down children_of index to find all descendants."""
             descendants = set()
-            for item_path in self.manifest.keys():
-                item_ancestors = _get_all_ancestors(item_path)
-                if item_ancestors & ancestor_paths:  # If they share any ancestor
-                    descendants.add(item_path)
+            queue = list(ancestor_paths)
+            while queue:
+                current = queue.pop()
+                for child in children_of.get(current, set()):
+                    if child not in descendants:
+                        descendants.add(child)
+                        queue.append(child)
             return descendants
 
         for path, name in self.manifest.items():
@@ -453,6 +466,7 @@ class DataInstanceLibrary:
         type_model = self.GetType(dtype) # check if datatype exists
         self.manifest[path] = dtype
         self.AddParentsTo(path, [self.Get(p) for p in parents])
+        self._invalidate_endpoint_cache()
         return path
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
@@ -464,6 +478,9 @@ class DataInstanceLibrary:
             f.write(value)
         return path
 
+    def _invalidate_endpoint_cache(self):
+        self._endpoint_cache.clear()
+
     def Remove(self, path: Path):
         assert path in self.manifest, f"not found [{path}]"
         try:
@@ -472,10 +489,11 @@ class DataInstanceLibrary:
             del self.manifest[K]
         except RuntimeError:
             assert False, f"can not make changes while iterating library"
-        
+
         del self.manifest[path]
         if path in self.parents:
             del self.parents[path]
+        self._invalidate_endpoint_cache()
 
     def Rename(self, path: Path, new: Path, _save=True):
         """
@@ -505,7 +523,88 @@ class DataInstanceLibrary:
         if path in self.parents:
             self.parents[new] = self.parents[path]
             del self.parents[path]
+        self._invalidate_endpoint_cache()
         if _save: self.Save()
+
+    def RenameByParent(self, parent_type: str):
+        """
+        Rename all items in the library based on the path stem of their parent of the given type.
+        Uses a transactional approach: plans all renames, executes filesystem moves, then commits manifest atomically.
+        """
+        # Phase A — Plan (read-only)
+        rename_plan: list[tuple[Path, Path]] = []  # (old_path, proposed_new_path)
+
+        for item_path, item_type in self.manifest.items():
+            if item_type == parent_type:
+                continue
+            if item_path not in self.parents:
+                continue
+            matching_parents = [p for p in self.parents[item_path] if p.name == parent_type]
+            if not matching_parents:
+                continue
+            matching_parents.sort(key=lambda p: str(p.path))
+            parent = matching_parents[0]
+            new_path = item_path.parent / (parent.path.stem + item_path.suffix)
+            rename_plan.append((item_path, new_path))
+
+        # Detect collisions: group by (directory, new_filename)
+        # Also account for non-renamed items that occupy target paths
+        renamed_old_paths = {old for old, _ in rename_plan}
+        occupied_paths = {p for p in self.manifest if p not in renamed_old_paths}
+        final_plan: list[tuple[Path, Path]] = []
+        seen: dict[Path, list[int]] = {}  # new_path -> list of indices in rename_plan
+        for i, (old, new) in enumerate(rename_plan):
+            seen.setdefault(new, []).append(i)
+
+        for new_path, indices in seen.items():
+            needs_hash = len(indices) > 1 or new_path in occupied_paths
+            for idx in indices:
+                old, proposed = rename_plan[idx]
+                if needs_hash:
+                    _, hash_str = KeyGenerator.FromStr(str(old), l=8)
+                    final_new = old.parent / (proposed.stem + "_" + hash_str + proposed.suffix)
+                else:
+                    final_new = proposed
+                if old != final_new:
+                    final_plan.append((old, final_new))
+
+        if not final_plan:
+            return
+
+        # Execute filesystem moves
+        completed: list[tuple[Path, Path]] = []
+        try:
+            for old, new in final_plan:
+                abs_old = old if old.is_absolute() else self.location / old
+                abs_new = new if new.is_absolute() else self.location / new
+                abs_new.parent.mkdir(parents=True, exist_ok=True)
+                abs_old.rename(abs_new)
+                completed.append((old, new))
+        except Exception:
+            # Rollback: move completed renames back to originals
+            for orig, renamed in completed:
+                abs_renamed = renamed if renamed.is_absolute() else self.location / renamed
+                abs_orig = orig if orig.is_absolute() else self.location / orig
+                if abs_renamed.exists():
+                    abs_renamed.rename(abs_orig)
+            raise
+
+        # Commit manifest atomically — two-phase for O(N×P) instead of O(R×N×P)
+        old_to_new = {old: new for old, new in final_plan}
+        # Phase 1: Move manifest and parents keys
+        for old, new in final_plan:
+            self.manifest[new] = self.manifest[old]
+            del self.manifest[old]
+            if old in self.parents:
+                self.parents[new] = self.parents[old]
+                del self.parents[old]
+        # Phase 2: Single pass to update all parent references
+        for parent_list in self.parents.values():
+            for pm in parent_list:
+                if pm.path in old_to_new:
+                    pm.path = old_to_new[pm.path]
+        self._invalidate_endpoint_cache()
+        self.Save()
 
     def AddParentsTo(self, path: Path|str, parents: Iterable[DataInstance]):
         if all(False for _ in parents):
@@ -517,11 +616,15 @@ class DataInstanceLibrary:
             return f"{d.parent_lib.GetKey()}/{d.path}"
         current += [self.ParentMetadata(p.dtype, p.dtype_name, p.parent_lib.GetKey(), p.path) for p in parents if _get_k(p) not in seen]
         self.parents[p] = current
+        self._invalidate_endpoint_cache()
 
-    def _calculate_key(self):
-        me_d = self.Pack()
-        for k in ["remote_src"]:
-            if k in me_d: del me_d[k]
+    def _calculate_key(self, _raw_override=None):
+        if _raw_override is not None:
+            me_d = {k: v for k, v in _raw_override.items() if k != "remote_src"}
+        else:
+            me_d = self.Pack()
+            for k in ["remote_src"]:
+                if k in me_d: del me_d[k]
         me = yaml.dump(me_d)
         self._hash, self._key = KeyGenerator.FromStr(me, l=12)
         return self._key
@@ -615,19 +718,26 @@ class DataInstanceLibrary:
             if len(parents) > 0:
                 lib.parents[Path(k)] = list(parents.values())
 
-        # Second pass: Aggregate grandparents (now all immediate parents are populated)
+        # Second pass: Memoized transitive closure for full ancestor aggregation
+        ancestor_cache: dict[Path, dict[Path, DataInstanceLibrary.ParentMetadata]] = {}
+
+        def _get_all_ancestors(k_path: Path) -> dict[Path, DataInstanceLibrary.ParentMetadata]:
+            if k_path in ancestor_cache:
+                return ancestor_cache[k_path]
+            ancestors: dict[Path, DataInstanceLibrary.ParentMetadata] = {}
+            for p in lib.parents.get(k_path, []):
+                ancestors[p.path] = p
+                for gp_path, gp in _get_all_ancestors(p.path).items():
+                    if gp_path not in ancestors:
+                        ancestors[gp_path] = gp
+            ancestor_cache[k_path] = ancestors
+            return ancestors
+
         for k in raw["manifest"].keys():
             k_path = Path(k)
             if k_path not in lib.parents:
                 continue
-            ancestors: dict[Path, DataInstanceLibrary.ParentMetadata] = {}
-            for p in lib.parents[k_path]:
-                ancestors[p.path] = p
-                # Recursively collect all ancestors
-                for gp in lib.parents.get(p.path, []):
-                    if gp.path not in ancestors:
-                        ancestors[gp.path] = gp
-            lib.parents[k_path] = list(ancestors.values())
+            lib.parents[k_path] = list(_get_all_ancestors(k_path).values())
 
         return lib
 
@@ -668,7 +778,7 @@ class DataInstanceLibrary:
         d = yaml_safe_load(index_path)
         self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
-        self._calculate_key()
+        self._calculate_key(_raw_override=d)
         return self
 
     def PrepTransfer(self, dest: Source, mover: Logistics|None=None):
