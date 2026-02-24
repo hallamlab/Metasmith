@@ -855,3 +855,114 @@ class TestDataInstanceLibraryRenameByParent:
 
         # Manifest should be unchanged
         assert loaded.manifest == original_manifest
+
+
+class TestDataInstanceLibraryPerformance:
+    """Performance tests for DataInstanceLibrary with 10k samples."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        d = tempfile.mkdtemp()
+        yield Path(d)
+        shutil.rmtree(d)
+
+    @pytest.fixture
+    def mock_types(self, temp_dir) -> Path:
+        types = DataTypeLibrary()
+        types["metadata"] = Endpoint(properties={"metadata"})
+        types["reads"] = Endpoint(properties={"reads"})
+        types["assembly"] = Endpoint(properties={"assembly"})
+        types["bam"] = Endpoint(properties={"bam"})
+        types_path = temp_dir / "mock_types.yml"
+        types.Save(types_path)
+        return types_path
+
+    def _build_10k_lib(self, temp_dir, mock_types, n=10000):
+        """Create a library with n samples, each with lineage: metadata -> reads -> assembly -> bam."""
+        lib_path = temp_dir / "lib"
+        lib = DataInstanceLibrary(lib_path)
+        lib.AddTypeLibrary(mock_types, namespace="mock")
+
+        for i in range(n):
+            d = f"s{i:05d}"
+            for f in ["meta.json", "reads.fq", "asm.fa", "out.bam"]:
+                p = lib_path / d / f
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text("")
+            m = lib.AddItem(Path(f"{d}/meta.json"), "mock::metadata")
+            r = lib.AddItem(Path(f"{d}/reads.fq"), "mock::reads", parents=[m])
+            a = lib.AddItem(Path(f"{d}/asm.fa"), "mock::assembly", parents=[r])
+            lib.AddItem(Path(f"{d}/out.bam"), "mock::bam", parents=[a])
+
+        lib.Save()
+        return lib_path
+
+    def test_save_load_10k(self, temp_dir, mock_types):
+        """Load 10k-sample library under 30s."""
+        import time
+        lib_path = self._build_10k_lib(temp_dir, mock_types)
+
+        start = time.time()
+        loaded = DataInstanceLibrary.Load(lib_path)
+        elapsed = time.time() - start
+
+        assert len(loaded.manifest) == 40000
+        assert elapsed < 30, f"Load took {elapsed:.1f}s (limit 30s)"
+
+    def test_as_samples_10k(self, temp_dir, mock_types):
+        """AsSamples iteration over 10k samples under 30s."""
+        import time
+        lib_path = self._build_10k_lib(temp_dir, mock_types)
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        start = time.time()
+        count = sum(1 for _ in loaded.AsSamples("mock::metadata"))
+        elapsed = time.time() - start
+
+        assert count == 10000
+        assert elapsed < 30, f"AsSamples took {elapsed:.1f}s (limit 30s)"
+
+    def test_trace_10k(self, temp_dir, mock_types):
+        """Trace across 10k samples under 30s."""
+        import time
+        lib_path = self._build_10k_lib(temp_dir, mock_types)
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        start = time.time()
+        results = list(loaded.Trace("mock::bam", "mock::metadata"))
+        elapsed = time.time() - start
+
+        assert len(results) == 10000
+        assert elapsed < 30, f"Trace took {elapsed:.1f}s (limit 30s)"
+
+    def test_rename_by_parent_10k(self, temp_dir, mock_types):
+        """RenameByParent on 10k samples under 60s."""
+        import time
+        lib_path = self._build_10k_lib(temp_dir, mock_types)
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        start = time.time()
+        loaded.RenameByParent("mock::metadata")
+        elapsed = time.time() - start
+
+        assert elapsed < 60, f"RenameByParent took {elapsed:.1f}s (limit 60s)"
+        # Verify reads were renamed to use metadata stem
+        renamed_reads = [p for p, t in loaded.manifest.items() if t == "mock::reads"]
+        assert len(renamed_reads) == 10000
+        assert all(p.stem == "meta" for p in renamed_reads)
+
+    def test_save_load_roundtrip_10k(self, temp_dir, mock_types):
+        """Pack equivalence after round-trip on 10k samples under 60s."""
+        import time
+        lib_path = self._build_10k_lib(temp_dir, mock_types)
+
+        start = time.time()
+        loaded = DataInstanceLibrary.Load(lib_path)
+        packed1 = loaded.Pack()
+        loaded.Save()
+        reloaded = DataInstanceLibrary.Load(lib_path)
+        packed2 = reloaded.Pack()
+        elapsed = time.time() - start
+
+        assert packed1["manifest"] == packed2["manifest"]
+        assert elapsed < 60, f"Round-trip took {elapsed:.1f}s (limit 60s)"
