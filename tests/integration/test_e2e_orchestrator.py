@@ -199,6 +199,148 @@ workflow {
         assert len(lines) >= 1
 
 
+    def test_channel_reuse_across_group_calls(self, nxf_runner):
+        """Two group() calls sharing a posted stream — second gets empty channel.
+
+        Reproduces the core deadlock mechanism: Nextflow channels are
+        single-consumer, so the first group() drains the stream and the
+        second group() receives nothing.
+        """
+        (nxf_runner.work_dir / "a.txt").write_text("a")
+
+        result = nxf_runner.run('''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [[:], file("${projectDir}/a.txt")],
+    ])
+
+    def (posted) = o.postIn([ch], ["x"])
+
+    // Pass the same posted stream to two group() calls
+    def g1 = o.group("x", [posted], ["t1"], 1)
+    def g2 = o.group("x", [posted], ["t2"], 1)
+
+    g1.view { "G1: ${it[0]}" }
+    g2.view { "G2: ${it[0]}" }
+}
+''', timeout=60)
+        NxfTestRunner.assert_nxf_ok(result)
+        g1_lines = [l for l in result.stdout.split("\n") if l.startswith("G1:")]
+        g2_lines = [l for l in result.stdout.split("\n") if l.startswith("G2:")]
+        assert len(g1_lines) >= 1, "G1 should have output"
+        assert len(g2_lines) >= 1, "G2 should have output (fails if channel was consumed by G1)"
+
+    def test_group_deadlocks_when_stream_reused(self, nxf_runner):
+        """Full DAG reproduction of mHAnaWSi deadlock topology.
+
+        Three stub processes:
+        - p01: per-sample (9 items), groups by "sample"
+        - p02: per-experiment (1 item), groups by "exp"
+        - p03: groups by "exp", needs outputs from both p01 and p02
+               plus shared streams (exp, container) already consumed
+               by p01/p02's group() calls
+
+        Before fix: p03 gets 0 inputs because the shared exp/container
+        streams were drained by earlier group() calls.
+        """
+        for i in range(9):
+            (nxf_runner.work_dir / f"sample_{i}.txt").write_text(f"sample {i}")
+        (nxf_runner.work_dir / "exp.txt").write_text("experiment")
+        (nxf_runner.work_dir / "container.txt").write_text("container")
+
+        result = nxf_runner.run('''
+process p01_per_sample {
+    input:
+        tuple val(index), path("input.txt"), path("exp.txt"), path("container.txt")
+    output:
+        tuple val(index), path("out.txt")
+    script:
+    """
+    echo "p01 done" > out.txt
+    """
+}
+
+process p02_per_exp {
+    input:
+        tuple val(index), path("exp.txt"), path("container.txt")
+    output:
+        tuple val(index), path("out.txt")
+    script:
+    """
+    echo "p02 done" > out.txt
+    """
+}
+
+process p03_merge {
+    input:
+        tuple val(index), path("p01_results"), path("p02_result"), path("exp.txt"), path("container.txt")
+    output:
+        tuple val(index), path("out.txt")
+    script:
+    """
+    echo "p03 done" > out.txt
+    """
+}
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    // Create 9 sample streams
+    sample_items = []
+    for (i in 0..8) {
+        sample_items.add([[:], file("${projectDir}/sample_${i}.txt")])
+    }
+    ch_samples = Channel.fromList(sample_items)
+
+    // Shared streams: exp and container
+    ch_exp = Channel.fromList([[[:], file("${projectDir}/exp.txt")]])
+    ch_container = Channel.fromList([[[:], file("${projectDir}/container.txt")]])
+
+    // Post all inputs
+    def (posted_samples) = o.postIn([ch_samples], ["sample"])
+    def (posted_exp) = o.postIn([ch_exp], ["exp"])
+    def (posted_container) = o.postIn([ch_container], ["container"])
+
+    // p01: groups by sample, also needs exp + container
+    def g1 = o.group("sample", [posted_samples, posted_exp, posted_container], ["p01_out"], 1)
+    def p01_result = p01_per_sample(g1)
+    def (p01_posted) = o.post([p01_result], ["p01_out"])
+
+    // p02: groups by exp, needs container
+    // NOTE: posted_exp and posted_container are reused here — already consumed above
+    def g2 = o.group("exp", [posted_exp, posted_container], ["p02_out"], 1)
+    def p02_result = p02_per_exp(g2)
+    def (p02_posted) = o.post([p02_result], ["p02_out"])
+
+    // p03: groups by exp, needs p01 + p02 outputs + exp + container
+    // All shared streams consumed by this point
+    def g3 = o.group("exp", [p01_posted, p02_posted, posted_exp, posted_container], ["p03_out"], 1)
+    def p03_result = p03_merge(g3)
+
+    p01_result.view { "P01: ${it[0]}" }
+    p02_result.view { "P02: ${it[0]}" }
+    p03_result.view { "P03: ${it[0]}" }
+}
+''', timeout=120)
+        # Before fix: Nextflow crashes or deadlocks because shared streams
+        # (posted_exp, posted_container) are consumed by group() in g1 and
+        # unavailable for g2/g3. Manifests as ConcurrentModificationException,
+        # missing process executions, or timeout.
+        #
+        # After fix: all three processes complete and p03 produces output.
+        p03_lines = [l for l in result.stdout.split("\n") if l.startswith("P03:")]
+        nxf_ok = result.returncode == 0 or (
+            "Duration unit cannot be a negative number" in result.stdout
+        )
+        assert nxf_ok and len(p03_lines) >= 1, (
+            f"Workflow failed or p03 got no output (got {len(p03_lines)} lines, "
+            f"rc={result.returncode}). This is the channel-reuse deadlock bug.\n"
+            f"stdout:\n{result.stdout[-500:]}"
+        )
+
+
 class TestOrchestratorBatch:
     """Test batch/debatch operations."""
 
