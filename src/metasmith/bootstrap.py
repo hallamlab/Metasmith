@@ -238,7 +238,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             if batch not in _hashes:
                 lin = lineages[batch]
                 slin = {k:sorted(lin[k]) for k in sorted(lin.keys())}
-                _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=8)
+                _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=16)
                 _hashes[batch] = _hash
             _hash = _hashes[batch]
             dest = Path(f"{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{dtype.GetPreferredFileExtension()}")

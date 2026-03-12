@@ -766,7 +766,7 @@ class WorkflowTask:
                 '"""',
                 'stub:',
                 'def dt = new Random().nextFloat()*params.testSpread',
-                'def hash = "${index[0].sort().collectEntries((k, v) -> [k, v.sort()])}".md5()[0..3]', # 4 characters
+                'def hash = "${index[0].sort().collectEntries((k, v) -> [k, v.sort()])}".md5()[0..11]', # 12 characters
                 f'"""',
                 f'sleep $dt',
                 f'touch {" ".join(mock_outputs)}',
