@@ -23,8 +23,8 @@ class Container:
         image = self.image
         if self.runtime == ContainerRuntime.DOCKER:
             DOCKER_DOMAIN = "docker://"
-            assert self.image.startswith(DOCKER_DOMAIN), f"can't use non-docker image [{self.image}] with docker runtime"
-            image = image.replace(DOCKER_DOMAIN, "")
+            if image.startswith(DOCKER_DOMAIN):
+                image = image.replace(DOCKER_DOMAIN, "")
         return image
 
     def GetLocalPath(self):

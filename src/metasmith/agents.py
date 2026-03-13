@@ -760,6 +760,140 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     task.plan.RenderDAG(f"{work_dir}/workflow.dag.svg")
     Log.Info(f"[{task._key}] staged to [{workspace_str}]")
         
+def CollectResults(
+    task: WorkflowTask,
+    output_path: Path,
+    inputs_dir: Path,
+    manifests_path: Path,
+) -> DataInstanceLibrary:
+    """Compile Nextflow outputs into a DataInstanceLibrary with lineage.
+
+    Reads input manifests and output manifests produced by the Orchestrator,
+    reconstructs parent-child relationships, and returns the result library.
+
+    Args:
+        task: The workflow task that was executed.
+        output_path: Path to the results directory (where outputs live).
+        inputs_dir: Path to the inputs/ directory with input CSVs.
+        manifests_path: Path to the _manifests/ directory with JSON manifests.
+
+    Returns:
+        DataInstanceLibrary with all outputs and their lineage.
+    """
+    output = DataInstanceLibrary(output_path)
+    tlibs: dict[str, DataTypeLibrary] = {}
+    path2inst: dict[Path, DataInstance] = {}
+    for lib in task.transform_libraries:
+        for namespace, tlib in lib.types.items():
+            tlibs[namespace] = tlib
+    for lib in task.data_libraries:
+        for namespace, tlib in lib.types.items():
+            if namespace in tlibs:
+                _lib = tlibs[namespace]
+                for k, e in tlib.types.items():
+                    if k in _lib: continue
+                    _lib[k] = e
+            else:
+                _lib = tlib
+            tlibs[namespace] = _lib
+        for path, name, model in lib.Iterate():
+            inst = lib.Get(path)
+            path2inst[inst.ResolvePath()] = inst
+    for namespace, tlib in tlibs.items():
+        output.AddTypeLibrary(namespace=namespace, lib=tlib)
+    k2inst: dict[str, DataInstance] = {}
+    for inst in task.plan.given:
+        k2inst[inst.dtype.key] = inst
+    for step in task.plan.steps:
+        for insts in step.dependency_map.values():
+            for inst in insts:
+                k2inst[inst.dtype.key] = inst
+    # this is a mappping of the (k, v) assinged by the orchestrator during nextflow
+    kv2path: dict[tuple[str, int], tuple[Path, dict]] = {}
+    for in_manifest in inputs_dir.iterdir():
+        k = in_manifest.name
+        with open(in_manifest) as f:
+            for l in f:
+                p = Path(l[:-1])
+                _hash = md5(str(p).encode()).hexdigest()
+                _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
+                kv2path[(k, _hash)] = p, {}
+    for manifest in glob(str(manifests_path/"*")):
+        manifest = Path(manifest)
+        if manifest.suffix != ".json": continue
+        inst_k = manifest.name.split(".")[-2] # TAB+TAB+f"index {{ path 'msm_manifest.{out_name}.{inst.dtype.key}.raw' }}",
+        _parsed_entries = []
+        with open(manifest) as j:
+            entries = json.load(j)
+            for lin, path in entries:
+                try:
+                    path = Path(path)
+                    lind: dict = json.loads(lin)
+                    kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
+                    kv2path[kv] = path, lind
+                    _parsed_entries.append({
+                        "instance_key": kv[0],
+                        "instance_index": kv[1],
+                        "path": str(path.relative_to(output_path)),
+                        "lineage": lind,
+                    })
+                except Exception as e:
+                    Log.Error(e)
+        with open(manifest, "w") as j:
+            json.dump(_parsed_entries, j, indent=2)
+    relavent_k = {k for k, v in kv2path}
+    given_manifest = []
+    todo = dict(enumerate(kv2path.items()))
+    while len(todo)>0:
+        to_del = []
+        for i, ((ck, cv), (path, lineage)) in todo.items():
+            cinst = k2inst[ck]
+            if path.is_relative_to(output_path): # is output
+                parents = []
+                ok = True
+                for pk, pvs in lineage.items():
+                    if pk not in relavent_k: continue
+                    if pk == ck: continue
+                    for pv in pvs:
+                        k = (pk, pv)
+                        if k not in kv2path: continue # likely due to a merge between branches
+                        ppath, _ = kv2path[k]
+                        if ppath not in path2inst:
+                            ok = False
+                            break
+                        _inst = path2inst[ppath]
+                        _path = _inst.ResolvePath()
+                        parents.append((_path, _inst.dtype_name))
+                        if _path in output: continue
+                    if not ok: break
+                if not ok: continue
+                _parents = []
+                for _path, _name in parents:
+                    if _path not in output.manifest:
+                        output.AddItem(path=_path, dtype=_name)
+                    _parents.append(_path)
+                _path = path.relative_to(output_path)
+                _path = output.AddItem(
+                    path=_path,
+                    dtype=cinst.dtype_name,
+                    parents=_parents,
+                )
+                _inst = output.Get(_path)
+                _path = _inst.ResolvePath()
+                path2inst[_path] = _inst
+            else:
+                given_manifest.append((ck, cv, cinst.dtype_name, path))
+            to_del.append(i)
+        assert len(to_del)>0
+        for i in to_del:
+            del todo[i]
+    output.PruneTypes(save=False)
+    output.Save()
+
+    _df = pd.DataFrame(given_manifest, columns="instance_key, instance_index, type_name, path".split(", "))
+    _df.to_csv(manifests_path/"given.csv", index=False)
+    return output
+
 def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
@@ -908,120 +1042,15 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         Log.Warn(f"no report at [{nxf_report}]")
 
     Log.Info(f"compiling results")
-    extern_output_path = extern_workspace/results_folder
-    output = DataInstanceLibrary(output_path)
-    tlibs: dict[str, DataTypeLibrary] = {}
-    path2inst: dict[Path, DataInstance] = {}
-    for lib in task.transform_libraries:
-        for namespace, tlib in lib.types.items():
-            tlibs[namespace] = tlib
-    for lib in task.data_libraries:
-        for namespace, tlib in lib.types.items():
-            if namespace in tlibs:
-                _lib = tlibs[namespace]
-                for k, e in tlib.types.items():
-                    if k in _lib: continue
-                    _lib[k] = e
-            else:
-                _lib = tlib
-            tlibs[namespace] = _lib
-        for path, name, model in lib.Iterate():
-            inst = lib.Get(path)
-            path2inst[inst.ResolvePath()] = inst
-    for namespace, tlib in tlibs.items():
-        output.AddTypeLibrary(namespace=namespace, lib=tlib)
-    k2inst: dict[str, DataInstance] = {}
-    for step in task.plan.steps:
-        for insts in step.dependency_map.values():
-            for inst in insts:
-                k2inst[inst.dtype.key] = inst
-    # this is a mappping of the (k, v) assinged by the orchestrator during nextflow
-    kv2path: dict[tuple[str, int], tuple[Path, dict]] = {}
-    for in_manifest in (output_path.parent/"inputs").iterdir():
-        k = in_manifest.name
-        with open(in_manifest) as f:
-            for l in f:
-                p = Path(l[:-1])
-                _hash = md5(str(p).encode()).hexdigest()
-                _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
-                kv2path[(k, _hash)] = p, {}
-    for manifest in glob(str(manifests_path/"*")):
-        manifest = Path(manifest)
-        if manifest.suffix != ".json": continue
-        inst_k = manifest.name.split(".")[-2] # TAB+TAB+f"index {{ path 'msm_manifest.{out_name}.{inst.dtype.key}.raw' }}",
-        _parsed_entries = []
-        with open(manifest) as j:
-            entries = json.load(j)
-            for lin, path in entries:
-                try:
-                    path = Path(path)
-                    lind: dict = json.loads(lin)
-                    kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
-                    kv2path[kv] = path, lind
-                    _parsed_entries.append({
-                        "instance_key": kv[0],
-                        "instance_index": kv[1],
-                        "path": str(path.relative_to(output_path)),
-                        "lineage": lind,
-                    })
-                except Exception as e:
-                    Log.Error(e)
-        with open(manifest, "w") as j:
-            json.dump(_parsed_entries, j, indent=2)
-    relavent_k = {k for k, v in kv2path}
-    given_manifest = []
-    n_outputs = 0
-    todo = dict(enumerate(kv2path.items()))
-    while len(todo)>0:
-        to_del = []
-        for i, ((ck, cv), (path, lineage)) in todo.items():
-            cinst = k2inst[ck]
-            if path.is_relative_to(output_path): # is output
-                parents = []
-                ok = True
-                for pk, pvs in lineage.items():
-                    if pk not in relavent_k: continue
-                    if pk == ck: continue
-                    for pv in pvs:
-                        k = (pk, pv)
-                        if k not in kv2path: continue # likely due to a merge between branches
-                        ppath, _ = kv2path[k]
-                        if ppath not in path2inst:
-                            ok = False
-                            break
-                        _inst = path2inst[ppath]
-                        _path = _inst.ResolvePath()
-                        parents.append((_path, _inst.dtype_name))
-                        if _path in output: continue
-                    if not ok: break
-                if not ok: continue
-                _parents = []
-                for _path, _name in parents:
-                    if _path not in output.manifest:
-                        output.AddItem(path=_path, dtype=_name)
-                    _parents.append(_path)
-                n_outputs+=1
-                _path = path.relative_to(output_path)
-                _path = output.AddItem(
-                    path=_path,
-                    dtype=cinst.dtype_name,
-                    parents=_parents,
-                )
-                _inst = output.Get(_path)
-                _path = _inst.ResolvePath()
-                path2inst[_path] = _inst
-            else:
-                given_manifest.append((ck, cv, cinst.dtype_name, path))
-            to_del.append(i)
-        assert len(to_del)>0
-        for i in to_del:
-            del todo[i]
-    output.PruneTypes(save=False)
-    output.Save()
-        
-    _df = pd.DataFrame(given_manifest, columns="instance_key, instance_index, type_name, path".split(", "))
-    _df.to_csv(manifests_path/"given.csv", index=False)
+    output = CollectResults(
+        task=task,
+        output_path=output_path,
+        inputs_dir=output_path.parent/"inputs",
+        manifests_path=manifests_path,
+    )
+    n_outputs = sum(1 for p in output.manifest if Path(p).is_relative_to(output_path) or not Path(p).is_absolute())
     tail = output_path.relative_to(AgentPaths.HOME_ROOT)
+    extern_output_path = extern_workspace/results_folder
     external_results_path = extern_home/tail
     Log.Info(f"[{n_outputs}] outputs for [{key}] at [{external_results_path}]")
 
