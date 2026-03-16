@@ -247,6 +247,10 @@ class WorkflowPlan:
             inst = DataInstance.Unpack(raw, libraries)
             inst.dtype = all_types[raw["type_id"]]
             inst.RecalculateKey()
+            if "instance_id" in raw:
+                inst.instance_id = raw["instance_id"]
+                inst._key = inst.instance_id
+                inst._hash, _ = KeyGenerator.FromStr(inst.instance_id, l=10)
             return inst
 
         def _unpack_step(raw: dict):
@@ -266,6 +270,10 @@ class WorkflowPlan:
             for inst, r in _iter():
                 inst.dtype = all_types[r["type_id"]]
                 inst.RecalculateKey()
+                if "instance_id" in r:
+                    inst.instance_id = r["instance_id"]
+                    inst._key = inst.instance_id
+                    inst._hash, _ = KeyGenerator.FromStr(inst.instance_id, l=10)
             step._resolve_dependency_map()
             return step
 
