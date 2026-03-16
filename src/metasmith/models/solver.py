@@ -241,7 +241,12 @@ class Application:
     _hash: int|None = None
     def Signature(self):
         if self._sig is None: 
-            self._sig = self.transform.key + "".join({self.used[p].key for p in self.transform.requires})
+            parts = []
+            for dep in self.transform.requires:
+                if dep not in self.used:
+                    continue
+                parts.append(f"{dep.key}:{self.used[dep].key}")
+            self._sig = self.transform.key + "|" + "|".join(parts)
         return self._sig
     def __hash__(self) -> int:
         if self._hash is None:
@@ -249,7 +254,7 @@ class Application:
         return self._hash
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Application): return False
-        return self._hash == value._hash
+        return self.Signature() == value.Signature()
 
 @dataclass
 class RefinerState:

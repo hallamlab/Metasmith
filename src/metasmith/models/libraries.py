@@ -179,14 +179,32 @@ class DataInstance:
     def __hash__(self) -> int:
         return self._hash
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, DataInstance) and self.instance_id == other.instance_id
+
     def RecalculateKey(self):
-        self._hash, self._key = KeyGenerator.FromStr("".join([
+        self._hash, self.instance_id = KeyGenerator.FromStr("".join([
+            str(self.path),
+            self.dtype_name,
+            self.parent_lib.GetKey(),
+        ]), l=10)
+        # Legacy typed key is kept for backward compatibility when reading old
+        # task serializations that referenced DataInstances by the old key.
+        _, self.legacy_key = KeyGenerator.FromStr("".join([
             str(self.path),
             self.dtype.key,
             self.dtype_name,
-            # self.parent_lib.GetKey(),
         ]), l=8)
+        self._key = self.instance_id
         return self._key
+
+    def WithDType(self, dtype: Endpoint, dtype_name: str | None = None):
+        return self.__class__(
+            path=self.path,
+            dtype=dtype,
+            dtype_name=self.dtype_name if dtype_name is None else dtype_name,
+            parent_lib=self.parent_lib,
+        )
 
     def GetDataType(self) -> tuple[str, str]:
         ns, name = self.dtype_name.split("::")
@@ -204,6 +222,7 @@ class DataInstance:
             type=f"{self.parent_lib.GetKey()}::{self.dtype_name}",
             # type=f"{self.dtype_name}",
             type_id=self.dtype.key,
+            instance_id=self.instance_id,
         )
 
     @classmethod
@@ -212,12 +231,18 @@ class DataInstance:
         lib = libraries[lib_key]
         dtype = lib.types[namespace][dtype_name]
 
-        return cls(
+        inst = cls(
             path=Path(raw["path"]),
             dtype=dtype,
             dtype_name=f"{namespace}::{dtype_name}",
             parent_lib=lib,
         )
+        if "instance_id" in raw:
+            # Preserve compatibility with newer serializations.
+            inst.instance_id = raw["instance_id"]
+            inst._key = inst.instance_id
+            inst._hash, _ = KeyGenerator.FromStr(inst.instance_id, l=10)
+        return inst
 
 class DataInstanceLibrary:
     schema: str = "v1"

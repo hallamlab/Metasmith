@@ -78,7 +78,7 @@ class TestHarnessBasic:
         assert has_output, "Transform should produce at least one output file"
 
     def test_metadata_format(self, mock_samples, mock_types, temp_dir):
-        """Metadata file matches NXF format: res, lin, inp, out lines."""
+        """Metadata file matches NXF format with dependency metadata."""
         task = _make_task(
             mock_samples, mock_types, temp_dir / "meta",
             alignment_transform(), {"bam"}, "bam",
@@ -93,13 +93,15 @@ class TestHarnessBasic:
 
         content = meta_path.read_text()
         lines = content.strip().split("\n")
-        assert len(lines) == 4
+        assert len(lines) >= 8
 
-        keys = [l[:3] for l in lines]
-        assert keys == ["res", "lin", "inp", "out"]
+        keys = [l.split(" ", maxsplit=1)[0] for l in lines]
+        for expected in ["res", "lin", "fmt", "din", "dot", "inp", "out"]:
+            assert expected in keys
 
         # Verify lin is valid JSON
-        lin_data = json.loads(lines[1][4:])
+        lin_line = [l for l in lines if l.startswith("lin ")][0]
+        lin_data = json.loads(lin_line[4:])
         assert isinstance(lin_data, list)
 
     def test_input_files_accessible(self, mock_samples, mock_types, temp_dir):

@@ -6,9 +6,9 @@ from tempfile import TemporaryDirectory
 from typing import Any, Generator, Iterable, Literal, TypeVar
 import os
 import itertools
-from collections import Counter
 import yaml
 import json
+from collections import Counter
 from hashlib import md5
 
 from ..coms.containers import Container, ContainerRuntime
@@ -26,19 +26,47 @@ BIND_FILE = ".command.binds"
 @dataclass
 class WorkflowStep:
     order: int
-    uses: list[DataInstance]
-    produces: list[list[DataInstance]]
     dependency_map: dict[Dependency, list[DataInstance]]
     transform: TransformInstance
     transform_library: TransformInstanceLibrary
+    uses: list[DataInstance] = field(default_factory=list)
+    produces: list[list[DataInstance]] = field(default_factory=list)
     _raw_dependency_map: dict|None = None
+    _raw_instances: dict[str, DataInstance]|None = None
+
+    def __post_init__(self):
+        if len(self.dependency_map)>0:
+            self.RefreshViews()
+
+    @property
+    def group_by_instances(self):
+        return self.dependency_map.get(self.transform.group_by, [])
+
+    def RefreshViews(self):
+        self.uses = [
+            inst
+            for dep in self.transform.model.requires
+            for inst in self.dependency_map.get(dep, [])
+        ]
+        self.produces = [
+            [
+                inst
+                for dep in dep_group
+                for inst in self.dependency_map.get(dep, [])
+            ]
+            for dep_group in self.transform.model.produces
+        ]
 
     def Pack(self):
+        all_instances: dict[str, DataInstance] = {}
+        for lst in self.dependency_map.values():
+            for inst in lst:
+                all_instances[inst.instance_id] = inst
         return dict(
             order=self.order,
-            uses=[inst.Pack() for inst in self.uses],
-            produces=[[inst.Pack() for inst in g] for g in self.produces],
-            dependency_map={k.key:[v._key for v in lst] for k, lst in self.dependency_map.items()},
+            schema="v2",
+            instances={k:v.Pack() for k, v in all_instances.items()},
+            dependency_map={k.key:[v.instance_id for v in lst] for k, lst in self.dependency_map.items()},
             transform=f"{self.transform_library.GetKey()}::{self.transform._path}",
         )
 
@@ -49,22 +77,50 @@ class WorkflowStep:
         assert isinstance(lib, TransformInstanceLibrary)
         tr = lib.GetTransform(transform_path)
         assert tr is not None
+        raw_instances: dict[str, DataInstance]|None = None
+        uses: list[DataInstance] = []
+        produces: list[list[DataInstance]] = []
+        if "instances" in raw:
+            raw_instances = {k:DataInstance.Unpack(v, libraries) for k, v in raw["instances"].items()}
+        else:
+            uses = [DataInstance.Unpack(inst, libraries) for inst in raw.get("uses", [])]
+            produces = [[DataInstance.Unpack(inst, libraries) for inst in g] for g in raw.get("produces", [])]
         return cls(
             order=raw["order"],
-            uses=[DataInstance.Unpack(inst, libraries) for inst in raw["uses"]],
-            produces=[[DataInstance.Unpack(inst, libraries) for inst in g] for g in raw["produces"]],
             dependency_map={}, # needs workflow plan to sort out
+            uses=uses,
+            produces=produces,
             _raw_dependency_map = raw["dependency_map"],
+            _raw_instances=raw_instances,
             transform=tr,
             transform_library=lib,
         )
     
     def _resolve_dependency_map(self):
         assert self._raw_dependency_map is not None
-        data = {d._key:d for d in itertools.chain(self.uses, [d for g in self.produces for d in g])}
+        if self._raw_instances is not None:
+            data = {}
+            for inst in self._raw_instances.values():
+                for k in {inst.instance_id, inst._key, inst.legacy_key}:
+                    data[k] = inst
+        else:
+            raw_data = itertools.chain(self.uses, [d for g in self.produces for d in g])
+            data = {}
+            for inst in raw_data:
+                for k in {inst.instance_id, inst._key, inst.legacy_key}:
+                    data[k] = inst
         tr = self.transform.model
         deps = {d.key:d for d in itertools.chain(tr.requires, [d for g in tr.produces for d in g])}
-        self.dependency_map = {deps[k]:[data[v] for v in lst] for k, lst in self._raw_dependency_map.items()}
+        dep_map: dict[Dependency, list[DataInstance]] = {}
+        for dep_key, ids in self._raw_dependency_map.items():
+            if dep_key not in deps:
+                continue
+            missing = [v for v in ids if v not in data]
+            if len(missing)>0:
+                Log.Warn(f"missing [{len(missing)}] DataInstances for dependency [{dep_key}] while unpacking workflow step [{self.order}]")
+            dep_map[deps[dep_key]] = [data[v] for v in ids if v in data]
+        self.dependency_map = dep_map
+        self.RefreshViews()
 
 @dataclass
 class WorkflowTarget:
@@ -196,9 +252,15 @@ class WorkflowPlan:
         def _unpack_step(raw: dict):
             step = WorkflowStep.Unpack(raw, libraries)
             def _iter():
-                for inst, r in zip(step.uses, raw["uses"]):
+                if "instances" in raw and step._raw_instances is not None:
+                    for k, r in raw["instances"].items():
+                        if k not in step._raw_instances:
+                            continue
+                        yield step._raw_instances[k], r
+                    return
+                for inst, r in zip(step.uses, raw.get("uses", [])):
                     yield inst, r
-                for g, rg in zip(step.produces, raw["produces"]):
+                for g, rg in zip(step.produces, raw.get("produces", [])):
                     for inst, r in zip(g, rg):
                         yield inst, r
             for inst, r in _iter():
@@ -284,6 +346,16 @@ class WorkflowPlan:
         )
         # result.RenderDAG("./dag")
 
+        def _dedupe_instances(instances: list[DataInstance]):
+            out = []
+            seen = set()
+            for inst in instances:
+                if inst.instance_id in seen:
+                    continue
+                seen.add(inst.instance_id)
+                out.append(inst)
+            return out
+
         # remap given inputs if changed by solver
         result_given = result.dependency_plan[0]
         for pgroup in result_given.produced:
@@ -310,11 +382,9 @@ class WorkflowPlan:
             _to_add = []
             for x in me:
                 if x==e: continue
-                for oe in given_map[x]:
-                    oe.dtype = e
-                    oe.RecalculateKey()
-                    _to_add.append(oe)
-            given_map[e] += _to_add
+                for oe in given_map.get(x, []):
+                    _to_add.append(oe.WithDType(e))
+            given_map[e] = _dedupe_instances(given_map[e] + _to_add)
 
         # assert result.complete, "failed to make plan!"
         if not result.complete:
@@ -350,7 +420,17 @@ class WorkflowPlan:
         # print()
         # print()
 
-        instance_map: dict[Endpoint, set[DataInstance]] = {k:set(v) for k, v in given_map.items()}
+        class CanonicalInstanceRegistry:
+            def __init__(self):
+                self._registry: dict[tuple[str, ...], DataInstance] = {}
+
+            def get_or_create(self, key: tuple[str, ...], factory):
+                if key not in self._registry:
+                    self._registry[key] = factory()
+                return self._registry[key]
+
+        canonical = CanonicalInstanceRegistry()
+        instance_map: dict[Endpoint, list[DataInstance]] = {k:_dedupe_instances(v) for k, v in given_map.items()}
         steps: dict[Application, WorkflowStep] = {}
         used_endpoints: set[Endpoint] = set()
         target_meta: dict[Endpoint, list[WorkflowTarget]] = {}
@@ -381,7 +461,15 @@ class WorkflowPlan:
                         dtype_name = dtname, 
                         parent_lib = _lib,
                     )
-                    instance_map[e] = instance_map.get(e, set())|{_instance}
+                    instance_key = (
+                        "generated",
+                        appl.Signature(),
+                        d.key,
+                        e.key,
+                        dtname,
+                    )
+                    _instance = canonical.get_or_create(instance_key, lambda: _instance)
+                    instance_map[e] = _dedupe_instances(instance_map.get(e, []) + [_instance])
                     _insts[(j, d, e)] = _instance
 
             # print(f">> {tr.name}")
@@ -392,8 +480,6 @@ class WorkflowPlan:
             used_endpoints |= {e for e in appl.used.values()}
             step = WorkflowStep(
                 order=i+1,
-                uses=[inst for e in appl.used.values() for inst in instance_map[e]],
-                produces=[[inst for e in pgroup.values() for inst in instance_map[e]] for pgroup in appl.produced],
                 dependency_map={d:list(instance_map[e]) for d, e in itertools.chain(appl.used.items(), [(d, e) for pgroup in appl.produced for d, e in pgroup.items()])},
                 transform=tr,
                 transform_library=_lib,
@@ -435,8 +521,18 @@ class WorkflowPlan:
         given_pool = set(given_map.keys())
         used_endpoints = _collect_ancestor_endpoints(used_endpoints, given_pool)
 
+        _given = []
+        _seen_given = set()
+        for e, lst in given_map.items():
+            if e not in used_endpoints:
+                continue
+            for inst in lst:
+                if inst.instance_id in _seen_given:
+                    continue
+                _seen_given.add(inst.instance_id)
+                _given.append(inst)
         return cls(
-            given=list({i for e, lst in given_map.items() for i in lst if e in used_endpoints}),
+            given=_given,
             targets=[x for g in target_meta.values() for x in g],
             steps=[s for a, s in steps.items()],
             _solver_result=result,
@@ -725,6 +821,25 @@ class WorkflowTask:
                     "errorStrategy 'ignore'" # no point in retrying if not changing resource requests
                 ]
             used_archetypes, produced_archetypes = get_io_signature(step)
+            dep_in = {
+                d.key: [inst.instance_id for inst in step.dependency_map.get(d, [])]
+                for d in step.transform.model.requires
+            }
+            dep_out = [
+                {
+                    d.key: [inst.instance_id for inst in step.dependency_map.get(d, [])]
+                    for d in dep_group
+                }
+                for dep_group in step.transform.model.produces
+            ]
+            structure_arity = {
+                d.key: len(step.dependency_map.get(d, []))
+                for d in itertools.chain(
+                    step.transform.model.requires,
+                    [d for g in step.transform.model.produces for d in g],
+                )
+            }
+            sample_arity = len(step.group_by_instances)
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
                 for branch, g in enumerate(produced_archetypes) for x in g
@@ -750,6 +865,11 @@ class WorkflowTask:
                 f'echo "{step.transform.name}"',
                 f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
                 f'echo "lin ${{Orchestrator.JsonforEcho(index)}}" >>{METADATA_FILE}',
+                f'echo "fmt 2" >>{METADATA_FILE}',
+                f"echo 'din {json.dumps(dep_in, separators=(',',':'))}' >>{METADATA_FILE}",
+                f"echo 'dot {json.dumps(dep_out, separators=(',',':'))}' >>{METADATA_FILE}",
+                f"echo 'sar {json.dumps(structure_arity, separators=(',',':'))}' >>{METADATA_FILE}",
+                f'echo "par {sample_arity}" >>{METADATA_FILE}',
                 f'echo "inp {','.join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
                 f'echo "out {';'.join(','.join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
             # ] + [
@@ -921,7 +1041,7 @@ class WorkflowTask:
             produced_snames = [get_prod_name(x.dtype, force_singular=True) for g in produced_archetypes for x in g]
             produced = ", ".join(f"_{x}" for x in produced_names)
             if len(used_archetypes)>0:
-                _inst = step.dependency_map[step.transform.group_by]
+                _inst = step.group_by_instances
                 _dtypes = {x.dtype.key for x in _inst}
                 if len(_dtypes)>1:
                     Log.Warn(f"unexpected plural groupby instance refernce for [{step.transform.name}:{step.transform.group_by}]: [{_inst}]")
@@ -1006,7 +1126,7 @@ class WorkflowTask:
             wf_output += [
                 TAB+f"_{ch}"+"{",
                 TAB+TAB+f"path '{out_name}'",
-                TAB+TAB+f"index {{ path '_manifests/{spec_name}.{inst.dtype.key}.json' }}",
+                TAB+TAB+f"index {{ path '_manifests/{spec_name}.{inst.dtype.key}.{inst.instance_id}.json' }}",
                 TAB+"}",
             ]
             

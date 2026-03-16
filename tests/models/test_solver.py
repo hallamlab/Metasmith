@@ -4,7 +4,7 @@ Converted from main/workflow_solver/branching_test.py
 """
 
 import pytest
-from metasmith.models.solver import solve_by_mcts, Transform, Endpoint
+from metasmith.models.solver import solve_by_mcts, Transform, Endpoint, Application
 
 
 class TestBasicSolver:
@@ -79,6 +79,29 @@ class TestBasicSolver:
             },
         ], target=target, transforms=transforms)
         assert sol.complete
+
+    def test_application_signature_is_dependency_ordered(self):
+        """Application signatures should differ when dependency bindings swap."""
+        tr = Transform()
+        dep_a = tr.AddRequirement(properties={"a"})
+        dep_b = tr.AddRequirement(properties={"b"})
+        tr.AddProduct(properties={"out"})
+
+        ep_a = Endpoint(properties={"input_a"})
+        ep_b = Endpoint(properties={"input_b"})
+        app1 = Application(
+            initial_timeline=0,
+            transform=tr,
+            used={dep_a: ep_a, dep_b: ep_b},
+            produced=[{}],
+        )
+        app2 = Application(
+            initial_timeline=0,
+            transform=tr,
+            used={dep_a: ep_b, dep_b: ep_a},
+            produced=[{}],
+        )
+        assert app1.Signature() != app2.Signature()
 
 
 class TestCircularDependencies:

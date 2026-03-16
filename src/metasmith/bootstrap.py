@@ -100,9 +100,14 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             with open(METADATA_FILE) as f:
                 for l in f:
                     if l.endswith("\n"): l = l[:-1]
-                    k = l[:len("###")]
-                    raw_meta[k] = l[len("### "):]
-                _vals = raw_meta["res"].strip().split("/")
+                    if len(l.strip()) == 0:
+                        continue
+                    if " " in l:
+                        k, v = l.split(" ", maxsplit=1)
+                    else:
+                        k, v = l, ""
+                    raw_meta[k] = v
+                _vals = raw_meta.get("res", "").strip().split("/")
                 for i, k in enumerate(["cpus", "memory", "attempt"]): # match nextflow task.{}
                     if i>=len(_vals): break
                     v = _vals[i]
@@ -116,37 +121,81 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                     params[k] = v
         except Exception as e:
             Log.Error(f"failed to read [{METADATA_FILE}]: {e}")
-        lineages = raw_meta["lin"]
+        lineages = raw_meta.get("lin", "[]")
         lineages = json.loads(lineages)
         if not isinstance(lineages, list): lineages = [lineages]
-        group_by_inst = step.dependency_map[step.transform.group_by]
+        group_by_inst = step.group_by_instances
+        if len(group_by_inst)==0:
+            Log.Error(f"group_by dependency has no bound instances for step [{step_name}]")
+            return ExecutionResult(False)
         _dtypes = {x.dtype for x in group_by_inst}
         if len(_dtypes)>1:
             Log.Warn(f"unexpected plural group by [{group_by_inst}]")
         group_by_inst = group_by_inst[0]
         # output_indexes = ["#".join(f"{x}" for x in lin[group_by_inst.dtype.key]) for lin in lineages]
+        inst_lookup: dict[str, DataInstance] = {}
+        for insts in step.dependency_map.values():
+            for inst in insts:
+                for key in {inst.instance_id, inst._key, inst.legacy_key}:
+                    inst_lookup[key] = inst
 
-        input_map: dict[Endpoint, list[DataInstance]] = {}
-        for k in raw_meta["inp"].split(","):
-            insts = [x for x in step.uses if x.dtype.key == k]
-            input_map[insts[0].dtype] = insts
-        input2dep: dict[Endpoint, Dependency] = {}
-        for e, d in zip(input_map, step.transform.model.requires):
-            input2dep[e] = d
-        output_map: list[dict[Endpoint, list[DataInstance]]] = []
+        fmt = int(raw_meta.get("fmt", "1"))
+        dep_in_raw = {}
+        dep_out_raw = []
+        if fmt >= 2 and "din" in raw_meta and "dot" in raw_meta:
+            try:
+                dep_in_raw = json.loads(raw_meta["din"])
+                dep_out_raw = json.loads(raw_meta["dot"])
+            except json.JSONDecodeError:
+                Log.Warn("failed to parse metadata v2 dependency payload, falling back to legacy inp/out")
+                fmt = 1
+
+        input_by_dep: dict[Dependency, list[DataInstance]] = {}
+        if fmt >= 2:
+            for dep in step.transform.model.requires:
+                ids = dep_in_raw.get(dep.key, [])
+                resolved = [inst_lookup[k] for k in ids if k in inst_lookup]
+                if len(resolved) == 0:
+                    resolved = step.dependency_map.get(dep, [])
+                input_by_dep[dep] = resolved
+        else:
+            inp_keys = [x for x in raw_meta.get("inp", "").split(",") if len(x)>0]
+            for dep, k in zip(step.transform.model.requires, inp_keys):
+                resolved = [x for x in step.dependency_map.get(dep, []) if x.dtype.key == k]
+                if len(resolved) == 0:
+                    resolved = step.dependency_map.get(dep, [])
+                input_by_dep[dep] = resolved
+            for dep in step.transform.model.requires:
+                if dep in input_by_dep:
+                    continue
+                input_by_dep[dep] = step.dependency_map.get(dep, [])
+
         dep2output: list[dict[Dependency, Endpoint]] = []
-        for graw, dep_group in zip(raw_meta["out"].split(";"), step.transform.model.produces):
-            group = {}
-            dgroup = {}
-            inst_group = [e for d in dep_group for e in step.dependency_map[d]]
-            for k, dep in zip(graw.split(","), dep_group):
-                insts = [x for x in inst_group if x.dtype.key == k]
-                if len(insts)==0: continue
-                group[e] = insts
-                e = insts[0].dtype
-                dgroup[dep] = e
-            output_map.append(group)
-            dep2output.append(dgroup)
+        if fmt >= 2:
+            for i, dep_group in enumerate(step.transform.model.produces):
+                dgroup = {}
+                raw_group = dep_out_raw[i] if i < len(dep_out_raw) else {}
+                for dep in dep_group:
+                    ids = raw_group.get(dep.key, [])
+                    resolved = [inst_lookup[k] for k in ids if k in inst_lookup]
+                    if len(resolved) == 0:
+                        resolved = step.dependency_map.get(dep, [])
+                    if len(resolved)==0:
+                        continue
+                    dgroup[dep] = resolved[0].dtype
+                dep2output.append(dgroup)
+        else:
+            out_groups = raw_meta.get("out", "").split(";") if "out" in raw_meta else []
+            for graw, dep_group in zip(out_groups, step.transform.model.produces):
+                dgroup = {}
+                for k, dep in zip(graw.split(","), dep_group):
+                    insts = [x for x in step.dependency_map.get(dep, []) if x.dtype.key == k]
+                    if len(insts)==0:
+                        insts = step.dependency_map.get(dep, [])
+                    if len(insts)==0:
+                        continue
+                    dgroup[dep] = insts[0].dtype
+                dep2output.append(dgroup)
         alldep2output = {d:e for x in dep2output for d,e in x.items()}
 
         # input2files: dict[Endpoint, list[Path]] = {}
@@ -193,13 +242,17 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
         inputs: list[dict[Dependency, ContextData]] = []
         Log.Info("uses:")
         missing_input=False
+        ordered_input_deps = list(step.transform.model.requires)
         for batch, batch_lineage in enumerate(lineages):
             if len(lineages)>1:
                 Log.Info(f"  > batch [{batch+1}]:")
             g: dict[Dependency, ContextData] = {}
             file_groups = batch_lineage['FILES']
-            for e, file_names in zip(input_map, file_groups):
-                insts = input_map[e]
+            for dep, file_names in zip(ordered_input_deps, file_groups):
+                insts = input_by_dep.get(dep, [])
+                if len(insts)==0:
+                    continue
+                e = insts[0].dtype
                 inst_names = {x.dtype_name for x in insts}
                 Log.Info(f"    [{e.key} {'/'.join(inst_names)}] at:")
                 input_group = [_parse_path(Path(p)) for p in file_names] 
@@ -212,7 +265,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                 for p in input_group:
                     missing_input = missing_input or not p.local.exists()
                     Log.Info(_shorten_home(f"        {_status(p)} [{_get_formatted_size(p.local)}] [{p.local}]"))
-                g[input2dep[e]] = ContextData(
+                g[dep] = ContextData(
                     input_group=input_group,
                     endpoint=e,
                     type_name=insts[0].dtype_name,
