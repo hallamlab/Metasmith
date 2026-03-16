@@ -232,18 +232,31 @@ class WorkflowPlan:
         max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
         given_map: dict[Endpoint, list[DataInstance]] = {}
+        _seen_instances: set[tuple] = set()  # (path, ep) dedup key
+        _view_eps_cache: dict[int, set[Endpoint]] = {}  # id(view) -> cached endpoints
         given_endpoints: list[set[Endpoint]] = []
         for group in given:
             eps = set()
             for lib in group:
+                view_id = id(lib)
+                if view_id in _view_eps_cache:
+                    # Same view object reused across groups (e.g. shared resources)
+                    eps.update(_view_eps_cache[view_id])
+                    continue
+                lib_eps = set()
                 for path, ep_name, ep in lib.Iterate():
-                    given_map[ep] = given_map.get(ep, [])+[DataInstance(
-                        path=path,
-                        dtype=ep,
-                        dtype_name=ep_name,
-                        parent_lib=lib._original,
-                    )]
-                    eps.add(ep)
+                    dedup_key = (path, ep)
+                    if dedup_key not in _seen_instances:
+                        _seen_instances.add(dedup_key)
+                        given_map.setdefault(ep, []).append(DataInstance(
+                            path=path,
+                            dtype=ep,
+                            dtype_name=ep_name,
+                            parent_lib=lib._original,
+                        ))
+                    lib_eps.add(ep)
+                _view_eps_cache[view_id] = lib_eps
+                eps.update(lib_eps)
             if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
             given_endpoints.append(eps)
 

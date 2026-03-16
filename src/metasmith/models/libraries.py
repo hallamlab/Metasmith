@@ -387,13 +387,23 @@ class DataInstanceLibrary:
                         to_check.append(p.path)
             return ancestors
 
+        # Pre-build children index: parent_path -> set of child paths
+        # This avoids O(N) full-manifest scans in _get_all_descendants
+        _children: dict[Path, set[Path]] = {}
+        for item_path in self.manifest:
+            for p in self.parents.get(item_path, []):
+                _children.setdefault(p.path, set()).add(item_path)
+
         def _get_all_descendants(ancestor_paths: set[Path]) -> set[Path]:
-            """Get all items that have any of the given paths as an ancestor."""
+            """Get all items that descend from any of the given paths."""
             descendants = set()
-            for item_path in self.manifest.keys():
-                item_ancestors = _get_all_ancestors(item_path)
-                if item_ancestors & ancestor_paths:  # If they share any ancestor
-                    descendants.add(item_path)
+            to_check = list(ancestor_paths)
+            while to_check:
+                current = to_check.pop()
+                for child in _children.get(current, ()):
+                    if child not in descendants:
+                        descendants.add(child)
+                        to_check.append(child)
             return descendants
 
         for path, name in self.manifest.items():

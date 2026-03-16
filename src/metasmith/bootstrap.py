@@ -168,7 +168,11 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                     tail = external.relative_to(agent_home)
                     local = AgentPaths.HOME_ROOT/tail
                 else:
+                    # External path (e.g. /project/...): use absolute path as container
+                    # path so GetContainerModel generates an identity bind mount rather
+                    # than mapping the source to /ws (which would override the workdir).
                     local = p
+                    container_override = container_override or external
             else:
                 local = p
                 external = external_cwd/p
