@@ -70,7 +70,7 @@ class Container:
                 run = 'run'
             case ContainerRuntime.APPTAINER:
                 others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}']
-                workdir = f'--workdir "{self.workdir}"' if self.workdir is not None else ''
+                workdir = f'--pwd "{self.workdir}"' if self.workdir is not None else ''
                 binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
                 if not isinstance(local, bool):
                     image = local
