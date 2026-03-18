@@ -169,6 +169,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                     local = AgentPaths.HOME_ROOT/tail
                 else:
                     local = p
+                    container_override = container_override or external
             else:
                 local = p
                 external = external_cwd/p
