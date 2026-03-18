@@ -1,3 +1,5 @@
+@../../../AGENTS.md
+
 # Claude Notes for MetasmithLibraries
 
 ## What is Metasmith?
