@@ -1025,3 +1025,18 @@ class TestDataInstanceLibraryPerformance:
 
         assert isinstance(plan, WorkflowPlan)
         assert elapsed < 10, f"Generate took {elapsed:.1f}s (limit 10s)"
+
+    def test_as_samples_dedup_child_type(self, temp_dir, mock_types):
+        """AsSamples on child type deduplicates views when all share same parent."""
+        lib_path = self._build_single_parent_lib(temp_dir, mock_types, n=1000)
+        loaded = DataInstanceLibrary.Load(lib_path)
+
+        # AsSamples on the child type — all 1000 assemblies share 1 parent,
+        # so all views have the same mask. Should yield 1 view, not 1000.
+        samples = list(loaded.AsSamples("mock::assembly"))
+        assert len(samples) == 1, (
+            f"Expected 1 deduplicated view, got {len(samples)}"
+        )
+
+        # The single view should contain all items (parent + 1000 children)
+        assert len(samples[0]._mask) == 1001

@@ -2,18 +2,14 @@
 
 Mirrors the exact setup from cyanoverse/tasks/binning/pairwise_ani.py:
 - 1 pangenome entity via AddValue
-- N assemblies parented to it
+- 21,081 assemblies parented to it (medium-quality MAG count)
 - Container resource library (skani.oci)
 - Target: taxonomy::ani_table
 - Transform: skani_triangle (pangenome + assembly -> ani_table)
 
-Before commit e099799, WorkflowPlan.Generate() hung for 45+ minutes
-with 21K items due to O(n^2) list concatenation in given_map construction.
-
-NOTE: AsSamples("sequences::assembly") with this topology produces N views
-where each view contains all N siblings — making the full Generate loop
-O(n^2) in view iteration. At 2K items this takes ~60s; at 21K it would
-take hours. The test uses 2K items as a practical regression check.
+Before commit e099799 + the AsSamples/Generate dedup fixes, this hung
+for 45+ minutes due to O(n^2) scaling in mask computation, view
+iteration, and list concatenation.
 """
 
 import time
@@ -75,16 +71,13 @@ class TestSolverScalingCyanoverse:
         inputs.Save()
         return inputs, lib_path
 
-    def test_generate_2k_ani_workflow(self, temp_dir):
-        """WorkflowPlan.Generate with 2K bins under 1 pangenome completes in <120s.
+    def test_generate_21k_ani_workflow(self, temp_dir):
+        """WorkflowPlan.Generate with 21,081 bins under 1 pangenome completes in <30s.
 
         Uses the exact cyanoverse topology: pangenome grouping + assemblies +
         container resources + skani_triangle transform → taxonomy::ani_table.
-
-        Before the fix (e099799), even 1K items caused Generate to take minutes
-        due to O(n^2) list concatenation. With the fix, 2K completes in ~70s.
         """
-        n = 2000
+        n = 21081
         inputs, lib_path = self._build_pangenome_lib(temp_dir, n=n)
 
         # Container resource library — same as pairwise_ani.py
@@ -98,8 +91,14 @@ class TestSolverScalingCyanoverse:
         t0 = time.time()
         samples = list(inputs.AsSamples("sequences::assembly"))
         as_time = time.time() - t0
-        assert len(samples) == n, f"Expected {n} samples, got {len(samples)}"
-        print(f"\nAsSamples({n}): {as_time:.1f}s")
+        print(f"\nAsSamples({n}): {as_time:.1f}s, {len(samples)} views")
+
+        # Dedup check: all assemblies share the same parent, so AsSamples
+        # should yield 1 deduplicated view, not 21K identical views
+        assert len(samples) == 1, (
+            f"Expected 1 deduplicated view, got {len(samples)}. "
+            f"AsSamples should deduplicate views with identical masks."
+        )
 
         # Target: ani_table — same as pairwise_ani.py TargetBuilder().Add("taxonomy::ani_table")
         target_model = Transform()
@@ -118,5 +117,5 @@ class TestSolverScalingCyanoverse:
 
         assert isinstance(plan, WorkflowPlan)
         assert len(plan.steps) == 1, f"Expected 1 step (skani_triangle), got {len(plan.steps)}"
-        assert elapsed < 120, f"Generate took {elapsed:.1f}s (limit 120s)"
+        assert elapsed < 30, f"Generate took {elapsed:.1f}s (limit 30s)"
         print(f"Generate({n}): {elapsed:.1f}s, {len(plan.steps)} steps")

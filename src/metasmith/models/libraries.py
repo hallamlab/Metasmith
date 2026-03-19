@@ -409,11 +409,21 @@ class DataInstanceLibrary:
                         queue.append(child)
             return descendants
 
+        _desc_cache: dict[frozenset[Path], set[Path]] = {}
+        _yielded_ancestors: set[frozenset[Path]] = set()
         for path, name in self.manifest.items():
             if not _accept(name): continue
             ancestors = _get_all_ancestors(path)
-            # Include index, ancestors, and all siblings (items sharing ancestors)
-            siblings = _get_all_descendants(ancestors | {path})
+            cache_key = frozenset(ancestors)
+            if cache_key not in _desc_cache:
+                _desc_cache[cache_key] = _get_all_descendants(ancestors | {path})
+            siblings = _desc_cache[cache_key]
+            # When path is already in siblings (shared-parent topology),
+            # the mask is identical for all items with the same ancestors.
+            # Yield only unique masks to avoid O(n^2) downstream.
+            if path in siblings and cache_key in _yielded_ancestors:
+                continue
+            _yielded_ancestors.add(cache_key)
             yield DataInstanceLibraryView(original=self, mask={path} | ancestors | siblings)
 
     def Trace(self, from_type: str, to_type: str):
@@ -915,11 +925,17 @@ class DataInstanceLibraryView:
         self._original = original
         self._mask = mask
 
+    @property
+    def _mask_key(self) -> frozenset[Path]:
+        if not hasattr(self, '_cached_mask_key'):
+            self._cached_mask_key = frozenset(self._mask)
+        return self._cached_mask_key
+
     def Get(self, path: str|Path):
         p = Path(path)
         assert p in self._mask
         return self._original.Get(path)
-    
+
     def Iterate(self):
         for p in self._mask:
             inst = self._original.Get(p)
