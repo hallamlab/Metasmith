@@ -234,7 +234,14 @@ class WorkflowPlan:
     ):
         given_map: dict[Endpoint, list[DataInstance]] = {}
         given_endpoints: list[set[Endpoint]] = []
+        _seen_group_keys: set[tuple] = set()
         for group in given:
+            # Skip groups whose views are identical to already-processed groups
+            group_key = tuple((id(lib._original), lib._mask_key) for lib in group)
+            if group_key in _seen_group_keys:
+                continue
+            _seen_group_keys.add(group_key)
+
             eps = set()
             for lib in group:
                 for path, ep_name, ep in lib.Iterate():
