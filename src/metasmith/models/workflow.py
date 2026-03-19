@@ -238,12 +238,14 @@ class WorkflowPlan:
             eps = set()
             for lib in group:
                 for path, ep_name, ep in lib.Iterate():
-                    given_map[ep] = given_map.get(ep, [])+[DataInstance(
+                    if ep not in given_map:
+                        given_map[ep] = []
+                    given_map[ep].append(DataInstance(
                         path=path,
                         dtype=ep,
                         dtype_name=ep_name,
                         parent_lib=lib._original,
-                    )]
+                    ))
                     eps.add(ep)
             if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
             given_endpoints.append(eps)
