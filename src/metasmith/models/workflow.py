@@ -803,8 +803,10 @@ class WorkflowTask:
                 return f"{s}b{i+1}"
             raw_external_binds = set()
             for inst in step.uses:
-                p = inst.path
-                if p.is_relative_to(Path(".")): continue
+                p = inst.ResolvePath()
+                if not p.is_absolute(): continue
+                if p.is_relative_to(context.home_dir):
+                    p = context.external_home / p.relative_to(context.home_dir)
                 raw_external_binds.add(p.parent)
             external_binds = self._get_common_folders(raw_external_binds)
             external_binds_param = ""

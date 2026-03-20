@@ -1270,28 +1270,29 @@ class ExecutionContext:
             image_path = str(path.external)
     
         _binds: list[tuple[Path, Path]] = []
-        for _, v in list(self._inputs[self._batch_index].items()):
-            for p in v.input_group:
-                if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
-                src = p.external.parent
-                if not p.container.is_absolute():
-                    dest = src
-                else:
-                    dest = p.container.parent
-                if not src.is_absolute() or not dest.is_absolute(): continue
+        for batch_item in self._inputs:
+            for _, v in list(batch_item.items()):
+                for p in v.input_group:
+                    if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
+                    src = p.external.parent
+                    if not p.container.is_absolute():
+                        dest = src
+                    else:
+                        dest = p.container.parent
+                    if not src.is_absolute() or not dest.is_absolute(): continue
 
-                found = False
-                for i, (a, b) in enumerate(_binds):
-                    ac = Path(os.path.commonpath([a, src]))
-                    bc = Path(os.path.commonpath([b, dest]))
-                    THRES = 3 # '/', '1', '2' >> /1/2
-                    if len(ac.parts)>=THRES:
-                        found = True
-                        break
-                if found:
-                    _binds[i] = ac, bc
-                else:
-                    _binds.append((src, dest))
+                    found = False
+                    for i, (a, b) in enumerate(_binds):
+                        ac = Path(os.path.commonpath([a, src]))
+                        bc = Path(os.path.commonpath([b, dest]))
+                        THRES = 3 # '/', '1', '2' >> /1/2
+                        if len(ac.parts)>=THRES:
+                            found = True
+                            break
+                    if found:
+                        _binds[i] = ac, bc
+                    else:
+                        _binds.append((src, dest))
         if binds is None: binds = []
         container_ws = Path("/ws")
         binds += [
