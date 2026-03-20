@@ -5,8 +5,7 @@ HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 NAME=metasmith
 DEV_USER=hallamlab
 _ver_file=$(find $HERE/src | grep version.txt)
-# VER="$(cat $_ver_file).$(git branch --show-current)-$(git rev-parse --short HEAD)"
-VER="$(cat $_ver_file)"
+VER="$(cat $_ver_file)+$(git rev-parse --short HEAD)"
 DOCKER_IMAGE=quay.io/$DEV_USER/$NAME
 
 # CONDA=conda
@@ -203,6 +202,13 @@ case $1 in
         mkdir -p $ws
         cd $ws
         python -m $NAME lab $@
+    ;;
+
+    -tt)
+        shift
+        cd $HERE
+        export PYTHONPATH=$HERE/src:$PYTHONPATH
+        pytest $@
     ;;
 
     -td) # inject updates to an agent home for dev binds

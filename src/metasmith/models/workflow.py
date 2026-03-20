@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, Generator, Iterable, Literal, TypeVar
 import os
 import itertools
+from collections import Counter
 import yaml
 import json
 from hashlib import md5
@@ -233,16 +234,25 @@ class WorkflowPlan:
     ):
         given_map: dict[Endpoint, list[DataInstance]] = {}
         given_endpoints: list[set[Endpoint]] = []
+        _seen_group_keys: set[tuple] = set()
         for group in given:
+            # Skip groups whose views are identical to already-processed groups
+            group_key = tuple((id(lib._original), lib._mask_key) for lib in group)
+            if group_key in _seen_group_keys:
+                continue
+            _seen_group_keys.add(group_key)
+
             eps = set()
             for lib in group:
                 for path, ep_name, ep in lib.Iterate():
-                    given_map[ep] = given_map.get(ep, [])+[DataInstance(
+                    if ep not in given_map:
+                        given_map[ep] = []
+                    given_map[ep].append(DataInstance(
                         path=path,
                         dtype=ep,
                         dtype_name=ep_name,
                         parent_lib=lib._original,
-                    )]
+                    ))
                     eps.add(ep)
             if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
             given_endpoints.append(eps)
@@ -414,6 +424,25 @@ class WorkflowPlan:
                             producing_step=step,
                         )   
                     ]
+
+        # expand used_endpoints to include all transitive lineage ancestors
+        # that exist in given_map, so PrepareNextflow's topological sort
+        # can resolve the full parent chain
+        def _collect_ancestor_endpoints(endpoints: set[Endpoint], pool: set[Endpoint]) -> set[Endpoint]:
+            result = set(endpoints)
+            frontier = set(endpoints)
+            while frontier:
+                next_frontier = set()
+                for ep in frontier:
+                    for parent in ep.parents:
+                        if parent not in result and parent in pool:
+                            result.add(parent)
+                            next_frontier.add(parent)
+                frontier = next_frontier
+            return result
+
+        given_pool = set(given_map.keys())
+        used_endpoints = _collect_ancestor_endpoints(used_endpoints, given_pool)
 
         return cls(
             given=list({i for e, lst in given_map.items() for i in lst if e in used_endpoints}),
@@ -746,7 +775,7 @@ class WorkflowTask:
                 '"""',
                 'stub:',
                 'def dt = new Random().nextFloat()*params.testSpread',
-                'def hash = "${index[0].sort().collectEntries((k, v) -> [k, v.sort()])}".md5()[0..3]', # 4 characters
+                'def hash = "${index[0].sort().collectEntries((k, v) -> [k, v.sort()])}".md5()[0..11]', # 12 characters
                 f'"""',
                 f'sleep $dt',
                 f'touch {" ".join(mock_outputs)}',
@@ -880,6 +909,18 @@ class WorkflowTask:
         wf_publish = set()       
         published_channels: dict[str, DataInstance] = {}
         resources = {}
+
+        # Pre-scan: count how many group() calls reference each stream symbol.
+        # Symbols used more than once need to be forked via multiMap.
+        stream_group_usage = Counter()
+        for step in the_plan.steps:
+            _used, _ = get_io_signature(step)
+            if len(_used) > 0:
+                for x in _used:
+                    stream_group_usage[x.dtype.key] += 1
+        fork_next_index = {k: 0 for k, v in stream_group_usage.items() if v > 1}
+        fork_emitted: set[str] = set()
+
         for step in the_plan.steps:
             process_name, src, src_res = prepare_step(step)
             resources[process_name] = src_res
@@ -895,7 +936,15 @@ class WorkflowTask:
                     Log.Warn(f"unexpected plural groupby instance refernce for [{step.transform.name}:{step.transform.group_by}]: [{_inst}]")
                 _inst = _inst[0]
                 gb = _inst.dtype.key
-                using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
+                symbol_parts = []
+                for x in used_archetypes:
+                    key = x.dtype.key
+                    if key in fork_next_index:
+                        symbol_parts.append(f"_{key}_{fork_next_index[key]}")
+                        fork_next_index[key] += 1
+                    else:
+                        symbol_parts.append(f"_{key}")
+                using_symbols = ", ".join(symbol_parts)
                 used = f"o.group('{gb}', [{using_symbols}], k, {step.transform.batch_size})"
             else:
                 used = ""
@@ -905,6 +954,15 @@ class WorkflowTask:
             wf_main.append(
                 f"({produced}) = o.post([*{process_name}({used})], k)"
             )
+            # Emit multiMap fork code for any produced symbols that are multi-use
+            for sname in produced_snames:
+                if sname in fork_next_index and sname not in fork_emitted:
+                    count = stream_group_usage[sname]
+                    branches = "; ".join(f"f{i}: item" for i in range(count))
+                    wf_main.append(f"def _{sname}_forks = _{sname}[1].multiMap {{ item -> {branches} }}")
+                    for i in range(count):
+                        wf_main.append(f"_{sname}_{i} = [_{sname}[0], _{sname}_forks.f{i}]")
+                    fork_emitted.add(sname)
             if step.order in final_steps_for_merging:
                 for e in final_steps_for_merging[step.order]:
                     names = to_merge_names[e]
@@ -913,6 +971,14 @@ class WorkflowTask:
                     wf_main.append(
                         f"_{name} = o.mix([{', '.join(to_mix)}])"
                     )
+                    # Emit multiMap fork code for mixed symbols that are multi-use
+                    if name in fork_next_index and name not in fork_emitted:
+                        count = stream_group_usage[name]
+                        branches = "; ".join(f"f{i}: item" for i in range(count))
+                        wf_main.append(f"def _{name}_forks = _{name}[1].multiMap {{ item -> {branches} }}")
+                        for i in range(count):
+                            wf_main.append(f"_{name}_{i} = [_{name}[0], _{name}_forks.f{i}]")
+                        fork_emitted.add(name)
             
             to_pubish = [x for g in produced_archetypes for x in g if x.dtype in target_endpoints]
             for inst in to_pubish:
@@ -953,6 +1019,17 @@ class WorkflowTask:
                 TAB+"}",
             ]
             
+        # Generate fork lines for postIn-produced streams
+        postin_fork_lines = []
+        for _, v, _ in prepared_given:
+            if v in fork_next_index and v not in fork_emitted:
+                count = stream_group_usage[v]
+                branches = "; ".join(f"f{i}: item" for i in range(count))
+                postin_fork_lines.append(f"def _{v}_forks = _{v}[1].multiMap {{ item -> {branches} }}")
+                for i in range(count):
+                    postin_fork_lines.append(f"_{v}_{i} = [_{v}[0], _{v}_forks.f{i}]")
+                fork_emitted.add(v)
+
         content = [
             f"workflow"+" {",
             "main:",
@@ -964,7 +1041,7 @@ class WorkflowTask:
         ] + [
             f'(_{v}) = o.postIn([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]) // {n}'
             for p, v, n in prepared_given # this must be (and is) sorted in lineage order
-        ] + [
+        ] + postin_fork_lines + [
             line for line in wf_main
         ] + [
             "",

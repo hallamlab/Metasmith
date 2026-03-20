@@ -27,6 +27,7 @@ params {
     }
 }
 
+nextflow.cache.db.type = 'rocksdb'
 filePorter.maxThreads = 2
 report.overwrite = true
 timeline.overwrite = true
