@@ -213,6 +213,7 @@ case $1 in
 
     -td) # inject updates to an agent home for dev binds
         shift
+        export PYTHONPATH=$HERE/src:$HERE/lib:$PYTHONPATH
         python main/local_mock/rsync.py $@
     ;;
 

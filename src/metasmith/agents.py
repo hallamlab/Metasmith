@@ -752,6 +752,8 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
             f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
             f'echo "start time was [$TIMESTAMP]"',
             f'export BINDS="{binds}"',
+            f'export OPENBLAS_NUM_THREADS=1',
+            f'export OMP_NUM_THREADS=1',
             f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} >$LOG_DIR/agent.log 2>&1 &',
         ]))
     os.chmod(launcher_path, 0o754)
@@ -979,7 +981,9 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             export NXF_HOME=./.nextflow
             export NXF_ENABLE_VIRTUAL_THREADS=true
             export NXF_OFFLINE=TRUE # don't go online and search for latest version
-            export NXF_OPTS="-XX:ActiveProcessorCount=1" # precaution against "unable to create native thread"
+            export OPENBLAS_NUM_THREADS=1
+            export OMP_NUM_THREADS=1
+            export NXF_OPTS="-Xms2g -Xmx10g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
             nextflow \
                 -config ./{AgentPaths.NXF_RES} \
                 -config ./{AgentPaths.NXF_CONFIG} \
