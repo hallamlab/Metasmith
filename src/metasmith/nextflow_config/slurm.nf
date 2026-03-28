@@ -38,6 +38,8 @@ env {
     NUMBA_CACHE_DIR = './temp/numba_cache'
     MPLCONFIGDIR = './temp/matplotlib'
     XDG_CACHE_HOME = './temp/xdg_home'
+    OPENBLAS_NUM_THREADS = 1
+    OMP_NUM_THREADS = 1
 }
 
 // report file path is dynamic, so needs to be passed in as argument at runtime
@@ -106,6 +108,7 @@ process {
 
     withLabel: 'xlocalx' {
         executor = 'local'
+        array = 0                           // local executor does not support arrays
         errorStrategy = 'ignore'            // no retry when local
     }
 }

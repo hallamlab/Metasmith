@@ -69,7 +69,7 @@ class Container:
                 workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ''
                 run = 'run'
             case ContainerRuntime.APPTAINER:
-                others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}']
+                others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}', '--env OPENBLAS_NUM_THREADS=1', '--env OMP_NUM_THREADS=1']
                 workdir = f'--pwd "{self.workdir}"' if self.workdir is not None else ''
                 binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
                 if not isinstance(local, bool):
