@@ -1263,12 +1263,15 @@ class ExecutionContext:
         _binds: list[tuple[Path, Path]] = []
         for _, v in list(self._inputs[self._batch_index].items()):
             for p in v.input_group:
+                Log.Info(f"[DBG] input path: local={p.local}, external={p.external}, container={p.container}")
+                Log.Info(f"[DBG]   container.is_absolute()={p.container.is_absolute()}, is_relative_to(HOME)={p.container.is_relative_to(AgentPaths.HOME_ROOT)}")
                 if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
                 src = p.external.parent
                 if not p.container.is_absolute():
                     dest = src
                 else:
                     dest = p.container.parent
+                Log.Info(f"[DBG]   src={src}, dest={dest}")
                 if not src.is_absolute() or not dest.is_absolute(): continue
 
                 found = False
@@ -1283,6 +1286,9 @@ class ExecutionContext:
                     _binds[i] = ac, bc
                 else:
                     _binds.append((src, dest))
+        Log.Info(f"[DBG] computed input binds:")
+        for s, d in _binds:
+            Log.Info(f"[DBG]   {s} -> {d}")
         if binds is None: binds = []
         container_ws = Path("/ws")
         binds += [
@@ -1313,13 +1319,21 @@ class ExecutionContext:
                 use_cache = True
 
         cmd = RemoveLeadingIndent(cmd)
+        import os as _os
+        Log.Info(f"[DBG] batch_index={self._batch_index}, total={len(self._inputs)}")
+        Log.Info(f"[DBG] cwd={_os.getcwd()}, external_cwd={self.external_cwd}")
         Log.Info(f"executing container [{container.image}] using [{container.runtime.name}]")
         h, k = KeyGenerator.FromStr(cmd)
         _bounce_script = Path(f"./_metasmith/.bounce.{k}")
+        Log.Info(f"[DBG] bounce_script={_bounce_script}, resolved={_bounce_script.resolve()}")
         exit_codef = Path(f"exitcode.{GenerateId()}")
         with open(_bounce_script, "w") as f:
             script = [
                 "cd /ws",
+                "echo '[BOUNCE] pwd='$(pwd)",
+                "echo '[BOUNCE] ls /ws/_metasmith/.bounce.*:' $(ls /ws/_metasmith/.bounce.* 2>&1)",
+                "echo '[BOUNCE] TMPDIR='$TMPDIR",
+                "ls -la /ws/ | head -20",
                 "on_exit() {",
                 f"    echo $? > {exit_codef}",
                 "}",
@@ -1328,6 +1342,7 @@ class ExecutionContext:
                 cmd,
             ]
             f.write("\n".join(script))
+        Log.Info(f"[DBG] bounce written, exists={_bounce_script.exists()}, size={_bounce_script.stat().st_size}")
         Log.Info(f"command with bounce at [{_bounce_script}]:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
