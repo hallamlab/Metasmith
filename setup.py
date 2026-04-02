@@ -47,5 +47,6 @@ if __name__ == "__main__":
         },
         python_requires=">=3.12",
         install_requires=[
+            "mcp>=1.0.0",
         ]
     )
