@@ -198,6 +198,56 @@ workflow {
         lines = [l for l in result.stdout.split("\n") if l.startswith("GROUP:")]
         assert len(lines) >= 1
 
+    def test_group_does_not_split_single_key_across_mixed_streams(self, nxf_runner):
+        """Mixed emissions for one key should form one complete group, not partials."""
+        (nxf_runner.work_dir / "a.txt").write_text("a")
+        for i in range(9):
+            (nxf_runner.work_dir / f"b_{i}.txt").write_text(f"b {i}")
+
+        result = nxf_runner.run('''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch_a_raw = Channel.fromList([
+        [[:], file("${projectDir}/a.txt")],
+    ])
+
+    ch_b_raw_early = Channel.fromList([
+        [[:], file("${projectDir}/b_0.txt")],
+        [[:], file("${projectDir}/b_1.txt")],
+        [[:], file("${projectDir}/b_2.txt")],
+    ])
+
+    ch_b_raw_late = Channel.fromList([
+        [[:], file("${projectDir}/b_3.txt")],
+        [[:], file("${projectDir}/b_4.txt")],
+        [[:], file("${projectDir}/b_5.txt")],
+        [[:], file("${projectDir}/b_6.txt")],
+        [[:], file("${projectDir}/b_7.txt")],
+        [[:], file("${projectDir}/b_8.txt")],
+    ]).map { x ->
+        sleep 100
+        return x
+    }
+
+    def (posted_a) = o.postIn([ch_a_raw], ["a"])
+    def (posted_b_early) = o.postIn([ch_b_raw_early], ["b"])
+    def (posted_b_late) = o.postIn([ch_b_raw_late], ["b"])
+    def mixed_b = o.mix([posted_b_early, posted_b_late])
+
+    def grouped = o.group("a", [posted_a, mixed_b], ["target"], 1)
+    grouped.view { indexes, a_vals, b_vals ->
+        "GROUP_MIX: idx=${indexes.size()} a=${a_vals.size()} b=${b_vals.size()}"
+    }
+}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("GROUP_MIX:")]
+        assert len(lines) == 1, f"Expected 1 grouped emission, got {len(lines)}: {lines}"
+        assert "idx=1" in lines[0]
+        assert "a=1" in lines[0]
+        assert "b=9" in lines[0]
+
 
     def test_channel_reuse_across_group_calls(self, nxf_runner):
         """Two group() calls sharing a posted stream — second gets empty channel.

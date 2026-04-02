@@ -635,7 +635,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     Log.Info(f"  [{len(task.transform_libraries)}] transform libraries")
     Log.Info(f"  [{len(task.plan.steps)}] total steps")
 
-    work_relative = AgentPaths.STAGED/task._key
+    work_relative = AgentPaths.STAGED/task_key
     work_dir = AgentPaths.WORK_ROOT/work_relative
     work_internals = work_dir/AgentPaths.INTERNALS
     data_dir = AgentPaths.to_data()

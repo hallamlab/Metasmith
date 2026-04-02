@@ -192,17 +192,9 @@ class Orchestrator {
             }
             // else not parent...
 
-            // The following enables groups to be emitted immediately when ready.
-            // As tasks are queued, they are added to a pending list via ${using()}
-            // and promise a named output stream.
-            // As tasks complete, a history of completed items (by index) is stored
-            // via ${post()}.
-            // When there are no more pending tasks that may create an item with 
-            // the relavent groupby ($by) value, the size of each group can be calculated
-            // using $index_history.
-            // Here, we buffer each item in $pending_groups until the group size matches
-            // the expected size calculated from $index_history.
-            // $flatMap enables remainders to be emmitted at end
+            // Buffer non-parent items by group key and emit only when the stream
+            // closes. Emitting early from transient index_history snapshots can
+            // split a single logical group into multiple partial groups.
             def pending_groups = [:]
             return _stream.concat(this.one_null)
             .flatMap((item) -> {
@@ -219,24 +211,7 @@ class Orchestrator {
                     def group = pending_groups.get(group_k, [])
                     group.add(new Tuple2(index, value))
                     pending_groups[group_k] = group
-
-                    // check at most N for every item finished in this stream
-                    // and emit if complete, letting it "catch up" by N-1
-                    // without this limit, all items from pending_groups may be checked
-                    // which is something like O(n^2) vs the size of this stream?
-                    def N = 2
-                    def to_check = pending_groups.keySet().findAll(k -> k!=group_k).take(N-1) + [group_k]
-                    return to_check.collect(key -> {
-                        def candidate_group = pending_groups[key]
-                        def (size_valid, expected_size) = this.getExpectedSize(by_name, name, key)
-                        if (size_valid && expected_size>0 && candidate_group.size()>=expected_size) {
-                            pending_groups.remove(key)
-                            return new Tuple3(key, name, candidate_group)
-                        } else {
-                            return null
-                        }
-                    })
-                    .findAll(x -> x!=null)
+                    return []
                 }
             })
             .map(x -> [x]) // see combine() below
@@ -254,10 +229,14 @@ class Orchestrator {
             return result
             .combine(channel)
             .filter((_result) -> {
-                return _result
+                def keys = _result
                 .collect(x -> x[0])
                 .findAll(x -> x!=null)
-                .unique().size()==1
+                if (keys.size()==0) return true
+                // use intersection instead of equality to handle aggregate-then-distribute patterns
+                // where a merged item carries all sample hashes but each individual item carries only its own
+                def common = keys.inject(keys[0] as Set, (acc, k) -> acc.intersect(k as Set))
+                return common.size() > 0
             })
         })
         // .view(v -> by_name=='b'? "^ $v" : null)
