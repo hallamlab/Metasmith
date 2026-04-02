@@ -286,7 +286,7 @@ class Orchestrator {
             def streams = batch.collect(item -> {
                 def index = [:]+item[0] // copy to avoid mutating the map stored in pending_tasks
                 def values = item[1..-1]
-                index['FILES'] = values.collect(path -> path.name)
+                index['FILES'] = values.collect(group -> group*.toString())
                 return [index, *values]
             }).transpose()
             def indexes = streams[0]

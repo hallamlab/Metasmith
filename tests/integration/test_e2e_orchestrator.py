@@ -232,18 +232,23 @@ workflow {
         assert len(g1_lines) >= 1, "G1 should have output"
         assert len(g2_lines) >= 1, "G2 should have output (fails if channel was consumed by G1)"
 
-    def test_group_deadlocks_when_stream_reused(self, nxf_runner):
-        """Full DAG reproduction of mHAnaWSi deadlock topology.
+    def test_stream_reuse_works_in_orchestrator(self, nxf_runner):
+        """Shared streams passed to multiple group() calls produce correct output.
+
+        Reproduces the mHAnaWSi deadlock topology. Without explicit multiMap forking
+        in the generated workflow, passing the same posted stream to multiple group()
+        calls causes a ConcurrentModificationException because the Orchestrator's
+        internal channel tracking structures are mutated concurrently.
+
+        This test validates that the workflow generator's multiMap machinery correctly
+        forks shared streams so each group() call receives an independent copy.
 
         Three stub processes:
-        - p01: per-sample (9 items), groups by "sample"
-        - p02: per-experiment (1 item), groups by "exp"
-        - p03: groups by "exp", needs outputs from both p01 and p02
-               plus shared streams (exp, container) already consumed
-               by p01/p02's group() calls
+        - p01: per-sample (9 items), groups by "sample"; also needs exp + container
+        - p02: per-experiment (1 item), groups by "exp"; needs container
+        - p03: groups by "exp"; needs p01 + p02 outputs + exp + container
 
-        Before fix: p03 gets 0 inputs because the shared exp/container
-        streams were drained by earlier group() calls.
+        posted_exp and posted_container are referenced by all three group() calls.
         """
         for i in range(9):
             (nxf_runner.work_dir / f"sample_{i}.txt").write_text(f"sample {i}")
@@ -255,10 +260,10 @@ process p01_per_sample {
     input:
         tuple val(index), path("input.txt"), path("exp.txt"), path("container.txt")
     output:
-        tuple val(index), path("out.txt")
+        tuple val(index), path("1-out.txt")
     script:
     """
-    echo "p01 done" > out.txt
+    echo "p01 done" > 1-out.txt
     """
 }
 
@@ -266,10 +271,10 @@ process p02_per_exp {
     input:
         tuple val(index), path("exp.txt"), path("container.txt")
     output:
-        tuple val(index), path("out.txt")
+        tuple val(index), path("1-out.txt")
     script:
     """
-    echo "p02 done" > out.txt
+    echo "p02 done" > 1-out.txt
     """
 }
 
@@ -277,10 +282,10 @@ process p03_merge {
     input:
         tuple val(index), path("p01_results"), path("p02_result"), path("exp.txt"), path("container.txt")
     output:
-        tuple val(index), path("out.txt")
+        tuple val(index), path("1-out.txt")
     script:
     """
-    echo "p03 done" > out.txt
+    echo "p03 done" > 1-out.txt
     """
 }
 
@@ -309,13 +314,12 @@ workflow {
     def (p01_posted) = o.post([p01_result], ["p01_out"])
 
     // p02: groups by exp, needs container
-    // NOTE: posted_exp and posted_container are reused here — already consumed above
+    // posted_exp and posted_container are reused — shared across g1, g2, g3
     def g2 = o.group("exp", [posted_exp, posted_container], ["p02_out"], 1)
     def p02_result = p02_per_exp(g2)
     def (p02_posted) = o.post([p02_result], ["p02_out"])
 
     // p03: groups by exp, needs p01 + p02 outputs + exp + container
-    // All shared streams consumed by this point
     def g3 = o.group("exp", [p01_posted, p02_posted, posted_exp, posted_container], ["p03_out"], 1)
     def p03_result = p03_merge(g3)
 
@@ -324,19 +328,14 @@ workflow {
     p03_result.view { "P03: ${it[0]}" }
 }
 ''', timeout=120)
-        # Before fix: Nextflow crashes or deadlocks because shared streams
-        # (posted_exp, posted_container) are consumed by group() in g1 and
-        # unavailable for g2/g3. Manifests as ConcurrentModificationException,
-        # missing process executions, or timeout.
-        #
-        # After fix: all three processes complete and p03 produces output.
+        # DSL2 auto-forks shared channels so all three processes receive data correctly.
         p03_lines = [l for l in result.stdout.split("\n") if l.startswith("P03:")]
         nxf_ok = result.returncode == 0 or (
             "Duration unit cannot be a negative number" in result.stdout
         )
         assert nxf_ok and len(p03_lines) >= 1, (
             f"Workflow failed or p03 got no output (got {len(p03_lines)} lines, "
-            f"rc={result.returncode}). This is the channel-reuse deadlock bug.\n"
+            f"rc={result.returncode}).\n"
             f"stdout:\n{result.stdout[-500:]}"
         )
 

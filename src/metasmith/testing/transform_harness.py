@@ -133,11 +133,35 @@ class TransformHarness:
         out_keys = ";".join(
             ",".join(x.dtype.key for x in g) for g in produced_archetypes
         )
+        dep_in = {
+            dep.key: [inst.instance_id for inst in step.dependency_map.get(dep, [])]
+            for dep in step.transform.model.requires
+        }
+        dep_out = [
+            {
+                dep.key: [inst.instance_id for inst in step.dependency_map.get(dep, [])]
+                for dep in dep_group
+            }
+            for dep_group in step.transform.model.produces
+        ]
+        structure_arity = {
+            dep.key: len(step.dependency_map.get(dep, []))
+            for dep in (
+                list(step.transform.model.requires)
+                + [d for g in step.transform.model.produces for d in g]
+            )
+        }
+        sample_arity = len(step.group_by_instances)
 
         meta_path = work_dir / METADATA_FILE
         with open(meta_path, "w") as f:
             f.write(f"res 1/1.GB/1\n")
             f.write(f"lin {json.dumps(lineages)}\n")
+            f.write(f"fmt 2\n")
+            f.write(f"din {json.dumps(dep_in, separators=(',', ':'))}\n")
+            f.write(f"dot {json.dumps(dep_out, separators=(',', ':'))}\n")
+            f.write(f"sar {json.dumps(structure_arity, separators=(',', ':'))}\n")
+            f.write(f"par {sample_arity}\n")
             f.write(f"inp {inp_keys}\n")
             f.write(f"out {out_keys}\n")
 

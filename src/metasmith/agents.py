@@ -803,15 +803,30 @@ def CollectResults(
             path2inst[inst.ResolvePath()] = inst
     for namespace, tlib in tlibs.items():
         output.AddTypeLibrary(namespace=namespace, lib=tlib)
-    k2inst: dict[str, DataInstance] = {}
+    inst_id2inst: dict[str, DataInstance] = {}
+    dtype2insts: dict[str, list[DataInstance]] = {}
     for inst in task.plan.given:
-        k2inst[inst.dtype.key] = inst
+        inst_id2inst[inst.instance_id] = inst
+        dtype2insts[inst.dtype.key] = dtype2insts.get(inst.dtype.key, []) + [inst]
     for step in task.plan.steps:
         for insts in step.dependency_map.values():
             for inst in insts:
-                k2inst[inst.dtype.key] = inst
+                inst_id2inst[inst.instance_id] = inst
+                dtype2insts[inst.dtype.key] = dtype2insts.get(inst.dtype.key, []) + [inst]
+
+    collision_warned: set[str] = set()
+    def _resolve_instance(dtype_key: str, instance_id: str | None = None):
+        if instance_id is not None and instance_id in inst_id2inst:
+            return inst_id2inst[instance_id]
+        candidates = dtype2insts.get(dtype_key, [])
+        if len(candidates) == 0:
+            raise KeyError(f"missing DataInstance for key [{dtype_key}]")
+        if len(candidates) > 1 and dtype_key not in collision_warned:
+            collision_warned.add(dtype_key)
+            Log.Warn(f"multiple DataInstances share dtype key [{dtype_key}], using deterministic first candidate")
+        return sorted(candidates, key=lambda x: (x.dtype_name, x.instance_id, str(x.path)))[0]
     # this is a mappping of the (k, v) assinged by the orchestrator during nextflow
-    kv2path: dict[tuple[str, int], tuple[Path, dict]] = {}
+    kv2path: dict[tuple[str, int], tuple[Path, dict, str|None]] = {}
     for in_manifest in inputs_dir.iterdir():
         k = in_manifest.name
         with open(in_manifest) as f:
@@ -819,11 +834,17 @@ def CollectResults(
                 p = Path(l[:-1])
                 _hash = md5(str(p).encode()).hexdigest()
                 _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
-                kv2path[(k, _hash)] = p, {}
+                kv2path[(k, _hash)] = p, {}, None
     for manifest in glob(str(manifests_path/"*")):
         manifest = Path(manifest)
         if manifest.suffix != ".json": continue
-        inst_k = manifest.name.split(".")[-2] # TAB+TAB+f"index {{ path 'msm_manifest.{out_name}.{inst.dtype.key}.raw' }}",
+        parts = manifest.name.split(".")
+        inst_id = None
+        if len(parts) >= 4:
+            inst_k = parts[-3]
+            inst_id = parts[-2]
+        else:
+            inst_k = parts[-2]
         _parsed_entries = []
         with open(manifest) as j:
             entries = json.load(j)
@@ -832,10 +853,11 @@ def CollectResults(
                     path = Path(path)
                     lind: dict = json.loads(lin)
                     kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
-                    kv2path[kv] = path, lind
+                    kv2path[kv] = path, lind, inst_id
                     _parsed_entries.append({
                         "instance_key": kv[0],
                         "instance_index": kv[1],
+                        "instance_id": inst_id,
                         "path": str(path.relative_to(output_path)),
                         "lineage": lind,
                     })
@@ -848,8 +870,8 @@ def CollectResults(
     todo = dict(enumerate(kv2path.items()))
     while len(todo)>0:
         to_del = []
-        for i, ((ck, cv), (path, lineage)) in todo.items():
-            cinst = k2inst[ck]
+        for i, ((ck, cv), (path, lineage, cinst_id)) in todo.items():
+            cinst = _resolve_instance(ck, cinst_id)
             if path.is_relative_to(output_path): # is output
                 parents = []
                 ok = True
@@ -859,7 +881,7 @@ def CollectResults(
                     for pv in pvs:
                         k = (pk, pv)
                         if k not in kv2path: continue # likely due to a merge between branches
-                        ppath, _ = kv2path[k]
+                        ppath, _, _ = kv2path[k]
                         if ppath not in path2inst:
                             ok = False
                             break
@@ -884,7 +906,7 @@ def CollectResults(
                 _path = _inst.ResolvePath()
                 path2inst[_path] = _inst
             else:
-                given_manifest.append((ck, cv, cinst.dtype_name, path))
+                given_manifest.append((ck, cv, cinst.instance_id, cinst.dtype_name, path))
             to_del.append(i)
         assert len(to_del)>0
         for i in to_del:
@@ -892,7 +914,7 @@ def CollectResults(
     output.PruneTypes(save=False)
     output.Save()
 
-    _df = pd.DataFrame(given_manifest, columns="instance_key, instance_index, type_name, path".split(", "))
+    _df = pd.DataFrame(given_manifest, columns="instance_key, instance_index, instance_id, type_name, path".split(", "))
     _df.to_csv(manifests_path/"given.csv", index=False)
     return output
 

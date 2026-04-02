@@ -179,14 +179,32 @@ class DataInstance:
     def __hash__(self) -> int:
         return self._hash
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, DataInstance) and self.instance_id == other.instance_id
+
     def RecalculateKey(self):
-        self._hash, self._key = KeyGenerator.FromStr("".join([
+        self._hash, self.instance_id = KeyGenerator.FromStr("".join([
+            str(self.path),
+            self.dtype_name,
+            self.parent_lib.GetKey(),
+        ]), l=10)
+        # Legacy typed key is kept for backward compatibility when reading old
+        # task serializations that referenced DataInstances by the old key.
+        _, self.legacy_key = KeyGenerator.FromStr("".join([
             str(self.path),
             self.dtype.key,
             self.dtype_name,
-            # self.parent_lib.GetKey(),
         ]), l=8)
+        self._key = self.instance_id
         return self._key
+
+    def WithDType(self, dtype: Endpoint, dtype_name: str | None = None):
+        return self.__class__(
+            path=self.path,
+            dtype=dtype,
+            dtype_name=self.dtype_name if dtype_name is None else dtype_name,
+            parent_lib=self.parent_lib,
+        )
 
     def GetDataType(self) -> tuple[str, str]:
         ns, name = self.dtype_name.split("::")
@@ -204,6 +222,7 @@ class DataInstance:
             type=f"{self.parent_lib.GetKey()}::{self.dtype_name}",
             # type=f"{self.dtype_name}",
             type_id=self.dtype.key,
+            instance_id=self.instance_id,
         )
 
     @classmethod
@@ -212,12 +231,18 @@ class DataInstance:
         lib = libraries[lib_key]
         dtype = lib.types[namespace][dtype_name]
 
-        return cls(
+        inst = cls(
             path=Path(raw["path"]),
             dtype=dtype,
             dtype_name=f"{namespace}::{dtype_name}",
             parent_lib=lib,
         )
+        if "instance_id" in raw:
+            # Preserve compatibility with newer serializations.
+            inst.instance_id = raw["instance_id"]
+            inst._key = inst.instance_id
+            inst._hash, _ = KeyGenerator.FromStr(inst.instance_id, l=10)
+        return inst
 
 class DataInstanceLibrary:
     schema: str = "v1"
@@ -409,21 +434,11 @@ class DataInstanceLibrary:
                         queue.append(child)
             return descendants
 
-        _desc_cache: dict[frozenset[Path], set[Path]] = {}
-        _yielded_ancestors: set[frozenset[Path]] = set()
         for path, name in self.manifest.items():
             if not _accept(name): continue
             ancestors = _get_all_ancestors(path)
-            cache_key = frozenset(ancestors)
-            if cache_key not in _desc_cache:
-                _desc_cache[cache_key] = _get_all_descendants(ancestors | {path})
-            siblings = _desc_cache[cache_key]
-            # When path is already in siblings (shared-parent topology),
-            # the mask is identical for all items with the same ancestors.
-            # Yield only unique masks to avoid O(n^2) downstream.
-            if path in siblings and cache_key in _yielded_ancestors:
-                continue
-            _yielded_ancestors.add(cache_key)
+            # Include index, ancestors, and all siblings (items sharing ancestors)
+            siblings = _get_all_descendants(ancestors | {path})
             yield DataInstanceLibraryView(original=self, mask={path} | ancestors | siblings)
 
     def Trace(self, from_type: str, to_type: str):
@@ -925,17 +940,11 @@ class DataInstanceLibraryView:
         self._original = original
         self._mask = mask
 
-    @property
-    def _mask_key(self) -> frozenset[Path]:
-        if not hasattr(self, '_cached_mask_key'):
-            self._cached_mask_key = frozenset(self._mask)
-        return self._cached_mask_key
-
     def Get(self, path: str|Path):
         p = Path(path)
         assert p in self._mask
         return self._original.Get(path)
-
+    
     def Iterate(self):
         for p in self._mask:
             inst = self._original.Get(p)
@@ -1261,34 +1270,29 @@ class ExecutionContext:
             image_path = str(path.external)
     
         _binds: list[tuple[Path, Path]] = []
-        for _, v in list(self._inputs[self._batch_index].items()):
-            for p in v.input_group:
-                Log.Info(f"[DBG] input path: local={p.local}, external={p.external}, container={p.container}")
-                Log.Info(f"[DBG]   container.is_absolute()={p.container.is_absolute()}, is_relative_to(HOME)={p.container.is_relative_to(AgentPaths.HOME_ROOT)}")
-                if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
-                src = p.external.parent
-                if not p.container.is_absolute():
-                    dest = src
-                else:
-                    dest = p.container.parent
-                Log.Info(f"[DBG]   src={src}, dest={dest}")
-                if not src.is_absolute() or not dest.is_absolute(): continue
+        for batch_item in self._inputs:
+            for _, v in list(batch_item.items()):
+                for p in v.input_group:
+                    if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
+                    src = p.external.parent
+                    if not p.container.is_absolute():
+                        dest = src
+                    else:
+                        dest = p.container.parent
+                    if not src.is_absolute() or not dest.is_absolute(): continue
 
-                found = False
-                for i, (a, b) in enumerate(_binds):
-                    ac = Path(os.path.commonpath([a, src]))
-                    bc = Path(os.path.commonpath([b, dest]))
-                    THRES = 3 # '/', '1', '2' >> /1/2
-                    if len(ac.parts)>=THRES:
-                        found = True
-                        break
-                if found:
-                    _binds[i] = ac, bc
-                else:
-                    _binds.append((src, dest))
-        Log.Info(f"[DBG] computed input binds:")
-        for s, d in _binds:
-            Log.Info(f"[DBG]   {s} -> {d}")
+                    found = False
+                    for i, (a, b) in enumerate(_binds):
+                        ac = Path(os.path.commonpath([a, src]))
+                        bc = Path(os.path.commonpath([b, dest]))
+                        THRES = 3 # '/', '1', '2' >> /1/2
+                        if len(ac.parts)>=THRES:
+                            found = True
+                            break
+                    if found:
+                        _binds[i] = ac, bc
+                    else:
+                        _binds.append((src, dest))
         if binds is None: binds = []
         container_ws = Path("/ws")
         binds += [
@@ -1319,21 +1323,13 @@ class ExecutionContext:
                 use_cache = True
 
         cmd = RemoveLeadingIndent(cmd)
-        import os as _os
-        Log.Info(f"[DBG] batch_index={self._batch_index}, total={len(self._inputs)}")
-        Log.Info(f"[DBG] cwd={_os.getcwd()}, external_cwd={self.external_cwd}")
         Log.Info(f"executing container [{container.image}] using [{container.runtime.name}]")
         h, k = KeyGenerator.FromStr(cmd)
         _bounce_script = Path(f"./_metasmith/.bounce.{k}")
-        Log.Info(f"[DBG] bounce_script={_bounce_script}, resolved={_bounce_script.resolve()}")
         exit_codef = Path(f"exitcode.{GenerateId()}")
         with open(_bounce_script, "w") as f:
             script = [
                 "cd /ws",
-                "echo '[BOUNCE] pwd='$(pwd)",
-                "echo '[BOUNCE] ls /ws/_metasmith/.bounce.*:' $(ls /ws/_metasmith/.bounce.* 2>&1)",
-                "echo '[BOUNCE] TMPDIR='$TMPDIR",
-                "ls -la /ws/ | head -20",
                 "on_exit() {",
                 f"    echo $? > {exit_codef}",
                 "}",
@@ -1342,7 +1338,6 @@ class ExecutionContext:
                 cmd,
             ]
             f.write("\n".join(script))
-        Log.Info(f"[DBG] bounce written, exists={_bounce_script.exists()}, size={_bounce_script.stat().st_size}")
         Log.Info(f"command with bounce at [{_bounce_script}]:")
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
