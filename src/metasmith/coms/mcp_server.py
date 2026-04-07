@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import functools
 import os
 import json
@@ -20,8 +21,10 @@ from ..models.libraries import (
 )
 from ..models.solver import Transform, Dependency
 from ..models.solver import Solution
-from ..models.workflow import WorkflowPlan
-from ..agents import TargetBuilder
+from ..models.workflow import WorkflowPlan, WorkflowTask
+from ..models.remote import Source
+from ..agents import Agent, TargetBuilder
+from ..models.build_libraries import Build
 from ..logging import Log
 
 # ---------------------------------------------------------------------------
@@ -33,10 +36,14 @@ class ServerState:
     type_paths: list[Path] = field(default_factory=list)
     data_paths: list[Path] = field(default_factory=list)
     transform_paths: list[Path] = field(default_factory=list)
+    agent_paths: list[Path] = field(default_factory=list)
+    workspace: Path | None = None
 
     _type_libs: dict[str, DataTypeLibrary] = field(default_factory=dict)
     _data_libs: dict[str, DataInstanceLibrary] = field(default_factory=dict)
     _transform_libs: dict[str, TransformInstanceLibrary] = field(default_factory=dict)
+    _agents: dict[str, Agent] = field(default_factory=dict)
+    _tasks: dict[str, Path] = field(default_factory=dict)
 
     # -- lazy loaders --------------------------------------------------------
 
@@ -61,6 +68,12 @@ class ServerState:
             lib = TransformInstanceLibrary.Load(p)
             self._transform_libs[str(p)] = lib
 
+    def _ensure_agents(self):
+        if self._agents:
+            return
+        for p in self.agent_paths:
+            self._agents[p.stem] = Agent.Load(p)
+
     @property
     def type_libs(self) -> dict[str, DataTypeLibrary]:
         self._ensure_type_libs()
@@ -75,6 +88,30 @@ class ServerState:
     def transform_libs(self) -> dict[str, TransformInstanceLibrary]:
         self._ensure_transform_libs()
         return self._transform_libs
+
+    @property
+    def agents(self) -> dict[str, Agent]:
+        self._ensure_agents()
+        return self._agents
+
+    # -- task caching -------------------------------------------------------
+
+    def save_task(self, task: WorkflowTask) -> str:
+        assert self.workspace is not None, "workspace not configured"
+        key = task.GetKey()
+        dest = self.workspace / key
+        dest.mkdir(parents=True, exist_ok=True)
+        task.SaveAs(Source.FromLocal(dest))
+        self._tasks[key] = dest
+        return key
+
+    def load_task(self, task_key: str) -> WorkflowTask:
+        if task_key not in self._tasks:
+            # try scanning workspace
+            if self.workspace and (self.workspace / task_key).exists():
+                self._tasks[task_key] = self.workspace / task_key
+        assert task_key in self._tasks, f"task [{task_key}] not found"
+        return WorkflowTask.Load(self._tasks[task_key])
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +441,17 @@ async def plan_workflow(
         }
     else:
         plan = gen_result
+        task = WorkflowTask(
+            ok=True, plan=plan,
+            data_libraries=[data_lib] + res_libs,
+            transform_libraries=tr_libs,
+        )
+        task_key = None
+        if STATE.workspace:
+            task_key = await asyncio.to_thread(STATE.save_task, task)
         return {
             "success": True,
+            "task_key": task_key,
             "steps": [step.Pack() for step in plan.steps],
             "targets": [t.Pack() for t in plan.targets],
             "step_count": len(plan.steps),
@@ -425,6 +471,146 @@ async def check_workflow(task_key: str, run: int | None = None) -> dict:
     """
     from ..agents import CheckWorkflow as _CheckWorkflow
     return _CheckWorkflow(task_key, run, quiet=True)
+
+
+# ===== Agent Tools ========================================================
+
+@mcp.tool()
+@_safe
+async def list_agents() -> list[dict]:
+    """List all loaded agents."""
+    return [
+        {"name": name, "home": agent.home.address, "container": agent.container, "runtime": agent.runtime.name}
+        for name, agent in STATE.agents.items()
+    ]
+
+
+@mcp.tool()
+@_safe
+async def load_agent(agent_path: str, name: str | None = None) -> dict:
+    """Load an agent from a YAML config file.
+
+    Args:
+        agent_path: path to the agent YAML file
+        name: optional display name (defaults to filename stem)
+    """
+    p = Path(agent_path)
+    agent = await asyncio.to_thread(Agent.Load, p)
+    key = name or p.stem
+    STATE._agents[key] = agent
+    return {"name": key, "home": agent.home.address, "container": agent.container, "runtime": agent.runtime.name}
+
+
+@mcp.tool()
+@_safe
+async def deploy_agent(agent_name: str, assertive: bool = False) -> dict:
+    """Deploy an agent to its home location (one-time setup, uses SSH).
+
+    Args:
+        agent_name: name of a loaded agent
+        assertive: if True, force re-deploy even if already deployed
+    """
+    agent = STATE.agents[agent_name]
+    await asyncio.to_thread(agent.Deploy, assertive)
+    return {"status": "deployed", "agent": agent_name, "home": agent.home.address}
+
+
+# ===== Lifecycle Tools ====================================================
+
+@mcp.tool()
+@_safe
+async def stage_workflow(agent_name: str, task_key: str, on_exist: str = "skip") -> dict:
+    """Stage a planned workflow on an agent — compiles DAG to Nextflow and transfers.
+
+    Args:
+        agent_name: name of a loaded agent
+        task_key: task key returned by plan_workflow
+        on_exist: behavior if already staged: skip, error, clear, update, update_workflow, update_data
+    """
+    agent = STATE.agents[agent_name]
+    task = await asyncio.to_thread(STATE.load_task, task_key)
+    await asyncio.to_thread(agent.StageWorkflow, task, on_exist)
+    return {"status": "staged", "task_key": task_key, "agent": agent_name}
+
+
+@mcp.tool()
+@_safe
+async def run_workflow(
+    agent_name: str,
+    task_key: str,
+    config_preset: str | None = None,
+    params: dict | None = None,
+) -> dict:
+    """Launch a staged workflow on an agent (async — returns immediately).
+
+    Args:
+        agent_name: name of a loaded agent
+        task_key: task key returned by plan_workflow
+        config_preset: optional Nextflow config preset name (see list_config_presets)
+        params: optional Nextflow params dict
+    """
+    agent = STATE.agents[agent_name]
+    config_file = None
+    if config_preset:
+        presets = agent.GetNxfConfigPresets()
+        assert config_preset in presets, f"preset [{config_preset}] not found, available: {list(presets.keys())}"
+        config_file = presets[config_preset]
+    await asyncio.to_thread(agent.RunWorkflow, task_key, config_file, params)
+    return {"status": "running", "task_key": task_key, "agent": agent_name}
+
+
+@mcp.tool()
+@_safe
+async def get_result_source(agent_name: str, task_key: str) -> dict:
+    """Get the source location of workflow results.
+
+    Args:
+        agent_name: name of a loaded agent
+        task_key: task key returned by plan_workflow
+    """
+    agent = STATE.agents[agent_name]
+    source = agent.GetResultSource(task_key)
+    return {"address": source.address, "type": source.type.name}
+
+
+@mcp.tool()
+@_safe
+async def list_config_presets(agent_name: str) -> dict:
+    """List available Nextflow config presets for an agent.
+
+    Args:
+        agent_name: name of a loaded agent
+    """
+    agent = STATE.agents[agent_name]
+    presets = agent.GetNxfConfigPresets()
+    return {name: str(path) for name, path in presets.items()}
+
+
+# ===== Build Tools ========================================================
+
+@mcp.tool()
+@_safe
+async def build_libraries(
+    type_paths: list[str] | None = None,
+    transform_paths: list[str] | None = None,
+) -> dict:
+    """Build/compile type libraries and propagate types to transform libraries.
+
+    Args:
+        type_paths: paths to type definition directories (defaults to server's --types)
+        transform_paths: paths to transform library directories (defaults to server's --transforms)
+    """
+    type_dirs = [Path(p) for p in type_paths] if type_paths else list(STATE.type_paths)
+    transform_dirs = [Path(p) for p in transform_paths] if transform_paths else list(STATE.transform_paths)
+    await asyncio.to_thread(Build, type_dirs, transform_dirs, [])
+    # invalidate caches so next access reloads
+    STATE._type_libs = {}
+    STATE._transform_libs = {}
+    return {
+        "status": "built",
+        "type_paths": [str(p) for p in type_dirs],
+        "transform_paths": [str(p) for p in transform_dirs],
+    }
 
 
 # ===== MCP Resources ======================================================
@@ -517,6 +703,14 @@ def _parse_args():
         help="Paths to data type library YAML files",
     )
     parser.add_argument(
+        "--agents", nargs="*", default=[], metavar="PATH",
+        help="Paths to agent YAML config files",
+    )
+    parser.add_argument(
+        "--workspace", default=None, metavar="PATH",
+        help="Workspace directory for caching workflow tasks (default: ~/.metasmith/mcp_workspace)",
+    )
+    parser.add_argument(
         "--transport", choices=["stdio", "sse"], default="stdio",
         help="MCP transport (default: stdio)",
     )
@@ -537,6 +731,14 @@ def main():
     STATE.transform_paths = [Path(p) for p in args.transforms] + _paths_from_env("METASMITH_TRANSFORM_LIBS")
     STATE.data_paths = [Path(p) for p in args.data] + _paths_from_env("METASMITH_DATA_LIBS")
     STATE.type_paths = [Path(p) for p in args.types] + _paths_from_env("METASMITH_TYPE_LIBS")
+    STATE.agent_paths = [Path(p) for p in args.agents] + _paths_from_env("METASMITH_AGENTS")
+
+    workspace = args.workspace or os.environ.get("METASMITH_WORKSPACE")
+    if workspace:
+        STATE.workspace = Path(workspace)
+    else:
+        STATE.workspace = Path.home() / ".metasmith" / "mcp_workspace"
+    STATE.workspace.mkdir(parents=True, exist_ok=True)
 
     mcp.run(transport=args.transport)
 

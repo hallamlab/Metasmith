@@ -228,6 +228,45 @@ bin_directory:
     content: metagenomic bins  # Distinguishes from other directories
 ```
 
+## MCP Server
+
+Metasmith exposes its API via [Model Context Protocol](https://modelcontextprotocol.io) through `metasmith-mcp`. This lets LLM clients (Claude, etc.) inspect types, libraries, transforms, plan workflows, and drive the full lifecycle.
+
+### Running
+
+```bash
+metasmith-mcp \
+  --types data_types/ncbi.yml data_types/sequences.yml \
+  --data inputs.xgdb \
+  --transforms transforms/amplicon transforms/pangenome \
+  --agents agents/local.yml \
+  --workspace ~/.metasmith/mcp_workspace
+```
+
+All flags also accept env vars: `METASMITH_TYPE_LIBS`, `METASMITH_DATA_LIBS`, `METASMITH_TRANSFORM_LIBS`, `METASMITH_AGENTS`, `METASMITH_WORKSPACE` (colon-separated paths).
+
+### Tools (21 total)
+
+| Category | Tools |
+|----------|-------|
+| **Types** | `list_types`, `get_type`, `check_type_compatibility` |
+| **Data libraries** | `list_data_libraries`, `inspect_data_library`, `list_data_items`, `show_item_lineage` |
+| **Transforms** | `list_transform_libraries`, `list_transforms`, `show_transform_contract` |
+| **Workflow** | `plan_workflow`, `check_workflow` |
+| **Agent management** | `list_agents`, `load_agent`, `deploy_agent` |
+| **Lifecycle** | `stage_workflow`, `run_workflow`, `get_result_source`, `list_config_presets` |
+| **Build** | `build_libraries` |
+
+### Workflow via MCP
+
+The full lifecycle is: `plan_workflow` → `stage_workflow` → `run_workflow` → `check_workflow` → `get_result_source`. `plan_workflow` returns a `task_key` that downstream tools reference. Tasks are cached to disk in the workspace directory.
+
+### Resources (6)
+
+URI-based read-only views: `metasmith://types`, `metasmith://types/{ns}`, `metasmith://types/{ns}/{name}`, `metasmith://data/{lib}`, `metasmith://transforms/{lib}`, `metasmith://transforms/{lib}/{transform}`.
+
+---
+
 ## Lessons Learned
 
 ### Metagenomic Binning (Feb 2026)

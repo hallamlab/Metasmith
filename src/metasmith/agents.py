@@ -364,13 +364,18 @@ class Agent:
             Log.Info(f"deployed to [{self.home.address}]")
 
     def GenerateWorkflow(
-        self, 
+        self,
         samples: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         resources: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary],
-        targets: TargetBuilder,
+        targets: TargetBuilder | list[str],
         max_iter: int=1024, max_refine: int=256, seed: int=42,
     ):
+        if isinstance(targets, list):
+            tb = TargetBuilder()
+            for t in targets:
+                tb.Add(t)
+            targets = tb
         assert len(targets.targets)>0, "[targets] can not be empty"
         
         def _get_endpoint(dtype_name: str):
