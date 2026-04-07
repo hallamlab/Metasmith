@@ -191,8 +191,14 @@ class LiveShell:
             if self._shell is None: return
             self._shell.Write(f'echo "{self._MARK}.{_mark}"')
 
-    def Exec(self, cmd: str, timeout: float|None = None, history: bool=False) -> ShellResult:
+    def Exec(self, cmd: str, timeout: float|None = None, history: bool=False, quiet: bool=False) -> ShellResult:
         _out, _err = [], []
+        _saved_out = _saved_err = None
+        if quiet:
+            _saved_out = list(self._out_callbacks)
+            _saved_err = list(self._err_callbacks)
+            self._out_callbacks.clear()
+            self._err_callbacks.clear()
         def _log_err(msg):
             _err.append(msg)
         def _log_out(msg):
@@ -206,4 +212,7 @@ class LiveShell:
         if history:
             self.RemoveOnOut(_log_out)
             self.RemoveOnErr(_log_err)
+        if _saved_out is not None:
+            self._out_callbacks = _saved_out
+            self._err_callbacks = _saved_err
         return ShellResult(out=_out, err=_err)

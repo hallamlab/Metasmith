@@ -3,6 +3,7 @@ import subprocess
 import os, sys
 from pathlib import Path
 import argparse
+from argparse import RawDescriptionHelpFormatter
 import inspect
 import base64
 import json
@@ -164,7 +165,9 @@ class CommandLineInterface:
     def build(self, raw_args=None):
         parser = ArgumentParser(
             prog = f'{CLI_ENTRY} {self._get_fn_name()}',
-            description=f"build libraries"
+            description=f"build libraries",
+            epilog="Example:\n  metasmith build -t data_types/ -r transforms/amplicon transforms/pangenome\n\nThis compiles types from -t directories and propagates them to all transform\nlibraries specified by -r. Unused types are pruned per library.",
+            formatter_class=RawDescriptionHelpFormatter,
         )
         parser.add_argument("-t", "--types", nargs='*', required=False, default=[],
             help="data types")

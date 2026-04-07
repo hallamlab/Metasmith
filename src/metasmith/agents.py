@@ -8,6 +8,7 @@ from typing import Iterable, Literal
 import yaml
 import json
 import re
+from collections import deque
 from hashlib import md5
 import pandas as pd
 from glob import glob
@@ -29,13 +30,9 @@ class AgentShell:
     def __init__(self, agent: Agent):
         self.agent = agent
         self.shell = LiveShell()
-        self.paused_out = False
-        self.paused_err = False
         def _on_out(x: str):
-            if self.paused_out: return
             Log.Info(f"> {x}\x1b[0;m", timestamp=False) # to escape nextflow colours
         def _on_err(x: str):
-            if self.paused_err: return
             Log.Error(f"> {x}", timestamp=False)
         Log.Info(f"connecting to deployed agent")
         self.agent._run_setup(self.shell)
@@ -58,21 +55,6 @@ class AgentShell:
                 pass
         self.shell.__exit__(exc_type, exc_val, exc_tb)
 
-class PausedShell:
-    def __init__(self, shell: AgentShell, err=False):
-        self.shell = shell
-        self.originals = shell.paused_out, shell.paused_err
-        self.shell.paused_out = True
-        self.shell.paused_err = err
-
-    def __enter__(self):
-        return self.shell
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        oo, oe = self.originals
-        self.shell.paused_out = oo
-        self.shell.paused_err = oe
-
 class TargetBuilder:
     def __init__(self) -> None:
         self.targets: dict[str, set[str]] = {}
@@ -80,11 +62,30 @@ class TargetBuilder:
     def Add(self, target_type: str, parents: set[str]|None=None):
         if parents is None: parents = set()
         assert "::" in target_type, f'expected @type to in the form of "namespace::type_name" but got [{target_type}]'
-        for p in parents:
-            assert p in self.targets, f'[{p}] needs to be added before use as a parent'
         assert target_type not in self.targets, f'[{target_type}] already added'
         self.targets[target_type] = parents.copy()
         return target_type
+
+    def resolve(self) -> list[tuple[str, set[str]]]:
+        """Return targets in topological order (parents before children)."""
+        # Validate parent references
+        for dtype, parents in self.targets.items():
+            for p in parents:
+                assert p in self.targets, f'parent [{p}] of [{dtype}] was never added'
+        # Kahn's algorithm
+        in_degree = {k: len(v) for k, v in self.targets.items()}
+        queue = deque(k for k, d in in_degree.items() if d == 0)
+        result: list[tuple[str, set[str]]] = []
+        while queue:
+            node = queue.popleft()
+            result.append((node, self.targets[node]))
+            for k, parents in self.targets.items():
+                if node in parents:
+                    in_degree[k] -= 1
+                    if in_degree[k] == 0:
+                        queue.append(k)
+        assert len(result) == len(self.targets), f'cycle detected in target parents'
+        return result
 
 ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|str|TransformInstance, Resources]
 @dataclass
@@ -165,16 +166,9 @@ class Agent:
         Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}]")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
-            _paused = False
-            shell.RegisterOnOut(lambda x: (Log.Info(x) if not _paused else None))
-            shell.RegisterOnErr(lambda x: (Log.Error(x) if not _paused else None))
-            class PausedShell():
-                def __enter__(self):
-                    nonlocal _paused
-                    _paused = True
-                def __exit__(self, exc_type, exc_val, exc_tb):
-                    nonlocal _paused
-                    _paused = False
+            _quiet = False
+            shell.RegisterOnOut(lambda x: (Log.Info(x) if not _quiet else None))
+            shell.RegisterOnErr(lambda x: (Log.Error(x) if not _quiet else None))
 
             def do_step(cmd: str, display_cmd: str|None=None, timeout:float|None=15):
                 if display_cmd is not None: Log.Info(f">>> {display_cmd}")
@@ -211,22 +205,24 @@ class Agent:
                     Log.Error(e)
                 assert len(res.completed) == 1, f"failed to deploy files"
 
-            with PausedShell():
-                self._run_setup(shell)
-                _FLAG = "already exists"
-                res = shell.Exec(f'[[ -e "{self.home.GetPath()}" ]] && echo "{_FLAG}"', history=True)
-                if _FLAG in res.out and not assertive: 
-                    Log.Info(f"[{self.home.address}] already exists, use Deploy(assertive=True) to deploy anyways")
-                    return
+            _quiet = True
+            self._run_setup(shell)
+            _FLAG = "already exists"
+            res = shell.Exec(f'[[ -e "{self.home.GetPath()}" ]] && echo "{_FLAG}"', history=True)
+            if _FLAG in res.out and not assertive:
+                Log.Info(f"[{self.home.address}] already exists, use Deploy(assertive=True) to deploy anyways")
+                return
+            _quiet = False
 
             shell.Exec(f'mkdir -p "{self.home.GetPath()}"')
-            with PausedShell():
-                cmds = [
-                    f'realpath {self.home.GetPath()}',
-                    f'realpath ~',
-                    f'hostname',
-                ]
-                res = shell.Exec('\n'.join(cmds), history=True)
+            _quiet = True
+            cmds = [
+                f'realpath {self.home.GetPath()}',
+                f'realpath ~',
+                f'hostname',
+            ]
+            res = shell.Exec('\n'.join(cmds), history=True)
+            _quiet = False
             assert len(res.out)==len(cmds), res.out
             resolved_agent_home, resolved_home, hostname = [x.strip() for x in res.out]
             resolved_agent_home = Path(resolved_agent_home)
@@ -395,7 +391,7 @@ class Agent:
         target_model = Transform()
         _dtname2dep: dict[str, Dependency] = {}
         target_names: dict[Endpoint, str] = {}
-        for dtype_name, parents in targets.targets.items():
+        for dtype_name, parents in targets.resolve():
             e = _get_endpoint(dtype_name)
             assert e not in target_names, f"[{dtype_name}] is a duplicate of [{target_names[e]}]"
             d = target_model.AddRequirement(example=e, parents={_dtname2dep[p] for p in parents})
@@ -442,31 +438,30 @@ class Agent:
         with agent_shell as sh_remote:
             remote_path = AgentPaths.to_task(task._key, root=self.home.GetPath())
             remote_work_path = remote_path.parent.parent
-            with PausedShell(agent_shell):
-                FLAG = "task already staged"
-                res = sh_remote.Exec(f'[ -e {remote_work_path} ] && echo "{FLAG}"', history=True)
-                if FLAG in res.out:
-                    _msg = f"task already staged at [{remote_work_path}]"
-                    if on_exist not in {"error"}:
-                        Log.Warn(_msg)
-                    match on_exist:
-                        case "error":
-                            raise FileExistsError(_msg)
-                        case "skip":
-                            return
-                        case "clear":
-                            Log.Warn(f"clearing previously staged task")
-                            _to_delete_src = remote_work_path
-                            _to_delete = _to_delete_src.with_suffix(".to_delete")
-                            sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
-                        case "update":
-                            Log.Warn(f"updating previously staged task")
-                        case "update_data":
-                            Log.Warn(f"resending data for previously staged task")
-                            task_stage_partial = "data_only"
-                        case "update_workflow":
-                            Log.Warn(f"recompiling workflow for previously staged task")
-                            task_stage_partial = "transforms_only"
+            FLAG = "task already staged"
+            res = sh_remote.Exec(f'[ -e {remote_work_path} ] && echo "{FLAG}"', history=True, quiet=True)
+            if FLAG in res.out:
+                _msg = f"task already staged at [{remote_work_path}]"
+                if on_exist not in {"error"}:
+                    Log.Warn(_msg)
+                match on_exist:
+                    case "error":
+                        raise FileExistsError(_msg)
+                    case "skip":
+                        return
+                    case "clear":
+                        Log.Warn(f"clearing previously staged task")
+                        _to_delete_src = remote_work_path
+                        _to_delete = _to_delete_src.with_suffix(".to_delete")
+                        sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
+                    case "update":
+                        Log.Warn(f"updating previously staged task")
+                    case "update_data":
+                        Log.Warn(f"resending data for previously staged task")
+                        task_stage_partial = "data_only"
+                    case "update_workflow":
+                        Log.Warn(f"recompiling workflow for previously staged task")
+                        task_stage_partial = "transforms_only"
 
             Log.Info(f"sending context for workflow [{task._key}]")
             task.SaveAs(self.home.ReplacePathWith(remote_path), partial=task_stage_partial)
@@ -507,8 +502,7 @@ class Agent:
             task_path = AgentPaths.to_task(task_key, root=self.home.GetPath())
             workspace = task_path.parent.parent
             FLAG = "workspace exists"
-            with PausedShell(agent_shell): # this syntax is confusing, need to fix
-                res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True)
+            res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True, quiet=True)
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
 
             Log.Info(f"sending config and params")
@@ -612,8 +606,7 @@ class Agent:
             agent_shell = AgentShell(self)
             with agent_shell as sh_remote:
                 FLAG = "results exist"
-                with PausedShell(agent_shell):
-                    res = sh_remote.Exec(f"[ -e {result_path} ] && echo '{FLAG}'", history=True)
+                res = sh_remote.Exec(f"[ -e {result_path} ] && echo '{FLAG}'", history=True, quiet=True)
                 assert FLAG in res.out, f"results not found at [{self.home.ReplacePathWith(result_path).address}]"
 
         if self.globus_uuid is not None and allow_globus:
@@ -1122,39 +1115,56 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     latest_link.symlink_to(f"../../{log_dir}")
     Log.Info(f"run completed at [{StdTime.Timestamp()}]")
 
-def CheckWorkflow(key: str, index: int|None=None):
+def CheckWorkflow(key: str, index: int|None=None, quiet: bool=False) -> dict:
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
     assert workspace.exists(), f"task workspace not found [{workspace}], maybe it wasn't staged yet"
 
-    Log.Info(f"searching for logs")
     internals = workspace/AgentPaths.INTERNALS
     log_scan_result = list((internals).glob("logs.*"))
     log_dirs = [p for p in log_scan_result if "latest" not in p.name]
     log_dirs = sorted(log_dirs, key=lambda x: x.name)
+
+    result = {
+        "key": key,
+        "runs": [{"index": i+1, "name": d.name, "path": str(d)} for i, d in enumerate(log_dirs)],
+        "total_runs": len(log_dirs),
+        "selected_run": None,
+        "log_content": None,
+    }
+
     if len(log_dirs) == 0:
-        Log.Warn(f"no logs found for [{key}]")
-        return
-    Log.Info(f"found [{len(log_dirs)}] runs")
-    for i, log_entry in enumerate(log_dirs):
-        n_str = f"{i+1}"
-        Log.Info(f"{' '*(5-len(n_str))}{n_str}: [{log_entry.name}]")
+        if not quiet:
+            Log.Warn(f"no logs found for [{key}]")
+        return result
+
+    if not quiet:
+        Log.Info(f"found [{len(log_dirs)}] runs")
+        for i, log_entry in enumerate(log_dirs):
+            n_str = f"{i+1}"
+            Log.Info(f"{' '*(5-len(n_str))}{n_str}: [{log_entry.name}]")
 
     log_dir = log_dirs[-1]
+    selected_index = len(log_dirs)
     msg = f"here is the main log of the latest run [{log_dir.name}]"
     if index is not None:
         if index < 1 or index > len(log_dirs):
-            Log.Warn(f"index [{index}] out of range")
+            if not quiet:
+                Log.Warn(f"index [{index}] out of range")
         else:
             log_dir = log_dirs[index-1]
+            selected_index = index
             msg = f"here is the main log for run [{index}] [{log_dir.name}]"
 
-    Log.Info(msg)
-    Log.Info(f">"*len(msg))
-    Log.Info("")
-    
+    result["selected_run"] = {"index": selected_index, "name": log_dir.name, "path": str(workspace/log_dir)}
     with open(workspace/log_dir/AgentPaths.MAIN_LOG_FILE, "r") as f:
-        lines = f.readlines()
+        result["log_content"] = f.read()
+
+    if not quiet:
+        Log.Info(msg)
+        Log.Info(f">"*len(msg))
+        Log.Info("")
+        lines = result["log_content"].splitlines(keepends=True)
         MAXL = 1000
         HEAD = 20
         if len(lines)>1000:
@@ -1163,7 +1173,8 @@ def CheckWorkflow(key: str, index: int|None=None):
             print("".join(lines[-(MAXL-HEAD):]))
         else:
             print("".join(lines))
+        Log.Info("")
+        Log.Info(f"<"*len(msg))
+        Log.Info(f"log folder at [{workspace/log_dir}]")
 
-    Log.Info("")
-    Log.Info(f"<"*len(msg))
-    Log.Info(f"log folder at [{workspace/log_dir}]")
+    return result

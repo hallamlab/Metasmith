@@ -376,7 +376,7 @@ async def plan_workflow(
     target_model = Transform()
     _dtname2dep: dict[str, Dependency] = {}
     target_names: dict[Endpoint, str] = {}
-    for dtype_name, parents in targets.targets.items():
+    for dtype_name, parents in targets.resolve():
         e = _get_endpoint(dtype_name)
         assert e not in target_names, f"[{dtype_name}] is a duplicate of [{target_names[e]}]"
         d = target_model.AddRequirement(example=e, parents={_dtname2dep[p] for p in parents})
@@ -410,6 +410,21 @@ async def plan_workflow(
             "targets": [t.Pack() for t in plan.targets],
             "step_count": len(plan.steps),
         }
+
+
+# ===== Workflow Status Tools ===============================================
+
+@mcp.tool()
+@_safe
+async def check_workflow(task_key: str, run: int | None = None) -> dict:
+    """Check the status and logs of a workflow run (same-machine only).
+
+    Args:
+        task_key: the workflow task key
+        run: optional 1-indexed run number (default: latest)
+    """
+    from ..agents import CheckWorkflow as _CheckWorkflow
+    return _CheckWorkflow(task_key, run, quiet=True)
 
 
 # ===== MCP Resources ======================================================
