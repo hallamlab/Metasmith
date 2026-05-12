@@ -272,6 +272,15 @@ The default resource estimates are liberal, but we know our task will only need 
 
     Multiple runs can be triggered, but nextflow will fail if consecutive runs are triggered too soon.
 
+.. note::
+
+    :python:`RunWorkflow` returns as soon as Nextflow has been launched in the
+    background. In a Jupyter notebook this is fine — you advance the next
+    cell after the run finishes. If you are running this tutorial as a plain
+    :python:`.py` script, see `Python basics <./python.html>`_ for a
+    :python:`wait_for_run` helper that polls the agent log for the
+    :python:`"run completed at"` sentinel before continuing.
+
 Once a task is running, the main log output can be viewed like so:
 
 .. code-block:: python

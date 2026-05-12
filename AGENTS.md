@@ -1,4 +1,11 @@
-# Claude Notes for MetasmithLibraries
+# Agent Notes for Metasmith
+
+## Environment
+
+Use the `msm_env` mamba environment to run Python, tests, and CLI commands:
+```
+mamba run -n msm_env <command>
+```
 
 ## What is Metasmith?
 
@@ -118,6 +125,50 @@ RunWorkflow fires and returns immediately. The actual execution happens in a
 Nextflow process that manages container pulls, job scheduling, and data staging.
 You poll for completion by checking if the results metadata directory appears.
 
+#### Waiting for a detached run
+
+`RunWorkflow` is fire-and-forget: the agent shell launches Nextflow under
+`nohup ... &` and returns as soon as the launch script exits. This is fine in
+Jupyter (the user advances the cell manually) but a plain-Python caller that
+immediately calls `GetResultSource` / `CheckWorkflow` will race past the run
+and crash on a missing `runs/<key>/results` or `logs.<ts>/main.log`.
+
+The agent writes a single sentinel line to `agent.log` when the Nextflow
+process exits cleanly:
+
+```
+runs/<key>/_metasmith/logs.<latest>/agent.log:
+  ...
+  run completed at [<timestamp>]
+```
+
+Script callers should poll for that sentinel before reading results. A minimal
+helper (works against either a local or remote home):
+
+```python
+import time
+from pathlib import Path
+
+def wait_for_run(task_dir: Path, poll_s: float = 10.0, timeout: float | None = None):
+    """Block until the agent writes 'run completed at' to the latest agent.log."""
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while deadline is None or time.monotonic() < deadline:
+        logs = sorted((task_dir / "_metasmith").glob("logs.*"))
+        if logs:
+            agent_log = logs[-1] / "agent.log"
+            if agent_log.exists() and "run completed at" in agent_log.read_text():
+                return True
+        time.sleep(poll_s)
+    return False
+
+# usage:
+smith.RunWorkflow(task, ...)
+wait_for_run(Path(agent_home_path) / "runs" / task.GetKey())
+results_path = smith.GetResultSource(task).GetPath()
+```
+
+A first-class `wait`/`WaitForRun` API is tracked for 0.18.
+
 ---
 
 ## How It All Fits Together
@@ -157,6 +208,23 @@ The value proposition: you never write Nextflow. You define types, write
 transform contracts, and Metasmith handles the plumbing. Adding a new tool means
 writing one Python file that declares its inputs/outputs and how to run it.
 The planner automatically incorporates it into any workflow where it's useful.
+
+---
+
+## Instance Identity & Serialization
+
+Each `DataInstance` has a stable `instance_id` (10-char hash derived from path, dtype name, and parent library). This ID persists across:
+- Type retyping via `WithDType()` — the instance keeps its identity even when viewed as a different type
+- Serialization/deserialization — `Pack()`/`Unpack()` explicitly preserve `instance_id`
+- Workflow steps — `WorkflowStep.Pack()` uses a v2 schema that stores instances by `instance_id`
+
+This enables reliable lineage tracking: use `DataInstanceLibrary.Load()` + `Trace()` to map results back to inputs rather than parsing filenames or work directories.
+
+### Testing Without Containers
+
+The `virtual_runtime` module provides a test harness for transforms that doesn't require container setup:
+- `TransformHarness` tracks instance_id in test scenarios
+- Useful for validating transform contracts (inputs/outputs/types) without pulling images
 
 ---
 
