@@ -305,7 +305,7 @@ will be run with the newly created :python:`genomes` file.
     context.ExecWithContainer(
         image = image,
         cmd = f"""
-            fastANI {threads} -ql {genomes} -rl {genomes} -o {iout.container} 
+            fastANI {threads} --queryList {genomes} --refList {genomes} --output {iout.container}
         """,
     )
 
@@ -380,7 +380,7 @@ The full :python:`fastani.py`.
         context.ExecWithContainer(
             image = image,
             cmd = f"""
-                fastANI {threads} -ql {genomes} -rl {genomes} -o {iout.container} 
+                fastANI {threads} --queryList {genomes} --refList {genomes} --output {iout.container}
             """,
         )
 
