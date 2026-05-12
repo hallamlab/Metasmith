@@ -5,7 +5,8 @@ My first agent
 ############################################################
 
 This tutorial will demonstrate the minimal steps for using Metasmith.
-As an example, we will perform pangenome analysis using mixed inputs.
+As an example, we will perform pangenome analysis on three E. coli genomes
+identified by their NCBI assembly accessions.
 
 The Jupyter notebook for this tutorial can be obtained by:
 
@@ -58,32 +59,18 @@ We will instruct :python:`smith` to manage containers with :python:`DOCKER`.
 2 - Register inputs
 ============================================================
 
-Pangenome analysis seeks to compare a panel of genomes at the level of genes. Three E. coli genomes will be used as input.
-We will download one of them now, and provide NCBI acession numbers for the other two.
+Pangenome analysis seeks to compare a panel of genomes at the level of genes.
+Three E. coli genomes will be used as input, identified by their NCBI assembly
+accessions.
 
-.. code-block:: python
-    :linenos:
-
-    local_input_file = WORKSPACE/"epi300.gbk"
-
-    mover = Logistics()
-    mover.QueueTransfer(
-        src=Source.FromHttp(url="https://github.com/hallamlab/MetasmithLibraries/releases/download/data.epi300.1/epi300.gbk"),
-        dest=Source.FromLocal(local_input_file),
-    )
-    mover.ExecuteTransfers()
-
-.. tip::
-
-    More on `logistics <../usage/logistics.html>`_
-
-Metasmith accepts inputs in the form of files that become registered as :python:`DataInstances` 
-within a managed folder called a :python:`DataInstanceLibrary`. Registering an input
-involves attaching a :python:`DataType` that describes how it can be used.
-Computational steps specify a :python:`DataType` for each of their inputs such that any 
-:python:`DataInstance` with a matching :python:`DataType` can be consumed. Registering
-inputs as typed :python:`DataInstances` enables Metasmith to determine which tools are capable of
-consuming it.
+Metasmith accepts inputs in the form of files or values that become registered
+as :python:`DataInstances` within a managed folder called a
+:python:`DataInstanceLibrary`. Registering an input involves attaching a
+:python:`DataType` that describes how it can be used. Computational steps
+specify a :python:`DataType` for each of their inputs such that any
+:python:`DataInstance` with a matching :python:`DataType` can be consumed.
+Registering inputs as typed :python:`DataInstances` enables Metasmith to
+determine which tools are capable of consuming them.
 
 .. code-block:: python
     :linenos:
@@ -96,11 +83,26 @@ consuming it.
     inputs.AddTypeLibrary(MLIB/"data_types/pangenome.yml")
 
     group = inputs.AddValue("pangenome", "e coli", "pangenome::pangenome")
-    inputs.AddValue("DH10b", "GCF_000019425.1", "ncbi::accession", parents={group})
-    inputs.AddValue("K12", "GCF_000005845.2", "ncbi::accession", parents={group})
-    inputs.AddItem(WORKSPACE/"epi300.gbk", "sequences::gbk", parents={group})
-    inputs.LocalizeContents()
+    inputs.AddValue("DH10b",   "GCF_000019425.1", "ncbi::assembly_accession", parents={group})
+    inputs.AddValue("K12",     "GCF_000005845.2", "ncbi::assembly_accession", parents={group})
+    inputs.AddValue("EPI300",  "GCF_049667475.1", "ncbi::assembly_accession", parents={group})
     inputs.Save()
+
+.. note::
+
+    The concrete subtype :python:`ncbi::assembly_accession` is required here —
+    the more general :python:`ncbi::accession` is abstract and will not match
+    :python:`getNcbiAssembly`'s input contract.
+
+    If you would rather start from a local :python:`.gbk` file you have on
+    disk, you can register it directly as :python:`sequences::gbk` with
+    :python:`inputs.AddItem(local_path, "sequences::gbk", parents={group})`.
+    Be aware that when an input already satisfies a downstream tool's
+    requirement, the planner will not schedule an upstream fetch for it — so
+    mixing one local genome with two accessions will produce a workflow with
+    a single-genome ppanggolin step rather than a three-genome one. Use
+    accessions for all inputs, or local files for all inputs, when you want
+    every genome to participate.
 
 .. tip::
 
@@ -157,7 +159,7 @@ Here, we request that targets of the type :python:`pangenome::heatmap` be produc
     task = smith.GenerateWorkflow(
         # divide the inputs into samples
         # we want all targets to be produced from each sample
-        samples=inputs.AsSamples(["ncbi::accession", "sequences::gbk"]),
+        samples=inputs.AsSamples("ncbi::assembly_accession"),
         resources=resources,    # these are available for each sample, but need not be used
         transforms=transforms,
         targets=targets,
