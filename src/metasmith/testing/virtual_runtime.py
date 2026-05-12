@@ -105,7 +105,7 @@ class VirtualE2ERuntime:
             "\n".join(
                 [
                     "#!/usr/bin/env bash",
-                    f'exec python -m metasmith.testing.virtual_runtime __tool__ {tool} "$@"',
+                    f'exec python3 -m metasmith.testing.virtual_runtime __tool__ {tool} "$@"',
                 ]
             )
             + "\n",
