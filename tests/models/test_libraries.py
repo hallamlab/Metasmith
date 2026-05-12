@@ -857,6 +857,7 @@ class TestDataInstanceLibraryRenameByParent:
         assert loaded.manifest == original_manifest
 
 
+@pytest.mark.slow
 class TestDataInstanceLibraryPerformance:
     """Performance tests for DataInstanceLibrary with 10k samples."""
 

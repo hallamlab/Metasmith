@@ -8,7 +8,6 @@ import os
 import itertools
 import yaml
 import json
-from collections import Counter
 from hashlib import md5
 
 from ..coms.containers import Container, ContainerRuntime
@@ -165,15 +164,15 @@ class WorkflowPlan:
     steps: list[WorkflowStep]
     _solver_result: SolverResult|None=None
     _archetype_translation: dict[DataInstance, DataInstance]|None = None
+    dropped_targets: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         self._update_hash()
 
     def _update_hash(self):
-        # given = [inst._key for inst in self.given]
-        # targets = [inst._key for inst in self.targets]
         steps = [step.transform.model.key for step in self.steps]
-        self._hash, self._key = KeyGenerator.FromStr("".join(steps), l=8)
+        given_ids = sorted(inst.instance_id for inst in self.given)
+        self._hash, self._key = KeyGenerator.FromStr("".join(steps) + "".join(given_ids), l=8)
 
     def __hash__(self) -> int:
         return self._hash
@@ -376,11 +375,21 @@ class WorkflowPlan:
 
         def _dedupe_instances(instances: list[DataInstance]):
             out = []
-            seen = set()
+            seen: dict[str, DataInstance] = {}
             for inst in instances:
                 if inst.instance_id in seen:
+                    existing = seen[inst.instance_id]
+                    # merge parent lineage from duplicate into the kept instance
+                    for p_path, p_list in inst.parent_lib.parents.items():
+                        if p_path not in existing.parent_lib.parents:
+                            existing.parent_lib.parents[p_path] = list(p_list)
+                        else:
+                            existing_keys = {f"{x.library_key}/{x.path}" for x in existing.parent_lib.parents[p_path]}
+                            existing.parent_lib.parents[p_path].extend(
+                                p for p in p_list if f"{p.library_key}/{p.path}" not in existing_keys
+                            )
                     continue
-                seen.add(inst.instance_id)
+                seen[inst.instance_id] = inst
                 out.append(inst)
             return out
 
@@ -559,11 +568,20 @@ class WorkflowPlan:
                     continue
                 _seen_given.add(inst.instance_id)
                 _given.append(inst)
+        resolved_target_names = {t.name for targets in target_meta.values() for t in targets}
+        dropped_targets = []
+        for requested_ep, requested_name in target_names.items():
+            if requested_name not in resolved_target_names:
+                Log.Warn(f"target [{requested_name}] was requested but not included in plan"
+                         " — check if group_by dependency can be satisfied from given inputs")
+                dropped_targets.append(requested_name)
+
         return cls(
             given=_given,
             targets=[x for g in target_meta.values() for x in g],
             steps=[s for a, s in steps.items()],
             _solver_result=result,
+            dropped_targets=dropped_targets,
         )
 
     def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}):
@@ -870,6 +888,12 @@ class WorkflowTask:
                 )
             }
             sample_arity = len(step.group_by_instances)
+            step_meta_file = f"workflow.step_{step.order}.meta"
+            with open(context.work_dir / step_meta_file, "w") as f:
+                f.write(f"din {json.dumps(dep_in, separators=(',',':'))}\n")
+                f.write(f"dot {json.dumps(dep_out, separators=(',',':'))}\n")
+                f.write(f"sar {json.dumps(structure_arity, separators=(',',':'))}\n")
+                f.write(f"par {sample_arity}\n")
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
                 for branch, g in enumerate(produced_archetypes) for x in g
@@ -896,10 +920,7 @@ class WorkflowTask:
                 f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
                 f'echo "lin ${{Orchestrator.JsonforEcho(index)}}" >>{METADATA_FILE}',
                 f'echo "fmt 2" >>{METADATA_FILE}',
-                f"echo 'din {json.dumps(dep_in, separators=(',',':'))}' >>{METADATA_FILE}",
-                f"echo 'dot {json.dumps(dep_out, separators=(',',':'))}' >>{METADATA_FILE}",
-                f"echo 'sar {json.dumps(structure_arity, separators=(',',':'))}' >>{METADATA_FILE}",
-                f'echo "par {sample_arity}" >>{METADATA_FILE}',
+                f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
                 f'echo "inp {','.join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
                 f'echo "out {';'.join(','.join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
             # ] + [
@@ -1036,8 +1057,12 @@ class WorkflowTask:
                 _given_lineage[str(inputs_dir.relative_to(context.work_dir)/k)] = _indexes
                 given_lineage_by_keys[k] = given_lineage_by_keys.get(k, set())|{k for x in _indexes for k in x.keys()}
         LINEAGE_FILE = "workflow.lineage_of_given.json"
+        _lineage_file_data = {
+            "lineage": _given_lineage,
+            "child2parent": {k: sorted(v) for k, v in given_lineage_by_keys.items()},
+        }
         with open(context.work_dir/LINEAGE_FILE, "w") as f:
-            json.dump(_given_lineage, f, separators=(',', ':'))
+            json.dump(_lineage_file_data, f, separators=(',', ':'))
 
         # goal:
         # k = ['h']
@@ -1051,16 +1076,12 @@ class WorkflowTask:
         published_channels: dict[str, DataInstance] = {}
         resources = {}
 
-        # Pre-scan: count how many group() calls reference each stream symbol.
-        # Symbols used more than once need to be forked via multiMap.
-        stream_group_usage = Counter()
-        for step in the_plan.steps:
-            _used, _ = get_io_signature(step)
-            if len(_used) > 0:
-                for x in _used:
-                    stream_group_usage[x.dtype.key] += 1
-        fork_next_index = {k: 0 for k, v in stream_group_usage.items() if v > 1}
-        fork_emitted: set[str] = set()
+        # NOTE: DSL2 implicitly forks channels even when wrapped in [name, channel]
+        # tuples and consumed inside Orchestrator.group(). multiMap forking was
+        # added in a94a3d1 but proven unnecessary — see tests:
+        #   test_channel_reuse_across_group_calls
+        #   test_stream_reuse_works_in_orchestrator
+        # Do not re-add multiMap here.
 
         for step in the_plan.steps:
             process_name, src, src_res = prepare_step(step)
@@ -1077,15 +1098,7 @@ class WorkflowTask:
                     Log.Warn(f"unexpected plural groupby instance refernce for [{step.transform.name}:{step.transform.group_by}]: [{_inst}]")
                 _inst = _inst[0]
                 gb = _inst.dtype.key
-                symbol_parts = []
-                for x in used_archetypes:
-                    key = x.dtype.key
-                    if key in fork_next_index:
-                        symbol_parts.append(f"_{key}_{fork_next_index[key]}")
-                        fork_next_index[key] += 1
-                    else:
-                        symbol_parts.append(f"_{key}")
-                using_symbols = ", ".join(symbol_parts)
+                using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
                 used = f"o.group('{gb}', [{using_symbols}], k, {step.transform.batch_size})"
             else:
                 used = ""
@@ -1095,15 +1108,6 @@ class WorkflowTask:
             wf_main.append(
                 f"({produced}) = o.post([*{process_name}({used})], k)"
             )
-            # Emit multiMap fork code for any produced symbols that are multi-use
-            for sname in produced_snames:
-                if sname in fork_next_index and sname not in fork_emitted:
-                    count = stream_group_usage[sname]
-                    branches = "; ".join(f"f{i}: item" for i in range(count))
-                    wf_main.append(f"def _{sname}_forks = _{sname}[1].multiMap {{ item -> {branches} }}")
-                    for i in range(count):
-                        wf_main.append(f"_{sname}_{i} = [_{sname}[0], _{sname}_forks.f{i}]")
-                    fork_emitted.add(sname)
             if step.order in final_steps_for_merging:
                 for e in final_steps_for_merging[step.order]:
                     names = to_merge_names[e]
@@ -1112,15 +1116,7 @@ class WorkflowTask:
                     wf_main.append(
                         f"_{name} = o.mix([{', '.join(to_mix)}])"
                     )
-                    # Emit multiMap fork code for mixed symbols that are multi-use
-                    if name in fork_next_index and name not in fork_emitted:
-                        count = stream_group_usage[name]
-                        branches = "; ".join(f"f{i}: item" for i in range(count))
-                        wf_main.append(f"def _{name}_forks = _{name}[1].multiMap {{ item -> {branches} }}")
-                        for i in range(count):
-                            wf_main.append(f"_{name}_{i} = [_{name}[0], _{name}_forks.f{i}]")
-                        fork_emitted.add(name)
-            
+
             to_pubish = [x for g in produced_archetypes for x in g if x.dtype in target_endpoints]
             for inst in to_pubish:
                 k = inst.dtype.key
@@ -1160,29 +1156,17 @@ class WorkflowTask:
                 TAB+"}",
             ]
             
-        # Generate fork lines for postIn-produced streams
-        postin_fork_lines = []
-        for _, v, _ in prepared_given:
-            if v in fork_next_index and v not in fork_emitted:
-                count = stream_group_usage[v]
-                branches = "; ".join(f"f{i}: item" for i in range(count))
-                postin_fork_lines.append(f"def _{v}_forks = _{v}[1].multiMap {{ item -> {branches} }}")
-                for i in range(count):
-                    postin_fork_lines.append(f"_{v}_{i} = [_{v}[0], _{v}_forks.f{i}]")
-                fork_emitted.add(v)
-
         content = [
             f"workflow"+" {",
             "main:",
             f'o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy',
-            f'l = new JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
-        ] + [
-            f'o.child2parent["{k}"] = ([{", ".join(f'"{x}"' for x in vset)}] as Set)'
-            for k, vset in given_lineage_by_keys.items()
+            f'_lf = new JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
+            f'l = _lf.lineage',
+            f'o.seedParents(_lf.child2parent)',
         ] + [
             f'(_{v}) = o.postIn([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]) // {n}'
             for p, v, n in prepared_given # this must be (and is) sorted in lineage order
-        ] + postin_fork_lines + [
+        ] + [
             line for line in wf_main
         ] + [
             "",

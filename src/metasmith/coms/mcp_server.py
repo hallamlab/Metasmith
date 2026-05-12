@@ -442,7 +442,7 @@ async def plan_workflow(
     else:
         plan = gen_result
         task = WorkflowTask(
-            ok=True, plan=plan,
+            ok=len(plan.dropped_targets) == 0, plan=plan,
             data_libraries=[data_lib] + res_libs,
             transform_libraries=tr_libs,
         )

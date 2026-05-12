@@ -420,7 +420,8 @@ class Agent:
             return WorkflowTask(ok=False, plan=WorkflowPlan(given=[], targets=[], steps=[], _solver_result=gen_result))
         else:
             orig_resources = [lib if isinstance(lib, DataInstanceLibrary) else lib._original for lib in resources]
-            return WorkflowTask(ok=True, plan=gen_result, data_libraries=list(sample_libs)+orig_resources,transform_libraries=transforms)
+            _ok = len(gen_result.dropped_targets) == 0
+            return WorkflowTask(ok=_ok, plan=gen_result, data_libraries=list(sample_libs)+orig_resources,transform_libraries=transforms)
 
     def _get_mock_container(self, task: WorkflowTask):
         binds = task.GetCommonInputFolders(method="external")
@@ -434,7 +435,7 @@ class Agent:
         )
         return mock
 
-    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", verify_external_paths: bool=False):
+    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "update", verify_external_paths: bool=False):
         VALID_ON_EXIST = {"skip", "error", "clear", "update", "update_workflow", "update_data"}
         assert on_exist in VALID_ON_EXIST, f"on_exist option [{on_exist}] is not one of {VALID_ON_EXIST}"
         Log.Info(f"staging workflow [{task.GetKey()}]")
@@ -866,7 +867,13 @@ def CollectResults(
     relavent_k = {k for k, v in kv2path}
     given_manifest = []
     todo = dict(enumerate(kv2path.items()))
+    prev_len = len(todo) + 1
     while len(todo)>0:
+        if len(todo) == prev_len:
+            for i, ((ck, cv), (path, lineage, cinst_id)) in todo.items():
+                Log.Warn(f"dropping entry with unresolvable lineage: [{ck}] path=[{path}]")
+            break
+        prev_len = len(todo)
         to_del = []
         for i, ((ck, cv), (path, lineage, cinst_id)) in todo.items():
             cinst = _resolve_instance(ck, cinst_id)
@@ -1020,7 +1027,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
                 -lib ./lib \
                 -ansi-log false \
                 -resume \
-                -work-dir ./nxf_work &
+                -work-dir {AgentPaths.WORK_ROOT}/nxf_work &
             PID=$!
             echo "nextflow PID is [$PID]"
             echo $PID >$PIDF

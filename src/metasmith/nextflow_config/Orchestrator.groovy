@@ -13,6 +13,12 @@ class Orchestrator {
         this.one_null = one_null
     }
 
+    public void seedParents(Map data) {
+        data.each { k, parents ->
+            this.child2parent[k] = (parents as Set)
+        }
+    }
+
     private synchronized def registerPendingTarget(String target, Map index) {
         // println("  <<ADD $target // $index")
         def pending_targets = this.pending_tasks.get(target, [] as Set) // this also sets if not exist
