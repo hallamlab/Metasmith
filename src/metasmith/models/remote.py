@@ -224,6 +224,21 @@ class Source:
         return GlobusSource.Parse(address=url).AsSource()
     
     @classmethod
+    def Parse(cls, uri: str) -> Source:
+        """Parse a URI string into a Source. Supports ssh://, http(s)://, globus://, and local paths."""
+        if uri.startswith("ssh://"):
+            parts = uri[6:].split("/", 1)
+            host = parts[0]
+            path = "/" + (parts[1] if len(parts) > 1 else "")
+            return cls.FromSsh(host, path)
+        elif uri.startswith("globus://") or "app.globus.org" in uri:
+            return cls.FromGlobus(uri)
+        elif uri.startswith("http://") or uri.startswith("https://"):
+            return cls.FromHttp(uri)
+        else:
+            return cls.FromLocal(uri)
+
+    @classmethod
     def Unpack(cls, d: dict):
         return cls(
             address=d["address"],

@@ -23,8 +23,8 @@ class Container:
         image = self.image
         if self.runtime == ContainerRuntime.DOCKER:
             DOCKER_DOMAIN = "docker://"
-            assert self.image.startswith(DOCKER_DOMAIN), f"can't use non-docker image [{self.image}] with docker runtime"
-            image = image.replace(DOCKER_DOMAIN, "")
+            if image.startswith(DOCKER_DOMAIN):
+                image = image.replace(DOCKER_DOMAIN, "")
         return image
 
     def GetLocalPath(self):
@@ -69,8 +69,8 @@ class Container:
                 workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ''
                 run = 'run'
             case ContainerRuntime.APPTAINER:
-                others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}']
-                workdir = f'--workdir "{self.workdir}"' if self.workdir is not None else ''
+                others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}', '--env OPENBLAS_NUM_THREADS=1', '--env OMP_NUM_THREADS=1']
+                workdir = f'--pwd "{self.workdir}"' if self.workdir is not None else ''
                 binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
                 if not isinstance(local, bool):
                     image = local

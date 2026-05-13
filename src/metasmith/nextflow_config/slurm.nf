@@ -27,6 +27,8 @@ params {
     }
 }
 
+cleanup = true                          // remove work dirs of completed tasks to save disk/inodes
+nextflow.cache.db.type = 'rocksdb'
 filePorter.maxThreads = 2
 report.overwrite = true
 timeline.overwrite = true
@@ -37,6 +39,8 @@ env {
     NUMBA_CACHE_DIR = './temp/numba_cache'
     MPLCONFIGDIR = './temp/matplotlib'
     XDG_CACHE_HOME = './temp/xdg_home'
+    OPENBLAS_NUM_THREADS = 1
+    OMP_NUM_THREADS = 1
 }
 
 // report file path is dynamic, so needs to be passed in as argument at runtime
@@ -70,7 +74,7 @@ workflow {
     output {
         enabled = true
         ignoreErrors = false
-        mode = 'rellink'
+        mode = 'copy'
     }
 }
 
@@ -105,6 +109,8 @@ process {
 
     withLabel: 'xlocalx' {
         executor = 'local'
+        array = 0                           // local executor does not support job arrays
+        scratch = false                     // login node doesn't have SLURM_TMPDIR
         errorStrategy = 'ignore'            // no retry when local
     }
 }

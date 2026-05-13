@@ -13,6 +13,12 @@ class Orchestrator {
         this.one_null = one_null
     }
 
+    public void seedParents(Map data) {
+        data.each { k, parents ->
+            this.child2parent[k] = (parents as Set)
+        }
+    }
+
     private synchronized def registerPendingTarget(String target, Map index) {
         // println("  <<ADD $target // $index")
         def pending_targets = this.pending_tasks.get(target, [] as Set) // this also sets if not exist
@@ -192,17 +198,9 @@ class Orchestrator {
             }
             // else not parent...
 
-            // The following enables groups to be emitted immediately when ready.
-            // As tasks are queued, they are added to a pending list via ${using()}
-            // and promise a named output stream.
-            // As tasks complete, a history of completed items (by index) is stored
-            // via ${post()}.
-            // When there are no more pending tasks that may create an item with 
-            // the relavent groupby ($by) value, the size of each group can be calculated
-            // using $index_history.
-            // Here, we buffer each item in $pending_groups until the group size matches
-            // the expected size calculated from $index_history.
-            // $flatMap enables remainders to be emmitted at end
+            // Buffer non-parent items by group key and emit only when the stream
+            // closes. Emitting early from transient index_history snapshots can
+            // split a single logical group into multiple partial groups.
             def pending_groups = [:]
             return _stream.concat(this.one_null)
             .flatMap((item) -> {
@@ -219,24 +217,7 @@ class Orchestrator {
                     def group = pending_groups.get(group_k, [])
                     group.add(new Tuple2(index, value))
                     pending_groups[group_k] = group
-
-                    // check at most N for every item finished in this stream
-                    // and emit if complete, letting it "catch up" by N-1
-                    // without this limit, all items from pending_groups may be checked
-                    // which is something like O(n^2) vs the size of this stream?
-                    def N = 2
-                    def to_check = pending_groups.keySet().findAll(k -> k!=group_k).take(N-1) + [group_k]
-                    return to_check.collect(key -> {
-                        def candidate_group = pending_groups[key]
-                        def (size_valid, expected_size) = this.getExpectedSize(by_name, name, key)
-                        if (size_valid && expected_size>0 && candidate_group.size()>=expected_size) {
-                            pending_groups.remove(key)
-                            return new Tuple3(key, name, candidate_group)
-                        } else {
-                            return null
-                        }
-                    })
-                    .findAll(x -> x!=null)
+                    return []
                 }
             })
             .map(x -> [x]) // see combine() below
@@ -254,10 +235,14 @@ class Orchestrator {
             return result
             .combine(channel)
             .filter((_result) -> {
-                return _result
+                def keys = _result
                 .collect(x -> x[0])
                 .findAll(x -> x!=null)
-                .unique().size()==1
+                if (keys.size()==0) return true
+                // use intersection instead of equality to handle aggregate-then-distribute patterns
+                // where a merged item carries all sample hashes but each individual item carries only its own
+                def common = keys.inject(keys[0] as Set, (acc, k) -> acc.intersect(k as Set))
+                return common.size() > 0
             })
         })
         // .view(v -> by_name=='b'? "^ $v" : null)
@@ -284,10 +269,10 @@ class Orchestrator {
         // return proc(channel)
         return channel.collate(size).map(batch -> {
             def streams = batch.collect(item -> {
-                def index = item[0]
+                def index = [:]+item[0] // copy to avoid mutating the map stored in pending_tasks
                 def values = item[1..-1]
-                index['FILES'] = values.collect(path -> path.name)
-                return item
+                index['FILES'] = values.collect(group -> group*.toString())
+                return [index, *values]
             }).transpose()
             def indexes = streams[0]
             // careful, this unique() could remove real file collisions as well!
@@ -307,12 +292,17 @@ class Orchestrator {
             return stream.flatMap((indexes, bag) -> {
                 // since process was batched, bag is a mix of groups and batches
                 // while index is a list of indexes
-                indexes = (indexes instanceof List)? indexes : [indexes]
+                def is_batched = indexes instanceof List
+                indexes = is_batched ? indexes : [indexes]
                 indexes = indexes.collect(index -> {
                     index.remove('FILES')
                     return index
                 })
                 bag = (bag instanceof List)? bag : [bag]
+                if (!is_batched) {
+                    // Non-batched: return the single item directly without numeric-prefix parsing
+                    return [new Tuple2(indexes[0], bag.size() == 1 ? bag[0] : bag)]
+                }
                 def batches = bag.groupBy(path -> {
                     return (path.name.split('-', 2)[0] as Integer) - 1
                 })

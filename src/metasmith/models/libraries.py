@@ -179,14 +179,32 @@ class DataInstance:
     def __hash__(self) -> int:
         return self._hash
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, DataInstance) and self.instance_id == other.instance_id
+
     def RecalculateKey(self):
-        self._hash, self._key = KeyGenerator.FromStr("".join([
+        self._hash, self.instance_id = KeyGenerator.FromStr("".join([
+            str(self.path),
+            self.dtype_name,
+            self.parent_lib.GetKey(),
+        ]), l=10)
+        # Legacy typed key is kept for backward compatibility when reading old
+        # task serializations that referenced DataInstances by the old key.
+        _, self.legacy_key = KeyGenerator.FromStr("".join([
             str(self.path),
             self.dtype.key,
             self.dtype_name,
-            # self.parent_lib.GetKey(),
         ]), l=8)
+        self._key = self.instance_id
         return self._key
+
+    def WithDType(self, dtype: Endpoint, dtype_name: str | None = None):
+        return self.__class__(
+            path=self.path,
+            dtype=dtype,
+            dtype_name=self.dtype_name if dtype_name is None else dtype_name,
+            parent_lib=self.parent_lib,
+        )
 
     def GetDataType(self) -> tuple[str, str]:
         ns, name = self.dtype_name.split("::")
@@ -204,6 +222,7 @@ class DataInstance:
             type=f"{self.parent_lib.GetKey()}::{self.dtype_name}",
             # type=f"{self.dtype_name}",
             type_id=self.dtype.key,
+            instance_id=self.instance_id,
         )
 
     @classmethod
@@ -212,12 +231,18 @@ class DataInstance:
         lib = libraries[lib_key]
         dtype = lib.types[namespace][dtype_name]
 
-        return cls(
+        inst = cls(
             path=Path(raw["path"]),
             dtype=dtype,
             dtype_name=f"{namespace}::{dtype_name}",
             parent_lib=lib,
         )
+        if "instance_id" in raw:
+            # Preserve compatibility with newer serializations.
+            inst.instance_id = raw["instance_id"]
+            inst._key = inst.instance_id
+            inst._hash, _ = KeyGenerator.FromStr(inst.instance_id, l=10)
+        return inst
 
 class DataInstanceLibrary:
     schema: str = "v1"
@@ -239,6 +264,7 @@ class DataInstanceLibrary:
         self._dtype2name = {}
         self.remote_src: Source|None = None
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
+        self._endpoint_cache: dict[Path, Endpoint] = {}
         if isinstance(location, DataInstanceLibrary):
             other = location
             self.location = other.location
@@ -261,6 +287,9 @@ class DataInstanceLibrary:
         self.location.mkdir(exist_ok=True)
 
     def AddTypeLibrary(self, lib: DataTypeLibrary|Source|Path|str, namespace: str|None=None, on_exist: str="skip"):
+        # Auto-detect swapped args: AddTypeLibrary("name", DataTypeLibrary(...))
+        if isinstance(lib, str) and isinstance(namespace, DataTypeLibrary):
+            lib, namespace = namespace, lib
         assert on_exist in {"skip", "error", "overwrite"}
         if isinstance(lib, Path) or isinstance(lib, str):
             lib = Source.FromLocal(lib)
@@ -311,8 +340,36 @@ class DataInstanceLibrary:
         e_name = self.manifest[p]
         e = self.GetType(e_name)
         if p in self.parents:
-            e = Endpoint(e.properties, {x.dtype for x in self.parents[p]})
+            # Build parent endpoints with their own lineage chains
+            parent_endpoints = set()
+            for parent_meta in self.parents[p]:
+                parent_ep = self._build_endpoint_with_lineage(parent_meta.path)
+                parent_endpoints.add(parent_ep)
+            e = Endpoint(e.properties, parent_endpoints)
         return DataInstance(p, e, e_name, self)
+
+    def _build_endpoint_with_lineage(self, path: Path, _seen: set[Path] | None = None) -> Endpoint:
+        """Recursively build an endpoint with its full parent chain."""
+        if _seen is None:
+            _seen = set()
+        if path in _seen:
+            # Avoid infinite recursion
+            e_name = self.manifest[path]
+            return self.GetType(e_name)
+        if path in self._endpoint_cache:
+            return self._endpoint_cache[path]
+        _seen.add(path)
+
+        e_name = self.manifest[path]
+        e = self.GetType(e_name)
+        if path in self.parents:
+            parent_endpoints = set()
+            for parent_meta in self.parents[path]:
+                parent_ep = self._build_endpoint_with_lineage(parent_meta.path, _seen)
+                parent_endpoints.add(parent_ep)
+            e = Endpoint(e.properties, parent_endpoints)
+        self._endpoint_cache[path] = e
+        return e
 
     def GetType(self, name: str):
         e = self._get_type(name, self.types)
@@ -350,10 +407,90 @@ class DataInstanceLibrary:
                 model = self.GetType(name)
                 return any(model.IsA(e) for e in _wl)
 
+        def _get_all_ancestors(path: Path) -> set[Path]:
+            """Recursively collect all ancestor paths."""
+            ancestors = set()
+            to_check = [path]
+            while to_check:
+                current = to_check.pop()
+                for p in self.parents.get(current, []):
+                    if p.path not in ancestors:
+                        ancestors.add(p.path)
+                        to_check.append(p.path)
+            return ancestors
+
+        # Build children_of reverse index once — O(N×P)
+        children_of: dict[Path, set[Path]] = {}
+        for item_path, parent_list in self.parents.items():
+            for pm in parent_list:
+                children_of.setdefault(pm.path, set()).add(item_path)
+
+        def _get_all_descendants(ancestor_paths: set[Path]) -> set[Path]:
+            """BFS down children_of index to find all descendants."""
+            descendants = set()
+            queue = list(ancestor_paths)
+            while queue:
+                current = queue.pop()
+                for child in children_of.get(current, set()):
+                    if child not in descendants:
+                        descendants.add(child)
+                        queue.append(child)
+            return descendants
+
+        _desc_cache: dict[frozenset[Path], set[Path]] = {}
+        _yielded_ancestors: set[frozenset[Path]] = set()
         for path, name in self.manifest.items():
             if not _accept(name): continue
-            _ps = {p.path for p in self.parents.get(path, [])}
-            yield DataInstanceLibraryView(original=self, mask={path}|_ps)
+            ancestors = _get_all_ancestors(path)
+            cache_key = frozenset(ancestors)
+            if cache_key not in _desc_cache:
+                _desc_cache[cache_key] = _get_all_descendants(ancestors | {path})
+            siblings = _desc_cache[cache_key]
+            # When path is already in siblings (shared-parent topology),
+            # the mask is identical for all items with the same ancestors.
+            # Yield only unique masks to avoid O(n^2) downstream.
+            if path in siblings and cache_key in _yielded_ancestors:
+                continue
+            _yielded_ancestors.add(cache_key)
+            yield DataInstanceLibraryView(original=self, mask={path} | ancestors | siblings)
+
+    def Trace(self, from_type: str, to_type: str):
+        """Trace lineage relationships between data types.
+
+        Yields (from_instance, to_instance) pairs where from_instance is of
+        from_type and to_instance is of to_type, connected through lineage.
+        Works in both directions: ancestor (follow parents) and descendant
+        (reverse lookup).
+
+        Args:
+            from_type: Source data type name (e.g. "mock::assembly")
+            to_type: Target data type name (e.g. "mock::reads")
+
+        Yields:
+            Tuple of (DataInstance, DataInstance) pairs
+        """
+        # Build reverse index: path -> list of paths that have it as ancestor
+        children_of: dict[Path, list[Path]] = {}
+        for path, parents_list in self.parents.items():
+            for p in parents_list:
+                children_of.setdefault(p.path, []).append(path)
+
+        for from_path, from_name in self.manifest.items():
+            if from_name != from_type:
+                continue
+            from_inst = self.Get(from_path)
+
+            # Check ancestors (to_type is an ancestor of from_type)
+            for parent_meta in self.parents.get(from_path, []):
+                if parent_meta.name == to_type:
+                    to_inst = self.Get(parent_meta.path)
+                    yield (from_inst, to_inst)
+
+            # Check descendants (to_type is a descendant of from_type)
+            for child_path in children_of.get(from_path, []):
+                if self.manifest.get(child_path) == to_type:
+                    to_inst = self.Get(child_path)
+                    yield (from_inst, to_inst)
 
     def AddItem(self, path: Path|str, dtype: str, parents: Iterable[Path]|None=None):
         if parents is None:
@@ -367,6 +504,7 @@ class DataInstanceLibrary:
         type_model = self.GetType(dtype) # check if datatype exists
         self.manifest[path] = dtype
         self.AddParentsTo(path, [self.Get(p) for p in parents])
+        self._invalidate_endpoint_cache()
         return path
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
@@ -378,6 +516,9 @@ class DataInstanceLibrary:
             f.write(value)
         return path
 
+    def _invalidate_endpoint_cache(self):
+        self._endpoint_cache.clear()
+
     def Remove(self, path: Path):
         assert path in self.manifest, f"not found [{path}]"
         try:
@@ -386,10 +527,11 @@ class DataInstanceLibrary:
             del self.manifest[K]
         except RuntimeError:
             assert False, f"can not make changes while iterating library"
-        
+
         del self.manifest[path]
         if path in self.parents:
             del self.parents[path]
+        self._invalidate_endpoint_cache()
 
     def Rename(self, path: Path, new: Path, _save=True):
         """
@@ -419,7 +561,88 @@ class DataInstanceLibrary:
         if path in self.parents:
             self.parents[new] = self.parents[path]
             del self.parents[path]
+        self._invalidate_endpoint_cache()
         if _save: self.Save()
+
+    def RenameByParent(self, parent_type: str):
+        """
+        Rename all items in the library based on the path stem of their parent of the given type.
+        Uses a transactional approach: plans all renames, executes filesystem moves, then commits manifest atomically.
+        """
+        # Phase A — Plan (read-only)
+        rename_plan: list[tuple[Path, Path]] = []  # (old_path, proposed_new_path)
+
+        for item_path, item_type in self.manifest.items():
+            if item_type == parent_type:
+                continue
+            if item_path not in self.parents:
+                continue
+            matching_parents = [p for p in self.parents[item_path] if p.name == parent_type]
+            if not matching_parents:
+                continue
+            matching_parents.sort(key=lambda p: str(p.path))
+            parent = matching_parents[0]
+            new_path = item_path.parent / (parent.path.stem + item_path.suffix)
+            rename_plan.append((item_path, new_path))
+
+        # Detect collisions: group by (directory, new_filename)
+        # Also account for non-renamed items that occupy target paths
+        renamed_old_paths = {old for old, _ in rename_plan}
+        occupied_paths = {p for p in self.manifest if p not in renamed_old_paths}
+        final_plan: list[tuple[Path, Path]] = []
+        seen: dict[Path, list[int]] = {}  # new_path -> list of indices in rename_plan
+        for i, (old, new) in enumerate(rename_plan):
+            seen.setdefault(new, []).append(i)
+
+        for new_path, indices in seen.items():
+            needs_hash = len(indices) > 1 or new_path in occupied_paths
+            for idx in indices:
+                old, proposed = rename_plan[idx]
+                if needs_hash:
+                    _, hash_str = KeyGenerator.FromStr(str(old), l=8)
+                    final_new = old.parent / (proposed.stem + "_" + hash_str + proposed.suffix)
+                else:
+                    final_new = proposed
+                if old != final_new:
+                    final_plan.append((old, final_new))
+
+        if not final_plan:
+            return
+
+        # Execute filesystem moves
+        completed: list[tuple[Path, Path]] = []
+        try:
+            for old, new in final_plan:
+                abs_old = old if old.is_absolute() else self.location / old
+                abs_new = new if new.is_absolute() else self.location / new
+                abs_new.parent.mkdir(parents=True, exist_ok=True)
+                abs_old.rename(abs_new)
+                completed.append((old, new))
+        except Exception:
+            # Rollback: move completed renames back to originals
+            for orig, renamed in completed:
+                abs_renamed = renamed if renamed.is_absolute() else self.location / renamed
+                abs_orig = orig if orig.is_absolute() else self.location / orig
+                if abs_renamed.exists():
+                    abs_renamed.rename(abs_orig)
+            raise
+
+        # Commit manifest atomically — two-phase for O(N×P) instead of O(R×N×P)
+        old_to_new = {old: new for old, new in final_plan}
+        # Phase 1: Move manifest and parents keys
+        for old, new in final_plan:
+            self.manifest[new] = self.manifest[old]
+            del self.manifest[old]
+            if old in self.parents:
+                self.parents[new] = self.parents[old]
+                del self.parents[old]
+        # Phase 2: Single pass to update all parent references
+        for parent_list in self.parents.values():
+            for pm in parent_list:
+                if pm.path in old_to_new:
+                    pm.path = old_to_new[pm.path]
+        self._invalidate_endpoint_cache()
+        self.Save()
 
     def AddParentsTo(self, path: Path|str, parents: Iterable[DataInstance]):
         if all(False for _ in parents):
@@ -431,11 +654,15 @@ class DataInstanceLibrary:
             return f"{d.parent_lib.GetKey()}/{d.path}"
         current += [self.ParentMetadata(p.dtype, p.dtype_name, p.parent_lib.GetKey(), p.path) for p in parents if _get_k(p) not in seen]
         self.parents[p] = current
+        self._invalidate_endpoint_cache()
 
-    def _calculate_key(self):
-        me_d = self.Pack()
-        for k in ["remote_src"]:
-            if k in me_d: del me_d[k]
+    def _calculate_key(self, _raw_override=None):
+        if _raw_override is not None:
+            me_d = {k: v for k, v in _raw_override.items() if k != "remote_src"}
+        else:
+            me_d = self.Pack()
+            for k in ["remote_src"]:
+                if k in me_d: del me_d[k]
         me = yaml.dump(me_d)
         self._hash, self._key = KeyGenerator.FromStr(me, l=12)
         return self._key
@@ -511,25 +738,45 @@ class DataInstanceLibrary:
         lib.manifest = manifest
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
+        # First pass: Build immediate parents for all items
         for k, v in raw["manifest"].items():
             parents: dict[Path, DataInstanceLibrary.ParentMetadata] = {}
-            for p_path, p_name in v.get("parents", {}).items():
-                for gp in lib.parents.get(p_path, []):
-                    # each entry should have the aggregated parents, so this should be sufficient
-                    # as in, gp also contains great gp and older.
-                    parents[gp.path] = gp
+            for p_key, p_name in v.get("parents", {}).items():
+                lib_key, p_path_str = p_key.split("@", maxsplit=1)
+                p_path = Path(p_path_str)
                 namespace, dtype_name = p_name.split("::")
                 _lib = dtypes[namespace]
                 dtype = _lib.types[dtype_name]
-                lib_key, p_path = p_path.split("@", maxsplit=1)
-                p_path = Path(p_path)
                 parents[p_path] = DataInstanceLibrary.ParentMetadata(
                     dtype=dtype,
                     name=p_name,
                     library_key=lib_key,
                     path=p_path,
                 )
-            if len(parents)>0: lib.parents[Path(k)] = [p for p in parents.values()]
+            if len(parents) > 0:
+                lib.parents[Path(k)] = list(parents.values())
+
+        # Second pass: Memoized transitive closure for full ancestor aggregation
+        ancestor_cache: dict[Path, dict[Path, DataInstanceLibrary.ParentMetadata]] = {}
+
+        def _get_all_ancestors(k_path: Path) -> dict[Path, DataInstanceLibrary.ParentMetadata]:
+            if k_path in ancestor_cache:
+                return ancestor_cache[k_path]
+            ancestors: dict[Path, DataInstanceLibrary.ParentMetadata] = {}
+            for p in lib.parents.get(k_path, []):
+                ancestors[p.path] = p
+                for gp_path, gp in _get_all_ancestors(p.path).items():
+                    if gp_path not in ancestors:
+                        ancestors[gp_path] = gp
+            ancestor_cache[k_path] = ancestors
+            return ancestors
+
+        for k in raw["manifest"].keys():
+            k_path = Path(k)
+            if k_path not in lib.parents:
+                continue
+            lib.parents[k_path] = list(_get_all_ancestors(k_path).values())
+
         return lib
 
     def Save(self, update_types=True):
@@ -569,7 +816,7 @@ class DataInstanceLibrary:
         d = yaml_safe_load(index_path)
         self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
-        self._calculate_key()
+        self._calculate_key(_raw_override=d)
         return self
 
     def PrepTransfer(self, dest: Source, mover: Logistics|None=None):
@@ -705,6 +952,12 @@ class DataInstanceLibraryView:
             mask = oset-mask
         self._original = original
         self._mask = mask
+
+    @property
+    def _mask_key(self) -> frozenset[Path]:
+        if not hasattr(self, '_cached_mask_key'):
+            self._cached_mask_key = frozenset(self._mask)
+        return self._cached_mask_key
 
     def Get(self, path: str|Path):
         p = Path(path)
@@ -1036,28 +1289,29 @@ class ExecutionContext:
             image_path = str(path.external)
     
         _binds: list[tuple[Path, Path]] = []
-        for _, v in list(self._inputs[self._batch_index].items()):
-            for p in v.input_group:
-                if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
-                src = p.external.parent
-                if not p.container.is_absolute():
-                    dest = src
-                else:
-                    dest = p.container.parent
-                if not src.is_absolute() or not dest.is_absolute(): continue
+        for batch_item in self._inputs:
+            for _, v in list(batch_item.items()):
+                for p in v.input_group:
+                    if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
+                    src = p.external.parent
+                    if not p.container.is_absolute():
+                        dest = src
+                    else:
+                        dest = p.container.parent
+                    if not src.is_absolute() or not dest.is_absolute(): continue
 
-                found = False
-                for i, (a, b) in enumerate(_binds):
-                    ac = Path(os.path.commonpath([a, src]))
-                    bc = Path(os.path.commonpath([b, dest]))
-                    THRES = 3 # '/', '1', '2' >> /1/2
-                    if len(ac.parts)>=THRES:
-                        found = True
-                        break
-                if found:
-                    _binds[i] = ac, bc
-                else:
-                    _binds.append((src, dest))
+                    found = False
+                    for i, (a, b) in enumerate(_binds):
+                        ac = Path(os.path.commonpath([a, src]))
+                        bc = Path(os.path.commonpath([b, dest]))
+                        THRES = 3 # '/', '1', '2' >> /1/2
+                        if len(ac.parts)>=THRES:
+                            found = True
+                            break
+                    if found:
+                        _binds[i] = ac, bc
+                    else:
+                        _binds.append((src, dest))
         if binds is None: binds = []
         container_ws = Path("/ws")
         binds += [

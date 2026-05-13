@@ -241,7 +241,12 @@ class Application:
     _hash: int|None = None
     def Signature(self):
         if self._sig is None: 
-            self._sig = self.transform.key + "".join({self.used[p].key for p in self.transform.requires})
+            parts = []
+            for dep in self.transform.requires:
+                if dep not in self.used:
+                    continue
+                parts.append(f"{dep.key}:{self.used[dep].key}")
+            self._sig = self.transform.key + "|" + "|".join(parts)
         return self._sig
     def __hash__(self) -> int:
         if self._hash is None:
@@ -249,7 +254,7 @@ class Application:
         return self._hash
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Application): return False
-        return self._hash == value._hash
+        return self.Signature() == value.Signature()
 
 @dataclass
 class RefinerState:
@@ -361,6 +366,18 @@ def solve_by_mcts(
     # ---
     # monte carlo tree search
 
+    def _collect_all_ancestors(endpoints: set[Endpoint]) -> set[Endpoint]:
+        """Recursively collect all ancestors of the given endpoints."""
+        ancestors: set[Endpoint] = set()
+        todo = list(endpoints)
+        while todo:
+            ep = todo.pop()
+            for parent in ep.parents:
+                if parent not in ancestors:
+                    ancestors.add(parent)
+                    todo.append(parent)
+        return ancestors
+
     given_tr = Transform()
     given_appl = Application(initial_timeline=0, transform=given_tr, used={}, produced=[])
     inherent_parents: set[Endpoint] = set()
@@ -372,8 +389,13 @@ def solve_by_mcts(
         for e in group:
             d = given_tr.AddProduct(e)
             pgroup[d] = e
-            inherent_parents.update(e.parents) # type: ignore
         given_appl.produced.append(pgroup)
+        # Collect ALL ancestors, not just immediate parents
+        inherent_parents.update(_collect_all_ancestors(group))
+
+    given_endpoints: set[Endpoint] = set()
+    for pgroup in given_appl.produced:
+        given_endpoints.update(pgroup.values())
 
     _last_state_k = -1
     _state2child = {}
@@ -507,25 +529,31 @@ def solve_by_mcts(
             for parent in p.parents:
                 assert isinstance(parent, Dependency)
                 matched = used[parent]
-                # print(".   ", matched, e.parents, e)
                 if matched not in e.parents: return False
             return True
         
         def _find_endpoints(p: Dependency):
-            candidates: set[Endpoint] = set()
+            given_candidates: list[Endpoint] = []
+            produced_candidates: list[Endpoint] = []
             for product in demand2product.get(p, []):
                 if product not in production: continue
                 for e in production[product]:
                     assert e.IsA(p)
-                    candidates.add(e)
-            return candidates
+                    if e in given_endpoints:
+                        given_candidates.append(e)
+                    else:
+                        produced_candidates.append(e)
+            # Prefer given endpoints: if any are available, only use those
+            # This prevents transforms from re-producing data that's already given
+            if given_candidates:
+                return given_candidates
+            return produced_candidates
         
         # print("?  ", state.have)
         viable_input_sets: list[Application] = []
-        matches: dict[Dependency, set[Endpoint]] = {}
+        matches: dict[Dependency, list[Endpoint]] = {}
         for p in tr.requires:
             candidates = _find_endpoints(p)
-            # print("?  ", p, len(candidates))
             if len(candidates) == 0: return viable_input_sets # empty, for type def
             matches[p] = candidates
         # for k, v in matches.items():
@@ -557,7 +585,7 @@ def solve_by_mcts(
                 (next_i, e, used) for e in matches[tr.requires[next_i]]
             ]
         return viable_input_sets
-        
+
     # ---
     # prune spurious nodes, assumes last step is target
     def prune_steps(steps: list[Application]) -> list[Application]:

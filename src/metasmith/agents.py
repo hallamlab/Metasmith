@@ -8,6 +8,7 @@ from typing import Iterable, Literal
 import yaml
 import json
 import re
+from collections import deque
 from hashlib import md5
 import pandas as pd
 from glob import glob
@@ -29,13 +30,9 @@ class AgentShell:
     def __init__(self, agent: Agent):
         self.agent = agent
         self.shell = LiveShell()
-        self.paused_out = False
-        self.paused_err = False
         def _on_out(x: str):
-            if self.paused_out: return
             Log.Info(f"> {x}\x1b[0;m", timestamp=False) # to escape nextflow colours
         def _on_err(x: str):
-            if self.paused_err: return
             Log.Error(f"> {x}", timestamp=False)
         Log.Info(f"connecting to deployed agent")
         self.agent._run_setup(self.shell)
@@ -58,21 +55,6 @@ class AgentShell:
                 pass
         self.shell.__exit__(exc_type, exc_val, exc_tb)
 
-class PausedShell:
-    def __init__(self, shell: AgentShell, err=False):
-        self.shell = shell
-        self.originals = shell.paused_out, shell.paused_err
-        self.shell.paused_out = True
-        self.shell.paused_err = err
-
-    def __enter__(self):
-        return self.shell
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        oo, oe = self.originals
-        self.shell.paused_out = oo
-        self.shell.paused_err = oe
-
 class TargetBuilder:
     def __init__(self) -> None:
         self.targets: dict[str, set[str]] = {}
@@ -80,11 +62,30 @@ class TargetBuilder:
     def Add(self, target_type: str, parents: set[str]|None=None):
         if parents is None: parents = set()
         assert "::" in target_type, f'expected @type to in the form of "namespace::type_name" but got [{target_type}]'
-        for p in parents:
-            assert p in self.targets, f'[{p}] needs to be added before use as a parent'
         assert target_type not in self.targets, f'[{target_type}] already added'
         self.targets[target_type] = parents.copy()
         return target_type
+
+    def resolve(self) -> list[tuple[str, set[str]]]:
+        """Return targets in topological order (parents before children)."""
+        # Validate parent references
+        for dtype, parents in self.targets.items():
+            for p in parents:
+                assert p in self.targets, f'parent [{p}] of [{dtype}] was never added'
+        # Kahn's algorithm
+        in_degree = {k: len(v) for k, v in self.targets.items()}
+        queue = deque(k for k, d in in_degree.items() if d == 0)
+        result: list[tuple[str, set[str]]] = []
+        while queue:
+            node = queue.popleft()
+            result.append((node, self.targets[node]))
+            for k, parents in self.targets.items():
+                if node in parents:
+                    in_degree[k] -= 1
+                    if in_degree[k] == 0:
+                        queue.append(k)
+        assert len(result) == len(self.targets), f'cycle detected in target parents'
+        return result
 
 ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|str|TransformInstance, Resources]
 @dataclass
@@ -165,16 +166,9 @@ class Agent:
         Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}]")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
-            _paused = False
-            shell.RegisterOnOut(lambda x: (Log.Info(x) if not _paused else None))
-            shell.RegisterOnErr(lambda x: (Log.Error(x) if not _paused else None))
-            class PausedShell():
-                def __enter__(self):
-                    nonlocal _paused
-                    _paused = True
-                def __exit__(self, exc_type, exc_val, exc_tb):
-                    nonlocal _paused
-                    _paused = False
+            _quiet = False
+            shell.RegisterOnOut(lambda x: (Log.Info(x) if not _quiet else None))
+            shell.RegisterOnErr(lambda x: (Log.Error(x) if not _quiet else None))
 
             def do_step(cmd: str, display_cmd: str|None=None, timeout:float|None=15):
                 if display_cmd is not None: Log.Info(f">>> {display_cmd}")
@@ -211,22 +205,24 @@ class Agent:
                     Log.Error(e)
                 assert len(res.completed) == 1, f"failed to deploy files"
 
-            with PausedShell():
-                self._run_setup(shell)
-                _FLAG = "already exists"
-                res = shell.Exec(f'[[ -e "{self.home.GetPath()}" ]] && echo "{_FLAG}"', history=True)
-                if _FLAG in res.out and not assertive: 
-                    Log.Info(f"[{self.home.address}] already exists, use Deploy(assertive=True) to deploy anyways")
-                    return
+            _quiet = True
+            self._run_setup(shell)
+            _FLAG = "already exists"
+            res = shell.Exec(f'[[ -e "{self.home.GetPath()}" ]] && echo "{_FLAG}"', history=True)
+            if _FLAG in res.out and not assertive:
+                Log.Info(f"[{self.home.address}] already exists, use Deploy(assertive=True) to deploy anyways")
+                return
+            _quiet = False
 
             shell.Exec(f'mkdir -p "{self.home.GetPath()}"')
-            with PausedShell():
-                cmds = [
-                    f'realpath {self.home.GetPath()}',
-                    f'realpath ~',
-                    f'hostname',
-                ]
-                res = shell.Exec('\n'.join(cmds), history=True)
+            _quiet = True
+            cmds = [
+                f'realpath {self.home.GetPath()}',
+                f'realpath ~',
+                f'hostname',
+            ]
+            res = shell.Exec('\n'.join(cmds), history=True)
+            _quiet = False
             assert len(res.out)==len(cmds), res.out
             resolved_agent_home, resolved_home, hostname = [x.strip() for x in res.out]
             resolved_agent_home = Path(resolved_agent_home)
@@ -368,13 +364,18 @@ class Agent:
             Log.Info(f"deployed to [{self.home.address}]")
 
     def GenerateWorkflow(
-        self, 
+        self,
         samples: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         resources: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary],
-        targets: TargetBuilder,
+        targets: TargetBuilder | list[str],
         max_iter: int=1024, max_refine: int=256, seed: int=42,
     ):
+        if isinstance(targets, list):
+            tb = TargetBuilder()
+            for t in targets:
+                tb.Add(t)
+            targets = tb
         assert len(targets.targets)>0, "[targets] can not be empty"
         
         def _get_endpoint(dtype_name: str):
@@ -395,7 +396,7 @@ class Agent:
         target_model = Transform()
         _dtname2dep: dict[str, Dependency] = {}
         target_names: dict[Endpoint, str] = {}
-        for dtype_name, parents in targets.targets.items():
+        for dtype_name, parents in targets.resolve():
             e = _get_endpoint(dtype_name)
             assert e not in target_names, f"[{dtype_name}] is a duplicate of [{target_names[e]}]"
             d = target_model.AddRequirement(example=e, parents={_dtname2dep[p] for p in parents})
@@ -419,7 +420,8 @@ class Agent:
             return WorkflowTask(ok=False, plan=WorkflowPlan(given=[], targets=[], steps=[], _solver_result=gen_result))
         else:
             orig_resources = [lib if isinstance(lib, DataInstanceLibrary) else lib._original for lib in resources]
-            return WorkflowTask(ok=True, plan=gen_result, data_libraries=list(sample_libs)+orig_resources,transform_libraries=transforms)
+            _ok = len(gen_result.dropped_targets) == 0
+            return WorkflowTask(ok=_ok, plan=gen_result, data_libraries=list(sample_libs)+orig_resources,transform_libraries=transforms)
 
     def _get_mock_container(self, task: WorkflowTask):
         binds = task.GetCommonInputFolders(method="external")
@@ -433,7 +435,7 @@ class Agent:
         )
         return mock
 
-    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "skip", verify_external_paths: bool=False):
+    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "update", verify_external_paths: bool=False):
         VALID_ON_EXIST = {"skip", "error", "clear", "update", "update_workflow", "update_data"}
         assert on_exist in VALID_ON_EXIST, f"on_exist option [{on_exist}] is not one of {VALID_ON_EXIST}"
         Log.Info(f"staging workflow [{task.GetKey()}]")
@@ -442,31 +444,30 @@ class Agent:
         with agent_shell as sh_remote:
             remote_path = AgentPaths.to_task(task._key, root=self.home.GetPath())
             remote_work_path = remote_path.parent.parent
-            with PausedShell(agent_shell):
-                FLAG = "task already staged"
-                res = sh_remote.Exec(f'[ -e {remote_work_path} ] && echo "{FLAG}"', history=True)
-                if FLAG in res.out:
-                    _msg = f"task already staged at [{remote_work_path}]"
-                    if on_exist not in {"error"}:
-                        Log.Warn(_msg)
-                    match on_exist:
-                        case "error":
-                            raise FileExistsError(_msg)
-                        case "skip":
-                            return
-                        case "clear":
-                            Log.Warn(f"clearing previously staged task")
-                            _to_delete_src = remote_work_path
-                            _to_delete = _to_delete_src.with_suffix(".to_delete")
-                            sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
-                        case "update":
-                            Log.Warn(f"updating previously staged task")
-                        case "update_data":
-                            Log.Warn(f"resending data for previously staged task")
-                            task_stage_partial = "data_only"
-                        case "update_workflow":
-                            Log.Warn(f"recompiling workflow for previously staged task")
-                            task_stage_partial = "transforms_only"
+            FLAG = "task already staged"
+            res = sh_remote.Exec(f'[ -e {remote_work_path} ] && echo "{FLAG}"', history=True, quiet=True)
+            if FLAG in res.out:
+                _msg = f"task already staged at [{remote_work_path}]"
+                if on_exist not in {"error"}:
+                    Log.Warn(_msg)
+                match on_exist:
+                    case "error":
+                        raise FileExistsError(_msg)
+                    case "skip":
+                        return
+                    case "clear":
+                        Log.Warn(f"clearing previously staged task")
+                        _to_delete_src = remote_work_path
+                        _to_delete = _to_delete_src.with_suffix(".to_delete")
+                        sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
+                    case "update":
+                        Log.Warn(f"updating previously staged task")
+                    case "update_data":
+                        Log.Warn(f"resending data for previously staged task")
+                        task_stage_partial = "data_only"
+                    case "update_workflow":
+                        Log.Warn(f"recompiling workflow for previously staged task")
+                        task_stage_partial = "transforms_only"
 
             Log.Info(f"sending context for workflow [{task._key}]")
             task.SaveAs(self.home.ReplacePathWith(remote_path), partial=task_stage_partial)
@@ -507,8 +508,7 @@ class Agent:
             task_path = AgentPaths.to_task(task_key, root=self.home.GetPath())
             workspace = task_path.parent.parent
             FLAG = "workspace exists"
-            with PausedShell(agent_shell): # this syntax is confusing, need to fix
-                res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True)
+            res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True, quiet=True)
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
 
             Log.Info(f"sending config and params")
@@ -612,8 +612,7 @@ class Agent:
             agent_shell = AgentShell(self)
             with agent_shell as sh_remote:
                 FLAG = "results exist"
-                with PausedShell(agent_shell):
-                    res = sh_remote.Exec(f"[ -e {result_path} ] && echo '{FLAG}'", history=True)
+                res = sh_remote.Exec(f"[ -e {result_path} ] && echo '{FLAG}'", history=True, quiet=True)
                 assert FLAG in res.out, f"results not found at [{self.home.ReplacePathWith(result_path).address}]"
 
         if self.globus_uuid is not None and allow_globus:
@@ -635,7 +634,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     Log.Info(f"  [{len(task.transform_libraries)}] transform libraries")
     Log.Info(f"  [{len(task.plan.steps)}] total steps")
 
-    work_relative = AgentPaths.STAGED/task._key
+    work_relative = AgentPaths.STAGED/task_key
     work_dir = AgentPaths.WORK_ROOT/work_relative
     work_internals = work_dir/AgentPaths.INTERNALS
     data_dir = AgentPaths.to_data()
@@ -752,6 +751,8 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
             f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
             f'echo "start time was [$TIMESTAMP]"',
             f'export BINDS="{binds}"',
+            f'export OPENBLAS_NUM_THREADS=1',
+            f'export OMP_NUM_THREADS=1',
             f'nohup ../../msm api run_workflow -a key={task_key} host=$(hostname) log_dir=$LOG_DIR stub_delay=${{1:-0}} >$LOG_DIR/agent.log 2>&1 &',
         ]))
     os.chmod(launcher_path, 0o754)
@@ -760,6 +761,168 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     task.plan.RenderDAG(f"{work_dir}/workflow.dag.svg")
     Log.Info(f"[{task._key}] staged to [{workspace_str}]")
         
+def CollectResults(
+    task: WorkflowTask,
+    output_path: Path,
+    inputs_dir: Path,
+    manifests_path: Path,
+) -> DataInstanceLibrary:
+    """Compile Nextflow outputs into a DataInstanceLibrary with lineage.
+
+    Reads input manifests and output manifests produced by the Orchestrator,
+    reconstructs parent-child relationships, and returns the result library.
+
+    Args:
+        task: The workflow task that was executed.
+        output_path: Path to the results directory (where outputs live).
+        inputs_dir: Path to the inputs/ directory with input CSVs.
+        manifests_path: Path to the _manifests/ directory with JSON manifests.
+
+    Returns:
+        DataInstanceLibrary with all outputs and their lineage.
+    """
+    output = DataInstanceLibrary(output_path)
+    tlibs: dict[str, DataTypeLibrary] = {}
+    path2inst: dict[Path, DataInstance] = {}
+    for lib in task.transform_libraries:
+        for namespace, tlib in lib.types.items():
+            tlibs[namespace] = tlib
+    for lib in task.data_libraries:
+        for namespace, tlib in lib.types.items():
+            if namespace in tlibs:
+                _lib = tlibs[namespace]
+                for k, e in tlib.types.items():
+                    if k in _lib: continue
+                    _lib[k] = e
+            else:
+                _lib = tlib
+            tlibs[namespace] = _lib
+        for path, name, model in lib.Iterate():
+            inst = lib.Get(path)
+            path2inst[inst.ResolvePath()] = inst
+    for namespace, tlib in tlibs.items():
+        output.AddTypeLibrary(namespace=namespace, lib=tlib)
+    inst_id2inst: dict[str, DataInstance] = {}
+    dtype2insts: dict[str, list[DataInstance]] = {}
+    for inst in task.plan.given:
+        inst_id2inst[inst.instance_id] = inst
+        dtype2insts[inst.dtype.key] = dtype2insts.get(inst.dtype.key, []) + [inst]
+    for step in task.plan.steps:
+        for insts in step.dependency_map.values():
+            for inst in insts:
+                inst_id2inst[inst.instance_id] = inst
+                dtype2insts[inst.dtype.key] = dtype2insts.get(inst.dtype.key, []) + [inst]
+
+    collision_warned: set[str] = set()
+    def _resolve_instance(dtype_key: str, instance_id: str | None = None):
+        if instance_id is not None and instance_id in inst_id2inst:
+            return inst_id2inst[instance_id]
+        candidates = dtype2insts.get(dtype_key, [])
+        if len(candidates) == 0:
+            raise KeyError(f"missing DataInstance for key [{dtype_key}]")
+        if len(candidates) > 1 and dtype_key not in collision_warned:
+            collision_warned.add(dtype_key)
+            Log.Warn(f"multiple DataInstances share dtype key [{dtype_key}], using deterministic first candidate")
+        return sorted(candidates, key=lambda x: (x.dtype_name, x.instance_id, str(x.path)))[0]
+    # this is a mappping of the (k, v) assinged by the orchestrator during nextflow
+    kv2path: dict[tuple[str, int], tuple[Path, dict, str|None]] = {}
+    for in_manifest in inputs_dir.iterdir():
+        k = in_manifest.name
+        with open(in_manifest) as f:
+            for l in f:
+                p = Path(l[:-1])
+                _hash = md5(str(p).encode()).hexdigest()
+                _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
+                kv2path[(k, _hash)] = p, {}, None
+    for manifest in glob(str(manifests_path/"*")):
+        manifest = Path(manifest)
+        if manifest.suffix != ".json": continue
+        parts = manifest.name.split(".")
+        inst_id = None
+        if len(parts) >= 4:
+            inst_k = parts[-3]
+            inst_id = parts[-2]
+        else:
+            inst_k = parts[-2]
+        _parsed_entries = []
+        with open(manifest) as j:
+            entries = json.load(j)
+            for lin, path in entries:
+                try:
+                    path = Path(path)
+                    lind: dict = json.loads(lin)
+                    kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
+                    kv2path[kv] = path, lind, inst_id
+                    _parsed_entries.append({
+                        "instance_key": kv[0],
+                        "instance_index": kv[1],
+                        "instance_id": inst_id,
+                        "path": str(path.relative_to(output_path)),
+                        "lineage": lind,
+                    })
+                except Exception as e:
+                    Log.Error(e)
+        with open(manifest, "w") as j:
+            json.dump(_parsed_entries, j, indent=2)
+    relavent_k = {k for k, v in kv2path}
+    given_manifest = []
+    todo = dict(enumerate(kv2path.items()))
+    prev_len = len(todo) + 1
+    while len(todo)>0:
+        if len(todo) == prev_len:
+            for i, ((ck, cv), (path, lineage, cinst_id)) in todo.items():
+                Log.Warn(f"dropping entry with unresolvable lineage: [{ck}] path=[{path}]")
+            break
+        prev_len = len(todo)
+        to_del = []
+        for i, ((ck, cv), (path, lineage, cinst_id)) in todo.items():
+            cinst = _resolve_instance(ck, cinst_id)
+            if path.is_relative_to(output_path): # is output
+                parents = []
+                ok = True
+                for pk, pvs in lineage.items():
+                    if pk not in relavent_k: continue
+                    if pk == ck: continue
+                    for pv in pvs:
+                        k = (pk, pv)
+                        if k not in kv2path: continue # likely due to a merge between branches
+                        ppath, _, _ = kv2path[k]
+                        if ppath not in path2inst:
+                            ok = False
+                            break
+                        _inst = path2inst[ppath]
+                        _path = _inst.ResolvePath()
+                        parents.append((_path, _inst.dtype_name))
+                        if _path in output: continue
+                    if not ok: break
+                if not ok: continue
+                _parents = []
+                for _path, _name in parents:
+                    if _path not in output.manifest:
+                        output.AddItem(path=_path, dtype=_name)
+                    _parents.append(_path)
+                _path = path.relative_to(output_path)
+                _path = output.AddItem(
+                    path=_path,
+                    dtype=cinst.dtype_name,
+                    parents=_parents,
+                )
+                _inst = output.Get(_path)
+                _path = _inst.ResolvePath()
+                path2inst[_path] = _inst
+            else:
+                given_manifest.append((ck, cv, cinst.instance_id, cinst.dtype_name, path))
+            to_del.append(i)
+        assert len(to_del)>0
+        for i in to_del:
+            del todo[i]
+    output.PruneTypes(save=False)
+    output.Save()
+
+    _df = pd.DataFrame(given_manifest, columns="instance_key, instance_index, instance_id, type_name, path".split(", "))
+    _df.to_csv(manifests_path/"given.csv", index=False)
+    return output
+
 def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
@@ -845,7 +1008,9 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             export NXF_HOME=./.nextflow
             export NXF_ENABLE_VIRTUAL_THREADS=true
             export NXF_OFFLINE=TRUE # don't go online and search for latest version
-            export NXF_OPTS="-XX:ActiveProcessorCount=1" # precaution against "unable to create native thread"
+            export OPENBLAS_NUM_THREADS=1
+            export OMP_NUM_THREADS=1
+            export NXF_OPTS="-Xms2g -Xmx10g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
             nextflow \
                 -config ./{AgentPaths.NXF_RES} \
                 -config ./{AgentPaths.NXF_CONFIG} \
@@ -862,7 +1027,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
                 -lib ./lib \
                 -ansi-log false \
                 -resume \
-                -work-dir ./nxf_work &
+                -work-dir {AgentPaths.WORK_ROOT}/nxf_work &
             PID=$!
             echo "nextflow PID is [$PID]"
             echo $PID >$PIDF
@@ -908,120 +1073,15 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         Log.Warn(f"no report at [{nxf_report}]")
 
     Log.Info(f"compiling results")
-    extern_output_path = extern_workspace/results_folder
-    output = DataInstanceLibrary(output_path)
-    tlibs: dict[str, DataTypeLibrary] = {}
-    path2inst: dict[Path, DataInstance] = {}
-    for lib in task.transform_libraries:
-        for namespace, tlib in lib.types.items():
-            tlibs[namespace] = tlib
-    for lib in task.data_libraries:
-        for namespace, tlib in lib.types.items():
-            if namespace in tlibs:
-                _lib = tlibs[namespace]
-                for k, e in tlib.types.items():
-                    if k in _lib: continue
-                    _lib[k] = e
-            else:
-                _lib = tlib
-            tlibs[namespace] = _lib
-        for path, name, model in lib.Iterate():
-            inst = lib.Get(path)
-            path2inst[inst.ResolvePath()] = inst
-    for namespace, tlib in tlibs.items():
-        output.AddTypeLibrary(namespace=namespace, lib=tlib)
-    k2inst: dict[str, DataInstance] = {}
-    for step in task.plan.steps:
-        for insts in step.dependency_map.values():
-            for inst in insts:
-                k2inst[inst.dtype.key] = inst
-    # this is a mappping of the (k, v) assinged by the orchestrator during nextflow
-    kv2path: dict[tuple[str, int], tuple[Path, dict]] = {}
-    for in_manifest in (output_path.parent/"inputs").iterdir():
-        k = in_manifest.name
-        with open(in_manifest) as f:
-            for l in f:
-                p = Path(l[:-1])
-                _hash = md5(str(p).encode()).hexdigest()
-                _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
-                kv2path[(k, _hash)] = p, {}
-    for manifest in glob(str(manifests_path/"*")):
-        manifest = Path(manifest)
-        if manifest.suffix != ".json": continue
-        inst_k = manifest.name.split(".")[-2] # TAB+TAB+f"index {{ path 'msm_manifest.{out_name}.{inst.dtype.key}.raw' }}",
-        _parsed_entries = []
-        with open(manifest) as j:
-            entries = json.load(j)
-            for lin, path in entries:
-                try:
-                    path = Path(path)
-                    lind: dict = json.loads(lin)
-                    kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
-                    kv2path[kv] = path, lind
-                    _parsed_entries.append({
-                        "instance_key": kv[0],
-                        "instance_index": kv[1],
-                        "path": str(path.relative_to(output_path)),
-                        "lineage": lind,
-                    })
-                except Exception as e:
-                    Log.Error(e)
-        with open(manifest, "w") as j:
-            json.dump(_parsed_entries, j, indent=2)
-    relavent_k = {k for k, v in kv2path}
-    given_manifest = []
-    n_outputs = 0
-    todo = dict(enumerate(kv2path.items()))
-    while len(todo)>0:
-        to_del = []
-        for i, ((ck, cv), (path, lineage)) in todo.items():
-            cinst = k2inst[ck]
-            if path.is_relative_to(output_path): # is output
-                parents = []
-                ok = True
-                for pk, pvs in lineage.items():
-                    if pk not in relavent_k: continue
-                    if pk == ck: continue
-                    for pv in pvs:
-                        k = (pk, pv)
-                        if k not in kv2path: continue # likely due to a merge between branches
-                        ppath, _ = kv2path[k]
-                        if ppath not in path2inst:
-                            ok = False
-                            break
-                        _inst = path2inst[ppath]
-                        _path = _inst.ResolvePath()
-                        parents.append((_path, _inst.dtype_name))
-                        if _path in output: continue
-                    if not ok: break
-                if not ok: continue
-                _parents = []
-                for _path, _name in parents:
-                    if _path not in output.manifest:
-                        output.AddItem(path=_path, dtype=_name)
-                    _parents.append(_path)
-                n_outputs+=1
-                _path = path.relative_to(output_path)
-                _path = output.AddItem(
-                    path=_path,
-                    dtype=cinst.dtype_name,
-                    parents=_parents,
-                )
-                _inst = output.Get(_path)
-                _path = _inst.ResolvePath()
-                path2inst[_path] = _inst
-            else:
-                given_manifest.append((ck, cv, cinst.dtype_name, path))
-            to_del.append(i)
-        assert len(to_del)>0
-        for i in to_del:
-            del todo[i]
-    output.PruneTypes(save=False)
-    output.Save()
-        
-    _df = pd.DataFrame(given_manifest, columns="instance_key, instance_index, type_name, path".split(", "))
-    _df.to_csv(manifests_path/"given.csv", index=False)
+    output = CollectResults(
+        task=task,
+        output_path=output_path,
+        inputs_dir=output_path.parent/"inputs",
+        manifests_path=manifests_path,
+    )
+    n_outputs = sum(1 for p in output.manifest if Path(p).is_relative_to(output_path) or not Path(p).is_absolute())
     tail = output_path.relative_to(AgentPaths.HOME_ROOT)
+    extern_output_path = extern_workspace/results_folder
     external_results_path = extern_home/tail
     Log.Info(f"[{n_outputs}] outputs for [{key}] at [{external_results_path}]")
 
@@ -1067,39 +1127,56 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     latest_link.symlink_to(f"../../{log_dir}")
     Log.Info(f"run completed at [{StdTime.Timestamp()}]")
 
-def CheckWorkflow(key: str, index: int|None=None):
+def CheckWorkflow(key: str, index: int|None=None, quiet: bool=False) -> dict:
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
     assert workspace.exists(), f"task workspace not found [{workspace}], maybe it wasn't staged yet"
 
-    Log.Info(f"searching for logs")
     internals = workspace/AgentPaths.INTERNALS
     log_scan_result = list((internals).glob("logs.*"))
     log_dirs = [p for p in log_scan_result if "latest" not in p.name]
     log_dirs = sorted(log_dirs, key=lambda x: x.name)
+
+    result = {
+        "key": key,
+        "runs": [{"index": i+1, "name": d.name, "path": str(d)} for i, d in enumerate(log_dirs)],
+        "total_runs": len(log_dirs),
+        "selected_run": None,
+        "log_content": None,
+    }
+
     if len(log_dirs) == 0:
-        Log.Warn(f"no logs found for [{key}]")
-        return
-    Log.Info(f"found [{len(log_dirs)}] runs")
-    for i, log_entry in enumerate(log_dirs):
-        n_str = f"{i+1}"
-        Log.Info(f"{' '*(5-len(n_str))}{n_str}: [{log_entry.name}]")
+        if not quiet:
+            Log.Warn(f"no logs found for [{key}]")
+        return result
+
+    if not quiet:
+        Log.Info(f"found [{len(log_dirs)}] runs")
+        for i, log_entry in enumerate(log_dirs):
+            n_str = f"{i+1}"
+            Log.Info(f"{' '*(5-len(n_str))}{n_str}: [{log_entry.name}]")
 
     log_dir = log_dirs[-1]
+    selected_index = len(log_dirs)
     msg = f"here is the main log of the latest run [{log_dir.name}]"
     if index is not None:
         if index < 1 or index > len(log_dirs):
-            Log.Warn(f"index [{index}] out of range")
+            if not quiet:
+                Log.Warn(f"index [{index}] out of range")
         else:
             log_dir = log_dirs[index-1]
+            selected_index = index
             msg = f"here is the main log for run [{index}] [{log_dir.name}]"
 
-    Log.Info(msg)
-    Log.Info(f">"*len(msg))
-    Log.Info("")
-    
+    result["selected_run"] = {"index": selected_index, "name": log_dir.name, "path": str(workspace/log_dir)}
     with open(workspace/log_dir/AgentPaths.MAIN_LOG_FILE, "r") as f:
-        lines = f.readlines()
+        result["log_content"] = f.read()
+
+    if not quiet:
+        Log.Info(msg)
+        Log.Info(f">"*len(msg))
+        Log.Info("")
+        lines = result["log_content"].splitlines(keepends=True)
         MAXL = 1000
         HEAD = 20
         if len(lines)>1000:
@@ -1108,7 +1185,8 @@ def CheckWorkflow(key: str, index: int|None=None):
             print("".join(lines[-(MAXL-HEAD):]))
         else:
             print("".join(lines))
+        Log.Info("")
+        Log.Info(f"<"*len(msg))
+        Log.Info(f"log folder at [{workspace/log_dir}]")
 
-    Log.Info("")
-    Log.Info(f"<"*len(msg))
-    Log.Info(f"log folder at [{workspace/log_dir}]")
+    return result
