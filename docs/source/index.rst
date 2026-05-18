@@ -113,3 +113,4 @@ Documentation
     tutorials/_index
     usage/_index
     workflows/_index
+    agentic/_index

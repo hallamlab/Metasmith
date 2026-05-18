@@ -309,7 +309,9 @@ bin_directory:
 
 ## MCP Server
 
-Metasmith exposes its API via [Model Context Protocol](https://modelcontextprotocol.io) through `metasmith-mcp`. This lets LLM clients (Claude, etc.) inspect types, libraries, transforms, plan workflows, and drive the full lifecycle.
+Metasmith exposes its **full** API via [Model Context Protocol](https://modelcontextprotocol.io) through `metasmith-mcp`. An LLM client (Claude, etc.) can register inputs, author transforms, plan workflows, run them, wait on detached runs, and collect results — all without dropping into Python.
+
+The canonical reference is **`docs/source/agentic/`** (see `tool_reference.rst` for the full catalog).
 
 ### Running
 
@@ -324,25 +326,44 @@ metasmith-mcp \
 
 All flags also accept env vars: `METASMITH_TYPE_LIBS`, `METASMITH_DATA_LIBS`, `METASMITH_TRANSFORM_LIBS`, `METASMITH_AGENTS`, `METASMITH_WORKSPACE` (colon-separated paths).
 
-### Tools (21 total)
+Inputs can also be added at runtime via `register_type_library`, `register_data_library`, `register_transform_library`, `register_agent`, so the server need not be restarted as work expands.
+
+### Tools (62 total)
 
 | Category | Tools |
 |----------|-------|
-| **Types** | `list_types`, `get_type`, `check_type_compatibility` |
-| **Data libraries** | `list_data_libraries`, `inspect_data_library`, `list_data_items`, `show_item_lineage` |
-| **Transforms** | `list_transform_libraries`, `list_transforms`, `show_transform_contract` |
-| **Workflow** | `plan_workflow`, `check_workflow` |
-| **Agent management** | `list_agents`, `load_agent`, `deploy_agent` |
-| **Lifecycle** | `stage_workflow`, `run_workflow`, `get_result_source`, `list_config_presets` |
+| **Server** | `server_status`, `register_type_library`, `register_data_library`, `register_transform_library`, `register_agent`, `reload_libraries` |
+| **Types** | `list_types`, `get_type`, `check_type_compatibility`, `create_type_library`, `add_type` |
+| **Data libraries** | `list_data_libraries`, `inspect_data_library`, `list_data_items`, `show_item_lineage`, `create_data_library`, `attach_type_library`, `add_data_item`, `add_data_value`, `set_item_parents`, `remove_data_item`, `rename_data_item`, `rename_by_parent`, `prune_types`, `consolidate_library`, `save_library`, `trace_lineage`, `load_remote_library` |
+| **Transforms** | `list_transform_libraries`, `list_transforms`, `show_transform_contract`, `read_transform_source`, `write_transform`, `scaffold_transform`, `validate_transform_contract`, `propagate_types` |
+| **Workflow planning** | `plan_workflow`, `get_workflow_plan`, `get_plan_hints`, `render_plan_dag`, `list_workflow_tasks`, `delete_workflow_task` |
+| **Agents** | `list_agents`, `load_agent`, `save_agent`, `get_agent_info`, `agent_ping`, `deploy_agent` |
+| **Lifecycle** | `stage_workflow`, `run_workflow`, `wait_for_workflow`, `tail_workflow_log`, `cancel_workflow`, `list_workflow_runs`, `check_workflow`, `get_result_source`, `collect_results`, `list_config_presets` |
+| **Source / Logistics** | `parse_source`, `source_exists`, `transfer_source` |
 | **Build** | `build_libraries` |
 
 ### Workflow via MCP
 
-The full lifecycle is: `plan_workflow` → `stage_workflow` → `run_workflow` → `check_workflow` → `get_result_source`. `plan_workflow` returns a `task_key` that downstream tools reference. Tasks are cached to disk in the workspace directory.
+The full lifecycle is:
 
-### Resources (6)
+```
+plan_workflow → stage_workflow → run_workflow → wait_for_workflow → tail_workflow_log → collect_results
+```
 
-URI-based read-only views: `metasmith://types`, `metasmith://types/{ns}`, `metasmith://types/{ns}/{name}`, `metasmith://data/{lib}`, `metasmith://transforms/{lib}`, `metasmith://transforms/{lib}/{transform}`.
+`run_workflow` is detached (the launcher exits as soon as `nohup nextflow … &` starts). Script callers MUST follow with `wait_for_workflow`, which blocks on the `run completed at` sentinel in `runs/<task_key>/_metasmith/logs.latest/agent.log`. `tail_workflow_log` returns the last N lines of `agent.log` or `main.log` and `cancel_workflow` cleanly stops a run by removing `workspace/PID.lock` (the in-container loop catches the absence and gracefully kills nextflow).
+
+Tasks are cached to disk in the workspace directory and can be re-fetched via `get_workflow_plan(task_key)` or `list_workflow_tasks()`.
+
+### Resources (12)
+
+URI-based read-only views:
+
+- `metasmith://server/status`
+- `metasmith://types`, `types/{ns}`, `types/{ns}/{name}`
+- `metasmith://data/{lib}`
+- `metasmith://transforms/{lib}`, `transforms/{lib}/{transform}`
+- `metasmith://agents`, `agents/{name}`
+- `metasmith://tasks`, `tasks/{key}`, `tasks/{key}/dag`
 
 ---
 
