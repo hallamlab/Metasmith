@@ -109,6 +109,17 @@ The planner handles parallelism automatically — if you have 3 accessions, it
 generates 3 parallel getNcbiAssembly jobs, then one ppanggolin that collects all
 the resulting gbk files.
 
+#### Diagnosing failed plans
+
+When the solver can't produce a complete plan, `WorkflowPlan.hints` carries
+structured `PlanHint` records (kinds: `unreachable_target`, `missing_input`,
+`lineage_mismatch`) describing why. Each hint has a `target`, human-readable
+`message`, optional reverse-BFS `chain` of requirements, candidate transforms,
+and "did you mean ..." near-misses ranked by property-Jaccard to the givens.
+`missing_input` hints are de-duped by demand shape and sorted by similarity to
+givens so the most actionable suggestion is first. Consumers (the MCP server,
+agents) surface these to the user as diagnostic output on failure.
+
 ### 5. Agents and Execution
 
 An Agent is a deployment target. It manages a home directory, handles container
