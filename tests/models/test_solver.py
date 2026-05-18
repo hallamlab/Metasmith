@@ -567,6 +567,48 @@ class TestGivenLineage:
         produced = _get_all_produced(sol)
         assert frozenset({"output"}) in produced
 
+    def test_given_fails_lineage_falls_back_to_produced(self):
+        """When given candidates fail _satisfies_lineage, a produced
+        alternative that would pass must still be considered.
+        Regression for the prefer-given short-circuit in _find_endpoints."""
+        # interleave: pair + r1 (parent=pair) + r2 (parent=pair) -> short_reads
+        interleave = Transform()
+        pair_in = interleave.AddRequirement(properties={"pair"})
+        interleave.AddRequirement(properties={"r1"}, parents={pair_in})
+        interleave.AddRequirement(properties={"r2"}, parents={pair_in})
+        interleave.AddProduct(properties={"reads", "short_reads"})
+
+        # consumer: meta -> reads(parent=meta) -> bam
+        consumer = Transform()
+        meta_in = consumer.AddRequirement(properties={"meta"})
+        consumer.AddRequirement(properties={"reads"}, parents={meta_in})
+        consumer.AddProduct(properties={"bam"})
+
+        # Given: meta -> pair -> {r1, r2}. r1/r2 are IsA(reads) but their
+        # direct parent is `pair`, not `meta` — they fail consumer's lineage.
+        meta_ep = Endpoint(properties={"meta"})
+        pair_ep = Endpoint(properties={"pair"}, parents={meta_ep})
+        r1_ep = Endpoint(properties={"r1", "reads"}, parents={pair_ep})
+        r2_ep = Endpoint(properties={"r2", "reads"}, parents={pair_ep})
+
+        target = Transform()
+        target.AddRequirement(properties={"bam"})
+
+        sol = solve_by_mcts(
+            given=[{meta_ep, pair_ep, r1_ep, r2_ep}],
+            target=target,
+            transforms=[interleave, consumer],
+        )
+        assert sol.complete
+        plan_transforms = {a.transform for a in sol.dependency_plan}
+        assert interleave in plan_transforms, \
+            "interleave dropped — produced short_reads alternative not considered"
+        assert consumer in plan_transforms, \
+            "consumer dropped — bam target not in plan"
+
+        produced = _get_all_produced(sol)
+        assert frozenset({"bam"}) in produced
+
     def test_binning_workflow_all_three_binners(self):
         """Simulates binning workflow with 3 binners: metabat2, maxbin2, concoct."""
         transforms = []

@@ -532,7 +532,7 @@ def solve_by_mcts(
                 if matched not in e.parents: return False
             return True
         
-        def _find_endpoints(p: Dependency):
+        def _find_endpoints(p: Dependency, include_produced: bool):
             given_candidates: list[Endpoint] = []
             produced_candidates: list[Endpoint] = []
             for product in demand2product.get(p, []):
@@ -543,47 +543,60 @@ def solve_by_mcts(
                         given_candidates.append(e)
                     else:
                         produced_candidates.append(e)
-            # Prefer given endpoints: if any are available, only use those
-            # This prevents transforms from re-producing data that's already given
-            if given_candidates:
-                return given_candidates
-            return produced_candidates
-        
-        # print("?  ", state.have)
-        viable_input_sets: list[Application] = []
-        matches: dict[Dependency, list[Endpoint]] = {}
-        for p in tr.requires:
-            candidates = _find_endpoints(p)
-            if len(candidates) == 0: return viable_input_sets # empty, for type def
-            matches[p] = candidates
-        # for k, v in matches.items():
-            # print(" ?-  ", len(v), k, v)
-        
-        INITIAL_I = 0
-        todo: list[tuple[int, Endpoint, dict[Dependency, Endpoint]]] = [
-            (INITIAL_I, e, dict()) for e in matches[tr.requires[INITIAL_I]]
-        ]
-        while len(todo)>0:
-            p_i, e, used = todo.pop()
-            p = tr.requires[p_i]
-            used = used|{p:e}
-            # print("_  ", used)
-            if handle_lineage and not _satisfies_lineage(e, p, used): continue
-            if p_i >= len(tr.requires)-1:
-                appl = Application(initial_timeline=state_k, transform=tr, used=used, produced=[{}])
-                if appl.Signature() in blacklist: continue # just check first
-                if handle_lineage:
-                    lineage: set = {ancestor for e in used.values() for ancestor in e.parents}
-                    lineage.update(used.values())
-                    appl.produced = [{p:Endpoint(p.properties, parents=lineage) for p in pgroup} for pgroup in tr.produces]
-                else:
-                    appl.produced = [mock for _, mock in zip(tr.produces, mock_produced)]
-                viable_input_sets.append(appl)
-                continue # at leaf (end of required dependencies)
-            next_i = p_i+1
-            todo += [
-                (next_i, e, used) for e in matches[tr.requires[next_i]]
+            if include_produced:
+                return given_candidates + produced_candidates
+            return given_candidates
+
+        # Two-pass: prefer given. If the given-only pass cannot reach a
+        # lineage-viable leaf at all, fall back to given+produced so a
+        # produced alternative can rescue a transform whose given candidates
+        # all fail _satisfies_lineage. The original single-pass short-circuit
+        # on IsA alone silently dropped such transforms.
+        #
+        # Important: only fall back when given-only failed for *lineage*
+        # reasons, not because the resulting Application was already in the
+        # blacklist (i.e., already explored by MCTS). Otherwise we'd flood the
+        # frontier with redundant produced variants every time MCTS revisits
+        # a transform.
+        def _resolve(include_produced: bool) -> tuple[list[Application], bool]:
+            viable_input_sets: list[Application] = []
+            reached_leaf = False
+            matches: dict[Dependency, list[Endpoint]] = {}
+            for p in tr.requires:
+                candidates = _find_endpoints(p, include_produced=include_produced)
+                if len(candidates) == 0: return viable_input_sets, reached_leaf
+                matches[p] = candidates
+
+            INITIAL_I = 0
+            todo: list[tuple[int, Endpoint, dict[Dependency, Endpoint]]] = [
+                (INITIAL_I, e, dict()) for e in matches[tr.requires[INITIAL_I]]
             ]
+            while len(todo)>0:
+                p_i, e, used = todo.pop()
+                p = tr.requires[p_i]
+                used = used|{p:e}
+                if handle_lineage and not _satisfies_lineage(e, p, used): continue
+                if p_i >= len(tr.requires)-1:
+                    reached_leaf = True
+                    appl = Application(initial_timeline=state_k, transform=tr, used=used, produced=[{}])
+                    if appl.Signature() in blacklist: continue # just check first
+                    if handle_lineage:
+                        lineage: set = {ancestor for e in used.values() for ancestor in e.parents}
+                        lineage.update(used.values())
+                        appl.produced = [{p:Endpoint(p.properties, parents=lineage) for p in pgroup} for pgroup in tr.produces]
+                    else:
+                        appl.produced = [mock for _, mock in zip(tr.produces, mock_produced)]
+                    viable_input_sets.append(appl)
+                    continue # at leaf (end of required dependencies)
+                next_i = p_i+1
+                todo += [
+                    (next_i, e, used) for e in matches[tr.requires[next_i]]
+                ]
+            return viable_input_sets, reached_leaf
+
+        viable_input_sets, reached_leaf = _resolve(include_produced=False)
+        if not reached_leaf:
+            viable_input_sets, _ = _resolve(include_produced=True)
         return viable_input_sets
 
     # ---
