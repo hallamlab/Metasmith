@@ -13,7 +13,7 @@ from hashlib import md5
 from ..coms.containers import Container, ContainerRuntime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
-from .libraries import TransformInstance, TransformInstanceLibrary
+from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
 from .remote import Logistics, Source, SourceType
 from .solver import Application, Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
 from ..hashing import KeyGenerator
@@ -641,7 +641,7 @@ class WorkflowPlan:
     def Generate(
         cls,
         given: list[list[DataInstanceLibraryView]],
-        transforms: list[TransformInstanceLibrary],
+        transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         target_names: dict[Endpoint, str],
         target_model: Transform,
         max_iter: int=256, max_refine: int=256, seed: int=42,
@@ -696,13 +696,14 @@ class WorkflowPlan:
         transform2inst: dict[Transform, TransformInstance] = {}
         inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}
         for trlib in transforms:
+            base = trlib._original if isinstance(trlib, TransformInstanceLibraryView) else trlib
             for path, tr in trlib.IterateTransforms():
                 model = tr.model
                 if model in transform2inst:
                     Log.Warn(f"transform [{model}] of [{trlib}] is masked")
                     continue
                 transform2inst[model] = tr
-                inst2trlib[tr] = trlib
+                inst2trlib[tr] = base
 
         _pl1 = "" if len(given)==1 else "s"
         _pl2 = "" if len(given_endpoints)==1 else "s"

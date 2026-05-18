@@ -969,6 +969,38 @@ class DataInstanceLibraryView:
             inst = self._original.Get(p)
             yield p, inst.dtype_name, inst.dtype
 
+class TransformInstanceLibraryView(DataInstanceLibraryView):
+    """Masked view of a TransformInstanceLibrary. Mirrors DataInstanceLibrary.AsView:
+    mask is a set of relative .py paths; invert=True flips include/exclude."""
+    _original: "TransformInstanceLibrary"
+
+    def IterateTransforms(self):
+        for p in self._mask:
+            tr = self._original.GetTransform(p)
+            assert tr is not None, p
+            yield p, tr
+
+    def GetTransform(self, path: str|Path, reload: bool=False):
+        p = Path(path)
+        if p.suffix != ".py":
+            p = p.with_suffix(".py")
+        assert p in self._mask, f"transform [{p}] is hidden by view mask"
+        return self._original.GetTransform(p, reload=reload)
+
+    @property
+    def types(self):
+        return self._original.types
+
+    @property
+    def location(self):
+        return self._original.location
+
+    def GetType(self, name: str):
+        return self._original.GetType(name)
+
+    def GetName(self, endpoint):
+        return self._original.GetName(endpoint)
+
 @dataclass
 class Size:
     value_gb: float
@@ -1205,6 +1237,10 @@ class TransformInstanceLibrary(DataInstanceLibrary):
             tr = self.GetTransform(k)
             assert tr is not None, (dtype_name, k)
             yield k, tr
+
+    def AsView(self, mask: set[Path], invert: bool=False):
+        """if invert=True, then items in mask are excluded"""
+        return TransformInstanceLibraryView(self, mask, invert)
 
     @classmethod
     def Load(cls, path: Path|str):

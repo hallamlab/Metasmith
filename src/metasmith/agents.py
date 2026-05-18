@@ -21,7 +21,7 @@ from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
 from .coms.via_file_watcher import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
-from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, DataInstanceLibraryView
+from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
 from .models.libraries import TransformInstance, Resources
 from .models.solver import Dependency, Endpoint, Solution, Transform
 from .constants import VERSION, MODULE_PATH, AgentPaths
@@ -367,7 +367,7 @@ class Agent:
         self,
         samples: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         resources: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
-        transforms: list[TransformInstanceLibrary],
+        transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         targets: TargetBuilder | list[str],
         max_iter: int=1024, max_refine: int=256, seed: int=42,
     ):
