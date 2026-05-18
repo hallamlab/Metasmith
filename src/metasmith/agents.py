@@ -416,12 +416,9 @@ class Agent:
             max_iter=max_iter, max_refine=max_refine, seed=seed
         )
         sample_libs = {v._original for v in _samples}
-        if isinstance(gen_result, Solution):
-            return WorkflowTask(ok=False, plan=WorkflowPlan(given=[], targets=[], steps=[], _solver_result=gen_result))
-        else:
-            orig_resources = [lib if isinstance(lib, DataInstanceLibrary) else lib._original for lib in resources]
-            _ok = len(gen_result.dropped_targets) == 0
-            return WorkflowTask(ok=_ok, plan=gen_result, data_libraries=list(sample_libs)+orig_resources,transform_libraries=transforms)
+        orig_resources = [lib if isinstance(lib, DataInstanceLibrary) else lib._original for lib in resources]
+        _ok = bool(gen_result.steps) and len(gen_result.dropped_targets) == 0
+        return WorkflowTask(ok=_ok, plan=gen_result, data_libraries=list(sample_libs)+orig_resources, transform_libraries=transforms)
 
     def _get_mock_container(self, task: WorkflowTask):
         binds = task.GetCommonInputFolders(method="external")

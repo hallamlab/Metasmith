@@ -483,8 +483,27 @@ def solve_by_mcts(
             for producer in demand2producer.get(p, []): # when tr requires a terminal endpoint that is not given
                 todo.append(DistNode(producer, dist, path))
     relavent_transforms = [tr for tr in transforms if tr in distance_scores]
+    if given_appl.transform not in distance_scores:
+        # no path from givens to target; bail with a structured Solution
+        # carrying the maps the diagnostic helper needs.
+        return Solution(
+            complete=False,
+            dependency_plan=[],
+            merged_endpoints={},
+            _frontier=[],
+            _history=[],
+            _refiner_histories=[],
+            _heuristics={
+                "demand2producer": demand2producer,
+                "demand2product": demand2product,
+                "product2consumer": product2consumer,
+                "no_path_possible": True,
+            },
+            _iterations=0,
+            _refiner_iterations=[],
+            _relavent_transforms=list(relavent_transforms),
+        )
     max_distance_score = max(distance_scores.values())
-    assert given_appl.transform in distance_scores, "no path possible"
 
     # for telemetry
     D2T_KEY = "distance to target"
@@ -1327,6 +1346,9 @@ def solve_by_mcts(
         _heuristics={
             "production depth": solution._production_depths,
             D2T_KEY: d2t_report,
+            "demand2producer": demand2producer,
+            "demand2product": demand2product,
+            "product2consumer": product2consumer,
         },
         _iterations=solution._iterations,
         _refiner_iterations=solution._refiner_iterations,

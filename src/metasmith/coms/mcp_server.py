@@ -432,30 +432,40 @@ async def plan_workflow(
         target_model=target_model,
     )
 
-    if isinstance(gen_result, Solution):
+    plan = gen_result
+    if not plan.steps or plan.dropped_targets:
         return {
             "success": False,
             "message": "solver could not find a complete plan",
-            "complete": gen_result.complete,
-            "iterations": gen_result._iterations,
-        }
-    else:
-        plan = gen_result
-        task = WorkflowTask(
-            ok=len(plan.dropped_targets) == 0, plan=plan,
-            data_libraries=[data_lib] + res_libs,
-            transform_libraries=tr_libs,
-        )
-        task_key = None
-        if STATE.workspace:
-            task_key = await asyncio.to_thread(STATE.save_task, task)
-        return {
-            "success": True,
-            "task_key": task_key,
-            "steps": [step.Pack() for step in plan.steps],
-            "targets": [t.Pack() for t in plan.targets],
             "step_count": len(plan.steps),
+            "dropped_targets": list(plan.dropped_targets),
+            "hints": [
+                {
+                    "kind": h.kind,
+                    "target": h.target,
+                    "message": h.message,
+                    "chain": list(h.chain),
+                    "candidate_transforms": list(h.candidate_transforms),
+                    "near_misses": list(h.near_misses),
+                }
+                for h in plan.hints
+            ],
         }
+    task = WorkflowTask(
+        ok=len(plan.dropped_targets) == 0, plan=plan,
+        data_libraries=[data_lib] + res_libs,
+        transform_libraries=tr_libs,
+    )
+    task_key = None
+    if STATE.workspace:
+        task_key = await asyncio.to_thread(STATE.save_task, task)
+    return {
+        "success": True,
+        "task_key": task_key,
+        "steps": [step.Pack() for step in plan.steps],
+        "targets": [t.Pack() for t in plan.targets],
+        "step_count": len(plan.steps),
+    }
 
 
 # ===== Workflow Status Tools ===============================================
