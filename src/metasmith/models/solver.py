@@ -544,11 +544,28 @@ def solve_by_mcts(
         # The endpoint matched to the LC must also be used to satisfy all instances.
         # That is, if a transform specifies A via P and B via P, 
         # then endpoint P' matched to P must be used to create both A and B
+        # Walk e's ancestry transitively, with cycle protection. Input endpoints
+        # store .parents as a nested tree (one direct level per endpoint),
+        # whereas produced endpoints get a one-hop flattened set per transform
+        # step (solver.py:603-605). A direct `matched in e.parents` check only
+        # succeeds on the flattened shape, so it silently dropped any input-
+        # rooted DAG whose lineage chains more than one level deep.
+        def _is_ancestor(target: Endpoint, e: Endpoint, seen: set[Endpoint]) -> bool:
+            if target in e.parents:
+                return True
+            for parent in e.parents:
+                if parent in seen:
+                    continue
+                seen.add(parent)
+                if _is_ancestor(target, parent, seen):
+                    return True
+            return False
+
         def _satisfies_lineage(e: Endpoint, p: Dependency, used: dict[Dependency, Endpoint]):
             for parent in p.parents:
                 assert isinstance(parent, Dependency)
                 matched = used[parent]
-                if matched not in e.parents: return False
+                if not _is_ancestor(matched, e, set()): return False
             return True
         
         def _find_endpoints(p: Dependency, include_produced: bool):
