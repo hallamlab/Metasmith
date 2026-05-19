@@ -262,9 +262,9 @@ class TestTraceFanOutMerge:
 
     Topology: assembly -> {branch_a, branch_b}, then branch_a + branch_b -> merged.
 
-    Note: Intermediate types (branch_a, branch_b) are not persisted in the
-    result library — only given inputs and target outputs are retained.
-    The merged output traces directly to its given ancestor (assembly).
+    With the default WorkflowPlan.publish_intermediates=True, every produced
+    instance (including branch_a and branch_b) is published to the result
+    library alongside the final merged target.
     """
 
     @pytest.fixture
@@ -302,11 +302,11 @@ class TestTraceFanOutMerge:
         pairs = list(result_lib.Trace("mock::assembly", "mock::merged"))
         assert len(pairs) >= 3
 
-    def test_intermediates_not_in_output(self, result_lib):
-        """Intermediate branch types are not persisted in results."""
+    def test_intermediates_published_in_output(self, result_lib):
+        """Intermediate branch types are persisted alongside the merged target."""
         type_names = set(result_lib.manifest.values())
-        assert "mock::branch_a" not in type_names
-        assert "mock::branch_b" not in type_names
+        assert "mock::branch_a" in type_names
+        assert "mock::branch_b" in type_names
 
 
 # ---------------------------------------------------------------------------

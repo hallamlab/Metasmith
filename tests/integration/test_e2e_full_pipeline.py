@@ -296,6 +296,10 @@ class TestWorkflowExecution:
         # Check for publish block
         assert "output {" in nxf_content or "output{" in nxf_content
 
+        # Final target keeps its WorkflowTarget.name as the publish path
+        target_name = task.plan.targets[0].name
+        assert f"path '{target_name}'" in nxf_content
+
     def test_task_save_load_roundtrip(self, simple_workflow_task, temp_dir):
         """WorkflowTask survives save/load roundtrip."""
         task = simple_workflow_task

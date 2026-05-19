@@ -27,7 +27,7 @@ params {
     }
 }
 
-cleanup = true                          // remove work dirs of completed tasks to save disk/inodes
+cleanup = false                         // remove work dirs of completed tasks to save disk/inodes
 nextflow.cache.db.type = 'rocksdb'
 filePorter.maxThreads = 2
 report.overwrite = true

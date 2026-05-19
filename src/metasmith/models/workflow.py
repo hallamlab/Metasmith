@@ -510,6 +510,7 @@ class WorkflowPlan:
     _archetype_translation: dict[DataInstance, DataInstance]|None = None
     dropped_targets: list[str] = field(default_factory=list)
     hints: list[PlanHint] = field(default_factory=list)
+    publish_intermediates: bool = True
 
     def __post_init__(self):
         self._update_hash()
@@ -566,6 +567,7 @@ class WorkflowPlan:
             given=[inst.Pack() for inst in self.given],
             targets=[inst.Pack() for inst in self.targets],
             steps=[step.Pack() for step in self.steps],
+            publish_intermediates=self.publish_intermediates,
         )
 
     def Save(self, path: Path):
@@ -635,6 +637,7 @@ class WorkflowPlan:
             given=given,
             targets=[_unpack_target(d) for d in raw["targets"]],
             steps=steps,
+            publish_intermediates=raw.get("publish_intermediates", True),
         )
 
     @classmethod
@@ -1462,7 +1465,7 @@ class WorkflowTask:
         src_process = []
         wf_main = []
         wf_publish = set()       
-        published_channels: dict[str, DataInstance] = {}
+        published_channels: dict[str, tuple[int, DataInstance]] = {}
         resources = {}
 
         # NOTE: DSL2 implicitly forks channels even when wrapped in [name, channel]
@@ -1506,11 +1509,14 @@ class WorkflowTask:
                         f"_{name} = o.mix([{', '.join(to_mix)}])"
                     )
 
-            to_pubish = [x for g in produced_archetypes for x in g if x.dtype in target_endpoints]
+            if the_plan.publish_intermediates:
+                to_pubish = [x for g in produced_archetypes for x in g]
+            else:
+                to_pubish = [x for g in produced_archetypes for x in g if x.dtype in target_endpoints]
             for inst in to_pubish:
                 k = inst.dtype.key
                 wf_publish.add(k)
-                published_channels[k] = inst
+                published_channels[k] = (step.order, inst)
 
         with open(context.work_dir/context.resources_file, "w") as f:
             _src = [
@@ -1530,14 +1536,12 @@ class WorkflowTask:
 
         wf_output = []
         _e2target = {x.instance.dtype:x for x in the_plan.targets}
-        for ch, inst in published_channels.items():
-            spec_name, out_name = [
-                n.replace(' ', '_').replace("::", "-")
-                for n in [
-                    inst.dtype_name,
-                    _e2target[inst.dtype].name
-                ]
-            ]
+        for ch, (step_order, inst) in published_channels.items():
+            spec_name = inst.dtype_name.replace(' ', '_').replace("::", "-")
+            if inst.dtype in _e2target:
+                out_name = _e2target[inst.dtype].name.replace(' ', '_').replace("::", "-")
+            else:
+                out_name = f"{step_order}_{spec_name}"
             wf_output += [
                 TAB+f"_{ch}"+"{",
                 TAB+TAB+f"path '{out_name}'",
