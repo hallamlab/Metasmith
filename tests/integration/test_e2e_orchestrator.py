@@ -446,6 +446,154 @@ workflow {
         # All indexes should have FILES key
         assert "true" in lines[0].lower()
 
+    @staticmethod
+    def _run_two_step_files_check(nxf_runner: "NxfTestRunner", batch_size: int) -> list[str]:
+        """Inbox #139 reproduction helper.
+
+        Runs a two-process pipeline (step1 produces a path() output; step2
+        consumes it via `o.group(..., batch_size)`). step2 echoes the index
+        it received as JSON, so the test can inspect the FILES paths that
+        `_batch()` wrote.
+
+        Returns the deduplicated list of distinct path strings observed in
+        every step2 invocation's `index['FILES']`. With the consumer-side
+        fix in place, these still contain `/ws/...` strings (the producer
+        is unchanged); callers should route them through
+        `bootstrap._parse_path` to verify resolution.
+        """
+        for i in range(3):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+
+        result = nxf_runner.run(f'''
+import groovy.json.JsonOutput
+
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-1.*-out1.txt")
+    script:
+    """
+    touch 1-1-1.HASH${{index.seed[0]}}-out1.txt
+    """
+}}
+
+process step2 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        path "index.json"
+    script:
+    """
+    echo '${{Orchestrator.JsonforEcho(index)}}' > index.json
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+
+    seed_raw = Channel.fromList([
+        [["seed": [1L]], file("${{projectDir}}/seed_0.txt")],
+        [["seed": [2L]], file("${{projectDir}}/seed_1.txt")],
+        [["seed": [3L]], file("${{projectDir}}/seed_2.txt")],
+    ])
+    seed = new Tuple2("seed", seed_raw)
+
+    k1 = ["out1"]
+    (_out1) = o.post([*step1(o.group("seed", [seed], k1, 1))], k1)
+
+    k2 = ["out2"]
+    step2(o.group("out1", [_out1], k2, {batch_size}))
+}}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        index_files = sorted(nxf_runner.work_dir.rglob("work/*/*/index.json"))
+        assert index_files, (
+            f"step2 produced no index.json with batch_size={batch_size}; "
+            f"stdout tail:\n{result.stdout[-1500:]}"
+        )
+        observed: list[str] = []
+        for ip in index_files:
+            raw = ip.read_text().strip()
+            # Bash echo wraps Groovy's escaped quotes (\") in the JSON; unescape.
+            parsed = json.loads(raw.replace('\\"', '"'))
+            if not isinstance(parsed, list):
+                parsed = [parsed]
+            for idx in parsed:
+                for group in idx.get("FILES", []):
+                    for p in group:
+                        observed.append(p)
+        return observed
+
+    @staticmethod
+    def _assert_files_resolve(files: list[str]) -> None:
+        """Inbox #139 fix verification.
+
+        For each FILES path captured from a step's index, run it through
+        `bootstrap._parse_path` and assert the resulting `local` view is
+        the container-canonical form rooted at `AgentPaths.HOME_ROOT`
+        with the supplied task key embedded. This is the assertion shape
+        for a consumer-side fix: raw FILES still contain `/ws/...`
+        strings; `_parse_path` rewrites them on read.
+        """
+        from pathlib import Path
+
+        from metasmith.bootstrap import _parse_path
+        from metasmith.constants import AgentPaths
+
+        assert files, "no FILES paths to verify"
+        task_key = "TEST"
+        for p in files:
+            parsed = _parse_path(
+                Path(p),
+                agent_home="/host/scratch/agent",
+                external_cwd=Path("/ws"),
+                task_key=task_key,
+            )
+            assert parsed.local.is_absolute() and parsed.local.is_relative_to(
+                AgentPaths.HOME_ROOT
+            ), f"_parse_path did not canonicalize {p!r}: local={parsed.local}"
+            assert f"runs/{task_key}/" in str(parsed.local), (
+                f"_parse_path lost the task_key in {parsed.local} (from {p!r})"
+            )
+            assert not str(parsed.local).startswith(str(AgentPaths.WORK_ROOT) + "/"), (
+                f"_parse_path left /ws prefix in {parsed.local} (from {p!r})"
+            )
+
+    def test_batched_files_resolve_through_parse_path(self, nxf_runner):
+        """Regression for inbox #139 — batched case.
+
+        When step2 consumes step1's `path()` output through `_batch(N>1, …)`,
+        `Orchestrator.groovy:274` renders each Path via `*.toString()`.
+        Inside the producer container the workdir is bound at `/ws`, so
+        the rendered string is `/ws/work/<hash>/<file>` — a path that
+        doesn't resolve inside the downstream consumer's own container
+        (its `/ws` is its own task dir). On HPC this trips
+        `bootstrap.py:279` with "detected missing inputs, stopping".
+
+        The fix in `bootstrap._parse_path` rewrites `/ws/<tail>` →
+        `<AgentPaths.HOME_ROOT>/runs/<task_key>/<tail>` at parse time
+        (mirroring `bin/sbatch:54-80`'s inverse rewrite). The raw FILES
+        strings still contain `/ws/...`; this test confirms they
+        resolve correctly when read.
+        """
+        files = self._run_two_step_files_check(nxf_runner, batch_size=2)
+        self._assert_files_resolve(files)
+
+    def test_unbatched_files_resolve_through_parse_path(self, nxf_runner):
+        """Regression for inbox #139 — non-batched case.
+
+        `o.group` always routes through `_batch` regardless of batch_size,
+        so the `/ws`-prefix in FILES is *not* batched-only. The reporter's
+        claim that non-batched works (msg #139, `p03__assembly_stats`)
+        cannot be due to batch size alone; their non-batched comparison
+        case must have been a given input (CSV-staged via `o.postIn` +
+        `in()`), not a process output. The fix in `bootstrap._parse_path`
+        covers both.
+        """
+        files = self._run_two_step_files_check(nxf_runner, batch_size=1)
+        self._assert_files_resolve(files)
+
     def test_batch_debatch_roundtrip(self, nxf_runner):
         """Items survive batch -> process -> debatch cycle."""
         for i in range(4):

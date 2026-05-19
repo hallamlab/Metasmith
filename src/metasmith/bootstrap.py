@@ -44,11 +44,67 @@ def DeployFromContainer(workspace: Path, architecture: str, system: str):
 
     Log.Info("deployment complete")
 
+def _parse_path(
+    p: Path,
+    *,
+    agent_home: str,
+    external_cwd: Path,
+    task_key: str,
+    container_override: Path | None = None,
+) -> ContextPath:
+    """Resolve a FILES-entry path into a (local, external, container) view.
+
+    Handles three input shapes:
+      1. `/ws/...`-prefixed strings emitted by Orchestrator.groovy:274's
+         `_batch()` for upstream process outputs. /ws inside the producer
+         container is bound to the host run-level dir, so /ws/<tail> →
+         host's `<agent_home>/runs/<task_key>/<tail>` and equivalently
+         `<AgentPaths.HOME_ROOT>/runs/<task_key>/<tail>` via the
+         $AGENT_HOME → /msm_home bind. Inbox #139.
+      2. Symlinks whose target sits under `agent_home` (the
+         host-canonical path) — rewritten to the container-relative form
+         under `AgentPaths.HOME_ROOT`.
+      3. Anything else: passed through as-is.
+
+    Mirrors the inverse rewrite at bin/sbatch:54-80.
+    """
+    # (1) /ws/... → /msm_home/runs/<task_key>/... (inbox #139)
+    if p.is_absolute() and p.is_relative_to(AgentPaths.WORK_ROOT):
+        tail = p.relative_to(AgentPaths.WORK_ROOT)
+        local = AgentPaths.HOME_ROOT / "runs" / task_key / tail
+        external = Path(agent_home) / "runs" / task_key / tail
+        container = container_override if container_override else local
+        return ContextPath(local=local, external=external, container=container)
+
+    # (2) symlinks under agent_home
+    if p.is_symlink():
+        external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
+        if external.is_relative_to(agent_home):
+            tail = external.relative_to(agent_home)
+            local = AgentPaths.HOME_ROOT/tail
+        else:
+            # External path (e.g. /project/...): use absolute path as container
+            # path so GetContainerModel generates an identity bind mount rather
+            # than mapping the source to /ws (which would override the workdir).
+            local = p
+            container_override = container_override or external
+    else:
+        local = p
+        external = external_cwd/p
+
+    if container_override:
+        container = container_override
+    else:
+        container = local
+    return ContextPath(local=local, external=external, container=container)
+
+
 def ExecuteStep(
     step,
     agent,
     shell,
     external_cwd: Path,
+    task_key: str,
     lineages: list,
     input_by_dep: dict,
     dep2output: list,
@@ -72,27 +128,14 @@ def ExecuteStep(
 
     def _status(p: ContextPath):
         return "✓" if p.local.exists() else "X"
-    def _parse_path(p: Path, container_override=None):
-        if p.is_symlink():
-            external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
-            if external.is_relative_to(agent_home):
-                tail = external.relative_to(agent_home)
-                local = AgentPaths.HOME_ROOT/tail
-            else:
-                # External path (e.g. /project/...): use absolute path as container
-                # path so GetContainerModel generates an identity bind mount rather
-                # than mapping the source to /ws (which would override the workdir).
-                local = p
-                container_override = container_override or external
-        else:
-            local = p
-            external = external_cwd/p
-
-        if container_override:
-            container = container_override
-        else:
-            container = local
-        return ContextPath(local=local, external=external, container=container)
+    def _parse(p: Path, container_override=None):
+        return _parse_path(
+            p,
+            agent_home=agent_home,
+            external_cwd=external_cwd,
+            task_key=task_key,
+            container_override=container_override,
+        )
     def _get_formatted_size(p: Path):
         if not p.exists():
             return "/"
@@ -121,7 +164,7 @@ def ExecuteStep(
             e = insts[0].dtype
             inst_names = {x.dtype_name for x in insts}
             Log.Info(f"    [{e.key} {'/'.join(inst_names)}] at:")
-            input_group = [_parse_path(Path(p)) for p in file_names]
+            input_group = [_parse(Path(p)) for p in file_names]
             for p in input_group:
                 missing_input = missing_input or not p.local.exists()
                 Log.Info(_shorten_home(f"        {_status(p)} [{_get_formatted_size(p.local)}] [{p.local}]"))
@@ -153,7 +196,7 @@ def ExecuteStep(
             _hashes[batch] = _hash
         _hash = _hashes[batch]
         dest = Path(f"{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{dtype.GetPreferredFileExtension()}")
-        return _parse_path(dest, container_override=Path("/ws")/dest)
+        return _parse(dest, container_override=Path("/ws")/dest)
 
     if len(agent.setup_commands)>0:
         Log.Info("setup commands for external shell:")
@@ -388,6 +431,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
             agent=agent,
             shell=shell,
             external_cwd=external_cwd,
+            task_key=task_key,
             lineages=lineages,
             input_by_dep=input_by_dep,
             dep2output=dep2output,

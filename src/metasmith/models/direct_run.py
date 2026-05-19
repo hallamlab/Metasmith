@@ -213,6 +213,7 @@ def RunTransform(
                 agent=agent,
                 shell=shell,
                 external_cwd=work_dir,
+                task_key=work_dir.name,
                 lineages=[lineage],
                 input_by_dep=input_by_dep,
                 dep2output=dep2output,
