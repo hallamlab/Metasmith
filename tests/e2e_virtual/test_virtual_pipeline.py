@@ -24,11 +24,7 @@ def _build_binning_task(tmp_path, mock_samples, mock_types) -> WorkflowTask:
     target_model.AddRequirement(properties={"bins", "method:metabat2"})
     target_model.AddRequirement(properties={"bins", "method:maxbin2"})
     target_model.AddRequirement(properties={"bins", "method:concoct"})
-    target_names = {
-        Endpoint(properties={"bins", "method:metabat2"}): "metabat2_bins",
-        Endpoint(properties={"bins", "method:maxbin2"}): "maxbin2_bins",
-        Endpoint(properties={"bins", "method:concoct"}): "concoct_bins",
-    }
+    target_names = ["metabat2_bins", "maxbin2_bins", "concoct_bins"]
 
     plan = WorkflowPlan.Generate(
         given=given,

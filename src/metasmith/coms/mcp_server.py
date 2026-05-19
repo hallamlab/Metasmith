@@ -23,7 +23,7 @@ from ..models.solver import Transform, Dependency
 from ..models.solver import Solution
 from ..models.workflow import WorkflowPlan, WorkflowTask
 from ..models.remote import Source
-from ..agents import Agent, TargetBuilder
+from ..agents import Agent, TargetBuilder, TargetSpec
 from ..models.build_libraries import Build
 from ..logging import Log
 
@@ -397,9 +397,7 @@ async def plan_workflow(
 
     targets = TargetBuilder()
     for t in target_types:
-        parents = set()
-        # auto-link to previously added targets that share namespace
-        targets.Add(t, parents)
+        targets.Add(t)
 
     # Build target model (same pattern as Agent.GenerateWorkflow)
     def _get_endpoint(dtype_name: str):
@@ -411,14 +409,13 @@ async def plan_workflow(
         assert False, f"no transforms had the namespace [{ns}]"
 
     target_model = Transform()
-    _dtname2dep: dict[str, Dependency] = {}
-    target_names: dict[Endpoint, str] = {}
-    for dtype_name, parents in targets.resolve():
-        e = _get_endpoint(dtype_name)
-        assert e not in target_names, f"[{dtype_name}] is a duplicate of [{target_names[e]}]"
-        d = target_model.AddRequirement(example=e, parents={_dtname2dep[p] for p in parents})
-        _dtname2dep[dtype_name] = d
-        target_names[e] = dtype_name
+    _spec2dep: dict[TargetSpec, Dependency] = {}
+    target_names: list[str] = []
+    for spec in targets.resolve():
+        e = _get_endpoint(spec.dtype_name)
+        d = target_model.AddRequirement(example=e, parents={_spec2dep[p] for p in spec.parents})
+        _spec2dep[spec] = d
+        target_names.append(spec.dtype_name)
 
     from ..models.libraries import DataInstanceLibraryView
     res_views = [DataInstanceLibraryView(lib) for lib in res_libs]

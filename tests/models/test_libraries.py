@@ -1013,7 +1013,7 @@ class TestDataInstanceLibraryPerformance:
 
         target_model = Transform()
         target_model.AddRequirement(properties={"bam"})
-        target_names = {Endpoint(properties={"bam"}): "bam"}
+        target_names = ["bam"]
 
         start = time.time()
         plan = WorkflowPlan.Generate(

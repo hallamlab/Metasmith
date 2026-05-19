@@ -171,7 +171,7 @@ def _make_task(
     temp_dir: Path,
     transforms: dict[str, str],
     target_properties: list[set[str]],
-    target_names: dict[Endpoint, str],
+    target_names: list[str],
     given_type: str = "mock::assembly",
 ) -> WorkflowTask:
     """Build a WorkflowTask from transforms and samples."""
@@ -220,7 +220,7 @@ class TestTraceLinearChain:
             temp_dir=tmp_path / "task",
             transforms=transforms,
             target_properties=[{"bam"}],
-            target_names={Endpoint(properties={"bam"}): "bam"},
+            target_names=["bam"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -280,7 +280,7 @@ class TestTraceFanOutMerge:
             temp_dir=tmp_path / "task",
             transforms=transforms,
             target_properties=[{"merged"}],
-            target_names={Endpoint(properties={"merged"}): "merged"},
+            target_names=["merged"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -335,11 +335,7 @@ class TestTraceMultiStepDiamond:
                 {"bins", "method:maxbin2"},
                 {"bins", "method:concoct"},
             ],
-            target_names={
-                Endpoint(properties={"bins", "method:metabat2"}): "metabat2_bins",
-                Endpoint(properties={"bins", "method:maxbin2"}): "maxbin2_bins",
-                Endpoint(properties={"bins", "method:concoct"}): "concoct_bins",
-            },
+            target_names=["metabat2_bins", "maxbin2_bins", "concoct_bins"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -395,7 +391,7 @@ class TestTraceScaling:
             temp_dir=tmp_path / "task",
             transforms=transforms,
             target_properties=[{"bam"}],
-            target_names={Endpoint(properties={"bam"}): "bam"},
+            target_names=["bam"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -431,7 +427,7 @@ class TestTracePersistence:
             temp_dir=tmp_path / "task",
             transforms=transforms,
             target_properties=[{"bam"}],
-            target_names={Endpoint(properties={"bam"}): "bam"},
+            target_names=["bam"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -518,7 +514,7 @@ class TestTraceSharedInputs:
 
         target_model = Transform()
         target_model.AddRequirement(properties={"annotated"})
-        target_names = {Endpoint(properties={"annotated"}): "annotated"}
+        target_names = ["annotated"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -590,7 +586,7 @@ class TestTraceSharedInputs:
 
         target_model = Transform()
         target_model.AddRequirement(properties={"annotated"})
-        target_names = {Endpoint(properties={"annotated"}): "annotated"}
+        target_names = ["annotated"]
 
         plan = WorkflowPlan.Generate(
             given=given,

@@ -169,7 +169,7 @@ class PlanHint:
 
 def _diagnose_plan_failure(
     target_model: Transform,
-    target_names: dict[Endpoint, str],
+    target_names: list[str],
     given_map: dict[Endpoint, list[DataInstance]],
     transform2inst: dict[Transform, TransformInstance],
     solver_result: SolverResult|None,
@@ -214,8 +214,8 @@ def _diagnose_plan_failure(
     # build endpoint -> name cache from data instances, target_names, and any
     # supplied type lookups (typically the transform libs)
     _name_cache: dict = {}
-    for ep, nm in target_names.items():
-        _name_cache[ep] = nm
+    for d, nm in zip(target_model.requires, target_names):
+        _name_cache.setdefault(Endpoint(d.properties), nm)
     for ep, insts in given_map.items():
         for inst in insts:
             if inst.dtype_name:
@@ -642,7 +642,7 @@ class WorkflowPlan:
         cls,
         given: list[list[DataInstanceLibraryView]],
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
-        target_names: dict[Endpoint, str],
+        target_names: list[str],
         target_model: Transform,
         max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
@@ -756,7 +756,7 @@ class WorkflowPlan:
                 targets=[],
                 steps=[],
                 _solver_result=result,
-                dropped_targets=[name for name in target_names.values()],
+                dropped_targets=list(target_names),
                 hints=failure_hints,
             )
 
@@ -838,6 +838,18 @@ class WorkflowPlan:
         target_appls = [a for a in solution.dependency_plan if sum(len(g) for g in a.produced)==0]
         # target_appl = solution.dependency_plan[-1]
         target_endpoints = {e for appl in target_appls for e in appl.used.values()}
+        # map each target_model.Dependency to its declared name (positional alignment).
+        dep_to_name: dict[Dependency, str] = dict(zip(target_model.requires, target_names))
+        # for the producer-labeling loop: walk the solver's terminal target_appls and
+        # queue (alias, target-dep) pairs per produced Endpoint. Lineage-distinct
+        # target deps land on distinct Endpoint objects, so each queue holds the
+        # right number of slots per endpoint.
+        ep_dep_queue: dict[Endpoint, list[Dependency]] = {}
+        for _appl in target_appls:
+            for _d, _e in _appl.used.items():
+                if _d in dep_to_name:
+                    ep_dep_queue.setdefault(_e, []).append(_d)
+        resolved_deps: set[Dependency] = set()
         applies = [a for a in solution.dependency_plan if len(a.used)>0 and sum(len(g) for g in a.produced)>0]
         # applies = solution.dependency_plan[1:-1]
         for i, appl in enumerate(applies):
@@ -889,18 +901,18 @@ class WorkflowPlan:
             for j, pgroup in enumerate(appl.produced):
                 for d, e in pgroup.items():
                     if e not in target_endpoints: continue
-                    dtname = None
-                    for x in target_names:
-                        if e.IsA(x):
-                            dtname = target_names[x]
-                    assert dtname is not None
+                    queue = ep_dep_queue.get(e)
+                    assert queue, f"no target dep matched produced endpoint [{e}]"
+                    d_target = queue.pop(0)
+                    dtname = dep_to_name[d_target]
+                    resolved_deps.add(d_target)
                     t = _insts[(j, d, e)]
                     target_meta[e] = target_meta.get(e, [])+[
                         WorkflowTarget(
                             name=dtname,
                             instance=t,
                             producing_step=step,
-                        )   
+                        )
                     ]
 
         # expand used_endpoints to include all transitive lineage ancestors
@@ -932,13 +944,12 @@ class WorkflowPlan:
                     continue
                 _seen_given.add(inst.instance_id)
                 _given.append(inst)
-        resolved_target_names = {t.name for targets in target_meta.values() for t in targets}
         dropped_targets = []
-        for requested_ep, requested_name in target_names.items():
-            if requested_name not in resolved_target_names:
-                Log.Warn(f"target [{requested_name}] was requested but not included in plan"
+        for d, nm in dep_to_name.items():
+            if d not in resolved_deps:
+                Log.Warn(f"target [{nm}] was requested but not included in plan"
                          " — check if group_by dependency can be satisfied from given inputs")
-                dropped_targets.append(requested_name)
+                dropped_targets.append(nm)
 
         # if the plan is empty or has dropped targets, attach hints
         built_steps = [s for a, s in steps.items()]

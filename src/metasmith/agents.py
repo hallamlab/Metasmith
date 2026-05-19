@@ -55,37 +55,30 @@ class AgentShell:
                 pass
         self.shell.__exit__(exc_type, exc_val, exc_tb)
 
+@dataclass(frozen=True)
+class TargetSpec:
+    dtype_name: str
+    parents: tuple["TargetSpec", ...] = ()
+
 class TargetBuilder:
     def __init__(self) -> None:
-        self.targets: dict[str, set[str]] = {}
+        self._items: list[TargetSpec] = []
 
-    def Add(self, target_type: str, parents: set[str]|None=None):
-        if parents is None: parents = set()
+    def Add(self, target_type: str, parents: Iterable[TargetSpec]|None=None) -> TargetSpec:
         assert "::" in target_type, f'expected @type to in the form of "namespace::type_name" but got [{target_type}]'
-        assert target_type not in self.targets, f'[{target_type}] already added'
-        self.targets[target_type] = parents.copy()
-        return target_type
+        spec = TargetSpec(target_type, tuple(parents or ()))
+        for existing in self._items:
+            assert existing != spec, f'target [{target_type}] with identical parents already added'
+        self._items.append(spec)
+        return spec
 
-    def resolve(self) -> list[tuple[str, set[str]]]:
-        """Return targets in topological order (parents before children)."""
-        # Validate parent references
-        for dtype, parents in self.targets.items():
-            for p in parents:
-                assert p in self.targets, f'parent [{p}] of [{dtype}] was never added'
-        # Kahn's algorithm
-        in_degree = {k: len(v) for k, v in self.targets.items()}
-        queue = deque(k for k, d in in_degree.items() if d == 0)
-        result: list[tuple[str, set[str]]] = []
-        while queue:
-            node = queue.popleft()
-            result.append((node, self.targets[node]))
-            for k, parents in self.targets.items():
-                if node in parents:
-                    in_degree[k] -= 1
-                    if in_degree[k] == 0:
-                        queue.append(k)
-        assert len(result) == len(self.targets), f'cycle detected in target parents'
-        return result
+    def resolve(self) -> list[TargetSpec]:
+        # Insertion order is causal: a parent must have been Add'd before its child,
+        # since the child receives the parent's TargetSpec handle.
+        return list(self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
 
 ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|str|TransformInstance, Resources]
 @dataclass
@@ -376,7 +369,7 @@ class Agent:
             for t in targets:
                 tb.Add(t)
             targets = tb
-        assert len(targets.targets)>0, "[targets] can not be empty"
+        assert len(targets)>0, "[targets] can not be empty"
         
         def _get_endpoint(dtype_name: str):
             ns, _ = dtype_name.split("::")
@@ -394,14 +387,13 @@ class Agent:
             assert False, f"no transforms had the namespace [{ns}]"
 
         target_model = Transform()
-        _dtname2dep: dict[str, Dependency] = {}
-        target_names: dict[Endpoint, str] = {}
-        for dtype_name, parents in targets.resolve():
-            e = _get_endpoint(dtype_name)
-            assert e not in target_names, f"[{dtype_name}] is a duplicate of [{target_names[e]}]"
-            d = target_model.AddRequirement(example=e, parents={_dtname2dep[p] for p in parents})
-            _dtname2dep[dtype_name] = d
-            target_names[e] = dtype_name
+        _spec2dep: dict[TargetSpec, Dependency] = {}
+        target_names: list[str] = []
+        for spec in targets.resolve():
+            e = _get_endpoint(spec.dtype_name)
+            d = target_model.AddRequirement(example=e, parents={_spec2dep[p] for p in spec.parents})
+            _spec2dep[spec] = d
+            target_names.append(spec.dtype_name)
 
         res_views = [lib if isinstance(lib, DataInstanceLibraryView) else DataInstanceLibraryView(lib) for lib in resources]
         _samples = [sample if isinstance(sample, DataInstanceLibraryView) else DataInstanceLibraryView(sample) for sample in samples]

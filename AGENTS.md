@@ -109,6 +109,26 @@ The planner handles parallelism automatically — if you have 3 accessions, it
 generates 3 parallel getNcbiAssembly jobs, then one ppanggolin that collects all
 the resulting gbk files.
 
+#### Declaring targets
+
+`TargetBuilder.Add(target_type, parents=None)` returns an opaque `TargetSpec`
+handle. Pass handles in `parents=` to link lineage-distinct forks:
+
+```python
+targets = TargetBuilder()
+asm     = targets.Add("sequences::assembly")
+mb_bins = targets.Add("binning::metabat2_bin_table", parents={asm})
+sb_bins = targets.Add("binning::semibin2_bin_table", parents={asm})
+# duplicate-type targets are allowed when lineage parents differ:
+targets.Add("taxonomy::gtdbtk", parents={mb_bins})
+targets.Add("taxonomy::gtdbtk", parents={sb_bins})
+```
+
+Two `Add` calls with the same `target_type` *and* the same `parents=` set raise
+— structurally identical requests are still rejected. `WorkflowPlan.Generate`
+takes `target_names: list[str]` aligned positionally with `target_model.requires`
+(no Endpoint-keyed dict).
+
 #### Diagnosing failed plans
 
 When the solver can't produce a complete plan, `WorkflowPlan.hints` carries
@@ -230,6 +250,15 @@ Each `DataInstance` has a stable `instance_id` (10-char hash derived from path, 
 - Workflow steps — `WorkflowStep.Pack()` uses a v2 schema that stores instances by `instance_id`
 
 This enables reliable lineage tracking: use `DataInstanceLibrary.Load()` + `Trace()` to map results back to inputs rather than parsing filenames or work directories.
+
+### Live-masking transforms
+
+`TransformInstanceLibrary.AsView(mask: set[Path], invert=False)` returns a
+`TransformInstanceLibraryView` that filters `IterateTransforms` to (or away
+from, with `invert=True`) the given `.py` paths. Pass the view into
+`Agent.GenerateWorkflow(transforms=[...])` or `WorkflowPlan.Generate(...)` in
+place of the underlying library to hide transforms by file path without
+rebuilding the library on disk. Mirrors `DataInstanceLibrary.AsView`.
 
 ### Testing Without Containers
 

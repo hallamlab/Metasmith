@@ -83,7 +83,7 @@ def _generate(inputs: DataInstanceLibrary, transforms: TransformInstanceLibrary,
     return WorkflowPlan.Generate(
         given=[[sv] for sv in samples],
         transforms=[transforms],
-        target_names={target_ep: target_type},
+        target_names=[target_type],
         target_model=target_model,
     )
 

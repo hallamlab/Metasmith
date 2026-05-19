@@ -107,11 +107,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
         target_model.AddRequirement(properties={"bins", "method:concoct"})
 
         # Define target names
-        target_names = {
-            Endpoint(properties={"bins", "method:metabat2"}): "metabat2_bins",
-            Endpoint(properties={"bins", "method:maxbin2"}): "maxbin2_bins",
-            Endpoint(properties={"bins", "method:concoct"}): "concoct_bins",
-        }
+        target_names = ["metabat2_bins", "maxbin2_bins", "concoct_bins"]
 
         # Generate workflow plan
         plan = WorkflowPlan.Generate(
@@ -168,7 +164,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 
         target_model = Transform()
         target_model.AddRequirement(properties={"bam"})
-        target_names = {Endpoint(properties={"bam"}): "bam"}
+        target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -231,7 +227,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 
         target_model = Transform()
         target_model.AddRequirement(properties={"bam"})
-        target_names = {Endpoint(properties={"bam"}): "bam"}
+        target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -287,7 +283,7 @@ TransformInstance(protocol=protocol, model=model, group_by=reads)
 
         target_model = Transform()
         target_model.AddRequirement(properties={"bam"})
-        target_names = {Endpoint(properties={"bam"}): "bam"}
+        target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -387,9 +383,7 @@ class TestBranchingBehavior:
         # Target just one branch output (solver picks one branch at a time)
         target_model = Transform()
         target_model.AddRequirement(properties={"branch_a"})
-        target_names = {
-            Endpoint(properties={"branch_a"}): "branch_a",
-        }
+        target_names = ["branch_a"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -484,7 +478,7 @@ TransformInstance(protocol=protocol, model=model, group_by=dep_a)
         # Target the merged output
         target_model = Transform()
         target_model.AddRequirement(properties={"merged"})
-        target_names = {Endpoint(properties={"merged"}): "merged"}
+        target_names = ["merged"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -621,7 +615,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 
         target_model = Transform()
         target_model.AddRequirement(properties={"bam"})
-        target_names = {Endpoint(properties={"bam"}): "bam"}
+        target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -755,7 +749,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 
         target_model = Transform()
         target_model.AddRequirement(properties={"bam"})
-        target_names = {Endpoint(properties={"bam"}): "bam"}
+        target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -801,7 +795,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 
         target_model = Transform()
         target_model.AddRequirement(properties={"bam"})
-        target_names = {Endpoint(properties={"bam"}): "bam"}
+        target_names = ["bam"]
 
         # Generate workflow multiple times
         plans = []
@@ -882,9 +876,7 @@ TransformInstance(protocol=protocol, model=model, group_by=asm)
 
         target_model = Transform()
         target_model.AddRequirement(properties={"bins", "method:metabat2"})
-        target_names = {
-            Endpoint(properties={"bins", "method:metabat2"}): "metabat2_bins"
-        }
+        target_names = ["metabat2_bins"]
 
         # Use both libraries
         plan = WorkflowPlan.Generate(
