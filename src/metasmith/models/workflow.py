@@ -1375,9 +1375,9 @@ class WorkflowTask:
             return name
         
         # goal:
-        # (_tK9GI0FH) = o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]) // lib::pangenome_heatmap.py
-        # (_7A15qSzL) = o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]) // containers::python_for_data_science.oci
-        # (_urCt2PG9) = o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]) // sequences::gbk
+        # _tK9GI0FH = (o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]))[0] // lib::pangenome_heatmap.py
+        # _7A15qSzL = (o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]))[0] // containers::python_for_data_science.oci
+        # _urCt2PG9 = (o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]))[0] // sequences::gbk
         # _seen = set()
         unsorted_input_channels: dict[Endpoint, list[DataInstance]] = {}
         _child2parents: dict[Endpoint, set[Endpoint]] = {}
@@ -1455,9 +1455,11 @@ class WorkflowTask:
 
         # goal:
         # k = ['h']
-        # (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
+        # h = (o.post([*p1(o.group('f', o.using([f], k)))], k))[0]
         # or this for when batching
-        # (y) = o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k)
+        # y = (o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k))[0]
+        # (multi-output processes still use parenthesized destructure, e.g.
+        #  (h, y) = o.post([*p1(...)], k) — strict syntax accepts >=2 vars)
         target_endpoints = {x.instance.dtype for x in the_plan.targets}
         src_process = []
         wf_main = []
@@ -1494,9 +1496,16 @@ class WorkflowTask:
             produced_k = [f"'{x}'" for x in produced_snames]
             produced_k = ", ".join(produced_k)
             wf_main.append(f"k = [{produced_k}]")
-            wf_main.append(
-                f"({produced}) = o.post([*{process_name}({used})], k)"
-            )
+            if len(produced_names) == 1:
+                # Nextflow 26.04+ strict syntax rejects single-element parenthesized
+                # multiple-assignment `(_x) = expr`; use indexed access instead.
+                wf_main.append(
+                    f"_{produced_names[0]} = (o.post([*{process_name}({used})], k))[0]"
+                )
+            else:
+                wf_main.append(
+                    f"({produced}) = o.post([*{process_name}({used})], k)"
+                )
             if step.order in final_steps_for_merging:
                 for e in final_steps_for_merging[step.order]:
                     names = to_merge_names[e]
@@ -1553,7 +1562,7 @@ class WorkflowTask:
             f'l = _lf.lineage',
             f'o.seedParents(_lf.child2parent)',
         ] + [
-            f'(_{v}) = o.postIn([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]) // {n}'
+            f'_{v} = (o.postIn([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]))[0] // {n}'
             for p, v, n in prepared_given # this must be (and is) sorted in lineage order
         ] + [
             line for line in wf_main

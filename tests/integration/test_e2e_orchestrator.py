@@ -7,6 +7,7 @@ class's group, batch, debatch, post, and mix methods inside Docker.
 import json
 import subprocess
 import shutil
+import sys
 import pytest
 from pathlib import Path
 
@@ -61,13 +62,26 @@ class NxfTestRunner:
 
     @staticmethod
     def assert_nxf_ok(result: subprocess.CompletedProcess):
-        """Assert Nextflow succeeded, tolerating the NXF 25.x duration bug.
+        """Assert Nextflow succeeded, tolerating upstream bug nextflow-io/nextflow#6757.
 
-        Nextflow 25.x has a known timing bug where very-fast workflows produce
-        a negative Duration assertion error (returncode=1) even when logic succeeds.
+        Under wall-clock skew (WSL2, NTP step), Nextflow's `WorkflowMetadata.invokeOnComplete`
+        asserts `Duration >= 0` and throws even after the workflow body has completed
+        successfully and all `publish` manifests have been written. The exit code is
+        non-zero but the on-disk results are intact and parseable.
         """
-        nxf_duration_bug = "Duration unit cannot be a negative number" in result.stdout
-        assert result.returncode == 0 or nxf_duration_bug, f"NXF failed: {result.stderr}"
+        nxf_duration_bug = (
+            "Duration unit cannot be a negative number" in result.stdout
+            or "Duration unit cannot be a negative number" in (result.stderr or "")
+        )
+        if result.returncode != 0 and nxf_duration_bug:
+            print(
+                "WARN: tolerated upstream nextflow-io/nextflow#6757 (negative Duration "
+                "assertion); workflow body completed, optional report/timeline/trace "
+                "artifacts may be missing.",
+                file=sys.stderr,
+            )
+            return
+        assert result.returncode == 0, f"NXF failed: {result.stderr}"
 
 
 @pytest.fixture
@@ -92,7 +106,7 @@ workflow {
         [["a": [2]], file("${projectDir}/lib/Orchestrator.groovy")],
     ])
 
-    def (out) = o.post([ch], ["result"])
+    def out = (o.post([ch], ["result"]))[0]
     def (name, stream) = out
     stream.view { idx, item -> "POST: ${JsonOutput.toJson(idx)} ${item.name}" }
 }
@@ -118,7 +132,7 @@ workflow {
         [[:], file("${projectDir}/input_2.txt")],
     ])
 
-    def (out) = o.postIn([ch], ["inp"])
+    def out = (o.postIn([ch], ["inp"]))[0]
     def (name, stream) = out
     stream.view { idx, item -> "POSTIN: ${JsonOutput.toJson(idx)} ${item.name}" }
 }
@@ -145,7 +159,7 @@ workflow {
         [[:], file("${projectDir}/test.nf")],
     ])
 
-    def (out) = o.post([ch], ["x"])
+    def out = (o.post([ch], ["x"]))[0]
     def (name, stream) = out
     stream.view { idx, item ->
         def hash_val = idx["x"][0]
@@ -187,8 +201,8 @@ workflow {
         [[:], file("${projectDir}/item_3.txt")],
     ])
 
-    def (posted_a) = o.postIn([ch_a_raw], ["a"])
-    def (posted_b) = o.postIn([ch_b_raw], ["b"])
+    def posted_a = (o.postIn([ch_a_raw], ["a"]))[0]
+    def posted_b = (o.postIn([ch_b_raw], ["b"]))[0]
 
     def grouped = o.group("a", [posted_a, posted_b], ["target"], 1)
     grouped.view { "GROUP: ${it[0]}" }
@@ -230,9 +244,9 @@ workflow {
         return x
     }
 
-    def (posted_a) = o.postIn([ch_a_raw], ["a"])
-    def (posted_b_early) = o.postIn([ch_b_raw_early], ["b"])
-    def (posted_b_late) = o.postIn([ch_b_raw_late], ["b"])
+    def posted_a = (o.postIn([ch_a_raw], ["a"]))[0]
+    def posted_b_early = (o.postIn([ch_b_raw_early], ["b"]))[0]
+    def posted_b_late = (o.postIn([ch_b_raw_late], ["b"]))[0]
     def mixed_b = o.mix([posted_b_early, posted_b_late])
 
     def grouped = o.group("a", [posted_a, mixed_b], ["target"], 1)
@@ -266,7 +280,7 @@ workflow {
         [[:], file("${projectDir}/a.txt")],
     ])
 
-    def (posted) = o.postIn([ch], ["x"])
+    def posted = (o.postIn([ch], ["x"]))[0]
 
     // Pass the same posted stream to two group() calls
     def g1 = o.group("x", [posted], ["t1"], 1)
@@ -344,7 +358,7 @@ workflow {
 
     // Create 9 sample streams
     sample_items = []
-    for (i in 0..8) {
+    (0..8).each { i ->
         sample_items.add([[:], file("${projectDir}/sample_${i}.txt")])
     }
     ch_samples = Channel.fromList(sample_items)
@@ -354,28 +368,34 @@ workflow {
     ch_container = Channel.fromList([[[:], file("${projectDir}/container.txt")]])
 
     // Post all inputs
-    def (posted_samples) = o.postIn([ch_samples], ["sample"])
-    def (posted_exp) = o.postIn([ch_exp], ["exp"])
-    def (posted_container) = o.postIn([ch_container], ["container"])
+    def posted_samples = (o.postIn([ch_samples], ["sample"]))[0]
+    def posted_exp = (o.postIn([ch_exp], ["exp"]))[0]
+    def posted_container = (o.postIn([ch_container], ["container"]))[0]
 
     // p01: groups by sample, also needs exp + container
     def g1 = o.group("sample", [posted_samples, posted_exp, posted_container], ["p01_out"], 1)
     def p01_result = p01_per_sample(g1)
-    def (p01_posted) = o.post([p01_result], ["p01_out"])
+    def p01_posted = (o.post([p01_result], ["p01_out"]))[0]
 
     // p02: groups by exp, needs container
     // posted_exp and posted_container are reused — shared across g1, g2, g3
     def g2 = o.group("exp", [posted_exp, posted_container], ["p02_out"], 1)
     def p02_result = p02_per_exp(g2)
-    def (p02_posted) = o.post([p02_result], ["p02_out"])
+    def p02_posted = (o.post([p02_result], ["p02_out"]))[0]
 
     // p03: groups by exp, needs p01 + p02 outputs + exp + container
     def g3 = o.group("exp", [p01_posted, p02_posted, posted_exp, posted_container], ["p03_out"], 1)
     def p03_result = p03_merge(g3)
 
-    p01_result.view { "P01: ${it[0]}" }
-    p02_result.view { "P02: ${it[0]}" }
-    p03_result.view { "P03: ${it[0]}" }
+    // Render the file name (a String) rather than the index Map. Iterating
+    // an index Map via Groovy's FormatHelper races with concurrent operators
+    // sharing the same Map reference (verified empirically against 25.10.0
+    // and 26.04.1) and surfaces as a `ConcurrentModificationException` from
+    // `FormatHelper.formatMap` inside the view closure. Production-generated
+    // workflows don't render index Maps via view, so this is test-side only.
+    p01_result.view { "P01: ${it[1].name}" }
+    p02_result.view { "P02: ${it[1].name}" }
+    p03_result.view { "P03: ${it[1].name}" }
 }
 ''', timeout=120)
         # DSL2 auto-forks shared channels so all three processes receive data correctly.
