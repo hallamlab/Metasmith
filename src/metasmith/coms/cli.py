@@ -187,6 +187,51 @@ class CommandLineInterface:
             # data_dirs=flatten(args.data),
         )
 
+    def run(self, raw_args=None):
+        parser = ArgumentParser(
+            prog=f'{CLI_ENTRY} {self._get_fn_name()}',
+            description="run a single transform against concrete inputs (no Nextflow)",
+            epilog=(
+                "Example:\n"
+                "  metasmith run -l transforms/amplicon -t align_reads.py "
+                "-i mock::reads=./r1.fq -i mock::reads=./r2.fq -i mock::assembly=./asm.fa -w outputs/"
+            ),
+            formatter_class=RawDescriptionHelpFormatter,
+        )
+        parser.add_argument("-l", "--transform-lib", required=True, type=Path,
+            help="path to the transform library (a directory)")
+        parser.add_argument("-t", "--transform", required=True,
+            help="relative path of the transform .py within the library")
+        parser.add_argument("-i", "--input", required=True, action="append", default=[],
+            metavar="TYPE=PATH",
+            help="input binding (e.g. ncbi::assembly_accession=./acc.txt); repeat for multiple inputs")
+        parser.add_argument("-w", "--work-dir", required=False, type=Path, default=None,
+            help="output directory (defaults to cwd)")
+        parser.add_argument("--agent-home", required=False, type=Path, default=None,
+            help="deployed agent home (containing lib/agent.yml). Defaults to env AGENT_HOME or a host-local stub.")
+        parser.add_argument("--host", required=False, default=None,
+            help="relay host name (reserved for relay-bounce wiring)")
+        args = parser.parse_args(raw_args)
+
+        inputs: list[tuple[str, Path]] = []
+        for item in args.input:
+            if "=" not in item:
+                Log.Error(f"invalid --input [{item}], expected TYPE=PATH")
+                sys.exit(2)
+            k, v = item.split("=", 1)
+            inputs.append((k, Path(v)))
+
+        from ..models.direct_run import RunTransform
+        result = RunTransform(
+            transform_lib=args.transform_lib,
+            transform=args.transform,
+            inputs=inputs,
+            work_dir=args.work_dir,
+            host=args.host,
+            agent_home=args.agent_home,
+        )
+        sys.exit(0 if result.success else 1)
+
     def help(self, args=None):
         help = [
             f"{NAME} v{VERSION}",

@@ -44,6 +44,195 @@ def DeployFromContainer(workspace: Path, architecture: str, system: str):
 
     Log.Info("deployment complete")
 
+def ExecuteStep(
+    step,
+    agent,
+    shell,
+    external_cwd: Path,
+    lineages: list,
+    input_by_dep: dict,
+    dep2output: list,
+    params: dict,
+) -> ExecutionResult:
+    """Run a single workflow step's protocol against pre-bound inputs.
+
+    Both the Nextflow path (StageAndRunTransform) and the direct-run path
+    (models.direct_run.RunTransform) go through here once they have a step,
+    a shell, and the bindings the protocol needs.
+    """
+    from .models.workflow import WorkflowStep
+    assert isinstance(step, WorkflowStep)
+
+    agent_home = str(agent.home.GetPath())
+    def _shorten_home(p: str):
+        return p.replace(agent_home, "{agent_home}")
+
+    step_name = f"{step.transform.name}:{step.transform.GetKey()}"
+    alldep2output = {d: e for x in dep2output for d, e in x.items()}
+
+    def _status(p: ContextPath):
+        return "✓" if p.local.exists() else "X"
+    def _parse_path(p: Path, container_override=None):
+        if p.is_symlink():
+            external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
+            if external.is_relative_to(agent_home):
+                tail = external.relative_to(agent_home)
+                local = AgentPaths.HOME_ROOT/tail
+            else:
+                # External path (e.g. /project/...): use absolute path as container
+                # path so GetContainerModel generates an identity bind mount rather
+                # than mapping the source to /ws (which would override the workdir).
+                local = p
+                container_override = container_override or external
+        else:
+            local = p
+            external = external_cwd/p
+
+        if container_override:
+            container = container_override
+        else:
+            container = local
+        return ContextPath(local=local, external=external, container=container)
+    def _get_formatted_size(p: Path):
+        if not p.exists():
+            return "/"
+        try:
+            size_bytes = p.stat().st_size
+            for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                if size_bytes < 1024.0:
+                    return f"{size_bytes:0.2f} {unit}"
+                size_bytes /= 1024.0
+            return f"{size_bytes:0.2f} PB" # Fallback for Petabytes
+        except:
+            return "/"
+    inputs: list[dict[Dependency, ContextData]] = []
+    Log.Info("uses:")
+    missing_input=False
+    ordered_input_deps = list(step.transform.model.requires)
+    for batch, batch_lineage in enumerate(lineages):
+        if len(lineages)>1:
+            Log.Info(f"  > batch [{batch+1}]:")
+        g: dict[Dependency, ContextData] = {}
+        file_groups = batch_lineage['FILES']
+        for dep, file_names in zip(ordered_input_deps, file_groups):
+            insts = input_by_dep.get(dep, [])
+            if len(insts)==0:
+                continue
+            e = insts[0].dtype
+            inst_names = {x.dtype_name for x in insts}
+            Log.Info(f"    [{e.key} {'/'.join(inst_names)}] at:")
+            input_group = [_parse_path(Path(p)) for p in file_names]
+            for p in input_group:
+                missing_input = missing_input or not p.local.exists()
+                Log.Info(_shorten_home(f"        {_status(p)} [{_get_formatted_size(p.local)}] [{p.local}]"))
+            g[dep] = ContextData(
+                input_group=input_group,
+                endpoint=e,
+                type_name=insts[0].dtype_name,
+            )
+        inputs.append(g)
+    if missing_input:
+        m = "detected missing inputs, stopping"
+        Log.Error(m)
+        Log.Info(m)
+        return ExecutionResult(False)
+
+    _hashes = {}
+    def _get_output_paths(key: Dependency, i: int, batch: int):
+        found = False
+        for branch, d2e in enumerate(dep2output):
+            if key in d2e:
+                dtype = d2e[key]
+                found = True
+                break
+        assert found, f"[{key}] not found in [{dep2output}]"
+        if batch not in _hashes:
+            lin = lineages[batch]
+            slin = {k:sorted(lin[k]) for k in sorted(lin.keys())}
+            _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=16)
+            _hashes[batch] = _hash
+        _hash = _hashes[batch]
+        dest = Path(f"{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{dtype.GetPreferredFileExtension()}")
+        return _parse_path(dest, container_override=Path("/ws")/dest)
+
+    if len(agent.setup_commands)>0:
+        Log.Info("setup commands for external shell:")
+        for line in agent.setup_commands:
+            Log.Info(f"    {line}")
+
+    context = ExecutionContext(
+        _inputs=inputs,
+        _get_output_paths=_get_output_paths,
+        external_shell=shell,
+        external_cwd=external_cwd,
+        external_agent_home=Path(agent_home),
+        container_runtime=agent.runtime,
+        params=params,
+    )
+    BREAK_LENGTH = 60
+    Log.Info(f">>> executing")
+    Log.Info(f">>> protocol "+">"*BREAK_LENGTH)
+
+    def on_exit(result: ExecutionResult, message: str|None=None):
+        Log.Info(f"<<< protocol "+"<"*BREAK_LENGTH)
+        Log.Info(f"<<< [{step_name}] {message}")
+        empty = False
+        if sum(len(x) for x in result.manifest)==0:
+            Log.Warn(f"no registered outputs")
+            result.manifest = [{}]
+            empty = True
+        seen_deps: set[Dependency] = set()
+        for i, manifest in enumerate(result.manifest):
+            if empty: break
+            if len(manifest)>0:
+                Log.Info(f"branch [{i+1}] of [{len(result.manifest)}]")
+            for d, p in manifest.items():
+                if not p.exists(): continue
+                e = alldep2output[d]
+                insts = step.dependency_map[d]
+                inst_names = {x.dtype_name for x in insts}
+                Log.Info(f"    ✓ [{_get_formatted_size(p)}] [{e.key} {'/'.join(inst_names)}] produced at [{_shorten_home(str(p))}]")
+                seen_deps.add(d)
+        missings = []
+        for i, g in enumerate(step.transform.model.produces):
+            mg = []
+            seen = False
+            for d in g:
+                if d in seen_deps:
+                    seen = True
+                    continue
+                insts = step.dependency_map.get(d, [])
+                inst_names = {x.dtype_name for x in insts}
+                iname = '/'.join(inst_names) if len(inst_names)>0 else "no expected instances"
+                dmeta = context.Output(d)
+                mg.append(f"    X branch [{i+1}] [{dmeta.local}] [{iname}]")
+            if seen: missings.append(mg)
+        if any(len(g)>0 for g in missings):
+            Log.Info(f"missing outputs:")
+            for m in [m for g in missings for m in g]:
+                Log.Info(m)
+    try:
+        results = step.transform.protocol(context)
+        if not isinstance(results, list):
+            results = [results]
+        for i, result in enumerate(results):
+            if len(results)>1:
+                Log.Info(f"batch [{i+1}] of [{len(results)}]")
+            on_exit(result, f"reports {'success' if result.success else 'failure'}")
+        success = any(r.success for r in results)
+        if success: Path(".command.success").touch()
+        return ExecutionResult(success)
+    except Exception as e:
+        on_exit(ExecutionResult(False), "failed with error")
+        Log.Error(f"error while executing transform [{step_name}]")
+        Log.Error(str(e))
+        with open("traceback.temp", "w") as f:
+            traceback.print_tb(e.__traceback__, file=f)
+        with open("traceback.temp", "r") as f:
+            Log.Error(f.read()[:-1])
+        return ExecutionResult(False)
+
+
 def StageAndRunTransform(workspace: Path, step_index: int, host: str):
     Log.Info(f"cwd [{os.getcwd()}]")
     server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS, host=host)
@@ -58,9 +247,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
     agent = Agent.Load(AgentPaths.to_definition())
     agent_home = str(agent.home.GetPath())
     Log.Info(f"agent home [{agent_home}]")
-    def _shorten_home(p: str):
-        return p.replace(agent_home, "{agent_home}")
-    
+
     Log.Info(f"connecting to relay [{server_path}]")
     with RemoteShell(server_path, timeout=60, setup_commands=agent.setup_commands) as shell:
         _paused = False
@@ -196,185 +383,13 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                         continue
                     dgroup[dep] = insts[0].dtype
                 dep2output.append(dgroup)
-        alldep2output = {d:e for x in dep2output for d,e in x.items()}
-
-        # input2files: dict[Endpoint, list[Path]] = {}
-        # for i, e in enumerate(input_map):
-        #     k = f"i{i+1:02}"
-        #     if k not in raw_meta: continue
-        #     # The lookbehind `(?<!...)` asserts that the pattern inside
-        #     # does not precede the current position.
-        #     file_group: list[str] = re.split(r"(?<!\\)\s", raw_meta[k])
-        #     input2files[e] = [Path(re.sub(r"\\\s", " ", f)) for f in file_group]
-        #     # Log.Debug(f"{k} {inst.dtype_name} {input2files[inst]}")
-
-        def _status(p: ContextPath):
-            return "✓" if p.local.exists() else "X"
-        def _parse_path(p: Path, container_override=None):
-            if p.is_symlink():
-                external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
-                if external.is_relative_to(agent_home):
-                    tail = external.relative_to(agent_home)
-                    local = AgentPaths.HOME_ROOT/tail
-                else:
-                    # External path (e.g. /project/...): use absolute path as container
-                    # path so GetContainerModel generates an identity bind mount rather
-                    # than mapping the source to /ws (which would override the workdir).
-                    local = p
-                    container_override = container_override or external
-            else:
-                local = p
-                external = external_cwd/p
-
-            if container_override:
-                container = container_override
-            else:
-                container = local
-            return ContextPath(local=local, external=external, container=container)
-        def _get_formatted_size(p: Path):
-            if not p.exists():
-                return "/"
-            try:
-                size_bytes = p.stat().st_size
-                for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-                    if size_bytes < 1024.0:
-                        return f"{size_bytes:0.2f} {unit}"
-                    size_bytes /= 1024.0
-                return f"{size_bytes:0.2f} PB" # Fallback for Petabytes
-            except:
-                return "/"
-        inputs: list[dict[Dependency, ContextData]] = []
-        Log.Info("uses:")
-        missing_input=False
-        ordered_input_deps = list(step.transform.model.requires)
-        for batch, batch_lineage in enumerate(lineages):
-            if len(lineages)>1:
-                Log.Info(f"  > batch [{batch+1}]:")
-            g: dict[Dependency, ContextData] = {}
-            file_groups = batch_lineage['FILES']
-            for dep, file_names in zip(ordered_input_deps, file_groups):
-                insts = input_by_dep.get(dep, [])
-                if len(insts)==0:
-                    continue
-                e = insts[0].dtype
-                inst_names = {x.dtype_name for x in insts}
-                Log.Info(f"    [{e.key} {'/'.join(inst_names)}] at:")
-                input_group = [_parse_path(Path(p)) for p in file_names] 
-                # remaining_files = input2files[e]
-                # group_size = len(batch_lineage[e.key])
-                # # Log.Debug(f"{inst.dtype_name} {group_size} {remaining_files}")
-                # input_group = [_parse_path(p) for p in remaining_files[:group_size]]
-                # # Log.Debug(f"{inst.dtype_name} {group_size} {[p.container for p in input_group]}")
-                # input2files[e] = remaining_files[group_size:]
-                for p in input_group:
-                    missing_input = missing_input or not p.local.exists()
-                    Log.Info(_shorten_home(f"        {_status(p)} [{_get_formatted_size(p.local)}] [{p.local}]"))
-                g[dep] = ContextData(
-                    input_group=input_group,
-                    endpoint=e,
-                    type_name=insts[0].dtype_name,
-                )
-            inputs.append(g)
-        if missing_input:
-            m = "detected missing inputs, stopping"
-            Log.Error(m)
-            Log.Info(m)
-            return ExecutionResult(False)
-
-        # kg = KeyGenerator()
-        # output_signature = step.transform.output_signature
-        _hashes = {}
-        def _get_output_paths(key: Dependency, i: int, batch: int):
-            found = False
-            for branch, d2e in enumerate(dep2output):
-                if key in d2e:
-                    dtype = d2e[key]
-                    found = True
-                    break
-            assert found, f"[{key}] not found in [{dep2output}]"
-            if batch not in _hashes:
-                lin = lineages[batch]
-                slin = {k:sorted(lin[k]) for k in sorted(lin.keys())}
-                _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=16)
-                _hashes[batch] = _hash
-            _hash = _hashes[batch]
-            dest = Path(f"{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{dtype.GetPreferredFileExtension()}")
-            # dest = Path(f"{output_indexes[batch]}-{i+1}.{kg.GenerateUID(3)}.{pattern}-{branch+1}{dtype.GetPreferredFileExtension()}")
-            return _parse_path(dest, container_override=Path("/ws")/dest)
-
-        if len(agent.setup_commands)>0:
-            Log.Info("setup commands for external shell:")
-            for line in agent.setup_commands:
-                Log.Info(f"    {line}")
-
-        context = ExecutionContext(
-            _inputs=inputs,
-            _get_output_paths=_get_output_paths,
-            external_shell=shell,
+        return ExecuteStep(
+            step=step,
+            agent=agent,
+            shell=shell,
             external_cwd=external_cwd,
-            external_agent_home=Path(agent_home),
-            container_runtime=agent.runtime,
+            lineages=lineages,
+            input_by_dep=input_by_dep,
+            dep2output=dep2output,
             params=params,
         )
-        BREAK_LENGTH = 60
-        Log.Info(f">>> executing")
-        Log.Info(f">>> protocol "+">"*BREAK_LENGTH)
-        
-        def on_exit(result: ExecutionResult, message: str|None=None):
-            Log.Info(f"<<< protocol "+"<"*BREAK_LENGTH)
-            Log.Info(f"<<< [{step_name}] {message}")
-            empty = False
-            if sum(len(x) for x in result.manifest)==0:
-                Log.Warn(f"no registered outputs")
-                result.manifest = [{}]
-                empty = True
-            seen_deps: set[Dependency] = set()
-            for i, manifest in enumerate(result.manifest):
-                if empty: break
-                if len(manifest)>0:
-                    Log.Info(f"branch [{i+1}] of [{len(result.manifest)}]")
-                for d, p in manifest.items():
-                    if not p.exists(): continue
-                    e = alldep2output[d]
-                    insts = step.dependency_map[d]
-                    inst_names = {x.dtype_name for x in insts}
-                    Log.Info(f"    ✓ [{_get_formatted_size(p)}] [{e.key} {'/'.join(inst_names)}] produced at [{_shorten_home(str(p))}]")
-                    seen_deps.add(d)
-            missings = []
-            for i, g in enumerate(step.transform.model.produces):
-                mg = []
-                seen = False
-                for d in g:
-                    if d in seen_deps: 
-                        seen = True
-                        continue
-                    insts = step.dependency_map.get(d, [])
-                    inst_names = {x.dtype_name for x in insts}
-                    iname = '/'.join(inst_names) if len(inst_names)>0 else "no expected instances"
-                    dmeta = context.Output(d)
-                    mg.append(f"    X branch [{i+1}] [{dmeta.local}] [{iname}]")
-                if seen: missings.append(mg)
-            if any(len(g)>0 for g in missings):
-                Log.Info(f"missing outputs:")
-                for m in [m for g in missings for m in g]:
-                    Log.Info(m)
-        try:
-            results = step.transform.protocol(context)
-            if not isinstance(results, list):
-                results = [results]
-            for i, result in enumerate(results):
-                if len(results)>1:
-                    Log.Info(f"batch [{i+1}] of [{len(results)}]")
-                on_exit(result, f"reports {'success' if result.success else 'failure'}")
-            success = any(r.success for r in results)
-            if success: Path(".command.success").touch()
-            return ExecutionResult(success)
-        except Exception as e:
-            on_exit(ExecutionResult(False), "failed with error")
-            Log.Error(f"error while executing transform [{step_name}]")
-            Log.Error(str(e))
-            with open("traceback.temp", "w") as f:
-                traceback.print_tb(e.__traceback__, file=f)
-            with open("traceback.temp", "r") as f:
-                Log.Error(f.read()[:-1])
-            return ExecutionResult(False)
