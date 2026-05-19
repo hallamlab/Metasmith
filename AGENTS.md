@@ -438,6 +438,22 @@ URI-based read-only views: `metasmith://types`, `metasmith://types/{ns}`, `metas
 - SemiBin2: 8 CPUs, 16GB RAM, 4h (lighter)
 - Test on a machine with sufficient RAM before production runs
 
+### Nextflow Quirks (May 2026)
+
+**Version: pinned to `nextflow=26.04.1`** in `envs/base.yml`. Bumped from 25.10.0; the codebase is forward-compatible with both. The 26.x line enables the strict syntax parser by default — keep generated `.nf` and our `Orchestrator.groovy` clean of:
+
+- **Single-element parenthesized assignment** `(_x) = expr` — strict mode rejects it. Use `_x = (expr)[0]` instead. The workflow generator at `src/metasmith/models/workflow.py` emits the indexed form (`_v = (o.postIn(...))[0]`, `_x = (o.post(...))[0]` for single-output processes). Multi-element destructures `(a, b) = expr` still work.
+- **Range-based for loops** `for (i in 0..N)` — strict mode rejects. Use `(0..N).each { i -> ... }`. (Multi-element `for (x : collection)` is fine; that's what `Orchestrator.groovy` uses.)
+
+**Don't render index Maps via `.view {}` in test scripts.** When a `.view {}` closure interpolates a `Map` (e.g. `view { "P01: ${it[0]}" }` where `it[0]` is an index Map), Groovy's `FormatHelper.formatMap` iterates entries and races with concurrent operators that share the Map reference. This surfaces as a `ConcurrentModificationException` from inside `view`. Production-generated workflows don't use `view` at all, so this is a test-side hazard only. Pattern: render a non-Map field (`view { "P01: ${it[1].name}" }`) or skip the view.
+
+**Upstream bug `nextflow-io/nextflow#6757` (open).** `nextflow.util.Duration(long)` asserts `duration >= 0`; under wall-clock skew (WSL2, NTP step) `WorkflowMetadata.invokeOnComplete()` throws and the JVM exits non-zero. The workflow body has already completed and `publish` manifests are on disk — only the optional `nxf_report.html` / `timeline.html` / `trace.tsv` artifacts are lost.
+- **Production path** (`src/metasmith/agents.py`): the shell heredoc wrapping `nextflow run` has `trap stop EXIT; exit 0`, so the non-zero JVM exit is absorbed; `CollectResults` runs unconditionally and report parsing has graceful fallbacks. No code change needed.
+- **Test path**: use `_assert_nxf_ok` / `NxfTestRunner.assert_nxf_ok` — they detect the assertion in `stdout`/`stderr`, print `WARN: tolerated upstream nextflow-io/nextflow#6757 …`, and return so downstream parsing proceeds. If `CollectResults` then fails on missing manifests, the test surfaces a clear error blaming #6757.
+- A Groovy `metaClass` override on `Duration.between` was tried and abandoned: Nextflow's caller is `@CompileStatic`, so meta-dispatch isn't intercepted.
+
+**Orchestrator concurrency hygiene.** `pending_tasks` / `index_history` / `child2parent` and the value Sets/Lists they hold are `ConcurrentHashMap` + `ConcurrentHashMap.newKeySet()` + `Collections.synchronizedList`. Defensive — the methods are `synchronized` but the collections they hand out leak to operator callbacks.
+
 ## Reference Transforms
 - `transforms/metagenomics/binning/checkm.py` - single assembly input pattern
 - `transforms/metagenomics/taxonomy/gtdbtk.py` - external database binding pattern
