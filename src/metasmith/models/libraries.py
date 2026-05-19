@@ -1316,7 +1316,7 @@ class ExecutionContext:
             Log.Info(f"    {line}")
         subprocess.run(cmd, shell=True, executable='/bin/bash')
 
-    def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None):
+    def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None):
         path = self._inputs[self._batch_index][image].path
         if IsText(path.local):
             with open(path.local) as f:
@@ -1362,12 +1362,13 @@ class ExecutionContext:
             workdir = container_ws,
             runtime = self.container_runtime,
             binds = binds,
+            extra_args = list(args) if args else [],
             container_cache = self.external_agent_home/AgentPaths.CONTAINER_CACHE,
         )
         return container
 
-    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, history: bool=True):
-        container = self.GetContainerModel(image, binds)
+    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, history: bool=True):
+        container = self.GetContainerModel(image, binds, args)
         assert container.workdir is not None # for typing
         use_cache = False
         cached_path = container.GetLocalPath()

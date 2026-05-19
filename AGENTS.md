@@ -86,6 +86,33 @@ Transforms run inside containers. The protocol has access to three path views:
 `.local` (protocol working dir), `.container` (inside the container), and
 `.external` (absolute host path).
 
+#### Extra container args
+
+`context.ExecWithContainer(...)` accepts `args: list[str]` for arbitrary
+runtime flags (e.g. `["--gpus", "all", "--shm-size=8g", "-e", "FOO=bar"]`).
+Tokens are appended verbatim after the framework's default flags and binds,
+just before the image — so a flag passed in `args=` wins over the default of
+the same name (e.g. `--network=none` overriding the Docker default
+`--network=host`). The caller is responsible for using the right dialect:
+flag syntax differs between Docker and Apptainer.
+
+The active runtime is readable on the context as
+`context.container_runtime` (`ContainerRuntime.DOCKER` or
+`ContainerRuntime.APPTAINER`), so a protocol can branch:
+
+```python
+from metasmith.coms.containers import ContainerRuntime
+
+if context.container_runtime is ContainerRuntime.DOCKER:
+    gpu_args = ["--gpus", "all"]
+else:
+    gpu_args = ["--nv"]
+context.ExecWithContainer(image=image, cmd="...", args=gpu_args)
+```
+
+`binds=` remains a separate, typed parameter — do not pass mounts through
+`args=`.
+
 ### 4. Workflow Generation
 
 This is where Metasmith earns its keep. Given:

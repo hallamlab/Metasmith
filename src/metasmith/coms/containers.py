@@ -14,6 +14,7 @@ class Container:
     container_cache: Path = Path("./")
     workdir: Path|str|None = None
     binds: list[tuple[Path|str, Path|str]] = field(default_factory=list)
+    extra_args: list[str] = field(default_factory=list)
     runtime: ContainerRuntime = ContainerRuntime.DOCKER
 
     def SetRuntime(self, runtime: ContainerRuntime):
@@ -85,6 +86,7 @@ class Container:
             *others,
             workdir,
             binds,
+            *self.extra_args,
             image,
         ]
         return " ".join(str(x) for x in toks if x != "")
