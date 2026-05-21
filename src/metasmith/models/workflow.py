@@ -1312,6 +1312,7 @@ class WorkflowTask:
                 f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
                 f'echo "lin ${{Orchestrator.JsonforEcho(index)}}" >>{METADATA_FILE}',
                 f'echo "fmt 2" >>{METADATA_FILE}',
+                f'echo "usr ${{groovy.json.JsonOutput.toJson(params.containsKey(\'user\') ? params.user : [:])}}" >>{METADATA_FILE}',
                 f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
                 f'echo "inp {','.join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
                 f'echo "out {';'.join(','.join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',

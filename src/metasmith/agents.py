@@ -480,10 +480,11 @@ class Agent:
         return presets
 
     def RunWorkflow(
-            self, 
-            task: WorkflowTask|str, 
-            config_file: Path|None=None, 
-            params: dict|Path|str|None=None, 
+            self,
+            task: WorkflowTask|str,
+            config_file: Path|None=None,
+            params: dict|Path|str|None=None,
+            user_params: dict|None=None,
             resource_overrides: ResourceOverrides|None=None,
             stub_delay: float=0,
         ) -> None:
@@ -512,7 +513,7 @@ class Agent:
                 if isinstance(params, dict):
                     params_local = temp_dir/AgentPaths.NXF_PARAMS
                     # lets underscores signify nested dictionaries
-                    # so "{process_tries=3}" becomes { process={ tries=3 } } 
+                    # so "{process_tries=3}" becomes { process={ tries=3 } }
                     def _parse(d: dict):
                         parsed = {}
                         for k, v in d.items():
@@ -531,10 +532,20 @@ class Agent:
                                 parsed[k] = v
                         return parsed
 
+                    parsed = _parse(params)
+                    # user_params bypass _parse() so underscored keys survive
+                    # verbatim; surfaces as params.user.<key> in nextflow and
+                    # rides into context.params via the "usr" line in
+                    # .command.metadata (see models/workflow.py + bootstrap.py).
+                    if "user" in parsed:
+                        Log.Warn(f"params['user'] overwritten by user_params; reserve the 'user' key for protocol config")
+                    parsed["user"] = dict(user_params) if user_params else {}
                     with open(params_local, "w") as f:
-                        yaml.safe_dump(_parse(params), f)
+                        yaml.safe_dump(parsed, f)
                     params_source = Source.FromLocal(params_local)
                 elif isinstance(params, Path):
+                    if user_params:
+                        Log.Warn(f"user_params ignored when params= is a Path; merge them into the YAML directly under the 'user' key")
                     params_source = Source.FromLocal(params)
                 mover.QueueTransfer(src=params_source, dest=ws_dest/AgentPaths.NXF_PARAMS)
                 # resource overrides
