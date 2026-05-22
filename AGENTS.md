@@ -183,36 +183,6 @@ RunWorkflow fires and returns immediately. The actual execution happens in a
 Nextflow process that manages container pulls, job scheduling, and data staging.
 You poll for completion by checking if the results metadata directory appears.
 
-#### Passing config to protocols (`user_params`)
-
-`RunWorkflow` has two `dict` kwargs for runtime config:
-
-- `params=` — Nextflow-side config. Keys with underscores get flattened into
-  nested dicts so `{"process_tries": 3}` becomes `params.process.tries=3`.
-  Use this for executor / process / Nextflow plumbing.
-- `user_params=` — Protocol-side config. Keys pass through verbatim (no
-  flattening), round-trip into `context.params` inside the protocol, and
-  override `$task.cpus` / `$task.memory` / `$task.attempt` on collision.
-
-```python
-smith.RunWorkflow(
-    task,
-    params=dict(slurmAccount="phyberos"),    # Nextflow / executor config
-    user_params=dict(shard_size=196000),     # visible as context.params["shard_size"]
-)
-```
-
-Inside the transform protocol:
-
-```python
-def protocol(context: ExecutionContext):
-    shard_size = int(context.params.get("shard_size", 1024))
-```
-
-Under the hood, `user_params` is nested under `params.user` in
-`workflow.params.yml`, echoed into `.command.metadata` as a JSON line, and
-merged into `context.params` by `bootstrap.py`.
-
 #### Waiting for a detached run
 
 `RunWorkflow` is fire-and-forget: the agent shell launches Nextflow under

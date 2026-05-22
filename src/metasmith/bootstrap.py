@@ -349,17 +349,6 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
                     except ValueError:
                         continue
                     params[k] = v
-                usr_raw = raw_meta.get("usr", "").strip()
-                if usr_raw:
-                    try:
-                        user_params = json.loads(usr_raw)
-                        if isinstance(user_params, dict):
-                            # user wins on collision (RunWorkflow user_params overrides $task.cpus/$task.memory/$task.attempt)
-                            params.update(user_params)
-                        else:
-                            Log.Warn(f"usr metadata is not a dict: {type(user_params).__name__}")
-                    except json.JSONDecodeError as e:
-                        Log.Warn(f"failed to parse usr metadata [{usr_raw[:80]}]: {e}")
         except Exception as e:
             Log.Error(f"failed to read [{METADATA_FILE}]: {e}")
         lineages = raw_meta.get("lin", "[]")

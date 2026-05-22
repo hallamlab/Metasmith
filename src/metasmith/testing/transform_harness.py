@@ -80,14 +80,11 @@ class TransformHarness:
         task: The WorkflowTask containing the step to run.
         step_index: 1-based index of the step to execute.
         work_dir: Working directory for the step. Uses a temp dir if None.
-        user_params: Optional dict round-tripped into context.params
-            (mirrors Agent.RunWorkflow(user_params=...)).
     """
 
     task: WorkflowTask
     step_index: int
     work_dir: Path | None = None
-    user_params: dict | None = None
     _original_cwd: Path = field(default_factory=Path.cwd, init=False, repr=False)
 
     @property
@@ -100,19 +97,14 @@ class TransformHarness:
         self.work_dir.mkdir(parents=True, exist_ok=True)
         return self.work_dir
 
-    def write_metadata(self, user_params: dict | None = None) -> Path:
+    def write_metadata(self) -> Path:
         """Write .command.metadata matching NXF process script format.
 
         Format matches PrepareNextflow lines 729-735 of workflow.py:
             res <cpus>/<memory>/<attempt>
             lin <json of index with FILES entry>
-            usr <json dict of user params from RunWorkflow(user_params=...)>
             inp <comma-separated input keys>
             out <semicolon-separated groups of comma-separated output keys>
-
-        Args:
-            user_params: Optional dict round-tripped into context.params
-                (mirrors Agent.RunWorkflow(user_params=...)).
 
         Returns:
             Path to the metadata file.
@@ -166,8 +158,6 @@ class TransformHarness:
             f.write(f"res 1/1.GB/1\n")
             f.write(f"lin {json.dumps(lineages)}\n")
             f.write(f"fmt 2\n")
-            if user_params:
-                f.write(f"usr {json.dumps(user_params, separators=(',', ':'))}\n")
             f.write(f"din {json.dumps(dep_in, separators=(',', ':'))}\n")
             f.write(f"dot {json.dumps(dep_out, separators=(',', ':'))}\n")
             f.write(f"sar {json.dumps(structure_arity, separators=(',', ':'))}\n")
@@ -332,10 +322,6 @@ class TransformHarness:
 
         mock_shell = MockShell()
 
-        params = {"cpus": 1, "memory": 1, "attempt": 1}
-        if self.user_params:
-            # user wins on collision, matching bootstrap.py
-            params.update(self.user_params)
         return ExecutionContext(
             _inputs=inputs,
             _get_output_paths=_get_output_paths,
@@ -343,7 +329,7 @@ class TransformHarness:
             external_cwd=work_dir,
             external_agent_home=work_dir,
             container_runtime=ContainerRuntime.DOCKER,
-            params=params,
+            params={"cpus": 1, "memory": 1, "attempt": 1},
         )
 
     def run(self) -> ExecutionResult:
@@ -358,7 +344,7 @@ class TransformHarness:
         work_dir = self._ensure_work_dir()
         self._original_cwd = Path.cwd()
 
-        self.write_metadata(user_params=self.user_params)
+        self.write_metadata()
         self.setup_inputs()
         context = self.build_context()
 

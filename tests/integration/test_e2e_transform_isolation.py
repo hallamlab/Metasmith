@@ -147,52 +147,6 @@ class TestHarnessBasic:
         assert parts[0].isdigit(), f"First part '{parts[0]}' should be batch number"
         assert parts[1].isdigit(), f"Second part '{parts[1]}' should be item number"
 
-    def test_user_params_round_trip(self, mock_samples, mock_types, temp_dir):
-        """RunWorkflow(user_params=...) reaches context.params; user wins on collision."""
-        task = _make_task(
-            mock_samples, mock_types, temp_dir / "uparam",
-            alignment_transform(), {"bam"}, "bam",
-        )
-        harness = TransformHarness(
-            task=task,
-            step_index=1,
-            work_dir=temp_dir / "work_uparam",
-            user_params={"shard_size": 196000, "cpus": 16, "nested": {"k": "v"}},
-        )
-
-        # 1. context.params receives user keys verbatim (no underscore flattening)
-        context = harness.build_context()
-        assert context.params["shard_size"] == 196000
-        assert context.params["nested"] == {"k": "v"}
-        # 2. user wins on collision with framework-derived resource keys
-        assert context.params["cpus"] == 16
-        # 3. non-overridden framework keys survive
-        assert context.params["memory"] == 1
-        assert context.params["attempt"] == 1
-
-        # 4. .command.metadata carries the usr line for bootstrap.py to parse
-        meta_path = harness.write_metadata(user_params=harness.user_params)
-        usr_line = [l for l in meta_path.read_text().splitlines() if l.startswith("usr ")]
-        assert len(usr_line) == 1
-        decoded = json.loads(usr_line[0][4:])
-        assert decoded == {"shard_size": 196000, "cpus": 16, "nested": {"k": "v"}}
-
-    def test_user_params_default_empty(self, mock_samples, mock_types, temp_dir):
-        """No user_params: no 'usr' line written, context.params unchanged."""
-        task = _make_task(
-            mock_samples, mock_types, temp_dir / "uparam_empty",
-            alignment_transform(), {"bam"}, "bam",
-        )
-        harness = TransformHarness(
-            task=task,
-            step_index=1,
-            work_dir=temp_dir / "work_uparam_empty",
-        )
-        meta_path = harness.write_metadata()
-        assert not any(l.startswith("usr ") for l in meta_path.read_text().splitlines())
-        context = harness.build_context()
-        assert context.params == {"cpus": 1, "memory": 1, "attempt": 1}
-
     def test_mock_shell_interface(self):
         """MockShell satisfies RemoteShell interface."""
         shell = MockShell()
