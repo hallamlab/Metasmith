@@ -84,7 +84,12 @@ TransformInstance(protocol=protocol, model=model, group_by=dep,
 
 Transforms run inside containers. The protocol has access to three path views:
 `.local` (protocol working dir), `.container` (inside the container), and
-`.external` (absolute host path).
+`.external` (absolute host path). `ContextPath` enforces three invariants
+post-construction: all three views are absolute, none contain `..`
+segments, and they are mutually consistent — violations raise
+`ValueError`. Protocols rarely build a `ContextPath` directly; the
+framework hands them ready-made via `context.Input(dep)`,
+`context.InputGroup(dep)`, and `context.Output(dep)`.
 
 #### Extra container args
 
@@ -292,6 +297,36 @@ rebuilding the library on disk. Mirrors `DataInstanceLibrary.AsView`.
 The `virtual_runtime` module provides a test harness for transforms that doesn't require container setup:
 - `TransformHarness` tracks instance_id in test scenarios
 - Useful for validating transform contracts (inputs/outputs/types) without pulling images
+
+### Path translation
+
+All conversion between the local / external / container path views
+lives in `src/metasmith/models/paths.py`. The two classes:
+
+- **`PathMap`** — per-execution context (carries `extern_home`,
+  `task_key`, optional `extern_cwd`). Built via `PathMap.FromAgent(agent,
+  task_key)` from `ExecuteStep`, or `PathMap.FromExternalCwd(cwd, agent)`
+  from `bin/sbatch`. Exposes `LocalToExternal` / `ExternalToLocal` /
+  `LocalToContainer` / `ContainerToLocal` for typed reroots using
+  `relative_to`, plus `Parse(p)` (the consolidator that handles
+  `/ws/<tail>` absolute, `../ws/<tail>` relative, HOME_ROOT-rooted
+  symlinks, and foreign symlinks uniformly) and `Render(p, dialect)`
+  (prefix-aware token substitution for `$AGENT_HOME` / `{agent_home}` /
+  `${params.home}`).
+- **`ContextPath`** — value type. Frozen, three Path fields, invariants
+  enforced in `__post_init__`. Build via classmethods (`FromLocal`,
+  `FromExternal`, `ForOutput`) when a `PathMap` is in scope.
+
+For shell-script content rewrites (e.g. `bin/sbatch.fix_paths` patching
+a `.command.run` body), use the `reroot_in_text(content, old_root,
+new_root)` helper: it matches the root only at path-segment boundaries
+so inner occurrences like `/msm_home_old_backup` or `/wsadm/ws/` are
+not corrupted.
+
+Never use raw `str.replace(extern_home, ...)`, `str.replace(HOME_ROOT,
+...)`, or regex like `r"/\w*/nxf_work/.*"` for path translation —
+those shapes silently corrupt or misidentify; the helpers above are the
+prefix-aware replacements.
 
 ---
 
