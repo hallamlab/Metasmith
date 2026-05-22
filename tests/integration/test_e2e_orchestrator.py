@@ -733,3 +733,57 @@ workflow {
         parsed = json.loads(json_str)
         assert "a" in parsed
         assert "b" in parsed
+
+
+class TestPathStringification:
+    """Capture the empirical shape of `Path.toString()` inside a Nextflow
+    process when the container workdir is bound at `/ws`.
+
+    Background: `Orchestrator.groovy:274` (`_batch`) renders upstream
+    process outputs via `values*.toString()`. The downstream consumer
+    receives the rendered strings in `index['FILES']` and routes them
+    through `bootstrap._parse_path`. The shape that `toString()`
+    actually emits is runtime-dependent — Docker emits absolute
+    `/ws/<tail>` (this test), while apptainer-local has been observed
+    to emit relative `../ws/<tail>` (the bug deferred to the path
+    overhaul; not exercised here because apptainer is not available
+    in CI — see `tests/path_overhaul/test_parse_path_apptainer_relative.py`
+    for the unit-level reproduction).
+    """
+
+    def test_docker_emits_absolute_ws_prefix(self, nxf_runner):
+        """Inside a Docker-bound container with workdir `/ws`,
+        `Path.toString()` on a workflow-generated path starts with
+        `/ws/`. This is the shape `Orchestrator.groovy:274`'s
+        `*.toString()` produces for upstream outputs.
+        """
+        result = nxf_runner.run('''
+process produce {
+    output:
+        path "out.txt"
+    script:
+    """
+    echo hello > out.txt
+    """
+}
+
+workflow {
+    produce()
+    produce.out.view { p -> "STRSHAPE: ${p.toString()}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("STRSHAPE:")]
+        assert len(lines) == 1, f"expected exactly one STRSHAPE line, got: {lines}"
+        rendered = lines[0].split("STRSHAPE: ", 1)[1]
+        # Docker stringification is absolute and `/ws/`-rooted.
+        assert rendered.startswith("/ws/"), (
+            f"Docker emitted unexpected toString shape: {rendered!r}. "
+            f"If this changes, `bootstrap._parse_path` case-1 (the inbox "
+            f"#139 fix) needs to be re-validated."
+        )
+        # No `..` segments — pre-condition for `_parse_path` case-1's
+        # `relative_to(WORK_ROOT)` to succeed.
+        assert ".." not in rendered.split("/"), (
+            f"Docker emitted `..` segment unexpectedly: {rendered!r}."
+        )
