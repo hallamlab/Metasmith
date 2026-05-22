@@ -24,7 +24,7 @@ from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, Workflow
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
 from .models.libraries import TransformInstance, Resources
 from .models.solver import Dependency, Endpoint, Solution, Transform
-from .constants import VERSION, MODULE_PATH, AgentPaths
+from .constants import VERSION, CONTAINER_TAG, MODULE_PATH, AgentPaths
 
 class AgentShell:
     def __init__(self, agent: Agent):
@@ -85,7 +85,7 @@ ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|str|TransformInstance, 
 class Agent:
     home: Source
     setup_commands: list[str] = field(default_factory=list)
-    container: str = f"docker://quay.io/hallamlab/metasmith:{VERSION}"
+    container: str = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
     globus_uuid: str|None = None
     runtime: ContainerRuntime=ContainerRuntime.APPTAINER
     real_path: Path|None = None
@@ -977,7 +977,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
             f'LOG_LATEST="./{AgentPaths.INTERNALS}/logs.latest"',
             f'mkdir -p $LOG_DIR',
             f'[ -e $LOG_LATEST ] && rm "$LOG_LATEST"; ln -s "./logs.$TIMESTAMP" "$LOG_LATEST"',
-            f'[ -e {AgentPaths.NXF_PARAMS} ] || touch {AgentPaths.NXF_PARAMS}',
+            f"[ -e {AgentPaths.NXF_PARAMS} ] || echo '{{}}' > {AgentPaths.NXF_PARAMS}",
             f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
             f'echo "start time was [$TIMESTAMP]"',
             f'export BINDS="{binds}"',

@@ -5,12 +5,16 @@ HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 NAME=metasmith
 DEV_USER=hallamlab
 _ver_file=$(find $HERE/src | grep version.txt)
-VER="$(cat $_ver_file)+$(git rev-parse --short HEAD)"
+# version.txt is the canonical version-with-tag (PEP 440 local form, e.g.
+# 0.17.1+a8d676a). Bump it by hand in the same commit that ships the new
+# image. Docker rejects '+' in tags, so the docker tag uses '-' instead.
+VER="$(cat $_ver_file)"
+DOCKER_TAG="${VER//+/-}"
 DOCKER_IMAGE=quay.io/$DEV_USER/$NAME
 
 # CONDA=conda
 CONDA=mamba # https://mamba.readthedocs.io/en/latest/mamba-installation.html#mamba-install
-echo image: $DOCKER_IMAGE:$VER
+echo image: $DOCKER_IMAGE:$DOCKER_TAG
 echo ""
 
 # this file contains a list of commands useful for dev,
@@ -117,11 +121,11 @@ case $1 in
             --build-arg="PACKAGE=${NAME}" \
             --build-arg="VERSION=${VER}" \
             --network=host \
-            -t $DOCKER_IMAGE:$VER . \
-        && docker inspect --format='{{.Size}}' $DOCKER_IMAGE:$VER | numfmt --to=si
+            -t $DOCKER_IMAGE:$DOCKER_TAG . \
+        && docker inspect --format='{{.Size}}' $DOCKER_IMAGE:$DOCKER_TAG | numfmt --to=si
     ;;
     -bs) # apptainer image *from docker*
-        apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$VER
+        apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$DOCKER_TAG
     ;;
     --update_container)
         $HERE/dev.sh -bp && $HERE/dev.sh -bd && $HERE/dev.sh -ud && $HERE/dev.sh -bs
@@ -150,7 +154,7 @@ case $1 in
     -ud) # docker
         # login and push image to quay.io
         # sudo docker login quay.io
-	    docker push $DOCKER_IMAGE:$VER
+	    docker push $DOCKER_IMAGE:$DOCKER_TAG
         echo "!!!"
         echo "remember to update the \"latest\" tag"
         echo "https://$DOCKER_IMAGE?tab=tags"
@@ -177,7 +181,7 @@ case $1 in
             --mount type=bind,source="$HOME/.globus",target="/.globus"\
             --mount type=bind,source="$HOME/.globusonline",target="/.globusonline"\
             --workdir="/ws" \
-            $DOCKER_IMAGE:$VER /bin/bash
+            $DOCKER_IMAGE:$DOCKER_TAG /bin/bash
     ;;
     -rs) # apptainer
             # -e XDG_CACHE_HOME="/ws"\
@@ -189,7 +193,7 @@ case $1 in
             --workdir /ws \
             --no-home \
             $HERE/$NAME.sif /bin/bash
-            # docker-daemon://$DOCKER_IMAGE:$VER /bin/bash
+            # docker-daemon://$DOCKER_IMAGE:$DOCKER_TAG /bin/bash
     ;;
 
     ###################################################
@@ -228,7 +232,7 @@ case $1 in
             --mount type=bind,source="$HOME/.globus",target="/.globus"\
             --mount type=bind,source="$HOME/.globusonline",target="/.globusonline"\
             --workdir="/ws" \
-            $DOCKER_IMAGE:$VER /bin/bash
+            $DOCKER_IMAGE:$DOCKER_TAG /bin/bash
     ;;
 
     ###################################################

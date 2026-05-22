@@ -16,20 +16,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]  # src/metasmith/testing -> repo
 
 
 def get_git_version() -> str:
-    """Get package version with git short hash appended.
+    """Return the canonical version-with-tag from version.txt.
+
+    version.txt holds the PEP 440 local-version form (e.g. "0.17.1+a8d676a")
+    bumped manually in the release commit. The Docker tag is derived from
+    this via get_docker_tag()'s '+'→'-' conversion.
 
     Returns:
-        Version string like "0.15.1+abc1234"
+        Version string like "0.17.1+a8d676a"
     """
-    base = (REPO_ROOT / "src/metasmith/version.txt").read_text().strip()
-    result = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        capture_output=True, text=True, cwd=REPO_ROOT,
-    )
-    git_hash = result.stdout.strip()
-    if not git_hash:
-        return base
-    return f"{base}+{git_hash}"
+    return (REPO_ROOT / "src/metasmith/version.txt").read_text().strip()
 
 
 def get_docker_tag(version: str|None = None) -> str:

@@ -475,6 +475,18 @@ URI-based read-only views:
 
 **Orchestrator concurrency hygiene.** `pending_tasks` / `index_history` / `child2parent` and the value Sets/Lists they hold are `ConcurrentHashMap` + `ConcurrentHashMap.newKeySet()` + `Collections.synchronizedList`. Defensive — the methods are `synchronized` but the collections they hand out leak to operator callbacks.
 
+## Release versioning
+
+`src/metasmith/version.txt` holds the **PEP 440 local version** including the build's git short hash, e.g. `0.17.1+a8d676a`. This is the single source of truth — bump it by hand in the same commit that ships the new image. From it:
+
+- `constants.VERSION` = file content verbatim (`0.17.1+a8d676a`).
+- `constants.CONTAINER_TAG` = `VERSION.replace('+', '-')` (`0.17.1-a8d676a`) — Docker tags reject `+`.
+- `Agent.container` default = `docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}`, so fresh deploys pull the exact image the maintainer pushed.
+- `dev.sh` derives `DOCKER_TAG` from `version.txt` the same way; `dev.sh -bd && -ud` build/push the matching tag.
+- `testing/docker_builder.get_git_version()` returns `version.txt` verbatim (no git rev-parse).
+
+Regression tests pinning this wiring: `tests/test_container_tag.py`, `tests/test_dev_sh_tag.py`.
+
 ## Reference Transforms
 - `transforms/metagenomics/binning/checkm.py` - single assembly input pattern
 - `transforms/metagenomics/taxonomy/gtdbtk.py` - external database binding pattern

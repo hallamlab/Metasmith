@@ -18,6 +18,11 @@ ENTRY_POINTS = [
 with open(MODULE_PATH/"version.txt") as f:
     VERSION = f.read().strip()
 
+# Docker tags reject '+', so convert the PEP 440 local-version separator.
+# This pins Agent.container to the exact hash-suffixed image pushed by
+# dev.sh -ud / testing/docker_builder.py, so a fresh deploy always finds it.
+CONTAINER_TAG = VERSION.replace('+', '-')
+
 class AgentPaths:
     WORK_ROOT = Path("/ws")
     HOME_ROOT = Path("/msm_home")
