@@ -11,6 +11,7 @@ from .constants import AgentPaths
 from .agents import Agent
 from .models.libraries import ContextPath, ContextData, ExecutionContext, ExecutionResult
 from .models.libraries import DataInstance, DataTypeLibrary, TransformInstance, TransformInstanceLibrary
+from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint
 from .hashing import KeyGenerator
 from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
@@ -54,49 +55,29 @@ def _parse_path(
 ) -> ContextPath:
     """Resolve a FILES-entry path into a (local, external, container) view.
 
-    Handles three input shapes:
-      1. `/ws/...`-prefixed strings emitted by Orchestrator.groovy:274's
-         `_batch()` for upstream process outputs. /ws inside the producer
-         container is bound to the host run-level dir, so /ws/<tail> →
-         host's `<agent_home>/runs/<task_key>/<tail>` and equivalently
-         `<AgentPaths.HOME_ROOT>/runs/<task_key>/<tail>` via the
-         $AGENT_HOME → /msm_home bind. Inbox #139.
-      2. Symlinks whose target sits under `agent_home` (the
-         host-canonical path) — rewritten to the container-relative form
-         under `AgentPaths.HOME_ROOT`.
-      3. Anything else: passed through as-is.
+    Thin shim over :meth:`metasmith.models.paths.PathMap.Parse` for
+    backward-compatible callers. The path overhaul (commit 2 of the
+    overhaul pair) centralises the four translation cases into
+    ``PathMap.Parse``:
+
+      1. ``/ws/<tail>`` absolute — Docker stringification of an upstream
+         process output (inbox #139 fix shape).
+      2. ``../ws/<tail>`` relative — apptainer-local stringification of
+         the same logical file; routed identically to (1).
+      3. Symlink whose target sits under ``HOME_ROOT`` — rerouted to
+         ``extern_home/<tail>``.
+      4. Symlink whose target sits outside ``HOME_ROOT`` — identity bind.
 
     Mirrors the inverse rewrite at bin/sbatch:54-80.
+
+    ``external_cwd`` is accepted for signature compatibility but is no
+    longer load-bearing — the relative ``../ws/`` case is anchored
+    against the path map's ``extern_work``, not against an external cwd
+    that callers may pass inconsistently.
     """
-    # (1) /ws/... → /msm_home/runs/<task_key>/... (inbox #139)
-    if p.is_absolute() and p.is_relative_to(AgentPaths.WORK_ROOT):
-        tail = p.relative_to(AgentPaths.WORK_ROOT)
-        local = AgentPaths.HOME_ROOT / "runs" / task_key / tail
-        external = Path(agent_home) / "runs" / task_key / tail
-        container = container_override if container_override else local
-        return ContextPath(local=local, external=external, container=container)
-
-    # (2) symlinks under agent_home
-    if p.is_symlink():
-        external = Path(str(p.readlink()).replace(str(AgentPaths.HOME_ROOT), agent_home))
-        if external.is_relative_to(agent_home):
-            tail = external.relative_to(agent_home)
-            local = AgentPaths.HOME_ROOT/tail
-        else:
-            # External path (e.g. /project/...): use absolute path as container
-            # path so GetContainerModel generates an identity bind mount rather
-            # than mapping the source to /ws (which would override the workdir).
-            local = p
-            container_override = container_override or external
-    else:
-        local = p
-        external = external_cwd/p
-
-    if container_override:
-        container = container_override
-    else:
-        container = local
-    return ContextPath(local=local, external=external, container=container)
+    _ = external_cwd  # legacy parameter; PathMap derives anchoring itself
+    path_map = PathMap(extern_home=Path(agent_home), task_key=task_key)
+    return path_map.Parse(p, container_override=container_override)
 
 
 def ExecuteStep(
@@ -120,8 +101,20 @@ def ExecuteStep(
     assert isinstance(step, WorkflowStep)
 
     agent_home = str(agent.home.GetPath())
-    def _shorten_home(p: str):
-        return p.replace(agent_home, "{agent_home}")
+    # Carry the step's host cwd in the PathMap so `ContextPath.ForOutput`
+    # can resolve a bare output filename to the correct per-step host
+    # location (deeper than `extern_work` by the nxf_work/<hash>/ tail).
+    path_map = PathMap(
+        extern_home=Path(agent_home),
+        task_key=task_key,
+        extern_cwd=external_cwd,
+    )
+    def _shorten_home(s: str):
+        # Log-line shortener: replace the host-side agent_home in a
+        # composed log string with the `{agent_home}` placeholder. This
+        # is a log-only convenience — production path translation goes
+        # through `path_map.Render` or `PathMap.Parse`, not str.replace.
+        return s.replace(agent_home, "{agent_home}")
 
     step_name = f"{step.transform.name}:{step.transform.GetKey()}"
     alldep2output = {d: e for x in dep2output for d, e in x.items()}
@@ -129,13 +122,7 @@ def ExecuteStep(
     def _status(p: ContextPath):
         return "✓" if p.local.exists() else "X"
     def _parse(p: Path, container_override=None):
-        return _parse_path(
-            p,
-            agent_home=agent_home,
-            external_cwd=external_cwd,
-            task_key=task_key,
-            container_override=container_override,
-        )
+        return path_map.Parse(p, container_override=container_override)
     def _get_formatted_size(p: Path):
         if not p.exists():
             return "/"
@@ -195,8 +182,8 @@ def ExecuteStep(
             _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=16)
             _hashes[batch] = _hash
         _hash = _hashes[batch]
-        dest = Path(f"{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{dtype.GetPreferredFileExtension()}")
-        return _parse(dest, container_override=Path("/ws")/dest)
+        name = f"{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{dtype.GetPreferredFileExtension()}"
+        return ContextPath.ForOutput(name, path_map)
 
     if len(agent.setup_commands)>0:
         Log.Info("setup commands for external shell:")

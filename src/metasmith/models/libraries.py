@@ -1250,19 +1250,17 @@ class TransformInstanceLibrary(DataInstanceLibrary):
     def LoadFrom(cls, src: Source, dest: Path, label: str|None=None):
         return cls(DataInstanceLibrary.LoadFrom(src, dest, label=label))
 
-@dataclass
-class ContextPath:
-    local: Path
-    external: Path
-    container: Path
+# ContextPath has moved to metasmith.models.paths; re-export to preserve
+# the existing `from metasmith.models.libraries import ContextPath` form.
+from .paths import ContextPath, PathMap  # noqa: E402,F401
 
 @dataclass
 class ContextData:
     input_group: list[ContextPath]
     endpoint: Endpoint
     type_name: str
-    path: ContextPath = field(default_factory=lambda: ContextPath(Path(), Path(), Path()))
-    
+    path: ContextPath = field(init=False)
+
     def __post_init__(self) -> None:
         assert len(self.input_group)>0
         self.path = self.input_group[0]

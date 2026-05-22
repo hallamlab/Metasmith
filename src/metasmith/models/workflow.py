@@ -14,6 +14,7 @@ from ..coms.containers import Container, ContainerRuntime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
+from .paths import PathMap
 from .remote import Logistics, Source, SourceType
 from .solver import Application, Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
 from ..hashing import KeyGenerator
@@ -1143,6 +1144,13 @@ class WorkflowTask:
         TAB = "\t"
         def _strip_var(s: str):
             return s[2:-1]
+        # Derive task key from the per-task workspace name. external_work
+        # is always <external_home>/runs/<task_key> by the StageWorkflow
+        # invariant (agents.py:874-878), so the basename IS the task key.
+        path_map = PathMap(
+            extern_home=context.external_home,
+            task_key=context.external_work.name,
+        )
         bootstrap = [
             f"{_strip_var(context.bootstrap_var)} = '''",
             f"CONTAINER={context.home_dir}",
@@ -1177,10 +1185,15 @@ class WorkflowTask:
             "",
             "",
         ]
+        # The Nextflow HEADER assigns the params.home / params.workspace
+        # variables. params.home is the literal host path; params.workspace
+        # is rendered via the groovy dialect so the substitution is
+        # prefix-aware (not str.replace, which would corrupt inner
+        # occurrences — see tests/path_overhaul/test_str_replace_path_overlap.py).
         HEADER = "\n".join([
             "params.testSpread=1",
             f"{_strip_var(context.external_home_var)} = '{context.external_home}'",
-            f'{_strip_var(context.external_work_var)} = "{context.external_work}"'.replace(str(context.external_home), context.external_home_var),
+            f'{_strip_var(context.external_work_var)} = "{path_map.Render(context.external_work, dialect="groovy")}"',
         ]+bootstrap)
         MAX_FILE_SIZE = int(2**16 * 0.95) # nextflow is 65536
 
@@ -1235,8 +1248,7 @@ class WorkflowTask:
             for inst in step.uses:
                 p = inst.ResolvePath()
                 if not p.is_absolute(): continue
-                if p.is_relative_to(context.home_dir):
-                    p = context.external_home / p.relative_to(context.home_dir)
+                p = path_map.LocalToExternal(p)
                 raw_external_binds.add(p.parent)
             external_binds = self._get_common_folders(raw_external_binds)
             external_binds_param = ""

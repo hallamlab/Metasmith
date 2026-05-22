@@ -22,31 +22,31 @@ corruption).
 """
 from pathlib import Path
 
-
-def _agents_str_replace_extern_location(lib_location: Path, home_root: Path, extern_home: Path) -> str:
-    """Replicates the line at `src/metasmith/agents.py:1192`."""
-    return str(lib_location).replace(str(home_root), str(extern_home))
+from metasmith.models.paths import PathMap
 
 
-def test_str_replace_does_not_corrupt_inner_substring() -> None:
+def test_path_map_local_to_external_preserves_inner_substring() -> None:
     """A library archived under a directory whose name contains
-    `msm_home` (e.g. `msm_home_old_backup`) should not have the inner
-    occurrence rewritten. Today's code corrupts it silently.
+    ``/msm_home`` as a substring (e.g. ``msm_home_old_backup``) must
+    not have its inner occurrence rewritten when translating from the
+    container view to the host view. Today's
+    ``str.replace(HOME_ROOT, extern_home)`` at
+    ``src/metasmith/agents.py:1192`` corrupts the inner occurrence;
+    :func:`PathMap.LocalToExternal` uses ``Path.relative_to`` and is
+    immune.
     """
-    home_root = Path("/msm_home")
-    extern_home = Path("/scratch/agent")
+    path_map = PathMap(extern_home=Path("/scratch/agent"), task_key="K")
 
     # A library location with the offending shape — the home-root prefix
-    # is correctly rooted, but a downstream directory contains the literal
-    # substring `msm_home`.
+    # is correctly rooted, but a downstream directory contains the
+    # literal substring `msm_home`.
     lib_location = Path("/msm_home/data/msm_home_old_backup/lib.xgdb")
 
-    result = _agents_str_replace_extern_location(lib_location, home_root, extern_home)
+    result = path_map.LocalToExternal(lib_location)
 
-    # The correct rewrite replaces ONLY the prefix.
-    expected = "/scratch/agent/data/msm_home_old_backup/lib.xgdb"
+    expected = Path("/scratch/agent/data/msm_home_old_backup/lib.xgdb")
     assert result == expected, (
-        f"str.replace corrupted inner substring:\n"
+        f"PathMap.LocalToExternal corrupted inner substring:\n"
         f"  got      = {result}\n"
         f"  expected = {expected}"
     )

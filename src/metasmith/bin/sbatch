@@ -4,42 +4,47 @@
 import sys
 from pathlib import Path
 import time
-import re
 import random
 from metasmith.coms.via_file_watcher import RemoteShell
 from metasmith.agents import Agent, AgentPaths
+from metasmith.models.paths import PathMap, reroot_in_text
 from metasmith.logging import Log
 
 agent = Agent.Load(AgentPaths.to_definition())
 cwd = Path("./").resolve()
-cwd_str = str(cwd)
-work_root = str(AgentPaths.WORK_ROOT)  # /ws
+work_root = AgentPaths.WORK_ROOT  # /ws
 
-# Derive external_cwd: map container path /ws/nxf_work/hash → external run dir.
-# The original regex r"/\w*/nxf_work/.*" breaks when the mount is /ws because
-# \w* matches "ws" instead of the run key. Instead, read the run key from
-# workflow.nf (always at /ws/workflow.nf) which has the external workspace path.
-if cwd_str.startswith(work_root):
-    rel = cwd_str[len(work_root):].lstrip("/")  # nxf_work/08/b8eb...
-    # Extract run key from workflow.nf line: params.workspace = ".../<key>"
-    _nf = Path(work_root) / "workflow.nf"
-    _key = None
-    if _nf.exists():
-        for _line in _nf.read_text().splitlines()[:5]:
-            if "/runs/" in _line:
-                _key = _line.rstrip("'\"").split("/runs/")[-1]
-                break
-    if _key:
-        external_workspace = AgentPaths.to_staged(root=agent.home.GetPath()) / _key
-        external_cwd = external_workspace / rel
-    else:
-        tail = next(re.finditer(r"/\w*/nxf_work/.*", cwd_str)).group()[1:]
-        external_cwd = AgentPaths.to_staged(root=agent.home.GetPath())/tail
-        external_workspace = Path(str(external_cwd).split("/nxf_work/")[0])
+# Derive the task key. workflow.nf at /ws/workflow.nf carries
+# `params.workspace = "<extern_home>/runs/<key>"` on one of its first
+# few lines; we use that as the canonical source. If unavailable (e.g.
+# when sbatch runs from a host cwd already under the STAGED tree), fall
+# back to the path-map's STAGED-tree walk.
+task_key = None
+_nf = work_root / "workflow.nf"
+if _nf.exists():
+    for _line in _nf.read_text().splitlines()[:5]:
+        if "/runs/" in _line:
+            task_key = _line.rstrip("'\"").split("/runs/")[-1]
+            break
+
+if task_key is not None:
+    path_map = PathMap(extern_home=Path(str(agent.home.GetPath())), task_key=task_key)
 else:
-    tail = next(re.finditer(r"/\w*/nxf_work/.*", cwd_str)).group()[1:]
-    external_cwd = AgentPaths.to_staged(root=agent.home.GetPath())/tail
-    external_workspace = Path(str(external_cwd).split("/nxf_work/")[0])
+    # Host cwd already under <extern_home>/runs/<key>/...; the path map
+    # identifies the task key by ancestry (not by regex on the segment
+    # shape — that's the bug pinned in
+    # tests/path_overhaul/test_sbatch_dir_named_ws.py).
+    path_map = PathMap.FromExternalCwd(cwd=cwd, agent=agent)
+
+# Map container cwd → external cwd. When cwd is /ws/<tail>, the host
+# path is extern_work/<tail>. When cwd is already a host path (because
+# sbatch was invoked from outside the container), it stays as-is.
+if cwd.is_relative_to(work_root):
+    rel = cwd.relative_to(work_root)
+    external_cwd = path_map.extern_work / rel
+else:
+    external_cwd = cwd
+external_workspace = path_map.extern_work
 
 Log.SetStdout(on=False)
 Log.AddLogFile(Path("./.sbatch.log"))
@@ -61,8 +66,12 @@ def fix_paths(file: Path):
         if len(lines)>1 and lines[1].startswith("array=("):
             child_jobs = lines[1][len("array=( "):-len(" )\n")].split(" ")
             todo += [Path(p)/".command.run" for p in child_jobs]
-    content = content.replace(str(AgentPaths.HOME_ROOT), str(agent.real_path))
-    content = content.replace(str(AgentPaths.WORK_ROOT) + "/", str(external_workspace) + "/")
+    # Path-prefix-aware rewrites: only match HOME_ROOT and WORK_ROOT
+    # when they appear at a path-segment boundary so unrelated
+    # substrings (e.g. `/msm_home_old_backup`) are not corrupted. See
+    # tests/path_overhaul/test_replace_path_overlap.py.
+    content = reroot_in_text(content, AgentPaths.HOME_ROOT, agent.real_path)
+    content = reroot_in_text(content, AgentPaths.WORK_ROOT, external_workspace)
     with open(file, 'w') as f:
         f.write(content)
     # if this was a gathered array job, we have to fix the paths for the actual jobs

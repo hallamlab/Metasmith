@@ -21,13 +21,19 @@ corruption); the agents.py mirror lives in test_str_replace_path_overlap.py.
 """
 from pathlib import Path
 
+from metasmith.models.paths import reroot_in_text
+
 
 def _sbatch_fix_paths_content(
     content: str, home_root: Path, real_path: Path, work_root: Path, external_workspace: Path
 ) -> str:
-    """Replicates the two replace calls at `src/metasmith/bin/sbatch:64-65`."""
-    content = content.replace(str(home_root), str(real_path))
-    content = content.replace(str(work_root) + "/", str(external_workspace) + "/")
+    """Replicates the rewrite at `src/metasmith/bin/sbatch:fix_paths`
+    via the centralised :func:`reroot_in_text` helper. Pre-overhaul,
+    this used raw ``str.replace`` and silently corrupted inner
+    substrings.
+    """
+    content = reroot_in_text(content, home_root, real_path)
+    content = reroot_in_text(content, work_root, external_workspace)
     return content
 
 

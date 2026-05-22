@@ -16,49 +16,53 @@ task key passed to the agent), not by regex on the segment shape.
 
 Reference: audit Category B (regex parses).
 """
-import re
+from pathlib import Path
+
+from metasmith.models.paths import PathMap
 
 
-def _sbatch_derive_tail(cwd_str: str) -> str:
-    """Replicates `src/metasmith/bin/sbatch:36,40`.
+class _StubSource:
+    def __init__(self, path: Path) -> None:
+        self._path = path
 
-    The actual sbatch script wraps this in a branching `if` on whether
-    cwd starts with `/ws`, but the regex branch is what we are pinning.
+    def GetPath(self) -> Path:
+        return self._path
+
+
+class _StubAgent:
+    def __init__(self, home_path: Path) -> None:
+        self.home = _StubSource(home_path)
+
+
+def test_path_map_picks_correct_run_key_when_sample_dir_named_ws() -> None:
+    """The :func:`PathMap.FromExternalCwd` replacement identifies the
+    run key by ancestry (first segment under ``<extern_home>/runs/``),
+    not by regex on the segment shape. A sub-directory literally named
+    ``ws`` between the run key and ``nxf_work/`` no longer hijacks the
+    extraction.
     """
-    return next(re.finditer(r"/\w*/nxf_work/.*", cwd_str)).group()[1:]
-
-
-def test_regex_picks_wrong_segment_when_sample_dir_named_ws() -> None:
-    """sbatch run from a host cwd where a sub-directory between the run
-    key and `nxf_work/` is named `ws`. The first `/\\w*/nxf_work/` match
-    grabs the `ws` segment and the run key is lost.
-    """
+    extern_home = Path("/host/agent")
     run_key = "REALKEY"
-    cwd_str = f"/host/agent/runs/{run_key}/ws/nxf_work/aa/bb"
+    cwd = extern_home / "runs" / run_key / "ws" / "nxf_work/aa/bb"
 
-    tail = _sbatch_derive_tail(cwd_str)
+    path_map = PathMap.FromExternalCwd(cwd=cwd, agent=_StubAgent(extern_home))
 
-    # The tail must start with the run key so that
-    # `staged_dir / tail.split('/nxf_work/')[0]` resolves to the actual
-    # external workspace, not the inner `ws` directory.
-    head = tail.split("/nxf_work/")[0]
-    assert head == run_key, (
-        f"sbatch regex extracted wrong head: got [{head}], expected [{run_key}]. "
-        f"Full tail=[{tail}], cwd=[{cwd_str}]"
+    assert path_map.task_key == run_key, (
+        f"PathMap picked wrong task_key: got [{path_map.task_key}], expected [{run_key}]"
     )
+    assert path_map.extern_work == extern_home / "runs" / run_key
 
 
-def test_regex_picks_wrong_segment_with_extra_subdir() -> None:
-    """A second shape: any extra segment between the run key and
-    `nxf_work/` triggers the same first-match-wins bug.
+def test_path_map_picks_correct_run_key_with_extra_subdir() -> None:
+    """Any extra segment between the run key and ``nxf_work/`` is
+    irrelevant — only the first segment under ``runs/`` is the key.
     """
+    extern_home = Path("/scratch/site")
     run_key = "REALKEY"
-    cwd_str = f"/scratch/site/runs/{run_key}/sample_a/nxf_work/aa/bb"
+    cwd = extern_home / "runs" / run_key / "sample_a" / "nxf_work/aa/bb"
 
-    tail = _sbatch_derive_tail(cwd_str)
+    path_map = PathMap.FromExternalCwd(cwd=cwd, agent=_StubAgent(extern_home))
 
-    head = tail.split("/nxf_work/")[0]
-    assert head == run_key, (
-        f"sbatch regex extracted wrong head: got [{head}], expected [{run_key}]. "
-        f"Full tail=[{tail}], cwd=[{cwd_str}]"
+    assert path_map.task_key == run_key, (
+        f"PathMap picked wrong task_key: got [{path_map.task_key}], expected [{run_key}]"
     )

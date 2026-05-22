@@ -23,6 +23,7 @@ from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSourc
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
 from .models.libraries import TransformInstance, Resources
+from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint, Solution, Transform
 from .constants import VERSION, CONTAINER_TAG, MODULE_PATH, AgentPaths
 
@@ -873,9 +874,9 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     with RemoteShell(AgentPaths.to_local_relay_coms(host=host), timeout=60) as extern_shell:
         extern_root = agent.real_path
         assert extern_root is not None
-        extern_work = extern_root/work_relative
-        _rel = f"{extern_work}".replace(f"{extern_root}/", "")
-        workspace_str = f"{{AGENT_HOME}}/{_rel}"
+        path_map = PathMap(extern_home=Path(str(extern_root)), task_key=task._key)
+        extern_work = path_map.extern_work
+        workspace_str = f"{{AGENT_HOME}}/{path_map.extern_work.relative_to(extern_root)}"
 
         if not verify:
             Log.Info(f"skipping verification of external inputs paths")
@@ -1167,7 +1168,8 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     Log.Info(f"loading agent metadata")
     agent = Agent.Load(AgentPaths.to_definition())
     extern_home = agent.home.GetPath()
-    extern_workspace = AgentPaths.to_task(key, root=extern_home).parent.parent
+    path_map = PathMap(extern_home=Path(str(extern_home)), task_key=key)
+    extern_workspace = path_map.extern_work
     (workspace/log_dir).mkdir(parents=True, exist_ok=True)
     MAIN_LOG = workspace/log_dir/AgentPaths.MAIN_LOG_FILE # this is the stdout captured by launcher
     Log.AddLogFile(MAIN_LOG)
@@ -1189,9 +1191,9 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         if lib.remote_src is None:
             Log.Info(f"[{_name}] is at [{lib.location}]")
         else:
-            _extern_location = str(lib.location).replace(str(AgentPaths.HOME_ROOT), str(extern_home))
+            _extern_location = path_map.LocalToExternal(lib.location)
             Log.Info(f"[{_name}] at [{lib.location}] is remote [{lib.remote_src.address}], downloading to [{_extern_location}]")
-            dest = dest_base/_extern_location
+            dest = dest_base/str(_extern_location)
             lib.ActualizeRemote(extern_dest=dest, label=f"msm_staging.{_name}")
 
     # need to call nf inside container
@@ -1310,9 +1312,8 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         manifests_path=manifests_path,
     )
     n_outputs = sum(1 for p in output.manifest if Path(p).is_relative_to(output_path) or not Path(p).is_absolute())
-    tail = output_path.relative_to(AgentPaths.HOME_ROOT)
     extern_output_path = extern_workspace/results_folder
-    external_results_path = extern_home/tail
+    external_results_path = path_map.LocalToExternal(output_path)
     Log.Info(f"[{n_outputs}] outputs for [{key}] at [{external_results_path}]")
 
     Log.Info(f"gathering log files")
