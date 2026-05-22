@@ -579,9 +579,16 @@ def solve_by_mcts(
                         given_candidates.append(e)
                     else:
                         produced_candidates.append(e)
+            # Per-requirement preference for given: if any given satisfies this
+            # dep, use only given here — independent of whether OTHER deps of
+            # the same transform need produced upstreams. The two-pass scaffold
+            # in _resolve still flips include_produced=True as a lineage-failure
+            # fallback (see test_given_fails_lineage_falls_back_to_produced).
             if include_produced:
                 return given_candidates + produced_candidates
-            return given_candidates
+            if given_candidates:
+                return given_candidates
+            return produced_candidates
 
         # Two-pass: prefer given. If the given-only pass cannot reach a
         # lineage-viable leaf at all, fall back to given+produced so a
