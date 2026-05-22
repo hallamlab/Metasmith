@@ -1154,6 +1154,50 @@ def CollectResults(
     _df.to_csv(manifests_path/"given.csv", index=False)
     return output
 
+def _extract_nxf_task_metadata(log_dir_abs: Path) -> "pd.DataFrame | None":
+    """Return the per-task Nextflow trace table, or None if unavailable.
+
+    Prefers `nxf_trace.tsv` (produced via `-with-trace`): a clean TSV
+    with no escape ambiguity. Falls back to scraping `nxf_report.html`
+    if the TSV is missing, sanitizing JS-only escapes (`\\'`) that
+    strict JSON rejects -- see inbox #162.
+    """
+    tsv = log_dir_abs/"nxf_trace.tsv"
+    if tsv.exists():
+        try:
+            return pd.read_csv(tsv, sep="\t")
+        except Exception as e:
+            Log.Warn(f"failed to read [{tsv}] [{e}], falling back to HTML report")
+
+    html = log_dir_abs/"nxf_report.html"
+    if not html.exists():
+        return None
+    try:
+        raw = None
+        with open(html) as f:
+            found = False
+            for l in f:
+                if l.strip().startswith('window.data = { "trace":['):
+                    found = True
+                    continue
+                if not found:
+                    continue
+                # Nextflow embeds the trace as a JS object literal.
+                # Single quotes in `.command.sh` arrive here as `\'`,
+                # which json.loads rejects. Stripping the backslash
+                # yields a valid JSON string (single quotes don't need
+                # escaping in JSON).
+                sanitized = l[:-2].replace("\\'", "'")
+                raw = json.loads('{ "trace":[' + sanitized).get("trace")
+                break
+        if raw is None:
+            return None
+        return pd.DataFrame(raw)
+    except Exception as e:
+        Log.Warn(f"failed to parse task metadata from [{html}] [{e}]")
+        return None
+
+
 def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
@@ -1278,31 +1322,13 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             timeout=None,
         )
 
-    nxf_report = workspace/nxf_report
-    if nxf_report.exists():
-        raw_task_meta = None
-        with open(nxf_report) as f:
-            found = False
-            for l in f:
-                if l.strip().startswith('window.data = { "trace":['): 
-                    found = True
-                    continue
-                if not found: 
-                    continue
-                raw_task_meta = json.loads('{ "trace":[' + l[:-2]).get("trace")
-                break
-        if raw_task_meta is not None:
-            try:
-                df_tasks = pd.DataFrame(raw_task_meta)
-                nxf_task_meta = workspace/log_dir/"nxf_tasks.csv"
-                df_tasks.to_csv(nxf_task_meta, index=False)
-                Log.Info(f"extracting task metadata to [{nxf_task_meta}]")
-            except Exception as e:
-                Log.Error(f"failed to parse task metadata from [{nxf_report}] [{e}]")
-        else:
-            Log.Warn(f"failed to find task metadata table within [{nxf_report}]")
+    df_tasks = _extract_nxf_task_metadata(workspace/log_dir)
+    if df_tasks is not None:
+        nxf_task_meta = workspace/log_dir/"nxf_tasks.csv"
+        df_tasks.to_csv(nxf_task_meta, index=False)
+        Log.Info(f"extracted task metadata to [{nxf_task_meta}]")
     else:
-        Log.Warn(f"no report at [{nxf_report}]")
+        Log.Warn(f"no task metadata extracted from [{workspace/log_dir}]")
 
     Log.Info(f"compiling results")
     output = CollectResults(
