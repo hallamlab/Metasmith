@@ -1,224 +1,130 @@
-.. role:: json(code)
-    :language: json
+.. role:: bash(code)
+    :language: bash
 
-My first agent (MCP)
+My first agent (CLI)
 ############################################################
 
 This tutorial mirrors the Python tutorial of the same name, but every
-step is a single MCP tool call. We will perform pangenome analysis
-on three E. coli genomes identified by their NCBI assembly accessions.
+step is a single ``metasmith`` shell call. We will perform pangenome
+analysis on three E. coli genomes identified by their NCBI assembly
+accessions.
 
 The endpoint of the workflow is a pangenome heatmap SVG.
 
 Prerequisites
 ============================================================
 
-- ``metasmith-mcp`` is installed and running (see `Setup <../setup.html>`_)
+- ``metasmith`` is installed (see `Setup <../setup.html>`_)
 - Docker or Apptainer is available on the host that will be your agent
 - A working directory ``./workspace`` where the agent will live
 
-1 — Confirm what the server already knows
+For brevity, the examples below omit ``--json`` — add it whenever you
+want machine-readable output instead of pretty-printed tables.
+
+1 — Build the input library
 ============================================================
 
-.. code-block:: json
-    :caption: server_status
+Create a fresh ``.xgdb`` and attach the type libraries:
 
-    {}
+.. code-block:: bash
 
-The server returns its loaded type/data/transform/agent paths and the
-workspace directory. If nothing is loaded, the next calls register the
-inputs.
+    metasmith data create ./workspace/3pangenome.xgdb \
+      --types data_types/ncbi.yml \
+      --types data_types/sequences.yml \
+      --types data_types/pangenome.yml \
+      --purge
 
-2 — Register types and tools
+Register a pangenome group, then add three accessions under it:
+
+.. code-block:: bash
+
+    metasmith data add-value ./workspace/3pangenome.xgdb \
+      --name ecoli_panel --value "e coli" \
+      --dtype pangenome::pangenome
+
+    metasmith data add-value ./workspace/3pangenome.xgdb \
+      --name K12 --value GCF_000005845.2 \
+      --dtype ncbi::assembly_accession --parent ecoli_panel
+
+    metasmith data add-value ./workspace/3pangenome.xgdb \
+      --name Sakai --value GCF_000008865.2 \
+      --dtype ncbi::assembly_accession --parent ecoli_panel
+
+    metasmith data add-value ./workspace/3pangenome.xgdb \
+      --name O157 --value GCA_000732965.1 \
+      --dtype ncbi::assembly_accession --parent ecoli_panel
+
+2 — Create and deploy the agent
 ============================================================
 
-.. code-block:: json
-    :caption: register_type_library
+.. code-block:: bash
 
-    {"path": "data_types/ncbi.yml"}
+    metasmith agent save ./workspace/agents/local.yml \
+      --home ./workspace/msm_home \
+      --runtime DOCKER
 
-.. code-block:: json
-    :caption: register_type_library
+    metasmith agent deploy ./workspace/agents/local.yml
 
-    {"path": "data_types/sequences.yml"}
-
-.. code-block:: json
-    :caption: register_type_library
-
-    {"path": "data_types/pangenome.yml"}
-
-.. code-block:: json
-    :caption: register_transform_library
-
-    {"path": "transforms/logistics"}
-
-.. code-block:: json
-    :caption: register_transform_library
-
-    {"path": "transforms/pangenome"}
-
-3 — Build the input library
+3 — Plan the workflow
 ============================================================
 
-Create a fresh ``.xgdb`` and attach the type libraries.
+.. code-block:: bash
 
-.. code-block:: json
-    :caption: create_data_library
+    metasmith plan \
+      --data-library ./workspace/3pangenome.xgdb \
+      --sample-type ncbi::assembly_accession \
+      --target-type pangenome::heatmap \
+      --transform-library transforms/logistics \
+      --transform-library transforms/pangenome
 
-    {
-      "path": "./workspace/3pangenome.xgdb",
-      "type_library_paths": [
-        "data_types/ncbi.yml",
-        "data_types/sequences.yml",
-        "data_types/pangenome.yml"
-      ],
-      "purge": true
-    }
-
-Register a pangenome group, then add three accessions under it.
-
-.. code-block:: json
-    :caption: add_data_value
-
-    {
-      "library_path": "./workspace/3pangenome.xgdb",
-      "name": "ecoli_panel",
-      "value": "e coli",
-      "dtype": "pangenome::pangenome"
-    }
-
-.. code-block:: json
-    :caption: add_data_value
-
-    {
-      "library_path": "./workspace/3pangenome.xgdb",
-      "name": "K12",
-      "value": "GCF_000005845.2",
-      "dtype": "ncbi::assembly_accession",
-      "parents": ["ecoli_panel"]
-    }
-
-.. code-block:: json
-    :caption: add_data_value
-
-    {
-      "library_path": "./workspace/3pangenome.xgdb",
-      "name": "Sakai",
-      "value": "GCF_000008865.2",
-      "dtype": "ncbi::assembly_accession",
-      "parents": ["ecoli_panel"]
-    }
-
-.. code-block:: json
-    :caption: add_data_value
-
-    {
-      "library_path": "./workspace/3pangenome.xgdb",
-      "name": "O157",
-      "value": "GCA_000732965.1",
-      "dtype": "ncbi::assembly_accession",
-      "parents": ["ecoli_panel"]
-    }
-
-4 — Create and deploy the agent
-============================================================
-
-.. code-block:: json
-    :caption: save_agent
-
-    {
-      "path": "./workspace/agents/local.yml",
-      "home_uri": "./workspace/msm_home",
-      "runtime": "DOCKER"
-    }
-
-.. code-block:: json
-    :caption: load_agent
-
-    {"agent_path": "./workspace/agents/local.yml", "name": "smith"}
-
-.. code-block:: json
-    :caption: deploy_agent
-
-    {"agent_name": "smith"}
-
-5 — Plan the workflow
-============================================================
-
-.. code-block:: json
-    :caption: plan_workflow
-
-    {
-      "data_library": "./workspace/3pangenome.xgdb",
-      "sample_type": "ncbi::assembly_accession",
-      "target_types": ["pangenome::heatmap"],
-      "transform_libraries": ["transforms/logistics", "transforms/pangenome"]
-    }
-
-Returns a ``task_key`` (and a ``hints`` array if the solver could
-not find a complete plan — see `Diagnosing failures
-<../diagnosing_failures.html>`_).
+Returns a ``task_key`` (and a ``hints`` array if the solver could not
+find a complete plan — see `Diagnosing failures
+<../diagnosing_failures.html>`_). The plan is cached under
+``--workspace`` (default ``~/.metasmith/workspace``).
 
 You can render the planned DAG to confirm shape:
 
-.. code-block:: json
-    :caption: render_plan_dag
+.. code-block:: bash
 
-    {"task_key": "<task_key from previous step>"}
+    metasmith task dag <task_key>
 
-6 — Stage, run, wait
+4 — Stage, run, wait
 ============================================================
 
-.. code-block:: json
-    :caption: stage_workflow
+.. code-block:: bash
 
-    {"agent_name": "smith", "task_key": "<task_key>"}
+    metasmith workflow stage ./workspace/agents/local.yml <task_key>
 
-.. code-block:: json
-    :caption: run_workflow
+    metasmith workflow run ./workspace/agents/local.yml <task_key> --preset local
 
-    {"agent_name": "smith", "task_key": "<task_key>", "config_preset": "local"}
-
-``run_workflow`` returns immediately (the launcher detaches under
+``workflow run`` returns immediately (the launcher detaches under
 ``nohup``). Block on the sentinel:
 
-.. code-block:: json
-    :caption: wait_for_workflow
+.. code-block:: bash
 
-    {"agent_name": "smith", "task_key": "<task_key>", "timeout_s": 3600}
+    metasmith workflow wait ./workspace/agents/local.yml <task_key> --timeout 3600
 
-Tail the Nextflow log while waiting (in a separate call):
+Tail the Nextflow log while waiting (in a separate terminal):
 
-.. code-block:: json
-    :caption: tail_workflow_log
+.. code-block:: bash
 
-    {"agent_name": "smith", "task_key": "<task_key>", "source": "main", "lines": 50}
+    metasmith workflow tail ./workspace/agents/local.yml <task_key> --source main --lines 50
 
-7 — Collect results and trace lineage
+5 — Collect results and trace lineage
 ============================================================
 
-.. code-block:: json
-    :caption: get_result_source
+.. code-block:: bash
 
-    {"agent_name": "smith", "task_key": "<task_key>"}
+    metasmith workflow result-source ./workspace/agents/local.yml <task_key>
 
-.. code-block:: json
-    :caption: collect_results
-
-    {"agent_name": "smith", "task_key": "<task_key>", "dest_uri": "./workspace/results"}
+    metasmith workflow collect ./workspace/agents/local.yml <task_key> \
+      --dest ./workspace/results
 
 To map outputs back to inputs, load the result library and trace:
 
-.. code-block:: json
-    :caption: load_remote_library
+.. code-block:: bash
 
-    {"src_uri": "./workspace/results", "dest_path": "./workspace/results.xgdb", "as_image": false}
+    metasmith data load-remote ./workspace/results ./workspace/results.xgdb
 
-.. code-block:: json
-    :caption: trace_lineage
-
-    {
-      "library_path": "./workspace/results.xgdb",
-      "from_type": "ncbi::assembly_accession",
-      "to_type": "pangenome::heatmap"
-    }
+    metasmith data trace ./workspace/results.xgdb \
+      ncbi::assembly_accession pangenome::heatmap

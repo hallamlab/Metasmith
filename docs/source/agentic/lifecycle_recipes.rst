@@ -1,21 +1,22 @@
 Lifecycle Recipes
 ############################################################
 
-Short, concrete patterns for running workflows from MCP.
+Short, concrete patterns for running workflows from the CLI.
 
 Detached run with sentinel wait
 ============================================================
 
-``run_workflow`` returns as soon as the launcher detaches under
-``nohup``. To avoid racing past it, capture an mtime stamp first and
-pass it to ``wait_for_workflow`` so the wait is not fooled by a
-previous run's "run completed at" line.
+``metasmith workflow run`` returns as soon as the launcher detaches
+under ``nohup``. To avoid racing past it, follow with
+``metasmith workflow wait`` so the wait blocks until the
+``run completed at`` sentinel appears (and is not fooled by a previous
+run's sentinel line).
 
-1. ``run_workflow`` → starts the detached driver
-2. ``wait_for_workflow`` with ``timeout_s`` and (optionally) the
-   workflow start mtime → blocks until the sentinel appears
-3. ``tail_workflow_log(source="agent", lines=50)`` → final agent
-   output for context
+1. ``metasmith workflow run AGENT TASK`` → starts the detached driver
+2. ``metasmith workflow wait AGENT TASK --timeout S`` → blocks on the
+   sentinel
+3. ``metasmith workflow tail AGENT TASK --source agent --lines 50`` →
+   final agent output for context
 
 The wait returns ``status="completed"``, ``"timeout"``, ``"missing"``,
 or ``"errored"``. ``"errored"`` means ``PID.lock`` disappeared without
@@ -26,40 +27,37 @@ Cancel and restage
 
 To stop a run cleanly:
 
-1. ``cancel_workflow`` → removes ``workspace/PID.lock``; the launcher
-   loop observes the absence and ``kill $PID; wait $PID`` on
-   nextflow. Falls back to ``pkill`` if the lock is gone but the
-   driver is still alive.
-2. ``stage_workflow`` with ``on_exist="update_workflow"`` → push only
-   the workflow scripts again (preserves staged inputs)
-3. ``run_workflow`` to relaunch
+1. ``metasmith workflow cancel AGENT TASK`` → removes
+   ``workspace/PID.lock``; the launcher loop observes the absence and
+   ``kill $PID; wait $PID`` on nextflow. Falls back to ``pkill`` if the
+   lock is gone but the driver is still alive.
+2. ``metasmith workflow stage AGENT TASK --on-exist update_workflow``
+   → push only the workflow scripts again (preserves staged inputs)
+3. ``metasmith workflow run AGENT TASK`` → relaunch
 
 Collect to a remote destination
 ============================================================
 
 The result source the agent returns is typically a Globus or local
-path. ``collect_results`` accepts any URI ``parse_source`` understands
-— ``ssh://``, ``http(s)://``, ``globus://``, or a local path.
+path. ``metasmith workflow collect`` accepts any URI
+``metasmith source parse`` understands — ``ssh://``, ``http(s)://``,
+``globus://``, or a local path.
 
-.. code-block:: json
-    :caption: collect_results
+.. code-block:: bash
 
-    {
-      "agent_name": "smith",
-      "task_key": "<task_key>",
-      "dest_uri": "ssh://workstation/data/results/run42"
-    }
+    metasmith workflow collect smith <task_key> \
+      --dest ssh://workstation/data/results/run42
 
 Poll without holding state
 ============================================================
 
-For long jobs where the MCP session may reconnect, the workspace
-caches everything under a ``task_key``. After reconnect:
+For long jobs where the controlling shell may disconnect, the
+workspace caches everything under a ``task_key``. After reconnect:
 
-1. ``server_status`` to confirm workspace path
-2. ``list_workflow_tasks`` to see all cached tasks
-3. ``list_workflow_runs(agent_name, task_key)`` for run indices
-4. ``tail_workflow_log`` and ``check_workflow`` to inspect
+1. ``metasmith task list`` to see all cached tasks
+2. ``metasmith workflow runs AGENT TASK`` for run indices
+3. ``metasmith workflow tail AGENT TASK`` and
+   ``metasmith workflow check TASK`` to inspect
 
-No state is held in the MCP session that cannot be recovered from
-``--workspace``.
+No state is held outside ``--workspace`` (and the agent's own
+``runs/`` directory) that cannot be recovered.

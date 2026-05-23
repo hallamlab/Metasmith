@@ -46,7 +46,5 @@ if __name__ == "__main__":
             'console_scripts': ENTRY_POINTS,
         },
         python_requires=">=3.12",
-        install_requires=[
-            "mcp>=1.0.0",
-        ]
+        install_requires=[],
     )
