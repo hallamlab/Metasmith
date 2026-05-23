@@ -4,45 +4,48 @@
 Agentic Use
 ############################################################
 
-Metasmith exposes its full Python API over the `Model Context Protocol
-<https://modelcontextprotocol.io>`_. An LLM agent (Claude, etc.) can
-drive Metasmith end-to-end — register inputs, author transforms, plan
-workflows, run, wait, tail logs, and collect results — without ever
-calling Python.
+Metasmith exposes its full Python API as a CLI under ``metasmith``
+(alias ``msm``). The same surface is used by humans typing into a
+shell and by LLM agents shelling out with ``--json`` for
+machine-readable output. There is no server process — each invocation
+loads what it needs from disk and exits.
+
+An LLM agent can drive Metasmith end-to-end — register inputs, author
+transforms, plan workflows, run, wait, tail logs, and collect
+results — entirely through shell commands.
 
 This section is the canonical reference for agent-driven use.
 
 Who this is for
 ============================================================
 
-- **LLM agents** running the ``metasmith-mcp`` server as a tool source.
-- **Engineers** building automations that need a stable, typed,
-  introspectable surface that mirrors the Python API.
+- **LLM agents** that shell out to ``metasmith ... --json``.
+- **Engineers** who want one stable, typed, scriptable surface that
+  mirrors the Python API.
 
 If you are writing a Jupyter notebook by hand, prefer the
 `Python tutorials <../tutorials/_index.html>`_.
 
-What an MCP-driven session looks like
+What a CLI-driven session looks like
 ============================================================
 
 The canonical end-to-end shape is::
 
-    register_type_library          ──► types known to the server
-    create_data_library + add_*    ──► typed inputs registered
-    register_transform_library     ──► tools known to the server
-    save_agent + deploy_agent      ──► execution target ready
-    plan_workflow                  ──► task_key (cached on disk)
-    stage_workflow                 ──► nextflow scripts on the agent
-    run_workflow                   ──► detached launch, returns immediately
-    wait_for_workflow              ──► blocks on `run completed at` sentinel
-    tail_workflow_log              ──► last N lines for inspection
-    get_result_source              ──► where the results live
-    collect_results                ──► copy back to a local/Globus dest
-    trace_lineage                  ──► map outputs to their inputs
+    metasmith data create + data add-*       ──► typed inputs registered
+    metasmith agent save + agent deploy      ──► execution target ready
+    metasmith plan                           ──► task_key (cached to workspace)
+    metasmith workflow stage                 ──► nextflow scripts on the agent
+    metasmith workflow run                   ──► detached launch
+    metasmith workflow wait                  ──► blocks on `run completed at` sentinel
+    metasmith workflow tail                  ──► last N lines for inspection
+    metasmith workflow result-source         ──► where the results live
+    metasmith workflow collect               ──► copy back to a local/Globus dest
+    metasmith data trace                     ──► map outputs to their inputs
 
-Every step above is a single MCP tool call. The server caches loaded
-libraries, tasks, and agents across calls, so an agent does not need
-to re-load between operations.
+Every step above is a single CLI call returning JSON when invoked with
+``--json``. No state is held between invocations; the workspace
+directory (``--workspace``, default ``~/.metasmith/workspace``) caches
+planned tasks so they can be re-fetched by ``task_key``.
 
 .. toctree::
     :maxdepth: 2

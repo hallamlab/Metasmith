@@ -12,7 +12,6 @@ _cli_call = "metasmith.coms.cli:main"
 ENTRY_POINTS = [
     f"metasmith={_cli_call}",
     f"msm={_cli_call}",
-    f"metasmith-mcp=metasmith.coms.mcp_server:main",
 ]
 
 with open(MODULE_PATH/"version.txt") as f:

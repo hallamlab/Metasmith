@@ -1,0 +1,128 @@
+"""`metasmith data ...` subcommands."""
+from __future__ import annotations
+
+import json
+
+from ...ops import data as _ops
+
+
+def register(subs):
+    p = subs.add_parser("data", help="data instance library operations")
+    sp = p.add_subparsers(dest="sub", metavar="ACTION")
+
+    _inspect = sp.add_parser("inspect", help="show schema, namespaces, item count")
+    _inspect.add_argument("library")
+    _inspect.set_defaults(func=lambda a: _ops.inspect_library(a.library))
+
+    _list = sp.add_parser("list", help="list items in a library")
+    _list.add_argument("library")
+    _list.add_argument("--type", dest="type_filter")
+    _list.set_defaults(func=lambda a: _ops.list_items(a.library, a.type_filter))
+
+    _create = sp.add_parser("create", help="create a new data instance library")
+    _create.add_argument("path")
+    _create.add_argument("--type-lib", action="append", default=[])
+    _create.add_argument("--purge", action="store_true")
+    _create.set_defaults(func=lambda a: _ops.create_library(a.path, a.type_lib, a.purge))
+
+    _attach = sp.add_parser("attach-types", help="attach a type library to a data library")
+    _attach.add_argument("library")
+    _attach.add_argument("type_library")
+    _attach.add_argument("--namespace")
+    _attach.add_argument("--on-exist", default="skip")
+    _attach.set_defaults(func=lambda a: _ops.attach_type_library(
+        a.library, a.type_library, a.namespace, a.on_exist,
+    ))
+
+    _addi = sp.add_parser("add-item", help="register an existing file as a typed item")
+    _addi.add_argument("library")
+    _addi.add_argument("--path", required=True, dest="host_path")
+    _addi.add_argument("--dtype", required=True)
+    _addi.add_argument("--parent", action="append", default=[], dest="parents")
+    _addi.add_argument("--no-save", action="store_true")
+    _addi.set_defaults(func=lambda a: _ops.add_item(
+        a.library, a.host_path, a.dtype, a.parents or None, not a.no_save,
+    ))
+
+    _addv = sp.add_parser("add-value", help="register a scalar/dict value as a typed item")
+    _addv.add_argument("library")
+    _addv.add_argument("--name", required=True)
+    _addv.add_argument("--value", required=True, help="string, or JSON if --json-value")
+    _addv.add_argument("--json-value", action="store_true",
+                       help="parse --value as JSON instead of treating as a string")
+    _addv.add_argument("--dtype", required=True)
+    _addv.add_argument("--parent", action="append", default=[], dest="parents")
+    _addv.add_argument("--no-save", action="store_true")
+    _addv.set_defaults(func=_cmd_add_value)
+
+    _setp = sp.add_parser("set-parents", help="attach parents to an item")
+    _setp.add_argument("library")
+    _setp.add_argument("item_path")
+    _setp.add_argument("--parent", action="append", required=True, dest="parents")
+    _setp.add_argument("--no-save", action="store_true")
+    _setp.set_defaults(func=lambda a: _ops.set_item_parents(
+        a.library, a.item_path, a.parents, not a.no_save,
+    ))
+
+    _rm = sp.add_parser("remove", help="unregister an item (filesystem unchanged)")
+    _rm.add_argument("library")
+    _rm.add_argument("item_path")
+    _rm.add_argument("--no-save", action="store_true")
+    _rm.set_defaults(func=lambda a: _ops.remove_item(a.library, a.item_path, not a.no_save))
+
+    _ren = sp.add_parser("rename", help="rename an item (manifest + filesystem)")
+    _ren.add_argument("library")
+    _ren.add_argument("old")
+    _ren.add_argument("new")
+    _ren.set_defaults(func=lambda a: _ops.rename_item(a.library, a.old, a.new))
+
+    _renp = sp.add_parser("rename-by-parent", help="rename items by their parent's stem")
+    _renp.add_argument("library")
+    _renp.add_argument("parent_type")
+    _renp.set_defaults(func=lambda a: _ops.rename_by_parent(a.library, a.parent_type))
+
+    _prune = sp.add_parser("prune-types", help="drop unused type definitions")
+    _prune.add_argument("library")
+    _prune.add_argument("--whitelist", action="append", default=[])
+    _prune.add_argument("--no-save", action="store_true")
+    _prune.set_defaults(func=lambda a: _ops.prune_types(
+        a.library, a.whitelist or None, not a.no_save,
+    ))
+
+    _con = sp.add_parser("consolidate", help="replace absolute-path items with local symlinks")
+    _con.add_argument("library")
+    _con.set_defaults(func=lambda a: _ops.consolidate(a.library))
+
+    _save = sp.add_parser("save", help="persist library manifest")
+    _save.add_argument("library")
+    _save.add_argument("--no-update-types", action="store_true")
+    _save.set_defaults(func=lambda a: _ops.save_library(a.library, not a.no_update_types))
+
+    _trace = sp.add_parser("trace", help="yield (from, to) lineage pairs by type")
+    _trace.add_argument("library")
+    _trace.add_argument("from_type")
+    _trace.add_argument("to_type")
+    _trace.set_defaults(func=lambda a: _ops.trace_lineage(a.library, a.from_type, a.to_type))
+
+    _lr = sp.add_parser("load-remote", help="fetch a library image from a Source URI")
+    _lr.add_argument("src_uri")
+    _lr.add_argument("dest")
+    _lr.add_argument("--on-exist", default="skip")
+    _lr.add_argument("--no-image", action="store_true",
+                     help="treat src as a directory, not a packed image")
+    _lr.set_defaults(func=lambda a: _ops.load_remote_library(
+        a.src_uri, a.dest, a.on_exist, not a.no_image,
+    ))
+
+    _lin = sp.add_parser("lineage", help="show an item's type + parents")
+    _lin.add_argument("library")
+    _lin.add_argument("item_path")
+    _lin.set_defaults(func=lambda a: _ops.show_item_lineage(a.library, a.item_path))
+
+
+def _cmd_add_value(args):
+    value = json.loads(args.value) if args.json_value else args.value
+    return _ops.add_value(
+        args.library, args.name, value, args.dtype,
+        args.parents or None, not args.no_save,
+    )
