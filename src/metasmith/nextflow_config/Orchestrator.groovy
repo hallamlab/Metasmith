@@ -108,6 +108,20 @@ class Orchestrator {
         return this._post(streams, names, true)
     }
 
+    // Replaces `[*process_call(...)]` in generated workflow.nf. Nextflow
+    // 26's strict parser rejects the spread-in-list-literal form, so the
+    // generator emits `o.asStreams(process_call(...))` instead. Handles both
+    // single-output processes (returns a Channel) and multi-output ones
+    // (returns an iterable ChannelOut).
+    public List asStreams(out) {
+        if (out instanceof Iterable) {
+            def result = []
+            for (ch in out) result << ch
+            return result
+        }
+        return [out]
+    }
+
     private def combineIndexes(indexes) {
         def combined_index = [:]
         def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) // reduce

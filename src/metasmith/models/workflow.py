@@ -1514,12 +1514,15 @@ class WorkflowTask:
             if len(produced_names) == 1:
                 # Nextflow 26.04+ strict syntax rejects single-element parenthesized
                 # multiple-assignment `(_x) = expr`; use indexed access instead.
+                # It also rejects `[*proc(...)]` (spread in list literal), so we
+                # route through `o.asStreams(...)` (defined in Orchestrator.groovy,
+                # which is loaded via -lib and not subject to strict syntax).
                 wf_main.append(
-                    f"_{produced_names[0]} = (o.post([*{process_name}({used})], k))[0]"
+                    f"_{produced_names[0]} = (o.post(o.asStreams({process_name}({used})), k))[0]"
                 )
             else:
                 wf_main.append(
-                    f"({produced}) = o.post([*{process_name}({used})], k)"
+                    f"({produced}) = o.post(o.asStreams({process_name}({used})), k)"
                 )
             if step.order in final_steps_for_merging:
                 for e in final_steps_for_merging[step.order]:

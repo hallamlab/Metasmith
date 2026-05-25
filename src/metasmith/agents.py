@@ -1285,7 +1285,6 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             export NXF_HOME=./.nextflow
             export NXF_ENABLE_VIRTUAL_THREADS=true
             export NXF_OFFLINE=TRUE # don't go online and search for latest version
-            export NXF_SYNTAX_PARSER=v1 # legacy parser (allows arrow lambdas + spread in generated workflow.nf)
             export OPENBLAS_NUM_THREADS=1
             export OMP_NUM_THREADS=1
             export NXF_OPTS="-Xms2g -Xmx10g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
