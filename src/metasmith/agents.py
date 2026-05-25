@@ -237,6 +237,7 @@ class Agent:
                 binds=[
                     ("$(pwd -P)", Path("/ws")),
                     ("$AGENT_HOME", Path("/msm_home")),
+                    ("$AGENT_HOME", Path(str(resolved_agent_home))),
                     ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
                     (resolved_home/".globus", resolved_home/".globus"),
                     (resolved_home/".globusonline", resolved_home/".globusonline"),
@@ -1284,6 +1285,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             export NXF_HOME=./.nextflow
             export NXF_ENABLE_VIRTUAL_THREADS=true
             export NXF_OFFLINE=TRUE # don't go online and search for latest version
+            export NXF_SYNTAX_PARSER=v1 # legacy parser (allows arrow lambdas + spread in generated workflow.nf)
             export OPENBLAS_NUM_THREADS=1
             export OMP_NUM_THREADS=1
             export NXF_OPTS="-Xms2g -Xmx10g -XX:ActiveProcessorCount=1 -Djdk.virtualThreadScheduler.maxPoolSize=512"
@@ -1303,7 +1305,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
                 -lib ./lib \
                 -ansi-log false \
                 -resume \
-                -work-dir {AgentPaths.WORK_ROOT}/nxf_work &
+                -work-dir {workspace}/nxf_work &
             PID=$!
             echo "nextflow PID is [$PID]"
             echo $PID >$PIDF

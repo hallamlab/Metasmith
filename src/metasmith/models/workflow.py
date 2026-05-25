@@ -1172,7 +1172,7 @@ class WorkflowTask:
             "    if (f in l) {",
             "        rows = Channel.fromList(l[f]).merge(rows)",
             "    }",
-            "    return rows.map((row) -> {",
+            "    return rows.map { row ->",
             "        if (row.size()>1) {",
             "            def (ri, rx) = row",
             "            return tuple(ri, file(rx))",
@@ -1180,7 +1180,7 @@ class WorkflowTask:
             "            def i = [:]",
             "            return tuple(i, file(row[0]))",
             "        }",
-            "    })",
+            "    }",
             "}",
             "",
             "",
@@ -1341,7 +1341,7 @@ class WorkflowTask:
                 '"""',
                 'stub:',
                 'def dt = new Random().nextFloat()*params.testSpread',
-                'def hash = "${index[0].sort().collectEntries((k, v) -> [k, v.sort()])}".md5()[0..11]', # 12 characters
+                'def hash = "${index[0].sort().collectEntries { k, v -> [k, v.sort()] }}".md5()[0..11]', # 12 characters
                 f'"""',
                 f'sleep $dt',
                 f'touch {" ".join(mock_outputs)}',
