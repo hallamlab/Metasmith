@@ -211,10 +211,13 @@ def cli_hostname(argv: list[str]) -> int:
 
 
 def cli_metasmith(argv: list[str]) -> int:
-    cmd = [sys.executable, "-m", "metasmith.coms.cli", *argv]
+    # The virtual runtime mocks transform execution via the nextflow stub
+    # and `virtual_output_synthesized`; the real `metasmith api` call would
+    # try to load /msm_home/lib/agent.yml and fail. We just record the
+    # invocation in the trace and return 0 so the bootstrap script's
+    # downstream steps (e.g. `msm_relay stop`) keep running.
     write_trace({"type": "metasmith_call", "argv": argv})
-    res = subprocess.run(cmd, check=False)
-    return int(res.returncode)
+    return 0
 
 
 def _docker_extract_command(argv: list[str]) -> tuple[str | None, list[str]]:
