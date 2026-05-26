@@ -1,0 +1,24 @@
+# Sandbox-scoped .condarc. The harness materializes this into
+# <SANDBOX>/home/.condarc and points HOME at <SANDBOX>/home so any
+# `mamba`/`conda` invocation from the agent picks it up.
+#
+# Placeholders interpolated by harness/sandbox.py:
+#   <SANDBOX>            absolute path to the test sandbox root
+#   <LOCAL_CHANNEL_ROOT> absolute path to <SANDBOX>/local-channels (parent of
+#                        the `hallamlab` channel dir)
+#
+# Effect:
+#   - `-c hallamlab` on the CLI resolves to file://<LOCAL_CHANNEL_ROOT>/hallamlab
+#     so the agent gets the locally-built metasmith pkg, never the public one.
+#   - mamba env create -n <name> lands under <SANDBOX>/envs/<name>.
+#   - pkgs cache lands under <SANDBOX>/pkgs (single rm -rf cleans everything).
+channel_priority: strict
+custom_channels:
+  hallamlab: file://<LOCAL_CHANNEL_ROOT>
+default_channels:
+  - conda-forge
+  - bioconda
+envs_dirs:
+  - <SANDBOX>/envs
+pkgs_dirs:
+  - <SANDBOX>/pkgs

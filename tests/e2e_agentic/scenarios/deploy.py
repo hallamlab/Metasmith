@@ -1,0 +1,93 @@
+"""Deploy scenario — agent runs `metasmith agent save` + `agent deploy`.
+
+Exercises the container spoof. metasmith is pre-installed (so this isolates
+the deploy path from install regressions). For DOCKER: the host daemon
+already carries the locally-built tag. For APPTAINER: the harness pre-
+placed the sif at the path Agent.Deploy computes inside
+`<SANDBOX>/agent_home/container_images/`, so the `[ -e ... ] || pull` gate
+skips pulling.
+"""
+from __future__ import annotations
+
+import os
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from ..harness.loop import LoopResult, LoopOutcome
+from ..harness.container_spoof import expected_sif_path
+from .base import PromptContext, VerifyContext
+
+
+_DEPLOY_PROMPT = """\
+{PRELUDE}
+
+# Your task (deploy)
+
+metasmith is already installed in conda env `msm_env` in the sandbox.
+
+Activate it, then save and deploy an agent named `local-agent`:
+
+```bash
+source $(conda info --base)/etc/profile.d/conda.sh && conda activate msm_env
+
+metasmith agent save <SANDBOX>/workspace/local-agent.yml \\
+    --home <SANDBOX>/agent_home \\
+    --runtime {RUNTIME}
+
+metasmith agent deploy <SANDBOX>/workspace/local-agent.yml
+```
+
+When deploy finishes successfully:
+
+```bash
+metasmith e2e checkpoint done --key deploy-{RUNTIME}
+```
+
+If `agent deploy` tries to pull from the registry (you'll see a Docker or
+Apptainer network error), that means the local container is missing —
+record the error in `../PROGRESS.md` and emit
+`metasmith e2e checkpoint give_up --reason "<text>"`.
+"""
+
+
+@dataclass
+class DeployScenario:
+    name: str = "deploy"
+    tutorial_path: str = "(internal deploy prompt)"
+    expected_artifact_globs: list[str] = field(default_factory=lambda: [
+        "workspace/local-agent.yml",
+    ])
+    expected_trace: tuple[str, str] | None = None
+    timeout_s: float = 600.0
+    pre_install_metasmith: bool = True
+
+    def build_prompt(self, ctx: PromptContext) -> str:
+        return _DEPLOY_PROMPT.format(PRELUDE=ctx.prelude_text, RUNTIME=ctx.runtime)
+
+    def verify(self, vctx: VerifyContext, result: LoopResult) -> list[str]:
+        fails: list[str] = []
+        if result.outcome is not LoopOutcome.DONE:
+            fails.append(f"deploy did not report DONE; outcome={result.outcome.value}")
+        yml = vctx.sandbox / "workspace" / "local-agent.yml"
+        if not yml.exists():
+            fails.append(f"missing {yml}; agent did not run `metasmith agent save`")
+        agent_home = vctx.sandbox / "agent_home"
+        if not agent_home.exists():
+            fails.append(f"missing agent home: {agent_home}")
+            return fails
+        # Runtime-specific container artifact check
+        runtime = vctx.agent_env.get("MSM_E2E_RUNTIME", "").upper()
+        image_tag = vctx.agent_env.get("MSM_E2E_IMAGE_TAG", "")
+        if runtime == "DOCKER":
+            r = subprocess.run(
+                ["docker", "image", "inspect", image_tag],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            if r.returncode != 0:
+                fails.append(f"docker image {image_tag!r} not present after deploy")
+        elif runtime == "APPTAINER":
+            sif = expected_sif_path(agent_home, f"docker://{image_tag}")
+            if not sif.exists():
+                fails.append(f"expected sif missing post-deploy: {sif}")
+        return fails

@@ -32,6 +32,10 @@ pixi.toml
 
 .coverage
 
+# e2e_agentic test infrastructure
+/.opencode-serve-*.log
+/tests/e2e_agentic/.runs/
+
 /src/metasmith/std/dtypes.yml
 /main/relay_agent/0x*
 

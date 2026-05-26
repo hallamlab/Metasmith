@@ -19,6 +19,7 @@ from . import (
     task as _task,
     build as _build,
     run as _run,
+    e2e as _e2e,
     legacy as _legacy,
 )
 
@@ -48,6 +49,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _task.register(subs)
     _build.register(subs)
     _run.register(subs)
+    _e2e.register(subs)
     _legacy.register(subs)
 
     return parser
