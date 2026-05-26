@@ -79,7 +79,7 @@ Every transform library carries its own compiled
 .. code-block:: bash
 
     metasmith transform propagate-types transforms/pangenome \
-      --types data_types
+      --type-lib data_types
 
 6 — Plan a workflow targeting the new type
 ============================================================

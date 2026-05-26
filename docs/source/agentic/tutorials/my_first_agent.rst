@@ -29,9 +29,9 @@ Create a fresh ``.xgdb`` and attach the type libraries:
 .. code-block:: bash
 
     metasmith data create ./workspace/3pangenome.xgdb \
-      --types data_types/ncbi.yml \
-      --types data_types/sequences.yml \
-      --types data_types/pangenome.yml \
+      --type-lib data_types/ncbi.yml \
+      --type-lib data_types/sequences.yml \
+      --type-lib data_types/pangenome.yml \
       --purge
 
 Register a pangenome group, then add three accessions under it:

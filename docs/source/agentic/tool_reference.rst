@@ -40,7 +40,7 @@ Command                                                           Purpose
 ================================================================  ============================================================
 ``metasmith data inspect LIB``                                    Schema + namespaces + item count
 ``metasmith data list LIB [--type TYPE]``                         List items, optionally filtered
-``metasmith data create PATH --types ... [--purge]``              Create a new ``.xgdb`` and attach types
+``metasmith data create PATH --type-lib ... [--purge]``           Create a new ``.xgdb`` and attach types
 ``metasmith data attach-types LIB TYPE_LIB --namespace NS``       Add a types YAML to an existing library
 ``metasmith data add-item LIB --path P --dtype T [--parent ...]`` Register an existing file
 ``metasmith data add-value LIB --name N --value V --dtype T``     Register a scalar/dict as a typed item
@@ -69,7 +69,7 @@ Command                                                           Purpose
 ``metasmith transform write LIB PATH --source FILE``              Write/overwrite a transform ``.py``
 ``metasmith transform scaffold LIB NAME --in T... --out T...``    Emit a typed skeleton
 ``metasmith transform validate LIB PATH``                         Reload + validate the contract resolves
-``metasmith transform propagate-types LIB --types DIR ...``       Copy type libs into the transform lib
+``metasmith transform propagate-types LIB --type-lib DIR ...``    Copy type libs into the transform lib
 ================================================================  ============================================================
 
 E. Workflow planning
