@@ -13,38 +13,30 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..harness.loop import LoopResult, LoopOutcome
-from .base import PromptContext, VerifyContext
+from .base import PromptContext, VerifyContext, _self_report_failures
 
 
 _INSTALL_PROMPT = """\
-{PRELUDE}
-
-# Your task (install)
-
-Install metasmith by following the docs at
-`docs/setup/install.rst` verbatim. The .condarc has been pre-configured
-so `-c hallamlab` resolves locally — no network needed.
-
-Concretely:
+Run the following commands in order:
 
 ```bash
 mamba create -y -n msm_env -c hallamlab -c bioconda metasmith
 source $(conda info --base)/etc/profile.d/conda.sh && conda activate msm_env
-msm --help > <SANDBOX>/workspace/install_help.txt
+msm --help > {SANDBOX}/workspace/install_help.txt
 metasmith --version
 ```
 
-The expected version is **{VERSION}**.
+If any command above produces an error or unexpected output, stop immediately and run:
 
-When `msm --help` exits 0 and `install_help.txt` is populated, run:
+```bash
+metasmith e2e report_issue --reason "<one line describing what you saw>"
+```
+
+When all commands above succeed, run:
 
 ```bash
 metasmith e2e checkpoint done --key install-{VERSION}
 ```
-
-If `mamba create` fails, capture the error in `../PROGRESS.md` and try
-again on the next iteration. If you cannot make progress, run
-`metasmith e2e checkpoint give_up --reason "<text>"`.
 """
 
 
@@ -60,12 +52,11 @@ class InstallScenario:
     pre_install_metasmith: bool = False     # this IS the install test
 
     def build_prompt(self, ctx: PromptContext) -> str:
-        return _INSTALL_PROMPT.format(PRELUDE=ctx.prelude_text, VERSION=ctx.version)
+        return _INSTALL_PROMPT.format(SANDBOX=str(ctx.sandbox), VERSION=ctx.version)
 
     def verify(self, vctx: VerifyContext, result: LoopResult) -> list[str]:
         fails: list[str] = []
-        if result.outcome is not LoopOutcome.DONE:
-            fails.append(f"install did not report DONE; outcome={result.outcome.value}")
+        fails.extend(_self_report_failures(result))
         help_file = vctx.sandbox / "workspace" / "install_help.txt"
         if not help_file.exists():
             fails.append(f"missing {help_file}")

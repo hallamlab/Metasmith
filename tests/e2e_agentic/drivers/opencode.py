@@ -38,6 +38,22 @@ def _wait_for_port(port: int, timeout_s: float = 15.0) -> bool:
     return False
 
 
+_OPENCODE_DATA_REL = Path(".local") / "share" / "opencode"
+
+
+def _bridge_opencode_auth(sandbox_home: Path) -> None:
+    """Make the real ~/.local/share/opencode visible inside a redirected
+    HOME by symlinking the directory across. Idempotent."""
+    real = Path.home() / _OPENCODE_DATA_REL
+    if not real.exists():
+        return
+    dest = sandbox_home / _OPENCODE_DATA_REL
+    if dest.exists() or dest.is_symlink():
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.symlink_to(real)
+
+
 def _opencode_has_credentials() -> bool:
     if os.environ.get("OPENCODE_API_KEY"):
         return True
@@ -67,7 +83,7 @@ class OpencodeDriver:
     timeout_s: float | None = 900.0
     _serve_proc: subprocess.Popen | None = field(default=None, init=False, repr=False)
 
-    def start_session(self) -> None:
+    def start_session(self, env: dict[str, str] | None = None) -> None:
         if shutil.which(self.bin) is None:
             raise RuntimeError(
                 f"`{self.bin}` not found on PATH; install via "
@@ -87,11 +103,24 @@ class OpencodeDriver:
         log = self.serve_log or Path.cwd() / f".opencode-serve-{self.serve_port}.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         self._serve_log_fp = log.open("w")  # type: ignore[attr-defined]
+        # opencode's bash tool calls run inside the serve daemon's process
+        # tree, so they inherit serve's env — NOT the env we pass to
+        # `opencode run` later. The sandbox spoof (CONDARC, HOME redirect)
+        # therefore has to be wired in here, at serve-launch time.
+        serve_env = dict(env) if env is not None else None
+        if serve_env is not None and "HOME" in serve_env:
+            # opencode resolves auth from Path.home()/.local/share/opencode/
+            # auth.json — so when HOME is redirected to the sandbox the
+            # daemon loses its credentials and serves "UnknownError" to
+            # every request. Bridge the real auth file in.
+            sandbox_home = Path(serve_env["HOME"])
+            _bridge_opencode_auth(sandbox_home)
         self._serve_proc = subprocess.Popen(
             [self.bin, "serve", "--port", str(self.serve_port)],
             stdout=self._serve_log_fp,
             stderr=subprocess.STDOUT,
             start_new_session=True,
+            env=serve_env,
         )
         if not _wait_for_port(self.serve_port):
             self.stop_session()

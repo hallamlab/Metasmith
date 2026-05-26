@@ -42,6 +42,9 @@ class SandboxLayout:
     condarc: Path
     bootstrap_env: Path
     sif_in_cache: Path | None  # the pre-placed metasmith sif, if APPTAINER
+    bash_env: Path | None = None  # auto-sourced before every `bash -c`; carries
+                                  # the conda init so non-login shells can
+                                  # `conda activate` without re-sourcing manually
 
 
 def _copy_tree(src: Path, dst: Path) -> None:
@@ -114,7 +117,13 @@ def build_sandbox(
     pkgs_dir = root / "pkgs"
     apptainer_cache = home / ".apptainer" / "cache"
 
-    for p in (home, workspace, agent_home, envs_dir, pkgs_dir,
+    # Note: agent_home is intentionally NOT pre-created here. `Agent.Deploy()`
+    # early-exits with "already exists" when its home dir is present, so a
+    # pre-created agent_home turns the deploy scenario into a no-op and
+    # masks container-pull regressions. The APPTAINER branch below creates
+    # agent_home/container_images/ as a side effect of pre-placing the sif,
+    # which is the deliberate spoof point for that runtime.
+    for p in (home, workspace, envs_dir, pkgs_dir,
               apptainer_cache, local_channels):
         p.mkdir(parents=True, exist_ok=True)
 
@@ -153,6 +162,22 @@ def build_sandbox(
     # --- 6. stash empty PROGRESS.md (agent appends to it)
     (root / "PROGRESS.md").touch()
 
+    # --- 7. bash_env: auto-sourced by every `bash -c` (BASH_ENV semantics).
+    # Each opencode/claude tool call spawns a fresh shell, so activation done
+    # in one call doesn't persist to the next. BASH_ENV sources the conda
+    # hook and activates msm_env *every* time a shell is opened, so the
+    # agent's verbatim docs commands work even when split across calls.
+    bash_env = home / ".bash_env"
+    bash_env.write_text(
+        "# Auto-sourced via BASH_ENV by every non-interactive bash invocation.\n"
+        f'export CONDARC="{condarc}"\n'
+        "# shellcheck disable=SC1091\n"
+        f'source "{boot_env}/etc/profile.d/conda.sh" 2>/dev/null || true\n'
+        f'if [ -d "{root}/envs/msm_env" ]; then\n'
+        f'    conda activate "{root}/envs/msm_env" 2>/dev/null || true\n'
+        "fi\n"
+    )
+
     return SandboxLayout(
         root=root,
         home=home,
@@ -165,6 +190,7 @@ def build_sandbox(
         condarc=condarc,
         bootstrap_env=boot_env,
         sif_in_cache=sif_in_cache,
+        bash_env=bash_env,
     )
 
 
@@ -183,9 +209,28 @@ def env_for_agent(layout: SandboxLayout) -> dict[str, str]:
     """
     out = dict(os.environ)
     out.pop("PYTHONPATH", None)
+    # Drop inherited CONDA_* vars from the test runner's own conda env. If
+    # left in place, `conda activate msm_env` sees a pre-existing activation
+    # and stacks instead of replacing, leaving the parent env's bin first on
+    # PATH and breaking bare-name resolution.
+    for k in list(out):
+        if k.startswith("CONDA_"):
+            del out[k]
     out["HOME"] = str(layout.home)
+    # CONDARC is set explicitly because conda's shell hook (sourced before
+    # `conda activate`) reads it directly. HOME redirection alone is
+    # unreliable across conda installations. With CONDARC pinned, bare
+    # `conda activate msm_env` resolves the path-based env in
+    # <sandbox>/envs/ via the spoofed envs_dirs entry.
+    out["CONDARC"] = str(layout.condarc)
     out["PATH"] = f"{layout.bootstrap_env}/bin:{out.get('PATH', '')}"
     out["APPTAINER_CACHEDIR"] = str(layout.home / ".apptainer" / "cache")
+    # BASH_ENV is sourced by every non-interactive `bash -c` invocation.
+    # We use it to re-apply `conda activate msm_env` in each shell the
+    # agent's bash tool spawns, so PATH carries metasmith even when the
+    # agent splits its commands across multiple tool calls.
+    if layout.bash_env is not None:
+        out["BASH_ENV"] = str(layout.bash_env)
     return out
 
 

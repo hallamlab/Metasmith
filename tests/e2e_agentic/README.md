@@ -50,8 +50,7 @@ tests/e2e_agentic/
 ├── install_mock/
 │   ├── build_local_artifacts.sh    wheel/conda-pkg/docker/sif (host)
 │   ├── verify_local_artifacts.py   preflight (no shared env)
-│   ├── condarc_template.yaml       .condarc with <SANDBOX> placeholders
-│   └── sandbox_prelude.md          prelude injected into every prompt
+│   └── condarc_template.yaml       .condarc with <SANDBOX> placeholders
 ├── scenarios/
 │   ├── base.py              Scenario protocol + standard_verify
 │   ├── harness_smoke.py     metasmith pre-installed; agent runs msm --help
@@ -149,13 +148,21 @@ template; the agent reads `sandbox/PROGRESS.md` to remember where it left
 off and writes its terminal verdict to `sandbox/CONTROL.json` via:
 
 ```bash
-metasmith e2e checkpoint done    --key <task_key>
-metasmith e2e checkpoint give_up --reason "..."
-metasmith e2e checkpoint continue --notes "..."   # implicit if file is absent
+metasmith e2e checkpoint done       --key <task_key>
+metasmith e2e checkpoint give_up    --reason "..."
+metasmith e2e checkpoint continue   --notes  "..."  # implicit if file is absent
+metasmith e2e report_issue          --reason "<one line describing what you saw>"
 ```
 
-Loop stops on `done`/`give_up`/`max_iters`/`max_tokens` (whichever fires
-first). See `harness/loop.py`. A wedged iteration (e.g. opencode hung on
+`report_issue` is the **fail-fast** action: scenario prompts list verbatim docs
+commands and instruct the agent to call `report_issue` on the first sign of any
+unexpected error or output. The loop terminates immediately with outcome
+`REPORTED_ISSUE` and the pytest failure message reads
+`agent reported issue: <reason>`. This is how the suite surfaces real bugs —
+the agent does not debug; it runs the docs and tattles.
+
+Loop stops on `done`/`give_up`/`report_issue`/`max_iters`/`max_tokens` (whichever
+fires first). See `harness/loop.py`. A wedged iteration (e.g. opencode hung on
 a provider-side stall) terminates at `--iter-timeout-s` so it becomes an
 iteration boundary instead of a permanent hang.
 

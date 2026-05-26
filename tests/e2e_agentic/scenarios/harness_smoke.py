@@ -12,26 +12,28 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..harness.loop import LoopResult, LoopOutcome
-from .base import PromptContext, VerifyContext
+from .base import PromptContext, VerifyContext, _self_report_failures
 
 
 _SMOKE_PROMPT = """\
-{PRELUDE}
+Run the following commands in order:
 
-# Your task (harness smoke)
+```bash
+source $(conda info --base)/etc/profile.d/conda.sh && conda activate msm_env
+msm --help > {SANDBOX}/workspace/help.txt
+```
 
-metasmith is already installed in conda env `msm_env` inside the sandbox.
+If any command above produces an error or unexpected output, stop immediately and run:
 
-1. Activate it: `source $(conda info --base)/etc/profile.d/conda.sh && conda activate msm_env`
-2. Run `msm --help` and confirm it exits 0.
-3. Save the output to `<SANDBOX>/workspace/help.txt`.
-4. Run:
+```bash
+metasmith e2e report_issue --reason "<one line describing what you saw>"
+```
 
-   ```
-   metasmith e2e checkpoint done --key harness-smoke
-   ```
+When all commands above succeed, run:
 
-That's it. Do not pull images. Do not edit `.condarc`.
+```bash
+metasmith e2e checkpoint done --key harness-smoke
+```
 """
 
 
@@ -47,12 +49,11 @@ class HarnessSmokeScenario:
     pre_install_metasmith: bool = True
 
     def build_prompt(self, ctx: PromptContext) -> str:
-        return _SMOKE_PROMPT.format(PRELUDE=ctx.prelude_text)
+        return _SMOKE_PROMPT.format(SANDBOX=str(ctx.sandbox))
 
     def verify(self, vctx: VerifyContext, result: LoopResult) -> list[str]:
         fails: list[str] = []
-        if result.outcome is not LoopOutcome.DONE:
-            fails.append(f"smoke did not report DONE; outcome={result.outcome.value}")
+        fails.extend(_self_report_failures(result))
         help_file = vctx.sandbox / "workspace" / "help.txt"
         if not help_file.exists():
             fails.append(f"missing {help_file}")

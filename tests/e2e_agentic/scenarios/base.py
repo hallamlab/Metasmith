@@ -24,7 +24,6 @@ class PromptContext:
     image_tag: str
     runtime: str
     docs_dir: Path           # in-sandbox copy of docs
-    prelude_text: str        # already-rendered sandbox_prelude.md
     tutorial_rel: str        # path relative to sandbox/docs/
 
 
@@ -63,6 +62,9 @@ def _self_report_failures(result: LoopResult) -> list[str]:
     if result.outcome is LoopOutcome.GAVE_UP:
         reason = result.terminal_control.reason if result.terminal_control else "(no reason)"
         return [f"agent gave up: {reason}"]
+    if result.outcome is LoopOutcome.REPORTED_ISSUE:
+        reason = result.terminal_control.reason if result.terminal_control else "(no reason)"
+        return [f"agent reported issue: {reason}"]
     if result.outcome is LoopOutcome.OVER_BUDGET:
         return [f"loop exceeded token budget after {result.iterations} iterations "
                 f"({result.tokens_used} tokens used)"]

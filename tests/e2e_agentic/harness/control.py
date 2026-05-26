@@ -6,9 +6,10 @@ to keep looping.
 
 Schemas accepted:
 
-    {"action": "done",     "task_key": "<key>", "notes": "..."}
-    {"action": "give_up",  "reason":  "...",    "notes": "..."}
-    {"action": "continue", "notes":   "..."}
+    {"action": "done",         "task_key": "<key>", "notes": "..."}
+    {"action": "give_up",      "reason":  "...",    "notes": "..."}
+    {"action": "continue",     "notes":   "..."}
+    {"action": "report_issue", "reason":  "..."}
 
 Anything else (missing file, malformed JSON, unknown action) is treated
 as implicit ``continue`` so the loop runs again next iteration.
@@ -21,7 +22,7 @@ from pathlib import Path
 
 CONTROL_FILENAME = "CONTROL.json"
 
-VALID_ACTIONS = frozenset({"done", "give_up", "continue"})
+VALID_ACTIONS = frozenset({"done", "give_up", "continue", "report_issue"})
 
 
 @dataclass(frozen=True)

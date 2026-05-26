@@ -109,20 +109,6 @@ def loop_budgets(pytestconfig):
     )
 
 
-@pytest.fixture
-def render_prelude():
-    """Returns a renderer that produces the sandbox prelude text."""
-    def _render(ctx, runtime: str, sandbox_root: Path) -> str:
-        prelude_md = (Path(__file__).resolve().parent
-                      / "install_mock" / "sandbox_prelude.md").read_text()
-        return (prelude_md
-                .replace("{VERSION}", ctx.version)
-                .replace("{RUNTIME}", runtime)
-                .replace("{IMAGE_TAG}", ctx.image_tag)
-                .replace("{SANDBOX}", str(sandbox_root)))
-    return _render
-
-
 # ---------------------------------------------------------------------------
 # helper: run a scenario end-to-end
 # ---------------------------------------------------------------------------
@@ -130,7 +116,7 @@ def render_prelude():
 
 @pytest.fixture
 def run_scenario(install_context_factory, agent_driver, tmp_path,
-                 loop_budgets, render_prelude, runs_dir, pytestconfig):
+                 loop_budgets, runs_dir, pytestconfig):
     """High-level scenario runner.
 
     1. Resolve InstallContext for the runtime.
@@ -159,20 +145,15 @@ def run_scenario(install_context_factory, agent_driver, tmp_path,
         if getattr(scenario, "pre_install_metasmith", False):
             install_metasmith_into_sandbox(layout, ctx, env_name=_METASMITH_ENV_NAME)
 
-        prelude = render_prelude(ctx, runtime, sb_root)
         prompt_ctx = PromptContext(
             sandbox=sb_root,
             version=ctx.version,
             image_tag=ctx.image_tag,
             runtime=runtime,
             docs_dir=layout.docs,
-            prelude_text=prelude,
             tutorial_rel=scenario.tutorial_path,
         )
         prompt = scenario.build_prompt(prompt_ctx)
-        # Substitute <SANDBOX> token in any prompt that still references it
-        # (some scenarios embed it directly in their templates).
-        prompt = prompt.replace("<SANDBOX>", str(sb_root))
 
         log_dir = runs_dir / scenario.name / runtime
         log_dir.mkdir(parents=True, exist_ok=True)

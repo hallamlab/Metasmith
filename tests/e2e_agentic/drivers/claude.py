@@ -23,7 +23,7 @@ class ClaudeDriver:
     extra_argv: list[str] = field(default_factory=list)
     timeout_s: float | None = None
 
-    def start_session(self) -> None:
+    def start_session(self, env: dict[str, str] | None = None) -> None:
         if shutil.which(self.bin) is None:
             raise RuntimeError(
                 f"`{self.bin}` not found on PATH; install Claude Code first"

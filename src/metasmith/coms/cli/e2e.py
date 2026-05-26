@@ -48,6 +48,12 @@ def _checkpoint(args) -> dict:
     return _write_control(cwd, payload)
 
 
+def _report_issue(args) -> dict:
+    cwd = Path(getattr(args, "cwd", None) or Path.cwd())
+    payload: dict = {"action": "report_issue", "reason": args.reason}
+    return _write_control(cwd, payload)
+
+
 def register(subs):
     p = subs.add_parser(
         "e2e",
@@ -71,3 +77,14 @@ def register(subs):
         help="directory to write CONTROL.json into (default: current working dir)",
     )
     cp.set_defaults(func=_checkpoint)
+
+    ri = sp.add_parser(
+        "report_issue",
+        help="Stop the loop immediately and fail the test with --reason as the message",
+    )
+    ri.add_argument("--reason", required=True, help="one-line description of the issue")
+    ri.add_argument(
+        "--cwd", default=None,
+        help="directory to write CONTROL.json into (default: current working dir)",
+    )
+    ri.set_defaults(func=_report_issue)

@@ -94,3 +94,40 @@ def test_env_for_agent_redirects_home(install_ctx, tmp_path):
     assert "PYTHONPATH" not in env, "host PYTHONPATH should not leak"
     assert str(layout.bootstrap_env / "bin") in env["PATH"]
     assert env["APPTAINER_CACHEDIR"].startswith(str(layout.home))
+
+
+def test_env_for_agent_sets_condarc(install_ctx, tmp_path):
+    layout = build_sandbox(tmp_path / "sb_condarc", install_ctx, runtime="DOCKER")
+    env = env_for_agent(layout)
+    # Without CONDARC, conda's shell hook falls back to the bootstrap install's
+    # default config and `conda activate msm_env` reports EnvironmentNameNotFound
+    # even with HOME redirected. The harness pins CONDARC to the spoofed file
+    # so the bare-name activation works without env juggling in the prompt.
+    assert env["CONDARC"] == str(layout.condarc)
+
+
+def test_bare_conda_activate_works_with_env_for_agent(install_ctx, tmp_path):
+    """End-to-end: after install_metasmith_into_sandbox, bare
+    `conda activate msm_env` resolves under env_for_agent alone (no extra
+    HOME/CONDARC/CONDA_ENVS_PATH set by the caller).
+
+    This is the contract the stripped scenario prompts depend on.
+    """
+    import subprocess
+    from tests.e2e_agentic.harness.sandbox import install_metasmith_into_sandbox
+
+    layout = build_sandbox(tmp_path / "sb_activate", install_ctx, runtime="DOCKER")
+    install_metasmith_into_sandbox(layout, install_ctx, env_name="msm_env")
+    env = env_for_agent(layout)
+
+    cmd = ("source $(conda info --base)/etc/profile.d/conda.sh "
+           "&& conda activate msm_env "
+           "&& which python")
+    r = subprocess.run(["bash", "-lc", cmd], env=env, capture_output=True, text=True)
+    assert r.returncode == 0, f"activation failed: {r.stderr}"
+    resolved = r.stdout.strip().splitlines()[-1]
+    expected_prefix = str(layout.root / "envs" / "msm_env")
+    assert resolved.startswith(expected_prefix), (
+        f"activate landed in unexpected env: {resolved!r}, "
+        f"expected prefix {expected_prefix!r}"
+    )

@@ -16,38 +16,33 @@ from pathlib import Path
 
 from ..harness.loop import LoopResult, LoopOutcome
 from ..harness.container_spoof import expected_sif_path
-from .base import PromptContext, VerifyContext
+from .base import PromptContext, VerifyContext, _self_report_failures
 
 
 _DEPLOY_PROMPT = """\
-{PRELUDE}
-
-# Your task (deploy)
-
-metasmith is already installed in conda env `msm_env` in the sandbox.
-
-Activate it, then save and deploy an agent named `local-agent`:
+Run the following commands in order:
 
 ```bash
 source $(conda info --base)/etc/profile.d/conda.sh && conda activate msm_env
 
-metasmith agent save <SANDBOX>/workspace/local-agent.yml \\
-    --home <SANDBOX>/agent_home \\
+metasmith agent save {SANDBOX}/workspace/local-agent.yml \\
+    --home {SANDBOX}/agent_home \\
     --runtime {RUNTIME}
 
-metasmith agent deploy <SANDBOX>/workspace/local-agent.yml
+metasmith agent deploy {SANDBOX}/workspace/local-agent.yml
 ```
 
-When deploy finishes successfully:
+If any command above produces an error or unexpected output, stop immediately and run:
+
+```bash
+metasmith e2e report_issue --reason "<one line describing what you saw>"
+```
+
+When all commands above succeed, run:
 
 ```bash
 metasmith e2e checkpoint done --key deploy-{RUNTIME}
 ```
-
-If `agent deploy` tries to pull from the registry (you'll see a Docker or
-Apptainer network error), that means the local container is missing —
-record the error in `../PROGRESS.md` and emit
-`metasmith e2e checkpoint give_up --reason "<text>"`.
 """
 
 
@@ -63,12 +58,11 @@ class DeployScenario:
     pre_install_metasmith: bool = True
 
     def build_prompt(self, ctx: PromptContext) -> str:
-        return _DEPLOY_PROMPT.format(PRELUDE=ctx.prelude_text, RUNTIME=ctx.runtime)
+        return _DEPLOY_PROMPT.format(SANDBOX=str(ctx.sandbox), RUNTIME=ctx.runtime)
 
     def verify(self, vctx: VerifyContext, result: LoopResult) -> list[str]:
         fails: list[str] = []
-        if result.outcome is not LoopOutcome.DONE:
-            fails.append(f"deploy did not report DONE; outcome={result.outcome.value}")
+        fails.extend(_self_report_failures(result))
         yml = vctx.sandbox / "workspace" / "local-agent.yml"
         if not yml.exists():
             fails.append(f"missing {yml}; agent did not run `metasmith agent save`")

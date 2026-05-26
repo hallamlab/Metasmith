@@ -27,9 +27,10 @@ class CustomTransformsScenario:
         template = (Path(__file__).resolve().parents[1]
                     / "prompts" / "ralph_system.md").read_text()
         return template.format(
-            PRELUDE=ctx.prelude_text,
+            SANDBOX=str(ctx.sandbox),
             TUTORIAL_REL=self.tutorial_path,
             RUNTIME=ctx.runtime,
+            TASK_KEY=self.name,
         )
 
     def verify(self, vctx: VerifyContext, result: LoopResult) -> list[str]:

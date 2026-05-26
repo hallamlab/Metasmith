@@ -6,8 +6,9 @@ conversation history. Stops on one of:
 
     1. CONTROL.json declares ``done``           → LoopResult.done
     2. CONTROL.json declares ``give_up``        → LoopResult.gave_up
-    3. cumulative tokens reach budget           → LoopResult.over_budget
-    4. iteration count reaches max_iters        → LoopResult.max_iters
+    3. CONTROL.json declares ``report_issue``   → LoopResult.reported_issue
+    4. cumulative tokens reach budget           → LoopResult.over_budget
+    5. iteration count reaches max_iters        → LoopResult.max_iters
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ from .control import Control, clear_control, read_control
 class LoopOutcome(Enum):
     DONE = "done"
     GAVE_UP = "gave_up"
+    REPORTED_ISSUE = "reported_issue"
     OVER_BUDGET = "over_budget"
     MAX_ITERS = "max_iters"
 
@@ -67,7 +69,7 @@ def ralph_loop(
     iter_results: list[IterResult] = []
     env = dict(env or {})
 
-    driver.start_session()
+    driver.start_session(env=env)
     try:
         for i in range(budgets.max_iters):
             iter_log = log_dir / f"iter-{i:03d}"
@@ -96,6 +98,15 @@ def ralph_loop(
             if control is not None and control.action == "give_up":
                 return LoopResult(
                     outcome=LoopOutcome.GAVE_UP,
+                    iterations=i + 1,
+                    tokens_used=budget.used,
+                    last_iter=result,
+                    terminal_control=control,
+                    iter_results=iter_results,
+                )
+            if control is not None and control.action == "report_issue":
+                return LoopResult(
+                    outcome=LoopOutcome.REPORTED_ISSUE,
                     iterations=i + 1,
                     tokens_used=budget.used,
                     last_iter=result,

@@ -54,8 +54,9 @@ class StubDriver:
     stopped: int = 0
     _i: int = 0
 
-    def start_session(self) -> None:
+    def start_session(self, env: dict[str, str] | None = None) -> None:
         self.started += 1
+        self.start_env = env
 
     def stop_session(self) -> None:
         self.stopped += 1
@@ -98,6 +99,14 @@ def test_control_round_trip_give_up(tmp_path: Path) -> None:
     assert c is not None
     assert c.action == "give_up"
     assert c.reason == "stuck"
+
+
+def test_control_round_trip_report_issue(tmp_path: Path) -> None:
+    write_control(tmp_path, "report_issue", reason="docker tag invalid")
+    c = read_control(tmp_path)
+    assert c is not None
+    assert c.action == "report_issue"
+    assert c.reason == "docker tag invalid"
 
 
 def test_control_missing_returns_none(tmp_path: Path) -> None:
@@ -226,6 +235,21 @@ def test_loop_give_up(tmp_path: Path) -> None:
     assert result.terminal_control.reason == "confused"
 
 
+def test_loop_report_issue_terminates_on_first_iter(tmp_path: Path) -> None:
+    steps = [
+        ScriptedStep(side_effect=_writes_control(
+            "report_issue", reason="docker rejects '+' in tag")),
+        # Extra step that would crash the StubDriver if the loop kept going.
+    ]
+    result, driver = _loop(tmp_path, steps)
+    assert result.outcome is LoopOutcome.REPORTED_ISSUE
+    assert not result.succeeded
+    assert result.iterations == 1
+    assert len(driver.invocations) == 1
+    assert result.terminal_control is not None
+    assert result.terminal_control.reason == "docker rejects '+' in tag"
+
+
 def test_loop_max_iters(tmp_path: Path) -> None:
     steps = [ScriptedStep() for _ in range(4)]
     result, driver = _loop(tmp_path, steps, max_iters=4)
@@ -335,6 +359,25 @@ def test_cli_checkpoint_done_without_key_errors(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit):
         main(["--quiet", "e2e", "checkpoint", "done", "--cwd", str(tmp_path)])
+
+
+def test_cli_report_issue_round_trip(tmp_path: Path) -> None:
+    from metasmith.coms.cli._main import main
+
+    rc = main(["--quiet", "e2e", "report_issue",
+               "--reason", "agent saw EnvironmentNameNotFound",
+               "--cwd", str(tmp_path)])
+    assert rc == 0
+    c = read_control(tmp_path)
+    assert c is not None and c.action == "report_issue"
+    assert c.reason == "agent saw EnvironmentNameNotFound"
+
+
+def test_cli_report_issue_without_reason_errors(tmp_path: Path) -> None:
+    from metasmith.coms.cli._main import main
+
+    with pytest.raises(SystemExit):
+        main(["--quiet", "e2e", "report_issue", "--cwd", str(tmp_path)])
 
 
 def test_loop_stop_session_called_on_exception(tmp_path: Path) -> None:
