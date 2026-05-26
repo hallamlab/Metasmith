@@ -1,6 +1,7 @@
 cache
 *.sif
 __pycache__
+/src/metasmith/build_hash.txt
 .ipynb_checkpoints
 .virtual_documents
 /*.ipynb
