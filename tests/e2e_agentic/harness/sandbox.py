@@ -208,7 +208,12 @@ def env_for_agent(layout: SandboxLayout) -> dict[str, str]:
     pre-placed sif).
     """
     out = dict(os.environ)
-    out.pop("PYTHONPATH", None)
+    # PYTHONPATH on the host may shadow the installed metasmith with a
+    # different version's source tree (e.g. /home/tony/lib/locals/metasmith).
+    # Setting it to empty (rather than .pop) is load-bearing: downstream
+    # `run_streaming` re-merges os.environ, so a popped key reappears.
+    # An explicit empty value overrides os.environ in that merge.
+    out["PYTHONPATH"] = ""
     # Drop inherited CONDA_* vars from the test runner's own conda env. If
     # left in place, `conda activate msm_env` sees a pre-existing activation
     # and stacks instead of replacing, leaving the parent env's bin first on

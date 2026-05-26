@@ -53,11 +53,18 @@ tests/e2e_agentic/
 │   └── condarc_template.yaml       .condarc with <SANDBOX> placeholders
 ├── scenarios/
 │   ├── base.py              Scenario protocol + standard_verify
+│   ├── _fixture_utils.py    helpers to pre-stage type/transform/data libs
 │   ├── harness_smoke.py     metasmith pre-installed; agent runs msm --help
 │   ├── install.py           agent runs verbatim docs install command
 │   ├── deploy.py            agent runs save + deploy against local container
 │   ├── my_first_agent.py    pangenome heatmap tutorial
-│   └── custom_transforms.py fastani transform tutorial
+│   ├── custom_transforms.py fastani transform tutorial
+│   ├── story_browse_libraries.py   user story: list/show type+transform libs
+│   ├── story_author_type.py        user story: author a new data type
+│   ├── story_plan_and_inspect.py   user story: plan, then inspect task subtree
+│   ├── story_run_direct.py         user story: metasmith run (no Nextflow)
+│   ├── recover_unreachable_target.py  plan failure → data add-value recovery
+│   └── recover_lineage_mismatch.py    plan failure → data set-parents recovery
 ├── prompts/ralph_system.md  fixed template (Geoff Huntley, Feb 2024)
 ├── test_sandbox_unit.py        sandbox materialization tests (no marker)
 ├── test_harness_smoke.py       loop/control/budget unit tests (no marker)
@@ -66,7 +73,9 @@ tests/e2e_agentic/
 ├── test_install.py             live: install from docs (marker)
 ├── test_deploy.py              live: agent save + deploy (marker, DOCKER+APPTAINER)
 ├── test_my_first_agent.py      live tutorial (marker, DOCKER+APPTAINER)
-└── test_custom_transforms.py   live tutorial (marker, DOCKER+APPTAINER)
+├── test_custom_transforms.py   live tutorial (marker, DOCKER+APPTAINER)
+├── test_story_*.py             live user-story smoke (marker, DOCKER)
+└── test_recover_*.py           live plan-failure recovery (marker, DOCKER)
 ```
 
 ## Prerequisites
@@ -178,10 +187,19 @@ The suite is structured as a progression of increasingly demanding tests:
 | `test_deploy[APPTAINER]`      | yes | pre-placed sif is served; no quay.io pull  |
 | `test_my_first_agent[*]`      | yes | full pangenome tutorial end-to-end         |
 | `test_custom_transforms[*]`   | yes | fastani transform tutorial end-to-end      |
+| `test_story_*[DOCKER]`        | yes | user-story smoke: browse / author type / plan+inspect / direct run |
+| `test_recover_*[DOCKER]`      | yes | plan-failure recovery via hints (unreachable target, lineage mismatch) |
 
 Pre-install means the harness creates `<sandbox>/envs/msm_env` before the
 agent runs; the agent then activates it. For `test_install` the agent does
 the `mamba create` itself, exercising the channel spoof.
+
+Scenarios that pre-stage workspace fixtures (type / transform / data libs
+built via metasmith's own CLI) implement an optional `setup_fixtures(layout,
+ctx)` hook on the `Scenario` protocol — run by the harness after the
+pre-install step, before the agent starts. See
+`scenarios/_fixture_utils.py` for shared helpers and any
+`scenarios/story_*.py` / `scenarios/recover_*.py` for examples.
 
 ## Troubleshooting
 

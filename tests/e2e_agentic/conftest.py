@@ -144,6 +144,15 @@ def run_scenario(install_context_factory, agent_driver, tmp_path,
 
         if getattr(scenario, "pre_install_metasmith", False):
             install_metasmith_into_sandbox(layout, ctx, env_name=_METASMITH_ENV_NAME)
+            # Claude Code's Bash tool doesn't reliably honor BASH_ENV across
+            # tool calls, so `conda activate msm_env` isn't applied to every
+            # fresh shell. Prepend the installed env's bin/ to PATH directly
+            # so `metasmith` and `msm` resolve regardless.
+            env_bin = sb_root / "envs" / _METASMITH_ENV_NAME / "bin"
+            agent_env["PATH"] = f"{env_bin}:{agent_env.get('PATH', '')}"
+
+        if hasattr(scenario, "setup_fixtures"):
+            scenario.setup_fixtures(layout, ctx)
 
         prompt_ctx = PromptContext(
             sandbox=sb_root,
