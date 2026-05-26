@@ -40,10 +40,24 @@ class InstallContext:
 
 
 def _read_version(project_root: Path) -> str:
+    """Return FULL_VERSION (PEP 440 local form, ``<semver>+<build_hash>``).
+
+    Mirrors ``constants.FULL_VERSION`` and ``dev.sh``'s ``FULL_VER`` so the
+    preflight image-tag and channel-wheel lookups match what the builders
+    actually produce. Stamping build_hash.txt is the builders' job; if it
+    is missing we fall back to bare semver and the lookups will fail with
+    the usual "run build_local_artifacts.sh" hint.
+    """
     p = project_root / "src" / "metasmith" / "version.txt"
     if not p.exists():
         raise PreflightError(f"missing {p}; cannot determine target version")
-    return p.read_text().strip()
+    semver = p.read_text().strip()
+    bh = project_root / "src" / "metasmith" / "build_hash.txt"
+    if bh.exists():
+        h = bh.read_text().strip()
+        if h:
+            return f"{semver}+{h}"
+    return semver
 
 
 def _docker_image_present(tag: str) -> bool:
