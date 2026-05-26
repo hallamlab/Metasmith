@@ -83,8 +83,7 @@ class GlobusSource:
     
     @classmethod
     def FromLocalPath(cls, path: Path|str):
-        path = Path(path)
-        assert path.is_absolute(), f"Path must be absolute [{path}]"
+        path = Path(path).resolve()
         return cls(_get_globus_local_id(), path)
     
     @classmethod
@@ -236,7 +235,7 @@ class Source:
         elif uri.startswith("http://") or uri.startswith("https://"):
             return cls.FromHttp(uri)
         else:
-            return cls.FromLocal(uri)
+            return cls.FromLocal(Path(uri).resolve())
 
     @classmethod
     def Unpack(cls, d: dict):
