@@ -95,21 +95,24 @@ def verify(
     agent: str = "opencode",
 ) -> InstallContext:
     project_root = project_root.resolve()
-    version = _read_version(project_root)
+    version = _read_version(project_root)  # FULL_VERSION: semver[+build_hash]
+    semver = version.split("+", 1)[0]
     image_tag = f"quay.io/hallamlab/metasmith:{version.replace('+', '-')}"
     channel_dir = project_root / "conda_build"
 
-    # 1. docker image
+    # 1. docker image (tag uses FULL_VERSION with +→-)
     if not _docker_image_present(image_tag):
         raise PreflightError(
             f"docker image {image_tag} not found locally.\n"
             f"  run: tests/e2e_agentic/install_mock/build_local_artifacts.sh"
         )
 
-    # 2. local conda channel populated with metasmith pkg
-    if not _channel_has_pkg(channel_dir, version):
+    # 2. local conda channel populated with metasmith pkg.
+    # conda-build strips PEP 440 local segments from the filename, so
+    # the artifact is named ``metasmith-<semver>-...``, not the FULL_VERSION.
+    if not _channel_has_pkg(channel_dir, semver):
         raise PreflightError(
-            f"no metasmith-{version}*.tar.bz2 in conda channel {channel_dir}.\n"
+            f"no metasmith-{semver}*.tar.bz2 in conda channel {channel_dir}.\n"
             f"  run: tests/e2e_agentic/install_mock/build_local_artifacts.sh"
         )
 
@@ -161,8 +164,12 @@ def verify(
     else:
         raise PreflightError(f"unknown agent {agent!r}; expected opencode|claude")
 
+    # ctx.version is the conda-spec form (bare semver). conda-build strips
+    # PEP 440 local segments, so a literal "metasmith=<semver>+<hash>" spec
+    # never resolves. The full PEP 440 form lives in image_tag (via the
+    # +→- translation) where the docker daemon needs it.
     return InstallContext(
-        version=version,
+        version=semver,
         project_root=project_root,
         image_tag=image_tag,
         sif_path=sif_path,

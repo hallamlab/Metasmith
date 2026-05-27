@@ -117,12 +117,15 @@ def build_sandbox(
     pkgs_dir = root / "pkgs"
     apptainer_cache = home / ".apptainer" / "cache"
 
-    # Note: agent_home is intentionally NOT pre-created here. `Agent.Deploy()`
-    # early-exits with "already exists" when its home dir is present, so a
-    # pre-created agent_home turns the deploy scenario into a no-op and
-    # masks container-pull regressions. The APPTAINER branch below creates
-    # agent_home/container_images/ as a side effect of pre-placing the sif,
-    # which is the deliberate spoof point for that runtime.
+    # agent_home is intentionally NOT pre-created here. The APPTAINER branch
+    # below does create agent_home/container_images/ as a side effect of
+    # pre-placing the sif — that's the deliberate spoof point so deploy
+    # skips the container pull (`[ -e {sif} ] || pull`). `Agent.Deploy()`
+    # no longer has any home-level short-circuit, so pre-creating
+    # container_images/ doesn't short-circuit the deploy itself — it just
+    # means the sif is already cached when deploy gets there. The relay
+    # binary extraction is independently gated on relay/msm_relay so it
+    # self-heals if missing.
     for p in (home, workspace, envs_dir, pkgs_dir,
               apptainer_cache, local_channels):
         p.mkdir(parents=True, exist_ok=True)

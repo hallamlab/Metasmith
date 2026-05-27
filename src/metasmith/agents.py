@@ -201,11 +201,6 @@ class Agent:
 
             _quiet = True
             self._run_setup(shell)
-            _FLAG = "already exists"
-            res = shell.Exec(f'[[ -e "{self.home.GetPath()}" ]] && echo "{_FLAG}"', history=True)
-            if _FLAG in res.out and not assertive:
-                Log.Info(f"[{self.home.address}] already exists, use Deploy(assertive=True) to deploy anyways")
-                return
             _quiet = False
 
             shell.Exec(f'mkdir -p "{self.home.GetPath()}"')
@@ -354,7 +349,18 @@ class Agent:
             )
 
             _sync_remote_files()
-            do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
+            # Container extraction is the one truly expensive step left;
+            # everything else above is either a no-op (rsync -au on unchanged
+            # files) or self-gated ([ -e {sif} ] for the container pull).
+            # Skip extraction only when its actual output already exists, so
+            # a partial deploy (sif present, relay missing) self-heals on the
+            # next call without needing assertive=True.
+            relay_bin = AgentPaths.to_relay(self.home.GetPath())
+            res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True)
+            if "relay-present" in res.out and not assertive:
+                Log.Info(f"relay binary present at [{relay_bin}], skipping container extraction")
+            else:
+                do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
