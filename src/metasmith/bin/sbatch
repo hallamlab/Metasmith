@@ -37,11 +37,15 @@ else:
     path_map = PathMap.FromExternalCwd(cwd=cwd, agent=agent)
 
 # Map container cwd → external cwd. When cwd is /ws/<tail>, the host
-# path is extern_work/<tail>. When cwd is already a host path (because
-# sbatch was invoked from outside the container), it stays as-is.
+# path is extern_work/<tail>. When cwd lands under HOME_ROOT (/msm_home)
+# — which happens when Nextflow resolves the process work-dir through
+# the home-bind rather than the work-bind — reroute via agent.real_path
+# so the relay's `cd` target points at an existing host directory. Same
+# convention the file-content rewrites use (reroot_in_text above).
 if cwd.is_relative_to(work_root):
-    rel = cwd.relative_to(work_root)
-    external_cwd = path_map.extern_work / rel
+    external_cwd = path_map.extern_work / cwd.relative_to(work_root)
+elif cwd.is_relative_to(AgentPaths.HOME_ROOT):
+    external_cwd = agent.real_path / cwd.relative_to(AgentPaths.HOME_ROOT)
 else:
     external_cwd = cwd
 external_workspace = path_map.extern_work

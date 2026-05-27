@@ -33,8 +33,11 @@ def pytest_addoption(parser):
     g.addoption("--max-iters", type=int, default=20)
     g.addoption("--max-tokens", type=int, default=2_000_000)
     g.addoption("--max-tokens-per-iter", type=int, default=200_000)
-    g.addoption("--iter-timeout-s", type=float, default=900.0,
-                help="per-iteration wall-clock timeout (opencode driver)")
+    g.addoption("--iter-timeout-s", type=float, default=300.0,
+                help="per-iteration wall-clock timeout (claude + opencode); "
+                     "keep tight so a hung workflow (e.g. nextflow stuck at "
+                     "JVM init) surfaces in minutes instead of waiting out "
+                     "the agent's hard-coded 1h `workflow wait --timeout`")
     g.addoption("--dry-run", action="store_true",
                 help="render the prompt + argv without spawning the agent")
     g.addoption("--runs-dir", default=None,
@@ -44,6 +47,24 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     config.addinivalue_line("markers",
         "e2e_agentic: live agent-driven run (opt-in; needs API key)")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip e2e_agentic tests up-front if MetasmithLibraries is unobtainable.
+
+    The fixture path resolves a MetasmithLibraries checkout via env var,
+    sibling dir, or auto-clone. If all three fail (e.g. CI without git or
+    network), there's no way the scenarios can run — surface a clear skip
+    reason at collection time rather than letting setup_fixtures explode.
+    """
+    from tests.e2e_agentic.scenarios._fixture_utils import _metasmith_libraries_root
+    try:
+        _metasmith_libraries_root()
+    except RuntimeError as exc:
+        skip = pytest.mark.skip(reason=f"MetasmithLibraries unavailable: {exc}")
+        for item in items:
+            if "e2e_agentic" in item.keywords:
+                item.add_marker(skip)
 
 
 # ---------------------------------------------------------------------------
@@ -94,8 +115,7 @@ def agent_driver(pytestconfig):
     effort = pytestconfig.getoption("--agent-effort")
     if effort and name == "claude":
         opts["effort"] = effort
-    if name == "opencode":
-        opts["timeout_s"] = pytestconfig.getoption("--iter-timeout-s")
+    opts["timeout_s"] = pytestconfig.getoption("--iter-timeout-s")
     return make_driver(name, model=model, **opts)
 
 

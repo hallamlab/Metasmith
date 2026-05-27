@@ -1,11 +1,15 @@
 import os, sys
 from pathlib import Path
 HERE = Path(os.path.realpath(__file__)).parent
-sys.path = [str(p) for p in set([
-    HERE.joinpath("src")
-]+sys.path)]
+# Prepend dev/src so `from metasmith.constants import ...` resolves to the
+# tree being built, not a stale install reachable via PYTHONPATH or env
+# site-packages. Order-preserving dedup: the previous set()-based form
+# silently shuffled priority, letting stale installs win and baking the
+# wrong VERSION into wheels.
+_src = str(HERE.joinpath("src"))
+sys.path = [_src] + [p for p in sys.path if p != _src]
 import setuptools
-from metasmith.constants import USER, NAME, VERSION, SHORT_SUMMARY, ENTRY_POINTS, GIT_URL
+from metasmith.constants import USER, NAME, VERSION, FULL_VERSION, SHORT_SUMMARY, ENTRY_POINTS, GIT_URL
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
@@ -13,7 +17,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 if __name__ == "__main__":
     setuptools.setup(
         name=NAME,
-        version=VERSION,
+        version=FULL_VERSION,
         author="Tony Liu, Ryan McLaughlin, Anika Nag, Aditi Nagaraj, and Steven J. Hallam",
         author_email="shallam@mail.ubc.ca",
         description=SHORT_SUMMARY,
@@ -33,6 +37,7 @@ if __name__ == "__main__":
         package_data={
             "":[ # "" is all packages
                 "version.txt",
+                "build_hash.txt",
                 "nextflow_config/**",
                 "bin/**",
                 "example_resources/**",

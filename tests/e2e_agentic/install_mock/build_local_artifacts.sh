@@ -21,7 +21,17 @@ unset PYTHONPATH
 
 HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 PROJECT=$( cd "$HERE/../../.." &> /dev/null && pwd )
-VER=$(cat "$PROJECT/src/metasmith/version.txt")
+# Stamp build_hash.txt so the tag we look up matches what the builders
+# (dev.sh / setup.py / constants.FULL_VERSION) actually produce.
+PY=$(command -v python3 || command -v python)
+PYTHONPATH="$PROJECT/src" "$PY" -m metasmith._build_hash --write >/dev/null
+SEMVER=$(cat "$PROJECT/src/metasmith/version.txt")
+BHASH=$(cat "$PROJECT/src/metasmith/build_hash.txt" 2>/dev/null || true)
+if [ -n "$BHASH" ]; then
+    VER="${SEMVER}+${BHASH}"
+else
+    VER="$SEMVER"
+fi
 DOCKER_TAG="${VER//+/-}"
 DOCKER_IMAGE="quay.io/hallamlab/metasmith:$DOCKER_TAG"
 
@@ -70,7 +80,7 @@ fi
 # --- 4. apptainer .sif (optional) ------------------------------------------
 SIF="$PROJECT/metasmith.sif"
 if [ "$WANT_APPTAINER" = "1" ]; then
-    if [ "$FORCE" = "1" ] || [ ! -f "$SIF" ] || [ "$SIF" -ot "$PROJECT/src/metasmith/version.txt" ]; then
+    if [ "$FORCE" = "1" ] || [ ! -f "$SIF" ] || [ "$SIF" -ot "$PROJECT/src/metasmith/version.txt" ] || [ "$SIF" -ot "$PROJECT/src/metasmith/build_hash.txt" ]; then
         echo "[4/4] building apptainer .sif from local docker image"
         ./dev.sh -bs
     else

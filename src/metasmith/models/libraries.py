@@ -724,6 +724,12 @@ class DataInstanceLibrary:
 
     @classmethod
     def Unpack(cls, location: Path, raw: dict, dtypes: dict[str, DataTypeLibrary], check_integrity: bool=False):
+        if "manifest" not in raw:
+            raise ValueError(
+                f"library index at [{location/cls._path_to_meta/(cls._index_name+cls._metadata_ext)}] "
+                f"is malformed: missing 'manifest' key. "
+                f"Was this directory compiled with `metasmith build`?"
+            )
         manifest = {}
         for k, v in raw["manifest"].items():
             type_name = v["type"]
@@ -1372,7 +1378,11 @@ class ExecutionContext:
         cached_path = container.GetLocalPath()
         if cached_path is not None:
             FLAG = "cached image exists"
-            res = self.external_shell.Exec(f'[ -e {cached_path} ] && echo "{FLAG}"', history=True)
+            sandbox_path = container.GetSandboxPath()
+            res = self.external_shell.Exec(
+                f'( [ -e {cached_path} ] || [ -d {sandbox_path} ] ) && echo "{FLAG}"',
+                history=True,
+            )
             if FLAG in res.out:
                 use_cache = True
 

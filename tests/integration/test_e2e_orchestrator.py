@@ -96,7 +96,7 @@ class TestOrchestratorPost:
     def test_post_produces_output(self, nxf_runner):
         """post() processes items and produces indexed output."""
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -108,7 +108,7 @@ workflow {
 
     def out = (o.post([ch], ["result"]))[0]
     def (name, stream) = out
-    stream.view { idx, item -> "POST: ${JsonOutput.toJson(idx)} ${item.name}" }
+    stream.view { idx, item -> "POST: ${groovy.json.JsonOutput.toJson(idx)} ${item.name}" }
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -121,7 +121,7 @@ workflow {
             (nxf_runner.work_dir / f"input_{i}.txt").write_text(f"data {i}")
 
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -134,7 +134,7 @@ workflow {
 
     def out = (o.postIn([ch], ["inp"]))[0]
     def (name, stream) = out
-    stream.view { idx, item -> "POSTIN: ${JsonOutput.toJson(idx)} ${item.name}" }
+    stream.view { idx, item -> "POSTIN: ${groovy.json.JsonOutput.toJson(idx)} ${item.name}" }
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -150,7 +150,7 @@ workflow {
     def test_post_hash_15chars(self, nxf_runner):
         """Hash in post is md5[0..14] parsed as long."""
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -186,7 +186,7 @@ class TestOrchestratorGroup:
         # Use postIn to register index history (the public API),
         # then group the resulting streams
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -445,7 +445,7 @@ workflow {
             (nxf_runner.work_dir / f"f_{i}.txt").write_text(f"file {i}")
 
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -457,7 +457,7 @@ workflow {
     ])
 
     def batched = o._batch(3, ch)
-    batched.view { "FILES: ${it[0].collect(i -> i.containsKey('FILES'))}" }
+    batched.view { "FILES: ${it[0].collect { i -> i.containsKey('FILES') }}" }
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -485,7 +485,7 @@ workflow {
             (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
 
         result = nxf_runner.run(f'''
-import groovy.json.JsonOutput
+
 
 process step1 {{
     input:
@@ -520,7 +520,7 @@ workflow {{
     seed = new Tuple2("seed", seed_raw)
 
     k1 = ["out1"]
-    (_out1) = o.post([*step1(o.group("seed", [seed], k1, 1))], k1)
+    (_out1) = o.post(o.asStreams(step1(o.group("seed", [seed], k1, 1))), k1)
 
     k2 = ["out2"]
     step2(o.group("out1", [_out1], k2, {batch_size}))
@@ -620,17 +620,13 @@ workflow {{
             (nxf_runner.work_dir / f"r_{i}.txt").write_text(f"roundtrip {i}")
 
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 process passthrough {
     input:
         tuple val(index), path("*")
     output:
         tuple val(index), path("*.out")
-    stub:
-    """
-    i=1; for f in *.txt; do cp "\\$f" "\\${i}-copy.out"; i=\\$((i+1)); done
-    """
     script:
     """
     i=1; for f in *.txt; do cp "\\$f" "\\${i}-copy.out"; i=\\$((i+1)); done
@@ -648,8 +644,8 @@ workflow {
     ])
 
     def batched = o._batch(2, ch)
-    def debatched = o._debatch([*passthrough(batched)])
-    debatched[0].view { idx, item -> "ROUNDTRIP: ${JsonOutput.toJson(idx)}" }
+    def debatched = o._debatch(o.asStreams(passthrough(batched)))
+    debatched[0].view { idx, item -> "ROUNDTRIP: ${groovy.json.JsonOutput.toJson(idx)}" }
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)

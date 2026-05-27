@@ -100,12 +100,17 @@ class VirtualE2ERuntime:
         return self
 
     def _write_wrapper(self, name: str, tool: str) -> None:
+        # Pin the python interpreter to the one driving the test, not
+        # whatever `python3` resolves to on PATH — otherwise the wrapper
+        # picks up /usr/bin/python3 which lacks numpy + the metasmith
+        # editable install.
         path = self.bin_dir / name
+        py = sys.executable
         path.write_text(
             "\n".join(
                 [
                     "#!/usr/bin/env bash",
-                    f'exec python3 -m metasmith.testing.virtual_runtime __tool__ {tool} "$@"',
+                    f'exec {py} -m metasmith.testing.virtual_runtime __tool__ {tool} "$@"',
                 ]
             )
             + "\n",

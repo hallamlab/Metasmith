@@ -28,12 +28,38 @@ class Container:
                 image = image.replace(DOCKER_DOMAIN, "")
         return image
 
+    def _cached_name(self):
+        return self.image.replace("://", "..").replace(":", "..").replace("/", "_")
+
     def GetLocalPath(self):
         # todo: docker-daemon local?
         match self.runtime:
             case ContainerRuntime.APPTAINER:
-                name = self.image.replace("://", "..").replace(":", "..").replace("/", "_")
-                return self.container_cache/f"{name}.sif"
+                return self.container_cache/f"{self._cached_name()}.sif"
+
+    def GetSandboxPath(self):
+        # Sibling of GetLocalPath for the APPTAINER `build --sandbox` artifact
+        # used when starter-suid is unavailable (squashfuse_ll path is broken
+        # under msm_relay's fork chain on WSL2 — Bug E.2). The bare directory
+        # is what `apptainer exec` consumes; no extension.
+        match self.runtime:
+            case ContainerRuntime.APPTAINER:
+                return self.container_cache/f"{self._cached_name()}.sandbox"
+
+    def MakeNeedsSandboxProbe(self):
+        # Emits the literal sentinel "needs-sandbox" when the host's apptainer
+        # ships no setuid starter-suid (conda-forge build); silent otherwise.
+        return (
+            'APPTAINER_BIN=$(readlink -f "$(command -v apptainer)" 2>/dev/null); '
+            'SUID="$(dirname "$APPTAINER_BIN")/../libexec/apptainer/bin/starter-suid"; '
+            '[ -u "$SUID" ] || echo "needs-sandbox"'
+        )
+
+    def MakeBuildSandboxCommand(self):
+        sif = self.GetLocalPath()
+        sandbox = self.GetSandboxPath()
+        if sif is None or sandbox is None: return ""
+        return f"apptainer build --force --sandbox {sandbox} {sif}"
 
     def MakePullCommand(self):
         image = self._get_image()
@@ -76,7 +102,13 @@ class Container:
                 if not isinstance(local, bool):
                     image = local
                 elif local:
-                    image = self.GetLocalPath()
+                    # Prefer the unpacked sandbox directory when deploy built
+                    # one (host lacks setuid starter-suid); fall back to SIF
+                    # otherwise. The conditional collapses cleanly in either
+                    # direction without per-call probing.
+                    sif = self.GetLocalPath()
+                    sandbox = self.GetSandboxPath()
+                    image = f'"$(if [ -d "{sandbox}" ]; then echo "{sandbox}"; else echo "{sif}"; fi)"'
                 run = 'exec'
             case _: # default
                 raise TypeError(f'unsupported runtime [{self.runtime}]')

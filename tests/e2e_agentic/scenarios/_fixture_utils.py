@@ -15,6 +15,8 @@ everything is in place.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import textwrap
 from dataclasses import dataclass
@@ -25,10 +27,145 @@ from ..harness.sandbox import SandboxLayout, env_for_agent
 
 
 _ENV_NAME = "msm_env"
+_METASMITH_LIBRARIES_REPO = "https://github.com/hallamlab/MetasmithLibraries.git"
+_MLIB_LAYOUT_MARKER = Path("resources") / "containers" / "_metadata" / "index.yml"
 
 
 def _msm_bin(layout: SandboxLayout) -> Path:
     return layout.root / "envs" / _ENV_NAME / "bin" / "metasmith"
+
+
+# ---------------------------------------------------------------------------
+# MetasmithLibraries discovery + staging
+# ---------------------------------------------------------------------------
+
+
+def _project_root() -> Path:
+    """Walk up from this file to the metasmith dev tree root."""
+    p = Path(__file__).resolve()
+    for parent in p.parents:
+        if (parent / "setup.py").exists() or (parent / "pyproject.toml").exists():
+            return parent
+    raise RuntimeError(f"could not locate project root from {p}")
+
+
+def _validate_mlib(root: Path) -> bool:
+    """Return True if ``root`` is the canonical MetasmithLibraries lib root.
+
+    The canonical layout has ``data_types/``, ``resources/``, ``transforms/``
+    directly at the top level (matching the ``main`` branch of the
+    upstream repo).
+    """
+    return (root / _MLIB_LAYOUT_MARKER).exists()
+
+
+def _resolve_lib_root(candidate: Path) -> Path | None:
+    """Given a path that might be a MetasmithLibraries checkout or the
+    parent of one, return the canonical lib root or None.
+
+    Handles multi-worktree layouts where ``<candidate>/main`` is the
+    actual working tree of the ``main`` branch.
+    """
+    if _validate_mlib(candidate):
+        return candidate
+    nested = candidate / "main"
+    if _validate_mlib(nested):
+        return nested
+    return None
+
+
+def _metasmith_libraries_cache_dir() -> Path:
+    return _project_root() / "tests" / "e2e_agentic" / ".cache" / "MetasmithLibraries"
+
+
+def _metasmith_libraries_root() -> Path:
+    """Resolve the source MetasmithLibraries checkout.
+
+    Priority:
+    1. ``METASMITH_LIBRARIES_ROOT`` env var.
+    2. Sibling dir ``<project_root>/../metasmith-libraries`` (dev layout).
+    3. Auto-bootstrap clone into
+       ``tests/e2e_agentic/.cache/MetasmithLibraries`` (gitignored).
+
+    No ``git pull`` on subsequent runs — the cache clone is a one-shot
+    bootstrap. To update, delete the cache dir (or set the env var to a
+    fresh checkout).
+    """
+    explicit = os.environ.get("METASMITH_LIBRARIES_ROOT")
+    if explicit:
+        root = _resolve_lib_root(Path(explicit).expanduser().resolve())
+        if root is None:
+            raise RuntimeError(
+                f"METASMITH_LIBRARIES_ROOT={explicit} does not contain "
+                f"{_MLIB_LAYOUT_MARKER} (checked both root and root/main)"
+            )
+        return root
+    # Walk up from the project root checking each level for a sibling
+    # checkout. Multi-worktree layouts (e.g. `projects/metasmith/dev/`)
+    # place the real sibling project two parents up rather than one.
+    pr = _project_root()
+    for ancestor in (pr.parent, pr.parent.parent):
+        root = _resolve_lib_root(ancestor / "metasmith-libraries")
+        if root is not None:
+            return root
+    cache_root = _resolve_lib_root(_metasmith_libraries_cache_dir())
+    if cache_root is not None:
+        return cache_root
+    cache = _metasmith_libraries_cache_dir()
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    if cache.exists():
+        shutil.rmtree(cache)
+    r = subprocess.run(
+        ["git", "clone", "--depth=1", _METASMITH_LIBRARIES_REPO, str(cache)],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(
+            f"auto-clone of MetasmithLibraries failed (exit {r.returncode}):\n"
+            f"  stdout: {r.stdout[-500:]}\n  stderr: {r.stderr[-500:]}\n"
+            f"  set METASMITH_LIBRARIES_ROOT to point at an existing checkout, "
+            f"or clone manually into {cache.parent.parent}"
+        )
+    root = _resolve_lib_root(cache)
+    if root is None:
+        raise RuntimeError(
+            f"auto-cloned MetasmithLibraries at {cache} is missing {_MLIB_LAYOUT_MARKER}"
+        )
+    return root
+
+
+def stage_real_libraries(layout: SandboxLayout) -> Path:
+    """Clone MetasmithLibraries into ``<sandbox>/MetasmithLibraries``.
+
+    Uses the resolved source checkout (env var, sibling dir, or auto-clone
+    cache) as the local origin for a ``git clone --depth=1`` into the
+    sandbox. The sandbox carries its own .git dir, so test runs preserve
+    provenance (HEAD SHA visible via ``git -C <sandbox>/MetasmithLibraries
+    rev-parse HEAD``).
+
+    The tutorials expect ``MLIB = <sandbox>/MetasmithLibraries`` —
+    matching the canonical layout the docs reference at
+    ``docs/source/setup/tutorials.rst``.
+    """
+    source = _metasmith_libraries_root()
+    dest = layout.root / "MetasmithLibraries"
+    if dest.exists():
+        shutil.rmtree(dest)
+    r = subprocess.run(
+        ["git", "clone", "--depth=1", str(source), str(dest)],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(
+            f"sandbox clone of MetasmithLibraries from {source} failed "
+            f"(exit {r.returncode}):\n  stdout: {r.stdout[-500:]}\n"
+            f"  stderr: {r.stderr[-500:]}"
+        )
+    if not _validate_mlib(dest):
+        raise RuntimeError(
+            f"staged MetasmithLibraries at {dest} is missing {_MLIB_LAYOUT_MARKER}"
+        )
+    return dest
 
 
 def run_msm(

@@ -14,13 +14,24 @@ ENTRY_POINTS = [
     f"msm={_cli_call}",
 ]
 
+# Public version (PEP 440 release segment). Bumped by hand when shipping.
 with open(MODULE_PATH/"version.txt") as f:
     VERSION = f.read().strip()
 
-# Docker tags reject '+', so convert the PEP 440 local-version separator.
-# This pins Agent.container to the exact hash-suffixed image pushed by
-# dev.sh -ud / testing/docker_builder.py, so a fresh deploy always finds it.
-CONTAINER_TAG = VERSION.replace('+', '-')
+# Build-time content hash of the source tree. Written by _build_hash.py
+# during dev.sh / testing.docker_builder builds; absent in fresh dev
+# checkouts (then degrades to bare VERSION).
+_bh = MODULE_PATH/"build_hash.txt"
+BUILD_HASH = _bh.read_text().strip() if _bh.exists() else ""
+
+# Canonical version string — PEP 440 local form. Used for the wheel
+# filename, __version__, and anywhere the exact build state matters.
+FULL_VERSION = f"{VERSION}+{BUILD_HASH}" if BUILD_HASH else VERSION
+
+# Container tag — FULL_VERSION rendered for Docker (rejects '+'). This is
+# the single +→- translation site; all Docker-side consumers derive from
+# CONTAINER_TAG, so dev.sh -ud and Agent.container stay in lockstep.
+CONTAINER_TAG = FULL_VERSION.replace('+', '-')
 
 class AgentPaths:
     WORK_ROOT = Path("/ws")

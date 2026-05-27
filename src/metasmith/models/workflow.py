@@ -1166,7 +1166,6 @@ class WorkflowTask:
             "}",
             f"'''",
             "",
-            "import groovy.json.JsonSlurper",
             "def in(f, l) {",
             "    def rows = Channel.fromPath(f).splitCsv(header: false)",
             "    if (f in l) {",
@@ -1325,8 +1324,8 @@ class WorkflowTask:
                 f'echo "lin ${{Orchestrator.JsonforEcho(index)}}" >>{METADATA_FILE}',
                 f'echo "fmt 2" >>{METADATA_FILE}',
                 f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
-                f'echo "inp {','.join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
-                f'echo "out {';'.join(','.join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
+                f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
+                f'echo "out {";".join(",".join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
             # ] + [
             #     f'echo "i{i+1:02} $_{i+1:02}">>{METADATA_FILE}'
             #     for i, x in enumerate(used_archetypes)
@@ -1577,7 +1576,7 @@ class WorkflowTask:
             f"workflow"+" {",
             "main:",
             f'o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy',
-            f'_lf = new JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
+            f'_lf = new groovy.json.JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
             f'l = _lf.lineage',
             f'o.seedParents(_lf.child2parent)',
         ] + [
