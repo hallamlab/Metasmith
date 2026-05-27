@@ -108,7 +108,7 @@ class Container:
                     # direction without per-call probing.
                     sif = self.GetLocalPath()
                     sandbox = self.GetSandboxPath()
-                    image = f"\"$(if [ -d '{sandbox}' ]; then echo '{sandbox}'; else echo '{sif}'; fi)\""
+                    image = f'"$(if [ -d "{sandbox}" ]; then echo "{sandbox}"; else echo "{sif}"; fi)"'
                 run = 'exec'
             case _: # default
                 raise TypeError(f'unsupported runtime [{self.runtime}]')
