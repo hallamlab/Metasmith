@@ -184,6 +184,23 @@ smith.StageWorkflow(task)   # compiles DAG → Nextflow scripts
 smith.RunWorkflow(task)     # launches Nextflow (async!)
 ```
 
+#### Apptainer SIF → sandbox auto-unpack
+
+`Agent.Deploy()` probes the host apptainer for a setuid `starter-suid`.
+If it's missing (the conda-forge build omits it), the deploy step also
+runs `apptainer build --force --sandbox <name>.sandbox <name>.sif` for
+every cached image. `Container.MakeRunCommand(local=True)` then emits
+a shell ternary that prefers the `.sandbox/` directory over the `.sif`
+at run time, so apptainer never engages squashfuse_ll — sidestepping the
+WSL2+squashfuse_ll FUSE wedge that hangs nextflow under msm_relay's fork
+chain (Bug E.2). On HPC hosts with a proper setuid starter-suid (e.g.
+Sockeye), the probe is silent and no sandbox dir is built. The cache
+layout is `<home>/container_images/<name>.sif` alongside `<name>.sandbox/`;
+the SIF is retained so an `assertive=True` redeploy can rebuild the
+sandbox without re-pulling. The relevant helpers are
+`Container.GetSandboxPath / MakeNeedsSandboxProbe / MakeBuildSandboxCommand`
+in `src/metasmith/coms/containers.py`.
+
 RunWorkflow fires and returns immediately. The actual execution happens in a
 Nextflow process that manages container pulls, job scheduling, and data staging.
 You poll for completion by checking if the results metadata directory appears.
