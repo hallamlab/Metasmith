@@ -91,7 +91,10 @@ def test_env_for_agent_redirects_home(install_ctx, tmp_path):
     layout = build_sandbox(tmp_path / "sb_env", install_ctx, runtime="DOCKER")
     env = env_for_agent(layout)
     assert env["HOME"] == str(layout.home)
-    assert "PYTHONPATH" not in env, "host PYTHONPATH should not leak"
+    # env_for_agent sets PYTHONPATH="" rather than popping it: subprocess.Popen
+    # re-merges os.environ when env= is passed, so a popped key reappears. The
+    # empty-string override is the contract; assert that, not absence.
+    assert env.get("PYTHONPATH", "") == "", "host PYTHONPATH should not leak"
     assert str(layout.bootstrap_env / "bin") in env["PATH"]
     assert env["APPTAINER_CACHEDIR"].startswith(str(layout.home))
 
