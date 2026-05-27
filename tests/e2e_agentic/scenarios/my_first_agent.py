@@ -8,51 +8,34 @@ from ..harness.loop import LoopResult
 from ..harness.sandbox import SandboxLayout
 from ..install_mock.verify_local_artifacts import InstallContext
 from .base import PromptContext, VerifyContext, standard_verify
-from ._fixture_utils import (
-    TypeSpec, TransformSpec,
-    build_type_lib_dir, build_transform_lib,
-)
+from ._fixture_utils import stage_real_libraries
 
 
 def _stage_pangenome_fixtures(layout: SandboxLayout) -> None:
-    """Stage the type + transform libraries the tutorials reference.
+    """Clone the real MetasmithLibraries checkout into the sandbox.
 
-    The tutorial uses relative paths (``data_types/ncbi.yml``,
-    ``transforms/logistics``, ``transforms/pangenome``) from the sandbox
-    root, so we stage there directly. The pre-existing sandbox copies
-    of these dirs are overwritten with tutorial-shaped contents.
+    The tutorials load ``MLIB/data_types/*.yml``, ``MLIB/resources/{containers,lib}``,
+    and ``MLIB/transforms/{logistics,pangenome}`` from the canonical
+    ``MetasmithLibraries`` layout. Rather than synthesising fixtures that
+    drift from real type and transform names (``getNcbiAssembly``,
+    ``ppanggolin``, ``heatmap``, etc.), the harness clones the real lib
+    in via :func:`stage_real_libraries`. The agent then sees the same
+    library a tutorial reader would clone with
+    ``git clone https://github.com/hallamlab/MetasmithLibraries.git``.
     """
-    types_dir = layout.root / "data_types"
-    build_type_lib_dir(layout, types_dir, "ncbi", [
-        TypeSpec("assembly_accession", {"_": "NCBI assembly accession id"}),
-    ])
-    build_type_lib_dir(layout, types_dir, "sequences", [
-        TypeSpec("gbk", {"_": "GenBank flat file", "ext": "gbk"}),
-    ])
-    build_type_lib_dir(layout, types_dir, "pangenome", [
-        TypeSpec("pangenome", {"_": "pangenome group container"}),
-        TypeSpec("heatmap",   {"_": "pangenome similarity heatmap", "ext": "svg"}),
-    ])
-    build_transform_lib(layout, layout.root / "transforms" / "logistics", types_dir, [
-        TransformSpec("fetch_genome",
-                      inputs=["ncbi::assembly_accession"],
-                      outputs=["sequences::gbk"]),
-    ])
-    build_transform_lib(layout, layout.root / "transforms" / "pangenome", types_dir, [
-        TransformSpec("build_heatmap",
-                      inputs=["sequences::gbk", "pangenome::pangenome"],
-                      outputs=["pangenome::heatmap"],
-                      group_by="pangenome::pangenome"),
-    ])
+    stage_real_libraries(layout)
 
 
 @dataclass
 class MyFirstAgentScenario:
     name: str = "my_first_agent"
-    tutorial_path: str = "agentic/tutorials/my_first_agent.rst"
+    tutorial_path: str = "tutorials/my_first_agent.rst"
     expected_artifact_globs: list[str] = field(default_factory=lambda: [
-        "workspace/results/**/heatmap*.svg",
-        "workspace/results/**/*.svg",
+        # Metasmith places step outputs under
+        # <workspace>/<msm_home|agent_home>/runs/<task_key>/results/<step>/
+        # — anywhere a `runs/<key>/results/pangenome-heatmap/*.svg` shows
+        # up counts as success.
+        "workspace/**/runs/*/results/pangenome-heatmap/*.svg",
     ])
     expected_trace: tuple[str, str] | None = (
         "ncbi::assembly_accession",

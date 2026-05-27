@@ -52,7 +52,5 @@ planned tasks so they can be re-fetched by ``task_key``.
 
     setup
     tool_reference
-    tutorials/my_first_agent
-    tutorials/custom_transforms
     lifecycle_recipes
     diagnosing_failures

@@ -49,6 +49,24 @@ def pytest_configure(config):
         "e2e_agentic: live agent-driven run (opt-in; needs API key)")
 
 
+def pytest_collection_modifyitems(config, items):
+    """Skip e2e_agentic tests up-front if MetasmithLibraries is unobtainable.
+
+    The fixture path resolves a MetasmithLibraries checkout via env var,
+    sibling dir, or auto-clone. If all three fail (e.g. CI without git or
+    network), there's no way the scenarios can run — surface a clear skip
+    reason at collection time rather than letting setup_fixtures explode.
+    """
+    from tests.e2e_agentic.scenarios._fixture_utils import _metasmith_libraries_root
+    try:
+        _metasmith_libraries_root()
+    except RuntimeError as exc:
+        skip = pytest.mark.skip(reason=f"MetasmithLibraries unavailable: {exc}")
+        for item in items:
+            if "e2e_agentic" in item.keywords:
+                item.add_marker(skip)
+
+
 # ---------------------------------------------------------------------------
 # session-scoped: install context + runs dir
 # ---------------------------------------------------------------------------

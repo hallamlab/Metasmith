@@ -36,6 +36,7 @@ pixi.toml
 # e2e_agentic test infrastructure
 /.opencode-serve-*.log
 /tests/e2e_agentic/.runs/
+/tests/e2e_agentic/.cache/
 
 /src/metasmith/std/dtypes.yml
 /main/relay_agent/0x*
