@@ -1378,7 +1378,11 @@ class ExecutionContext:
         cached_path = container.GetLocalPath()
         if cached_path is not None:
             FLAG = "cached image exists"
-            res = self.external_shell.Exec(f'[ -e {cached_path} ] && echo "{FLAG}"', history=True)
+            sandbox_path = container.GetSandboxPath()
+            res = self.external_shell.Exec(
+                f'( [ -e {cached_path} ] || [ -d {sandbox_path} ] ) && echo "{FLAG}"',
+                history=True,
+            )
             if FLAG in res.out:
                 use_cache = True
 

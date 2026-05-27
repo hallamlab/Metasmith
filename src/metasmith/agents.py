@@ -254,6 +254,25 @@ class Agent:
                     timeout=None
                 )
 
+                # If the host's apptainer ships no setuid starter-suid, it falls
+                # back to squashfuse_ll for SIF mounts — which deadlocks under
+                # msm_relay's fork chain on WSL2 (Bug E.2). Unpack to a sandbox
+                # directory once at deploy; MakeRunCommand(local=True) prefers
+                # the sandbox over the SIF at run time.
+                _sandbox_path = container.GetSandboxPath()
+                _probe = container.MakeNeedsSandboxProbe()
+                _build_sandbox = container.MakeBuildSandboxCommand()
+                _force = f'rm -rf {_sandbox_path} && ' if assertive else ''
+                do_step(
+                    cmd=(
+                        f'{_force}'
+                        f'if [ "$({_probe})" = "needs-sandbox" ] && [ ! -d {_sandbox_path} ]; then '
+                        f'{_build_sandbox}; fi'
+                    ),
+                    display_cmd=f"{{if no starter-suid and not unpacked}}: apptainer build --sandbox {_sandbox_path.name} {_local_path.name}".replace(str(resolved_agent_home), '$AGENT_HOME'),
+                    timeout=None,
+                )
+
             _remote_file(
                 f"""
                 #!/bin/bash
