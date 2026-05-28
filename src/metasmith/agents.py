@@ -30,23 +30,35 @@ from .constants import VERSION, CONTAINER_TAG, MODULE_PATH, AgentPaths
 class AgentShell:
     def __init__(self, agent: Agent):
         self.agent = agent
-        self.shell = LiveShell()
-        def _on_out(x: str):
-            Log.Info(f"> {x}\x1b[0;m", timestamp=False) # to escape nextflow colours
-        def _on_err(x: str):
-            Log.Error(f"> {x}", timestamp=False)
-        Log.Info(f"connecting to deployed agent")
-        self.agent._run_setup(self.shell)
-        self.shell.RegisterOnOut(_on_out)
-        self.shell.RegisterOnErr(_on_err)
-        self.shell.Exec(f"cd {agent.home.GetPath()}")
-        Log.Info(f"starting relay service")
-        self.shell.Exec(f'./relay/msm_relay start')
+        self.shell: LiveShell | None = None
 
     def __enter__(self):
-        return self.shell
+        shell = LiveShell()
+        try:
+            def _on_out(x: str):
+                Log.Info(f"> {x}\x1b[0;m", timestamp=False) # to escape nextflow colours
+            def _on_err(x: str):
+                Log.Error(f"> {x}", timestamp=False)
+            Log.Info(f"connecting to deployed agent")
+            self.agent._run_setup(shell)
+            shell.RegisterOnOut(_on_out)
+            shell.RegisterOnErr(_on_err)
+            shell.Exec(f"cd {self.agent.home.GetPath()}")
+            res = shell.Exec('[ -e ./relay/msm_relay ] && echo "relay-present"', history=True)
+            assert "relay-present" in res.out, (
+                f"relay binary not present at [{self.agent.home.GetPath()}/relay/msm_relay]; "
+                f"agent home may be partially deployed — rerun Agent.Deploy()"
+            )
+            Log.Info(f"starting relay service")
+            shell.Exec(f'./relay/msm_relay start')
+            self.shell = shell
+            return self.shell
+        except BaseException:
+            shell.Dispose()
+            raise
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.shell is None: return
         Log.Info(f"closing connection")
         self.agent._run_cleanup(self.shell)
         if self.agent._is_ssh():
@@ -55,6 +67,7 @@ class AgentShell:
             except (KeyboardInterrupt, TimeoutError):
                 pass
         self.shell.__exit__(exc_type, exc_val, exc_tb)
+        self.shell = None
 
 @dataclass(frozen=True)
 class TargetSpec:
@@ -164,7 +177,7 @@ class Agent:
             shell.RegisterOnOut(lambda x: (Log.Info(x) if not _quiet else None))
             shell.RegisterOnErr(lambda x: (Log.Error(x) if not _quiet else None))
 
-            def do_step(cmd: str, display_cmd: str|None=None, timeout:float|None=15):
+            def do_step(cmd: str, display_cmd: str|None=None, timeout:float|None=None):
                 if display_cmd is not None: Log.Info(f">>> {display_cmd}")
                 str_cmd = RemoveLeadingIndent(cmd)
                 for x in str_cmd.split("\n"):
@@ -251,7 +264,6 @@ class Agent:
                 do_step(
                     cmd=f'mkdir -p "{_local_path.parent}" && [ -e {_local_path} ] || {_pull_cmd}',
                     display_cmd=f"{{if not exists}}: {_pull_cmd.replace(str(resolved_agent_home), '$AGENT_HOME')}",
-                    timeout=None
                 )
 
                 # If the host's apptainer ships no setuid starter-suid, it falls
@@ -270,7 +282,6 @@ class Agent:
                         f'{_build_sandbox}; fi'
                     ),
                     display_cmd=f"{{if no starter-suid and not unpacked}}: apptainer build --sandbox {_sandbox_path.name} {_local_path.name}".replace(str(resolved_agent_home), '$AGENT_HOME'),
-                    timeout=None,
                 )
 
             _remote_file(
@@ -380,6 +391,8 @@ class Agent:
                 Log.Info(f"relay binary present at [{relay_bin}], skipping container extraction")
             else:
                 do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
+                res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-deployed"', history=True)
+                assert "relay-deployed" in res.out, f"deploy_from_container completed but relay binary missing at [{relay_bin}]"
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
@@ -496,6 +509,9 @@ class Agent:
                 export BINDS="{binds}"
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname)
             """, timeout=None)
+            launcher_path = remote_work_path / AgentPaths.LAUNCHER_FILE
+            res = sh_remote.Exec(f'[ -e {launcher_path} ] && echo "launcher-staged"', history=True, quiet=True)
+            assert "launcher-staged" in res.out, f"stage_workflow returned but launcher missing at [{launcher_path}]"
 
     def GetNxfConfigPresets(self, folder: Path = MODULE_PATH/"nextflow_config"):
         if not folder.exists(): raise FileNotFoundError(folder)
@@ -611,7 +627,10 @@ class Agent:
             else:
                 m = "execution"
             Log.Info(f"triggering {m} of [{task_key}]")
-            sh_remote.Exec(f"{workspace/AgentPaths.LAUNCHER_FILE} {stub_delay:0.3f}")
+            launcher = workspace / AgentPaths.LAUNCHER_FILE
+            res = sh_remote.Exec(f"[ -e {launcher} ] && echo 'launcher-present'", history=True, quiet=True)
+            assert "launcher-present" in res.out, f"launcher missing at [{launcher}]; re-stage the task"
+            sh_remote.Exec(f"{launcher} {stub_delay:0.3f}")
 
     def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)

@@ -76,6 +76,10 @@ def AwaitCheck(check: Callable[[], bool], timeout: float):
         dt *= 2
 
 MAX_READERS = 256
+# Pathological-input guard: cap how much we'll buffer for an incomplete
+# line. Hitting this cap emits one Log.Warning and drops the head of the
+# buffer; the stream stays alive (G8).
+MAX_LINE_BYTES = 1 << 20  # 1 MiB
 _readers = set()
 class NonBlockingReader:
     def __init__(self, io_handle: int, on_close: Callable[[NonBlockingReader], None] = None, sep: bytes = b"\n") -> None:
@@ -96,39 +100,65 @@ class NonBlockingReader:
 
         def reader(fd: int, callbacks: list[Callable[[bytes], None]]):
             _buffer = []
+            _buffer_bytes = 0
+            _eof = [False]
+            _truncation_warned = [False]
             def _try_read():
-                nonlocal _buffer
+                nonlocal _buffer, _buffer_bytes
                 changed = False
-                i=0
                 while True:
                     # https://stackoverflow.com/a/21429655/13690762
                     r, _, _ = select([ fd, self._notify_out ], [], [], 60) # allows unblock with notify_out
-                    # Log.Debug(f"r* [{id(self)}] [closed: {self.IsClosed()}] [notified: {self._notify_out in r}] ")
                     if self.IsClosed():
                         return []
-                    chunk = os.read(fd, 4096)
-                    if len(chunk) == 0:
-                        with self._lock:
-                            i+=1
-                            print(i, end="\r")
-                            self._lock.wait(0.1)
-                            # gevent.sleep(1/100)
+                    if fd not in r:
+                        # select woke for notify_out (dispose) or timed out; loop and re-check
                         continue
+                    try:
+                        chunk = os.read(fd, 4096)
+                    except OSError:
+                        # fd closed underneath us
+                        _eof[0] = True
+                        break
+                    if len(chunk) == 0:
+                        # Real EOF on the fd. Flush any remainder and stop.
+                        _eof[0] = True
+                        break
                     _buffer.append(chunk)
+                    _buffer_bytes += len(chunk)
+                    # Bound the buffer: if a single line exceeds MAX_LINE_BYTES,
+                    # drop from the head, warn once, and keep going.
+                    if _buffer_bytes > MAX_LINE_BYTES:
+                        joined = b''.join(_buffer)
+                        joined = joined[-MAX_LINE_BYTES:]
+                        _buffer = [joined]
+                        _buffer_bytes = len(joined)
+                        if not _truncation_warned[0]:
+                            Log.Warn(f"NonBlockingReader: truncating oversized incomplete line on fd {fd}")
+                            _truncation_warned[0] = True
                     changed = True
                     if self._sep in chunk: break # line complete
-                if not changed: return []
+                if not changed and not _eof[0]: return []
 
+                joined = b''.join(_buffer)
+                lines = joined.split(self._sep)
                 complete_segments = []
-                remainder = []
-                lines = b''.join(_buffer).split(self._sep)
+                remainder = b''
                 for i, line in enumerate(lines):
                     if i < len(lines)-1:
                         complete_segments.append(line)
-                    else: # last chunk
-                        if len(line) > 0: remainder.append(line) # save for later if incomplete
+                    else:
+                        remainder = line
                 _buffer.clear()
-                _buffer.extend(remainder)
+                _buffer_bytes = 0
+                if _eof[0]:
+                    # On EOF, emit whatever's left as a final segment
+                    if len(remainder) > 0:
+                        complete_segments.append(remainder)
+                else:
+                    if len(remainder) > 0:
+                        _buffer.append(remainder)
+                        _buffer_bytes = len(remainder)
                 return complete_segments
 
             initial_wait, max_wait = 0.1, 600
@@ -151,15 +181,22 @@ class NonBlockingReader:
                 try:
                     lines = list(_try_read())
                     for line in lines:
-                        # Log.Debug(f"--- {line}")
-                        for cb in callbacks: cb(line)
+                        for cb in list(callbacks):
+                            try:
+                                cb(line)
+                            except Exception as cb_err:
+                                Log.Error(f"NonBlockingReader callback raised: [{cb_err}]")
                     reset_wait()
+                    if _eof[0]:
+                        # EOF reached on fd. Stop the reader cleanly.
+                        with self._lock:
+                            self._is_closed = True
+                        break
                 except OSError as e: # fd closed
                     if e.errno == 9: # Bad file descriptor
                         break
                     else: # likely a race condition
                         scaling_wait()
-                        # gevent.sleep(1/100)
                 except KeyboardInterrupt:
                     with self._lock:
                         self._is_closed=True
