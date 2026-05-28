@@ -1,7 +1,8 @@
-"""Docker image build infrastructure with git-hash versioning.
+"""Docker image build infrastructure aligned with constants.FULL_VERSION.
 
-Provides utilities to build and cache Docker images for integration testing,
-using PEP 440 local version format (e.g. 0.15.1+abc1234).
+version.txt holds the PEP 440 release segment; build_hash.txt holds a
+content hash of src/metasmith/. Together they form FULL_VERSION; the
+docker tag is FULL_VERSION rendered for Docker ('+' → '-').
 """
 
 import subprocess
@@ -11,39 +12,31 @@ import os
 from pathlib import Path
 
 from ..logging import Log
+from .._build_hash import write_build_hash
 
 REPO_ROOT = Path(__file__).resolve().parents[3]  # src/metasmith/testing -> repo root
 
 
-def get_git_version() -> str:
-    """Get package version with git short hash appended.
+def get_full_version() -> str:
+    """Return FULL_VERSION (canonical, PEP 440 local form) by re-reading
+    version.txt + build_hash.txt. We do not import constants.FULL_VERSION
+    directly so callers that just wrote build_hash.txt see the new value
+    without a module reload."""
+    semver = (REPO_ROOT / "src/metasmith/version.txt").read_text().strip()
+    bh_path = REPO_ROOT / "src/metasmith/build_hash.txt"
+    bh = bh_path.read_text().strip() if bh_path.exists() else ""
+    return f"{semver}+{bh}" if bh else semver
 
-    Returns:
-        Version string like "0.15.1+abc1234"
-    """
-    base = (REPO_ROOT / "src/metasmith/version.txt").read_text().strip()
-    result = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        capture_output=True, text=True, cwd=REPO_ROOT,
-    )
-    git_hash = result.stdout.strip()
-    if not git_hash:
-        return base
-    return f"{base}+{git_hash}"
+
+# Back-compat alias: pre-refactor name, still used by tests/test_container_tag.py.
+def get_git_version() -> str:
+    return get_full_version()
 
 
 def get_docker_tag(version: str|None = None) -> str:
-    """Get the full Docker image tag for testing.
-
-    Args:
-        version: Override version string. Uses get_git_version() if None.
-
-    Returns:
-        Full image tag like "quay.io/hallamlab/metasmith:0.15.1+abc1234"
-    """
+    """Full image tag (e.g. ``quay.io/hallamlab/metasmith:0.18.2-abc1234``)."""
     if version is None:
-        version = get_git_version()
-    # Docker tags cannot contain '+', replace with '-'
+        version = get_full_version()
     return f"quay.io/hallamlab/metasmith:{version.replace('+', '-')}"
 
 
@@ -66,14 +59,14 @@ def image_exists(tag: str) -> bool:
 def build_pip_package(version: str|None = None) -> Path:
     """Build pip package, optionally with a custom version.
 
-    Temporarily writes version to version.txt, runs `python -m build`,
-    then restores the original version.
+    Stamps build_hash.txt before building so the wheel filename embeds
+    FULL_VERSION (semver + build hash). Optionally overrides version.txt
+    for the duration of the build (restored on exit).
 
-    Args:
-        version: Version to write. Uses current version.txt if None.
-
-    Returns:
-        Path to the dist/ directory containing built packages.
+    ``version`` is interpreted as the bare semver written to version.txt.
+    A FULL_VERSION-shaped string (``<semver>+<local>``) is accepted and
+    stripped — otherwise the local segment would be duplicated when
+    setup.py composes ``version.txt + '+' + build_hash.txt``.
     """
     version_file = REPO_ROOT / "src/metasmith/version.txt"
     original_version = version_file.read_text()
@@ -83,13 +76,20 @@ def build_pip_package(version: str|None = None) -> Path:
 
     try:
         if version is not None:
-            version_file.write_text(version)
+            # version.txt holds the bare release segment only; the local
+            # build-hash segment is owned by build_hash.txt and gets
+            # composed in constants.FULL_VERSION at import time.
+            semver = version.split("+", 1)[0]
+            version_file.write_text(semver)
 
         # Clean previous builds
         if build_dir.exists():
             shutil.rmtree(build_dir)
         if dist_dir.exists():
             shutil.rmtree(dist_dir)
+
+        # Stamp build hash so setup.py picks up FULL_VERSION.
+        write_build_hash(REPO_ROOT / "src/metasmith")
 
         Log.Info(f"building pip package")
         result = subprocess.run(
@@ -185,8 +185,11 @@ def build_docker_image(tag: str|None = None, version: str|None = None) -> str:
     Returns:
         The image tag that was built.
     """
+    # Stamp build hash first so we can resolve the tag without doing the
+    # full pip build; then short-circuit if the image is already cached.
+    write_build_hash(REPO_ROOT / "src/metasmith")
     if version is None:
-        version = get_git_version()
+        version = get_full_version()
     if tag is None:
         tag = get_docker_tag(version)
 

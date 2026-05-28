@@ -1,0 +1,364 @@
+"""
+LiveShell unit tests covering the goals of the robust-upgrade plan
+(plan: read-awm-inbodx-for-dynamic-brooks.md). One test per goal G1-G8.
+
+These tests exercise the wrapper's surface contract — exit-code capture,
+sentinel-collision immunity, blocking AwaitDone, lifecycle leak-freedom,
+callback isolation, and bounded buffering — without depending on
+external infrastructure (no docker, no relay, no network).
+"""
+
+from __future__ import annotations
+import os
+import resource
+import subprocess
+import time
+from contextlib import contextmanager
+
+import pytest
+
+# conftest.py inserts src/ on sys.path
+from metasmith.coms.terminals import LiveShell, ShellResult, TerminalProcess
+
+
+# ----------------------------------------------------------------------
+# helpers
+# ----------------------------------------------------------------------
+
+def _fd_count():
+    """Count of open FDs in this process. Used for leak detection."""
+    try:
+        return len(os.listdir(f"/proc/{os.getpid()}/fd"))
+    except FileNotFoundError:
+        pytest.skip("/proc/self/fd not available")
+
+
+def _child_bash_count():
+    """How many bash children does this process have right now?"""
+    try:
+        out = subprocess.check_output(
+            ["pgrep", "-P", str(os.getpid()), "bash"],
+            stderr=subprocess.DEVNULL,
+        ).decode()
+        return len([l for l in out.splitlines() if l.strip()])
+    except subprocess.CalledProcessError:
+        return 0
+
+
+@contextmanager
+def _short_init():
+    """Cap the LiveShell init timeout so partial-init tests don't drag."""
+    orig = LiveShell._INIT_TIMEOUT
+    LiveShell._INIT_TIMEOUT = 1.0
+    try:
+        yield
+    finally:
+        LiveShell._INIT_TIMEOUT = orig
+
+
+# ----------------------------------------------------------------------
+# G1 — exit codes are first-class
+# ----------------------------------------------------------------------
+
+def test_g1_exit_code_zero():
+    with LiveShell() as sh:
+        res = sh.Exec("true", history=True)
+        assert res.exit_code == 0
+
+
+def test_g1_exit_code_nonzero():
+    with LiveShell() as sh:
+        res = sh.Exec("false", history=True)
+        assert res.exit_code == 1
+
+
+def test_g1_exit_code_arbitrary():
+    # (exit N) uses a subshell so the wrapper bash stays alive.
+    with LiveShell() as sh:
+        for code in (2, 42, 124, 127, 255):
+            res = sh.Exec(f"(exit {code})", history=True)
+            assert res.exit_code == code, f"expected {code}, got {res.exit_code}"
+
+
+# ----------------------------------------------------------------------
+# G2 — sentinel collision immunity
+# ----------------------------------------------------------------------
+
+def test_g2_user_output_matching_frame_is_not_stripped():
+    """
+    A user command that prints a JSON line shaped exactly like a completion
+    frame must still appear verbatim in ShellResult.out — no in-band
+    stripping. Same line was the previous design's classic foot-gun.
+    """
+    with LiveShell() as sh:
+        fake_frame = '{"id":"anything","exit":99}'
+        res = sh.Exec(f"""echo '{fake_frame}'; echo data""", history=True)
+        assert res.exit_code == 0
+        assert fake_frame in res.out, f"frame line was stripped: {res.out!r}"
+        assert "data" in res.out
+
+
+def test_g2_user_can_echo_legacy_marker():
+    """
+    Old in-band marker ("done_<random>.<hash>") echoed by user code
+    must pass through untouched (no MARK in the wrapper anymore).
+    """
+    with LiveShell() as sh:
+        res = sh.Exec('echo "done_anyhash.somevalue"; echo trailer', history=True)
+        assert res.exit_code == 0
+        assert "done_anyhash.somevalue" in res.out
+        assert "trailer" in res.out
+
+
+# ----------------------------------------------------------------------
+# G3 — completion works regardless of which user stream is touched
+# ----------------------------------------------------------------------
+
+def test_g3_stderr_only_command_does_not_hang():
+    with LiveShell() as sh:
+        res = sh.Exec("echo hi >&2", history=True, timeout=5)
+        assert res.exit_code == 0
+        assert res.out == []
+        assert "hi" in res.err
+
+
+def test_g3_silent_command_returns_promptly():
+    with LiveShell() as sh:
+        t0 = time.monotonic()
+        res = sh.Exec("true", history=True, timeout=5)
+        dt = time.monotonic() - t0
+        assert res.exit_code == 0
+        assert dt < 2.0, f"silent command took {dt:.2f}s — should be subsecond"
+
+
+def test_g3_mixed_streams():
+    with LiveShell() as sh:
+        res = sh.Exec("echo o; echo e >&2; echo o2; echo e2 >&2", history=True)
+        assert res.exit_code == 0
+        assert set(res.out) >= {"o", "o2"}
+        assert set(res.err) >= {"e", "e2"}
+
+
+# ----------------------------------------------------------------------
+# G4 — AwaitDone does not CPU-poll
+# ----------------------------------------------------------------------
+
+def test_g4_long_wait_does_not_burn_cpu():
+    """
+    `sleep 3` should consume effectively zero CPU in the parent
+    Python process: the wrapper sleeps in Condition.wait_for, not in
+    a poll loop. Allow generous headroom for thread overhead.
+    """
+    with LiveShell() as sh:
+        # Warm up so reader threads are running and stable.
+        sh.Exec("true", history=True)
+        u0 = resource.getrusage(resource.RUSAGE_SELF).ru_utime
+        s0 = resource.getrusage(resource.RUSAGE_SELF).ru_stime
+        t0 = time.monotonic()
+        res = sh.Exec("sleep 3", history=True, timeout=10)
+        wall = time.monotonic() - t0
+        u1 = resource.getrusage(resource.RUSAGE_SELF).ru_utime
+        s1 = resource.getrusage(resource.RUSAGE_SELF).ru_stime
+    cpu = (u1 - u0) + (s1 - s0)
+    assert res.exit_code == 0
+    assert wall >= 2.8, f"sleep 3 returned too fast: {wall:.2f}s"
+    # Polling design burns 100% of one core; the new design should be
+    # near-zero. 0.5s budget allows for thread / reader overhead.
+    assert cpu < 0.5, f"cpu={cpu:.2f}s during 3s wait — looks like polling"
+
+
+# ----------------------------------------------------------------------
+# G5 — TerminalProcess / LiveShell leak-free on partial init
+# ----------------------------------------------------------------------
+
+def test_g5_clean_lifecycle_no_fd_leak():
+    fd0 = _fd_count()
+    bash0 = _child_bash_count()
+    for _ in range(5):
+        with LiveShell() as sh:
+            sh.Exec("echo x", history=True)
+    # Reaper / FD release is synchronous in Dispose; allow tiny grace
+    time.sleep(0.1)
+    fd1 = _fd_count()
+    bash1 = _child_bash_count()
+    assert abs(fd1 - fd0) <= 2, f"fd leak: {fd0} -> {fd1}"
+    assert bash1 <= bash0, f"bash child leak: {bash0} -> {bash1}"
+
+
+def test_g5_partial_init_failure_does_not_leak():
+    """
+    If TerminalProcess.__init__ raises after pty.openpty() has allocated
+    FDs, the cleanup path must release them. Force the failure by
+    overriding subprocess.Popen to raise.
+    """
+    import metasmith.coms.terminals as tmod
+    fd0 = _fd_count()
+    orig_popen = subprocess.Popen
+    def boom(*a, **kw):
+        raise RuntimeError("simulated subprocess failure")
+    tmod.subprocess.Popen = boom
+    try:
+        with pytest.raises(RuntimeError, match="simulated"):
+            TerminalProcess()
+    finally:
+        tmod.subprocess.Popen = orig_popen
+    time.sleep(0.1)
+    fd1 = _fd_count()
+    assert abs(fd1 - fd0) <= 2, f"partial-init leaked FDs: {fd0} -> {fd1}"
+
+
+# ----------------------------------------------------------------------
+# G7 — a raising callback does not stop subsequent delivery
+# ----------------------------------------------------------------------
+
+def test_g7_raising_callback_isolated():
+    delivered = []
+    fail_every_other = {"n": 0}
+    def bad_cb(line):
+        fail_every_other["n"] += 1
+        if fail_every_other["n"] % 2 == 1:
+            raise RuntimeError("intentional callback failure")
+    def good_cb(line):
+        delivered.append(line)
+    with LiveShell() as sh:
+        sh.RegisterOnOut(bad_cb)
+        sh.RegisterOnOut(good_cb)
+        sh.Exec("for i in 1 2 3 4 5 6; do echo line_$i; done")
+        # let the reader thread drain
+        time.sleep(0.3)
+    assert len(delivered) >= 6, f"good callback missed lines: {delivered}"
+    assert any("line_1" in s for s in delivered)
+    assert any("line_6" in s for s in delivered)
+
+
+# ----------------------------------------------------------------------
+# G8 — bounded buffer on pathological no-newline output
+# ----------------------------------------------------------------------
+
+def test_g8_oversized_line_bounded():
+    """
+    A single ~5 MB write with no newline must not blow up memory. The
+    NonBlockingReader caps its incomplete-line buffer at MAX_LINE_BYTES
+    and emits one Log.Warn. We assert: (a) the wrapper survives,
+    (b) RSS growth is bounded.
+    """
+    with LiveShell() as sh:
+        sh.Exec("true", history=True)  # warm
+        rss0 = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss  # KB on linux
+        # 5 MB of 'a' followed by a newline
+        cmd = (
+            "python3 -c \"import sys; sys.stdout.write('a'*5_000_000); "
+            "sys.stdout.write('\\nDONE\\n'); sys.stdout.flush()\""
+        )
+        res = sh.Exec(cmd, history=True, timeout=15)
+        rss1 = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    assert res.exit_code == 0
+    # Allow 50 MB headroom — 5MB raw + decoding + test scaffolding. Without
+    # the cap, multiple seconds of accumulation could easily exceed 100 MB.
+    growth_mb = (rss1 - rss0) / 1024
+    assert growth_mb < 50, f"RSS grew {growth_mb:.1f} MB — buffer cap not enforced"
+    # We don't assert exact content because the cap drops bytes from the head;
+    # the trailing DONE marker is what matters.
+    assert any("DONE" in line for line in res.out), f"DONE marker missing: tail={res.out[-3:]!r}"
+
+
+# ----------------------------------------------------------------------
+# ExecAsync + AwaitDone(_hash) — the supported async path
+# (4 batch sites in remote.py: local/globus/ssh/http transfer fan-out)
+# ----------------------------------------------------------------------
+
+def test_exec_async_await_done_returns_exit_code():
+    with LiveShell() as sh:
+        h = sh.ExecAsync("sleep 0.1; (exit 7)")
+        rc = sh.AwaitDone(_hash=h, timeout=5)
+        assert rc == 7, rc
+        # AwaitDone reaps internal state — long-lived shells don't leak.
+        assert h not in sh._results
+        assert h not in sh._pending
+
+
+def test_batched_exec_async_drains_via_last_hash():
+    """
+    The remote.py transfer-fanout pattern: enqueue N commands on one shell,
+    then wait on the LAST hash. Because bash is sequential, the last frame
+    arriving means all prior commands also completed.
+
+    Regression guard for the (now-removed) bare-AwaitDone() semantic, which
+    only waited for one random pending hash and left the rest in flight.
+    """
+    with LiveShell() as sh:
+        # 5 commands with descending sleeps. If we only waited for the first,
+        # we'd return after ~0.1s with 4 still in flight.
+        sleeps = [0.5, 0.4, 0.3, 0.2, 0.1]
+        last_hash = None
+        t0 = time.monotonic()
+        for s in sleeps:
+            last_hash = sh.ExecAsync(f"sleep {s}")
+        assert last_hash is not None
+        rc = sh.AwaitDone(_hash=last_hash, timeout=10)
+        wall = time.monotonic() - t0
+    assert rc == 0
+    # Total sequential wall is ~1.5s; assert we actually waited for the batch
+    assert wall >= 1.4, f"AwaitDone(last_hash) returned too fast: {wall:.2f}s — batch not drained"
+
+
+def test_await_done_requires_hash():
+    """The bare AwaitDone() form is gone — it had no coherent semantic."""
+    with LiveShell() as sh:
+        sh.ExecAsync("sleep 0.05")
+        with pytest.raises(TypeError):
+            sh.AwaitDone()  # type: ignore[call-arg]
+
+
+def test_batch_strict_ordering_invariant():
+    """
+    The wait-on-last idiom rests on a strict-ordering invariant: when
+    `AwaitDone(_hash=last)` returns, every PRIOR hash in the batch must
+    also be fully synced.
+
+    The invariant holds because each of the three pipes (ctl/stdout/stderr)
+    is read by a single thread in OS-preserved order, and bash writes
+    those pipes in command order. We stress this with 50 commands of
+    varied timings and assert the invariant directly.
+    """
+    import random
+    random.seed(42)
+    with LiveShell() as sh:
+        N = 50
+        hashes = []
+        for i in range(N):
+            # Mix command shapes to perturb scheduling: silent, stdout,
+            # stderr, mixed, sleep, nonzero exit, fast.
+            shape = i % 7
+            if shape == 0:   cmd = "true"
+            elif shape == 1: cmd = f"echo o_{i}"
+            elif shape == 2: cmd = f"echo e_{i} 1>&2"
+            elif shape == 3: cmd = f"echo o_{i}; echo e_{i} 1>&2"
+            elif shape == 4: cmd = f"sleep 0.0{random.randint(1, 5)}"
+            elif shape == 5: cmd = f"(exit {i % 7})"
+            else:            cmd = f"echo o_{i}; echo e_{i} 1>&2; (exit {i % 3})"
+            hashes.append(sh.ExecAsync(cmd))
+
+        rc = sh.AwaitDone(_hash=hashes[-1], timeout=20)
+        # Last hash was reaped by AwaitDone; every prior hash must still be
+        # fully synced (not yet reaped). If even one isn't, the strict
+        # ordering invariant is broken and the wait-on-last idiom is unsafe.
+        not_synced_prior = [h for h in hashes[:-1] if not sh._is_fully_synced(h)]
+        assert not not_synced_prior, (
+            f"strict-ordering INVARIANT BROKEN: {len(not_synced_prior)}/{N-1} "
+            f"prior hashes not fully synced after AwaitDone(_hash=last). "
+            f"wait-on-last idiom is unsafe. examples: {not_synced_prior[:5]}"
+        )
+
+
+def test_quiet_mode_does_not_pollute_outer_callbacks():
+    outer = []
+    with LiveShell() as sh:
+        sh.RegisterOnOut(outer.append)
+        # quiet mode: outer should NOT see the inner echo
+        sh.Exec("echo inner", history=True, quiet=True)
+        # post-quiet: outer should see the next echo
+        sh.Exec("echo after", history=True)
+        time.sleep(0.2)
+    assert "inner" not in outer
+    assert any("after" in s for s in outer)

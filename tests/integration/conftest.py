@@ -237,7 +237,7 @@ def simple_workflow_task(mock_samples, mock_types, temp_dir):
     given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
     target_model = Transform()
     target_model.AddRequirement(properties={"bam"})
-    target_names = {Endpoint(properties={"bam"}): "bam"}
+    target_names = ["bam"]
 
     plan = WorkflowPlan.Generate(
         given=given,

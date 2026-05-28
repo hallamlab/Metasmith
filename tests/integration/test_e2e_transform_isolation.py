@@ -32,7 +32,7 @@ def _make_task(mock_samples, mock_types, temp_dir, transforms, target_props, tar
     given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
     target_model = Transform()
     target_model.AddRequirement(properties=target_props)
-    target_names = {Endpoint(properties=target_props): target_name}
+    target_names = [target_name]
 
     plan = WorkflowPlan.Generate(
         given=given,
@@ -298,7 +298,7 @@ class TestHarnessBranching:
         given = [[sv] for sv in mock_samples.AsSamples("mock::assembly")]
         target_model = Transform()
         target_model.AddRequirement(properties={"merged"})
-        target_names = {Endpoint(properties={"merged"}): "merged"}
+        target_names = ["merged"]
 
         plan = WorkflowPlan.Generate(
             given=given,

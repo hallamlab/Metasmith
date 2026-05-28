@@ -567,6 +567,55 @@ class TestGivenLineage:
         produced = _get_all_produced(sol)
         assert frozenset({"output"}) in produced
 
+    def test_given_fails_lineage_falls_back_to_produced(self):
+        """When given candidates fail _satisfies_lineage even after walking
+        ancestors transitively, a produced alternative that pulls the needed
+        ancestor into its flattened lineage must still be considered.
+        Regression for the prefer-given short-circuit in _find_endpoints."""
+        # interleave: meta + pair + r1 (parent=pair) + r2 (parent=pair) -> short_reads
+        # interleave consumes meta directly, so its produced short_reads will
+        # carry meta in its flattened lineage.
+        interleave = Transform()
+        interleave.AddRequirement(properties={"meta"})
+        pair_in = interleave.AddRequirement(properties={"pair"})
+        interleave.AddRequirement(properties={"r1"}, parents={pair_in})
+        interleave.AddRequirement(properties={"r2"}, parents={pair_in})
+        interleave.AddProduct(properties={"reads", "short_reads"})
+
+        # consumer: meta -> reads(parent=meta) -> bam
+        consumer = Transform()
+        meta_in = consumer.AddRequirement(properties={"meta"})
+        consumer.AddRequirement(properties={"reads"}, parents={meta_in})
+        consumer.AddProduct(properties={"bam"})
+
+        # Given: meta (orphan), pair (orphan), r1/r2 (parent=pair).
+        # r1/r2 are IsA(reads), but their full ancestor walk does NOT reach
+        # meta — pair has no parent. So consumer cannot bind reads to a
+        # given endpoint; it must use interleave's produced short_reads,
+        # which DOES include meta in its lineage.
+        meta_ep = Endpoint(properties={"meta"})
+        pair_ep = Endpoint(properties={"pair"})
+        r1_ep = Endpoint(properties={"r1", "reads"}, parents={pair_ep})
+        r2_ep = Endpoint(properties={"r2", "reads"}, parents={pair_ep})
+
+        target = Transform()
+        target.AddRequirement(properties={"bam"})
+
+        sol = solve_by_mcts(
+            given=[{meta_ep, pair_ep, r1_ep, r2_ep}],
+            target=target,
+            transforms=[interleave, consumer],
+        )
+        assert sol.complete
+        plan_transforms = {a.transform for a in sol.dependency_plan}
+        assert interleave in plan_transforms, \
+            "interleave dropped — produced short_reads alternative not considered"
+        assert consumer in plan_transforms, \
+            "consumer dropped — bam target not in plan"
+
+        produced = _get_all_produced(sol)
+        assert frozenset({"bam"}) in produced
+
     def test_binning_workflow_all_three_binners(self):
         """Simulates binning workflow with 3 binners: metabat2, maxbin2, concoct."""
         transforms = []
@@ -629,6 +678,45 @@ class TestGivenLineage:
 
         # Verify correct number of steps: 1 given + 1 bam + 3 binners + 1 target = 6
         assert len(sol.dependency_plan) == 6
+
+    def test_input_rooted_multi_hop_lineage(self):
+        """Input chain meta <- pair <- R1 should satisfy a transform that
+        requires reads(parents=meta), even though R1's direct parent is pair.
+
+        Reproduces inbox msg #133: assembly_stats unreachable from input-rooted
+        DAGs because _satisfies_lineage uses direct `in e.parents` check, but
+        input endpoint .parents is stored as a nested tree (one level of direct
+        parents per endpoint), not a flat ancestor closure.
+        """
+        transforms = []
+
+        # assembly_stats-like: meta, reads(parents=meta), asm(parents=reads) -> bam
+        t = Transform()
+        meta = t.AddRequirement(properties={"meta"})
+        reads = t.AddRequirement(properties={"reads"}, parents={meta})
+        t.AddRequirement(properties={"assembly"}, parents={reads})
+        t.AddProduct(properties={"bam"})
+        transforms.append(t)
+
+        # Input chain (nested): meta <- pair <- R1 (IsA reads) <- asm
+        # Note: pair is an intermediate that the transform does NOT name,
+        # so meta is a grandparent (not direct parent) of R1.
+        meta_ep = Endpoint(properties={"meta"})
+        pair_ep = Endpoint(properties={"pair"}, parents={meta_ep})
+        r1_ep = Endpoint(properties={"r1", "reads"}, parents={pair_ep})
+        asm_ep = Endpoint(properties={"assembly"}, parents={r1_ep})
+
+        target = Transform()
+        target.AddRequirement(properties={"bam"})
+
+        sol = solve_by_mcts(
+            given=[{meta_ep, pair_ep, r1_ep, asm_ep}],
+            target=target,
+            transforms=transforms,
+        )
+        assert sol.complete
+        produced = _get_all_produced(sol)
+        assert frozenset({"bam"}) in produced
 
 
 class TestMultiSampleBinningWorkflow:

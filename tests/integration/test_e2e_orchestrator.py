@@ -7,6 +7,7 @@ class's group, batch, debatch, post, and mix methods inside Docker.
 import json
 import subprocess
 import shutil
+import sys
 import pytest
 from pathlib import Path
 
@@ -61,13 +62,26 @@ class NxfTestRunner:
 
     @staticmethod
     def assert_nxf_ok(result: subprocess.CompletedProcess):
-        """Assert Nextflow succeeded, tolerating the NXF 25.x duration bug.
+        """Assert Nextflow succeeded, tolerating upstream bug nextflow-io/nextflow#6757.
 
-        Nextflow 25.x has a known timing bug where very-fast workflows produce
-        a negative Duration assertion error (returncode=1) even when logic succeeds.
+        Under wall-clock skew (WSL2, NTP step), Nextflow's `WorkflowMetadata.invokeOnComplete`
+        asserts `Duration >= 0` and throws even after the workflow body has completed
+        successfully and all `publish` manifests have been written. The exit code is
+        non-zero but the on-disk results are intact and parseable.
         """
-        nxf_duration_bug = "Duration unit cannot be a negative number" in result.stdout
-        assert result.returncode == 0 or nxf_duration_bug, f"NXF failed: {result.stderr}"
+        nxf_duration_bug = (
+            "Duration unit cannot be a negative number" in result.stdout
+            or "Duration unit cannot be a negative number" in (result.stderr or "")
+        )
+        if result.returncode != 0 and nxf_duration_bug:
+            print(
+                "WARN: tolerated upstream nextflow-io/nextflow#6757 (negative Duration "
+                "assertion); workflow body completed, optional report/timeline/trace "
+                "artifacts may be missing.",
+                file=sys.stderr,
+            )
+            return
+        assert result.returncode == 0, f"NXF failed: {result.stderr}"
 
 
 @pytest.fixture
@@ -82,7 +96,7 @@ class TestOrchestratorPost:
     def test_post_produces_output(self, nxf_runner):
         """post() processes items and produces indexed output."""
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -92,9 +106,9 @@ workflow {
         [["a": [2]], file("${projectDir}/lib/Orchestrator.groovy")],
     ])
 
-    def (out) = o.post([ch], ["result"])
+    def out = (o.post([ch], ["result"]))[0]
     def (name, stream) = out
-    stream.view { idx, item -> "POST: ${JsonOutput.toJson(idx)} ${item.name}" }
+    stream.view { idx, item -> "POST: ${groovy.json.JsonOutput.toJson(idx)} ${item.name}" }
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -107,7 +121,7 @@ workflow {
             (nxf_runner.work_dir / f"input_{i}.txt").write_text(f"data {i}")
 
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -118,9 +132,9 @@ workflow {
         [[:], file("${projectDir}/input_2.txt")],
     ])
 
-    def (out) = o.postIn([ch], ["inp"])
+    def out = (o.postIn([ch], ["inp"]))[0]
     def (name, stream) = out
-    stream.view { idx, item -> "POSTIN: ${JsonOutput.toJson(idx)} ${item.name}" }
+    stream.view { idx, item -> "POSTIN: ${groovy.json.JsonOutput.toJson(idx)} ${item.name}" }
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -136,7 +150,7 @@ workflow {
     def test_post_hash_15chars(self, nxf_runner):
         """Hash in post is md5[0..14] parsed as long."""
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -145,7 +159,7 @@ workflow {
         [[:], file("${projectDir}/test.nf")],
     ])
 
-    def (out) = o.post([ch], ["x"])
+    def out = (o.post([ch], ["x"]))[0]
     def (name, stream) = out
     stream.view { idx, item ->
         def hash_val = idx["x"][0]
@@ -172,7 +186,7 @@ class TestOrchestratorGroup:
         # Use postIn to register index history (the public API),
         # then group the resulting streams
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -187,8 +201,8 @@ workflow {
         [[:], file("${projectDir}/item_3.txt")],
     ])
 
-    def (posted_a) = o.postIn([ch_a_raw], ["a"])
-    def (posted_b) = o.postIn([ch_b_raw], ["b"])
+    def posted_a = (o.postIn([ch_a_raw], ["a"]))[0]
+    def posted_b = (o.postIn([ch_b_raw], ["b"]))[0]
 
     def grouped = o.group("a", [posted_a, posted_b], ["target"], 1)
     grouped.view { "GROUP: ${it[0]}" }
@@ -230,9 +244,9 @@ workflow {
         return x
     }
 
-    def (posted_a) = o.postIn([ch_a_raw], ["a"])
-    def (posted_b_early) = o.postIn([ch_b_raw_early], ["b"])
-    def (posted_b_late) = o.postIn([ch_b_raw_late], ["b"])
+    def posted_a = (o.postIn([ch_a_raw], ["a"]))[0]
+    def posted_b_early = (o.postIn([ch_b_raw_early], ["b"]))[0]
+    def posted_b_late = (o.postIn([ch_b_raw_late], ["b"]))[0]
     def mixed_b = o.mix([posted_b_early, posted_b_late])
 
     def grouped = o.group("a", [posted_a, mixed_b], ["target"], 1)
@@ -266,7 +280,7 @@ workflow {
         [[:], file("${projectDir}/a.txt")],
     ])
 
-    def (posted) = o.postIn([ch], ["x"])
+    def posted = (o.postIn([ch], ["x"]))[0]
 
     // Pass the same posted stream to two group() calls
     def g1 = o.group("x", [posted], ["t1"], 1)
@@ -344,7 +358,7 @@ workflow {
 
     // Create 9 sample streams
     sample_items = []
-    for (i in 0..8) {
+    (0..8).each { i ->
         sample_items.add([[:], file("${projectDir}/sample_${i}.txt")])
     }
     ch_samples = Channel.fromList(sample_items)
@@ -354,28 +368,34 @@ workflow {
     ch_container = Channel.fromList([[[:], file("${projectDir}/container.txt")]])
 
     // Post all inputs
-    def (posted_samples) = o.postIn([ch_samples], ["sample"])
-    def (posted_exp) = o.postIn([ch_exp], ["exp"])
-    def (posted_container) = o.postIn([ch_container], ["container"])
+    def posted_samples = (o.postIn([ch_samples], ["sample"]))[0]
+    def posted_exp = (o.postIn([ch_exp], ["exp"]))[0]
+    def posted_container = (o.postIn([ch_container], ["container"]))[0]
 
     // p01: groups by sample, also needs exp + container
     def g1 = o.group("sample", [posted_samples, posted_exp, posted_container], ["p01_out"], 1)
     def p01_result = p01_per_sample(g1)
-    def (p01_posted) = o.post([p01_result], ["p01_out"])
+    def p01_posted = (o.post([p01_result], ["p01_out"]))[0]
 
     // p02: groups by exp, needs container
     // posted_exp and posted_container are reused — shared across g1, g2, g3
     def g2 = o.group("exp", [posted_exp, posted_container], ["p02_out"], 1)
     def p02_result = p02_per_exp(g2)
-    def (p02_posted) = o.post([p02_result], ["p02_out"])
+    def p02_posted = (o.post([p02_result], ["p02_out"]))[0]
 
     // p03: groups by exp, needs p01 + p02 outputs + exp + container
     def g3 = o.group("exp", [p01_posted, p02_posted, posted_exp, posted_container], ["p03_out"], 1)
     def p03_result = p03_merge(g3)
 
-    p01_result.view { "P01: ${it[0]}" }
-    p02_result.view { "P02: ${it[0]}" }
-    p03_result.view { "P03: ${it[0]}" }
+    // Render the file name (a String) rather than the index Map. Iterating
+    // an index Map via Groovy's FormatHelper races with concurrent operators
+    // sharing the same Map reference (verified empirically against 25.10.0
+    // and 26.04.1) and surfaces as a `ConcurrentModificationException` from
+    // `FormatHelper.formatMap` inside the view closure. Production-generated
+    // workflows don't render index Maps via view, so this is test-side only.
+    p01_result.view { "P01: ${it[1].name}" }
+    p02_result.view { "P02: ${it[1].name}" }
+    p03_result.view { "P03: ${it[1].name}" }
 }
 ''', timeout=120)
         # DSL2 auto-forks shared channels so all three processes receive data correctly.
@@ -425,7 +445,7 @@ workflow {
             (nxf_runner.work_dir / f"f_{i}.txt").write_text(f"file {i}")
 
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 workflow {
     o = new Orchestrator(Channel.fromList([null]))
@@ -437,7 +457,7 @@ workflow {
     ])
 
     def batched = o._batch(3, ch)
-    batched.view { "FILES: ${it[0].collect(i -> i.containsKey('FILES'))}" }
+    batched.view { "FILES: ${it[0].collect { i -> i.containsKey('FILES') }}" }
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -446,23 +466,167 @@ workflow {
         # All indexes should have FILES key
         assert "true" in lines[0].lower()
 
+    @staticmethod
+    def _run_two_step_files_check(nxf_runner: "NxfTestRunner", batch_size: int) -> list[str]:
+        """Inbox #139 reproduction helper.
+
+        Runs a two-process pipeline (step1 produces a path() output; step2
+        consumes it via `o.group(..., batch_size)`). step2 echoes the index
+        it received as JSON, so the test can inspect the FILES paths that
+        `_batch()` wrote.
+
+        Returns the deduplicated list of distinct path strings observed in
+        every step2 invocation's `index['FILES']`. With the consumer-side
+        fix in place, these still contain `/ws/...` strings (the producer
+        is unchanged); callers should route them through
+        `bootstrap._parse_path` to verify resolution.
+        """
+        for i in range(3):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+
+        result = nxf_runner.run(f'''
+
+
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-1.*-out1.txt")
+    script:
+    """
+    touch 1-1-1.HASH${{index.seed[0]}}-out1.txt
+    """
+}}
+
+process step2 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        path "index.json"
+    script:
+    """
+    echo '${{Orchestrator.JsonforEcho(index)}}' > index.json
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+
+    seed_raw = Channel.fromList([
+        [["seed": [1L]], file("${{projectDir}}/seed_0.txt")],
+        [["seed": [2L]], file("${{projectDir}}/seed_1.txt")],
+        [["seed": [3L]], file("${{projectDir}}/seed_2.txt")],
+    ])
+    seed = new Tuple2("seed", seed_raw)
+
+    k1 = ["out1"]
+    (_out1) = o.post(o.asStreams(step1(o.group("seed", [seed], k1, 1))), k1)
+
+    k2 = ["out2"]
+    step2(o.group("out1", [_out1], k2, {batch_size}))
+}}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        index_files = sorted(nxf_runner.work_dir.rglob("work/*/*/index.json"))
+        assert index_files, (
+            f"step2 produced no index.json with batch_size={batch_size}; "
+            f"stdout tail:\n{result.stdout[-1500:]}"
+        )
+        observed: list[str] = []
+        for ip in index_files:
+            raw = ip.read_text().strip()
+            # Bash echo wraps Groovy's escaped quotes (\") in the JSON; unescape.
+            parsed = json.loads(raw.replace('\\"', '"'))
+            if not isinstance(parsed, list):
+                parsed = [parsed]
+            for idx in parsed:
+                for group in idx.get("FILES", []):
+                    for p in group:
+                        observed.append(p)
+        return observed
+
+    @staticmethod
+    def _assert_files_resolve(files: list[str]) -> None:
+        """Inbox #139 fix verification.
+
+        For each FILES path captured from a step's index, run it through
+        `bootstrap._parse_path` and assert the resulting `local` view is
+        the container-canonical form rooted at `AgentPaths.HOME_ROOT`
+        with the supplied task key embedded. This is the assertion shape
+        for a consumer-side fix: raw FILES still contain `/ws/...`
+        strings; `_parse_path` rewrites them on read.
+        """
+        from pathlib import Path
+
+        from metasmith.bootstrap import _parse_path
+        from metasmith.constants import AgentPaths
+
+        assert files, "no FILES paths to verify"
+        task_key = "TEST"
+        for p in files:
+            parsed = _parse_path(
+                Path(p),
+                agent_home="/host/scratch/agent",
+                external_cwd=Path("/ws"),
+                task_key=task_key,
+            )
+            assert parsed.local.is_absolute() and parsed.local.is_relative_to(
+                AgentPaths.HOME_ROOT
+            ), f"_parse_path did not canonicalize {p!r}: local={parsed.local}"
+            assert f"runs/{task_key}/" in str(parsed.local), (
+                f"_parse_path lost the task_key in {parsed.local} (from {p!r})"
+            )
+            assert not str(parsed.local).startswith(str(AgentPaths.WORK_ROOT) + "/"), (
+                f"_parse_path left /ws prefix in {parsed.local} (from {p!r})"
+            )
+
+    def test_batched_files_resolve_through_parse_path(self, nxf_runner):
+        """Regression for inbox #139 — batched case.
+
+        When step2 consumes step1's `path()` output through `_batch(N>1, …)`,
+        `Orchestrator.groovy:274` renders each Path via `*.toString()`.
+        Inside the producer container the workdir is bound at `/ws`, so
+        the rendered string is `/ws/work/<hash>/<file>` — a path that
+        doesn't resolve inside the downstream consumer's own container
+        (its `/ws` is its own task dir). On HPC this trips
+        `bootstrap.py:279` with "detected missing inputs, stopping".
+
+        The fix in `bootstrap._parse_path` rewrites `/ws/<tail>` →
+        `<AgentPaths.HOME_ROOT>/runs/<task_key>/<tail>` at parse time
+        (mirroring `bin/sbatch:54-80`'s inverse rewrite). The raw FILES
+        strings still contain `/ws/...`; this test confirms they
+        resolve correctly when read.
+        """
+        files = self._run_two_step_files_check(nxf_runner, batch_size=2)
+        self._assert_files_resolve(files)
+
+    def test_unbatched_files_resolve_through_parse_path(self, nxf_runner):
+        """Regression for inbox #139 — non-batched case.
+
+        `o.group` always routes through `_batch` regardless of batch_size,
+        so the `/ws`-prefix in FILES is *not* batched-only. The reporter's
+        claim that non-batched works (msg #139, `p03__assembly_stats`)
+        cannot be due to batch size alone; their non-batched comparison
+        case must have been a given input (CSV-staged via `o.postIn` +
+        `in()`), not a process output. The fix in `bootstrap._parse_path`
+        covers both.
+        """
+        files = self._run_two_step_files_check(nxf_runner, batch_size=1)
+        self._assert_files_resolve(files)
+
     def test_batch_debatch_roundtrip(self, nxf_runner):
         """Items survive batch -> process -> debatch cycle."""
         for i in range(4):
             (nxf_runner.work_dir / f"r_{i}.txt").write_text(f"roundtrip {i}")
 
         result = nxf_runner.run('''
-import groovy.json.JsonOutput
+
 
 process passthrough {
     input:
         tuple val(index), path("*")
     output:
         tuple val(index), path("*.out")
-    stub:
-    """
-    i=1; for f in *.txt; do cp "\\$f" "\\${i}-copy.out"; i=\\$((i+1)); done
-    """
     script:
     """
     i=1; for f in *.txt; do cp "\\$f" "\\${i}-copy.out"; i=\\$((i+1)); done
@@ -480,8 +644,8 @@ workflow {
     ])
 
     def batched = o._batch(2, ch)
-    def debatched = o._debatch([*passthrough(batched)])
-    debatched[0].view { idx, item -> "ROUNDTRIP: ${JsonOutput.toJson(idx)}" }
+    def debatched = o._debatch(o.asStreams(passthrough(batched)))
+    debatched[0].view { idx, item -> "ROUNDTRIP: ${groovy.json.JsonOutput.toJson(idx)}" }
 }
 ''')
         NxfTestRunner.assert_nxf_ok(result)
@@ -565,3 +729,57 @@ workflow {
         parsed = json.loads(json_str)
         assert "a" in parsed
         assert "b" in parsed
+
+
+class TestPathStringification:
+    """Capture the empirical shape of `Path.toString()` inside a Nextflow
+    process when the container workdir is bound at `/ws`.
+
+    Background: `Orchestrator.groovy:274` (`_batch`) renders upstream
+    process outputs via `values*.toString()`. The downstream consumer
+    receives the rendered strings in `index['FILES']` and routes them
+    through `bootstrap._parse_path`. The shape that `toString()`
+    actually emits is runtime-dependent — Docker emits absolute
+    `/ws/<tail>` (this test), while apptainer-local has been observed
+    to emit relative `../ws/<tail>` (the bug deferred to the path
+    overhaul; not exercised here because apptainer is not available
+    in CI — see `tests/path_overhaul/test_parse_path_apptainer_relative.py`
+    for the unit-level reproduction).
+    """
+
+    def test_docker_emits_absolute_ws_prefix(self, nxf_runner):
+        """Inside a Docker-bound container with workdir `/ws`,
+        `Path.toString()` on a workflow-generated path starts with
+        `/ws/`. This is the shape `Orchestrator.groovy:274`'s
+        `*.toString()` produces for upstream outputs.
+        """
+        result = nxf_runner.run('''
+process produce {
+    output:
+        path "out.txt"
+    script:
+    """
+    echo hello > out.txt
+    """
+}
+
+workflow {
+    produce()
+    produce.out.view { p -> "STRSHAPE: ${p.toString()}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("STRSHAPE:")]
+        assert len(lines) == 1, f"expected exactly one STRSHAPE line, got: {lines}"
+        rendered = lines[0].split("STRSHAPE: ", 1)[1]
+        # Docker stringification is absolute and `/ws/`-rooted.
+        assert rendered.startswith("/ws/"), (
+            f"Docker emitted unexpected toString shape: {rendered!r}. "
+            f"If this changes, `bootstrap._parse_path` case-1 (the inbox "
+            f"#139 fix) needs to be re-validated."
+        )
+        # No `..` segments — pre-condition for `_parse_path` case-1's
+        # `relative_to(WORK_ROOT)` to succeed.
+        assert ".." not in rendered.split("/"), (
+            f"Docker emitted `..` segment unexpectedly: {rendered!r}."
+        )

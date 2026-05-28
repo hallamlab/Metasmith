@@ -28,6 +28,39 @@ Prerequisites
 - `A tutorial workspace has been setup for Jupyter notebooks <../setup/tutorials.html>`_
 - You have completed the tutorial: `My first agent <my_first_agent.html>`_ since this will be a direct continuation
 
+.. note::
+
+    If you are following along outside of Jupyter (for example as plain Python
+    scripts), set :python:`WORKSPACE = Path("./")` and
+    :python:`MLIB = WORKSPACE/"MetasmithLibraries"` at the top of each script,
+    and treat any :python:`ipynbButtonLink(...)` calls as illustrative — they
+    are notebook helpers and can be skipped.
+
+The shape of this tutorial
+============================================================
+
+A transform earns its keep by *connecting* existing transforms — turning two
+disconnected halves of the type graph into a single chain that the solver
+can plan over.
+
+Upstream of fastANI, the standard library already provides
+:python:`getNcbiAssembly` (in the :python:`logistics` transform library),
+which fetches genomes from NCBI and produces :python:`sequences::assembly`.
+
+Downstream of fastANI, we would like to visualise the all-vs-all comparison
+as a *pairwise* heatmap — one cell per genome pair, color-coded by ANI.
+There is no transform for that today either, so we will add a tiny
+companion stub called :python:`ani_heatmap` that consumes
+:python:`ani::table` and produces :python:`pangenome::heatmap`.
+
+Today, :python:`sequences::assembly` and :python:`pangenome::heatmap` are
+disconnected: nothing turns a group of genomes into an ANI matrix.
+By adding :python:`fastani` (assembly + pangenome → ani::table), both
+connections light up at once: getNcbiAssembly can feed into fastani, and
+fastani can feed into ani_heatmap. Below we will render each of these
+two connections as its own DAG, and close with a short remark on chaining
+all three transforms end to end.
+
 Modelling a new transform
 ============================================================
 
@@ -419,7 +452,28 @@ Our :python:`TransformInstanceLibrary` should now save sucessfully.
     ani_transforms.AddTypeLibrary(MLIB/"data_types/sequences.yml")
     ani_transforms.AddTypeLibrary(MLIB/"data_types/pangenome.yml")
     ani_transforms.AddStub("fastani")
+    ani_transforms.AddStub("ani_heatmap")
     ani_transforms.Save()
+
+.. note::
+
+    The :python:`ani_heatmap` stub is added so the solver can find a
+    *downstream* consumer of :python:`ani::table`. We won't run it —
+    the default stub body just :python:`touch`-es an output file, which
+    is enough for the DAG demonstrations below. A real :python:`ani_heatmap`
+    would render an SVG from the all-vs-all similarity table.
+
+    Open the generated :python:`ani_heatmap.py` and replace its contract
+    lines with the following (leave the default protocol body and
+    :python:`TransformInstance(...)` call untouched):
+
+    .. code-block:: python
+        :caption: ani_heatmap.py
+
+        lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+        model = Transform()
+        ani   = model.AddRequirement(lib.GetType("ani::table"))
+        out   = model.AddProduct(lib.GetType("pangenome::heatmap"))
 
 To test fastANI, we will need to prepare inputs and the container image.
 
@@ -466,7 +520,13 @@ We will prepare resources and transforms using the same method shown in the My f
         ani_transforms
     ]
 
-Let's generate the workflow and inspect the plan.
+Upstream chain
+------------------------------------------------------------
+
+The first DAG demonstrates how :python:`fastani` plugs into the *existing*
+:python:`getNcbiAssembly` transform. We start from NCBI accessions and
+target :python:`ani::table`; the solver discovers the chain
+:python:`getNcbiAssembly → fastani` automatically.
 
 .. code-block:: python
     :caption: Jupyter
@@ -478,25 +538,92 @@ Let's generate the workflow and inspect the plan.
         runtime=ContainerRuntime.DOCKER,
     )
 
-    targets = TargetBuilder()
-    targets.Add("ani::table")
+    upstream_targets = TargetBuilder()
+    upstream_targets.Add("ani::table")
     task = smith.GenerateWorkflow(
         samples=inputs.AsSamples("ncbi::assembly_accession"),
         resources=resources,
         transforms=transforms,
-        targets=targets,
+        targets=upstream_targets,
     )
 
-    dag = task.plan.RenderDAG(WORKSPACE/"ani_dag.svg")
-    ipynbButtonLink(dag)
+    upstream_dag = task.plan.RenderDAG(WORKSPACE/"ani_dag_upstream.svg")
+    ipynbButtonLink(upstream_dag)
 
 .. figure:: /_static/dag_ani.svg
    :align: center
    :width: 70%
-   :alt: the generated fastANI workflow
+   :alt: the upstream chain — getNcbiAssembly feeds fastani
 
-Finally, we can stage and run fastANI. The following also includes a bit of
-resource tweaks to let the three download steps execute concurrently. 
+   :python:`getNcbiAssembly` produces :python:`sequences::assembly`, which
+   :python:`fastani` consumes to produce :python:`ani::table`.
+
+Downstream chain
+------------------------------------------------------------
+
+The second DAG demonstrates how :python:`fastani` plugs into the *new*
+:python:`ani_heatmap` stub. We mock a starting set of
+:python:`sequences::assembly` samples and target :python:`pangenome::heatmap`;
+the solver discovers the chain :python:`fastani → ani_heatmap`.
+
+.. code-block:: python
+    :caption: Jupyter
+    :linenos:
+
+    ani_demo_inputs_path = WORKSPACE/"ani_demo_inputs.xgdb"
+    try:
+        ani_demo_inputs = DataInstanceLibrary.Load(ani_demo_inputs_path)
+    except:
+        ani_demo_inputs = DataInstanceLibrary(ani_demo_inputs_path)
+        ani_demo_inputs.AddTypeLibrary(MLIB/"data_types/pangenome.yml")
+        ani_demo_inputs.AddTypeLibrary(MLIB/"data_types/sequences.yml")
+        ani_demo_inputs.AddTypeLibrary(ani_types, namespace="ani")
+
+        # mock assemblies — the solver only needs samples to plan a DAG;
+        # the values are placeholder paths, never read
+        group = ani_demo_inputs.AddValue("pangenome", "e coli", "pangenome::pangenome")
+        ani_demo_inputs.AddValue("DH10b", "mock_DH10b.fna", "sequences::assembly", parents={group})
+        ani_demo_inputs.AddValue("K12", "mock_K12.fna", "sequences::assembly", parents={group})
+        ani_demo_inputs.AddValue("fastani.oci", "docker://staphb/fastani:1.34", "ani::fastani.oci")
+        ani_demo_inputs.Save()
+
+    downstream_resources = [
+        view for view in ani_demo_inputs.AsSamples("ani::fastani.oci")
+    ]
+    downstream_targets = TargetBuilder()
+    downstream_targets.Add("pangenome::heatmap")
+    downstream_task = smith.GenerateWorkflow(
+        samples=ani_demo_inputs.AsSamples("sequences::assembly"),
+        resources=downstream_resources,
+        transforms=transforms,
+        targets=downstream_targets,
+    )
+
+    downstream_dag = downstream_task.plan.RenderDAG(WORKSPACE/"ani_dag_downstream.svg")
+    ipynbButtonLink(downstream_dag)
+
+The rendered DAG shows :python:`fastani` producing :python:`ani::table` and
+:python:`ani_heatmap` consuming it to produce :python:`pangenome::heatmap`.
+
+Chaining all three
+------------------------------------------------------------
+
+.. tip::
+
+    Targeting :python:`pangenome::heatmap` from :python:`ncbi::assembly_accession`
+    sources directly would produce the full chain
+    :python:`accession → assembly → ani::table → heatmap` in a single DAG.
+    The construction is identical — change only the target on the upstream
+    plan above and let the solver discover the full chain. We don't
+    demonstrate it here; the two demonstrations above already cover both
+    of the new connections in isolation.
+
+Stage and run
+------------------------------------------------------------
+
+Finally, we can stage and run the upstream task to actually compute an
+ANI table. The following also includes a bit of resource tweaks to let the
+three download steps execute concurrently.
 
 .. code-block:: python
     :caption: Jupyter

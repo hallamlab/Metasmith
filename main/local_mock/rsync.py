@@ -14,6 +14,7 @@ else:
 switch = {
     "local" :   f"{WORKSPACE_ROOT}/main/local_mock/cache/local_home",
     "lib":      f"/home/tony/workspace/tools/MetasmithLibraries/tests/test_msm_home",
+    "scratch":  f"/home/tony/agentic_workspace/data/metasmith/scratch/agent_home",
     "sockeye":  f"sockeye:~/scratch/metasmith",
     "cosmos":   f"cosmos:/home/tony/workspace/metasmith_ws",
     "fir":      f"fir:/scratch/phyberos/metasmith",
@@ -34,18 +35,18 @@ with LiveShell() as shell:
         container_cache=Path(home)/AgentPaths.CONTAINER_CACHE,
         runtime=ContainerRuntime.APPTAINER
     ).GetLocalPath()
-    shell.Exec(f"rsync -au --progress {WORKSPACE_ROOT}/metasmith.sif {lpath}")
-    
-    # for dist in [
-    #     "target/x86_64-unknown-linux-musl/release",
-    #     "target/x86_64-apple-darwin/release",
-    #     "target/aarch64-apple-darwin/release",
-    #     "target/aarch64-unknown-linux-musl/release",
-    # ]:
-    #     shell.Exec(f"rsync -ac --progress {WORKSPACE_ROOT}/main/relay_agent/{dist}/msm_relay {home}/relay/msm_relay")
-        
+    sif_src = f"{WORKSPACE_ROOT}/metasmith.sif"
+    if os.path.exists(sif_src):
+        shell.Exec(f"rsync -au --progress {sif_src} {lpath}")
+    else:
+        print(f"W: skipping .sif rsync — source missing [{sif_src}]")
+
     dist = "target/x86_64-unknown-linux-musl/release"
-    shell.Exec(f"rsync -ac --progress {WORKSPACE_ROOT}/main/relay_agent/{dist}/msm_relay {home}/relay/msm_relay")
+    relay_src = f"{WORKSPACE_ROOT}/main/relay_agent/{dist}/msm_relay"
+    if os.path.exists(relay_src):
+        shell.Exec(f"rsync -ac --progress {relay_src} {home}/relay/msm_relay")
+    else:
+        print(f"W: skipping msm_relay rsync — source missing [{relay_src}]")
     if ":" in home: # is remote
         host, path = home.split(":")
         pre = f'ssh {host} mkdir -p "{path}/dev" && '

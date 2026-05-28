@@ -724,6 +724,12 @@ class DataInstanceLibrary:
 
     @classmethod
     def Unpack(cls, location: Path, raw: dict, dtypes: dict[str, DataTypeLibrary], check_integrity: bool=False):
+        if "manifest" not in raw:
+            raise ValueError(
+                f"library index at [{location/cls._path_to_meta/(cls._index_name+cls._metadata_ext)}] "
+                f"is malformed: missing 'manifest' key. "
+                f"Was this directory compiled with `metasmith build`?"
+            )
         manifest = {}
         for k, v in raw["manifest"].items():
             type_name = v["type"]
@@ -969,6 +975,38 @@ class DataInstanceLibraryView:
             inst = self._original.Get(p)
             yield p, inst.dtype_name, inst.dtype
 
+class TransformInstanceLibraryView(DataInstanceLibraryView):
+    """Masked view of a TransformInstanceLibrary. Mirrors DataInstanceLibrary.AsView:
+    mask is a set of relative .py paths; invert=True flips include/exclude."""
+    _original: "TransformInstanceLibrary"
+
+    def IterateTransforms(self):
+        for p in self._mask:
+            tr = self._original.GetTransform(p)
+            assert tr is not None, p
+            yield p, tr
+
+    def GetTransform(self, path: str|Path, reload: bool=False):
+        p = Path(path)
+        if p.suffix != ".py":
+            p = p.with_suffix(".py")
+        assert p in self._mask, f"transform [{p}] is hidden by view mask"
+        return self._original.GetTransform(p, reload=reload)
+
+    @property
+    def types(self):
+        return self._original.types
+
+    @property
+    def location(self):
+        return self._original.location
+
+    def GetType(self, name: str):
+        return self._original.GetType(name)
+
+    def GetName(self, endpoint):
+        return self._original.GetName(endpoint)
+
 @dataclass
 class Size:
     value_gb: float
@@ -1206,6 +1244,10 @@ class TransformInstanceLibrary(DataInstanceLibrary):
             assert tr is not None, (dtype_name, k)
             yield k, tr
 
+    def AsView(self, mask: set[Path], invert: bool=False):
+        """if invert=True, then items in mask are excluded"""
+        return TransformInstanceLibraryView(self, mask, invert)
+
     @classmethod
     def Load(cls, path: Path|str):
         return cls(DataInstanceLibrary.Load(path))
@@ -1214,19 +1256,17 @@ class TransformInstanceLibrary(DataInstanceLibrary):
     def LoadFrom(cls, src: Source, dest: Path, label: str|None=None):
         return cls(DataInstanceLibrary.LoadFrom(src, dest, label=label))
 
-@dataclass
-class ContextPath:
-    local: Path
-    external: Path
-    container: Path
+# ContextPath has moved to metasmith.models.paths; re-export to preserve
+# the existing `from metasmith.models.libraries import ContextPath` form.
+from .paths import ContextPath, PathMap  # noqa: E402,F401
 
 @dataclass
 class ContextData:
     input_group: list[ContextPath]
     endpoint: Endpoint
     type_name: str
-    path: ContextPath = field(default_factory=lambda: ContextPath(Path(), Path(), Path()))
-    
+    path: ContextPath = field(init=False)
+
     def __post_init__(self) -> None:
         assert len(self.input_group)>0
         self.path = self.input_group[0]
@@ -1280,7 +1320,7 @@ class ExecutionContext:
             Log.Info(f"    {line}")
         subprocess.run(cmd, shell=True, executable='/bin/bash')
 
-    def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None):
+    def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None):
         path = self._inputs[self._batch_index][image].path
         if IsText(path.local):
             with open(path.local) as f:
@@ -1326,18 +1366,23 @@ class ExecutionContext:
             workdir = container_ws,
             runtime = self.container_runtime,
             binds = binds,
+            extra_args = list(args) if args else [],
             container_cache = self.external_agent_home/AgentPaths.CONTAINER_CACHE,
         )
         return container
 
-    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, history: bool=True):
-        container = self.GetContainerModel(image, binds)
+    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, history: bool=True):
+        container = self.GetContainerModel(image, binds, args)
         assert container.workdir is not None # for typing
         use_cache = False
         cached_path = container.GetLocalPath()
         if cached_path is not None:
             FLAG = "cached image exists"
-            res = self.external_shell.Exec(f'[ -e {cached_path} ] && echo "{FLAG}"', history=True)
+            sandbox_path = container.GetSandboxPath()
+            res = self.external_shell.Exec(
+                f'( [ -e {cached_path} ] || [ -d {sandbox_path} ] ) && echo "{FLAG}"',
+                history=True,
+            )
             if FLAG in res.out:
                 use_cache = True
 

@@ -3,7 +3,7 @@ from pathlib import Path
 
 def ipynbButtonLink(url, text: str|None=None, color: str="#1976D2", on_hover_color: str="#1565C0", size: str="16px", external=False):
     if not external:
-        url = Path(url).relative_to(Path(".").absolute(), walk_up=True)
+        url = Path(url).absolute().relative_to(Path(".").absolute(), walk_up=True)
         if text is None:
             text = url.name
     else:

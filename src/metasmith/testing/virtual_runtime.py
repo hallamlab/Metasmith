@@ -100,12 +100,17 @@ class VirtualE2ERuntime:
         return self
 
     def _write_wrapper(self, name: str, tool: str) -> None:
+        # Pin the python interpreter to the one driving the test, not
+        # whatever `python3` resolves to on PATH — otherwise the wrapper
+        # picks up /usr/bin/python3 which lacks numpy + the metasmith
+        # editable install.
         path = self.bin_dir / name
+        py = sys.executable
         path.write_text(
             "\n".join(
                 [
                     "#!/usr/bin/env bash",
-                    f'exec python3 -m metasmith.testing.virtual_runtime __tool__ {tool} "$@"',
+                    f'exec {py} -m metasmith.testing.virtual_runtime __tool__ {tool} "$@"',
                 ]
             )
             + "\n",
@@ -211,10 +216,13 @@ def cli_hostname(argv: list[str]) -> int:
 
 
 def cli_metasmith(argv: list[str]) -> int:
-    cmd = [sys.executable, "-m", "metasmith.coms.cli", *argv]
+    # The virtual runtime mocks transform execution via the nextflow stub
+    # and `virtual_output_synthesized`; the real `metasmith api` call would
+    # try to load /msm_home/lib/agent.yml and fail. We just record the
+    # invocation in the trace and return 0 so the bootstrap script's
+    # downstream steps (e.g. `msm_relay stop`) keep running.
     write_trace({"type": "metasmith_call", "argv": argv})
-    res = subprocess.run(cmd, check=False)
-    return int(res.returncode)
+    return 0
 
 
 def _docker_extract_command(argv: list[str]) -> tuple[str | None, list[str]]:

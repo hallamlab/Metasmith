@@ -84,7 +84,39 @@ TransformInstance(protocol=protocol, model=model, group_by=dep,
 
 Transforms run inside containers. The protocol has access to three path views:
 `.local` (protocol working dir), `.container` (inside the container), and
-`.external` (absolute host path).
+`.external` (absolute host path). `ContextPath` enforces three invariants
+post-construction: all three views are absolute, none contain `..`
+segments, and they are mutually consistent — violations raise
+`ValueError`. Protocols rarely build a `ContextPath` directly; the
+framework hands them ready-made via `context.Input(dep)`,
+`context.InputGroup(dep)`, and `context.Output(dep)`.
+
+#### Extra container args
+
+`context.ExecWithContainer(...)` accepts `args: list[str]` for arbitrary
+runtime flags (e.g. `["--gpus", "all", "--shm-size=8g", "-e", "FOO=bar"]`).
+Tokens are appended verbatim after the framework's default flags and binds,
+just before the image — so a flag passed in `args=` wins over the default of
+the same name (e.g. `--network=none` overriding the Docker default
+`--network=host`). The caller is responsible for using the right dialect:
+flag syntax differs between Docker and Apptainer.
+
+The active runtime is readable on the context as
+`context.container_runtime` (`ContainerRuntime.DOCKER` or
+`ContainerRuntime.APPTAINER`), so a protocol can branch:
+
+```python
+from metasmith.coms.containers import ContainerRuntime
+
+if context.container_runtime is ContainerRuntime.DOCKER:
+    gpu_args = ["--gpus", "all"]
+else:
+    gpu_args = ["--nv"]
+context.ExecWithContainer(image=image, cmd="...", args=gpu_args)
+```
+
+`binds=` remains a separate, typed parameter — do not pass mounts through
+`args=`.
 
 ### 4. Workflow Generation
 
@@ -109,6 +141,37 @@ The planner handles parallelism automatically — if you have 3 accessions, it
 generates 3 parallel getNcbiAssembly jobs, then one ppanggolin that collects all
 the resulting gbk files.
 
+#### Declaring targets
+
+`TargetBuilder.Add(target_type, parents=None)` returns an opaque `TargetSpec`
+handle. Pass handles in `parents=` to link lineage-distinct forks:
+
+```python
+targets = TargetBuilder()
+asm     = targets.Add("sequences::assembly")
+mb_bins = targets.Add("binning::metabat2_bin_table", parents={asm})
+sb_bins = targets.Add("binning::semibin2_bin_table", parents={asm})
+# duplicate-type targets are allowed when lineage parents differ:
+targets.Add("taxonomy::gtdbtk", parents={mb_bins})
+targets.Add("taxonomy::gtdbtk", parents={sb_bins})
+```
+
+Two `Add` calls with the same `target_type` *and* the same `parents=` set raise
+— structurally identical requests are still rejected. `WorkflowPlan.Generate`
+takes `target_names: list[str]` aligned positionally with `target_model.requires`
+(no Endpoint-keyed dict).
+
+#### Diagnosing failed plans
+
+When the solver can't produce a complete plan, `WorkflowPlan.hints` carries
+structured `PlanHint` records (kinds: `unreachable_target`, `missing_input`,
+`lineage_mismatch`) describing why. Each hint has a `target`, human-readable
+`message`, optional reverse-BFS `chain` of requirements, candidate transforms,
+and "did you mean ..." near-misses ranked by property-Jaccard to the givens.
+`missing_input` hints are de-duped by demand shape and sorted by similarity to
+givens so the most actionable suggestion is first. Consumers (the CLI,
+agents) surface these to the user as diagnostic output on failure.
+
 ### 5. Agents and Execution
 
 An Agent is a deployment target. It manages a home directory, handles container
@@ -120,6 +183,23 @@ smith.Deploy()              # one-time setup, pulls metasmith container
 smith.StageWorkflow(task)   # compiles DAG → Nextflow scripts
 smith.RunWorkflow(task)     # launches Nextflow (async!)
 ```
+
+#### Apptainer SIF → sandbox auto-unpack
+
+`Agent.Deploy()` probes the host apptainer for a setuid `starter-suid`.
+If it's missing (the conda-forge build omits it), the deploy step also
+runs `apptainer build --force --sandbox <name>.sandbox <name>.sif` for
+every cached image. `Container.MakeRunCommand(local=True)` then emits
+a shell ternary that prefers the `.sandbox/` directory over the `.sif`
+at run time, so apptainer never engages squashfuse_ll — sidestepping the
+WSL2+squashfuse_ll FUSE wedge that hangs nextflow under msm_relay's fork
+chain (Bug E.2). On HPC hosts with a proper setuid starter-suid (e.g.
+Sockeye), the probe is silent and no sandbox dir is built. The cache
+layout is `<home>/container_images/<name>.sif` alongside `<name>.sandbox/`;
+the SIF is retained so an `assertive=True` redeploy can rebuild the
+sandbox without re-pulling. The relevant helpers are
+`Container.GetSandboxPath / MakeNeedsSandboxProbe / MakeBuildSandboxCommand`
+in `src/metasmith/coms/containers.py`.
 
 RunWorkflow fires and returns immediately. The actual execution happens in a
 Nextflow process that manages container pulls, job scheduling, and data staging.
@@ -220,11 +300,58 @@ Each `DataInstance` has a stable `instance_id` (10-char hash derived from path, 
 
 This enables reliable lineage tracking: use `DataInstanceLibrary.Load()` + `Trace()` to map results back to inputs rather than parsing filenames or work directories.
 
+### Live-masking transforms
+
+`TransformInstanceLibrary.AsView(mask: set[Path], invert=False)` returns a
+`TransformInstanceLibraryView` that filters `IterateTransforms` to (or away
+from, with `invert=True`) the given `.py` paths. Pass the view into
+`Agent.GenerateWorkflow(transforms=[...])` or `WorkflowPlan.Generate(...)` in
+place of the underlying library to hide transforms by file path without
+rebuilding the library on disk. Mirrors `DataInstanceLibrary.AsView`.
+
 ### Testing Without Containers
 
 The `virtual_runtime` module provides a test harness for transforms that doesn't require container setup:
 - `TransformHarness` tracks instance_id in test scenarios
 - Useful for validating transform contracts (inputs/outputs/types) without pulling images
+
+### Path translation
+
+All conversion between the local / external / container path views
+lives in `src/metasmith/models/paths.py`. The two classes:
+
+- **`PathMap`** — per-execution context (carries `extern_home`,
+  `task_key`, optional `extern_cwd`). Built via `PathMap.FromAgent(agent,
+  task_key)` from `ExecuteStep`, or `PathMap.FromExternalCwd(cwd, agent)`
+  from `bin/sbatch`. Exposes `LocalToExternal` / `ExternalToLocal` /
+  `LocalToContainer` / `ContainerToLocal` for typed reroots using
+  `relative_to`, plus `Parse(p)` (the consolidator that handles
+  `/ws/<tail>` absolute, `../ws/<tail>` relative, HOME_ROOT-rooted
+  symlinks, and foreign symlinks uniformly) and `Render(p, dialect)`
+  (prefix-aware token substitution for `$AGENT_HOME` / `{agent_home}` /
+  `${params.home}`).
+- **`ContextPath`** — value type. Frozen, three Path fields, invariants
+  enforced in `__post_init__`. Build via classmethods (`FromLocal`,
+  `FromExternal`, `ForOutput`) when a `PathMap` is in scope.
+
+For shell-script content rewrites (e.g. `bin/sbatch.fix_paths` patching
+a `.command.run` body), use the `reroot_in_text(content, old_root,
+new_root)` helper: it matches the root only at path-segment boundaries
+so inner occurrences like `/msm_home_old_backup` or `/wsadm/ws/` are
+not corrupted.
+
+The container is dual-bound: the host scope dir lands at both `/ws` and
+`/msm_home`. When Nextflow resolves a process work-dir through the
+home-bind rather than the work-bind, `bin/sbatch` sees `cwd` under
+`AgentPaths.HOME_ROOT` (`/msm_home`) instead of `WORK_ROOT` (`/ws`) —
+the cwd-to-host mapping must check both prefixes and route HOME_ROOT
+cwds through `agent.real_path`. Pinned by
+`tests/path_overhaul/test_sbatch_home_root_cwd.py`.
+
+Never use raw `str.replace(extern_home, ...)`, `str.replace(HOME_ROOT,
+...)`, or regex like `r"/\w*/nxf_work/.*"` for path translation —
+those shapes silently corrupt or misidentify; the helpers above are the
+prefix-aware replacements.
 
 ---
 
@@ -296,42 +423,59 @@ bin_directory:
     content: metagenomic bins  # Distinguishes from other directories
 ```
 
-## MCP Server
+## CLI
 
-Metasmith exposes its API via [Model Context Protocol](https://modelcontextprotocol.io) through `metasmith-mcp`. This lets LLM clients (Claude, etc.) inspect types, libraries, transforms, plan workflows, and drive the full lifecycle.
+Metasmith exposes its **full** Python API as a CLI under `metasmith` (alias `msm`). The same surface is used by humans typing into a shell and by LLM agents shelling out with `--json` for machine-readable output. There is no server process; each invocation loads what it needs from disk and exits.
 
-### Running
+The canonical reference is **`docs/source/agentic/`** (see `tool_reference.rst` for the full catalog).
+
+### Global flags
 
 ```bash
-metasmith-mcp \
-  --types data_types/ncbi.yml data_types/sequences.yml \
-  --data inputs.xgdb \
-  --transforms transforms/amplicon transforms/pangenome \
-  --agents agents/local.yml \
-  --workspace ~/.metasmith/mcp_workspace
+metasmith [--json] [--quiet] [--workspace PATH] COMMAND ...
 ```
 
-All flags also accept env vars: `METASMITH_TYPE_LIBS`, `METASMITH_DATA_LIBS`, `METASMITH_TRANSFORM_LIBS`, `METASMITH_AGENTS`, `METASMITH_WORKSPACE` (colon-separated paths).
+- `--json` — emit machine-readable JSON on stdout (progress logs are routed to stderr so they don't corrupt the stream)
+- `--workspace PATH` — workspace for cached workflow tasks (default `~/.metasmith/workspace`; env `METASMITH_WORKSPACE`)
+- `--quiet` — suppress non-essential output
 
-### Tools (21 total)
+Errors print to stderr and exit non-zero — they are not swallowed into `{"error": ...}` dicts.
 
-| Category | Tools |
-|----------|-------|
-| **Types** | `list_types`, `get_type`, `check_type_compatibility` |
-| **Data libraries** | `list_data_libraries`, `inspect_data_library`, `list_data_items`, `show_item_lineage` |
-| **Transforms** | `list_transform_libraries`, `list_transforms`, `show_transform_contract` |
-| **Workflow** | `plan_workflow`, `check_workflow` |
-| **Agent management** | `list_agents`, `load_agent`, `deploy_agent` |
-| **Lifecycle** | `stage_workflow`, `run_workflow`, `get_result_source`, `list_config_presets` |
-| **Build** | `build_libraries` |
+### Command tree
 
-### Workflow via MCP
+| Group | Subcommands |
+|-------|-------------|
+| `metasmith type` | `list`, `show`, `compat`, `create`, `add` |
+| `metasmith data` | `inspect`, `list`, `create`, `attach-types`, `add-item`, `add-value`, `set-parents`, `remove`, `rename`, `rename-by-parent`, `prune-types`, `consolidate`, `save`, `trace`, `load-remote`, `lineage` |
+| `metasmith transform` | `list`, `libraries`, `show`, `read`, `write`, `scaffold`, `validate`, `propagate-types` |
+| `metasmith plan` | one-shot planner (`--data-library`, `--sample-type`, `--target-type ...`, `--transform-library ...`) |
+| `metasmith workflow` | `stage`, `run`, `wait`, `tail`, `cancel`, `runs`, `check`, `collect`, `result-source`, `presets` |
+| `metasmith agent` | `list`, `info`, `save`, `ping`, `deploy` |
+| `metasmith source` | `parse`, `exists`, `transfer` |
+| `metasmith task` | `list`, `show`, `hints`, `dag`, `delete` |
+| `metasmith build` | `all` (default), `types`, `uniques`, `transforms` — compile data type, unique, and transform libraries |
+| top-level legacy | `get`, `lab`, `api`, `help` |
 
-The full lifecycle is: `plan_workflow` → `stage_workflow` → `run_workflow` → `check_workflow` → `get_result_source`. `plan_workflow` returns a `task_key` that downstream tools reference. Tasks are cached to disk in the workspace directory.
+### Workflow via CLI
 
-### Resources (6)
+The full lifecycle is:
 
-URI-based read-only views: `metasmith://types`, `metasmith://types/{ns}`, `metasmith://types/{ns}/{name}`, `metasmith://data/{lib}`, `metasmith://transforms/{lib}`, `metasmith://transforms/{lib}/{transform}`.
+```
+metasmith plan ...                     → task_key (cached to workspace)
+metasmith workflow stage AGENT TASK    → compile DAG → Nextflow → transfer
+metasmith workflow run AGENT TASK      → detached launch under nohup
+metasmith workflow wait AGENT TASK     → blocks on `run completed at` sentinel
+metasmith workflow tail AGENT TASK     → last N lines of agent.log / main.log
+metasmith workflow collect AGENT TASK --dest URI
+```
+
+`workflow run` is detached (the launcher exits as soon as `nohup nextflow … &` starts). Script callers MUST follow with `workflow wait`, which blocks on the `run completed at` sentinel in `runs/<task_key>/_metasmith/logs.latest/agent.log`. `workflow cancel` cleanly stops a run by removing `workspace/PID.lock` (the in-container loop catches the absence and gracefully kills nextflow).
+
+Tasks are cached to disk under `--workspace` and can be re-fetched via `metasmith task show <key>` or `metasmith task list`.
+
+### Library architecture
+
+Each call loads its inputs by path; there is no persistent in-memory state. Cold-load cost for a parse of types / data / transform manifests is small enough that re-loading per invocation is acceptable. Caching that the old MCP server held in `ServerState` is now just disk reads of `.xgdb` manifests, type YAMLs, and workspace task files.
 
 ---
 
@@ -370,6 +514,67 @@ URI-based read-only views: `metasmith://types`, `metasmith://types/{ns}`, `metas
 - COMEBin: 8 CPUs, 32GB RAM, 12h (heavy)
 - SemiBin2: 8 CPUs, 16GB RAM, 4h (lighter)
 - Test on a machine with sufficient RAM before production runs
+
+### Nextflow Quirks (May 2026)
+
+**Version: pinned to `nextflow=26.04.1`** in `envs/base.yml`. Bumped from 25.10.0; the codebase is forward-compatible with both. The 26.x line enables the strict syntax parser by default — keep generated `.nf` and our `Orchestrator.groovy` clean of:
+
+- **Single-element parenthesized assignment** `(_x) = expr` — strict mode rejects it. Use `_x = (expr)[0]` instead. The workflow generator at `src/metasmith/models/workflow.py` emits the indexed form (`_v = (o.postIn(...))[0]`, `_x = (o.post(...))[0]` for single-output processes). Multi-element destructures `(a, b) = expr` still work.
+- **Range-based for loops** `for (i in 0..N)` — strict mode rejects. Use `(0..N).each { i -> ... }`. (Multi-element `for (x : collection)` is fine; that's what `Orchestrator.groovy` uses.)
+
+**Don't render index Maps via `.view {}` in test scripts.** When a `.view {}` closure interpolates a `Map` (e.g. `view { "P01: ${it[0]}" }` where `it[0]` is an index Map), Groovy's `FormatHelper.formatMap` iterates entries and races with concurrent operators that share the Map reference. This surfaces as a `ConcurrentModificationException` from inside `view`. Production-generated workflows don't use `view` at all, so this is a test-side hazard only. Pattern: render a non-Map field (`view { "P01: ${it[1].name}" }`) or skip the view.
+
+**Upstream bug `nextflow-io/nextflow#6757` (open).** `nextflow.util.Duration(long)` asserts `duration >= 0`; under wall-clock skew (WSL2, NTP step) `WorkflowMetadata.invokeOnComplete()` throws and the JVM exits non-zero. The workflow body has already completed and `publish` manifests are on disk — only the optional `nxf_report.html` / `timeline.html` / `trace.tsv` artifacts are lost.
+- **Production path** (`src/metasmith/agents.py`): the shell heredoc wrapping `nextflow run` has `trap stop EXIT; exit 0`, so the non-zero JVM exit is absorbed; `CollectResults` runs unconditionally and report parsing has graceful fallbacks. No code change needed.
+- **Test path**: use `_assert_nxf_ok` / `NxfTestRunner.assert_nxf_ok` — they detect the assertion in `stdout`/`stderr`, print `WARN: tolerated upstream nextflow-io/nextflow#6757 …`, and return so downstream parsing proceeds. If `CollectResults` then fails on missing manifests, the test surfaces a clear error blaming #6757.
+- A Groovy `metaClass` override on `Duration.between` was tried and abandoned: Nextflow's caller is `@CompileStatic`, so meta-dispatch isn't intercepted.
+
+**Orchestrator concurrency hygiene.** `pending_tasks` / `index_history` / `child2parent` and the value Sets/Lists they hold are `ConcurrentHashMap` + `ConcurrentHashMap.newKeySet()` + `Collections.synchronizedList`. Defensive — the methods are `synchronized` but the collections they hand out leak to operator callbacks.
+
+## Release versioning
+
+Two files form the version. Both live under `src/metasmith/`:
+
+- **`version.txt`** — bare PEP 440 release segment, e.g. `0.18.2`. Source-controlled. Bumped by hand when shipping. **Must not** contain `+` or `-`.
+- **`build_hash.txt`** — 7-char md5 over the `src/metasmith/` tree, regenerated by `_build_hash.py` at build time. Gitignored. Absent in fresh dev checkouts (then everything degrades to bare semver).
+
+Derivations in `constants.py`:
+
+```
+VERSION       = "0.18.2"                              # from version.txt
+BUILD_HASH    = "abc1234"                             # from build_hash.txt (or "" if absent)
+FULL_VERSION  = f"{VERSION}+{BUILD_HASH}"             # canonical, PEP 440 local form
+CONTAINER_TAG = FULL_VERSION.replace('+', '-')        # single +→- site
+```
+
+Downstream consumers:
+
+- `setup.py` ships the wheel as `metasmith-{FULL_VERSION}-py3-none-any.whl`.
+- `Agent.container` default = `docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}` — fresh deploys pull the exact image the maintainer pushed.
+- `dev.sh` reads both files and renders `DOCKER_TAG` identically (`test_dev_sh_tag.py` keeps it in lockstep).
+- `testing/docker_builder.{get_full_version,get_docker_tag}()` mirror the same chain.
+
+### Bump procedure
+
+The build hash decouples the chicken-and-egg of self-referential commit hashes — there is no embedded git hash to manage.
+
+```bash
+# 1. Bump semver
+echo 0.18.3 > src/metasmith/version.txt
+git commit -am "Bump version to 0.18.3"
+
+# 2. Build & publish (these stamp build_hash.txt as a side effect)
+./dev.sh -bp           # pip wheel → metasmith-0.18.3+<hash>-py3-none-any.whl
+./dev.sh -bd && -ud    # docker → quay.io/hallamlab/metasmith:0.18.3-<hash>
+./dev.sh -bs           # apptainer .sif (matching tag)
+
+# 3. Tag
+git tag v0.18.3 && git push upstream v0.18.3
+```
+
+The hash captures the source state; identical source ↔ identical hash ↔ identical image tag. Two builds from the same commit produce the same tag; a one-line edit produces a new tag (and a new image).
+
+Regression tests pinning the chain: `tests/test_container_tag.py`, `tests/test_dev_sh_tag.py`.
 
 ## Reference Transforms
 - `transforms/metagenomics/binning/checkm.py` - single assembly input pattern

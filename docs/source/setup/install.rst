@@ -101,12 +101,18 @@ along with nearly all of their dependencies. Containers are "pulled" as "images"
     https://github.com/hallamlab/metasmith
     ...
 
+.. _Apptainer Install:
+
 Apptainer
 ------------------------------------------------------------
 
 `Apptainer <https://apptainer.org/>`_ is an alternative to Docker designd for research computing on grid infrastructure.
 It is only available for **Linux machines**.
 
+We recommend installing via your system package manager (e.g. :bash:`sudo apt install apptainer` on Debian/Ubuntu)
+or by following Apptainer's `official install docs <https://apptainer.org/docs/admin/main/installation.html>`_.
+The conda-forge build is supported but lacks setuid privileges; metasmith will unpack each container image to
+a sandbox directory at deploy time, roughly doubling on-disk footprint per cached image.
 
 .. button-link:: https://apptainer.org/docs/admin/main/installation.html
     :color: primary

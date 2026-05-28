@@ -274,20 +274,23 @@ class TransformHarness:
                     dgroup[dep] = insts[0].dtype
             dep2output.append(dgroup)
 
-        # Build context inputs
+        # Build context inputs. The harness has no real host/container
+        # distinction, so all three views collapse to the same absolute
+        # path. ContextPath enforces absoluteness; the harness anchors
+        # relative inputs against the working directory.
+        def _absolutize(p: str | Path) -> Path:
+            q = Path(p)
+            return q if q.is_absolute() else (work_dir / q).resolve()
+
         inputs: list[dict[Dependency, ContextData]] = []
         for batch_lineage in lineages:
             g: dict[Dependency, ContextData] = {}
             file_groups = batch_lineage["FILES"]
             for (e, dep_insts), file_names in zip(input_map.items(), file_groups):
-                input_group = [
-                    ContextPath(
-                        local=Path(p),
-                        external=Path(p),
-                        container=Path(p),
-                    )
-                    for p in file_names
-                ]
+                input_group = []
+                for p in file_names:
+                    abs_p = _absolutize(p)
+                    input_group.append(ContextPath(local=abs_p, external=abs_p, container=abs_p))
                 g[input2dep[e]] = ContextData(
                     input_group=input_group,
                     endpoint=e,
@@ -317,7 +320,7 @@ class TransformHarness:
                 _hashes[batch] = _hash
             _hash = _hashes[batch]
             ext = dtype.GetPreferredFileExtension()
-            dest = work_dir / f"{batch + 1}-{i + 1}-{branch + 1}.{_hash}-{dtype.key}{ext}"
+            dest = (work_dir / f"{batch + 1}-{i + 1}-{branch + 1}.{_hash}-{dtype.key}{ext}").resolve()
             return ContextPath(local=dest, external=dest, container=dest)
 
         mock_shell = MockShell()

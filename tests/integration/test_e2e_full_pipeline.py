@@ -87,11 +87,7 @@ class TestWorkflowGeneration:
         target_model.AddRequirement(properties={"bins", "method:metabat2"})
         target_model.AddRequirement(properties={"bins", "method:maxbin2"})
         target_model.AddRequirement(properties={"bins", "method:concoct"})
-        target_names = {
-            Endpoint(properties={"bins", "method:metabat2"}): "metabat2_bins",
-            Endpoint(properties={"bins", "method:maxbin2"}): "maxbin2_bins",
-            Endpoint(properties={"bins", "method:concoct"}): "concoct_bins",
-        }
+        target_names = ["metabat2_bins", "maxbin2_bins", "concoct_bins"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -126,7 +122,7 @@ class TestWorkflowGeneration:
         given = [[sv] for sv in lib.AsSamples("mock::bam")]
         target_model = Transform()
         target_model.AddRequirement(properties={"bam"})
-        target_names = {Endpoint(properties={"bam"}): "bam"}
+        target_names = ["bam"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -299,6 +295,10 @@ class TestWorkflowExecution:
 
         # Check for publish block
         assert "output {" in nxf_content or "output{" in nxf_content
+
+        # Final target keeps its WorkflowTarget.name as the publish path
+        target_name = task.plan.targets[0].name
+        assert f"path '{target_name}'" in nxf_content
 
     def test_task_save_load_roundtrip(self, simple_workflow_task, temp_dir):
         """WorkflowTask survives save/load roundtrip."""

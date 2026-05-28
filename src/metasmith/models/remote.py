@@ -83,8 +83,7 @@ class GlobusSource:
     
     @classmethod
     def FromLocalPath(cls, path: Path|str):
-        path = Path(path)
-        assert path.is_absolute(), f"Path must be absolute [{path}]"
+        path = Path(path).resolve()
         return cls(_get_globus_local_id(), path)
     
     @classmethod
@@ -236,7 +235,7 @@ class Source:
         elif uri.startswith("http://") or uri.startswith("https://"):
             return cls.FromHttp(uri)
         else:
-            return cls.FromLocal(uri)
+            return cls.FromLocal(Path(uri).resolve())
 
     @classmethod
     def Unpack(cls, d: dict):
@@ -297,12 +296,13 @@ class Logistics:
                 shell = LiveShell()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"local: {x}"))
                 to_dispose.append(shell)
+                last_hash = None
                 for src, dest in todo:
                     dest_path = Path(dest.address)
                     if dest_path.exists() and (dest_path.is_symlink() != (dest.type == SourceType.SYMLINK)):
                         dest_path.unlink()
                     if dest.type == SourceType.SYMLINK:
-                        shell.ExecAsync(f"ln -s {src.address} {dest.address}")
+                        last_hash = shell.ExecAsync(f"ln -s {src.address} {dest.address}")
                     elif dest.type == SourceType.DIRECT:
                         src_path = src.GetPath()
                         dest_path = dest.GetPath()
@@ -314,10 +314,11 @@ class Logistics:
                             cmd += f'mkdir -p "{dest_path.parent}" && '
                         rs = "-L" if resolve_symlinks else ""
                         cmd += f'rsync -auP {rs} "{sa}" "{dest_path}"'
-                        shell.ExecAsync(cmd)
+                        last_hash = shell.ExecAsync(cmd)
 
                 def _join():
-                    shell.AwaitDone(timeout=None)
+                    if last_hash is not None:
+                        shell.AwaitDone(_hash=last_hash, timeout=None)
                     completed = []
                     for src, dest in todo:
                         dest_path = Path(dest.address)
@@ -392,9 +393,11 @@ class Logistics:
                                 continue
                             time.sleep(1)
                     finally:
+                        last_hash = None
                         for k, _ in tasks:
-                            shell.ExecAsync(f"globus task cancel {k}")
-                        shell.AwaitDone()
+                            last_hash = shell.ExecAsync(f"globus task cancel {k}")
+                        if last_hash is not None:
+                            shell.AwaitDone(_hash=last_hash)
                     return completed
                 return _join
             
@@ -453,15 +456,17 @@ class Logistics:
                 shell = LiveShell()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"ssh: {x}"))
                 to_dispose.append(shell)
+                last_hash = None
                 for (src_host, dest_host), batch in batched_ssh.items():
                     for src_s, dest_s, _, _ in batch:
                         src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
                         s_resolved = f"{src_addr}"
                         if src_is_dir[(src_host, src_s.path)]: s_resolved += "/"
                         rs = "-L" if resolve_symlinks else ""
-                        shell.ExecAsync(f'rsync -auP {rs} "{s_resolved}" "{dest_addr}"')
+                        last_hash = shell.ExecAsync(f'rsync -auP {rs} "{s_resolved}" "{dest_addr}"')
                 def _join():
-                    shell.AwaitDone(timeout=None)
+                    if last_hash is not None:
+                        shell.AwaitDone(_hash=last_hash, timeout=None)
                     completed = []
                     for (src_host, dest_host), batch in batched_ssh.items():
                         def _check(path: Path):
@@ -486,12 +491,14 @@ class Logistics:
                 shell = LiveShell()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"http: {x}"))
                 to_dispose.append(shell)
+                last_hash = None
                 for src, dest in todo:
                     dest_path = Path(dest.address)
                     if dest_path.exists(): continue
-                    shell.ExecAsync(f"mkdir -p {dest_path.parent} && curl --silent -L -o {dest_path} {src.address}")
+                    last_hash = shell.ExecAsync(f"mkdir -p {dest_path.parent} && curl --silent -L -o {dest_path} {src.address}")
                 def _join():
-                    shell.AwaitDone(timeout=None)
+                    if last_hash is not None:
+                        shell.AwaitDone(_hash=last_hash, timeout=None)
                     completed = []
                     for src, dest in todo:
                         if Path(dest.address).exists():

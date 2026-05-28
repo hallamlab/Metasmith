@@ -7,21 +7,23 @@ class Orchestrator {
     private def one_null
 
     Orchestrator(one_null) {
-        this.pending_tasks = [:]
-        this.index_history = [:]
-        this.child2parent = [:]     // this is just a topological map (keys only), the indexes link actual instances
+        this.pending_tasks = new java.util.concurrent.ConcurrentHashMap()
+        this.index_history = new java.util.concurrent.ConcurrentHashMap()
+        this.child2parent = new java.util.concurrent.ConcurrentHashMap()
         this.one_null = one_null
     }
 
     public void seedParents(Map data) {
         data.each { k, parents ->
-            this.child2parent[k] = (parents as Set)
+            def s = java.util.concurrent.ConcurrentHashMap.newKeySet()
+            s.addAll(parents)
+            this.child2parent[k] = s
         }
     }
 
     private synchronized def registerPendingTarget(String target, Map index) {
         // println("  <<ADD $target // $index")
-        def pending_targets = this.pending_tasks.get(target, [] as Set) // this also sets if not exist
+        def pending_targets = this.pending_tasks.get(target, java.util.concurrent.ConcurrentHashMap.newKeySet()) // this also sets if not exist
         pending_targets.add(index)
     }
 
@@ -50,7 +52,7 @@ class Orchestrator {
     }
 
     private synchronized def registerIndexHistory(String name, Map index) {
-        def hist = this.index_history.get(name, []) // sets if $name not in index_history
+        def hist = this.index_history.get(name, Collections.synchronizedList(new ArrayList())) // sets if $name not in index_history
         hist.add(index)
     }
 
@@ -106,6 +108,20 @@ class Orchestrator {
         return this._post(streams, names, true)
     }
 
+    // Replaces `[*process_call(...)]` in generated workflow.nf. Nextflow
+    // 26's strict parser rejects the spread-in-list-literal form, so the
+    // generator emits `o.asStreams(process_call(...))` instead. Handles both
+    // single-output processes (returns a Channel) and multi-output ones
+    // (returns an iterable ChannelOut).
+    public List asStreams(out) {
+        if (out instanceof Iterable) {
+            def result = []
+            for (ch in out) result << ch
+            return result
+        }
+        return [out]
+    }
+
     private def combineIndexes(indexes) {
         def combined_index = [:]
         def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) // reduce
@@ -153,7 +169,9 @@ class Orchestrator {
     public def group(by, streams, targets, batch_size) {
         def parents = streams.collect((k, s) -> k) as Set
         for (t : targets) {
-            this.child2parent[t] = this.child2parent.get(t, [] as Set)+parents
+            def existing = this.child2parent.get(t, java.util.concurrent.ConcurrentHashMap.newKeySet())
+            existing.addAll(parents)
+            this.child2parent[t] = existing
         }
 
         def original_order = streams.collect(s -> s[0]).withIndex().collectEntries((item, i) -> [item, i])

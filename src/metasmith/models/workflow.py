@@ -13,7 +13,8 @@ from hashlib import md5
 from ..coms.containers import Container, ContainerRuntime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
-from .libraries import TransformInstance, TransformInstanceLibrary
+from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
+from .paths import PathMap
 from .remote import Logistics, Source, SourceType
 from .solver import Application, Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
 from ..hashing import KeyGenerator
@@ -158,6 +159,350 @@ class NextflowGenContext:
     bootstrap_var: str = "${params.bootstrap_def}"
 
 @dataclass
+class PlanHint:
+    kind: str
+    target: str
+    message: str
+    chain: list[str] = field(default_factory=list)
+    candidate_transforms: list[str] = field(default_factory=list)
+    near_misses: list[str] = field(default_factory=list)
+
+
+def _diagnose_plan_failure(
+    target_model: Transform,
+    target_names: list[str],
+    given_map: dict[Endpoint, list[DataInstance]],
+    transform2inst: dict[Transform, TransformInstance],
+    solver_result: SolverResult|None,
+    type_lookups: list = None,
+    max_hops: int = 6,
+    max_hints_per_target: int = 4,
+    near_miss_top_n: int = 3,
+) -> list[PlanHint]:
+    """Build PlanHint objects explaining why no plan was found.
+
+    Three passes:
+        a. unreachable target: no transform produces a match.
+        b. multi-hop reverse-BFS: chain dead-ends at a demand with no
+           producer and no given match.
+        c. lineage mismatch: a given matches a requirement by properties
+           but does not descend from a required parent.
+    """
+    from collections import deque
+
+    hints: list[PlanHint] = []
+
+    all_givens: set[Endpoint] = set(given_map.keys())
+
+    def _matches_any_given(d: Dependency) -> bool:
+        return any(g.IsA(d) for g in all_givens)
+
+    def _producers_of(demand: Dependency) -> list[Transform]:
+        out: list[Transform] = []
+        for model in transform2inst:
+            hit = False
+            for pgroup in model.produces:
+                for p in pgroup:
+                    if p.IsA(demand):
+                        hit = True
+                        break
+                if hit:
+                    break
+            if hit:
+                out.append(model)
+        return out
+
+    # build endpoint -> name cache from data instances, target_names, and any
+    # supplied type lookups (typically the transform libs)
+    _name_cache: dict = {}
+    for d, nm in zip(target_model.requires, target_names):
+        _name_cache.setdefault(Endpoint(d.properties), nm)
+    for ep, insts in given_map.items():
+        for inst in insts:
+            if inst.dtype_name:
+                _name_cache.setdefault(ep, inst.dtype_name)
+                break
+    for lookup in (type_lookups or []):
+        # walk the inner DataTypeLibrary namespaces to capture every typed
+        # Endpoint (lookup.Iterate() only yields stored instances, not type
+        # definitions)
+        try:
+            for ns, tlib in lookup.types.items():
+                for type_name, ep in tlib.types.items():
+                    _name_cache.setdefault(ep, f"{ns}::{type_name}")
+        except Exception:
+            pass
+
+    def _name(d) -> str:
+        cached = _name_cache.get(d)
+        if cached:
+            return cached
+        # node hashes by properties+parents; try property-only match
+        for ep, nm in _name_cache.items():
+            if ep.properties == d.properties:
+                _name_cache[d] = nm
+                return nm
+        if not d.properties:
+            return "<unspecified>"
+        return "{" + ", ".join(sorted(d.properties)) + "}"
+
+    def _model_name(model: Transform|None) -> str:
+        if model is None:
+            return "<target>"
+        ti = transform2inst.get(model)
+        if ti is not None and ti.name:
+            return ti.name
+        return "<unnamed>"
+
+    def _jaccard(a: set[str], b: set[str]) -> float:
+        u = a | b
+        return len(a & b) / len(u) if u else 0.0
+
+    def _property_keys(props: set[str]) -> set[str]:
+        keys = set()
+        for p in props:
+            try:
+                obj = json.loads(p)
+                if isinstance(obj, dict):
+                    keys.update(obj.keys())
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                pass
+            keys.add(p)
+        return keys
+
+    def _shape_key(d) -> str:
+        # canonical key that ignores parent identity — collapses two demands
+        # with the same property bag (but different `parents={...}`) into one
+        return "|".join(sorted(d.properties)) or "<unspecified>"
+
+    def _similarity_to_givens(demand) -> float:
+        if not all_givens:
+            return 0.0
+        best = max(
+            (_jaccard(g.properties, demand.properties) for g in all_givens),
+            default=0.0,
+        )
+        if best > 0:
+            return best
+        dkeys = _property_keys(demand.properties)
+        if not dkeys:
+            return 0.0
+        # 0.5 factor keeps shape-match scores strictly below value-match scores
+        return max(
+            (_jaccard(_property_keys(g.properties), dkeys) * 0.5 for g in all_givens),
+            default=0.0,
+        )
+
+    def _rank_near_misses_among_givens(demand: Dependency) -> list[str]:
+        scored: list[tuple[float, str, str, list[str]]] = []
+        for ep, insts in given_map.items():
+            if ep.IsA(demand):
+                continue
+            score = _jaccard(ep.properties, demand.properties)
+            if score <= 0:
+                continue
+            overlap = sorted(ep.properties & demand.properties)
+            for inst in insts:
+                scored.append((score, inst.dtype_name or _name(ep), str(inst.path), overlap))
+        scored.sort(key=lambda x: -x[0])
+        out = [
+            f"{name} @ {path} (overlap {score:.2f}: {overlap})"
+            for score, name, path, overlap in scored[:near_miss_top_n]
+        ]
+        if out:
+            return out
+        # fallback: rank by property-KEY overlap (helps when same shape but
+        # different value, e.g. ext=bam vs ext=fq.gz)
+        demand_keys = _property_keys(demand.properties)
+        if not demand_keys:
+            return []
+        key_scored: list[tuple[float, str, str, list[str]]] = []
+        for ep, insts in given_map.items():
+            if ep.IsA(demand):
+                continue
+            ep_keys = _property_keys(ep.properties)
+            key_score = _jaccard(ep_keys, demand_keys)
+            if key_score <= 0:
+                continue
+            shared_keys = sorted(ep_keys & demand_keys)
+            for inst in insts:
+                key_scored.append((key_score, inst.dtype_name or _name(ep), str(inst.path), shared_keys))
+        key_scored.sort(key=lambda x: -x[0])
+        return [
+            f"{name} @ {path} (shape-match {score:.2f}: shared keys {keys})"
+            for score, name, path, keys in key_scored[:near_miss_top_n]
+        ]
+
+    def _rank_near_misses_among_products(demand: Dependency) -> list[str]:
+        scored: list[tuple[float, str, list[str]]] = []
+        for model in transform2inst:
+            for pgroup in model.produces:
+                for p in pgroup:
+                    if p.IsA(demand):
+                        continue
+                    score = _jaccard(p.properties, demand.properties)
+                    if score <= 0:
+                        continue
+                    overlap = sorted(p.properties & demand.properties)
+                    scored.append((score, _model_name(model), overlap))
+        scored.sort(key=lambda x: -x[0])
+        seen: set[str] = set()
+        out: list[str] = []
+        for score, name, overlap in scored:
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append(f"{name} produces a near-match (overlap {score:.2f}: {overlap})")
+            if len(out) >= near_miss_top_n:
+                break
+        return out
+
+    # ---- pass (a) + (b): per-target reverse-BFS ----
+    for tr_req in target_model.requires:
+        target_name = _name(tr_req)
+        producers = _producers_of(tr_req)
+        if not producers:
+            hints.append(PlanHint(
+                kind='unreachable_target',
+                target=target_name,
+                message=f"no transform in the loaded libraries produces a type that satisfies {target_name}",
+                near_misses=_rank_near_misses_among_products(tr_req),
+            ))
+            continue
+
+        queue: deque[tuple[Dependency, list[str], int]] = deque()
+        for prod in producers:
+            link = (
+                f"{_model_name(prod)} produces {target_name} but needs "
+                + ", ".join(_name(r) for r in prod.requires)
+            )
+            for sub in prod.requires:
+                queue.append((sub, [f"target needs {target_name}", link], 1))
+
+        visited: set[str] = set()
+        dead_ends: dict[str, tuple[Dependency, list[str]]] = {}
+        steps_budget = max_hints_per_target * 16
+        while queue and steps_budget > 0:
+            steps_budget -= 1
+            d, chain, hops = queue.popleft()
+            if d.key in visited:
+                continue
+            visited.add(d.key)
+            if _matches_any_given(d):
+                continue
+            sub_producers = _producers_of(d)
+            if not sub_producers:
+                sk = _shape_key(d)
+                if sk not in dead_ends:
+                    dead_ends[sk] = (d, chain + [f"<no producer for {_name(d)}>"])
+                continue
+            if hops >= max_hops:
+                sk = _shape_key(d)
+                if sk not in dead_ends:
+                    dead_ends[sk] = (d, chain + [f"<hop limit reached at {_name(d)}>"])
+                continue
+            for prod in sub_producers[:3]:
+                link = (
+                    f"{_model_name(prod)} produces {_name(d)} but needs "
+                    + ", ".join(_name(r) for r in prod.requires)
+                )
+                for sub in prod.requires:
+                    queue.append((sub, chain + [link], hops + 1))
+
+        ranked = sorted(
+            dead_ends.values(),
+            key=lambda dc: (
+                -_similarity_to_givens(dc[0]),
+                len(dc[1]),
+                _name(dc[0]),
+            ),
+        )
+        for d, chain in ranked[:max_hints_per_target]:
+            hints.append(PlanHint(
+                kind='missing_input',
+                target=target_name,
+                message=(
+                    f"to produce {target_name}, the chain dead-ends at {_name(d)}: "
+                    f"no transform produces it and no given input matches"
+                ),
+                chain=chain,
+                near_misses=_rank_near_misses_among_givens(d),
+            ))
+
+    # ---- pass (c): lineage mismatch ----
+    def _collect_ancestors(ep: Endpoint) -> set[Endpoint]:
+        seen: set[Endpoint] = set()
+        todo = [ep]
+        while todo:
+            cur = todo.pop()
+            for p in cur.parents:
+                if p in seen:
+                    continue
+                seen.add(p)
+                todo.append(p)
+        return seen
+
+    seen_lineage_keys: set[str] = set()
+    checked: list[tuple[Dependency, Transform|None, str]] = []
+    for tr_req in target_model.requires:
+        checked.append((tr_req, None, _name(tr_req)))
+    for model in transform2inst:
+        ctx_name = _model_name(model)
+        for req in model.requires:
+            checked.append((req, model, ctx_name))
+
+    for req, model, ctx in checked:
+        if not req.parents:
+            continue
+        prop_match = [g for g in all_givens if g.properties >= req.properties]
+        if not prop_match:
+            continue
+        for req_parent in req.parents:
+            parent_match = [g for g in all_givens if g.properties >= req_parent.properties]
+            for child in prop_match:
+                if child in parent_match:
+                    continue
+                ancestors = _collect_ancestors(child)
+                if any(pm in ancestors for pm in parent_match):
+                    continue
+                key = f"{req.key}|{req_parent.key}|{child.key}"
+                if key in seen_lineage_keys:
+                    continue
+                seen_lineage_keys.add(key)
+                req_name = _name(req)
+                req_parent_name = _name(req_parent)
+                child_insts = given_map.get(child, [])
+                child_label = child_insts[0].dtype_name if child_insts and child_insts[0].dtype_name else _name(child)
+                near_misses: list[str] = []
+                parent_path_hint = None
+                for parent_ep in parent_match:
+                    insts = given_map.get(parent_ep, [])
+                    if insts:
+                        parent_path_hint = str(insts[0].path)
+                        break
+                if parent_path_hint is None:
+                    parent_path_hint = f"<{req_parent_name} instance>"
+                for inst in child_insts:
+                    near_misses.append(
+                        f"add parents=[{parent_path_hint}] when registering {inst.path} "
+                        f"so it descends from a {req_parent_name}"
+                    )
+                hints.append(PlanHint(
+                    kind='lineage_mismatch',
+                    target=ctx,
+                    message=(
+                        f"{child_label} matches {req_name} by properties, "
+                        f"but it is not registered as a descendant of any {req_parent_name}; "
+                        f"{_model_name(model)} requires that parent in its data lineage"
+                    ),
+                    chain=[f"{_model_name(model)} needs {req_name} with parent {req_parent_name}"],
+                    near_misses=near_misses,
+                ))
+    return hints
+
+
+@dataclass
 class WorkflowPlan:
     given: list[DataInstance]
     targets: list[WorkflowTarget] # target, used givens
@@ -165,6 +510,8 @@ class WorkflowPlan:
     _solver_result: SolverResult|None=None
     _archetype_translation: dict[DataInstance, DataInstance]|None = None
     dropped_targets: list[str] = field(default_factory=list)
+    hints: list[PlanHint] = field(default_factory=list)
+    publish_intermediates: bool = True
 
     def __post_init__(self):
         self._update_hash()
@@ -221,6 +568,7 @@ class WorkflowPlan:
             given=[inst.Pack() for inst in self.given],
             targets=[inst.Pack() for inst in self.targets],
             steps=[step.Pack() for step in self.steps],
+            publish_intermediates=self.publish_intermediates,
         )
 
     def Save(self, path: Path):
@@ -290,14 +638,15 @@ class WorkflowPlan:
             given=given,
             targets=[_unpack_target(d) for d in raw["targets"]],
             steps=steps,
+            publish_intermediates=raw.get("publish_intermediates", True),
         )
 
     @classmethod
     def Generate(
         cls,
         given: list[list[DataInstanceLibraryView]],
-        transforms: list[TransformInstanceLibrary],
-        target_names: dict[Endpoint, str],
+        transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
+        target_names: list[str],
         target_model: Transform,
         max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
@@ -351,13 +700,14 @@ class WorkflowPlan:
         transform2inst: dict[Transform, TransformInstance] = {}
         inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}
         for trlib in transforms:
+            base = trlib._original if isinstance(trlib, TransformInstanceLibraryView) else trlib
             for path, tr in trlib.IterateTransforms():
                 model = tr.model
                 if model in transform2inst:
                     Log.Warn(f"transform [{model}] of [{trlib}] is masked")
                     continue
                 transform2inst[model] = tr
-                inst2trlib[tr] = trlib
+                inst2trlib[tr] = base
 
         _pl1 = "" if len(given)==1 else "s"
         _pl2 = "" if len(given_endpoints)==1 else "s"
@@ -393,6 +743,27 @@ class WorkflowPlan:
                 out.append(inst)
             return out
 
+        if not result.complete or not result.dependency_plan:
+            # solver couldn't connect givens to target — return an empty plan
+            # decorated with structured hints instead of raising or returning
+            # the raw Solution.
+            failure_hints = _diagnose_plan_failure(
+                target_model=target_model,
+                target_names=target_names,
+                given_map=given_map,
+                transform2inst=transform2inst,
+                solver_result=result,
+                type_lookups=list(transforms),
+            )
+            return cls(
+                given=[],
+                targets=[],
+                steps=[],
+                _solver_result=result,
+                dropped_targets=list(target_names),
+                hints=failure_hints,
+            )
+
         # remap given inputs if changed by solver
         result_given = result.dependency_plan[0]
         for pgroup in result_given.produced:
@@ -423,9 +794,6 @@ class WorkflowPlan:
                     _to_add.append(oe.WithDType(e))
             given_map[e] = _dedupe_instances(given_map[e] + _to_add)
 
-        # assert result.complete, "failed to make plan!"
-        if not result.complete:
-            return result
         solution = result
 
         # for e, lst in given_map.items():
@@ -474,6 +842,18 @@ class WorkflowPlan:
         target_appls = [a for a in solution.dependency_plan if sum(len(g) for g in a.produced)==0]
         # target_appl = solution.dependency_plan[-1]
         target_endpoints = {e for appl in target_appls for e in appl.used.values()}
+        # map each target_model.Dependency to its declared name (positional alignment).
+        dep_to_name: dict[Dependency, str] = dict(zip(target_model.requires, target_names))
+        # for the producer-labeling loop: walk the solver's terminal target_appls and
+        # queue (alias, target-dep) pairs per produced Endpoint. Lineage-distinct
+        # target deps land on distinct Endpoint objects, so each queue holds the
+        # right number of slots per endpoint.
+        ep_dep_queue: dict[Endpoint, list[Dependency]] = {}
+        for _appl in target_appls:
+            for _d, _e in _appl.used.items():
+                if _d in dep_to_name:
+                    ep_dep_queue.setdefault(_e, []).append(_d)
+        resolved_deps: set[Dependency] = set()
         applies = [a for a in solution.dependency_plan if len(a.used)>0 and sum(len(g) for g in a.produced)>0]
         # applies = solution.dependency_plan[1:-1]
         for i, appl in enumerate(applies):
@@ -525,18 +905,18 @@ class WorkflowPlan:
             for j, pgroup in enumerate(appl.produced):
                 for d, e in pgroup.items():
                     if e not in target_endpoints: continue
-                    dtname = None
-                    for x in target_names:
-                        if e.IsA(x):
-                            dtname = target_names[x]
-                    assert dtname is not None
+                    queue = ep_dep_queue.get(e)
+                    assert queue, f"no target dep matched produced endpoint [{e}]"
+                    d_target = queue.pop(0)
+                    dtname = dep_to_name[d_target]
+                    resolved_deps.add(d_target)
                     t = _insts[(j, d, e)]
                     target_meta[e] = target_meta.get(e, [])+[
                         WorkflowTarget(
                             name=dtname,
                             instance=t,
                             producing_step=step,
-                        )   
+                        )
                     ]
 
         # expand used_endpoints to include all transitive lineage ancestors
@@ -568,20 +948,33 @@ class WorkflowPlan:
                     continue
                 _seen_given.add(inst.instance_id)
                 _given.append(inst)
-        resolved_target_names = {t.name for targets in target_meta.values() for t in targets}
         dropped_targets = []
-        for requested_ep, requested_name in target_names.items():
-            if requested_name not in resolved_target_names:
-                Log.Warn(f"target [{requested_name}] was requested but not included in plan"
+        for d, nm in dep_to_name.items():
+            if d not in resolved_deps:
+                Log.Warn(f"target [{nm}] was requested but not included in plan"
                          " — check if group_by dependency can be satisfied from given inputs")
-                dropped_targets.append(requested_name)
+                dropped_targets.append(nm)
+
+        # if the plan is empty or has dropped targets, attach hints
+        built_steps = [s for a, s in steps.items()]
+        plan_hints: list[PlanHint] = []
+        if not built_steps or dropped_targets:
+            plan_hints = _diagnose_plan_failure(
+                target_model=target_model,
+                target_names=target_names,
+                given_map=given_map,
+                transform2inst=transform2inst,
+                solver_result=result,
+                type_lookups=list(transforms),
+            )
 
         return cls(
             given=_given,
             targets=[x for g in target_meta.values() for x in g],
-            steps=[s for a, s in steps.items()],
+            steps=built_steps,
             _solver_result=result,
             dropped_targets=dropped_targets,
+            hints=plan_hints,
         )
 
     def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}):
@@ -751,6 +1144,13 @@ class WorkflowTask:
         TAB = "\t"
         def _strip_var(s: str):
             return s[2:-1]
+        # Derive task key from the per-task workspace name. external_work
+        # is always <external_home>/runs/<task_key> by the StageWorkflow
+        # invariant (agents.py:874-878), so the basename IS the task key.
+        path_map = PathMap(
+            extern_home=context.external_home,
+            task_key=context.external_work.name,
+        )
         bootstrap = [
             f"{_strip_var(context.bootstrap_var)} = '''",
             f"CONTAINER={context.home_dir}",
@@ -766,13 +1166,12 @@ class WorkflowTask:
             "}",
             f"'''",
             "",
-            "import groovy.json.JsonSlurper",
             "def in(f, l) {",
             "    def rows = Channel.fromPath(f).splitCsv(header: false)",
             "    if (f in l) {",
             "        rows = Channel.fromList(l[f]).merge(rows)",
             "    }",
-            "    return rows.map((row) -> {",
+            "    return rows.map { row ->",
             "        if (row.size()>1) {",
             "            def (ri, rx) = row",
             "            return tuple(ri, file(rx))",
@@ -780,15 +1179,20 @@ class WorkflowTask:
             "            def i = [:]",
             "            return tuple(i, file(row[0]))",
             "        }",
-            "    })",
+            "    }",
             "}",
             "",
             "",
         ]
+        # The Nextflow HEADER assigns the params.home / params.workspace
+        # variables. params.home is the literal host path; params.workspace
+        # is rendered via the groovy dialect so the substitution is
+        # prefix-aware (not str.replace, which would corrupt inner
+        # occurrences — see tests/path_overhaul/test_str_replace_path_overlap.py).
         HEADER = "\n".join([
             "params.testSpread=1",
             f"{_strip_var(context.external_home_var)} = '{context.external_home}'",
-            f'{_strip_var(context.external_work_var)} = "{context.external_work}"'.replace(str(context.external_home), context.external_home_var),
+            f'{_strip_var(context.external_work_var)} = "{path_map.Render(context.external_work, dialect="groovy")}"',
         ]+bootstrap)
         MAX_FILE_SIZE = int(2**16 * 0.95) # nextflow is 65536
 
@@ -843,8 +1247,7 @@ class WorkflowTask:
             for inst in step.uses:
                 p = inst.ResolvePath()
                 if not p.is_absolute(): continue
-                if p.is_relative_to(context.home_dir):
-                    p = context.external_home / p.relative_to(context.home_dir)
+                p = path_map.LocalToExternal(p)
                 raw_external_binds.add(p.parent)
             external_binds = self._get_common_folders(raw_external_binds)
             external_binds_param = ""
@@ -921,8 +1324,8 @@ class WorkflowTask:
                 f'echo "lin ${{Orchestrator.JsonforEcho(index)}}" >>{METADATA_FILE}',
                 f'echo "fmt 2" >>{METADATA_FILE}',
                 f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
-                f'echo "inp {','.join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
-                f'echo "out {';'.join(','.join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
+                f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
+                f'echo "out {";".join(",".join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
             # ] + [
             #     f'echo "i{i+1:02} $_{i+1:02}">>{METADATA_FILE}'
             #     for i, x in enumerate(used_archetypes)
@@ -937,7 +1340,7 @@ class WorkflowTask:
                 '"""',
                 'stub:',
                 'def dt = new Random().nextFloat()*params.testSpread',
-                'def hash = "${index[0].sort().collectEntries((k, v) -> [k, v.sort()])}".md5()[0..11]', # 12 characters
+                'def hash = "${index[0].sort().collectEntries { k, v -> [k, v.sort()] }}".md5()[0..11]', # 12 characters
                 f'"""',
                 f'sleep $dt',
                 f'touch {" ".join(mock_outputs)}',
@@ -986,9 +1389,9 @@ class WorkflowTask:
             return name
         
         # goal:
-        # (_tK9GI0FH) = o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]) // lib::pangenome_heatmap.py
-        # (_7A15qSzL) = o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]) // containers::python_for_data_science.oci
-        # (_urCt2PG9) = o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]) // sequences::gbk
+        # _tK9GI0FH = (o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]))[0] // lib::pangenome_heatmap.py
+        # _7A15qSzL = (o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]))[0] // containers::python_for_data_science.oci
+        # _urCt2PG9 = (o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]))[0] // sequences::gbk
         # _seen = set()
         unsorted_input_channels: dict[Endpoint, list[DataInstance]] = {}
         _child2parents: dict[Endpoint, set[Endpoint]] = {}
@@ -1066,14 +1469,16 @@ class WorkflowTask:
 
         # goal:
         # k = ['h']
-        # (h) = o.post([*p1(o.group('f', o.using([f], k)))], k)
+        # h = (o.post([*p1(o.group('f', o.using([f], k)))], k))[0]
         # or this for when batching
-        # (y) = o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k)
+        # y = (o.post(o.debatch([*b1(o.batch(o.group('g', o.using([g], k)), 3))]), k))[0]
+        # (multi-output processes still use parenthesized destructure, e.g.
+        #  (h, y) = o.post([*p1(...)], k) — strict syntax accepts >=2 vars)
         target_endpoints = {x.instance.dtype for x in the_plan.targets}
         src_process = []
         wf_main = []
         wf_publish = set()       
-        published_channels: dict[str, DataInstance] = {}
+        published_channels: dict[str, tuple[int, DataInstance]] = {}
         resources = {}
 
         # NOTE: DSL2 implicitly forks channels even when wrapped in [name, channel]
@@ -1105,9 +1510,19 @@ class WorkflowTask:
             produced_k = [f"'{x}'" for x in produced_snames]
             produced_k = ", ".join(produced_k)
             wf_main.append(f"k = [{produced_k}]")
-            wf_main.append(
-                f"({produced}) = o.post([*{process_name}({used})], k)"
-            )
+            if len(produced_names) == 1:
+                # Nextflow 26.04+ strict syntax rejects single-element parenthesized
+                # multiple-assignment `(_x) = expr`; use indexed access instead.
+                # It also rejects `[*proc(...)]` (spread in list literal), so we
+                # route through `o.asStreams(...)` (defined in Orchestrator.groovy,
+                # which is loaded via -lib and not subject to strict syntax).
+                wf_main.append(
+                    f"_{produced_names[0]} = (o.post(o.asStreams({process_name}({used})), k))[0]"
+                )
+            else:
+                wf_main.append(
+                    f"({produced}) = o.post(o.asStreams({process_name}({used})), k)"
+                )
             if step.order in final_steps_for_merging:
                 for e in final_steps_for_merging[step.order]:
                     names = to_merge_names[e]
@@ -1117,11 +1532,14 @@ class WorkflowTask:
                         f"_{name} = o.mix([{', '.join(to_mix)}])"
                     )
 
-            to_pubish = [x for g in produced_archetypes for x in g if x.dtype in target_endpoints]
+            if the_plan.publish_intermediates:
+                to_pubish = [x for g in produced_archetypes for x in g]
+            else:
+                to_pubish = [x for g in produced_archetypes for x in g if x.dtype in target_endpoints]
             for inst in to_pubish:
                 k = inst.dtype.key
                 wf_publish.add(k)
-                published_channels[k] = inst
+                published_channels[k] = (step.order, inst)
 
         with open(context.work_dir/context.resources_file, "w") as f:
             _src = [
@@ -1141,14 +1559,12 @@ class WorkflowTask:
 
         wf_output = []
         _e2target = {x.instance.dtype:x for x in the_plan.targets}
-        for ch, inst in published_channels.items():
-            spec_name, out_name = [
-                n.replace(' ', '_').replace("::", "-")
-                for n in [
-                    inst.dtype_name,
-                    _e2target[inst.dtype].name
-                ]
-            ]
+        for ch, (step_order, inst) in published_channels.items():
+            spec_name = inst.dtype_name.replace(' ', '_').replace("::", "-")
+            if inst.dtype in _e2target:
+                out_name = _e2target[inst.dtype].name.replace(' ', '_').replace("::", "-")
+            else:
+                out_name = f"{step_order}_{spec_name}"
             wf_output += [
                 TAB+f"_{ch}"+"{",
                 TAB+TAB+f"path '{out_name}'",
@@ -1160,11 +1576,11 @@ class WorkflowTask:
             f"workflow"+" {",
             "main:",
             f'o = new Orchestrator(Channel.fromList([null])) // cant create channels in groovy',
-            f'_lf = new JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
+            f'_lf = new groovy.json.JsonSlurper().parseText(file("{LINEAGE_FILE}").text)',
             f'l = _lf.lineage',
             f'o.seedParents(_lf.child2parent)',
         ] + [
-            f'(_{v}) = o.postIn([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]) // {n}'
+            f'_{v} = (o.postIn([in("{p.relative_to(context.work_dir)}", l)], ["{p.name}"]))[0] // {n}'
             for p, v, n in prepared_given # this must be (and is) sorted in lineage order
         ] + [
             line for line in wf_main

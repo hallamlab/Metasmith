@@ -21,31 +21,44 @@ from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
 from .coms.via_file_watcher import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
-from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, DataInstanceLibraryView
+from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
 from .models.libraries import TransformInstance, Resources
+from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint, Solution, Transform
-from .constants import VERSION, MODULE_PATH, AgentPaths
+from .constants import VERSION, CONTAINER_TAG, MODULE_PATH, AgentPaths
 
 class AgentShell:
     def __init__(self, agent: Agent):
         self.agent = agent
-        self.shell = LiveShell()
-        def _on_out(x: str):
-            Log.Info(f"> {x}\x1b[0;m", timestamp=False) # to escape nextflow colours
-        def _on_err(x: str):
-            Log.Error(f"> {x}", timestamp=False)
-        Log.Info(f"connecting to deployed agent")
-        self.agent._run_setup(self.shell)
-        self.shell.RegisterOnOut(_on_out)
-        self.shell.RegisterOnErr(_on_err)
-        self.shell.Exec(f"cd {agent.home.GetPath()}")
-        Log.Info(f"starting relay service")
-        self.shell.Exec(f'./relay/msm_relay start')
+        self.shell: LiveShell | None = None
 
     def __enter__(self):
-        return self.shell
+        shell = LiveShell()
+        try:
+            def _on_out(x: str):
+                Log.Info(f"> {x}\x1b[0;m", timestamp=False) # to escape nextflow colours
+            def _on_err(x: str):
+                Log.Error(f"> {x}", timestamp=False)
+            Log.Info(f"connecting to deployed agent")
+            self.agent._run_setup(shell)
+            shell.RegisterOnOut(_on_out)
+            shell.RegisterOnErr(_on_err)
+            shell.Exec(f"cd {self.agent.home.GetPath()}")
+            res = shell.Exec('[ -e ./relay/msm_relay ] && echo "relay-present"', history=True)
+            assert "relay-present" in res.out, (
+                f"relay binary not present at [{self.agent.home.GetPath()}/relay/msm_relay]; "
+                f"agent home may be partially deployed — rerun Agent.Deploy()"
+            )
+            Log.Info(f"starting relay service")
+            shell.Exec(f'./relay/msm_relay start')
+            self.shell = shell
+            return self.shell
+        except BaseException:
+            shell.Dispose()
+            raise
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.shell is None: return
         Log.Info(f"closing connection")
         self.agent._run_cleanup(self.shell)
         if self.agent._is_ssh():
@@ -54,45 +67,39 @@ class AgentShell:
             except (KeyboardInterrupt, TimeoutError):
                 pass
         self.shell.__exit__(exc_type, exc_val, exc_tb)
+        self.shell = None
+
+@dataclass(frozen=True)
+class TargetSpec:
+    dtype_name: str
+    parents: tuple["TargetSpec", ...] = ()
 
 class TargetBuilder:
     def __init__(self) -> None:
-        self.targets: dict[str, set[str]] = {}
+        self._items: list[TargetSpec] = []
 
-    def Add(self, target_type: str, parents: set[str]|None=None):
-        if parents is None: parents = set()
+    def Add(self, target_type: str, parents: Iterable[TargetSpec]|None=None) -> TargetSpec:
         assert "::" in target_type, f'expected @type to in the form of "namespace::type_name" but got [{target_type}]'
-        assert target_type not in self.targets, f'[{target_type}] already added'
-        self.targets[target_type] = parents.copy()
-        return target_type
+        spec = TargetSpec(target_type, tuple(parents or ()))
+        for existing in self._items:
+            assert existing != spec, f'target [{target_type}] with identical parents already added'
+        self._items.append(spec)
+        return spec
 
-    def resolve(self) -> list[tuple[str, set[str]]]:
-        """Return targets in topological order (parents before children)."""
-        # Validate parent references
-        for dtype, parents in self.targets.items():
-            for p in parents:
-                assert p in self.targets, f'parent [{p}] of [{dtype}] was never added'
-        # Kahn's algorithm
-        in_degree = {k: len(v) for k, v in self.targets.items()}
-        queue = deque(k for k, d in in_degree.items() if d == 0)
-        result: list[tuple[str, set[str]]] = []
-        while queue:
-            node = queue.popleft()
-            result.append((node, self.targets[node]))
-            for k, parents in self.targets.items():
-                if node in parents:
-                    in_degree[k] -= 1
-                    if in_degree[k] == 0:
-                        queue.append(k)
-        assert len(result) == len(self.targets), f'cycle detected in target parents'
-        return result
+    def resolve(self) -> list[TargetSpec]:
+        # Insertion order is causal: a parent must have been Add'd before its child,
+        # since the child receives the parent's TargetSpec handle.
+        return list(self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
 
 ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|str|TransformInstance, Resources]
 @dataclass
 class Agent:
     home: Source
     setup_commands: list[str] = field(default_factory=list)
-    container: str = f"docker://quay.io/hallamlab/metasmith:{VERSION}"
+    container: str = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
     globus_uuid: str|None = None
     runtime: ContainerRuntime=ContainerRuntime.APPTAINER
     real_path: Path|None = None
@@ -170,7 +177,7 @@ class Agent:
             shell.RegisterOnOut(lambda x: (Log.Info(x) if not _quiet else None))
             shell.RegisterOnErr(lambda x: (Log.Error(x) if not _quiet else None))
 
-            def do_step(cmd: str, display_cmd: str|None=None, timeout:float|None=15):
+            def do_step(cmd: str, display_cmd: str|None=None, timeout:float|None=None):
                 if display_cmd is not None: Log.Info(f">>> {display_cmd}")
                 str_cmd = RemoveLeadingIndent(cmd)
                 for x in str_cmd.split("\n"):
@@ -207,11 +214,6 @@ class Agent:
 
             _quiet = True
             self._run_setup(shell)
-            _FLAG = "already exists"
-            res = shell.Exec(f'[[ -e "{self.home.GetPath()}" ]] && echo "{_FLAG}"', history=True)
-            if _FLAG in res.out and not assertive:
-                Log.Info(f"[{self.home.address}] already exists, use Deploy(assertive=True) to deploy anyways")
-                return
             _quiet = False
 
             shell.Exec(f'mkdir -p "{self.home.GetPath()}"')
@@ -243,6 +245,7 @@ class Agent:
                 binds=[
                     ("$(pwd -P)", Path("/ws")),
                     ("$AGENT_HOME", Path("/msm_home")),
+                    ("$AGENT_HOME", Path(str(resolved_agent_home))),
                     ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
                     (resolved_home/".globus", resolved_home/".globus"),
                     (resolved_home/".globusonline", resolved_home/".globusonline"),
@@ -261,7 +264,24 @@ class Agent:
                 do_step(
                     cmd=f'mkdir -p "{_local_path.parent}" && [ -e {_local_path} ] || {_pull_cmd}',
                     display_cmd=f"{{if not exists}}: {_pull_cmd.replace(str(resolved_agent_home), '$AGENT_HOME')}",
-                    timeout=None
+                )
+
+                # If the host's apptainer ships no setuid starter-suid, it falls
+                # back to squashfuse_ll for SIF mounts — which deadlocks under
+                # msm_relay's fork chain on WSL2 (Bug E.2). Unpack to a sandbox
+                # directory once at deploy; MakeRunCommand(local=True) prefers
+                # the sandbox over the SIF at run time.
+                _sandbox_path = container.GetSandboxPath()
+                _probe = container.MakeNeedsSandboxProbe()
+                _build_sandbox = container.MakeBuildSandboxCommand()
+                _force = f'rm -rf {_sandbox_path} && ' if assertive else ''
+                do_step(
+                    cmd=(
+                        f'{_force}'
+                        f'if [ "$({_probe})" = "needs-sandbox" ] && [ ! -d {_sandbox_path} ]; then '
+                        f'{_build_sandbox}; fi'
+                    ),
+                    display_cmd=f"{{if no starter-suid and not unpacked}}: apptainer build --sandbox {_sandbox_path.name} {_local_path.name}".replace(str(resolved_agent_home), '$AGENT_HOME'),
                 )
 
             _remote_file(
@@ -359,7 +379,20 @@ class Agent:
             )
 
             _sync_remote_files()
-            do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
+            # Container extraction is the one truly expensive step left;
+            # everything else above is either a no-op (rsync -au on unchanged
+            # files) or self-gated ([ -e {sif} ] for the container pull).
+            # Skip extraction only when its actual output already exists, so
+            # a partial deploy (sif present, relay missing) self-heals on the
+            # next call without needing assertive=True.
+            relay_bin = AgentPaths.to_relay(self.home.GetPath())
+            res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True)
+            if "relay-present" in res.out and not assertive:
+                Log.Info(f"relay binary present at [{relay_bin}], skipping container extraction")
+            else:
+                do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
+                res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-deployed"', history=True)
+                assert "relay-deployed" in res.out, f"deploy_from_container completed but relay binary missing at [{relay_bin}]"
             self._run_cleanup(shell)
             Log.Info(f"deployed to [{self.home.address}]")
 
@@ -367,7 +400,7 @@ class Agent:
         self,
         samples: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         resources: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
-        transforms: list[TransformInstanceLibrary],
+        transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         targets: TargetBuilder | list[str],
         max_iter: int=1024, max_refine: int=256, seed: int=42,
     ):
@@ -376,7 +409,7 @@ class Agent:
             for t in targets:
                 tb.Add(t)
             targets = tb
-        assert len(targets.targets)>0, "[targets] can not be empty"
+        assert len(targets)>0, "[targets] can not be empty"
         
         def _get_endpoint(dtype_name: str):
             ns, _ = dtype_name.split("::")
@@ -394,14 +427,13 @@ class Agent:
             assert False, f"no transforms had the namespace [{ns}]"
 
         target_model = Transform()
-        _dtname2dep: dict[str, Dependency] = {}
-        target_names: dict[Endpoint, str] = {}
-        for dtype_name, parents in targets.resolve():
-            e = _get_endpoint(dtype_name)
-            assert e not in target_names, f"[{dtype_name}] is a duplicate of [{target_names[e]}]"
-            d = target_model.AddRequirement(example=e, parents={_dtname2dep[p] for p in parents})
-            _dtname2dep[dtype_name] = d
-            target_names[e] = dtype_name
+        _spec2dep: dict[TargetSpec, Dependency] = {}
+        target_names: list[str] = []
+        for spec in targets.resolve():
+            e = _get_endpoint(spec.dtype_name)
+            d = target_model.AddRequirement(example=e, parents={_spec2dep[p] for p in spec.parents})
+            _spec2dep[spec] = d
+            target_names.append(spec.dtype_name)
 
         res_views = [lib if isinstance(lib, DataInstanceLibraryView) else DataInstanceLibraryView(lib) for lib in resources]
         _samples = [sample if isinstance(sample, DataInstanceLibraryView) else DataInstanceLibraryView(sample) for sample in samples]
@@ -416,12 +448,9 @@ class Agent:
             max_iter=max_iter, max_refine=max_refine, seed=seed
         )
         sample_libs = {v._original for v in _samples}
-        if isinstance(gen_result, Solution):
-            return WorkflowTask(ok=False, plan=WorkflowPlan(given=[], targets=[], steps=[], _solver_result=gen_result))
-        else:
-            orig_resources = [lib if isinstance(lib, DataInstanceLibrary) else lib._original for lib in resources]
-            _ok = len(gen_result.dropped_targets) == 0
-            return WorkflowTask(ok=_ok, plan=gen_result, data_libraries=list(sample_libs)+orig_resources,transform_libraries=transforms)
+        orig_resources = [lib if isinstance(lib, DataInstanceLibrary) else lib._original for lib in resources]
+        _ok = bool(gen_result.steps) and len(gen_result.dropped_targets) == 0
+        return WorkflowTask(ok=_ok, plan=gen_result, data_libraries=list(sample_libs)+orig_resources, transform_libraries=transforms)
 
     def _get_mock_container(self, task: WorkflowTask):
         binds = task.GetCommonInputFolders(method="external")
@@ -480,6 +509,9 @@ class Agent:
                 export BINDS="{binds}"
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname)
             """, timeout=None)
+            launcher_path = remote_work_path / AgentPaths.LAUNCHER_FILE
+            res = sh_remote.Exec(f'[ -e {launcher_path} ] && echo "launcher-staged"', history=True, quiet=True)
+            assert "launcher-staged" in res.out, f"stage_workflow returned but launcher missing at [{launcher_path}]"
 
     def GetNxfConfigPresets(self, folder: Path = MODULE_PATH/"nextflow_config"):
         if not folder.exists(): raise FileNotFoundError(folder)
@@ -595,7 +627,10 @@ class Agent:
             else:
                 m = "execution"
             Log.Info(f"triggering {m} of [{task_key}]")
-            sh_remote.Exec(f"{workspace/AgentPaths.LAUNCHER_FILE} {stub_delay:0.3f}")
+            launcher = workspace / AgentPaths.LAUNCHER_FILE
+            res = sh_remote.Exec(f"[ -e {launcher} ] && echo 'launcher-present'", history=True, quiet=True)
+            assert "launcher-present" in res.out, f"launcher missing at [{launcher}]; re-stage the task"
+            sh_remote.Exec(f"{launcher} {stub_delay:0.3f}")
 
     def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
@@ -621,6 +656,247 @@ class Agent:
             src = self.home.ReplacePathWith(result_path)
         return src
 
+    # -- lightweight detached-run helpers -----------------------------------
+
+    def _remote_oneshot(self, cmd: str, timeout: int = 30) -> "ShellResult":
+        """One-shot exec on the agent host without holding AgentShell open.
+
+        Local home → transient LiveShell with quiet=True.
+        SSH home   → direct subprocess `ssh host '<cmd>'`.
+        Returns ShellResult with .out and .err populated.
+        """
+        if self._is_ssh():
+            import subprocess
+            ssh_src = SshSource.Parse(self.home.address)
+            try:
+                proc = subprocess.run(
+                    ["ssh", "-o", f"ConnectTimeout={min(timeout, 30)}", "-o", "BatchMode=yes", ssh_src.host, cmd],
+                    capture_output=True, text=True, timeout=timeout,
+                )
+                return ShellResult(
+                    out=[ln for ln in proc.stdout.splitlines()],
+                    err=[ln for ln in proc.stderr.splitlines()],
+                )
+            except subprocess.TimeoutExpired as exc:
+                return ShellResult(out=[], err=[f"ssh timeout after {timeout}s: {exc}"])
+        else:
+            with LiveShell() as sh:
+                res = sh.Exec(cmd, history=True, quiet=True, timeout=timeout)
+            return res
+
+    def _task_workspace(self, task_key: str) -> Path:
+        """workspace = runs/<key>/ (parent of _metasmith)"""
+        return AgentPaths.to_task(task_key, root=self.home.GetPath()).parent.parent
+
+    def _resolve_run_dir(self, task_key: str, run: int | None) -> Path:
+        """Resolve runs/<key>/_metasmith/logs.<ts>/ once at call time."""
+        workspace = self._task_workspace(task_key)
+        internals = workspace / AgentPaths.INTERNALS
+        if run is None:
+            latest = internals / "logs.latest"
+            res = self._remote_oneshot(f"readlink -f {latest}", timeout=15)
+            for line in res.out:
+                line = line.strip()
+                if line.startswith(str(internals)) or "/logs." in line:
+                    return Path(line)
+            return latest  # fall back to symlink path
+        else:
+            res = self._remote_oneshot(
+                f"ls -1d {internals}/logs.* 2>/dev/null | grep -v latest | sort",
+                timeout=15,
+            )
+            dirs = [Path(ln.strip()) for ln in res.out if ln.strip()]
+            assert 1 <= run <= len(dirs), f"run {run} out of range (1..{len(dirs)})"
+            return dirs[run - 1]
+
+    def WaitForWorkflow(
+        self,
+        task: WorkflowTask | str,
+        timeout_s: float = 3600.0,
+        poll_s: float = 5.0,
+        run: int | None = None,
+        sentinel: str = "run completed at",
+        since_mtime: float | None = None,
+    ) -> dict:
+        """Block until `sentinel` appears in agent.log of the selected run.
+
+        Returns: {task_key, status, run_dir, elapsed_s, last_log_mtime, tail}
+        status ∈ {"completed", "timeout", "missing", "errored"}.
+        """
+        import time
+        task_key = task._key if isinstance(task, WorkflowTask) else str(task)
+        run_dir = self._resolve_run_dir(task_key, run)
+        agent_log = run_dir / "agent.log"
+        workspace = self._task_workspace(task_key)
+        pid_lock = workspace / "PID.lock"
+
+        start = time.monotonic()
+        cur_poll = poll_s
+        max_poll = 15.0
+        last_mtime: float = 0.0
+
+        while True:
+            elapsed = time.monotonic() - start
+            cmd = (
+                f"if [ -e {agent_log} ]; then "
+                f"stat -c %Y {agent_log}; "
+                f"grep -c '{sentinel}' {agent_log} 2>/dev/null || echo 0; "
+                f"else echo MISSING; echo 0; fi; "
+                f"[ -e {pid_lock} ] && echo PID_ALIVE || echo PID_GONE"
+            )
+            res = self._remote_oneshot(cmd, timeout=30)
+            lines = [ln.strip() for ln in res.out if ln.strip()]
+            mtime_line = lines[0] if lines else ""
+            count_line = lines[1] if len(lines) > 1 else "0"
+            pid_line = lines[-1] if lines else "PID_GONE"
+
+            log_exists = mtime_line != "MISSING"
+            try:
+                last_mtime = float(mtime_line) if log_exists else 0.0
+            except ValueError:
+                last_mtime = 0.0
+            try:
+                count = int(count_line)
+            except ValueError:
+                count = 0
+
+            fresh = (since_mtime is None) or (last_mtime > since_mtime)
+            if log_exists and count > 0 and fresh:
+                tail = self.TailWorkflowLog(task_key, source="agent", lines=20, run=run)
+                return {
+                    "task_key": task_key,
+                    "status": "completed",
+                    "run_dir": str(run_dir),
+                    "elapsed_s": elapsed,
+                    "last_log_mtime": last_mtime,
+                    "tail": tail.get("lines", []),
+                }
+            if log_exists and pid_line == "PID_GONE" and count == 0 and elapsed > 5.0:
+                tail = self.TailWorkflowLog(task_key, source="agent", lines=20, run=run)
+                return {
+                    "task_key": task_key,
+                    "status": "errored",
+                    "run_dir": str(run_dir),
+                    "elapsed_s": elapsed,
+                    "last_log_mtime": last_mtime,
+                    "tail": tail.get("lines", []),
+                }
+            if elapsed > timeout_s:
+                tail_lines: list[str] = []
+                if log_exists:
+                    tail = self.TailWorkflowLog(task_key, source="agent", lines=20, run=run)
+                    tail_lines = tail.get("lines", [])
+                return {
+                    "task_key": task_key,
+                    "status": "timeout" if log_exists else "missing",
+                    "run_dir": str(run_dir),
+                    "elapsed_s": elapsed,
+                    "last_log_mtime": last_mtime,
+                    "tail": tail_lines,
+                }
+            time.sleep(cur_poll)
+            cur_poll = min(max_poll, cur_poll * 1.3)
+
+    def TailWorkflowLog(
+        self,
+        task: WorkflowTask | str,
+        source: str = "agent",
+        lines: int = 50,
+        run: int | None = None,
+    ) -> dict:
+        """Read the last N lines from agent.log or main.log of the selected run."""
+        assert source in ("agent", "main"), f"source must be 'agent' or 'main', got [{source}]"
+        task_key = task._key if isinstance(task, WorkflowTask) else str(task)
+        run_dir = self._resolve_run_dir(task_key, run)
+        if source == "agent":
+            log_path = run_dir / "agent.log"
+        else:
+            log_path = run_dir / AgentPaths.MAIN_LOG_FILE
+        res = self._remote_oneshot(
+            f"[ -e {log_path} ] && tail -n {lines} {log_path} || echo __MSM_MISSING__",
+            timeout=30,
+        )
+        out = res.out
+        exists = not (len(out) == 1 and out[0].strip() == "__MSM_MISSING__")
+        return {
+            "task_key": task_key,
+            "source": source,
+            "run": run,
+            "run_dir": str(run_dir),
+            "file": str(log_path),
+            "exists": exists,
+            "lines": out if exists else [],
+        }
+
+    def CancelWorkflow(self, task: WorkflowTask | str, timeout_s: float = 30.0) -> dict:
+        """Best-effort cancel an active run by removing workspace/PID.lock.
+
+        The launcher (see RunWorkflow) watches PID.lock and gracefully kills
+        nextflow when it disappears. Falls back to pkill if the lock is gone
+        but the driver is still alive.
+        """
+        import time
+        task_key = task._key if isinstance(task, WorkflowTask) else str(task)
+        workspace = self._task_workspace(task_key)
+        pid_lock = workspace / "PID.lock"
+
+        probe = self._remote_oneshot(f"[ -e {pid_lock} ] && cat {pid_lock} || echo __MSM_NONE__", timeout=15)
+        first = probe.out[0].strip() if probe.out else "__MSM_NONE__"
+        if first == "__MSM_NONE__":
+            return {
+                "task_key": task_key,
+                "method": "noop",
+                "killed_pid": None,
+                "status": "not_running",
+                "detail": "PID.lock not present",
+            }
+        try:
+            pid = int(first)
+        except ValueError:
+            pid = None
+
+        self._remote_oneshot(f"rm -f {pid_lock}", timeout=15)
+
+        start = time.monotonic()
+        while time.monotonic() - start < timeout_s:
+            alive = self._remote_oneshot(
+                f"[ -e /proc/{pid} ] && echo ALIVE || echo GONE" if pid else "echo GONE",
+                timeout=15,
+            )
+            if alive.out and alive.out[0].strip() == "GONE":
+                return {
+                    "task_key": task_key,
+                    "method": "pidfile",
+                    "killed_pid": pid,
+                    "status": "cancelled",
+                    "detail": "PID.lock removed; driver exited",
+                }
+            time.sleep(1.0)
+
+        # fallback
+        self._remote_oneshot(f"pkill -f 'run_workflow.*key={task_key}' || true", timeout=15)
+        return {
+            "task_key": task_key,
+            "method": "pkill_fallback",
+            "killed_pid": pid,
+            "status": "cancelled",
+            "detail": "PID.lock removal did not stop driver within timeout; pkill fallback issued",
+        }
+
+    def ListWorkflowRuns(self, task: WorkflowTask | str) -> list[dict]:
+        """List all runs (logs.<ts> directories) for a task."""
+        task_key = task._key if isinstance(task, WorkflowTask) else str(task)
+        internals = self._task_workspace(task_key) / AgentPaths.INTERNALS
+        res = self._remote_oneshot(
+            f"ls -1d {internals}/logs.* 2>/dev/null | grep -v latest | sort",
+            timeout=15,
+        )
+        runs: list[dict] = []
+        for i, line in enumerate(ln.strip() for ln in res.out if ln.strip()):
+            ts = line.rsplit(".", 1)[-1] if "." in line else ""
+            runs.append({"index": i + 1, "path": line, "timestamp": ts})
+        return runs
+
 # ===========================================================================
 # calls to staged Agent
 
@@ -643,9 +919,9 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     with RemoteShell(AgentPaths.to_local_relay_coms(host=host), timeout=60) as extern_shell:
         extern_root = agent.real_path
         assert extern_root is not None
-        extern_work = extern_root/work_relative
-        _rel = f"{extern_work}".replace(f"{extern_root}/", "")
-        workspace_str = f"{{AGENT_HOME}}/{_rel}"
+        path_map = PathMap(extern_home=Path(str(extern_root)), task_key=task._key)
+        extern_work = path_map.extern_work
+        workspace_str = f"{{AGENT_HOME}}/{path_map.extern_work.relative_to(extern_root)}"
 
         if not verify:
             Log.Info(f"skipping verification of external inputs paths")
@@ -747,7 +1023,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
             f'LOG_LATEST="./{AgentPaths.INTERNALS}/logs.latest"',
             f'mkdir -p $LOG_DIR',
             f'[ -e $LOG_LATEST ] && rm "$LOG_LATEST"; ln -s "./logs.$TIMESTAMP" "$LOG_LATEST"',
-            f'[ -e {AgentPaths.NXF_PARAMS} ] || touch {AgentPaths.NXF_PARAMS}',
+            f"[ -e {AgentPaths.NXF_PARAMS} ] || echo '{{}}' > {AgentPaths.NXF_PARAMS}",
             f'[ -e {AgentPaths.NXF_CONFIG} ] || touch {AgentPaths.NXF_CONFIG}',
             f'echo "start time was [$TIMESTAMP]"',
             f'export BINDS="{binds}"',
@@ -923,6 +1199,50 @@ def CollectResults(
     _df.to_csv(manifests_path/"given.csv", index=False)
     return output
 
+def _extract_nxf_task_metadata(log_dir_abs: Path) -> "pd.DataFrame | None":
+    """Return the per-task Nextflow trace table, or None if unavailable.
+
+    Prefers `nxf_trace.tsv` (produced via `-with-trace`): a clean TSV
+    with no escape ambiguity. Falls back to scraping `nxf_report.html`
+    if the TSV is missing, sanitizing JS-only escapes (`\\'`) that
+    strict JSON rejects -- see inbox #162.
+    """
+    tsv = log_dir_abs/"nxf_trace.tsv"
+    if tsv.exists():
+        try:
+            return pd.read_csv(tsv, sep="\t")
+        except Exception as e:
+            Log.Warn(f"failed to read [{tsv}] [{e}], falling back to HTML report")
+
+    html = log_dir_abs/"nxf_report.html"
+    if not html.exists():
+        return None
+    try:
+        raw = None
+        with open(html) as f:
+            found = False
+            for l in f:
+                if l.strip().startswith('window.data = { "trace":['):
+                    found = True
+                    continue
+                if not found:
+                    continue
+                # Nextflow embeds the trace as a JS object literal.
+                # Single quotes in `.command.sh` arrive here as `\'`,
+                # which json.loads rejects. Stripping the backslash
+                # yields a valid JSON string (single quotes don't need
+                # escaping in JSON).
+                sanitized = l[:-2].replace("\\'", "'")
+                raw = json.loads('{ "trace":[' + sanitized).get("trace")
+                break
+        if raw is None:
+            return None
+        return pd.DataFrame(raw)
+    except Exception as e:
+        Log.Warn(f"failed to parse task metadata from [{html}] [{e}]")
+        return None
+
+
 def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     task_path = AgentPaths.to_task(key)
     workspace = task_path.parent.parent
@@ -937,7 +1257,8 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     Log.Info(f"loading agent metadata")
     agent = Agent.Load(AgentPaths.to_definition())
     extern_home = agent.home.GetPath()
-    extern_workspace = AgentPaths.to_task(key, root=extern_home).parent.parent
+    path_map = PathMap(extern_home=Path(str(extern_home)), task_key=key)
+    extern_workspace = path_map.extern_work
     (workspace/log_dir).mkdir(parents=True, exist_ok=True)
     MAIN_LOG = workspace/log_dir/AgentPaths.MAIN_LOG_FILE # this is the stdout captured by launcher
     Log.AddLogFile(MAIN_LOG)
@@ -959,9 +1280,9 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         if lib.remote_src is None:
             Log.Info(f"[{_name}] is at [{lib.location}]")
         else:
-            _extern_location = str(lib.location).replace(str(AgentPaths.HOME_ROOT), str(extern_home))
+            _extern_location = path_map.LocalToExternal(lib.location)
             Log.Info(f"[{_name}] at [{lib.location}] is remote [{lib.remote_src.address}], downloading to [{_extern_location}]")
-            dest = dest_base/_extern_location
+            dest = dest_base/str(_extern_location)
             lib.ActualizeRemote(extern_dest=dest, label=f"msm_staging.{_name}")
 
     # need to call nf inside container
@@ -1027,7 +1348,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
                 -lib ./lib \
                 -ansi-log false \
                 -resume \
-                -work-dir {AgentPaths.WORK_ROOT}/nxf_work &
+                -work-dir {workspace}/nxf_work &
             PID=$!
             echo "nextflow PID is [$PID]"
             echo $PID >$PIDF
@@ -1046,31 +1367,13 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
             timeout=None,
         )
 
-    nxf_report = workspace/nxf_report
-    if nxf_report.exists():
-        raw_task_meta = None
-        with open(nxf_report) as f:
-            found = False
-            for l in f:
-                if l.strip().startswith('window.data = { "trace":['): 
-                    found = True
-                    continue
-                if not found: 
-                    continue
-                raw_task_meta = json.loads('{ "trace":[' + l[:-2]).get("trace")
-                break
-        if raw_task_meta is not None:
-            try:
-                df_tasks = pd.DataFrame(raw_task_meta)
-                nxf_task_meta = workspace/log_dir/"nxf_tasks.csv"
-                df_tasks.to_csv(nxf_task_meta, index=False)
-                Log.Info(f"extracting task metadata to [{nxf_task_meta}]")
-            except Exception as e:
-                Log.Error(f"failed to parse task metadata from [{nxf_report}] [{e}]")
-        else:
-            Log.Warn(f"failed to find task metadata table within [{nxf_report}]")
+    df_tasks = _extract_nxf_task_metadata(workspace/log_dir)
+    if df_tasks is not None:
+        nxf_task_meta = workspace/log_dir/"nxf_tasks.csv"
+        df_tasks.to_csv(nxf_task_meta, index=False)
+        Log.Info(f"extracted task metadata to [{nxf_task_meta}]")
     else:
-        Log.Warn(f"no report at [{nxf_report}]")
+        Log.Warn(f"no task metadata extracted from [{workspace/log_dir}]")
 
     Log.Info(f"compiling results")
     output = CollectResults(
@@ -1080,9 +1383,8 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         manifests_path=manifests_path,
     )
     n_outputs = sum(1 for p in output.manifest if Path(p).is_relative_to(output_path) or not Path(p).is_absolute())
-    tail = output_path.relative_to(AgentPaths.HOME_ROOT)
     extern_output_path = extern_workspace/results_folder
-    external_results_path = extern_home/tail
+    external_results_path = path_map.LocalToExternal(output_path)
     Log.Info(f"[{n_outputs}] outputs for [{key}] at [{external_results_path}]")
 
     Log.Info(f"gathering log files")

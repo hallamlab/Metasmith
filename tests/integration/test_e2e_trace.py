@@ -11,6 +11,7 @@ Tests use Nextflow stub mode (processes create empty output files).
 import json
 import shutil
 import subprocess
+import sys
 import pytest
 from pathlib import Path
 
@@ -33,6 +34,32 @@ from .conftest import create_transform_library
 pytestmark = [pytest.mark.docker, pytest.mark.slow]
 
 ORCHESTRATOR_SRC = MODULE_PATH / "nextflow_config/Orchestrator.groovy"
+
+
+def _assert_nxf_ok(result: subprocess.CompletedProcess) -> bool:
+    """Tolerate upstream nextflow-io/nextflow#6757 (negative Duration in
+    invokeOnComplete). Returns True iff the run produced normal exit; False
+    iff it exited non-zero solely due to the upstream Duration assertion —
+    in that case manifests are still on disk and downstream parsing should
+    proceed. Raises AssertionError on any other failure mode.
+    """
+    nxf_duration_bug = (
+        "Duration unit cannot be a negative number" in result.stdout
+        or "Duration unit cannot be a negative number" in (result.stderr or "")
+    )
+    if result.returncode == 0:
+        return True
+    if nxf_duration_bug:
+        print(
+            "WARN: tolerated upstream nextflow-io/nextflow#6757 (negative Duration "
+            "assertion); workflow body completed, optional report/timeline/trace "
+            "artifacts may be missing.",
+            file=sys.stderr,
+        )
+        return False
+    raise AssertionError(
+        f"Nextflow stub run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    )
 
 
 def run_stub_workflow(
@@ -89,9 +116,7 @@ def run_stub_workflow(
         text=True,
         timeout=timeout,
     )
-    assert result.returncode == 0, (
-        f"Nextflow stub run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-    )
+    nxf_clean_exit = _assert_nxf_ok(result)
 
     # Fix file ownership (Docker runs as root)
     subprocess.run(
@@ -102,22 +127,36 @@ def run_stub_workflow(
         capture_output=True, timeout=120,
     )
 
-    # Collect results
+    # Collect results. Manifests are emitted by `publish` channels BEFORE
+    # Nextflow's invokeOnComplete fires, so they survive the upstream
+    # Duration assertion. If parsing fails after a tolerated Duration bug,
+    # surface that as the likely culprit instead of a generic error.
     output_path = work_dir / "results"
     inputs_dir = work_dir / "inputs"
     manifests_path = output_path / "_manifests"
     manifests_path.mkdir(parents=True, exist_ok=True)
 
-    output = CollectResults(
-        task=task,
-        output_path=output_path,
-        inputs_dir=inputs_dir,
-        manifests_path=manifests_path,
-    )
-
-    # Save and reload to trigger transitive closure
-    output.Save()
-    loaded = DataInstanceLibrary.Load(output.location)
+    try:
+        output = CollectResults(
+            task=task,
+            output_path=output_path,
+            inputs_dir=inputs_dir,
+            manifests_path=manifests_path,
+        )
+        # Save and reload to trigger transitive closure
+        output.Save()
+        loaded = DataInstanceLibrary.Load(output.location)
+    except Exception as e:
+        if not nxf_clean_exit:
+            raise AssertionError(
+                f"CollectResults failed after a tolerated upstream Duration "
+                f"assertion (nextflow-io/nextflow#6757). Manifests should be "
+                f"on disk before invokeOnComplete fires — if they are not, "
+                f"the workflow body itself failed.\nUnderlying error: {e!r}\n"
+                f"STDOUT:\n{result.stdout[-2000:]}\n"
+                f"STDERR:\n{(result.stderr or '')[-2000:]}"
+            ) from e
+        raise
     return loaded
 
 
@@ -171,7 +210,7 @@ def _make_task(
     temp_dir: Path,
     transforms: dict[str, str],
     target_properties: list[set[str]],
-    target_names: dict[Endpoint, str],
+    target_names: list[str],
     given_type: str = "mock::assembly",
 ) -> WorkflowTask:
     """Build a WorkflowTask from transforms and samples."""
@@ -220,7 +259,7 @@ class TestTraceLinearChain:
             temp_dir=tmp_path / "task",
             transforms=transforms,
             target_properties=[{"bam"}],
-            target_names={Endpoint(properties={"bam"}): "bam"},
+            target_names=["bam"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -262,9 +301,9 @@ class TestTraceFanOutMerge:
 
     Topology: assembly -> {branch_a, branch_b}, then branch_a + branch_b -> merged.
 
-    Note: Intermediate types (branch_a, branch_b) are not persisted in the
-    result library — only given inputs and target outputs are retained.
-    The merged output traces directly to its given ancestor (assembly).
+    With the default WorkflowPlan.publish_intermediates=True, every produced
+    instance (including branch_a and branch_b) is published to the result
+    library alongside the final merged target.
     """
 
     @pytest.fixture
@@ -280,7 +319,7 @@ class TestTraceFanOutMerge:
             temp_dir=tmp_path / "task",
             transforms=transforms,
             target_properties=[{"merged"}],
-            target_names={Endpoint(properties={"merged"}): "merged"},
+            target_names=["merged"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -302,11 +341,11 @@ class TestTraceFanOutMerge:
         pairs = list(result_lib.Trace("mock::assembly", "mock::merged"))
         assert len(pairs) >= 3
 
-    def test_intermediates_not_in_output(self, result_lib):
-        """Intermediate branch types are not persisted in results."""
+    def test_intermediates_published_in_output(self, result_lib):
+        """Intermediate branch types are persisted alongside the merged target."""
         type_names = set(result_lib.manifest.values())
-        assert "mock::branch_a" not in type_names
-        assert "mock::branch_b" not in type_names
+        assert "mock::branch_a" in type_names
+        assert "mock::branch_b" in type_names
 
 
 # ---------------------------------------------------------------------------
@@ -335,11 +374,7 @@ class TestTraceMultiStepDiamond:
                 {"bins", "method:maxbin2"},
                 {"bins", "method:concoct"},
             ],
-            target_names={
-                Endpoint(properties={"bins", "method:metabat2"}): "metabat2_bins",
-                Endpoint(properties={"bins", "method:maxbin2"}): "maxbin2_bins",
-                Endpoint(properties={"bins", "method:concoct"}): "concoct_bins",
-            },
+            target_names=["metabat2_bins", "maxbin2_bins", "concoct_bins"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -395,7 +430,7 @@ class TestTraceScaling:
             temp_dir=tmp_path / "task",
             transforms=transforms,
             target_properties=[{"bam"}],
-            target_names={Endpoint(properties={"bam"}): "bam"},
+            target_names=["bam"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -431,7 +466,7 @@ class TestTracePersistence:
             temp_dir=tmp_path / "task",
             transforms=transforms,
             target_properties=[{"bam"}],
-            target_names={Endpoint(properties={"bam"}): "bam"},
+            target_names=["bam"],
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
@@ -518,7 +553,7 @@ class TestTraceSharedInputs:
 
         target_model = Transform()
         target_model.AddRequirement(properties={"annotated"})
-        target_names = {Endpoint(properties={"annotated"}): "annotated"}
+        target_names = ["annotated"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -590,7 +625,7 @@ class TestTraceSharedInputs:
 
         target_model = Transform()
         target_model.AddRequirement(properties={"annotated"})
-        target_names = {Endpoint(properties={"annotated"}): "annotated"}
+        target_names = ["annotated"]
 
         plan = WorkflowPlan.Generate(
             given=given,
@@ -642,9 +677,7 @@ class TestTraceSharedInputs:
             ],
             capture_output=True, text=True, timeout=300,
         )
-        assert result.returncode == 0, (
-            f"Nextflow stub run failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-        )
+        nxf_clean_exit = _assert_nxf_ok(result)
 
         # Fix ownership
         subprocess.run(
@@ -655,11 +688,20 @@ class TestTraceSharedInputs:
             capture_output=True, timeout=120,
         )
 
-        # Check raw manifest JSON files for missing keys
+        # Check raw manifest JSON files for missing keys. These are emitted by
+        # `publish` BEFORE invokeOnComplete fires, so they survive a tolerated
+        # upstream Duration assertion.
         manifests_path = work_dir / "results" / "_manifests"
         manifests_path.mkdir(parents=True, exist_ok=True)
         manifest_files = list(manifests_path.glob("*.json"))
-        assert len(manifest_files) > 0, "No manifest JSON files found"
+        assert len(manifest_files) > 0, (
+            "No manifest JSON files found."
+            + (
+                " Nextflow exited non-zero solely due to the upstream Duration "
+                "assertion (#6757), but no manifests reached disk — the workflow "
+                "body itself failed earlier." if not nxf_clean_exit else ""
+            )
+        )
 
         # Determine which instance keys should appear in lineage
         # by reading the inputs directory

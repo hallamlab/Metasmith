@@ -104,7 +104,7 @@ class TestSolverScalingCyanoverse:
         target_model = Transform()
         ani_ep = transforms[0].GetType("taxonomy::ani_table")
         target_model.AddRequirement(ani_ep)
-        target_names = {ani_ep: "taxonomy::ani_table"}
+        target_names = ["taxonomy::ani_table"]
 
         start = time.time()
         plan = WorkflowPlan.Generate(

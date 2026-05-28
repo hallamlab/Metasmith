@@ -61,7 +61,7 @@ To maximize reproducibility and portability, Metasmith relies on `OCI <https://e
 compliant containers to standardize the compute environment for itself and the tools that it runs. One of the following must be installed
 on the machine that the agent is deployed to:
 
-- `Apptainer <https://apptainer.org/>`_ is typically used by research compute infrastructure.
+- `Apptainer <https://apptainer.org/>`_ is typically used by research compute infrastructure. See the :ref:`apptainer install notes <Apptainer Install>` for the recommended installation channel.
 - `Docker <https://docs.docker.com/get-docker/>`_ is the de facto industry standard for containerization.
 
 .. important::
