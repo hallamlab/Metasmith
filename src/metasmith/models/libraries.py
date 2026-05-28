@@ -26,7 +26,7 @@ def yaml_safe_load(p: Path):
     MAX = 5
     for i in range(MAX):
         with open(p) as f:
-            s = '\n'.join(f.readlines())
+            s = f.read()
             # assert len(s) > 0, f"DataTypeLibrary at [{path}] is empty"
             d = yaml.safe_load(s)
             if d is not None: return d
