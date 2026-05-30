@@ -176,6 +176,99 @@ def load_remote_library(
     }
 
 
+def import_library(
+    src_uri: str,
+    dest_path: str,
+    cache_root: str | None = None,
+    on_exist: str = "skip",
+    as_image: bool = True,
+) -> dict:
+    """S7 — Import a library across workspaces, preserving cache identity.
+
+    Transfers the library at `src_uri` into `dest_path` via LoadFrom, then
+    upserts every imported `origin in {"lineage", "imported"}` DataInstance
+    into the destination `task_cache/` as `origin="imported"` rows. Leaf
+    instances are NOT upserted — their identity is unique-per-AddItem and
+    not cache-meaningful. The upserted rows point at the library's files
+    on disk so downstream workflows resolve them as cache hits.
+
+    `cache_root` defaults to `<dest_path>/../task_cache/` to match the
+    agent-home convention; pass an explicit path to override.
+    """
+    src = Source.Parse(src_uri)
+    dest = Path(dest_path).resolve()
+    lib = DataInstanceLibrary.LoadFrom(src, dest, as_image, on_exist)
+
+    if cache_root is None:
+        cache_root_path = dest.parent / "task_cache"
+    else:
+        cache_root_path = Path(cache_root).resolve()
+    cache_root_path.mkdir(parents=True, exist_ok=True)
+
+    from ..caching.store import CacheStore, encode_manifest
+
+    store = CacheStore.open(cache_root_path)
+    try:
+        upserts = 0
+        skipped_leaf = 0
+        for path in lib.manifest:
+            meta = lib.instance_meta.get(path)
+            if meta is None:
+                continue
+            origin = meta.get("origin", "leaf")
+            if origin == "leaf":
+                skipped_leaf += 1
+                continue
+            instance_id_hex = meta.get("instance_id")
+            if not instance_id_hex:
+                continue
+            try:
+                key = bytes.fromhex(instance_id_hex)
+            except ValueError:
+                # Legacy (non-multihash) id; keep the library entry but
+                # skip the cache row since the key shape doesn't match.
+                continue
+            lineage_payload = meta.get("lineage_payload") or b""
+            output_root_rel = f"imported/{instance_id_hex[:2]}/{instance_id_hex[2:]}"
+            output_dir = cache_root_path / output_root_rel
+            output_dir.mkdir(parents=True, exist_ok=True)
+            payload = encode_manifest(
+                cache_key=key,
+                transform_key="",
+                signature="",
+                lineage_payload=lineage_payload,
+                output_files=[{"relpath": str(path)}],
+                out_identities={},
+                index_payload=[],
+            )
+            (output_dir / "manifest.cbor").write_bytes(payload)
+            size_bytes = 0
+            try:
+                size_bytes = (lib.location / path).stat().st_size
+            except OSError:
+                pass
+            store.upsert(
+                key=key,
+                transform_key="",
+                payload=payload,
+                output_root=output_root_rel,
+                size_bytes=size_bytes,
+                origin="imported",
+            )
+            upserts += 1
+    finally:
+        store.close()
+
+    return {
+        "library": str(lib.location),
+        "src": src_uri,
+        "item_count": len(lib.manifest),
+        "imported_cache_entries": upserts,
+        "skipped_leaf_entries": skipped_leaf,
+        "cache_root": str(cache_root_path),
+    }
+
+
 def show_item_lineage(library_path: str, item_path: str) -> dict:
     lib = load_data_lib(library_path)
     p = Path(item_path)

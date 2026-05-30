@@ -446,7 +446,7 @@ Errors print to stderr and exit non-zero — they are not swallowed into `{"erro
 | Group | Subcommands |
 |-------|-------------|
 | `metasmith type` | `list`, `show`, `compat`, `create`, `add` |
-| `metasmith data` | `inspect`, `list`, `create`, `attach-types`, `add-item`, `add-value`, `set-parents`, `remove`, `rename`, `rename-by-parent`, `prune-types`, `consolidate`, `save`, `trace`, `load-remote`, `lineage` |
+| `metasmith data` | `inspect`, `list`, `create`, `attach-types`, `add-item`, `add-value`, `set-parents`, `remove`, `rename`, `rename-by-parent`, `prune-types`, `consolidate`, `save`, `trace`, `load-remote`, `import-library`, `lineage` |
 | `metasmith transform` | `list`, `libraries`, `show`, `read`, `write`, `scaffold`, `validate`, `propagate-types` |
 | `metasmith plan` | one-shot planner (`--data-library`, `--sample-type`, `--target-type ...`, `--transform-library ...`) |
 | `metasmith workflow` | `stage`, `run`, `wait`, `tail`, `cancel`, `runs`, `check`, `collect`, `result-source`, `presets` |
@@ -454,7 +454,13 @@ Errors print to stderr and exit non-zero — they are not swallowed into `{"erro
 | `metasmith source` | `parse`, `exists`, `transfer` |
 | `metasmith task` | `list`, `show`, `hints`, `dag`, `delete` |
 | `metasmith build` | `all` (default), `types`, `uniques`, `transforms` — compile data type, unique, and transform libraries |
+| `metasmith cache` | `list`, `gc`, `explain` — lineage-addressed task-cache operations |
+| `metasmith status` | `<run_dir>` — render per-task hit/run status from `_metasmith/trace.jsonl` + `workflow.step_N.meta` |
 | top-level legacy | `get`, `lab`, `api`, `help` |
+
+### Task cache (new, feat/caching)
+
+A lineage-addressed cache lives at `<agent_home>/task_cache/`. Identity is provenance (transform key + sorted input instance_ids encoded as canonical CBOR + blake3-32 multihash), not bytes. Defaults: cache is **ON**; per-transform opt-out via `TransformInstance(..., cacheable=False)`; global kill-switch via `METASMITH_CACHE=0` env. See `docs/source/usage/nextflow.rst` for the full surface. Cross-workspace reuse: `metasmith data import-library <src> <dest>` upserts `origin in {"lineage","imported"}` entries into the destination cache.
 
 ### Workflow via CLI
 

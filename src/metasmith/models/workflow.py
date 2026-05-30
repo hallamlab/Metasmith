@@ -157,6 +157,15 @@ class NextflowGenContext:
     external_home_var: str = "${params.home}"
     external_work_var: str = "${params.workspace}"
     bootstrap_var: str = "${params.bootstrap_def}"
+    # S3 — lineage-addressed task cache. cache_root defaults to
+    # <external_home>/task_cache; set to None to disable cache integration
+    # (synthetic channels, publishDir-to-cache, probe). The env var
+    # METASMITH_CACHE=0 also disables, regardless of this setting.
+    cache_root: Path | None = None
+    # Materialization strategy for publishDir into the cache: 'link'
+    # (hardlink, local FS) or 'copy' (network FS). S6 picks this from
+    # mountinfo; for now the default is 'link'.
+    cache_hit_strategy: str = "link"
 
 @dataclass
 class PlanHint:
@@ -1140,10 +1149,174 @@ class WorkflowTask:
     def GetKey(self):
         return self._key
 
+    def _apply_fs_strategy(self, context: NextflowGenContext) -> None:
+        """Refuse straddle-mounts; pick publishDir mode from mountinfo.
+
+        S6 contract:
+        - If cache_root and work_dir live on different mounts, raise
+          StraddleMountError. Rename across mounts is non-atomic; this
+          would break promote's loser-of-race contract.
+        - Otherwise set context.cache_hit_strategy to 'copy' on a network
+          FS (Lustre / NFS / GPFS / BeeGFS / etc.) and 'link' on a local
+          FS. The default was 'link'; this only widens it when needed.
+
+        Silently skipped when cache_root is None or METASMITH_CACHE is
+        falsy (cache integration disabled).
+        """
+        if context.cache_root is None:
+            return
+        if os.environ.get("METASMITH_CACHE", "1").lower() in {
+            "0", "false", "off", "no"
+        }:
+            return
+        from ..caching.fs import assert_same_mount, detect_strategy
+
+        # cache_root may not exist yet on a fresh workspace; resolve()
+        # walks up to the first existing parent for the mountinfo match.
+        anchor = context.cache_root
+        while not anchor.exists() and anchor != anchor.parent:
+            anchor = anchor.parent
+        assert_same_mount(anchor, context.work_dir)
+        context.cache_hit_strategy = detect_strategy(
+            anchor, default=context.cache_hit_strategy
+        )
+
+    def _compute_cache_decisions(
+        self, context: NextflowGenContext
+    ) -> dict[int, dict]:
+        """Compute per-step cache keys + probe results.
+
+        Returns a dict[step.order, {cache_key, hit, entry?, transform_key,
+        signature, sorted_input_ids, out_instance_ids}]. The OUTPUT
+        instance_ids are needed by downstream steps as their input
+        identities, so the walk runs in topological (step.order) order.
+
+        Cache integration is skipped (returns {} effectively) when:
+        - context.cache_root is None
+        - env METASMITH_CACHE is set to "0" / "false" / "off"
+        """
+        if context.cache_root is None:
+            return {}
+        if os.environ.get("METASMITH_CACHE", "1").lower() in {
+            "0", "false", "off", "no"
+        }:
+            return {}
+
+        from ..caching.keys import (
+            KEY_PREFIX,
+            canonical_cbor,
+            lineage_key,
+            multihash_key,
+        )
+        from ..caching.store import CacheStore
+
+        # Cache STORE is optional — probe-only flow doesn't require the
+        # SQLite db to exist. Only open if the cache_root already exists
+        # on disk (this matches "fresh workspace -> nothing to probe"
+        # and avoids materializing an empty task_cache/ dir during the
+        # first ever run).
+        store = None
+        if context.cache_root.exists():
+            try:
+                store = CacheStore.open(context.cache_root)
+            except Exception:
+                store = None
+
+        decisions: dict[int, dict] = {}
+        # Per-(step.order, slot_key, branch_idx) → output instance_id (hex).
+        # Downstream steps use this to look up their inputs' ids when the
+        # input came from an upstream step's output (not a given leaf).
+        out_id_by_producer: dict[tuple[int, str, int], str] = {}
+
+        def _input_instance_id(inst, source_step: int | None) -> bytes:
+            """Encode the input's instance_id to bytes for the lineage key.
+
+            We accept either a multihash hex string (new leaf / lineage
+            ids minted by S2's AddItem path) or a legacy 10-char digest
+            (DataInstances created without library-level mint, e.g.
+            transform-library instances whose paths fall through to the
+            legacy `_resolve_instance_meta` formula). In both cases the
+            UTF-8 encoding is a stable, lossless byte rendering — the
+            actual digest format does not matter for the cache_key, only
+            that two identical inputs produce identical bytes.
+            """
+            return inst.instance_id.encode("utf-8")
+
+        for step in self.plan.steps:
+            transform_key = step.transform.GetKey() or step.transform.name or ""
+            signature = str(step.transform._hash)
+
+            sorted_inputs: list[tuple[str, bytes]] = []
+            for dep in step.transform.model.requires:
+                insts = step.dependency_map.get(dep, [])
+                if not insts:
+                    continue
+                # Aggregate every instance feeding this slot. Sort the
+                # ids to remove ordering noise from the input set.
+                slot_ids = sorted(
+                    _input_instance_id(i, None).hex() for i in insts
+                )
+                sorted_inputs.append((dep.key, "+".join(slot_ids).encode()))
+            sorted_inputs.sort(key=lambda kv: kv[0])
+
+            cache_key = lineage_key(transform_key, signature, sorted_inputs)
+
+            # Compute per-output instance_ids (slot_key + branch_idx).
+            out_ids: dict[tuple[str, int], str] = {}
+            for branch_idx, dep_group in enumerate(step.transform.model.produces):
+                for dep in dep_group:
+                    derived = multihash_key(
+                        canonical_cbor(
+                            {"ck": cache_key, "s": dep.key, "b": branch_idx}
+                        )
+                    )
+                    out_ids[(dep.key, branch_idx)] = derived.hex()
+                    out_id_by_producer[(step.order, dep.key, branch_idx)] = derived.hex()
+
+            entry = None
+            hit = False
+            if store is not None:
+                entry = store.probe(cache_key)
+                if entry is not None and store.files_exist(entry):
+                    hit = True
+
+            decisions[step.order] = {
+                "cache_key": cache_key,
+                "transform_key": transform_key,
+                "signature": signature,
+                "sorted_inputs": sorted_inputs,
+                "out_instance_ids": out_ids,
+                "hit": hit,
+                "entry": entry,
+                "cacheable": getattr(step.transform, "cacheable", True),
+            }
+
+        if store is not None:
+            store.close()
+        # Diagnostic: log how many decisions came back as hits so an
+        # operator who wonders why a "cached" rerun still executes can
+        # see the probe found the entry but synthetic-channel emission
+        # for hit steps is not yet wired (S3 remainder). Without that
+        # codegen branch, hit decisions are advisory: the cache is
+        # consistent across runs but does not yet short-circuit the
+        # executor.
+        hits = sum(1 for d in decisions.values() if d["hit"])
+        if hits:
+            Log.Info(
+                f"cache probe matched {hits}/{len(decisions)} step(s); "
+                "synthetic-channel emission for hits is not yet wired, "
+                "so these steps will still execute"
+            )
+        return decisions
+
     def PrepareNextflow(self, context: NextflowGenContext):
         TAB = "\t"
         def _strip_var(s: str):
             return s[2:-1]
+        if context.cache_root is None:
+            context.cache_root = context.external_home / "task_cache"
+        self._apply_fs_strategy(context)
+        cache_decisions = self._compute_cache_decisions(context)
         # Derive task key from the per-task workspace name. external_work
         # is always <external_home>/runs/<task_key> by the StageWorkflow
         # invariant (agents.py:874-878), so the basename IS the task key.
@@ -1239,7 +1412,27 @@ class WorkflowTask:
                 TAB+f"label 'x{x}x'"
                 for x in step.transform.labels
             ]
-            
+            # S3 — emit a publishDir directive into <cache_root>/<key>.tmp/
+            # for cacheable miss steps so Nextflow itself stages outputs
+            # into the cache staging area as it normally would for
+            # publishDir. The post-exec promote step (S5) then validates
+            # and renames the .tmp directory into its final cache slot.
+            # `cacheable=False` and the env kill-switch skip this entirely.
+            decision = cache_decisions.get(step.order)
+            if decision is not None and decision.get("cacheable", True):
+                cache_tmp = (
+                    context.cache_root / f"{decision['cache_key'].hex()}.tmp"
+                )
+                src += [
+                    TAB + (
+                        f"publishDir \"{cache_tmp}\", "
+                        f"mode: '{context.cache_hit_strategy}', "
+                        "overwrite: true, "
+                        "failOnError: true, "
+                        "pattern: '*'"
+                    )
+                ]
+
             def _make_bind_var(i: int, is_assignment=False):
                 s = "\\$" if not is_assignment else ""
                 return f"{s}b{i+1}"
@@ -1292,11 +1485,34 @@ class WorkflowTask:
             }
             sample_arity = len(step.group_by_instances)
             step_meta_file = f"workflow.step_{step.order}.meta"
+            cache_decision = cache_decisions.get(step.order)
             with open(context.work_dir / step_meta_file, "w") as f:
                 f.write(f"din {json.dumps(dep_in, separators=(',',':'))}\n")
                 f.write(f"dot {json.dumps(dep_out, separators=(',',':'))}\n")
                 f.write(f"sar {json.dumps(structure_arity, separators=(',',':'))}\n")
                 f.write(f"par {sample_arity}\n")
+                # S3 — cache_key + per-output instance_ids land in the
+                # step meta so the post-exec promote step (S5) can locate
+                # what to write, and `msm status <key>` (S8) can render
+                # per-task provenance. cacheable comes from the
+                # TransformInstance (S4 default True); the post-exec
+                # promote skips write when False.
+                if cache_decision is not None:
+                    f.write(
+                        f"cache_key {cache_decision['cache_key'].hex()}\n"
+                    )
+                    out_ids_serialized = {
+                        f"{slot}::{branch}": iid
+                        for (slot, branch), iid
+                        in cache_decision["out_instance_ids"].items()
+                    }
+                    f.write(
+                        "out_identities "
+                        f"{json.dumps(out_ids_serialized, separators=(',',':'))}\n"
+                    )
+                    f.write(
+                        f"cacheable {'true' if cache_decision['cacheable'] else 'false'}\n"
+                    )
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
                 for branch, g in enumerate(produced_archetypes) for x in g

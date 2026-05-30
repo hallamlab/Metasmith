@@ -1,0 +1,58 @@
+"""End-to-end contrast test: the canonical before/after pin.
+
+Runs ``linear_3step`` twice and asserts the difference between the two
+RunSnapshots is exactly the difference caching introduces:
+
+  before  (run 1):  cache miss path  — every step executes, cache populated
+  after   (run 2):  cache hit path   — no step executes, cache unchanged
+  fingerprints are identical between the two runs
+
+This test reads as a behavioral spec — anyone reviewing the caching
+branch can open this file and see what "before" looked like vs "after."
+Xfail-strict until all of S1-S5 land, then the marker is removed.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from tests.integration._cache_harness import capture_run, clear_trace
+from tests.integration.fixtures.cache_fixtures import linear_3step
+
+from tests.e2e_virtual.conftest import virtual_runtime  # noqa: F401
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="S3 synthetic-channel hit-path emission not landed; cache hits still execute",
+)
+def test_full_caching_flow_end_to_end(tmp_path, virtual_runtime):
+    # First run: cache miss everywhere.
+    task1 = linear_3step.build_task(tmp_path / "run1")
+    snap1 = capture_run(virtual_runtime, task1)
+
+    assert snap1.executed_steps != (), "run 1 should execute every step"
+    assert snap1.cache_state != (), "run 1 should populate the cache"
+    assert snap1.result_fingerprints, "run 1 should produce results"
+
+    clear_trace(virtual_runtime)
+
+    # Second run: cache hit everywhere.
+    task2 = linear_3step.build_task(tmp_path / "run2")
+    snap2 = capture_run(virtual_runtime, task2)
+
+    # The diff that caching introduces:
+    assert snap2.executed_steps == (), (
+        f"run 2 should execute zero steps; got {snap2.executed_steps}"
+    )
+    assert snap2.cache_state == snap1.cache_state, (
+        "run 2 should not write new cache entries"
+    )
+
+    # The diff that caching does NOT introduce: results bytes are
+    # identical to the original cache-populating run.
+    assert snap2.result_fingerprints == snap1.result_fingerprints, (
+        "run 2 fingerprints diverged from run 1 — cache served stale bytes"
+    )

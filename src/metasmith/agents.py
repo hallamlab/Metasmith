@@ -1375,6 +1375,27 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     else:
         Log.Warn(f"no task metadata extracted from [{workspace/log_dir}]")
 
+    # S5 — post-execution promote. Walks workflow.step_*.meta, locates
+    # each step's outputs, deposits them in the cache, and inserts into
+    # CacheStore. Skipped when METASMITH_CACHE is falsy (kill-switch).
+    if os.environ.get("METASMITH_CACHE", "1").lower() not in {
+        "0", "false", "off", "no"
+    }:
+        try:
+            from .caching.promote import promote_run
+
+            agent_home = Path(str(extern_home))
+            cache_root = agent_home / "task_cache"
+            summary = promote_run(workspace=workspace, cache_root=cache_root)
+            if summary.get("promoted") or summary.get("skipped"):
+                Log.Info(
+                    "cache promote: "
+                    f"{len(summary['promoted'])} written, "
+                    f"{len(summary['skipped'])} skipped"
+                )
+        except Exception as e:
+            Log.Warn(f"cache promote failed: {e}")
+
     Log.Info(f"compiling results")
     output = CollectResults(
         task=task,

@@ -21,6 +21,7 @@ from . import (
     run as _run,
     e2e as _e2e,
     legacy as _legacy,
+    cache as _cache,
 )
 
 
@@ -51,6 +52,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _run.register(subs)
     _e2e.register(subs)
     _legacy.register(subs)
+    _cache.register(subs)
+    _cache.register_status(subs)
 
     return parser
 

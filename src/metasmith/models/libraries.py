@@ -171,10 +171,30 @@ class DataInstance:
     dtype: Endpoint
     dtype_name: str
     parent_lib: DataInstanceLibrary
+    # S2 — two-source identity. `origin` is one of:
+    #   "leaf"     — user-added via AddItem / AddValue. Unique per call.
+    #   "lineage"  — produced by a transform; instance_id is the lineage_key
+    #                over (transform_key, signature, sorted_input_ids).
+    #   "imported" — round-tripped through msm data import-library from a
+    #                foreign workspace; instance_id and lineage_payload are
+    #                preserved verbatim.
+    origin: str = "leaf"
+    lineage_payload: bytes | None = None
+    instance_id: str | None = None
 
     def __post_init__(self):
-        self.RecalculateKey()
-        # assert self.path.is_absolute(), f"path must be absolute [{self.path}]"
+        # When instance_id is not provided, defer to the parent_lib's
+        # per-path metadata cache. The lib mints + stores a fresh leaf id
+        # on first sight of an unknown path (S2: unique-per-AddItem-call).
+        if self.instance_id is None:
+            meta = self.parent_lib._resolve_instance_meta(
+                self.path, self.dtype_name
+            )
+            self.instance_id = meta["instance_id"]
+            self.origin = meta.get("origin", "leaf")
+            payload = meta.get("lineage_payload")
+            self.lineage_payload = payload
+        self._refresh_derived_keys()
 
     def __hash__(self) -> int:
         return self._hash
@@ -182,20 +202,30 @@ class DataInstance:
     def __eq__(self, other: object) -> bool:
         return isinstance(other, DataInstance) and self.instance_id == other.instance_id
 
-    def RecalculateKey(self):
-        self._hash, self.instance_id = KeyGenerator.FromStr("".join([
-            str(self.path),
-            self.dtype_name,
-            self.parent_lib.GetKey(),
-        ]), l=10)
-        # Legacy typed key is kept for backward compatibility when reading old
-        # task serializations that referenced DataInstances by the old key.
+    def _refresh_derived_keys(self):
+        """Recompute _hash, _key, legacy_key from instance_id + dtype.
+
+        _key tracks instance_id (modern callers); legacy_key preserves the
+        old (path + dtype.key + dtype_name) shape so v0.18 serializations
+        that referenced DataInstances by the old key still resolve.
+        """
+        self._hash, _ = KeyGenerator.FromStr(self.instance_id, l=10)
+        self._key = self.instance_id
         _, self.legacy_key = KeyGenerator.FromStr("".join([
             str(self.path),
             self.dtype.key,
             self.dtype_name,
         ]), l=8)
-        self._key = self.instance_id
+
+    def RecalculateKey(self):
+        """Backward-compat shim — see _refresh_derived_keys.
+
+        Callers that mutate the instance in place (e.g., a dtype rename)
+        used to invoke this to bring _hash / instance_id into sync with
+        path + dtype. Under S2 the instance_id is owned by the library,
+        so this just refreshes the derived shorter keys.
+        """
+        self._refresh_derived_keys()
         return self._key
 
     def WithDType(self, dtype: Endpoint, dtype_name: str | None = None):
@@ -204,6 +234,9 @@ class DataInstance:
             dtype=dtype,
             dtype_name=self.dtype_name if dtype_name is None else dtype_name,
             parent_lib=self.parent_lib,
+            origin=self.origin,
+            lineage_payload=self.lineage_payload,
+            instance_id=self.instance_id,
         )
 
     def GetDataType(self) -> tuple[str, str]:
@@ -217,31 +250,46 @@ class DataInstance:
             return self.parent_lib.location/self.path
 
     def Pack(self):
-        return dict(
+        d = dict(
             path=str(self.path),
             type=f"{self.parent_lib.GetKey()}::{self.dtype_name}",
-            # type=f"{self.dtype_name}",
             type_id=self.dtype.key,
             instance_id=self.instance_id,
+            origin=self.origin,
         )
+        if self.lineage_payload is not None:
+            d["lineage_payload"] = self.lineage_payload.hex()
+        return d
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
         lib_key, namespace, dtype_name = raw["type"].split("::")
         lib = libraries[lib_key]
         dtype = lib.types[namespace][dtype_name]
+        payload = raw.get("lineage_payload")
+        if isinstance(payload, str):
+            payload = bytes.fromhex(payload)
 
         inst = cls(
             path=Path(raw["path"]),
             dtype=dtype,
             dtype_name=f"{namespace}::{dtype_name}",
             parent_lib=lib,
+            origin=raw.get("origin", "leaf"),
+            lineage_payload=payload,
+            instance_id=raw.get("instance_id"),
         )
-        if "instance_id" in raw:
-            # Preserve compatibility with newer serializations.
-            inst.instance_id = raw["instance_id"]
-            inst._key = inst.instance_id
-            inst._hash, _ = KeyGenerator.FromStr(inst.instance_id, l=10)
+        # Mirror the unpacked instance_id back into the library's meta so
+        # subsequent lib.Get(path) calls return the same id rather than
+        # minting a new leaf. Critical for round-trip stability when the
+        # library YAML lacks per-path instance_ids but a referencing
+        # workflow plan does carry them.
+        if raw.get("instance_id"):
+            lib.instance_meta[inst.path] = {
+                "instance_id": inst.instance_id,
+                "origin": inst.origin,
+                "lineage_payload": inst.lineage_payload,
+            }
         return inst
 
 class DataInstanceLibrary:
@@ -265,11 +313,16 @@ class DataInstanceLibrary:
         self.remote_src: Source|None = None
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
         self._endpoint_cache: dict[Path, Endpoint] = {}
+        # S2 — per-path identity metadata. Each entry:
+        #   {"instance_id": str, "origin": "leaf"|"lineage"|"imported",
+        #    "lineage_payload": bytes|None}
+        self.instance_meta: dict[Path, dict] = {}
         if isinstance(location, DataInstanceLibrary):
             other = location
             self.location = other.location
             self.manifest = other.manifest
             self.types = other.types
+            self.instance_meta = other.instance_meta
         else:
             location = Path(location).resolve()
             if not location.exists():
@@ -497,15 +550,86 @@ class DataInstanceLibrary:
             parents = []
         for p in parents:
             assert p in self.manifest
-            # if not p.is_absolute(): p = self.location/p
-            # assert p.exists(), f"parent [{p}] doesn't exist"
         path = Path(path)
         assert path not in self.manifest, f"[{path}] already added"
         type_model = self.GetType(dtype) # check if datatype exists
         self.manifest[path] = dtype
+        # S2: mint a fresh leaf instance_id at AddItem time so that two
+        # calls (even with identical (path, dtype) — e.g. across two
+        # library builds at the same location) yield distinct ids. The
+        # id is multihash(blake3, uuid4 || time_ns), no path/dtype input.
+        self._mint_leaf_id(path)
         self.AddParentsTo(path, [self.Get(p) for p in parents])
         self._invalidate_endpoint_cache()
         return path
+
+    def _mint_leaf_id(self, path: Path) -> str:
+        """Create a unique-per-call leaf instance_id for `path`.
+
+        Uses uuid4 + time_ns as the randomness source and the project's
+        multihash key encoding (see metasmith.caching.keys). The id is
+        stored in self.instance_meta and returned.
+        """
+        import uuid
+
+        from ..caching.keys import multihash_key
+
+        raw = uuid.uuid4().bytes + time.time_ns().to_bytes(16, "big", signed=False)
+        key = multihash_key(raw)
+        self.instance_meta[path] = {
+            "instance_id": key.hex(),
+            "origin": "leaf",
+            "lineage_payload": None,
+        }
+        return self.instance_meta[path]["instance_id"]
+
+    def _resolve_instance_meta(self, path: Path, dtype_name: str) -> dict:
+        """Return the {instance_id, origin, lineage_payload} entry for path.
+
+        First lookup is self.instance_meta. A miss represents either a
+        legacy library that pre-dates per-path metadata, or an in-process
+        DataInstance constructed for a path the library doesn't actually
+        track (e.g., a transient view from WithDType on an unrelated lib).
+        In both cases we mint a deterministic legacy-shape id so existing
+        v0.18 serializations resolve identically.
+        """
+        if path in self.instance_meta:
+            return self.instance_meta[path]
+        # Legacy fallback: derive instance_id from (path, dtype_name, lib_key)
+        # so a v0.18 manifest reloads with stable ids. Marked origin="leaf"
+        # per the plan's one-way migration rule.
+        _, legacy_id = KeyGenerator.FromStr("".join([
+            str(path), dtype_name, self.GetKey(),
+        ]), l=10)
+        self.instance_meta[path] = {
+            "instance_id": legacy_id,
+            "origin": "leaf",
+            "lineage_payload": None,
+        }
+        return self.instance_meta[path]
+
+    def SetLineageInstance(
+        self,
+        path: Path,
+        *,
+        instance_id: str,
+        lineage_payload: bytes,
+        origin: str = "lineage",
+    ) -> None:
+        """Register a non-leaf (origin=lineage|imported) entry.
+
+        Used by the post-execution promote step (S5) to record that a
+        transform produced an output whose identity is the lineage_key
+        over its (transform_key, signature, sorted_input_ids).
+        """
+        assert origin in {"lineage", "imported"}, (
+            f"origin must be lineage or imported, got {origin!r}"
+        )
+        self.instance_meta[path] = {
+            "instance_id": instance_id,
+            "origin": origin,
+            "lineage_payload": lineage_payload,
+        }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
         path = Path(name)
@@ -712,6 +836,15 @@ class DataInstanceLibrary:
             )
             if len(d_parents) > 0:
                 d["parents"] = dict(sorted(d_parents.items(), key=lambda t:t[0]))
+            # S2 — embed instance_meta if present. Read directly to avoid
+            # recursing through GetKey -> Pack -> _resolve_instance_meta.
+            meta = self.instance_meta.get(path)
+            if meta is not None:
+                d["instance_id"] = meta["instance_id"]
+                d["origin"] = meta.get("origin", "leaf")
+                payload = meta.get("lineage_payload")
+                if payload is not None:
+                    d["lineage_payload"] = payload.hex()
             return d
         man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
         man = dict(sorted(man.items(), key=lambda t: t[0]))
@@ -731,17 +864,31 @@ class DataInstanceLibrary:
                 f"Was this directory compiled with `metasmith build`?"
             )
         manifest = {}
+        instance_meta: dict[Path, dict] = {}
         for k, v in raw["manifest"].items():
             type_name = v["type"]
             if check_integrity:
                 assert (location/k).exists(), f"[{k}], does not exist"
             cls._get_type(type_name, dtypes) # check if datatype exists
             manifest[Path(k)] = type_name
+            # S2 — pull instance metadata from manifest entry if present.
+            # Legacy entries (no instance_id field) get fresh ids minted
+            # lazily on first Get() via _resolve_instance_meta.
+            if "instance_id" in v:
+                payload = v.get("lineage_payload")
+                if isinstance(payload, str):
+                    payload = bytes.fromhex(payload)
+                instance_meta[Path(k)] = {
+                    "instance_id": v["instance_id"],
+                    "origin": v.get("origin", "leaf"),
+                    "lineage_payload": payload,
+                }
         lib = cls(
             location=location,
         )
         lib.schema = raw["schema"]
         lib.manifest = manifest
+        lib.instance_meta = instance_meta
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
         # First pass: Build immediate parents for all items
@@ -1126,6 +1273,7 @@ class TransformInstance:
     resources: Resources|None = None
     batch_size: int = 1
     labels: list[str] = field(default_factory=list)
+    cacheable: bool = True
     _path: Path = field(default_factory=Path)
     _key: str = ""
     _hash: int = -1
