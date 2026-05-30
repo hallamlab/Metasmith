@@ -142,13 +142,85 @@ def test_straddle_mount_init_fails(tmp_path, monkeypatch):
 _orig_read_text = Path.read_text
 
 
-@pytest.mark.xfail(strict=True, reason="S8 GC tombstone delay not landed")
 def test_gc_tombstone_delay(tmp_path):
-    """S8: tombstoning an entry K leaves it readable for the grace period.
+    """S8: tombstoning an entry K leaves output_root on disk during grace.
 
-    Tombstone, then an in-flight materialize against K must succeed;
-    only after the 24h grace expires should the unlink run.
+    Two-phase semantics: `gc_cache` first tombstones, then a follow-up
+    pass with `delete=True` only unlinks entries whose `tombstoned_at`
+    is past the grace window. While inside the grace window any
+    in-flight materialization (which read the output_root path before
+    the tombstone) can still complete because the directory is intact.
     """
-    from metasmith.caching.store import CacheStore  # noqa: F401
+    from metasmith.caching.store import CacheStore
+    from metasmith.ops.cache import gc_cache
 
-    assert False
+    cache_root = tmp_path / "task_cache"
+    cache_root.mkdir()
+    store = CacheStore.open(cache_root)
+    try:
+        # Stand up a cached entry with a real output_root on disk so
+        # that the delete path can observably leave it alone (or remove
+        # it). Shard layout mirrors `_shard_dir`: <key[:2]>/<key[2:]>.
+        key_hex = "1e20" + "ab" * 32
+        key = bytes.fromhex(key_hex)
+        output_root = cache_root / key_hex[:2] / key_hex[2:]
+        (output_root / "out").mkdir(parents=True)
+        (output_root / "out" / "f.txt").write_text("payload")
+        store.upsert(
+            key=key,
+            transform_key="tr.test",
+            payload=b"\x00manifest",
+            output_root=str(output_root.relative_to(cache_root)),
+            size_bytes=7,
+            origin="lineage",
+        )
+        # Push last_hit_at into the past so the older-than filter picks
+        # the entry. Then tombstone via gc_cache.
+        store.conn.execute(
+            "UPDATE entries SET last_hit_at = ? WHERE key = ?",
+            (1, key),
+        )
+        store.conn.commit()
+    finally:
+        store.close()
+
+    summary = gc_cache(
+        cache_root=str(cache_root),
+        older_than_seconds=10,
+        delete=False,
+    )
+    assert summary["tombstoned"] == [key_hex]
+    assert summary["deleted"] == []
+    assert (cache_root / key_hex[:2] / key_hex[2:] / "out" / "f.txt").exists()
+
+    # Grace not elapsed: even with delete=True the file stays. The
+    # tombstone was just written so (now - tombstoned_at) << grace.
+    summary = gc_cache(
+        cache_root=str(cache_root),
+        delete=True,
+    )
+    assert summary["deleted"] == [], (
+        f"entry unlinked while still inside grace window: {summary}"
+    )
+    assert (cache_root / key_hex[:2] / key_hex[2:] / "out" / "f.txt").exists()
+
+    # Force the tombstone older than the grace window and re-run.
+    store = CacheStore.open(cache_root)
+    try:
+        store.conn.execute(
+            "UPDATE entries SET tombstoned_at = ? WHERE key = ?",
+            (1, key),
+        )
+        store.conn.commit()
+    finally:
+        store.close()
+
+    summary = gc_cache(
+        cache_root=str(cache_root),
+        delete=True,
+        grace_seconds=10,
+    )
+    assert summary["deleted"] == [key_hex]
+    assert not (cache_root / key_hex[:2] / key_hex[2:]).exists(), (
+        "output_root should have been unlinked after grace elapsed"
+    )

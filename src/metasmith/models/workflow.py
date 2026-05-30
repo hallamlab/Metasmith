@@ -1262,6 +1262,14 @@ class WorkflowTask:
             cache_key = lineage_key(transform_key, signature, sorted_inputs)
 
             # Compute per-output instance_ids (slot_key + branch_idx).
+            # G9 — mutate the produced DataInstance objects in place so
+            # downstream steps see lineage-derived ids on their input
+            # sides. dependency_map shares the same DataInstance object
+            # reference between the producing step's produced dep and
+            # the consuming step's required dep (via canonical
+            # get_or_create in WorkflowPlan.Generate), so a single
+            # mutation propagates. We run topologically, so each
+            # consumer iteration above sees ids already rewritten.
             out_ids: dict[tuple[str, int], str] = {}
             for branch_idx, dep_group in enumerate(step.transform.model.produces):
                 for dep in dep_group:
@@ -1270,8 +1278,14 @@ class WorkflowTask:
                             {"ck": cache_key, "s": dep.key, "b": branch_idx}
                         )
                     )
-                    out_ids[(dep.key, branch_idx)] = derived.hex()
-                    out_id_by_producer[(step.order, dep.key, branch_idx)] = derived.hex()
+                    derived_hex = derived.hex()
+                    out_ids[(dep.key, branch_idx)] = derived_hex
+                    out_id_by_producer[(step.order, dep.key, branch_idx)] = derived_hex
+                    for inst in step.dependency_map.get(dep, []):
+                        inst.instance_id = derived_hex
+                        inst.origin = "lineage"
+                        inst._refresh_derived_keys()
+            step.RefreshViews()
 
             entry = None
             hit = False
@@ -1293,19 +1307,38 @@ class WorkflowTask:
 
         if store is not None:
             store.close()
-        # Diagnostic: log how many decisions came back as hits so an
-        # operator who wonders why a "cached" rerun still executes can
-        # see the probe found the entry but synthetic-channel emission
-        # for hit steps is not yet wired (S3 remainder). Without that
-        # codegen branch, hit decisions are advisory: the cache is
-        # consistent across runs but does not yet short-circuit the
-        # executor.
+        # G11 — emit the per-run trace.jsonl at compile time. Each cached
+        # step writes a single `source: hit` row; misses get their `run`
+        # row from the post-exec promote pass (S5). The file is truncated
+        # here so successive runs of the same task in the same workspace
+        # don't accumulate stale entries — `msm status <run_dir>` reads
+        # the latest run only.
+        trace_dir = context.work_dir / "_metasmith"
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = trace_dir / "trace.jsonl"
+        with open(trace_path, "w", encoding="utf-8") as f:
+            for order, decision in sorted(decisions.items()):
+                if not decision["hit"]:
+                    continue
+                # Resolve the step name for human-readable status lines.
+                step_name = ""
+                for step in self.plan.steps:
+                    if step.order == order:
+                        step_name = step.transform.name or ""
+                        break
+                row = {
+                    "source": "hit",
+                    "step": order,
+                    "step_name": step_name,
+                    "cache_key": decision["cache_key"].hex(),
+                    "transform_key": decision["transform_key"],
+                }
+                f.write(json.dumps(row, separators=(",", ":")) + "\n")
         hits = sum(1 for d in decisions.values() if d["hit"])
         if hits:
             Log.Info(
                 f"cache probe matched {hits}/{len(decisions)} step(s); "
-                "synthetic-channel emission for hits is not yet wired, "
-                "so these steps will still execute"
+                f"will short-circuit via synthetic Channel.of(...) emission"
             )
         return decisions
 
@@ -1705,13 +1738,95 @@ class WorkflowTask:
         # Do not re-add multiMap here.
 
         for step in the_plan.steps:
-            process_name, src, src_res = prepare_step(step)
-            resources[process_name] = src_res
-            src_process.append(src)
+            decision = cache_decisions.get(step.order)
+            is_hit = bool(decision and decision.get("hit"))
             used_archetypes, produced_archetypes = get_io_signature(step)
             produced_names = [get_prod_name(x.dtype) for g in produced_archetypes for x in g]
             produced_snames = [get_prod_name(x.dtype, force_singular=True) for g in produced_archetypes for x in g]
             produced = ", ".join(f"_{x}" for x in produced_names)
+            produced_k = [f"'{x}'" for x in produced_snames]
+            produced_k = ", ".join(produced_k)
+            wf_main.append(f"k = [{produced_k}]")
+
+            if is_hit:
+                # S3 — synthetic Channel.of for cache hits. Replace the
+                # process call with N channels (one per produced dep,
+                # ordered by branch then dep) where each channel emits
+                # `(index, file)` tuples for the cached files matching
+                # the canonical `1-1-{branch+1}.*-{dtype_key}{ext}`
+                # filename shape. The tuple re-enters o.post() exactly
+                # as a real process output would (Critic E#1 pin).
+                cache_out = (
+                    context.cache_root
+                    / decision["cache_key"].hex()[:2]
+                    / decision["cache_key"].hex()[2:]
+                    / "out"
+                )
+                cached_channels: list[str] = []
+                cached_channel_var = f"__cached_step_{step.order}"
+                channel_exprs: list[str] = []
+                for branch_idx, dep_group in enumerate(step.transform.model.produces):
+                    for dep in dep_group:
+                        insts = step.dependency_map.get(dep, [])
+                        if not insts:
+                            channel_exprs.append("Channel.empty()")
+                            continue
+                        out_inst = insts[0]
+                        ext = out_inst.dtype.GetPreferredFileExtension()
+                        suffix = f"-{out_inst.dtype.key}{ext}"
+                        branch_prefix = f"1-1-{branch_idx + 1}."
+                        cached_files = sorted(
+                            f for f in (cache_out.glob("*") if cache_out.exists() else [])
+                            if f.is_file()
+                            and f.name.startswith(branch_prefix)
+                            and f.name.endswith(suffix)
+                        )
+                        if not cached_files:
+                            channel_exprs.append("Channel.empty()")
+                            continue
+                        tuples = ", ".join(
+                            f"[[:], file('{fp}')]" for fp in cached_files
+                        )
+                        channel_exprs.append(f"Channel.of({tuples})")
+                wf_main.append(
+                    f"def {cached_channel_var} = [{', '.join(channel_exprs)}]"
+                )
+                if len(produced_names) == 1:
+                    wf_main.append(
+                        f"_{produced_names[0]} = "
+                        f"(o.post(o.asStreams({cached_channel_var}), k))[0]"
+                    )
+                else:
+                    wf_main.append(
+                        f"({produced}) = "
+                        f"o.post(o.asStreams({cached_channel_var}), k)"
+                    )
+                # Final-step merging still applies if the cached step is
+                # the producer of a target.
+                if step.order in final_steps_for_merging:
+                    for e in final_steps_for_merging[step.order]:
+                        names = to_merge_names[e]
+                        to_mix = [f"_{x}" for x in names]
+                        name = get_prod_name(e, force_singular=True)
+                        wf_main.append(
+                            f"_{name} = o.mix([{', '.join(to_mix)}])"
+                        )
+                if the_plan.publish_intermediates:
+                    to_pubish = [x for g in produced_archetypes for x in g]
+                else:
+                    to_pubish = [
+                        x for g in produced_archetypes for x in g
+                        if x.dtype in target_endpoints
+                    ]
+                for inst in to_pubish:
+                    k = inst.dtype.key
+                    wf_publish.add(k)
+                    published_channels[k] = (step.order, inst)
+                continue
+
+            process_name, src, src_res = prepare_step(step)
+            resources[process_name] = src_res
+            src_process.append(src)
             if len(used_archetypes)>0:
                 _inst = step.group_by_instances
                 _dtypes = {x.dtype.key for x in _inst}
@@ -1723,9 +1838,6 @@ class WorkflowTask:
                 used = f"o.group('{gb}', [{using_symbols}], k, {step.transform.batch_size})"
             else:
                 used = ""
-            produced_k = [f"'{x}'" for x in produced_snames]
-            produced_k = ", ".join(produced_k)
-            wf_main.append(f"k = [{produced_k}]")
             if len(produced_names) == 1:
                 # Nextflow 26.04+ strict syntax rejects single-element parenthesized
                 # multiple-assignment `(_x) = expr`; use indexed access instead.

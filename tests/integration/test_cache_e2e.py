@@ -24,14 +24,10 @@ from tests.integration.fixtures.cache_fixtures import linear_3step
 from tests.e2e_virtual.conftest import virtual_runtime  # noqa: F401
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="S3 synthetic-channel hit-path emission not landed; cache hits still execute",
-)
 def test_full_caching_flow_end_to_end(tmp_path, virtual_runtime):
     # First run: cache miss everywhere.
-    task1 = linear_3step.build_task(tmp_path / "run1")
-    snap1 = capture_run(virtual_runtime, task1)
+    task = linear_3step.build_task(tmp_path)
+    snap1 = capture_run(virtual_runtime, task)
 
     assert snap1.executed_steps != (), "run 1 should execute every step"
     assert snap1.cache_state != (), "run 1 should populate the cache"
@@ -40,8 +36,7 @@ def test_full_caching_flow_end_to_end(tmp_path, virtual_runtime):
     clear_trace(virtual_runtime)
 
     # Second run: cache hit everywhere.
-    task2 = linear_3step.build_task(tmp_path / "run2")
-    snap2 = capture_run(virtual_runtime, task2)
+    snap2 = capture_run(virtual_runtime, task)
 
     # The diff that caching introduces:
     assert snap2.executed_steps == (), (

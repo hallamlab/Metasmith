@@ -202,6 +202,23 @@ def recover_orphan_tmp_dirs(cache_root: Path) -> dict[str, str]:
     return actions
 
 
+def _append_trace_row(workspace: Path, row: dict) -> None:
+    """Append a single JSONL row to <workspace>/_metasmith/trace.jsonl.
+
+    Compile-time hits are seeded by `_compute_cache_decisions`; this
+    appends `source: run` rows for steps actually executed and freshly
+    promoted on this pass. Same file, two writers — that is the G11
+    two-pass contract.
+    """
+    trace_dir = workspace / "_metasmith"
+    trace_dir.mkdir(parents=True, exist_ok=True)
+    trace_path = trace_dir / "trace.jsonl"
+    import json as _json
+
+    with open(trace_path, "a", encoding="utf-8") as f:
+        f.write(_json.dumps(row, separators=(",", ":")) + "\n")
+
+
 def promote_run(
     *,
     workspace: Path,
@@ -285,6 +302,15 @@ def promote_run(
                     origin="lineage",
                 )
                 promoted.append(key_hex)
+                _append_trace_row(
+                    workspace,
+                    {
+                        "source": "run",
+                        "step": spec.order,
+                        "cache_key": key_hex,
+                        "transform_key": spec.transform_key,
+                    },
+                )
             finally:
                 _release_lock(lock)
         return {

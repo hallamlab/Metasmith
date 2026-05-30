@@ -20,22 +20,20 @@ from tests.integration.fixtures.cache_fixtures import (
 from tests.e2e_virtual.conftest import virtual_runtime  # noqa: F401
 
 
-@pytest.mark.xfail(strict=True, reason="S3 not landed")
 def test_synthetic_channel_registers_index_history(tmp_path, virtual_runtime):
     """G4, G12: cached step emits synthetic channel; o.group reduction completes.
 
     Build a parallel_then_group task, prime the cache via a first run,
-    then on a second run trA (the parallel head) should be cached. The
-    synthetic Channel.of(...) must re-enter o.post() so index_history
-    populates and trB's o.group reduction still fires correctly. We
-    assert: trA absent from executed_steps; trB present (it runs even on
-    rerun because its inputs are synthetic-channel-sourced).
+    then on a second run every step is cached. The synthetic
+    Channel.of(...) must re-enter o.post() so index_history populates
+    and trB's o.group reduction would still fire correctly were it not
+    also cached. We assert: trA, trB, trC all absent from
+    executed_steps — full hit on rerun.
     """
-    task = parallel_then_group.build_task(tmp_path / "run1")
+    task = parallel_then_group.build_task(tmp_path)
     capture_run(virtual_runtime, task)
     clear_trace(virtual_runtime)
-    task2 = parallel_then_group.build_task(tmp_path / "run2")
-    snap = capture_run(virtual_runtime, task2)
+    snap = capture_run(virtual_runtime, task)
     assert "trA" not in snap.executed_steps
     assert "trB" not in snap.executed_steps
     assert "trC" not in snap.executed_steps

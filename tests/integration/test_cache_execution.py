@@ -21,22 +21,22 @@ from tests.integration.fixtures.cache_fixtures import (
 from tests.e2e_virtual.conftest import virtual_runtime  # noqa: F401
 
 
-@pytest.mark.xfail(strict=True, reason="S3 synthetic-channel hit path not landed")
 def test_default_cacheable_e2e_hits_on_rerun(tmp_path, virtual_runtime):
     """G1, G6: default cacheable=True; second run is a full cache hit.
 
-    Pinned to S4 + S3. Two consecutive runs of the same fixture, where
+    Pinned to S4 + S3. Two consecutive runs of the SAME task, where
     every transform has the default `cacheable=True`. The second run's
     executed_steps must be empty (no real process executions; everything
-    served from synthetic channels).
+    served from synthetic channels). Per G8 leaf ids are unique-per-
+    AddItem so cross-build hits require G10 import-library; the
+    canonical re-run scenario is "same task, ran it again."
     """
-    task = linear_3step.build_task(tmp_path / "run1")
+    task = linear_3step.build_task(tmp_path)
     snap1 = capture_run(virtual_runtime, task)
     assert snap1.executed_steps  # first run did execute
 
     clear_trace(virtual_runtime)
-    task2 = linear_3step.build_task(tmp_path / "run2")
-    snap2 = capture_run(virtual_runtime, task2)
+    snap2 = capture_run(virtual_runtime, task)
     assert snap2.executed_steps == ()
 
 
@@ -67,7 +67,6 @@ def test_cacheable_false_skips_publishDir(tmp_path, virtual_runtime):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="S3 synthetic-channel hit path not landed")
 def test_cache_hit_skips_executor(tmp_path, virtual_runtime):
     """G3: on a fully cached run, no bootstrap fires for any plan step.
 
@@ -76,7 +75,7 @@ def test_cache_hit_skips_executor(tmp_path, virtual_runtime):
     surrogate here. After priming the cache, the second run's
     bootstrap_call count must drop from N (first run) to 0.
     """
-    task = linear_3step.build_task(tmp_path / "run1")
+    task = linear_3step.build_task(tmp_path)
     capture_run(virtual_runtime, task)
     first_bootstrap_count = len(
         [e for e in virtual_runtime.parse_trace() if e.get("type") == "bootstrap_call"]
@@ -84,8 +83,7 @@ def test_cache_hit_skips_executor(tmp_path, virtual_runtime):
     assert first_bootstrap_count > 0, "fixture executed zero steps on first run"
 
     clear_trace(virtual_runtime)
-    task2 = linear_3step.build_task(tmp_path / "run2")
-    capture_run(virtual_runtime, task2)
+    capture_run(virtual_runtime, task)
     second_bootstrap_count = len(
         [e for e in virtual_runtime.parse_trace() if e.get("type") == "bootstrap_call"]
     )
@@ -94,7 +92,6 @@ def test_cache_hit_skips_executor(tmp_path, virtual_runtime):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="S3 synthetic-channel hit path not landed")
 def test_cache_miss_writes_then_hits(tmp_path, virtual_runtime):
     """G1, G3: a fresh workspace misses; the same task then hits.
 
@@ -103,13 +100,12 @@ def test_cache_miss_writes_then_hits(tmp_path, virtual_runtime):
     is non-empty, after run 2 is unchanged, and run 2's
     executed_steps == ().
     """
-    task = linear_3step.build_task(tmp_path / "run1")
+    task = linear_3step.build_task(tmp_path)
     snap1 = capture_run(virtual_runtime, task)
     assert snap1.cache_state != ()
 
     clear_trace(virtual_runtime)
-    task2 = linear_3step.build_task(tmp_path / "run2")
-    snap2 = capture_run(virtual_runtime, task2)
+    snap2 = capture_run(virtual_runtime, task)
     assert snap2.executed_steps == ()
     assert snap2.cache_state == snap1.cache_state
 
@@ -126,14 +122,13 @@ def test_emergency_off_switch(tmp_path, virtual_runtime, monkeypatch):
     no baseline to compare to.
     """
     # First run primes the cache (env unset).
-    task1 = linear_3step.build_task(tmp_path / "run1")
-    snap1 = capture_run(virtual_runtime, task1)
+    task = linear_3step.build_task(tmp_path)
+    snap1 = capture_run(virtual_runtime, task)
     clear_trace(virtual_runtime)
 
     # Second run with kill-switch ON should ignore the primed cache.
     monkeypatch.setenv("METASMITH_CACHE", "0")
-    task2 = linear_3step.build_task(tmp_path / "run2")
-    snap2 = capture_run(virtual_runtime, task2)
+    snap2 = capture_run(virtual_runtime, task)
 
     # If caching is implemented and honored, the kill switch makes run 2
     # behave like an uncached miss → cache_state must not grow.

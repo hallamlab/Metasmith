@@ -17,7 +17,6 @@ from tests.integration.fixtures.cache_fixtures import linear_3step
 from tests.e2e_virtual.conftest import virtual_runtime  # noqa: F401
 
 
-@pytest.mark.xfail(strict=True, reason="S3 hit-path trace emission not landed")
 def test_trace_jsonl_records_hit_and_run(tmp_path, virtual_runtime):
     """G11: per-task trace.jsonl records `source: hit|run` and step name.
 
@@ -27,10 +26,9 @@ def test_trace_jsonl_records_hit_and_run(tmp_path, virtual_runtime):
     `source: hit` rows; post-exec emits `source: run` rows. Both reach
     the file.
     """
-    task = linear_3step.build_task(tmp_path / "run1")
+    task = linear_3step.build_task(tmp_path)
     capture_run(virtual_runtime, task)
-    task2 = linear_3step.build_task(tmp_path / "run2")
-    capture_run(virtual_runtime, task2)
+    capture_run(virtual_runtime, task)
 
     # Find the latest run_dir's trace.jsonl
     runs = sorted((virtual_runtime.home / "runs").glob("*/_metasmith/trace.jsonl"))
@@ -53,7 +51,7 @@ def test_msm_status_joins_meta(tmp_path, virtual_runtime, capsys):
     """
     from metasmith.ops.cache import status_run
 
-    task = linear_3step.build_task(tmp_path / "run1")
+    task = linear_3step.build_task(tmp_path)
     capture_run(virtual_runtime, task)
     key = task.GetKey()
     run_dir = virtual_runtime.home / "runs" / key
