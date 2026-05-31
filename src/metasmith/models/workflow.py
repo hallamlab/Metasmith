@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
 from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -26,7 +26,7 @@ BIND_FILE = ".command.binds"
 @dataclass
 class WorkflowStep:
     order: int
-    dependency_map: dict[Dependency, list[DataInstance]]
+    dependency_map: InitVar[dict[Dependency, list[DataInstance]]]
     transform: TransformInstance
     transform_library: TransformInstanceLibrary
     uses: list[DataInstance] = field(default_factory=list)
@@ -34,8 +34,25 @@ class WorkflowStep:
     _raw_dependency_map: dict|None = None
     _raw_instances: dict[str, DataInstance]|None = None
 
-    def __post_init__(self):
-        if len(self.dependency_map)>0:
+    def __post_init__(self, dependency_map: dict[Dependency, list[DataInstance]]):
+        # Backing storage for the dependency_map property. Initialized
+        # before assignment so the setter's `self._dependency_map = …`
+        # never runs against an undefined attribute.
+        self._dependency_map: dict[Dependency, list[DataInstance]] = {}
+        self.dependency_map = dependency_map
+
+    # `dependency_map` is bound as a property below the class body so that
+    # the @dataclass decorator doesn't see a class-attribute default
+    # shadowing the InitVar declaration above. The setter auto-refreshes
+    # `uses` and `produces`; an empty dict is treated as 'not resolved
+    # yet' (Unpack pre-`_resolve_dependency_map`) and skips the refresh
+    # so explicitly-passed views survive.
+    def _get_dependency_map(self) -> dict[Dependency, list[DataInstance]]:
+        return self._dependency_map
+
+    def _set_dependency_map(self, value: dict[Dependency, list[DataInstance]]):
+        self._dependency_map = value
+        if value:
             self.RefreshViews()
 
     @property
@@ -43,6 +60,12 @@ class WorkflowStep:
         return self.dependency_map.get(self.transform.group_by, [])
 
     def RefreshViews(self):
+        """Recompute `uses`/`produces` from the current `dependency_map`.
+
+        Called automatically by the `dependency_map` setter; you only
+        need to call it manually if you reach into `_dependency_map`
+        directly (which you shouldn't — go through the property).
+        """
         self.uses = [
             inst
             for dep in self.transform.model.requires
@@ -120,7 +143,14 @@ class WorkflowStep:
                 Log.Warn(f"missing [{len(missing)}] DataInstances for dependency [{dep_key}] while unpacking workflow step [{self.order}]")
             dep_map[deps[dep_key]] = [data[v] for v in ids if v in data]
         self.dependency_map = dep_map
-        self.RefreshViews()
+
+# Bind dependency_map as a property here (post-class-body) so the
+# @dataclass decorator above does not see a class-attribute default
+# shadowing the InitVar declaration in WorkflowStep.
+WorkflowStep.dependency_map = property(  # type: ignore[assignment]
+    WorkflowStep._get_dependency_map,
+    WorkflowStep._set_dependency_map,
+)
 
 @dataclass
 class WorkflowTarget:
@@ -1404,6 +1434,15 @@ class WorkflowTask:
 
         _archetypes: dict[DataInstance, DataInstance] = {}
         def get_archetype(candidates: list[DataInstance]):
+            """Pick a stable representative for a set of equivalent instances.
+
+            The closure body is the canonical-name dance: if any candidate
+            already has a recorded archetype, reuse it (transitive merge);
+            otherwise the first candidate becomes the archetype. The
+            `_archetypes` dict is closure state — extraction would force
+            it to become a class attribute on NextflowGenContext, adding
+            indirection with no behavioral win (A3 decision).
+            """
             a = None
             for c in candidates:
                 if c not in _archetypes: continue
