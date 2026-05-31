@@ -112,6 +112,17 @@ def test_telemetry_e2e_lineage_walk_parallel_then_group(tmp_path, virtual_runtim
     assert tx_keys and "" not in tx_keys, (
         f"every promote-side event must carry transform_key, got {tx_keys!r}"
     )
+    # C0: promote-side events must carry direct-parent `consumes`,
+    # mirroring the cache-hit route (workflow.py:1419-1422). Every
+    # transform in parallel_then_group has ≥1 required dep, so every
+    # promote-side event should report a non-empty consumes dict.
+    empty_consumes = [
+        (e.task_hash[:8], e.transform_key)
+        for e in promoted_or_miss if not e.consumes
+    ]
+    assert not empty_consumes, (
+        f"promote-side events with empty consumes: {empty_consumes!r}"
+    )
 
     # walk_ancestors from any produced file_instance_id terminates with a
     # bounded number of yields (no cycle blowup).

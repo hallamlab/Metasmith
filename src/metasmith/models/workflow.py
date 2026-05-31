@@ -1656,6 +1656,19 @@ class WorkflowTask:
                         f"cacheable {'true' if cache_decision['cacheable'] else 'false'}\n"
                     )
                     f.write(f"transform_key {cache_decision['transform_key']}\n")
+                    # C0: persist the compile-time sorted_inputs so the
+                    # post-exec promote route can populate InvocationEvent.consumes
+                    # with the same dict shape as the cache-hit route at
+                    # workflow.py:1419-1422. Without this, promote-side events
+                    # carry consumes={} and BFS over trace.jsonl has no edges.
+                    sorted_inputs_serialized = [
+                        [slot_key, iid_bytes.hex()]
+                        for slot_key, iid_bytes in cache_decision["sorted_inputs"]
+                    ]
+                    f.write(
+                        "sorted_inputs "
+                        f"{json.dumps(sorted_inputs_serialized, separators=(',',':'))}\n"
+                    )
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
                 for branch, g in enumerate(produced_archetypes) for x in g

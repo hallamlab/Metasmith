@@ -28,7 +28,7 @@ import os
 import shutil
 import socket
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .keys import canonical_cbor
@@ -44,6 +44,14 @@ class StepPromoteSpec:
     signature: str
     out_identities: dict[str, str]  # "{slot}::{branch}" -> instance_id hex
     dep_out: list[dict]  # parsed `dot` line; per-branch dep_key -> [ids]
+    # C0: per-slot input ids in the same shape the cache-hit route uses
+    # (workflow.py:1419-1422). Each tuple is (slot_key, aggregated_hex);
+    # aggregated_hex is the +-joined sorted list of input instance_ids
+    # for that slot, encoded as a single hex string. Built at compile
+    # time (workflow.py:1279-1290), persisted via the `sorted_inputs`
+    # line in step_N.meta, and consumed by `_emit_promote_event` to
+    # populate InvocationEvent.consumes.
+    sorted_inputs: list = field(default_factory=list)
 
 
 def _shard_dir(cache_root: Path, key_hex: str) -> Path:
@@ -69,6 +77,7 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
     transform_key = ""
     signature = ""
     dep_out: list[dict] = []
+    sorted_inputs: list = []
 
     for line in meta_path.read_text().splitlines():
         if not line.strip():
@@ -90,6 +99,11 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
                 pass
         elif head == "transform_key":
             transform_key = rest.strip()
+        elif head == "sorted_inputs":
+            try:
+                sorted_inputs = json.loads(rest)
+            except json.JSONDecodeError:
+                sorted_inputs = []
     if cache_key_hex is None:
         return None
     return StepPromoteSpec(
@@ -100,6 +114,7 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
         signature=signature,
         out_identities=out_identities,
         dep_out=dep_out,
+        sorted_inputs=sorted_inputs,
     )
 
 
@@ -282,11 +297,19 @@ def _append_invocation_event_v2(
                 dtype_key=dtype_key,
             )
         )
+    # C0: build `consumes` from compile-time sorted_inputs (persisted via
+    # step_N.meta). Mirrors workflow.py:1419-1422 exactly — both routes
+    # produce byte-identical consumes dicts for the same task. iid_hex is
+    # the aggregated +-joined hex from workflow.py:1289; the cache-hit
+    # route appends it whole (no splitting on +), so we do the same here.
+    consumes: dict[str, list[str]] = {}
+    for slot_key, iid_hex in spec.sorted_inputs:
+        consumes.setdefault(slot_key, []).append(iid_hex)
     event = InvocationEvent(
         task_hash=cache_key_hex,
         transform_key=spec.transform_key,
         status=status,  # type: ignore[arg-type]
-        consumes={},
+        consumes=consumes,
         produces=produces,
         session_id=session_id,
         step_order=spec.order,
