@@ -102,14 +102,15 @@ def test_telemetry_e2e_lineage_walk_parallel_then_group(tmp_path, virtual_runtim
     invocations = lib.find_invocations()
     assert invocations, "no InvocationEvents emitted"
     # parallel_then_group has 3 parallel A invocations + 1 B + 1 C = 5 tasks.
-    # All run on the first capture_run so all events report 'promoted'.
-    # (transform_key is populated only on cache-hit emits today; the
-    # promote-side rows carry it as "" until the meta-file plumbing is
-    # extended — counting events is the load-bearing assertion.)
     statuses = {e.status for e in invocations}
     assert statuses <= {"promoted", "hit", "miss"}, statuses
     assert len(invocations) >= 3, (
         f"expected ≥3 events for parallel_then_group, got {len(invocations)}"
+    )
+    promoted_or_miss = [e for e in invocations if e.status in ("promoted", "miss")]
+    tx_keys = {e.transform_key for e in promoted_or_miss}
+    assert tx_keys and "" not in tx_keys, (
+        f"every promote-side event must carry transform_key, got {tx_keys!r}"
     )
 
     # walk_ancestors from any produced file_instance_id terminates with a

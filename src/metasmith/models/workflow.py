@@ -1655,6 +1655,7 @@ class WorkflowTask:
                     f.write(
                         f"cacheable {'true' if cache_decision['cacheable'] else 'false'}\n"
                     )
+                    f.write(f"transform_key {cache_decision['transform_key']}\n")
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
                 for branch, g in enumerate(produced_archetypes) for x in g

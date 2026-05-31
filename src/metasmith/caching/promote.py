@@ -88,6 +88,8 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
                 dep_out = json.loads(rest)
             except json.JSONDecodeError:
                 pass
+        elif head == "transform_key":
+            transform_key = rest.strip()
     if cache_key_hex is None:
         return None
     return StepPromoteSpec(
