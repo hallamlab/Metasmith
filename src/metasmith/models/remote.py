@@ -429,9 +429,9 @@ class Logistics:
                     with LiveShell() as remote_shell:
                         remote = src_host if src_host != "" else dest_host
                         remote_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh {remote}: {x}"))
-                        res = remote_shell.Exec(f"ssh {remote}; echo exited", history=True)
-                        if "exited" in res.out:
-                            Log.Error(f"failed to ssh into {remote}")
+                        res = remote_shell.Exec(f"ssh {remote}", history=True)
+                        if res.exit_code not in (0, None):
+                            Log.Error(f"failed to ssh into {remote}: exit={res.exit_code}")
                             continue
                         for src_s, dest_s, _, _ in batch:
                             src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
@@ -469,21 +469,39 @@ class Logistics:
                         shell.AwaitDone(_hash=last_hash, timeout=None)
                     completed = []
                     for (src_host, dest_host), batch in batched_ssh.items():
-                        def _check(path: Path):
-                            if dest_host != "":
-                                FLAG = "ok"
-                                res = shell.Exec(f'[ -e {path} ] && echo "{FLAG}"', history=True)
-                                return FLAG in res.out
-                            else:
-                                return Path(path).exists()
+                        # For remote dest_host, use an interactive ssh entry
+                        # — `Exec(f"ssh host")` works under the inline-marker
+                        # protocol because the marker tail flows through ssh
+                        # to the remote interactive bash and gets echoed back.
+                        # `Exec(f"ssh host 'cmd'")` does NOT work: ssh's
+                        # non-interactive command-mode discards the trailing
+                        # marker bytes, so AwaitDone wedges. We dispose the
+                        # check shell without an explicit `Exec("exit")` —
+                        # Dispose terminates the local bash, which closes its
+                        # ssh child.
+                        check_shell = None
+                        if dest_host != "":
+                            check_shell = LiveShell()
+                            check_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh {dest_host}: {x}"))
+                            check_shell.Exec(f"ssh {dest_host}")
+                        try:
+                            def _check(path: Path):
+                                if check_shell is not None:
+                                    FLAG = "ok"
+                                    res = check_shell.Exec(
+                                        f'[ -e {path} ] && echo "{FLAG}"',
+                                        history=True,
+                                    )
+                                    return FLAG in res.out
+                                else:
+                                    return Path(path).exists()
 
-                        if dest_host != "":
-                            shell.Exec(f'ssh {dest_host}') # todo: what if ssh fails?
-                        for _, dest_s, src, dest in batch:
-                            if _check(dest_s.path):
-                                completed.append((src, dest))
-                        if dest_host != "":
-                            shell.Exec("exit")
+                            for _, dest_s, src, dest in batch:
+                                if _check(dest_s.path):
+                                    completed.append((src, dest))
+                        finally:
+                            if check_shell is not None:
+                                check_shell.Dispose()
                     return completed
                 return _join
 
