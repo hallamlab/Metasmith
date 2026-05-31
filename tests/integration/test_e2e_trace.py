@@ -526,7 +526,7 @@ class TestTraceSharedInputs:
     Orchestrator treats it as a broadcast/shared input via .combine().
 
     This reproduces the production bug where _batch() in-place mutation of
-    index HashMaps corrupts the pending_tasks HashSet, causing rare lineage
+    index HashMaps corrupts shared orchestrator state, causing rare lineage
     key loss in output manifests.
     """
 
