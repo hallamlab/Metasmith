@@ -149,6 +149,25 @@ def test_telemetry_e2e_lineage_walk_parallel_then_group(tmp_path, virtual_runtim
         f"consumes encoding likely regressed"
     )
 
+    # C0.5: promote-side ProducedFile.path must be populated, and
+    # file_instance_id must diverge from slot_id (per-file mint via
+    # LinPayload.mint_file_id). At least one promoted event needs
+    # ≥1 produces with a non-empty path AND a file_instance_id !=
+    # slot_id. Cache-hit events on the first run match promote on
+    # the same task; legacy fallback events emit path="" with
+    # file_instance_id == slot_id, which would fail this check.
+    promoted = [e for e in invocations if e.status == "promoted"]
+    if promoted:
+        path_bearing = [
+            (pf.path, pf.slot_id, pf.file_instance_id)
+            for e in promoted for pf in e.produces
+            if pf.path and pf.file_instance_id != pf.slot_id
+        ]
+        assert path_bearing, (
+            "no promoted event carries a populated ProducedFile.path "
+            "with per-file file_instance_id; C0.5 emission regressed"
+        )
+
 
 # ---------------------------------------------------------------------------
 # G6 — logs resolved from cache shard

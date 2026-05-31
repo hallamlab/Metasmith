@@ -45,13 +45,21 @@ class StepPromoteSpec:
     out_identities: dict[str, str]  # "{slot}::{branch}" -> instance_id hex
     dep_out: list[dict]  # parsed `dot` line; per-branch dep_key -> [ids]
     # C0: per-slot input ids in the same shape the cache-hit route uses
-    # (workflow.py:1419-1422). Each tuple is (slot_key, aggregated_hex);
-    # aggregated_hex is the +-joined sorted list of input instance_ids
-    # for that slot, encoded as a single hex string. Built at compile
-    # time (workflow.py:1279-1290), persisted via the `sorted_inputs`
-    # line in step_N.meta, and consumed by `_emit_promote_event` to
-    # populate InvocationEvent.consumes.
+    # (workflow.py:1419-1422). Each tuple is (slot_key, list[slot_id_hex]).
+    # Built at compile time (workflow.py:1279-1290), persisted via the
+    # `sorted_inputs` line in step_N.meta, and consumed by
+    # `_emit_promote_event` to populate InvocationEvent.consumes.
     sorted_inputs: list = field(default_factory=list)
+    # C0.5: per-output-slot file naming info. Each entry is
+    #   {"dtype_key", "ext", "branch_idx", "slot_id"}
+    # where dtype_key is the DataInstance.dtype.key embedded in the
+    # canonical filename (bootstrap.py:196), ext is the preferred
+    # extension (e.g. ".bam", ".tar.gz"), branch_idx is the produces-
+    # branch index, and slot_id is the channel-level identity. Used to
+    # match output files in promote_run unambiguously. Empty list
+    # signals a legacy step_N.meta — the promote path falls back to
+    # per-slot degenerate emission with a Log.Warn.
+    slot_files: list = field(default_factory=list)
 
 
 def _shard_dir(cache_root: Path, key_hex: str) -> Path:
@@ -78,6 +86,7 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
     signature = ""
     dep_out: list[dict] = []
     sorted_inputs: list = []
+    slot_files: list = []
 
     for line in meta_path.read_text().splitlines():
         if not line.strip():
@@ -119,6 +128,13 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
                     sorted_inputs.append((k, [str(x) for x in v]))
                 elif isinstance(v, str):
                     sorted_inputs.append((k, v.split("+") if v else []))
+        elif head == "slot_files":
+            try:
+                slot_files = json.loads(rest)
+                if not isinstance(slot_files, list):
+                    slot_files = []
+            except json.JSONDecodeError:
+                slot_files = []
     if cache_key_hex is None:
         return None
     return StepPromoteSpec(
@@ -130,6 +146,7 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
         out_identities=out_identities,
         dep_out=dep_out,
         sorted_inputs=sorted_inputs,
+        slot_files=slot_files,
     )
 
 
@@ -285,10 +302,19 @@ def _append_invocation_event_v2(
     spec: "StepPromoteSpec",
     status: str,
     cache_key_hex: str,
+    files_meta: list[dict] | None = None,
 ) -> None:
-    """Append a v2 InvocationEvent row to <workspace>/_metasmith/trace.jsonl."""
+    """Append a v2 InvocationEvent row to <workspace>/_metasmith/trace.jsonl.
+
+    C0.5: when `files_meta` carries per-file `slot_id`/`dtype_key`
+    entries (post-C0.5 promote), emit one ProducedFile per file with
+    `file_instance_id = LinPayload.mint_file_id(slot_id, relpath)`.
+    Legacy callers (and miss/fail emissions that have no files_meta yet)
+    fall back to the per-slot degenerate emission with `path=""`.
+    """
     from ..models.lineage import (
         InvocationEvent,
+        LinPayload,
         ProducedFile,
         append_invocation_event,
     )
@@ -298,20 +324,45 @@ def _append_invocation_event_v2(
     trace_path = trace_dir / "trace.jsonl"
 
     produces: list[ProducedFile] = []
-    for slot_branch, instance_id_hex in sorted(spec.out_identities.items()):
-        # `slot_branch` is the encoded "<dep_key>::<branch_idx>" form
-        # (see workflow.py:1574). slot_id = instance_id_hex here; the
-        # per-file file_instance_id is minted by CollectResults over
-        # (slot_id, relative_path) once the file lands.
-        dtype_key = slot_branch.split("::", 1)[0]
-        produces.append(
-            ProducedFile(
-                file_instance_id=instance_id_hex,
-                slot_id=instance_id_hex,
-                path="",
-                dtype_key=dtype_key,
+    # C0.5: prefer per-file emission when files_meta carries slot info.
+    have_per_file = files_meta is not None and any(
+        f.get("slot_id") and not f.get("unmatched")
+        for f in (files_meta or [])
+    )
+    if have_per_file:
+        for f in sorted(files_meta or [], key=lambda d: d.get("relpath", "")):
+            if f.get("unmatched"):
+                # G6: file copied to cache but doesn't belong to any
+                # declared slot. Skip — emitting with empty slot_id would
+                # pollute TraceIndex.by_slot.
+                continue
+            sid = f.get("slot_id", "")
+            rel = f.get("relpath", "")
+            dk = f.get("dtype_key", "")
+            if not sid:
+                continue
+            produces.append(
+                ProducedFile(
+                    file_instance_id=LinPayload.mint_file_id(
+                        slot_id=sid, relative_path=rel
+                    ),
+                    slot_id=sid,
+                    path=rel,
+                    dtype_key=dk,
+                )
             )
-        )
+    else:
+        # Legacy fallback (miss-without-promote, or pre-C0.5 caller).
+        for slot_branch, instance_id_hex in sorted(spec.out_identities.items()):
+            dtype_key = slot_branch.split("::", 1)[0]
+            produces.append(
+                ProducedFile(
+                    file_instance_id=instance_id_hex,
+                    slot_id=instance_id_hex,
+                    path="",
+                    dtype_key=dtype_key,
+                )
+            )
     # C0-amend: spec.sorted_inputs is list[tuple[str, list[str]]].
     # Mirrors workflow.py:1419-1422 exactly — both routes produce
     # byte-identical consumes dicts of {slot_key: list[slot_id_hex]}.
@@ -373,14 +424,86 @@ def promote_run(
                 tmp.mkdir(parents=True, exist_ok=True)
                 out_dir = tmp / "out"
                 out_dir.mkdir(parents=True, exist_ok=True)
+                # C0.5: enriched files_meta with (slot_id, dtype_key, branch_idx)
+                # per file so cache-hit emission can read paths back without
+                # rescanning the filesystem, and so per-file `file_instance_id`
+                # mints deterministically via LinPayload.mint_file_id.
+                #
+                # spec.slot_files holds the compile-time-known declaration:
+                # one entry per produced slot with the DataInstance's
+                # `dtype.key` (which is what the filename embeds, NOT the
+                # Dependency.key), preferred extension, branch_idx, and
+                # slot_id. Empty list = legacy step_N.meta; matcher emits
+                # nothing matched and `_append_invocation_event_v2` falls
+                # back to per-slot degenerate emission.
+                #
+                # Canonical filename (bootstrap.py:196, virtual_runtime.py:651/665):
+                #   "{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{ext}"
+                # We parse branch_idx from the leading prefix and match the
+                # filename tail against each declared (dtype_key, ext, branch_idx)
+                # triple via endswith — robust to multi-segment extensions.
                 files_meta: list[dict] = []
                 total_bytes = 0
+                unmatched: list[str] = []
                 for src in outputs:
                     dest = out_dir / src.name
                     if src.resolve() != dest.resolve():
                         shutil.copy2(src, dest)
-                    files_meta.append({"relpath": str(dest.relative_to(tmp))})
+                    relpath = str(dest.relative_to(tmp))
                     total_bytes += dest.stat().st_size
+                    name = src.name
+                    prefix, _dot, rest = name.partition(".")
+                    tokens = prefix.split("-")
+                    branch_idx = -1
+                    if len(tokens) >= 3 and rest:
+                        try:
+                            branch_idx = int(tokens[2]) - 1
+                        except ValueError:
+                            branch_idx = -1
+                    matched: dict | None = None
+                    if branch_idx >= 0:
+                        # Prefer longest dtype_key first to avoid prefix
+                        # collisions (e.g. "step_a" vs "step_a_legacy").
+                        candidates = sorted(
+                            spec.slot_files,
+                            key=lambda d: len(str(d.get("dtype_key", ""))),
+                            reverse=True,
+                        )
+                        for sf in candidates:
+                            if sf.get("branch_idx") != branch_idx:
+                                continue
+                            dk = sf.get("dtype_key", "")
+                            ext = sf.get("ext", "")
+                            if not dk:
+                                continue
+                            if name.endswith(f"-{dk}{ext}"):
+                                matched = sf
+                                break
+                    if matched is not None:
+                        files_meta.append({
+                            "relpath": relpath,
+                            "slot_id": matched.get("slot_id", ""),
+                            "dtype_key": matched.get("dtype_key", ""),
+                            "branch_idx": matched.get("branch_idx", 0),
+                        })
+                    else:
+                        # G6: still copy to cache so the file isn't lost,
+                        # but mark as unmatched so cache-hit emission skips
+                        # it (no synthetic ProducedFile with empty slot_id).
+                        files_meta.append({
+                            "relpath": relpath,
+                            "unmatched": True,
+                        })
+                        unmatched.append(src.name)
+                if unmatched and spec.slot_files:
+                    # Only warn when we DID have a slot declaration to match
+                    # against — legacy step_N.meta files have empty slot_files
+                    # and degrade gracefully via _append_invocation_event_v2.
+                    log.append((
+                        "warn",
+                        f"promote {key_hex[:8]}: "
+                        f"{len(unmatched)} unmatched output(s): {unmatched}",
+                    ))
                 # C8 / G6 — capture .command.{sh,out,err,log} into
                 # `<shard>/logs/` so get_logs_of resolves after `rm -rf
                 # work/` + resume. Best-effort: logs are nice-to-have,
@@ -434,6 +557,7 @@ def promote_run(
                     spec=spec,
                     status="promoted",
                     cache_key_hex=key_hex,
+                    files_meta=files_meta,
                 )
             finally:
                 _release_lock(lock)

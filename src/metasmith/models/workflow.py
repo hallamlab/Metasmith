@@ -1363,6 +1363,7 @@ class WorkflowTask:
         from ..models.lineage import (
             INVOCATION_EVENT_SCHEMA_VERSION,
             InvocationEvent,
+            LinPayload,
             ProducedFile,
             SessionStart,
             append_invocation_event,
@@ -1416,16 +1417,65 @@ class WorkflowTask:
                 if step.order == order:
                     step_name = step.transform.name or ""
                     break
-            produces: list[ProducedFile] = []
-            for (slot_key, branch_idx), slot_id in decision["out_instance_ids"].items():
-                produces.append(
-                    ProducedFile(
-                        file_instance_id=slot_id,  # cache-hit: file_instance_id = slot_id until promote re-mints
-                        slot_id=slot_id,
-                        path="",
-                        dtype_key=slot_key,
+            # C0.5: read per-file (slot_id, dtype_key, relpath) from the
+            # cache entry's manifest.cbor and emit one ProducedFile per
+            # file. Pre-C0.5 manifests carry only {"relpath"} per file —
+            # detected by missing "slot_id" — and we fall back to the
+            # legacy per-slot degenerate emission with a Log.Warn. The
+            # legacy path also covers the (defensive) empty-files case.
+            from ..caching.store import decode_manifest
+            entry = decision["entry"]
+            files: list[dict] = []
+            if entry is not None and getattr(entry, "payload", None):
+                try:
+                    manifest = decode_manifest(entry.payload)
+                    files = manifest.get("files", []) or []
+                except Exception as e:
+                    Log.Warn(
+                        f"cache-hit decode_manifest failed for "
+                        f"{decision['cache_key'].hex()[:8]}: {e}"
                     )
-                )
+            legacy = (not files) or any(
+                "slot_id" not in f for f in files
+            )
+            produces: list[ProducedFile] = []
+            if legacy:
+                if entry is not None:
+                    Log.Warn(
+                        f"cache-hit: legacy manifest for "
+                        f"{decision['cache_key'].hex()[:8]}; emitting "
+                        "per-slot degenerate ProducedFile rows"
+                    )
+                for (slot_key, branch_idx), slot_id in decision[
+                    "out_instance_ids"
+                ].items():
+                    produces.append(
+                        ProducedFile(
+                            file_instance_id=slot_id,
+                            slot_id=slot_id,
+                            path="",
+                            dtype_key=slot_key,
+                        )
+                    )
+            else:
+                for f in sorted(files, key=lambda d: d.get("relpath", "")):
+                    if f.get("unmatched"):
+                        continue
+                    sid = f.get("slot_id", "")
+                    rel = f.get("relpath", "")
+                    dk = f.get("dtype_key", "")
+                    if not sid:
+                        continue
+                    produces.append(
+                        ProducedFile(
+                            file_instance_id=LinPayload.mint_file_id(
+                                slot_id=sid, relative_path=rel
+                            ),
+                            slot_id=sid,
+                            path=rel,
+                            dtype_key=dk,
+                        )
+                    )
             # C0-amend: decision["sorted_inputs"] is now
             # list[tuple[str, list[str]]] — the slot_ids are already
             # hex strings, no byte-encoding gymnastics. This is the
@@ -1685,6 +1735,46 @@ class WorkflowTask:
                     f.write(
                         "sorted_inputs "
                         f"{json.dumps(sorted_inputs_serialized, separators=(',',':'))}\n"
+                    )
+                    # C0.5: persist per-output-slot file naming info so
+                    # the post-exec promote can match output files to slots
+                    # unambiguously. The canonical filename (bootstrap.py:196,
+                    # virtual_runtime.py:651/665) is
+                    #   "{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{ext}"
+                    # Critically: the filename embeds the DataInstance's
+                    # `dtype.key` (DataType hash), NOT the Dependency's `key`
+                    # (which is a different hash). The slot_id for a produced
+                    # file is keyed by (dep.key, branch_idx) in out_identities.
+                    # We persist (dtype_key, ext, branch_idx, slot_id) per
+                    # produced slot so promote can match by filename and
+                    # recover the slot_id without re-deriving any hashes.
+                    slot_files: list[dict] = []
+                    for branch_idx, dep_group in enumerate(
+                        step.transform.model.produces
+                    ):
+                        for dep in dep_group:
+                            slot_id = cache_decision[
+                                "out_instance_ids"
+                            ].get((dep.key, branch_idx), "")
+                            insts = step.dependency_map.get(dep, [])
+                            if insts:
+                                dtype_key = insts[0].dtype.key
+                                ext = (
+                                    insts[0].dtype.GetPreferredFileExtension()
+                                    or ""
+                                )
+                            else:
+                                dtype_key = dep.key
+                                ext = dep.GetPreferredFileExtension() or ""
+                            slot_files.append({
+                                "dtype_key": dtype_key,
+                                "ext": ext,
+                                "branch_idx": branch_idx,
+                                "slot_id": slot_id,
+                            })
+                    f.write(
+                        "slot_files "
+                        f"{json.dumps(slot_files, separators=(',',':'))}\n"
                     )
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
