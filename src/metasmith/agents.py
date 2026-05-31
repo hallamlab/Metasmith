@@ -1080,50 +1080,56 @@ def CollectResults(
     for namespace, tlib in tlibs.items():
         output.AddTypeLibrary(namespace=namespace, lib=tlib)
     inst_id2inst: dict[str, DataInstance] = {}
-    dtype2insts: dict[str, list[DataInstance]] = {}
     for inst in task.plan.given:
         inst_id2inst[inst.instance_id] = inst
-        dtype2insts[inst.dtype.key] = dtype2insts.get(inst.dtype.key, []) + [inst]
     for step in task.plan.steps:
         for insts in step.dependency_map.values():
             for inst in insts:
                 inst_id2inst[inst.instance_id] = inst
-                dtype2insts[inst.dtype.key] = dtype2insts.get(inst.dtype.key, []) + [inst]
 
-    collision_warned: set[str] = set()
     def _resolve_instance(dtype_key: str, instance_id: str | None = None):
-        """Look up the source DataInstance by id (G1).
+        """Direct lookup by instance_id (G2). No dtype_key fallback.
 
-        Prefer `instance_id` (the slot-level identity routed by every
-        new write path); fall back to dtype_key with a once-per-key
-        Log.Warn on collision, since legacy workspaces and Nextflow
-        output manifests may still drop instance_id on some entries.
-        Defensive only; the routing-side change is the property setter
-        in C3 + the bootstrap.py raises in C5.
+        The input-CSV writer at workflow.py emits `<path>\\t<instance_id>`
+        rows; manifest filenames carry slot_id in the `inst_id` field.
+        Both routes populate `instance_id` end-to-end, so the legacy
+        collision fallback (multiple candidates → deterministic first)
+        is no longer needed.
         """
-        if instance_id is not None and instance_id in inst_id2inst:
-            return inst_id2inst[instance_id]
-        candidates = dtype2insts.get(dtype_key, [])
-        if len(candidates) == 0:
-            raise KeyError(f"missing DataInstance for key [{dtype_key}]")
-        if len(candidates) > 1 and dtype_key not in collision_warned:
-            collision_warned.add(dtype_key)
-            Log.Warn(
-                f"multiple DataInstances share dtype key [{dtype_key}]; "
-                f"using deterministic first candidate "
-                f"(instance_id={instance_id!r} unresolved)"
+        if instance_id is None:
+            raise KeyError(
+                f"_resolve_instance called without instance_id for [{dtype_key}]; "
+                f"input CSV writer should always emit <path>\\t<instance_id>"
             )
-        return sorted(candidates, key=lambda x: (x.dtype_name, x.instance_id, str(x.path)))[0]
+        try:
+            return inst_id2inst[instance_id]
+        except KeyError:
+            raise KeyError(
+                f"missing DataInstance for instance_id [{instance_id}] (dtype={dtype_key})"
+            )
     # this is a mappping of the (k, v) assinged by the orchestrator during nextflow
     kv2path: dict[tuple[str, int], tuple[Path, dict, str|None]] = {}
+    # G2: sidecar in <work>/input_ids/<name> carries `<path>\t<instance_id>`
+    # so agents can route by instance_id without polluting `inputs_dir`
+    # (which Nextflow's Channel.splitCsv consumes as path-only CSVs).
+    ids_dir = inputs_dir.parent / "input_ids"
     for in_manifest in inputs_dir.iterdir():
         k = in_manifest.name
+        sidecar = ids_dir / k
+        inst_id_by_path: dict[str, str] = {}
+        if sidecar.exists():
+            for line in sidecar.read_text().splitlines():
+                if not line.strip():
+                    continue
+                head, _, instance_id = line.partition("\t")
+                if instance_id:
+                    inst_id_by_path[head] = instance_id
         with open(in_manifest) as f:
             for l in f:
                 p = Path(l[:-1])
                 _hash = md5(str(p).encode()).hexdigest()
                 _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
-                kv2path[(k, _hash)] = p, {}, None
+                kv2path[(k, _hash)] = p, {}, inst_id_by_path.get(str(p))
     for manifest in glob(str(manifests_path/"*")):
         manifest = Path(manifest)
         if manifest.suffix != ".json": continue
@@ -1142,7 +1148,12 @@ def CollectResults(
                     path = Path(path)
                     lind: dict = json.loads(lin)
                     kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
-                    kv2path[kv] = path, lind, inst_id
+                    # G2: CSV-supplied instance_id is the authoritative
+                    # routing identity; manifest filename's inst_id only
+                    # fills the gap for entries with no CSV row.
+                    prior = kv2path.get(kv)
+                    csv_inst_id = prior[2] if prior else None
+                    kv2path[kv] = path, lind, (csv_inst_id or inst_id)
                     # C6 — mint the per-file `file_instance_id` over
                     # (slot_id, relative_path). Deterministic so cache
                     # hits reproduce identity; surfaced via the
