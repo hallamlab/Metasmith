@@ -266,22 +266,31 @@ class Agent:
                     display_cmd=f"{{if not exists}}: {_pull_cmd.replace(str(resolved_agent_home), '$AGENT_HOME')}",
                 )
 
-                # If the host's apptainer ships no setuid starter-suid, it falls
-                # back to squashfuse_ll for SIF mounts — which deadlocks under
-                # msm_relay's fork chain on WSL2 (Bug E.2). Unpack to a sandbox
-                # directory once at deploy; MakeRunCommand(local=True) prefers
-                # the sandbox over the SIF at run time.
+                # Decide per-host whether to deliver the rootfs as SIF or as
+                # an unpacked sandbox dir. The probe is a static two-axis
+                # check (setuid starter-suid + apptainer major.minor); SIF is
+                # preferred when safe (no disk doubling). Sandbox is built
+                # only on apptainer >=1.4 without setuid — the case where SIF
+                # engages squashfuse_ll (Bug E.2 wedge under msm_relay on
+                # WSL2) and the sandbox path goes through kernel overlayfs.
+                # On apptainer 1.3.x without setuid the sandbox path itself
+                # falls back to fuse-overlayfs (Bug E.4 SIGBUS on fir under
+                # SLURM array contention), so we keep SIF there too. Verdict
+                # is re-evaluated on every Deploy(); a stale sandbox from a
+                # prior host config is removed when the verdict flips.
                 _sandbox_path = container.GetSandboxPath()
-                _probe = container.MakeNeedsSandboxProbe()
+                _probe = container.MakeSandboxDecisionProbe()
                 _build_sandbox = container.MakeBuildSandboxCommand()
                 _force = f'rm -rf {_sandbox_path} && ' if assertive else ''
                 do_step(
                     cmd=(
                         f'{_force}'
-                        f'if [ "$({_probe})" = "needs-sandbox" ] && [ ! -d {_sandbox_path} ]; then '
-                        f'{_build_sandbox}; fi'
+                        f'VERDICT=$({_probe}); '
+                        f'if [ "$VERDICT" = "use-sandbox" ]; then '
+                        f'[ -d {_sandbox_path} ] || {_build_sandbox}; '
+                        f'else rm -rf {_sandbox_path}; fi'
                     ),
-                    display_cmd=f"{{if no starter-suid and not unpacked}}: apptainer build --sandbox {_sandbox_path.name} {_local_path.name}".replace(str(resolved_agent_home), '$AGENT_HOME'),
+                    display_cmd=f"{{probe host; build sandbox iff apptainer>=1.4 and no setuid}}: apptainer build --sandbox {_sandbox_path.name} {_local_path.name}".replace(str(resolved_agent_home), '$AGENT_HOME'),
                 )
 
             _remote_file(

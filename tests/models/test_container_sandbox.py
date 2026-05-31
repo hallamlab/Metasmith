@@ -1,14 +1,19 @@
-"""Tests for the SIF→sandbox unpack helpers on Container.
+"""Tests for the SIF↔sandbox decision helpers on Container.
 
-When the host's apptainer ships no setuid `starter-suid` (e.g. the
-conda-forge build), apptainer falls back to squashfuse_ll for SIF mounts,
-which deadlocks under msm_relay's fork chain on WSL2 (Bug E.2). The
-runtime workaround is to unpack the SIF to a sandbox directory once at
-deploy time; `MakeRunCommand(local=True)` then picks the sandbox over the
-SIF via a shell-level conditional.
+The host's apptainer routes the rootfs through one of three mechanisms:
+1. Kernel squashfs mount (setuid starter-suid present — HPC like Sockeye)
+2. squashfuse_ll (apptainer without setuid for SIF — wedges under
+   msm_relay's fork chain on WSL2, Bug E.2)
+3. fuse-overlayfs (apptainer <1.4 without setuid for sandbox — races
+   SIGBUS under SLURM array contention on fir, Bug E.4)
 
-These tests pin the helper shapes and the conditional substitution. They
-don't spawn apptainer — only inspect the emitted shell text.
+`MakeSandboxDecisionProbe` is a static two-axis check emitting either
+`use-sif` (kernel mount safe, or sandbox would be worse) or `use-sandbox`
+(apptainer >=1.4 with no setuid: SIF would FUSE-wedge, sandbox is
+kernel-overlayfs). Deploy consults the verdict at deploy time;
+`MakeRunCommand(local=True)` reads the sandbox dir's presence on disk at
+run time. These tests pin the emitted shell text's semantic properties
+and the run-time ternary — they don't spawn apptainer.
 """
 
 from pathlib import Path
@@ -52,17 +57,36 @@ class TestCachePaths:
         assert _docker().GetSandboxPath() is None
 
 
-class TestProbe:
+class TestSandboxDecisionProbe:
     def test_probe_checks_starter_suid_setuid(self):
-        probe = _apptainer().MakeNeedsSandboxProbe()
-        # The probe must look at `starter-suid` specifically; that's the
-        # missing piece in conda-forge apptainer that drives the wedge.
+        probe = _apptainer().MakeSandboxDecisionProbe()
+        # The setuid `starter-suid` check is the first axis: kernel-mount
+        # path is safe for both SIF and sandbox, so verdict is use-sif.
         assert "starter-suid" in probe
-        # The setuid bit test `[ -u ... ]` is the right check; presence
-        # alone is not enough (a non-setuid copy still wouldn't work).
         assert "[ -u" in probe
-        # Sentinel string the deploy step matches against.
-        assert "needs-sandbox" in probe
+
+    def test_probe_checks_apptainer_version(self):
+        probe = _apptainer().MakeSandboxDecisionProbe()
+        # The second axis is apptainer major.minor — versions <1.4 route
+        # the sandbox through fuse-overlayfs (Bug E.4 SIGBUS on fir);
+        # >=1.4 uses kernel overlayfs.
+        assert "apptainer --version" in probe
+        # Numeric major/minor comparison must be present so the gate is
+        # accurate across point releases.
+        assert "-ge 2" in probe or "-ge 4" in probe
+        assert "-ge 4" in probe  # the load-bearing one
+
+    def test_probe_emits_only_two_verdicts(self):
+        probe = _apptainer().MakeSandboxDecisionProbe()
+        # Verdicts are the contract consumed by agents.py:Deploy.
+        # Both literals must appear (probe can take either branch).
+        assert '"use-sif"' in probe
+        assert '"use-sandbox"' in probe
+
+    def test_probe_empty_for_docker(self):
+        # Docker has no sandbox/SIF distinction; helper returns empty so
+        # callers can interpolate without branching.
+        assert _docker().MakeSandboxDecisionProbe() == ""
 
 
 class TestBuildCommand:
@@ -92,7 +116,8 @@ class TestRunCommandSwitch:
         sif = c.GetLocalPath()
         sandbox = c.GetSandboxPath()
         # Both paths must appear inside a shell conditional that picks
-        # sandbox-dir when present, else SIF.
+        # sandbox-dir when present, else SIF. The directory's presence is
+        # the run-time signal; deploy controls the presence.
         assert "[ -d" in cmd and str(sandbox) in cmd
         assert str(sif) in cmd
         assert "if" in cmd and "then" in cmd and "else" in cmd and "fi" in cmd
