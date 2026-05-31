@@ -21,6 +21,7 @@ from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
 from .coms.via_file_watcher import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
+from .models.lineage import LinPayload
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
 from .models.libraries import TransformInstance, Resources
 from .models.paths import PathMap
@@ -1091,6 +1092,15 @@ def CollectResults(
 
     collision_warned: set[str] = set()
     def _resolve_instance(dtype_key: str, instance_id: str | None = None):
+        """Look up the source DataInstance by id (G1).
+
+        Prefer `instance_id` (the slot-level identity routed by every
+        new write path); fall back to dtype_key with a once-per-key
+        Log.Warn on collision, since legacy workspaces and Nextflow
+        output manifests may still drop instance_id on some entries.
+        Defensive only; the routing-side change is the property setter
+        in C3 + the bootstrap.py raises in C5.
+        """
         if instance_id is not None and instance_id in inst_id2inst:
             return inst_id2inst[instance_id]
         candidates = dtype2insts.get(dtype_key, [])
@@ -1098,7 +1108,11 @@ def CollectResults(
             raise KeyError(f"missing DataInstance for key [{dtype_key}]")
         if len(candidates) > 1 and dtype_key not in collision_warned:
             collision_warned.add(dtype_key)
-            Log.Warn(f"multiple DataInstances share dtype key [{dtype_key}], using deterministic first candidate")
+            Log.Warn(
+                f"multiple DataInstances share dtype key [{dtype_key}]; "
+                f"using deterministic first candidate "
+                f"(instance_id={instance_id!r} unresolved)"
+            )
         return sorted(candidates, key=lambda x: (x.dtype_name, x.instance_id, str(x.path)))[0]
     # this is a mappping of the (k, v) assinged by the orchestrator during nextflow
     kv2path: dict[tuple[str, int], tuple[Path, dict, str|None]] = {}
@@ -1117,7 +1131,7 @@ def CollectResults(
         inst_id = None
         if len(parts) >= 4:
             inst_k = parts[-3]
-            inst_id = parts[-2]
+            inst_id = parts[-2]  # slot_id (encoded in the manifest filename)
         else:
             inst_k = parts[-2]
         _parsed_entries = []
@@ -1129,11 +1143,25 @@ def CollectResults(
                     lind: dict = json.loads(lin)
                     kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
                     kv2path[kv] = path, lind, inst_id
+                    # C6 — mint the per-file `file_instance_id` over
+                    # (slot_id, relative_path). Deterministic so cache
+                    # hits reproduce identity; surfaced via the
+                    # DataInstanceLibrary telemetry API in C8. The slot
+                    # id stays in the manifest filename; the per-file
+                    # id is added inside each entry.
+                    rel_path = path.relative_to(output_path) if path.is_absolute() else path
+                    file_instance_id = None
+                    if inst_id is not None:
+                        file_instance_id = LinPayload.mint_file_id(
+                            slot_id=inst_id,
+                            relative_path=rel_path,
+                        )
                     _parsed_entries.append({
                         "instance_key": kv[0],
                         "instance_index": kv[1],
                         "instance_id": inst_id,
-                        "path": str(path.relative_to(output_path)),
+                        "file_instance_id": file_instance_id,
+                        "path": str(rel_path),
                         "lineage": lind,
                     })
                 except Exception as e:
