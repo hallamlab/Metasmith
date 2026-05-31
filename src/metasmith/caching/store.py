@@ -24,8 +24,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from .keys import LIN_PAYLOAD_VERSION
+from ..logging import Log
+
 
 SCHEMA_VERSION = "1"
+
+# Sqlite schema_meta keys — bumping LIN_PAYLOAD_VERSION here renders old
+# shards unreachable (their cache_keys no longer collide). The session
+# counter feeds trace.jsonl rotation: each compile reads + increments.
+LIN_PAYLOAD_VERSION_KEY = "lineage_payload_version"
+TRACE_SESSION_COUNTER_KEY = "trace_session_counter"
+SHARD_LAYOUT_VERSION_KEY = "shard_layout_version"
+SHARD_LAYOUT_VERSION = 2  # v2: <shard>/logs/.command.{sh,out,err,log} captured
 
 
 _CREATE_SQL = [
@@ -98,8 +109,63 @@ class CacheStore:
             "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
             ("schema_version", SCHEMA_VERSION),
         )
+        # Stamp the lineage-payload + shard-layout versions, and seed the
+        # session counter on first open. Existing DBs keep their stored
+        # value; the warn below fires when the stored value is older.
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
+            (LIN_PAYLOAD_VERSION_KEY, str(LIN_PAYLOAD_VERSION)),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
+            (SHARD_LAYOUT_VERSION_KEY, str(SHARD_LAYOUT_VERSION)),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
+            (TRACE_SESSION_COUNTER_KEY, "0"),
+        )
+        row = conn.execute(
+            "SELECT v FROM schema_meta WHERE k = ?",
+            (LIN_PAYLOAD_VERSION_KEY,),
+        ).fetchone()
+        stored = int(row[0]) if row is not None else 0
+        if stored < LIN_PAYLOAD_VERSION:
+            Log.Warn(
+                f"lin payload v{LIN_PAYLOAD_VERSION} supersedes v{stored}; "
+                f"old shards at {cache_root} are unreachable. "
+                f"Run `msm cache gc --delete` to reclaim."
+            )
+            conn.execute(
+                "UPDATE schema_meta SET v = ? WHERE k = ?",
+                (str(LIN_PAYLOAD_VERSION), LIN_PAYLOAD_VERSION_KEY),
+            )
         conn.commit()
         return cls(cache_root, conn)
+
+    def allocate_session_id(self) -> int:
+        """Atomic-increment + return the trace-session counter.
+
+        The trace.jsonl rotator calls this on every compile to stamp a
+        fresh `SessionStart` row and tag every `InvocationEvent` of the
+        run. Monotonic; survives across runs (sqlite-persisted).
+        """
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE schema_meta SET v = CAST(CAST(v AS INTEGER) + 1 AS TEXT) "
+                "WHERE k = ?",
+                (TRACE_SESSION_COUNTER_KEY,),
+            )
+            if cur.rowcount == 0:
+                # First call on a DB that pre-dates the counter row.
+                self.conn.execute(
+                    "INSERT INTO schema_meta(k, v) VALUES (?, ?)",
+                    (TRACE_SESSION_COUNTER_KEY, "1"),
+                )
+            row = self.conn.execute(
+                "SELECT v FROM schema_meta WHERE k = ?",
+                (TRACE_SESSION_COUNTER_KEY,),
+            ).fetchone()
+        return int(row[0])
 
     def close(self) -> None:
         self.conn.close()
