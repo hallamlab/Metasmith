@@ -133,6 +133,22 @@ def test_telemetry_e2e_lineage_walk_parallel_then_group(tmp_path, virtual_runtim
             break
         break
 
+    # C0-amend: walk_ancestors must yield ≥1 result from a non-leaf
+    # event. Pre-amend, consumes carried `hex(utf8("+".join(hexes)))`
+    # garbage that no TraceIndex lookup could resolve, so the walk
+    # silently produced zero ancestors. The B and C events in
+    # parallel_then_group both have ≥1 input dep — pick the event with
+    # the largest consumes set and walk from one of its produces.
+    non_leaf = [e for e in invocations if e.consumes]
+    assert non_leaf, "expected ≥1 non-leaf event in parallel_then_group"
+    target = max(non_leaf, key=lambda e: sum(len(v) for v in e.consumes.values()))
+    assert target.produces, f"event {target.task_hash[:8]} has no produces"
+    descendants = list(lib.walk_ancestors(target.produces[0].file_instance_id))
+    assert len(descendants) >= 1, (
+        f"walk_ancestors from {target.task_hash[:8]} yielded 0 ancestors; "
+        f"consumes encoding likely regressed"
+    )
+
 
 # ---------------------------------------------------------------------------
 # G6 — logs resolved from cache shard

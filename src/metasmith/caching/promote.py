@@ -101,9 +101,24 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
             transform_key = rest.strip()
         elif head == "sorted_inputs":
             try:
-                sorted_inputs = json.loads(rest)
+                raw = json.loads(rest)
             except json.JSONDecodeError:
-                sorted_inputs = []
+                raw = []
+            # C0-amend: tolerate two shapes:
+            #   - new: [[slot_key, [iid_hex, ...]], ...]
+            #   - legacy (C0 f0725e6): [[slot_key, "iid_hex+iid_hex+..."], ...]
+            # The legacy form was a +-joined ASCII string of hexes; splitting
+            # on "+" recovers the list (hex chars never contain +). Empty
+            # string → empty list, not [""].
+            sorted_inputs = []
+            for entry in raw:
+                if not isinstance(entry, list) or len(entry) != 2:
+                    continue
+                k, v = entry
+                if isinstance(v, list):
+                    sorted_inputs.append((k, [str(x) for x in v]))
+                elif isinstance(v, str):
+                    sorted_inputs.append((k, v.split("+") if v else []))
     if cache_key_hex is None:
         return None
     return StepPromoteSpec(
@@ -297,14 +312,12 @@ def _append_invocation_event_v2(
                 dtype_key=dtype_key,
             )
         )
-    # C0: build `consumes` from compile-time sorted_inputs (persisted via
-    # step_N.meta). Mirrors workflow.py:1419-1422 exactly — both routes
-    # produce byte-identical consumes dicts for the same task. iid_hex is
-    # the aggregated +-joined hex from workflow.py:1289; the cache-hit
-    # route appends it whole (no splitting on +), so we do the same here.
-    consumes: dict[str, list[str]] = {}
-    for slot_key, iid_hex in spec.sorted_inputs:
-        consumes.setdefault(slot_key, []).append(iid_hex)
+    # C0-amend: spec.sorted_inputs is list[tuple[str, list[str]]].
+    # Mirrors workflow.py:1419-1422 exactly — both routes produce
+    # byte-identical consumes dicts of {slot_key: list[slot_id_hex]}.
+    # The hex strings ARE the slot_ids that TraceIndex.by_slot indexes
+    # on, so walk_ancestors can route by them.
+    consumes = {slot_key: list(ids) for slot_key, ids in spec.sorted_inputs}
     event = InvocationEvent(
         task_hash=cache_key_hex,
         transform_key=spec.transform_key,

@@ -1276,7 +1276,7 @@ class WorkflowTask:
             transform_key = step.transform.GetKey() or step.transform.name or ""
             signature = str(step.transform._hash)
 
-            sorted_inputs: list[tuple[str, bytes]] = []
+            sorted_inputs: list[tuple[str, list[str]]] = []
             for dep in step.transform.model.requires:
                 insts = step.dependency_map.get(dep, [])
                 if not insts:
@@ -1286,10 +1286,20 @@ class WorkflowTask:
                 slot_ids = sorted(
                     _input_instance_id(i, None).hex() for i in insts
                 )
-                sorted_inputs.append((dep.key, "+".join(slot_ids).encode()))
+                # C0-amend: store as list[str], not "+"-joined bytes.
+                # The previous shape leaked into InvocationEvent.consumes
+                # as `hex_of_utf8_of_plus_joined_string` — useless for
+                # any TraceIndex.by_slot lookup. Cache-key byte-identity
+                # is preserved by re-joining locally for lineage_key
+                # below.
+                sorted_inputs.append((dep.key, slot_ids))
             sorted_inputs.sort(key=lambda kv: kv[0])
 
-            cache_key = lineage_key(transform_key, signature, sorted_inputs)
+            cache_key = lineage_key(
+                transform_key,
+                signature,
+                [(k, "+".join(ids).encode()) for k, ids in sorted_inputs],
+            )
 
             # Compute per-output slot_ids (cache_key + dep.key + branch_idx).
             # G1 (C4): these `derived_hex` values ARE the slot_ids — the
@@ -1416,9 +1426,14 @@ class WorkflowTask:
                         dtype_key=slot_key,
                     )
                 )
-            consumes: dict[str, list[str]] = {}
-            for slot_key, instance_id_bytes in decision["sorted_inputs"]:
-                consumes.setdefault(slot_key, []).append(instance_id_bytes.hex())
+            # C0-amend: decision["sorted_inputs"] is now
+            # list[tuple[str, list[str]]] — the slot_ids are already
+            # hex strings, no byte-encoding gymnastics. This is the
+            # shape `walk_ancestors` expects to look up `by_slot`.
+            consumes = {
+                slot_key: list(ids)
+                for slot_key, ids in decision["sorted_inputs"]
+            }
             event = InvocationEvent(
                 task_hash=decision["cache_key"].hex(),
                 transform_key=decision["transform_key"],
@@ -1661,9 +1676,11 @@ class WorkflowTask:
                     # with the same dict shape as the cache-hit route at
                     # workflow.py:1419-1422. Without this, promote-side events
                     # carry consumes={} and BFS over trace.jsonl has no edges.
+                    # C0-amend: serialize as [slot_key, [hex,...]]; promote-side
+                    # parser tolerates the legacy single-string form via split("+").
                     sorted_inputs_serialized = [
-                        [slot_key, iid_bytes.hex()]
-                        for slot_key, iid_bytes in cache_decision["sorted_inputs"]
+                        [slot_key, list(ids)]
+                        for slot_key, ids in cache_decision["sorted_inputs"]
                     ]
                     f.write(
                         "sorted_inputs "
