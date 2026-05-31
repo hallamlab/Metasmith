@@ -1291,28 +1291,34 @@ class WorkflowTask:
 
             cache_key = lineage_key(transform_key, signature, sorted_inputs)
 
-            # Compute per-output instance_ids (slot_key + branch_idx).
-            # G9 — mutate the produced DataInstance objects in place so
-            # downstream steps see lineage-derived ids on their input
-            # sides. dependency_map shares the same DataInstance object
-            # reference between the producing step's produced dep and
-            # the consuming step's required dep (via canonical
-            # get_or_create in WorkflowPlan.Generate), so a single
-            # mutation propagates. We run topologically, so each
-            # consumer iteration above sees ids already rewritten.
-            out_ids: dict[tuple[str, int], str] = {}
+            # Compute per-output slot_ids (cache_key + dep.key + branch_idx).
+            # G1 (C4): these `derived_hex` values ARE the slot_ids — the
+            # production-channel identity for the (transform, slot, branch)
+            # triple. They're stored on each produced DataInstance's
+            # `instance_id` field so downstream steps see slot-identity on
+            # their input sides. File-level identity (file_instance_id) is
+            # minted post-facto by CollectResults (C6) over (slot_id, path)
+            # and never travels on the Nextflow channel.
+            #
+            # dependency_map shares the same DataInstance object reference
+            # between the producing step's produced dep and the consuming
+            # step's required dep (via canonical get_or_create in
+            # WorkflowPlan.Generate), so a single mutation propagates. We
+            # run topologically, so each consumer iteration above sees ids
+            # already rewritten.
+            out_slot_ids: dict[tuple[str, int], str] = {}
             for branch_idx, dep_group in enumerate(step.transform.model.produces):
                 for dep in dep_group:
-                    derived = multihash_key(
+                    slot_id_bytes = multihash_key(
                         canonical_cbor(
                             {"ck": cache_key, "s": dep.key, "b": branch_idx}
                         )
                     )
-                    derived_hex = derived.hex()
-                    out_ids[(dep.key, branch_idx)] = derived_hex
-                    out_id_by_producer[(step.order, dep.key, branch_idx)] = derived_hex
+                    slot_id = slot_id_bytes.hex()
+                    out_slot_ids[(dep.key, branch_idx)] = slot_id
+                    out_id_by_producer[(step.order, dep.key, branch_idx)] = slot_id
                     for inst in step.dependency_map.get(dep, []):
-                        inst.instance_id = derived_hex
+                        inst.instance_id = slot_id
                         inst.origin = "lineage"
                         inst._refresh_derived_keys()
             step.RefreshViews()
@@ -1329,7 +1335,7 @@ class WorkflowTask:
                 "transform_key": transform_key,
                 "signature": signature,
                 "sorted_inputs": sorted_inputs,
-                "out_instance_ids": out_ids,
+                "out_instance_ids": out_slot_ids,
                 "hit": hit,
                 "entry": entry,
                 "cacheable": getattr(step.transform, "cacheable", True),
@@ -1609,7 +1615,12 @@ class WorkflowTask:
                 f'echo "step {step.order}, sample $index"',    # this is used to extract logs in agent.RunWorkflow()
                 f'echo "{step.transform.name}"',
                 f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
-                f'echo "lin ${{Orchestrator.JsonforEcho(index)}}" >>{METADATA_FILE}',
+                # C4 — wrap the channel's index map in the LinPayload v2
+                # envelope `{"v": 2, "entries": <index>}`. Orchestrator.groovy
+                # is untouched; the JSON literal is composed in bash from the
+                # raw `Orchestrator.JsonforEcho(index)` output. Bootstrap (C5)
+                # parses this via `LinPayload.from_json`.
+                f'echo "lin {{\\"v\\":2,\\"entries\\":${{Orchestrator.JsonforEcho(index)}}}}" >>{METADATA_FILE}',
                 f'echo "fmt 2" >>{METADATA_FILE}',
                 f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
                 f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',

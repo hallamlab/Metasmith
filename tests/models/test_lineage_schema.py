@@ -9,7 +9,6 @@ from metasmith.models.lineage import (
     GroupingFrame,
     InvocationEvent,
     LeafRecord,
-    LinEntry,
     LinPayload,
     LineageNode,
     LogBundle,
@@ -22,18 +21,10 @@ from metasmith.models.lineage import (
 def _example_payload() -> LinPayload:
     return LinPayload(
         v=LIN_PAYLOAD_VERSION,
-        entries=[
-            LinEntry(
-                slot_id="aabbccdd",
-                dtype_key="sequences::gbk",
-                lineage_index={"k": "v"},
-            ),
-            LinEntry(
-                slot_id="11223344",
-                dtype_key="ncbi::assembly_accession",
-                lineage_index={},
-            ),
-        ],
+        entries={
+            "slot_a": [123456789, 987654321],
+            "slot_b": [42],
+        },
     )
 
 
@@ -77,8 +68,15 @@ def test_lin_payload_roundtrip():
     decoded = LinPayload.from_json(encoded)
     assert decoded == payload
     assert decoded.v == LIN_PAYLOAD_VERSION
-    assert decoded.entries[0].slot_id == "aabbccdd"
-    # mint_file_id is deterministic
+    assert decoded.entries["slot_a"] == [123456789, 987654321]
+    assert decoded.entries["slot_b"] == [42]
+    # Wire shape matches what Orchestrator.JsonforEcho(index) emits today,
+    # wrapped in {"v": 2, "entries": ...}.
+    assert json.loads(encoded) == {
+        "v": LIN_PAYLOAD_VERSION,
+        "entries": {"slot_a": [123456789, 987654321], "slot_b": [42]},
+    }
+    # mint_file_id is deterministic.
     fid1 = LinPayload.mint_file_id("slot_A", "out/x.gbk")
     fid2 = LinPayload.mint_file_id("slot_A", "out/x.gbk")
     fid3 = LinPayload.mint_file_id("slot_A", Path("out/x.gbk"))
@@ -89,7 +87,12 @@ def test_lin_payload_roundtrip():
 
 def test_lin_payload_rejects_unknown_version():
     with pytest.raises(ValueError):
-        LinPayload.from_json(json.dumps({"v": 99, "entries": []}))
+        LinPayload.from_json(json.dumps({"v": 99, "entries": {}}))
+
+
+def test_lin_payload_rejects_non_dict_entries():
+    with pytest.raises(ValueError):
+        LinPayload.from_json(json.dumps({"v": LIN_PAYLOAD_VERSION, "entries": []}))
 
 
 def test_invocation_event_roundtrip():

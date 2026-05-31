@@ -115,50 +115,28 @@ class ArityMismatchError(ValueError):
 
 
 @dataclass(frozen=True)
-class LinEntry:
-    """One slot's lineage tag on the wire.
-
-    `slot_id` is the production-channel identity; `dtype_key` and
-    `lineage_index` are reproduction-friendly bookkeeping (the same
-    fields the v1 dict-shaped lin payload carried).
-    """
-
-    slot_id: str
-    dtype_key: str
-    lineage_index: dict
-
-    def to_dict(self) -> dict:
-        return {
-            "slot_id": self.slot_id,
-            "dtype_key": self.dtype_key,
-            "lineage_index": self.lineage_index,
-        }
-
-    @classmethod
-    def from_dict(cls, raw: dict) -> "LinEntry":
-        return cls(
-            slot_id=raw["slot_id"],
-            dtype_key=raw["dtype_key"],
-            lineage_index=raw.get("lineage_index", {}),
-        )
-
-
-@dataclass(frozen=True)
 class LinPayload:
     """Slot-level lineage tag carried on Nextflow channel values.
 
+    The on-wire shape is `{"v": LIN_PAYLOAD_VERSION, "entries": <map>}`
+    where the map is `slot_name -> [lineage_index_hash, ...]`. The
+    `slot_name` keys are the channel-label hashes (`prod_name`) emitted
+    by `Orchestrator.groovy`'s namespace — bootstrap looks up actual
+    `DataInstance` objects via the `din` line of `workflow.step_N.meta`,
+    not via the `lin` payload directly. The payload is the lineage
+    *trace* through the DAG, not the input-id list.
+
     File-level identity (`file_instance_id`) is *not* on the wire — it
     is minted post-facto by `CollectResults` via `mint_file_id`.
-    Bootstrap consumes only slot-level identity off the channel.
     """
 
     v: int
-    entries: list[LinEntry] = field(default_factory=list)
+    entries: dict[str, list[int]] = field(default_factory=dict)
 
     VERSION: ClassVar[int] = LIN_PAYLOAD_VERSION
 
     def Pack(self) -> dict:
-        return {"v": self.v, "entries": [e.to_dict() for e in self.entries]}
+        return {"v": self.v, "entries": {k: list(v) for k, v in self.entries.items()}}
 
     def to_json(self) -> str:
         return json.dumps(self.Pack(), separators=(",", ":"))
@@ -170,7 +148,12 @@ class LinPayload:
             raise ValueError(
                 f"unsupported lin payload version {v!r}; expected {LIN_PAYLOAD_VERSION}"
             )
-        entries = [LinEntry.from_dict(e) for e in raw.get("entries", [])]
+        entries_raw = raw.get("entries", {})
+        if not isinstance(entries_raw, dict):
+            raise ValueError(
+                f"lin payload entries must be a dict, got {type(entries_raw).__name__}"
+            )
+        entries = {k: list(v) for k, v in entries_raw.items()}
         return cls(v=v, entries=entries)
 
     @classmethod
