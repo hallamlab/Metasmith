@@ -429,7 +429,7 @@ class Logistics:
                     with LiveShell() as remote_shell:
                         remote = src_host if src_host != "" else dest_host
                         remote_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh {remote}: {x}"))
-                        res = remote_shell.Exec(f"ssh {remote}", history=True)
+                        res = remote_shell.Exec(f"ssh {remote}", history=True, inherit_stdin=True)
                         if res.exit_code not in (0, None):
                             Log.Error(f"failed to ssh into {remote}: exit={res.exit_code}")
                             continue

@@ -148,7 +148,7 @@ class Agent:
         if self._is_ssh():
             ssh_src = SshSource.Parse(self.home.address)
             Log.Info(f"starting ssh to [{ssh_src.host}]")
-            shell.Exec(f"ssh {ssh_src.host}")
+            shell.Exec(f"ssh {ssh_src.host}", inherit_stdin=True)
             SUCCESS = f"ssh_connected_flag.{KeyGenerator.FromInt(2**42)}"
             def on_out(x):
                 if SUCCESS in x: return

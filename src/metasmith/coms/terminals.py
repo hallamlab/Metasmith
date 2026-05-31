@@ -182,6 +182,27 @@ class LiveShell:
         marker shape with an unknown nonce passes through verbatim, so user
         output is byte-faithful unless they happen to also know our token
         + a currently-pending nonce (statistically zero).
+
+    stdin isolation (default):
+      User cmds run inside `{ ...; } </dev/null` so children cannot greedily
+      consume the marker emission line off bash's stdin pipe. Without this,
+      `Exec("ssh host cmd")` would wedge: ssh inherits the pipe, reads the
+      marker line meant for local bash, and forwards it to the remote where
+      it's discarded. The brace group preserves env mutations in the parent
+      shell (unlike `(...)` subshells) and propagates $? unchanged.
+
+      For cmds that legitimately need bash's real stdin — sub-shell entries
+      (ssh host, bash -c interactive, docker exec -i ...) whose marker is
+      meant to travel through to the inner shell — pass inherit_stdin=True
+      to Exec / ExecAsync. SubShell.__enter__ does this automatically.
+
+    Known residual limitations (in-band approach inherent):
+      - Exec("exec something") replaces bash; no in-band approach survives.
+      - Exec("exec 2>/tmp/log") sends the stderr marker to the file forever.
+      - User cmd that itself reads stdin (e.g. cat, read x) gets immediate
+        EOF from the default /dev/null redirect, which is the right batch
+        behavior. Pass inherit_stdin=True only if the cmd is a sub-shell
+        entry.
     """
 
     _INIT_NONCE = "__msm_init__"
@@ -346,14 +367,31 @@ class LiveShell:
 
     # --- exec ---------------------------------------------------------------
 
-    def ExecAsync(self, cmd: str):
-        """Send a command + inline marker emission. Returns the per-Exec nonce."""
+    def ExecAsync(self, cmd: str, inherit_stdin: bool = False):
+        """Send a command + inline marker emission. Returns the per-Exec nonce.
+
+        inherit_stdin: when False (default), the user cmd runs inside a brace
+        group with stdin redirected to /dev/null, so children like one-shot
+        ssh, cat, read, or sudo (no -n) cannot greedily consume the marker
+        emission line off bash's stdin pipe. Set True only for cmds that
+        deliberately enter a long-lived sub-shell (e.g. SubShell entry),
+        where the marker is supposed to travel through to the inner shell.
+        """
         if self._shell is None: return None
         nonce = GenerateId()
         with self._cond:
             self._pending.add(nonce)
             self._sync_received[nonce] = set()
-        self._shell.Write(RemoveLeadingIndent(cmd))
+        body = RemoveLeadingIndent(cmd).rstrip()
+        if inherit_stdin:
+            self._shell.Write(body)
+        else:
+            # Brace group preserves env mutations in the parent shell (unlike
+            # subshell parens). Explicit '\n' before '}' guarantees the
+            # closing brace is its own token regardless of how `cmd` ended.
+            # `__rc=$?` on the next written line still captures this group's
+            # exit code, which equals the user cmd's exit code.
+            self._shell.Write("{\n" + body + "\n} </dev/null")
         self._shell.Write(self._marker_emission_bash(nonce))
         return nonce
 
@@ -408,7 +446,12 @@ class LiveShell:
         that you intend to leave again. Plain Exec("ssh host 'cmd'") one-shot
         commands do NOT need SubShell — they return on their own.
         """
-        self.Exec(entry_cmd, timeout=pop_timeout)
+        # inherit_stdin=True: the entry_cmd (ssh / nested bash / ...) is
+        # supposed to consume the marker emission line off our stdin pipe
+        # and forward it to the inner shell, which executes the printf and
+        # the marker travels back to us via stdout/stderr. The default
+        # </dev/null wrap would break that mechanism.
+        self.Exec(entry_cmd, timeout=pop_timeout, inherit_stdin=True)
         self._depth += 1
         try:
             yield self
@@ -477,7 +520,7 @@ class LiveShell:
                 return rc
         return None
 
-    def Exec(self, cmd: str, timeout: float|None = None, history: bool=False, quiet: bool=False) -> ShellResult:
+    def Exec(self, cmd: str, timeout: float|None = None, history: bool=False, quiet: bool=False, inherit_stdin: bool = False) -> ShellResult:
         _out, _err = [], []
         _log_out = _out.append
         _log_err = _err.append
@@ -492,7 +535,7 @@ class LiveShell:
                 self.RegisterOnOut(_log_out)
                 self.RegisterOnErr(_log_err)
 
-            _hash = self.ExecAsync(cmd)
+            _hash = self.ExecAsync(cmd, inherit_stdin=inherit_stdin)
             if _hash is None:
                 return ShellResult(out=_out, err=_err, exit_code=None)
             exit_code = self.AwaitDone(_hash=_hash, timeout=timeout)
