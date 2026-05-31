@@ -458,9 +458,9 @@ Errors print to stderr and exit non-zero — they are not swallowed into `{"erro
 | `metasmith status` | `<run_dir>` — render per-task hit/run status from `_metasmith/trace.jsonl` + `workflow.step_N.meta` |
 | top-level legacy | `get`, `lab`, `api`, `help` |
 
-### Task cache (new, feat/caching)
+### Task cache (feat/caching)
 
-A lineage-addressed cache lives at `<agent_home>/task_cache/`. Identity is provenance (transform key + sorted input instance_ids encoded as canonical CBOR + blake3-32 multihash), not bytes. Defaults: cache is **ON**; per-transform opt-out via `TransformInstance(..., cacheable=False)`; global kill-switch via `METASMITH_CACHE=0` env. See `docs/source/usage/nextflow.rst` for the full surface. Cross-workspace reuse: `metasmith data import-library <src> <dest>` upserts `origin in {"lineage","imported"}` entries into the destination cache.
+A lineage-addressed cache lives at `<agent_home>/task_cache/`. Identity is provenance (transform key + sorted input instance_ids encoded as canonical CBOR + blake3-32 multihash), not bytes. Defaults: cache is **ON**; per-transform opt-out via `TransformInstance(..., cacheable=False)`; global kill-switch via `METASMITH_CACHE=0` env. Cache hits short-circuit the executor — compile-time probe rewrites the per-step emission in `workflow.nf` to a synthetic `Channel.of(...)` routed through `o.post(o.asStreams(...), k)` (Critic E#1 invariant preserved); the post-exec promote (`promote_run`) atomic-renames `<key>.tmp/` → `<key[:2]>/<key[2:]>/`. `<run_dir>/_metasmith/trace.jsonl` records one `source: hit` row per cached step at compile time + one `source: run` row per promoted step post-exec. Per G8 leaf ids are unique per `AddItem`, so cross-build hits require `metasmith data import-library <src> <dest>` (upserts `origin in {"lineage","imported"}` entries into the destination cache). See `docs/source/usage/nextflow.rst` for the full surface.
 
 ### Workflow via CLI
 
