@@ -1130,55 +1130,192 @@ def CollectResults(
                 _hash = md5(str(p).encode()).hexdigest()
                 _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
                 kv2path[(k, _hash)] = p, {}, inst_id_by_path.get(str(p))
-    for manifest in glob(str(manifests_path/"*")):
-        manifest = Path(manifest)
-        if manifest.suffix != ".json": continue
-        parts = manifest.name.split(".")
-        inst_id = None
-        if len(parts) >= 4:
-            inst_k = parts[-3]
-            inst_id = parts[-2]  # slot_id (encoded in the manifest filename)
-        else:
-            inst_k = parts[-2]
-        _parsed_entries = []
-        with open(manifest) as j:
-            entries = json.load(j)
-            for lin, path in entries:
-                try:
-                    path = Path(path)
-                    lind: dict = json.loads(lin)
-                    kv = inst_k, int(lind[inst_k][0]) # the type+index of the entry itself, so there must only be 1 value
-                    # G2: CSV-supplied instance_id is the authoritative
-                    # routing identity; manifest filename's inst_id only
-                    # fills the gap for entries with no CSV row.
-                    prior = kv2path.get(kv)
-                    csv_inst_id = prior[2] if prior else None
-                    kv2path[kv] = path, lind, (csv_inst_id or inst_id)
-                    # C6 — mint the per-file `file_instance_id` over
-                    # (slot_id, relative_path). Deterministic so cache
-                    # hits reproduce identity; surfaced via the
-                    # DataInstanceLibrary telemetry API in C8. The slot
-                    # id stays in the manifest filename; the per-file
-                    # id is added inside each entry.
-                    rel_path = path.relative_to(output_path) if path.is_absolute() else path
-                    file_instance_id = None
-                    if inst_id is not None:
-                        file_instance_id = LinPayload.mint_file_id(
-                            slot_id=inst_id,
-                            relative_path=rel_path,
-                        )
-                    _parsed_entries.append({
-                        "instance_key": kv[0],
-                        "instance_index": kv[1],
-                        "instance_id": inst_id,
-                        "file_instance_id": file_instance_id,
-                        "path": str(rel_path),
-                        "lineage": lind,
-                    })
-                except Exception as e:
-                    Log.Error(e)
-        with open(manifest, "w") as j:
-            json.dump(_parsed_entries, j, indent=2)
+    # C1: BFS over `_metasmith/trace.jsonl` populates the output side of
+    # `kv2path` directly from `InvocationEvent.consumes`, replacing the
+    # legacy `_manifests/*.json` glob. The trace is authoritative post
+    # C0/C0.5: every promote/hit event carries `consumes` (slot-keyed
+    # parent ids) and per-file `ProducedFile.path` + `file_instance_id`.
+    # publishDir for `_manifests/` is still in place — C2's job to drop.
+    from .telemetry import TraceIndex
+    trace_idx = TraceIndex.read(output_path.parent / "_metasmith" / "trace.jsonl")
+    # trace.jsonl carries slot_ids (assigned by _compute_cache_decisions
+    # at PrepareNextflow time); the on-disk task loaded above still
+    # holds pre-refresh short instance_ids because PrepareNextflow is
+    # not rerun in RunWorkflow. Bridge the two so `_resolve_instance`
+    # can map a slot_id back to a DataInstance via inst_id2inst — both
+    # ids end up pointing at the same in-memory DataInstance whose
+    # dtype_name we ultimately need at `output.AddItem`.
+    for _ev in trace_idx.events:
+        if not _ev.step_order:
+            continue
+        _si = _ev.step_order - 1
+        if not (0 <= _si < len(task.plan.steps)):
+            continue
+        _step = task.plan.steps[_si]
+        _dtype_to_insts: dict[str, list[DataInstance]] = {}
+        for _dep_group in _step.transform.model.produces:
+            for _dep in _dep_group:
+                for _inst in _step.dependency_map.get(_dep, []):
+                    _dtype_to_insts.setdefault(_inst.dtype.key, []).append(_inst)
+        for _pf in _ev.produces:
+            _cands = _dtype_to_insts.get(_pf.dtype_key, [])
+            if _cands:
+                if _pf.slot_id:
+                    inst_id2inst.setdefault(_pf.slot_id, _cands[0])
+                if _pf.file_instance_id:
+                    inst_id2inst.setdefault(_pf.file_instance_id, _cands[0])
+    # consumes values are `hex(utf8(instance_id))` (workflow.py:1287),
+    # while TraceIndex.by_slot / by_file key on the raw instance_id —
+    # decode once to bridge. Empty for fixtures with no upstream chain
+    # (every input is a leaf given), and `_try_decode` falls back to
+    # the raw form for trace shapes that ever emit it directly.
+    def _try_decode(piid: str) -> str | None:
+        try:
+            return bytes.fromhex(piid).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return None
+    _slot_to_event: dict[str, "object"] = {}
+    for _ev in trace_idx.events:
+        for _pf in _ev.produces:
+            if _pf.slot_id:
+                _slot_to_event.setdefault(_pf.slot_id, _ev)
+            if _pf.file_instance_id:
+                _slot_to_event.setdefault(_pf.file_instance_id, _ev)
+
+    def _seed_given_lineage(inst, lind: dict[str, list[int]]) -> None:
+        """Walk `parent_lib.parents` transitively from a given DataInstance.
+
+        Mirrors virtual_runtime._seed_lineage (virtual_runtime.py:308):
+        the legacy `_manifests/*.json` rows carried this full ancestry
+        chain inline, not just direct parents. Reproducing it here keeps
+        downstream parent-walk lookups (the `lineage.items()` loop
+        below) able to find given-side `(dtype, hash15)` entries from
+        kv2path's input-CSV side.
+        """
+        stack = [inst]
+        seen: set[tuple[str, str]] = set()
+        while stack:
+            curr = stack.pop()
+            pl = getattr(curr, "parent_lib", None)
+            mark = (pl.GetKey() if pl is not None else "", str(curr.path))
+            if mark in seen:
+                continue
+            seen.add(mark)
+            p = curr.ResolvePath()
+            lind.setdefault(curr.dtype.key, []).append(
+                int(md5(str(p).encode()).hexdigest()[:15], 16)
+            )
+            if pl is None:
+                continue
+            for pm in pl.parents.get(curr.path, []):
+                if pm.path in pl.manifest:
+                    stack.append(pl.Get(pm.path))
+
+    def _build_transitive_lind(root_ev):
+        """BFS over `consumes`; returns {dtype_key: sorted [hash15(abs_path)]}.
+
+        Reproduces post-hoc what virtual_runtime's `_merge_lineage`
+        built at channel-merge time. Each reached event contributes its
+        own produces' (dtype_key, hash15(abs_path)) to the accumulator.
+        Frontier branches terminating at a given (no producer event)
+        seed via `_seed_given_lineage` so the ancestry chain on the
+        input side of the library reaches the kv2path lookup table.
+        """
+        lind: dict[str, list[int]] = {}
+        seen_evs: set[str] = set()
+        frontier = [root_ev]
+        while frontier:
+            nxt = []
+            for ev in frontier:
+                if ev.task_hash in seen_evs:
+                    continue
+                seen_evs.add(ev.task_hash)
+                for pf in ev.produces:
+                    if not pf.path or not pf.dtype_key:
+                        continue
+                    rel = Path(pf.path)
+                    abs_p = output_path / rel if not rel.is_absolute() else rel
+                    lind.setdefault(pf.dtype_key, []).append(
+                        int(md5(str(abs_p).encode()).hexdigest()[:15], 16)
+                    )
+                for parent_iids in ev.consumes.values():
+                    for piid in parent_iids:
+                        decoded = _try_decode(piid)
+                        parent_ev = None
+                        for key in (decoded, piid):
+                            if key and key in _slot_to_event:
+                                parent_ev = _slot_to_event[key]
+                                break
+                        if parent_ev is not None:
+                            if parent_ev.task_hash not in seen_evs:
+                                nxt.append(parent_ev)
+                            continue
+                        given = None
+                        for key in (decoded, piid):
+                            if key and key in inst_id2inst:
+                                given = inst_id2inst[key]
+                                break
+                        if given is not None:
+                            _seed_given_lineage(given, lind)
+            frontier = nxt
+        return {k: sorted(set(v)) for k, v in lind.items()}
+
+    _output_kv_count_before_trace = sum(
+        1 for (_k, _h), (_p, _l, _i) in kv2path.items()
+        if _p.is_absolute() and _p.is_relative_to(output_path)
+    )
+    for ev in trace_idx.events:
+        for pf in ev.produces:
+            if not pf.path or not pf.dtype_key:
+                continue
+            rel_path = Path(pf.path)
+            abs_path = output_path / rel_path if not rel_path.is_absolute() else rel_path
+            _hash = int(md5(str(abs_path).encode()).hexdigest()[:15], 16)
+            kv = pf.dtype_key, _hash
+            try:
+                lind = _build_transitive_lind(ev)
+            except Exception as e:
+                Log.Error(e)
+                continue
+            # Preserve CSV-side instance_id if a prior input entry
+            # already claimed this kv (G2 routing identity); otherwise
+            # fall back to the slot_id from the trace event (matches the
+            # legacy manifest-filename `inst_id` field).
+            prior = kv2path.get(kv)
+            csv_inst_id = prior[2] if prior else None
+            kv2path[kv] = abs_path, lind, (csv_inst_id or pf.slot_id or None)
+    _output_kv_count_after_trace = sum(
+        1 for (_k, _h), (_p, _l, _i) in kv2path.items()
+        if _p.is_absolute() and _p.is_relative_to(output_path)
+    )
+    # Legacy fallback: when the trace produced no output kv entries —
+    # typical for docker-stub harnesses that bypass promote_run — fall
+    # back to the legacy `_manifests/*.json` reader so kv2path still
+    # gets populated. C2 deletes the publishDir + this fallback in one
+    # commit; until then, both paths must coexist.
+    if _output_kv_count_after_trace == _output_kv_count_before_trace:
+        for manifest in glob(str(manifests_path/"*")):
+            manifest = Path(manifest)
+            if manifest.suffix != ".json": continue
+            parts = manifest.name.split(".")
+            inst_id = None
+            if len(parts) >= 4:
+                inst_k = parts[-3]
+                inst_id = parts[-2]
+            else:
+                inst_k = parts[-2]
+            with open(manifest) as j:
+                entries = json.load(j)
+                for lin, path in entries:
+                    try:
+                        path = Path(path)
+                        lind: dict = json.loads(lin)
+                        kv = inst_k, int(lind[inst_k][0])
+                        prior = kv2path.get(kv)
+                        csv_inst_id = prior[2] if prior else None
+                        kv2path[kv] = path, lind, (csv_inst_id or inst_id)
+                    except Exception as e:
+                        Log.Error(e)
     relavent_k = {k for k, v in kv2path}
     given_manifest = []
     todo = dict(enumerate(kv2path.items()))
