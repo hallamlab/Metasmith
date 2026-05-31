@@ -1341,35 +1341,99 @@ class WorkflowTask:
                 "cacheable": getattr(step.transform, "cacheable", True),
             }
 
-        if store is not None:
-            store.close()
-        # G11 — emit the per-run trace.jsonl at compile time. Each cached
-        # step writes a single `source: hit` row; misses get their `run`
-        # row from the post-exec promote pass (S5). The file is truncated
-        # here so successive runs of the same task in the same workspace
-        # don't accumulate stale entries — `msm status <run_dir>` reads
-        # the latest run only.
+        # C7 — emit the per-run trace.jsonl at compile time as v2
+        # InvocationEvent rows. On each compile: if a prior trace.jsonl
+        # exists, rotate it to `trace.<prev_session_id>.jsonl` (the
+        # session_id read from its SessionStart sentinel, or 0 fallback);
+        # then allocate a fresh session_id via the cache sqlite counter
+        # and open a clean file headed by a SessionStart sentinel. All
+        # subsequent emits in this compile carry the new session_id.
+        # Post-exec promote (promote.py) appends miss/promoted/fail rows
+        # carrying the same session_id, rediscovered from the sentinel.
+        from ..models.lineage import (
+            INVOCATION_EVENT_SCHEMA_VERSION,
+            InvocationEvent,
+            ProducedFile,
+            SessionStart,
+            append_invocation_event,
+        )
+        from ..constants import VERSION
+
         trace_dir = context.work_dir / "_metasmith"
         trace_dir.mkdir(parents=True, exist_ok=True)
         trace_path = trace_dir / "trace.jsonl"
+
+        prev_session_id = 0
+        if trace_path.exists():
+            try:
+                first_line = next(
+                    (l for l in trace_path.read_text().splitlines() if l.strip()),
+                    "",
+                )
+                if first_line:
+                    head = json.loads(first_line)
+                    if head.get("event") == SessionStart.EVENT_NAME:
+                        prev_session_id = int(head.get("session_id", 0))
+            except Exception:
+                prev_session_id = 0
+            rotated = trace_dir / f"trace.{prev_session_id}.jsonl"
+            try:
+                trace_path.rename(rotated)
+            except OSError:
+                # Falling back to truncate-overwrite is non-fatal: the
+                # archived rows are lost but the fresh session proceeds.
+                pass
+
+        if store is not None:
+            session_id = store.allocate_session_id()
+        else:
+            session_id = prev_session_id + 1
+
+        sentinel = SessionStart(
+            session_id=session_id,
+            compile_started_at="",  # Date.now() omitted — set at writer
+            metasmith_version=VERSION,
+            schema_version=INVOCATION_EVENT_SCHEMA_VERSION,
+        )
         with open(trace_path, "w", encoding="utf-8") as f:
-            for order, decision in sorted(decisions.items()):
-                if not decision["hit"]:
-                    continue
-                # Resolve the step name for human-readable status lines.
-                step_name = ""
-                for step in self.plan.steps:
-                    if step.order == order:
-                        step_name = step.transform.name or ""
-                        break
-                row = {
-                    "source": "hit",
-                    "step": order,
-                    "step_name": step_name,
-                    "cache_key": decision["cache_key"].hex(),
-                    "transform_key": decision["transform_key"],
-                }
-                f.write(json.dumps(row, separators=(",", ":")) + "\n")
+            f.write(sentinel.to_jsonl() + "\n")
+
+        for order, decision in sorted(decisions.items()):
+            if not decision["hit"]:
+                continue
+            step_name = ""
+            for step in self.plan.steps:
+                if step.order == order:
+                    step_name = step.transform.name or ""
+                    break
+            produces: list[ProducedFile] = []
+            for (slot_key, branch_idx), slot_id in decision["out_instance_ids"].items():
+                produces.append(
+                    ProducedFile(
+                        file_instance_id=slot_id,  # cache-hit: file_instance_id = slot_id until promote re-mints
+                        slot_id=slot_id,
+                        path="",
+                        dtype_key=slot_key,
+                    )
+                )
+            consumes: dict[str, list[str]] = {}
+            for slot_key, instance_id_bytes in decision["sorted_inputs"]:
+                consumes.setdefault(slot_key, []).append(instance_id_bytes.hex())
+            event = InvocationEvent(
+                task_hash=decision["cache_key"].hex(),
+                transform_key=decision["transform_key"],
+                status="hit",
+                consumes=consumes,
+                produces=produces,
+                session_id=session_id,
+                step_order=order,
+                step_name=step_name,
+                cache_key=decision["cache_key"].hex(),
+            )
+            append_invocation_event(trace_path, event)
+
+        if store is not None:
+            store.close()
         hits = sum(1 for d in decisions.values() if d["hit"])
         if hits:
             Log.Info(

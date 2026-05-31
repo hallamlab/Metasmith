@@ -202,21 +202,77 @@ def recover_orphan_tmp_dirs(cache_root: Path) -> dict[str, str]:
     return actions
 
 
-def _append_trace_row(workspace: Path, row: dict) -> None:
-    """Append a single JSONL row to <workspace>/_metasmith/trace.jsonl.
+def _read_session_id(workspace: Path) -> int:
+    """Recover the active session_id from the SessionStart sentinel.
 
-    Compile-time hits are seeded by `_compute_cache_decisions`; this
-    appends `source: run` rows for steps actually executed and freshly
-    promoted on this pass. Same file, two writers — that is the G11
-    two-pass contract.
+    Workflow.py:_compute_cache_decisions writes the sentinel as the
+    first line of every fresh trace.jsonl (C7); promote_run reads it
+    so its emitted InvocationEvents carry the same session_id. Returns
+    0 if the file or sentinel is missing — every InvocationEvent still
+    parses, just with an uncorrelated session_id.
     """
+    trace_path = workspace / "_metasmith" / "trace.jsonl"
+    if not trace_path.exists():
+        return 0
+    try:
+        for line in trace_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            head = json.loads(line)
+            if head.get("event") == "session_start":
+                return int(head.get("session_id", 0))
+            return 0
+    except Exception:
+        return 0
+    return 0
+
+
+def _append_invocation_event_v2(
+    workspace: Path,
+    *,
+    session_id: int,
+    spec: "StepPromoteSpec",
+    status: str,
+    cache_key_hex: str,
+) -> None:
+    """Append a v2 InvocationEvent row to <workspace>/_metasmith/trace.jsonl."""
+    from ..models.lineage import (
+        InvocationEvent,
+        ProducedFile,
+        append_invocation_event,
+    )
+
     trace_dir = workspace / "_metasmith"
     trace_dir.mkdir(parents=True, exist_ok=True)
     trace_path = trace_dir / "trace.jsonl"
-    import json as _json
 
-    with open(trace_path, "a", encoding="utf-8") as f:
-        f.write(_json.dumps(row, separators=(",", ":")) + "\n")
+    produces: list[ProducedFile] = []
+    for slot_branch, instance_id_hex in sorted(spec.out_identities.items()):
+        # `slot_branch` is the encoded "<dep_key>::<branch_idx>" form
+        # (see workflow.py:1574). slot_id = instance_id_hex here; the
+        # per-file file_instance_id is minted by CollectResults over
+        # (slot_id, relative_path) once the file lands.
+        dtype_key = slot_branch.split("::", 1)[0]
+        produces.append(
+            ProducedFile(
+                file_instance_id=instance_id_hex,
+                slot_id=instance_id_hex,
+                path="",
+                dtype_key=dtype_key,
+            )
+        )
+    event = InvocationEvent(
+        task_hash=cache_key_hex,
+        transform_key=spec.transform_key,
+        status=status,  # type: ignore[arg-type]
+        consumes={},
+        produces=produces,
+        session_id=session_id,
+        step_order=spec.order,
+        cache_key=cache_key_hex,
+        time_source="orchestrator",
+    )
+    append_invocation_event(trace_path, event)
 
 
 def promote_run(
@@ -302,14 +358,12 @@ def promote_run(
                     origin="lineage",
                 )
                 promoted.append(key_hex)
-                _append_trace_row(
+                _append_invocation_event_v2(
                     workspace,
-                    {
-                        "source": "run",
-                        "step": spec.order,
-                        "cache_key": key_hex,
-                        "transform_key": spec.transform_key,
-                    },
+                    session_id=_read_session_id(workspace),
+                    spec=spec,
+                    status="promoted",
+                    cache_key_hex=key_hex,
                 )
             finally:
                 _release_lock(lock)
