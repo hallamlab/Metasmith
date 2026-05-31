@@ -175,6 +175,25 @@ def _find_step_outputs(workspace: Path, step_order: int) -> list[Path]:
     return out
 
 
+def _find_step_logs(workspace: Path, step_order: int) -> list[Path]:
+    """Locate `.command.{sh,out,err,log}` files for a completed step.
+
+    C8 / G6 — promote captures these into `<shard>/logs/` so
+    `DataInstanceLibrary.get_logs_of(any_output).stdout` resolves after
+    `rm -rf work/` + resume. Same scan root as `_find_step_outputs`;
+    different filter.
+    """
+    out: list[Path] = []
+    step_dir = workspace / "nxf_work" / f"step_{step_order:02}"
+    if not step_dir.exists():
+        return out
+    for fp in sorted(step_dir.rglob(".command.*")):
+        if not fp.is_file():
+            continue
+        out.append(fp)
+    return out
+
+
 def recover_orphan_tmp_dirs(cache_root: Path) -> dict[str, str]:
     """Walk `<cache_root>/*.tmp/`: promote those with manifest.cbor, else rm.
 
@@ -324,6 +343,19 @@ def promote_run(
                         shutil.copy2(src, dest)
                     files_meta.append({"relpath": str(dest.relative_to(tmp))})
                     total_bytes += dest.stat().st_size
+                # C8 / G6 — capture .command.{sh,out,err,log} into
+                # `<shard>/logs/` so get_logs_of resolves after `rm -rf
+                # work/` + resume. Best-effort: logs are nice-to-have,
+                # never fail the promote on a missing/unreadable .command.*.
+                log_srcs = _find_step_logs(workspace, spec.order)
+                if log_srcs:
+                    logs_dir = tmp / "logs"
+                    logs_dir.mkdir(parents=True, exist_ok=True)
+                    for lsrc in log_srcs:
+                        try:
+                            shutil.copy2(lsrc, logs_dir / lsrc.name)
+                        except OSError:
+                            continue
                 lineage_payload = canonical_cbor(
                     {
                         "tk": spec.transform_key,
