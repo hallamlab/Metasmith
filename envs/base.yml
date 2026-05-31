@@ -40,5 +40,9 @@ dependencies:
   - globus-cli=3.40.0
   - globus-sdk=4.1.0
 
+  # caching: canonical CBOR encoding + blake3 multihash keys
+  - cbor2=5.6.5
+  - blake3=0.4.1
+
 # there can NOT be any pip dependencies,
 # since those will not be installed with the conda package

@@ -446,7 +446,7 @@ Errors print to stderr and exit non-zero — they are not swallowed into `{"erro
 | Group | Subcommands |
 |-------|-------------|
 | `metasmith type` | `list`, `show`, `compat`, `create`, `add` |
-| `metasmith data` | `inspect`, `list`, `create`, `attach-types`, `add-item`, `add-value`, `set-parents`, `remove`, `rename`, `rename-by-parent`, `prune-types`, `consolidate`, `save`, `trace`, `load-remote`, `lineage` |
+| `metasmith data` | `inspect`, `list`, `create`, `attach-types`, `add-item`, `add-value`, `set-parents`, `remove`, `rename`, `rename-by-parent`, `prune-types`, `consolidate`, `save`, `trace`, `load-remote`, `import-library`, `lineage` |
 | `metasmith transform` | `list`, `libraries`, `show`, `read`, `write`, `scaffold`, `validate`, `propagate-types` |
 | `metasmith plan` | one-shot planner (`--data-library`, `--sample-type`, `--target-type ...`, `--transform-library ...`) |
 | `metasmith workflow` | `stage`, `run`, `wait`, `tail`, `cancel`, `runs`, `check`, `collect`, `result-source`, `presets` |
@@ -454,7 +454,13 @@ Errors print to stderr and exit non-zero — they are not swallowed into `{"erro
 | `metasmith source` | `parse`, `exists`, `transfer` |
 | `metasmith task` | `list`, `show`, `hints`, `dag`, `delete` |
 | `metasmith build` | `all` (default), `types`, `uniques`, `transforms` — compile data type, unique, and transform libraries |
+| `metasmith cache` | `list`, `gc`, `explain` — lineage-addressed task-cache operations |
+| `metasmith status` | `<run_dir>` — render per-task hit/run status from `_metasmith/trace.jsonl` + `workflow.step_N.meta` |
 | top-level legacy | `get`, `lab`, `api`, `help` |
+
+### Task cache (feat/caching)
+
+A lineage-addressed cache lives at `<agent_home>/task_cache/`. Identity is provenance (transform key + sorted input instance_ids encoded as canonical CBOR + blake3-32 multihash), not bytes. Defaults: cache is **ON**; per-transform opt-out via `TransformInstance(..., cacheable=False)`; global kill-switch via `METASMITH_CACHE=0` env. Cache hits short-circuit the executor — compile-time probe rewrites the per-step emission in `workflow.nf` to a synthetic `Channel.of(...)` routed through `o.post(o.asStreams(...), k)` (Critic E#1 invariant preserved); the post-exec promote (`promote_run`) atomic-renames `<key>.tmp/` → `<key[:2]>/<key[2:]>/`. `<run_dir>/_metasmith/trace.jsonl` records one `source: hit` row per cached step at compile time + one `source: run` row per promoted step post-exec. Per G8 leaf ids are unique per `AddItem`, so cross-build hits require `metasmith data import-library <src> <dest>` (upserts `origin in {"lineage","imported"}` entries into the destination cache). See `docs/source/usage/nextflow.rst` for the full surface.
 
 ### Workflow via CLI
 

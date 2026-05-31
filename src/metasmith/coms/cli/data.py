@@ -114,6 +114,21 @@ def register(subs):
         a.src_uri, a.dest, a.on_exist, not a.no_image,
     ))
 
+    _il = sp.add_parser(
+        "import-library",
+        help="fetch a library + upsert lineage/imported entries into task_cache",
+    )
+    _il.add_argument("src_uri")
+    _il.add_argument("dest")
+    _il.add_argument("--cache-root", default=None,
+                     help="override cache_root (default: <dest>/../task_cache)")
+    _il.add_argument("--on-exist", default="skip")
+    _il.add_argument("--no-image", action="store_true",
+                     help="treat src as a directory, not a packed image")
+    _il.set_defaults(func=lambda a: _ops.import_library(
+        a.src_uri, a.dest, a.cache_root, a.on_exist, not a.no_image,
+    ))
+
     _lin = sp.add_parser("lineage", help="show an item's type + parents")
     _lin.add_argument("library")
     _lin.add_argument("item_path")
