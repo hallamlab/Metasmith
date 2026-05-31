@@ -2,6 +2,8 @@ from __future__ import annotations
 import os
 import re
 import secrets
+import time
+from contextlib import contextmanager
 from typing import IO, Callable
 from threading import Condition
 import subprocess
@@ -193,6 +195,10 @@ class LiveShell:
         r"(?: (?P<rc>-?\d+))?\x1e"
     )
 
+    # Test seam: when True, the first marker write in _pop is replaced with a
+    # nonce nothing matches, forcing the retry path. Production default False.
+    _pop_drop_first_marker = False
+
     def __init__(self) -> None:
         self._err_callbacks: list[Callable[[str], None]] = []
         self._out_callbacks: list[Callable[[str], None]] = []
@@ -203,6 +209,8 @@ class LiveShell:
         self._shell: TerminalProcess | None = None
         self._closed = False
         self._token = secrets.token_hex(16)  # 128-bit session id
+        self._last_byte_time = time.monotonic()
+        self._depth = 0  # bookkeeping for SubShell nesting; diagnostics only
 
         try:
             self._shell = TerminalProcess()
@@ -247,6 +255,9 @@ class LiveShell:
             if self._shell is None: return
             msg = RemoveTrailingNewline(self._shell.Decode(x))
             if len(msg) == 0: return
+            # Channel-activity timestamp: updated on every non-empty chunk,
+            # including marker lines. Read by _pop to detect quiescence.
+            self._last_byte_time = time.monotonic()
             m = self._MARKER_RE.search(msg)
             if m and m.group("token") == self._token:
                 nonce = m.group("nonce")
@@ -373,6 +384,98 @@ class LiveShell:
             self._pending.discard(_hash)
             self._sync_received.pop(_hash, None)
         return exit_code
+
+    # --- shell-boundary crossing --------------------------------------------
+
+    @contextmanager
+    def SubShell(self, entry_cmd: str, *,
+                 pop_quiescence_ms: int = 150,
+                 pop_idle_samples: int = 3,
+                 pop_timeout: float = 5.0,
+                 pop_retries: int = 1):
+        """
+        Cross into and back out of a sub-shell (ssh, nested bash, docker exec, ...).
+
+        Enter: writes entry_cmd via plain Exec — the marker arrives from the
+        sub-shell over its forwarded stdout/stderr, so we know we're in.
+
+        Exit: writes 'exit', waits for output to quiesce (multi-sample idle
+        window), then writes a fresh marker-emission line that lands on the
+        parent shell. If the first marker is lost (sub-shell still draining
+        when written), retries up to `pop_retries` times.
+
+        Use this whenever the entry_cmd transitions to a different shell layer
+        that you intend to leave again. Plain Exec("ssh host 'cmd'") one-shot
+        commands do NOT need SubShell — they return on their own.
+        """
+        self.Exec(entry_cmd, timeout=pop_timeout)
+        self._depth += 1
+        try:
+            yield self
+        finally:
+            try:
+                self._pop(
+                    quiescence_ms=pop_quiescence_ms,
+                    idle_samples=pop_idle_samples,
+                    timeout=pop_timeout,
+                    retries=pop_retries,
+                )
+            finally:
+                self._depth -= 1
+
+    def _pop(self, *, quiescence_ms: int, idle_samples: int,
+             timeout: float, retries: int) -> int | None:
+        """
+        Write `exit` and synchronize with the parent shell.
+
+        Phase 1: wait for true output quiescence — idle_samples consecutive
+        sample windows where (now - _last_byte_time) >= quiescence_ms. A
+        floor ensures at least one full quiescence_ms passes even if no
+        output ever arrives (silent sub-shells).
+
+        Phase 2: write a fresh marker-emission line and AwaitDone. If the
+        marker doesn't return within a short window, retry. The retry is
+        safe — a lost marker is a no-op on the dead sub-shell; the new
+        marker lands on whichever shell now holds stdin.
+        """
+        if self._shell is None: return None
+        self._shell.Write("exit")
+        sample_interval = max(quiescence_ms / 1000.0 / idle_samples, 0.020)
+        deadline = time.monotonic() + timeout
+        floor_deadline = time.monotonic() + (quiescence_ms / 1000.0)
+        consecutive_idle = 0
+        while time.monotonic() < deadline:
+            sleep(sample_interval)
+            if time.monotonic() < floor_deadline:
+                continue
+            idle_ms = (time.monotonic() - self._last_byte_time) * 1000.0
+            if idle_ms >= quiescence_ms:
+                consecutive_idle += 1
+                if consecutive_idle >= idle_samples:
+                    break
+            else:
+                consecutive_idle = 0
+        # Phase 2: send fresh marker; one retry covers a lost first attempt.
+        for attempt in range(retries + 1):
+            nonce = GenerateId()
+            with self._cond:
+                self._pending.add(nonce)
+                self._sync_received[nonce] = set()
+            if attempt == 0 and self._pop_drop_first_marker:
+                # Test seam: emit a marker that nothing matches so the retry
+                # path is exercised. Use a fresh token so it can't be parsed
+                # as ours even by accident.
+                bogus = self._marker_emission_bash(nonce).replace(
+                    self._token, "0" * len(self._token)
+                )
+                self._shell.Write(bogus)
+            else:
+                self._shell.Write(self._marker_emission_bash(nonce))
+            per_attempt = 0.5 if attempt < retries else max(1.0, timeout - 1.0)
+            rc = self.AwaitDone(nonce, timeout=per_attempt)
+            if rc is not None:
+                return rc
+        return None
 
     def Exec(self, cmd: str, timeout: float|None = None, history: bool=False, quiet: bool=False) -> ShellResult:
         _out, _err = [], []

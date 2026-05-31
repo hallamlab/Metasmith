@@ -468,40 +468,32 @@ class Logistics:
                     if last_hash is not None:
                         shell.AwaitDone(_hash=last_hash, timeout=None)
                     completed = []
-                    for (src_host, dest_host), batch in batched_ssh.items():
-                        # For remote dest_host, use an interactive ssh entry
-                        # — `Exec(f"ssh host")` works under the inline-marker
-                        # protocol because the marker tail flows through ssh
-                        # to the remote interactive bash and gets echoed back.
-                        # `Exec(f"ssh host 'cmd'")` does NOT work: ssh's
-                        # non-interactive command-mode discards the trailing
-                        # marker bytes, so AwaitDone wedges. We dispose the
-                        # check shell without an explicit `Exec("exit")` —
-                        # Dispose terminates the local bash, which closes its
-                        # ssh child.
-                        check_shell = None
-                        if dest_host != "":
-                            check_shell = LiveShell()
-                            check_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh {dest_host}: {x}"))
-                            check_shell.Exec(f"ssh {dest_host}")
-                        try:
-                            def _check(path: Path):
-                                if check_shell is not None:
-                                    FLAG = "ok"
-                                    res = check_shell.Exec(
-                                        f'[ -e {path} ] && echo "{FLAG}"',
-                                        history=True,
-                                    )
-                                    return FLAG in res.out
-                                else:
-                                    return Path(path).exists()
-
-                            for _, dest_s, src, dest in batch:
-                                if _check(dest_s.path):
-                                    completed.append((src, dest))
-                        finally:
-                            if check_shell is not None:
-                                check_shell.Dispose()
+                    # One shared LiveShell for all dest-host batches: for remote
+                    # dests we enter via SubShell("ssh host") which pops cleanly
+                    # back to local bash after the batch, so the same shell can
+                    # ssh into the next host. For local dests, plain Path.exists().
+                    check_shell = LiveShell()
+                    try:
+                        check_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh-check: {x}"))
+                        for (src_host, dest_host), batch in batched_ssh.items():
+                            def _check_remote(path: Path) -> bool:
+                                FLAG = "ok"
+                                res = check_shell.Exec(
+                                    f'[ -e {path} ] && echo "{FLAG}"',
+                                    history=True,
+                                )
+                                return FLAG in res.out
+                            if dest_host != "":
+                                with check_shell.SubShell(f"ssh {dest_host}"):
+                                    for _, dest_s, src, dest in batch:
+                                        if _check_remote(dest_s.path):
+                                            completed.append((src, dest))
+                            else:
+                                for _, dest_s, src, dest in batch:
+                                    if Path(dest_s.path).exists():
+                                        completed.append((src, dest))
+                    finally:
+                        check_shell.Dispose()
                     return completed
                 return _join
 

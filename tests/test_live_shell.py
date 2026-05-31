@@ -362,3 +362,109 @@ def test_quiet_mode_does_not_pollute_outer_callbacks():
         time.sleep(0.2)
     assert "inner" not in outer
     assert any("after" in s for s in outer)
+
+
+# ----------------------------------------------------------------------
+# SubShell + quiescence (Approach D follow-up — robust shell-boundary
+# crossing via SubShell context manager, no ssh needed for these tests)
+# ----------------------------------------------------------------------
+
+def test_subshell_nested_bash_round_trip():
+    """Enter nested local bash, run a command, leave, continue locally."""
+    with LiveShell() as sh:
+        assert sh._depth == 0
+        r = sh.Exec("echo top", history=True, timeout=5)
+        assert r.exit_code == 0 and r.out == ["top"]
+        with sh.SubShell("bash"):
+            assert sh._depth == 1
+            r = sh.Exec("echo nested", history=True, timeout=5)
+            assert r.exit_code == 0 and r.out == ["nested"]
+        assert sh._depth == 0
+        r = sh.Exec("echo back", history=True, timeout=5)
+        assert r.exit_code == 0 and r.out == ["back"]
+
+
+def test_subshell_two_levels_deep():
+    """Two-level nesting (bash → bash) pops cleanly back to the root shell."""
+    with LiveShell() as sh:
+        # SHLVL increments for each nested bash invocation, so it's a stable
+        # signal that we are actually at the depth we think we are.
+        r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+        root_lvl = int(r.out[0])
+        with sh.SubShell("bash"):
+            r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+            assert int(r.out[0]) == root_lvl + 1
+            with sh.SubShell("bash"):
+                r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+                assert int(r.out[0]) == root_lvl + 2
+                assert sh._depth == 2
+            r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+            assert int(r.out[0]) == root_lvl + 1
+        r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+        assert int(r.out[0]) == root_lvl
+        assert sh._depth == 0
+
+
+def test_subshell_pops_on_exception_in_body():
+    """Exception inside the with body still pops the sub-shell on exit."""
+    with LiveShell() as sh:
+        r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+        root_lvl = int(r.out[0])
+        with pytest.raises(RuntimeError):
+            with sh.SubShell("bash"):
+                raise RuntimeError("kaboom")
+        assert sh._depth == 0
+        # Back at root shell — SHLVL should match pre-entry value.
+        r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+        assert int(r.out[0]) == root_lvl
+
+
+def test_subshell_pop_within_time_bounds():
+    """Default pop completes within ~1s for a silent nested bash."""
+    with LiveShell() as sh:
+        t0 = time.monotonic()
+        with sh.SubShell("bash"):
+            pass
+        elapsed = time.monotonic() - t0
+        # 150ms floor + 3*50ms samples ≈ 250-350ms in the silent case;
+        # add headroom for CI jitter but cap well below 5s timeout.
+        assert elapsed < 1.5, f"pop took {elapsed:.3f}s, expected < 1.5s"
+
+
+def test_subshell_pop_retry_path():
+    """Force the first marker write to be dropped; retry must recover."""
+    LiveShell._pop_drop_first_marker = True
+    try:
+        with LiveShell() as sh:
+            with sh.SubShell("bash"):
+                r = sh.Exec("echo inside", history=True, timeout=5)
+                assert r.out == ["inside"]
+            # If pop's retry didn't fire, this Exec would wedge.
+            r = sh.Exec("echo recovered", history=True, timeout=5)
+            assert r.exit_code == 0 and r.out == ["recovered"]
+    finally:
+        LiveShell._pop_drop_first_marker = False
+
+
+def test_pop_quiescence_under_chatty_output():
+    """A sub-shell that prints noise on exit shouldn't trip premature pop."""
+    with LiveShell() as sh:
+        # Nested bash that prints a multi-line message via PROMPT_COMMAND-
+        # equivalent: install an EXIT trap that emits chatter, then exit.
+        sh.Exec("bash", timeout=5)
+        # Inside nested bash, install the trap and then leave via _pop.
+        sh.Exec("trap 'for i in 1 2 3 4 5; do echo bye_$i; done' EXIT", timeout=5)
+        rc = sh._pop(quiescence_ms=150, idle_samples=3, timeout=5.0, retries=1)
+        assert rc is not None
+        # Back at root shell.
+        r = sh.Exec("echo back", history=True, timeout=5)
+        assert r.exit_code == 0 and r.out == ["back"]
+
+
+def test_last_byte_time_updates_on_output():
+    """The quiescence timestamp moves forward when bytes arrive."""
+    with LiveShell() as sh:
+        t_before = sh._last_byte_time
+        time.sleep(0.05)
+        sh.Exec("echo tick", history=True, timeout=5)
+        assert sh._last_byte_time > t_before
