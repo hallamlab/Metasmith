@@ -119,24 +119,28 @@ class LinPayload:
     """Slot-level lineage tag carried on Nextflow channel values.
 
     The on-wire shape is `{"v": LIN_PAYLOAD_VERSION, "entries": <map>}`
-    where the map is `slot_name -> [lineage_index_hash, ...]`. The
-    `slot_name` keys are the channel-label hashes (`prod_name`) emitted
-    by `Orchestrator.groovy`'s namespace — bootstrap looks up actual
-    `DataInstance` objects via the `din` line of `workflow.step_N.meta`,
-    not via the `lin` payload directly. The payload is the lineage
-    *trace* through the DAG, not the input-id list.
+    where the map is `slot_name -> <value>`. The value is either a list
+    of lineage-index hashes (for normal slots) or a `list[list[str]]`
+    of file groups for the special "FILES" key Orchestrator injects at
+    task entry. `slot_name` keys are the channel-label hashes
+    (`prod_name`) emitted by `Orchestrator.groovy`'s namespace —
+    bootstrap looks up actual `DataInstance` objects via the `din` line
+    of `workflow.step_N.meta`, not via the `lin` payload directly. The
+    payload is the lineage *trace* through the DAG, not the input-id
+    list.
 
     File-level identity (`file_instance_id`) is *not* on the wire — it
     is minted post-facto by `CollectResults` via `mint_file_id`.
     """
 
     v: int
-    entries: dict[str, list[int]] = field(default_factory=dict)
+    entries: dict[str, Any] = field(default_factory=dict)
 
     VERSION: ClassVar[int] = LIN_PAYLOAD_VERSION
+    FILES_KEY: ClassVar[str] = "FILES"
 
     def Pack(self) -> dict:
-        return {"v": self.v, "entries": {k: list(v) for k, v in self.entries.items()}}
+        return {"v": self.v, "entries": dict(self.entries)}
 
     def to_json(self) -> str:
         return json.dumps(self.Pack(), separators=(",", ":"))
@@ -153,12 +157,19 @@ class LinPayload:
             raise ValueError(
                 f"lin payload entries must be a dict, got {type(entries_raw).__name__}"
             )
-        entries = {k: list(v) for k, v in entries_raw.items()}
-        return cls(v=v, entries=entries)
+        return cls(v=v, entries=dict(entries_raw))
 
     @classmethod
     def from_json(cls, raw: str) -> "LinPayload":
         return cls.Unpack(json.loads(raw))
+
+    def file_groups(self) -> list[list[str]]:
+        """Pull the Orchestrator-injected `FILES` value if present."""
+        return self.entries.get(self.FILES_KEY, [])
+
+    def lineage_index(self) -> dict[str, list[int]]:
+        """Return entries minus the special `FILES` key."""
+        return {k: v for k, v in self.entries.items() if k != self.FILES_KEY}
 
     @staticmethod
     def mint_file_id(slot_id: str, relative_path: Union[str, Path]) -> str:

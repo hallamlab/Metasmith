@@ -95,6 +95,35 @@ def test_lin_payload_rejects_non_dict_entries():
         LinPayload.from_json(json.dumps({"v": LIN_PAYLOAD_VERSION, "entries": []}))
 
 
+def test_lin_payload_file_groups_and_lineage_index():
+    """Wire-shape: Orchestrator injects FILES alongside lineage_index hashes.
+
+    `file_groups()` extracts the special FILES key; `lineage_index()`
+    returns everything else. C5's bootstrap consumes both.
+    """
+    raw = {
+        "v": LIN_PAYLOAD_VERSION,
+        "entries": {
+            "slot_reads": [12345, 67890],
+            "slot_db": [42],
+            LinPayload.FILES_KEY: [["/work/r1.fq", "/work/r2.fq"], ["/work/db.fa"]],
+        },
+    }
+    payload = LinPayload.from_json(json.dumps(raw))
+    assert payload.file_groups() == [
+        ["/work/r1.fq", "/work/r2.fq"],
+        ["/work/db.fa"],
+    ]
+    assert payload.lineage_index() == {
+        "slot_reads": [12345, 67890],
+        "slot_db": [42],
+    }
+    # Missing FILES key returns empty list (e.g., direct-run path).
+    bare = LinPayload(v=LIN_PAYLOAD_VERSION, entries={"slot_x": [1]})
+    assert bare.file_groups() == []
+    assert bare.lineage_index() == {"slot_x": [1]}
+
+
 def test_invocation_event_roundtrip():
     ev = _example_event()
     line = ev.to_jsonl()
