@@ -1,14 +1,12 @@
 import groovy.json.JsonOutput
 
 class Orchestrator {
-    private Map pending_tasks
     private Map index_history
     private Map child2parent
     private def one_null
     private List _dispatchLog
 
     Orchestrator(one_null) {
-        this.pending_tasks = new java.util.concurrent.ConcurrentHashMap()
         this.index_history = new java.util.concurrent.ConcurrentHashMap()
         this.child2parent = new java.util.concurrent.ConcurrentHashMap()
         this.one_null = one_null
@@ -31,47 +29,9 @@ class Orchestrator {
         }
     }
 
-    private synchronized def registerPendingTarget(String target, Map index) {
-        // println("  <<ADD $target // $index")
-        def pending_targets = this.pending_tasks.get(target, java.util.concurrent.ConcurrentHashMap.newKeySet()) // this also sets if not exist
-        pending_targets.add(index)
-    }
-
-    private synchronized def removePendingTarget(String target, Map index) {
-        if (!(target in this.pending_tasks)) return
-        def pending_targets = this.pending_tasks[target]
-        if (pending_targets==null) return
-        // println("  - rm $target // $index // $pending_targets")
-        pending_targets.remove(index)
-        // // use the linage in the index to figure out which inputs were
-        // // used to produce the output (@index) and remove these from pending_tasks
-        // pending_targets = pending_targets.collect((candidate_index) -> {
-        //     for (c : candidate_index) {
-        //         if (!(c.key in index) || !index[c.key].containsAll(c.value)) {
-        //             return null
-        //         }
-        //     }
-        //     return candidate_index
-        // })
-        // .findAll(x -> x!=null)
-        if (pending_targets.size()==0) {
-            this.pending_tasks.remove(target)
-        } else {
-            this.pending_tasks[target] = pending_targets
-        }
-    }
-
     private synchronized def registerIndexHistory(String name, Map index) {
         def hist = this.index_history.get(name, Collections.synchronizedList(new ArrayList())) // sets if $name not in index_history
         hist.add(index)
-    }
-
-    private synchronized def getExpectedSize(String grouping_by, String name, group_ks) {
-        def pending_targets = this.pending_tasks[name]
-        def size_valid = pending_targets==null? true : pending_targets.collect(i -> i[grouping_by]).every(ks -> ks.every(k -> !(k in group_ks)))
-        def expected_size = !size_valid? -1 : this.index_history[name].collect(i -> i[grouping_by]).findAll(ks -> ks.any(k -> (k in group_ks))).size()
-        // println("  * $grouping_by $name $group_ks // $size_valid/$expected_size // $pending_targets")
-        return new Tuple2(size_valid, expected_size)
     }
 
     public List _post(streams, names, fullHash) {
@@ -84,7 +44,6 @@ class Orchestrator {
             return new Tuple2(
                 name,
                 stream.flatMap((index, group) -> {
-                    this.removePendingTarget(name, index)
                     if (!(group instanceof List)) {
                         group = [group]
                     }
@@ -425,16 +384,13 @@ class Orchestrator {
             }))
             def common_index = this.combineIndexes(groups.collect(channel -> channel.collect(group -> group[0])).flatten())
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
-            for (target : targets) {
-                this.registerPendingTarget(target, common_index)
-            }
             return [common_index, *values]
         }))
     }
 
     private def _collateBatch(batch) {
         def streams = batch.collect(item -> {
-            def index = [:]+item[0] // copy to avoid mutating the map stored in pending_tasks
+            def index = [:]+item[0] // copy to avoid mutating shared state
             def values = item[1..-1]
             index['FILES'] = values.collect(group -> group*.toString())
             return [index, *values]

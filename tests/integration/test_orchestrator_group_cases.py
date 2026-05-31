@@ -453,10 +453,9 @@ workflow {
     def (pbName, pbStream) = new Tuple2("b", ch_b)
     def (pcName, pcStream) = new Tuple2("c", ch_c)
 
-    // Need index_history populated so getExpectedSize works. Run through
-    // a no-op postIn that preserves the existing idx fields, but it adds
-    // a `b`/`c` key based on hash. That's fine — the by-key match here is
-    // on `a` not `b`/`c`.
+    // Run through a no-op postIn that preserves the existing idx fields
+    // but adds a `b`/`c` key based on hash. That's fine — the by-key
+    // match here is on `a` not `b`/`c`.
     def pb = (o.postIn([ch_b], ["bx"]))[0]
     def pc = (o.postIn([ch_c], ["cx"]))[0]
 
