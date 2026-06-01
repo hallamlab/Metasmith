@@ -1,4 +1,4 @@
-cache
+/cache
 *.sif
 __pycache__
 /src/metasmith/build_hash.txt

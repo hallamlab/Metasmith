@@ -8,8 +8,8 @@ import shutil
 from pathlib import Path
 import pytest
 
-from tests.integration.fixtures.cache_fixtures.linear_3step import build_task
-from tests.integration._cache_harness import capture_run
+from tests.cache.fixtures.cache_fixtures.linear_3step import build_task
+from tests.cache._cache_harness import capture_run
 
 OUTDIR = Path("/tmp/quadrant_audit_data")
 
@@ -43,7 +43,7 @@ def test_dump_virtual_runtime_quadrants(virtual_runtime, tmp_path):
             break
 
     # Truncate trace and run again (warm = all hits)
-    from tests.integration._cache_harness import clear_trace
+    from tests.cache._cache_harness import clear_trace
     clear_trace(virtual_runtime)
     snap2 = capture_run(virtual_runtime, task)
     trace2 = virtual_runtime.trace_file.read_text()
