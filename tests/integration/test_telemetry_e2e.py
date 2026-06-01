@@ -300,3 +300,260 @@ def test_telemetry_e2e_find_failures_picks_injected_fail(tmp_path, virtual_runti
     assert "dead" * 16 in hashes, (
         f"injected fail not surfaced, failures={list(hashes)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# S2 — Red invariant tests gating C2 (plans/lineage-quadrant-audit.md, G3/G7)
+#
+# Each test pins one shape invariant the C2 endgame depends on. All are
+# currently red on HEAD (88b4d9c) and xfail-marked with the plan step that
+# turns them green. Remove the marker in that step's commit.
+# ---------------------------------------------------------------------------
+
+
+def _non_sentinel_events(workspace: Path) -> list[InvocationEvent]:
+    """Load InvocationEvents (no SessionStart) via the library."""
+    lib = _load_results_lib(workspace)
+    return lib.find_invocations()
+
+
+@pytest.mark.xfail(
+    reason="I1 — Bug A: consumes values are hex-of-hex (iid_string.encode().hex()) "
+    "instead of plain 32-byte hex. Fixed in S4.",
+    strict=False,
+)
+def test_consumes_values_parse_as_hex_lists(tmp_path, virtual_runtime):
+    """I1: every consumes[k][i] decodes as plain hex of len 32 (a slot_id).
+
+    Bug A: workflow.py:~1279-1290 packs sorted_inputs as a `+`-joined
+    bytes object; the value persisted to step_N.meta and re-emitted in
+    consumes is the hex of that ASCII-encoded hex string — one extra
+    encoding layer. Decode once: you get a hex string. Decode twice:
+    you get the bytes. The BFS in agents.py walks consumes looking
+    for file_instance_id (plain hex) and finds nothing.
+    """
+    task = linear_3step.build_task(tmp_path, n_samples=3)
+    capture_run(virtual_runtime, task)
+    events = _non_sentinel_events(_run_workspace(virtual_runtime))
+    assert events, "no events emitted"
+    bad: list[tuple[str, str, str]] = []
+    for ev in events:
+        for slot_key, ids in ev.consumes.items():
+            for iid_hex in ids:
+                try:
+                    raw = bytes.fromhex(iid_hex)
+                except ValueError:
+                    bad.append((ev.task_hash[:8], slot_key, "not-hex"))
+                    continue
+                # A 32-byte file_instance_id => 64 hex chars. iid format
+                # used in the codebase is 32 bytes + 1-byte prefix => 66
+                # hex chars. Anything longer is the hex-of-hex bug.
+                if len(iid_hex) > 80:
+                    bad.append((ev.task_hash[:8], slot_key, f"len={len(iid_hex)}"))
+                # If decoded bytes are ASCII-printable hex, that's the bug.
+                try:
+                    inner = raw.decode("ascii")
+                    if all(c in "0123456789abcdef" for c in inner) and len(inner) > 16:
+                        bad.append((
+                            ev.task_hash[:8], slot_key,
+                            f"hex-of-hex inner_len={len(inner)}",
+                        ))
+                except UnicodeDecodeError:
+                    pass
+    assert not bad, f"consumes hex-of-hex violations: {bad!r}"
+
+
+@pytest.mark.xfail(
+    reason="I2 — Bug B: cache-hit emits produces[].path=''; C0.5 only fixed "
+    "the promote route. Fixed in S4.",
+    strict=False,
+)
+def test_produced_files_have_nonempty_path(tmp_path, virtual_runtime):
+    """I2: every produces[].path on every event is a non-empty string.
+
+    Bug B: workflow.py:1412-1498 (cache-hit emission) constructs
+    ProducedFile with path=''. C0.5 (72e1715) plumbed paths through
+    the promote route only.
+    """
+    task = linear_3step.build_task(tmp_path, n_samples=1)
+    # First run: promote events (path populated).
+    capture_run(virtual_runtime, task)
+    # Second run: cache-hit events (path empty today).
+    capture_run(virtual_runtime, task)
+    events = _non_sentinel_events(_run_workspace(virtual_runtime))
+    empty = [
+        (ev.task_hash[:8], ev.status, pf.dtype_key)
+        for ev in events for pf in ev.produces if not pf.path
+    ]
+    assert not empty, f"ProducedFile.path empty on {empty!r}"
+
+
+@pytest.mark.xfail(
+    reason="I3 — Bug C: cache-hit emits slot_id == file_instance_id (degenerate); "
+    "should mint per-file via LinPayload.mint_file_id. Fixed in S4.",
+    strict=False,
+)
+def test_cache_hit_file_id_minted_from_path(tmp_path, virtual_runtime):
+    """I3: on cache-hit events, file_instance_id != slot_id (per-file mint).
+
+    Bug C: workflow.py:1412-1498 cache-hit emission passes slot_id as
+    file_instance_id. Promote (C0.5) correctly mints
+    LinPayload.mint_file_id(slot_id, relpath). The values should
+    diverge whenever there is a non-empty path.
+    """
+    task = linear_3step.build_task(tmp_path, n_samples=1)
+    capture_run(virtual_runtime, task)
+    capture_run(virtual_runtime, task)
+    events = _non_sentinel_events(_run_workspace(virtual_runtime))
+    hit_events = [e for e in events if e.status == "hit"]
+    assert hit_events, "no cache-hit events emitted"
+    degenerate = [
+        (ev.task_hash[:8], pf.slot_id[:12])
+        for ev in hit_events for pf in ev.produces
+        if pf.slot_id == pf.file_instance_id
+    ]
+    assert not degenerate, (
+        f"cache-hit produces with slot_id==file_instance_id: {degenerate!r}"
+    )
+
+
+@pytest.mark.xfail(
+    reason="I4 — Bug D: cache-hit produces[].dtype_key is the downstream consumer's "
+    "dep_key, not the producer's dtype.key. Fixed in S4.",
+    strict=False,
+)
+def test_dtype_key_matches_producer_not_consumer(tmp_path, virtual_runtime):
+    """I4: produces[].dtype_key on cache-hit matches the promote-side dtype_key for
+    the same task.
+
+    Bug D: warm-run audit (linear_3step) showed cache-hit step 1
+    emits dtype_key='MbSRYjOi' (step 2's consume key) where promote
+    step 1 correctly emits dtype_key='IA33yeXE'. The producer's
+    dtype.key is the correct value.
+    """
+    task = linear_3step.build_task(tmp_path, n_samples=1)
+    # Run 1: cold (promote)
+    capture_run(virtual_runtime, task)
+    workspace_cold = _run_workspace(virtual_runtime)
+    promote_dtype_keys = {
+        ev.task_hash: {pf.dtype_key for pf in ev.produces}
+        for ev in _non_sentinel_events(workspace_cold)
+        if ev.status == "promoted"
+    }
+    # Run 2: warm (hits) — same workspace, additional events appended.
+    capture_run(virtual_runtime, task)
+    workspace_warm = _run_workspace(virtual_runtime)
+    hit_dtype_keys = {
+        ev.task_hash: {pf.dtype_key for pf in ev.produces}
+        for ev in _non_sentinel_events(workspace_warm)
+        if ev.status == "hit"
+    }
+    mismatches: list[tuple[str, set, set]] = []
+    for th, hk in hit_dtype_keys.items():
+        pk = promote_dtype_keys.get(th)
+        if pk is not None and pk != hk:
+            mismatches.append((th[:8], pk, hk))
+    assert not mismatches, (
+        f"cache-hit dtype_key differs from promote for same task: {mismatches!r}"
+    )
+
+
+@pytest.mark.xfail(
+    reason="I5 — Bug E: step_name only emitted on cache-hit; missing on promote. "
+    "Fixed in S4.",
+    strict=False,
+)
+def test_step_name_populated_on_all_routes(tmp_path, virtual_runtime):
+    """I5: every event (promote AND hit) carries a non-empty step_name.
+
+    Cosmetic but symptomatic of route divergence — emission schema
+    should be byte-identical between promote and cache-hit routes.
+    Reads the rotated trace.1.jsonl too (cold-run promote events end up
+    there after the second `capture_run` rotates the trace).
+    """
+    task = linear_3step.build_task(tmp_path, n_samples=1)
+    capture_run(virtual_runtime, task)  # cold: promote events
+    capture_run(virtual_runtime, task)  # warm: hit events
+    workspace = _run_workspace(virtual_runtime)
+    trace_dir = workspace / "_metasmith"
+    all_events: list[dict] = []
+    for trace_path in sorted(trace_dir.glob("trace*.jsonl")):
+        for line in trace_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            ev = json.loads(line)
+            if ev.get("event") == "session_start":
+                continue
+            all_events.append(ev)
+    assert all_events, "no non-sentinel events across rotated traces"
+    statuses = {ev.get("status") for ev in all_events}
+    assert {"promoted", "hit"} <= statuses, (
+        f"need both promoted and hit events to detect route divergence; "
+        f"got statuses={statuses!r}"
+    )
+    missing = [
+        (ev.get("task_hash", "")[:8], ev.get("status"))
+        for ev in all_events if not ev.get("step_name")
+    ]
+    assert not missing, f"events without step_name: {missing!r}"
+
+
+@pytest.mark.xfail(
+    reason="I6 — C2 structural defect: promote/cache-hit emit one event per step, "
+    "aggregating batches. Fixed in S4 (per-batch emission loop).",
+    strict=False,
+)
+def test_invocation_event_is_one_per_batch_not_per_step(tmp_path, virtual_runtime):
+    """I6: for linear_3step(n_samples=N), non-sentinel events == n_steps * N.
+
+    Today promote_run (promote.py:386-561) and _compute_cache_decisions
+    (workflow.py:1412-1498) emit ONE event per step regardless of
+    batch count. N=3 samples → 3 events (one per step) where the trace
+    semantics demand 9 (one per task = batch). This aggregation hides
+    cross-sample lineage contamination because every batch's parents
+    are lumped into the same consumes dict.
+    """
+    N = 3
+    task = linear_3step.build_task(tmp_path, n_samples=N)
+    capture_run(virtual_runtime, task)
+    events = _non_sentinel_events(_run_workspace(virtual_runtime))
+    n_steps = 3  # linear_3step has 3 transforms
+    expected = n_steps * N
+    assert len(events) == expected, (
+        f"expected {expected} per-batch events ({n_steps} steps × {N} samples), "
+        f"got {len(events)} (likely step-aggregated)"
+    )
+
+
+@pytest.mark.xfail(
+    reason="I7 — C2 structural: cross-sample lineage purity. With step-aggregated "
+    "consumes + _manifests fallback present today, this may pass; once "
+    "_manifests is deleted (S6) it breaks N²-style without S4. Fixed in S4.",
+    strict=False,
+)
+def test_linear_3step_n_samples_yields_exactly_n_parent_pairs(tmp_path, virtual_runtime):
+    """I7: lib.Trace('cf::step_c', 'cf::seed') yields exactly N pairs for N samples.
+
+    This is the C2 structural gate: with step-aggregated consumes,
+    walking back from any step_c output reaches every seed (cartesian
+    N×N). With per-batch consumes, each step_c output reaches exactly
+    one seed (the one it descends from).
+
+    Today, the _manifests/*.json fallback (agents.py:1291-1318) means
+    Trace can sometimes find the right pairs even when consumes is
+    aggregated — manifests carry per-file ancestry. Once _manifests is
+    deleted (S6), this test catches the contamination.
+    """
+    N = 3
+    task = linear_3step.build_task(tmp_path, n_samples=N)
+    capture_run(virtual_runtime, task)
+    lib = _load_results_lib(_run_workspace(virtual_runtime))
+
+    pairs = list(lib.Trace("cf::step_c", "cf::seed"))
+    assert len(pairs) == N, (
+        f"expected exactly {N} (step_c, seed) pairs for {N} samples, "
+        f"got {len(pairs)} — likely cross-sample contamination (N² or N+aggregate)"
+    )
+    # Stronger check: each step_c output should pair with a *distinct* seed.
+    seeds = {to_inst.path for _, to_inst in pairs}
+    assert len(seeds) == N, f"expected {N} distinct seeds, got {len(seeds)}: {seeds!r}"

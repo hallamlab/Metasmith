@@ -758,3 +758,61 @@ class TestTraceSharedInputs:
                     f"Cross-sample contamination: annotated={ann_inst.path} "
                     f"traces to assembly={asm_inst.path}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# S2 — Red invariant test gating C2 (plans/lineage-quadrant-audit.md, I8)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    reason="I8 — Bug F: docker-stub bypasses RunWorkflow, so _compute_cache_decisions "
+    "and promote_run never fire. trace.jsonl contains only the SessionStart "
+    "sentinel. Fixed in S5 (run_stub_workflow invokes promote_run after nextflow).",
+    strict=False,
+)
+class TestStubTraceHasInvocationEvents:
+    """I8: docker-stub trace.jsonl contains >= n_steps * n_samples non-sentinel
+    events (one per task), not only the SessionStart sentinel.
+
+    Pre-S5, docker-stub lineage rides entirely on _manifests/*.json. Once
+    _manifests is deleted (S6) and the BFS over trace.jsonl is the sole
+    lineage source, this invariant must hold or every docker test will
+    regress.
+    """
+
+    N_SAMPLES = 3
+
+    @pytest.fixture
+    def workspace_after_stub_run(self, tmp_path, mock_types, docker_image):
+        """Run a stub linear-chain workflow and return its workspace dir."""
+        samples = _make_samples(tmp_path / "data", mock_types, n_samples=self.N_SAMPLES)
+        transforms = alignment_transform()
+        task = _make_task(
+            samples=samples,
+            mock_types=mock_types,
+            temp_dir=tmp_path / "task",
+            transforms=transforms,
+            target_properties=[{"bam"}],
+            target_names=["bam"],
+        )
+        work_dir = tmp_path / "ws"
+        run_stub_workflow(task, work_dir, docker_image)
+        return work_dir
+
+    def test_trace_has_promote_events(self, workspace_after_stub_run):
+        """Non-sentinel events count >= n_steps * n_samples."""
+        trace = workspace_after_stub_run / "_metasmith" / "trace.jsonl"
+        assert trace.exists(), f"no trace.jsonl at {trace}"
+        events = [
+            json.loads(l)
+            for l in trace.read_text().splitlines()
+            if l.strip() and json.loads(l).get("event") != "session_start"
+        ]
+        # alignment_transform is a 1-step transform (reads+assembly -> bam),
+        # so n_steps == 1; with 3 samples that's >=3 events.
+        n_steps = 1
+        assert len(events) >= n_steps * self.N_SAMPLES, (
+            f"expected >= {n_steps * self.N_SAMPLES} non-sentinel events "
+            f"(n_steps × n_samples), got {len(events)} — docker stub bypasses promote_run"
+        )
