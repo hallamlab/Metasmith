@@ -184,22 +184,40 @@ smith.StageWorkflow(task)   # compiles DAG → Nextflow scripts
 smith.RunWorkflow(task)     # launches Nextflow (async!)
 ```
 
-#### Apptainer SIF → sandbox auto-unpack
+#### Apptainer SIF ↔ sandbox decision
 
-`Agent.Deploy()` probes the host apptainer for a setuid `starter-suid`.
-If it's missing (the conda-forge build omits it), the deploy step also
-runs `apptainer build --force --sandbox <name>.sandbox <name>.sif` for
-every cached image. `Container.MakeRunCommand(local=True)` then emits
-a shell ternary that prefers the `.sandbox/` directory over the `.sif`
-at run time, so apptainer never engages squashfuse_ll — sidestepping the
-WSL2+squashfuse_ll FUSE wedge that hangs nextflow under msm_relay's fork
-chain (Bug E.2). On HPC hosts with a proper setuid starter-suid (e.g.
-Sockeye), the probe is silent and no sandbox dir is built. The cache
-layout is `<home>/container_images/<name>.sif` alongside `<name>.sandbox/`;
-the SIF is retained so an `assertive=True` redeploy can rebuild the
-sandbox without re-pulling. The relevant helpers are
-`Container.GetSandboxPath / MakeNeedsSandboxProbe / MakeBuildSandboxCommand`
-in `src/metasmith/coms/containers.py`.
+`Agent.Deploy()` runs `Container.MakeSandboxDecisionProbe()` against the
+target host (login node for HPC, locally for WSL2) and acts on the
+verdict it prints:
+
+- **`use-sif`** — setuid `starter-suid` is present (kernel squashfs
+  mount; HPC like Sockeye), **or** apptainer is older than 1.4 without
+  setuid (sandbox path falls back to fuse-overlayfs, which races SIGBUS
+  under SLURM array contention — Bug E.4 on fir 1.3.5). Deploy removes
+  any stale `<name>.sandbox/` so the run-time ternary picks SIF.
+
+- **`use-sandbox`** — apptainer ≥1.4 without setuid (the Bug E.2 surface
+  on WSL2: SIF would engage squashfuse_ll and wedge under msm_relay's
+  fork chain). Deploy runs `apptainer build --force --sandbox` if the
+  directory doesn't already exist. The sandbox rootfs is read through
+  unprivileged kernel overlayfs, never FUSE.
+
+The probe is a two-axis static check (no `apptainer exec` at deploy
+time): `[ -u .../starter-suid ]` first, then `apptainer --version` major
+and minor compared against `1.4`. Verdict is re-evaluated on every
+`Deploy()` call, so an apptainer upgrade flips the on-disk state on next
+deploy. `assertive=True` prepends `rm -rf <sandbox>` so a forced
+redeploy unconditionally re-probes and rebuilds.
+
+`Container.MakeRunCommand(local=True)` emits the run-time ternary
+`"$(if [ -d <sandbox> ]; then echo <sandbox>; else echo <sif>; fi)"` —
+unchanged. Deploy controls which arm fires by controlling the directory's
+presence on the target host.
+
+Cache layout: `<home>/container_images/<name>.sif` (always retained)
+alongside `<name>.sandbox/` (present iff verdict is `use-sandbox`).
+Helpers in `src/metasmith/coms/containers.py`:
+`GetSandboxPath / MakeSandboxDecisionProbe / MakeBuildSandboxCommand`.
 
 RunWorkflow fires and returns immediately. The actual execution happens in a
 Nextflow process that manages container pulls, job scheduling, and data staging.

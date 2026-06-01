@@ -46,13 +46,33 @@ class Container:
             case ContainerRuntime.APPTAINER:
                 return self.container_cache/f"{self._cached_name()}.sandbox"
 
-    def MakeNeedsSandboxProbe(self):
-        # Emits the literal sentinel "needs-sandbox" when the host's apptainer
-        # ships no setuid starter-suid (conda-forge build); silent otherwise.
+    def MakeSandboxDecisionProbe(self):
+        # Emits either "use-sif" or "use-sandbox" on stdout, encoding the
+        # host-local choice of rootfs delivery for APPTAINER. Two-axis static
+        # check; no `apptainer exec` involved.
+        #
+        # use-sif (default) — either:
+        #   (a) setuid starter-suid present → kernel squashfs mount, no FUSE
+        #       (HPC with privileged apptainer: Sockeye), or
+        #   (b) apptainer <1.4 without setuid → sandbox path falls back to
+        #       fuse-overlayfs (race-prone under sbatch arrays; SIGBUS on fir
+        #       1.3.5). SIF goes through squashfuse_ll which works fine on
+        #       HPC batch nodes without the relay fork chain.
+        #
+        # use-sandbox — apptainer >=1.4 without setuid: SIF would engage
+        # squashfuse_ll (wedges under msm_relay's fork chain on WSL2 — Bug
+        # E.2), but the sandbox path routes through unprivileged kernel
+        # overlayfs (no FUSE daemon in the chain).
+        if self.runtime != ContainerRuntime.APPTAINER:
+            return ""
         return (
             'APPTAINER_BIN=$(readlink -f "$(command -v apptainer)" 2>/dev/null); '
             'SUID="$(dirname "$APPTAINER_BIN")/../libexec/apptainer/bin/starter-suid"; '
-            '[ -u "$SUID" ] || echo "needs-sandbox"'
+            'if [ -u "$SUID" ]; then echo "use-sif"; '
+            'else V=$(apptainer --version 2>/dev/null | awk \'NR==1{print $NF}\'); '
+            'MAJ=${V%%.*}; REST=${V#*.}; MIN=${REST%%.*}; '
+            'if [ "${MAJ:-0}" -ge 2 ] || { [ "${MAJ:-0}" -eq 1 ] && [ "${MIN:-0}" -ge 4 ]; }; '
+            'then echo "use-sandbox"; else echo "use-sif"; fi; fi'
         )
 
     def MakeBuildSandboxCommand(self):

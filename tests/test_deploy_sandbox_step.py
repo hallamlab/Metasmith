@@ -1,11 +1,14 @@
-"""Pin Agent.Deploy()'s SIF→sandbox unpack step.
+"""Pin Agent.Deploy()'s SIF↔sandbox decision step.
 
-When the host's apptainer ships no setuid `starter-suid`, apptainer
-falls back to squashfuse_ll for SIF mounts. That path deadlocks under
-msm_relay's fork chain on WSL2 (Bug E.2). Deploy() now probes for the
-missing setuid helper and, if absent, unpacks the SIF to a sandbox
-directory once. MakeRunCommand(local=True) then picks the sandbox over
-the SIF.
+Deploy probes the host (setuid starter-suid + apptainer version) and
+emits exactly one of two outcomes:
+ - "use-sif" verdict → ensure no `.sandbox` dir exists (remove stale)
+ - "use-sandbox" verdict → build the sandbox if missing (idempotent)
+
+This shape covers all three known mechanisms: kernel mount (setuid
+present — Sockeye), squashfuse_ll (no setuid + apptainer >=1.4 — WSL2
+hosts hit Bug E.2 wedge so we prefer sandbox), and fuse-overlayfs
+(no setuid + apptainer 1.3.x — fir hits Bug E.4 SIGBUS so we keep SIF).
 
 These are source-pattern tests, matching ``test_deploy_skip_marker.py``.
 """
@@ -19,29 +22,38 @@ def _deploy_block() -> str:
     return text[start:end]
 
 
-def test_deploy_emits_sandbox_probe_and_build():
+def test_deploy_calls_decision_probe_and_build_helpers():
     block = _deploy_block()
-    # The probe must surface through MakeNeedsSandboxProbe so the helper
-    # stays in one place (containers.py) and the deploy step is just a
-    # caller. If a future edit inlines the probe text here, this test
-    # breaks deliberately.
-    assert "MakeNeedsSandboxProbe" in block
+    # The probe and build commands must come from Container helpers so
+    # the shell logic lives in one place (containers.py). If a future
+    # edit inlines the probe text here, this test breaks deliberately.
+    assert "MakeSandboxDecisionProbe" in block
     assert "MakeBuildSandboxCommand" in block
-    # The conditional must check the probe's sentinel AND skip when the
-    # sandbox dir already exists — a partial deploy should self-heal but
-    # a healthy one should not re-extract.
-    assert '"needs-sandbox"' in block
-    assert "! -d" in block
 
 
-def test_deploy_sandbox_step_is_artifact_gated():
-    """Skip semantics: if the sandbox dir is already present we don't
-    rebuild it. Matches the relay-binary skip idiom one step below.
-    """
+def test_deploy_branches_on_verdict():
     block = _deploy_block()
-    assert "GetSandboxPath" in block, (
-        "deploy step must derive its skip gate from Container.GetSandboxPath"
-    )
+    # Probe output is captured in a shell variable; both verdict literals
+    # appear in the branching logic.
+    assert "VERDICT=$(" in block
+    assert '"use-sandbox"' in block
+    # Sandbox is built ONLY on the use-sandbox branch; the existence
+    # check makes the build idempotent across redeploys.
+    assert "[ -d " in block
+
+
+def test_deploy_clears_stale_sandbox_when_sif_verdict():
+    """If the verdict flips from use-sandbox to use-sif (apptainer
+    upgrade or setuid added), Deploy must remove the stale sandbox dir
+    so the run-time ternary in MakeRunCommand picks SIF, not the
+    out-of-date unpack."""
+    block = _deploy_block()
+    # The else arm must `rm -rf` the sandbox path.
+    assert "GetSandboxPath" in block
+    assert "rm -rf" in block
+    # And the else arm must be reachable (no unconditional "if" wrapping
+    # the whole thing).
+    assert "else " in block or "else\n" in block
 
 
 def test_assertive_clears_sandbox():
