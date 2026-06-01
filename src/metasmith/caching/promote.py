@@ -341,6 +341,25 @@ def _read_session_id(workspace: Path) -> int:
     return 0
 
 
+def _parse_batch_idx_from_relpath(relpath: str) -> int:
+    """Extract `batch_idx` (0-indexed) from a canonical output filename.
+
+    Filename shape (bootstrap.py:196, virtual_runtime.py:651/665):
+      `{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{ext}`
+    The file may live under `out/` so we strip path components first.
+    Returns -1 when the filename doesn't match (e.g. host log files).
+    """
+    name = Path(relpath).name
+    prefix = name.partition(".")[0]
+    tokens = prefix.split("-")
+    if len(tokens) < 3:
+        return -1
+    try:
+        return int(tokens[0]) - 1
+    except ValueError:
+        return -1
+
+
 def _append_invocation_event_v2(
     workspace: Path,
     *,
@@ -350,13 +369,27 @@ def _append_invocation_event_v2(
     cache_key_hex: str,
     files_meta: list[dict] | None = None,
 ) -> None:
-    """Append a v2 InvocationEvent row to <workspace>/_metasmith/trace.jsonl.
+    """Append v2 InvocationEvent row(s) to <workspace>/_metasmith/trace.jsonl.
 
-    C0.5: when `files_meta` carries per-file `slot_id`/`dtype_key`
-    entries (post-C0.5 promote), emit one ProducedFile per file with
-    `file_instance_id = LinPayload.mint_file_id(slot_id, relpath)`.
-    Legacy callers (and miss/fail emissions that have no files_meta yet)
-    fall back to the per-slot degenerate emission with `path=""`.
+    S4b: emit ONE event per batch (= per task) instead of one per step.
+    Filename `batch_idx` parsed from each matched file's relpath; events
+    grouped by batch_idx. For multi-batch steps, task_hash is suffixed
+    with `:{batch_idx}` so events are distinct in TraceIndex.by_task_hash.
+
+    Per-batch consumes is read from `spec.batches` when available with
+    > 1 entries (compile-time per-batch decomp from S3, accurate for
+    step 1 where dependency_map carries the full N-sample arity). For
+    intermediate steps (compile-time archetype arity = 1, runtime arity
+    = N), `spec.batches` has a single entry; we fall back to the
+    aggregate `spec.sorted_inputs` for all runtime batches. That's
+    still step-aggregated for intermediate steps — full per-batch
+    consumes on intermediates requires runtime parent capture (a
+    follow-up for parallel_then_group / group_by topologies).
+
+    C0.5 / S4a: per-file emission with mint_file_id(slot_id, relpath)
+    + populated path / dtype_key remains. Legacy fallback (no
+    files_meta) emits a single per-slot degenerate event with
+    `path=""`.
     """
     from ..models.lineage import (
         InvocationEvent,
@@ -369,36 +402,83 @@ def _append_invocation_event_v2(
     trace_dir.mkdir(parents=True, exist_ok=True)
     trace_path = trace_dir / "trace.jsonl"
 
-    produces: list[ProducedFile] = []
-    # C0.5: prefer per-file emission when files_meta carries slot info.
+    # Group matched files by parsed batch_idx; unmatched files are
+    # carried under batch_idx=-1 and dropped from emission below.
+    batched: dict[int, list[dict]] = {}
     have_per_file = files_meta is not None and any(
         f.get("slot_id") and not f.get("unmatched")
         for f in (files_meta or [])
     )
     if have_per_file:
-        for f in sorted(files_meta or [], key=lambda d: d.get("relpath", "")):
-            if f.get("unmatched"):
-                # G6: file copied to cache but doesn't belong to any
-                # declared slot. Skip — emitting with empty slot_id would
-                # pollute TraceIndex.by_slot.
+        for f in (files_meta or []):
+            if f.get("unmatched") or not f.get("slot_id"):
                 continue
-            sid = f.get("slot_id", "")
-            rel = f.get("relpath", "")
-            dk = f.get("dtype_key", "")
-            if not sid:
+            # S4b: prefer the explicit `batch_idx` field set by
+            # promote_run from the source `batch_XXXX_YYYY` parent dir.
+            # Fall back to filename prefix parse for legacy callers.
+            bi = f.get("batch_idx", None)
+            if bi is None or bi < 0:
+                bi = _parse_batch_idx_from_relpath(f.get("relpath", ""))
+            batched.setdefault(int(bi), []).append(f)
+
+    # Per-batch consumes: spec.batches[i].sorted_inputs when len > 1,
+    # else aggregate. `consumes_for_batch` is keyed by batch_idx.
+    aggregate_consumes = {
+        slot_key: list(ids) for slot_key, ids in spec.sorted_inputs
+    }
+    consumes_for_batch: dict[int, dict[str, list[str]]] = {}
+    if len(spec.batches) > 1:
+        for b in spec.batches:
+            bi = int(b.get("batch_idx", 0))
+            consumes_for_batch[bi] = {
+                slot_key: list(ids)
+                for slot_key, ids in b.get("sorted_inputs", [])
+            }
+
+    def _emit(batch_idx: int, produces: list[ProducedFile]) -> None:
+        if len(spec.batches) > 1 or len(batched) > 1:
+            task_hash = f"{cache_key_hex}:{batch_idx}"
+        else:
+            task_hash = cache_key_hex
+        consumes = consumes_for_batch.get(batch_idx, aggregate_consumes)
+        event = InvocationEvent(
+            task_hash=task_hash,
+            transform_key=spec.transform_key,
+            status=status,  # type: ignore[arg-type]
+            consumes=consumes,
+            produces=produces,
+            session_id=session_id,
+            step_order=spec.order,
+            step_name=spec.step_name,
+            cache_key=cache_key_hex,
+            time_source="orchestrator",
+        )
+        append_invocation_event(trace_path, event)
+
+    if have_per_file and batched:
+        for batch_idx in sorted(batched.keys()):
+            if batch_idx < 0:
                 continue
-            produces.append(
-                ProducedFile(
-                    file_instance_id=LinPayload.mint_file_id(
-                        slot_id=sid, relative_path=rel
-                    ),
-                    slot_id=sid,
-                    path=rel,
-                    dtype_key=dk,
+            produces: list[ProducedFile] = []
+            for f in sorted(batched[batch_idx], key=lambda d: d.get("relpath", "")):
+                sid = f.get("slot_id", "")
+                rel = f.get("relpath", "")
+                dk = f.get("dtype_key", "")
+                produces.append(
+                    ProducedFile(
+                        file_instance_id=LinPayload.mint_file_id(
+                            slot_id=sid, relative_path=rel
+                        ),
+                        slot_id=sid,
+                        path=rel,
+                        dtype_key=dk,
+                    )
                 )
-            )
+            if produces:
+                _emit(batch_idx, produces)
     else:
         # Legacy fallback (miss-without-promote, or pre-C0.5 caller).
+        produces = []
         for slot_branch, instance_id_hex in sorted(spec.out_identities.items()):
             dtype_key = slot_branch.split("::", 1)[0]
             produces.append(
@@ -409,25 +489,7 @@ def _append_invocation_event_v2(
                     dtype_key=dtype_key,
                 )
             )
-    # C0-amend: spec.sorted_inputs is list[tuple[str, list[str]]].
-    # Mirrors workflow.py:1419-1422 exactly — both routes produce
-    # byte-identical consumes dicts of {slot_key: list[slot_id_hex]}.
-    # The hex strings ARE the slot_ids that TraceIndex.by_slot indexes
-    # on, so walk_ancestors can route by them.
-    consumes = {slot_key: list(ids) for slot_key, ids in spec.sorted_inputs}
-    event = InvocationEvent(
-        task_hash=cache_key_hex,
-        transform_key=spec.transform_key,
-        status=status,  # type: ignore[arg-type]
-        consumes=consumes,
-        produces=produces,
-        session_id=session_id,
-        step_order=spec.order,
-        step_name=spec.step_name,
-        cache_key=cache_key_hex,
-        time_source="orchestrator",
-    )
-    append_invocation_event(trace_path, event)
+        _emit(0, produces)
 
 
 def promote_run(
@@ -493,6 +555,20 @@ def promote_run(
                 total_bytes = 0
                 unmatched: list[str] = []
                 for src in outputs:
+                    # S4b: resolve batch_idx from `batch_XXXX_YYYY` parent
+                    # directory. -1 when src isn't under that layout
+                    # (e.g. real-Nextflow files-at-root which arrive
+                    # already in <cache_tmp> — handled in S5 with a
+                    # cache_tmp parameter). Filenames for different
+                    # batches have distinct content hashes in their
+                    # middle token, so flat `out/` doesn't collide.
+                    parent = src.parent
+                    batch_dir_idx = -1
+                    if parent.name.startswith("batch_"):
+                        try:
+                            batch_dir_idx = int(parent.name.split("_")[1])
+                        except (IndexError, ValueError):
+                            batch_dir_idx = -1
                     dest = out_dir / src.name
                     if src.resolve() != dest.resolve():
                         shutil.copy2(src, dest)
@@ -532,6 +608,10 @@ def promote_run(
                             "slot_id": matched.get("slot_id", ""),
                             "dtype_key": matched.get("dtype_key", ""),
                             "branch_idx": matched.get("branch_idx", 0),
+                            # S4b: persist resolved batch_idx for per-batch
+                            # event emission. -1 when src wasn't under
+                            # batch_XXXX_YYYY (treated as single-batch).
+                            "batch_idx": batch_dir_idx,
                         })
                     else:
                         # G6: still copy to cache so the file isn't lost,

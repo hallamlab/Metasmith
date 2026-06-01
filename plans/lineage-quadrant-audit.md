@@ -148,3 +148,35 @@ The audit changes the C2-completion plan in three ways:
 1. **S2 grows from 5 tests to ~10 tests.** Bugs A–E need their own red tests *before* S4 emission code can be modified. Currently they're masked by the `_manifests/*.json` fallback.
 2. **S4 emission work is wider than "loop over batches".** It must also: (a) double-decode-fix `consumes` values, (b) populate `path` on cache-hit, (c) mint per-file IDs distinct from slot_id on cache-hit, (d) read `dtype_key` from the producer side, (e) populate `step_name` on promote.
 3. **S0 (this doc) becomes a per-commit obligation.** Any commit that modifies emission MUST re-run the probe and update this table in the same commit.
+
+## Discovered during S3/S4 (post-initial-audit)
+
+The protocol surfaced three additional structural facts during implementation:
+
+### S3 / Bug G — compile-time per-batch arity collapses for steps 2+
+
+`cache_decision[step.order]['batches']` (the S3 per-batch decomposition) is accurate **only for step 1**, where `dependency_map` carries the full N-sample arity from `given` libraries. For steps 2+, `WorkflowPlan.Generate` canonicalizes intermediate deps to a single **archetype** DataInstance per slot, so `dependency_map[step.transform.model.requires[i]]` has length 1 regardless of runtime fan-out. The S3 batches list has 1 entry for these steps.
+
+**Site:** `src/metasmith/models/workflow.py` `_compute_cache_decisions` ~line 1356 (`group_total = max(1, len(step.group_by_instances))`).
+
+**Resolution:** S4b derives `batch_idx` from the `nxf_work/step_NN/batch_XXXX_YYYY/` parent dir at promote time (after runtime has fanned out), not from compile-time `spec.batches`. The S3 `batches` list still gates per-batch consumes when present with > 1 entries (step 1).
+
+### S4 / Bug H — virtual_runtime collapses downstream steps to a single grouped invocation
+
+For `linear_3step(n_samples=N)`, virtual_runtime executes step 1 N times (one per seed input) but steps 2 and 3 only ONCE each — all N step_a outputs are grouped into a single step 2 invocation, similarly for step 3. The collapse is gated by `group_total = max(1, len(step.group_by_instances))` (`virtual_runtime.py:573`), which returns 1 when `transform.group_by` is unset.
+
+`identity_transform_code` (the `linear_3step` builder) does not set `group_by`, so steps 2/3 default to single-invocation aggregation. Full per-sample fan-out at every step requires either (a) setting `group_by=primary_input_dep` on each transform, or (b) running through real Nextflow / docker stub which fans out per channel-element regardless.
+
+**Impact on I6/I7:** the original "9 events for n=3 / 3 distinct seeds per step_c via Trace" invariants only hold for true per-sample workflows. Reframed:
+- **I6 (post-S4):** assert step 1 emits N promoted events with N distinct consumes sets — the only step where per-batch fan-out is observable in virtual_runtime.
+- **I7 (post-S4):** assert `Trace("step_a", "seed")` yields N direct-parent pairs (Trace walks direct parents only — see Bug I).
+
+True 9-event / cross-step purity validation depends on S5 (docker-stub plumbing) where real Nextflow channels fan out per-element.
+
+### S4 / Bug I — `Trace` walks direct parents only, not transitive
+
+`DataInstanceLibrary.Trace(from_type, to_type)` (`src/metasmith/models/libraries.py:510-546`) iterates `self.parents[from_path]` one hop deep. It does NOT walk transitive ancestry. To find seeds from a step_c output, callers must chain Trace calls or use `walk_ancestors` (which DOES walk transitively).
+
+This invalidated the original I7 premise that `Trace("step_c", "seed")` would yield N pairs. The CollectResults BFS over trace.jsonl carries transitive lineage into per-file `lin` dicts, but `parents` is built one-hop from the immediate producing event.
+
+**Resolution:** I7 reframed to use `Trace("step_a", "seed")` (direct adjacency, step_a's direct parent is the seed).
