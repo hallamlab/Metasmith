@@ -528,9 +528,7 @@ def cli_nextflow(argv: list[str]) -> int:
 
     workspace = Path.cwd()
     output_root = (workspace / output_name).resolve()
-    manifests_dir = output_root / "_manifests"
     output_root.mkdir(parents=True, exist_ok=True)
-    manifests_dir.mkdir(parents=True, exist_ok=True)
 
     task = _load_task_from_workspace(workspace)
     bootstrap = Path(os.environ.get(HOME_ENV, str(AgentPaths.HOME_ROOT))) / "lib/msm_bootstrap"
@@ -686,7 +684,7 @@ def cli_nextflow(argv: list[str]) -> int:
                             (fpath.resolve(), curr, out_inst.instance_id)
                         )
 
-    # Publish manifests for targets.
+    # Publish target outputs (lineage now rides on trace.jsonl).
     for target in task.plan.targets:
         dep_key = target.instance.dtype.key
         entries = produced_by_dep.get(dep_key, [])
@@ -695,24 +693,9 @@ def cli_nextflow(argv: list[str]) -> int:
 
         out_dir = output_root / target.name.replace(" ", "_")
         out_dir.mkdir(parents=True, exist_ok=True)
-        manifest_rows: list[list[str]] = []
-        for i, (src, lineage, _inst_id) in enumerate(entries):
+        for i, (src, _lineage, _inst_id) in enumerate(entries):
             dest = out_dir / f"{i + 1:04}_{src.name}"
             shutil.copy2(src, dest)
-            manifest_rows.append([json.dumps(lineage, separators=(",", ":")), str(dest)])
-
-        manifest = manifests_dir / _manifest_name_for_target(target)
-        with open(manifest, "w", encoding="utf-8") as f:
-            json.dump(manifest_rows, f)
-        write_trace(
-            {
-                "type": "manifest_written",
-                "target": target.name,
-                "dep_key": dep_key,
-                "count": len(manifest_rows),
-                "manifest": str(manifest),
-            }
-        )
 
     # Produce optional report files if requested.
     for k in ["-with-report", "-with-dag", "-with-timeline", "-with-trace"]:

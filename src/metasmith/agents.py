@@ -11,7 +11,6 @@ import re
 from collections import deque
 from hashlib import md5
 import pandas as pd
-from glob import glob
 
 from .serialization import StdTime
 from .hashing import KeyGenerator
@@ -1042,18 +1041,19 @@ def CollectResults(
     task: WorkflowTask,
     output_path: Path,
     inputs_dir: Path,
-    manifests_path: Path,
 ) -> DataInstanceLibrary:
     """Compile Nextflow outputs into a DataInstanceLibrary with lineage.
 
-    Reads input manifests and output manifests produced by the Orchestrator,
-    reconstructs parent-child relationships, and returns the result library.
+    Walks `<workspace>/_metasmith/trace.jsonl` for per-batch
+    InvocationEvent rows (produced by promote_run / cache-hit emission)
+    and reconstructs parent-child relationships from `consumes` /
+    `produces`. The legacy `_manifests/*.json` sidecar route is gone
+    as of S6.
 
     Args:
         task: The workflow task that was executed.
         output_path: Path to the results directory (where outputs live).
         inputs_dir: Path to the inputs/ directory with input CSVs.
-        manifests_path: Path to the _manifests/ directory with JSON manifests.
 
     Returns:
         DataInstanceLibrary with all outputs and their lineage.
@@ -1260,10 +1260,6 @@ def CollectResults(
             frontier = nxt
         return {k: sorted(set(v)) for k, v in lind.items()}
 
-    _output_kv_count_before_trace = sum(
-        1 for (_k, _h), (_p, _l, _i) in kv2path.items()
-        if _p.is_absolute() and _p.is_relative_to(output_path)
-    )
     for ev in trace_idx.events:
         for pf in ev.produces:
             if not pf.path or not pf.dtype_key:
@@ -1279,43 +1275,10 @@ def CollectResults(
                 continue
             # Preserve CSV-side instance_id if a prior input entry
             # already claimed this kv (G2 routing identity); otherwise
-            # fall back to the slot_id from the trace event (matches the
-            # legacy manifest-filename `inst_id` field).
+            # fall back to the slot_id from the trace event.
             prior = kv2path.get(kv)
             csv_inst_id = prior[2] if prior else None
             kv2path[kv] = abs_path, lind, (csv_inst_id or pf.slot_id or None)
-    _output_kv_count_after_trace = sum(
-        1 for (_k, _h), (_p, _l, _i) in kv2path.items()
-        if _p.is_absolute() and _p.is_relative_to(output_path)
-    )
-    # Legacy fallback: when the trace produced no output kv entries —
-    # typical for docker-stub harnesses that bypass promote_run — fall
-    # back to the legacy `_manifests/*.json` reader so kv2path still
-    # gets populated. C2 deletes the publishDir + this fallback in one
-    # commit; until then, both paths must coexist.
-    if _output_kv_count_after_trace == _output_kv_count_before_trace:
-        for manifest in glob(str(manifests_path/"*")):
-            manifest = Path(manifest)
-            if manifest.suffix != ".json": continue
-            parts = manifest.name.split(".")
-            inst_id = None
-            if len(parts) >= 4:
-                inst_k = parts[-3]
-                inst_id = parts[-2]
-            else:
-                inst_k = parts[-2]
-            with open(manifest) as j:
-                entries = json.load(j)
-                for lin, path in entries:
-                    try:
-                        path = Path(path)
-                        lind: dict = json.loads(lin)
-                        kv = inst_k, int(lind[inst_k][0])
-                        prior = kv2path.get(kv)
-                        csv_inst_id = prior[2] if prior else None
-                        kv2path[kv] = path, lind, (csv_inst_id or inst_id)
-                    except Exception as e:
-                        Log.Error(e)
     relavent_k = {k for k, v in kv2path}
     given_manifest = []
     todo = dict(enumerate(kv2path.items()))
@@ -1363,7 +1326,7 @@ def CollectResults(
                 _path = _inst.ResolvePath()
                 path2inst[_path] = _inst
             else:
-                given_manifest.append((ck, cv, cinst.instance_id, cinst.dtype_name, path))
+                given_manifest.append((cinst.instance_id, cinst.dtype.key, str(path), cinst.origin))
             to_del.append(i)
         assert len(to_del)>0
         for i in to_del:
@@ -1371,8 +1334,8 @@ def CollectResults(
     output.PruneTypes(save=False)
     output.Save()
 
-    _df = pd.DataFrame(given_manifest, columns="instance_key, instance_index, instance_id, type_name, path".split(", "))
-    _df.to_csv(manifests_path/"given.csv", index=False)
+    _df = pd.DataFrame(given_manifest, columns=["instance_id", "dtype_key", "path", "origin"])
+    _df.to_csv(output_path/"given.csv", index=False)
     return output
 
 def _extract_nxf_task_metadata(log_dir_abs: Path) -> "pd.DataFrame | None":
@@ -1473,8 +1436,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
     nxf_dag = log_dir/"workflow.dag_nxf.dot"
     output_path = workspace/results_folder
     if output_path.exists(): shutil.rmtree(output_path)
-    manifests_path = output_path/"_manifests"
-    manifests_path.mkdir(parents=True, exist_ok=True)
+    output_path.mkdir(parents=True, exist_ok=True)
     with LiveShell() as shell:
         shell.RegisterOnOut(Log.Info)
         shell.RegisterOnErr(Log.Error)
@@ -1577,7 +1539,6 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
         task=task,
         output_path=output_path,
         inputs_dir=output_path.parent/"inputs",
-        manifests_path=manifests_path,
     )
     n_outputs = sum(1 for p in output.manifest if Path(p).is_relative_to(output_path) or not Path(p).is_absolute())
     extern_output_path = extern_workspace/results_folder

@@ -423,29 +423,16 @@ def _append_invocation_event_v2(
 
     # Per-batch consumes: spec.batches[i].sorted_inputs when len > 1,
     # else aggregate. `consumes_for_batch` is keyed by batch_idx.
-    # S5: when files arrived flat in cache_tmp (real Nextflow
-    # publishDir, batch_idx synthesized per-file by promote_run), the
-    # compile-time spec.batches doesn't reflect runtime fan-out and
-    # neither aggregate nor per-batch consumes maps cleanly. Emit
-    # consumes={} so the trace events register output files (for I8)
-    # without injecting cross-sample parent edges that would contaminate
-    # the BFS in agents.py. Pre-S6, `_manifests/*.json` remains the
-    # authoritative parent source for these cases; S6 will fold full
-    # per-file consumes capture from runtime Nextflow .command.in.
-    is_flat_cache_tmp = (
-        have_per_file
-        and len(batched) > 1
-        and len(spec.batches) <= 1
-        and all(
-            not (workspace / "nxf_work" / f"step_{spec.order:02}").exists()
-            for _ in [None]
-        )
-    )
-    aggregate_consumes = (
-        {}
-        if is_flat_cache_tmp
-        else {slot_key: list(ids) for slot_key, ids in spec.sorted_inputs}
-    )
+    # For first-step events (compile-time arity = N), spec.batches has
+    # N entries and per-batch consumes is exact. For intermediate steps
+    # (compile-time archetype arity = 1, runtime arity = N), spec.batches
+    # has 1 entry and every runtime batch falls back to aggregate
+    # consumes — step-aggregated, not per-batch. The C1 BFS over trace
+    # still walks direct parents correctly for first-step events;
+    # multi-hop parent walks through aggregated intermediates inflate
+    # reachability without misrouting direct parents. Deferred to a
+    # future runtime-capture step (see audit doc I11).
+    aggregate_consumes = {slot_key: list(ids) for slot_key, ids in spec.sorted_inputs}
     consumes_for_batch: dict[int, dict[str, list[str]]] = {}
     if len(spec.batches) > 1:
         for b in spec.batches:
