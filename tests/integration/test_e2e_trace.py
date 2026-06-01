@@ -766,9 +766,11 @@ class TestTraceSharedInputs:
 
 
 @pytest.mark.xfail(
-    reason="I8 — Bug F: docker-stub bypasses RunWorkflow, so _compute_cache_decisions "
-    "and promote_run never fire. trace.jsonl contains only the SessionStart "
-    "sentinel. Fixed in S5 (run_stub_workflow invokes promote_run after nextflow).",
+    reason="I8 — Bug F + Bug J: docker-stub bypasses RunWorkflow; invoking "
+    "promote_run separately would inject contaminated lineage via the C1 BFS "
+    "(see plans/lineage-quadrant-audit.md Bug J — trace events pre-empt "
+    "manifest fallback in agents.py:1296). Atomically resolved in S6 with "
+    "manifest deletion.",
     strict=False,
 )
 class TestStubTraceHasInvocationEvents:

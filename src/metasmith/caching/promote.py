@@ -423,9 +423,29 @@ def _append_invocation_event_v2(
 
     # Per-batch consumes: spec.batches[i].sorted_inputs when len > 1,
     # else aggregate. `consumes_for_batch` is keyed by batch_idx.
-    aggregate_consumes = {
-        slot_key: list(ids) for slot_key, ids in spec.sorted_inputs
-    }
+    # S5: when files arrived flat in cache_tmp (real Nextflow
+    # publishDir, batch_idx synthesized per-file by promote_run), the
+    # compile-time spec.batches doesn't reflect runtime fan-out and
+    # neither aggregate nor per-batch consumes maps cleanly. Emit
+    # consumes={} so the trace events register output files (for I8)
+    # without injecting cross-sample parent edges that would contaminate
+    # the BFS in agents.py. Pre-S6, `_manifests/*.json` remains the
+    # authoritative parent source for these cases; S6 will fold full
+    # per-file consumes capture from runtime Nextflow .command.in.
+    is_flat_cache_tmp = (
+        have_per_file
+        and len(batched) > 1
+        and len(spec.batches) <= 1
+        and all(
+            not (workspace / "nxf_work" / f"step_{spec.order:02}").exists()
+            for _ in [None]
+        )
+    )
+    aggregate_consumes = (
+        {}
+        if is_flat_cache_tmp
+        else {slot_key: list(ids) for slot_key, ids in spec.sorted_inputs}
+    )
     consumes_for_batch: dict[int, dict[str, list[str]]] = {}
     if len(spec.batches) > 1:
         for b in spec.batches:
@@ -525,11 +545,27 @@ def promote_run(
                 skipped.append(key_hex)
                 continue
             try:
+                # S5: when real-Nextflow publishDir has already staged
+                # outputs at `<cache_root>/<key>.tmp/<file>` (files-at-root,
+                # see workflow.py:1665-1683), pick those up directly. The
+                # virtual_runtime path keeps using `_find_step_outputs`
+                # (nxf_work/step_NN/batch_*/file layout). cache_tmp can
+                # also have a pre-existing `out/` from a re-run we should
+                # not double-process.
+                tmp = cache_root / f"{key_hex}.tmp"
                 outputs = _find_step_outputs(workspace, spec.order)
+                if not outputs and tmp.exists():
+                    # files-at-root in cache_tmp (real Nextflow publishDir)
+                    skip_names = {"out", "logs", "manifest.cbor"}
+                    outputs = [
+                        p for p in tmp.iterdir()
+                        if p.is_file()
+                        and p.name not in skip_names
+                        and not p.name.startswith(".command")
+                    ]
                 if not outputs:
                     skipped.append(key_hex)
                     continue
-                tmp = cache_root / f"{key_hex}.tmp"
                 tmp.mkdir(parents=True, exist_ok=True)
                 out_dir = tmp / "out"
                 out_dir.mkdir(parents=True, exist_ok=True)
@@ -554,14 +590,22 @@ def promote_run(
                 files_meta: list[dict] = []
                 total_bytes = 0
                 unmatched: list[str] = []
+                # S5: files-at-root in cache_tmp (real-Nextflow publishDir
+                # path) loses the per-batch parent-dir signal. Each file
+                # there came from a separate Nextflow task invocation,
+                # so assign a sequential batch_idx per (slot_id,
+                # filename-order) so per-batch event emission produces
+                # one event per file.
+                files_have_batch_dir = any(
+                    p.parent.name.startswith("batch_") for p in outputs
+                )
+                fallback_batch_counter = 0
                 for src in outputs:
                     # S4b: resolve batch_idx from `batch_XXXX_YYYY` parent
-                    # directory. -1 when src isn't under that layout
-                    # (e.g. real-Nextflow files-at-root which arrive
-                    # already in <cache_tmp> — handled in S5 with a
-                    # cache_tmp parameter). Filenames for different
-                    # batches have distinct content hashes in their
-                    # middle token, so flat `out/` doesn't collide.
+                    # directory. For files-at-root in cache_tmp,
+                    # synthesize a sequential batch_idx per file so
+                    # downstream per-batch event emission distinguishes
+                    # them.
                     parent = src.parent
                     batch_dir_idx = -1
                     if parent.name.startswith("batch_"):
@@ -569,9 +613,22 @@ def promote_run(
                             batch_dir_idx = int(parent.name.split("_")[1])
                         except (IndexError, ValueError):
                             batch_dir_idx = -1
+                    elif not files_have_batch_dir:
+                        batch_dir_idx = fallback_batch_counter
+                        fallback_batch_counter += 1
                     dest = out_dir / src.name
+                    # S5: when src is inside cache_tmp (real-Nextflow
+                    # publishDir already staged here), move instead of
+                    # copy to avoid duplicating files.
+                    try:
+                        src_in_tmp = src.parent.resolve() == tmp.resolve()
+                    except (OSError, RuntimeError):
+                        src_in_tmp = False
                     if src.resolve() != dest.resolve():
-                        shutil.copy2(src, dest)
+                        if src_in_tmp:
+                            shutil.move(str(src), str(dest))
+                        else:
+                            shutil.copy2(src, dest)
                     relpath = str(dest.relative_to(tmp))
                     total_bytes += dest.stat().st_size
                     name = src.name

@@ -180,3 +180,22 @@ True 9-event / cross-step purity validation depends on S5 (docker-stub plumbing)
 This invalidated the original I7 premise that `Trace("step_c", "seed")` would yield N pairs. The CollectResults BFS over trace.jsonl carries transitive lineage into per-file `lin` dicts, but `parents` is built one-hop from the immediate producing event.
 
 **Resolution:** I7 reframed to use `Trace("step_a", "seed")` (direct adjacency, step_a's direct parent is the seed).
+
+### S5 / Bug J — docker-stub promote_run pre-empts manifest fallback in agents.py
+
+Attempted in S5: invoke `promote_run` after the nextflow subprocess in `run_stub_workflow` so docker-driven trace.jsonl carries InvocationEvents (I8 invariant). The fallback condition in `agents.py:1296`:
+
+```python
+if _output_kv_count_after_trace == _output_kv_count_before_trace:
+    # scan _manifests/*.json
+```
+
+is `True` only when the trace contributed zero output kvs. With promote_run running, the trace events add `kv2path` entries for every produced file, so the fallback skips — and the resulting kv2path entries are missing the transitively-accumulated ancestry that `_manifests/*.json`'s per-file `lin` dicts carry. The C1 BFS over `consumes` can only synthesize ancestry when `consumes` is correct per-task, which it isn't for docker-stub flat cache_tmp (compile-time `spec.batches` has 1 entry per step but runtime fans out N tasks per step).
+
+**Site:** `src/metasmith/agents.py:1287-1296` + `src/metasmith/caching/promote.py:_append_invocation_event_v2` per-batch logic.
+
+**Failure signature:** `TestTraceMultiStepDiamond::test_final_output_to_root` (and siblings) report `assert 5 == 3` — outputs cross-link to inputs from sibling samples.
+
+**Resolution:** S5 plumbing is held back. `promote.py` retains the cache_tmp scan + flat-layout batch_idx synthesis as dormant code paths (no caller yet exercises them post-revert). S6 will land docker-stub `promote_run` invocation atomically with `_manifests/*.json` deletion, removing the trace-vs-manifest precedence question entirely. I8 remains xfail until S6.
+
+The deeper structural fact: pre-S6, trace.jsonl and `_manifests/*.json` are **redundant**, with manifests authoritative. The C1 BFS preserves trace's lineage but the fallback logic is "use manifest only when trace is empty" — which doesn't compose cleanly when trace events exist but lack correct per-task consumes. The two paths must be unified in S6.
