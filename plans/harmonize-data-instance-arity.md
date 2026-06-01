@@ -254,17 +254,31 @@ Currently `DataInstance.RecalculateKey()` hashes `path + dtype.key + dtype_name`
 
 ## Commit Tracking
 
-Record the commit hash for each phase as it is implemented:
+| Phase | Commit | Status | Notes |
+|-------|--------|--------|-------|
+| Phase 0 (tests) | `1589347` | done | `tests/models/test_workflow.py` baseline landed in C8 part 1 of `feat/lineage-robustness`; 6 originally-listed categories dropped with explicit justification (see `plans/ok-sketch-this-out-magical-koala.md` G7). |
+| Phase 1 (dependency_map sole field) | `36c4a43` | done | A2 revised: `dependency_map` is now a property with a setter that always calls `RefreshViews()`. Drift is structurally impossible — there is no field to bypass. Pack()-time drift assertion dropped (was redundant under property model). |
+| Phase 2 (instance_map normalization) | `ec1ece4` | done | Landed on `feat/arch-cleanup`. |
+| Phase 3 (archetype formalization) | `36c4a43` | done | A3: closure at `workflow.py:1406-1415` preserved with rationale docstring. Extraction was net +lines for no behavioral gain. |
+| Phase 4 (bootstrap dependency keys) | `ec1ece4` | done | Landed on `feat/arch-cleanup`. Further dep-keyed FILES + sar/par preflight landed in `dc8dd6c` (`feat/lineage-robustness` C5). |
+| Phase 5 (agents k2inst fix) | `ec1ece4` | done | Landed on `feat/arch-cleanup`. |
+| Phase 6 (DataInstance identity) | `ec1ece4`, `c7b60e3` | done | Two-source identity landed in `ec1ece4`; `file_instance_id` minting via `LinPayload.mint_file_id(slot_id, relative_path)` landed in `c7b60e3` (C6). |
 
-| Phase | Commit | Status |
-|-------|--------|--------|
-| Phase 0 (tests) | | pending |
-| Phase 1 (dependency_map sole field) | | pending |
-| Phase 2 (instance_map normalization) | | pending |
-| Phase 3 (archetype formalization) | | pending |
-| Phase 4 (bootstrap dependency keys) | | pending |
-| Phase 5 (agents k2inst fix) | | pending |
-| Phase 6 (DataInstance identity) | | pending |
+### Lineage-robustness scope (this commit chain)
+
+| Commit | Subject |
+|--------|---------|
+| C1 dataclasses | `LinPayload`, `InvocationEvent`, `SessionStart`, `LineageNode`, `LogBundle` in `src/metasmith/models/lineage.py`. |
+| C2 cache versions | `LIN_PAYLOAD_VERSION`, `SHARD_LAYOUT_VERSION`, `trace_session_counter` rows in `caching/store.py`; `CacheStore.allocate_session_id()`. |
+| C3 (`36c4a43`) | A2 dependency_map property+setter + A3 archetype docstring + `test_workflow.py` setter test. |
+| C4 (`9f8f168`) | Slot-only lin payload v2 emit (`workflow.py:1573`). |
+| C5 (`dc8dd6c`) | Bootstrap parses `LinPayload`, dep-keyed FILES, sar/par preflight, hard-raise on missing required input. |
+| C6 (`c7b60e3`) | CollectResults mints `file_instance_id` at manifest-augmentation site. |
+| C7 (`96c049d`) | trace.jsonl rotation + SessionStart sentinel + v2 hit/promoted emit; `promote.py` v2 emission; `test_cache_trace.py` v2 shape assertions. |
+| C8 part 1 (`1589347`) | Phase 0 baseline tests + `_find_step_logs` + `.command.*` capture under `<shard>/logs/`. |
+| C8c (`5fcd98a`) | `DataInstanceLibrary` telemetry API + `Load(attach_trace=True)` + `python_api` re-exports. |
+| C8 status v2 (`cec6040`) | `status_for_run` tolerates v2 rows + SessionStart sentinel. |
+| C8d (`e98d3f8`) | `tests/integration/test_telemetry_e2e.py` — G5/G6 acceptance gate. |
 
 ## Verification Strategy: Test Before, Test After
 

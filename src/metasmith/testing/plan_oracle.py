@@ -47,8 +47,14 @@ class PlanExecutionOracle:
                 f"expected {expected_arity[step]}, got {got}"
             )
 
-        manifests = [e for e in events if e.get("type") == "manifest_written"]
-        target_keys = {t.instance.dtype.key for t in self.task.plan.targets}
-        written_keys = {str(e.get("dep_key")) for e in manifests if int(e.get("count", 0)) > 0}
-        missing = sorted(target_keys - written_keys)
-        assert not missing, f"missing manifests for target dependency keys: {missing}"
+        # Post-S6: the legacy `manifest_written` debug events emitted by
+        # virtual_runtime's publish loop are gone (manifests/ deleted).
+        # Per-target output presence is now verified by the C1 trace
+        # invariants in `tests/integration/test_telemetry_e2e.py` and
+        # `tests/integration/test_e2e_trace.py`; the bootstrap-sequence
+        # + arity checks above remain the load-bearing pre-S6 oracles.
+        results = [e for e in events if e.get("type") == "bootstrap_result"]
+        if results:
+            assert any(int(e.get("code", 1)) == 0 for e in results), (
+                "no bootstrap_result reported success"
+            )

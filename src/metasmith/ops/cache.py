@@ -147,19 +147,32 @@ def status_run(run_dir: str) -> dict:
 
 
 def status_for_run(run_dir: str) -> dict:
-    """Join _metasmith/trace.jsonl with workflow.step_N.meta files."""
+    """Join _metasmith/trace.jsonl with workflow.step_N.meta files.
+
+    Tolerates both v2 InvocationEvent rows (schema_version=2) and the
+    SessionStart sentinel that leads every fresh trace. The returned
+    `trace` key carries the InvocationEvent rows; `session_starts`
+    surfaces SessionStart rows separately so callers can correlate
+    `session_id` without re-parsing. Legacy v1 rows (no schema_version)
+    pass through as-is for backwards compatibility with older run dirs.
+    """
     run = Path(run_dir).resolve()
     trace = run / "_metasmith" / "trace.jsonl"
     rows: list[dict] = []
+    session_starts: list[dict] = []
     if trace.exists():
         for line in trace.read_text().splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
-                rows.append(json.loads(line))
+                raw = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if raw.get("event") == "session_start":
+                session_starts.append(raw)
+                continue
+            rows.append(raw)
     metas: dict[int, dict] = {}
     for meta in sorted(run.glob("workflow.step_*.meta")):
         try:
@@ -171,4 +184,9 @@ def status_for_run(run_dir: str) -> dict:
             head, _, rest = ln.partition(" ")
             body[head] = rest.strip()
         metas[order] = body
-    return {"run_dir": str(run), "trace": rows, "meta": metas}
+    return {
+        "run_dir": str(run),
+        "trace": rows,
+        "session_starts": session_starts,
+        "meta": metas,
+    }

@@ -382,13 +382,16 @@ def _collect_result_fingerprints(workspace: Path) -> tuple[tuple[str, str], ...]
         if not fp.is_file():
             continue
         rel = fp.relative_to(results)
-        # Exclude `_manifests/` (per-target lineage JSONs whose filenames
-        # embed instance_ids) and `_metadata/` (results-library YAML
-        # which also embeds instance_ids + per-path lineage metadata).
-        # Both are observable but neither belongs in the "output payload"
-        # determinism check — under S2, leaf instance_ids are
-        # unique-per-build by design.
-        if rel.parts and rel.parts[0] in {"_manifests", "_metadata"}:
+        # Exclude:
+        #  - `_metadata/` (results-library YAML embedding instance_ids
+        #    + per-path lineage metadata)
+        #  - `given.csv` (top-level, post-S6 — embeds workspace-absolute
+        #    paths of given inputs which vary per build)
+        # Under S2, leaf instance_ids are unique-per-build by design,
+        # so neither belongs in the "output payload" determinism check.
+        if rel.parts and rel.parts[0] in {"_metadata"}:
+            continue
+        if str(rel) == "given.csv":
             continue
         if not rel.parts:
             continue
@@ -427,20 +430,30 @@ def _collect_executed_steps(events: list[dict]) -> tuple[str, ...]:
 
 
 def _collect_target_manifests(workspace: Path) -> tuple[tuple[str, int], ...]:
-    mdir = workspace / "results" / "_manifests"
-    if not mdir.exists():
-        return ()
-    import json
+    """Per-target produced-file count, sourced from trace.jsonl (post-S6).
 
-    rows: list[tuple[str, int]] = []
-    for fp in sorted(mdir.glob("*.json")):
-        try:
-            data = json.loads(fp.read_text())
-            target_name = fp.name.split(".")[0]
-            rows.append((target_name, len(data)))
-        except Exception:
+    Pre-S6 this read `_manifests/*.json` sidecars; those are gone. The
+    per-target produced-file count is now derived from non-sentinel
+    InvocationEvents — group `produces` by dtype_key and report
+    `(dtype_key, total_produced_count)`. The snapshot is used for
+    cross-run determinism only, so the exact label shape doesn't matter
+    as long as it's stable.
+    """
+    trace_path = workspace / "_metasmith" / "trace.jsonl"
+    if not trace_path.exists():
+        return ()
+    from metasmith.telemetry import TraceIndex
+
+    trace = TraceIndex.read(trace_path)
+    counts: dict[str, int] = {}
+    for ev in trace.events:
+        if ev.status not in ("promoted", "hit", "miss"):
             continue
-    return tuple(rows)
+        for pf in ev.produces:
+            if not pf.dtype_key:
+                continue
+            counts[pf.dtype_key] = counts.get(pf.dtype_key, 0) + 1
+    return tuple(sorted(counts.items()))
 
 
 def capture_run(virtual_runtime, task: WorkflowTask) -> RunSnapshot:

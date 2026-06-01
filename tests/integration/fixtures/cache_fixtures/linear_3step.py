@@ -23,10 +23,10 @@ from tests.integration._cache_harness import (
 TYPE_NAMES = ("seed", "step_a", "step_b", "step_c")
 
 
-def build_task(tmp_path: Path) -> WorkflowTask:
+def build_task(tmp_path: Path, n_samples: int = 1) -> WorkflowTask:
     types_path = build_types_library(tmp_path, TYPE_NAMES)
     samples = build_samples_library(
-        tmp_path, types_path, count=1, input_type="seed"
+        tmp_path, types_path, count=n_samples, input_type="seed"
     )
     transforms = {
         "trA": identity_transform_code("trA", "seed", "step_a"),

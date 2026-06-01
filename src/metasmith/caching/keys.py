@@ -32,6 +32,11 @@ BLAKE3_MULTIHASH_CODE = 0x1E
 BLAKE3_DIGEST_LEN = 32  # 256-bit
 KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 
+# Hard-breaking version stamp on the lineage payload. Baked into every
+# lineage_key so a bump renders pre-v2 cache shards unreachable; the
+# sqlite metadata row in CacheStore mirrors it for runtime checks.
+LIN_PAYLOAD_VERSION = 2
+
 
 def canonical_cbor(payload) -> bytes:
     """Canonical CBOR encoding per RFC 8949 §4.2.2 (deterministic).
@@ -87,6 +92,7 @@ def lineage_key(
     """
     payload = canonical_cbor(
         {
+            "v": LIN_PAYLOAD_VERSION,
             "tk": transform_key,
             "sig": signature,
             "inputs": [

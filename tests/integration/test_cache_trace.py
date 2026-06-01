@@ -17,27 +17,45 @@ from tests.integration.fixtures.cache_fixtures import linear_3step
 from tests.e2e_virtual.conftest import virtual_runtime  # noqa: F401
 
 
-def test_trace_jsonl_records_hit_and_run(tmp_path, virtual_runtime):
-    """G11: per-task trace.jsonl records `source: hit|run` and step name.
+def test_trace_jsonl_records_v2_invocation_events(tmp_path, virtual_runtime):
+    """C7: trace.jsonl carries v2 InvocationEvent rows + SessionStart sentinel.
 
-    Run once (all runs), run again (all hits). The second run's
-    trace.jsonl must have exactly N rows for an N-step plan, each with
-    `source: hit`. Critical that this is two-pass: compile-time emits
-    `source: hit` rows; post-exec emits `source: run` rows. Both reach
-    the file.
+    Run once (all promoted), run again (all hit). The second run's
+    trace.jsonl must lead with a SessionStart sentinel and then carry
+    exactly N InvocationEvent rows for an N-step plan, each with
+    `status: hit` and `schema_version: 2`. Compile-time emits the hit
+    rows; post-exec promote.py appends miss/promoted/fail rows carrying
+    the same `session_id` recovered from the sentinel.
     """
     task = linear_3step.build_task(tmp_path)
     capture_run(virtual_runtime, task)
     capture_run(virtual_runtime, task)
 
-    # Find the latest run_dir's trace.jsonl
     runs = sorted((virtual_runtime.home / "runs").glob("*/_metasmith/trace.jsonl"))
     assert runs, "no trace.jsonl emitted under any run_dir"
-    lines = [json.loads(l) for l in runs[-1].read_text().splitlines() if l.strip()]
-    sources = [r.get("source") for r in lines]
-    assert sources, "trace.jsonl is empty"
-    assert all(s == "hit" for s in sources), (
-        f"second run expected all hits, got {sources}"
+    raw = [json.loads(l) for l in runs[-1].read_text().splitlines() if l.strip()]
+    assert raw, "trace.jsonl is empty"
+
+    head = raw[0]
+    assert head.get("event") == "session_start", (
+        f"first line must be SessionStart sentinel, got {head}"
+    )
+    assert "session_id" in head
+    session_id = head["session_id"]
+
+    events = raw[1:]
+    assert events, "no InvocationEvent rows after SessionStart"
+    for row in events:
+        assert row.get("schema_version") == 2, (
+            f"non-v2 row in trace.jsonl: {row}"
+        )
+        assert row.get("session_id") == session_id, (
+            f"session_id drift between sentinel ({session_id}) and event {row}"
+        )
+        assert row.get("task_hash"), f"row missing task_hash: {row}"
+    statuses = [r.get("status") for r in events]
+    assert all(s == "hit" for s in statuses), (
+        f"second run expected all hit statuses, got {statuses}"
     )
 
 

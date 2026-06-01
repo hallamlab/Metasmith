@@ -44,3 +44,4 @@ pixi.toml
 *.acc
 local_home
 std_assembly_data
+.claude/
