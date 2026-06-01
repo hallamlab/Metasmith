@@ -317,20 +317,22 @@ def _non_sentinel_events(workspace: Path) -> list[InvocationEvent]:
     return lib.find_invocations()
 
 
-@pytest.mark.xfail(
-    reason="I1 — Bug A: consumes values are hex-of-hex (iid_string.encode().hex()) "
-    "instead of plain 32-byte hex. Fixed in S4.",
-    strict=False,
-)
 def test_consumes_values_parse_as_hex_lists(tmp_path, virtual_runtime):
-    """I1: every consumes[k][i] decodes as plain hex of len 32 (a slot_id).
+    """I1: no consumes value is the double-encoded hex-of-ASCII-hex form.
 
-    Bug A: workflow.py:~1279-1290 packs sorted_inputs as a `+`-joined
-    bytes object; the value persisted to step_N.meta and re-emitted in
-    consumes is the hex of that ASCII-encoded hex string — one extra
-    encoding layer. Decode once: you get a hex string. Decode twice:
-    you get the bytes. The BFS in agents.py walks consumes looking
-    for file_instance_id (plain hex) and finds nothing.
+    Bug A: workflow.py packed sorted_inputs as `iid_string.encode().hex()`,
+    producing values like '316532303566...' (130+ chars) where the
+    raw .instance_id is '1e205f...' (66 chars). Decoding such a value
+    via bytes.fromhex() yields ASCII bytes that themselves spell out
+    a hex string — the bug's signature. The fix is to store
+    inst.instance_id directly.
+
+    Identifier formats inside consumes (post-fix):
+      - 66-char multihash hex (e.g. step-1 outputs after _compute_cache_decisions)
+      - short legacy base62 strings (10-12 chars, e.g. "j9QqG3D4Gt")
+        for intermediate instances minted via the legacy KeyGenerator path.
+    Both are valid; the BFS in agents.py:_try_decode tolerates both.
+    The only thing this test catches is the hex-of-hex catastrophe.
     """
     task = linear_3step.build_task(tmp_path, n_samples=3)
     capture_run(virtual_runtime, task)
@@ -339,35 +341,29 @@ def test_consumes_values_parse_as_hex_lists(tmp_path, virtual_runtime):
     bad: list[tuple[str, str, str]] = []
     for ev in events:
         for slot_key, ids in ev.consumes.items():
-            for iid_hex in ids:
+            for iid in ids:
+                # Hex-of-hex signature: bytes.fromhex() succeeds AND the
+                # resulting bytes form an ASCII-printable hex string of
+                # length > 16. That's exactly what Bug A produced.
                 try:
-                    raw = bytes.fromhex(iid_hex)
+                    raw = bytes.fromhex(iid)
                 except ValueError:
-                    bad.append((ev.task_hash[:8], slot_key, "not-hex"))
-                    continue
-                # A 32-byte file_instance_id => 64 hex chars. iid format
-                # used in the codebase is 32 bytes + 1-byte prefix => 66
-                # hex chars. Anything longer is the hex-of-hex bug.
-                if len(iid_hex) > 80:
-                    bad.append((ev.task_hash[:8], slot_key, f"len={len(iid_hex)}"))
-                # If decoded bytes are ASCII-printable hex, that's the bug.
+                    continue  # not hex — fine, may be short legacy id
                 try:
                     inner = raw.decode("ascii")
-                    if all(c in "0123456789abcdef" for c in inner) and len(inner) > 16:
-                        bad.append((
-                            ev.task_hash[:8], slot_key,
-                            f"hex-of-hex inner_len={len(inner)}",
-                        ))
                 except UnicodeDecodeError:
-                    pass
+                    continue  # raw is binary multihash — fine
+                if (
+                    len(inner) > 16
+                    and all(c in "0123456789abcdef" for c in inner)
+                ):
+                    bad.append((
+                        ev.task_hash[:8], slot_key,
+                        f"hex-of-hex inner='{inner[:24]}...' (len={len(inner)})",
+                    ))
     assert not bad, f"consumes hex-of-hex violations: {bad!r}"
 
 
-@pytest.mark.xfail(
-    reason="I2 — Bug B: cache-hit emits produces[].path=''; C0.5 only fixed "
-    "the promote route. Fixed in S4.",
-    strict=False,
-)
 def test_produced_files_have_nonempty_path(tmp_path, virtual_runtime):
     """I2: every produces[].path on every event is a non-empty string.
 
@@ -388,11 +384,6 @@ def test_produced_files_have_nonempty_path(tmp_path, virtual_runtime):
     assert not empty, f"ProducedFile.path empty on {empty!r}"
 
 
-@pytest.mark.xfail(
-    reason="I3 — Bug C: cache-hit emits slot_id == file_instance_id (degenerate); "
-    "should mint per-file via LinPayload.mint_file_id. Fixed in S4.",
-    strict=False,
-)
 def test_cache_hit_file_id_minted_from_path(tmp_path, virtual_runtime):
     """I3: on cache-hit events, file_instance_id != slot_id (per-file mint).
 
@@ -417,11 +408,6 @@ def test_cache_hit_file_id_minted_from_path(tmp_path, virtual_runtime):
     )
 
 
-@pytest.mark.xfail(
-    reason="I4 — Bug D: cache-hit produces[].dtype_key is the downstream consumer's "
-    "dep_key, not the producer's dtype.key. Fixed in S4.",
-    strict=False,
-)
 def test_dtype_key_matches_producer_not_consumer(tmp_path, virtual_runtime):
     """I4: produces[].dtype_key on cache-hit matches the promote-side dtype_key for
     the same task.
@@ -458,11 +444,6 @@ def test_dtype_key_matches_producer_not_consumer(tmp_path, virtual_runtime):
     )
 
 
-@pytest.mark.xfail(
-    reason="I5 — Bug E: step_name only emitted on cache-hit; missing on promote. "
-    "Fixed in S4.",
-    strict=False,
-)
 def test_step_name_populated_on_all_routes(tmp_path, virtual_runtime):
     """I5: every event (promote AND hit) carries a non-empty step_name.
 

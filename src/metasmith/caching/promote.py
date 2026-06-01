@@ -44,6 +44,10 @@ class StepPromoteSpec:
     signature: str
     out_identities: dict[str, str]  # "{slot}::{branch}" -> instance_id hex
     dep_out: list[dict]  # parsed `dot` line; per-branch dep_key -> [ids]
+    # S4a (Bug E): persisted from compile-time `step.transform.name` so
+    # the promote route can populate InvocationEvent.step_name to match
+    # the cache-hit route's emission schema.
+    step_name: str = ""
     # C0: per-slot input ids in the same shape the cache-hit route uses
     # (workflow.py:1419-1422). Each tuple is (slot_key, list[slot_id_hex]).
     # Built at compile time (workflow.py:1279-1290), persisted via the
@@ -91,6 +95,7 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
     cacheable = True
     out_identities: dict[str, str] = {}
     transform_key = ""
+    step_name = ""
     signature = ""
     dep_out: list[dict] = []
     sorted_inputs: list = []
@@ -117,6 +122,8 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
                 pass
         elif head == "transform_key":
             transform_key = rest.strip()
+        elif head == "step_name":
+            step_name = rest.strip()
         elif head == "sorted_inputs":
             try:
                 raw = json.loads(rest)
@@ -179,6 +186,7 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
         cache_key=bytes.fromhex(cache_key_hex),
         cacheable=cacheable,
         transform_key=transform_key,
+        step_name=step_name,
         signature=signature,
         out_identities=out_identities,
         dep_out=dep_out,
@@ -415,6 +423,7 @@ def _append_invocation_event_v2(
         produces=produces,
         session_id=session_id,
         step_order=spec.order,
+        step_name=spec.step_name,
         cache_key=cache_key_hex,
         time_source="orchestrator",
     )

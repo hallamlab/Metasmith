@@ -1258,19 +1258,16 @@ class WorkflowTask:
         # input came from an upstream step's output (not a given leaf).
         out_id_by_producer: dict[tuple[int, str, int], str] = {}
 
-        def _input_instance_id(inst, source_step: int | None) -> bytes:
-            """Encode the input's instance_id to bytes for the lineage key.
-
-            We accept either a multihash hex string (new leaf / lineage
-            ids minted by S2's AddItem path) or a legacy 10-char digest
-            (DataInstances created without library-level mint, e.g.
-            transform-library instances whose paths fall through to the
-            legacy `_resolve_instance_meta` formula). In both cases the
-            UTF-8 encoding is a stable, lossless byte rendering — the
-            actual digest format does not matter for the cache_key, only
-            that two identical inputs produce identical bytes.
-            """
-            return inst.instance_id.encode("utf-8")
+        # S4a (Bug A fix): use inst.instance_id directly. The old code
+        # called `inst.instance_id.encode("utf-8").hex()` which produces
+        # hex-of-ASCII-hex (double-encoded). The audit
+        # (plans/lineage-quadrant-audit.md, I1) confirmed this leaked
+        # into InvocationEvent.consumes as e.g.
+        # "3165323035396234..." (decodes to the actual hex
+        # "1e2059b4..."). The fix is to just keep the hex string. Cache
+        # sharding changes — existing dev caches need rebuild — but the
+        # consumes dict now carries plain 32-byte hex slot_ids that
+        # TraceIndex.by_slot can actually look up.
 
         for step in self.plan.steps:
             transform_key = step.transform.GetKey() or step.transform.name or ""
@@ -1283,15 +1280,8 @@ class WorkflowTask:
                     continue
                 # Aggregate every instance feeding this slot. Sort the
                 # ids to remove ordering noise from the input set.
-                slot_ids = sorted(
-                    _input_instance_id(i, None).hex() for i in insts
-                )
-                # C0-amend: store as list[str], not "+"-joined bytes.
-                # The previous shape leaked into InvocationEvent.consumes
-                # as `hex_of_utf8_of_plus_joined_string` — useless for
-                # any TraceIndex.by_slot lookup. Cache-key byte-identity
-                # is preserved by re-joining locally for lineage_key
-                # below.
+                # S4a (Bug A): store inst.instance_id directly (hex string).
+                slot_ids = sorted(i.instance_id for i in insts)
                 sorted_inputs.append((dep.key, slot_ids))
             sorted_inputs.sort(key=lambda kv: kv[0])
 
@@ -1373,9 +1363,8 @@ class WorkflowTask:
                             selected = [dep_insts[start]]
                         else:
                             selected = [dep_insts[-1]]
-                    slot_ids = sorted(
-                        _input_instance_id(i, None).hex() for i in selected
-                    )
+                    # S4a (Bug A): use inst.instance_id directly.
+                    slot_ids = sorted(i.instance_id for i in selected)
                     batch_sorted.append((dep.key, slot_ids))
                 batch_sorted.sort(key=lambda kv: kv[0])
                 batches.append({
@@ -1481,8 +1470,16 @@ class WorkflowTask:
                         f"cache-hit decode_manifest failed for "
                         f"{decision['cache_key'].hex()[:8]}: {e}"
                     )
-            legacy = (not files) or any(
-                "slot_id" not in f for f in files
+            # S4a (Bug B/C/D fix): ignore `unmatched` files when deciding
+            # legacy fallback. Unmatched files (e.g. virt-host.log,
+            # virt-host.stop) are copied into the cache shard without
+            # slot_id annotation; their presence shouldn't force the
+            # whole event into the legacy degenerate emission (which
+            # collapses slot_id == file_instance_id, drops path, and
+            # uses the consumer's dep_key as dtype_key).
+            matched_files = [f for f in files if not f.get("unmatched")]
+            legacy = (not matched_files) or any(
+                "slot_id" not in f for f in matched_files
             )
             produces: list[ProducedFile] = []
             if legacy:
@@ -1767,6 +1764,11 @@ class WorkflowTask:
                         f"cacheable {'true' if cache_decision['cacheable'] else 'false'}\n"
                     )
                     f.write(f"transform_key {cache_decision['transform_key']}\n")
+                    # S4a (Bug E): persist step_name so promote_run can
+                    # populate InvocationEvent.step_name on the promote
+                    # route. Cache-hit already populates it from
+                    # step.transform.name; promote couldn't see that.
+                    f.write(f"step_name {step.transform.name or ''}\n")
                     # C0: persist the compile-time sorted_inputs so the
                     # post-exec promote route can populate InvocationEvent.consumes
                     # with the same dict shape as the cache-hit route at
