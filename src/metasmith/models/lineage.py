@@ -440,28 +440,45 @@ class LineageNode:
     inputs: dict[str, list["LineageNode"]] = field(default_factory=dict)
     group: Optional[GroupingFrame] = None
 
-    def to_json(self, *, indent: Optional[int] = None) -> str:
-        def encode(node: "LineageNode") -> dict:
+    def to_json(self, *, indent: Optional[int] = None, depth: Optional[int] = None) -> str:
+        """Serialize to JSON.
+
+        `depth` (S7): cap the walk distance from the root. None = no cap
+        (every reachable ancestor). 0 = root only with `inputs={}`. Matches
+        `to_mermaid`'s depth semantics.
+        """
+        def encode(node: "LineageNode", remaining: Optional[int]) -> dict:
             pb = node.produced_by
             if isinstance(pb, InvocationEvent):
                 produced = {"kind": "invocation", **pb.to_dict()}
             else:
                 produced = pb.to_dict()
+            if remaining is None:
+                child_remaining = None
+                inputs = {
+                    k: [encode(child, None) for child in v]
+                    for k, v in node.inputs.items()
+                }
+            elif remaining <= 0:
+                inputs = {}
+            else:
+                child_remaining = remaining - 1
+                inputs = {
+                    k: [encode(child, child_remaining) for child in v]
+                    for k, v in node.inputs.items()
+                }
             d = {
                 "instance_id": node.instance_id,
                 "dtype_key": node.dtype_key,
                 "path": node.path,
                 "produced_by": produced,
-                "inputs": {
-                    k: [encode(child) for child in v]
-                    for k, v in node.inputs.items()
-                },
+                "inputs": inputs,
             }
             if node.group is not None:
                 d["group"] = node.group.to_dict()
             return d
 
-        return json.dumps(encode(self), indent=indent, separators=(",", ":") if indent is None else None)
+        return json.dumps(encode(self, depth), indent=indent, separators=(",", ":") if indent is None else None)
 
     def to_mermaid(
         self,

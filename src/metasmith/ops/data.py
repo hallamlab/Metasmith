@@ -269,16 +269,52 @@ def import_library(
     }
 
 
-def show_item_lineage(library_path: str, item_path: str) -> dict:
+def show_item_lineage(
+    library_path: str,
+    item_path: str,
+    *,
+    of: str | None = None,
+    fmt: str = "json",
+    depth: int | None = None,
+    include_logs: bool = False,
+) -> dict:
+    """Render an item's lineage tree.
+
+    S7: walks the trace-backed ancestor graph via `get_lineage_of` and
+    renders as JSON or mermaid. `--of PATH` writes to disk; otherwise
+    returns the rendered text in the result dict so the CLI can print
+    it. `--logs` attaches per-invocation `.command.*` log paths via
+    `get_logs_of`.
+    """
     lib = load_data_lib(library_path)
     p = Path(item_path)
     inst = lib.Get(p)
-    parents = []
-    for pm in lib.parents.get(p, []):
-        parents.append({"path": str(pm.path), "type_name": pm.name})
+    node = lib.get_lineage_of(inst)
+
+    if fmt == "mermaid":
+        rendered = node.to_mermaid(depth=depth if depth is not None else 16)
+    else:
+        rendered = node.to_json(indent=2, depth=depth)
+
+    logs: dict | None = None
+    if include_logs:
+        try:
+            bundle = lib.get_logs_of(inst)
+            logs = bundle.to_dict() if hasattr(bundle, "to_dict") else None
+        except Exception as e:
+            logs = {"error": repr(e)}
+
+    if of is not None:
+        out_path = Path(of)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(rendered, encoding="utf-8")
+
     return {
         "path": str(inst.path),
         "type_name": inst.dtype_name,
-        "properties": inst.dtype.Pack()["properties"],
-        "parents": parents,
+        "format": fmt,
+        "depth": depth,
+        "rendered": rendered if of is None else None,
+        "written_to": str(of) if of is not None else None,
+        "logs": logs,
     }

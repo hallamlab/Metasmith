@@ -2,9 +2,9 @@
 
 ## Environment
 
-Use the `msm_env` mamba environment to run Python, tests, and CLI commands:
+Use the `msm` mamba environment to run Python, tests, and CLI commands:
 ```
-mamba run -n msm_env <command>
+mamba run -n msm <command>
 ```
 
 ## What is Metasmith?
