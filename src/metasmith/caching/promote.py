@@ -60,6 +60,14 @@ class StepPromoteSpec:
     # signals a legacy step_N.meta — the promote path falls back to
     # per-slot degenerate emission with a Log.Warn.
     slot_files: list = field(default_factory=list)
+    # S3: per-batch decomposition mirroring the compile-time batching
+    # algorithm (virtual_runtime._select_instances). Each entry is
+    #   {"batch_idx", "start", "end",
+    #    "sorted_inputs": [[slot_key, [iid_hex, ...]], ...]}
+    # Used by S4 emission to produce one InvocationEvent per batch
+    # (= per task) instead of one per step. Empty list signals legacy
+    # step_N.meta; emission falls back to step-aggregated path.
+    batches: list = field(default_factory=list)
 
 
 def _shard_dir(cache_root: Path, key_hex: str) -> Path:
@@ -87,6 +95,7 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
     dep_out: list[dict] = []
     sorted_inputs: list = []
     slot_files: list = []
+    batches: list = []
 
     for line in meta_path.read_text().splitlines():
         if not line.strip():
@@ -135,6 +144,34 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
                     slot_files = []
             except json.JSONDecodeError:
                 slot_files = []
+        elif head == "batches":
+            # S3: list of per-batch dicts with sorted_inputs slice.
+            try:
+                raw = json.loads(rest)
+            except json.JSONDecodeError:
+                raw = []
+            if isinstance(raw, list):
+                # Normalize sorted_inputs entries to (slot_key, [hex,...])
+                # tuples so downstream code matches the StepPromoteSpec
+                # field shape.
+                batches = []
+                for b in raw:
+                    if not isinstance(b, dict):
+                        continue
+                    bsi = []
+                    for entry in b.get("sorted_inputs", []):
+                        if isinstance(entry, list) and len(entry) == 2:
+                            k, v = entry
+                            if isinstance(v, list):
+                                bsi.append((k, [str(x) for x in v]))
+                            elif isinstance(v, str):
+                                bsi.append((k, v.split("+") if v else []))
+                    batches.append({
+                        "batch_idx": int(b.get("batch_idx", len(batches))),
+                        "start": int(b.get("start", 0)),
+                        "end": int(b.get("end", 0)),
+                        "sorted_inputs": bsi,
+                    })
     if cache_key_hex is None:
         return None
     return StepPromoteSpec(
@@ -147,6 +184,7 @@ def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
         dep_out=dep_out,
         sorted_inputs=sorted_inputs,
         slot_files=slot_files,
+        batches=batches,
     )
 
 

@@ -1340,6 +1340,51 @@ class WorkflowTask:
                 if entry is not None and store.files_exist(entry):
                     hit = True
 
+            # S3: per-batch decomposition. The compile-time `sorted_inputs`
+            # above is the *aggregate* (step-level) view used for cache_key
+            # byte-identity. For per-task (per-batch) InvocationEvent
+            # emission (S4), we also pre-compute each batch's specific
+            # inputs by mirroring virtual_runtime.py's batching algorithm
+            # (_select_instances at virtual_runtime.py:327):
+            #   group_total = max(1, len(step.group_by_instances))
+            #   batch_size  = max(1, step.transform.batch_size)
+            #   for start in range(0, group_total, batch_size): end=...
+            #     per-dep selected = insts[start:end]  (broadcast 1-inst deps)
+            # The aggregate `sorted_inputs` stays as the cache_key source;
+            # `batches` is emission-only metadata. Cache sharding remains
+            # one-shard-per-step.
+            group_total = max(1, len(step.group_by_instances))
+            batch_size = max(1, int(getattr(step.transform, "batch_size", 1) or 1))
+            batches: list[dict] = []
+            for batch_idx, start in enumerate(range(0, group_total, batch_size)):
+                end = min(group_total, start + batch_size)
+                batch_sorted: list[tuple[str, list[str]]] = []
+                for dep in step.transform.model.requires:
+                    dep_insts = list(step.dependency_map.get(dep, []))
+                    if not dep_insts:
+                        continue
+                    if len(dep_insts) == 1:
+                        selected = dep_insts  # broadcast
+                    else:
+                        chunk = dep_insts[start:end]
+                        if chunk:
+                            selected = chunk
+                        elif start < len(dep_insts):
+                            selected = [dep_insts[start]]
+                        else:
+                            selected = [dep_insts[-1]]
+                    slot_ids = sorted(
+                        _input_instance_id(i, None).hex() for i in selected
+                    )
+                    batch_sorted.append((dep.key, slot_ids))
+                batch_sorted.sort(key=lambda kv: kv[0])
+                batches.append({
+                    "batch_idx": batch_idx,
+                    "start": start,
+                    "end": end,
+                    "sorted_inputs": batch_sorted,
+                })
+
             decisions[step.order] = {
                 "cache_key": cache_key,
                 "transform_key": transform_key,
@@ -1349,6 +1394,7 @@ class WorkflowTask:
                 "hit": hit,
                 "entry": entry,
                 "cacheable": getattr(step.transform, "cacheable", True),
+                "batches": batches,
             }
 
         # C7 — emit the per-run trace.jsonl at compile time as v2
@@ -1775,6 +1821,17 @@ class WorkflowTask:
                     f.write(
                         "slot_files "
                         f"{json.dumps(slot_files, separators=(',',':'))}\n"
+                    )
+                    # S3: persist per-batch decomposition so promote can
+                    # emit one InvocationEvent per batch (= per task) in
+                    # S4. Single-batch steps still emit one event each;
+                    # multi-batch steps stop aggregating across siblings
+                    # (the C2 structural defect from session #268).
+                    # Shape: [{batch_idx, start, end, sorted_inputs:
+                    # [[slot_key, [hex,...]], ...]}, ...]
+                    f.write(
+                        "batches "
+                        f"{json.dumps(cache_decision.get('batches', []), separators=(',',':'))}\n"
                     )
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
