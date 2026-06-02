@@ -3,12 +3,11 @@
 One transform emits N distinct output slots; each slot reaches its
 downstream consumer with a stable, independent identity.
 
-The current `multi_slot_producer` stimulus only resolves slot_0 in
-`plan.dependency_map` for `slots>=2`; `PrepareNextflow` raises
-KeyError on subsequent slots (see `workflow.py:get_io_signature`).
-So fan-out tests assert at the **plan level** only — building the
-plan exercises the planner's slot synthesis without depending on the
-compile-stage dep_map wiring.
+Plan-level wiring of multi-slot `dependency_map` is now end-to-end
+(solver consolidates per-pgroup variants instead of splitting them into
+disjoint timelines, and the lineage walk no longer treats sibling
+produces as parents). F1-F4 still assert at plan level; F5 adds an
+end-to-end run that exercises compile + execute for a 2-slot transform.
 
 Catalog: see `tests/flow/AGENTS.md` Axis 3.
 """
@@ -17,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import build_fan_out_plan
+from .conftest import build_fan_out_plan, run_and_load
 
 
 def test_f1_two_slot_distinct_ids(tmp_path):
@@ -96,23 +95,40 @@ def test_f3_slot_routing(tmp_path, slot_idx):
 
 
 def test_f4_slot_lineage_isolation(tmp_path):
-    """<F4> Slot lineage isolation: the slot_0 DataInstance is independent of slot_1.
+    """<F4> Slot lineage isolation: every slot has a wired, distinct DataInstance.
 
-    Plan-level: instance_ids assigned to slot_0 and slot_1 inputs in the
-    same step must not collide. Where both slots carry DataInstances they
-    differ; where only one carries an instance, the assertion is vacuous
-    but the slot count contract still holds.
+    With the solver consolidating per-pgroup variants, every declared output
+    slot now carries its own DataInstance with a unique `instance_id`.
     """
     bp = build_fan_out_plan(tmp_path, n_slots=2)
     step = bp.plan.steps[0]
     assert len(step.produces) == 2
-    ids: set[str] = set()
-    for slot_insts in step.produces:
-        for inst in slot_insts:
-            ids.add(inst.instance_id)
-    # Slot_0 has a wired DataInstance — its id must appear; slot_1 is empty
-    # today, so we cannot demand distinctness directly, but we *can* assert
-    # the planner did not collapse the two slots into a shared instance.
-    assert len(step.produces[0]) >= 1
-    if step.produces[1]:
-        assert step.produces[0][0].instance_id != step.produces[1][0].instance_id
+    for i, slot_insts in enumerate(step.produces):
+        assert len(slot_insts) >= 1, f"slot_{i} has no wired DataInstance"
+    assert step.produces[0][0].instance_id != step.produces[1][0].instance_id
+
+
+def test_f5_multi_slot_end_to_end(tmp_path, virtual_runtime):
+    """<F5> End-to-end: a 2-slot producer compiles, runs, and promotes both slots.
+
+    Exercises the full G2 fix path — solver wires every pgroup, the lineage
+    walk doesn't treat siblings as parents, and CollectResults resolves both
+    outputs in a single CollectResults pass. The original bug surfaced as
+    `KeyError: (D:slot_1)` at `workflow.py:get_io_signature`; the fix lets
+    `PrepareNextflow` see both slots in `dependency_map`.
+    """
+    bp = build_fan_out_plan(tmp_path, n_slots=2)
+    task, lib = run_and_load(virtual_runtime, bp)
+    events = lib._trace.events
+    # The virtual runtime emits one InvocationEvent per multi-slot step with
+    # both produces; G2's fix is that both slots actually appear here.
+    assert len(events) == 1, f"expected 1 invocation, got {len(events)}"
+    ev = events[0]
+    assert len(ev.produces) == 2, (
+        f"expected 2 produces (slot_0 + slot_1), got {len(ev.produces)}"
+    )
+    dtypes = {pf.dtype_key for pf in ev.produces}
+    assert len(dtypes) == 2, f"slots collapsed to a single dtype: {dtypes}"
+    # The library walk should now resolve both promoted outputs.
+    promoted = lib.find_invocations(status="promoted")
+    assert len(promoted) == 1, f"expected 1 promoted step, got {len(promoted)}"

@@ -64,14 +64,23 @@ def test_b2_three_way_fanout_shared_ancestor(tmp_path, virtual_runtime):
 def test_b3_sibling_failure_isolated(tmp_path, virtual_runtime):
     """<B3> One branch fails, the sibling branch still completes.
 
-    `failing_at_slot_k(k=1, slots=2)` currently trips `PrepareNextflow`
-    because the planner only wires slot_0 in `dependency_map`. Pin the
-    expected behavior via xfail until the multi-slot dep_map plumbing
-    catches up.
+    Planner wiring of multi-slot `dependency_map` is fixed (solver consolidates
+    per-pgroup variants in the same timeline; sibling lineage walk no longer
+    treats siblings as parents). With G2 in place the plan compiles, both slots
+    run, and CollectResults resolves cleanly.
+
+    What remains: the virtual runtime emits a single `status='promoted'`
+    invocation event for the whole multi-slot step, so `failing_at_slot_k`'s
+    per-slot raise (the protocol calls RuntimeError on slot k) never surfaces
+    as a recorded failure. `find_failures()` returns 0 instead of 1.
+
+    Pinned via xfail until the runtime tracks per-slot ExecutionResults
+    (multi-slot failure detection — file as follow-up).
     """
     pytest.xfail(
-        reason="multi-slot producer in plan.dependency_map leaves slot_1 unbound "
-        "(see workflow.py:get_io_signature KeyError)"
+        reason="virtual runtime emits one promoted event per step regardless of "
+        "per-slot raises; per-slot ExecutionResult failure tracking is the gap. "
+        "Planner-side multi-slot wiring (the original G2 bug) is fixed."
     )
     bp = build_branching_with_failure_plan(tmp_path)
     task, lib = run_and_load(virtual_runtime, bp)
