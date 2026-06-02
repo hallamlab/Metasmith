@@ -108,6 +108,75 @@ def test_s4_walk_ancestors_5_hop(tmp_path, virtual_runtime):
 
 
 # ---------------------------------------------------------------------------
+# G3 — promoted-output manifest_id matches trace's file_instance_id
+# ---------------------------------------------------------------------------
+
+
+def test_g3_manifest_id_matches_trace_file_instance_id(tmp_path, virtual_runtime):
+    """<G3> The published-results library persists `instance_id` from the
+    trace's `ProducedFile.file_instance_id` so `walk_ancestors` on a loaded
+    library bridges into the trace index instead of falling back to the
+    legacy path+dtype+lib_key derivation.
+
+    Without G3 (the `SetLineageInstance` call in `CollectResults`), every
+    promoted file's manifest entry has `origin='leaf'` and an
+    instance_id computed from the legacy formula, so the trace-index
+    key (which is `file_instance_id`) does not match what the library
+    exposes; `walk_ancestors` returns 0 nodes.
+    """
+    from tests.flow.conftest import build_linear_plan, run_and_load
+
+    bp = build_linear_plan(tmp_path, n_steps=2)
+    _task, lib = run_and_load(virtual_runtime, bp)
+
+    events = lib.find_invocations()
+    assert events, "expected >=1 invocation after 2-step plan"
+
+    # Build {file_instance_id -> ProducedFile.path} from the trace.
+    trace_id_to_relpath: dict[str, str] = {}
+    for ev in events:
+        for pf in ev.produces:
+            if not pf.path or not pf.file_instance_id:
+                continue
+            trace_id_to_relpath[pf.file_instance_id] = pf.path
+    assert trace_id_to_relpath, "trace events carry no file_instance_id entries"
+
+    # For each manifest entry that maps to a produced file, assert the
+    # manifest's persisted instance_id equals the trace's file_instance_id.
+    promoted_matches = 0
+    leaf_origins = []
+    for path, meta in lib.instance_meta.items():
+        if meta.get("origin") != "lineage":
+            leaf_origins.append((str(path), meta.get("origin"), meta.get("instance_id")))
+            continue
+        mid = meta["instance_id"]
+        assert mid in trace_id_to_relpath, (
+            f"manifest entry [{path}] has origin=lineage with "
+            f"instance_id={mid!r} but no trace event carries that id; "
+            f"available trace ids: {sorted(trace_id_to_relpath)[:5]}"
+        )
+        # Path in manifest is relative to lib root; the trace stores a
+        # relative path under output_root. They share the same suffix.
+        promoted_matches += 1
+    assert promoted_matches >= 1, (
+        f"no promoted-origin manifest entries observed; all leaf: "
+        f"{leaf_origins!r}"
+    )
+
+    # walk_ancestors on any promoted file returns non-empty ancestry.
+    promoted_id = next(
+        meta["instance_id"]
+        for meta in lib.instance_meta.values()
+        if meta.get("origin") == "lineage"
+    )
+    visited = [getattr(n, "instance_id", None) for n in lib.walk_ancestors(promoted_id)]
+    visited = [v for v in visited if v]
+    assert visited, (
+        f"walk_ancestors({promoted_id!r}) returned empty — G3 bridge is broken"
+    )
+
+
+# ---------------------------------------------------------------------------
 # S5 — merged_endpoints remapping preserves identity (xfail-if-internal)
 # ---------------------------------------------------------------------------
 
