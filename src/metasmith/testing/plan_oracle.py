@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ..models.workflow import WorkflowTask
+from ..models.workflow import WorkflowPlan, WorkflowTask
+
+if TYPE_CHECKING:
+    from .contract_runtime import CompiledTask, ContractReport
 
 
 @dataclass
@@ -58,3 +61,21 @@ class PlanExecutionOracle:
             assert any(int(e.get("code", 1)) == 0 for e in results), (
                 "no bootstrap_result reported success"
             )
+
+    def validate_contract_only(
+        self, plan: WorkflowPlan, compiled: "CompiledTask"
+    ) -> "ContractReport":
+        """Validate a `CompiledTask` against this oracle's plan semantics.
+
+        The plan argument is accepted explicitly so callers that build a
+        plan independent of `self.task.plan` (e.g. cross-task fixtures)
+        can route through the same oracle. When `plan is self.task.plan`
+        the check reduces to the standard contract sweep; otherwise the
+        oracle confirms the compiled task references the same plan.
+        """
+        from .contract_runtime import validate_contract
+
+        assert plan is compiled.task.plan, (
+            "validate_contract_only: compiled.task.plan must be the plan argument"
+        )
+        return validate_contract(compiled)
