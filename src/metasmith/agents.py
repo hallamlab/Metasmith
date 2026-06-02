@@ -1220,7 +1220,7 @@ def CollectResults(
                 if pm.path in pl.manifest:
                     stack.append(pl.Get(pm.path))
 
-    def _build_transitive_lind(root_ev):
+    def _build_transitive_lind(root_ev, root_pf):
         """BFS over `consumes`; returns {dtype_key: sorted [hash15(abs_path)]}.
 
         Reproduces post-hoc what virtual_runtime's `_merge_lineage`
@@ -1229,10 +1229,44 @@ def CollectResults(
         Frontier branches terminating at a given (no producer event)
         seed via `_seed_given_lineage` so the ancestry chain on the
         input side of the library reaches the kv2path lookup table.
+
+        Multi-slot events emit multiple ProducedFile siblings under a
+        single event; siblings are co-produced, not each other's
+        ancestors. For the ROOT event, include only `root_pf` (the file
+        whose lineage is being computed) so the downstream resolver in
+        CollectResults does not treat sibling outputs as parents. All
+        ancestor events still contribute their full produces.
         """
         lind: dict[str, list[int]] = {}
-        seen_evs: set[str] = set()
-        frontier = [root_ev]
+        if root_pf.path and root_pf.dtype_key:
+            rel = Path(root_pf.path)
+            abs_p = output_path / rel if not rel.is_absolute() else rel
+            lind.setdefault(root_pf.dtype_key, []).append(
+                int(md5(str(abs_p).encode()).hexdigest()[:15], 16)
+            )
+        seen_evs: set[str] = {root_ev.task_hash}
+        frontier: list = []
+        # Seed frontier from root_ev's consumes (without re-adding its
+        # own produces — those are the file we're computing lineage FOR
+        # plus its siblings).
+        for parent_iids in root_ev.consumes.values():
+            for piid in parent_iids:
+                decoded = _try_decode(piid)
+                parent_ev = None
+                for key in (decoded, piid):
+                    if key and key in _slot_to_event:
+                        parent_ev = _slot_to_event[key]
+                        break
+                if parent_ev is not None:
+                    frontier.append(parent_ev)
+                    continue
+                given = None
+                for key in (decoded, piid):
+                    if key and key in inst_id2inst:
+                        given = inst_id2inst[key]
+                        break
+                if given is not None:
+                    _seed_given_lineage(given, lind)
         while frontier:
             nxt = []
             for ev in frontier:
@@ -1278,7 +1312,7 @@ def CollectResults(
             _hash = int(md5(str(abs_path).encode()).hexdigest()[:15], 16)
             kv = pf.dtype_key, _hash
             try:
-                lind = _build_transitive_lind(ev)
+                lind = _build_transitive_lind(ev, pf)
             except Exception as e:
                 Log.Error(e)
                 continue
