@@ -429,9 +429,9 @@ class Logistics:
                     with LiveShell() as remote_shell:
                         remote = src_host if src_host != "" else dest_host
                         remote_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh {remote}: {x}"))
-                        res = remote_shell.Exec(f"ssh {remote}; echo exited", history=True)
-                        if "exited" in res.out:
-                            Log.Error(f"failed to ssh into {remote}")
+                        res = remote_shell.Exec(f"ssh {remote}", history=True, inherit_stdin=True)
+                        if res.exit_code not in (0, None):
+                            Log.Error(f"failed to ssh into {remote}: exit={res.exit_code}")
                             continue
                         for src_s, dest_s, _, _ in batch:
                             src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
@@ -468,22 +468,32 @@ class Logistics:
                     if last_hash is not None:
                         shell.AwaitDone(_hash=last_hash, timeout=None)
                     completed = []
-                    for (src_host, dest_host), batch in batched_ssh.items():
-                        def _check(path: Path):
-                            if dest_host != "":
+                    # One shared LiveShell for all dest-host batches: for remote
+                    # dests we enter via SubShell("ssh host") which pops cleanly
+                    # back to local bash after the batch, so the same shell can
+                    # ssh into the next host. For local dests, plain Path.exists().
+                    check_shell = LiveShell()
+                    try:
+                        check_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh-check: {x}"))
+                        for (src_host, dest_host), batch in batched_ssh.items():
+                            def _check_remote(path: Path) -> bool:
                                 FLAG = "ok"
-                                res = shell.Exec(f'[ -e {path} ] && echo "{FLAG}"', history=True)
+                                res = check_shell.Exec(
+                                    f'[ -e {path} ] && echo "{FLAG}"',
+                                    history=True,
+                                )
                                 return FLAG in res.out
+                            if dest_host != "":
+                                with check_shell.SubShell(f"ssh {dest_host}"):
+                                    for _, dest_s, src, dest in batch:
+                                        if _check_remote(dest_s.path):
+                                            completed.append((src, dest))
                             else:
-                                return Path(path).exists()
-
-                        if dest_host != "":
-                            shell.Exec(f'ssh {dest_host}') # todo: what if ssh fails?
-                        for _, dest_s, src, dest in batch:
-                            if _check(dest_s.path):
-                                completed.append((src, dest))
-                        if dest_host != "":
-                            shell.Exec("exit")
+                                for _, dest_s, src, dest in batch:
+                                    if Path(dest_s.path).exists():
+                                        completed.append((src, dest))
+                    finally:
+                        check_shell.Dispose()
                     return completed
                 return _join
 
