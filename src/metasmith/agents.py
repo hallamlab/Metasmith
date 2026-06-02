@@ -1116,8 +1116,14 @@ def CollectResults(
             raise KeyError(
                 f"missing DataInstance for instance_id [{instance_id}] (dtype={dtype_key})"
             )
-    # this is a mappping of the (k, v) assinged by the orchestrator during nextflow
-    kv2path: dict[tuple[str, int], tuple[Path, dict, str|None]] = {}
+    # Mapping of (dtype_key, hash15(abs_path)) → (path, lineage, slot/csv id, file_instance_id).
+    # The fourth element is the trace's ProducedFile.file_instance_id (G3); it's
+    # None for input entries (which only carry the csv-routed slot identity) and
+    # is the bridge between the trace's per-file identity and the published-results
+    # manifest's instance_id. Consumed by SetLineageInstance(...) after AddItem
+    # below so `_resolve_instance_meta` on reload no longer falls back to the
+    # legacy path+dtype derivation for promoted outputs.
+    kv2path: dict[tuple[str, int], tuple[Path, dict, str|None, str|None]] = {}
     # G2: sidecar in <work>/input_ids/<name> carries `<path>\t<instance_id>`
     # so agents can route by instance_id without polluting `inputs_dir`
     # (which Nextflow's Channel.splitCsv consumes as path-only CSVs).
@@ -1138,7 +1144,7 @@ def CollectResults(
                 p = Path(l[:-1])
                 _hash = md5(str(p).encode()).hexdigest()
                 _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
-                kv2path[(k, _hash)] = p, {}, inst_id_by_path.get(str(p))
+                kv2path[(k, _hash)] = p, {}, inst_id_by_path.get(str(p)), None
     # C1: BFS over `_metasmith/trace.jsonl` populates the output side of
     # `kv2path` directly from `InvocationEvent.consumes`, replacing the
     # legacy `_manifests/*.json` glob. The trace is authoritative post
@@ -1321,19 +1327,24 @@ def CollectResults(
             # fall back to the slot_id from the trace event.
             prior = kv2path.get(kv)
             csv_inst_id = prior[2] if prior else None
-            kv2path[kv] = abs_path, lind, (csv_inst_id or pf.slot_id or None)
+            kv2path[kv] = (
+                abs_path,
+                lind,
+                (csv_inst_id or pf.slot_id or None),
+                pf.file_instance_id,
+            )
     relavent_k = {k for k, v in kv2path}
     given_manifest = []
     todo = dict(enumerate(kv2path.items()))
     prev_len = len(todo) + 1
     while len(todo)>0:
         if len(todo) == prev_len:
-            for i, ((ck, cv), (path, lineage, cinst_id)) in todo.items():
+            for i, ((ck, cv), (path, lineage, cinst_id, file_inst_id)) in todo.items():
                 Log.Warn(f"dropping entry with unresolvable lineage: [{ck}] path=[{path}]")
             break
         prev_len = len(todo)
         to_del = []
-        for i, ((ck, cv), (path, lineage, cinst_id)) in todo.items():
+        for i, ((ck, cv), (path, lineage, cinst_id, file_inst_id)) in todo.items():
             cinst = _resolve_instance(ck, cinst_id)
             if path.is_relative_to(output_path): # is output
                 parents = []
@@ -1344,7 +1355,7 @@ def CollectResults(
                     for pv in pvs:
                         k = (pk, pv)
                         if k not in kv2path: continue # likely due to a merge between branches
-                        ppath, _, _ = kv2path[k]
+                        ppath, _, _, _ = kv2path[k]
                         if ppath not in path2inst:
                             ok = False
                             break
@@ -1365,6 +1376,18 @@ def CollectResults(
                     dtype=cinst.dtype_name,
                     parents=_parents,
                 )
+                # G3: persist the trace's file_instance_id into the published
+                # manifest so DataInstanceLibrary.Load on a downstream consumer
+                # sees `instance_id == ProducedFile.file_instance_id` instead of
+                # the legacy (path + dtype + lib_key) fallback. Bridges
+                # walk_ancestors / get_lineage_of into the trace index.
+                if file_inst_id is not None:
+                    output.SetLineageInstance(
+                        path=_path,
+                        instance_id=file_inst_id,
+                        lineage_payload=b"",
+                        origin="lineage",
+                    )
                 _inst = output.Get(_path)
                 _path = _inst.ResolvePath()
                 path2inst[_path] = _inst

@@ -17,15 +17,13 @@ slice into `step.group_by_instances`), so the EXPECTED batch count is
 `ceil(n_inputs / batch_size)` and the expected slice sizes are
 `min(batch_size, n - i*batch_size)` for i in range(...).
 
-Note on lineage walks: at the time of writing, `DataInstanceLibrary.Load`
-re-computes manifest instance_ids from the published-output files, which
-do NOT match the `file_instance_id` recorded in the InvocationEvents'
-`produces` records. Telemetry-based lineage walks (`get_lineage_of`,
-`walk_ancestors`) therefore return empty graphs against the published
-results library. Until that index gap is closed (separate scope), these
-tests assert on the trace events directly via `find_invocations`, which
-is the contract the catalog actually points at for arity + parent-union
-checks.
+These tests assert on trace events directly via `find_invocations`
+because the catalog defines arity + parent-union behavior in terms of
+InvocationEvent shape. Lineage walks across the loaded
+`DataInstanceLibrary` (`walk_ancestors`, `get_lineage_of`) now bridge
+into trace events via the manifest's `file_instance_id` —
+covered by `test_lineage_roundtrip.py::test_g3_manifest_id_matches_
+trace_file_instance_id`.
 """
 
 from __future__ import annotations
