@@ -27,7 +27,7 @@ params {
     }
 }
 
-cleanup = false                         // remove work dirs of completed tasks to save disk/inodes
+cleanup = false                         // keep work dirs after task completion so .command.err/.out are recoverable for failed tasks; set true to remove them and save disk/inodes
 nextflow.cache.db.type = 'rocksdb'
 filePorter.maxThreads = 2
 report.overwrite = true
