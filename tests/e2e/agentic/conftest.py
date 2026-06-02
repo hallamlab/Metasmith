@@ -74,7 +74,7 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(scope="session")
 def project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return Path(__file__).resolve().parents[3]
 
 
 @pytest.fixture(scope="session")
@@ -83,7 +83,7 @@ def runs_dir(project_root, pytestconfig) -> Path:
     if explicit:
         return Path(explicit).resolve()
     ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    p = project_root / "tests" / "e2e_agentic" / ".runs" / ts
+    p = project_root / "tests" / "e2e" / "agentic" / ".runs" / ts
     p.mkdir(parents=True, exist_ok=True)
     return p
 

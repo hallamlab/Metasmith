@@ -104,7 +104,7 @@ def verify(
     if not _docker_image_present(image_tag):
         raise PreflightError(
             f"docker image {image_tag} not found locally.\n"
-            f"  run: tests/e2e_agentic/install_mock/build_local_artifacts.sh"
+            f"  run: tests/e2e/agentic/install_mock/build_local_artifacts.sh"
         )
 
     # 2. local conda channel populated with metasmith pkg.
@@ -113,7 +113,7 @@ def verify(
     if not _channel_has_pkg(channel_dir, semver):
         raise PreflightError(
             f"no metasmith-{semver}*.tar.bz2 in conda channel {channel_dir}.\n"
-            f"  run: tests/e2e_agentic/install_mock/build_local_artifacts.sh"
+            f"  run: tests/e2e/agentic/install_mock/build_local_artifacts.sh"
         )
 
     # 3. apptainer .sif (only if runtime requires it)
@@ -123,7 +123,7 @@ def verify(
         if not sif_path.exists():
             raise PreflightError(
                 f"apptainer runtime requested but {sif_path} is missing.\n"
-                f"  run: tests/e2e_agentic/install_mock/build_local_artifacts.sh --apptainer"
+                f"  run: tests/e2e/agentic/install_mock/build_local_artifacts.sh --apptainer"
             )
 
     # 4. host-level test infra: mamba + apptainer reachable (the agent's
