@@ -1,6 +1,5 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Generator, Iterable, Literal, TypeVar
@@ -11,6 +10,7 @@ import json
 from hashlib import md5
 
 from ..coms.containers import Container, ContainerRuntime
+from .dag_renderer import DagRenderer, NodeKind
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
@@ -1000,150 +1000,63 @@ class WorkflowPlan:
         )
 
     def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}):
-        # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
-        # todo: propogate errors, those might be important...
-        import logging
-        _temp = logging.getLogger
-        class DummyLogger:
-            def debug(self, *args, **kwargs):
-                pass
-            def info(self, *args, **kwargs):
-                pass
-            def warn(self, *args, **kwargs):
-                pass
-            def error(self, *args, **kwargs):
-                pass
-        logging.getLogger = lambda *args, **kwargs: DummyLogger()
-        import graphviz
-        logging.getLogger = _temp
-
-        path_base = Path(path_base)
-        ext = path_base.suffix
-        if ext:
-            format = ext.replace(".", "")
-            path_base = path_base.with_suffix("")
-        todo = [(graphviz, 0)]
-        while len(todo)>0:
-            m, depth = todo.pop()
-            if hasattr(m, "log") and hasattr(m.log, "setLevel"):
-                m.log.setLevel(logging.ERROR)
-            if depth >= 2: continue
-            if hasattr(m, "__dict__"):
-                todo += [(x, depth+1) for x in m.__dict__.values()]
-
-        class NodeType(Enum):
-            TRANSFORM = 1
-            DATA      = 2
-        def _render_node(type: NodeType, name: str) -> str:
-            match type:
-                case NodeType.TRANSFORM:
-                    return f'"{name}" [shape="oval", style="filled", fillcolor="#CCCCCC"]'
-                case NodeType.DATA:
-                    return f'"{name}" [shape="box"]'
-        def _get_ns(name: str):
-            if "::" in name: 
-                ns, d = name.split("::", maxsplit=1)
+        def _get_ns(name: str) -> str:
+            if "::" in name:
+                ns, _ = name.split("::", maxsplit=1)
                 return ns
-            else:
-                return name
-        def _as_DAG(*, font: str = 'Arial') -> str:
-            # def _join(names):
-            #     MAXN = 3
-            #     if len(names)>MAXN:
-            #         _names = list(names)[:MAXN]+["..."]
-            #     else:
-            #         _names = names
-            #     return "/".join(_names)
-    
-            lines = ["digraph G {"]
-            
-            lines += [
-                f'graph [fontname="{font}"];',
-                f'node  [fontname="{font}"];',
-                f'edge  [fontname="{font}"];',
-            ]
-            lines.append(_render_node(NodeType.TRANSFORM, "given"))
-            k2names: dict[Endpoint, set[str]] = {}
-            for x in self.given:
-                if _get_ns(x.dtype_name) in blacklist_namespaces: continue
-                k = x.dtype
-                k2names[k] = k2names.get(k, set())|{x.dtype_name}
-            # for x in self.given:
-            #     print(x.dtype_name, x.dtype)
-            parents: set[Endpoint] = set()
-            for e in k2names:
+            return name
+
+        r = DagRenderer(font=font)
+        r.add_node(NodeKind.TRANSFORM, "given")
+
+        k2names: dict[Endpoint, set[str]] = {}
+        for x in self.given:
+            if _get_ns(x.dtype_name) in blacklist_namespaces: continue
+            k2names[x.dtype] = k2names.get(x.dtype, set()) | {x.dtype_name}
+        parents: set[Endpoint] = set()
+        for e in k2names:
+            for p in e.parents:
+                parents.add(p) # type: ignore
+        shown_parents: set[str] = set()
+        for p in parents:
+            if p not in k2names: continue
+            for inst in k2names[p]:
+                if _get_ns(inst) in blacklist_namespaces: continue
+                shown_parents.add(inst)
+        for e, insts_all in k2names.items():
+            insts = [i for i in insts_all if _get_ns(i) not in blacklist_namespaces]
+            if len(insts) == 0: continue
+            for inst_name in insts:
                 for p in e.parents:
-                    parents.add(p) # type: ignore
-            shown_parents: set[str] = set()
-            for p in parents:
-                if p not in k2names: continue
-                for inst in k2names[p]:
-                    if _get_ns(inst) in blacklist_namespaces: continue
-                    shown_parents.add(inst)
-            for e, insts_all in k2names.items():
-                insts = [i for i in insts_all if _get_ns(i) not in blacklist_namespaces]
-                if len(insts)==0: continue
-                for inst_name in insts:
-                    for p in e.parents:
-                        if p not in k2names: continue
-                        pinsts = k2names[p] # type: ignore
-                        pinsts = [i for i in pinsts if i in shown_parents]
-                        for pname in pinsts:
-                            lines.append(f'    "{pname}" -> "{inst_name}";')
-                    lines.append(f'    "given" -> "{inst_name}";')
-            seen = set()
-            e2name = {}
-            for step in self.steps:
-                transform_name = f"{step.order} {step.transform.name}"
-                lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
-                inputs, outputs = [], []
-                for acc, deps in [
-                    (inputs, step.transform.model.requires),
-                    (outputs, [d for g in step.transform.model.produces for d in g]),
-                ]:
-                    for d in deps:
-                        insts = step.dependency_map[d]
-                        inst_names = {x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces}
-                        if len(inst_names)==0: continue
-                        # _name = _join(inst_names)
-                        # acc.append(_name)
-                        acc += list(inst_names)
-                        for inst in insts:
-                            e2name[inst.dtype] = inst.dtype_name
-                # inputs = []
-                # for d in step.transform.model.requires:
-                #     insts = step.dependency_map[d]
-                #     inst_names = {x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces}
-                #     if len(inst_names)==0: continue
-                #     inputs.append(_join(inst_names))
-                for name in inputs:
-                    lines.append(_render_node(NodeType.DATA, name))
-                    x = f'    "{name}" -> "{transform_name}";'
-                    if x not in seen: lines.append(x)
-                    seen.add(x)
-                for name in outputs:
-                    lines.append(_render_node(NodeType.DATA, name))
-                    x = f'    "{transform_name}" -> "{name}";'
-                    if x not in seen: lines.append(x)
-                    seen.add(x)
-            lines.append(_render_node(NodeType.TRANSFORM, "target"))
-            # for x in self.targets:
-            #     print(x.instance.dtype_name, x.instance.dtype)
-            # target_names = {}
-            # for target in self.targets:
-            #     e = target.instance.dtype
-            #     target_names[e] = target_names.get(e, set())|{target.instance.dtype_name}
-            for target in {x.instance.dtype_name for x in self.targets}:
-            # for e, names in target_names.items():
-            #     target = _join(names)
-                lines.append(f'    "{target}" -> "target";')
-            lines.append("}")
-            return "\n".join(lines)
-        
-        dag_str = _as_DAG(font=font)
-        src = graphviz.Source(dag_str, filename=path_base, format=format)
-        src.render(cleanup=True, quiet=True)
-        return path_base.parent/(path_base.name+f".{format}")
+                    if p not in k2names: continue
+                    pinsts = [i for i in k2names[p] if i in shown_parents] # type: ignore
+                    for pname in pinsts:
+                        r.add_edge(pname, inst_name)
+                r.add_edge("given", inst_name)
+
+        for step in self.steps:
+            transform_name = f"{step.order} {step.transform.name}"
+            r.add_node(NodeKind.TRANSFORM, transform_name)
+            inputs, outputs = [], []
+            for acc, deps in [
+                (inputs, step.transform.model.requires),
+                (outputs, [d for g in step.transform.model.produces for d in g]),
+            ]:
+                for d in deps:
+                    insts = step.dependency_map[d]
+                    inst_names = {x.dtype_name for x in insts if _get_ns(x.dtype_name) not in blacklist_namespaces}
+                    if len(inst_names) == 0: continue
+                    acc += list(inst_names)
+            for name in inputs:
+                r.add_edge(name, transform_name)
+            for name in outputs:
+                r.add_edge(transform_name, name)
+
+        r.add_node(NodeKind.TRANSFORM, "target")
+        for target in {x.instance.dtype_name for x in self.targets}:
+            r.add_edge(target, "target")
+
+        return r.render(path_base, format)
 
 @dataclass
 class WorkflowTask:

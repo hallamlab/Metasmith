@@ -5,10 +5,10 @@ import numpy as np
 import json
 import re
 from pathlib import Path
-from enum import Enum
 from collections import deque
 
 from ..hashing import KeyGenerator
+from .dag_renderer import DagRenderer, NodeKind
 
 class Node:
     PROPERTY_FIELD = "properties"
@@ -290,69 +290,22 @@ class Solution:
     _relavent_transforms: list[Transform]
 
     def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', keys: bool = True):
-        # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
-        # todo: propogate errors, those might be important...
-        import logging
-        _temp = logging.getLogger
-        class DummyLogger:
-            def debug(self, *args, **kwargs):
-                pass
-            def info(self, *args, **kwargs):
-                pass
-            def warn(self, *args, **kwargs):
-                pass
-            def error(self, *args, **kwargs):
-                pass
-        logging.getLogger = lambda *args, **kwargs: DummyLogger()
-        import graphviz
-        logging.getLogger = _temp
-
-        todo = [(graphviz, 0)]
-        while len(todo)>0:
-            m, depth = todo.pop()
-            if hasattr(m, "log") and hasattr(m.log, "setLevel"):
-                m.log.setLevel(logging.ERROR)
-            if depth >= 2: continue
-            if hasattr(m, "__dict__"):
-                todo += [(x, depth+1) for x in m.__dict__.values()]
-
-        class NodeType(Enum):
-            TRANSFORM = 1
-            DATA      = 2
-        def _render_node(type: NodeType, name: str) -> str:
-            match type:
-                case NodeType.TRANSFORM:
-                    return f'"{name}" [shape="oval", style="filled", fillcolor="#CCCCCC"]'
-                case NodeType.DATA:
-                    return f'"{name}" [shape="box"]'
-
-        def _as_DAG(*, font: str = 'Arial') -> str:
-            lines = ["digraph G {"]
-            lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
-            for i, step in enumerate(self.dependency_plan):
-                if keys:
-                    transform_name = f"{i+1} {step.transform.key}"
-                else:
-                    transform_name = f"{i+1} {step.transform}"
-                lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
-                if keys:
-                    inputs  = [f"{u.key}" for u in step.used.values()]
-                    outputs = [f"{o.key}" for pgroup in step.produced for o in pgroup.values()]
-                else:
-                    inputs  = [f"{u}" for u in step.used.values()]
-                    outputs = [f"{o}" for pgroup in step.produced for o in pgroup.values()]
-                for name in inputs:
-                    lines.append(_render_node(NodeType.DATA, name))
-                    lines.append(f'    "{name}" -> "{transform_name}";')
-                for name in outputs:
-                    lines.append(_render_node(NodeType.DATA, name))
-                    lines.append(f'    "{transform_name}" -> "{name}";')
-            lines.append("}")
-            return "\n".join(lines)
-        
-        dag_str = _as_DAG(font=font)
-        src = graphviz.Source(dag_str, filename=path_base, format=format)
-        src.render(cleanup=True, quiet=True)
+        r = DagRenderer(font=font)
+        for i, step in enumerate(self.dependency_plan):
+            if keys:
+                transform_name = f"{i+1} {step.transform.key}"
+                inputs  = [f"{u.key}" for u in step.used.values()]
+                outputs = [f"{o.key}" for pgroup in step.produced for o in pgroup.values()]
+            else:
+                transform_name = f"{i+1} {step.transform}"
+                inputs  = [f"{u}" for u in step.used.values()]
+                outputs = [f"{o}" for pgroup in step.produced for o in pgroup.values()]
+            r.add_node(NodeKind.TRANSFORM, transform_name)
+            for name in inputs:
+                r.add_edge(name, transform_name)
+            for name in outputs:
+                r.add_edge(transform_name, name)
+        r.render(path_base, format)
     
 def solve_by_mcts(
     given: list[set[Endpoint]],
