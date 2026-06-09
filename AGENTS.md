@@ -267,6 +267,63 @@ results_path = smith.GetResultSource(task).GetPath()
 
 A first-class `wait`/`WaitForRun` API is tracked for 0.18.
 
+#### Resource overrides at run time
+
+`RunWorkflow(resource_overrides={key: Resources(...), ...})` overrides
+per-process `cpus` / `memory` / `duration` for the run without re-staging.
+The mechanism is selector-based and relies on a specific Nextflow precedence
+rule — load it before adding new override shapes or debugging "the override
+didn't apply."
+
+**Two files, two selectors.** Stage time emits `workflow.resources.nf` with
+one block per step using an **exact** selector (`step.transform.name`
+prefixed by `pNN__`); run time emits an appended block in
+`workflow.config.nf` with a **regex** selector derived from the key:
+
+| Key shape | Emitted run-time selector |
+|---|---|
+| `"all"` / `"*"` | `withName: '.*'` |
+| `int` (step index) | `withName: 'pNN__.*'` |
+| `str` (transform name) | `withName: '.*__<str>'` |
+| `Transform` / `TransformInstance` | `withName: '.*__<.name>'` |
+
+The runner passes the two files in order: `nextflow -config
+./workflow.resources.nf -config ./workflow.config.nf ...` (see
+`agents.py:1344-1346`).
+
+**Precedence rule that makes it work.** Nextflow does **not** apply "exact >
+regex specificity" across selectors from different config sources. The
+rule that actually applies is: **per-directive last-defined wins**, where
+"last" = the later of the two `-config` flags. The exact `pNN__<name>`
+block from `workflow.resources.nf` is loaded first; the regex block from
+`workflow.config.nf` is loaded second, so any directive set in both files
+takes the run-time value. Directives set only in the stage file (e.g.
+`memory = { (2**(task.attempt-1)) * (... as MemoryUnit) }` retry-scaling
+closure) fall through unchanged. `nextflow config -config A -config B` is
+the quickest way to inspect the merged tree when troubleshooting.
+
+**Caveats.**
+
+- The regex selectors are **case-sensitive** Java regexes. `'.*ncbi.*'`
+  will not match `p01__getNcbiAssembly`; the user's regex has to handle
+  case explicitly or use the transform's literal name.
+- Local-executor caps (`params.executor.memory` in `local.nf`) reject
+  asks that exceed available host memory before the run starts — the
+  override is honored; Nextflow is just rejecting the resulting request.
+  Bump the executor cap or use a smaller override for local smoke tests.
+- The "won't mess with caching" comment at
+  `src/metasmith/models/workflow.py:1265` is load-bearing:
+  `workflow.resources.nf` content stays stable across runs with
+  different overrides (overrides live in `workflow.config.nf`), so
+  Nextflow's per-task hashing is unaffected by override differences.
+
+If an override appears to be silently dropped, check in this order: the
+regex actually matches the staged process name (`pNN__<transform.name>`),
+no Groovy parse error in `.nextflow.log` killed the include, no third
+config layer was loaded after `workflow.config.nf`, and `sacct` request
+columns (`ReqCPUS`/`ReqMem`) match the override — `AllocCPUS`/`AllocMem`
+reflect SLURM partition rounding, not what Nextflow requested.
+
 ---
 
 ## How It All Fits Together
