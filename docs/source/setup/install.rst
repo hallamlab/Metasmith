@@ -111,8 +111,30 @@ It is only available for **Linux machines**.
 
 We recommend installing via your system package manager (e.g. :bash:`sudo apt install apptainer` on Debian/Ubuntu)
 or by following Apptainer's `official install docs <https://apptainer.org/docs/admin/main/installation.html>`_.
-The conda-forge build is supported but lacks setuid privileges; metasmith will unpack each container image to
-a sandbox directory at deploy time, roughly doubling on-disk footprint per cached image.
+This gives you a *setuid* Apptainer, which metasmith deploys as a single ``.sif`` image.
+
+.. warning::
+
+    The conda-forge / :bash:`mamba` Apptainer build is **not reliable for deployment**.
+    Because it lacks the setuid ``starter-suid`` helper, it can only build and run the
+    container rootfs through *unprivileged user namespaces*. Many recent Linux
+    distributions restrict these by default — e.g. Ubuntu 23.10 and later ship
+    ``kernel.apparmor_restrict_unprivileged_userns=1``, under which :python:`smith.Deploy()`
+    fails while unpacking the sandbox with
+    ``FATAL: ... Failed to create container process: Operation not permitted``.
+
+    On a host where unprivileged user namespaces are blocked, choose one of:
+
+    - install a **system (setuid) Apptainer** via your package manager (preferred), or
+    - enable unprivileged user namespaces:
+      :bash:`sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`
+      (persist under ``/etc/sysctl.d/``), or
+    - use the **Docker** runtime instead.
+
+    HPC clusters that provide a setuid Apptainer module (e.g. via ``module load``) are
+    unaffected. Where the conda-forge build *does* work, metasmith unpacks each image to a
+    sandbox directory at deploy time, roughly doubling the on-disk footprint per cached
+    image.
 
 .. button-link:: https://apptainer.org/docs/admin/main/installation.html
     :color: primary
