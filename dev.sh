@@ -22,6 +22,62 @@ FULL_VER="$(_compute_full_ver)"
 DOCKER_TAG="${FULL_VER//+/-}"
 DOCKER_IMAGE=quay.io/$DEV_USER/$NAME
 
+# Refuse to publish or convert an image whose bundled relay binaries are
+# stubs. Bug shipped in 0.18.4 where the Dockerfile happily COPYed 28-byte
+# "#!/bin/sh\necho 'stub relay'" placeholders left over in main/relay_agent/
+# target/ because the --update_container chain skips -br. Set
+# MSM_SKIP_RELAY_CHECK=1 to override (e.g. emergency linux-only patch).
+_assert_real_relays() {
+    [ -n "$MSM_SKIP_RELAY_CHECK" ] && {
+        echo "MSM_SKIP_RELAY_CHECK set — skipping relay binary check"
+        return 0
+    }
+    local img="$DOCKER_IMAGE:$DOCKER_TAG"
+    echo "checking relay binaries in $img"
+    local out rc
+    out=$(docker run --rm --entrypoint sh "$img" -c '
+        bad=""
+        for slot in x86_64-linux:7f454c46 arm64-linux:7f454c46 \
+                    x86_64-darwin:cffaedfe arm64-darwin:cffaedfe; do
+            tgt=${slot%:*}; want=${slot##*:}
+            f=/app/msm_relay.$tgt
+            sz=$(stat -c %s "$f" 2>/dev/null || echo 0)
+            magic=$(head -c 4 "$f" 2>/dev/null | od -An -tx1 | tr -d " ")
+            kind=stub
+            case "$magic" in
+                7f454c46) kind=ELF ;;
+                cffaedfe|feedfacf) kind=Mach-O ;;
+            esac
+            ok=yes
+            [ "$magic" = "$want" ] || ok=no
+            [ "$sz" -gt 100000 ] || ok=no
+            printf "  %-14s size=%-8s magic=%s  %s\n" "$tgt" "$sz" "$magic" "$kind"
+            [ "$ok" = "yes" ] || bad="$bad $tgt"
+        done
+        [ -z "$bad" ] && exit 0
+        echo "STUB:$bad"
+        exit 1
+    ' 2>&1)
+    rc=$?
+    echo "$out" | grep -v '^STUB:'
+    if [ $rc -ne 0 ]; then
+        local bad_slots
+        bad_slots=$(echo "$out" | grep '^STUB:' | sed 's/^STUB://')
+        echo ""
+        echo "ERROR: stub relay binary detected in $img"
+        echo "  bad slots:$bad_slots"
+        echo ""
+        echo "Rebuild relays first, then re-tag the image:"
+        echo "  $HERE/dev.sh -brc   # build the cross-compile container (one time)"
+        echo "  $HERE/dev.sh -br    # build all 4 relay targets"
+        echo "  $HERE/dev.sh -bd    # rebuild the docker image"
+        echo ""
+        echo "Override (NOT recommended) by setting MSM_SKIP_RELAY_CHECK=1."
+        return 1
+    fi
+    return 0
+}
+
 # CONDA=conda
 CONDA=mamba # https://mamba.readthedocs.io/en/latest/mamba-installation.html#mamba-install
 echo image: $DOCKER_IMAGE:$DOCKER_TAG
@@ -105,12 +161,12 @@ case $1 in
         $HERE/conda_recipe/call_build.sh
     ;;
     -brc) # build the container for building the relay
-        cd main/relay_agent
-        ./pack.sh -b
+        cd $HERE/main/relay_agent
+        ./dev.sh -bb
     ;;
     -br) # build the relay
-        cd main/relay_agent
-        ./pack.sh -p
+        cd $HERE/main/relay_agent
+        ./dev.sh -b
     ;;
     -bd) # docker
         # pre-download requirements
@@ -147,6 +203,7 @@ case $1 in
         && docker inspect --format='{{.Size}}' $DOCKER_IMAGE:$DOCKER_TAG | numfmt --to=si
     ;;
     -bs) # apptainer image *from docker*
+        _assert_real_relays || exit 1
         apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$DOCKER_TAG
     ;;
     --update_container)
@@ -176,6 +233,7 @@ case $1 in
     -ud) # docker
         # login and push image to quay.io
         # sudo docker login quay.io
+        _assert_real_relays || exit 1
 	    docker push $DOCKER_IMAGE:$DOCKER_TAG
         echo "!!!"
         echo "remember to update the \"latest\" tag"
