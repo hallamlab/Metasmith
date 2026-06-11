@@ -1,0 +1,4 @@
+manifest:
+  echo_greeting.py:
+    type: transforms::transform
+schema: v1

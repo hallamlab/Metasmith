@@ -1,0 +1,9 @@
+types:
+  name:
+    properties:
+      _: opaque label string
+      ext: txt
+  greeting:
+    properties:
+      _: greeting text file produced by echo_greeting
+      ext: txt
