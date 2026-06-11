@@ -640,12 +640,16 @@ git commit -am "Bump version to 0.18.3"
 
 # 2. Build & publish (these stamp build_hash.txt as a side effect)
 ./dev.sh -bp           # pip wheel → metasmith-0.18.3+<hash>-py3-none-any.whl
+./dev.sh -brc          # one-time: build the rust cross-compile container
+./dev.sh -br           # build all 4 relay binaries (x86_64/arm64 × linux/darwin)
 ./dev.sh -bd && -ud    # docker → quay.io/hallamlab/metasmith:0.18.3-<hash>
 ./dev.sh -bs           # apptainer .sif (matching tag)
 
 # 3. Tag
 git tag v0.18.3 && git push upstream v0.18.3
 ```
+
+`-br` is load-bearing — `--update_container` skips it, which is how 0.18.4 shipped with 3 of 4 `/app/msm_relay.*` slots replaced by 28-byte `#!/bin/sh\necho 'stub relay'` stubs left over in `main/relay_agent/target/`. `dev.sh -ud` and `-bs` now invoke `_assert_real_relays` against the just-tagged image and refuse to publish or convert if any slot is a stub (wrong magic for its arch, or <100 KB). Override only for emergencies: `MSM_SKIP_RELAY_CHECK=1 ./dev.sh -ud`.
 
 The hash captures the source state; identical source ↔ identical hash ↔ identical image tag. Two builds from the same commit produce the same tag; a one-line edit produces a new tag (and a new image).
 
