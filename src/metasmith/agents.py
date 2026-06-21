@@ -16,7 +16,7 @@ from glob import glob
 from .serialization import StdTime
 from .hashing import KeyGenerator
 from .logging import Log
-from .coms.containers import Container, ContainerRuntime
+from .env import Environment, Runtime
 from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
 from .coms.via_file_watcher import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
@@ -101,7 +101,7 @@ class Agent:
     setup_commands: list[str] = field(default_factory=list)
     container: str = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
     globus_uuid: str|None = None
-    runtime: ContainerRuntime=ContainerRuntime.APPTAINER
+    runtime: Runtime=Runtime.APPTAINER
     real_path: Path|None = None
 
     def _is_ssh(self):
@@ -127,7 +127,7 @@ class Agent:
     @classmethod
     def Unpack(cls, data):
         data["home"] = Source.Unpack(data["home"])
-        data["runtime"] = ContainerRuntime[data["runtime"]]
+        data["runtime"] = Runtime[data["runtime"]]
         k = "real_path"
         if k in data:
             data[k] = Path(data[k])
@@ -169,8 +169,15 @@ class Agent:
     def _run_cleanup(self, shell: LiveShell):
         pass
 
-    def Deploy(self, assertive: bool=False):
-        Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}]")
+    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None):
+        # Deploy is the entry point where the runtime is chosen and then
+        # persisted into agent.yml; everything downstream reads it back
+        # transparently. Passing nothing keeps the agent's current runtime.
+        if runtime is not None:
+            self.runtime = runtime
+        if image is not None:
+            self.container = image
+        Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}] using runtime [{self.runtime.name}]")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
             _quiet = False
@@ -231,7 +238,7 @@ class Agent:
             resolved_home = Path(resolved_home)
 
             dev_src = "$AGENT_HOME/dev/metasmith"
-            dev_mock = Container(
+            dev_mock = Environment(
                 image=self.container,
                 binds=[
                     (dev_src, Path("/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith")),
@@ -239,7 +246,7 @@ class Agent:
                 runtime=self.runtime,
             )
 
-            container = Container(
+            container = Environment(
                 image=self.container,
                 container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
                 binds=[
@@ -258,53 +265,20 @@ class Agent:
                 f"mkdir -p {p}" for p, _ in container.binds
             ]
             do_step("\n".join(_cmds))
-            _local_path = container.GetLocalPath()
-            if _local_path:
-                _pull_cmd = container.MakePullCommand()
-                do_step(
-                    cmd=f'mkdir -p "{_local_path.parent}" && [ -e {_local_path} ] || {_pull_cmd}',
-                    display_cmd=f"{{if not exists}}: {_pull_cmd.replace(str(resolved_agent_home), '$AGENT_HOME')}",
-                )
-
-                # Decide per-host whether to deliver the rootfs as SIF or as
-                # an unpacked sandbox dir. The probe is a static two-axis
-                # check (setuid starter-suid + apptainer major.minor); SIF is
-                # preferred when safe (no disk doubling). Sandbox is built
-                # only on apptainer >=1.4 without setuid — the case where SIF
-                # engages squashfuse_ll (Bug E.2 wedge under msm_relay on
-                # WSL2) and the sandbox path goes through kernel overlayfs.
-                # On apptainer 1.3.x without setuid the sandbox path itself
-                # falls back to fuse-overlayfs (Bug E.4 SIGBUS on fir under
-                # SLURM array contention), so we keep SIF there too. Verdict
-                # is re-evaluated on every Deploy(); a stale sandbox from a
-                # prior host config is removed when the verdict flips.
-                _sandbox_path = container.GetSandboxPath()
-                _probe = container.MakeSandboxDecisionProbe()
-                _build_sandbox = container.MakeBuildSandboxCommand()
-                _force = f'rm -rf {_sandbox_path} && ' if assertive else ''
-                do_step(
-                    cmd=(
-                        f'{_force}'
-                        f'VERDICT=$({_probe}); '
-                        f'if [ "$VERDICT" = "use-sandbox" ]; then '
-                        f'[ -d {_sandbox_path} ] || {_build_sandbox}; '
-                        f'else rm -rf {_sandbox_path}; fi'
-                    ),
-                    display_cmd=f"{{probe host; build sandbox iff apptainer>=1.4 and no setuid}}: apptainer build --sandbox {_sandbox_path.name} {_local_path.name}".replace(str(resolved_agent_home), '$AGENT_HOME'),
-                )
+            # Per-host provisioning (image pull + SIF/sandbox decision) is
+            # owned by the Environment so Deploy never branches on a runtime.
+            # Empty for runtimes with nothing to pull (mamba/native).
+            for _cmd, _display_cmd in container.ProvisionSteps(agent_home=resolved_agent_home, assertive=assertive):
+                do_step(cmd=_cmd, display_cmd=_display_cmd)
 
             _remote_file(
-                f"""
-                #!/bin/bash
-                AGENT_HOME={resolved_agent_home}
-                BINDS="$BINDS {container.MakeBindsParam()}"
-                if [ -e "{dev_src}" ]; then
-                    echo "including dev binds"
-                    BINDS="$BINDS {dev_mock.MakeBindsParam()}"
-                fi
-                echo "binds [$BINDS]"
-                {container.MakeRunCommand(local=True, custom_bind_param="$BINDS")} metasmith $@
-                """,
+                container.RenderMsmWrapper(
+                    agent_home=resolved_agent_home,
+                    run_command=container.MakeRunCommand(local=True, custom_bind_param="$BINDS"),
+                    main_binds=container.MakeBindsParam(),
+                    dev_binds=dev_mock.MakeBindsParam(),
+                    dev_src=dev_src,
+                ),
                 dest="msm",
                 executable=True,
             )
@@ -317,7 +291,7 @@ class Agent:
                 dest=AgentPaths.to_definition(Path(".")),
             )
 
-            bootstrap_container = Container(
+            bootstrap_container = Environment(
                 image=self.container,
                 binds=[
                     ("$(pwd -P)", Path("/ws")),
@@ -328,61 +302,14 @@ class Agent:
                 container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE
             )
             _remote_file(
-                f"""
-                #!/bin/bash
-
-                AGENT_HOME={resolved_agent_home}
-                TASK_DIR=$1
-                STEP=$2
-                HOST_NAME=$3
-                CWD=${{4:-$(pwd -P)}}
-                cd $CWD
-                if [ -e "{AgentPaths.HOME_ROOT}" ]; then
-                    echo "bootstrap called from container, bouncing to external [$@]"
-                    REL_CWD=$(realpath --relative-to="{AgentPaths.HOME_ROOT}" $CWD)
-                    CMD="{AgentPaths.to_bootstrap(Path('$AGENT_HOME'))} $@ $AGENT_HOME/$REL_CWD"
-                    /app/msm_relay.x86_64-linux --io {AgentPaths.to_relay().parent}/$HOST_NAME bounce "$CMD"
-                    exit
-                fi
-
-                echo "bootstrap ======================"
-                INTERNALS="_metasmith"
-                [ -z $STEP ] && echo "no step provided" && exit 1
-                echo "cwd [$(pwd -P)]"
-                echo "task [$TASK_DIR]"
-                echo "step [$STEP]"
-                function run_container {{
-                    BINDS="{bootstrap_container.MakeBindsParam()}"
-                    if [ -e "{dev_src}" ]; then
-                        echo "including dev binds"
-                        BINDS="$BINDS {dev_mock.MakeBindsParam()}"
-                    fi
-                    if [ -e "./{BIND_FILE}" ]; then
-                        echo "including linked data binds"
-                        BINDS="$BINDS $(cat ./{BIND_FILE})"
-                    fi
-                    echo "final binds:"
-                    echo "$BINDS"
-                    {bootstrap_container.MakeRunCommand(local=True, custom_bind_param="$BINDS")} $@
-                }}
-                echo "deploy relay ==================="
-                run_container metasmith api deploy_from_container -a workspace=$INTERNALS architecture=$(uname -m) system=$(uname -s)
-                find $INTERNALS/relay/
-                echo "pre execute ===================="
-                find .
-                ls -lh .
-                echo "relay =========================="
-                $INTERNALS/relay/msm_relay start --local
-                echo "execute ========================"
-                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR host=$(hostname)
-                echo "post execute ==================="
-                find .
-                ls -lh .
-                echo "cleanup ========================"
-                $INTERNALS/relay/msm_relay stop
-                echo "relay logs ====================="
-                $INTERNALS/relay/msm_relay logs
-                """,
+                bootstrap_container.RenderBootstrap(
+                    agent_home=resolved_agent_home,
+                    run_command=bootstrap_container.MakeRunCommand(local=True, custom_bind_param="$BINDS"),
+                    run_binds=bootstrap_container.MakeBindsParam(),
+                    dev_binds=dev_mock.MakeBindsParam(),
+                    dev_src=dev_src,
+                    bind_file=BIND_FILE,
+                ),
                 dest=AgentPaths.to_bootstrap(Path(".")),
                 executable=True,
             )
@@ -463,7 +390,7 @@ class Agent:
 
     def _get_mock_container(self, task: WorkflowTask):
         binds = task.GetCommonInputFolders(method="external")
-        mock = Container(
+        mock = Environment(
             image=self.container,
             binds=[
                 (p, p)

@@ -16,6 +16,7 @@ from pathlib import Path
 from enum import Enum
 
 from ..coms.terminals import LiveShell
+from ..constants import AgentPaths
 
 
 class Runtime(Enum):
@@ -163,3 +164,187 @@ class Environment:
             shell.Exec(
                 f"{self.MakeRunCommand()} {command}",
             )
+
+    # ------------------------------------------------------------------
+    # Deploy-facing surface — the runtime-specific provisioning and the
+    # shell that crosses (or doesn't cross) the runtime boundary. These
+    # are the methods Agent.Deploy drives so that Deploy itself never
+    # branches on a runtime. Container runtimes need the relay to launch
+    # tools from inside the metasmith container; mamba/native do not.
+    # ------------------------------------------------------------------
+
+    @property
+    def needs_relay(self) -> bool:
+        # The relay exists solely to bounce tool launches across the
+        # container boundary. Only the container runtimes have that
+        # boundary; mamba/native run tools in-process on the host.
+        return self.runtime in (Runtime.DOCKER, Runtime.APPTAINER)
+
+    @staticmethod
+    def Detect() -> "Runtime":
+        # Host-local default when no runtime was chosen at Deploy. Folded
+        # in from direct_run._detect_runtime so the detection heuristic
+        # lives with the rest of the runtime routing.
+        import shutil
+        if shutil.which("docker"):
+            return Runtime.DOCKER
+        if shutil.which("apptainer") or shutil.which("singularity"):
+            return Runtime.APPTAINER
+        return Runtime.DOCKER
+
+    def ProvisionSteps(self, *, agent_home: Path, assertive: bool=False) -> list[tuple[str, str|None]]:
+        # Deploy-time steps that make the image runnable on the host:
+        # pull (if not cached) + the per-host SIF/sandbox decision. Returns
+        # (cmd, display_cmd) pairs; empty for runtimes with nothing to pull
+        # (mamba/native). The probe is a static two-axis check (setuid
+        # starter-suid + apptainer major.minor); SIF is preferred when safe
+        # (no disk doubling). Sandbox is built only on apptainer >=1.4
+        # without setuid — the case where SIF engages squashfuse_ll (Bug
+        # E.2 wedge under msm_relay on WSL2) and the sandbox path goes
+        # through kernel overlayfs. On apptainer 1.3.x without setuid the
+        # sandbox path itself falls back to fuse-overlayfs (Bug E.4 SIGBUS
+        # on fir under SLURM array contention), so SIF is kept there too.
+        # Verdict is re-evaluated on every Deploy(); a stale sandbox from a
+        # prior host config is removed when the verdict flips.
+        steps: list[tuple[str, str|None]] = []
+        local_path = self.GetLocalPath()
+        if not local_path:
+            return steps
+        pull_cmd = self.MakePullCommand()
+        steps.append((
+            f'mkdir -p "{local_path.parent}" && [ -e {local_path} ] || {pull_cmd}',
+            f"{{if not exists}}: {pull_cmd.replace(str(agent_home), '$AGENT_HOME')}",
+        ))
+        sandbox_path = self.GetSandboxPath()
+        probe = self.MakeSandboxDecisionProbe()
+        build_sandbox = self.MakeBuildSandboxCommand()
+        force = f'rm -rf {sandbox_path} && ' if assertive else ''
+        steps.append((
+            (
+                f'{force}'
+                f'VERDICT=$({probe}); '
+                f'if [ "$VERDICT" = "use-sandbox" ]; then '
+                f'[ -d {sandbox_path} ] || {build_sandbox}; '
+                f'else rm -rf {sandbox_path}; fi'
+            ),
+            f"{{probe host; build sandbox iff apptainer>=1.4 and no setuid}}: apptainer build --sandbox {sandbox_path.name} {local_path.name}".replace(str(agent_home), '$AGENT_HOME'),
+        ))
+        return steps
+
+    def RenderMsmWrapper(self, *, agent_home: Path, run_command: str, main_binds: str, dev_binds: str, dev_src: str) -> str:
+        # Body of the `msm` convenience wrapper deployed into the agent
+        # home: invoke `metasmith` inside the runtime. For container
+        # runtimes this is the run-command (computed by the caller from the
+        # role-specific binds, since the `msm` wrapper carries no --workdir)
+        # with accumulated $BINDS; for mamba/native there is no container,
+        # so metasmith runs directly under an optional wrapper prefix.
+        if self.needs_relay:
+            return f"""
+                #!/bin/bash
+                AGENT_HOME={agent_home}
+                BINDS="$BINDS {main_binds}"
+                if [ -e "{dev_src}" ]; then
+                    echo "including dev binds"
+                    BINDS="$BINDS {dev_binds}"
+                fi
+                echo "binds [$BINDS]"
+                {run_command} metasmith $@
+                """
+        wrapper = self.MakeWrapperPrefix()
+        prefix = f"{wrapper} " if wrapper else ""
+        return f"""
+            #!/bin/bash
+            AGENT_HOME={agent_home}
+            {prefix}metasmith $@
+            """
+
+    def RenderBootstrap(self, *, agent_home: Path, run_command: str, run_binds: str, dev_binds: str, dev_src: str, bind_file: str) -> str:
+        # Body of `msm_bootstrap`, the per-step launcher Nextflow calls.
+        # For container runtimes it (a) bounces back to the host via the
+        # relay when invoked from inside the container, then (b) runs each
+        # metasmith step inside a fresh container with the relay daemon
+        # bridging tool launches. For mamba/native there is no boundary to
+        # cross: the step runs in-process with no bounce and no relay.
+        # `run_command` is computed by the caller from the bootstrap's
+        # /ws-workdir sub-environment.
+        if self.needs_relay:
+            return f"""
+                #!/bin/bash
+
+                AGENT_HOME={agent_home}
+                TASK_DIR=$1
+                STEP=$2
+                HOST_NAME=$3
+                CWD=${{4:-$(pwd -P)}}
+                cd $CWD
+                if [ -e "{AgentPaths.HOME_ROOT}" ]; then
+                    echo "bootstrap called from container, bouncing to external [$@]"
+                    REL_CWD=$(realpath --relative-to="{AgentPaths.HOME_ROOT}" $CWD)
+                    CMD="{AgentPaths.to_bootstrap(Path('$AGENT_HOME'))} $@ $AGENT_HOME/$REL_CWD"
+                    /app/msm_relay.x86_64-linux --io {AgentPaths.to_relay().parent}/$HOST_NAME bounce "$CMD"
+                    exit
+                fi
+
+                echo "bootstrap ======================"
+                INTERNALS="_metasmith"
+                [ -z $STEP ] && echo "no step provided" && exit 1
+                echo "cwd [$(pwd -P)]"
+                echo "task [$TASK_DIR]"
+                echo "step [$STEP]"
+                function run_container {{
+                    BINDS="{run_binds}"
+                    if [ -e "{dev_src}" ]; then
+                        echo "including dev binds"
+                        BINDS="$BINDS {dev_binds}"
+                    fi
+                    if [ -e "./{bind_file}" ]; then
+                        echo "including linked data binds"
+                        BINDS="$BINDS $(cat ./{bind_file})"
+                    fi
+                    echo "final binds:"
+                    echo "$BINDS"
+                    {run_command} $@
+                }}
+                echo "deploy relay ==================="
+                run_container metasmith api deploy_from_container -a workspace=$INTERNALS architecture=$(uname -m) system=$(uname -s)
+                find $INTERNALS/relay/
+                echo "pre execute ===================="
+                find .
+                ls -lh .
+                echo "relay =========================="
+                $INTERNALS/relay/msm_relay start --local
+                echo "execute ========================"
+                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR host=$(hostname)
+                echo "post execute ==================="
+                find .
+                ls -lh .
+                echo "cleanup ========================"
+                $INTERNALS/relay/msm_relay stop
+                echo "relay logs ====================="
+                $INTERNALS/relay/msm_relay logs
+                """
+        wrapper = self.MakeWrapperPrefix()
+        prefix = f"{wrapper} " if wrapper else ""
+        return f"""
+            #!/bin/bash
+
+            AGENT_HOME={agent_home}
+            TASK_DIR=$1
+            STEP=$2
+            HOST_NAME=$3
+            CWD=${{4:-$(pwd -P)}}
+            cd $CWD
+            echo "bootstrap ======================"
+            [ -z $STEP ] && echo "no step provided" && exit 1
+            echo "cwd [$(pwd -P)]"
+            echo "task [$TASK_DIR]"
+            echo "step [$STEP]"
+            {prefix}metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR host=$(hostname)
+            """
+
+    def MakeWrapperPrefix(self) -> str:
+        # The command prefix that places a bare `metasmith ...` call into
+        # this environment without a container. Empty for container
+        # runtimes (they wrap via MakeRunCommand) and for native (already
+        # inside); mamba overrides to `mamba run -n <env>`.
+        return ""

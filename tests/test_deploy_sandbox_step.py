@@ -16,8 +16,11 @@ from metasmith.constants import MODULE_PATH
 
 
 def _deploy_block() -> str:
-    text = (MODULE_PATH / "agents.py").read_text()
-    start = text.index("def Deploy(")
+    # The SIF/sandbox decision moved out of Agent.Deploy into the sealed
+    # env module (Environment.ProvisionSteps), so Deploy never branches on
+    # a runtime. This pins the logic at its new home.
+    text = (MODULE_PATH / "env" / "environment.py").read_text()
+    start = text.index("def ProvisionSteps(")
     end = text.index("\n    def ", start + 1)
     return text[start:end]
 
