@@ -101,7 +101,12 @@ class Agent:
     container: str = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
     globus_uuid: str|None = None
     runtime: Runtime=Runtime.APPTAINER
+    native: bool = False
     real_path: Path|None = None
+
+    def _environment(self) -> Environment:
+        # The agent's own Environment — how metasmith itself runs on the host.
+        return Environment(image=self.container, runtime=self.runtime, native=self.native)
 
     def _is_ssh(self):
         return self.home.type == SourceType.SSH
@@ -117,6 +122,7 @@ class Agent:
             home=self.home.Pack(),
             container=self.container,
             runtime=self.runtime.name,
+            native=self.native,
         ) | optional
 
     def Save(self, file_path: Path):
@@ -127,6 +133,9 @@ class Agent:
     def Unpack(cls, data):
         data["home"] = Source.Unpack(data["home"])
         data["runtime"] = Runtime[data["runtime"]]
+        # `native` is newer than the original agent.yml format; legacy files
+        # omit it and default to a wrapped (non-native) environment.
+        data.setdefault("native", False)
         k = "real_path"
         if k in data:
             data[k] = Path(data[k])
@@ -168,15 +177,19 @@ class Agent:
     def _run_cleanup(self, shell: LiveShell):
         pass
 
-    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None):
+    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None):
         # Deploy is the entry point where the runtime is chosen and then
         # persisted into agent.yml; everything downstream reads it back
         # transparently. Passing nothing keeps the agent's current runtime.
+        # `native=True` selects the orthogonal "already inside, no wrapper"
+        # mode (not a runtime — composes with one).
         if runtime is not None:
             self.runtime = runtime
         if image is not None:
             self.container = image
-        Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}] using runtime [{self.runtime.name}]")
+        if native is not None:
+            self.native = native
+        Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}] using runtime [{self.runtime.name}] (native={self.native})")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
             _quiet = False
@@ -243,6 +256,7 @@ class Agent:
                     (dev_src, Path("/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith")),
                 ],
                 runtime=self.runtime,
+                native=self.native,
             )
 
             container = Environment(
@@ -257,6 +271,7 @@ class Agent:
                     (resolved_home/".globusonline", resolved_home/".globusonline"),
                 ],
                 runtime=self.runtime,
+                native=self.native,
             )
             _cmds = [
                 f"AGENT_HOME={resolved_agent_home}"
@@ -298,6 +313,7 @@ class Agent:
                 ],
                 workdir=Path("/ws"),
                 runtime=self.runtime,
+                native=self.native,
                 container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE
             )
             _remote_file(
@@ -396,6 +412,7 @@ class Agent:
                 for p in binds
             ],
             runtime=self.runtime,
+            native=self.native,
         )
         return mock
 
@@ -851,7 +868,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     data_dir = AgentPaths.to_data()
     data_dir.mkdir(parents=True, exist_ok=True)
     work_internals.mkdir(parents=True, exist_ok=True)
-    _agent_env = Environment(image=agent.container, runtime=agent.runtime)
+    _agent_env = Environment(image=agent.container, runtime=agent.runtime, native=agent.native)
     with _agent_env.ConnectShell(AgentPaths.to_local_relay_coms(host=host)) as extern_shell:
         extern_root = agent.real_path
         assert extern_root is not None

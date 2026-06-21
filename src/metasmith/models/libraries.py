@@ -1354,14 +1354,23 @@ class ExecutionContext:
                     else:
                         _binds.append((src, dest))
         if binds is None: binds = []
-        container_ws = Path("/ws")
-        binds += [
-            ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
-            (self.external_agent_home, AgentPaths.HOME_ROOT),
-            (self.external_cwd, container_ws),
-        ]
-        binds += sorted([(s, d) for s, d in _binds])
-        
+        # Probe whether this runtime crosses a container boundary. When it
+        # does not (mamba/native), paths are identity: the tool runs on the
+        # host filesystem in the real cwd, so there is no /ws remap and no
+        # binds to compute. The PathMap views collapse to equal.
+        _probe = Container(image=str(image_path), runtime=self.container_runtime)
+        if _probe.needs_relay:
+            container_ws = Path("/ws")
+            binds += [
+                ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
+                (self.external_agent_home, AgentPaths.HOME_ROOT),
+                (self.external_cwd, container_ws),
+            ]
+            binds += sorted([(s, d) for s, d in _binds])
+        else:
+            container_ws = self.external_cwd
+            binds = []
+
         container = Container(
             image = str(image_path),
             workdir = container_ws,
@@ -1394,7 +1403,7 @@ class ExecutionContext:
         exit_codef = Path(f"exitcode.{GenerateId()}")
         with open(_bounce_script, "w") as f:
             script = [
-                "cd /ws",
+                f"cd {container.workdir}",
                 "on_exit() {",
                 f"    echo $? > {exit_codef}",
                 "}",

@@ -69,3 +69,28 @@ def test_pack_round_trip_preserves_runtime_and_container(tmp_path):
     reloaded = Agent.Unpack(agent.Pack())
     assert reloaded.runtime == ContainerRuntime.DOCKER
     assert reloaded.container == agent.container
+
+
+def test_legacy_file_without_native_defaults_false(tmp_path):
+    # Files predating the `native` field must still load (default False).
+    p = _legacy_yaml(tmp_path, runtime="APPTAINER", container="docker://x:1")
+    agent = Agent.Load(p)
+    assert agent.native is False
+
+
+def test_mamba_native_round_trip(tmp_path):
+    from metasmith.env import Runtime
+    agent = Agent(
+        home=Source.FromLocal(tmp_path),
+        runtime=Runtime.MAMBA,
+        native=True,
+    )
+    packed = agent.Pack()
+    assert packed["runtime"] == "MAMBA"
+    assert packed["native"] is True
+
+    reloaded = Agent.Unpack(agent.Pack())
+    assert reloaded.runtime == Runtime.MAMBA
+    assert reloaded.native is True
+    # And the agent's Environment is relay-free.
+    assert reloaded._environment().needs_relay is False

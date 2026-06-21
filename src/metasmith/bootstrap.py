@@ -265,21 +265,25 @@ def ExecuteStep(
 
 def StageAndRunTransform(workspace: Path, step_index: int, host: str):
     Log.Info(f"cwd [{os.getcwd()}]")
-    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS, host=host)
-    MAX_WAIT = 3
-    for i in range(MAX_WAIT):
-        if server_path.exists(): break
-        Log.Warn(f"waiting {i+1} of {MAX_WAIT} for relay to start")
-        time.sleep(1)
-    assert server_path.exists(), f"server not started [{server_path}]"
-
     Log.Info(f"loading agent config")
     agent = Agent.Load(AgentPaths.to_definition())
     agent_home = str(agent.home.GetPath())
     Log.Info(f"agent home [{agent_home}]")
 
-    Log.Info(f"connecting to relay [{server_path}]")
-    agent_env = Environment(image=agent.container, runtime=agent.runtime)
+    agent_env = Environment(image=agent.container, runtime=agent.runtime, native=agent.native)
+    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS, host=host)
+    if agent_env.needs_relay:
+        # Container runtimes launch each tool across the boundary, so they
+        # depend on the relay daemon the bootstrap started. mamba/native run
+        # the tool in-process — there is no relay to wait on.
+        MAX_WAIT = 3
+        for i in range(MAX_WAIT):
+            if server_path.exists(): break
+            Log.Warn(f"waiting {i+1} of {MAX_WAIT} for relay to start")
+            time.sleep(1)
+        assert server_path.exists(), f"server not started [{server_path}]"
+
+    Log.Info(f"connecting shell (relay={agent_env.needs_relay})")
     with agent_env.ConnectShell(server_path, agent.setup_commands) as shell:
         _paused = False
         class PausedStdOut:

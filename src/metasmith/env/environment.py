@@ -22,6 +22,13 @@ from ..constants import AgentPaths
 class Runtime(Enum):
     DOCKER = "docker"
     APPTAINER = "apptainer"
+    MAMBA = "mamba"
+
+
+# Runtimes that launch a tool across a container boundary, and therefore need
+# the relay to bounce launches back to the host daemon. MAMBA does not — it
+# runs tools in-process on the host filesystem.
+_CONTAINER_RUNTIMES = (Runtime.DOCKER, Runtime.APPTAINER)
 
 
 @dataclass
@@ -32,6 +39,11 @@ class Environment:
     binds: list[tuple[Path|str, Path|str]] = field(default_factory=list)
     extra_args: list[str] = field(default_factory=list)
     runtime: Runtime = Runtime.DOCKER
+    # `native` is orthogonal to the runtime enum: it means "we are already
+    # inside the target environment, emit no wrapper at all". It is not a
+    # Runtime member because it composes with one (a native agent can still
+    # describe its tools as mamba/docker for portability metadata).
+    native: bool = False
 
     def SetRuntime(self, runtime: Runtime):
         self.runtime = runtime
@@ -104,10 +116,18 @@ class Environment:
                 return f"{self.runtime.value} pull {self.GetLocalPath()} {image}"
             case Runtime.DOCKER:
                 return f"{self.runtime.value} pull --platform=linux/amd64 {image}"
+            case Runtime.MAMBA:
+                # No remote image to fetch; provisioning is env creation,
+                # handled in ProvisionSteps. Nothing to pull.
+                return ""
             case _:
                 return f"{self.runtime.value} pull {image}"
 
     def MakeBindsParam(self):
+        # mamba/native run on the host filesystem — there is no boundary to
+        # bind across, so binds collapse to nothing.
+        if self.runtime == Runtime.MAMBA or self.native:
+            return ""
         binds = {str(d):str(s) for s, d in self.binds}
         binds = [(s, d) for d, s in binds.items()]
         if len(binds)==0: return ""
@@ -123,7 +143,16 @@ class Environment:
         return binds
 
     def MakeRunCommand(self, local: bool|str = False, custom_bind_param: str|None=None):
+        # native: already inside the target environment — no wrapper, just
+        # whatever extra args the caller asked for (usually none).
+        if self.native:
+            return " ".join(str(x) for x in self.extra_args if x != "")
         image = self._get_image()
+        if self.runtime == Runtime.MAMBA:
+            # `mamba run -n <env>` activates the conda env for the wrapped
+            # command. No binds/workdir/cache — the host filesystem is shared.
+            toks = ["mamba", "run", "-n", image, *self.extra_args]
+            return " ".join(str(x) for x in toks if x != "")
         binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
         match self.runtime:
             case Runtime.DOCKER:
@@ -177,8 +206,10 @@ class Environment:
     def needs_relay(self) -> bool:
         # The relay exists solely to bounce tool launches across the
         # container boundary. Only the container runtimes have that
-        # boundary; mamba/native run tools in-process on the host.
-        return self.runtime in (Runtime.DOCKER, Runtime.APPTAINER)
+        # boundary; mamba/native run tools in-process on the host. A
+        # native environment never crosses a boundary regardless of the
+        # runtime it nominally carries.
+        return not self.native and self.runtime in _CONTAINER_RUNTIMES
 
     @staticmethod
     def Detect() -> "Runtime":
@@ -346,7 +377,11 @@ class Environment:
         # The command prefix that places a bare `metasmith ...` call into
         # this environment without a container. Empty for container
         # runtimes (they wrap via MakeRunCommand) and for native (already
-        # inside); mamba overrides to `mamba run -n <env>`.
+        # inside); mamba activates its env via `mamba run -n <env>`.
+        if self.native:
+            return ""
+        if self.runtime == Runtime.MAMBA:
+            return f"mamba run -n {self._get_image()}"
         return ""
 
     def ConnectShell(self, server_path: Path|None=None, setup_commands: list[str]|None=None):
