@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from ..coms.containers import ContainerRuntime
+from ..env import Runtime as ContainerRuntime
 from ..coms.terminals import ShellResult
 from ..hashing import KeyGenerator
 from ..logging import Log

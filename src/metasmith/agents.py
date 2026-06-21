@@ -18,7 +18,6 @@ from .hashing import KeyGenerator
 from .logging import Log
 from .env import Environment, Runtime
 from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
-from .coms.via_file_watcher import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
@@ -852,7 +851,8 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     data_dir = AgentPaths.to_data()
     data_dir.mkdir(parents=True, exist_ok=True)
     work_internals.mkdir(parents=True, exist_ok=True)
-    with RemoteShell(AgentPaths.to_local_relay_coms(host=host), timeout=60) as extern_shell:
+    _agent_env = Environment(image=agent.container, runtime=agent.runtime)
+    with _agent_env.ConnectShell(AgentPaths.to_local_relay_coms(host=host)) as extern_shell:
         extern_root = agent.real_path
         assert extern_root is not None
         path_map = PathMap(extern_home=Path(str(extern_root)), task_key=task._key)

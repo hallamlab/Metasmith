@@ -13,9 +13,10 @@ from datetime import timedelta
 import json
 
 from ..serialization import IsText
-from ..coms.containers import ContainerRuntime, Container
+from ..env import Environment as Container, Runtime as ContainerRuntime
 from ..coms.terminals import RemoveLeadingIndent
-from ..coms.via_file_watcher import RemoteShell, GenerateId
+from ..coms.ipc import GenerateId
+from ..env import Shell
 from .solver import Dependency, Endpoint, Transform
 from .remote import Logistics, Source, SourceType
 from ..hashing import KeyGenerator
@@ -1285,7 +1286,7 @@ class ExecutionFailed(Exception):
 class ExecutionContext:
     _inputs: list[dict[Dependency, ContextData]]
     _get_output_paths: Callable[[Dependency, int, int], ContextPath]
-    external_shell: RemoteShell # since metasmith will bootstrap into its own container
+    external_shell: Shell # relay shell for container runtimes, local shell otherwise
     external_cwd: Path
     external_agent_home: Path
     container_runtime: ContainerRuntime

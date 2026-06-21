@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..agents import Agent
-from ..coms.containers import ContainerRuntime
+from ..env import Runtime as ContainerRuntime
 from ..models.remote import Source
 
 

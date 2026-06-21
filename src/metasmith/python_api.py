@@ -6,8 +6,7 @@ from .models.remote import Source, SshSource, GlobusSource, HttpSource, SourceTy
 from .models.remote import Logistics, LogisticsResult, LogisticsException
 from .logging import Log
 from .coms.terminals import LiveShell
-from .coms.via_file_watcher import RemoteShell
-from .coms.containers import ContainerRuntime, Container
+from .env import RemoteShell, Environment, Runtime, Container, ContainerRuntime
 from .agents import Agent, AgentPaths, TargetBuilder
 from .constants import VERSION as METASMITH_VERSION
 from .coms.jupyter import ipynbButtonLink

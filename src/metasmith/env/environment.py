@@ -348,3 +348,15 @@ class Environment:
         # runtimes (they wrap via MakeRunCommand) and for native (already
         # inside); mamba overrides to `mamba run -n <env>`.
         return ""
+
+    def ConnectShell(self, server_path: Path|None=None, setup_commands: list[str]|None=None):
+        # The shell a caller should run tool commands on. Container runtimes
+        # cross the boundary via the relay (RemoteShell bounces launches back
+        # to the host daemon at `server_path`); mamba/native run in-process,
+        # so a plain local shell suffices. The relay client is constructed
+        # only here — no caller outside the env module builds a RemoteShell.
+        if self.needs_relay:
+            from ..coms.via_file_watcher import RemoteShell
+            assert server_path is not None, "relay runtimes require a server path"
+            return RemoteShell(server_path, timeout=60, setup_commands=setup_commands or [])
+        return LiveShell()

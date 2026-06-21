@@ -15,7 +15,7 @@ from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint
 from .hashing import KeyGenerator
 from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
-from .coms.via_file_watcher import RemoteShell
+from .env import Environment
 
 def DeployFromContainer(workspace: Path, architecture: str, system: str):
     deploy_root = workspace
@@ -279,7 +279,8 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
     Log.Info(f"agent home [{agent_home}]")
 
     Log.Info(f"connecting to relay [{server_path}]")
-    with RemoteShell(server_path, timeout=60, setup_commands=agent.setup_commands) as shell:
+    agent_env = Environment(image=agent.container, runtime=agent.runtime)
+    with agent_env.ConnectShell(server_path, agent.setup_commands) as shell:
         _paused = False
         class PausedStdOut:
             def __enter__(self):

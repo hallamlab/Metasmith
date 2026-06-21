@@ -10,9 +10,18 @@ duration of the carve and will be removed once all call sites migrate to the
 """
 
 from .environment import Environment, Runtime
+from ._shell import Shell
+
+# The relay client is owned by the env module; it is re-exported here so the
+# one historical public re-export (python_api) can redirect through env
+# rather than reaching into coms directly.
+from ..coms.via_file_watcher import RemoteShell
 
 # Transitional aliases — call sites are migrating from the old names.
 Container = Environment
 ContainerRuntime = Runtime
 
-__all__ = ["Environment", "Runtime", "Container", "ContainerRuntime"]
+__all__ = [
+    "Environment", "Runtime", "Shell", "RemoteShell",
+    "Container", "ContainerRuntime",
+]

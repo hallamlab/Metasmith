@@ -10,7 +10,7 @@ import yaml
 import json
 from hashlib import md5
 
-from ..coms.containers import Container, ContainerRuntime
+from ..env import Environment as Container, Runtime as ContainerRuntime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
