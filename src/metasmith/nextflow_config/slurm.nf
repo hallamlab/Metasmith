@@ -20,7 +20,7 @@ params {
     process {
         scratch = '${SLURM_TMPDIR:-${TMPDIR:-/tmp}}'
         tries = 2
-        array = 20
+        array = 100
         cpus = 4
         memory = '16 GB'                    // https://www.nextflow.io/docs/latest/reference/stdlib-types.html#memoryunit
         time = '6hours'                     // https://www.nextflow.io/docs/latest/reference/stdlib-types.html#duration
