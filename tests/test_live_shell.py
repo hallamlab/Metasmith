@@ -463,6 +463,93 @@ def test_pop_quiescence_under_chatty_output():
         assert r.exit_code == 0 and r.out == ["back"]
 
 
+# ----------------------------------------------------------------------
+# G9 — init timeout measures inactivity, not total runtime
+# ----------------------------------------------------------------------
+
+def _rearm_init(sh):
+    """Reset the init handshake bookkeeping so _wait_for_init can be driven
+    again under test-controlled timing."""
+    with sh._cond:
+        sh._pending.add(sh._INIT_NONCE)
+        sh._sync_received[sh._INIT_NONCE] = set()
+        sh._results.pop(sh._INIT_NONCE, None)
+        sh._last_byte_time = time.monotonic()
+
+
+def test_g9_init_timeout_tracks_activity_not_total_time():
+    """
+    Init must NOT time out while bytes keep flowing, even once total elapsed
+    time exceeds the idle window. Proves the window resets on activity (it is
+    an *idle* window) rather than being a fixed total-time ceiling.
+
+    We drive _wait_for_init against a real (alive) bash with a tiny idle
+    window, while a feeder thread keeps bumping _last_byte_time — the same
+    signal _make_tee stamps on every incoming chunk — for roughly twice the
+    window before delivering the markers.
+    """
+    import threading
+
+    with LiveShell() as sh:
+        sh._INIT_TIMEOUT = 0.3        # idle window
+        sh._INIT_POLL_INTERVAL = 0.01
+        _rearm_init(sh)
+
+        active_for = 0.6              # ~2x the idle window
+        def feeder():
+            t_end = time.monotonic() + active_for
+            while time.monotonic() < t_end:
+                with sh._cond:
+                    sh._last_byte_time = time.monotonic()  # simulate a chunk
+                time.sleep(0.02)
+            # Activity stops; deliver both init markers so the wait succeeds.
+            with sh._cond:
+                sh._results[sh._INIT_NONCE] = 0
+                sh._sync_received[sh._INIT_NONCE] = {"out", "err"}
+                sh._cond.notify_all()
+
+        th = threading.Thread(target=feeder)
+        t0 = time.monotonic()
+        th.start()
+        sh._wait_for_init()           # must not raise despite elapsed > window
+        elapsed = time.monotonic() - t0
+        th.join(timeout=2)
+
+    # Survived well past the 0.3s idle window because activity kept resetting
+    # it — a total-time ceiling would have raised at 0.3s.
+    assert elapsed >= 0.5, (
+        f"init returned after only {elapsed:.2f}s — too early to prove the "
+        f"idle window survived sustained activity"
+    )
+
+
+def test_g9_init_fails_fast_when_bash_dead():
+    """
+    If bash exits before responding, init must fail within ~a poll interval —
+    not after the full idle window — and the error must name the exit code.
+    This is the alive-vs-dead distinction the old fixed-deadline wait could
+    not make.
+    """
+    with LiveShell() as sh:
+        sh._INIT_TIMEOUT = 30.0       # long idle window: must NOT be reached
+        sh._INIT_POLL_INTERVAL = 0.01
+        _rearm_init(sh)
+
+        # Kill the underlying bash so IsAlive() -> False and ExitCode() is set.
+        sh._shell._console.kill()
+        sh._shell._console.wait(timeout=2)
+
+        t0 = time.monotonic()
+        with pytest.raises(RuntimeError, match="bash exited"):
+            sh._wait_for_init()
+        dt = time.monotonic() - t0
+
+    assert dt < 1.0, (
+        f"dead-bash init took {dt:.2f}s; should fail fast, far below the "
+        f"30s idle window"
+    )
+
+
 def test_last_byte_time_updates_on_output():
     """The quiescence timestamp moves forward when bytes arrive."""
     with LiveShell() as sh:

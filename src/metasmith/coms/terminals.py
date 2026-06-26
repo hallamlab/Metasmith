@@ -103,6 +103,22 @@ class TerminalProcess:
     def Decode(self, payload: bytes):
         return payload.decode(encoding=self.ENCODING)
 
+    def IsAlive(self) -> bool:
+        """True iff the bash subprocess exists and has not yet exited.
+
+        Wraps Popen.poll() (non-blocking): poll() returns None while the
+        child runs and the exit code once it has exited, reaping it. Never
+        call wait() here — it would block.
+        """
+        if self._console is None: return False
+        return self._console.poll() is None
+
+    def ExitCode(self) -> int | None:
+        """Exit code if the subprocess has exited, else None (still running
+        or never started)."""
+        if self._console is None: return None
+        return self._console.poll()
+
     def Write(self, msg: str):
         self.Send(bytes('%s\n' % (msg), encoding=self.ENCODING))
 
@@ -206,7 +222,15 @@ class LiveShell:
     """
 
     _INIT_NONCE = "__msm_init__"
-    _INIT_TIMEOUT = 5.0
+    # Max channel-IDLE window during init, NOT a total-time ceiling. Init
+    # fails only after this many seconds with no byte on either stream (or
+    # the moment bash is observed dead). As long as bash keeps emitting,
+    # the window resets and init keeps waiting. See _wait_for_init.
+    _INIT_TIMEOUT = 300.0
+    # Re-sample cadence for liveness + _last_byte_time while waiting. Only
+    # matters on the slow/failure path; the healthy path wakes on the
+    # marker's notify_all and exits immediately.
+    _INIT_POLL_INTERVAL = 0.05
 
     _RS = "\x1e"
     # Matches one marker line on either stream. Token is captured for filter;
@@ -311,16 +335,33 @@ class LiveShell:
         return _cb
 
     def _wait_for_init(self):
+        # Activity-keyed wait: succeed when both init markers arrive, fail
+        # fast if bash exits, and fail only after a full idle window of
+        # silence — never on a fixed total deadline. The bounded wait()
+        # slice is load-bearing: _make_tee notifies the condition only on
+        # marker lines, so ordinary (non-marker) output does NOT wake us;
+        # the poll interval is what lets us re-sample _last_byte_time and
+        # see that a slow-but-alive bash is still talking.
         with self._cond:
-            ok = self._cond.wait_for(
-                lambda: self._is_fully_synced(self._INIT_NONCE) or self._closed,
-                timeout=self._INIT_TIMEOUT,
-            )
-        if not ok:
-            raise RuntimeError(
-                f"LiveShell init: bash did not respond on both streams within "
-                f"{self._INIT_TIMEOUT}s"
-            )
+            while True:
+                if self._is_fully_synced(self._INIT_NONCE):
+                    break  # both markers in — success
+                if self._closed:
+                    raise RuntimeError(
+                        "LiveShell init: shell closed before bash responded"
+                    )
+                if self._shell is None or not self._shell.IsAlive():
+                    rc = self._shell.ExitCode() if self._shell is not None else None
+                    raise RuntimeError(
+                        f"LiveShell init: bash exited (rc={rc}) before responding"
+                    )
+                idle = time.monotonic() - self._last_byte_time
+                if idle >= self._INIT_TIMEOUT:
+                    raise RuntimeError(
+                        f"LiveShell init: no channel activity for "
+                        f"{self._INIT_TIMEOUT}s (bash alive but unresponsive)"
+                    )
+                self._cond.wait(timeout=self._INIT_POLL_INTERVAL)
         # Reap init bookkeeping so it doesn't linger.
         with self._cond:
             self._results.pop(self._INIT_NONCE, None)
