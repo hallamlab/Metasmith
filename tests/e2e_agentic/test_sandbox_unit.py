@@ -37,9 +37,21 @@ def test_sif_basename_matches_metasmith_sanitizer():
 
 
 def test_expected_sif_path_lives_under_container_images(tmp_path):
+    # Fallback: no APPTAINER_CACHEDIR → store is <agent_home>/container_images.
     p = expected_sif_path(tmp_path / "agent_home",
                           "docker://quay.io/hallamlab/metasmith:1.2.3")
     assert p.parent == tmp_path / "agent_home" / "container_images"
+    assert p.name == "docker..quay.io_hallamlab_metasmith..1.2.3.sif"
+
+
+def test_expected_sif_path_honors_apptainer_cachedir(tmp_path):
+    # Override: APPTAINER_CACHEDIR set → store is that dir, mirroring
+    # Container._store_root() in src/metasmith/coms/containers.py.
+    cache = tmp_path / "scratch" / "apptainer"
+    p = expected_sif_path(tmp_path / "agent_home",
+                          "docker://quay.io/hallamlab/metasmith:1.2.3",
+                          apptainer_cachedir=cache)
+    assert p.parent == cache
     assert p.name == "docker..quay.io_hallamlab_metasmith..1.2.3.sif"
 
 
@@ -73,10 +85,12 @@ def test_build_sandbox_apptainer(install_ctx, tmp_path):
     pkgs = list((root / "local-channels" / "hallamlab").rglob("metasmith-*.tar.bz2"))
     assert pkgs, "no metasmith pkg in spoofed hallamlab channel"
 
-    # Sif pre-placed at the path Agent.Deploy will compute
+    # Sif pre-placed at the path Agent.Deploy will compute. The harness sets
+    # APPTAINER_CACHEDIR under the sandbox home, and the store honors it, so
+    # the sif lands there rather than under agent_home/container_images.
     assert layout.sif_in_cache is not None
     assert layout.sif_in_cache.exists()
-    assert layout.sif_in_cache.parent == root / "agent_home" / "container_images"
+    assert layout.sif_in_cache.parent == root / "home" / ".apptainer" / "cache"
 
 
 def test_build_sandbox_docker_skips_sif(install_ctx, tmp_path):
