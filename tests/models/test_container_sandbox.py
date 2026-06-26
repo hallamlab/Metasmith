@@ -45,11 +45,24 @@ class TestCachePaths:
         sif = c.GetLocalPath()
         sandbox = c.GetSandboxPath()
         assert sif is not None and sandbox is not None
-        assert sif.parent == sandbox.parent == Path("/cache")
+        # Both derive from the one store root, so they are always siblings
+        # — the run-time SIF/sandbox ternary depends on this.
+        assert sif.parent == sandbox.parent
         # Same stem (sanitized image name), different suffix.
         assert sif.stem == sandbox.stem
         assert sif.suffix == ".sif"
         assert sandbox.suffix == ".sandbox"
+
+    def test_store_root_honors_apptainer_cachedir(self):
+        # Single point of control: the store root is a shell expression that
+        # prefers APPTAINER_CACHEDIR (expanded on the execution host) and
+        # falls back to the caller's container_cache. pathlib round-trips the
+        # ${...:-.../...} segment cleanly for .parent / .name.
+        c = _apptainer(container_cache=Path("/cache"))
+        expected_root = Path("${APPTAINER_CACHEDIR:-/cache}")
+        assert c.GetLocalPath().parent == expected_root
+        assert c.GetSandboxPath().parent == expected_root
+        assert c.GetLocalPath().name == "docker..quay.io_example_tool..1.0.sif"
 
     def test_docker_has_no_sandbox(self):
         # Sandbox is an apptainer-only concept; docker runtime returns None
