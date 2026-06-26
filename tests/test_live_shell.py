@@ -18,6 +18,7 @@ from contextlib import contextmanager
 import pytest
 
 # conftest.py inserts src/ on sys.path
+from metasmith.coms import terminals
 from metasmith.coms.terminals import LiveShell, ShellResult, TerminalProcess
 
 
@@ -461,6 +462,132 @@ def test_pop_quiescence_under_chatty_output():
         # Back at root shell.
         r = sh.Exec("echo back", history=True, timeout=5)
         assert r.exit_code == 0 and r.out == ["back"]
+
+
+# ----------------------------------------------------------------------
+# G9 — init handshake is liveness-governed (not a short time gate)
+#
+# These drive REAL bash processes (no mocked markers). We rewrite the spawned
+# argv so the real bash is slow to reach its read loop (`sleep N; exec bash`),
+# dies before responding (`sleep N; exit C`), or stays alive but never answers
+# (`exec sleep N`) — reproducing the deploy condition directly.
+# ----------------------------------------------------------------------
+
+@contextmanager
+def _spawn_override(delay, inner="exec bash"):
+    """Make the next LiveShell()'s bash run `sleep {delay}; {inner}` instead of
+    a bare `bash`, so the init marker is genuinely delayed / never emitted.
+    Patches only the terminals module's `subprocess` reference (PIPE /
+    TimeoutExpired preserved), and restores it on exit."""
+    real = terminals.subprocess
+    class _Shim:
+        PIPE = subprocess.PIPE
+        TimeoutExpired = subprocess.TimeoutExpired
+        def Popen(self, args, **kw):
+            if args == ["bash"]:
+                args = ["bash", "-c", f"sleep {delay}; {inner}"]
+            return subprocess.Popen(args, **kw)
+    terminals.subprocess = _Shim()
+    try:
+        yield
+    finally:
+        terminals.subprocess = real
+
+
+def test_g9_slow_but_alive_bash_still_inits():
+    """A real bash that is slow to reach its read loop — the init marker
+    delayed well past the old 5s gate — still inits, because liveness governs
+    the wait. This is the deploy false positive distilled; a reintroduced short
+    deadline would fail it."""
+    delay = 6.0  # > the old 5.0s ceiling
+    t0 = time.monotonic()
+    with _spawn_override(delay):
+        with LiveShell() as sh:
+            dt = time.monotonic() - t0
+            r = sh.Exec("echo alive", history=True, timeout=10)
+    assert r.exit_code == 0 and r.out == ["alive"], r.out
+    assert dt >= delay - 0.5, (
+        f"init returned in {dt:.2f}s; expected to wait ~{delay}s for the real "
+        f"marker — a short deadline would have killed this live bash"
+    )
+
+
+def test_g9_dead_bash_fails_fast_with_rc():
+    """A real bash that exits before responding (never emits the marker) makes
+    init fail fast — at ~the death, far under the backstop — naming the rc.
+    The old fixed-deadline wait could not tell this from a slow shell."""
+    t0 = time.monotonic()
+    with _spawn_override(0.5, inner="exit 7"):
+        with pytest.raises(RuntimeError, match=r"bash exited \(rc=7\)"):
+            LiveShell()
+    dt = time.monotonic() - t0
+    assert dt < 3.0, f"dead-bash init took {dt:.2f}s; should fail fast"
+
+
+def test_g9_wedged_alive_bash_hits_backstop(monkeypatch):
+    """A real bash that is alive but never responds (here it `exec`s into a
+    long sleep, so it stays alive yet emits no marker) raises only via the far
+    backstop, with an 'unresponsive' message — not a death, not a 5s gate."""
+    monkeypatch.setattr(LiveShell, "_INIT_TIMEOUT", 0.4)
+    monkeypatch.setattr(LiveShell, "_INIT_POLL_INTERVAL", 0.01)
+    t0 = time.monotonic()
+    with _spawn_override(0, inner="exec sleep 30"):
+        with pytest.raises(RuntimeError, match="unresponsive"):
+            LiveShell()
+    dt = time.monotonic() - t0
+    assert dt >= 0.4, f"backstop fired too early ({dt:.2f}s)"
+    assert dt < 2.0, f"backstop fired too late ({dt:.2f}s)"
+
+
+def test_g9_command_path_timeout_none_survives_silence():
+    """
+    Objective 1: the command/transform path (timeout=None) is unchanged — it
+    waits forever through silence, with no inactivity/liveness kill. A command
+    that produces no output for seconds still returns its exit code. (Faithful
+    proxy for 'no output for hours'; the command path has no time gate at all.)
+    """
+    with LiveShell() as sh:
+        res = sh.Exec("sleep 2", history=True, timeout=None)
+    assert res.exit_code == 0
+
+
+@pytest.mark.slow
+def test_g9_init_survives_reader_starvation_under_load():
+    """The real deploy trigger: heavy CPU load (GIL contention) starves the
+    Python reader threads while many real LiveShells are constructed. Under the
+    old 5s gate this false-killed shells whose marker hadn't been parsed yet;
+    liveness-governed init must bring every shell up. Asserts no false negatives
+    (no latency assertion — that would be flaky)."""
+    import threading
+
+    stop = threading.Event()
+    def gil_hog():
+        x = 0
+        while not stop.is_set():
+            for _ in range(200000):
+                x = (x * 1103515245 + 12345) & 0x7fffffff
+
+    n_hogs = max(8, (os.cpu_count() or 4))
+    hogs = [threading.Thread(target=gil_hog, daemon=True) for _ in range(n_hogs)]
+    for h in hogs:
+        h.start()
+    time.sleep(0.3)  # let load ramp
+
+    failures = []
+    try:
+        for i in range(8):
+            try:
+                with LiveShell() as sh:
+                    r = sh.Exec("echo ok", history=True, timeout=30)
+                    assert r.out == ["ok"], r.out
+            except Exception as e:
+                failures.append((i, repr(e)))
+    finally:
+        stop.set()
+        for h in hogs:
+            h.join(timeout=2)
+
+    assert not failures, f"init false-negatives under load: {failures}"
 
 
 def test_last_byte_time_updates_on_output():
