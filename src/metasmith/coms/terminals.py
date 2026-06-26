@@ -228,8 +228,9 @@ class LiveShell:
     # clock — see _wait_for_init). It exists only so a bash that is alive yet
     # never responds (e.g. an rc file that blocks on `read` forever) can't
     # hang the caller indefinitely. Kept generous so it stays clear of any
-    # realistic reader-thread starvation under load.
-    _INIT_TIMEOUT = 300.0
+    # realistic reader-thread starvation under load. Env-overridable for the
+    # truly pathological host.
+    _INIT_TIMEOUT = float(os.environ.get("METASMITH_LIVESHELL_INIT_TIMEOUT", "300.0"))
     # Re-sample cadence for the liveness poll while waiting. Only matters on
     # the slow/failure path; the healthy path wakes on the marker's
     # notify_all and exits immediately.
