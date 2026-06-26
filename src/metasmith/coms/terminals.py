@@ -222,14 +222,17 @@ class LiveShell:
     """
 
     _INIT_NONCE = "__msm_init__"
-    # Max channel-IDLE window during init, NOT a total-time ceiling. Init
-    # fails only after this many seconds with no byte on either stream (or
-    # the moment bash is observed dead). As long as bash keeps emitting,
-    # the window resets and init keeps waiting. See _wait_for_init.
+    # FAR backstop for a WEDGED-but-alive bash, measured as absolute elapsed
+    # from the start of _wait_for_init. This is NOT the operative limit:
+    # liveness governs the wait (a slow-but-alive bash is never killed by the
+    # clock — see _wait_for_init). It exists only so a bash that is alive yet
+    # never responds (e.g. an rc file that blocks on `read` forever) can't
+    # hang the caller indefinitely. Kept generous so it stays clear of any
+    # realistic reader-thread starvation under load.
     _INIT_TIMEOUT = 300.0
-    # Re-sample cadence for liveness + _last_byte_time while waiting. Only
-    # matters on the slow/failure path; the healthy path wakes on the
-    # marker's notify_all and exits immediately.
+    # Re-sample cadence for the liveness poll while waiting. Only matters on
+    # the slow/failure path; the healthy path wakes on the marker's
+    # notify_all and exits immediately.
     _INIT_POLL_INTERVAL = 0.05
 
     _RS = "\x1e"
@@ -335,32 +338,52 @@ class LiveShell:
         return _cb
 
     def _wait_for_init(self):
-        # Activity-keyed wait: succeed when both init markers arrive, fail
-        # fast if bash exits, and fail only after a full idle window of
-        # silence — never on a fixed total deadline. The bounded wait()
-        # slice is load-bearing: _make_tee notifies the condition only on
-        # marker lines, so ordinary (non-marker) output does NOT wake us;
-        # the poll interval is what lets us re-sample _last_byte_time and
-        # see that a slow-but-alive bash is still talking.
+        # Liveness-governed handshake. The OPERATIVE gate is whether bash is
+        # actually alive, not a clock: a slow-but-alive bash (heavy rc, a
+        # loaded host, reader threads starved under load so the already-
+        # emitted marker sits unread) is tolerated for as long as it stays
+        # alive. We fail fast only when bash has truly exited, and fall back
+        # to a far absolute backstop only for a wedged-but-alive shell.
+        #
+        # This is the fix for the deploy false positive: the old code used a
+        # flat 5s deadline with no liveness check, so under load a live bash
+        # whose marker hadn't been parsed yet was wrongly declared dead.
+        # poll() (waitpid WNOHANG) can never report a running process as
+        # exited, so liveness is a safe gate.
+        start = time.monotonic()
         with self._cond:
             while True:
+                # 1. Sync wins first: an already-arrived marker beats any
+                #    concurrent liveness/backstop verdict.
                 if self._is_fully_synced(self._INIT_NONCE):
                     break  # both markers in — success
+                # 2. Shell disposed mid-init.
                 if self._closed:
                     raise RuntimeError(
                         "LiveShell init: shell closed before bash responded"
                     )
+                # 3. Liveness gate — fail fast iff bash actually exited. Re-
+                #    check sync once more first, defending against an emit-
+                #    then-exit race (bash answered, then exited with the bytes
+                #    still unread). The init shell is persistent so this is
+                #    belt-and-suspenders, but cheap and correct.
                 if self._shell is None or not self._shell.IsAlive():
+                    if self._is_fully_synced(self._INIT_NONCE):
+                        break
                     rc = self._shell.ExitCode() if self._shell is not None else None
                     raise RuntimeError(
                         f"LiveShell init: bash exited (rc={rc}) before responding"
                     )
-                idle = time.monotonic() - self._last_byte_time
-                if idle >= self._INIT_TIMEOUT:
+                # 4. Far backstop — only reachable while bash is alive, so it
+                #    fires solely for a wedged-but-alive shell, never for a
+                #    merely slow/loaded one.
+                if time.monotonic() - start >= self._INIT_TIMEOUT:
                     raise RuntimeError(
-                        f"LiveShell init: no channel activity for "
-                        f"{self._INIT_TIMEOUT}s (bash alive but unresponsive)"
+                        f"LiveShell init: bash alive but unresponsive for "
+                        f"{self._INIT_TIMEOUT}s"
                     )
+                # 5. Wake on the marker's notify_all, else re-sample liveness
+                #    every poll interval.
                 self._cond.wait(timeout=self._INIT_POLL_INTERVAL)
         # Reap init bookkeeping so it doesn't linger.
         with self._cond:
