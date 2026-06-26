@@ -214,10 +214,17 @@ redeploy unconditionally re-probes and rebuilds.
 unchanged. Deploy controls which arm fires by controlling the directory's
 presence on the target host.
 
-Cache layout: `<home>/container_images/<name>.sif` (always retained)
-alongside `<name>.sandbox/` (present iff verdict is `use-sandbox`).
-Helpers in `src/metasmith/coms/containers.py`:
-`GetSandboxPath / MakeSandboxDecisionProbe / MakeBuildSandboxCommand`.
+Cache layout: `<store>/<name>.sif` (always retained) alongside
+`<name>.sandbox/` (present iff verdict is `use-sandbox`). The store root
+`<store>` is the single point of control `Container._store_root()`:
+`${APPTAINER_CACHEDIR:-<home>/container_images}` — i.e. the host's
+`APPTAINER_CACHEDIR` when set, else `<home>/container_images`. It is a shell
+expression expanded on the *execution host* (like `$AGENT_HOME` in the same
+strings), so the pull (write), sandbox build, and `exec` (read) sides always
+agree. Both `GetLocalPath` and `GetSandboxPath` derive from it, keeping the
+`.sif` and `.sandbox` siblings. Helpers in
+`src/metasmith/coms/containers.py`: `_store_root / GetLocalPath /
+GetSandboxPath / MakeSandboxDecisionProbe / MakeBuildSandboxCommand`.
 
 RunWorkflow fires and returns immediately. The actual execution happens in a
 Nextflow process that manages container pulls, job scheduling, and data staging.

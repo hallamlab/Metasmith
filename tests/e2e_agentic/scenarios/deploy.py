@@ -81,7 +81,12 @@ class DeployScenario:
             if r.returncode != 0:
                 fails.append(f"docker image {image_tag!r} not present after deploy")
         elif runtime == "APPTAINER":
-            sif = expected_sif_path(agent_home, f"docker://{image_tag}")
+            # The store honors APPTAINER_CACHEDIR (set in the agent env), so
+            # resolve the sif path the same way Agent.Deploy does.
+            sif = expected_sif_path(
+                agent_home, f"docker://{image_tag}",
+                apptainer_cachedir=vctx.agent_env.get("APPTAINER_CACHEDIR"),
+            )
             if not sif.exists():
                 fails.append(f"expected sif missing post-deploy: {sif}")
         return fails

@@ -30,12 +30,27 @@ def sif_basename(image: str) -> str:
     return f"{name}.sif"
 
 
-def expected_sif_path(agent_home: Path, image: str) -> Path:
+def store_root(agent_home: Path, apptainer_cachedir: str | os.PathLike | None = None) -> Path:
+    """Mirror Container._store_root() (containers.py).
+
+    The image store is ``APPTAINER_CACHEDIR`` when set on the execution host,
+    else ``<agent_home>/container_images``. The harness sets APPTAINER_CACHEDIR
+    in the agent's env (sandbox.py), so the spoof must pre-place the sif where
+    deploy will actually look — pass that value through here.
+    """
+    if apptainer_cachedir:
+        return Path(apptainer_cachedir)
+    return agent_home / _CONTAINER_CACHE_SUBDIR
+
+
+def expected_sif_path(agent_home: Path, image: str,
+                      apptainer_cachedir: str | os.PathLike | None = None) -> Path:
     """Path Agent.Deploy will check before pulling."""
-    return agent_home / _CONTAINER_CACHE_SUBDIR / sif_basename(image)
+    return store_root(agent_home, apptainer_cachedir) / sif_basename(image)
 
 
-def preplace_sif(agent_home: Path, image: str, source_sif: Path) -> Path:
+def preplace_sif(agent_home: Path, image: str, source_sif: Path,
+                 apptainer_cachedir: str | os.PathLike | None = None) -> Path:
     """Hardlink ``source_sif`` to the path Agent.Deploy expects.
 
     Idempotent: if the destination already points at the same inode it's a
@@ -43,7 +58,7 @@ def preplace_sif(agent_home: Path, image: str, source_sif: Path) -> Path:
     """
     if not source_sif.exists():
         raise FileNotFoundError(f"source sif not found: {source_sif}")
-    dest = expected_sif_path(agent_home, image)
+    dest = expected_sif_path(agent_home, image, apptainer_cachedir)
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         try:
