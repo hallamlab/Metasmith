@@ -17,6 +17,18 @@ Wire vs. post-facto identity
 `LinPayload` (slot-level) is the wire format. `InvocationEvent.produces`
 carries both ids per file (event-stream view of the same fact).
 
+Per-output ancestry
+-------------------
+`InvocationEvent.consumes` records the invocation's inputs as a single
+`dep_key -> [instance_id]` map — shared by *every* output of that
+invocation, so it cannot say which output descends from which input.
+`ProducedFile.parents` refines this to the per-file truth: the input
+`instance_id`s *that* file descends from. This is the single point of
+provenance the telemetry walk and (next session) the cache-walk read.
+When `parents` is empty the fact wasn't captured (legacy row, or an
+emission route that hasn't recorded runtime ancestry) and consumers
+fall back to the event-level `consumes`.
+
 trace.jsonl layout
 ------------------
 A trace.jsonl is a sequence of newline-delimited JSON objects. The
@@ -171,16 +183,39 @@ class LinPayload:
         """Return entries minus the special `FILES` key."""
         return {k: v for k, v in self.entries.items() if k != self.FILES_KEY}
 
+    FILE_ID_SEP: ClassVar[str] = "::"
+
     @staticmethod
     def mint_file_id(slot_id: str, relative_path: Union[str, Path]) -> str:
-        """Deterministic `file_instance_id` per (slot, relative_path).
+        """Deterministic `file_instance_id` per (slot, file basename).
 
-        Called from `CollectResults` and `promote_run`. Re-run with a
-        cache hit produces the same id, satisfying G1's deterministic
-        identity postcondition.
+        Single point of provenance: the file identity is the md5 of the
+        composite `"{slot_id}::{basename}"`. md5 is chosen deliberately —
+        it is the one strong-ish digest the Nextflow `Orchestrator.groovy`
+        runtime can compute (`"${slot_id}::${item.name}".md5()`) to
+        reproduce the *exact same* id on the channel, collapsing the
+        on-channel and off-channel identity to one value (G1). This
+        codebase already relies on Groovy/Python md5 agreement (the
+        given-lineage seed mirrors `Long.parseLong(md5(...)[0..14],16)`),
+        so the match is proven. The result is 32 lowercase hex chars, so
+        it stays a valid instance-id token everywhere a hex id is expected
+        (e.g. `telemetry._HEX_RE`, cache-shard prefixing).
+
+        The path is normalised to its basename: promote stages outputs
+        under `<shard>/out/<name>` while the channel only ever sees the
+        basename, so basename is the one representation both sides share.
+        Basenames are unique within a slot (the canonical filename embeds
+        batch/branch/hash/dtype), so this stays collision-free per slot.
+
+        Called from `CollectResults`, `promote_run`, and mirrored by
+        `Orchestrator._post`. Re-run with a cache hit produces the same
+        id, satisfying G1's deterministic identity postcondition.
         """
-        payload = canonical_cbor({"s": slot_id, "p": str(relative_path)})
-        return multihash_key(payload).hex()
+        from hashlib import md5
+
+        name = Path(str(relative_path)).name
+        composite = f"{slot_id}{LinPayload.FILE_ID_SEP}{name}"
+        return md5(composite.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -194,20 +229,35 @@ class ProducedFile:
 
     Carries both ids: `slot_id` (wire identity) and `file_instance_id`
     (post-facto, the id `DataInstanceLibrary` queries route through).
+
+    `parents` is this file's **per-output ancestry**: the concrete input
+    `instance_id`s *this* file descends from. It is the single-point-of-
+    provenance refinement of the event-level `InvocationEvent.consumes`
+    map (which is shared across every output of the invocation and so
+    cannot distinguish which output came from which input — the root of
+    the cartesian sibling-walk bug). An empty `parents` means "not
+    recorded" (legacy rows, or a producer that hasn't captured runtime
+    ancestry yet); consumers fall back to the event-level `consumes`.
     """
 
     file_instance_id: str
     slot_id: str
     path: str
     dtype_key: str = ""
+    parents: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "file_instance_id": self.file_instance_id,
             "slot_id": self.slot_id,
             "path": self.path,
             "dtype_key": self.dtype_key,
         }
+        # additive-with-default: only emit when populated so byte-identical
+        # to pre-refactor rows whenever ancestry wasn't captured.
+        if self.parents:
+            d["parents"] = list(self.parents)
+        return d
 
     @classmethod
     def from_dict(cls, raw: dict) -> "ProducedFile":
@@ -216,6 +266,7 @@ class ProducedFile:
             slot_id=raw["slot_id"],
             path=raw["path"],
             dtype_key=raw.get("dtype_key", ""),
+            parents=list(raw.get("parents", [])),
         )
 
 
