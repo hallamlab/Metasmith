@@ -17,12 +17,15 @@ For both sub-cases the contract is the same: the cache.sqlite row for
 the relevant key carries the correct `origin`, and (where the planner
 can express the demand) P2's trace.jsonl records a `status="hit"` row.
 
-The leaf-identity model (G8) makes "exact same plan ran in two
-workspaces" hit only when inputs come from the same library object —
-this is by design. The (a) sub-case below reuses the source library so
-the lineage key is byte-stable; the (b) sub-case asserts the
-imported-row plumbing without requiring P2 to also re-derive the same
-key, because the leaf identities by definition differ.
+Since R1, leaf ids are content-addressed, so "exact same plan ran in two
+workspaces" now hits automatically whenever the input *bytes* match —
+even with independently built library objects at different locations.
+That auto-resume path is proven directly in `test_cross_run.py`. The two
+sub-cases here cover the complementary plumbing: (a) reuses the source
+library so the lineage key is byte-stable regardless of input presence,
+and (b) asserts the `import-library` bridge that carries already-computed
+lineage rows across workspaces (still needed for absent/remote inputs
+whose leaves fall back to random ids).
 """
 
 from __future__ import annotations

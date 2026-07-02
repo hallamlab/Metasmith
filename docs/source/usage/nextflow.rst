@@ -31,7 +31,15 @@ resolve to the same instance_ids.
 Two sources of identity:
 
 - **Leaf** (``origin="leaf"``) — set by ``DataInstanceLibrary.AddItem``.
-  Unique per call; deliberately not derivable from path or bytes.
+  **Content-addressed** (``multihash(blake3(file_bytes) ‖ relpath)``) when
+  the file is present at add time, so identical input bytes at the same
+  relative path yield identical leaf ids across independent runs — this is
+  what makes cross-run resume automatic without ``import-library``. The
+  relative path is folded in so distinct files that share bytes stay
+  distinct (no fan-out collapse). Falls back to a unique-per-call random
+  id when the file is absent/unreadable (remote or lazily materialized
+  inputs get no cross-run reuse). Force the legacy random id with
+  ``METASMITH_LEAF_RANDOM=1``.
 - **Lineage** (``origin="lineage"``) — set by the planner /
   post-execution promote: ``instance_id = lineage_key(...)`` over the
   transform's static metadata + input identities. Two workspaces running

@@ -368,8 +368,7 @@ def _collect_result_fingerprints(workspace: Path) -> tuple[tuple[str, str], ...]
     Hashes file *content* and groups by target directory, deliberately
     discarding individual filenames and the `_manifests/` sidecars. This
     matches the cache's contract: "byte-equal outputs across runs" — the
-    manifest filenames embed instance_ids (which under S2's leaf-identity
-    model are unique per build) and the manifest contents embed
+    manifest filenames embed instance_ids and the manifest contents embed
     workspace-absolute paths, so neither belongs in the determinism check.
     A cache hit must reproduce the per-target output payload multiset
     verbatim; that is what this captures.
@@ -387,8 +386,8 @@ def _collect_result_fingerprints(workspace: Path) -> tuple[tuple[str, str], ...]
         #    + per-path lineage metadata)
         #  - `given.csv` (top-level, post-S6 — embeds workspace-absolute
         #    paths of given inputs which vary per build)
-        # Under S2, leaf instance_ids are unique-per-build by design,
-        # so neither belongs in the "output payload" determinism check.
+        # These embed workspace-absolute paths / minted ids, so neither
+        # belongs in the "output payload" determinism check.
         if rel.parts and rel.parts[0] in {"_metadata"}:
             continue
         if str(rel) == "given.csv":
