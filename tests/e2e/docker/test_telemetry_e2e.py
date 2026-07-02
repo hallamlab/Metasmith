@@ -305,9 +305,10 @@ def test_telemetry_e2e_find_failures_picks_injected_fail(tmp_path, virtual_runti
 # ---------------------------------------------------------------------------
 # S2 — Red invariant tests gating C2 (plans/lineage-quadrant-audit.md, G3/G7)
 #
-# Each test pins one shape invariant the C2 endgame depends on. All are
-# currently red on HEAD (88b4d9c) and xfail-marked with the plan step that
-# turns them green. Remove the marker in that step's commit.
+# Each test pins one shape invariant the C2 endgame depends on. These were
+# xfail-marked while red; the single-point-of-provenance refactor (T1-T4)
+# turned them green by writer/reader-aligning the promote and cache-hit
+# routes, so the markers are removed and they now run as ordinary asserts.
 # ---------------------------------------------------------------------------
 
 

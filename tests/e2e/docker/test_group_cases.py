@@ -843,9 +843,10 @@ workflow {
 # C16 (sharpened): two SEPARATE channels each carrying the SAME file path,
 # mixed before postIn. The two arrivals are reference-distinct items in the
 # merged channel — Nextflow's upstream coalescing does not dedup them —
-# but their content-hash (postIn's fullHash=true → md5("$item")) collides
-# because the file path string is identical. The orchestrator's bag-
-# insertion is the only thing that can deduplicate them.
+# but their on-channel id (postIn's seedless fallback → md5("$item"), used
+# when no SELF_ID_KEY rides the item map) collides because the file path
+# string is identical. The orchestrator's bag-insertion is the only thing
+# that can deduplicate them.
 # ===========================================================================
 
 
@@ -861,7 +862,7 @@ workflow {
     def ch_a = Channel.fromList([[[:], file("${projectDir}/a.txt")]])
     // Two independent channels each emitting the same file. After mix,
     // the merged channel emits two reference-distinct items whose
-    // content-hash collides (same path string under postIn fullHash=true).
+    // on-channel id collides (same path string under postIn's seedless fallback).
     def ch_b1 = Channel.fromList([[[:], file("${projectDir}/b.txt")]])
     def ch_b2 = Channel.fromList([[[:], file("${projectDir}/b.txt")]])
     def pa = (o.postIn([ch_a], ["a"]))[0]
