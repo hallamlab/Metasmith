@@ -1205,9 +1205,17 @@ class WorkflowTask:
         """Refuse straddle-mounts; pick publishDir mode from mountinfo.
 
         S6 contract:
-        - If cache_root and work_dir live on different mounts, raise
-          StraddleMountError. Rename across mounts is non-atomic; this
-          would break promote's loser-of-race contract.
+        - If cache_root and work_dir live on different mounts, force the
+          publishDir 'copy' strategy. The only cross-mount-fragile op is
+          Nextflow's publishDir hardlink ('link'); copy works across
+          mounts. promote's own staging uses shutil.move/copy2
+          (cross-mount safe) and its atomic tmp->shard rename is *within*
+          cache_root (always same mount), so the loser-of-race contract is
+          unaffected by a work_dir/cache_root straddle. This is the
+          containerized-agent case: agent_home is bound at both /ws
+          (WORK_ROOT) and its literal path, which are distinct bind mounts
+          that reject cross-mount rename/hardlink (EXDEV) despite sharing a
+          host device.
         - Otherwise set context.cache_hit_strategy to 'copy' on a network
           FS (Lustre / NFS / GPFS / BeeGFS / etc.) and 'link' on a local
           FS. The default was 'link'; this only widens it when needed.
@@ -1221,14 +1229,29 @@ class WorkflowTask:
             "0", "false", "off", "no"
         }:
             return
-        from ..caching.fs import assert_same_mount, detect_strategy
+        from ..caching.fs import (
+            StraddleMountError,
+            assert_same_mount,
+            detect_strategy,
+        )
 
         # cache_root may not exist yet on a fresh workspace; resolve()
         # walks up to the first existing parent for the mountinfo match.
         anchor = context.cache_root
         while not anchor.exists() and anchor != anchor.parent:
             anchor = anchor.parent
-        assert_same_mount(anchor, context.work_dir)
+        try:
+            assert_same_mount(anchor, context.work_dir)
+        except StraddleMountError as e:
+            # Containerized agent: work_dir (/ws) and cache_root (literal
+            # home bind) are distinct bind mounts of the same host dir.
+            # Hardlink publishDir would EXDEV; fall back to copy.
+            Log.Warn(
+                "cache_root and work_dir straddle mounts; forcing "
+                f"publishDir 'copy' strategy. ({e})"
+            )
+            context.cache_hit_strategy = "copy"
+            return
         context.cache_hit_strategy = detect_strategy(
             anchor, default=context.cache_hit_strategy
         )
@@ -1881,12 +1904,21 @@ class WorkflowTask:
                 f'echo "step {step.order}, sample $index"',    # this is used to extract logs in agent.RunWorkflow()
                 f'echo "{step.transform.name}"',
                 f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
-                # C4 — wrap the channel's index map in the LinPayload v2
-                # envelope `{"v": 2, "entries": <index>}`. Orchestrator.groovy
-                # is untouched; the JSON literal is composed in bash from the
-                # raw `Orchestrator.JsonforEcho(index)` output. Bootstrap (C5)
-                # parses this via `LinPayload.from_json`.
-                f'echo "lin {{\\"v\\":2,\\"entries\\":${{Orchestrator.JsonforEcho(index)}}}}" >>{METADATA_FILE}',
+                # C4 — wrap the channel's per-task lineage MAP in the
+                # LinPayload v2 envelope `{"v": 2, "entries": <index_map>}` and
+                # serialise the WHOLE envelope through Orchestrator.JsonforEcho
+                # so the outer `"v"`/`"entries"` keys are bash-escaped (`\"`)
+                # identically to the nested entries. Two prior bugs here:
+                #  (1) hand-escaping only the envelope at the Groovy level
+                #      collapsed those quotes to bare `"` in the bash
+                #      `echo "..."`, producing invalid JSON; and
+                #  (2) `entries` was the whole channel value `index` — a
+                #      length-1 LIST wrapping the map — but LinPayload.entries
+                #      is a dict and Bootstrap (C5) re-wraps it into a list
+                #      itself, so the wire must carry `index[0]` (the map).
+                # `index[0]` matches the stub's own access pattern below.
+                # Bootstrap parses this via `LinPayload.from_json`.
+                f'echo "lin ${{Orchestrator.JsonforEcho([v:2, entries:index[0]])}}" >>{METADATA_FILE}',
                 f'echo "fmt 2" >>{METADATA_FILE}',
                 f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
                 f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
