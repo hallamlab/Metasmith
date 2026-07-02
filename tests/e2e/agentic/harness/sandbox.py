@@ -117,16 +117,16 @@ def build_sandbox(
     pkgs_dir = root / "pkgs"
     apptainer_cache = home / ".apptainer" / "cache"
 
-    # agent_home is intentionally NOT pre-created here. The APPTAINER branch
-    # below does create agent_home/container_images/ as a side effect of
-    # pre-placing the sif — that's the deliberate spoof point so deploy
-    # skips the container pull (`[ -e {sif} ] || pull`). `Agent.Deploy()`
-    # no longer has any home-level short-circuit, so pre-creating
-    # container_images/ doesn't short-circuit the deploy itself — it just
-    # means the sif is already cached when deploy gets there. The relay
-    # binary extraction is independently gated on relay/msm_relay so it
-    # self-heals if missing.
-    for p in (home, workspace, envs_dir, pkgs_dir,
+    # The metasmith image store now honors APPTAINER_CACHEDIR (set in the
+    # agent env below to `apptainer_cache`), so the APPTAINER branch pre-places
+    # the sif under that cache dir — the deliberate spoof point so deploy skips
+    # the container pull (`[ -e {sif} ] || pull`). `Agent.Deploy()` has no
+    # home-level short-circuit, so pre-placing the sif doesn't short-circuit
+    # the deploy itself — it just means the image is already cached when deploy
+    # gets there. The relay binary extraction is independently gated on
+    # relay/msm_relay so it self-heals if missing. agent_home is pre-created so
+    # the layout is well-formed before any deploy runs.
+    for p in (home, workspace, agent_home, envs_dir, pkgs_dir,
               apptainer_cache, local_channels):
         p.mkdir(parents=True, exist_ok=True)
 
@@ -157,7 +157,10 @@ def build_sandbox(
         # The image Agent.Deploy will check for is the canonical metasmith
         # container reference baked into src/metasmith/agents.py.
         image = f"docker://{ctx.image_tag}"
-        sif_in_cache = preplace_sif(agent_home, image, ctx.sif_path)
+        # Mirror the agent env's APPTAINER_CACHEDIR (set in env_for_agent) so
+        # the sif lands at the store path Agent.Deploy will compute.
+        sif_in_cache = preplace_sif(agent_home, image, ctx.sif_path,
+                                    apptainer_cachedir=apptainer_cache)
 
     # --- 5. bootstrap env (host-shared)
     boot_env = ensure_bootstrap_env()

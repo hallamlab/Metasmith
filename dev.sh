@@ -22,6 +22,101 @@ FULL_VER="$(_compute_full_ver)"
 DOCKER_TAG="${FULL_VER//+/-}"
 DOCKER_IMAGE=quay.io/$DEV_USER/$NAME
 
+# Refuse to publish or convert an image whose bundled relay binaries are
+# stubs. Bug shipped in 0.18.4 where the Dockerfile happily COPYed 28-byte
+# "#!/bin/sh\necho 'stub relay'" placeholders left over in main/relay_agent/
+# target/ because the --update_container chain skips -br. Set
+# MSM_SKIP_RELAY_CHECK=1 to override (e.g. emergency linux-only patch).
+_assert_real_relays() {
+    [ -n "$MSM_SKIP_RELAY_CHECK" ] && {
+        echo "MSM_SKIP_RELAY_CHECK set — skipping relay binary check"
+        return 0
+    }
+    local img="$DOCKER_IMAGE:$DOCKER_TAG"
+    echo "checking relay binaries in $img"
+    local out rc
+    out=$(docker run --rm --entrypoint sh "$img" -c '
+        bad=""
+        for slot in x86_64-linux:7f454c46 arm64-linux:7f454c46 \
+                    x86_64-darwin:cffaedfe arm64-darwin:cffaedfe; do
+            tgt=${slot%:*}; want=${slot##*:}
+            f=/app/msm_relay.$tgt
+            sz=$(stat -c %s "$f" 2>/dev/null || echo 0)
+            magic=$(head -c 4 "$f" 2>/dev/null | od -An -tx1 | tr -d " ")
+            kind=stub
+            case "$magic" in
+                7f454c46) kind=ELF ;;
+                cffaedfe|feedfacf) kind=Mach-O ;;
+            esac
+            ok=yes
+            [ "$magic" = "$want" ] || ok=no
+            [ "$sz" -gt 100000 ] || ok=no
+            printf "  %-14s size=%-8s magic=%s  %s\n" "$tgt" "$sz" "$magic" "$kind"
+            [ "$ok" = "yes" ] || bad="$bad $tgt"
+        done
+        [ -z "$bad" ] && exit 0
+        echo "STUB:$bad"
+        exit 1
+    ' 2>&1)
+    rc=$?
+    echo "$out" | grep -v '^STUB:'
+    if [ $rc -ne 0 ]; then
+        local bad_slots
+        bad_slots=$(echo "$out" | grep '^STUB:' | sed 's/^STUB://')
+        echo ""
+        echo "ERROR: stub relay binary detected in $img"
+        echo "  bad slots:$bad_slots"
+        echo ""
+        echo "Rebuild relays first, then re-tag the image:"
+        echo "  $HERE/dev.sh -brc   # build the cross-compile container (one time)"
+        echo "  $HERE/dev.sh -br    # build all 4 relay targets"
+        echo "  $HERE/dev.sh -bd    # rebuild the docker image"
+        echo ""
+        echo "Override (NOT recommended) by setting MSM_SKIP_RELAY_CHECK=1."
+        return 1
+    fi
+    return 0
+}
+
+# Refuse to bake a stale pip artifact into the image or conda package. dist/ is
+# produced once by -bp and then frozen; -bd re-tags the image from the *live*
+# source tree while installing whatever sdist sits in dist/, and -bc packages
+# that same sdist. So an edit between -bp and -bd/-bc would ship an artifact
+# whose embedded build hash disagrees with the image tag (and with the conda
+# build). Recompute the live source hash and require a matching sdist in dist/.
+# Override with MSM_SKIP_DIST_CHECK=1.
+_assert_dist_matches_source() {
+    [ -n "$MSM_SKIP_DIST_CHECK" ] && {
+        echo "MSM_SKIP_DIST_CHECK set — skipping dist/source hash check"
+        return 0
+    }
+    local live_hash live_full want
+    live_hash=$(PYTHONPATH="$HERE/src" python -m metasmith._build_hash 2>/dev/null)
+    if [ -z "$live_hash" ]; then
+        echo "ERROR: could not compute the source build hash (is the metasmith env active?)"
+        return 1
+    fi
+    live_full="${VER}+${live_hash}"
+    want="$HERE/dist/$NAME-$live_full.tar.gz"
+    if [ ! -f "$want" ]; then
+        echo ""
+        echo "ERROR: dist/ does not match the current source tree (build hash drift)."
+        echo "  expected sdist: dist/$NAME-$live_full.tar.gz"
+        echo "  live source hash: $live_hash   (version $VER)"
+        echo "  present in dist/:"
+        ( ls -1 "$HERE"/dist/*.tar.gz 2>/dev/null || echo "    (no sdist present)" ) | sed 's#.*/#    #'
+        echo ""
+        echo "  The pip artifacts are stale relative to the source, so the image would be"
+        echo "  tagged with a hash that does not match the code baked into it. Rebuild:"
+        echo "    $HERE/dev.sh -bp"
+        echo ""
+        echo "  Override (NOT recommended) by setting MSM_SKIP_DIST_CHECK=1."
+        return 1
+    fi
+    echo "dist/ matches source: $NAME-$live_full.tar.gz"
+    return 0
+}
+
 # CONDA=conda
 CONDA=mamba # https://mamba.readthedocs.io/en/latest/mamba-installation.html#mamba-install
 echo image: $DOCKER_IMAGE:$DOCKER_TAG
@@ -100,17 +195,18 @@ case $1 in
     ;;
     -bc) # conda
         # requires built pip package
+        _assert_dist_matches_source || exit 1
         rm -r $HERE/conda_build
         python ./conda_recipe/compile_recipe.py
         $HERE/conda_recipe/call_build.sh
     ;;
     -brc) # build the container for building the relay
-        cd main/relay_agent
-        ./pack.sh -b
+        cd $HERE/main/relay_agent
+        ./dev.sh -bb
     ;;
     -br) # build the relay
-        cd main/relay_agent
-        ./pack.sh -p
+        cd $HERE/main/relay_agent
+        ./dev.sh -b
     ;;
     -bd) # docker
         # pre-download requirements
@@ -135,6 +231,10 @@ case $1 in
         DOCKER_TAG="${FULL_VER//+/-}"
         echo image: $DOCKER_IMAGE:$DOCKER_TAG
 
+        # the sdist the Dockerfile installs must match the tag we just computed,
+        # else the image's contents and its tag (and the conda build) disagree
+        _assert_dist_matches_source || exit 1
+
         # build the docker container locally
         export DOCKER_BUILDKIT=1
         # --network=host because I ran into a network error
@@ -147,6 +247,7 @@ case $1 in
         && docker inspect --format='{{.Size}}' $DOCKER_IMAGE:$DOCKER_TAG | numfmt --to=si
     ;;
     -bs) # apptainer image *from docker*
+        _assert_real_relays || exit 1
         apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$DOCKER_TAG
     ;;
     --update_container)
@@ -176,6 +277,7 @@ case $1 in
     -ud) # docker
         # login and push image to quay.io
         # sudo docker login quay.io
+        _assert_real_relays || exit 1
 	    docker push $DOCKER_IMAGE:$DOCKER_TAG
         echo "!!!"
         echo "remember to update the \"latest\" tag"

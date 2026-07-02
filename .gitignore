@@ -16,7 +16,6 @@ __pycache__
 /secrets
 /lib/*
 !/lib/local
-!/lib/data_types
 .secret
 .DS_Store
 

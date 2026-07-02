@@ -31,11 +31,22 @@ class Container:
     def _cached_name(self):
         return self.image.replace("://", "..").replace(":", "..").replace("/", "_")
 
+    def _store_root(self):
+        # Single point of control for the apptainer image-store location.
+        # Prefer APPTAINER_CACHEDIR when set, else the agent-home default the
+        # caller passed in `container_cache`. The value is a shell expression
+        # expanded on the *execution host* (the same way `$AGENT_HOME` is in
+        # these strings), so an HPC deploy picks up the cluster's setting and
+        # the write side (pull/build) and read side (exec) can never diverge.
+        # Both GetLocalPath and GetSandboxPath build off this so the .sif and
+        # .sandbox always stay siblings under one root.
+        return Path(f"${{APPTAINER_CACHEDIR:-{self.container_cache}}}")
+
     def GetLocalPath(self):
         # todo: docker-daemon local?
         match self.runtime:
             case ContainerRuntime.APPTAINER:
-                return self.container_cache/f"{self._cached_name()}.sif"
+                return self._store_root()/f"{self._cached_name()}.sif"
 
     def GetSandboxPath(self):
         # Sibling of GetLocalPath for the APPTAINER `build --sandbox` artifact
@@ -44,7 +55,7 @@ class Container:
         # is what `apptainer exec` consumes; no extension.
         match self.runtime:
             case ContainerRuntime.APPTAINER:
-                return self.container_cache/f"{self._cached_name()}.sandbox"
+                return self._store_root()/f"{self._cached_name()}.sandbox"
 
     def MakeSandboxDecisionProbe(self):
         # Emits either "use-sif" or "use-sandbox" on stdout, encoding the

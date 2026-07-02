@@ -426,6 +426,54 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     }
 
 
+def pull_container_transform(
+    container_type: str = "mock::container",
+    pulled_type: str = "mock::pulled",
+) -> dict[str, str]:
+    """Prefetch transform: <generic container> -> <pulled>, grouped by the
+    container requirement.
+
+    Mirrors the real container-prefetch step. The single requirement is the
+    *generic* container type, so when given inputs are distinct subtypes that
+    each structurally satisfy it (e.g. provides:bbtools / megahit / seqkit),
+    the solver merges them under one requirement. This is the topology that
+    regressed into a malformed o.group / runtime NPE; see
+    tests/integration/test_multicontainer_groupby.py.
+
+    Args:
+        container_type: Namespaced generic container requirement type.
+        pulled_type: Namespaced produced type.
+    """
+    return {
+        "pullContainer": f'''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+image = model.AddRequirement(lib.GetType("{container_type}"))
+out = model.AddProduct(lib.GetType("{pulled_type}"))
+
+def protocol(context: ExecutionContext):
+    out_path = Path("pulled.txt")
+    out_path.write_text("pulled")
+    return ExecutionResult(manifest=[{{out: out_path}}], success=True)
+
+TransformInstance(
+    protocol=protocol,
+    model=model,
+    group_by=image,
+)
+'''
+    }
+
+
 def failing_transform() -> dict[str, str]:
     """Transform that raises an exception for error-path testing."""
     return {

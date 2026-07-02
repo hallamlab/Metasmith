@@ -823,15 +823,37 @@ class WorkflowPlan:
                         given_map[e] = given_map[ge]
                         break
 
+        # Collapse merged endpoints onto a single canonical dtype.
+        #
+        # When several distinct subtypes (e.g. provides:bbtools / megahit /
+        # seqkit) all structurally satisfy one transform requirement, the solver
+        # records them in merged_endpoints[canonical] = {all subtype endpoints}
+        # and the remap loop above gathers their instances into
+        # given_map[canonical] — but leaves each instance carrying its ORIGINAL
+        # dtype. Downstream codegen keys the group_by channel by instance dtype,
+        # so a mixed-dtype list emits a malformed o.group (the by-key names a
+        # channel that isn't wired in) -> runtime NullPointerException, and only
+        # one of the N inputs is ever consumed.
+        #
+        # Retype every instance bound to a merged endpoint onto the canonical
+        # dtype so the group_by requirement sees a single dtype: one input
+        # channel carrying N paths, homogeneous fan-out (identical to the
+        # multi-sample path that already works). WithDType preserves instance_id
+        # (it keys off path/dtype_name/parent_lib, not dtype), so we retype
+        # BEFORE deduping — otherwise the un-retyped originals (same instance_id)
+        # win the dedup and the collapse is silently undone. dtype_name is kept,
+        # so manifests still label each container by its true subtype.
         for e, me in result.merged_endpoints.items():
             if len(me)<2: continue
             if e not in given_map: continue
-            _to_add = []
+            pool = list(given_map[e])
             for x in me:
                 if x==e: continue
-                for oe in given_map.get(x, []):
-                    _to_add.append(oe.WithDType(e))
-            given_map[e] = _dedupe_instances(given_map[e] + _to_add)
+                pool += given_map.get(x, [])
+            given_map[e] = _dedupe_instances([
+                inst if inst.dtype.key==e.key else inst.WithDType(e)
+                for inst in pool
+            ])
 
         solution = result
 
@@ -2134,7 +2156,18 @@ class WorkflowTask:
                 _inst = step.group_by_instances
                 _dtypes = {x.dtype.key for x in _inst}
                 if len(_dtypes)>1:
-                    Log.Warn(f"unexpected plural groupby instance refernce for [{step.transform.name}:{step.transform.group_by}]: [{_inst}]")
+                    # The group_by requirement bound instances of >1 dtype that
+                    # were NOT collapsed onto a single canonical dtype upstream
+                    # (see the merged-endpoints collapse in Generate). Emitting
+                    # o.group here would key the channel by one dtype while
+                    # wiring a different one -> runtime NullPointerException in
+                    # Orchestrator.group. Fail loudly at stage time instead.
+                    _detail = ", ".join(f"{x.dtype_name}({x.dtype.key})" for x in _inst)
+                    raise ValueError(
+                        f"group_by for [{step.transform.name}] bound multiple "
+                        f"un-collapsed dtypes {sorted(_dtypes)} -> cannot emit a "
+                        f"valid o.group (would NPE at runtime). instances: [{_detail}]"
+                    )
                 _inst = _inst[0]
                 gb = _inst.dtype.key
                 using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
