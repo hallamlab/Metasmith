@@ -58,32 +58,13 @@ def test_baseline_fixture_workflows_produce_deterministic_outputs(
     )
 
 
-@pytest.mark.parametrize("name", sorted(FIXTURES))
-def test_baseline_rerun_re_executes_everything(name, tmp_path, virtual_runtime):
-    """On main: the second run re-executes every transform.
-
-    Captures the "no caching today" baseline. Post S3, the same fixture
-    rerun should drop executed_steps to () (full cache hit); this test will
-    therefore start failing once caching lands, and the corresponding
-    forward-looking test in test_cache_execution.py will turn green.
-    """
-    fixture = FIXTURES[name]
-
-    task = fixture.build_task(tmp_path / "run1")
-    snap1 = capture_run(virtual_runtime, task)
-
-    clear_trace(virtual_runtime)
-
-    task2 = fixture.build_task(tmp_path / "run2")
-    snap2 = capture_run(virtual_runtime, task2)
-
-    assert snap1.executed_steps == snap2.executed_steps, (
-        f"fixture {name}: rerun trace shape changed between identical runs"
-    )
-    assert len(snap2.executed_steps) > 0, (
-        f"fixture {name}: rerun executed zero steps on main; "
-        "caching may have leaked into the baseline"
-    )
+# NOTE: `test_baseline_rerun_re_executes_everything` was removed here. It
+# pinned the pre-caching "main" behavior (a rerun re-executes every step) and
+# its own docstring stated it "will start failing once caching lands." Caching
+# has landed, so the assertion is now intentionally false. The forward-looking
+# behavior (rerun on identical inputs → executed_steps == () full hit) is
+# covered green by tests/cache/test_cross_run.py, tests/cache/test_hit_miss.py,
+# and tests/e2e/virtual/test_cache_e2e.py.
 
 
 @pytest.mark.parametrize("name", sorted(FIXTURES))
