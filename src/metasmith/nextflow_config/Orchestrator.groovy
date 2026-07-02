@@ -1,6 +1,12 @@
 import groovy.json.JsonOutput
 
 class Orchestrator {
+    // Reserved index key carrying a leaf's canonical instance_id from the
+    // Python given-lineage seed. postIn relocates it to index[<name>] and
+    // strips it, so it never propagates as a lineage key. Kept in lockstep
+    // with workflow.py's given-seed (SELF_ID_KEY).
+    public static final String SELF_ID_KEY = "__self__"
+
     private Map index_history
     private Map child2parent
     private def one_null
@@ -76,10 +82,12 @@ class Orchestrator {
     }
 
     public List postIn(streams, names) {
-        // Leaves (given inputs). Per-file identity is the full-path md5, kept
-        // in lockstep with the Python given-lineage seed (workflow.py), which
-        // references leaf parents by the same Long(md5(path)[0..14]). Migrating
-        // leaves to the canonical instance_id is deferred (T2b).
+        // Leaves (given inputs). The per-file identity is the leaf's canonical
+        // instance_id, threaded in from the Python given-lineage seed under
+        // SELF_ID_KEY and relocated here to index[name] — byte-identical to
+        // the off-channel instance_id (single point of provenance). Direct/test
+        // callers that pass no seed fall back to the full-path md5 so the id
+        // stays deterministic and per-file.
         return [names, streams].transpose().collect((name, stream) -> {
             return new Tuple2(
                 name,
@@ -88,10 +96,9 @@ class Orchestrator {
                         group = [group]
                     }
                     return group.collect((item) -> {
-                        def LIMIT = 14 // 0..14 is 15 characters and enables sign to be ignored
-                        def v = Long.parseLong("$item".md5()[0..LIMIT], 16)
                         index = [:]+index // copy the hashmap
-                        index[name] = [v]
+                        def self_id = index.remove(SELF_ID_KEY)
+                        index[name] = (self_id != null) ? self_id : ["$item".md5()]
                         this.registerIndexHistory(name, index)
                         return [index, item]
                     })

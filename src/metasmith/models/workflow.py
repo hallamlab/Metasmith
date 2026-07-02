@@ -1987,6 +1987,11 @@ class WorkflowTask:
         _seen_paths = set()
         _given_by_prod_name: dict[str, list[DataInstance]] = {}
         _path2prod_name = {}
+        # path -> the given DataInstance written at that path. Used to source a
+        # parent-ref's canonical instance_id from the SAME given object the
+        # parent leaf itself carries on-channel (so a child's parent-ref equals
+        # the parent's own self-id). See the given-seed below.
+        _path2given_inst: dict[Path, DataInstance] = {}
         for i, (_, lst) in enumerate(input_channels.items()):
             inst = get_archetype(lst)
             p = inputs_dir/f"{get_prod_name(inst.dtype, force_singular=True)}"
@@ -2005,29 +2010,57 @@ class WorkflowTask:
                 for i, x in enumerate(to_write):
                     _path = x.ResolvePath()
                     _path2prod_name[_path] = v
+                    _path2given_inst[_path] = x
                     f.write(f"{_path}\n")
             # Note: the old input_ids/ sidecar (<path>\t<instance_id>) is gone —
             # agents.py now derives path->instance_id straight from the given
             # DataInstances (the record), so there is no second copy to keep in
             # sync. inputs_dir stays path-CSV only for Nextflow's splitCsv.
 
+        # SELF_ID_KEY must match Orchestrator.SELF_ID_KEY: postIn relocates the
+        # value at this reserved key to index[<name>] and strips it, so a leaf's
+        # on-channel per-file identity is its canonical instance_id (single point
+        # of provenance) rather than the legacy Long(md5(path)[:15]).
+        SELF_ID_KEY = "__self__"
         _given_lineage = {}
         given_lineage_by_keys = {}
         for prod_name, to_write in _given_by_prod_name.items():
-            _indexes = []
+            # Parent-refs per row (instance_id-valued). These drive both the
+            # on-channel join and child2parent (classify()); their VALUE changes
+            # Long->instance_id (injective, byte-exact joins) but their PRESENCE
+            # is gated exactly as before to preserve results.
+            _parent_indexes: list[dict[str, list[str]]] = []
+            _parent_keys: set[str] = set()
             for x in to_write:
-                _index = {}
-                for p in [x.parent_lib.Get(p.path).ResolvePath() for p in x.parent_lib.parents.get(x.path, [])]:
-                    if p not in _path2prod_name: continue # spurious parent, not used in wf
-                    _prod_name = _path2prod_name[p]
-                    _hash = md5(str(p).encode()).hexdigest()
-                    _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
-                    _index[_prod_name] = _index.get(_prod_name, [])+[_hash]
-                _indexes.append(_index)
-            if all(len(idx)>0 for idx in _indexes):
-                k = prod_name.split('_')[0] # in case this will be merged and has a "_1" suffix
-                _given_lineage[str(inputs_dir.relative_to(context.work_dir)/k)] = _indexes
-                given_lineage_by_keys[k] = given_lineage_by_keys.get(k, set())|{k for x in _indexes for k in x.keys()}
+                _pi: dict[str, list[str]] = {}
+                for pm in x.parent_lib.parents.get(x.path, []):
+                    _pp = x.parent_lib.Get(pm.path).ResolvePath()
+                    _parent_inst = _path2given_inst.get(_pp)
+                    if _parent_inst is None: continue # spurious parent, not a workflow input
+                    _prod_name = _path2prod_name[_pp]
+                    # Parent-ref = the parent given instance's canonical id, which
+                    # is exactly the parent leaf's own self-id (both read from the
+                    # same DataInstance).
+                    _pi[_prod_name] = _pi.get(_prod_name, [])+[_parent_inst.instance_id]
+                    _parent_keys.add(_prod_name)
+                _parent_indexes.append(_pi)
+            # Preserve the legacy gate: parent-refs ride the channel (and seed
+            # child2parent) only when EVERY row of this input has ≥1 in-workflow
+            # parent — otherwise they were dropped pre-refactor, so keep dropping
+            # them to hold join behaviour byte-identical.
+            _all_have_parents = all(len(pi) > 0 for pi in _parent_indexes)
+            _indexes = []
+            for x, _pi in zip(to_write, _parent_indexes):
+                _row = dict(_pi) if _all_have_parents else {}
+                # Always carry the leaf's own canonical instance_id so the merge in
+                # in() fires and postIn mints the canonical (not Long) self-id.
+                _row[SELF_ID_KEY] = [x.instance_id]
+                _indexes.append(_row)
+            k = prod_name.split('_')[0] # in case this will be merged and has a "_1" suffix
+            _given_lineage[str(inputs_dir.relative_to(context.work_dir)/k)] = _indexes
+            # child2parent keys only on real parent prod_names — never SELF_ID_KEY.
+            if _all_have_parents and _parent_keys:
+                given_lineage_by_keys[k] = given_lineage_by_keys.get(k, set())|_parent_keys
         LINEAGE_FILE = "workflow.lineage_of_given.json"
         _lineage_file_data = {
             "lineage": _given_lineage,
