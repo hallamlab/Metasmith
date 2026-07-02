@@ -1316,7 +1316,16 @@ class WorkflowTask:
 
         for step in self.plan.steps:
             transform_key = step.transform.GetKey() or step.transform.name or ""
-            signature = str(step.transform._hash)
+            # R5 (F1 fix): the lineage signature captures BOTH the I/O type
+            # topology (_hash = model.hash) AND the transform's protocol-body
+            # identity (_protocol_source_hash = digest of the definition-file
+            # bytes). Topology alone let a protocol edit — or a different tool
+            # with the same in/out types — false-hit the cache with stale
+            # output. Folding the body digest in makes such an edit bust the
+            # cache. Computed once here; promote reads the resulting cache_key
+            # back from workflow.step_N.meta, so probe/promote stay symmetric.
+            protocol_sig = getattr(step.transform, "_protocol_source_hash", "") or ""
+            signature = f"{step.transform._hash}:{protocol_sig}"
 
             sorted_inputs: list[tuple[str, list[str]]] = []
             for dep in step.transform.model.requires:

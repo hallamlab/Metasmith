@@ -35,7 +35,7 @@ KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 # Hard-breaking version stamp on the lineage payload. Baked into every
 # lineage_key so a bump renders pre-v2 cache shards unreachable; the
 # sqlite metadata row in CacheStore mirrors it for runtime checks.
-LIN_PAYLOAD_VERSION = 2
+LIN_PAYLOAD_VERSION = 3
 
 
 def canonical_cbor(payload) -> bytes:
@@ -96,10 +96,17 @@ def lineage_key(
         The transform's stable identifier (e.g. `TransformInstance._key`).
         Embedded verbatim into the payload.
     signature:
-        Static signature of the transform's contract (e.g.
-        `TransformInstance._hash`). Captures the input/output type
-        topology + protocol identity so that two transforms with the
-        same name but different bodies key differently.
+        Static signature of the transform's contract. As of
+        LIN_PAYLOAD_VERSION 3 the caller builds this as
+        `f"{model._hash}:{_protocol_source_hash}"` (see
+        `workflow.py`) so it captures BOTH the input/output type
+        topology AND the transform's protocol-body identity (a digest
+        of the definition-file bytes). Two transforms that share an
+        in/out type topology but differ in body — or two entirely
+        different tools with the same declared types — therefore key
+        differently, and editing a transform's protocol busts the
+        cross-run cache instead of serving stale output. (Pre-v3 this
+        was topology-only, which false-hit on protocol edits.)
     sorted_inputs:
         Sequence of `(slot_key, instance_id_bytes)` pairs. The caller
         must sort by `slot_key` so the encoding is order-independent.

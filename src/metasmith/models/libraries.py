@@ -1727,6 +1727,14 @@ class TransformInstance:
     _path: Path = field(default_factory=Path)
     _key: str = ""
     _hash: int = -1
+    # R5 (F1 fix): stable digest of the transform's definition-file bytes.
+    # Folded into the lineage cache signature so that editing a transform's
+    # protocol (its command/logic) busts the cross-run cache even when the
+    # I/O type topology is unchanged. Kept SEPARATE from _key/_hash (which
+    # stay = model.key/model.hash for Nextflow process naming), decoupling
+    # cache correctness from nxf process identity. Empty string when the
+    # definition file was unreadable at Load time (degrades to topology-only).
+    _protocol_source_hash: str = ""
     def __post_init__(self):
         assert self.batch_size>0, self.model
         assert self.group_by in self.model.requires, self.model
@@ -1764,13 +1772,22 @@ class TransformInstance:
             tr = cls._last_loaded_transform
             tr.name = definition.stem
             tr._path = definition
-            # with open(definition) as f:
-            #     raw = "".join(f.readlines())
-            #     h, k = KeyGenerator.FromStr(raw, l=5)
-            #     tr._hash, tr._key = h, k
-            # use the transform model hash, 
-            # since updates to script should be able to use the existing nxf cache
+            # _key/_hash stay = model topology so that updates to a script
+            # still reuse the existing *Nextflow* work-dir cache (the process
+            # name is derived from these). Do NOT fold protocol identity here.
             tr._hash, tr._key = tr.model.hash, tr.model.key
+            # R5 (F1 fix): separately digest the definition-file bytes so the
+            # *lineage* cache signature (workflow.py) can distinguish two
+            # transforms that share an I/O type topology but differ in body.
+            # Content only (not path) so byte-identical definitions at
+            # different library roots still collide -> cross-run reuse holds.
+            try:
+                src_text = (parent_lib / definition).read_text(
+                    encoding="utf-8", errors="replace"
+                )
+                _, tr._protocol_source_hash = KeyGenerator.FromStr(src_text, l=12)
+            except OSError:
+                tr._protocol_source_hash = ""
             return cls._last_loaded_transform
         finally:
             sys.path = original_path_var
