@@ -1147,7 +1147,8 @@ def CollectResults(
     # legacy `_manifests/*.json` glob. The trace is authoritative post
     # C0/C0.5: every promote/hit event carries `consumes` (slot-keyed
     # parent ids) and per-file `ProducedFile.path` + `file_instance_id`.
-    # publishDir for `_manifests/` is still in place — C2's job to drop.
+    # The legacy `_manifests/` publishDir route is fully removed (S6);
+    # the trace is the sole reconstruction source.
     from .telemetry import TraceIndex
     trace_idx = TraceIndex.read(output_path.parent / "_metasmith" / "trace.jsonl")
     # trace.jsonl carries slot_ids (assigned by _compute_cache_decisions
