@@ -209,23 +209,11 @@ class TestWorkflowStaging:
             content = csv_file.read_text().strip()
             assert len(content) > 0, f"{csv_file.name} should not be empty"
 
-        # G2: each input CSV gets a sidecar at input_ids/<name> with
-        # `<path>\t<instance_id>` rows. agents.py reads this to route
-        # by instance_id without polluting inputs_dir for Nextflow.
+        # The old input_ids/ sidecar is gone: agents.py now derives
+        # path->instance_id from the given DataInstances (the record), so
+        # there is no separate sidecar copy and inputs_dir stays path-only.
         ids_dir = work_dir / "input_ids"
-        assert ids_dir.exists(), "input_ids/ sidecar dir should exist"
-        for csv_file in csv_files:
-            sidecar = ids_dir / csv_file.name
-            assert sidecar.exists(), f"sidecar missing for {csv_file.name}"
-            lines = [
-                ln for ln in sidecar.read_text().splitlines() if ln.strip()
-            ]
-            assert lines, f"{sidecar} should not be empty"
-            for ln in lines:
-                head, sep, instance_id = ln.partition("\t")
-                assert sep == "\t", f"sidecar row missing \\t: {ln!r}"
-                assert head, f"sidecar row missing path: {ln!r}"
-                assert instance_id, f"sidecar row missing instance_id: {ln!r}"
+        assert not ids_dir.exists(), "input_ids/ sidecar should no longer be written"
 
     def test_stage_lineage_json(self, simple_workflow_task, temp_dir):
         """workflow.lineage_of_given.json has parent hashes."""

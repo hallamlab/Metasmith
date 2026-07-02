@@ -1089,12 +1089,19 @@ def CollectResults(
     for namespace, tlib in tlibs.items():
         output.AddTypeLibrary(namespace=namespace, lib=tlib)
     inst_id2inst: dict[str, DataInstance] = {}
+    # path2iid replaces the old input_ids/ sidecar: the given DataInstances are
+    # themselves the record of <path> -> <instance_id> (the input CSVs write
+    # x.ResolvePath(); this maps the same path back to x.instance_id). Sourcing
+    # it from task.plan.given (+ step deps) removes the sidecar's separate copy.
+    path2iid: dict[str, str] = {}
     for inst in task.plan.given:
         inst_id2inst[inst.instance_id] = inst
+        path2iid[str(inst.ResolvePath())] = inst.instance_id
     for step in task.plan.steps:
         for insts in step.dependency_map.values():
             for inst in insts:
                 inst_id2inst[inst.instance_id] = inst
+                path2iid[str(inst.ResolvePath())] = inst.instance_id
 
     def _resolve_instance(dtype_key: str, instance_id: str | None = None):
         """Direct lookup by instance_id (G2). No dtype_key fallback.
@@ -1124,27 +1131,17 @@ def CollectResults(
     # below so `_resolve_instance_meta` on reload no longer falls back to the
     # legacy path+dtype derivation for promoted outputs.
     kv2path: dict[tuple[str, int], tuple[Path, dict, str|None, str|None]] = {}
-    # G2: sidecar in <work>/input_ids/<name> carries `<path>\t<instance_id>`
-    # so agents can route by instance_id without polluting `inputs_dir`
-    # (which Nextflow's Channel.splitCsv consumes as path-only CSVs).
-    ids_dir = inputs_dir.parent / "input_ids"
+    # The input CSVs are path-only (Nextflow's Channel.splitCsv consumes them);
+    # the instance_id that routes each path to its DataInstance comes from
+    # path2iid (built above from the given record), not a separate sidecar file.
     for in_manifest in inputs_dir.iterdir():
         k = in_manifest.name
-        sidecar = ids_dir / k
-        inst_id_by_path: dict[str, str] = {}
-        if sidecar.exists():
-            for line in sidecar.read_text().splitlines():
-                if not line.strip():
-                    continue
-                head, _, instance_id = line.partition("\t")
-                if instance_id:
-                    inst_id_by_path[head] = instance_id
         with open(in_manifest) as f:
             for l in f:
                 p = Path(l[:-1])
                 _hash = md5(str(p).encode()).hexdigest()
                 _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
-                kv2path[(k, _hash)] = p, {}, inst_id_by_path.get(str(p)), None
+                kv2path[(k, _hash)] = p, {}, path2iid.get(str(p)), None
     # C1: BFS over `_metasmith/trace.jsonl` populates the output side of
     # `kv2path` directly from `InvocationEvent.consumes`, replacing the
     # legacy `_manifests/*.json` glob. The trace is authoritative post

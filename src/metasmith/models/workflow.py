@@ -2006,16 +2006,11 @@ class WorkflowTask:
                     _path = x.ResolvePath()
                     _path2prod_name[_path] = v
                     f.write(f"{_path}\n")
-            # G2: sidecar carrying <path>\t<instance_id> for agents.py to
-            # route by instance_id. Lives outside `inputs_dir` so the
-            # Nextflow channel reader doesn't see it; `inputs_dir` stays
-            # path-CSV only (splitCsv at workflow.py:1476 is comma-default
-            # and would corrupt file() on tab-extended rows).
-            ids_sidecar = ensure_local_folder("input_ids") / p.name
-            with open(ids_sidecar, "w") as f:
-                for x in to_write:
-                    f.write(f"{x.ResolvePath()}\t{x.instance_id}\n")
-        
+            # Note: the old input_ids/ sidecar (<path>\t<instance_id>) is gone —
+            # agents.py now derives path->instance_id straight from the given
+            # DataInstances (the record), so there is no second copy to keep in
+            # sync. inputs_dir stays path-CSV only for Nextflow's splitCsv.
+
         _given_lineage = {}
         given_lineage_by_keys = {}
         for prod_name, to_write in _given_by_prod_name.items():
