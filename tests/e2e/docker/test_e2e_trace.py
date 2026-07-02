@@ -389,37 +389,18 @@ class TestTraceMultiStepDiamond:
         )
         return run_stub_workflow(task, tmp_path / "ws", docker_image)
 
-    @pytest.mark.xfail(
-        reason="Bug L / I11 — intermediate-step `consumes` is step-aggregated "
-        "(spec.batches collapses to 1 entry for steps downstream of step 1 "
-        "since dependency_map uses 1 archetype per intermediate slot). "
-        "Multi-hop trace walks fan out cartesian across siblings. Resolution "
-        "requires runtime parent capture (read Nextflow .command.in or "
-        "Orchestrator-emitted sidecar). See plans/lineage-quadrant-audit.md.",
-        strict=False,
-    )
     def test_final_output_to_root(self, result_lib):
         """Trace bins->reads (deep transitive) yields 3 pairs per output type."""
         for bin_type in ["mock::metabat2_bins", "mock::maxbin2_bins", "mock::concoct_bins"]:
             pairs = list(result_lib.Trace(bin_type, "mock::reads"))
             assert len(pairs) == 3, f"{bin_type}->reads: expected 3, got {len(pairs)}"
 
-    @pytest.mark.xfail(
-        reason="Bug L / I11 — intermediate-step `consumes` is step-aggregated. "
-        "See plans/lineage-quadrant-audit.md.",
-        strict=False,
-    )
     def test_final_output_to_given_input(self, result_lib):
         """Trace bins->assembly (direct given parent) yields 3 pairs per output type."""
         for bin_type in ["mock::metabat2_bins", "mock::maxbin2_bins", "mock::concoct_bins"]:
             pairs = list(result_lib.Trace(bin_type, "mock::assembly"))
             assert len(pairs) == 3, f"{bin_type}->assembly: expected 3, got {len(pairs)}"
 
-    @pytest.mark.xfail(
-        reason="Bug L / I11 — intermediate-step `consumes` is step-aggregated. "
-        "See plans/lineage-quadrant-audit.md.",
-        strict=False,
-    )
     def test_different_bin_types_same_count(self, result_lib):
         """All 3 binner outputs produce the same number of results."""
         counts = {}

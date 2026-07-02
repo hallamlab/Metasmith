@@ -1186,13 +1186,67 @@ def CollectResults(
             return bytes.fromhex(piid).decode("utf-8")
         except (ValueError, UnicodeDecodeError):
             return None
-    _slot_to_event: dict[str, "object"] = {}
+    # Map every produced slot_id / file_instance_id to ALL events that
+    # produced it. A slot_id is shared across every batch of a step (the
+    # intermediate bam of a 3-sample diamond has one slot_id but three
+    # producer events, one per sample), so a single-winner map collapses
+    # multi-batch producers to the first event — the root of Bug L/I11: a
+    # downstream task that references the bam by slot_id would always walk
+    # back into sample 0's alignment. Keep the full producer list and
+    # disambiguate per walk-branch by shared given-ancestry (below).
+    _slot_to_events: dict[str, list] = {}
+    def _add_producer(key, ev):
+        if not key:
+            return
+        lst = _slot_to_events.setdefault(key, [])
+        if ev not in lst:
+            lst.append(ev)
     for _ev in trace_idx.events:
         for _pf in _ev.produces:
-            if _pf.slot_id:
-                _slot_to_event.setdefault(_pf.slot_id, _ev)
-            if _pf.file_instance_id:
-                _slot_to_event.setdefault(_pf.file_instance_id, _ev)
+            _add_producer(_pf.slot_id, _ev)
+            _add_producer(_pf.file_instance_id, _ev)
+
+    def _event_given_ids(ev) -> set[str]:
+        """Given-leaf instance_ids directly referenced by `ev.consumes`.
+
+        A "given" here is a consumes id that resolves to a DataInstance
+        but is produced by no event (a true leaf) — that set is the
+        event's *sample identity*. The diamond's alignment:i and
+        binner:i both reference assembly_i directly, so intersecting
+        these sets tells us which bam producer feeds which binner
+        without any runtime capture. Bridged slot/file ids (added to
+        inst_id2inst above) are produced, so they're excluded.
+        """
+        out: set[str] = set()
+        for _vals in ev.consumes.values():
+            for _piid in _vals:
+                for _key in (_try_decode(_piid), _piid):
+                    if _key and _key in inst_id2inst and _key not in _slot_to_events:
+                        out.add(_key)
+                        break
+        return out
+
+    def _producers_for(piid, root_givens):
+        """Producer events for a consumes id, disambiguated by sample.
+
+        When a slot_id names multiple producers (one per batch), keep
+        only those sharing a given ancestor with the walk root. If none
+        share one — a wildcard/cartesian join, or a root with no direct
+        given to key on — fall back to the first producer (legacy
+        single-winner behaviour), so already-correct walks don't shift.
+        Returns None when the id names no producer (it's a given leaf).
+        """
+        for _key in (_try_decode(piid), piid):
+            if _key and _key in _slot_to_events:
+                cands = _slot_to_events[_key]
+                if len(cands) <= 1:
+                    return list(cands)
+                if root_givens:
+                    filtered = [e for e in cands if _event_given_ids(e) & root_givens]
+                    if filtered:
+                        return filtered
+                return [cands[0]]
+        return None
 
     def _seed_given_lineage(inst, lind: dict[str, list[int]]) -> None:
         """Walk `parent_lib.parents` transitively from a given DataInstance.
@@ -1247,6 +1301,10 @@ def CollectResults(
             lind.setdefault(root_pf.dtype_key, []).append(
                 int(md5(str(abs_p).encode()).hexdigest()[:15], 16)
             )
+        # The walk root's sample identity: the given leaves its producing
+        # event directly consumes. Every ancestor of root_pf shares it,
+        # so it disambiguates multi-producer slot references (Bug L/I11).
+        root_givens = _event_given_ids(root_ev)
         seen_evs: set[str] = {root_ev.task_hash}
         frontier: list = []
         # Seed frontier from root_ev's consumes (without re-adding its
@@ -1254,17 +1312,12 @@ def CollectResults(
         # plus its siblings).
         for parent_iids in root_ev.consumes.values():
             for piid in parent_iids:
-                decoded = _try_decode(piid)
-                parent_ev = None
-                for key in (decoded, piid):
-                    if key and key in _slot_to_event:
-                        parent_ev = _slot_to_event[key]
-                        break
-                if parent_ev is not None:
-                    frontier.append(parent_ev)
+                parent_evs = _producers_for(piid, root_givens)
+                if parent_evs:
+                    frontier.extend(parent_evs)
                     continue
                 given = None
-                for key in (decoded, piid):
+                for key in (_try_decode(piid), piid):
                     if key and key in inst_id2inst:
                         given = inst_id2inst[key]
                         break
@@ -1286,18 +1339,14 @@ def CollectResults(
                     )
                 for parent_iids in ev.consumes.values():
                     for piid in parent_iids:
-                        decoded = _try_decode(piid)
-                        parent_ev = None
-                        for key in (decoded, piid):
-                            if key and key in _slot_to_event:
-                                parent_ev = _slot_to_event[key]
-                                break
-                        if parent_ev is not None:
-                            if parent_ev.task_hash not in seen_evs:
-                                nxt.append(parent_ev)
+                        parent_evs = _producers_for(piid, root_givens)
+                        if parent_evs:
+                            for pe in parent_evs:
+                                if pe.task_hash not in seen_evs:
+                                    nxt.append(pe)
                             continue
                         given = None
-                        for key in (decoded, piid):
+                        for key in (_try_decode(piid), piid):
                             if key and key in inst_id2inst:
                                 given = inst_id2inst[key]
                                 break
