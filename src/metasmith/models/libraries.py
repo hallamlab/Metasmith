@@ -554,28 +554,70 @@ class DataInstanceLibrary:
         assert path not in self.manifest, f"[{path}] already added"
         type_model = self.GetType(dtype) # check if datatype exists
         self.manifest[path] = dtype
-        # S2: mint a fresh leaf instance_id at AddItem time so that two
-        # calls (even with identical (path, dtype) — e.g. across two
-        # library builds at the same location) yield distinct ids. The
-        # id is multihash(blake3, uuid4 || time_ns), no path/dtype input.
+        # R1: mint the leaf instance_id at AddItem time. When the file is
+        # present the id is derived from (content digest ⊕ relative path)
+        # so two runs on byte-identical inputs at the same layout mint the
+        # same id → cross-run cache reuse, while distinct files that share
+        # bytes stay distinct; when the file is absent it falls back to a
+        # unique-per-call random id (legacy S2 behaviour). See _mint_leaf_id.
         self._mint_leaf_id(path)
         self.AddParentsTo(path, [self.Get(p) for p in parents])
         self._invalidate_endpoint_cache()
         return path
 
     def _mint_leaf_id(self, path: Path) -> str:
-        """Create a unique-per-call leaf instance_id for `path`.
+        """Create a leaf instance_id for `path`.
 
-        Uses uuid4 + time_ns as the randomness source and the project's
-        multihash key encoding (see metasmith.caching.keys). The id is
-        stored in self.instance_meta and returned.
+        Cross-run reentrancy (R1): when the resolved path is a readable
+        regular file at mint time, the id is derived from the file's
+        content digest AND its library-relative path —
+        `multihash(blake3(file_bytes) || relpath)`. Two independent runs
+        that lay the same input bytes at the same relative path mint the
+        *same* leaf id, so their downstream cache_keys match and the second
+        run resumes from the cache without a manual `metasmith data
+        import-library` bridge.
+
+        The relative path is folded in (not content alone) so that two
+        DISTINCT inputs which happen to share bytes — e.g. N empty/degenerate
+        files, or two samples with byte-identical reads — keep DISTINCT
+        identities. Pure content-addressing would collapse them to one leaf,
+        which both corrupts fan-out (N inputs → 1 identity) and re-triggers
+        the solver's O(n^2) id-collision path. Content is still part of the
+        key, so a different file reusing a path can never cause a false hit.
+
+        When the file is absent/unreadable at mint time (remote or lazily
+        materialized inputs), we fall back to the legacy unique-per-call id
+        (uuid4 + time_ns via the multihash encoding). Such leaves get no
+        cross-run reuse — acceptable, and it preserves the old behaviour
+        exactly for the no-file case.
+
+        Set METASMITH_LEAF_RANDOM=1 to force the legacy random id even when
+        the file is present (opt-out kill-switch). The id is stored in
+        self.instance_meta and returned. `origin` stays "leaf" either way —
+        a content-addressed input is still a user-supplied leaf.
         """
+        import os
         import uuid
 
-        from ..caching.keys import multihash_key
+        from ..caching.keys import (
+            content_multihash_key,
+            multihash_key,
+        )
 
-        raw = uuid.uuid4().bytes + time.time_ns().to_bytes(16, "big", signed=False)
-        key = multihash_key(raw)
+        key = None
+        if not os.environ.get("METASMITH_LEAF_RANDOM"):
+            abs_path = path if path.is_absolute() else self.location / path
+            try:
+                if abs_path.is_file():
+                    # content digest ⊕ relative path → stable across runs
+                    # yet distinct per (path, content) pair.
+                    content = content_multihash_key(abs_path)
+                    key = multihash_key(content + str(path).encode("utf-8"))
+            except OSError:
+                key = None
+        if key is None:
+            raw = uuid.uuid4().bytes + time.time_ns().to_bytes(16, "big", signed=False)
+            key = multihash_key(raw)
         self.instance_meta[path] = {
             "instance_id": key.hex(),
             "origin": "leaf",

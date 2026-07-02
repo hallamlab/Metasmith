@@ -62,6 +62,27 @@ def multihash_key(payload: bytes) -> bytes:
     return KEY_PREFIX + _digest(payload)
 
 
+def content_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
+    """Return the multihash key over a file's raw bytes, streamed.
+
+    Same encoding as `multihash_key(open(path,'rb').read())` but reads in
+    `chunk_size` chunks so large inputs never fully materialize in memory.
+    Used for content-addressed *leaf* identity: two independent runs that
+    see byte-identical input files mint the same leaf instance_id, so their
+    downstream cache_keys match and the second run resumes from the cache
+    (cross-run reentrancy). The caller is responsible for confirming the
+    path is a readable regular file; OSError propagates.
+    """
+    hasher = blake3()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
+
+
 def lineage_key(
     transform_key: str,
     signature: str,

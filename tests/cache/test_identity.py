@@ -6,10 +6,11 @@ across Python versions and dict orderings, and the cross-workspace
 identity preservation contract that `metasmith data import-library`
 relies on.
 
-Coverage: G1 (lineage key shape + multihash prefix), G8 (leaf AddItem
-unique), G9 (lineage-only identity is workspace-independent), G10
-(cross-workspace import preserves identity), S1 (canonical CBOR
-stability).
+Coverage: G1 (lineage key shape + multihash prefix), R1 (leaf AddItem
+content-addressed when the file is present → cross-run stable; unique
+random fallback when absent), G9 (lineage-only identity is
+workspace-independent), G10 (cross-workspace import preserves identity),
+S1 (canonical CBOR stability).
 """
 
 from __future__ import annotations
@@ -60,14 +61,92 @@ def test_key_carries_multihash_prefix():
 # ---------------------------------------------------------------------------
 
 
-def test_addItem_unique_per_call(tmp_path):
-    """G8: leaf instance_ids are minted per AddItem call, not path-derived.
+def test_addItem_content_addressed_when_file_present(tmp_path):
+    """R1: a present leaf file is content-addressed → stable across builds.
 
-    Two independent library builds — same location, same (path, dtype) —
-    produce DataInstances with distinct `instance_id`s, because each
-    AddItem call mints a fresh `multihash(blake3, uuid4 || time_ns)`.
-    The discriminating fact vs main is that identity used to be a pure
-    function of (path, dtype, lib_key); under S2 it is not.
+    This is the cross-run reentrancy contract. Two independent library
+    builds — same location, same (path, dtype), same file *bytes* —
+    produce DataInstances with IDENTICAL `instance_id`s, because AddItem
+    mints `multihash(blake3(file_bytes))` when the file is readable. That
+    byte-stability is exactly what lets a second run's cache_keys match
+    the first run's and resume from the cache with no import-library step.
+
+    (Supersedes the pre-R1 `test_addItem_unique_per_call`, which pinned
+    the old always-random G8 model; uniqueness now holds only for the
+    absent-file fallback — see the next test.)
+    """
+    from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
+    from metasmith.models.solver import Endpoint
+
+    types = DataTypeLibrary()
+    types["seed"] = Endpoint(properties={"seed"})
+    tpath = tmp_path / "types.yml"
+    types.Save(tpath)
+
+    def _build_once(payload: str) -> str:
+        lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
+        lib.Purge()
+        lib.AddTypeLibrary(tpath, namespace="cf")
+        (lib.location / "a.txt").write_text(payload, encoding="utf-8")
+        lib.AddItem(Path("a.txt"), "cf::seed")
+        return lib.Get(Path("a.txt")).instance_id
+
+    id1 = _build_once("payload\n")
+    id2 = _build_once("payload\n")
+    assert id1 == id2, (
+        "same input bytes produced different leaf ids; content-addressed "
+        "leaves must be byte-stable across runs for cross-run reentrancy"
+    )
+    # multihash-shaped
+    assert bytes.fromhex(id1)[:2] == b"\x1e\x20"
+
+    # Different bytes → different id (same path, so content participates).
+    id3 = _build_once("DIFFERENT\n")
+    assert id3 != id1
+
+
+def test_addItem_same_bytes_distinct_paths_are_distinct(tmp_path):
+    """R1: identical bytes at DIFFERENT relative paths mint DISTINCT ids.
+
+    The leaf id folds the library-relative path into the content digest,
+    so two distinct inputs that happen to share bytes (e.g. N empty files,
+    or two samples with byte-identical reads) keep distinct identities.
+    Pure content-addressing would collapse them to one leaf — corrupting
+    fan-out and re-triggering the solver's O(n^2) id-collision path. This
+    is the guard for that regression.
+    """
+    from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
+    from metasmith.models.solver import Endpoint
+
+    types = DataTypeLibrary()
+    types["seed"] = Endpoint(properties={"seed"})
+    tpath = tmp_path / "types.yml"
+    types.Save(tpath)
+
+    lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
+    lib.Purge()
+    lib.AddTypeLibrary(tpath, namespace="cf")
+    # two files, identical (empty) bytes, different relative paths
+    (lib.location / "a.txt").write_text("", encoding="utf-8")
+    (lib.location / "b.txt").write_text("", encoding="utf-8")
+    lib.AddItem(Path("a.txt"), "cf::seed")
+    lib.AddItem(Path("b.txt"), "cf::seed")
+
+    id_a = lib.Get(Path("a.txt")).instance_id
+    id_b = lib.Get(Path("b.txt")).instance_id
+    assert id_a != id_b, (
+        "identical-byte files at different paths collapsed to one leaf id; "
+        "the relative path must participate in leaf identity"
+    )
+
+
+def test_addItem_unique_per_call_when_file_absent(tmp_path):
+    """R1: the absent-file fallback preserves the legacy unique-per-call id.
+
+    When no readable file exists at the path at AddItem time (remote /
+    lazily materialized inputs), the leaf id falls back to the old
+    `multihash(blake3, uuid4 || time_ns)` random shape — so two builds
+    still differ, and those leaves simply get no cross-run cache reuse.
     """
     from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
     from metasmith.models.solver import Endpoint
@@ -81,15 +160,15 @@ def test_addItem_unique_per_call(tmp_path):
         lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
         lib.Purge()
         lib.AddTypeLibrary(tpath, namespace="cf")
-        (lib.location / "a.txt").write_text("payload\n", encoding="utf-8")
+        # note: no file written at a.txt → absent-file random fallback
         lib.AddItem(Path("a.txt"), "cf::seed")
         return lib.Get(Path("a.txt")).instance_id
 
     id1 = _build_once()
     id2 = _build_once()
     assert id1 != id2, (
-        "two independent AddItem calls produced the same leaf id; "
-        "leaf identity should be unique-per-call (not derived from path)"
+        "two absent-file AddItem calls produced the same leaf id; the "
+        "fallback should stay unique-per-call"
     )
 
 
