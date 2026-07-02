@@ -11,9 +11,9 @@ import sqlite3
 
 import pytest
 
-from metasmith.caching.keys import LIN_PAYLOAD_VERSION
+from metasmith.caching.keys import CACHE_KEY_VERSION
 from metasmith.caching.store import (
-    LIN_PAYLOAD_VERSION_KEY,
+    CACHE_EPOCH_KEY,
     SHARD_LAYOUT_VERSION,
     SHARD_LAYOUT_VERSION_KEY,
     TRACE_SESSION_COUNTER_KEY,
@@ -36,8 +36,8 @@ def test_open_stamps_lin_and_shard_versions(tmp_path):
     cache_root = tmp_path / "cache"
     store = CacheStore.open(cache_root)
     try:
-        assert _read_meta(cache_root, LIN_PAYLOAD_VERSION_KEY) == str(
-            LIN_PAYLOAD_VERSION
+        assert _read_meta(cache_root, CACHE_EPOCH_KEY) == str(
+            CACHE_KEY_VERSION
         )
         assert _read_meta(cache_root, SHARD_LAYOUT_VERSION_KEY) == str(
             SHARD_LAYOUT_VERSION
@@ -77,30 +77,35 @@ def test_open_upgrades_stale_lineage_version(tmp_path, caplog):
     )
     conn.execute(
         "INSERT INTO schema_meta(k, v) VALUES (?, ?)",
-        (LIN_PAYLOAD_VERSION_KEY, "1"),
+        (CACHE_EPOCH_KEY, "1"),
     )
     conn.commit()
     conn.close()
 
     store = CacheStore.open(cache_root)
     try:
-        assert _read_meta(cache_root, LIN_PAYLOAD_VERSION_KEY) == str(
-            LIN_PAYLOAD_VERSION
+        assert _read_meta(cache_root, CACHE_EPOCH_KEY) == str(
+            CACHE_KEY_VERSION
         )
     finally:
         store.close()
 
 
 def test_lineage_key_version_baked_in(tmp_path):
-    """A bump of LIN_PAYLOAD_VERSION must alter the cache key bytes."""
+    """A bump of CACHE_KEY_VERSION must alter the cache key bytes.
+
+    The cache-key epoch — not the on-wire LIN_PAYLOAD_VERSION — is what is
+    folded into the lineage payload, so it is the constant whose bump must
+    invalidate old shards.
+    """
     from metasmith.caching import keys as keys_mod
     from metasmith.caching.keys import lineage_key
 
     base = lineage_key("tr.x", "sig", [("a", b"id")])
-    original = keys_mod.LIN_PAYLOAD_VERSION
+    original = keys_mod.CACHE_KEY_VERSION
     try:
-        keys_mod.LIN_PAYLOAD_VERSION = original + 1
+        keys_mod.CACHE_KEY_VERSION = original + 1
         bumped = lineage_key("tr.x", "sig", [("a", b"id")])
     finally:
-        keys_mod.LIN_PAYLOAD_VERSION = original
+        keys_mod.CACHE_KEY_VERSION = original
     assert base != bumped

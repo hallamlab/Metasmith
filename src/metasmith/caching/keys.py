@@ -32,10 +32,27 @@ BLAKE3_MULTIHASH_CODE = 0x1E
 BLAKE3_DIGEST_LEN = 32  # 256-bit
 KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 
-# Hard-breaking version stamp on the lineage payload. Baked into every
-# lineage_key so a bump renders pre-v2 cache shards unreachable; the
-# sqlite metadata row in CacheStore mirrors it for runtime checks.
-LIN_PAYLOAD_VERSION = 3
+# Cache-key epoch. Baked into every lineage_key so a bump renders pre-epoch
+# cache shards unreachable; the sqlite metadata row in CacheStore mirrors it
+# for runtime checks. Bumped 2 -> 3 in R5 when the lineage signature began
+# folding the transform's protocol-body identity (F1 fix).
+#
+# DELIBERATELY SEPARATE from LIN_PAYLOAD_VERSION below: the cache epoch tracks
+# cache-key *semantics*, whereas the wire version tracks the Nextflow-channel
+# envelope *shape*. They were one constant until R5; bumping it for the F1
+# cache-key change silently broke the on-wire lin envelope, whose Groovy
+# emitter (`workflow.py` -> `Orchestrator.JsonforEcho([v:2, ...])`) hardcodes
+# the wire version and did not move in lockstep. Keeping them independent
+# means a future cache-semantics bump never again desyncs the wire protocol.
+CACHE_KEY_VERSION = 3
+
+# On-wire LinPayload envelope version (models/lineage.py). Tracks the SHAPE of
+# the `{"v": N, "entries": <map>}` value carried on the Nextflow channel, which
+# has NOT changed since v2. Must stay in lockstep with the Groovy emitter's
+# hardcoded `[v:2, ...]` in workflow.py; do not bump this for cache-key changes
+# (bump CACHE_KEY_VERSION instead) — only when the envelope shape itself changes
+# (in which case update the Groovy emitter too).
+LIN_PAYLOAD_VERSION = 2
 
 
 def canonical_cbor(payload) -> bytes:
@@ -97,7 +114,7 @@ def lineage_key(
         Embedded verbatim into the payload.
     signature:
         Static signature of the transform's contract. As of
-        LIN_PAYLOAD_VERSION 3 the caller builds this as
+        CACHE_KEY_VERSION 3 the caller builds this as
         `f"{model._hash}:{_protocol_source_hash}"` (see
         `workflow.py`) so it captures BOTH the input/output type
         topology AND the transform's protocol-body identity (a digest
@@ -120,7 +137,7 @@ def lineage_key(
     """
     payload = canonical_cbor(
         {
-            "v": LIN_PAYLOAD_VERSION,
+            "v": CACHE_KEY_VERSION,
             "tk": transform_key,
             "sig": signature,
             "inputs": [

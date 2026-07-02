@@ -24,16 +24,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from .keys import LIN_PAYLOAD_VERSION
+from .keys import CACHE_KEY_VERSION
 from ..logging import Log
 
 
 SCHEMA_VERSION = "1"
 
-# Sqlite schema_meta keys — bumping LIN_PAYLOAD_VERSION here renders old
-# shards unreachable (their cache_keys no longer collide). The session
-# counter feeds trace.jsonl rotation: each compile reads + increments.
-LIN_PAYLOAD_VERSION_KEY = "lineage_payload_version"
+# Sqlite schema_meta keys — bumping CACHE_KEY_VERSION renders old shards
+# unreachable (their cache_keys no longer collide). The session counter feeds
+# trace.jsonl rotation: each compile reads + increments. The key string is
+# kept as "lineage_payload_version" for backward-compat with DBs stamped
+# before the cache-epoch / wire-version split (R5); the stored VALUE now
+# tracks CACHE_KEY_VERSION, the cache epoch.
+CACHE_EPOCH_KEY = "lineage_payload_version"
 TRACE_SESSION_COUNTER_KEY = "trace_session_counter"
 SHARD_LAYOUT_VERSION_KEY = "shard_layout_version"
 SHARD_LAYOUT_VERSION = 2  # v2: <shard>/logs/.command.{sh,out,err,log} captured
@@ -114,7 +117,7 @@ class CacheStore:
         # value; the warn below fires when the stored value is older.
         conn.execute(
             "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
-            (LIN_PAYLOAD_VERSION_KEY, str(LIN_PAYLOAD_VERSION)),
+            (CACHE_EPOCH_KEY, str(CACHE_KEY_VERSION)),
         )
         conn.execute(
             "INSERT OR IGNORE INTO schema_meta(k, v) VALUES (?, ?)",
@@ -126,18 +129,18 @@ class CacheStore:
         )
         row = conn.execute(
             "SELECT v FROM schema_meta WHERE k = ?",
-            (LIN_PAYLOAD_VERSION_KEY,),
+            (CACHE_EPOCH_KEY,),
         ).fetchone()
         stored = int(row[0]) if row is not None else 0
-        if stored < LIN_PAYLOAD_VERSION:
+        if stored < CACHE_KEY_VERSION:
             Log.Warn(
-                f"lin payload v{LIN_PAYLOAD_VERSION} supersedes v{stored}; "
+                f"cache epoch v{CACHE_KEY_VERSION} supersedes v{stored}; "
                 f"old shards at {cache_root} are unreachable. "
                 f"Run `msm cache gc --delete` to reclaim."
             )
             conn.execute(
                 "UPDATE schema_meta SET v = ? WHERE k = ?",
-                (str(LIN_PAYLOAD_VERSION), LIN_PAYLOAD_VERSION_KEY),
+                (str(CACHE_KEY_VERSION), CACHE_EPOCH_KEY),
             )
         conn.commit()
         return cls(cache_root, conn)
