@@ -131,6 +131,37 @@ def test_perturbed_inputs_get_distinct_identity(tmp_path, virtual_runtime):
     )
 
 
+def test_leaf_id_portable_across_abs_and_rel_path(tmp_path, virtual_runtime):
+    """F2: the leaf id folds the LIBRARY-RELATIVE path, not the raw argument.
+
+    Two independent runs may add the same file via a relative path on one host
+    and an absolute path (with a different home root) on another. Folding the
+    raw `str(path)` made their leaf ids diverge → a spurious cross-run /
+    cross-host cache miss. The id must be identical as long as the file's
+    library-relative location and bytes match.
+    """
+    from metasmith.models.libraries import DataInstanceLibrary
+
+    types_path = build_types_library(tmp_path, TYPE_NAMES)
+
+    def _leaf_id(where: str, use_absolute_arg: bool) -> str:
+        lib = DataInstanceLibrary(tmp_path / where)
+        lib.Purge()
+        lib.AddTypeLibrary(types_path, namespace="cf")
+        (lib.location / "sub").mkdir(parents=True, exist_ok=True)
+        (lib.location / "sub" / "data.txt").write_text("payload\n", encoding="utf-8")
+        arg = (lib.location / "sub" / "data.txt") if use_absolute_arg else Path("sub/data.txt")
+        lib.AddItem(arg, "cf::seed")
+        return lib.Get(arg).instance_id
+
+    id_rel = _leaf_id("relroot.xgdb", use_absolute_arg=False)
+    id_abs = _leaf_id("a/deeper/absroot.xgdb", use_absolute_arg=True)
+    assert id_rel == id_abs, (
+        "same library-relative path + bytes minted different leaf ids for "
+        "relative vs absolute AddItem arguments; cross-host reuse would miss"
+    )
+
+
 def test_leaf_random_optout_disables_cross_run(tmp_path, virtual_runtime):
     """R2/R3: METASMITH_LEAF_RANDOM=1 restores legacy random leaf ids.
 

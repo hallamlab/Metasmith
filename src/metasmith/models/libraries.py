@@ -607,12 +607,24 @@ class DataInstanceLibrary:
         key = None
         if not os.environ.get("METASMITH_LEAF_RANDOM"):
             abs_path = path if path.is_absolute() else self.location / path
+            # R5 (F2 fix): fold the LIBRARY-RELATIVE path, not the raw argument.
+            # Two runs may add the same file via an absolute path on one host
+            # and a relative path on another (or with different home roots);
+            # folding str(path) verbatim made their leaf ids diverge → cross-run
+            # / cross-host cache miss. Normalizing to the path relative to the
+            # library location makes the id host-independent while still
+            # distinguishing distinct in-library paths. Falls back to the raw
+            # path for inputs that live outside the library root.
+            try:
+                fold_path = abs_path.relative_to(self.location)
+            except ValueError:
+                fold_path = path
             try:
                 if abs_path.is_file():
-                    # content digest ⊕ relative path → stable across runs
-                    # yet distinct per (path, content) pair.
+                    # content digest ⊕ library-relative path → stable across
+                    # runs/hosts yet distinct per (path, content) pair.
                     content = content_multihash_key(abs_path)
-                    key = multihash_key(content + str(path).encode("utf-8"))
+                    key = multihash_key(content + str(fold_path).encode("utf-8"))
             except OSError:
                 key = None
         if key is None:
