@@ -78,6 +78,45 @@ _assert_real_relays() {
     return 0
 }
 
+# Refuse to bake a stale pip artifact into the image or conda package. dist/ is
+# produced once by -bp and then frozen; -bd re-tags the image from the *live*
+# source tree while installing whatever sdist sits in dist/, and -bc packages
+# that same sdist. So an edit between -bp and -bd/-bc would ship an artifact
+# whose embedded build hash disagrees with the image tag (and with the conda
+# build). Recompute the live source hash and require a matching sdist in dist/.
+# Override with MSM_SKIP_DIST_CHECK=1.
+_assert_dist_matches_source() {
+    [ -n "$MSM_SKIP_DIST_CHECK" ] && {
+        echo "MSM_SKIP_DIST_CHECK set — skipping dist/source hash check"
+        return 0
+    }
+    local live_hash live_full want
+    live_hash=$(PYTHONPATH="$HERE/src" python -m metasmith._build_hash 2>/dev/null)
+    if [ -z "$live_hash" ]; then
+        echo "ERROR: could not compute the source build hash (is the metasmith env active?)"
+        return 1
+    fi
+    live_full="${VER}+${live_hash}"
+    want="$HERE/dist/$NAME-$live_full.tar.gz"
+    if [ ! -f "$want" ]; then
+        echo ""
+        echo "ERROR: dist/ does not match the current source tree (build hash drift)."
+        echo "  expected sdist: dist/$NAME-$live_full.tar.gz"
+        echo "  live source hash: $live_hash   (version $VER)"
+        echo "  present in dist/:"
+        ( ls -1 "$HERE"/dist/*.tar.gz 2>/dev/null || echo "    (no sdist present)" ) | sed 's#.*/#    #'
+        echo ""
+        echo "  The pip artifacts are stale relative to the source, so the image would be"
+        echo "  tagged with a hash that does not match the code baked into it. Rebuild:"
+        echo "    $HERE/dev.sh -bp"
+        echo ""
+        echo "  Override (NOT recommended) by setting MSM_SKIP_DIST_CHECK=1."
+        return 1
+    fi
+    echo "dist/ matches source: $NAME-$live_full.tar.gz"
+    return 0
+}
+
 # CONDA=conda
 CONDA=mamba # https://mamba.readthedocs.io/en/latest/mamba-installation.html#mamba-install
 echo image: $DOCKER_IMAGE:$DOCKER_TAG
@@ -156,6 +195,7 @@ case $1 in
     ;;
     -bc) # conda
         # requires built pip package
+        _assert_dist_matches_source || exit 1
         rm -r $HERE/conda_build
         python ./conda_recipe/compile_recipe.py
         $HERE/conda_recipe/call_build.sh
@@ -190,6 +230,10 @@ case $1 in
         FULL_VER="$(_compute_full_ver)"
         DOCKER_TAG="${FULL_VER//+/-}"
         echo image: $DOCKER_IMAGE:$DOCKER_TAG
+
+        # the sdist the Dockerfile installs must match the tag we just computed,
+        # else the image's contents and its tag (and the conda build) disagree
+        _assert_dist_matches_source || exit 1
 
         # build the docker container locally
         export DOCKER_BUILDKIT=1
