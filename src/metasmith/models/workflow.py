@@ -2073,6 +2073,22 @@ class WorkflowTask:
             produced_k = ", ".join(produced_k)
             wf_main.append(f"k = [{produced_k}]")
 
+            # T2: per-produced-slot identity threaded into o.post so the
+            # on-channel id becomes md5("<slot_id>::<filename>"), byte-identical
+            # to the canonical file_instance_id (LinPayload.mint_file_id).
+            # Order matches produced_names: get_io_signature iterates
+            # step.transform.model.produces, so (branch_idx, dep) enumeration
+            # here is 1:1 with the produced streams/names.
+            _out_ids = (decision or {}).get("out_instance_ids", {})
+            produced_slot_ids = [
+                _out_ids.get((dep.key, branch_idx), "")
+                for branch_idx, dep_group in enumerate(step.transform.model.produces)
+                for dep in dep_group
+            ]
+            slot_ids_literal = (
+                "[" + ", ".join(f"'{s}'" for s in produced_slot_ids) + "]"
+            )
+
             if is_hit:
                 # S3 — synthetic Channel.of for cache hits. Replace the
                 # process call with N channels (one per produced dep,
@@ -2119,12 +2135,12 @@ class WorkflowTask:
                 if len(produced_names) == 1:
                     wf_main.append(
                         f"_{produced_names[0]} = "
-                        f"(o.post(o.asStreams({cached_channel_var}), k))[0]"
+                        f"(o.post(o.asStreams({cached_channel_var}), k, {slot_ids_literal}))[0]"
                     )
                 else:
                     wf_main.append(
                         f"({produced}) = "
-                        f"o.post(o.asStreams({cached_channel_var}), k)"
+                        f"o.post(o.asStreams({cached_channel_var}), k, {slot_ids_literal})"
                     )
                 # Final-step merging still applies if the cached step is
                 # the producer of a target.
@@ -2181,11 +2197,11 @@ class WorkflowTask:
                 # route through `o.asStreams(...)` (defined in Orchestrator.groovy,
                 # which is loaded via -lib and not subject to strict syntax).
                 wf_main.append(
-                    f"_{produced_names[0]} = (o.post(o.asStreams({process_name}({used})), k))[0]"
+                    f"_{produced_names[0]} = (o.post(o.asStreams({process_name}({used})), k, {slot_ids_literal}))[0]"
                 )
             else:
                 wf_main.append(
-                    f"({produced}) = o.post(o.asStreams({process_name}({used})), k)"
+                    f"({produced}) = o.post(o.asStreams({process_name}({used})), k, {slot_ids_literal})"
                 )
             if step.order in final_steps_for_merging:
                 for e in final_steps_for_merging[step.order]:

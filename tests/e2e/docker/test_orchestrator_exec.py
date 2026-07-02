@@ -147,8 +147,15 @@ workflow {
             idx = json.loads(idx_str)
             assert "inp" in idx
 
-    def test_post_hash_15chars(self, nxf_runner):
-        """Hash in post is md5[0..14] parsed as long."""
+    def test_post_id_is_md5_composite(self, nxf_runner):
+        """post() id is the md5 of "<slot_id>::<filename>" (a hex String).
+
+        This is the on-channel form of the canonical file_instance_id
+        (LinPayload.mint_file_id). With no slot_ids supplied the channel
+        name stands in for the slot_id, so the id is md5("x::test.nf").
+        """
+        import hashlib
+
         result = nxf_runner.run('''
 
 
@@ -170,8 +177,36 @@ workflow {
         NxfTestRunner.assert_nxf_ok(result)
         lines = [l for l in result.stdout.split("\n") if l.startswith("HASH:")]
         assert len(lines) == 1
-        # Verify it's a Long
-        assert "Long" in lines[0] or "long" in lines[0].lower()
+        # It is a String, not a Long, now.
+        assert "String" in lines[0]
+        # And it is exactly md5("x::test.nf") — the mint_file_id composite.
+        expected = hashlib.md5(b"x::test.nf").hexdigest()
+        assert expected in lines[0], f"expected {expected} in {lines[0]}"
+
+    def test_post_id_uses_slot_id_when_supplied(self, nxf_runner):
+        """When slot_ids is passed, the id is md5("<slot_id>::<filename>")."""
+        import hashlib
+
+        result = nxf_runner.run('''
+
+
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [[:], file("${projectDir}/test.nf")],
+    ])
+
+    def out = (o.post([ch], ["x"], ["deadbeef"]))[0]
+    def (name, stream) = out
+    stream.view { idx, item -> "HASH: ${idx["x"][0]}" }
+}
+''')
+        NxfTestRunner.assert_nxf_ok(result)
+        lines = [l for l in result.stdout.split("\n") if l.startswith("HASH:")]
+        assert len(lines) == 1
+        expected = hashlib.md5(b"deadbeef::test.nf").hexdigest()
+        assert expected in lines[0], f"expected {expected} in {lines[0]}"
 
 
 class TestOrchestratorGroup:

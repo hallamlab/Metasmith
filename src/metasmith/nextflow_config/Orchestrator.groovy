@@ -34,13 +34,21 @@ class Orchestrator {
         hist.add(index)
     }
 
-    public List _post(streams, names, fullHash) {
+    public List _post(streams, names, slot_ids) {
         // streams is a list of each of the channels produced:
         // output:
         //      tuple val(index),path("*i") <- stream 1
         //      tuple val(index),path("*j") <- stream 2
-        // the index is then copied for multiple files
-        return [names, streams].transpose().collect((name, stream) -> {
+        // the index is then copied for multiple files.
+        //
+        // The on-channel per-file identity is md5("<slot_id>::<filename>"),
+        // byte-identical to the canonical off-channel file id
+        // (LinPayload.mint_file_id in Python). slot_ids[i] is the compile-time
+        // slot identity threaded in by the generator (workflow.py). When it is
+        // absent (null/empty) the channel name stands in, so the id stays
+        // deterministic and per-file for direct/test callers.
+        return [names, streams, slot_ids].transpose().collect((name, stream, slot_id) -> {
+            def sid = (slot_id == null || slot_id == "") ? name : slot_id
             return new Tuple2(
                 name,
                 stream.flatMap((index, group) -> {
@@ -48,15 +56,8 @@ class Orchestrator {
                         group = [group]
                     }
                     return group.collect((item) -> { // map
-                        def LIMIT = 14 // 0..14 is 15 characters and enables sign to be ignored
-                        def hash = ""
-                        if (fullHash) {
-                            hash = "$item".md5()[0..LIMIT]
-                        } else {
-                            hash = "${item.name}".md5()[0..LIMIT]
-                        }
-                        def v = Long.parseLong(hash, 16)
-                        // println("post: <$name> $v $hash $item")
+                        def v = "${sid}::${item.name}".md5()
+                        // println("post: <$name> $v $item")
                         index = [:]+index // copy the hashmap
                         index[name] = [v]
                         this.registerIndexHistory(name, index)
@@ -69,12 +70,34 @@ class Orchestrator {
         })
     }
 
-    public List post(streams, names) {
-        return this._post(_debatch(streams), names, false)
+    public List post(streams, names, slot_ids = null) {
+        def sids = (slot_ids == null) ? names.collect { null } : slot_ids
+        return this._post(_debatch(streams), names, sids)
     }
 
     public List postIn(streams, names) {
-        return this._post(streams, names, true)
+        // Leaves (given inputs). Per-file identity is the full-path md5, kept
+        // in lockstep with the Python given-lineage seed (workflow.py), which
+        // references leaf parents by the same Long(md5(path)[0..14]). Migrating
+        // leaves to the canonical instance_id is deferred (T2b).
+        return [names, streams].transpose().collect((name, stream) -> {
+            return new Tuple2(
+                name,
+                stream.flatMap((index, group) -> {
+                    if (!(group instanceof List)) {
+                        group = [group]
+                    }
+                    return group.collect((item) -> {
+                        def LIMIT = 14 // 0..14 is 15 characters and enables sign to be ignored
+                        def v = Long.parseLong("$item".md5()[0..LIMIT], 16)
+                        index = [:]+index // copy the hashmap
+                        index[name] = [v]
+                        this.registerIndexHistory(name, index)
+                        return [index, item]
+                    })
+                })
+            )
+        })
     }
 
     // Replaces `[*process_call(...)]` in generated workflow.nf. Nextflow
