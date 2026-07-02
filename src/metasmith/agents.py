@@ -373,8 +373,32 @@ class Agent:
                 ls -lh .
                 echo "relay =========================="
                 $INTERNALS/relay/msm_relay start --local
+                echo "stage control-plane ============"
+                # Under SLURM array fan-out, copy the small shared control-plane
+                # subset into this task's node-local scratch so N tasks don't all
+                # read the same files through the /msm_home bind (errno 108). Runs
+                # bare on the host, so it reads the real $AGENT_HOME (Lustre), never
+                # /msm_home. Fail-open: any failure leaves STAGE_ROOT empty and the
+                # task reads the shared copy exactly as before.
+                STAGE_ROOT=""
+                if [ -n "$SLURM_TMPDIR" ] && command -v rsync >/dev/null 2>&1; then
+                    KEY=$(basename "$TASK_DIR")
+                    HOST_STAGE="$(pwd -P)/$INTERNALS/stage"
+                    if mkdir -p "$HOST_STAGE/lib" "$HOST_STAGE/runs/$KEY/$INTERNALS" "$HOST_STAGE/data" \
+                        && rsync -a "$AGENT_HOME/lib/agent.yml" "$HOST_STAGE/lib/agent.yml" \
+                        && rsync -a "$AGENT_HOME/runs/$KEY/$INTERNALS/task" "$HOST_STAGE/runs/$KEY/$INTERNALS/" \
+                        && rsync -a --prune-empty-dirs --include='*/' --include='_metadata/***' --exclude='*' "$AGENT_HOME/data/" "$HOST_STAGE/data/"; then
+                        STAGE_ROOT="/ws/$INTERNALS/stage"
+                        echo "staged control-plane -> [$HOST_STAGE] (container view [$STAGE_ROOT])"
+                    else
+                        echo "control-plane staging failed; falling back to shared read"
+                        STAGE_ROOT=""
+                    fi
+                else
+                    echo "no SLURM_TMPDIR or rsync; using shared control-plane read"
+                fi
                 echo "execute ========================"
-                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR host=$(hostname)
+                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR -a stage_root=$STAGE_ROOT host=$(hostname)
                 echo "post execute ==================="
                 find .
                 ls -lh .
