@@ -231,10 +231,11 @@ class Agent:
             resolved_home = Path(resolved_home)
 
             dev_src = "$AGENT_HOME/dev/metasmith"
+            dev_target = "/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith"
             dev_mock = Container(
                 image=self.container,
                 binds=[
-                    (dev_src, Path("/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith")),
+                    (dev_src, Path(dev_target)),
                 ],
                 runtime=self.runtime,
             )
@@ -355,7 +356,26 @@ class Agent:
                     BINDS="{bootstrap_container.MakeBindsParam()}"
                     if [ -e "{dev_src}" ]; then
                         echo "including dev binds"
-                        BINDS="$BINDS {dev_mock.MakeBindsParam()}"
+                        # Node-local-stage the dev overlay before binding it. Under
+                        # SLURM array fan-out ~N tasks otherwise read the SAME package
+                        # files through the Lustre bind at import time; concurrent
+                        # reads intermittently return a partial readdir (errno 108) so
+                        # a submodule (e.g. coms.ipc) momentarily vanishes and the
+                        # import crashes the task (exit 127). Stage to per-task
+                        # node-local scratch (same scheme as the control-plane staging
+                        # below; /ws is node-local under SLURM) and bind that instead.
+                        # Fail-open: any failure keeps the shared Lustre bind.
+                        DEV_BIND_SRC="{dev_src}"
+                        if [ -n "$SLURM_TMPDIR" ] && command -v rsync >/dev/null 2>&1; then
+                            LOCAL_DEV="$(pwd -P)/$INTERNALS/stage/metasmith"
+                            if mkdir -p "$LOCAL_DEV" && rsync -a --delete "{dev_src}/" "$LOCAL_DEV/"; then
+                                DEV_BIND_SRC="$LOCAL_DEV"
+                                echo "staged dev overlay -> [$LOCAL_DEV]"
+                            else
+                                echo "dev overlay staging failed; using shared read"
+                            fi
+                        fi
+                        BINDS="$BINDS --bind $DEV_BIND_SRC:{dev_target}"
                     fi
                     if [ -e "./{BIND_FILE}" ]; then
                         echo "including linked data binds"
