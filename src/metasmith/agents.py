@@ -231,10 +231,11 @@ class Agent:
             resolved_home = Path(resolved_home)
 
             dev_src = "$AGENT_HOME/dev/metasmith"
+            dev_target = "/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith"
             dev_mock = Container(
                 image=self.container,
                 binds=[
-                    (dev_src, Path("/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith")),
+                    (dev_src, Path(dev_target)),
                 ],
                 runtime=self.runtime,
             )
@@ -351,11 +352,104 @@ class Agent:
                 echo "cwd [$(pwd -P)]"
                 echo "task [$TASK_DIR]"
                 echo "step [$STEP]"
+                # --- adaptive de-synchronization of the array fan-out ----------
+                # Under SLURM array fan-out ~N tasks bootstrap at the same instant
+                # and all read the shared Lustre agent home (dev overlay, container
+                # cache, control-plane) at once -> the metadata storm that yields
+                # errno 108 (ESHUTDOWN) + partial reads -> exit 127. Spread the
+                # starts over a window sized to the array so the peak start rate
+                # stays bounded (~1 start / 3s): a big fan-out smears across up to
+                # ~5 min (unnoticeable at that job scale) while a small array barely
+                # waits (efficiency). Skipped for non-array / single-task runs, and
+                # opt-out via METASMITH_NO_START_JITTER=1. RANDOM (<=32767) covers
+                # the capped window directly. This is belt-and-suspenders on top of
+                # the per-node-once overlay staging below, and also de-syncs the
+                # container-extract / control-plane reads that staging doesn't cover.
+                if [ -z "${{METASMITH_NO_START_JITTER:-}}" ] && [ -n "${{SLURM_ARRAY_TASK_COUNT:-}}" ] && [ "$SLURM_ARRAY_TASK_COUNT" -gt 1 ]; then
+                    _win=$(( SLURM_ARRAY_TASK_COUNT * 3 )); [ "$_win" -gt 300 ] && _win=300
+                    _delay=$(( RANDOM % (_win + 1) ))
+                    echo "start jitter: sleep ${{_delay}}s (window ${{_win}}s, array=$SLURM_ARRAY_TASK_COUNT)"
+                    sleep "$_delay"
+                fi
+                # Exponential backoff with full jitter (bounded), for transient
+                # errno-108 retries in the staging paths below. Efficient (near-zero
+                # wait) when there is no contention; backs off dynamically when reads
+                # actually fail. Arg: attempt number (1-based).
+                msm_backoff() {{ _a="$1"; _b=$(( 1 << _a )); [ "$_b" -gt 60 ] && _b=60; sleep "$(( RANDOM % (_b + 1) ))"; }}
                 function run_container {{
                     BINDS="{bootstrap_container.MakeBindsParam()}"
                     if [ -e "{dev_src}" ]; then
                         echo "including dev binds"
-                        BINDS="$BINDS {dev_mock.MakeBindsParam()}"
+                        # Node-local staging of the dev overlay before binding it.
+                        # Under SLURM array fan-out up to ~array-size tasks land on
+                        # ONE node; if each reads the shared Lustre overlay tree at
+                        # once (import-time, or an rsync tree-walk of ~70 files) the
+                        # metadata storm evicts the Lustre client with errno 108
+                        # (ESHUTDOWN) and returns a SILENTLY-INCOMPLETE copy -> a
+                        # submodule (e.g. models.workflow) vanishes ->
+                        # ModuleNotFoundError -> exit 127 (reproduced: 100-way naive
+                        # fan-out -> 93/97 incomplete, 558 errno-108). Two-layer fix:
+                        # (1) deliver the overlay as a single tarball so the per-node
+                        # Lustre read is ONE streaming file (what Lustre stays healthy
+                        # under) instead of a readdir walk, the ~70 small-file writes
+                        # land on node-local disk during `tar -x`, and a truncated
+                        # archive fails `tar -x` LOUDLY instead of silently; (2)
+                        # collapse the N per-node reads to ONE with an flock. The cache
+                        # is keyed by the tarball's own stat (mtime+size) -- a single
+                        # metadata op, scheduler-agnostic, content-fresh (a reused node
+                        # never serves a stale overlay; an identical tarball is reused
+                        # for free) -- so there is NO dependence on SLURM_ARRAY_JOB_ID.
+                        # The winner copies the tarball to node-local scratch, extracts,
+                        # verifies completeness (key submodule + non-trivial file count)
+                        # before stamping, and retries transient errno-108 with backoff.
+                        # All paths fail-open to the shared Lustre tree bind, so staging
+                        # is never worse than the old behaviour.
+                        # See plans/03-tarball-dev-overlay.md.
+                        DEV_BIND_SRC="{dev_src}"
+                        DEV_TARBALL="{dev_src}.tar"
+                        if [ -e "$DEV_TARBALL" ] && [ -n "$SLURM_TMPDIR" ] && command -v flock >/dev/null 2>&1; then
+                            STAGE_KEY=$(stat -c '%Y-%s' "$DEV_TARBALL" 2>/dev/null || echo nokey)
+                            STAGE_BASE="/tmp/msm_devstage_${{USER:-$(id -un)}}"
+                            STAGE_DIR="$STAGE_BASE/$STAGE_KEY"
+                            NODE_DEV="$STAGE_DIR/metasmith"
+                            STAMP="$STAGE_DIR/.msm_stage_ok"
+                            mkdir -p "$STAGE_BASE"
+                            # best-effort prune of other overlays' stale stages (bounded disk)
+                            find "$STAGE_BASE" -maxdepth 1 -mindepth 1 ! -name "$STAGE_KEY" -mmin +120 -exec rm -rf {{}} + 2>/dev/null || true
+                            (
+                                exec 9>"$STAGE_DIR.lock" 2>/dev/null || exec 9>"$STAGE_BASE/$STAGE_KEY.lock"
+                                if flock -w 300 9; then
+                                    if [ ! -e "$STAMP" ]; then
+                                        _t=0
+                                        while [ "$_t" -lt 3 ]; do
+                                            _t=$((_t+1))
+                                            rm -rf "$NODE_DEV"; mkdir -p "$STAGE_DIR"
+                                            _lt="$SLURM_TMPDIR/msm_overlay.$STAGE_KEY.tar"
+                                            # native copy to node-local, then extract, then bind
+                                            if cp -f "$DEV_TARBALL" "$_lt" 2>"$STAGE_DIR/.stage.err" \
+                                                && tar -xf "$_lt" -C "$STAGE_DIR" 2>>"$STAGE_DIR/.stage.err"; then
+                                                _n=$(find "$NODE_DEV" -type f 2>/dev/null | wc -l)
+                                                if [ -e "$NODE_DEV/models/workflow.py" ] && [ -e "$NODE_DEV/coms" ] && [ "$_n" -ge 50 ]; then
+                                                    rm -f "$_lt" 2>/dev/null || true
+                                                    : > "$STAMP"; break
+                                                fi
+                                            fi
+                                            rm -f "$_lt" 2>/dev/null || true
+                                            echo "dev overlay stage attempt $_t incomplete; retrying" >&2
+                                            msm_backoff "$_t"
+                                        done
+                                    fi
+                                fi
+                            )
+                            if [ -e "$STAMP" ]; then
+                                DEV_BIND_SRC="$NODE_DEV"
+                                echo "staged dev overlay (per-node-once tarball, key $STAGE_KEY) -> [$NODE_DEV]"
+                            else
+                                rm -rf "$NODE_DEV" 2>/dev/null || true
+                                echo "dev overlay tarball staging failed; using shared Lustre read"
+                            fi
+                        fi
+                        BINDS="$BINDS --bind $DEV_BIND_SRC:{dev_target}"
                     fi
                     if [ -e "./{BIND_FILE}" ]; then
                         echo "including linked data binds"
@@ -373,8 +467,44 @@ class Agent:
                 ls -lh .
                 echo "relay =========================="
                 $INTERNALS/relay/msm_relay start --local
+                echo "stage control-plane ============"
+                # Under SLURM array fan-out, copy the small shared control-plane
+                # subset into this task's node-local scratch so N tasks don't all
+                # read the same files through the /msm_home bind (errno 108). Runs
+                # bare on the host, so it reads the real $AGENT_HOME (Lustre), never
+                # /msm_home. Fail-open: any failure leaves STAGE_ROOT empty and the
+                # task reads the shared copy exactly as before.
+                STAGE_ROOT=""
+                if [ -n "$SLURM_TMPDIR" ] && command -v rsync >/dev/null 2>&1; then
+                    KEY=$(basename "$TASK_DIR")
+                    HOST_STAGE="$(pwd -P)/$INTERNALS/stage"
+                    # This subset is task-specific (the task dir), so per-node-once
+                    # sharing does not apply as it does for the dev overlay; but the
+                    # same Lustre concurrent-read eviction (errno 108) hits it, so
+                    # retry the copy with backoff before giving up. Fail-open: on
+                    # persistent failure leave STAGE_ROOT empty and read the shared
+                    # copy exactly as before.
+                    _c=0
+                    while [ "$_c" -lt 3 ]; do
+                        _c=$((_c+1))
+                        if mkdir -p "$HOST_STAGE/lib" "$HOST_STAGE/runs/$KEY/$INTERNALS" "$HOST_STAGE/data" \
+                            && rsync -a "$AGENT_HOME/lib/agent.yml" "$HOST_STAGE/lib/agent.yml" \
+                            && rsync -a "$AGENT_HOME/runs/$KEY/$INTERNALS/task" "$HOST_STAGE/runs/$KEY/$INTERNALS/" \
+                            && rsync -a --prune-empty-dirs --include='*/' --include='_metadata/***' --exclude='*' "$AGENT_HOME/data/" "$HOST_STAGE/data/"; then
+                            STAGE_ROOT="/ws/$INTERNALS/stage"
+                            echo "staged control-plane -> [$HOST_STAGE] (container view [$STAGE_ROOT])"
+                            break
+                        fi
+                        echo "control-plane staging attempt $_c failed; retrying" >&2
+                        STAGE_ROOT=""
+                        msm_backoff "$_c"
+                    done
+                    [ -z "$STAGE_ROOT" ] && echo "control-plane staging failed; falling back to shared read"
+                else
+                    echo "no SLURM_TMPDIR or rsync; using shared control-plane read"
+                fi
                 echo "execute ========================"
-                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR host=$(hostname)
+                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR -a stage_root=$STAGE_ROOT host=$(hostname)
                 echo "post execute ==================="
                 find .
                 ls -lh .

@@ -263,8 +263,14 @@ def ExecuteStep(
         return ExecutionResult(False)
 
 
-def StageAndRunTransform(workspace: Path, step_index: int, host: str):
+def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root: Path|None=None):
     Log.Info(f"cwd [{os.getcwd()}]")
+    # Control-plane root: node-local stage when the host-side bootstrap staged a
+    # copy into per-task scratch (SLURM array fan-out), else the shared HOME_ROOT
+    # bind (local executor / staging disabled / staging failed → fail-open).
+    cp_root = stage_root if stage_root is not None else AgentPaths.HOME_ROOT
+    if stage_root is not None:
+        Log.Info(f"reading control-plane from node-local stage [{stage_root}]")
     server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS, host=host)
     MAX_WAIT = 3
     for i in range(MAX_WAIT):
@@ -274,7 +280,7 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
     assert server_path.exists(), f"server not started [{server_path}]"
 
     Log.Info(f"loading agent config")
-    agent = Agent.Load(AgentPaths.to_definition())
+    agent = Agent.Load(AgentPaths.to_definition(root=cp_root))
     agent_home = str(agent.home.GetPath())
     Log.Info(f"agent home [{agent_home}]")
 
@@ -303,9 +309,9 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
         external_cwd = Path(res.out[0])
         Log.Info(f"external cwd [{external_cwd}]")
         task_key = workspace.name
-        task_path = AgentPaths.to_task(task_key)
+        task_path = AgentPaths.to_task(task_key, root=cp_root)
         Log.Info(f"loading task from [{task_path}]")
-        task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
+        task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data(root=cp_root)])
 
         step = task.plan.steps[step_index-1]    # also 1 indexed for log legibility
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
