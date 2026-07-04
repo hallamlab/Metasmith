@@ -1,21 +1,24 @@
-"""Regression test for the hardened dev-overlay staging LOGIC used by the
+"""Regression test for the TARBALL dev-overlay staging LOGIC used by the
 bootstrap heredoc in `agents.py` (`run_container`).
 
-The bootstrap stages the dev overlay per-node-once under `flock`, verifies
-completeness (key submodule + file count) before binding, retries transient
-errno-108 (ESHUTDOWN), and fails-open to the shared Lustre bind on any error.
-That shell lives inside a generated heredoc and cannot be imported, so this
-runs the same primitives against a simulated flaky source (a partial readdir
-that a copy reports as success) and asserts:
+The bootstrap delivers the overlay as a single tarball; each node natively
+`cp`s it to local scratch, `tar -x` extracts it, verifies completeness (key
+submodule + file count) before binding, does this per-node-once under `flock`,
+keys the cache by the tarball's own `stat` (mtime+size, so no dependence on
+SLURM_ARRAY_JOB_ID), retries transient errno-108 (ESHUTDOWN), and fails-open to
+the shared Lustre bind on any error. That shell lives inside a generated heredoc
+and cannot be imported, so this runs the same primitives and asserts:
 
-  * naive staging binds a silently-incomplete copy -> import fails (the
-    reproduced exit-127 mechanism),
-  * hardened staging retries past the partial read and binds a verified copy,
-  * hardened staging fails-open (never leaves a partial dest) on a broken source,
-  * per-node-once flock makes concurrent callers read the source exactly once.
+  * a truncated tarball fails `tar -x` loudly (no silently-incomplete bind — the
+    old exit-0-on-partial-readdir -> exit-127 trap is gone),
+  * a good tarball is cp+extracted, verified, and importable,
+  * staging fails-open (never leaves a partial dest) on a broken tarball,
+  * per-node-once flock makes concurrent callers cp+extract exactly once,
+  * the `stat` cache key reuses an identical tarball but re-extracts a changed
+    one to a fresh dir (a reused node never serves a stale overlay).
 
 Faithful HPC evidence for the same fix: RCA plan 02-errno108-overlay-fanout-rca.md
-(naive 558 errno-108 / 93-of-97 incomplete; per-node-once 0 / 0).
+(naive rsync fan-out 558 errno-108 / 93-of-97 incomplete; tarball 0 / 0).
 """
 from pathlib import Path
 import subprocess

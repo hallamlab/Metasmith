@@ -380,46 +380,61 @@ class Agent:
                     BINDS="{bootstrap_container.MakeBindsParam()}"
                     if [ -e "{dev_src}" ]; then
                         echo "including dev binds"
-                        # Per-node-once node-local staging of the dev overlay before
-                        # binding it. Under SLURM array fan-out up to ~array-size tasks
-                        # land on ONE node and each otherwise reads the SAME Lustre tree
-                        # at once (at import time, or via a per-task rsync) -> a metadata
-                        # storm that makes the Lustre client shed reads with errno 108
-                        # (ESHUTDOWN) and return a SILENTLY-INCOMPLETE copy -> a submodule
-                        # (e.g. models.workflow, coms.ipc) vanishes -> ModuleNotFoundError
-                        # -> exit 127. Reproduced: 100-way naive rsync fan-out on one node
-                        # -> 93/97 tasks incomplete, 558 errno-108 events. So collapse the
-                        # N per-node reads to ONE with an flock, keyed by the SLURM (array)
-                        # job id so the cache is always THIS run's overlay and never a
-                        # stale one from a prior job on a reused node. The staging winner
-                        # verifies completeness (key submodule present + non-trivial file
-                        # count) before publishing the stamp; it retries transient
-                        # errno-108 with backoff; all paths fail-open to the shared Lustre
-                        # bind so staging can never be worse than the old behaviour.
+                        # Node-local staging of the dev overlay before binding it.
+                        # Under SLURM array fan-out up to ~array-size tasks land on
+                        # ONE node; if each reads the shared Lustre overlay tree at
+                        # once (import-time, or an rsync tree-walk of ~70 files) the
+                        # metadata storm evicts the Lustre client with errno 108
+                        # (ESHUTDOWN) and returns a SILENTLY-INCOMPLETE copy -> a
+                        # submodule (e.g. models.workflow) vanishes ->
+                        # ModuleNotFoundError -> exit 127 (reproduced: 100-way naive
+                        # fan-out -> 93/97 incomplete, 558 errno-108). Two-layer fix:
+                        # (1) deliver the overlay as a single tarball so the per-node
+                        # Lustre read is ONE streaming file (what Lustre stays healthy
+                        # under) instead of a readdir walk, the ~70 small-file writes
+                        # land on node-local disk during `tar -x`, and a truncated
+                        # archive fails `tar -x` LOUDLY instead of silently; (2)
+                        # collapse the N per-node reads to ONE with an flock. The cache
+                        # is keyed by the tarball's own stat (mtime+size) -- a single
+                        # metadata op, scheduler-agnostic, content-fresh (a reused node
+                        # never serves a stale overlay; an identical tarball is reused
+                        # for free) -- so there is NO dependence on SLURM_ARRAY_JOB_ID.
+                        # The winner copies the tarball to node-local scratch, extracts,
+                        # verifies completeness (key submodule + non-trivial file count)
+                        # before stamping, and retries transient errno-108 with backoff.
+                        # All paths fail-open to the shared Lustre tree bind, so staging
+                        # is never worse than the old behaviour.
+                        # See plans/03-tarball-dev-overlay.md.
                         DEV_BIND_SRC="{dev_src}"
-                        if [ -n "$SLURM_TMPDIR" ] && command -v rsync >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
-                            STAGE_JOB="${{SLURM_ARRAY_JOB_ID:-${{SLURM_JOB_ID:-nojob}}}}"
+                        DEV_TARBALL="{dev_src}.tar"
+                        if [ -e "$DEV_TARBALL" ] && [ -n "$SLURM_TMPDIR" ] && command -v flock >/dev/null 2>&1; then
+                            STAGE_KEY=$(stat -c '%Y-%s' "$DEV_TARBALL" 2>/dev/null || echo nokey)
                             STAGE_BASE="/tmp/msm_devstage_${{USER:-$(id -un)}}"
-                            STAGE_DIR="$STAGE_BASE/$STAGE_JOB"
+                            STAGE_DIR="$STAGE_BASE/$STAGE_KEY"
                             NODE_DEV="$STAGE_DIR/metasmith"
                             STAMP="$STAGE_DIR/.msm_stage_ok"
                             mkdir -p "$STAGE_BASE"
-                            # best-effort prune of other jobs' stale stages (bounded disk)
-                            find "$STAGE_BASE" -maxdepth 1 -mindepth 1 ! -name "$STAGE_JOB" -mmin +120 -exec rm -rf {{}} + 2>/dev/null || true
+                            # best-effort prune of other overlays' stale stages (bounded disk)
+                            find "$STAGE_BASE" -maxdepth 1 -mindepth 1 ! -name "$STAGE_KEY" -mmin +120 -exec rm -rf {{}} + 2>/dev/null || true
                             (
-                                exec 9>"$STAGE_DIR.lock" 2>/dev/null || exec 9>"$STAGE_BASE/$STAGE_JOB.lock"
+                                exec 9>"$STAGE_DIR.lock" 2>/dev/null || exec 9>"$STAGE_BASE/$STAGE_KEY.lock"
                                 if flock -w 300 9; then
                                     if [ ! -e "$STAMP" ]; then
                                         _t=0
                                         while [ "$_t" -lt 3 ]; do
                                             _t=$((_t+1))
-                                            rm -rf "$NODE_DEV"; mkdir -p "$NODE_DEV"
-                                            if rsync -a --delete "{dev_src}/" "$NODE_DEV/" 2>"$STAGE_DIR/.rsync.err"; then
+                                            rm -rf "$NODE_DEV"; mkdir -p "$STAGE_DIR"
+                                            _lt="$SLURM_TMPDIR/msm_overlay.$STAGE_KEY.tar"
+                                            # native copy to node-local, then extract, then bind
+                                            if cp -f "$DEV_TARBALL" "$_lt" 2>"$STAGE_DIR/.stage.err" \
+                                                && tar -xf "$_lt" -C "$STAGE_DIR" 2>>"$STAGE_DIR/.stage.err"; then
                                                 _n=$(find "$NODE_DEV" -type f 2>/dev/null | wc -l)
                                                 if [ -e "$NODE_DEV/models/workflow.py" ] && [ -e "$NODE_DEV/coms" ] && [ "$_n" -ge 50 ]; then
+                                                    rm -f "$_lt" 2>/dev/null || true
                                                     : > "$STAMP"; break
                                                 fi
                                             fi
+                                            rm -f "$_lt" 2>/dev/null || true
                                             echo "dev overlay stage attempt $_t incomplete; retrying" >&2
                                             msm_backoff "$_t"
                                         done
@@ -428,10 +443,10 @@ class Agent:
                             )
                             if [ -e "$STAMP" ]; then
                                 DEV_BIND_SRC="$NODE_DEV"
-                                echo "staged dev overlay (per-node-once, job $STAGE_JOB) -> [$NODE_DEV]"
+                                echo "staged dev overlay (per-node-once tarball, key $STAGE_KEY) -> [$NODE_DEV]"
                             else
                                 rm -rf "$NODE_DEV" 2>/dev/null || true
-                                echo "dev overlay staging failed; using shared Lustre read"
+                                echo "dev overlay tarball staging failed; using shared Lustre read"
                             fi
                         fi
                         BINDS="$BINDS --bind $DEV_BIND_SRC:{dev_target}"
