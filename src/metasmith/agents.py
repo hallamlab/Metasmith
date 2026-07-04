@@ -352,6 +352,30 @@ class Agent:
                 echo "cwd [$(pwd -P)]"
                 echo "task [$TASK_DIR]"
                 echo "step [$STEP]"
+                # --- adaptive de-synchronization of the array fan-out ----------
+                # Under SLURM array fan-out ~N tasks bootstrap at the same instant
+                # and all read the shared Lustre agent home (dev overlay, container
+                # cache, control-plane) at once -> the metadata storm that yields
+                # errno 108 (ESHUTDOWN) + partial reads -> exit 127. Spread the
+                # starts over a window sized to the array so the peak start rate
+                # stays bounded (~1 start / 3s): a big fan-out smears across up to
+                # ~5 min (unnoticeable at that job scale) while a small array barely
+                # waits (efficiency). Skipped for non-array / single-task runs, and
+                # opt-out via METASMITH_NO_START_JITTER=1. RANDOM (<=32767) covers
+                # the capped window directly. This is belt-and-suspenders on top of
+                # the per-node-once overlay staging below, and also de-syncs the
+                # container-extract / control-plane reads that staging doesn't cover.
+                if [ -z "$METASMITH_NO_START_JITTER" ] && [ -n "$SLURM_ARRAY_TASK_COUNT" ] && [ "$SLURM_ARRAY_TASK_COUNT" -gt 1 ]; then
+                    _win=$(( SLURM_ARRAY_TASK_COUNT * 3 )); [ "$_win" -gt 300 ] && _win=300
+                    _delay=$(( RANDOM % (_win + 1) ))
+                    echo "start jitter: sleep ${{_delay}}s (window ${{_win}}s, array=$SLURM_ARRAY_TASK_COUNT)"
+                    sleep "$_delay"
+                fi
+                # Exponential backoff with full jitter (bounded), for transient
+                # errno-108 retries in the staging paths below. Efficient (near-zero
+                # wait) when there is no contention; backs off dynamically when reads
+                # actually fail. Arg: attempt number (1-based).
+                msm_backoff() {{ _a="$1"; _b=$(( 1 << _a )); [ "$_b" -gt 60 ] && _b=60; sleep "$(( RANDOM % (_b + 1) ))"; }}
                 function run_container {{
                     BINDS="{bootstrap_container.MakeBindsParam()}"
                     if [ -e "{dev_src}" ]; then
@@ -397,7 +421,7 @@ class Agent:
                                                 fi
                                             fi
                                             echo "dev overlay stage attempt $_t incomplete; retrying" >&2
-                                            sleep $((_t*2))
+                                            msm_backoff "$_t"
                                         done
                                     fi
                                 fi
@@ -458,7 +482,7 @@ class Agent:
                         fi
                         echo "control-plane staging attempt $_c failed; retrying" >&2
                         STAGE_ROOT=""
-                        sleep $((_c*2))
+                        msm_backoff "$_c"
                     done
                     [ -z "$STAGE_ROOT" ] && echo "control-plane staging failed; falling back to shared read"
                 else
