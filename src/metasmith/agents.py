@@ -356,23 +356,58 @@ class Agent:
                     BINDS="{bootstrap_container.MakeBindsParam()}"
                     if [ -e "{dev_src}" ]; then
                         echo "including dev binds"
-                        # Node-local-stage the dev overlay before binding it. Under
-                        # SLURM array fan-out ~N tasks otherwise read the SAME package
-                        # files through the Lustre bind at import time; concurrent
-                        # reads intermittently return a partial readdir (errno 108) so
-                        # a submodule (e.g. coms.ipc) momentarily vanishes and the
-                        # import crashes the task (exit 127). Stage to per-task
-                        # node-local scratch (same scheme as the control-plane staging
-                        # below; /ws is node-local under SLURM) and bind that instead.
-                        # Fail-open: any failure keeps the shared Lustre bind.
+                        # Per-node-once node-local staging of the dev overlay before
+                        # binding it. Under SLURM array fan-out up to ~array-size tasks
+                        # land on ONE node and each otherwise reads the SAME Lustre tree
+                        # at once (at import time, or via a per-task rsync) -> a metadata
+                        # storm that makes the Lustre client shed reads with errno 108
+                        # (ESHUTDOWN) and return a SILENTLY-INCOMPLETE copy -> a submodule
+                        # (e.g. models.workflow, coms.ipc) vanishes -> ModuleNotFoundError
+                        # -> exit 127. Reproduced: 100-way naive rsync fan-out on one node
+                        # -> 93/97 tasks incomplete, 558 errno-108 events. So collapse the
+                        # N per-node reads to ONE with an flock, keyed by the SLURM (array)
+                        # job id so the cache is always THIS run's overlay and never a
+                        # stale one from a prior job on a reused node. The staging winner
+                        # verifies completeness (key submodule present + non-trivial file
+                        # count) before publishing the stamp; it retries transient
+                        # errno-108 with backoff; all paths fail-open to the shared Lustre
+                        # bind so staging can never be worse than the old behaviour.
                         DEV_BIND_SRC="{dev_src}"
-                        if [ -n "$SLURM_TMPDIR" ] && command -v rsync >/dev/null 2>&1; then
-                            LOCAL_DEV="$(pwd -P)/$INTERNALS/stage/metasmith"
-                            if mkdir -p "$LOCAL_DEV" && rsync -a --delete "{dev_src}/" "$LOCAL_DEV/"; then
-                                DEV_BIND_SRC="$LOCAL_DEV"
-                                echo "staged dev overlay -> [$LOCAL_DEV]"
+                        if [ -n "$SLURM_TMPDIR" ] && command -v rsync >/dev/null 2>&1 && command -v flock >/dev/null 2>&1; then
+                            STAGE_JOB="${{SLURM_ARRAY_JOB_ID:-${{SLURM_JOB_ID:-nojob}}}}"
+                            STAGE_BASE="/tmp/msm_devstage_${{USER:-$(id -un)}}"
+                            STAGE_DIR="$STAGE_BASE/$STAGE_JOB"
+                            NODE_DEV="$STAGE_DIR/metasmith"
+                            STAMP="$STAGE_DIR/.msm_stage_ok"
+                            mkdir -p "$STAGE_BASE"
+                            # best-effort prune of other jobs' stale stages (bounded disk)
+                            find "$STAGE_BASE" -maxdepth 1 -mindepth 1 ! -name "$STAGE_JOB" -mmin +120 -exec rm -rf {{}} + 2>/dev/null || true
+                            (
+                                exec 9>"$STAGE_DIR.lock" 2>/dev/null || exec 9>"$STAGE_BASE/$STAGE_JOB.lock"
+                                if flock -w 300 9; then
+                                    if [ ! -e "$STAMP" ]; then
+                                        _t=0
+                                        while [ "$_t" -lt 3 ]; do
+                                            _t=$((_t+1))
+                                            rm -rf "$NODE_DEV"; mkdir -p "$NODE_DEV"
+                                            if rsync -a --delete "{dev_src}/" "$NODE_DEV/" 2>"$STAGE_DIR/.rsync.err"; then
+                                                _n=$(find "$NODE_DEV" -type f 2>/dev/null | wc -l)
+                                                if [ -e "$NODE_DEV/models/workflow.py" ] && [ -e "$NODE_DEV/coms" ] && [ "$_n" -ge 50 ]; then
+                                                    : > "$STAMP"; break
+                                                fi
+                                            fi
+                                            echo "dev overlay stage attempt $_t incomplete; retrying" >&2
+                                            sleep $((_t*2))
+                                        done
+                                    fi
+                                fi
+                            )
+                            if [ -e "$STAMP" ]; then
+                                DEV_BIND_SRC="$NODE_DEV"
+                                echo "staged dev overlay (per-node-once, job $STAGE_JOB) -> [$NODE_DEV]"
                             else
-                                echo "dev overlay staging failed; using shared read"
+                                rm -rf "$NODE_DEV" 2>/dev/null || true
+                                echo "dev overlay staging failed; using shared Lustre read"
                             fi
                         fi
                         BINDS="$BINDS --bind $DEV_BIND_SRC:{dev_target}"
@@ -404,16 +439,28 @@ class Agent:
                 if [ -n "$SLURM_TMPDIR" ] && command -v rsync >/dev/null 2>&1; then
                     KEY=$(basename "$TASK_DIR")
                     HOST_STAGE="$(pwd -P)/$INTERNALS/stage"
-                    if mkdir -p "$HOST_STAGE/lib" "$HOST_STAGE/runs/$KEY/$INTERNALS" "$HOST_STAGE/data" \
-                        && rsync -a "$AGENT_HOME/lib/agent.yml" "$HOST_STAGE/lib/agent.yml" \
-                        && rsync -a "$AGENT_HOME/runs/$KEY/$INTERNALS/task" "$HOST_STAGE/runs/$KEY/$INTERNALS/" \
-                        && rsync -a --prune-empty-dirs --include='*/' --include='_metadata/***' --exclude='*' "$AGENT_HOME/data/" "$HOST_STAGE/data/"; then
-                        STAGE_ROOT="/ws/$INTERNALS/stage"
-                        echo "staged control-plane -> [$HOST_STAGE] (container view [$STAGE_ROOT])"
-                    else
-                        echo "control-plane staging failed; falling back to shared read"
+                    # This subset is task-specific (the task dir), so per-node-once
+                    # sharing does not apply as it does for the dev overlay; but the
+                    # same Lustre concurrent-read eviction (errno 108) hits it, so
+                    # retry the copy with backoff before giving up. Fail-open: on
+                    # persistent failure leave STAGE_ROOT empty and read the shared
+                    # copy exactly as before.
+                    _c=0
+                    while [ "$_c" -lt 3 ]; do
+                        _c=$((_c+1))
+                        if mkdir -p "$HOST_STAGE/lib" "$HOST_STAGE/runs/$KEY/$INTERNALS" "$HOST_STAGE/data" \
+                            && rsync -a "$AGENT_HOME/lib/agent.yml" "$HOST_STAGE/lib/agent.yml" \
+                            && rsync -a "$AGENT_HOME/runs/$KEY/$INTERNALS/task" "$HOST_STAGE/runs/$KEY/$INTERNALS/" \
+                            && rsync -a --prune-empty-dirs --include='*/' --include='_metadata/***' --exclude='*' "$AGENT_HOME/data/" "$HOST_STAGE/data/"; then
+                            STAGE_ROOT="/ws/$INTERNALS/stage"
+                            echo "staged control-plane -> [$HOST_STAGE] (container view [$STAGE_ROOT])"
+                            break
+                        fi
+                        echo "control-plane staging attempt $_c failed; retrying" >&2
                         STAGE_ROOT=""
-                    fi
+                        sleep $((_c*2))
+                    done
+                    [ -z "$STAGE_ROOT" ] && echo "control-plane staging failed; falling back to shared read"
                 else
                     echo "no SLURM_TMPDIR or rsync; using shared control-plane read"
                 fi
