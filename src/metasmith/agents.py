@@ -365,7 +365,7 @@ class Agent:
                 # the capped window directly. This is belt-and-suspenders on top of
                 # the per-node-once overlay staging below, and also de-syncs the
                 # container-extract / control-plane reads that staging doesn't cover.
-                if [ -z "$METASMITH_NO_START_JITTER" ] && [ -n "$SLURM_ARRAY_TASK_COUNT" ] && [ "$SLURM_ARRAY_TASK_COUNT" -gt 1 ]; then
+                if [ -z "${{METASMITH_NO_START_JITTER:-}}" ] && [ -n "${{SLURM_ARRAY_TASK_COUNT:-}}" ] && [ "$SLURM_ARRAY_TASK_COUNT" -gt 1 ]; then
                     _win=$(( SLURM_ARRAY_TASK_COUNT * 3 )); [ "$_win" -gt 300 ] && _win=300
                     _delay=$(( RANDOM % (_win + 1) ))
                     echo "start jitter: sleep ${{_delay}}s (window ${{_win}}s, array=$SLURM_ARRAY_TASK_COUNT)"
