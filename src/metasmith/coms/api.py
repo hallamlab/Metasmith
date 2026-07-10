@@ -20,7 +20,11 @@ class Api:
         assert step_index, "[step_index] is required"
         host = body.get("host")
         assert host, "[host] is required"
-        res = StageAndRunTransform(Path(workspace), int(step_index), host)
+        stage_root = body.get("stage_root") or None      # empty string → shared read
+        res = StageAndRunTransform(
+            Path(workspace), int(step_index), host,
+            stage_root=Path(stage_root) if stage_root else None,
+        )
         exit(res.success)
 
     def stage_workflow(self, body: dict):

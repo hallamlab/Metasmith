@@ -25,13 +25,21 @@ from ..constants import VERSION, MODULE_PATH, AgentPaths
 def yaml_safe_load(p: Path):
     MAX = 5
     for i in range(MAX):
-        with open(p) as f:
-            s = f.read()
+        try:
+            with open(p) as f:
+                s = f.read()
             # assert len(s) > 0, f"DataTypeLibrary at [{path}] is empty"
             d = yaml.safe_load(s)
-            if d is not None: return d
-            Log.Warn(f"{i+1} of {MAX}, failed to load yaml [{p}]")
+        except OSError as e:
+            # Under SLURM array fan-out the shared /msm_home bind can shed reads
+            # with errno 108 (ESHUTDOWN, "transport endpoint shutdown"); retry the
+            # same backoff we use for empty parses instead of dropping the task.
+            Log.Warn(f"{i+1} of {MAX}, error reading yaml [{p}]: {e}")
             time.sleep(1)
+            continue
+        if d is not None: return d
+        Log.Warn(f"{i+1} of {MAX}, failed to load yaml [{p}]")
+        time.sleep(1)
     assert False, f"failed to load yaml [{p}]"
 
 @dataclass
