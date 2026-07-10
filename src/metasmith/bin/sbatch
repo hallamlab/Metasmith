@@ -7,7 +7,7 @@ import time
 import random
 from metasmith.coms.via_file_watcher import RemoteShell
 from metasmith.agents import Agent, AgentPaths
-from metasmith.models.paths import PathMap, reroot_in_text
+from metasmith.models.paths import PathMap, reroot_in_text, inject_array_child_guard
 from metasmith.logging import Log
 
 agent = Agent.Load(AgentPaths.to_definition())
@@ -67,7 +67,8 @@ def fix_paths(file: Path):
     with open(file, 'r') as f:
         lines = f.readlines()
         content = "".join(lines)
-        if len(lines)>1 and lines[1].startswith("array=("):
+        is_array = len(lines)>1 and lines[1].startswith("array=(")
+        if is_array:
             child_jobs = lines[1][len("array=( "):-len(" )\n")].split(" ")
             todo += [Path(p)/".command.run" for p in child_jobs]
     # Path-prefix-aware rewrites: only match HOME_ROOT and WORK_ROOT
@@ -76,6 +77,13 @@ def fix_paths(file: Path):
     # tests/path_overhaul/test_replace_path_overlap.py.
     content = reroot_in_text(content, AgentPaths.HOME_ROOT, agent.real_path)
     content = reroot_in_text(content, AgentPaths.WORK_ROOT, external_workspace)
+    # For the array dispatcher, guarantee every child leaves .command.begin +
+    # .exitcode so a child that dies before writing them (exit 126, pre-begin)
+    # cannot leave Nextflow waiting forever on a SUBMITTED phantom. Only the
+    # array .command.sh carries the `bash $nxf_array_task_dir/.command.run`
+    # line; the helper is a no-op on the per-child .command.run scripts.
+    if is_array:
+        content = inject_array_child_guard(content)
     with open(file, 'w') as f:
         f.write(content)
     # if this was a gathered array job, we have to fix the paths for the actual jobs

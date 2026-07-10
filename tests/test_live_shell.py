@@ -18,6 +18,7 @@ from contextlib import contextmanager
 import pytest
 
 # conftest.py inserts src/ on sys.path
+from metasmith.coms import terminals
 from metasmith.coms.terminals import LiveShell, ShellResult, TerminalProcess
 
 
@@ -362,3 +363,345 @@ def test_quiet_mode_does_not_pollute_outer_callbacks():
         time.sleep(0.2)
     assert "inner" not in outer
     assert any("after" in s for s in outer)
+
+
+# ----------------------------------------------------------------------
+# SubShell + quiescence (Approach D follow-up — robust shell-boundary
+# crossing via SubShell context manager, no ssh needed for these tests)
+# ----------------------------------------------------------------------
+
+def test_subshell_nested_bash_round_trip():
+    """Enter nested local bash, run a command, leave, continue locally."""
+    with LiveShell() as sh:
+        assert sh._depth == 0
+        r = sh.Exec("echo top", history=True, timeout=5)
+        assert r.exit_code == 0 and r.out == ["top"]
+        with sh.SubShell("bash"):
+            assert sh._depth == 1
+            r = sh.Exec("echo nested", history=True, timeout=5)
+            assert r.exit_code == 0 and r.out == ["nested"]
+        assert sh._depth == 0
+        r = sh.Exec("echo back", history=True, timeout=5)
+        assert r.exit_code == 0 and r.out == ["back"]
+
+
+def test_subshell_two_levels_deep():
+    """Two-level nesting (bash → bash) pops cleanly back to the root shell."""
+    with LiveShell() as sh:
+        # SHLVL increments for each nested bash invocation, so it's a stable
+        # signal that we are actually at the depth we think we are.
+        r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+        root_lvl = int(r.out[0])
+        with sh.SubShell("bash"):
+            r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+            assert int(r.out[0]) == root_lvl + 1
+            with sh.SubShell("bash"):
+                r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+                assert int(r.out[0]) == root_lvl + 2
+                assert sh._depth == 2
+            r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+            assert int(r.out[0]) == root_lvl + 1
+        r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+        assert int(r.out[0]) == root_lvl
+        assert sh._depth == 0
+
+
+def test_subshell_pops_on_exception_in_body():
+    """Exception inside the with body still pops the sub-shell on exit."""
+    with LiveShell() as sh:
+        r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+        root_lvl = int(r.out[0])
+        with pytest.raises(RuntimeError):
+            with sh.SubShell("bash"):
+                raise RuntimeError("kaboom")
+        assert sh._depth == 0
+        # Back at root shell — SHLVL should match pre-entry value.
+        r = sh.Exec("echo $SHLVL", history=True, timeout=5)
+        assert int(r.out[0]) == root_lvl
+
+
+def test_subshell_pop_within_time_bounds():
+    """Default pop completes within ~1s for a silent nested bash."""
+    with LiveShell() as sh:
+        t0 = time.monotonic()
+        with sh.SubShell("bash"):
+            pass
+        elapsed = time.monotonic() - t0
+        # 150ms floor + 3*50ms samples ≈ 250-350ms in the silent case;
+        # add headroom for CI jitter but cap well below 5s timeout.
+        assert elapsed < 1.5, f"pop took {elapsed:.3f}s, expected < 1.5s"
+
+
+def test_subshell_pop_retry_path():
+    """Force the first marker write to be dropped; retry must recover."""
+    LiveShell._pop_drop_first_marker = True
+    try:
+        with LiveShell() as sh:
+            with sh.SubShell("bash"):
+                r = sh.Exec("echo inside", history=True, timeout=5)
+                assert r.out == ["inside"]
+            # If pop's retry didn't fire, this Exec would wedge.
+            r = sh.Exec("echo recovered", history=True, timeout=5)
+            assert r.exit_code == 0 and r.out == ["recovered"]
+    finally:
+        LiveShell._pop_drop_first_marker = False
+
+
+def test_pop_quiescence_under_chatty_output():
+    """A sub-shell that prints noise on exit shouldn't trip premature pop."""
+    with LiveShell() as sh:
+        # Nested bash that prints a multi-line message via PROMPT_COMMAND-
+        # equivalent: install an EXIT trap that emits chatter, then exit.
+        # inherit_stdin=True mirrors SubShell.__enter__: the nested bash
+        # needs the real stdin pipe so subsequent Exec writes reach it.
+        sh.Exec("bash", timeout=5, inherit_stdin=True)
+        # Inside nested bash, install the trap and then leave via _pop.
+        sh.Exec("trap 'for i in 1 2 3 4 5; do echo bye_$i; done' EXIT", timeout=5)
+        rc = sh._pop(quiescence_ms=150, idle_samples=3, timeout=5.0, retries=1)
+        assert rc is not None
+        # Back at root shell.
+        r = sh.Exec("echo back", history=True, timeout=5)
+        assert r.exit_code == 0 and r.out == ["back"]
+
+
+# ----------------------------------------------------------------------
+# G9 — init handshake is liveness-governed (not a short time gate)
+#
+# These drive REAL bash processes (no mocked markers). We rewrite the spawned
+# argv so the real bash is slow to reach its read loop (`sleep N; exec bash`),
+# dies before responding (`sleep N; exit C`), or stays alive but never answers
+# (`exec sleep N`) — reproducing the deploy condition directly.
+# ----------------------------------------------------------------------
+
+@contextmanager
+def _spawn_override(delay, inner="exec bash"):
+    """Make the next LiveShell()'s bash run `sleep {delay}; {inner}` instead of
+    a bare `bash`, so the init marker is genuinely delayed / never emitted.
+    Patches only the terminals module's `subprocess` reference (PIPE /
+    TimeoutExpired preserved), and restores it on exit."""
+    real = terminals.subprocess
+    class _Shim:
+        PIPE = subprocess.PIPE
+        TimeoutExpired = subprocess.TimeoutExpired
+        def Popen(self, args, **kw):
+            if args == ["bash"]:
+                args = ["bash", "-c", f"sleep {delay}; {inner}"]
+            return subprocess.Popen(args, **kw)
+    terminals.subprocess = _Shim()
+    try:
+        yield
+    finally:
+        terminals.subprocess = real
+
+
+def test_g9_slow_but_alive_bash_still_inits():
+    """A real bash that is slow to reach its read loop — the init marker
+    delayed well past the old 5s gate — still inits, because liveness governs
+    the wait. This is the deploy false positive distilled; a reintroduced short
+    deadline would fail it."""
+    delay = 6.0  # > the old 5.0s ceiling
+    t0 = time.monotonic()
+    with _spawn_override(delay):
+        with LiveShell() as sh:
+            dt = time.monotonic() - t0
+            r = sh.Exec("echo alive", history=True, timeout=10)
+    assert r.exit_code == 0 and r.out == ["alive"], r.out
+    assert dt >= delay - 0.5, (
+        f"init returned in {dt:.2f}s; expected to wait ~{delay}s for the real "
+        f"marker — a short deadline would have killed this live bash"
+    )
+
+
+def test_g9_dead_bash_fails_fast_with_rc():
+    """A real bash that exits before responding (never emits the marker) makes
+    init fail fast — at ~the death, far under the backstop — naming the rc.
+    The old fixed-deadline wait could not tell this from a slow shell."""
+    t0 = time.monotonic()
+    with _spawn_override(0.5, inner="exit 7"):
+        with pytest.raises(RuntimeError, match=r"bash exited \(rc=7\)"):
+            LiveShell()
+    dt = time.monotonic() - t0
+    assert dt < 3.0, f"dead-bash init took {dt:.2f}s; should fail fast"
+
+
+def test_g9_wedged_alive_bash_hits_backstop(monkeypatch):
+    """A real bash that is alive but never responds (here it `exec`s into a
+    long sleep, so it stays alive yet emits no marker) raises only via the far
+    backstop, with an 'unresponsive' message — not a death, not a 5s gate."""
+    monkeypatch.setattr(LiveShell, "_INIT_TIMEOUT", 0.4)
+    monkeypatch.setattr(LiveShell, "_INIT_POLL_INTERVAL", 0.01)
+    t0 = time.monotonic()
+    with _spawn_override(0, inner="exec sleep 30"):
+        with pytest.raises(RuntimeError, match="unresponsive"):
+            LiveShell()
+    dt = time.monotonic() - t0
+    assert dt >= 0.4, f"backstop fired too early ({dt:.2f}s)"
+    assert dt < 2.0, f"backstop fired too late ({dt:.2f}s)"
+
+
+def test_g9_command_path_timeout_none_survives_silence():
+    """
+    Objective 1: the command/transform path (timeout=None) is unchanged — it
+    waits forever through silence, with no inactivity/liveness kill. A command
+    that produces no output for seconds still returns its exit code. (Faithful
+    proxy for 'no output for hours'; the command path has no time gate at all.)
+    """
+    with LiveShell() as sh:
+        res = sh.Exec("sleep 2", history=True, timeout=None)
+    assert res.exit_code == 0
+
+
+@pytest.mark.slow
+def test_g9_init_survives_reader_starvation_under_load():
+    """The real deploy trigger: heavy CPU load (GIL contention) starves the
+    Python reader threads while many real LiveShells are constructed. Under the
+    old 5s gate this false-killed shells whose marker hadn't been parsed yet;
+    liveness-governed init must bring every shell up. Asserts no false negatives
+    (no latency assertion — that would be flaky)."""
+    import threading
+
+    stop = threading.Event()
+    def gil_hog():
+        x = 0
+        while not stop.is_set():
+            for _ in range(200000):
+                x = (x * 1103515245 + 12345) & 0x7fffffff
+
+    n_hogs = max(8, (os.cpu_count() or 4))
+    hogs = [threading.Thread(target=gil_hog, daemon=True) for _ in range(n_hogs)]
+    for h in hogs:
+        h.start()
+    time.sleep(0.3)  # let load ramp
+
+    failures = []
+    try:
+        for i in range(8):
+            try:
+                with LiveShell() as sh:
+                    r = sh.Exec("echo ok", history=True, timeout=30)
+                    assert r.out == ["ok"], r.out
+            except Exception as e:
+                failures.append((i, repr(e)))
+    finally:
+        stop.set()
+        for h in hogs:
+            h.join(timeout=2)
+
+    assert not failures, f"init false-negatives under load: {failures}"
+
+
+def test_last_byte_time_updates_on_output():
+    """The quiescence timestamp moves forward when bytes arrive."""
+    with LiveShell() as sh:
+        t_before = sh._last_byte_time
+        time.sleep(0.05)
+        sh.Exec("echo tick", history=True, timeout=5)
+        assert sh._last_byte_time > t_before
+
+
+# ----------------------------------------------------------------------
+# stdin-isolation (the </dev/null wrap): user cmds get EOF from /dev/null
+# instead of stealing bash's stdin pipe. Mutation gate: reverting the wrap
+# in ExecAsync makes test_exec_stdin_reading_cmd_does_not_steal_marker
+# and the network-gated ssh tests time out.
+# ----------------------------------------------------------------------
+
+def test_exec_stdin_reading_cmd_does_not_steal_marker():
+    """`cat` would consume the marker emission line off bash's stdin pipe
+    without the </dev/null wrap. With the wrap it gets EOF and exits."""
+    with LiveShell() as sh:
+        r = sh.Exec("cat", timeout=5)
+        assert r.exit_code == 0
+        # Next Exec must still work — proves the first one didn't break
+        # the marker protocol or leave bytes stranded on the pipe.
+        r2 = sh.Exec("echo hi", history=True, timeout=5)
+        assert r2.exit_code == 0
+        assert r2.out == ["hi"]
+
+
+def test_exec_explicit_stdin_redirect_is_honored():
+    """`cat < file` overrides the outer </dev/null and reads the file."""
+    with LiveShell() as sh:
+        r = sh.Exec("cat < /etc/hostname", history=True, timeout=5)
+        assert r.exit_code == 0
+        assert len(r.out) >= 1 and r.out[0] != ""
+
+
+def test_exec_multiline_body_preserves_env_mutation():
+    """The brace group must preserve env mutations across Execs (current
+    shell, not a subshell). Multi-line bodies must parse cleanly under
+    the `{\\n ... \\n} </dev/null` wrap regardless of trailing whitespace."""
+    import textwrap
+    with LiveShell() as sh:
+        cmd = textwrap.dedent("""
+            x=42
+            echo "x is $x"
+        """)
+        r = sh.Exec(cmd, history=True, timeout=5)
+        assert r.exit_code == 0
+        assert "x is 42" in r.out
+        # Brace-group scope preserves env in the parent shell.
+        r2 = sh.Exec("echo $x", history=True, timeout=5)
+        assert r2.exit_code == 0
+        assert r2.out == ["42"]
+
+
+def test_exec_inherit_stdin_passes_through_to_child():
+    """With inherit_stdin=True the user cmd inherits bash's stdin pipe.
+    Verified by entering nested bash and running a command in it — the
+    SubShell mechanism this enables. Mirrors test_pop_quiescence path."""
+    with LiveShell() as sh:
+        sh.Exec("bash", timeout=5, inherit_stdin=True)
+        r = sh.Exec("echo from-nested", history=True, timeout=5)
+        assert r.exit_code == 0
+        assert r.out == ["from-nested"]
+        # Pop back out cleanly so the LiveShell disposes cleanly.
+        sh._pop(quiescence_ms=150, idle_samples=3, timeout=5.0, retries=1)
+
+
+# ----------------------------------------------------------------------
+# Network-gated: real-traffic confirmation against an ssh-reachable host.
+# Run with: LIVESHELL_REMOTE_HOST=sockeye pytest -m network
+# ----------------------------------------------------------------------
+
+_REMOTE_HOST = os.environ.get("LIVESHELL_REMOTE_HOST", "")
+
+
+@pytest.mark.network
+@pytest.mark.skipif(not _REMOTE_HOST, reason="set LIVESHELL_REMOTE_HOST to an ssh-reachable host")
+def test_exec_ssh_one_shot_returns_rc_zero():
+    """Exec("ssh host true") must return rc=0, not None. Pre-fix this
+    wedged because ssh consumed the marker line from bash's stdin."""
+    with LiveShell() as sh:
+        r = sh.Exec(f"ssh {_REMOTE_HOST} true", timeout=30)
+        assert r.exit_code == 0
+
+
+@pytest.mark.network
+@pytest.mark.skipif(not _REMOTE_HOST, reason="set LIVESHELL_REMOTE_HOST to an ssh-reachable host")
+def test_exec_ssh_one_shot_returns_rc_nonzero():
+    """ssh propagates the remote command's exit code."""
+    with LiveShell() as sh:
+        r = sh.Exec(f"ssh {_REMOTE_HOST} false", timeout=30)
+        assert r.exit_code == 1
+
+
+@pytest.mark.network
+@pytest.mark.skipif(not _REMOTE_HOST, reason="set LIVESHELL_REMOTE_HOST to an ssh-reachable host")
+def test_exec_ssh_then_rsync_compound():
+    """The exact rsync.py:55 pattern: `ssh host mkdir && rsync src host:dst`.
+    Verifies the compound runs and the destination file exists remotely."""
+    with LiveShell() as sh:
+        cmd = (
+            f"ssh {_REMOTE_HOST} 'mkdir -p /tmp/lstest_msm' && "
+            f"rsync /etc/hostname {_REMOTE_HOST}:/tmp/lstest_msm/probe.txt"
+        )
+        r = sh.Exec(cmd, timeout=60)
+        assert r.exit_code == 0
+        # Confirm the file landed.
+        check = sh.Exec(
+            f"ssh {_REMOTE_HOST} 'cat /tmp/lstest_msm/probe.txt'",
+            history=True, timeout=30,
+        )
+        assert check.exit_code == 0
+        assert len(check.out) > 0

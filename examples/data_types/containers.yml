@@ -1,0 +1,10 @@
+types:
+  container:
+    properties:
+      Format: OCI
+  metasmith.oci:
+    extends: container
+    properties:
+      provides:
+      - echo
+      - bash

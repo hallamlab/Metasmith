@@ -184,22 +184,47 @@ smith.StageWorkflow(task)   # compiles DAG → Nextflow scripts
 smith.RunWorkflow(task)     # launches Nextflow (async!)
 ```
 
-#### Apptainer SIF → sandbox auto-unpack
+#### Apptainer SIF ↔ sandbox decision
 
-`Agent.Deploy()` probes the host apptainer for a setuid `starter-suid`.
-If it's missing (the conda-forge build omits it), the deploy step also
-runs `apptainer build --force --sandbox <name>.sandbox <name>.sif` for
-every cached image. `Container.MakeRunCommand(local=True)` then emits
-a shell ternary that prefers the `.sandbox/` directory over the `.sif`
-at run time, so apptainer never engages squashfuse_ll — sidestepping the
-WSL2+squashfuse_ll FUSE wedge that hangs nextflow under msm_relay's fork
-chain (Bug E.2). On HPC hosts with a proper setuid starter-suid (e.g.
-Sockeye), the probe is silent and no sandbox dir is built. The cache
-layout is `<home>/container_images/<name>.sif` alongside `<name>.sandbox/`;
-the SIF is retained so an `assertive=True` redeploy can rebuild the
-sandbox without re-pulling. The relevant helpers are
-`Container.GetSandboxPath / MakeNeedsSandboxProbe / MakeBuildSandboxCommand`
-in `src/metasmith/coms/containers.py`.
+`Agent.Deploy()` runs `Container.MakeSandboxDecisionProbe()` against the
+target host (login node for HPC, locally for WSL2) and acts on the
+verdict it prints:
+
+- **`use-sif`** — setuid `starter-suid` is present (kernel squashfs
+  mount; HPC like Sockeye), **or** apptainer is older than 1.4 without
+  setuid (sandbox path falls back to fuse-overlayfs, which races SIGBUS
+  under SLURM array contention — Bug E.4 on fir 1.3.5). Deploy removes
+  any stale `<name>.sandbox/` so the run-time ternary picks SIF.
+
+- **`use-sandbox`** — apptainer ≥1.4 without setuid (the Bug E.2 surface
+  on WSL2: SIF would engage squashfuse_ll and wedge under msm_relay's
+  fork chain). Deploy runs `apptainer build --force --sandbox` if the
+  directory doesn't already exist. The sandbox rootfs is read through
+  unprivileged kernel overlayfs, never FUSE.
+
+The probe is a two-axis static check (no `apptainer exec` at deploy
+time): `[ -u .../starter-suid ]` first, then `apptainer --version` major
+and minor compared against `1.4`. Verdict is re-evaluated on every
+`Deploy()` call, so an apptainer upgrade flips the on-disk state on next
+deploy. `assertive=True` prepends `rm -rf <sandbox>` so a forced
+redeploy unconditionally re-probes and rebuilds.
+
+`Container.MakeRunCommand(local=True)` emits the run-time ternary
+`"$(if [ -d <sandbox> ]; then echo <sandbox>; else echo <sif>; fi)"` —
+unchanged. Deploy controls which arm fires by controlling the directory's
+presence on the target host.
+
+Cache layout: `<store>/<name>.sif` (always retained) alongside
+`<name>.sandbox/` (present iff verdict is `use-sandbox`). The store root
+`<store>` is the single point of control `Container._store_root()`:
+`${APPTAINER_CACHEDIR:-<home>/container_images}` — i.e. the host's
+`APPTAINER_CACHEDIR` when set, else `<home>/container_images`. It is a shell
+expression expanded on the *execution host* (like `$AGENT_HOME` in the same
+strings), so the pull (write), sandbox build, and `exec` (read) sides always
+agree. Both `GetLocalPath` and `GetSandboxPath` derive from it, keeping the
+`.sif` and `.sandbox` siblings. Helpers in
+`src/metasmith/coms/containers.py`: `_store_root / GetLocalPath /
+GetSandboxPath / MakeSandboxDecisionProbe / MakeBuildSandboxCommand`.
 
 RunWorkflow fires and returns immediately. The actual execution happens in a
 Nextflow process that manages container pulls, job scheduling, and data staging.
@@ -248,6 +273,63 @@ results_path = smith.GetResultSource(task).GetPath()
 ```
 
 A first-class `wait`/`WaitForRun` API is tracked for 0.18.
+
+#### Resource overrides at run time
+
+`RunWorkflow(resource_overrides={key: Resources(...), ...})` overrides
+per-process `cpus` / `memory` / `duration` for the run without re-staging.
+The mechanism is selector-based and relies on a specific Nextflow precedence
+rule — load it before adding new override shapes or debugging "the override
+didn't apply."
+
+**Two files, two selectors.** Stage time emits `workflow.resources.nf` with
+one block per step using an **exact** selector (`step.transform.name`
+prefixed by `pNN__`); run time emits an appended block in
+`workflow.config.nf` with a **regex** selector derived from the key:
+
+| Key shape | Emitted run-time selector |
+|---|---|
+| `"all"` / `"*"` | `withName: '.*'` |
+| `int` (step index) | `withName: 'pNN__.*'` |
+| `str` (transform name) | `withName: '.*__<str>'` |
+| `Transform` / `TransformInstance` | `withName: '.*__<.name>'` |
+
+The runner passes the two files in order: `nextflow -config
+./workflow.resources.nf -config ./workflow.config.nf ...` (see
+`agents.py:1344-1346`).
+
+**Precedence rule that makes it work.** Nextflow does **not** apply "exact >
+regex specificity" across selectors from different config sources. The
+rule that actually applies is: **per-directive last-defined wins**, where
+"last" = the later of the two `-config` flags. The exact `pNN__<name>`
+block from `workflow.resources.nf` is loaded first; the regex block from
+`workflow.config.nf` is loaded second, so any directive set in both files
+takes the run-time value. Directives set only in the stage file (e.g.
+`memory = { (2**(task.attempt-1)) * (... as MemoryUnit) }` retry-scaling
+closure) fall through unchanged. `nextflow config -config A -config B` is
+the quickest way to inspect the merged tree when troubleshooting.
+
+**Caveats.**
+
+- The regex selectors are **case-sensitive** Java regexes. `'.*ncbi.*'`
+  will not match `p01__getNcbiAssembly`; the user's regex has to handle
+  case explicitly or use the transform's literal name.
+- Local-executor caps (`params.executor.memory` in `local.nf`) reject
+  asks that exceed available host memory before the run starts — the
+  override is honored; Nextflow is just rejecting the resulting request.
+  Bump the executor cap or use a smaller override for local smoke tests.
+- The "won't mess with caching" comment at
+  `src/metasmith/models/workflow.py:1265` is load-bearing:
+  `workflow.resources.nf` content stays stable across runs with
+  different overrides (overrides live in `workflow.config.nf`), so
+  Nextflow's per-task hashing is unaffected by override differences.
+
+If an override appears to be silently dropped, check in this order: the
+regex actually matches the staged process name (`pNN__<transform.name>`),
+no Groovy parse error in `.nextflow.log` killed the include, no third
+config layer was loaded after `workflow.config.nf`, and `sacct` request
+columns (`ReqCPUS`/`ReqMem`) match the override — `AllocCPUS`/`AllocMem`
+reflect SLURM partition rounding, not what Nextflow requested.
 
 ---
 
@@ -565,12 +647,16 @@ git commit -am "Bump version to 0.18.3"
 
 # 2. Build & publish (these stamp build_hash.txt as a side effect)
 ./dev.sh -bp           # pip wheel → metasmith-0.18.3+<hash>-py3-none-any.whl
+./dev.sh -brc          # one-time: build the rust cross-compile container
+./dev.sh -br           # build all 4 relay binaries (x86_64/arm64 × linux/darwin)
 ./dev.sh -bd && -ud    # docker → quay.io/hallamlab/metasmith:0.18.3-<hash>
 ./dev.sh -bs           # apptainer .sif (matching tag)
 
 # 3. Tag
 git tag v0.18.3 && git push upstream v0.18.3
 ```
+
+`-br` is load-bearing — `--update_container` skips it, which is how 0.18.4 shipped with 3 of 4 `/app/msm_relay.*` slots replaced by 28-byte `#!/bin/sh\necho 'stub relay'` stubs left over in `main/relay_agent/target/`. `dev.sh -ud` and `-bs` now invoke `_assert_real_relays` against the just-tagged image and refuse to publish or convert if any slot is a stub (wrong magic for its arch, or <100 KB). Override only for emergencies: `MSM_SKIP_RELAY_CHECK=1 ./dev.sh -ud`.
 
 The hash captures the source state; identical source ↔ identical hash ↔ identical image tag. Two builds from the same commit produce the same tag; a one-line edit produces a new tag (and a new image).
 
@@ -580,3 +666,25 @@ Regression tests pinning the chain: `tests/test_container_tag.py`, `tests/test_d
 - `transforms/metagenomics/binning/checkm.py` - single assembly input pattern
 - `transforms/metagenomics/taxonomy/gtdbtk.py` - external database binding pattern
 - `transforms/logistics/getNcbiAssembly.py` - multiple outputs pattern
+
+## `examples/` — minimal regression library
+
+Top-level `examples/` is the smallest valid metasmith library — agnostic
+(no host/runtime references) and reusable for any deploy/runtime smoke.
+Layout:
+
+```
+examples/
+├── data_types/{examples,containers}.yml   # source types: examples::name, examples::greeting, containers::metasmith.oci
+├── metasmith.oci                          # docker:// URL for the metasmith image itself
+├── echo_greeting.py                       # 1 transform: name → echo "hello $name" > greeting.txt
+└── _metadata/                             # generated by `metasmith build -t data_types -r .`, committed
+```
+
+Use it from a smoke script like `main/local_mock/smoke_hpc_deploy.py`:
+`DataInstanceLibrary` for the input value + a containers `DataInstanceLibrary`
+with `metasmith.oci` `AddItem`'d in, then `TransformInstanceLibrary.Load(examples)`
+and `TargetBuilder().Add("examples::greeting")`.
+
+Rebuild after editing yamls or the transform:
+`python -m metasmith build -t examples/data_types -r examples`.

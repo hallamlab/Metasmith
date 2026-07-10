@@ -52,6 +52,17 @@ Additional setup commands, to be run before the excution of each workflow, can b
         ]
     )
 
+.. note::
+
+    For the Apptainer runtime, ``APPTAINER_CACHEDIR`` also selects where
+    Metasmith stores its built container images (the ``.sif`` files and any
+    unpacked ``.sandbox`` directories) — this is the store ``apptainer exec``
+    reads from at run time. When it is unset, Metasmith falls back to
+    ``<agent_home>/container_images``. If you export it (as above), point it at
+    **persistent** storage with room for the images; a location that is wiped
+    between sessions (e.g. a node-local ``/tmp``) forces a re-pull on every run.
+    The example above uses ``/home/$USER/tmp``, which persists, so it is safe.
+
 .. _Container Runtime:
 
 Container Runtime

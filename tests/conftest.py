@@ -13,6 +13,13 @@ if str(SRC_ROOT) not in sys.path:
 from metasmith.models.solver import Transform, Endpoint
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "network: requires LIVESHELL_REMOTE_HOST (ssh-reachable host) env var",
+    )
+
+
 @pytest.fixture
 def make_transform():
     """Factory fixture to create Transform objects."""

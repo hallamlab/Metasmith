@@ -31,11 +31,22 @@ class Container:
     def _cached_name(self):
         return self.image.replace("://", "..").replace(":", "..").replace("/", "_")
 
+    def _store_root(self):
+        # Single point of control for the apptainer image-store location.
+        # Prefer APPTAINER_CACHEDIR when set, else the agent-home default the
+        # caller passed in `container_cache`. The value is a shell expression
+        # expanded on the *execution host* (the same way `$AGENT_HOME` is in
+        # these strings), so an HPC deploy picks up the cluster's setting and
+        # the write side (pull/build) and read side (exec) can never diverge.
+        # Both GetLocalPath and GetSandboxPath build off this so the .sif and
+        # .sandbox always stay siblings under one root.
+        return Path(f"${{APPTAINER_CACHEDIR:-{self.container_cache}}}")
+
     def GetLocalPath(self):
         # todo: docker-daemon local?
         match self.runtime:
             case ContainerRuntime.APPTAINER:
-                return self.container_cache/f"{self._cached_name()}.sif"
+                return self._store_root()/f"{self._cached_name()}.sif"
 
     def GetSandboxPath(self):
         # Sibling of GetLocalPath for the APPTAINER `build --sandbox` artifact
@@ -44,15 +55,35 @@ class Container:
         # is what `apptainer exec` consumes; no extension.
         match self.runtime:
             case ContainerRuntime.APPTAINER:
-                return self.container_cache/f"{self._cached_name()}.sandbox"
+                return self._store_root()/f"{self._cached_name()}.sandbox"
 
-    def MakeNeedsSandboxProbe(self):
-        # Emits the literal sentinel "needs-sandbox" when the host's apptainer
-        # ships no setuid starter-suid (conda-forge build); silent otherwise.
+    def MakeSandboxDecisionProbe(self):
+        # Emits either "use-sif" or "use-sandbox" on stdout, encoding the
+        # host-local choice of rootfs delivery for APPTAINER. Two-axis static
+        # check; no `apptainer exec` involved.
+        #
+        # use-sif (default) — either:
+        #   (a) setuid starter-suid present → kernel squashfs mount, no FUSE
+        #       (HPC with privileged apptainer: Sockeye), or
+        #   (b) apptainer <1.4 without setuid → sandbox path falls back to
+        #       fuse-overlayfs (race-prone under sbatch arrays; SIGBUS on fir
+        #       1.3.5). SIF goes through squashfuse_ll which works fine on
+        #       HPC batch nodes without the relay fork chain.
+        #
+        # use-sandbox — apptainer >=1.4 without setuid: SIF would engage
+        # squashfuse_ll (wedges under msm_relay's fork chain on WSL2 — Bug
+        # E.2), but the sandbox path routes through unprivileged kernel
+        # overlayfs (no FUSE daemon in the chain).
+        if self.runtime != ContainerRuntime.APPTAINER:
+            return ""
         return (
             'APPTAINER_BIN=$(readlink -f "$(command -v apptainer)" 2>/dev/null); '
             'SUID="$(dirname "$APPTAINER_BIN")/../libexec/apptainer/bin/starter-suid"; '
-            '[ -u "$SUID" ] || echo "needs-sandbox"'
+            'if [ -u "$SUID" ]; then echo "use-sif"; '
+            'else V=$(apptainer --version 2>/dev/null | awk \'NR==1{print $NF}\'); '
+            'MAJ=${V%%.*}; REST=${V#*.}; MIN=${REST%%.*}; '
+            'if [ "${MAJ:-0}" -ge 2 ] || { [ "${MAJ:-0}" -eq 1 ] && [ "${MIN:-0}" -ge 4 ]; }; '
+            'then echo "use-sandbox"; else echo "use-sif"; fi; fi'
         )
 
     def MakeBuildSandboxCommand(self):
