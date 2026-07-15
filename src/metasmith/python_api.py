@@ -2,6 +2,11 @@ from .models.libraries import Endpoint, DataTypeLibrary, DataInstanceLibrary
 from .models.libraries import Transform, TransformInstance, TransformInstanceLibrary
 from .models.libraries import ExecutionContext, ExecutionResult, Resources, Size, Duration
 from .models.workflow import WorkflowTask, WorkflowPlan, WorkflowStep, WorkflowTarget
+# Run one transform against concrete files -- no solver, no nextflow -- while still
+# routing through the same ExecuteStep the DAG uses, so what you iterate on solo is
+# what runs in the pipeline. This is the transform-authoring dev loop; it was
+# reachable only by importing a private module path.
+from .models.direct_run import RunTransform
 from .models.remote import Source, SshSource, GlobusSource, HttpSource, SourceType
 from .models.remote import Logistics, LogisticsResult, LogisticsException
 from .logging import Log
