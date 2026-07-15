@@ -203,6 +203,12 @@ def RunTransform(
 
     original_cwd = Path.cwd()
     Log.Info(f"direct-run [{inst.name}] in [{work_dir}]")
+    # ExecWithContainer writes its bounce script to ./_metasmith/.bounce.<k>. On the
+    # nextflow path that directory already exists in the task work dir; here nobody
+    # has made it, so ANY containerized transform died with a bare
+    # `FileNotFoundError: _metasmith/.bounce.*` -- i.e. the direct-run dev loop only
+    # ever worked for transforms that shell out without a container.
+    (work_dir / "_metasmith").mkdir(parents=True, exist_ok=True)
     os.chdir(work_dir)
     try:
         with LiveShell() as shell:
@@ -218,6 +224,12 @@ def RunTransform(
                 input_by_dep=input_by_dep,
                 dep2output=dep2output,
                 params={"cpus": 1, "memory": 1, "attempt": 1},
+                # direct-run is host-local: no bootstrap container, nothing bound
+                # at /ws. Without this every containerized transform reports
+                # success=False despite having produced its outputs, because the
+                # standard `output.local.exists()` idiom checks a /ws path that
+                # only exists inside the nextflow bootstrap container.
+                host_local=True,
             )
     finally:
         os.chdir(original_cwd)

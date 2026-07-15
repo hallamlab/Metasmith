@@ -90,6 +90,7 @@ def ExecuteStep(
     input_by_dep: dict,
     dep2output: list,
     params: dict,
+    host_local: bool = False,
 ) -> ExecutionResult:
     """Run a single workflow step's protocol against pre-bound inputs.
 
@@ -108,6 +109,7 @@ def ExecuteStep(
         extern_home=Path(agent_home),
         task_key=task_key,
         extern_cwd=external_cwd,
+        host_local=host_local,
     )
     def _shorten_home(s: str):
         # Log-line shortener: replace the host-side agent_home in a

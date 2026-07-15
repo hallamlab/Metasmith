@@ -247,9 +247,13 @@ class ContextPath:
         if "/" in name or name in ("", ".", ".."):
             raise ValueError(f"ForOutput expects a bare filename, got: {name!r}")
         container = AgentPaths.WORK_ROOT / name
-        local = container  # same workdir bind from both container views
         external_base = path_map.extern_cwd if path_map.extern_cwd is not None else path_map.extern_work
         external = external_base / name
+        # Under nextflow the bootstrap is itself containerized with cwd bound to
+        # /ws, so the local and container views coincide. On the direct-run path
+        # the bootstrap is a plain host process and nothing is bound at /ws, so
+        # `local` there IS the host path -- see PathMap.host_local.
+        local = external if path_map.host_local else container
         return cls(local=local, external=external, container=container)
 
 
@@ -279,6 +283,14 @@ class PathMap:
     extern_home: Path
     task_key: str
     extern_cwd: Path | None = None
+    # True when the bootstrap itself is NOT running inside a container -- i.e. the
+    # direct-run path, where cwd is a plain host directory and nothing is bound at
+    # /ws. ForOutput's `local` view depends on this: under nextflow the bootstrap
+    # runs containerized with cwd bound to /ws, so local==container==/ws/<name>;
+    # host-local there is no such bind, and local must be the host path or every
+    # `output.local.exists()` success check reads False for a step that in fact
+    # succeeded. Default False keeps the nextflow path byte-identical.
+    host_local: bool = False
     extern_work: Path = field(init=False)
 
     def __post_init__(self) -> None:
