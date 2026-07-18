@@ -127,3 +127,12 @@ def test_provision_for_returns_callable_for_reference_arms() -> None:
     # A7 (container/ad-hoc) and A10 (metasmith) must yield a real callable.
     assert callable(provision_for(_A7))
     assert callable(provision_for(_A10))
+
+
+def test_every_scenario_exposes_max_tokens_quota() -> None:
+    # Per-test token quota field must exist on every scenario (pipeline + t1),
+    # so run_cell's quota resolution can't silently regress. None until piloted.
+    for sc in _pipeline_scenarios():
+        assert hasattr(sc, "max_tokens"), sc.name
+    assert hasattr(InstallToolScenario(env_channel="container", tool="fastp"),
+                   "max_tokens")

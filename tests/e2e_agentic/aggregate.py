@@ -57,11 +57,26 @@ def load_results(paths: list[Path]) -> pd.DataFrame:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     df["_total_tokens"] = df[list(_TOKEN_COLS)].sum(axis=1, skipna=True)
-    df["_executed"] = df["outcome"].astype(str).str.strip().ne("") if "outcome" in df else False
+    # "Executed" = the loop ran (outcome stamped) OR the harness crashed before
+    # the loop (status=error, blank outcome). Both are attempts and belong in the
+    # DNF denominator.
+    _outcome = df["outcome"].astype(str).str.strip() if "outcome" in df else ""
+    _status = df["status"].astype(str).str.strip() if "status" in df else ""
+    df["_executed"] = (
+        (_outcome.ne("") if "outcome" in df else False)
+        | (_status.eq("error") if "status" in df else False)
+    )
     df["_success"] = (
         df["_executed"]
         & df.get("outcome", "").astype(str).str.strip().eq("done")
         & df.get("artifact_ok", "").map(_truthy)
+    )
+    # DNF = attempted but did not succeed. `over_budget` is the "quota reached"
+    # subset the study surfaces explicitly. Derived here (not a CSV column) so
+    # the master experiments.csv schema is untouched.
+    df["_dnf"] = df["_executed"] & ~df["_success"]
+    df["_over_budget"] = df["_executed"] & (
+        _outcome.eq("over_budget") if "outcome" in df else False
     )
     return df
 
@@ -80,6 +95,9 @@ def summarize(df: pd.DataFrame) -> pd.DataFrame:
             "n_executed": int(len(g)),
             "n_success": int(len(succ)),
             "success_rate": round(len(succ) / len(g), 4) if len(g) else 0.0,
+            "n_dnf": int(g["_dnf"].sum()),
+            "dnf_rate": round(int(g["_dnf"].sum()) / len(g), 4) if len(g) else 0.0,
+            "n_over_budget": int(g["_over_budget"].sum()),
         }
         for c in _TOKEN_COLS:
             pts = succ[c].dropna().tolist()

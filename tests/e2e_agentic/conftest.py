@@ -26,8 +26,12 @@ def pytest_addoption(parser):
     g.addoption("--agent-effort", default=None,
                 help="effort level (claude only)")
     g.addoption("--max-iters", type=int, default=20)
-    g.addoption("--max-tokens", type=int, default=2_000_000)
+    # None → the scenario's own max_tokens quota, else the global fallback.
+    g.addoption("--max-tokens", type=int, default=None)
     g.addoption("--max-tokens-per-iter", type=int, default=200_000)
+    g.addoption("--max-usd-per-iter", type=float, default=None,
+                help="per-invocation dollar runaway valve (claude "
+                     "--max-budget-usd); None → derived from --max-tokens-per-iter")
     g.addoption("--iter-timeout-s", type=float, default=300.0,
                 help="per-iteration wall-clock timeout (claude + opencode); "
                      "keep tight so a hung workflow (e.g. nextflow stuck at "
@@ -122,10 +126,15 @@ def agent_driver(pytestconfig):
 @pytest.fixture
 def loop_budgets(pytestconfig):
     from tests.e2e_agentic.harness.loop import LoopBudgets
+    from tests.e2e_agentic.run_cell import _GLOBAL_MAX_TOKENS_FALLBACK
+    # max_tokens stays a placeholder here (the scenario isn't known yet); the
+    # per-scenario quota is resolved in run_scenario._run before ralph_loop.
+    cli_max = pytestconfig.getoption("--max-tokens")
     return LoopBudgets(
         max_iters=pytestconfig.getoption("--max-iters"),
-        max_tokens=pytestconfig.getoption("--max-tokens"),
+        max_tokens=cli_max if cli_max is not None else _GLOBAL_MAX_TOKENS_FALLBACK,
         max_tokens_per_iter=pytestconfig.getoption("--max-tokens-per-iter"),
+        max_usd_per_iter=pytestconfig.getoption("--max-usd-per-iter"),
     )
 
 
@@ -183,11 +192,23 @@ def run_scenario(install_context_factory, agent_driver, tmp_path,
             (log_dir / "PROMPT.md").write_text(prompt)
             pytest.skip(f"--dry-run: prompt rendered to {log_dir / 'PROMPT.md'}")
 
+        # Re-resolve the token quota now that the scenario is known: explicit
+        # --max-tokens wins, else the scenario's own quota, else the fallback
+        # already baked into loop_budgets.
+        from dataclasses import replace
+        from tests.e2e_agentic.run_cell import (
+            _GLOBAL_MAX_TOKENS_FALLBACK, _effective_max_tokens,
+        )
+        budgets = replace(loop_budgets, max_tokens=_effective_max_tokens(
+            pytestconfig.getoption("--max-tokens"), scenario,
+            _GLOBAL_MAX_TOKENS_FALLBACK,
+        ))
+
         result = ralph_loop(
             driver=agent_driver,
             prompt=prompt,
             sandbox=sb_root,
-            budgets=loop_budgets,
+            budgets=budgets,
             log_dir=log_dir,
             env=agent_env,
         )

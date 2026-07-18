@@ -234,3 +234,77 @@ def test_factory_honors_explicit_model() -> None:
 def test_factory_rejects_unknown_driver() -> None:
     with pytest.raises(ValueError, match="unknown agent driver"):
         make_driver("aider")
+
+
+# ---------------------------------------------------------------------------
+# per-iteration dollar runaway valve (--max-budget-usd)
+# ---------------------------------------------------------------------------
+
+
+def _capture_argv(monkeypatch, module) -> list:
+    """Stub the driver's run_streaming to record argv and return a clean exit."""
+    captured: list = []
+
+    def fake_run_streaming(argv, **kwargs):
+        captured.append(argv)
+        return (0, 0.0)  # exit_code, duration; no transcript written -> zeros
+
+    monkeypatch.setattr(module, "run_streaming", fake_run_streaming)
+    return captured
+
+
+def _invoke_claude(driver, tmp_path, **kw):
+    return driver.invoke(
+        prompt="do the thing", sandbox=tmp_path, env={},
+        max_tokens_per_iter=kw.pop("max_tokens_per_iter", 200_000),
+        log_dir=tmp_path, **kw,
+    )
+
+
+def test_claude_emits_explicit_max_budget_usd(monkeypatch, tmp_path) -> None:
+    from tests.e2e_agentic.drivers import claude as claude_mod
+    captured = _capture_argv(monkeypatch, claude_mod)
+
+    _invoke_claude(ClaudeDriver(model="haiku"), tmp_path, max_usd_per_iter=1.25)
+
+    argv = captured[0]
+    assert "--max-budget-usd" in argv
+    assert argv[argv.index("--max-budget-usd") + 1] == "1.2500"
+    # single-value flag sits before the trailing positional prompt
+    assert argv[-1] == "do the thing"
+
+
+def test_claude_derives_max_budget_usd_when_unset(monkeypatch, tmp_path) -> None:
+    from tests.e2e_agentic.drivers import claude as claude_mod
+    captured = _capture_argv(monkeypatch, claude_mod)
+
+    # haiku output rate $5/MTok * 2 safety factor: 200k -> $2.0000
+    _invoke_claude(ClaudeDriver(model="haiku"), tmp_path,
+                   max_tokens_per_iter=200_000, max_usd_per_iter=None)
+
+    argv = captured[0]
+    assert "--max-budget-usd" in argv
+    assert argv[argv.index("--max-budget-usd") + 1] == "2.0000"
+
+
+def test_claude_omits_max_budget_usd_for_unknown_model(monkeypatch, tmp_path) -> None:
+    from tests.e2e_agentic.drivers import claude as claude_mod
+    captured = _capture_argv(monkeypatch, claude_mod)
+
+    # unknown model + no explicit override -> guard disabled, no flag emitted
+    _invoke_claude(ClaudeDriver(model="sonnet"), tmp_path, max_usd_per_iter=None)
+
+    assert "--max-budget-usd" not in captured[0]
+
+
+def test_opencode_ignores_max_usd_per_iter(monkeypatch, tmp_path) -> None:
+    """opencode accepts the arg (protocol) but never emits a dollar flag."""
+    from tests.e2e_agentic.drivers import opencode as opencode_mod
+    captured = _capture_argv(monkeypatch, opencode_mod)
+
+    d = OpencodeDriver()
+    d.serve_port = 12345  # skip start_session; invoke only needs the port
+    d.invoke(prompt="go", sandbox=tmp_path, env={},
+             max_tokens_per_iter=200_000, log_dir=tmp_path, max_usd_per_iter=1.0)
+
+    assert "--max-budget-usd" not in captured[0]

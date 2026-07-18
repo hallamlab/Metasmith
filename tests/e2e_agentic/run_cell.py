@@ -298,8 +298,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     # loop budgets
     ap.add_argument("--max-iters", type=int, default=20)
-    ap.add_argument("--max-tokens", type=int, default=2_000_000)
+    # Default None so "explicitly passed" is detectable: the effective quota is
+    # the CLI value if given, else the scenario's own max_tokens, else the
+    # global fallback. See _effective_max_tokens.
+    ap.add_argument("--max-tokens", type=int, default=None)
     ap.add_argument("--max-tokens-per-iter", type=int, default=200_000)
+    # Per-invocation dollar runaway valve (claude --max-budget-usd). None → the
+    # driver derives one from --max-tokens-per-iter.
+    ap.add_argument("--max-usd-per-iter", type=float, default=None)
     ap.add_argument("--iter-timeout-s", type=float, default=300.0)
 
     # paths
@@ -320,6 +326,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
 _DEFAULT_EXPERIMENTS = Path(
     "/home/tony/agentic_workspace/data/metasmith/token-benchmark/experiments.csv"
 )
+
+# Fallback per-test token quota when neither --max-tokens nor the scenario
+# declares one. Each scenario should carry a pilot-discovered max_tokens; this
+# is only the backstop for an un-piloted test.
+_GLOBAL_MAX_TOKENS_FALLBACK = 2_000_000
+
+
+def _effective_max_tokens(cli_value: int | None, scenario, fallback: int) -> int:
+    """Resolve a cell's token quota: explicit CLI > scenario.max_tokens > fallback."""
+    if cli_value is not None:
+        return cli_value
+    scenario_quota = getattr(scenario, "max_tokens", None)
+    return scenario_quota if scenario_quota else fallback
 
 
 def run(argv: list[str] | None = None) -> int:
@@ -414,8 +433,11 @@ def run(argv: list[str] | None = None) -> int:
             )
             budgets = LoopBudgets(
                 max_iters=args.max_iters,
-                max_tokens=args.max_tokens,
+                max_tokens=_effective_max_tokens(
+                    args.max_tokens, scenario, _GLOBAL_MAX_TOKENS_FALLBACK,
+                ),
                 max_tokens_per_iter=args.max_tokens_per_iter,
+                max_usd_per_iter=args.max_usd_per_iter,
             )
             t0 = time.monotonic()
             result = ralph_loop(

@@ -155,7 +155,11 @@ class OpencodeDriver:
         env: dict[str, str],
         max_tokens_per_iter: int,
         log_dir: Path,
+        max_usd_per_iter: float | None = None,
     ) -> IterResult:
+        # max_usd_per_iter is a documented no-op here: opencode has no
+        # per-invocation dollar cap, and this study drives the `claude` CLI.
+        # Accepted only to satisfy the AgentDriver protocol.
         argv = [
             self.bin, "run",
             "--attach", f"http://127.0.0.1:{self.serve_port}",

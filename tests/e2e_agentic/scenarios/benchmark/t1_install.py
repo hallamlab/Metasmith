@@ -111,6 +111,8 @@ class InstallToolScenario:
     expected_artifact_globs: list[str] = field(
         default_factory=lambda: [f"{_PROBE_OUT_REL}/**/*"]
     )
+    # Per-test token quota; None → run_cell's global fallback. See _base.py.
+    max_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if self.env_channel not in INSTALL_ENV_CHANNELS:

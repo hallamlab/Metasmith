@@ -58,5 +58,6 @@ class AgentDriver(Protocol):
         env: dict[str, str],
         max_tokens_per_iter: int,
         log_dir: Path,
+        max_usd_per_iter: float | None = None,
     ) -> IterResult:
         ...

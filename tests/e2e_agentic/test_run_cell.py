@@ -156,6 +156,31 @@ def test_run_cell_synthesizes_keys_without_experiments(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# _effective_max_tokens: explicit CLI > scenario.max_tokens > global fallback
+# ---------------------------------------------------------------------------
+
+
+class _FakeScenario:
+    def __init__(self, max_tokens):
+        self.max_tokens = max_tokens
+
+
+def test_effective_max_tokens_cli_wins() -> None:
+    sc = _FakeScenario(max_tokens=5_000_000)
+    assert rc._effective_max_tokens(999, sc, 2_000_000) == 999
+
+
+def test_effective_max_tokens_scenario_quota() -> None:
+    sc = _FakeScenario(max_tokens=5_000_000)
+    assert rc._effective_max_tokens(None, sc, 2_000_000) == 5_000_000
+
+
+def test_effective_max_tokens_falls_back() -> None:
+    sc = _FakeScenario(max_tokens=None)
+    assert rc._effective_max_tokens(None, sc, 2_000_000) == 2_000_000
+
+
+# ---------------------------------------------------------------------------
 # aggregate
 # ---------------------------------------------------------------------------
 
@@ -187,6 +212,10 @@ def test_aggregate_summary_and_plot_degradation(tmp_path: Path) -> None:
     assert row["n_executed"] == "3"
     assert row["n_success"] == "2"
     assert float(row["success_rate"]) == pytest.approx(2 / 3, abs=1e-3)
+    # DNF = the one over_budget (quota-reached) row
+    assert row["n_dnf"] == "1"
+    assert float(row["dnf_rate"]) == pytest.approx(1 / 3, abs=1e-3)
+    assert row["n_over_budget"] == "1"
     # token medians are over successes only (the over_budget row is excluded)
     assert float(row["median_tokens_in"]) == pytest.approx(1100.0)
     assert json.loads(row["points_tokens_in"]) == [1000, 1200]

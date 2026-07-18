@@ -42,6 +42,11 @@ class BenchmarkScenario:
     expected_trace: tuple[str, str] | None = EXPECTED_TRACE
     timeout_s: float = 3600.0
     pre_install_metasmith: bool = True   # metasmith is the harness control plane
+    # Per-test cumulative token quota (billable in+cached+out+cache_creation).
+    # None → run_cell falls back to the global default. Subclasses override with
+    # a pilot-discovered value; a cell that reaches this quota stops as a DNF
+    # (outcome=over_budget). See run_cell._effective_max_tokens.
+    max_tokens: int | None = None
 
     # --- hooks a subclass may override -------------------------------------
 

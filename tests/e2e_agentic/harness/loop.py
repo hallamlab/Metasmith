@@ -35,6 +35,10 @@ class LoopBudgets:
     max_iters: int = 20
     max_tokens: int = 2_000_000
     max_tokens_per_iter: int = 200_000
+    # Per-invocation dollar runaway valve (claude `--max-budget-usd`). None →
+    # the driver derives one from max_tokens_per_iter. The exact stop stays the
+    # cumulative token quota (max_tokens); this only bounds a single invocation.
+    max_usd_per_iter: float | None = None
 
 
 @dataclass
@@ -96,6 +100,7 @@ def ralph_loop(
                 sandbox=sandbox,
                 env=env,
                 max_tokens_per_iter=budgets.max_tokens_per_iter,
+                max_usd_per_iter=budgets.max_usd_per_iter,
                 log_dir=iter_log,
             )
             iter_results.append(result)
