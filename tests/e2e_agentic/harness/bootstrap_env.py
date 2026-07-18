@@ -46,11 +46,18 @@ def ensure_bootstrap_env(cache_root: Path | None = None) -> Path:
 
     env = dict(os.environ)
     env.pop("PYTHONPATH", None)
+    # mamba is pinned to 2.5.0: mamba/micromamba >=2.6 default to CEP-16
+    # "sharded repodata", whose on-demand per-package shard fetch silently
+    # drops transitive deps across channels (observed on micb0: a bioconda
+    # `nextflow` pulling a conda-forge `openjdk` shard came back empty, so the
+    # metasmith solve failed with "openjdk ... does not exist"). 2.5.0 uses
+    # classic full repodata.json and solves the same specs cleanly. This binary
+    # is what the agent's install path uses too, so the pin fixes both.
     cmd = [
         "mamba", "create", "-y",
         "-p", str(env_path),
         "-c", "conda-forge",
-        "python=3.12", "mamba", "apptainer",
+        "python=3.12", "mamba=2.5.0", "apptainer",
     ]
     r = subprocess.run(cmd, env=env)
     if r.returncode != 0:

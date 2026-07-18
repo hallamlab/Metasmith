@@ -100,8 +100,10 @@ def verify(
     image_tag = f"quay.io/hallamlab/metasmith:{version.replace('+', '-')}"
     channel_dir = project_root / "conda_build"
 
-    # 1. docker image (tag uses FULL_VERSION with +→-)
-    if not _docker_image_present(image_tag):
+    # 1. docker image (tag uses FULL_VERSION with +→-). Only required for the
+    #    DOCKER runtime — APPTAINER runs use the .sif (checked below), and
+    #    apptainer-only hosts (e.g. micb0) have no docker daemon to inspect.
+    if runtime.upper() == "DOCKER" and not _docker_image_present(image_tag):
         raise PreflightError(
             f"docker image {image_tag} not found locally.\n"
             f"  run: tests/e2e_agentic/install_mock/build_local_artifacts.sh"

@@ -27,6 +27,7 @@ type or an output format, change it HERE and every scenario follows.
 from __future__ import annotations
 
 import dataclasses
+import os
 import shutil
 import subprocess
 import textwrap
@@ -86,8 +87,14 @@ EXPECTED_TRACE: tuple[str, str] = (INPUT_TYPES[0], FINAL_ARTIFACT_TYPE)
 
 #: Root of the pre-staged benchmark materials (reads, DBs, container sifs,
 #: nf-core checkout). See .../token-benchmark/materials/manifest.md.
+#: Host-overridable via ``BENCHMARK_MATERIALS_ROOT`` so the benchmark can run on
+#: hosts other than the Cosmos dev box (e.g. micb0, where materials live under
+#: ``~/token-benchmark/materials``). Defaults to the Cosmos dev location.
 MATERIALS_ROOT = Path(
-    "/home/tony/agentic_workspace/data/metasmith/token-benchmark/materials"
+    os.environ.get(
+        "BENCHMARK_MATERIALS_ROOT",
+        "/home/tony/agentic_workspace/data/metasmith/token-benchmark/materials",
+    )
 )
 
 READS_R1_SRC = MATERIALS_ROOT / "reads" / "ecoli_R1.fastq.gz"
