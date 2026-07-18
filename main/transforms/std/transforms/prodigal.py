@@ -42,10 +42,6 @@ TransformInstance(
     protocol = protocol,
     group_by=assembly,
     model = model,
-    output_signature = {
-        cds: "cds.faa",
-        gff: "orfs.gff"
-    },
     resources=Resources(
         cpus=4,
         memory=Size.GB(16),

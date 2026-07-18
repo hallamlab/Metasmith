@@ -118,6 +118,97 @@ def test_parse_claude_result_text_fallback(tmp_path: Path) -> None:
     assert s.final_text == "the-final-line"
 
 
+def test_parse_claude_stream_result_is_authoritative_for_cache(tmp_path: Path) -> None:
+    """Representative real-shaped stream: usage nested under ``message`` on
+    each assistant event, and a cumulative usage on the terminal ``result``
+    event. The result event is authoritative — the four counts must equal
+    the result's usage, NOT the sum of result + per-message usage (which
+    would double-count, badly so for cache_read).
+    """
+    p = _write_jsonl(tmp_path / "claude.jsonl", [
+        {"type": "system", "subtype": "init"},
+        {"type": "assistant",
+         "message": {"role": "assistant",
+                     "content": [{"type": "text", "text": "first"}],
+                     "usage": {"input_tokens": 100, "output_tokens": 20,
+                               "cache_read_input_tokens": 5_000,
+                               "cache_creation_input_tokens": 800}}},
+        {"type": "assistant",
+         "message": {"role": "assistant",
+                     "content": [{"type": "text", "text": "done"}],
+                     "usage": {"input_tokens": 10, "output_tokens": 40,
+                               "cache_read_input_tokens": 6_000,
+                               "cache_creation_input_tokens": 0}}},
+        {"type": "result", "result": "done",
+         "usage": {"input_tokens": 110, "output_tokens": 60,
+                   "cache_read_input_tokens": 11_000,
+                   "cache_creation_input_tokens": 800}},
+    ])
+    s = parse_claude_stream(p)
+    assert s.final_text == "done"
+    # authoritative == the result event's usage, not the per-message sum
+    assert s.tokens_in == 110
+    assert s.tokens_out == 60
+    assert s.tokens_cached == 11_000
+    assert s.tokens_cache_creation == 800
+
+
+def test_parse_claude_stream_falls_back_to_message_sum(tmp_path: Path) -> None:
+    """When the result event carries no usage (older CLI / truncated stream),
+    accounting falls back to summing the per-assistant-message usage — still
+    four-way, still each event counted once."""
+    p = _write_jsonl(tmp_path / "claude.jsonl", [
+        {"type": "assistant",
+         "message": {"content": [{"type": "text", "text": "a"}],
+                     "usage": {"input_tokens": 100, "output_tokens": 20,
+                               "cache_read_input_tokens": 5_000,
+                               "cache_creation_input_tokens": 800}}},
+        {"type": "assistant",
+         "message": {"content": [{"type": "text", "text": "b"}],
+                     "usage": {"input_tokens": 10, "output_tokens": 40,
+                               "cache_read_input_tokens": 6_000,
+                               "cache_creation_input_tokens": 0}}},
+        {"type": "result", "result": "b"},  # no usage
+    ])
+    s = parse_claude_stream(p)
+    assert s.tokens_in == 110
+    assert s.tokens_out == 60
+    assert s.tokens_cached == 11_000
+    assert s.tokens_cache_creation == 800
+
+
+def test_iterresult_tokens_total_includes_cache() -> None:
+    """The loop stop-condition total is the full billable footprint:
+    input + output + cache_read + cache_creation."""
+    from tests.e2e_agentic.drivers.base import IterResult
+
+    r = IterResult(
+        exit_code=0, tokens_in=100, tokens_out=50,
+        tokens_cached=2_000, tokens_cache_creation=300,
+        final_text="", transcript_path=None, duration_s=0.0,
+    )
+    assert r.tokens_total == 2_450
+
+
+def test_budget_record_tracks_split_and_charges_total() -> None:
+    """TokenBudget.record folds the four-way split for reporting and charges
+    the billable total against the limit (stop semantics unchanged)."""
+    from tests.e2e_agentic.drivers.base import IterResult
+    from tests.e2e_agentic.harness.budget import TokenBudget
+
+    b = TokenBudget(limit=10_000)
+    b.record(IterResult(
+        exit_code=0, tokens_in=100, tokens_out=50,
+        tokens_cached=2_000, tokens_cache_creation=300,
+        final_text="", transcript_path=None, duration_s=0.0,
+    ))
+    assert b.tokens_in == 100
+    assert b.tokens_out == 50
+    assert b.tokens_cached == 2_000
+    assert b.tokens_cache_creation == 300
+    assert b.used == 2_450  # billable total drives the stop condition
+
+
 # ---------------------------------------------------------------------------
 # factory
 # ---------------------------------------------------------------------------

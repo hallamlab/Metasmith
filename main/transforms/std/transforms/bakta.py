@@ -34,13 +34,15 @@ def protocol(context: ExecutionContext):
                 {assembly_path.container}
         """
     )
-    return ExecutionResult(success=out_path.local.exists())
+    return ExecutionResult(
+        manifest=[{
+            out: out_path.local,
+        }],
+        success=out_path.local.exists(),
+    )
 
 TransformInstance(
     protocol = protocol,
     group_by=assembly,
     model = model,
-    output_signature = {
-        out: "bakta_out/",
-    },
 )

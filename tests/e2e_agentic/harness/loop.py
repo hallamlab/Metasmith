@@ -45,10 +45,26 @@ class LoopResult:
     last_iter: IterResult | None
     terminal_control: Control | None
     iter_results: list[IterResult] = field(default_factory=list)
+    # Four-way roll-up of the run's token cost (from TokenBudget). Defaults
+    # keep older direct constructions working; ralph_loop fills them in.
+    tokens_in: int = 0
+    tokens_out: int = 0
+    tokens_cached: int = 0
+    tokens_cache_creation: int = 0
 
     @property
     def succeeded(self) -> bool:
         return self.outcome is LoopOutcome.DONE
+
+
+def _token_rollup(budget: TokenBudget) -> dict:
+    """The budget's four-way split, as kwargs for LoopResult."""
+    return dict(
+        tokens_in=budget.tokens_in,
+        tokens_out=budget.tokens_out,
+        tokens_cached=budget.tokens_cached,
+        tokens_cache_creation=budget.tokens_cache_creation,
+    )
 
 
 def ralph_loop(
@@ -83,7 +99,7 @@ def ralph_loop(
                 log_dir=iter_log,
             )
             iter_results.append(result)
-            budget.consume(result.tokens_total)
+            budget.record(result)
 
             control = read_control(sandbox)
             if control is not None and control.action == "done":
@@ -94,6 +110,7 @@ def ralph_loop(
                     last_iter=result,
                     terminal_control=control,
                     iter_results=iter_results,
+                    **_token_rollup(budget),
                 )
             if control is not None and control.action == "give_up":
                 return LoopResult(
@@ -103,6 +120,7 @@ def ralph_loop(
                     last_iter=result,
                     terminal_control=control,
                     iter_results=iter_results,
+                    **_token_rollup(budget),
                 )
             if control is not None and control.action == "report_issue":
                 return LoopResult(
@@ -112,6 +130,7 @@ def ralph_loop(
                     last_iter=result,
                     terminal_control=control,
                     iter_results=iter_results,
+                    **_token_rollup(budget),
                 )
 
             if budget.exhausted():
@@ -122,6 +141,7 @@ def ralph_loop(
                     last_iter=result,
                     terminal_control=control,
                     iter_results=iter_results,
+                    **_token_rollup(budget),
                 )
 
             clear_control(sandbox)
@@ -133,6 +153,7 @@ def ralph_loop(
             last_iter=iter_results[-1] if iter_results else None,
             terminal_control=None,
             iter_results=iter_results,
+            **_token_rollup(budget),
         )
     finally:
         driver.stop_session()

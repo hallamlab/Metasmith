@@ -85,6 +85,28 @@ def _hardlink_channel(src_channel: Path, dst_channel: Path) -> None:
             _hardlink_or_copy(sub, dst_channel / sub.name)
 
 
+def _resolve_data_types_src(project_root: Path) -> Path:
+    """Resolve the source ``data_types/`` tree to copy into the sandbox.
+
+    The reference environment ships a MetasmithLibraries checkout at
+    ``<project_root>/lib`` (gitignored), so ``lib/data_types`` is the canonical
+    source. On a fresh dev checkout that tree is absent — rather than crash, fall
+    back to the in-repo minimal ``examples/data_types`` library (always present,
+    a valid metasmith type library). The sandbox's top-level ``data_types/`` is a
+    general reference; benchmark arms stage their own transform library separately
+    (e.g. ``workspace/std`` for A10), so the fallback does not weaken those runs.
+    """
+    canonical = project_root / "lib" / "data_types"
+    if canonical.exists():
+        return canonical
+    fallback = project_root / "examples" / "data_types"
+    if fallback.exists():
+        return fallback
+    # Neither present: return the canonical path so _copy_tree raises the usual
+    # "sandbox source missing" error naming the expected location.
+    return canonical
+
+
 def _render_condarc(template: str, sandbox: Path, channel_root: Path) -> str:
     return (
         template
@@ -132,7 +154,7 @@ def build_sandbox(
 
     # --- 1. docs / data_types / transforms — copies, not symlinks
     _copy_tree(ctx.docs_dir, docs)
-    _copy_tree(ctx.project_root / "lib" / "data_types", data_types)
+    _copy_tree(_resolve_data_types_src(ctx.project_root), data_types)
     _copy_tree(ctx.project_root / "main" / "transforms" / "std" / "transforms",
                transforms)
 

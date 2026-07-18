@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from ..harness.loop import LoopResult, LoopOutcome
+from .arms import Arm, DEFAULT_ARM
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,9 @@ class PromptContext:
     runtime: str
     docs_dir: Path           # in-sandbox copy of docs
     tutorial_rel: str        # path relative to sandbox/docs/
+    # Which env × orchestrator arm this render targets. Defaults to full
+    # metasmith (A10) so existing scenarios render exactly as before.
+    arm: Arm = DEFAULT_ARM
 
 
 @dataclass(frozen=True)
@@ -34,6 +38,27 @@ class VerifyContext:
     agent_env: dict[str, str]   # the env the agent's shells ran with
     metasmith_env_name: str     # the conda env name the agent should have created
     installed_env_path: Path    # absolute path to <sandbox>/envs/<metasmith_env_name>
+    # The arm being verified. Defaults to metasmith (A10) so the metasmith-only
+    # lineage-trace check keeps running for existing scenarios.
+    arm: Arm = DEFAULT_ARM
+
+
+def compose_prompt(shared_block: str, arm: Arm) -> str:
+    """Assemble an arm's prompt: shared goal/data/done block + arm preamble.
+
+    The ``shared_block`` is byte-identical across arms (the goal, the data
+    layout, and the done/report protocol). The arm's additive ``preamble``
+    ("your environment / available tools / reference material") is prepended
+    when non-empty. The metasmith arm (A10) has an empty preamble, so its
+    prompt is the shared block verbatim — preserving current behavior.
+
+    This is the seam P4 builds the 7 benchmark scenarios on: author one
+    shared block per scenario, then ``compose_prompt(shared, ctx.arm)``.
+    """
+    preamble = arm.preamble.strip()
+    if not preamble:
+        return shared_block
+    return f"{preamble}\n\n{shared_block}"
 
 
 @runtime_checkable
@@ -118,7 +143,13 @@ def standard_verify(
     expected_trace: tuple[str, str] | None,
 ) -> list[str]:
     fails: list[str] = []
+    # self-report + artifact-glob checks apply to EVERY arm.
     fails.extend(_self_report_failures(result))
     fails.extend(_artifact_failures(vctx.sandbox, artifact_globs))
-    fails.extend(_trace_failures(vctx, expected_trace, result))
+    # the lineage-trace check is metasmith-specific (`metasmith data trace`
+    # against a results.xgdb): only the metasmith arm produces one. Non-metasmith
+    # arms (ad-hoc/mamba/container × ad-hoc/snakemake/nextflow) have no such
+    # provenance store, so the trace check is skipped for them.
+    if vctx.arm.is_metasmith:
+        fails.extend(_trace_failures(vctx, expected_trace, result))
     return fails

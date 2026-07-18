@@ -112,5 +112,7 @@ class ClaudeDriver:
             final_text=summary.final_text,
             transcript_path=transcript,
             duration_s=duration,
+            tokens_cached=summary.tokens_cached,
+            tokens_cache_creation=summary.tokens_cache_creation,
             extra={"raw_events": summary.raw_events, "argv": argv},
         )
