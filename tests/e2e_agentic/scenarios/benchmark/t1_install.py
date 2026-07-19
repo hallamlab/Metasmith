@@ -106,7 +106,7 @@ class InstallToolScenario:
     tool: str = "fastp"              # one of TOOLS
     tutorial_path: str = ""
     expected_trace: tuple[str, str] | None = None
-    timeout_s: float = 1800.0
+    timeout_s: float = 900.0   # per-tool install probe; tiny inputs
     pre_install_metasmith: bool = True   # metasmith is the harness control plane
     expected_artifact_globs: list[str] = field(
         default_factory=lambda: [f"{_PROBE_OUT_REL}/**/*"]

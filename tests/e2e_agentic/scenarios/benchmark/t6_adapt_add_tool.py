@@ -34,7 +34,7 @@ ABRICATE_REPORT_REL = "workspace/results/abricate.tsv"
 @dataclass
 class AddToolScenario(BenchmarkScenario):
     name: str = "t6_adapt_add_tool"
-    timeout_s: float = 3600.0
+    timeout_s: float = 900.0   # micro pipeline + abricate; local run
     # Both the final enrichment PNG AND the abricate report must appear.
     expected_artifact_globs: list[str] = field(
         default_factory=lambda: [FINAL_ARTIFACT_GLOB, ABRICATE_REPORT_REL]

@@ -31,6 +31,7 @@ from pathlib import Path
 
 from .base import IterResult
 from ._stream import parse_claude_stream, run_streaming
+from ..harness import jail as _jail
 
 
 _CLAUDE_CRED_REL = Path(".claude") / ".credentials.json"
@@ -89,13 +90,29 @@ class ClaudeDriver:
     add_dirs: list[Path] = field(default_factory=list)
     extra_argv: list[str] = field(default_factory=list)
     timeout_s: float | None = None
+    # Filesystem-jail toggle. None → auto (jail iff bwrap present AND the run is
+    # APPTAINER, or MSM_E2E_JAIL forces it — see harness/jail.jail_enabled).
+    # True/False force the decision for tests / docker dev.
+    jail: bool | None = None
+    # Unshare the user namespace inside the jail. Off by default so a nested
+    # apptainer owns the userns; the micb0 spike flips this to measure nesting.
+    jail_unshare_user: bool = False
+
+    def _should_jail(self, env: dict[str, str] | None) -> bool:
+        if self.jail is not None:
+            return self.jail
+        return _jail.jail_enabled(env)
 
     def start_session(self, env: dict[str, str] | None = None) -> None:
         if shutil.which(self.bin) is None:
             raise RuntimeError(
                 f"`{self.bin}` not found on PATH; install Claude Code first"
             )
-        if env is not None and "HOME" in env:
+        # When jailing, the host ~/.claude is bind-mounted live into the sandbox
+        # HOME (shared, rotating auth) — no copy/symlink. The copy-symlink bridge
+        # is the redirection-only fallback (docker dev / no-bwrap hosts), where
+        # each sandbox gets its own view of the credentials file.
+        if (env is not None and "HOME" in env and not self._should_jail(env)):
             _bridge_claude_auth(Path(env["HOME"]))
 
     def stop_session(self) -> None:
@@ -139,6 +156,22 @@ class ClaudeDriver:
             argv += ["--max-budget-usd", f"{usd_cap:.4f}"]
         argv += self.extra_argv
         argv.append(prompt)
+
+        # Filesystem jail: wrap the claude argv in a bwrap namespace that binds
+        # the sandbox rw + system dirs ro + the shared ~/.claude auth, so the
+        # bypass-permissions agent cannot read host paths outside the allow-list.
+        if self._should_jail(env):
+            home = Path(env.get("HOME", sandbox / "home"))
+            argv = _jail.wrap(
+                argv,
+                sandbox=sandbox,
+                home=home,
+                env=env,
+                extra_ro=_jail.extra_ro_from_env(env),
+                claude_bin=shutil.which(self.bin),
+                chdir=sandbox,
+                unshare_user=self.jail_unshare_user,
+            )
 
         transcript = log_dir / "stream.jsonl"
         exit_code, duration = run_streaming(

@@ -32,7 +32,7 @@ _CONTIGS_REL = "workspace/precomputed/contigs.fasta"
 @dataclass
 class FromMiddleScenario(BenchmarkScenario):
     name: str = "t7_adapt_from_middle"
-    timeout_s: float = 2700.0
+    timeout_s: float = 900.0   # resumes from golden contigs; downstream only
 
     def data_lines(self, ctx: PromptContext) -> list[str]:
         sb = str(ctx.sandbox)

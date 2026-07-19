@@ -48,6 +48,34 @@ def _checkpoint(args) -> dict:
     return _write_control(cwd, payload)
 
 
+def _submit(args) -> dict:
+    """Declare the implementation ready for the non-agentic checker to execute.
+
+    metasmith arm: ``--key <task_key> --agent <agent>`` (a staged workflow).
+    baseline arm:  ``--entrypoint <path>`` (a runnable run.sh / Snakefile / main.nf).
+    """
+    cwd = Path(getattr(args, "cwd", None) or Path.cwd())
+    payload: dict = {"action": "submit"}
+    if args.notes is not None:
+        payload["notes"] = args.notes
+    if args.key:
+        payload["task_key"] = args.key
+    if args.agent:
+        # Resolve a filesystem agent reference to an absolute path so the checker
+        # finds it regardless of its own cwd; leave a bare name untouched.
+        ap = Path(args.agent)
+        payload["agent"] = str(ap.resolve()) if ap.exists() else args.agent
+    if args.entrypoint:
+        ep = Path(args.entrypoint)
+        payload["entrypoint"] = str(ep.resolve()) if ep.exists() else args.entrypoint
+    if not args.key and not args.entrypoint:
+        raise SystemExit(
+            "`submit` requires either --key <task_key> (metasmith arm) or "
+            "--entrypoint <path> (baseline arm)"
+        )
+    return _write_control(cwd, payload)
+
+
 def _report_issue(args) -> dict:
     cwd = Path(getattr(args, "cwd", None) or Path.cwd())
     payload: dict = {"action": "report_issue", "reason": args.reason}
@@ -77,6 +105,21 @@ def register(subs):
         help="directory to write CONTROL.json into (default: current working dir)",
     )
     cp.set_defaults(func=_checkpoint)
+
+    sub = sp.add_parser(
+        "submit",
+        help="Declare the implementation ready for the non-agentic checker "
+             "(--key <task_key> [--agent <agent>] | --entrypoint <path>)",
+    )
+    sub.add_argument("--key", help="staged task_key (metasmith arm)")
+    sub.add_argument("--agent", help="agent reference used to stage (metasmith arm)")
+    sub.add_argument("--entrypoint", help="runnable entrypoint (baseline arm)")
+    sub.add_argument("--notes", help="free text notes carried in the payload")
+    sub.add_argument(
+        "--cwd", default=None,
+        help="directory to write CONTROL.json into (default: current working dir)",
+    )
+    sub.set_defaults(func=_submit)
 
     ri = sp.add_parser(
         "report_issue",

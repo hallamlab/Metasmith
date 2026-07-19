@@ -26,4 +26,4 @@ from ._base import BenchmarkScenario
 @dataclass
 class RunScenario(BenchmarkScenario):
     name: str = "t3_run"
-    timeout_s: float = 3600.0
+    timeout_s: float = 900.0   # micro pipeline ~1.5 min; headroom for overhead

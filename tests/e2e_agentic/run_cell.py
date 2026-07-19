@@ -45,7 +45,13 @@ from tests.e2e_agentic.harness.cell import (
     DEFAULT_METASMITH_ENV_NAME,
     prepare_sandbox,
 )
-from tests.e2e_agentic.harness.loop import LoopBudgets, LoopResult, ralph_loop
+from tests.e2e_agentic.harness.checker import run_checker
+from tests.e2e_agentic.harness.loop import (
+    LoopBudgets,
+    LoopOutcome,
+    LoopResult,
+    ralph_loop,
+)
 from tests.e2e_agentic.install_mock.verify_local_artifacts import (
     InstallContext,
     PreflightError,
@@ -453,7 +459,28 @@ def run(argv: list[str] | None = None) -> int:
                 installed_env_path=sb_root / "envs" / args.metasmith_env_name,
                 arm=arm,
             )
-            failures = scenario.verify(vctx, result)
+
+            # Submit/checker: if the agent SUBMITTED an implementation, a
+            # non-agentic checker executes it (no driver, no token capture) to
+            # materialize the final artifact BEFORE the oracle runs. A checker
+            # failure is a legitimate artifact_ok=false cell (a bad submission),
+            # not a harness error — its notes are recorded alongside verify's.
+            checker_failures: list[str] = []
+            if result.outcome is LoopOutcome.SUBMITTED:
+                co = run_checker(
+                    vctx, result,
+                    action=getattr(scenario, "checker_action", "run"),
+                    resource_overrides=getattr(
+                        scenario, "checker_resource_overrides", None),
+                    timeout_s=scenario.timeout_s,
+                )
+                (log_dir / "checker.json").write_text(json.dumps(
+                    {"ok": co.ok, "kind": co.kind, "failures": co.failures,
+                     "steps": [vars(s) for s in co.steps]}, indent=2))
+                if not co.ok:
+                    checker_failures = [f"checker: {f}" for f in co.failures]
+
+            failures = checker_failures + scenario.verify(vctx, result)
             artifact_ok = not failures
     except Exception as exc:  # noqa: BLE001 — a harness failure is a censored
         # result, NOT a dropped run. Record it and continue.

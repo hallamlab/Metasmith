@@ -61,7 +61,8 @@ class StubDriver:
     def stop_session(self) -> None:
         self.stopped += 1
 
-    def invoke(self, *, prompt, sandbox, env, max_tokens_per_iter, log_dir) -> IterResult:
+    def invoke(self, *, prompt, sandbox, env, max_tokens_per_iter, log_dir,
+               max_usd_per_iter=None) -> IterResult:
         if self._i >= len(self.steps):
             raise AssertionError("StubDriver invoked more times than scripted")
         step = self.steps[self._i]

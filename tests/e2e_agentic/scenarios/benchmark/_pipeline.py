@@ -77,6 +77,30 @@ FINAL_RESULTS_REL = "workspace/results"
 #: because ``standard_verify`` treats each listed glob as a hard requirement.
 FINAL_ARTIFACT_GLOB = "workspace/results/**/*.png"
 
+#: The results table (clusterProfiler TSV) that rides alongside the PNG. Used by
+#: the golden content sanity check (not a hard artifact-glob, so a PNG-only
+#: submission still fails on the richer content check rather than glob-absence).
+FINAL_TABLE_GLOB = "workspace/results/**/*.tsv"
+
+# ---------------------------------------------------------------------------
+# Golden content oracle (T3) — compares the produced final artifacts against the
+# frozen golden set in SHAPE + a TOLERANT content bound, never bit-identity
+# (tool nondeterminism + timestamps make exact-match brittle and needless; the
+# study only needs a correctly-shaped real artifact). See materials/golden/REPORT.md.
+# ---------------------------------------------------------------------------
+
+#: A real clusterProfiler PNG dotplot is tens of KB; a 0-byte / tiny stub is not.
+GOLDEN_MIN_PNG_BYTES = 1024
+#: Columns clusterProfiler::enricher always emits (a subset — order-independent).
+GOLDEN_TSV_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "ID", "Description", "GeneRatio", "BgRatio",
+    "pvalue", "p.adjust", "qvalue", "geneID", "Count",
+)
+#: A real enrichment produces >=1 term row. Kept at 1 (maximally tolerant): the
+#: point is "a real run produced a non-empty, correctly-shaped table", not a
+#: row-count match to golden's 2987 (which depends on the exact assembly).
+GOLDEN_MIN_TSV_ROWS = 1
+
 #: Metasmith-only lineage trace the oracle runs (`metasmith data trace`). Skipped
 #: for non-metasmith arms by ``standard_verify`` (they have no results.xgdb).
 EXPECTED_TRACE: tuple[str, str] = (INPUT_TYPES[0], FINAL_ARTIFACT_TYPE)
@@ -97,12 +121,25 @@ MATERIALS_ROOT = Path(
     )
 )
 
-READS_R1_SRC = MATERIALS_ROOT / "reads" / "ecoli_R1.fastq.gz"
-READS_R2_SRC = MATERIALS_ROOT / "reads" / "ecoli_R2.fastq.gz"
+# The benchmark runs on the MICRO layer (T1/T2): a 25k-pair read subsample + a
+# mini eggNOG diamond DB, so the real pipeline finishes in minutes with correct
+# behaviour confirmed once (see materials/golden/REPORT.md). Filenames are
+# unchanged (ecoli_R{1,2}.fastq.gz), so the shared DATA prompt block stays
+# byte-identical across arms. Point BENCHMARK_MATERIALS_ROOT elsewhere to relocate.
+READS_R1_SRC = MATERIALS_ROOT / "micro" / "reads" / "ecoli_R1.fastq.gz"
+READS_R2_SRC = MATERIALS_ROOT / "micro" / "reads" / "ecoli_R2.fastq.gz"
 
-#: Reference databases (pre-provisioned fixtures, identical across arms).
+#: Reference databases (pre-provisioned fixtures, identical across arms). eggNOG
+#: is the MICRO data_dir: a 957 KB mini dmnd + symlinked eggnog.db/taxa (drops
+#: emapper from ~33 min to ~4 s). bakta-light is already fast, kept as-is.
 DB_BAKTA = MATERIALS_ROOT / "dbs" / "bakta-light" / "db-light"
-DB_EGGNOG = MATERIALS_ROOT / "dbs" / "eggnog" / "data"
+DB_EGGNOG = MATERIALS_ROOT / "micro" / "dbs" / "eggnog" / "data"
+
+#: Frozen golden set (final PNG/TSV + intermediates), computed once on the micro
+#: dataset (see materials/golden/REPORT.md). Host-overridable via MATERIALS_ROOT.
+#: Seeds t6/t7 and bounds the golden content oracle.
+GOLDEN_DIR = MATERIALS_ROOT / "golden"
+GOLDEN_CONTIGS = GOLDEN_DIR / "contigs.fasta"          # t7 from-middle resume point
 
 #: Tool container images (sif) + their quay tags. Source of truth:
 #: materials/images/container_tags.txt.
@@ -112,7 +149,7 @@ CONTAINER_IMAGES: dict[str, tuple[Path, str]] = {
     "spades": (MATERIALS_ROOT / "images" / "spades.sif",
                "quay.io/biocontainers/spades:3.15.5--h95f258a_1"),
     "bakta": (MATERIALS_ROOT / "images" / "bakta.sif",
-              "quay.io/biocontainers/bakta:1.9.3--pyhdfd78af_0"),  # RECONCILE: sif not yet staged
+              "quay.io/biocontainers/bakta:1.11.0--pyhdfd78af_0"),  # >=1.11 required by db-light v6.0
     "eggnog-mapper": (MATERIALS_ROOT / "images" / "eggnog-mapper.sif",
                       "quay.io/biocontainers/eggnog-mapper:2.1.12--pyhdfd78af_0"),
     "clusterprofiler": (MATERIALS_ROOT / "images" / "clusterProfiler.sif",
@@ -267,30 +304,38 @@ def shared_goal_block(
         {chr(10).join(data_block)}
 
         ## Deliverable
-        The final artifact is the clusterProfiler KEGG/GO functional-enrichment
-        result: a PNG dotplot (and its TSV results table). Collect / write the
-        final artifact(s) into:
+        Your job is to BUILD the pipeline implementation, then SUBMIT it — a
+        separate non-agentic checker runs your submission to produce the final
+        artifact: the clusterProfiler KEGG/GO functional-enrichment result (a PNG
+        dotplot + its TSV results table) under
 
           {sb}/{FINAL_RESULTS_REL}/
 
-        so a `.png` appears under that directory when you are done.
+        Validate your implementation cheaply before submitting (e.g. a metasmith
+        `plan`, `nextflow -stub-run`, `snakemake -n`, or a dry run). Do NOT block
+        on the full, long-running pipeline yourself — the checker executes it.
 
-        ## Done protocol
+        ## Submit protocol
         If any step fails or produces unexpected output, stop immediately and run:
 
         ```bash
         metasmith e2e report_issue --cwd "{sb}" --reason "<one line describing what you saw>"
         ```
 
-        When the final clusterProfiler artifact is present under
-        `{sb}/{FINAL_RESULTS_REL}/`, run:
+        When your implementation is ready and cheaply validated, submit it with
+        the form matching what you built:
 
         ```bash
-        metasmith e2e checkpoint done --cwd "{sb}" --key {done_key}
+        # a metasmith workflow you staged (metasmith plan + `metasmith workflow stage`):
+        metasmith e2e submit --cwd "{sb}" --key <task_key> --agent <agent>
+
+        # OR a runnable script/pipeline you wrote:
+        metasmith e2e submit --cwd "{sb}" --entrypoint <path to run.sh|Snakefile|main.nf>
         ```
 
         The `--cwd "{sb}"` flag writes `CONTROL.json` to the sandbox root, where
-        the harness loop watches for it.
+        the harness loop watches for it. After you submit, the checker runs your
+        implementation and materializes the final artifact.
         """)
 
 
@@ -537,7 +582,7 @@ def build_env_spec(layout: SandboxLayout, env: str) -> Path:
             dependencies:
               - fastp=0.23.4
               - spades=3.15.5
-              - bakta=1.9.3
+              - bakta=1.11.0
               - eggnog-mapper=2.1.12
               - bioconductor-clusterprofiler=4.6.0
               - abricate=1.0.1
@@ -560,12 +605,18 @@ def build_env_spec(layout: SandboxLayout, env: str) -> Path:
 def build_intermediate_contigs(layout: SandboxLayout) -> Path:
     """t7 (from-middle) start-state: pre-computed assembly contigs.
 
-    Copies the staged toy contigs if the materials agent produced them, else
-    synthesises a tiny valid multi-FASTA so the from-middle scenario has a real
-    assembly to resume from without re-running fastp/SPAdes.
+    Prefers the frozen GOLDEN assembly (the exact contigs the full micro pipeline
+    produced, so resuming from them reproduces the golden downstream artifacts).
+    Falls back to a legacy staged path, then to a synthesised tiny multi-FASTA so
+    the scenario still has a valid assembly if golden is absent.
     """
     dest = layout.workspace / "precomputed" / "contigs.fasta"
     dest.parent.mkdir(parents=True, exist_ok=True)
+    # 1. golden assembly (T2) — the real from-middle resume point.
+    if GOLDEN_CONTIGS.exists():
+        shutil.copy2(GOLDEN_CONTIGS, dest)
+        return dest
+    # 2. legacy staged intermediate (pre-golden layout).
     staged = MATERIALS_ROOT / "intermediates" / "contigs.fasta"  # RECONCILE if renamed
     if staged.exists():
         shutil.copy2(staged, dest)

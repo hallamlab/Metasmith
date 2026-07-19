@@ -4,11 +4,17 @@ Re-invokes the agent with a fixed prompt each iteration. State lives on
 disk inside the sandbox (PROMPT.md / PROGRESS.md / CONTROL.json), not in
 conversation history. Stops on one of:
 
-    1. CONTROL.json declares ``done``           → LoopResult.done
-    2. CONTROL.json declares ``give_up``        → LoopResult.gave_up
-    3. CONTROL.json declares ``report_issue``   → LoopResult.reported_issue
-    4. cumulative tokens reach budget           → LoopResult.over_budget
-    5. iteration count reaches max_iters        → LoopResult.max_iters
+    1. CONTROL.json declares ``submit``         → LoopResult.submitted
+    2. CONTROL.json declares ``done``           → LoopResult.done
+    3. CONTROL.json declares ``give_up``        → LoopResult.gave_up
+    4. CONTROL.json declares ``report_issue``   → LoopResult.reported_issue
+    5. cumulative tokens reach budget           → LoopResult.over_budget
+    6. iteration count reaches max_iters        → LoopResult.max_iters
+
+``submit`` is the terminal action under the submit/checker model: the agent
+declares its implementation ready and the caller (run_cell) hands it to a
+non-agentic checker to execute + verify. ``done`` remains a distinct terminal
+state for legacy prompts that produce the artifact in-loop (no checker).
 """
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ from .control import Control, clear_control, read_control
 
 
 class LoopOutcome(Enum):
+    SUBMITTED = "submitted"
     DONE = "done"
     GAVE_UP = "gave_up"
     REPORTED_ISSUE = "reported_issue"
@@ -107,6 +114,16 @@ def ralph_loop(
             budget.record(result)
 
             control = read_control(sandbox)
+            if control is not None and control.action == "submit":
+                return LoopResult(
+                    outcome=LoopOutcome.SUBMITTED,
+                    iterations=i + 1,
+                    tokens_used=budget.used,
+                    last_iter=result,
+                    terminal_control=control,
+                    iter_results=iter_results,
+                    **_token_rollup(budget),
+                )
             if control is not None and control.action == "done":
                 return LoopResult(
                     outcome=LoopOutcome.DONE,

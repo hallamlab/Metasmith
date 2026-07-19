@@ -6,6 +6,8 @@ to keep looping.
 
 Schemas accepted:
 
+    {"action": "submit",       "task_key": "<key>", "agent": "...", "notes": "..."}
+    {"action": "submit",       "entrypoint": "workspace/run.sh",    "notes": "..."}
     {"action": "done",         "task_key": "<key>", "notes": "..."}
     {"action": "give_up",      "reason":  "...",    "notes": "..."}
     {"action": "continue",     "notes":   "..."}
@@ -13,6 +15,12 @@ Schemas accepted:
 
 Anything else (missing file, malformed JSON, unknown action) is treated
 as implicit ``continue`` so the loop runs again next iteration.
+
+``submit`` is the primary terminal action under the submit/checker model: the
+agent declares its implementation ready (a staged metasmith task, or a runnable
+baseline entrypoint) and a non-agentic checker executes it. ``done`` is retained
+for backward compatibility (older prompts / the metasmith trace check) and is
+treated as a submission too.
 """
 from __future__ import annotations
 
@@ -22,7 +30,12 @@ from pathlib import Path
 
 CONTROL_FILENAME = "CONTROL.json"
 
-VALID_ACTIONS = frozenset({"done", "give_up", "continue", "report_issue"})
+VALID_ACTIONS = frozenset(
+    {"submit", "done", "give_up", "continue", "report_issue"}
+)
+
+#: Actions that terminate the loop with a submission the checker should execute.
+SUBMIT_ACTIONS = frozenset({"submit", "done"})
 
 
 @dataclass(frozen=True)
@@ -35,12 +48,28 @@ class Control:
         return self.payload.get("task_key")
 
     @property
+    def agent(self) -> str | None:
+        """Agent reference for a metasmith-arm submission (path or name the
+        agent used with ``metasmith workflow stage``)."""
+        return self.payload.get("agent")
+
+    @property
+    def entrypoint(self) -> str | None:
+        """Runnable entrypoint for a baseline-arm submission (path to the
+        ``run.sh`` / ``Snakefile`` / ``main.nf`` the checker executes)."""
+        return self.payload.get("entrypoint")
+
+    @property
     def reason(self) -> str | None:
         return self.payload.get("reason")
 
     @property
     def notes(self) -> str | None:
         return self.payload.get("notes")
+
+    @property
+    def is_submission(self) -> bool:
+        return self.action in SUBMIT_ACTIONS
 
 
 def control_path(sandbox: Path) -> Path:
