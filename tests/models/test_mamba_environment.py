@@ -72,7 +72,7 @@ class TestMambaEnvironment:
 
     def test_bootstrap_has_no_relay(self):
         env = Environment(image="checkm", runtime=Runtime.MAMBA)
-        bs = env.RenderBootstrap(agent_home=Path("/h"), run_command="", run_binds="", dev_binds="", dev_src="x", bind_file="b")
+        bs = env.RenderBootstrap(agent_home=Path("/h"), run_command="", run_binds="", dev_src="x", dev_target="t", bind_file="b")
         assert "msm_relay" not in bs
         assert "bouncing to external" not in bs
         assert "run_container" not in bs

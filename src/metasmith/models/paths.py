@@ -105,6 +105,54 @@ def reroot_in_text(content: str, old_root: Path | str, new_root: Path | str) -> 
     return re.sub(pattern, str(new_root), content)
 
 
+_PHANTOM_GUARD_SENTINEL = "# msm-phantom-guard"
+_ARRAY_CHILD_INVOCATION = re.compile(
+    r"^([ \t]*)(bash \$\{?nxf_array_task_dir\}?/\.command\.run\b.*)$",
+    re.MULTILINE,
+)
+
+
+def inject_array_child_guard(content: str) -> str:
+    """Ensure every SLURM array child leaves ``.command.begin`` + ``.exitcode``.
+
+    Nextflow moves an array child ``SUBMITTED -> RUNNING`` only when it sees the
+    child's ``.command.begin``, then reads ``.exitcode`` to finalize it. There
+    is **no fallback start-timeout for array children**, so a child that dies at
+    the container/exec layer (SLURM exit 126) *before* ``.command.run`` writes
+    ``.command.begin`` leaves neither file -> Nextflow waits on it forever and
+    the whole run hangs ~1h from done. This injects an EXIT-trap guard into the
+    array dispatcher (``.command.sh``) that, after the child returns,
+    force-creates ``.command.begin`` and ``.exitcode`` (with the child's
+    captured exit code) ONLY if the child did not already write them -- so a
+    normal success or late (in-container) failure is never clobbered, matching
+    the proven manual recovery (``: > .command.begin; echo 126 > .exitcode``).
+
+    An EXIT trap (installed *before* the child invocation) is required because
+    the dispatcher runs under ``set -e`` (shebang ``#!/bin/bash -ue``): a
+    failing ``bash .command.run`` exits the script before any *following* line
+    could run, but the EXIT trap still fires and still sees the child's ``$?``.
+
+    Idempotent (sentinel-guarded) and a no-op for non-array scripts (those
+    without the ``bash $nxf_array_task_dir/.command.run`` invocation line).
+    """
+    if _PHANTOM_GUARD_SENTINEL in content:
+        return content
+    m = _ARRAY_CHILD_INVOCATION.search(content)
+    if m is None:
+        return content
+    indent = m.group(1)
+    guard = (
+        f"{indent}{_PHANTOM_GUARD_SENTINEL}\n"
+        f"{indent}msm_phantom_guard() {{\n"
+        f"{indent}    __msm_rc=$?\n"
+        f'{indent}    [ -e "$nxf_array_task_dir/.command.begin" ] || : > "$nxf_array_task_dir/.command.begin"\n'
+        f'{indent}    [ -e "$nxf_array_task_dir/.exitcode" ] || echo "${{__msm_rc:-126}}" > "$nxf_array_task_dir/.exitcode"\n'
+        f"{indent}}}\n"
+        f"{indent}trap msm_phantom_guard EXIT\n"
+    )
+    return content[:m.start()] + guard + content[m.start():]
+
+
 def _strip_dotdot(p: Path) -> Path:
     """Pure-string ``..`` collapse, no FS access.
 
@@ -199,9 +247,13 @@ class ContextPath:
         if "/" in name or name in ("", ".", ".."):
             raise ValueError(f"ForOutput expects a bare filename, got: {name!r}")
         container = AgentPaths.WORK_ROOT / name
-        local = container  # same workdir bind from both container views
         external_base = path_map.extern_cwd if path_map.extern_cwd is not None else path_map.extern_work
         external = external_base / name
+        # Under nextflow the bootstrap is itself containerized with cwd bound to
+        # /ws, so the local and container views coincide. On the direct-run path
+        # the bootstrap is a plain host process and nothing is bound at /ws, so
+        # `local` there IS the host path -- see PathMap.host_local.
+        local = external if path_map.host_local else container
         return cls(local=local, external=external, container=container)
 
 
@@ -231,6 +283,14 @@ class PathMap:
     extern_home: Path
     task_key: str
     extern_cwd: Path | None = None
+    # True when the bootstrap itself is NOT running inside a container -- i.e. the
+    # direct-run path, where cwd is a plain host directory and nothing is bound at
+    # /ws. ForOutput's `local` view depends on this: under nextflow the bootstrap
+    # runs containerized with cwd bound to /ws, so local==container==/ws/<name>;
+    # host-local there is no such bind, and local must be the host path or every
+    # `output.local.exists()` success check reads False for a step that in fact
+    # succeeded. Default False keeps the nextflow path byte-identical.
+    host_local: bool = False
     extern_work: Path = field(init=False)
 
     def __post_init__(self) -> None:

@@ -53,6 +53,21 @@ with LiveShell() as shell:
     else:
         pre = f'mkdir -p "{home}/dev" && '
     shell.Exec(f"{pre}rsync -ac --progress --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/ {home}/dev/metasmith")
+    # Also ship the overlay as a single tarball. Under SLURM array fan-out a
+    # compute node stages it with one streaming read (native cp) + `tar -x` to
+    # node-local disk, instead of an rsync tree-walk of ~70 files whose metadata
+    # storm evicts the Lustre client (errno 108 / ESHUTDOWN) and returns a
+    # silently-incomplete copy -> ModuleNotFoundError -> exit 127. The archive
+    # carries a `metasmith/` prefix so a node extracts to <stage>/metasmith; the
+    # tree above is kept as the fail-open bind target and the dev-run gate.
+    # Built in a throwaway tempdir so nothing lands in the source tree.
+    # See plans/03-tarball-dev-overlay.md.
+    shell.Exec(
+        f'MSMTAR=$(mktemp -d)/metasmith.tar'
+        f' && tar -c --exclude=__pycache__ -C {WORKSPACE_ROOT}/src -f "$MSMTAR" metasmith'
+        f' && rsync -ac --progress "$MSMTAR" {home}/dev/metasmith.tar'
+        f' && rm -rf "$(dirname "$MSMTAR")"'
+    )
     shell.Exec(f"rsync -ac --progress --exclude=__pycache__ {WORKSPACE_ROOT}/src/metasmith/nextflow_config {home}/lib/")
 
 
