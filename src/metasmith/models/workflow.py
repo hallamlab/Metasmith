@@ -1001,7 +1001,7 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}):
         # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
         # todo: propogate errors, those might be important...
         import logging
@@ -1437,7 +1437,7 @@ class WorkflowTask:
         
         # goal:
         # _tK9GI0FH = (o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]))[0] // lib::pangenome_heatmap.py
-        # _7A15qSzL = (o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]))[0] // containers::python_for_data_science.oci
+        # _7A15qSzL = (o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]))[0] // env::python_for_data_science.env
         # _urCt2PG9 = (o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]))[0] // sequences::gbk
         # _seen = set()
         unsorted_input_channels: dict[Endpoint, list[DataInstance]] = {}
