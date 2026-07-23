@@ -42,7 +42,7 @@ def register(subs):
     _scaf.add_argument("--out", action="append", required=True, dest="outputs",
                        help="output type (repeatable)")
     _scaf.add_argument("--group-by", help="input type to group by (defaults to first --in)")
-    _scaf.add_argument("--container", help="container type, e.g. containers::myimage.oci")
+    _scaf.add_argument("--container", help="env type, e.g. env::myimage.env")
     _scaf.add_argument("--cpus", type=int)
     _scaf.add_argument("--memory-gb", type=float)
     _scaf.add_argument("--duration-h", type=float)

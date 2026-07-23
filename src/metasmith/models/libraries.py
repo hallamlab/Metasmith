@@ -1288,6 +1288,35 @@ class ExecutionResult:
 class ExecutionFailed(Exception):
     pass
 
+def ResolveEnvImage(content: str, runtime: ContainerRuntime, source: str|Path="<env>") -> str:
+    """Resolve a generic env-declaration file's content to the image / env-name
+    the active runtime should use.
+
+    The generic format is a YAML mapping with an optional ``container:`` (a
+    ``docker://…`` URI, used by the container runtimes) and/or an optional
+    ``conda:`` (a conda/mamba env name, used by ``Runtime.MAMBA``). Selection is
+    by the single global runtime; a missing key for the selected runtime is a
+    hard error naming the file.
+
+    Legacy resources (``*.oci`` whose whole content is a bare URI) parse as a
+    YAML scalar, not a mapping, and are treated verbatim as the container image
+    so existing container runs keep working unchanged.
+    """
+    try:
+        parsed = yaml.safe_load(content)
+    except yaml.YAMLError:
+        parsed = None
+    if isinstance(parsed, dict):
+        key = "conda" if runtime == ContainerRuntime.MAMBA else "container"
+        value = parsed.get(key)
+        assert value, (
+            f"env declaration [{source}] has no '{key}:' entry for runtime "
+            f"[{runtime.value}] (keys present: {sorted(parsed)})"
+        )
+        return str(value).strip()
+    # legacy bare-URI (*.oci) or unparseable content -> use verbatim as the image
+    return content.strip()
+
 # work as if batch of 1 item
 # until explicitly batch iterated
 @dataclass
@@ -1333,7 +1362,10 @@ class ExecutionContext:
         path = self._inputs[self._batch_index][image].path
         if IsText(path.local):
             with open(path.local) as f:
-                image_path = f.read().strip() # using the uri
+                content = f.read()
+            # Generic env declaration: select container: / conda: by the global
+            # runtime (legacy bare-URI *.oci files resolve verbatim).
+            image_path = ResolveEnvImage(content, self.container_runtime, path.local)
         else:
             image_path = str(path.external)
     
