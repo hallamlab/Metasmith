@@ -84,17 +84,30 @@ metasmith from the shell environment.
 ```
 unset PYTHONPATH
 
-./dev.sh -brc   # one-time: build the rust cross-compile container
-./dev.sh -br    # build the relay binaries (all four arch/os targets)
-./dev.sh -bp    # build the pip wheel + sdist  (stamps build_hash.txt)
-./dev.sh -bd    # build the docker image, tagged <version>-<hash>
-./dev.sh -bs    # build the apptainer .sif from the local docker image
-./dev.sh -bc    # build the conda package from the wheel
+./dev.sh -brc        # one-time: build the rust cross-compile container
+./dev.sh -br         # build the relay binaries (all four arch/os targets)
+./dev.sh --build-gui # build the frontend bundle (needs node; see below)
+./dev.sh -bp         # build the pip wheel + sdist  (stamps build_hash.txt)
+./dev.sh -bd         # build the docker image, tagged <version>-<hash>
+./dev.sh -bs         # build the apptainer .sif from the local docker image
+./dev.sh -bc         # build the conda package from the wheel
 ```
 
 `-brc`/`-br` produce the relay binaries that get baked into the docker image;
 build them before `-bd`. `-bp` stamps `build_hash.txt`, which fixes the build
 hash that ties the wheel, image tag, and SIF to the exact source state.
+
+`--build-gui` compiles the web GUI into `src/metasmith/gui/static/`. That
+directory is generated and never committed, so a fresh checkout has none, and
+without it the package would ship an empty static directory — a failure nobody
+notices until someone opens the page. `-bp` and `-bd` refuse to run when it is
+missing. It needs node, which is a build dependency only and deliberately absent
+from `envs/base.yml`:
+
+```
+mamba create -n msm_node -c conda-forge nodejs
+mamba run -n msm_node ./dev.sh --build-gui
+```
 
 ---
 
@@ -128,6 +141,7 @@ Then:
 | Test | `pytest -m "not docker and not e2e_agentic and not nextflow and not slow and not network"` | green gate |
 | Bump | edit `src/metasmith/version.txt` + commit | new version |
 | Relay | `./dev.sh -brc` then `./dev.sh -br` | relay binaries |
+| GUI | `./dev.sh --build-gui` (needs node) | `src/metasmith/gui/static/` |
 | Wheel | `./dev.sh -bp` | pip wheel + sdist, build hash |
 | Docker | `./dev.sh -bd` | local image `<version>-<hash>` |
 | SIF | `./dev.sh -bs` | `metasmith.sif` |

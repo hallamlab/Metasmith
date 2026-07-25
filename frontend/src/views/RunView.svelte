@@ -18,6 +18,19 @@
     results = await api.get(`/runs/${workflow}/${run}/results`)
   }
 
+  // Attach to whatever background job is working on this run. Staging can take
+  // a while and the launch was started from the workflow view, so without this
+  // the first thing a user sees after pressing the button is an empty log.
+  async function attachJob() {
+    try {
+      const jobs = await api.get(`/jobs?run=${encodeURIComponent(run)}`)
+      const mine = jobs.filter((j) => j.subject?.workflow === workflow)
+      if (mine.length) jobId = mine[0].id
+    } catch {
+      /* the job list is a convenience; its absence is not an error */
+    }
+  }
+
   async function tail() {
     try {
       log = await api.get(`/runs/${workflow}/${run}/log?lines=200`)
@@ -34,6 +47,7 @@
     log = { lines: [], error: null }
     attempt(async () => {
       await load()
+      await attachJob()
       await tail()
       void w, r
     })

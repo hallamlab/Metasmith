@@ -13,7 +13,6 @@ dependencies:
   - unzip=6.0
   - git=2.52.0 # to pull transform libraries
   - tk=8.6.13 # for globus
-  - git # to pull transforms
 
   # # relay now just uses files
   # # networking (mostly for relay)
@@ -23,6 +22,11 @@ dependencies:
   # - requests=2.32.3
   # - aiohttp=3.13.1
   
+  # UI: `msm gui` serves a prebuilt bundle, so only the server side is needed
+  # here — node is a build dependency, not a runtime one.
+  - flask=3.1.3
+  - coolname=2.2.0 # readable workflow names: blazing-ape, crystalline-lake
+
   # UI via jupyterlab
   - jupyterlab=4.5.0
   - jupyterlab-lsp=5.2.0

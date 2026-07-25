@@ -42,6 +42,9 @@ if __name__ == "__main__":
                 "bin/**",
                 "example_resources/**",
                 "jupyter_lab/**",
+                # built by `dev.sh --build-gui`, not committed; the wheel and
+                # container builds refuse to proceed without it
+                "gui/static/**",
             ],
             # examples
             # "package-name": ["*.txt"],
