@@ -4,7 +4,7 @@ import subprocess
 import shutil
 from pathlib import Path
 import yaml
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Callable, Iterable
 from importlib import reload, __import__
@@ -1353,9 +1353,23 @@ class ExecutionContext:
     external_shell: Shell # relay shell for container runtimes, local shell otherwise
     external_cwd: Path
     external_agent_home: Path
-    container_runtime: Runtime
+    # The environment a *tool* runs in on this host. Private: a protocol has no
+    # business branching on the runtime, and everything that used to require it
+    # (GPU flags, bind dialect, whether there is a boundary at all) is answered
+    # by the env package. Never `native` -- native describes whether metasmith
+    # itself is containerized, which says nothing about the tool's own image.
+    _environment: Runtime|Environment = Runtime.DOCKER
     params: dict = field(default_factory=dict)
     _batch_index: int = 0
+
+    def __post_init__(self):
+        # Accept a bare Runtime for the many construction sites that only have
+        # one; normalise to an Environment so routing has a single shape.
+        if isinstance(self._environment, Runtime):
+            self._environment = Environment(image="", runtime=self._environment)
+
+    def _tool_environment(self, image: str, **kw) -> Environment:
+        return replace(self._environment, image=image, **kw)
 
     def GetMeta(self, key: Dependency):
         d = self._inputs[self._batch_index]
@@ -1469,7 +1483,7 @@ class ExecutionContext:
         # does not (mamba/native), paths are identity: the tool runs on the
         # host filesystem in the real cwd, so there is no /ws remap and no
         # binds to compute. The PathMap views collapse to equal.
-        _probe = Environment(image=str(image_path), runtime=self.container_runtime)
+        _probe = self._tool_environment(str(image_path))
         if _probe.needs_relay:
             container_ws = Path("/ws")
             binds += [
@@ -1494,15 +1508,13 @@ class ExecutionContext:
             if gpu_args and gpu_args[0] not in extra_args:
                 extra_args = gpu_args + extra_args
 
-        container = Environment(
-            image = str(image_path),
+        return self._tool_environment(
+            str(image_path),
             workdir = container_ws,
-            runtime = self.container_runtime,
             binds = binds,
             extra_args = extra_args,
             container_cache = self.external_agent_home/AgentPaths.CONTAINER_CACHE,
         )
-        return container
 
     def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, history: bool=True):
         container = self.GetContainerModel(image, binds, args)

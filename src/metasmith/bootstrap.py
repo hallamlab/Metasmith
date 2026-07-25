@@ -198,7 +198,7 @@ def ExecuteStep(
         external_shell=shell,
         external_cwd=external_cwd,
         external_agent_home=Path(agent_home),
-        container_runtime=agent.runtime,
+        _environment=agent.runtime,
         params=params,
     )
     BREAK_LENGTH = 60

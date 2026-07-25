@@ -65,7 +65,7 @@ def _context(tmp_path: Path, runtime: Runtime, params: dict, shell=None, image_d
         external_shell=shell or ScriptedShell(),
         external_cwd=Path("/hpc/home/work"),
         external_agent_home=Path("/hpc/home/msm_home"),
-        container_runtime=runtime,
+        _environment=runtime,
         params=params,
     )
 

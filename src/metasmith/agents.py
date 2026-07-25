@@ -1113,7 +1113,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
         external_work=extern_work,
         home_dir=AgentPaths.HOME_ROOT,
         external_home=agent.home.GetPath(),
-        container_runtime=agent.runtime,
+        runtime=agent.runtime,
         resources_file=AgentPaths.NXF_RES,
     ))
     nxflib_dir = work_dir/"lib"

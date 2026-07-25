@@ -140,7 +140,7 @@ def stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:
         external_work=workspace,
         home_dir=AgentPaths.HOME_ROOT,
         external_home=AgentPaths.HOME_ROOT,
-        container_runtime=Runtime.DOCKER,
+        runtime=Runtime.DOCKER,
         resources_file=AgentPaths.NXF_RES,
     )
 

@@ -75,7 +75,7 @@ def _build_context(tmp_path: Path, runtime: Runtime, image_dep: Dependency):
         external_shell=RecordingShell(),
         external_cwd=Path("/hpc/home/work"),
         external_agent_home=Path("/hpc/home/msm_home"),
-        container_runtime=runtime,
+        _environment=runtime,
     )
 
 

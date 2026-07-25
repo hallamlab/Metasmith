@@ -104,7 +104,7 @@ class TestGetContainerModelBatchBinds:
             external_shell=MagicMock(),
             external_cwd=Path("/ws"),
             external_agent_home=Path("/hpc/msm_home"),
-            container_runtime=Runtime.APPTAINER,
+            _environment=Runtime.APPTAINER,
         )
 
     def _call_get_container(self, ctx, image_dep, tmp_path):

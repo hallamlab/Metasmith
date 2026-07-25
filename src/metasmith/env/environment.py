@@ -156,8 +156,8 @@ class Environment:
     def MakeGpuArgs(self) -> list[str]:
         # The per-runtime flags that expose the host's GPUs inside the tool
         # environment. This is exactly the branch the env package exists to own
-        # -- before this, every GPU transform hand-wrote it and had to read
-        # `context.container_runtime` to know which dialect to use.
+        # -- before this, every GPU transform hand-wrote it and had to read the
+        # runtime off the ExecutionContext to know which dialect to use.
         # mamba/native inherit the host's devices, so they need nothing.
         if self.native: return []
         match self.runtime:

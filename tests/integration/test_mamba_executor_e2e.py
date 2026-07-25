@@ -69,7 +69,7 @@ def test_mamba_runs_real_tool_no_relay(tmp_path, monkeypatch):
         external_shell=LiveShell(),
         external_cwd=tmp_path,
         external_agent_home=tmp_path / "msm_home",
-        container_runtime=Runtime.MAMBA,
+        _environment=Runtime.MAMBA,
     )
 
     # Sanity: the model is identity (no container boundary).

@@ -115,7 +115,7 @@ def test_mamba_exec_no_relay_identity_cwd(tmp_path, monkeypatch):
         external_shell=RecordingShell(),
         external_cwd=real_cwd,
         external_agent_home=tmp_path / "msm_home",
-        container_runtime=Runtime.MAMBA,
+        _environment=Runtime.MAMBA,
     )
     shell: RecordingShell = ctx.external_shell  # type: ignore[assignment]
 

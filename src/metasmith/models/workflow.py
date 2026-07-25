@@ -154,7 +154,7 @@ class NextflowGenContext:
     external_work: Path
     home_dir: Path
     external_home: Path
-    container_runtime: Runtime
+    runtime: Runtime
     resources_file: str
     external_home_var: str = "${params.home}"
     external_work_var: str = "${params.workspace}"
@@ -1282,7 +1282,7 @@ class WorkflowTask:
                         (_make_bind_var(i), _make_bind_var(i))
                         for i, _ in enumerate(external_binds)
                     ],
-                    runtime=context.container_runtime,
+                    runtime=context.runtime,
                 ).MakeBindsParam()
 
             res = step.transform.resources

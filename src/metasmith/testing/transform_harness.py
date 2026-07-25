@@ -331,7 +331,7 @@ class TransformHarness:
             external_shell=mock_shell,
             external_cwd=work_dir,
             external_agent_home=work_dir,
-            container_runtime=Runtime.DOCKER,
+            _environment=Runtime.DOCKER,
             params={"cpus": 1, "memory": 1, "attempt": 1},
         )
 

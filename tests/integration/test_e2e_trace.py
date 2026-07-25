@@ -84,7 +84,7 @@ def run_stub_workflow(
         external_work=work_dir,
         home_dir=work_dir,
         external_home=work_dir,
-        container_runtime=Runtime.DOCKER,
+        runtime=Runtime.DOCKER,
         resources_file=AgentPaths.NXF_RES,
     )
     task.PrepareNextflow(context)
@@ -650,7 +650,7 @@ class TestTraceSharedInputs:
             external_work=work_dir,
             home_dir=work_dir,
             external_home=work_dir,
-            container_runtime=Runtime.DOCKER,
+            runtime=Runtime.DOCKER,
             resources_file=AgentPaths.NXF_RES,
         )
         task.PrepareNextflow(context)
