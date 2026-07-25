@@ -11,6 +11,7 @@
   } from './lib/state.svelte.js'
   import Rail from './components/Rail.svelte'
   import DeleteControl from './components/DeleteControl.svelte'
+  import Icon from './components/Icon.svelte'
   import SshHost from './views/SshHost.svelte'
   import SshEditor from './views/SshEditor.svelte'
   import SshNew from './views/SshNew.svelte'
@@ -19,6 +20,44 @@
   import WorkflowNew from './views/WorkflowNew.svelte'
   import WorkflowView from './views/WorkflowView.svelte'
   import RunView from './views/RunView.svelte'
+
+  // where a release lives. The urls themselves come from the server, which reads
+  // them from constants.py -- the one place they are written down.
+  // A left-to-right mark, pinned to the front of the path. The path is laid out
+  // right-to-left so the ellipsis lands at the *start* and the last segment --
+  // the part that says which project this is -- is always the part you can see.
+  // Without the mark the leading `/` is a neutral character at the edge of an
+  // RTL paragraph, and bidi resolution moves it to the far end: `home/…/proj/`.
+  const LRM = '‎'
+
+  const LINKS = [
+    { id: 'docs', title: 'documentation' },
+    { id: 'github', title: 'source on github' },
+    { id: 'conda', title: 'conda package' },
+    { id: 'container', title: 'container image on quay.io' },
+  ]
+
+  let copied = $state(false)
+
+  async function copyPath() {
+    const text = app.project?.root
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // clipboard permission can be refused even on localhost; the old path
+      // through a throwaway textarea still works when it is
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.cssText = 'position:fixed;opacity:0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      ta.remove()
+    }
+    copied = true
+    setTimeout(() => (copied = false), 1200)
+  }
 
   $effect(() => {
     attempt(loadProject)
@@ -36,10 +75,22 @@
 
   // -- rail contents -------------------------------------------------------
 
-  let sshItems = $derived([
-    { id: 'editor', kind: 'editor' },
-    ...app.hosts.map((h) => ({ id: `host:${h.alias}`, kind: 'host', host: h })),
-  ])
+  // Two runs of hosts under their own headings: the ones metasmith wrote and can
+  // rewrite, and the ones that were already in your config and are only read.
+  // Which is which decides whether the form below is editable, so it is worth
+  // seeing before you click rather than after.
+  let sshItems = $derived.by(() => {
+    const row = (h) => ({ id: `host:${h.alias}`, kind: 'host', host: h })
+    const managed = app.hosts.filter((h) => h.managed)
+    const native = app.hosts.filter((h) => !h.managed)
+    return [
+      { id: 'editor', kind: 'editor' },
+      ...(managed.length ? [{ id: 'h:managed', kind: 'heading', label: 'managed' }] : []),
+      ...managed.map(row),
+      ...(native.length ? [{ id: 'h:native', kind: 'heading', label: 'native' }] : []),
+      ...native.map(row),
+    ]
+  })
 
   let agentItems = $derived(
     app.agents.map((a) => ({ id: a.name, agent: a, dim: !!a.archived_at })),
@@ -90,6 +141,11 @@
 
 <div class="shell">
   <header>
+    <div class="brand">
+      Metasmith
+      {#if app.project}<span class="ver mono">{app.project.version}</span>{/if}
+    </div>
+
     <nav>
       {#each SECTIONS as s}
         <button class="tab" class:on={app.section === s.id} onclick={() => (app.section = s.id)}>
@@ -97,15 +153,36 @@
         </button>
       {/each}
     </nav>
-    <div class="row small muted">
-      {#if app.project}
-        <span class="mono truncate" title={app.project.root}>{app.project.root}</span>
+
+    {#if app.project}
+      <!-- takes all the slack: a project path is long and the interesting end
+           of it is the last segment, so it gets the room and the tabs do not -->
+      <div class="where small muted">
         {#if !app.project.stdlib.present}
           <span class="tag bad">standard library not cloned</span>
         {/if}
-        <span>metasmith {app.project.version}</span>
-      {/if}
-    </div>
+        <span class="path mono" title={app.project.root}>{LRM}{app.project.root}</span>
+        <button
+          class="copy"
+          onclick={copyPath}
+          title={copied ? 'copied' : 'copy the project path'}
+          aria-label="copy the project path"
+        >
+          <Icon name={copied ? 'check' : 'copy'} size={13} />
+        </button>
+      </div>
+
+      <div class="links">
+        {#each LINKS as l}
+          <a href={app.project.links?.[l.id]} target="_blank" rel="noreferrer noopener" title={l.title}>
+            <Icon name={l.id} />
+            <span class="sr">{l.title}</span>
+          </a>
+        {/each}
+      </div>
+    {:else}
+      <div class="where"></div>
+    {/if}
   </header>
 
   {#if app.notice}
@@ -322,15 +399,62 @@
   .shell { display: flex; flex-direction: column; height: 100vh; }
   header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: 18px;
     padding: 0 14px;
     border-bottom: 1px solid var(--line);
     background: var(--panel);
     flex: 0 0 auto;
   }
+  .brand { font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
+  .ver { color: var(--muted); font-weight: 400; margin-left: 6px; }
   nav { display: flex; }
+
+  .where {
+    flex: 1;
+    min-width: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    color: var(--muted);
+  }
+  .copy {
+    flex: 0 0 auto;
+    display: flex;
+    padding: 5px;
+    background: none;
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .copy:hover { color: var(--text); background: var(--panel-2); }
+  .path {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    /* clip the head, not the tail */
+    direction: rtl;
+    text-align: left;
+  }
+
+  .links { display: flex; align-items: center; gap: 2px; }
+  .links a {
+    display: flex;
+    padding: 6px;
+    border-radius: var(--radius);
+    color: var(--muted);
+  }
+  .links a:hover { color: var(--text); background: var(--panel-2); }
+  /* the label is for screen readers and nothing else; `title` covers the mouse */
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .tab {
     background: none;
     border: none;

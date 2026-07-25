@@ -23,6 +23,41 @@ export const app = $state({
   loading: false,
 })
 
+// -- the left rail's width -------------------------------------------------
+// One value for all four sections: the rail is the same furniture whichever tab
+// you are on, and a width that changed under you when you switched would read as
+// a glitch. Kept out of `app` because nothing reloads it from the server.
+
+export const RAIL_DEFAULT = 280
+export const RAIL_MIN = 180
+export const RAIL_MAX = 720
+
+const RAIL_KEY = 'metasmith.railWidth'
+
+export function clampRail(w) {
+  return Math.min(RAIL_MAX, Math.max(RAIL_MIN, Math.round(w)))
+}
+
+function storedRailWidth() {
+  try {
+    const raw = Number(localStorage.getItem(RAIL_KEY))
+    return Number.isFinite(raw) && raw > 0 ? clampRail(raw) : RAIL_DEFAULT
+  } catch {
+    return RAIL_DEFAULT
+  }
+}
+
+export const ui = $state({ railWidth: storedRailWidth() })
+
+export function setRailWidth(w) {
+  ui.railWidth = clampRail(w)
+  try {
+    localStorage.setItem(RAIL_KEY, String(ui.railWidth))
+  } catch {
+    // a browser with storage denied still resizes; it just forgets on reload
+  }
+}
+
 export function notify(message, kind = 'error') {
   app.notice = message ? { message, kind } : null
 }

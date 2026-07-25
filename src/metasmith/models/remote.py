@@ -224,18 +224,30 @@ class Source:
     
     @classmethod
     def Parse(cls, uri: str) -> Source:
-        """Parse a URI string into a Source. Supports ssh://, http(s)://, globus://, and local paths."""
+        """Parse a URI string into a Source. Supports ssh://, http(s)://, globus://, and local paths.
+
+        The ssh form has to round-trip: `SshSource.__str__` renders `ssh://host:path`,
+        and anything that re-saves an agent parses its own stored address back in. A
+        host/path split on `/` does not survive that -- it reads the `:` as part of
+        the host and re-renders a second one, so the address grows a colon on every
+        save. Delegate to `SshSource.Parse`, which owns the `:` form, and keep the
+        older slash form working for addresses written by hand.
+        """
         if uri.startswith("ssh://"):
-            parts = uri[6:].split("/", 1)
-            host = parts[0]
-            path = "/" + (parts[1] if len(parts) > 1 else "")
-            return cls.FromSsh(host, path)
+            rest = uri[len("ssh://"):]
+            if ":" in rest:
+                return SshSource.Parse(uri).AsSource()
+            host, _, tail = rest.partition("/")
+            return cls.FromSsh(host, "/" + tail)
         elif uri.startswith("globus://") or "app.globus.org" in uri:
             return cls.FromGlobus(uri)
         elif uri.startswith("http://") or uri.startswith("https://"):
             return cls.FromHttp(uri)
         else:
-            return cls.FromLocal(Path(uri).resolve())
+            # `~` is how anyone writes a home-relative path, and an agent home is
+            # exactly the kind of path people write that way. Without this it
+            # resolves to a literal directory named `~` under the cwd.
+            return cls.FromLocal(Path(uri).expanduser().resolve())
 
     @classmethod
     def Unpack(cls, d: dict):

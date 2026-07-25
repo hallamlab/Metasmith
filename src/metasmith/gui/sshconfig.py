@@ -24,6 +24,8 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -38,14 +40,20 @@ BLOCK_PREAMBLE = [
     "# finds for each keyword, so a wildcard block above it would silently win.",
 ]
 
-# the four fields the form carries; anything else belongs in the text editor.
+# the fields the form carries; anything else belongs in the text editor.
 # (ssh keyword, field name)
 FORM_KEYWORDS = [
     ("HostName", "hostname"),
     ("User", "user"),
     ("Port", "port"),
     ("ProxyJump", "proxy_jump"),
+    ("IdentityFile", "identity_file"),
 ]
+
+# Generated keys live in their own directory rather than loose in ~/.ssh, so it
+# is obvious at a glance which keys metasmith made and which are the user's.
+KEY_DIR_NAME = "metasmith"
+KEY_TYPE = "ed25519"
 
 _WILDCARD = re.compile(r"[*?!]")
 
@@ -77,6 +85,7 @@ class HostEntry:
             "user": self.keywords.get("user"),
             "port": self.keywords.get("port"),
             "proxy_jump": self.keywords.get("proxyjump"),
+            "identity_file": self.keywords.get("identityfile"),
             "managed": self.managed,
             "source": self.source,
             "line": self.line,
@@ -173,9 +182,47 @@ class SshConfig:
                     entry.keywords.setdefault(key, value)
 
     def entries(self) -> list[HostEntry]:
+        """Every `Host` block, in file order -- one entry per pattern per block.
+
+        This is the raw parse: an alias declared twice appears twice. Callers that
+        want destinations rather than blocks want `resolved` instead.
+        """
         out: list[HostEntry] = []
         self._parse_file(self.path, set(), out, {})
         return out
+
+    @staticmethod
+    def _collapse(entries: list[HostEntry]) -> list[HostEntry]:
+        """One entry per pattern, merged the way ssh reads them.
+
+        A config may well declare the same alias more than once -- twice in one
+        file, or once here and once behind an `Include` -- and ssh does not treat
+        those as two hosts. It takes the first value it finds for each keyword
+        across every block that matches, so the effective host is the union of
+        the blocks with the earliest occurrence winning per keyword. The first
+        block also owns the identity we report (`source`, `line`, `managed`),
+        which is what `find` has always returned and what the ownership checks in
+        `update_host` / `remove_host` are asking about.
+        """
+        merged: dict[str, HostEntry] = {}
+        for e in entries:
+            first = merged.get(e.pattern)
+            if first is None:
+                merged[e.pattern] = HostEntry(
+                    pattern=e.pattern,
+                    keywords=dict(e.keywords),
+                    source=e.source,
+                    line=e.line,
+                    managed=e.managed,
+                )
+                continue
+            for k, v in e.keywords.items():
+                first.keywords.setdefault(k, v)
+        return list(merged.values())
+
+    def resolved(self) -> list[HostEntry]:
+        """`entries`, collapsed to one entry per pattern."""
+        return self._collapse(self.entries())
 
     def hosts(self) -> list[dict]:
         """Concrete destinations only.
@@ -183,10 +230,10 @@ class SshConfig:
         Wildcard patterns are defaults applied to other hosts, not things you can
         connect to, so they are not offered as agent homes.
         """
-        return [e.to_dict() for e in self.entries() if not e.is_pattern]
+        return [e.to_dict() for e in self.resolved() if not e.is_pattern]
 
     def find(self, alias: str) -> HostEntry | None:
-        for e in self.entries():
+        for e in self.resolved():
             if e.pattern == alias:
                 return e
         return None
@@ -198,7 +245,7 @@ class SshConfig:
         override it, but the user should still be able to see them.
         """
         return [
-            e.to_dict() for e in self.entries()
+            e.to_dict() for e in self.resolved()
             if e.is_pattern and not e.managed and fnmatch.fnmatch(alias, e.pattern)
         ]
 
@@ -227,6 +274,118 @@ class SshConfig:
     def managed_entries(self) -> list[dict]:
         return [e.to_dict() for e in self.entries() if e.managed and not e.is_pattern]
 
+    # -- identity keys -----------------------------------------------------
+
+    @property
+    def key_dir(self) -> Path:
+        return self.path.parent / KEY_DIR_NAME
+
+    def _tildify(self, p: Path) -> str:
+        """Write `~/.ssh/...` rather than `/home/you/.ssh/...`.
+
+        The config is a file people read and copy between machines; an absolute
+        path with a username baked into it is worse on both counts.
+        """
+        try:
+            return "~/" + str(p.relative_to(Path.home()))
+        except ValueError:
+            return str(p)
+
+    def resolve_identity(self, value: str | None) -> Path | None:
+        if not value:
+            return None
+        return Path(os.path.expanduser(value.strip().strip('"')))
+
+    def read_identity(self, value: str | None) -> dict | None:
+        """What the UI shows for an `IdentityFile`: where it is, and the public half.
+
+        Only the `.pub` is ever read. The private key is never opened, never sent
+        to the browser, and never logged -- there is nothing the page could do
+        with it that is worth the risk of it sitting in a response body.
+        """
+        path = self.resolve_identity(value)
+        if path is None:
+            return None
+        pub = path.with_name(path.name + ".pub")
+        out = {
+            "value": value,
+            "path": str(path),
+            "exists": path.is_file(),
+            "generated": path.parent == self.key_dir,
+            "public_key": None,
+            "public_key_path": str(pub) if pub.is_file() else None,
+        }
+        if pub.is_file():
+            try:
+                out["public_key"] = pub.read_text().strip()
+            except OSError:
+                pass
+        return out
+
+    def generate_identity(self, alias: str, comment: str | None = None) -> dict:
+        """Make an ed25519 keypair for `alias` under `~/.ssh/metasmith/`.
+
+        Never overwrites: a key already at that path may well be the only way
+        into a machine, and `ssh-keygen` would replace it without asking. An
+        existing pair is returned as-is instead, flagged `created: False`.
+        """
+        alias = alias.strip()
+        assert alias, "an alias is required to name the key"
+        assert not _WILDCARD.search(alias) and "/" not in alias, (
+            f"[{alias}] is not usable as a key name"
+        )
+
+        dest = self.key_dir / alias
+        if dest.is_file():
+            out = self.read_identity(self._tildify(dest))
+            return {**out, "created": False}
+
+        if shutil.which("ssh-keygen") is None:
+            raise SshConfigError(
+                "ssh-keygen is not on PATH, so metasmith cannot generate a key. "
+                "Make one yourself and point the identity field at it."
+            )
+
+        self.key_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        proc = subprocess.run(
+            [
+                "ssh-keygen", "-q",
+                "-t", KEY_TYPE,
+                "-N", "",  # no passphrase: an agent runs unattended
+                "-C", comment or f"metasmith:{alias}",
+                "-f", str(dest),
+            ],
+            capture_output=True, text=True,
+        )
+        if proc.returncode != 0 or not dest.is_file():
+            detail = (proc.stderr or proc.stdout or "").strip()
+            raise SshConfigError(f"ssh-keygen failed: {detail or 'no output'}")
+        os.chmod(dest, 0o600)
+
+        out = self.read_identity(self._tildify(dest))
+        return {**out, "created": True}
+
+    def delete_identity(self, alias: str) -> dict:
+        """Remove a keypair metasmith generated.
+
+        Scoped to `~/.ssh/metasmith/` on purpose. Everywhere else in this module
+        the rule is that metasmith edits only what it wrote, and a key is the
+        sharpest case of it: deleting the wrong one locks someone out of a
+        machine with no undo. A path outside that directory is refused even when
+        the alias matches.
+        """
+        alias = alias.strip()
+        assert alias, "an alias is required"
+        dest = self.key_dir / alias
+        if not dest.is_file():
+            raise SshConfigError(f"no generated key for [{alias}]")
+        removed = []
+        for p in (dest.with_name(dest.name + ".pub"), dest):
+            if p.is_file():
+                p.unlink()
+                removed.append(str(p))
+        return {"alias": alias, "action": "deleted", "removed": removed}
+
     @staticmethod
     def _strip_preamble(body: str) -> str:
         """Drop a leading copy of the preamble.
@@ -242,16 +401,46 @@ class SshConfig:
             i += 1
         return "\n".join(lines[i:])
 
-    def write_managed_block(self, body: str):
-        """Replace the managed block, always placing it first in the file."""
-        before, _current, after = self.split()
-        rest = "\n".join(x for x in (before, after) if x.strip())
-        body = self._strip_preamble(body)
-        block = "\n".join([BEGIN_MARKER, *BLOCK_PREAMBLE, body.strip("\n"), END_MARKER])
+    def native(self) -> str:
+        """Everything outside the managed block, as one editable document.
+
+        The block is always written first, so in practice this is the `after`
+        half; `before` is only non-empty for a file metasmith has never touched.
+        Joining them is what lets the editor offer the user's config as a single
+        text rather than two boxes whose split is an artefact of our marker.
+        """
+        before, _managed, after = self.split()
+        return "\n\n".join(x.strip("\n") for x in (before, after) if x.strip())
+
+    def _compose(self, managed: str, native: str) -> str:
+        block = "\n".join([
+            BEGIN_MARKER, *BLOCK_PREAMBLE, self._strip_preamble(managed).strip("\n"), END_MARKER,
+        ])
         text = block + "\n"
-        if rest.strip():
-            text += "\n" + rest.rstrip("\n") + "\n"
-        self._write(text)
+        if native.strip():
+            text += "\n" + native.strip("\n") + "\n"
+        return text
+
+    def write_managed_block(self, body: str):
+        """Replace the managed block, leaving the rest of the file alone."""
+        self._write(self._compose(body, self.native()))
+
+    def write_all(self, managed: str, native: str):
+        """Replace both halves at once -- the config editor's save.
+
+        The user's half is editable here because refusing to edit it just sends
+        them to another editor for a file this page is already showing. What
+        stays non-negotiable is the layout: metasmith's block is reassembled from
+        its own marker and written first, so a save cannot reorder the file into
+        the shape where a `Host *` silently wins.
+        """
+        for marker in (BEGIN_MARKER, END_MARKER):
+            if marker in native:
+                raise SshConfigError(
+                    "the metasmith markers belong to the managed block; remove "
+                    "them from the rest of the file before saving."
+                )
+        self._write(self._compose(managed, native))
 
     # -- host CRUD ---------------------------------------------------------
 
@@ -275,6 +464,7 @@ class SshConfig:
         user: str | None = None,
         port: str | int | None = None,
         proxy_jump: str | None = None,
+        identity_file: str | None = None,
     ) -> dict:
         alias = alias.strip()
         assert alias, "alias is required"
@@ -299,6 +489,7 @@ class SshConfig:
             "user": (user or "").strip() or None,
             "port": str(port).strip() if port not in (None, "") else None,
             "proxy_jump": (proxy_jump or "").strip() or None,
+            "identity_file": (identity_file or "").strip() or None,
         })
         self.write_managed_block(self._render(current))
         return self.find(alias).to_dict()
@@ -316,7 +507,7 @@ class SshConfig:
         for h in hosts:
             if h["alias"] != alias:
                 continue
-            for k in ("hostname", "user", "port", "proxy_jump"):
+            for k in ("hostname", "user", "port", "proxy_jump", "identity_file"):
                 if k in fields:
                     v = fields[k]
                     h[k] = str(v).strip() or None if v not in (None, "") else None

@@ -23,6 +23,13 @@ body {
   font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
+/* set while the rail's grip is being dragged: the pointer spends most of the
+   drag over the main pane, where a text cursor and live selection would be */
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
 button {
   font: inherit;
   color: var(--text);

@@ -1,33 +1,28 @@
 <script>
   import { api } from '../lib/api.js'
-  import { app, attempt, loadAgents, select } from '../lib/state.svelte.js'
-  import Field from '../components/Field.svelte'
+  import { attempt, loadAgents, select } from '../lib/state.svelte.js'
+  import { agentPayload, blankForm, homeUri } from '../lib/agentform.js'
+  import AgentFields from './AgentFields.svelte'
 
-  let form = $state({
-    name: '',
-    kind: 'local',
-    host: '',
-    path: '',
-    runtime: 'APPTAINER',
-    setup: '',
+  // Opens on a working agent rather than an empty form: a generated name and a
+  // home you would probably have typed anyway. Everything is editable, so the
+  // defaults are a starting point, not a decision made for you.
+  let form = $state(blankForm())
+  let ready = $state(false)
+
+  $effect(() => {
+    attempt(async () => {
+      const d = await api.get('/defaults/agent')
+      form = blankForm({ name: d.name, path: d.home, runtime: d.runtime })
+      ready = true
+    })
   })
 
-  let home = $derived(
-    form.kind === 'ssh'
-      ? form.host && form.path
-        ? `ssh://${form.host}:${form.path}`
-        : ''
-      : form.path,
-  )
+  let home = $derived(homeUri(form))
 
   async function create() {
     const out = await attempt(async () => {
-      const body = await api.post('/agents', {
-        name: form.name,
-        home,
-        runtime: form.runtime,
-        setup_commands: form.setup.split('\n').map((s) => s.trim()).filter(Boolean),
-      })
+      const body = await api.post('/agents', agentPayload(form))
       await loadAgents()
       return body
     })
@@ -35,57 +30,23 @@
   }
 </script>
 
-<div class="col" style="gap:14px; max-width:600px">
-  <h1>new agent</h1>
-  <div class="card col" style="gap:10px">
-    <Field label="name">
-      <input bind:value={form.name} placeholder="smith" />
-    </Field>
+<div class="col" style="gap:14px; max-width:720px">
+  <div class="spread">
+    <h1>new agent</h1>
+    <button class="primary" onclick={create} disabled={!ready || !form.name.trim() || !home}>
+      create
+    </button>
+  </div>
 
-    <Field label="where it lives">
-      <select bind:value={form.kind}>
-        <option value="local">this machine</option>
-        <option value="ssh">a remote host over ssh</option>
-      </select>
-    </Field>
+  <p class="small muted" style="max-width:70ch">
+    An agent is a place metasmith can run work: a directory on this machine or on a
+    host you reach over ssh. Nothing is installed there until you deploy it.
+  </p>
 
-    {#if form.kind === 'ssh'}
-      <Field label="host" hint="an alias from the SSH section">
-        <select bind:value={form.host}>
-          <option value="">choose a host…</option>
-          {#each app.hosts as h}
-            <option value={h.alias}>{h.alias}</option>
-          {/each}
-        </select>
-      </Field>
-    {/if}
+  <AgentFields bind:form />
 
-    <Field
-      label="home directory"
-      hint={form.kind === 'ssh'
-        ? 'an absolute path on that host; on a cluster put it on scratch, not on a home quota'
-        : 'a path on this machine'}
-    >
-      <input bind:value={form.path} placeholder={form.kind === 'ssh' ? '/scratch/you/msm_home' : './msm_home'} />
-    </Field>
-
-    <Field label="container runtime">
-      <select bind:value={form.runtime}>
-        <option value="APPTAINER">apptainer</option>
-        <option value="DOCKER">docker</option>
-      </select>
-    </Field>
-
-    <Field
-      label="setup commands"
-      hint="run before anything else on that host — one per line, e.g. module load"
-    >
-      <textarea bind:value={form.setup} rows="3" spellcheck="false"></textarea>
-    </Field>
-
-    <div class="row">
-      <button class="primary" onclick={create} disabled={!form.name || !home}>create</button>
-      {#if home}<span class="small muted mono truncate">{home}</span>{/if}
-    </div>
+  <div class="row small muted">
+    <span>home</span>
+    <span class="mono">{home || '—'}</span>
   </div>
 </div>

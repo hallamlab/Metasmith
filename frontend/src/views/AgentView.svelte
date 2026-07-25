@@ -1,22 +1,49 @@
 <script>
   import { api } from '../lib/api.js'
-  import { app, attempt, loadAgents, select } from '../lib/state.svelte.js'
+  import { attempt, loadAgents, select } from '../lib/state.svelte.js'
+  import { agentPayload, formFromAgent, homeUri } from '../lib/agentform.js'
+  import AgentFields from './AgentFields.svelte'
   import JobLog from '../components/JobLog.svelte'
 
   let { name } = $props()
 
   let agent = $state(null)
+  let form = $state(null)
   let jobId = $state(null)
   let ping = $state(null)
   let pinging = $state(false)
+  let saved = $state(false)
+
+  // The name is the directory the agent yaml lives in, so renaming is a move,
+  // not an edit -- it stays read-only here.
+  let dirty = $derived(
+    !!agent && !!form && JSON.stringify(agentPayload(form)) !== JSON.stringify(agentPayload(formFromAgent(agent))),
+  )
+  let home = $derived(form ? homeUri(form) : '')
+
+  function adopt(a) {
+    agent = a
+    form = formFromAgent(a)
+  }
 
   $effect(() => {
     const n = name
     agent = null
+    form = null
     jobId = null
     ping = null
-    attempt(async () => (agent = await api.get(`/agents/${n}`)))
+    attempt(async () => adopt(await api.get(`/agents/${n}`)))
   })
+
+  async function save() {
+    await attempt(async () => {
+      await api.put(`/agents/${name}`, agentPayload(form))
+      adopt(await api.get(`/agents/${name}`))
+      await loadAgents()
+      saved = true
+      setTimeout(() => (saved = false), 1500)
+    })
+  }
 
   async function doPing() {
     pinging = true
@@ -33,15 +60,15 @@
     await attempt(async () => {
       await api.post(`/agents/${name}/archive`, { archived: false })
       await loadAgents()
-      agent = await api.get(`/agents/${name}`)
+      adopt(await api.get(`/agents/${name}`))
     })
   }
 </script>
 
-{#if !agent}
+{#if !agent || !form}
   <p class="muted">loading…</p>
 {:else}
-  <div class="col" style="gap:14px">
+  <div class="col" style="gap:14px; max-width:760px">
     <div class="spread">
       <h1>{agent.name}</h1>
       <div class="row">
@@ -49,33 +76,27 @@
           <span class="tag warn">archived</span>
           <button onclick={unarchive}>restore</button>
         {/if}
+        {#if saved}<span class="tag ok">saved</span>{/if}
         <button onclick={doPing} disabled={pinging}>{pinging ? 'pinging…' : 'ping'}</button>
+        <button onclick={save} disabled={!dirty || !home}>save</button>
         <button class="primary" onclick={deploy}>deploy</button>
       </div>
     </div>
 
-    <div class="card">
-      <table class="small">
-        <tbody>
-          <tr><td class="muted">home</td><td class="mono">{agent.home}</td></tr>
-          <tr><td class="muted">reached by</td><td>{agent.home_type === 'SSH' ? 'ssh' : 'this machine'}</td></tr>
-          <tr><td class="muted">runtime</td><td>{agent.runtime.toLowerCase()}</td></tr>
-          <tr><td class="muted">container</td><td class="mono">{agent.container}</td></tr>
-          {#if agent.real_path}
-            <tr><td class="muted">resolved path</td><td class="mono">{agent.real_path}</td></tr>
-          {/if}
-          {#if agent.setup_commands.length}
-            <tr>
-              <td class="muted">setup</td>
-              <td class="mono">{agent.setup_commands.join('\n')}</td>
-            </tr>
-          {/if}
-        </tbody>
-      </table>
+    <AgentFields bind:form nameEditable={false} />
+
+    <div class="row small muted wrap">
+      <span>home</span>
+      <span class="mono">{home || '—'}</span>
+      {#if agent.real_path}
+        <span>· resolves to</span>
+        <span class="mono">{agent.real_path}</span>
+      {/if}
+      {#if dirty}<span class="tag warn">unsaved</span>{/if}
     </div>
 
     {#if ping}
-      <div class="card col">
+      <div class="col" style="gap:6px">
         <div class="spread">
           <h3>ping</h3>
           <span class="tag" class:ok={ping.ok} class:bad={!ping.ok}>
@@ -90,28 +111,28 @@
       {jobId}
       onend={async () => {
         await loadAgents()
-        agent = await api.get(`/agents/${name}`)
+        adopt(await api.get(`/agents/${name}`))
       }}
     />
 
-    {#if Object.keys(agent.config_presets ?? {}).length}
-      <div class="card col">
-        <h3>nextflow presets</h3>
+    <div class="col" style="gap:6px">
+      <h3>nextflow presets</h3>
+      {#if Object.keys(agent.config_presets ?? {}).length}
         <p class="small muted">
           Named configurations found on this agent; pick one when you launch a run.
         </p>
         <div class="row wrap">
           {#each Object.keys(agent.config_presets) as p}<span class="tag">{p}</span>{/each}
         </div>
-      </div>
-    {:else}
-      <p class="small muted">
-        No nextflow presets yet — they appear once the agent has been deployed.
-      </p>
-    {/if}
+      {:else}
+        <p class="small muted">
+          None yet — they appear once the agent has been deployed.
+        </p>
+      {/if}
+    </div>
 
     {#if agent.runs?.length}
-      <div class="card col">
+      <div class="col" style="gap:6px">
         <h3>runs on this agent</h3>
         <table class="small">
           <tbody>

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -84,6 +85,78 @@ Match host beta
         """ssh takes the first value it finds for a keyword; so does this."""
         _write(cfg_path, "Host alpha\n    User first\n    User second\n")
         assert cfg.hosts()[0]["user"] == "first"
+
+
+class TestDuplicateAliases:
+    """An alias declared more than once is one host, not several.
+
+    Real configs do this constantly -- a `Host a b c` line that overlaps another,
+    or the same alias in two included files. ssh merges them first-value-wins; a
+    host list that repeated the alias instead used to reach the GUI as two rail
+    rows carrying the same key, which Svelte rejects outright (each_key_duplicate),
+    taking the whole page down with it.
+    """
+
+    def test_repeated_alias_is_one_host(self, cfg, cfg_path):
+        _write(cfg_path, """
+Host alpha
+    HostName alpha.example.org
+
+Host alpha
+    HostName other.example.org
+""")
+        assert [h["alias"] for h in cfg.hosts()] == ["alpha"]
+
+    def test_repeated_alias_merges_first_wins(self, cfg, cfg_path):
+        """Each keyword resolves independently, to its earliest occurrence."""
+        _write(cfg_path, """
+Host alpha
+    HostName alpha.example.org
+
+Host alpha
+    HostName ignored.example.org
+    User tony
+    Port 2222
+""")
+        h = cfg.hosts()[0]
+        assert h["hostname"] == "alpha.example.org"  # earlier block wins
+        assert h["user"] == "tony"                   # only the later block has it
+        assert h["port"] == "2222"
+
+    def test_overlapping_host_lines_collapse(self, cfg, cfg_path):
+        _write(cfg_path, "Host a b\n    User one\n\nHost b c\n    User two\n")
+        hosts = {h["alias"]: h for h in cfg.hosts()}
+        assert set(hosts) == {"a", "b", "c"}
+        assert hosts["b"]["user"] == "one"
+
+    def test_duplicate_across_an_include_collapses(self, cfg, cfg_path):
+        _write(cfg_path.parent / "extra", "Host alpha\n    User from-include\n")
+        _write(cfg_path, "Include extra\n\nHost alpha\n    HostName a\n")
+        hosts = cfg.hosts()
+        assert [h["alias"] for h in hosts] == ["alpha"]
+        assert hosts[0]["user"] == "from-include"  # the Include is read first
+        assert hosts[0]["hostname"] == "a"
+
+    def test_aliases_are_unique(self, cfg, cfg_path):
+        """The invariant the rail depends on: one row per alias, always."""
+        _write(cfg_path, """
+Host alpha beta
+Host beta gamma
+Host alpha
+Include missing-on-purpose
+""")
+        aliases = [h["alias"] for h in cfg.hosts()]
+        assert len(aliases) == len(set(aliases))
+
+    def test_repeated_pattern_collapses_in_shadowing(self, cfg, cfg_path):
+        _write(cfg_path, "Host *\n    User one\n\nHost *\n    Port 22\n")
+        patterns = cfg.shadowing_patterns("anything")
+        assert [p["alias"] for p in patterns] == ["*"]
+
+    def test_definition_site_is_the_first_occurrence(self, cfg, cfg_path):
+        """Ownership questions ask about the block ssh would actually honour."""
+        _write(cfg_path, "Host alpha\n    HostName first\n\nHost alpha\n    User u\n")
+        assert cfg.find("alpha").line == 1
 
 
 class TestIncludes:
@@ -250,6 +323,135 @@ class TestShadowing:
         _write(cfg_path, "Host *.internal\n    User svc\n")
         cfg.add_host("box.example.org", "10.0.0.9")
         assert cfg.shadowing_patterns("box.example.org") == []
+
+
+class TestIdentityKeys:
+    def test_identity_is_a_form_field(self, cfg):
+        cfg.add_host("one", "one.example.org", identity_file="~/.ssh/metasmith/one")
+        host = cfg.hosts()[0]
+        assert host["identity_file"] == "~/.ssh/metasmith/one"
+        assert "IdentityFile ~/.ssh/metasmith/one" in cfg.read()
+
+    def test_identity_can_be_updated_and_cleared(self, cfg):
+        cfg.add_host("one", "one.example.org")
+        assert cfg.update_host("one", identity_file="~/.ssh/k")["identity_file"] == "~/.ssh/k"
+        assert cfg.update_host("one", identity_file="")["identity_file"] is None
+
+    def test_generate_writes_a_keypair(self, cfg):
+        out = cfg.generate_identity("one")
+        assert out["created"] is True
+        assert out["exists"] is True
+        assert Path(out["path"]).parent == cfg.key_dir
+        assert Path(out["path"] + ".pub").is_file()
+        assert out["public_key"].startswith("ssh-ed25519 ")
+
+    def test_generated_key_is_private(self, cfg):
+        out = cfg.generate_identity("one")
+        assert stat.S_IMODE(Path(out["path"]).stat().st_mode) == 0o600
+
+    def test_generate_never_overwrites(self, cfg):
+        """A key already at that path may be the only way into a machine."""
+        first = cfg.generate_identity("one")
+        original = Path(first["path"]).read_bytes()
+        again = cfg.generate_identity("one")
+        assert again["created"] is False
+        assert again["public_key"] == first["public_key"]
+        assert Path(first["path"]).read_bytes() == original
+
+    def test_generated_path_is_written_home_relative(self, cfg, monkeypatch, tmp_path):
+        """The config should read `~/.ssh/...`, not someone's absolute home."""
+        monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+        out = cfg.generate_identity("one")
+        assert out["value"].startswith("~/")
+        assert "metasmith/one" in out["value"]
+
+    def test_read_identity_reports_a_missing_key(self, cfg):
+        info = cfg.read_identity("~/.ssh/nope-not-here")
+        assert info["exists"] is False
+        assert info["public_key"] is None
+
+    def test_read_identity_of_nothing(self, cfg):
+        assert cfg.read_identity(None) is None
+        assert cfg.read_identity("") is None
+
+    def test_generate_refuses_a_pattern(self, cfg):
+        with pytest.raises(AssertionError):
+            cfg.generate_identity("not/a/name")
+
+    def test_delete_removes_both_halves(self, cfg):
+        out = cfg.generate_identity("one")
+        priv = Path(out["path"])
+        cfg.delete_identity("one")
+        assert not priv.exists()
+        assert not priv.with_name(priv.name + ".pub").exists()
+
+    def test_delete_is_repeatable_only_once(self, cfg):
+        cfg.generate_identity("one")
+        cfg.delete_identity("one")
+        with pytest.raises(SshConfigError, match="no generated key"):
+            cfg.delete_identity("one")
+
+    def test_delete_never_touches_a_key_we_did_not_generate(self, cfg, cfg_path):
+        """The user's own key is not ours to remove, whatever it is called."""
+        theirs = cfg_path.parent / "id_ed25519"
+        _write(theirs, "PRIVATE KEY")
+        with pytest.raises(SshConfigError, match="no generated key"):
+            cfg.delete_identity("id_ed25519")
+        assert theirs.read_text() == "PRIVATE KEY"
+
+    def test_generate_after_delete_makes_a_fresh_key(self, cfg):
+        first = cfg.generate_identity("one")["public_key"]
+        cfg.delete_identity("one")
+        second = cfg.generate_identity("one")
+        assert second["created"] is True
+        assert second["public_key"] != first
+
+
+class TestEditingBothHalves:
+    """The editor shows the whole file, so it can save the whole file."""
+
+    def test_native_half_is_editable(self, cfg, cfg_path):
+        _write(cfg_path, "Host theirs\n    HostName t\n")
+        cfg.add_host("ours", "o")
+        cfg.write_all(cfg.split()[1], "Host theirs\n    HostName edited.example.org\n")
+        by_alias = {h["alias"]: h for h in cfg.hosts()}
+        assert by_alias["theirs"]["hostname"] == "edited.example.org"
+        assert by_alias["ours"]["hostname"] == "o"
+
+    def test_managed_block_stays_first(self, cfg, cfg_path):
+        """The one thing a save may not do is reorder the file."""
+        cfg.add_host("ours", "o")
+        cfg.write_all(cfg.split()[1], "Host *\n    User wrong\n")
+        lines = [ln for ln in cfg.read().splitlines() if ln.strip()]
+        assert lines[0] == BEGIN_MARKER
+        assert lines.index("Host ours") < lines.index("Host *")
+
+    def test_markers_in_the_native_half_are_refused(self, cfg):
+        cfg.add_host("ours", "o")
+        with pytest.raises(SshConfigError, match="markers belong to"):
+            cfg.write_all("", f"{BEGIN_MARKER}\nHost sneaky\n{END_MARKER}\n")
+
+    def test_native_joins_both_sides_of_the_block(self, cfg, cfg_path):
+        _write(cfg_path, f"Host above\n\n{BEGIN_MARKER}\n{END_MARKER}\n\nHost below\n")
+        native = cfg.native()
+        assert "Host above" in native
+        assert "Host below" in native
+        assert BEGIN_MARKER not in native
+
+    def test_round_trip_is_stable(self, cfg, cfg_path):
+        _write(cfg_path, "Host theirs\n    HostName t\n")
+        cfg.add_host("ours", "o")
+        for _ in range(3):
+            cfg.write_all(cfg.split()[1], cfg.native())
+        assert cfg.read().count(BEGIN_MARKER) == 1
+        assert cfg.read().count("# Managed by metasmith.") == 1
+        assert {h["alias"] for h in cfg.hosts()} == {"ours", "theirs"}
+
+    def test_writing_only_the_block_leaves_the_rest(self, cfg, cfg_path):
+        _write(cfg_path, "Host theirs\n    HostName t\n")
+        cfg.add_host("ours", "o")
+        cfg.write_managed_block("Host renamed\n    HostName r\n")
+        assert "Host theirs" in cfg.read()
 
 
 class TestEmptyConfig:

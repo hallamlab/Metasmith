@@ -21,11 +21,16 @@ from ..ops import runtime as op_runtime
 from ..ops import workflow as op_workflow
 from . import stdlib
 from .jobs import LogCapture
-from .names import assert_valid_name, slugify
+from .names import assert_valid_name, generate_workflow_name, slugify
 from .sshconfig import SshConfig, SshConfigError
 from .store import INPUT_LIBRARY_DIRNAME, Project, ProjectError, utcnow
 
 bp = Blueprint("api", __name__, url_prefix="/api")
+
+# What a new agent's home is set to before the user touches it. `~` is the one
+# path spelling that means the same thing whether the agent runs here or on a
+# cluster, and it is expanded by whichever side ends up resolving it.
+DEFAULT_AGENT_HOME = "~/msm_home"
 
 # Planning is not reentrant. TransformInstance.Load imports each transform by
 # bare module name, mutates sys.path, calls importlib.reload, and hands the
@@ -83,13 +88,36 @@ def _wants_archived() -> bool:
 
 @bp.get("/project")
 def get_project():
-    from ..constants import VERSION
+    from ..constants import CONDA_URL, CONTAINER_URL, DOCS_URL, GIT_URL, VERSION
 
     p = _project()
     return jsonify({
         "root": str(p.root),
         "version": VERSION,
         "stdlib": stdlib.discover(p.root),
+        # the header's resource links; written down once, in constants.py
+        "links": {
+            "docs": DOCS_URL,
+            "github": GIT_URL,
+            "conda": CONDA_URL,
+            "container": CONTAINER_URL,
+        },
+    })
+
+
+@bp.get("/defaults/agent")
+def agent_defaults():
+    """What the new-agent view is pre-filled with.
+
+    Generated here rather than in the browser because the name has to avoid the
+    ones already taken, and only this side knows them.
+    """
+    p = _project()
+    return jsonify({
+        "name": generate_workflow_name(taken=p.agent_names(include_archived=True)),
+        "home": DEFAULT_AGENT_HOME,
+        "runtime": "APPTAINER",
+        "setup_commands": [],
     })
 
 
@@ -117,8 +145,34 @@ def ssh_add_host():
         user=b.get("user"),
         port=b.get("port"),
         proxy_jump=b.get("proxy_jump"),
+        identity_file=b.get("identity_file"),
     )
     return jsonify({"host": host, "shadowed_by": cfg.shadowing_patterns(host["alias"])}), 201
+
+
+@bp.get("/ssh/hosts/<alias>/identity")
+def ssh_host_identity(alias):
+    """The public half of whatever key this host authenticates with, if any."""
+    cfg = _ssh()
+    host = cfg.find(alias)
+    if host is None:
+        raise SshConfigError(f"no host named [{alias}]")
+    return jsonify({"identity": cfg.read_identity(host.keywords.get("identityfile"))})
+
+
+@bp.post("/ssh/keys")
+def ssh_generate_key():
+    """Mint an ed25519 keypair for an alias, or hand back the one already there."""
+    b = _body()
+    alias = (b.get("alias") or "").strip()
+    assert alias, "an alias is required to name the key"
+    return jsonify(_ssh().generate_identity(alias, comment=b.get("comment")))
+
+
+@bp.delete("/ssh/keys/<alias>")
+def ssh_delete_key(alias):
+    """Only ever a key metasmith generated -- see `delete_identity`."""
+    return jsonify(_ssh().delete_identity(alias))
 
 
 @bp.patch("/ssh/hosts/<alias>")
@@ -150,26 +204,38 @@ def ssh_delete_host(alias):
     return jsonify(_ssh().remove_host(alias))
 
 
-@bp.get("/ssh/config")
-def ssh_read_config():
-    cfg = _ssh()
+def _config_payload(cfg) -> dict:
     before, managed, after = cfg.split()
-    return jsonify({
+    return {
         "path": str(cfg.path),
         "before": before,
         "managed": managed,
         "after": after,
+        "native": cfg.native(),
         "exists": cfg.path.is_file(),
-    })
+    }
+
+
+@bp.get("/ssh/config")
+def ssh_read_config():
+    return jsonify(_config_payload(_ssh()))
 
 
 @bp.put("/ssh/config")
 def ssh_write_config():
-    """Only the managed block is writable; the rest of the file is the user's."""
+    """Both halves are writable; only the layout is not.
+
+    Sending just `managed` leaves the user's half untouched, which is what the
+    per-host forms do. Sending `native` as well replaces it -- the editor shows
+    the whole file, so it can save the whole file.
+    """
+    b = _body()
     cfg = _ssh()
-    cfg.write_managed_block(_body().get("managed", ""))
-    before, managed, after = cfg.split()
-    return jsonify({"before": before, "managed": managed, "after": after})
+    if "native" in b:
+        cfg.write_all(b.get("managed", ""), b.get("native") or "")
+    else:
+        cfg.write_managed_block(b.get("managed", ""))
+    return jsonify(_config_payload(cfg))
 
 
 # -- agents ------------------------------------------------------------------
@@ -210,13 +276,15 @@ def get_agent(name):
 def create_agent():
     b = _body()
     p = _project()
-    name = slugify(b.get("name") or "")
+    # an unnamed agent gets a generated name, the same as an unnamed workflow
+    name = slugify(b["name"]) if b.get("name") else generate_workflow_name(
+        taken=p.agent_names(include_archived=True)
+    )
     assert_valid_name(name, "agent name")
     if p.agent_exists(name):
         raise ProjectError(f"agent [{name}] already exists")
     p.initialize()
-    home = b.get("home") or ""
-    assert home, "home is required (a local path, or ssh://host/path)"
+    home = b.get("home") or DEFAULT_AGENT_HOME
     return jsonify(op_agent.save_agent(
         path=str(p.agent_path(name)),
         home_uri=home,

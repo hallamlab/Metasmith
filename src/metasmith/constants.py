@@ -8,6 +8,12 @@ USER = "hallamlab" # github id
 GIT_URL = f"https://github.com/{USER}/{NAME}"
 SHORT_SUMMARY = "Automated generation of workflows for Nextflow executed using agents"
 
+# Where a release ends up, and where it is documented. The GUI links these from
+# its header, so they live here rather than being retyped in the frontend.
+DOCS_URL = f"https://{NAME}.readthedocs.io/en/latest/index.html"
+CONDA_URL = f"https://anaconda.org/{USER}/{NAME}"
+CONTAINER_URL = f"https://quay.io/repository/{USER}/{NAME}"
+
 # The standard library of data types, transforms, and resources. Both `msm lab`
 # and `msm gui` clone this into the working directory; there is no configuration
 # for it, so this is the single place the URL is written down.
