@@ -250,10 +250,22 @@ class Agent:
             resolved_home = Path(resolved_home)
 
             dev_src = "$AGENT_HOME/dev/metasmith"
+            dev_target = "/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith"
             dev_mock = Environment(
                 image=self.container,
                 binds=[
-                    (dev_src, Path("/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith")),
+                    (dev_src, Path(dev_target)),
+                ],
+                runtime=self.runtime,
+                native=self.native,
+            )
+            # The bootstrap may stage the dev overlay to node-local scratch
+            # before binding it (SLURM array fan-out), so it binds whatever
+            # $DEV_BIND_SRC resolves to at run time rather than dev_src.
+            dev_mock_staged = Environment(
+                image=self.container,
+                binds=[
+                    ("$DEV_BIND_SRC", Path(dev_target)),
                 ],
                 runtime=self.runtime,
                 native=self.native,
@@ -321,7 +333,7 @@ class Agent:
                     agent_home=resolved_agent_home,
                     run_command=bootstrap_container.MakeRunCommand(local=True, custom_bind_param="$BINDS"),
                     run_binds=bootstrap_container.MakeBindsParam(),
-                    dev_binds=dev_mock.MakeBindsParam(),
+                    dev_binds=dev_mock_staged.MakeBindsParam(),
                     dev_src=dev_src,
                     bind_file=BIND_FILE,
                 ),

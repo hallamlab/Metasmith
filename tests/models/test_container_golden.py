@@ -25,8 +25,11 @@ IMAGE = "docker://quay.io/example/tool:1.0"
 CACHE = Path("/cache")
 # `_cached_name()` sanitization of IMAGE: "://"->".." , ":"->".." , "/"->"_"
 CACHED = "docker..quay.io_example_tool..1.0"
-SIF = f"/cache/{CACHED}.sif"
-SANDBOX = f"/cache/{CACHED}.sandbox"
+# The image store root is a shell expression expanded on the execution host:
+# APPTAINER_CACHEDIR when the cluster sets one, else the caller's cache dir.
+STORE = "${APPTAINER_CACHEDIR:-/cache}"
+SIF = f"{STORE}/{CACHED}.sif"
+SANDBOX = f"{STORE}/{CACHED}.sandbox"
 
 BINDS = [(Path("/host/data"), Path("/data")), (Path("/host/db"), Path("/db"))]
 

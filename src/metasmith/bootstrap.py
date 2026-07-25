@@ -90,6 +90,7 @@ def ExecuteStep(
     input_by_dep: dict,
     dep2output: list,
     params: dict,
+    host_local: bool = False,
 ) -> ExecutionResult:
     """Run a single workflow step's protocol against pre-bound inputs.
 
@@ -108,6 +109,7 @@ def ExecuteStep(
         extern_home=Path(agent_home),
         task_key=task_key,
         extern_cwd=external_cwd,
+        host_local=host_local,
     )
     def _shorten_home(s: str):
         # Log-line shortener: replace the host-side agent_home in a
@@ -263,10 +265,17 @@ def ExecuteStep(
         return ExecutionResult(False)
 
 
-def StageAndRunTransform(workspace: Path, step_index: int, host: str):
+def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root: Path|None=None):
     Log.Info(f"cwd [{os.getcwd()}]")
+    # Control-plane root: node-local stage when the host-side bootstrap staged a
+    # copy into per-task scratch (SLURM array fan-out), else the shared HOME_ROOT
+    # bind (local executor / staging disabled / staging failed → fail-open).
+    cp_root = stage_root if stage_root is not None else AgentPaths.HOME_ROOT
+    if stage_root is not None:
+        Log.Info(f"reading control-plane from node-local stage [{stage_root}]")
+
     Log.Info(f"loading agent config")
-    agent = Agent.Load(AgentPaths.to_definition())
+    agent = Agent.Load(AgentPaths.to_definition(root=cp_root))
     agent_home = str(agent.home.GetPath())
     Log.Info(f"agent home [{agent_home}]")
 
@@ -308,9 +317,9 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str):
         external_cwd = Path(res.out[0])
         Log.Info(f"external cwd [{external_cwd}]")
         task_key = workspace.name
-        task_path = AgentPaths.to_task(task_key)
+        task_path = AgentPaths.to_task(task_key, root=cp_root)
         Log.Info(f"loading task from [{task_path}]")
-        task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data()])
+        task = WorkflowTask.Load(task_path, alt_data_paths=[AgentPaths.to_data(root=cp_root)])
 
         step = task.plan.steps[step_index-1]    # also 1 indexed for log legibility
         step_name = f"{step.transform.name}:{step.transform.GetKey()}"
