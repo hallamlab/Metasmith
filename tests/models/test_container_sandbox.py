@@ -1,4 +1,4 @@
-"""Tests for the SIF↔sandbox decision helpers on Container.
+"""Tests for the SIF↔sandbox decision helpers on Environment.
 
 The host's apptainer routes the rootfs through one of three mechanisms:
 1. Kernel squashfs mount (setuid starter-suid present — HPC like Sockeye)
@@ -18,23 +18,23 @@ and the run-time ternary — they don't spawn apptainer.
 
 from pathlib import Path
 
-from metasmith.coms.containers import Container, ContainerRuntime
+from metasmith.env import Environment, Runtime
 
 
-def _apptainer(**kw) -> Container:
-    return Container(
+def _apptainer(**kw) -> Environment:
+    return Environment(
         image="docker://quay.io/example/tool:1.0",
         workdir=Path("/ws"),
-        runtime=ContainerRuntime.APPTAINER,
+        runtime=Runtime.APPTAINER,
         **kw,
     )
 
 
-def _docker(**kw) -> Container:
-    return Container(
+def _docker(**kw) -> Environment:
+    return Environment(
         image="docker://quay.io/example/tool:1.0",
         workdir=Path("/ws"),
-        runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
         **kw,
     )
 

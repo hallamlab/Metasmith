@@ -15,7 +15,7 @@ from datetime import timedelta
 import json
 
 from ..serialization import IsText
-from ..env import Environment as Container, Runtime as ContainerRuntime
+from ..env import Environment, Runtime
 from ..coms.terminals import RemoveLeadingIndent
 from ..coms.ipc import GenerateId
 from ..env import Shell
@@ -1353,7 +1353,7 @@ class ExecutionContext:
     external_shell: Shell # relay shell for container runtimes, local shell otherwise
     external_cwd: Path
     external_agent_home: Path
-    container_runtime: ContainerRuntime
+    container_runtime: Runtime
     params: dict = field(default_factory=dict)
     _batch_index: int = 0
 
@@ -1469,7 +1469,7 @@ class ExecutionContext:
         # does not (mamba/native), paths are identity: the tool runs on the
         # host filesystem in the real cwd, so there is no /ws remap and no
         # binds to compute. The PathMap views collapse to equal.
-        _probe = Container(image=str(image_path), runtime=self.container_runtime)
+        _probe = Environment(image=str(image_path), runtime=self.container_runtime)
         if _probe.needs_relay:
             container_ws = Path("/ws")
             binds += [
@@ -1494,7 +1494,7 @@ class ExecutionContext:
             if gpu_args and gpu_args[0] not in extra_args:
                 extra_args = gpu_args + extra_args
 
-        container = Container(
+        container = Environment(
             image = str(image_path),
             workdir = container_ws,
             runtime = self.container_runtime,

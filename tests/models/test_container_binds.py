@@ -18,7 +18,7 @@ from metasmith.models.libraries import (
 )
 from metasmith.models.solver import Dependency, Endpoint
 from metasmith.constants import AgentPaths
-from metasmith.coms.containers import ContainerRuntime
+from metasmith.env import Runtime
 
 
 # ---------- helpers ----------
@@ -104,7 +104,7 @@ class TestGetContainerModelBatchBinds:
             external_shell=MagicMock(),
             external_cwd=Path("/ws"),
             external_agent_home=Path("/hpc/msm_home"),
-            container_runtime=ContainerRuntime.APPTAINER,
+            container_runtime=Runtime.APPTAINER,
         )
 
     def _call_get_container(self, ctx, image_dep, tmp_path):

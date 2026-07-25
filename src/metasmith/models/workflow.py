@@ -10,7 +10,7 @@ import yaml
 import json
 from hashlib import md5
 
-from ..env import Environment as Container, Runtime as ContainerRuntime
+from ..env import Environment, Runtime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
@@ -154,7 +154,7 @@ class NextflowGenContext:
     external_work: Path
     home_dir: Path
     external_home: Path
-    container_runtime: ContainerRuntime
+    container_runtime: Runtime
     resources_file: str
     external_home_var: str = "${params.home}"
     external_work_var: str = "${params.workspace}"
@@ -1276,7 +1276,7 @@ class WorkflowTask:
             external_binds = self._get_common_folders(raw_external_binds)
             external_binds_param = ""
             if len(external_binds)>0:
-                external_binds_param = Container(
+                external_binds_param = Environment(
                     image="",
                     binds=[
                         (_make_bind_var(i), _make_bind_var(i))

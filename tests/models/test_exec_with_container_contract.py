@@ -9,7 +9,7 @@ shell is asked to run — so the swap is provably behavior-preserving.
 
 We use a recording shell (not the live RemoteShell) and assert:
   1. The command run on the shell is `<MakeRunCommand(local=...)> bash <bounce>`.
-  2. The run-command embedded in it matches the Container the context builds.
+  2. The run-command embedded in it matches the Environment the context builds.
 
 DOCKER is used so `GetLocalPath()` is None and the cache-probe `Exec` is
 skipped — keeping the recorded call sequence to exactly one (the run).
@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from metasmith.coms.terminals import ShellResult
-from metasmith.coms.containers import ContainerRuntime
+from metasmith.env import Runtime
 from metasmith.models.libraries import (
     ContextData,
     ContextPath,
@@ -58,7 +58,7 @@ def _dep(name: str) -> Dependency:
     return Dependency(properties={name}, parents=set())
 
 
-def _build_context(tmp_path: Path, runtime: ContainerRuntime, image_dep: Dependency):
+def _build_context(tmp_path: Path, runtime: Runtime, image_dep: Dependency):
     # Binary image file so IsText(path.local) is False -> uses path.external as uri.
     sif = tmp_path / "tool.sif"
     sif.write_bytes(b"\x00\x01\x02\x03")
@@ -85,7 +85,7 @@ def test_exec_with_container_issues_run_command(tmp_path, monkeypatch):
     monkeypatch.setattr(libraries_mod, "GenerateId", lambda *a, **k: FIXED_ID)
 
     image_dep = _dep("image")
-    ctx = _build_context(tmp_path, ContainerRuntime.DOCKER, image_dep)
+    ctx = _build_context(tmp_path, Runtime.DOCKER, image_dep)
     shell: RecordingShell = ctx.external_shell  # type: ignore[assignment]
 
     ctx.ExecWithContainer(image_dep, "echo hello")
@@ -94,7 +94,7 @@ def test_exec_with_container_issues_run_command(tmp_path, monkeypatch):
     assert len(shell.calls) == 1
     run_cmd = shell.calls[0]
 
-    # The run-command prefix is exactly what the context's Container would emit
+    # The run-command prefix is exactly what the context's Environment would emit
     # (local=False, since DOCKER cache path is None).
     expected_container = ctx.GetContainerModel(image_dep)
     expected_run = expected_container.MakeRunCommand(local=False)

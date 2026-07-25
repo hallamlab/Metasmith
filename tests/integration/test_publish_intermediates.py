@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from metasmith.constants import AgentPaths
-from metasmith.coms.containers import ContainerRuntime
+from metasmith.env import Runtime
 from metasmith.models.solver import Transform
 from metasmith.models.workflow import (
     WorkflowPlan,
@@ -68,7 +68,7 @@ def _stage(task: WorkflowTask, work_dir: Path) -> str:
         external_work=work_dir,
         home_dir=Path("/msm_home"),
         external_home=work_dir.parent,
-        container_runtime=ContainerRuntime.DOCKER,
+        container_runtime=Runtime.DOCKER,
         resources_file=AgentPaths.NXF_RES,
     )
     task.PrepareNextflow(context)

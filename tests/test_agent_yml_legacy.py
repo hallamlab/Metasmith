@@ -15,7 +15,7 @@ from pathlib import Path
 import yaml
 
 from metasmith.agents import Agent
-from metasmith.coms.containers import ContainerRuntime
+from metasmith.env import Runtime
 from metasmith.models.remote import Source
 
 
@@ -40,7 +40,7 @@ def test_legacy_apptainer_loads(tmp_path):
         container="docker://quay.io/hallamlab/metasmith:9.9.9-deadbee",
     )
     agent = Agent.Load(p)
-    assert agent.runtime == ContainerRuntime.APPTAINER
+    assert agent.runtime == Runtime.APPTAINER
     assert agent.container == "docker://quay.io/hallamlab/metasmith:9.9.9-deadbee"
 
 
@@ -51,14 +51,14 @@ def test_legacy_docker_loads(tmp_path):
         container="docker://quay.io/hallamlab/metasmith:9.9.9-deadbee",
     )
     agent = Agent.Load(p)
-    assert agent.runtime == ContainerRuntime.DOCKER
+    assert agent.runtime == Runtime.DOCKER
     assert agent.container == "docker://quay.io/hallamlab/metasmith:9.9.9-deadbee"
 
 
 def test_pack_round_trip_preserves_runtime_and_container(tmp_path):
     agent = Agent(
         home=Source.FromLocal(tmp_path),
-        runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
         container="docker://quay.io/hallamlab/metasmith:9.9.9-deadbee",
     )
     packed = agent.Pack()
@@ -67,7 +67,7 @@ def test_pack_round_trip_preserves_runtime_and_container(tmp_path):
     assert packed["container"] == "docker://quay.io/hallamlab/metasmith:9.9.9-deadbee"
 
     reloaded = Agent.Unpack(agent.Pack())
-    assert reloaded.runtime == ContainerRuntime.DOCKER
+    assert reloaded.runtime == Runtime.DOCKER
     assert reloaded.container == agent.container
 
 
