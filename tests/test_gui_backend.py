@@ -202,6 +202,37 @@ class TestWorkflows:
         _seed_inputs(client, name)
         _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
         assert [p.name for p in (project_root / "workflows").iterdir()] == [name]
+        wf_dir = project_root / "workflows" / name
+        assert not (wf_dir / ".staging").exists()
+
+    def test_two_workflows_with_identical_inputs_can_generate_at_once(self, client):
+        """Two generates in flight at once must both land.
+
+        Two things would otherwise break. Identical inputs deliberately produce
+        the same task key, and the planner always writes to
+        <workspace>/<task_key> -- a shared workspace would have them fighting
+        over one directory. And planning is not reentrant: transforms are
+        imported by bare module name through process-global state, so the two
+        plans have to be serialised.
+        """
+        project = client.application.config["MSM_PROJECT"]
+        shared = project.root / "shared.fa"
+        shared.write_text(">x\nACGT\n")
+        names = [_make_workflow(client) for _ in range(2)]
+        for n in names:
+            client.post(f"/api/workflows/{n}/inputs/items", json={
+                "path": str(shared), "dtype": "mock::assembly",
+            })
+
+        # generate returns 202 immediately, so both jobs are in flight at once
+        jobs = {n: client.post(f"/api/workflows/{n}/generate", json={}).get_json() for n in names}
+        keys = {n: _finish(client, jobs[n])["task_key"] for n in names}
+        assert len(set(keys.values())) == 1, "same inputs should give the same key"
+        for n in names:
+            body = client.get(f"/api/workflows/{n}").get_json()
+            assert body["success"] is True
+            assert (Path(body["path"]) / "task.yml").is_file()
+            assert op_workspace.load_task(None, body["path"]).GetKey() == keys[n]
 
     def test_regenerating_replaces_the_bundle(self, client):
         name = _make_workflow(client)

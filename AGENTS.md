@@ -584,6 +584,12 @@ Three things are load-bearing:
 - **The failure case has an on-disk form.** `plan_workflow` returns early on an
   unsolvable target without building a task, so `request.yml` + `result.yml` are the
   only record of a failed generate; without them a browser reload would lose it.
+- **Planning is not reentrant.** `TransformInstance.Load` imports each transform by
+  bare module name, mutates `sys.path`, calls `importlib.reload`, and returns the
+  result through a *class* attribute — all process-global. Two `plan_workflow` calls
+  in one process clobber each other and fail with a bare
+  `spec not found for the module`. The CLI never hits this (one process, one plan);
+  the GUI can, so `api.py` serialises generates behind `_plan_lock`.
 - **The ssh block is written first in the file.** ssh takes the first value it finds
   per keyword, so a `Host *` above it would set User or IdentityFile for a brand-new
   alias — an entry that parses cleanly, displays correctly, and connects as the wrong

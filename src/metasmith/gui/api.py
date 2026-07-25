@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import shutil
-import time
+import threading
 from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request
@@ -26,6 +26,16 @@ from .sshconfig import SshConfig, SshConfigError
 from .store import INPUT_LIBRARY_DIRNAME, Project, ProjectError, utcnow
 
 bp = Blueprint("api", __name__, url_prefix="/api")
+
+# Planning is not reentrant. TransformInstance.Load imports each transform by
+# bare module name, mutates sys.path, calls importlib.reload, and hands the
+# result back through a *class* attribute -- all process-global. Two generates
+# running at once clobber each other and fail with a bare
+# "spec not found for the module". The CLI never hit this because one process
+# plans once; the GUI lets a user press generate on two workflows in a row, so
+# it serialises them here. Planning is short and single-user, so the queueing
+# costs nothing.
+_plan_lock = threading.Lock()
 
 
 # -- plumbing ----------------------------------------------------------------
@@ -417,26 +427,33 @@ def generate_workflow(name):
                 elif target.exists():
                     target.unlink()
 
-            result = op_workflow.plan_workflow(
-                data_library=lib_path,
-                sample_type=sample_type,
-                target_types=list(targets),
-                transform_libraries=list(transforms),
-                resource_libraries=list(resources) or None,
-                workspace=str(wf.path.parent),
-            )
+            # Plan into a workspace private to this workflow. plan_workflow
+            # always writes to <workspace>/<task_key>, and two workflows with
+            # the same inputs deliberately produce the same key -- generating
+            # both at once into a shared workspace would have them fighting
+            # over one directory.
+            staging = wf.path / ".staging"
+            if staging.exists():
+                shutil.rmtree(staging)
+            with _plan_lock:
+                result = op_workflow.plan_workflow(
+                    data_library=lib_path,
+                    sample_type=sample_type,
+                    target_types=list(targets),
+                    transform_libraries=list(transforms),
+                    resource_libraries=list(resources) or None,
+                    workspace=str(staging),
+                )
             if result.get("success"):
-                # plan_workflow saved it under <workflows>/<task_key>/; move it
-                # to the workflow directory so the readable name is the address.
-                staged = wf.path.parent / result["task_key"]
-                if staged.exists() and staged != wf.path:
-                    for item in staged.iterdir():
-                        dest = wf.path / item.name
-                        if dest.exists():
-                            shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
-                        shutil.move(str(item), str(dest))
-                    staged.rmdir()
+                # promote the bundle to the workflow directory, so the readable
+                # name is the address the CLI can stage
+                staged = staging / result["task_key"]
+                assert staged.is_dir(), f"planner wrote no bundle at [{staged}]"
+                for item in staged.iterdir():
+                    shutil.move(str(item), str(wf.path / item.name))
                 result["step_display"] = _step_display(wf.path)
+            if staging.exists():
+                shutil.rmtree(staging)
             result["stdlib_commit"] = commit
             result["transform_libraries"] = list(transforms)
             result["resource_libraries"] = list(resources)
