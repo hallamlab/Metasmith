@@ -417,6 +417,10 @@ class TestRuns:
         with mock.patch("metasmith.ops.runtime.collect", side_effect=_collect):
             r = client.post(f"/api/runs/{runnable}/{run['name']}/collect", json={})
             _finish(client, r.get_json())
+        # a fast transfer logs nothing on its own; an empty job log reads as
+        # "nothing happened" rather than "already done"
+        lines = client.application.config["MSM_JOBS"].get(r.get_json()["id"]).lines()
+        assert any("collecting results" in ln for ln in lines)
         assert seen["dest"].endswith(f"{run['name']}/outputs")
         # everything goes over ssh; globus is deliberately off
         assert seen["globus"] is False

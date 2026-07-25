@@ -722,8 +722,17 @@ def collect_run(workflow, run):
 
     def _work(job):
         with LogCapture(job):
+            # a fast local transfer logs nothing at all, and a job log that stays
+            # empty reads as "nothing happened" rather than "already done"
+            job.emit(f"collecting results for [{key}] from agent [{agent_name}]")
+            job.emit(f"into [{dest}]")
             # no globus: the whole remote path here is ssh
             out = op_runtime.collect(agent_path, key, str(dest), allow_globus=False)
+            for src, dst in out.get("completed", []):
+                job.emit(f"transferred [{src}] -> [{dst}]")
+            for err in out.get("errors", []):
+                job.emit(f"ERROR: {err}")
+            job.emit(f"collected {len(out.get('completed', []))} item(s)")
             p.update_run(workflow, run, {"collected_at": utcnow()})
             return out
 
