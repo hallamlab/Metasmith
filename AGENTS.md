@@ -139,8 +139,25 @@ smith.RunWorkflow(task, gpus=Gpu(
     type="a100",                     # optional gres type token
     count=4,                         # optional: devices per node
     flag="--gres=gpu:",              # site request syntax; count is appended
+    extra=["--partition=gpu"],       # flags GPU steps need beyond the count
 ))
 ```
+
+`extra=` goes on GPU steps *only*, which is what distinguishes it from
+`params.process.clusterOptionsExtra` (every step) — a site's default partition
+usually has no cards, and sending CPU work there would be wrong.
+
+**Sockeye**, verified against the live scheduler:
+
+```python
+gpus=Gpu(memory=Size.GB(32), extra=["--partition=gpu"])   # V100-SXM2-32GB
+params={"slurmAccount": "st-<alloc>", "slurmGpuAccount": "st-<alloc>-gpu"}
+```
+
+Its `job_submit` plugin accepts only the untyped `--gpus-per-node=N` (the
+default `flag`); both `--gres=gpu:v100:N` and the typed `--gpus-per-node=v100:N`
+are rejected with `requested_gpus 0`, so leave `type` unset there. GPU work is
+charged to a separate allocation, which is what `slurmGpuAccount` exists for.
 
 Metasmith derives `ceil(gpu_memory / device.memory)` per step at run time and
 renders it into `workflow.config.nf` as per-step `withName` blocks — the same
@@ -165,9 +182,22 @@ if not devices:
 `DetectGpus()` probes the execution host through the relay (or the local shell
 under mamba/native), so it is correct under every runtime and honest under a
 partial allocation or a MIG slice, where `CUDA_VISIBLE_DEVICES` is a
-`MIG-<uuid>` rather than an index. A declaring step gets `--nv` / `--gpus all`
-added to its tool container automatically, in the right dialect; passing them
-by hand still works and is not duplicated.
+`MIG-<uuid>` rather than an index. It is memoized per task.
+
+A declaring step gets `--nv` / `--gpus all` added to its tool container
+automatically, in the right dialect; passing them by hand still works and is
+not duplicated. The flags are added only when a device is actually *detected*,
+not merely declared — `docker run --gpus all` fails outright on a CPU-only host
+("could not select device driver"), which would turn an `OPTIONAL` step's
+graceful fallback into a dead task. mamba/native add nothing: the tool runs on
+the host and inherits its devices.
+
+Hosts that need more than the runtime's own switch declare it once, on the
+agent: `Agent(gpu_args=[...])`. WSL2 is the live example — apptainer's `--nv`
+injects `nvidia-smi` but its library discovery misses the driver stack under
+`/usr/lib/wsl`, so NVML answers "GPU access blocked by the operating system"
+until you add `["--bind", "/usr/lib/wsl:/usr/lib/wsl", "--env",
+"LD_LIBRARY_PATH=/usr/lib/wsl/lib"]`.
 
 **Scheduler flags** are injected through the existing params mechanism, not a
 new field: `RunWorkflow(params={"process_clusterOptionsExtra": "--partition=bigmem"})`
