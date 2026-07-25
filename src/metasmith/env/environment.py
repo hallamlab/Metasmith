@@ -172,7 +172,17 @@ class Environment:
                 workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ''
                 run = 'run'
             case Runtime.APPTAINER:
-                others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}', '--env OPENBLAS_NUM_THREADS=1', '--env OMP_NUM_THREADS=1']
+                # Thread caps track the allocation, not a hardcoded 1. `--cleanenv` wipes the
+                # container env, so whatever is set here IS the whole story for OpenMP tools.
+                # Pinning 1 silently capped every containerized tool to a single core no matter
+                # what it was told: metaSPAdes launched as `spades.py -t 32` on a 32-core SLURM
+                # allocation wrote `max_threads 32` into its own config and then ran with
+                # `Threads: 1`, leaving 31 cores idle for hours. SLURM_CPUS_PER_TASK is expanded
+                # by the shell on the compute node (same idiom as TMPDIR above), so each task
+                # gets exactly the cpus its transform reserved; off-SLURM runs keep the old
+                # single-threaded default.
+                nthreads = '${SLURM_CPUS_PER_TASK:-1}'
+                others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}', f'--env OPENBLAS_NUM_THREADS={nthreads}', f'--env OMP_NUM_THREADS={nthreads}']
                 workdir = f'--pwd "{self.workdir}"' if self.workdir is not None else ''
                 binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
                 if not isinstance(local, bool):

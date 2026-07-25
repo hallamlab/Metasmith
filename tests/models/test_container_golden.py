@@ -106,7 +106,7 @@ class TestRunCommandGolden:
         cmd = _container(ContainerRuntime.APPTAINER).MakeRunCommand(local=False)
         assert cmd == (
             'apptainer exec --no-home --cleanenv --env TMPDIR=${TMPDIR-"/tmp"} '
-            '--env OPENBLAS_NUM_THREADS=1 --env OMP_NUM_THREADS=1 '
+            '--env OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} --env OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} '
             '--pwd "/ws" '
             '--bind /host/data:/data,/host/db:/db '
             'docker://quay.io/example/tool:1.0'
@@ -116,7 +116,7 @@ class TestRunCommandGolden:
         cmd = _container(ContainerRuntime.APPTAINER, workdir=None, binds=[]).MakeRunCommand(local=False)
         assert cmd == (
             'apptainer exec --no-home --cleanenv --env TMPDIR=${TMPDIR-"/tmp"} '
-            '--env OPENBLAS_NUM_THREADS=1 --env OMP_NUM_THREADS=1 '
+            '--env OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} --env OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} '
             'docker://quay.io/example/tool:1.0'
         )
 
@@ -128,7 +128,7 @@ class TestRunCommandGolden:
         cmd = _container(ContainerRuntime.APPTAINER).MakeRunCommand(local=True)
         assert cmd == (
             'apptainer exec --no-home --cleanenv --env TMPDIR=${TMPDIR-"/tmp"} '
-            '--env OPENBLAS_NUM_THREADS=1 --env OMP_NUM_THREADS=1 '
+            '--env OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} --env OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1} '
             '--pwd "/ws" '
             '--bind /host/data:/data,/host/db:/db '
             f'"$(if [ -d "{SANDBOX}" ]; then echo "{SANDBOX}"; else echo "{SIF}"; fi)"'
