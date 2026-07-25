@@ -94,7 +94,8 @@ def build_agent(args, agent_path: str) -> Agent:
     )
 
 
-def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = None):
+def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = None,
+               also_cpu: bool = False, remote: tuple[str, str] | None = None):
     inputs = DataInstanceLibrary(workdir / f"{tag}-inputs.xgdb")
     inputs.AddTypeLibrary(EXAMPLES / "data_types" / "examples.yml")
     inputs.AddValue("probe", tag, "examples::name")
@@ -102,38 +103,82 @@ def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = No
 
     containers = DataInstanceLibrary(workdir / f"{tag}-containers.xgdb")
     containers.AddTypeLibrary(EXAMPLES / "data_types" / "containers.yml")
+    # Written INSIDE the library dir so its manifest entry is relative: an
+    # absolute path outside the library would have to exist on the execution
+    # host too, which for a remote agent it does not.
+    oci = containers.location / "metasmith.oci"
     if mamba_env:
         # Under the mamba runtime the resource file's *content* is the conda
         # env name rather than an image URI -- same type, same slot, different
         # thing to run in. The transform is unchanged and does not know.
-        env_file = workdir / f"{tag}-metasmith.oci"
-        env_file.write_text(f"{mamba_env}\n")
-        containers.AddItem(env_file, "containers::metasmith.oci")
+        oci.write_text(f"{mamba_env}\n")
     else:
-        containers.AddItem(EXAMPLES / "metasmith.oci", "containers::metasmith.oci")
+        oci.write_text((EXAMPLES / "metasmith.oci").read_text())
+    containers.AddItem(Path("metasmith.oci"), "containers::metasmith.oci")
     containers.Save()
 
     transforms = TransformInstanceLibrary.Load(EXAMPLES)
+
+    if remote is not None:
+        # A remote agent cannot read this machine's filesystem. Push each
+        # library to the target and record that address on the local object;
+        # StageWorkflow then pulls them into the agent's own data dir, so every
+        # input path the workflow references exists on the execution host.
+        host, root = remote
+        subprocess.run(f'ssh {host} mkdir -p "{root}"', shell=True, check=True)
+        for lib in (inputs, containers, transforms):
+            name = Path(lib.location).name
+            subprocess.run(
+                f'rsync -a --delete --exclude=__pycache__ "{lib.location}/" {host}:"{root}/{name}/"',
+                shell=True, check=True,
+            )
+            lib.remote_src = SshSource(host=host, path=f"{root}/{name}").AsSource()
+            lib.Save()
+
     targets = TargetBuilder()
     targets.Add("examples::gpu_report")
+    if also_cpu:
+        # echo_greeting declares no GPU, so it must be submitted WITHOUT a GPU
+        # request and against the ordinary account -- the half of the claim that
+        # a GPU-only workflow cannot check.
+        targets.Add("examples::greeting")
     return smith.GenerateWorkflow(
         samples=[inputs], resources=[containers],
         transforms=[transforms], targets=targets,
     )
 
 
-def read_report(smith: Agent, task) -> str:
-    src = smith.GetResultSource(task)
-    root = Path(str(src.GetPath()))
-    hits = sorted(root.rglob("*.txt"))
-    if not hits:
-        return f"!! no report found under {root}"
-    return "\n".join(f"--- {h.name}\n{h.read_text().strip()}" for h in hits)
+def read_report(smith: Agent, task, host: str) -> str | None:
+    """The transform's own report. None when it could not be read at all.
+
+    Distinguishing "no report" from "a report saying no GPU" matters: the
+    verdict below treats the first as a failure, not a pass. A remote agent's
+    results live on the target, so they are read over ssh rather than by
+    globbing a path that does not exist on this machine.
+    """
+    root = Path(str(smith.GetResultSource(task).GetPath()))
+    if host == "local":
+        hits = sorted(root.rglob("*.txt"))
+        if not hits:
+            return None
+        return "\n".join(f"--- {h.name}\n{h.read_text().strip()}" for h in hits)
+    res = subprocess.run(
+        f'ssh {host} "find {root} -name \'*.txt\' -type f -exec sh -c '
+        f'\'echo \\\"--- \\$1\\\"; cat \\$1\' _ {{}} \\;"',
+        shell=True, capture_output=True, text=True,
+    )
+    out = res.stdout.strip()
+    return out or None
 
 
 def run_once(args, smith: Agent, workdir: Path, tag: str, gpus: Gpu | None, params: dict | None):
     print(f"\n=== [{tag}] gpus={gpus}", flush=True)
-    task = build_task(smith, workdir, tag, mamba_env=args.mamba_env if args.runtime == "mamba" else None)
+    task = build_task(
+        smith, workdir, tag,
+        mamba_env=args.mamba_env if args.runtime == "mamba" else None,
+        also_cpu=args.also_cpu_step,
+        remote=None if args.host == "local" else (args.host, args.lib_root),
+    )
     if not task.ok:
         print(f"!! plan failed: hints={list(task.plan.hints)}", file=sys.stderr)
         return None
@@ -151,7 +196,7 @@ def run_once(args, smith: Agent, workdir: Path, tag: str, gpus: Gpu | None, para
         for line in result["tail"]:
             print(f"    {line}")
         return None
-    report = read_report(smith, task)
+    report = read_report(smith, task, args.host)
     print(report, flush=True)
     return report
 
@@ -170,6 +215,8 @@ def main(argv=None):
     ap.add_argument("--slurm-account", default=None)
     ap.add_argument("--slurm-gpu-account", default=None)
     ap.add_argument("--setup-command", action="append", default=None)
+    ap.add_argument("--lib-root", default=None, help="remote dir to push the libraries into (remote hosts)")
+    ap.add_argument("--also-cpu-step", action="store_true", help="add a non-GPU transform to the same workflow")
     ap.add_argument("--skip-negative", action="store_true", help="skip the no-GPU-declared fallback run")
     ap.add_argument("--agent-path", default=None)
     ap.add_argument("--timeout-s", type=float, default=1800.0)
@@ -186,6 +233,8 @@ def main(argv=None):
         agent_path = str(REPO_ROOT / ".awm" / "data" / f"gpu_smoke_{args.runtime}")
     else:
         agent_path = f"/scratch/{_remote_user(args.host)}/metasmith_gpu_smoke_{ts}"
+    if args.host != "local" and not args.lib_root:
+        args.lib_root = f"{agent_path}/_smoke_libs"
     print(f"==> target: {args.host}:{agent_path} runtime={args.runtime} native={args.native}", flush=True)
 
     smith = build_agent(args, agent_path)
@@ -217,9 +266,14 @@ def main(argv=None):
         negative = run_once(args, smith, workdir, f"{args.runtime}-nogpu-{ts}", None, params or None)
 
     print("\n=== verdict", flush=True)
+    # For a scheduler run the report is only half the evidence; the other half
+    # is the scheduler's own record. Print the sacct query to run.
+    if args.host != "local":
+        print(f"    scheduler check: ssh {args.host} \"sacct -X --format=JobID,JobName%24,State,"
+              f"Account%20,Partition,ReqTRES%40,AllocTRES%40,NodeList\"", flush=True)
     ok = True
     if positive is None:
-        print("FAIL: the declared-GPU run did not complete"); ok = False
+        print("FAIL: the declared-GPU run produced no readable report"); ok = False
     elif "no gpu visible" in positive:
         print("FAIL: a GPU was declared but the tool saw no device"); ok = False
     elif "detected_devices=0" in positive:
