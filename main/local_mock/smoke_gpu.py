@@ -46,22 +46,55 @@ def _remote_user(host: str) -> str:
     return res.stdout.strip()
 
 
+def inject_dev_overlay(host: str, agent_path: str):
+    """Bind this worktree's metasmith over the deployed container's copy.
+
+    The published image predates whatever is being tested, so without this the
+    task runs the *released* metasmith and a new field on `Agent` reads as an
+    unexpected keyword. Same mechanism as `dev.sh -td`, targeted at this
+    smoke's agent home rather than the registered ones. The tarball is what a
+    SLURM compute node stages per-node-once; the tree is the fail-open bind
+    target and the gate that switches the dev binds on at all.
+    """
+    src = REPO_ROOT / "src"
+    if host == "local":
+        run = lambda c: subprocess.run(c, shell=True, check=True)
+        run(f'mkdir -p "{agent_path}/dev" "{agent_path}/lib"')
+        run(f'rsync -ac --exclude=__pycache__ "{src}/metasmith/" "{agent_path}/dev/metasmith"')
+        run(f'rsync -ac --exclude=__pycache__ "{src}/metasmith/nextflow_config" "{agent_path}/lib/"')
+        run(f'T=$(mktemp -d)/metasmith.tar && tar -c --exclude=__pycache__ -C "{src}" -f "$T" metasmith'
+            f' && cp "$T" "{agent_path}/dev/metasmith.tar" && rm -rf "$(dirname "$T")"')
+    else:
+        run = lambda c: subprocess.run(c, shell=True, check=True)
+        run(f'ssh {host} mkdir -p "{agent_path}/dev" "{agent_path}/lib"')
+        run(f'rsync -ac --exclude=__pycache__ "{src}/metasmith/" {host}:"{agent_path}/dev/metasmith"')
+        run(f'rsync -ac --exclude=__pycache__ "{src}/metasmith/nextflow_config" {host}:"{agent_path}/lib/"')
+        run(f'T=$(mktemp -d)/metasmith.tar && tar -c --exclude=__pycache__ -C "{src}" -f "$T" metasmith'
+            f' && rsync -ac "$T" {host}:"{agent_path}/dev/metasmith.tar" && rm -rf "$(dirname "$T")"')
+
+
 def build_agent(args, agent_path: str) -> Agent:
     if args.host == "local":
         home = Source.FromLocal(Path(agent_path))
     else:
         home = SshSource(host=args.host, path=agent_path).AsSource()
     gpu_args = list(WSL_GPU_ARGS) if args.wsl else []
+    kw = {}
+    # A dev checkout's build hash names an image nobody published, so apptainer
+    # cannot pull it; point at a published tag and let the dev overlay supply
+    # the code under test.
+    if getattr(args, "container", None): kw["container"] = args.container
     return Agent(
         home=home,
         runtime=Runtime[args.runtime.upper()],
         native=args.native,
         gpu_args=gpu_args,
         setup_commands=list(args.setup_command or []),
+        **kw,
     )
 
 
-def build_task(smith: Agent, workdir: Path, tag: str):
+def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = None):
     inputs = DataInstanceLibrary(workdir / f"{tag}-inputs.xgdb")
     inputs.AddTypeLibrary(EXAMPLES / "data_types" / "examples.yml")
     inputs.AddValue("probe", tag, "examples::name")
@@ -69,7 +102,15 @@ def build_task(smith: Agent, workdir: Path, tag: str):
 
     containers = DataInstanceLibrary(workdir / f"{tag}-containers.xgdb")
     containers.AddTypeLibrary(EXAMPLES / "data_types" / "containers.yml")
-    containers.AddItem(EXAMPLES / "metasmith.oci", "containers::metasmith.oci")
+    if mamba_env:
+        # Under the mamba runtime the resource file's *content* is the conda
+        # env name rather than an image URI -- same type, same slot, different
+        # thing to run in. The transform is unchanged and does not know.
+        env_file = workdir / f"{tag}-metasmith.oci"
+        env_file.write_text(f"{mamba_env}\n")
+        containers.AddItem(env_file, "containers::metasmith.oci")
+    else:
+        containers.AddItem(EXAMPLES / "metasmith.oci", "containers::metasmith.oci")
     containers.Save()
 
     transforms = TransformInstanceLibrary.Load(EXAMPLES)
@@ -92,7 +133,7 @@ def read_report(smith: Agent, task) -> str:
 
 def run_once(args, smith: Agent, workdir: Path, tag: str, gpus: Gpu | None, params: dict | None):
     print(f"\n=== [{tag}] gpus={gpus}", flush=True)
-    task = build_task(smith, workdir, tag)
+    task = build_task(smith, workdir, tag, mamba_env=args.mamba_env if args.runtime == "mamba" else None)
     if not task.ok:
         print(f"!! plan failed: hints={list(task.plan.hints)}", file=sys.stderr)
         return None
@@ -132,6 +173,9 @@ def main(argv=None):
     ap.add_argument("--agent-path", default=None)
     ap.add_argument("--timeout-s", type=float, default=1800.0)
     ap.add_argument("--no-deploy", action="store_true", help="reuse an already deployed agent home")
+    ap.add_argument("--no-dev-overlay", action="store_true", help="run the image's released metasmith as-is")
+    ap.add_argument("--mamba-env", default=None, help="conda env the TOOL runs in, for --runtime mamba")
+    ap.add_argument("--container", default=None, help="agent image; defaults to the build-tagged one, which is unpublished on a dev checkout")
     args = ap.parse_args(argv)
 
     ts = int(time.time())
@@ -147,6 +191,9 @@ def main(argv=None):
     if not args.no_deploy:
         print("==> Deploy()", flush=True)
         smith.Deploy()
+    if not args.no_dev_overlay:
+        print("==> inject dev overlay", flush=True)
+        inject_dev_overlay(args.host, agent_path)
 
     workdir = REPO_ROOT / ".awm" / "data" / "gpu_smoke_runs"
     workdir.mkdir(parents=True, exist_ok=True)

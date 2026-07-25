@@ -117,6 +117,19 @@ def test_gpu_label_only_on_declaring_processes(virtual_runtime, tmp_path, mock_s
     assert not any(n.endswith("__cpu_only") for n in labelled), labelled
 
 
+def test_gpu_manifest_survives_a_line_reader(virtual_runtime, tmp_path, mock_samples, mock_types):
+    # RunWorkflow reads this back by `cat`-ing it over the agent shell, and a
+    # line reader drops a final line that has no newline. Pretty-printed JSON
+    # without one silently truncated to invalid JSON and no-op'd the preflight
+    # -- caught on real hardware, pinned here.
+    _, workspace, _ = _stage_mixed(tmp_path, mock_samples, mock_types)
+    raw = (workspace / AgentPaths.GPU_MANIFEST).read_text()
+    assert raw.endswith("\n")
+    lines = [l for l in raw.split("\n") if l]
+    assert len(lines) == 1, "manifest must be one line so a line reader cannot split it"
+    assert json.loads(lines[0])["steps"]
+
+
 def test_gpu_manifest_records_each_declaring_step(virtual_runtime, tmp_path, mock_samples, mock_types):
     _, workspace, _ = _stage_mixed(tmp_path, mock_samples, mock_types)
     manifest = json.loads((workspace / AgentPaths.GPU_MANIFEST).read_text())

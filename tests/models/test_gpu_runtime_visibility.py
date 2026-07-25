@@ -135,6 +135,8 @@ class TestDetectGpus:
 # --------------------------------------------------------------------------
 
 DECLARED = {"gpus": {"gpus": "required", "gpu_memory_gb": 8.0}}
+OPTIONAL = {"gpus": {"gpus": "optional", "gpu_memory_gb": 8.0}}
+HAS_GPU = ["msm_gpu 8192"]
 
 
 class TestAutomaticGpuArgs:
@@ -143,31 +145,51 @@ class TestAutomaticGpuArgs:
     )
     def test_declaring_step_gets_its_runtime_dialect(self, tmp_path, runtime, expected):
         dep = _dep("image")
-        ctx = _context(tmp_path, runtime, DECLARED, image_dep=dep)
+        ctx = _context(tmp_path, runtime, DECLARED, shell=ScriptedShell(HAS_GPU), image_dep=dep)
         container = ctx.GetContainerModel(dep)
         assert container.extra_args[: len(expected)] == expected
 
     def test_non_declaring_step_gets_nothing(self, tmp_path):
         dep = _dep("image")
-        ctx = _context(tmp_path, Runtime.APPTAINER, {"cpus": 4}, image_dep=dep)
+        ctx = _context(tmp_path, Runtime.APPTAINER, {"cpus": 4}, shell=ScriptedShell(HAS_GPU), image_dep=dep)
         assert ctx.GetContainerModel(dep).extra_args == []
+
+    @pytest.mark.parametrize("runtime", [Runtime.DOCKER, Runtime.APPTAINER])
+    def test_no_device_present_means_no_flags(self, tmp_path, runtime):
+        # The reason this is gated on detection rather than on the declaration:
+        # a Gpus.OPTIONAL step is *expected* to land on CPU-only hosts, and
+        # `docker run --gpus all` fails outright there ("could not select
+        # device driver") -- turning a graceful fallback into a dead task.
+        dep = _dep("image")
+        ctx = _context(tmp_path, runtime, OPTIONAL, shell=ScriptedShell([]), image_dep=dep)
+        assert ctx.GetContainerModel(dep).extra_args == []
+
+    def test_detection_is_probed_once_per_context(self, tmp_path):
+        # GetContainerModel consults it on every ExecWithContainer call, and the
+        # answer cannot change within a task
+        dep = _dep("image")
+        shell = ScriptedShell(HAS_GPU)
+        ctx = _context(tmp_path, Runtime.DOCKER, DECLARED, shell=shell, image_dep=dep)
+        ctx.GetContainerModel(dep)
+        ctx.GetContainerModel(dep)
+        assert sum("nvidia-smi" in c for c in shell.calls) == 1
 
     def test_caller_supplied_flag_is_not_duplicated(self, tmp_path):
         # transforms that hardcoded --nv before this existed must keep working
         dep = _dep("image")
-        ctx = _context(tmp_path, Runtime.APPTAINER, DECLARED, image_dep=dep)
+        ctx = _context(tmp_path, Runtime.APPTAINER, DECLARED, shell=ScriptedShell(HAS_GPU), image_dep=dep)
         container = ctx.GetContainerModel(dep, args=["--nv", "--env", "FOO=bar"])
         assert container.extra_args.count("--nv") == 1
         assert container.MakeRunCommand().count("--nv") == 1
 
     def test_caller_args_are_preserved_alongside_framework_flags(self, tmp_path):
         dep = _dep("image")
-        ctx = _context(tmp_path, Runtime.DOCKER, DECLARED, image_dep=dep)
+        ctx = _context(tmp_path, Runtime.DOCKER, DECLARED, shell=ScriptedShell(HAS_GPU), image_dep=dep)
         container = ctx.GetContainerModel(dep, args=["--shm-size=8g"])
         assert container.extra_args == ["--gpus", "all", "--shm-size=8g"]
 
     def test_flags_reach_the_emitted_run_command(self, tmp_path):
         dep = _dep("image")
-        ctx = _context(tmp_path, Runtime.APPTAINER, DECLARED, image_dep=dep)
+        ctx = _context(tmp_path, Runtime.APPTAINER, DECLARED, shell=ScriptedShell(HAS_GPU), image_dep=dep)
         cmd = ctx.GetContainerModel(dep).MakeRunCommand()
         assert "--nv" in cmd

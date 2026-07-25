@@ -43,13 +43,17 @@ class AgentShell:
             shell.RegisterOnOut(_on_out)
             shell.RegisterOnErr(_on_err)
             shell.Exec(f"cd {self.agent.home.GetPath()}")
-            res = shell.Exec('[ -e ./relay/msm_relay ] && echo "relay-present"', history=True)
-            assert "relay-present" in res.out, (
-                f"relay binary not present at [{self.agent.home.GetPath()}/relay/msm_relay]; "
-                f"agent home may be partially deployed — rerun Agent.Deploy()"
-            )
-            Log.Info(f"starting relay service")
-            shell.Exec(f'./relay/msm_relay start')
+            # mamba/native cross no container boundary, so there is no relay to
+            # find or start; requiring one would make those runtimes
+            # undeployable rather than merely un-bounced.
+            if self.agent._environment().needs_relay:
+                res = shell.Exec('[ -e ./relay/msm_relay ] && echo "relay-present"', history=True)
+                assert "relay-present" in res.out, (
+                    f"relay binary not present at [{self.agent.home.GetPath()}/relay/msm_relay]; "
+                    f"agent home may be partially deployed — rerun Agent.Deploy()"
+                )
+                Log.Info(f"starting relay service")
+                shell.Exec(f'./relay/msm_relay start')
             self.shell = shell
             return self.shell
         except BaseException:
@@ -118,12 +122,17 @@ def _read_gpu_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
     res = shell.Exec(f'[ -e "{path}" ] && cat "{path}"', history=True, quiet=True)
     text = "\n".join(res.out)
     if "{" not in text: return {}
-    text = text[text.index("{"):text.rindex("}")+1]
     try:
+        text = text[text.index("{"):text.rindex("}")+1]
         return json.loads(text).get("steps", {})
-    except json.JSONDecodeError as e:
-        Log.Warn(f"could not parse GPU manifest at [{path}]: {e}")
-        return {}
+    except (json.JSONDecodeError, ValueError) as e:
+        # A file that exists but does not parse means we cannot tell whether a
+        # step requires a GPU. Proceeding would silently skip the very check
+        # this feature exists to perform, so refuse instead.
+        raise GpuRequirementError(
+            f"GPU manifest at [{path}] exists but could not be parsed ({e});"
+            f" cannot verify GPU requirements. Re-stage the workflow."
+        ) from e
 
 def _plan_gpu_requests(
         manifest: dict[str, dict],
@@ -478,8 +487,14 @@ class Agent:
             # a partial deploy (sif present, relay missing) self-heals on the
             # next call without needing assertive=True.
             relay_bin = AgentPaths.to_relay(self.home.GetPath())
-            res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True)
-            if "relay-present" in res.out and not assertive:
+            if not container.needs_relay:
+                # The relay exists solely to bounce tool launches back across a
+                # container boundary. mamba/native have no boundary, and the
+                # extraction step reads from inside the metasmith container --
+                # which is not running. Nothing to deploy.
+                Log.Info(f"runtime [{self.runtime.name}] needs no relay, skipping container extraction")
+            elif "relay-present" in shell.Exec(
+                    f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True).out and not assertive:
                 Log.Info(f"relay binary present at [{relay_bin}], skipping container extraction")
             else:
                 do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")

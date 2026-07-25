@@ -30,9 +30,11 @@ TASK_KEY = "testtask01"
 
 
 class FakeShell:
-    def __init__(self, manifest: dict, gpu_present: str = ""):
+    def __init__(self, manifest: dict, gpu_present: str = "", manifest_text: str | None = None):
         self.manifest = manifest
         self.gpu_present = gpu_present
+        # raw override, for the truncated-read case
+        self.manifest_text = manifest_text
         self.calls: list[str] = []
 
     def Exec(self, cmd, timeout=None, history=False, quiet=False) -> ShellResult:
@@ -42,7 +44,9 @@ class FakeShell:
         if "launcher-present" in cmd:
             return ShellResult(out=["launcher-present"], err=[])
         if AgentPaths.GPU_MANIFEST in cmd:
-            return ShellResult(out=json.dumps({"schema": 1, "steps": self.manifest}).splitlines(), err=[])
+            if self.manifest_text is not None:
+                return ShellResult(out=self.manifest_text.splitlines(), err=[])
+            return ShellResult(out=[json.dumps({"schema": 1, "steps": self.manifest})], err=[])
         if "nvidia-smi" in cmd:
             return ShellResult(out=[self.gpu_present] if self.gpu_present else [], err=[])
         return ShellResult(out=[], err=[])
@@ -89,8 +93,8 @@ def agent(tmp_path, monkeypatch):
     return Agent(home=Source.FromLocal(home))
 
 
-def _run(monkeypatch, agent, manifest, gpus=None, gpu_present="", config=None):
-    shell = FakeShell(manifest, gpu_present)
+def _run(monkeypatch, agent, manifest, gpus=None, gpu_present="", config=None, manifest_text=None):
+    shell = FakeShell(manifest, gpu_present, manifest_text)
 
     class _AgentShell:
         def __init__(self, _agent): pass
@@ -130,6 +134,20 @@ class TestPreflightBlocksTheLaunch:
         assert shell.launched
         base = (agent.GetNxfConfigPresets()["slurm"]).read_text()
         assert RecordingMover.sent[AgentPaths.NXF_CONFIG] == base
+
+
+class TestUnreadableManifest:
+    def test_truncated_manifest_refuses_rather_than_skipping_the_check(self, monkeypatch, agent):
+        # A file that exists but does not parse means we cannot tell whether a
+        # step requires a GPU. Proceeding would silently skip the very check
+        # this feature exists to perform. (Seen for real: the manifest was
+        # written pretty-printed with no trailing newline, and the agent
+        # shell's line reader dropped the closing brace.)
+        truncated = '{"schema":1,"steps":{"p01__x":{"gpus":"required"'
+        with pytest.raises(GpuRequirementError) as e:
+            _run(monkeypatch, agent, {}, manifest_text=truncated)
+        assert "could not be parsed" in str(e.value)
+        assert RecordingMover.sent == {}
 
 
 class TestDeclaredRunRendersRequests:

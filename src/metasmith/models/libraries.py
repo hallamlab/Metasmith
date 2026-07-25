@@ -1361,6 +1361,7 @@ class ExecutionContext:
     _environment: Runtime|Environment = Runtime.DOCKER
     params: dict = field(default_factory=dict)
     _batch_index: int = 0
+    _detected_gpus: list|None = None
 
     def __post_init__(self):
         # Accept a bare Runtime for the many construction sites that only have
@@ -1415,7 +1416,7 @@ class ExecutionContext:
         mem = raw.get("gpu_memory_gb")
         return toggle, None if mem is None else Size.GB(mem)
 
-    def DetectGpus(self) -> list[Size]:
+    def DetectGpus(self, refresh: bool=False) -> list[Size]:
         """Per-device VRAM of the GPUs this task actually got, on the exec host.
 
         Probes through `external_shell`, which is the relay for container
@@ -1426,7 +1427,13 @@ class ExecutionContext:
         index) those differ, and the allocated figure is the one a tool sizing
         its own offload needs. A host with no nvidia-smi is a valid empty
         answer, not an error.
+
+        Memoized: the answer cannot change within a task, and GetContainerModel
+        consults it on every ExecWithContainer call. Pass refresh=True to probe
+        again.
         """
+        if self._detected_gpus is not None and not refresh:
+            return list(self._detected_gpus)
         FLAG = "msm_gpu"
         probe = (
             'command -v nvidia-smi >/dev/null 2>&1 && '
@@ -1437,6 +1444,7 @@ class ExecutionContext:
             res = self.external_shell.Exec(probe, history=True)
         except Exception as e:
             Log.Warn(f"gpu detection failed: {e}")
+            self._detected_gpus = []
             return []
         found: list[Size] = []
         for line in res.out:
@@ -1447,7 +1455,8 @@ class ExecutionContext:
                 found.append(Size.MB(float(val)))
             except ValueError:
                 continue
-        return found
+        self._detected_gpus = found
+        return list(found)
 
     def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None):
         path = self._inputs[self._batch_index][image].path
@@ -1505,8 +1514,13 @@ class ExecutionContext:
         # branches on the runtime to pick the dialect. Transforms that still
         # pass them by hand keep working: framework flags whose leading token is
         # already present in `args=` are dropped rather than duplicated.
+        #
+        # Gated on a device actually being present, not merely declared: a
+        # Gpus.OPTIONAL step is expected to land on CPU-only hosts, and there
+        # `docker run --gpus all` fails outright ("could not select device
+        # driver"), turning a graceful fallback into a dead task.
         declared, _ = self.DeclaredGpus()
-        if declared is not Gpus.NONE:
+        if declared is not Gpus.NONE and self.DetectGpus():
             gpu_args = _probe.MakeGpuArgs()
             if gpu_args and gpu_args[0] not in extra_args:
                 extra_args = gpu_args + extra_args

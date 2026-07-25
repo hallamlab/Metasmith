@@ -89,3 +89,68 @@ def test_mamba_runs_real_tool_no_relay(tmp_path, monkeypatch):
 
     # No relay artifacts were created on this path.
     assert not (tmp_path / "_metasmith" / "relay").exists()
+
+
+def test_mamba_inherits_the_hosts_gpu(tmp_path, monkeypatch):
+    """mamba/native run on the host, so a GPU is inherited, not passed through.
+
+    The container runtimes need a flag (`--nv`, `--gpus all`) to cross the
+    boundary; mamba has no boundary, so the correct behaviour is to add nothing
+    and still see whatever the host has. This asserts both halves against the
+    real machine: detection agrees with `nvidia-smi`, and the emitted command
+    carries no GPU flag either way.
+
+    Skipped where there is no GPU -- the no-flag half is still covered by the
+    unit tests; this is the real-hardware half.
+    """
+    import shutil as _shutil
+    import subprocess as _sp
+
+    if not _shutil.which("nvidia-smi"):
+        pytest.skip("no nvidia-smi on this host")
+    listing = _sp.run(["nvidia-smi", "-L"], capture_output=True, text=True)
+    if listing.returncode != 0 or "GPU " not in listing.stdout:
+        pytest.skip("nvidia-smi present but reports no device")
+    expected = len([l for l in listing.stdout.splitlines() if l.startswith("GPU ")])
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "_metasmith").mkdir()
+
+    env_file = tmp_path / "tool.condaenv"
+    env_file.write_text(f"{ENV_NAME}\n")
+    env_dep = _dep("env")
+    env_cp = ContextPath(local=env_file, external=env_file, container=env_file)
+    env_cd = ContextData(input_group=[env_cp], endpoint=Endpoint(properties={"env"}), type_name="env")
+
+    ctx = ExecutionContext(
+        _inputs=[{env_dep: env_cd}],
+        _get_output_paths=lambda *a: None,
+        external_shell=LiveShell(),
+        external_cwd=tmp_path,
+        external_agent_home=tmp_path / "msm_home",
+        _environment=Runtime.MAMBA,
+        # what the step declared at stage time
+        params={"gpus": {"gpus": "required", "gpu_memory_gb": 4.0}},
+    )
+
+    with ctx.external_shell as shell:
+        ctx.external_shell = shell
+        found = ctx.DetectGpus()
+        # the framework's own detection agrees with the host
+        assert len(found) == expected, f"detected {found}, nvidia-smi reports {expected}"
+        assert all(f.value_gb > 0 for f in found)
+
+        # a declaring step gets NO wrapper flags under mamba -- the device is
+        # simply inherited
+        model = ctx.GetContainerModel(env_dep)
+        assert model.MakeGpuArgs() == []
+        assert model.extra_args == []
+        cmd = model.MakeRunCommand()
+        assert "--nv" not in cmd and "--gpus" not in cmd
+        assert cmd == f"mamba run -n {ENV_NAME}"
+
+        # and the tool, run through the conda env, really sees the device
+        out = tmp_path / "gpu.txt"
+        ctx.ExecWithContainer(env_dep, f"nvidia-smi -L > {out}")
+    assert out.exists()
+    assert "GPU 0" in out.read_text(), out.read_text()

@@ -1619,8 +1619,13 @@ class WorkflowTask:
         # Always (re)written, including empty, so an `update_workflow` re-stage
         # that drops a GPU transform cannot leave a stale requirement behind for
         # the run-time preflight to trip over.
+        # One compact line plus a trailing newline, deliberately. RunWorkflow
+        # reads this back by `cat`-ing it over the agent shell, and a line
+        # reader drops a final line with no newline -- which silently truncated
+        # the JSON and turned the whole preflight into a no-op.
         with open(context.work_dir/AgentPaths.GPU_MANIFEST, "w") as f:
-            json.dump({"schema": 1, "steps": gpu_requirements}, f, indent=4)
+            json.dump({"schema": 1, "steps": gpu_requirements}, f, separators=(",", ":"))
+            f.write("\n")
 
         wf_output = []
         _e2target = {x.instance.dtype:x for x in the_plan.targets}
