@@ -8,6 +8,12 @@ USER = "hallamlab" # github id
 GIT_URL = f"https://github.com/{USER}/{NAME}"
 SHORT_SUMMARY = "Automated generation of workflows for Nextflow executed using agents"
 
+# The standard library of data types, transforms, and resources. Both `msm lab`
+# and `msm gui` clone this into the working directory; there is no configuration
+# for it, so this is the single place the URL is written down.
+STDLIB_NAME = "MetasmithLibraries"
+STDLIB_URL = f"https://github.com/{USER}/{STDLIB_NAME}.git"
+
 _cli_call = "metasmith.coms.cli:main"
 ENTRY_POINTS = [
     f"metasmith={_cli_call}",
