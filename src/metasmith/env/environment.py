@@ -153,6 +153,21 @@ class Environment:
                 raise TypeError(f"unsupported runtime [{self.runtime}]")
         return binds
 
+    def MakeGpuArgs(self) -> list[str]:
+        # The per-runtime flags that expose the host's GPUs inside the tool
+        # environment. This is exactly the branch the env package exists to own
+        # -- before this, every GPU transform hand-wrote it and had to read
+        # `context.container_runtime` to know which dialect to use.
+        # mamba/native inherit the host's devices, so they need nothing.
+        if self.native: return []
+        match self.runtime:
+            case Runtime.DOCKER:
+                return ["--gpus", "all"]
+            case Runtime.APPTAINER:
+                return ["--nv"]
+            case _:
+                return []
+
     def MakeRunCommand(self, local: bool|str = False, custom_bind_param: str|None=None):
         # native: already inside the target environment — no wrapper, just
         # whatever extra args the caller asked for (usually none).

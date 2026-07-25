@@ -4,7 +4,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import tempfile
 import shutil
-from typing import Iterable, Literal
+from typing import Callable, Iterable, Literal
 import yaml
 import json
 import re
@@ -21,7 +21,7 @@ from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
-from .models.libraries import TransformInstance, Resources
+from .models.libraries import TransformInstance, Resources, Size, Gpu, Gpus, GPU_LABEL
 from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint, Solution, Transform
 from .constants import VERSION, CONTAINER_TAG, MODULE_PATH, AgentPaths
@@ -94,6 +94,122 @@ class TargetBuilder:
         return len(self._items)
 
 ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|str|TransformInstance, Resources]
+
+class GpuRequirementError(Exception):
+    """A staged workflow's GPU requirements cannot be met by this run's declaration."""
+
+# Emitted into workflow.config.nf whenever a run declares a GPU. Apptainer runs
+# tool containers with --cleanenv (see env/environment.py), which strips
+# CUDA_VISIBLE_DEVICES and so hides a partial allocation -- or a MIG slice, whose
+# handle is a MIG-<uuid> rather than an index -- from the tool. Re-exporting it
+# under the APPTAINERENV_/SINGULARITYENV_ prefixes is the way back in, and is a
+# harmless no-op under Docker and mamba/native. Single-quoted in the emitted
+# Groovy so `$` survives to the shell rather than being interpolated.
+_GPU_BEFORE_SCRIPT = (
+    'export APPTAINERENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"; '
+    'export SINGULARITYENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"'
+)
+
+def _read_gpu_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
+    # Per-step GPU asks recorded at stage time. Absent for workspaces staged by
+    # an older metasmith, which is indistinguishable from "no step wants a GPU"
+    # and is treated as such.
+    path = workspace/AgentPaths.GPU_MANIFEST
+    res = shell.Exec(f'[ -e "{path}" ] && cat "{path}"', history=True, quiet=True)
+    text = "\n".join(res.out)
+    if "{" not in text: return {}
+    text = text[text.index("{"):text.rindex("}")+1]
+    try:
+        return json.loads(text).get("steps", {})
+    except json.JSONDecodeError as e:
+        Log.Warn(f"could not parse GPU manifest at [{path}]: {e}")
+        return {}
+
+def _plan_gpu_requests(
+        manifest: dict[str, dict],
+        device: Gpu|None,
+        detect: "Callable[[], str]|None" = None,
+    ) -> dict[str, int]:
+    """Reconcile the staged per-step GPU asks against this run's declaration.
+
+    Returns process-name -> device count for the steps that should be submitted
+    with a GPU request. Raises GpuRequirementError when a REQUIRED step cannot
+    be satisfied; OPTIONAL steps never fail here -- they render without GPU
+    flags and let the protocol's own detection take the CPU branch.
+    """
+    if not manifest: return {}
+    required = [v for v in manifest.values() if v.get("gpus") == Gpus.REQUIRED.value]
+    if device is None:
+        if not required: return {}
+        offenders = ", ".join(sorted(f"{v['transform']} (step {v['step']})" for v in required))
+        detail = ""
+        if detect is not None:
+            found = detect()
+            if found:
+                detail = (
+                    f" a GPU does appear to be present on the target"
+                    f" [{found}] -- declare it with RunWorkflow(gpus=Gpu(memory=Size.GB(...)))."
+                )
+        raise GpuRequirementError(
+            f"workflow requires a GPU but none was declared for this run;"
+            f" offending transforms: {offenders}.{detail}"
+        )
+
+    planned: dict[str, int] = {}
+    over: list[str] = []
+    for process, v in sorted(manifest.items()):
+        ask = v.get("gpu_memory_gb")
+        n = device.DevicesFor(None if ask is None else Size.GB(ask))
+        if device.count is not None and n > device.count:
+            over.append(
+                f"{v['transform']} (step {v['step']}) needs {ask} GB"
+                f" -> {n} device(s), but only {device.count} are declared"
+            )
+            continue
+        if n > 1:
+            # Splitting a VRAM ask across cards only works for tools that can
+            # shard; most cannot, and they fail deep inside CUDA rather than at
+            # submission. Loud, per-step, and named.
+            Log.Warn(
+                f"GPU request for [{v['transform']}] (step {v['step']}) spans {n} devices"
+                f" ({ask} GB over {device.memory.value_gb:g} GB per device) -- the tool must"
+                f" be able to shard across cards, or this will fail at run time"
+            )
+        planned[process] = n
+    if over:
+        raise GpuRequirementError(
+            "declared GPU cannot satisfy the workflow: " + "; ".join(over)
+        )
+    return planned
+
+def _render_gpu_config(planned: dict[str, int], device: Gpu|None, scheduler: bool) -> list[str]:
+    # The shared label block carries only what does not vary per step; the
+    # per-step withName blocks carry the device count, which is the one thing
+    # that could not be known at stage time. withName outranks withLabel in
+    # nextflow, and this file is loaded after workflow.resources.nf, so a
+    # resource_overrides entry for the same step still wins per-directive.
+    if not planned: return []
+    TAB = "\t"
+    lines = ["", "process {", TAB+f"withLabel: 'x{GPU_LABEL}x' "+"{",
+             TAB+TAB+f"beforeScript = '{_GPU_BEFORE_SCRIPT}'", TAB+"}"]
+    if scheduler and device is not None:
+        for process, n in planned.items():
+            # clusterOptions is a scalar directive: setting it here REPLACES the
+            # base string, so the base flags have to be restated or every job is
+            # rejected by SLURM for a missing account.
+            base = (
+                "(params.process.clusterOptions ?: "
+                '"--nodes=1 --ntasks=1 --account=${params.slurmGpuAccount ?: params.slurmAccount}")'
+            )
+            extra = '(params.process.clusterOptionsExtra ? " ${params.process.clusterOptionsExtra}" : "")'
+            lines += [
+                TAB+f"withName: '{process}' "+"{",
+                TAB+TAB+f'clusterOptions = {base} + " {device.MakeRequestFlag(n)}" + {extra}',
+                TAB+"}",
+            ]
+    lines += ["}", ""]
+    return lines
+
 @dataclass
 class Agent:
     home: Source
@@ -490,8 +606,9 @@ class Agent:
             self, 
             task: WorkflowTask|str, 
             config_file: Path|None=None, 
-            params: dict|Path|str|None=None, 
+            params: dict|Path|str|None=None,
             resource_overrides: ResourceOverrides|None=None,
+            gpus: Gpu|None=None,
             stub_delay: float=0,
         ) -> None:
         is_dry_run = stub_delay>0
@@ -506,6 +623,21 @@ class Agent:
             FLAG = "workspace exists"
             res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True, quiet=True)
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
+
+            # GPU preflight, deliberately BEFORE anything is transferred and
+            # long before the detached `nohup nextflow ... &` launch -- the run
+            # is fire-and-forget, so a failure raised any later is invisible to
+            # this caller.
+            def _detect_gpu_on_target() -> str:
+                probe = sh_remote.Exec(
+                    "command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | head -4",
+                    history=True, quiet=True,
+                )
+                return "; ".join(x.strip() for x in probe.out if x.strip())
+            gpu_manifest = _read_gpu_manifest(sh_remote, workspace)
+            gpu_planned = _plan_gpu_requests(gpu_manifest, gpus, _detect_gpu_on_target)
+            if gpu_planned:
+                Log.Info(f"GPU requests planned for [{len(gpu_planned)}] of [{len(gpu_manifest)}] declaring steps")
 
             Log.Info(f"sending config and params")
             mover = Logistics()
@@ -526,16 +658,24 @@ class Agent:
                             k = str(k)
                             if isinstance(v, dict):
                                 v = _parse(v)
-                            if "_" in k:
-                                stacks = [x for x in k.split("_") if x != ""]
-                                if len(stacks)>1:
-                                    _d_curr = parsed
-                                    for k in stacks[:-1]:
-                                        _d_curr[k] = {}
-                                        _d_curr = _d_curr[k]
-                                    _d_curr[stacks[-1]] = v
+                            stacks = [x for x in k.split("_") if x != ""] if "_" in k else [k]
+                            if len(stacks)>1:
+                                # setdefault, not assignment: two keys sharing a
+                                # prefix (process_tries + process_clusterOptionsExtra)
+                                # must merge into one nested dict rather than the
+                                # later one wiping the earlier.
+                                _d_curr = parsed
+                                for _k in stacks[:-1]:
+                                    _nxt = _d_curr.get(_k)
+                                    if not isinstance(_nxt, dict): _nxt = {}
+                                    _d_curr[_k] = _nxt
+                                    _d_curr = _nxt
+                                _d_curr[stacks[-1]] = v
                             else:
-                                parsed[k] = v
+                                # stacks[0] rather than k so a leading/trailing
+                                # underscore ("_foo") lands as "foo" instead of
+                                # being silently dropped as it used to be.
+                                parsed[stacks[0]] = v
                         return parsed
 
                     with open(params_local, "w") as f:
@@ -548,6 +688,18 @@ class Agent:
                 local_config = temp_dir/config_file.name
                 shutil.copy(config_file, local_config)
                 mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
+                # GPU blocks first, so an explicit resource_overrides entry for
+                # the same step is still last-defined and wins per-directive.
+                if gpu_planned:
+                    # Only a grid executor has a scheduler to ask; the local
+                    # executor inherits whatever devices the host has, so the
+                    # declaration there exists purely to pass the preflight and
+                    # switch on the runtime's GPU flags.
+                    is_scheduler = "slurmAccount" in local_config.read_text()
+                    gpu_lines = _render_gpu_config(gpu_planned, gpus, is_scheduler)
+                    if gpu_lines:
+                        with open(local_config, "a") as f:
+                            f.write("\n".join(gpu_lines))
                 # lines = [
                 #     # "",
                 #     # "lineage.enabled = true",

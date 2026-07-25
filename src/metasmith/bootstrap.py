@@ -350,6 +350,15 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
                     except ValueError:
                         continue
                     params[k] = v
+                # The GPU declaration is static per step (it comes from the
+                # transform's Resources, not a nextflow interpolation), so it
+                # rides in via the staged step meta file. Absent for every
+                # non-GPU step and for workspaces staged before GPU support.
+                if "gpu" in raw_meta:
+                    try:
+                        params["gpus"] = json.loads(raw_meta["gpu"])
+                    except json.JSONDecodeError as e:
+                        Log.Warn(f"could not parse gpu metadata [{raw_meta['gpu']}]: {e}")
         except Exception as e:
             Log.Error(f"failed to read [{METADATA_FILE}]: {e}")
         lineages = raw_meta.get("lin", "[]")

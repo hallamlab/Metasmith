@@ -1,6 +1,6 @@
 from .models.libraries import Endpoint, DataTypeLibrary, DataInstanceLibrary
 from .models.libraries import Transform, TransformInstance, TransformInstanceLibrary
-from .models.libraries import ExecutionContext, ExecutionResult, Resources, Size, Duration
+from .models.libraries import ExecutionContext, ExecutionResult, Resources, Size, Duration, Gpu, Gpus
 from .models.workflow import WorkflowTask, WorkflowPlan, WorkflowStep, WorkflowTarget
 # Run one transform against concrete files -- no solver, no nextflow -- while still
 # routing through the same ExecuteStep the DAG uses, so what you iterate on solo is

@@ -14,11 +14,13 @@ from ..env import Environment as Container, Runtime as ContainerRuntime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
+from .libraries import GPU_LABEL, Gpus
 from .paths import PathMap
 from .remote import Logistics, Source, SourceType
 from .solver import Application, Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
 from ..hashing import KeyGenerator
 from ..logging import Log
+from ..constants import AgentPaths
 
 METADATA_FILE = ".command.metadata"
 BIND_FILE = ".command.binds"
@@ -1285,8 +1287,24 @@ class WorkflowTask:
 
             res = step.transform.resources
             src_res = [] # goes to config to not mess with caching
-            if res is not None: 
+            if res is not None:
                 src_res += [x for x in res.AsNextflowFormat(is_config=True)] # config!
+            # GPU need is declared on the resources, not on transform.labels, so
+            # an author writes it once. The label is the shared channel (the
+            # `xlocalx` precedent in slurm.nf); the per-step device count cannot
+            # be rendered here because stage time does not know what a device is
+            # on the target -- that lands in workflow.config.nf at run time.
+            gpu_req = None
+            if res is not None and res.wants_gpu:
+                src.append(TAB+f"label 'x{GPU_LABEL}x'")
+                gpu_req = {
+                    "step": step.order,
+                    "transform": str(step.transform.name),
+                    "process": process_name,
+                    "gpus": res.gpus.value,
+                    "gpu_memory_gb": None if res.gpu_memory is None else res.gpu_memory.value_gb,
+                }
+                gpu_requirements[process_name] = gpu_req
             duration_is_strict = res is not None and res.duration is not None and res.duration.strict
             memory_is_strict = res is not None and res.memory is not None and res.memory.strict
             if duration_is_strict and memory_is_strict:
@@ -1319,6 +1337,13 @@ class WorkflowTask:
                 f.write(f"dot {json.dumps(dep_out, separators=(',',':'))}\n")
                 f.write(f"sar {json.dumps(structure_arity, separators=(',',':'))}\n")
                 f.write(f"par {sample_arity}\n")
+                # Static per-step GPU declaration, surfaced to the protocol as
+                # context.params["gpus"]. Only written when the transform asked
+                # for a GPU, so previously staged workspaces (and every non-GPU
+                # step) produce byte-identical metadata to before.
+                if gpu_req is not None:
+                    _gpu_meta = {k: gpu_req[k] for k in ("gpus", "gpu_memory_gb")}
+                    f.write(f"gpu {json.dumps(_gpu_meta, separators=(',',':'))}\n")
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
                 for branch, g in enumerate(produced_archetypes) for x in g
@@ -1502,6 +1527,7 @@ class WorkflowTask:
         wf_publish = set()       
         published_channels: dict[str, tuple[int, DataInstance]] = {}
         resources = {}
+        gpu_requirements: dict[str, dict] = {}
 
         # NOTE: DSL2 implicitly forks channels even when wrapped in [name, channel]
         # tuples and consumed inside Orchestrator.group(). multiMap forking was
@@ -1589,6 +1615,12 @@ class WorkflowTask:
             _src.append("}")
             for line in _src:
                 f.write(line+"\n")
+
+        # Always (re)written, including empty, so an `update_workflow` re-stage
+        # that drops a GPU transform cannot leave a stale requirement behind for
+        # the run-time preflight to trip over.
+        with open(context.work_dir/AgentPaths.GPU_MANIFEST, "w") as f:
+            json.dump({"schema": 1, "steps": gpu_requirements}, f, indent=4)
 
         wf_output = []
         _e2target = {x.instance.dtype:x for x in the_plan.targets}

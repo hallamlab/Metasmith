@@ -5,8 +5,10 @@ import shutil
 from pathlib import Path
 import yaml
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Callable, Iterable
 from importlib import reload, __import__
+import math
 import tempfile
 import time
 from datetime import timedelta
@@ -1078,11 +1080,65 @@ class Duration:
         if len(s) == 0: s = [ss]
         return f"'{' '.join(s)}'"
 
+class Gpus(Enum):
+    # A pure toggle: whether the transform's tool needs a GPU, and how badly.
+    # Deliberately carries no count and no device type -- how many devices a
+    # given VRAM ask resolves to, and what a device is called, are facts about
+    # the *host*, not the tool. Those live on `Gpu` (the run-side declaration).
+    NONE = "none"
+    OPTIONAL = "optional"
+    REQUIRED = "required"
+
+# Label attached at stage time to every process whose transform declared a GPU.
+# Follows the existing `label 'x<name>x'` convention (see `xlocalx` in slurm.nf).
+GPU_LABEL = "gpu"
+
+@dataclass
+class Gpu:
+    """What a GPU *is* on the target host — the run-side half of the contract.
+
+    Declared once per run via `Agent.RunWorkflow(gpus=...)`. This is the only
+    place device vocabulary appears: per-device VRAM, the site's device/gres
+    type token, how many devices a node has, and the scheduler flag shape used
+    to ask for them. A transform never names any of these.
+
+    `flag` is the request syntax including its separator, so the count appends
+    directly: `--gpus-per-node=` -> `--gpus-per-node=2`, `--gres=gpu:` ->
+    `--gres=gpu:2` (or `--gres=gpu:a100:2` when `type` is set).
+    """
+    memory: Size|None = None
+    type: str|None = None
+    count: int|None = None
+    flag: str = "--gpus-per-node="
+
+    def DevicesFor(self, required: Size|None) -> int:
+        # How many of *this* device it takes to total `required` VRAM. No ask
+        # (or no declared per-device memory to divide by) means one device --
+        # the transform said it wants a GPU without saying how much.
+        if required is None or self.memory is None: return 1
+        if self.memory.value_gb <= 0: return 1
+        return max(1, math.ceil(required.value_gb / self.memory.value_gb))
+
+    def MakeRequestFlag(self, devices: int) -> str:
+        if self.type: return f"{self.flag}{self.type}:{devices}"
+        return f"{self.flag}{devices}"
+
 @dataclass
 class Resources:
     cpus: int|None = None
     memory: Size|None = None
     duration: Duration|None = None
+    # GPU need. `gpus` is the toggle; `gpu_memory` is the TOTAL VRAM the tool
+    # needs, which is the unit a tool actually cares about. Unlike the three
+    # fields above, `gpu_memory` is NOT a Nextflow directive -- Nextflow has no
+    # VRAM concept -- so AsNextflowFormat never renders it. It is metasmith-side
+    # input to the run-time device-count computation and to the protocol.
+    gpus: Gpus = Gpus.NONE
+    gpu_memory: Size|None = None
+
+    @property
+    def wants_gpu(self) -> bool:
+        return self.gpus is not Gpus.NONE
 
     def AsNextflowFormat(self, is_config=False):
         def _parse_res(r:int|Duration|Size|None, var: str, field: str, norm: str, strict: str=""):
@@ -1329,6 +1385,53 @@ class ExecutionContext:
             Log.Info(f"    {line}")
         subprocess.run(cmd, shell=True, executable='/bin/bash')
 
+    def DeclaredGpus(self) -> tuple[Gpus, Size|None]:
+        # What this step *asked* for at stage time. Staged by the generator into
+        # the step meta file; absent (-> Gpus.NONE) for any step that declared
+        # no GPU and for workspaces staged before GPU support existed.
+        raw = self.params.get("gpus")
+        if not isinstance(raw, dict): return Gpus.NONE, None
+        try:
+            toggle = Gpus(raw.get("gpus", Gpus.NONE.value))
+        except ValueError:
+            toggle = Gpus.NONE
+        mem = raw.get("gpu_memory_gb")
+        return toggle, None if mem is None else Size.GB(mem)
+
+    def DetectGpus(self) -> list[Size]:
+        """Per-device VRAM of the GPUs this task actually got, on the exec host.
+
+        Probes through `external_shell`, which is the relay for container
+        runtimes and the local shell for mamba/native -- so the answer is about
+        the machine the tool will run on, under every runtime. Reports what was
+        *allocated*, not what was asked for: under a partial SLURM allocation or
+        a MIG slice (where CUDA_VISIBLE_DEVICES is a MIG-<uuid> rather than an
+        index) those differ, and the allocated figure is the one a tool sizing
+        its own offload needs. A host with no nvidia-smi is a valid empty
+        answer, not an error.
+        """
+        FLAG = "msm_gpu"
+        probe = (
+            'command -v nvidia-smi >/dev/null 2>&1 && '
+            f'nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null'
+            f' | sed "s/^/{FLAG} /" || true'
+        )
+        try:
+            res = self.external_shell.Exec(probe, history=True)
+        except Exception as e:
+            Log.Warn(f"gpu detection failed: {e}")
+            return []
+        found: list[Size] = []
+        for line in res.out:
+            line = line.strip()
+            if not line.startswith(FLAG): continue
+            val = line[len(FLAG):].strip()
+            try:
+                found.append(Size.MB(float(val)))
+            except ValueError:
+                continue
+        return found
+
     def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None):
         path = self._inputs[self._batch_index][image].path
         if IsText(path.local):
@@ -1379,12 +1482,24 @@ class ExecutionContext:
             container_ws = self.external_cwd
             binds = []
 
+        extra_args = list(args) if args else []
+        # A step that declared a GPU gets its runtime's GPU flags for free --
+        # the transform author never writes `--nv` / `--gpus all`, and never
+        # branches on the runtime to pick the dialect. Transforms that still
+        # pass them by hand keep working: framework flags whose leading token is
+        # already present in `args=` are dropped rather than duplicated.
+        declared, _ = self.DeclaredGpus()
+        if declared is not Gpus.NONE:
+            gpu_args = _probe.MakeGpuArgs()
+            if gpu_args and gpu_args[0] not in extra_args:
+                extra_args = gpu_args + extra_args
+
         container = Container(
             image = str(image_path),
             workdir = container_ws,
             runtime = self.container_runtime,
             binds = binds,
-            extra_args = list(args) if args else [],
+            extra_args = extra_args,
             container_cache = self.external_agent_home/AgentPaths.CONTAINER_CACHE,
         )
         return container
