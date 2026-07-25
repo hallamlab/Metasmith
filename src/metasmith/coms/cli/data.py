@@ -25,6 +25,12 @@ def register(subs):
     _create.add_argument("--purge", action="store_true")
     _create.set_defaults(func=lambda a: _ops.create_library(a.path, a.type_lib, a.purge))
 
+    _fork = sp.add_parser("fork", help="copy a library under a new fork id (new task key, no data copied)")
+    _fork.add_argument("library")
+    _fork.add_argument("dest")
+    _fork.add_argument("--fork-id", help="explicit fork id; a random one is generated otherwise")
+    _fork.set_defaults(func=lambda a: _ops.fork_library(a.library, a.dest, a.fork_id))
+
     _attach = sp.add_parser("attach-types", help="attach a type library to a data library")
     _attach.add_argument("library")
     _attach.add_argument("type_library")

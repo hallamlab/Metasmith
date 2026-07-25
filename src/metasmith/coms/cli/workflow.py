@@ -24,10 +24,11 @@ def register(subs):
 
     _stage = sp.add_parser("stage", help="compile DAG to Nextflow and transfer to agent")
     _stage.add_argument("agent")
-    _stage.add_argument("task_key")
+    _stage.add_argument("task_ref", metavar="TASK",
+                        help="task key in the workspace, or a path to a task bundle directory")
     _stage.add_argument("--on-exist", default="skip",
                         choices=["skip", "error", "clear", "update", "update_workflow", "update_data"])
-    _stage.set_defaults(func=lambda a: _rt.stage(a.agent, a.task_key, a.on_exist, a.workspace))
+    _stage.set_defaults(func=lambda a: _rt.stage(a.agent, a.task_ref, a.on_exist, a.workspace))
 
     _run = sp.add_parser("run", help="launch a staged workflow")
     _run.add_argument("agent")

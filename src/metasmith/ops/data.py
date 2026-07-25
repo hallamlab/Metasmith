@@ -1,8 +1,11 @@
 """Data instance library operations: CRUD on libraries and their items."""
 from __future__ import annotations
 
+import os
+import shutil
 from pathlib import Path
 
+from ..hashing import KeyGenerator
 from ..models.libraries import DataInstanceLibrary
 from ..models.remote import Source
 from ._common import load_data_lib
@@ -43,6 +46,53 @@ def create_library(
         lib.AddTypeLibrary(Path(tp).resolve())
     lib.Save()
     return {"path": str(p), "type_namespaces": list(lib.types.keys())}
+
+
+def _link_or_copy(src, dst, *, follow_symlinks=True):
+    """Hardlink a library-internal file, falling back to a copy across filesystems."""
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst, follow_symlinks=follow_symlinks)
+
+
+def fork_library(
+    library_path: str,
+    dest_path: str,
+    fork_id: str | None = None,
+) -> dict:
+    """Copy a library's manifest to a new location under a fresh fork id.
+
+    Identity in metasmith is content-free by design, so re-running with new bytes at
+    the same paths reuses the old task. A fork is the explicit way to say the inputs
+    changed: the new fork id lands in the manifest, which changes the library key,
+    every instance_id derived from it, and therefore the task key -- with no file
+    contents read. It also discards all cache reuse, so it is the expensive path.
+
+    Data is not duplicated: items recorded as absolute paths are only manifest
+    entries, symlinks are preserved as symlinks, and library-internal regular files
+    are hardlinked where the filesystem allows.
+    """
+    src = Path(library_path).resolve()
+    dest = Path(dest_path).resolve()
+    assert src.is_dir(), f"library [{src}] does not exist"
+    assert src != dest, "fork destination must differ from the source"
+    assert not dest.exists() or not any(dest.iterdir()), (
+        f"fork destination [{dest}] already exists and is not empty"
+    )
+    load_data_lib(src)  # fail before copying if the source is not a valid library
+    shutil.copytree(src, dest, symlinks=True, copy_function=_link_or_copy, dirs_exist_ok=True)
+
+    lib = DataInstanceLibrary.Load(dest)
+    lib.fork_id = fork_id or KeyGenerator().GenerateUID(l=8)
+    lib.Save()
+    lib._calculate_key()
+    return {
+        "library": str(dest),
+        "forked_from": str(src),
+        "fork_id": lib.fork_id,
+        "key": lib.GetKey(),
+    }
 
 
 def attach_type_library(

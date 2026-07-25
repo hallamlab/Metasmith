@@ -271,6 +271,12 @@ class DataInstanceLibrary:
         self.types: dict[str, DataTypeLibrary] = {}
         self._dtype2name = {}
         self.remote_src: Source|None = None
+        # an optional user-set discriminator. Identity here is deliberately content-free
+        # (inputs reach 100s of GB), so two libraries listing the same paths are the same
+        # library. Setting this is how a user says "no, treat this as new" -- it is packed
+        # into the manifest, so it flows into the library key, every instance_id, and the
+        # plan/task key without any special casing downstream.
+        self.fork_id: str|None = None
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
         self._endpoint_cache: dict[Path, Endpoint] = {}
         if isinstance(location, DataInstanceLibrary):
@@ -278,6 +284,7 @@ class DataInstanceLibrary:
             self.location = other.location
             self.manifest = other.manifest
             self.types = other.types
+            self.fork_id = other.fork_id
         else:
             location = Path(location).resolve()
             if not location.exists():
@@ -726,6 +733,7 @@ class DataInstanceLibrary:
         packed = dict(
             schema=self.schema,
             manifest=man,
+            fork_id=self.fork_id,
             remote_src=self.remote_src.Pack() if self.remote_src is not None else None,
         )
         return {k:v for k, v in packed.items() if v is not None}
@@ -750,6 +758,7 @@ class DataInstanceLibrary:
         )
         lib.schema = raw["schema"]
         lib.manifest = manifest
+        lib.fork_id = raw.get("fork_id")
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
         # First pass: Build immediate parents for all items

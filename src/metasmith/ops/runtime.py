@@ -9,11 +9,17 @@ from . import workspace as _ws
 from .agent import load_agent
 
 
-def stage(agent_path: str, task_key: str, on_exist: str = "skip", workspace: str | None = None) -> dict:
+def stage(agent_path: str, task_ref: str, on_exist: str = "skip", workspace: str | None = None) -> dict:
+    """Stage a task on an agent. `task_ref` is a task key or a task bundle directory.
+
+    The returned task_key is the task's own key, never the reference that was passed
+    in -- every later verb (run/wait/tail/cancel) uses it to address the agent-side
+    directory, which is named by the key.
+    """
     agent = load_agent(agent_path)
-    task = _ws.load_task(workspace, task_key)
+    task = _ws.load_task(workspace, task_ref)
     agent.StageWorkflow(task, on_exist)
-    return {"status": "staged", "task_key": task_key, "agent": Path(agent_path).stem}
+    return {"status": "staged", "task_key": task.GetKey(), "agent": Path(agent_path).stem}
 
 
 def run(
