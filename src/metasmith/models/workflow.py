@@ -10,7 +10,7 @@ import yaml
 import json
 from hashlib import md5
 
-from ..env import Environment, Runtime
+from ..env import ContainerDef, Environment, Runtime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
@@ -1278,11 +1278,11 @@ class WorkflowTask:
             if len(external_binds)>0:
                 external_binds_param = Environment(
                     image="",
-                    binds=[
+                    runtime=context.runtime,
+                    container=ContainerDef(binds=[
                         (_make_bind_var(i), _make_bind_var(i))
                         for i, _ in enumerate(external_binds)
-                    ],
-                    runtime=context.runtime,
+                    ]),
                 ).MakeBindsParam()
 
             res = step.transform.resources

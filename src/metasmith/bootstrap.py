@@ -198,7 +198,10 @@ def ExecuteStep(
         external_shell=shell,
         external_cwd=external_cwd,
         external_agent_home=Path(agent_home),
-        _environment=agent.runtime,
+        # The TOOL environment, not the agent's own: never native (whether
+        # metasmith itself is containerized says nothing about the tool's
+        # image), but it does carry the host's GPU flag configuration.
+        _environment=Environment(image="", runtime=agent.runtime, gpu_args=list(agent.gpu_args)),
         params=params,
     )
     BREAK_LENGTH = 60

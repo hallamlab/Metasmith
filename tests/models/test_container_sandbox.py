@@ -18,25 +18,23 @@ and the run-time ternary — they don't spawn apptainer.
 
 from pathlib import Path
 
-from metasmith.env import Environment, Runtime
+from metasmith.env import ContainerDef, Environment, Runtime
+
+
+def _env(image, runtime, *, container_cache=Path('./'), binds=None, **kw) -> Environment:
+    return Environment(
+        image=image, runtime=runtime,
+        container=ContainerDef(cache=container_cache, workdir=Path('/ws'), binds=list(binds or [])),
+        **kw,
+    )
 
 
 def _apptainer(**kw) -> Environment:
-    return Environment(
-        image="docker://quay.io/example/tool:1.0",
-        workdir=Path("/ws"),
-        runtime=Runtime.APPTAINER,
-        **kw,
-    )
+    return _env("docker://quay.io/example/tool:1.0", Runtime.APPTAINER, **kw)
 
 
 def _docker(**kw) -> Environment:
-    return Environment(
-        image="docker://quay.io/example/tool:1.0",
-        workdir=Path("/ws"),
-        runtime=Runtime.DOCKER,
-        **kw,
-    )
+    return _env("docker://quay.io/example/tool:1.0", Runtime.DOCKER, **kw)
 
 
 class TestCachePaths:

@@ -263,3 +263,44 @@ class TestEnvironmentGpuArgs:
         env = Environment(image="docker://x:1", runtime=runtime)
         env.extra_args = env.MakeGpuArgs()
         assert flag in env.MakeRunCommand()
+
+
+class TestSiteGpuArgs:
+    """Some hosts need more than the runtime switch to expose a device.
+
+    WSL2 is the live case: apptainer's `--nv` finds and injects `nvidia-smi`
+    but its library discovery misses the driver stack under /usr/lib/wsl, so
+    NVML reports "GPU access blocked by the operating system". Which extra
+    flags a host needs is a host fact, so it is declared on the Agent rather
+    than sniffed at run time.
+    """
+
+    WSL = ["--bind", "/usr/lib/wsl:/usr/lib/wsl", "--env", "LD_LIBRARY_PATH=/usr/lib/wsl/lib"]
+
+    def test_site_args_follow_the_runtime_switch(self):
+        env = Environment(image="x", runtime=Runtime.APPTAINER, gpu_args=self.WSL)
+        assert env.MakeGpuArgs() == ["--nv"] + self.WSL
+
+    def test_site_args_apply_to_docker_too(self):
+        env = Environment(image="x", runtime=Runtime.DOCKER, gpu_args=["--shm-size=8g"])
+        assert env.MakeGpuArgs() == ["--gpus", "all", "--shm-size=8g"]
+
+    def test_site_args_are_the_whole_answer_for_native(self):
+        env = Environment(image="x", runtime=Runtime.DOCKER, native=True, gpu_args=["--x"])
+        assert env.MakeGpuArgs() == ["--x"]
+
+    def test_default_is_empty_so_a_normal_host_is_unchanged(self):
+        assert Environment(image="x", runtime=Runtime.APPTAINER).MakeGpuArgs() == ["--nv"]
+
+    def test_agent_round_trips_through_agent_yml(self, tmp_path):
+        from metasmith.agents import Agent
+        from metasmith.models.remote import Source
+        a = Agent(home=Source.FromLocal(tmp_path), gpu_args=list(self.WSL))
+        assert Agent.Unpack(a.Pack()).gpu_args == self.WSL
+
+    def test_legacy_agent_yml_without_the_key_still_loads(self):
+        from metasmith.agents import Agent
+        from metasmith.models.remote import Source
+        packed = Agent(home=Source.FromLocal("/tmp/x")).Pack()
+        packed.pop("gpu_args")
+        assert Agent.Unpack(packed).gpu_args == []

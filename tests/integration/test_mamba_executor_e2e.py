@@ -76,7 +76,7 @@ def test_mamba_runs_real_tool_no_relay(tmp_path, monkeypatch):
     model = ctx.GetContainerModel(env_dep)
     assert model.runtime == Runtime.MAMBA
     assert model.needs_relay is False
-    assert model.binds == []
+    assert model.container.binds == []
 
     with ctx.external_shell as shell:
         ctx.external_shell = shell  # ensure the live shell is the running one

@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from metasmith.coms.terminals import ShellResult
-from metasmith.env import Environment, Runtime
+from metasmith.env import ContainerDef, Environment, Runtime
 from metasmith.models.libraries import ContextData, ContextPath, ExecutionContext
 from metasmith.models.solver import Dependency, Endpoint
 import metasmith.models.libraries as libraries_mod
@@ -60,7 +60,7 @@ class TestMambaEnvironment:
         assert env.MakeRunCommand(local=True) == "mamba run -n checkm-1.2.0"
 
     def test_no_binds_no_cache_no_pull(self):
-        env = Environment(image="checkm", runtime=Runtime.MAMBA, binds=[(Path("/a"), Path("/b"))])
+        env = Environment(image="checkm", runtime=Runtime.MAMBA, container=ContainerDef(binds=[(Path("/a"), Path("/b"))]))
         assert env.MakeBindsParam() == ""
         assert env.GetLocalPath() is None
         assert env.GetSandboxPath() is None
@@ -122,8 +122,8 @@ def test_mamba_exec_no_relay_identity_cwd(tmp_path, monkeypatch):
     # The model built for a mamba dep is identity: no binds, workdir == cwd.
     model = ctx.GetContainerModel(image_dep)
     assert model.runtime == Runtime.MAMBA
-    assert model.binds == []
-    assert Path(model.workdir) == real_cwd
+    assert model.container.binds == []
+    assert Path(model.container.workdir) == real_cwd
 
     ctx.ExecWithContainer(image_dep, "checkm version")
 

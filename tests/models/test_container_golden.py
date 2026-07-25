@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from metasmith.env import Environment, Runtime
+from metasmith.env import ContainerDef, Environment, Runtime
 
 
 IMAGE = "docker://quay.io/example/tool:1.0"
@@ -38,10 +38,12 @@ BINDS = [(Path("/host/data"), Path("/data")), (Path("/host/db"), Path("/db"))]
 def _container(runtime: Runtime, *, workdir=Path("/ws"), binds=None) -> Environment:
     return Environment(
         image=IMAGE,
-        workdir=workdir,
         runtime=runtime,
-        container_cache=CACHE,
-        binds=list(BINDS) if binds is None else binds,
+        container=ContainerDef(
+            cache=CACHE,
+            workdir=workdir,
+            binds=list(BINDS) if binds is None else binds,
+        ),
     )
 
 
@@ -137,3 +139,114 @@ class TestRunCommandGolden:
             '--bind /host/data:/data,/host/db:/db '
             f'"$(if [ -d "{SANDBOX}" ]; then echo "{SANDBOX}"; else echo "{SIF}"; fi)"'
         )
+
+
+# --------------------------------------------------------------------------
+# the runtimes that are NOT containers
+#
+# These are the arm the original carve was least covered on, and the reason a
+# dropped behaviour could ship unnoticed. mamba runs the tool on the host
+# filesystem under an activated env; native means we are already inside the
+# target environment and emit no wrapper at all. Both must collapse the
+# container-shaped inputs (cache, workdir, binds) to nothing rather than
+# rendering them in some third dialect.
+# --------------------------------------------------------------------------
+
+MAMBA_ENV = "toolenv"
+
+
+def _mamba(*, native=False, extra_args=None) -> Environment:
+    return Environment(
+        image=MAMBA_ENV,
+        runtime=Runtime.MAMBA,
+        native=native,
+        extra_args=list(extra_args or []),
+        container=ContainerDef(cache=CACHE, workdir=Path("/ws"), binds=list(BINDS)),
+    )
+
+
+class TestMambaGolden:
+    def test_run_command_is_env_activation_only(self):
+        assert _mamba().MakeRunCommand() == f"mamba run -n {MAMBA_ENV}"
+
+    def test_extra_args_ride_along(self):
+        assert _mamba(extra_args=["--no-capture-output"]).MakeRunCommand() == (
+            f"mamba run -n {MAMBA_ENV} --no-capture-output"
+        )
+
+    def test_binds_collapse_to_nothing(self):
+        # there is no boundary to bind across
+        assert _mamba().MakeBindsParam() == ""
+
+    def test_nothing_to_pull_and_no_image_store(self):
+        env = _mamba()
+        assert env.MakePullCommand() == ""
+        assert env.GetLocalPath() is None
+        assert env.GetSandboxPath() is None
+        assert env.ProvisionSteps(agent_home=Path("/home")) == []
+
+    def test_wrapper_prefix_activates_the_env(self):
+        assert _mamba().MakeWrapperPrefix() == f"mamba run -n {MAMBA_ENV}"
+
+
+class TestNativeGolden:
+    @pytest.mark.parametrize("runtime", [Runtime.DOCKER, Runtime.APPTAINER, Runtime.MAMBA])
+    def test_native_emits_no_wrapper_whatever_the_runtime(self, runtime):
+        env = Environment(image=IMAGE, runtime=runtime, native=True,
+                          container=ContainerDef(cache=CACHE, workdir=Path("/ws"), binds=list(BINDS)))
+        assert env.MakeRunCommand() == ""
+        assert env.MakeWrapperPrefix() == ""
+        assert env.MakeBindsParam() == ""
+        assert env.needs_relay is False
+
+    def test_native_still_forwards_caller_args(self):
+        env = Environment(image=IMAGE, runtime=Runtime.DOCKER, native=True,
+                          extra_args=["--flag", "v"])
+        assert env.MakeRunCommand() == "--flag v"
+
+
+# --------------------------------------------------------------------------
+# GPU args
+# --------------------------------------------------------------------------
+
+class TestGpuArgsGolden:
+    def test_docker(self):
+        assert _container(Runtime.DOCKER).MakeGpuArgs() == ["--gpus", "all"]
+
+    def test_apptainer(self):
+        assert _container(Runtime.APPTAINER).MakeGpuArgs() == ["--nv"]
+
+    def test_mamba_and_native_inherit_the_host(self):
+        assert _mamba().MakeGpuArgs() == []
+        assert _mamba(native=True).MakeGpuArgs() == []
+
+
+# --------------------------------------------------------------------------
+# ProvisionSteps — the deploy-time shell
+# --------------------------------------------------------------------------
+
+AGENT_HOME = Path("/arc/home/u/msm_home")
+
+
+class TestProvisionGolden:
+    def test_docker_has_nothing_to_provision(self):
+        # no local image store for docker; the daemon owns its own cache
+        assert _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME) == []
+
+    def test_apptainer_pulls_then_probes(self):
+        steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME)
+        assert len(steps) == 2
+        pull, sandbox = steps
+        assert pull[0] == (
+            f'mkdir -p "{STORE}" && [ -e {SIF} ] || '
+            f'apptainer pull {SIF} {IMAGE}'
+        )
+        # the probe decides SIF vs sandbox on the execution host, and a stale
+        # sandbox from a prior host config is removed when the verdict flips
+        assert sandbox[0].startswith("VERDICT=$(")
+        assert f'[ -d {SANDBOX} ] || apptainer build --force --sandbox {SANDBOX} {SIF}' in sandbox[0]
+        assert f"else rm -rf {SANDBOX}; fi" in sandbox[0]
+
+    def test_assertive_forces_a_rebuild(self):
+        steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME, assertive=True)
+        assert steps[1][0].startswith(f"rm -rf {SANDBOX} && VERDICT=$(")

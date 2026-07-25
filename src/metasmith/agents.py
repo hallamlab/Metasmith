@@ -16,7 +16,7 @@ from glob import glob
 from .serialization import StdTime
 from .hashing import KeyGenerator
 from .logging import Log
-from .env import Environment, Runtime
+from .env import ContainerDef, Environment, Runtime
 from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
@@ -218,6 +218,13 @@ class Agent:
     globus_uuid: str|None = None
     runtime: Runtime=Runtime.APPTAINER
     native: bool = False
+    # Extra flags this host needs to expose its GPUs to a tool, appended after
+    # the runtime's own switch. Empty on a normal Linux box; WSL2 needs
+    # ["--bind", "/usr/lib/wsl:/usr/lib/wsl", "--env",
+    #  "LD_LIBRARY_PATH=/usr/lib/wsl/lib"] because apptainer's `--nv` discovery
+    # misses the WSL driver stack. A host fact, so it is declared here rather
+    # than sniffed at run time.
+    gpu_args: list[str] = field(default_factory=list)
     real_path: Path|None = None
 
     def _environment(self) -> Environment:
@@ -239,6 +246,7 @@ class Agent:
             container=self.container,
             runtime=self.runtime.name,
             native=self.native,
+            gpu_args=list(self.gpu_args),
         ) | optional
 
     def Save(self, file_path: Path):
@@ -252,6 +260,7 @@ class Agent:
         # `native` is newer than the original agent.yml format; legacy files
         # omit it and default to a wrapped (non-native) environment.
         data.setdefault("native", False)
+        data.setdefault("gpu_args", [])
         k = "real_path"
         if k in data:
             data[k] = Path(data[k])
@@ -369,42 +378,44 @@ class Agent:
             dev_target = "/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith"
             dev_mock = Environment(
                 image=self.container,
-                binds=[
-                    (dev_src, Path(dev_target)),
-                ],
                 runtime=self.runtime,
                 native=self.native,
+                container=ContainerDef(binds=[
+                    (dev_src, Path(dev_target)),
+                ]),
             )
             # The bootstrap may stage the dev overlay to node-local scratch
             # before binding it (SLURM array fan-out), so it binds whatever
             # $DEV_BIND_SRC resolves to at run time rather than dev_src.
             dev_mock_staged = Environment(
                 image=self.container,
-                binds=[
-                    ("$DEV_BIND_SRC", Path(dev_target)),
-                ],
                 runtime=self.runtime,
                 native=self.native,
+                container=ContainerDef(binds=[
+                    ("$DEV_BIND_SRC", Path(dev_target)),
+                ]),
             )
 
             container = Environment(
                 image=self.container,
-                container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
-                binds=[
-                    ("$(pwd -P)", Path("/ws")),
-                    ("$AGENT_HOME", Path("/msm_home")),
-                    ("$AGENT_HOME", Path(str(resolved_agent_home))),
-                    ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
-                    (resolved_home/".globus", resolved_home/".globus"),
-                    (resolved_home/".globusonline", resolved_home/".globusonline"),
-                ],
                 runtime=self.runtime,
                 native=self.native,
+                container=ContainerDef(
+                    cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
+                    binds=[
+                        ("$(pwd -P)", Path("/ws")),
+                        ("$AGENT_HOME", Path("/msm_home")),
+                        ("$AGENT_HOME", Path(str(resolved_agent_home))),
+                        ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
+                        (resolved_home/".globus", resolved_home/".globus"),
+                        (resolved_home/".globusonline", resolved_home/".globusonline"),
+                    ],
+                ),
             )
             _cmds = [
                 f"AGENT_HOME={resolved_agent_home}"
             ] + [
-                f"mkdir -p {p}" for p, _ in container.binds
+                f"mkdir -p {p}" for p, _ in container.container.binds
             ]
             do_step("\n".join(_cmds))
             # Per-host provisioning (image pull + SIF/sandbox decision) is
@@ -435,14 +446,16 @@ class Agent:
 
             bootstrap_container = Environment(
                 image=self.container,
-                binds=[
-                    ("$(pwd -P)", Path("/ws")),
-                    ("$AGENT_HOME", Path("/msm_home")),
-                ],
-                workdir=Path("/ws"),
                 runtime=self.runtime,
                 native=self.native,
-                container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE
+                container=ContainerDef(
+                    cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
+                    workdir=Path("/ws"),
+                    binds=[
+                        ("$(pwd -P)", Path("/ws")),
+                        ("$AGENT_HOME", Path("/msm_home")),
+                    ],
+                ),
             )
             _remote_file(
                 bootstrap_container.RenderBootstrap(
@@ -535,12 +548,12 @@ class Agent:
         binds = task.GetCommonInputFolders(method="external")
         mock = Environment(
             image=self.container,
-            binds=[
-                (p, p)
-                for p in binds
-            ],
             runtime=self.runtime,
             native=self.native,
+            container=ContainerDef(binds=[
+                (p, p)
+                for p in binds
+            ]),
         )
         return mock
 
@@ -583,8 +596,8 @@ class Agent:
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
             binds = mock.MakeBindsParam()
-            if len(mock.binds)>0:
-                Log.Info(f"external binds {[a for a, b in mock.binds]}")
+            if len(mock.container.binds)>0:
+                Log.Info(f"external binds {[a for a, b in mock.container.binds]}")
             sh_remote.Exec(f"""\
                 export BINDS="{binds}"
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname)
@@ -1126,8 +1139,8 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     Log.Info(f"creating launcher script at [{launcher_path}]")
     mock = agent._get_mock_container(task)
     binds = mock.MakeBindsParam()
-    if len(mock.binds)>0:
-        Log.Info(f"external binds {[a for a, b in mock.binds]}")
+    if len(mock.container.binds)>0:
+        Log.Info(f"external binds {[a for a, b in mock.container.binds]}")
     with open(launcher_path, "w") as f:
         f.write("\n".join([
             f'#!/bin/bash',

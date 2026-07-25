@@ -6,7 +6,7 @@ MAMBA) or constructs a relay shell. Callers hold an `Environment` and a
 wrapped, invoked, bridged, and handed the host's GPUs -- live here.
 """
 
-from .environment import Environment, Runtime
+from .environment import ContainerDef, Environment, Runtime
 from ._shell import Shell
 
 # The relay client is owned by the env module; it is re-exported here so the
@@ -14,4 +14,4 @@ from ._shell import Shell
 # rather than reaching into coms directly.
 from ..coms.via_file_watcher import RemoteShell
 
-__all__ = ["Environment", "Runtime", "Shell", "RemoteShell"]
+__all__ = ["ContainerDef", "Environment", "Runtime", "Shell", "RemoteShell"]

@@ -15,7 +15,7 @@ from datetime import timedelta
 import json
 
 from ..serialization import IsText
-from ..env import Environment, Runtime
+from ..env import ContainerDef, Environment, Runtime
 from ..coms.terminals import RemoveLeadingIndent
 from ..coms.ipc import GenerateId
 from ..env import Shell
@@ -1369,7 +1369,10 @@ class ExecutionContext:
             self._environment = Environment(image="", runtime=self._environment)
 
     def _tool_environment(self, image: str, **kw) -> Environment:
-        return replace(self._environment, image=image, **kw)
+        # The container half is rebuilt per call (each tool has its own image,
+        # workdir and binds); runtime/native carry over from the template.
+        container = replace(self._environment.container, **kw) if kw else self._environment.container
+        return replace(self._environment, image=image, container=container)
 
     def GetMeta(self, key: Dependency):
         d = self._inputs[self._batch_index]
@@ -1508,22 +1511,23 @@ class ExecutionContext:
             if gpu_args and gpu_args[0] not in extra_args:
                 extra_args = gpu_args + extra_args
 
-        return self._tool_environment(
+        env = self._tool_environment(
             str(image_path),
             workdir = container_ws,
             binds = binds,
-            extra_args = extra_args,
-            container_cache = self.external_agent_home/AgentPaths.CONTAINER_CACHE,
+            cache = self.external_agent_home/AgentPaths.CONTAINER_CACHE,
         )
+        env.extra_args = extra_args
+        return env
 
     def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, history: bool=True):
-        container = self.GetContainerModel(image, binds, args)
-        assert container.workdir is not None # for typing
+        env = self.GetContainerModel(image, binds, args)
+        assert env.container.workdir is not None # for typing
         use_cache = False
-        cached_path = container.GetLocalPath()
+        cached_path = env.GetLocalPath()
         if cached_path is not None:
             FLAG = "cached image exists"
-            sandbox_path = container.GetSandboxPath()
+            sandbox_path = env.GetSandboxPath()
             res = self.external_shell.Exec(
                 f'( [ -e {cached_path} ] || [ -d {sandbox_path} ] ) && echo "{FLAG}"',
                 history=True,
@@ -1532,13 +1536,13 @@ class ExecutionContext:
                 use_cache = True
 
         cmd = RemoveLeadingIndent(cmd)
-        Log.Info(f"executing container [{container.image}] using [{container.runtime.name}]")
+        Log.Info(f"executing container [{env.image}] using [{env.runtime.name}]")
         h, k = KeyGenerator.FromStr(cmd)
         _bounce_script = Path(f"./_metasmith/.bounce.{k}")
         exit_codef = Path(f"exitcode.{GenerateId()}")
         with open(_bounce_script, "w") as f:
             script = [
-                f"cd {container.workdir}",
+                f"cd {env.container.workdir}",
                 "on_exit() {",
                 f"    echo $? > {exit_codef}",
                 "}",
@@ -1551,15 +1555,15 @@ class ExecutionContext:
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
         Log.Info(f"binds:")
-        for s, d in container.binds:
+        for s, d in env.container.binds:
             Log.Info(f"    {s} -> {d}")
-        _container_start = f"{container.MakeRunCommand(local=use_cache)} {shell}"
+        _container_start = f"{env.MakeRunCommand(local=use_cache)} {shell}"
         Log.Info(f"-> container start: [{_container_start}]")
         BREAK_LENGTH = 60
         msg = "-> container ->"
         Log.Info(msg+"-"*(BREAK_LENGTH-len(msg)))
         result = self.external_shell.Exec(
-            f"{_container_start} {container.workdir/_bounce_script}",
+            f"{_container_start} {env.container.workdir/_bounce_script}",
             timeout=None, history=history
         )
         try:

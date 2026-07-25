@@ -135,7 +135,7 @@ class TestGetContainerModelBatchBinds:
         }]
         ctx = self._make_context(batch)
         container = self._call_get_container(ctx, image_dep, tmp_path)
-        bind_srcs = [str(s) for s, _ in container.binds]
+        bind_srcs = [str(s) for s, _ in container.container.binds]
         assert any("/data/batch0" in s for s in bind_srcs), f"Expected /data/batch0 in binds, got {bind_srcs}"
 
     def test_multi_batch_binds_all_collected(self, tmp_path):
@@ -157,7 +157,7 @@ class TestGetContainerModelBatchBinds:
 
         ctx = self._make_context(batches)
         container = self._call_get_container(ctx, image_dep, tmp_path)
-        bind_srcs = [str(s) for s, _ in container.binds]
+        bind_srcs = [str(s) for s, _ in container.container.binds]
 
         # All three project dirs should be represented (possibly merged via commonpath)
         # At minimum, /data should appear as a common ancestor
@@ -181,6 +181,6 @@ class TestGetContainerModelBatchBinds:
         ctx = self._make_context(batch)
         container = self._call_get_container(ctx, image_dep, tmp_path)
         # The _binds portion shouldn't contain HOME_ROOT paths
-        bind_dests = [str(d) for _, d in container.binds]
+        bind_dests = [str(d) for _, d in container.container.binds]
         home_root_binds = [d for d in bind_dests if d.startswith(str(AgentPaths.HOME_ROOT) + "/config")]
         assert len(home_root_binds) == 0, f"HOME_ROOT child paths should not appear in _binds: {home_root_binds}"
