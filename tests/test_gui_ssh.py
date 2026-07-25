@@ -186,6 +186,15 @@ class TestManagedBlock:
         assert "Host fresh" in managed
         assert "Host old" in after
 
+    def test_round_tripping_the_editor_does_not_stack_preambles(self, cfg):
+        """split() hands back the preamble too; writing it straight back must not double it."""
+        cfg.add_host("one", "one.example.org")
+        for _ in range(3):
+            _before, body, _after = cfg.split()
+            cfg.write_managed_block(body)
+        assert cfg.read().count("# Managed by metasmith.") == 1
+        assert [h["alias"] for h in cfg.hosts()] == ["one"]
+
     def test_editing_the_block_directly(self, cfg):
         cfg.add_host("one", "one.example.org")
         cfg.write_managed_block("Host hand-written\n    HostName manual.example.org\n")

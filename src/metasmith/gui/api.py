@@ -302,6 +302,12 @@ def get_workflow(name):
     wf = p.read_workflow(name)
     out = _workflow_summary(wf)
     out["request"] = wf.request
+    # backfill for results written before the summary existed, and for anything
+    # planned by the CLI directly into a workflow directory
+    if wf.ok and not wf.result.get("step_display"):
+        display = _step_display(wf.path)
+        if display:
+            wf = p.write_result(name, wf.result | {"step_display": display})
     out["result"] = wf.result
     out["runs"] = [_run_summary(r) for r in p.list_runs(workflow=name, include_archived=True)]
     lib_path = p.input_library_path(name)
@@ -430,6 +436,7 @@ def generate_workflow(name):
                             shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
                         shutil.move(str(item), str(dest))
                     staged.rmdir()
+                result["step_display"] = _step_display(wf.path)
             result["stdlib_commit"] = commit
             result["transform_libraries"] = list(transforms)
             result["resource_libraries"] = list(resources)
@@ -438,6 +445,35 @@ def generate_workflow(name):
 
     job = _jobs().submit("generate", f"generate {name}", _work, subject={"workflow": name})
     return jsonify(job.summary()), 202
+
+
+def _step_display(bundle: Path) -> list[dict]:
+    """A readable summary of the plan's steps.
+
+    The packed form of a step is a wire format -- instance ids and a dependency
+    map -- with nothing a person would want to read. The step objects themselves
+    carry `uses` and `produces`, so the summary is built once at generate time
+    and stored beside the result.
+    """
+    from ..ops import workspace as op_workspace
+
+    try:
+        task = op_workspace.load_task(None, str(bundle))
+    except Exception:
+        return []
+    out = []
+    for step in task.plan.steps:
+        out.append({
+            "order": step.order,
+            "transform": Path(str(step.transform._path)).name,
+            "library": step.transform_library.GetKey(),
+            "uses": sorted({inst.dtype_name for inst in step.uses}),
+            "produces": sorted({
+                inst.dtype_name for group in step.produces for inst in group
+            }),
+        })
+    out.sort(key=lambda s: s["order"])
+    return out
 
 
 @bp.get("/workflows/<name>/dag")

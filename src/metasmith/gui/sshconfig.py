@@ -227,10 +227,26 @@ class SshConfig:
     def managed_entries(self) -> list[dict]:
         return [e.to_dict() for e in self.entries() if e.managed and not e.is_pattern]
 
+    @staticmethod
+    def _strip_preamble(body: str) -> str:
+        """Drop a leading copy of the preamble.
+
+        `split()` hands the editor everything between the markers, preamble
+        included, so writing it straight back would stack a second copy on every
+        save.
+        """
+        preamble = set(BLOCK_PREAMBLE)
+        lines = body.splitlines()
+        i = 0
+        while i < len(lines) and (not lines[i].strip() or lines[i] in preamble):
+            i += 1
+        return "\n".join(lines[i:])
+
     def write_managed_block(self, body: str):
         """Replace the managed block, always placing it first in the file."""
         before, _current, after = self.split()
         rest = "\n".join(x for x in (before, after) if x.strip())
+        body = self._strip_preamble(body)
         block = "\n".join([BEGIN_MARKER, *BLOCK_PREAMBLE, body.strip("\n"), END_MARKER])
         text = block + "\n"
         if rest.strip():
