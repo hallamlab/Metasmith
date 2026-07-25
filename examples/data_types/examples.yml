@@ -7,3 +7,7 @@ types:
     properties:
       _: greeting text file produced by echo_greeting
       ext: txt
+  gpu_report:
+    properties:
+      _: gpu visibility report produced by gpu_probe
+      ext: txt
