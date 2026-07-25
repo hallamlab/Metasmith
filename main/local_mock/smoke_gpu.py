@@ -166,6 +166,7 @@ def main(argv=None):
     ap.add_argument("--gpu-type", default=None, help="site gres type token, e.g. a100")
     ap.add_argument("--gpu-flag", default="--gpus-per-node=", help="site request syntax; count is appended")
     ap.add_argument("--gpu-count", type=int, default=None, help="devices per node on the target")
+    ap.add_argument("--gpu-extra", action="append", default=None, help="scheduler flag GPU steps need beyond the count, e.g. --partition=gpu (repeatable)")
     ap.add_argument("--slurm-account", default=None)
     ap.add_argument("--slurm-gpu-account", default=None)
     ap.add_argument("--setup-command", action="append", default=None)
@@ -207,6 +208,7 @@ def main(argv=None):
         type=args.gpu_type,
         count=args.gpu_count,
         flag=args.gpu_flag,
+        extra=list(args.gpu_extra or []),
     )
     positive = run_once(args, smith, workdir, f"{args.runtime}-gpu-{ts}", device, params or None)
 

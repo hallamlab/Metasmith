@@ -87,6 +87,22 @@ class TestGpuDevice:
         assert Gpu(flag="--gres=gpu:").MakeRequestFlag(4) == "--gres=gpu:4"
         assert Gpu(flag="--gres=gpu:", type="h100").MakeRequestFlag(2) == "--gres=gpu:h100:2"
 
+    def test_site_flags_ride_with_the_request(self):
+        # sockeye's default partition has no cards, and only GPU steps should
+        # be sent to the gpu partition -- so this lives on the device, not on
+        # the every-step clusterOptionsExtra
+        assert Gpu(extra=["--partition=gpu"]).MakeRequestFlag(1) == (
+            "--gpus-per-node=1 --partition=gpu"
+        )
+
+    def test_sockeye_dialect(self):
+        # verified against the live scheduler: sockeye's job_submit plugin
+        # accepts `--gpus-per-node=N` and rejects both `--gres=gpu:v100:N` and
+        # the typed `--gpus-per-node=v100:N` ("requested_gpus 0")
+        assert Gpu(memory=Size.GB(32), extra=["--partition=gpu"]).MakeRequestFlag(1) == (
+            "--gpus-per-node=1 --partition=gpu"
+        )
+
 
 # --------------------------------------------------------------------------
 # the seam: preflight

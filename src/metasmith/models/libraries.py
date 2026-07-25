@@ -1110,6 +1110,12 @@ class Gpu:
     type: str|None = None
     count: int|None = None
     flag: str = "--gpus-per-node="
+    # Scheduler flags a GPU step needs beyond the device count -- typically the
+    # GPU partition, since a site's default partition has no cards. These go on
+    # GPU steps only, which is what distinguishes them from
+    # `params.process.clusterOptionsExtra` (every step). Sockeye needs
+    # ["--partition=gpu"].
+    extra: list[str] = field(default_factory=list)
 
     def DevicesFor(self, required: Size|None) -> int:
         # How many of *this* device it takes to total `required` VRAM. No ask
@@ -1120,8 +1126,8 @@ class Gpu:
         return max(1, math.ceil(required.value_gb / self.memory.value_gb))
 
     def MakeRequestFlag(self, devices: int) -> str:
-        if self.type: return f"{self.flag}{self.type}:{devices}"
-        return f"{self.flag}{devices}"
+        req = f"{self.flag}{self.type}:{devices}" if self.type else f"{self.flag}{devices}"
+        return " ".join([req, *self.extra])
 
 @dataclass
 class Resources:
