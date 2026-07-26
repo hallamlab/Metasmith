@@ -78,3 +78,59 @@ class TestContainerScripts:
         # The run-command is the container exec, carrying $BINDS.
         assert "$BINDS" in script
         assert runtime.value in script  # "docker" / "apptainer"
+
+    def test_container_scripts_do_not_override_the_roots(self, runtime):
+        # Under a container the agent home is bound at /msm_home and the cwd at
+        # /ws, so the defaults are already correct. Exporting an override here
+        # would be read *inside* the container and point at a host path.
+        for script in (
+            _render_wrapper(_container(runtime)),
+            _render_bootstrap(_container(runtime, workdir=Path("/ws"))),
+        ):
+            assert "METASMITH_HOME_ROOT" not in script
+            assert "METASMITH_WORK_ROOT" not in script
+
+    def test_bootstrap_bounce_uses_container_literals(self, runtime):
+        # The bounce test and the relay io path run inside the container, so
+        # they must interpolate the fixed layout, never the resolvable roots.
+        script = _render_bootstrap(_container(runtime, workdir=Path("/ws")))
+        assert 'if [ -e "/msm_home" ]; then' in script
+        assert "--io /msm_home/relay/" in script
+
+
+class TestRelayFreeScripts:
+    """mamba/native cross no boundary, so nothing is mounted at the container
+    roots; the deployed scripts must hand metasmith the real host paths."""
+
+    def _mamba(self) -> Environment:
+        return Environment(image="msm_tool_env", runtime=Runtime.MAMBA)
+
+    def test_mamba_needs_no_relay(self):
+        assert self._mamba().needs_relay is False
+
+    def test_wrapper_exports_agent_home_and_both_roots(self):
+        script = _render_wrapper(self._mamba())
+        assert f"export AGENT_HOME={AH}" in script
+        # The msm wrapper carries no workdir; deploy dual-binds the agent home
+        # at both roots in the container case, so both point at it here too.
+        assert f"export METASMITH_HOME_ROOT={AH}" in script
+        assert f"export METASMITH_WORK_ROOT={AH}" in script
+        assert "mamba run -n msm_tool_env metasmith $@" in script
+
+    def test_bootstrap_exports_home_root_and_cwd_work_root(self):
+        script = _render_bootstrap(self._mamba())
+        assert f"export AGENT_HOME={AH}" in script
+        assert f"export METASMITH_HOME_ROOT={AH}" in script
+        # /ws is bound to the step's cwd in the container case; without a
+        # container the work root IS that cwd.
+        assert 'export METASMITH_WORK_ROOT="$(pwd -P)"' in script
+        # ... and it must be exported after the `cd`, or it captures the
+        # launch directory instead of the step's.
+        assert script.index("cd $CWD") < script.index("export METASMITH_WORK_ROOT")
+
+    def test_bootstrap_takes_no_relay(self):
+        script = _render_bootstrap(self._mamba())
+        assert "msm_relay" not in script
+        assert "bouncing to external" not in script
+        assert "run_container" not in script
+        assert "metasmith api execute_transform" in script

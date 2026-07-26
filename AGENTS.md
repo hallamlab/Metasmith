@@ -72,7 +72,9 @@ gbk   = model.AddProduct(lib.GetType("sequences::gbk"))
 **The protocol** is a function that actually runs the tool:
 ```python
 def protocol(context: ExecutionContext):
-    context.ExecWithContainer(image=image, cmd="datasets download ...")
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd="datasets download ...") \
+        .ifVirtualEnvDo(env=image, cmd="datasets download ...")
     return ExecutionResult(manifest=[{gbk: out_path}], success=True)
 ```
 
@@ -82,9 +84,13 @@ TransformInstance(protocol=protocol, model=model, group_by=dep,
     resources=Resources(cpus=1, memory=Size.GB(1)))
 ```
 
-Transforms run inside containers. The protocol has access to three path views:
-`.local` (protocol working dir), `.container` (inside the container), and
-`.external` (absolute host path). `ContextPath` enforces three invariants
+A transform declares how it runs in each world and metasmith picks the arm
+matching the agent's runtime; either arm may be omitted, and omitting
+`ifVirtualEnvDo` is how a container-only tool declares itself. The protocol has
+access to three path views: `.local` (protocol working dir), `.container`
+(inside the container), and `.external` (absolute host path). Under a runtime
+with no container boundary (`Runtime.MAMBA`, or `native`) all three are the same
+host path. `ContextPath` enforces three invariants
 post-construction: all three views are absolute, none contain `..`
 segments, and they are mutually consistent — violations raise
 `ValueError`. Protocols rarely build a `ContextPath` directly; the
@@ -93,7 +99,7 @@ framework hands them ready-made via `context.Input(dep)`,
 
 #### Extra container args
 
-`context.ExecWithContainer(...)` accepts `args: list[str]` for arbitrary
+`ifContainerDo(...)` accepts `args: list[str]` for arbitrary
 runtime flags (e.g. `["--gpus", "all", "--shm-size=8g", "-e", "FOO=bar"]`).
 Tokens are appended verbatim after the framework's default flags and binds,
 just before the image — so a flag passed in `args=` wins over the default of
@@ -538,7 +544,7 @@ out   = model.AddProduct(lib.GetType("namespace::output_type"))
 
 def protocol(context: ExecutionContext):
     # context.Input(slot) / context.Output(slot) for paths
-    # context.ExecWithContainer(image=image, cmd="...")
+    # context.ExecWithEnv().ifContainerDo(env=image, cmd="...")
     return ExecutionResult(manifest=[{out: out_path}], success=True)
 
 TransformInstance(

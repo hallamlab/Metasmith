@@ -5,7 +5,7 @@ A mamba/native Environment crosses no container boundary, so:
   - needs_relay is False (no daemon, no bounce)
   - binds collapse to nothing (shared host filesystem)
   - the run-command is `mamba run -n <env>` (or empty for native)
-  - ExecWithContainer issues exactly one shell call — no image cache probe —
+  - the virtual-env arm issues exactly one shell call — no image cache probe —
     on a local shell, and the bounce script cd's to the real host cwd (not
     the container /ws), i.e. paths are identity.
 """
@@ -93,7 +93,7 @@ class TestNativeMode:
 
 
 # --------------------------------------------------------------------------
-# ExecWithContainer on the mamba path — no relay, no probe, identity cwd
+# ExecWithEnv's virtual-env arm on the mamba path — no relay, no probe, identity cwd
 # --------------------------------------------------------------------------
 
 def test_mamba_exec_no_relay_identity_cwd(tmp_path, monkeypatch):
@@ -125,7 +125,7 @@ def test_mamba_exec_no_relay_identity_cwd(tmp_path, monkeypatch):
     assert model.container.binds == []
     assert Path(model.container.workdir) == real_cwd
 
-    ctx.ExecWithContainer(image_dep, "checkm version")
+    ctx.ExecWithEnv().ifVirtualEnvDo(image_dep, "checkm version")
 
     # Exactly one shell call — no image cache probe (mamba has no local image).
     assert len(shell.calls) == 1

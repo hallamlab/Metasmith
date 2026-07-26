@@ -134,6 +134,61 @@ def _read_gpu_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
             f" cannot verify GPU requirements. Re-stage the workflow."
         ) from e
 
+class EnvPortabilityError(Exception):
+    """A staged workflow names a tool this agent's runtime cannot provide."""
+
+def _read_env_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
+    # Per-step tool-environment declarations recorded at stage time. Absent for
+    # workspaces staged by an older metasmith, which is indistinguishable from
+    # "nothing to check" and is treated as such -- otherwise every already-staged
+    # workspace would start failing at run.
+    path = workspace/AgentPaths.ENV_MANIFEST
+    res = shell.Exec(f'[ -e "{path}" ] && cat "{path}"', history=True, quiet=True)
+    text = "\n".join(res.out)
+    if "{" not in text: return {}
+    try:
+        text = text[text.index("{"):text.rindex("}")+1]
+        return json.loads(text).get("steps", {})
+    except (json.JSONDecodeError, ValueError) as e:
+        # Same reasoning as the GPU manifest: a file that exists but does not
+        # parse means the check cannot be performed, and skipping it silently is
+        # the failure mode this exists to prevent.
+        raise EnvPortabilityError(
+            f"env manifest at [{path}] exists but could not be parsed ({e});"
+            f" cannot verify tool-environment portability. Re-stage the workflow."
+        ) from e
+
+def _check_env_portability(manifest: dict[str, dict], env: Environment) -> None:
+    """Refuse a run whose steps have no tool form this agent can execute.
+
+    Under a container runtime every declaration is satisfiable by construction
+    (a `container:` entry is the legacy default and the arms only gate *which*
+    command runs), so the check is about the relay-free runtimes, where a third
+    of a typical tool library simply has no conda form.
+    """
+    if not manifest or env.needs_relay: return
+    ARM, FIELD = "ifVirtualEnvDo", "conda"
+    offenders: list[str] = []
+    for _, v in sorted(manifest.items()):
+        who = f"{v.get('transform')} (step {v.get('step')})"
+        arms = v.get("arms")
+        if arms is None:
+            # Source could not be scanned at stage time -- unknown, not absent.
+            continue
+        if ARM not in arms:
+            offenders.append(f"{who}: declares no {ARM} arm (has {arms or ['no arms']})")
+            continue
+        for name, fields in sorted((v.get("envs") or {}).items()):
+            if fields is None: continue  # resource unreadable at stage time
+            if FIELD not in fields:
+                offenders.append(f"{who}: env resource [{name}] has no '{FIELD}:' entry (has {fields or ['nothing']})")
+    if offenders:
+        raise EnvPortabilityError(
+            f"agent runtime [{env.runtime.name}] runs tools without a container, but"
+            f" [{len(offenders)}] step(s) have no form it can execute:\n  "
+            + "\n  ".join(offenders)
+        )
+
 def _plan_gpu_requests(
         manifest: dict[str, dict],
         device: Gpu|None,
@@ -497,7 +552,9 @@ class Agent:
                     f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True).out and not assertive:
                 Log.Info(f"relay binary present at [{relay_bin}], skipping container extraction")
             else:
-                do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
+                # Runs *inside* the metasmith container via the msm wrapper, so
+                # the workspace is the container's own view of the agent home.
+                do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.CONTAINER_HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
                 res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-deployed"', history=True)
                 assert "relay-deployed" in res.out, f"deploy_from_container completed but relay binary missing at [{relay_bin}]"
             self._run_cleanup(shell)
@@ -666,6 +723,15 @@ class Agent:
             gpu_planned = _plan_gpu_requests(gpu_manifest, gpus, _detect_gpu_on_target)
             if gpu_planned:
                 Log.Info(f"GPU requests planned for [{len(gpu_planned)}] of [{len(gpu_manifest)}] declaring steps")
+
+            # Tool-environment preflight, same placement and same reasoning: a
+            # step whose tool has no form this agent can run must be caught here
+            # rather than mid-run, after everything upstream has already been
+            # computed.
+            env_manifest = _read_env_manifest(sh_remote, workspace)
+            _check_env_portability(env_manifest, Environment(
+                image=self.container, runtime=self.runtime, native=self.native,
+            ))
 
             Log.Info(f"sending config and params")
             mover = Logistics()
@@ -1072,7 +1138,12 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
             Log.Info(f"skipping verification of external inputs paths")
         else:
             given_paths = [inst.ResolvePath() for inst in task.plan.given]
-            given_paths = [p for p in given_paths if not p.is_relative_to(AgentPaths.HOME_ROOT)]
+            # Container-internal paths cannot be stat'd from the external shell,
+            # so they are skipped. Without a container boundary the home root IS
+            # a real host path and every given path under it is verifiable --
+            # applying the filter there would silently narrow verification.
+            if _agent_env.needs_relay:
+                given_paths = [p for p in given_paths if not p.is_relative_to(AgentPaths.HOME_ROOT)]
             def batchify(iterable: Iterable, n):
                 batch: list[str] = []
                 for x in iterable:

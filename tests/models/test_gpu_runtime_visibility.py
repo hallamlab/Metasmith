@@ -165,7 +165,7 @@ class TestAutomaticGpuArgs:
         assert ctx.GetContainerModel(dep).extra_args == []
 
     def test_detection_is_probed_once_per_context(self, tmp_path):
-        # GetContainerModel consults it on every ExecWithContainer call, and the
+        # GetContainerModel consults it on every ExecWithEnv call, and the
         # answer cannot change within a task
         dep = _dep("image")
         shell = ScriptedShell(HAS_GPU)

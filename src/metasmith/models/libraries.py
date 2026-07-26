@@ -9,6 +9,8 @@ from enum import Enum
 from typing import Callable, Iterable
 from importlib import reload, __import__
 import math
+import re
+import shlex
 import tempfile
 import time
 from datetime import timedelta
@@ -16,6 +18,7 @@ import json
 
 from ..serialization import IsText
 from ..env import ContainerDef, Environment, Runtime
+from ..env.dispatch_scan import EnvScan, ScanFile
 from ..coms.terminals import RemoveLeadingIndent
 from ..coms.ipc import GenerateId
 from ..env import Shell
@@ -1200,6 +1203,16 @@ class TransformInstance:
     _path: Path = field(default_factory=Path)
     _key: str = ""
     _hash: int = -1
+    # Which worlds this transform declared it can run in, read statically off
+    # its own source at load. Set by `Load`; None when the source could not be
+    # scanned, which is distinct from "declared nothing" and must not be read
+    # as a portability answer.
+    _env_scan: "EnvScan|None" = None
+    # The Dependency each arm named as its `env=`, resolved through the module
+    # globals. Lets stage time find the env *resource* behind an arm and read
+    # which of `container:` / `conda:` it actually carries.
+    _env_deps: list[Dependency] = field(default_factory=list)
+
     def __post_init__(self):
         assert self.batch_size>0, self.model
         assert self.group_by in self.model.requires, self.model
@@ -1237,6 +1250,24 @@ class TransformInstance:
             tr = cls._last_loaded_transform
             tr.name = definition.stem
             tr._path = definition
+            # Read the ExecWithEnv declarations off the source now, while the
+            # file and the module namespace are both in hand. `env=` is written
+            # as a bare name bound to a Dependency at module scope, so the
+            # identifier the scan returns resolves straight through the module.
+            try:
+                tr._env_scan = ScanFile(parent_lib/definition)
+            except (OSError, SyntaxError) as e:
+                Log.Warn(f"could not scan env declarations in [{definition}]: {e}")
+                tr._env_scan = None
+            if tr._env_scan is not None:
+                seen: list[Dependency] = []
+                for chain in tr._env_scan.chains:
+                    for name in chain.envs:
+                        if name is None: continue
+                        d = getattr(m, name, None)
+                        if isinstance(d, Dependency) and d not in seen:
+                            seen.append(d)
+                tr._env_deps = seen
             # with open(definition) as f:
             #     raw = "".join(f.readlines())
             #     h, k = KeyGenerator.FromStr(raw, l=5)
@@ -1350,7 +1381,7 @@ class ExecutionResult:
 class ExecutionFailed(Exception):
     pass
 
-def ResolveEnvImage(content: str, runtime: ContainerRuntime, source: str|Path="<env>") -> str:
+def ResolveEnvImage(content: str, runtime: Runtime, source: str|Path="<env>") -> str:
     """Resolve a generic env-declaration file's content to the image / env-name
     the active runtime should use.
 
@@ -1369,7 +1400,7 @@ def ResolveEnvImage(content: str, runtime: ContainerRuntime, source: str|Path="<
     except yaml.YAMLError:
         parsed = None
     if isinstance(parsed, dict):
-        key = "conda" if runtime == ContainerRuntime.MAMBA else "container"
+        key = "conda" if runtime == Runtime.MAMBA else "container"
         value = parsed.get(key)
         assert value, (
             f"env declaration [{source}] has no '{key}:' entry for runtime "
@@ -1378,6 +1409,106 @@ def ResolveEnvImage(content: str, runtime: ContainerRuntime, source: str|Path="<
         return str(value).strip()
     # legacy bare-URI (*.oci) or unparseable content -> use verbatim as the image
     return content.strip()
+
+CONTAINER_ARM = "ifContainerDo"
+VIRTUAL_ENV_ARM = "ifVirtualEnvDo"
+
+# Names whose meaning belongs to the framework, not the transform. Overwriting
+# any of these from a protocol reshapes the environment metasmith just built
+# (PATH/LD_LIBRARY_PATH), relocates the workdir the bounce script cd'd into
+# (PWD), or redirects scratch the runtime already agreed on (TMPDIR, HOME).
+# Tool-native names like GTDBTK_DATA_PATH are exactly what exports are for.
+_RESERVED_EXPORTS = frozenset({"PATH", "HOME", "LD_LIBRARY_PATH", "TMPDIR", "PWD"})
+
+def _validate_exports(exports: dict[str, "str|Path"]|None) -> dict[str, str]:
+    if not exports: return {}
+    out: dict[str, str] = {}
+    for k, v in exports.items():
+        k = str(k)
+        assert k not in _RESERVED_EXPORTS, (
+            f"export [{k}] is reserved by the framework; "
+            f"reserved names are {sorted(_RESERVED_EXPORTS)}"
+        )
+        assert re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k), (
+            f"export name [{k}] is not a valid shell identifier"
+        )
+        out[k] = str(v)
+    return out
+
+
+class EnvDispatch:
+    """The chain returned by :meth:`ExecutionContext.ExecWithEnv`.
+
+    Holds no command of its own — each arm is dispatched the instant it is
+    declared, if it matches. What it does hold is the record of which arms the
+    transform declared, which is what makes the "no arm matched" failure
+    reportable and what the stage-time portability manifest reads.
+    """
+
+    def __init__(self, context: "ExecutionContext"):
+        self._context = context
+        self.declared: list[str] = []
+        self._matched: str|None = None
+
+    @property
+    def matched(self) -> str|None:
+        return self._matched
+
+    def _dispatch(self, arm: str, applies: bool, **kw):
+        self.declared.append(arm)
+        if not applies:
+            Log.Info(f"skipping [{arm}] (does not apply to this runtime)")
+            return self
+        assert self._matched is None, (
+            f"[{arm}] and [{self._matched}] both apply to this runtime; "
+            "an ExecWithEnv chain must have exactly one matching arm"
+        )
+        self._matched = arm
+        self._context._ExecInEnv(**kw)
+        return self
+
+    def ifContainerDo(
+        self,
+        env: Dependency,
+        cmd: str,
+        shell: str="bash",
+        binds: list[tuple[Path|str, Path|str]]|None=None,
+        args: list[str]|None=None,
+        exports: dict[str, str|Path]|None=None,
+        history: bool=True,
+    ) -> "EnvDispatch":
+        """How this step runs when the tool lives in a container image.
+
+        `binds` are host->container mount pairs and `args` are extra flags for
+        the runtime's own run command; both are meaningless without a mount
+        namespace, which is why they live here and not on the venv arm.
+        """
+        return self._dispatch(
+            CONTAINER_ARM, self._context._crosses_boundary,
+            image=env, cmd=cmd, shell=shell, binds=binds, args=args,
+            exports=exports, history=history,
+        )
+
+    def ifVirtualEnvDo(
+        self,
+        env: Dependency,
+        cmd: str,
+        shell: str="bash",
+        exports: dict[str, str|Path]|None=None,
+        history: bool=True,
+    ) -> "EnvDispatch":
+        """How this step runs when the tool is a package set on PATH.
+
+        There is no mount namespace here, so there is no `binds` — accepting one
+        could only mean ignoring it, which is the bug this API replaced. Hand the
+        tool its paths directly (every ContextPath view is the host path under
+        this runtime) or through `exports`.
+        """
+        return self._dispatch(
+            VIRTUAL_ENV_ARM, not self._context._crosses_boundary,
+            image=env, cmd=cmd, shell=shell, exports=exports, history=history,
+        )
+
 
 # work as if batch of 1 item
 # until explicitly batch iterated
@@ -1397,12 +1528,20 @@ class ExecutionContext:
     params: dict = field(default_factory=dict)
     _batch_index: int = 0
     _detected_gpus: list|None = None
+    _env_dispatches: list["EnvDispatch"] = field(default_factory=list)
 
     def __post_init__(self):
         # Accept a bare Runtime for the many construction sites that only have
         # one; normalise to an Environment so routing has a single shape.
         if isinstance(self._environment, Runtime):
             self._environment = Environment(image="", runtime=self._environment)
+
+    @property
+    def _crosses_boundary(self) -> bool:
+        # Whether a tool launched from here lands on the other side of a
+        # container boundary. The single question every arm dispatch turns on.
+        assert isinstance(self._environment, Environment)
+        return self._environment.needs_relay
 
     def _tool_environment(self, image: str, **kw) -> Environment:
         # The container half is rebuilt per call (each tool has its own image,
@@ -1464,7 +1603,7 @@ class ExecutionContext:
         answer, not an error.
 
         Memoized: the answer cannot change within a task, and GetContainerModel
-        consults it on every ExecWithContainer call. Pass refresh=True to probe
+        consults it on every ExecWithEnv call. Pass refresh=True to probe
         again.
         """
         if self._detected_gpus is not None and not refresh:
@@ -1500,12 +1639,21 @@ class ExecutionContext:
                 content = f.read()
             # Generic env declaration: select container: / conda: by the global
             # runtime (legacy bare-URI *.oci files resolve verbatim).
-            image_path = ResolveEnvImage(content, self.container_runtime, path.local)
+            image_path = ResolveEnvImage(content, self._environment.runtime, path.local)
         else:
             image_path = str(path.external)
     
+        # Probe whether this runtime crosses a container boundary. When it
+        # does not (mamba/native), paths are identity: the tool runs on the
+        # host filesystem in the real cwd, so there is no /ws remap and no
+        # binds to compute. The PathMap views collapse to equal.
+        _probe = self._tool_environment(str(image_path))
+
         _binds: list[tuple[Path, Path]] = []
-        for batch_item in self._inputs:
+        # Accumulating implicit input binds is dead work with no boundary --
+        # and a half-computed bind list is exactly what invites a future
+        # reader to "just use it" and reintroduce the silent-drop bug.
+        for batch_item in (self._inputs if _probe.needs_relay else []):
             for _, v in list(batch_item.items()):
                 for p in v.input_group:
                     if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
@@ -1529,13 +1677,8 @@ class ExecutionContext:
                     else:
                         _binds.append((src, dest))
         if binds is None: binds = []
-        # Probe whether this runtime crosses a container boundary. When it
-        # does not (mamba/native), paths are identity: the tool runs on the
-        # host filesystem in the real cwd, so there is no /ws remap and no
-        # binds to compute. The PathMap views collapse to equal.
-        _probe = self._tool_environment(str(image_path))
         if _probe.needs_relay:
-            container_ws = Path("/ws")
+            container_ws = AgentPaths.WORK_ROOT
             binds += [
                 ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
                 (self.external_agent_home, AgentPaths.HOME_ROOT),
@@ -1543,8 +1686,14 @@ class ExecutionContext:
             ]
             binds += sorted([(s, d) for s, d in _binds])
         else:
+            # No mount namespace to bind into. Callers must not reach here with
+            # binds -- ExecWithEnv routes them through ifContainerDo, which only
+            # runs under a container runtime.
+            assert not binds, (
+                f"binds are meaningless without a container boundary "
+                f"(runtime [{_probe.runtime.name}]): {binds}"
+            )
             container_ws = self.external_cwd
-            binds = []
 
         extra_args = list(args) if args else []
         # A step that declared a GPU gets its runtime's GPU flags for free --
@@ -1572,7 +1721,44 @@ class ExecutionContext:
         env.extra_args = extra_args
         return env
 
-    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, history: bool=True):
+    def ExecWithEnv(self) -> "EnvDispatch":
+        """Declare how this step invokes its tool in each world.
+
+        A container is a filesystem layout with an entrypoint; a conda env is a
+        package set on PATH. They are not interchangeable -- a third of the tool
+        library has no conda form, and where both exist the invocation often
+        differs. So the transform declares each world it supports and metasmith
+        runs the one that matches the agent::
+
+            context.ExecWithEnv() \\
+                .ifContainerDo(env=dep, cmd=..., binds=[...], args=[...]) \\
+                .ifVirtualEnvDo(env=dep, cmd=..., exports={...})
+
+        Arms are declarations evaluated in place, not a sequence: the matching
+        one runs the moment it is called and the other is recorded and skipped,
+        so writing side effects between arms makes their order observable. There
+        is no terminal call; a chain whose every arm was skipped is caught by the
+        framework after the protocol returns (see `UnmatchedEnvDispatches`),
+        because a silently-empty step is worse than a loud one.
+
+        Either arm may be omitted. A container-only tool simply has no
+        `ifVirtualEnvDo`, which is what makes "can this run without containers?"
+        a question the tooling can answer statically.
+        """
+        d = EnvDispatch(self)
+        self._env_dispatches.append(d)
+        return d
+
+    def UnmatchedEnvDispatches(self) -> list["EnvDispatch"]:
+        """The `ExecWithEnv()` chains this execution reached that ran nothing.
+
+        Read by `bootstrap.ExecuteStep` after the protocol returns: a chain that
+        declares only a container arm on a mamba agent would otherwise no-op its
+        way to a step that reports success and produces nothing.
+        """
+        return [d for d in self._env_dispatches if not d._matched]
+
+    def _ExecInEnv(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, exports: dict[str, str|Path]|None=None, history: bool=True):
         env = self.GetContainerModel(image, binds, args)
         assert env.container.workdir is not None # for typing
         use_cache = False
@@ -1591,6 +1777,11 @@ class ExecutionContext:
         Log.Info(f"executing container [{env.image}] using [{env.runtime.name}]")
         h, k = KeyGenerator.FromStr(cmd)
         _bounce_script = Path(f"./_metasmith/.bounce.{k}")
+        # Whoever set up this cwd may or may not have made the internals dir: the
+        # relay bootstrap does (it deploys the relay there), the relay-free
+        # bootstrap and direct-run do not. Owning it here means the arm works the
+        # same under every runtime instead of each caller remembering.
+        _bounce_script.parent.mkdir(parents=True, exist_ok=True)
         exit_codef = Path(f"exitcode.{GenerateId()}")
         with open(_bounce_script, "w") as f:
             script = [
@@ -1600,6 +1791,10 @@ class ExecutionContext:
                 "}",
                 "trap on_exit EXIT",
                 "set -e",
+                # Exports ride in the bounce script rather than a per-runtime
+                # flag (`-e` / `--env` / nothing), so one mechanism serves every
+                # runtime and the tool sees its own vocabulary either way.
+                *(f"export {k}={shlex.quote(str(v))}" for k, v in _validate_exports(exports).items()),
                 cmd,
             ]
             f.write("\n".join(script))

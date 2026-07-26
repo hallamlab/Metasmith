@@ -2,7 +2,7 @@
 and no container.
 
 Unlike the unit tests (which assert the *shape* of the emitted command), this
-drives `ExecutionContext.ExecWithContainer` against a real local shell and a
+drives `ExecutionContext.ExecWithEnv().ifVirtualEnvDo` against a real local shell and a
 real conda env (`mamba run -n <env>`), then checks the tool actually ran by
 inspecting its output file. This is the load-bearing claim of the whole
 refactor: a transform's tool executes inside a conda env, in-process on the
@@ -81,7 +81,7 @@ def test_mamba_runs_real_tool_no_relay(tmp_path, monkeypatch):
     with ctx.external_shell as shell:
         ctx.external_shell = shell  # ensure the live shell is the running one
         # `cp` is a real tool resolved through `mamba run -n <env>`.
-        ctx.ExecWithContainer(env_dep, f"cp {src} {dst}")
+        ctx.ExecWithEnv().ifVirtualEnvDo(env_dep, f"cp {src} {dst}")
 
     # The tool actually ran inside the conda env: the output exists and matches.
     assert dst.exists(), "mamba-run tool did not produce its output"
@@ -151,6 +151,6 @@ def test_mamba_inherits_the_hosts_gpu(tmp_path, monkeypatch):
 
         # and the tool, run through the conda env, really sees the device
         out = tmp_path / "gpu.txt"
-        ctx.ExecWithContainer(env_dep, f"nvidia-smi -L > {out}")
+        ctx.ExecWithEnv().ifVirtualEnvDo(env_dep, f"nvidia-smi -L > {out}")
     assert out.exists()
     assert "GPU 0" in out.read_text(), out.read_text()

@@ -8,10 +8,14 @@ wrapped, invoked, bridged, and handed the host's GPUs -- live here.
 
 from .environment import ContainerDef, Environment, Runtime
 from ._shell import Shell
+from .dispatch_scan import EnvChain, EnvScan, ScanFile, ScanSource
 
 # The relay client is owned by the env module; it is re-exported here so the
 # one historical public re-export (python_api) can redirect through env
 # rather than reaching into coms directly.
 from ..coms.via_file_watcher import RemoteShell
 
-__all__ = ["ContainerDef", "Environment", "Runtime", "Shell", "RemoteShell"]
+__all__ = [
+    "ContainerDef", "Environment", "Runtime", "Shell", "RemoteShell",
+    "EnvChain", "EnvScan", "ScanFile", "ScanSource",
+]
