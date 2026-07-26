@@ -1,6 +1,6 @@
 from pathlib import Path
 from metasmith.coms.terminals import LiveShell
-from metasmith.coms.containers import Container, ContainerRuntime
+from metasmith.env import ContainerDef, Environment, Runtime
 from metasmith.constants import AgentPaths, VERSION
 from local.constants import WORKSPACE_ROOT
 import sys, os
@@ -30,10 +30,10 @@ print(f"injecting updates to [{home}]")
 with LiveShell() as shell:
     shell.RegisterOnOut(lambda x: print(x))
     shell.RegisterOnErr(lambda x: print(f"E: {x}"))
-    lpath = Container(
+    lpath = Environment(
         image=f"docker://quay.io/hallamlab/metasmith:{VERSION}",
-        container_cache=Path(home)/AgentPaths.CONTAINER_CACHE,
-        runtime=ContainerRuntime.APPTAINER
+        runtime=Runtime.APPTAINER,
+        container=ContainerDef(cache=Path(home)/AgentPaths.CONTAINER_CACHE),
     ).GetLocalPath()
     sif_src = f"{WORKSPACE_ROOT}/metasmith.sif"
     if os.path.exists(sif_src):

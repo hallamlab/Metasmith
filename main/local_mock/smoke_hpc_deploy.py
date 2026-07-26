@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 from metasmith.python_api import (
-    Agent, SshSource, ContainerRuntime,
+    Agent, SshSource, Runtime,
     DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder,
 )
 
@@ -61,7 +61,7 @@ def main(argv=None):
     home = SshSource(host=args.host, path=agent_path).AsSource()
     smith = Agent(
         home=home,
-        runtime=ContainerRuntime.APPTAINER,
+        runtime=Runtime.APPTAINER,
         setup_commands=profile["setup_commands"],
     )
 

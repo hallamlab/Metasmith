@@ -46,6 +46,11 @@ class AgentPaths:
     NXF_CONFIG = "workflow.config.nf"
     NXF_RES = "workflow.resources.nf"
     NXF_PARAMS = "workflow.params.yml"
+    # Per-step GPU requirement manifest, written at stage time and read by
+    # RunWorkflow's preflight. Stage time knows what each transform asked for;
+    # only run time knows what a device is on the target, so the two halves
+    # meet through this file rather than in the emitted nextflow.
+    GPU_MANIFEST = "workflow.gpu.json"
 
     @classmethod
     def to_staged(cls, root: Path|None=None):

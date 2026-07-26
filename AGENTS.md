@@ -2,9 +2,9 @@
 
 ## Environment
 
-Use the `msm_env` mamba environment to run Python, tests, and CLI commands:
+Use the `msm` mamba environment to run Python, tests, and CLI commands:
 ```
-mamba run -n msm_env <command>
+mamba run -n msm <command>
 ```
 
 ## What is Metasmith?
@@ -101,22 +101,109 @@ the same name (e.g. `--network=none` overriding the Docker default
 `--network=host`). The caller is responsible for using the right dialect:
 flag syntax differs between Docker and Apptainer.
 
-The active runtime is readable on the context as
-`context.container_runtime` (`ContainerRuntime.DOCKER` or
-`ContainerRuntime.APPTAINER`), so a protocol can branch:
-
-```python
-from metasmith.coms.containers import ContainerRuntime
-
-if context.container_runtime is ContainerRuntime.DOCKER:
-    gpu_args = ["--gpus", "all"]
-else:
-    gpu_args = ["--nv"]
-context.ExecWithContainer(image=image, cmd="...", args=gpu_args)
-```
-
 `binds=` remains a separate, typed parameter — do not pass mounts through
 `args=`.
+
+A protocol has no way to read the active runtime, and does not need one. The
+`env` package owns every per-runtime difference — bind dialect, whether there
+is a container boundary at all, and the GPU flags below — so a transform that
+branched on the runtime to pick `--gpus all` vs `--nv` should delete that
+branch and declare the GPU instead.
+
+### GPUs
+
+A transform declares GPU need on its resources, in the unit it actually cares
+about — total VRAM — plus whether the need is hard or soft:
+
+```python
+TransformInstance(
+    protocol=protocol, model=model, group_by=dep,
+    resources=Resources(
+        cpus=8, memory=Size.GB(32),
+        gpus=Gpus.REQUIRED,          # or Gpus.OPTIONAL; default Gpus.NONE
+        gpu_memory=Size.GB(40),      # TOTAL VRAM the tool needs
+    ),
+)
+```
+
+Device *count* and device *type* are deliberately not declarable here: whether
+40 GB is one A100, one `3g.40gb` MIG slice, or two 24 GB cards is a fact about
+the host, and a MIG profile name means nothing on another cluster. Those live
+on the run side.
+
+The person launching the run says what a GPU is on the target, once:
+
+```python
+smith.RunWorkflow(task, gpus=Gpu(
+    memory=Size.GB(80),              # per-device VRAM
+    type="a100",                     # optional gres type token
+    count=4,                         # optional: devices per node
+    flag="--gres=gpu:",              # site request syntax; count is appended
+    extra=["--partition=gpu"],       # flags GPU steps need beyond the count
+))
+```
+
+`extra=` goes on GPU steps *only*, which is what distinguishes it from
+`params.process.clusterOptionsExtra` (every step) — a site's default partition
+usually has no cards, and sending CPU work there would be wrong.
+
+**Sockeye**, verified against the live scheduler:
+
+```python
+gpus=Gpu(memory=Size.GB(32), extra=["--partition=gpu"])   # V100-SXM2-32GB
+params={"slurmAccount": "st-<alloc>", "slurmGpuAccount": "st-<alloc>-gpu"}
+```
+
+Its `job_submit` plugin accepts only the untyped `--gpus-per-node=N` (the
+default `flag`); both `--gres=gpu:v100:N` and the typed `--gpus-per-node=v100:N`
+are rejected with `requested_gpus 0`, so leave `type` unset there. GPU work is
+charged to a separate allocation, which is what `slurmGpuAccount` exists for.
+
+Metasmith derives `ceil(gpu_memory / device.memory)` per step at run time and
+renders it into `workflow.config.nf` as per-step `withName` blocks — the same
+path `resource_overrides` uses, so a per-step override still wins. A request
+resolving to more than one device logs a loud warning, since most tools cannot
+shard a model across cards.
+
+**Preflight.** `RunWorkflow` refuses — before the detached launch, naming the
+offending transforms — when a `Gpus.REQUIRED` step has no device declared, or
+when a step's ask exceeds the declared devices. `Gpus.OPTIONAL` steps never
+fail; they submit without GPU flags and take their own CPU branch.
+
+**Inside the protocol.** Two different questions:
+
+```python
+declared, asked_for = context.DeclaredGpus()   # what this step requested
+devices = context.DetectGpus()                 # what it actually got, per-device VRAM
+if not devices:
+    ...  # CPU fallback (only reachable for Gpus.OPTIONAL)
+```
+
+`DetectGpus()` probes the execution host through the relay (or the local shell
+under mamba/native), so it is correct under every runtime and honest under a
+partial allocation or a MIG slice, where `CUDA_VISIBLE_DEVICES` is a
+`MIG-<uuid>` rather than an index. It is memoized per task.
+
+A declaring step gets `--nv` / `--gpus all` added to its tool container
+automatically, in the right dialect; passing them by hand still works and is
+not duplicated. The flags are added only when a device is actually *detected*,
+not merely declared — `docker run --gpus all` fails outright on a CPU-only host
+("could not select device driver"), which would turn an `OPTIONAL` step's
+graceful fallback into a dead task. mamba/native add nothing: the tool runs on
+the host and inherits its devices.
+
+Hosts that need more than the runtime's own switch declare it once, on the
+agent: `Agent(gpu_args=[...])`. WSL2 is the live example — apptainer's `--nv`
+injects `nvidia-smi` but its library discovery misses the driver stack under
+`/usr/lib/wsl`, so NVML answers "GPU access blocked by the operating system"
+until you add `["--bind", "/usr/lib/wsl:/usr/lib/wsl", "--env",
+"LD_LIBRARY_PATH=/usr/lib/wsl/lib"]`.
+
+**Scheduler flags** are injected through the existing params mechanism, not a
+new field: `RunWorkflow(params={"process_clusterOptionsExtra": "--partition=bigmem"})`
+appends to `clusterOptions` without restating the account/node flags. Sites
+that charge GPU work to a different allocation set `params={"slurmGpuAccount":
+"..."}`, which the GPU blocks use in place of `slurmAccount`.
 
 ### 4. Workflow Generation
 
@@ -178,7 +265,7 @@ An Agent is a deployment target. It manages a home directory, handles container
 orchestration, and compiles the generated workflow into Nextflow syntax.
 
 ```python
-smith = Agent(home=Source.FromLocal(path), runtime=ContainerRuntime.DOCKER)
+smith = Agent(home=Source.FromLocal(path), runtime=Runtime.DOCKER)
 smith.Deploy()              # one-time setup, pulls metasmith container
 smith.StageWorkflow(task)   # compiles DAG → Nextflow scripts
 smith.RunWorkflow(task)     # launches Nextflow (async!)
@@ -186,7 +273,7 @@ smith.RunWorkflow(task)     # launches Nextflow (async!)
 
 #### Apptainer SIF ↔ sandbox decision
 
-`Agent.Deploy()` runs `Container.MakeSandboxDecisionProbe()` against the
+`Agent.Deploy()` runs `Environment.MakeSandboxDecisionProbe()` against the
 target host (login node for HPC, locally for WSL2) and acts on the
 verdict it prints:
 
@@ -209,21 +296,21 @@ and minor compared against `1.4`. Verdict is re-evaluated on every
 deploy. `assertive=True` prepends `rm -rf <sandbox>` so a forced
 redeploy unconditionally re-probes and rebuilds.
 
-`Container.MakeRunCommand(local=True)` emits the run-time ternary
+`Environment.MakeRunCommand(local=True)` emits the run-time ternary
 `"$(if [ -d <sandbox> ]; then echo <sandbox>; else echo <sif>; fi)"` —
 unchanged. Deploy controls which arm fires by controlling the directory's
 presence on the target host.
 
 Cache layout: `<store>/<name>.sif` (always retained) alongside
 `<name>.sandbox/` (present iff verdict is `use-sandbox`). The store root
-`<store>` is the single point of control `Container._store_root()`:
+`<store>` is the single point of control `Environment._store_root()`:
 `${APPTAINER_CACHEDIR:-<home>/container_images}` — i.e. the host's
 `APPTAINER_CACHEDIR` when set, else `<home>/container_images`. It is a shell
 expression expanded on the *execution host* (like `$AGENT_HOME` in the same
 strings), so the pull (write), sandbox build, and `exec` (read) sides always
 agree. Both `GetLocalPath` and `GetSandboxPath` derive from it, keeping the
 `.sif` and `.sandbox` siblings. Helpers in
-`src/metasmith/coms/containers.py`: `_store_root / GetLocalPath /
+`src/metasmith/env/environment.py`: `_store_root / GetLocalPath /
 GetSandboxPath / MakeSandboxDecisionProbe / MakeBuildSandboxCommand`.
 
 RunWorkflow fires and returns immediately. The actual execution happens in a

@@ -6,7 +6,7 @@
 # from pathlib import Path
 # from metasmith.python_api import Agent, Source, SshSource, DataInstanceLibrary, TransformInstanceLibrary, DataTypeLibrary
 # from metasmith.python_api import Resources, Size, Duration
-# from metasmith.python_api import ContainerRuntime
+# from metasmith.python_api import Runtime
 
 # remote_reads = Path("./cache/sample_reads").absolute()
 # agent_home = Source.FromLocal(Path("./cache/local_home").absolute())
@@ -14,7 +14,7 @@
 #     home = agent_home,
 #     setup_commands=[
 #     ],
-#     runtime=ContainerRuntime.APPTAINER,
+#     runtime=Runtime.APPTAINER,
 # )
 # # smith.Deploy(assertive=True)
 

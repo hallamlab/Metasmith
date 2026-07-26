@@ -13,15 +13,15 @@ from metasmith.models.libraries import (
     TransformInstance,
 )
 from metasmith.models.solver import Endpoint, Transform
-from metasmith.coms.containers import ContainerRuntime
+from metasmith.env import Runtime
 
 
 @pytest.fixture(scope="session")
 def container_runtime():
     """Detect Docker or Apptainer, return None for dry-run mode."""
     for cmd, runtime in [
-        (["docker", "info"], ContainerRuntime.DOCKER),
-        (["apptainer", "--version"], ContainerRuntime.APPTAINER),
+        (["docker", "info"], Runtime.DOCKER),
+        (["apptainer", "--version"], Runtime.APPTAINER),
     ]:
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=10)
@@ -220,7 +220,7 @@ def local_agent(local_agent_home, docker_image):
     agent = Agent(
         home=Source.FromLocal(local_agent_home),
         container=docker_image,
-        runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
     )
     return agent
 

@@ -28,7 +28,7 @@ from metasmith.constants import (
     MODULE_PATH,
     VERSION,
 )
-from metasmith.coms.containers import ContainerRuntime
+from metasmith.env import Runtime
 from metasmith.models.remote import Source
 
 
@@ -62,12 +62,12 @@ def test_container_tag_is_full_version_with_plus_translated():
 
 
 def test_agent_default_container_uses_CONTAINER_TAG(tmp_path):
-    agent = Agent(home=Source.FromLocal(tmp_path), runtime=ContainerRuntime.APPTAINER)
+    agent = Agent(home=Source.FromLocal(tmp_path), runtime=Runtime.APPTAINER)
     assert agent.container == f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
 
 
 def test_agent_yml_round_trip_preserves_container(tmp_path):
-    agent = Agent(home=Source.FromLocal(tmp_path), runtime=ContainerRuntime.APPTAINER)
+    agent = Agent(home=Source.FromLocal(tmp_path), runtime=Runtime.APPTAINER)
     packed = agent.Pack()
     assert packed["container"] == f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import tempfile
 import shutil
-from typing import Iterable, Literal
+from typing import Callable, Iterable, Literal
 import yaml
 import json
 import re
@@ -16,12 +16,12 @@ from glob import glob
 from .serialization import StdTime
 from .hashing import KeyGenerator
 from .logging import Log
-from .env import Environment, Runtime
+from .env import ContainerDef, Environment, Runtime
 from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
-from .models.libraries import TransformInstance, Resources
+from .models.libraries import TransformInstance, Resources, Size, Gpu, Gpus, GPU_LABEL
 from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint, Solution, Transform
 from .constants import VERSION, CONTAINER_TAG, MODULE_PATH, AgentPaths
@@ -43,13 +43,17 @@ class AgentShell:
             shell.RegisterOnOut(_on_out)
             shell.RegisterOnErr(_on_err)
             shell.Exec(f"cd {self.agent.home.GetPath()}")
-            res = shell.Exec('[ -e ./relay/msm_relay ] && echo "relay-present"', history=True)
-            assert "relay-present" in res.out, (
-                f"relay binary not present at [{self.agent.home.GetPath()}/relay/msm_relay]; "
-                f"agent home may be partially deployed — rerun Agent.Deploy()"
-            )
-            Log.Info(f"starting relay service")
-            shell.Exec(f'./relay/msm_relay start')
+            # mamba/native cross no container boundary, so there is no relay to
+            # find or start; requiring one would make those runtimes
+            # undeployable rather than merely un-bounced.
+            if self.agent._environment().needs_relay:
+                res = shell.Exec('[ -e ./relay/msm_relay ] && echo "relay-present"', history=True)
+                assert "relay-present" in res.out, (
+                    f"relay binary not present at [{self.agent.home.GetPath()}/relay/msm_relay]; "
+                    f"agent home may be partially deployed — rerun Agent.Deploy()"
+                )
+                Log.Info(f"starting relay service")
+                shell.Exec(f'./relay/msm_relay start')
             self.shell = shell
             return self.shell
         except BaseException:
@@ -94,6 +98,127 @@ class TargetBuilder:
         return len(self._items)
 
 ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|str|TransformInstance, Resources]
+
+class GpuRequirementError(Exception):
+    """A staged workflow's GPU requirements cannot be met by this run's declaration."""
+
+# Emitted into workflow.config.nf whenever a run declares a GPU. Apptainer runs
+# tool containers with --cleanenv (see env/environment.py), which strips
+# CUDA_VISIBLE_DEVICES and so hides a partial allocation -- or a MIG slice, whose
+# handle is a MIG-<uuid> rather than an index -- from the tool. Re-exporting it
+# under the APPTAINERENV_/SINGULARITYENV_ prefixes is the way back in, and is a
+# harmless no-op under Docker and mamba/native. Single-quoted in the emitted
+# Groovy so `$` survives to the shell rather than being interpolated.
+_GPU_BEFORE_SCRIPT = (
+    'export APPTAINERENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"; '
+    'export SINGULARITYENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"'
+)
+
+def _read_gpu_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
+    # Per-step GPU asks recorded at stage time. Absent for workspaces staged by
+    # an older metasmith, which is indistinguishable from "no step wants a GPU"
+    # and is treated as such.
+    path = workspace/AgentPaths.GPU_MANIFEST
+    res = shell.Exec(f'[ -e "{path}" ] && cat "{path}"', history=True, quiet=True)
+    text = "\n".join(res.out)
+    if "{" not in text: return {}
+    try:
+        text = text[text.index("{"):text.rindex("}")+1]
+        return json.loads(text).get("steps", {})
+    except (json.JSONDecodeError, ValueError) as e:
+        # A file that exists but does not parse means we cannot tell whether a
+        # step requires a GPU. Proceeding would silently skip the very check
+        # this feature exists to perform, so refuse instead.
+        raise GpuRequirementError(
+            f"GPU manifest at [{path}] exists but could not be parsed ({e});"
+            f" cannot verify GPU requirements. Re-stage the workflow."
+        ) from e
+
+def _plan_gpu_requests(
+        manifest: dict[str, dict],
+        device: Gpu|None,
+        detect: "Callable[[], str]|None" = None,
+    ) -> dict[str, int]:
+    """Reconcile the staged per-step GPU asks against this run's declaration.
+
+    Returns process-name -> device count for the steps that should be submitted
+    with a GPU request. Raises GpuRequirementError when a REQUIRED step cannot
+    be satisfied; OPTIONAL steps never fail here -- they render without GPU
+    flags and let the protocol's own detection take the CPU branch.
+    """
+    if not manifest: return {}
+    required = [v for v in manifest.values() if v.get("gpus") == Gpus.REQUIRED.value]
+    if device is None:
+        if not required: return {}
+        offenders = ", ".join(sorted(f"{v['transform']} (step {v['step']})" for v in required))
+        detail = ""
+        if detect is not None:
+            found = detect()
+            if found:
+                detail = (
+                    f" a GPU does appear to be present on the target"
+                    f" [{found}] -- declare it with RunWorkflow(gpus=Gpu(memory=Size.GB(...)))."
+                )
+        raise GpuRequirementError(
+            f"workflow requires a GPU but none was declared for this run;"
+            f" offending transforms: {offenders}.{detail}"
+        )
+
+    planned: dict[str, int] = {}
+    over: list[str] = []
+    for process, v in sorted(manifest.items()):
+        ask = v.get("gpu_memory_gb")
+        n = device.DevicesFor(None if ask is None else Size.GB(ask))
+        if device.count is not None and n > device.count:
+            over.append(
+                f"{v['transform']} (step {v['step']}) needs {ask} GB"
+                f" -> {n} device(s), but only {device.count} are declared"
+            )
+            continue
+        if n > 1:
+            # Splitting a VRAM ask across cards only works for tools that can
+            # shard; most cannot, and they fail deep inside CUDA rather than at
+            # submission. Loud, per-step, and named.
+            Log.Warn(
+                f"GPU request for [{v['transform']}] (step {v['step']}) spans {n} devices"
+                f" ({ask} GB over {device.memory.value_gb:g} GB per device) -- the tool must"
+                f" be able to shard across cards, or this will fail at run time"
+            )
+        planned[process] = n
+    if over:
+        raise GpuRequirementError(
+            "declared GPU cannot satisfy the workflow: " + "; ".join(over)
+        )
+    return planned
+
+def _render_gpu_config(planned: dict[str, int], device: Gpu|None, scheduler: bool) -> list[str]:
+    # The shared label block carries only what does not vary per step; the
+    # per-step withName blocks carry the device count, which is the one thing
+    # that could not be known at stage time. withName outranks withLabel in
+    # nextflow, and this file is loaded after workflow.resources.nf, so a
+    # resource_overrides entry for the same step still wins per-directive.
+    if not planned: return []
+    TAB = "\t"
+    lines = ["", "process {", TAB+f"withLabel: 'x{GPU_LABEL}x' "+"{",
+             TAB+TAB+f"beforeScript = '{_GPU_BEFORE_SCRIPT}'", TAB+"}"]
+    if scheduler and device is not None:
+        for process, n in planned.items():
+            # clusterOptions is a scalar directive: setting it here REPLACES the
+            # base string, so the base flags have to be restated or every job is
+            # rejected by SLURM for a missing account.
+            base = (
+                "(params.process.clusterOptions ?: "
+                '"--nodes=1 --ntasks=1 --account=${params.slurmGpuAccount ?: params.slurmAccount}")'
+            )
+            extra = '(params.process.clusterOptionsExtra ? " ${params.process.clusterOptionsExtra}" : "")'
+            lines += [
+                TAB+f"withName: '{process}' "+"{",
+                TAB+TAB+f'clusterOptions = {base} + " {device.MakeRequestFlag(n)}" + {extra}',
+                TAB+"}",
+            ]
+    lines += ["}", ""]
+    return lines
+
 @dataclass
 class Agent:
     home: Source
@@ -102,6 +227,13 @@ class Agent:
     globus_uuid: str|None = None
     runtime: Runtime=Runtime.APPTAINER
     native: bool = False
+    # Extra flags this host needs to expose its GPUs to a tool, appended after
+    # the runtime's own switch. Empty on a normal Linux box; WSL2 needs
+    # ["--bind", "/usr/lib/wsl:/usr/lib/wsl", "--env",
+    #  "LD_LIBRARY_PATH=/usr/lib/wsl/lib"] because apptainer's `--nv` discovery
+    # misses the WSL driver stack. A host fact, so it is declared here rather
+    # than sniffed at run time.
+    gpu_args: list[str] = field(default_factory=list)
     real_path: Path|None = None
 
     def _environment(self) -> Environment:
@@ -123,6 +255,7 @@ class Agent:
             container=self.container,
             runtime=self.runtime.name,
             native=self.native,
+            gpu_args=list(self.gpu_args),
         ) | optional
 
     def Save(self, file_path: Path):
@@ -136,6 +269,7 @@ class Agent:
         # `native` is newer than the original agent.yml format; legacy files
         # omit it and default to a wrapped (non-native) environment.
         data.setdefault("native", False)
+        data.setdefault("gpu_args", [])
         k = "real_path"
         if k in data:
             data[k] = Path(data[k])
@@ -253,31 +387,44 @@ class Agent:
             dev_target = "/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith"
             dev_mock = Environment(
                 image=self.container,
-                binds=[
-                    (dev_src, Path(dev_target)),
-                ],
                 runtime=self.runtime,
                 native=self.native,
+                container=ContainerDef(binds=[
+                    (dev_src, Path(dev_target)),
+                ]),
+            )
+            # The bootstrap may stage the dev overlay to node-local scratch
+            # before binding it (SLURM array fan-out), so it binds whatever
+            # $DEV_BIND_SRC resolves to at run time rather than dev_src.
+            dev_mock_staged = Environment(
+                image=self.container,
+                runtime=self.runtime,
+                native=self.native,
+                container=ContainerDef(binds=[
+                    ("$DEV_BIND_SRC", Path(dev_target)),
+                ]),
             )
 
             container = Environment(
                 image=self.container,
-                container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
-                binds=[
-                    ("$(pwd -P)", Path("/ws")),
-                    ("$AGENT_HOME", Path("/msm_home")),
-                    ("$AGENT_HOME", Path(str(resolved_agent_home))),
-                    ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
-                    (resolved_home/".globus", resolved_home/".globus"),
-                    (resolved_home/".globusonline", resolved_home/".globusonline"),
-                ],
                 runtime=self.runtime,
                 native=self.native,
+                container=ContainerDef(
+                    cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
+                    binds=[
+                        ("$(pwd -P)", Path("/ws")),
+                        ("$AGENT_HOME", Path("/msm_home")),
+                        ("$AGENT_HOME", Path(str(resolved_agent_home))),
+                        ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
+                        (resolved_home/".globus", resolved_home/".globus"),
+                        (resolved_home/".globusonline", resolved_home/".globusonline"),
+                    ],
+                ),
             )
             _cmds = [
                 f"AGENT_HOME={resolved_agent_home}"
             ] + [
-                f"mkdir -p {p}" for p, _ in container.binds
+                f"mkdir -p {p}" for p, _ in container.container.binds
             ]
             do_step("\n".join(_cmds))
             # Per-host provisioning (image pull + SIF/sandbox decision) is
@@ -308,14 +455,16 @@ class Agent:
 
             bootstrap_container = Environment(
                 image=self.container,
-                binds=[
-                    ("$(pwd -P)", Path("/ws")),
-                    ("$AGENT_HOME", Path("/msm_home")),
-                ],
-                workdir=Path("/ws"),
                 runtime=self.runtime,
                 native=self.native,
-                container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE
+                container=ContainerDef(
+                    cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
+                    workdir=Path("/ws"),
+                    binds=[
+                        ("$(pwd -P)", Path("/ws")),
+                        ("$AGENT_HOME", Path("/msm_home")),
+                    ],
+                ),
             )
             _remote_file(
                 bootstrap_container.RenderBootstrap(
@@ -338,8 +487,14 @@ class Agent:
             # a partial deploy (sif present, relay missing) self-heals on the
             # next call without needing assertive=True.
             relay_bin = AgentPaths.to_relay(self.home.GetPath())
-            res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True)
-            if "relay-present" in res.out and not assertive:
+            if not container.needs_relay:
+                # The relay exists solely to bounce tool launches back across a
+                # container boundary. mamba/native have no boundary, and the
+                # extraction step reads from inside the metasmith container --
+                # which is not running. Nothing to deploy.
+                Log.Info(f"runtime [{self.runtime.name}] needs no relay, skipping container extraction")
+            elif "relay-present" in shell.Exec(
+                    f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True).out and not assertive:
                 Log.Info(f"relay binary present at [{relay_bin}], skipping container extraction")
             else:
                 do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
@@ -408,12 +563,12 @@ class Agent:
         binds = task.GetCommonInputFolders(method="external")
         mock = Environment(
             image=self.container,
-            binds=[
-                (p, p)
-                for p in binds
-            ],
             runtime=self.runtime,
             native=self.native,
+            container=ContainerDef(binds=[
+                (p, p)
+                for p in binds
+            ]),
         )
         return mock
 
@@ -456,8 +611,8 @@ class Agent:
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
             binds = mock.MakeBindsParam()
-            if len(mock.binds)>0:
-                Log.Info(f"external binds {[a for a, b in mock.binds]}")
+            if len(mock.container.binds)>0:
+                Log.Info(f"external binds {[a for a, b in mock.container.binds]}")
             sh_remote.Exec(f"""\
                 export BINDS="{binds}"
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname)
@@ -479,8 +634,9 @@ class Agent:
             self, 
             task: WorkflowTask|str, 
             config_file: Path|None=None, 
-            params: dict|Path|str|None=None, 
+            params: dict|Path|str|None=None,
             resource_overrides: ResourceOverrides|None=None,
+            gpus: Gpu|None=None,
             stub_delay: float=0,
         ) -> None:
         is_dry_run = stub_delay>0
@@ -495,6 +651,21 @@ class Agent:
             FLAG = "workspace exists"
             res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True, quiet=True)
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
+
+            # GPU preflight, deliberately BEFORE anything is transferred and
+            # long before the detached `nohup nextflow ... &` launch -- the run
+            # is fire-and-forget, so a failure raised any later is invisible to
+            # this caller.
+            def _detect_gpu_on_target() -> str:
+                probe = sh_remote.Exec(
+                    "command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | head -4",
+                    history=True, quiet=True,
+                )
+                return "; ".join(x.strip() for x in probe.out if x.strip())
+            gpu_manifest = _read_gpu_manifest(sh_remote, workspace)
+            gpu_planned = _plan_gpu_requests(gpu_manifest, gpus, _detect_gpu_on_target)
+            if gpu_planned:
+                Log.Info(f"GPU requests planned for [{len(gpu_planned)}] of [{len(gpu_manifest)}] declaring steps")
 
             Log.Info(f"sending config and params")
             mover = Logistics()
@@ -515,16 +686,24 @@ class Agent:
                             k = str(k)
                             if isinstance(v, dict):
                                 v = _parse(v)
-                            if "_" in k:
-                                stacks = [x for x in k.split("_") if x != ""]
-                                if len(stacks)>1:
-                                    _d_curr = parsed
-                                    for k in stacks[:-1]:
-                                        _d_curr[k] = {}
-                                        _d_curr = _d_curr[k]
-                                    _d_curr[stacks[-1]] = v
+                            stacks = [x for x in k.split("_") if x != ""] if "_" in k else [k]
+                            if len(stacks)>1:
+                                # setdefault, not assignment: two keys sharing a
+                                # prefix (process_tries + process_clusterOptionsExtra)
+                                # must merge into one nested dict rather than the
+                                # later one wiping the earlier.
+                                _d_curr = parsed
+                                for _k in stacks[:-1]:
+                                    _nxt = _d_curr.get(_k)
+                                    if not isinstance(_nxt, dict): _nxt = {}
+                                    _d_curr[_k] = _nxt
+                                    _d_curr = _nxt
+                                _d_curr[stacks[-1]] = v
                             else:
-                                parsed[k] = v
+                                # stacks[0] rather than k so a leading/trailing
+                                # underscore ("_foo") lands as "foo" instead of
+                                # being silently dropped as it used to be.
+                                parsed[stacks[0]] = v
                         return parsed
 
                     with open(params_local, "w") as f:
@@ -537,6 +716,18 @@ class Agent:
                 local_config = temp_dir/config_file.name
                 shutil.copy(config_file, local_config)
                 mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
+                # GPU blocks first, so an explicit resource_overrides entry for
+                # the same step is still last-defined and wins per-directive.
+                if gpu_planned:
+                    # Only a grid executor has a scheduler to ask; the local
+                    # executor inherits whatever devices the host has, so the
+                    # declaration there exists purely to pass the preflight and
+                    # switch on the runtime's GPU flags.
+                    is_scheduler = "slurmAccount" in local_config.read_text()
+                    gpu_lines = _render_gpu_config(gpu_planned, gpus, is_scheduler)
+                    if gpu_lines:
+                        with open(local_config, "a") as f:
+                            f.write("\n".join(gpu_lines))
                 # lines = [
                 #     # "",
                 #     # "lineage.enabled = true",
@@ -950,7 +1141,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
         external_work=extern_work,
         home_dir=AgentPaths.HOME_ROOT,
         external_home=agent.home.GetPath(),
-        container_runtime=agent.runtime,
+        runtime=agent.runtime,
         resources_file=AgentPaths.NXF_RES,
     ))
     nxflib_dir = work_dir/"lib"
@@ -963,8 +1154,8 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     Log.Info(f"creating launcher script at [{launcher_path}]")
     mock = agent._get_mock_container(task)
     binds = mock.MakeBindsParam()
-    if len(mock.binds)>0:
-        Log.Info(f"external binds {[a for a, b in mock.binds]}")
+    if len(mock.container.binds)>0:
+        Log.Info(f"external binds {[a for a, b in mock.container.binds]}")
     with open(launcher_path, "w") as f:
         f.write("\n".join([
             f'#!/bin/bash',

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from metasmith.env.environment import Environment, Runtime
+from metasmith.env.environment import ContainerDef, Environment, Runtime
 
 
 AH = Path("/arc/home/u/msm_home")
@@ -25,8 +25,11 @@ DEV_SRC = "$AGENT_HOME/dev/metasmith"
 def _container(runtime: Runtime, **kw) -> Environment:
     return Environment(
         image=IMG,
-        container_cache=Path("$AGENT_HOME") / "container_images",
         runtime=runtime,
+        container=ContainerDef(
+            cache=Path("$AGENT_HOME") / "container_images",
+            workdir=kw.pop("workdir", None),
+        ),
         **kw,
     )
 

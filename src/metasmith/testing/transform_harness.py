@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from ..env import Runtime as ContainerRuntime
+from ..env import Runtime
 from ..coms.terminals import ShellResult
 from ..hashing import KeyGenerator
 from ..logging import Log
@@ -331,7 +331,7 @@ class TransformHarness:
             external_shell=mock_shell,
             external_cwd=work_dir,
             external_agent_home=work_dir,
-            container_runtime=ContainerRuntime.DOCKER,
+            _environment=Runtime.DOCKER,
             params={"cpus": 1, "memory": 1, "attempt": 1},
         )
 

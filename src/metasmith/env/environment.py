@@ -32,11 +32,26 @@ _CONTAINER_RUNTIMES = (Runtime.DOCKER, Runtime.APPTAINER)
 
 
 @dataclass
-class Environment:
-    image: str
-    container_cache: Path = Path("./")
+class ContainerDef:
+    """The container-only half of an Environment.
+
+    Every field here presupposes a container boundary: an image store to pull
+    into, a working directory inside the image, and mounts across the boundary.
+    None of it means anything for mamba/native, which run the tool on the host
+    filesystem in the real cwd -- so it is nested rather than sitting beside
+    `runtime` where a mamba caller would be invited to fill it in.
+    """
+    cache: Path = Path("./")
     workdir: Path|str|None = None
     binds: list[tuple[Path|str, Path|str]] = field(default_factory=list)
+
+
+@dataclass
+class Environment:
+    # For container runtimes this is the image URI; for MAMBA it is the conda
+    # environment name. Both name "the thing the tool runs in", which is why
+    # they share a field rather than the runtime branch reaching for two.
+    image: str
     extra_args: list[str] = field(default_factory=list)
     runtime: Runtime = Runtime.DOCKER
     # `native` is orthogonal to the runtime enum: it means "we are already
@@ -44,6 +59,15 @@ class Environment:
     # Runtime member because it composes with one (a native agent can still
     # describe its tools as mamba/docker for portability metadata).
     native: bool = False
+    container: ContainerDef = field(default_factory=ContainerDef)
+    # Site override for the GPU flags below. Some hosts need more than the
+    # runtime's own switch to actually expose a device -- WSL2 is the live
+    # example: apptainer's `--nv` library discovery misses the driver stack
+    # under /usr/lib/wsl, so `nvidia-smi` finds its binary but NVML reports
+    # "GPU access blocked by the operating system". Which extra flags a host
+    # needs is a host fact, so it is configured (Agent.gpu_args) rather than
+    # sniffed at run time.
+    gpu_args: list[str] = field(default_factory=list)
 
     def SetRuntime(self, runtime: Runtime):
         self.runtime = runtime
@@ -62,13 +86,13 @@ class Environment:
     def _store_root(self):
         # Single point of control for the apptainer image-store location.
         # Prefer APPTAINER_CACHEDIR when set, else the agent-home default the
-        # caller passed in `container_cache`. The value is a shell expression
+        # caller passed in `container.cache`. The value is a shell expression
         # expanded on the *execution host* (the same way `$AGENT_HOME` is in
         # these strings), so an HPC deploy picks up the cluster's setting and
         # the write side (pull/build) and read side (exec) can never diverge.
         # Both GetLocalPath and GetSandboxPath build off this so the .sif and
         # .sandbox always stay siblings under one root.
-        return Path(f"${{APPTAINER_CACHEDIR:-{self.container_cache}}}")
+        return Path(f"${{APPTAINER_CACHEDIR:-{self.container.cache}}}")
 
     def GetLocalPath(self):
         # todo: docker-daemon local?
@@ -139,7 +163,7 @@ class Environment:
         # bind across, so binds collapse to nothing.
         if self.runtime == Runtime.MAMBA or self.native:
             return ""
-        binds = {str(d):str(s) for s, d in self.binds}
+        binds = {str(d):str(s) for s, d in self.container.binds}
         binds = [(s, d) for d, s in binds.items()]
         if len(binds)==0: return ""
         match self.runtime:
@@ -152,6 +176,23 @@ class Environment:
             case _: # default
                 raise TypeError(f"unsupported runtime [{self.runtime}]")
         return binds
+
+    def MakeGpuArgs(self) -> list[str]:
+        # The per-runtime flags that expose the host's GPUs inside the tool
+        # environment. This is exactly the branch the env package exists to own
+        # -- before this, every GPU transform hand-wrote it and had to read the
+        # runtime off the ExecutionContext to know which dialect to use.
+        # mamba/native inherit the host's devices, so they need nothing beyond
+        # whatever the site configured.
+        if self.native: return list(self.gpu_args)
+        match self.runtime:
+            case Runtime.DOCKER:
+                base = ["--gpus", "all"]
+            case Runtime.APPTAINER:
+                base = ["--nv"]
+            case _:
+                base = []
+        return base + list(self.gpu_args)
 
     def MakeRunCommand(self, local: bool|str = False, custom_bind_param: str|None=None):
         # native: already inside the target environment — no wrapper, just
@@ -169,7 +210,7 @@ class Environment:
             case Runtime.DOCKER:
                 # todo: detect if image for matching platform exists first before forcing amd64
                 others = ['--platform=linux/amd64', '--rm', '-u $(id -u):$(id -g)', '--network=host', '-e TMPDIR=${TMPDIR-"/tmp"}', '--entrypoint=""']
-                workdir = f'--workdir="{self.workdir}"' if self.workdir is not None else ''
+                workdir = f'--workdir="{self.container.workdir}"' if self.container.workdir is not None else ''
                 run = 'run'
             case Runtime.APPTAINER:
                 # Thread caps track the allocation, not a hardcoded 1. `--cleanenv` wipes the
@@ -183,7 +224,7 @@ class Environment:
                 # single-threaded default.
                 nthreads = '${SLURM_CPUS_PER_TASK:-1}'
                 others = ['--no-home', '--cleanenv', '--env TMPDIR=${TMPDIR-"/tmp"}', f'--env OPENBLAS_NUM_THREADS={nthreads}', f'--env OMP_NUM_THREADS={nthreads}']
-                workdir = f'--pwd "{self.workdir}"' if self.workdir is not None else ''
+                workdir = f'--pwd "{self.container.workdir}"' if self.container.workdir is not None else ''
                 binds = custom_bind_param if custom_bind_param is not None else self.MakeBindsParam()
                 if not isinstance(local, bool):
                     image = local

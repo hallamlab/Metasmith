@@ -1,4 +1,9 @@
 manifest:
   echo_greeting.py:
     type: transforms::transform
+  gpu_probe.py:
+    type: transforms::transform
+remote_src:
+  address: ssh://sockeye:/scratch/st-shallam-1/txyliu/msm_gpu_smoke/_smoke_libs/examples
+  type: SSH
 schema: v1

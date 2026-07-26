@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from metasmith.constants import AgentPaths, MODULE_PATH
-from metasmith.coms.containers import ContainerRuntime
+from metasmith.env import Runtime
 from metasmith.models.libraries import (
     DataInstanceLibrary,
     DataTypeLibrary,
@@ -140,7 +140,7 @@ def stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:
         external_work=workspace,
         home_dir=AgentPaths.HOME_ROOT,
         external_home=AgentPaths.HOME_ROOT,
-        container_runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
         resources_file=AgentPaths.NXF_RES,
     )
 
