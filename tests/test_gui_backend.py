@@ -17,6 +17,7 @@ from metasmith.testing.mock_transforms import identity_transform
 from metasmith.gui import stdlib
 from metasmith.gui.app import create_app
 from metasmith.gui.store import Project
+from metasmith.ops import agent as op_agent
 from metasmith.ops import workspace as op_workspace
 
 from tests.integration.conftest import create_transform_library
@@ -318,6 +319,202 @@ class TestAgents:
         client.post("/api/agents/smith/archive", json={"archived": True})
         assert client.get("/api/agents").get_json() == []
         assert len(client.get("/api/agents?archived=1").get_json()) == 1
+
+    def test_created_from_nothing(self, client):
+        """`+ agent` posts an empty body -- there is no form in front of it."""
+        r = client.post("/api/agents", json={})
+        assert r.status_code == 201, r.get_json()
+        body = r.get_json()
+        assert body["name"]
+        # named after itself, so a host with three agents has three directories
+        assert body["home"].endswith(f"msm.{body['name']}")
+        assert body["setup_commands"] == ["#!/bin/bash"]
+        assert body["valid"] is True
+
+    def test_defaults_offer_every_runtime(self, client):
+        d = client.get("/api/defaults/agent").get_json()
+        # read off env.Runtime rather than written out again
+        assert set(d["runtimes"]) >= {"APPTAINER", "DOCKER", "MAMBA"}
+        assert d["home"] == f"~/msm.{d['name']}"
+
+    def test_mamba_is_a_runtime(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        r = client.put("/api/agents/smith", json={"name": "smith", "runtime": "MAMBA"})
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["runtime"] == "MAMBA"
+
+    def test_unknown_runtime_refused(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        r = client.put("/api/agents/smith", json={"name": "smith", "runtime": "PODMAN"})
+        assert r.status_code == 400
+        assert "PODMAN" in r.get_json()["error"]
+
+
+class TestAgentUpdateConvention:
+    """One PUT carrying the whole object, identity field included."""
+
+    def test_rename_moves_the_file(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        r = client.put("/api/agents/smith", json={"name": "wesson"})
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["name"] == "wesson"
+        assert client.get("/api/agents/smith").status_code == 409
+        assert client.get("/api/agents/wesson").status_code == 200
+        assert [a["name"] for a in client.get("/api/agents").get_json()] == ["wesson"]
+
+    def test_rename_keeps_the_other_fields(self, client, tmp_path):
+        client.post("/api/agents", json={
+            "name": "smith", "home": str(tmp_path / "h"), "runtime": "DOCKER",
+            "setup_commands": ["module load gcc"],
+        })
+        body = client.put("/api/agents/smith", json={"name": "wesson"}).get_json()
+        assert body["runtime"] == "DOCKER"
+        assert body["setup_commands"] == ["module load gcc"]
+
+    def test_rename_onto_a_taken_name_is_refused(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "a", "home": str(tmp_path / "h")})
+        client.post("/api/agents", json={"name": "b", "home": str(tmp_path / "h")})
+        r = client.put("/api/agents/a", json={"name": "b"})
+        assert r.status_code == 409
+        # and neither one lost its file to the attempt
+        assert {x["name"] for x in client.get("/api/agents").get_json()} == {"a", "b"}
+
+    def test_rename_takes_its_runs_with_it(self, client, project_root, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        p = Project(project_root)
+        wf = p.create_workflow(name="wf", request={})
+        p.create_run(wf.name, {"agent": "smith", "task_key": "k"})
+        client.put("/api/agents/smith", json={"name": "wesson"})
+        # a run whose agent has vanished cannot be tailed, cancelled or collected
+        assert [r.record["agent"] for r in p.list_runs()] == ["wesson"]
+        assert client.get("/api/agents/wesson").get_json()["runs"][0]["workflow"] == "wf"
+
+    def test_archive_mark_moves_with_it(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        client.post("/api/agents/smith/archive", json={"archived": True})
+        client.put("/api/agents/smith", json={"name": "wesson"})
+        assert client.get("/api/agents").get_json() == []
+        listed = client.get("/api/agents?archived=1").get_json()
+        assert [a["name"] for a in listed] == ["wesson"]
+        assert listed[0]["archived_at"]
+
+    def test_a_refused_save_does_not_half_rename(self, client, tmp_path):
+        """The rename lands after the fields are checked, never before."""
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        r = client.put("/api/agents/smith", json={"name": "wesson", "runtime": "PODMAN"})
+        assert r.status_code == 400
+        assert client.get("/api/agents/smith").status_code == 200
+        assert client.get("/api/agents/wesson").status_code == 409
+
+    def test_fields_the_page_does_not_draw_survive(self, client, tmp_path):
+        """The image is a dev field and is not rendered; a save must not eat it."""
+        client.post("/api/agents", json={
+            "name": "smith", "home": str(tmp_path / "h"), "container": "docker://pinned:1",
+        })
+        body = client.put("/api/agents/smith", json={
+            "name": "smith", "home": str(tmp_path / "h"), "runtime": "DOCKER",
+        }).get_json()
+        assert body["container"] == "docker://pinned:1"
+
+
+class TestAgentValidity:
+    """Saveable while it is being filled in; not launchable until it is."""
+
+    def test_a_remote_agent_with_no_host_saves_and_says_so(self, client):
+        client.post("/api/agents", json={"name": "smith"})
+        r = client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://:~/msm.smith"})
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert body["valid"] is False
+        assert "no host chosen" in body["problems"]
+        # and it round-trips as remote rather than reverting to local
+        assert client.get("/api/agents/smith").get_json()["home"] == "ssh://:~/msm.smith"
+
+    def test_a_host_that_is_not_in_the_config_is_a_problem(self, client):
+        client.post("/api/agents", json={"name": "smith"})
+        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://nowhere:~/x"})
+        body = client.get("/api/agents/smith").get_json()
+        assert body["valid"] is False
+        assert any("nowhere" in p for p in body["problems"])
+
+    def test_a_known_host_is_valid(self, client):
+        client.post("/api/ssh/hosts", json={"alias": "sockeye", "hostname": "sockeye.example"})
+        client.post("/api/agents", json={"name": "smith"})
+        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://sockeye:~/x"})
+        body = client.get("/api/agents/smith").get_json()
+        assert body["valid"] is True, body["problems"]
+
+    def test_a_blank_home_is_refused(self, client):
+        client.post("/api/agents", json={"name": "smith"})
+        r = client.put("/api/agents/smith", json={"name": "smith", "home": " "})
+        # blank is not a state worth saving: the field has a default, and an
+        # empty Source.Parse silently resolves to the cwd
+        assert r.status_code == 400
+
+    def test_an_incomplete_agent_cannot_be_launched_on(self, client, project_root):
+        client.post("/api/agents", json={"name": "smith"})
+        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://:~/x"})
+        p = Project(project_root)
+        wf = p.create_workflow(name="wf", request={})
+        p.write_result(wf.name, {"success": True, "task_key": "k"})
+        r = client.post("/api/runs", json={"workflow": "wf", "agent": "smith"})
+        assert r.status_code == 409
+        assert "no host chosen" in r.get_json()["error"]
+
+    def test_a_wildcard_pattern_counts_as_knowing_the_host(self, client, tmp_path):
+        """`Host *.cluster.edu` makes every name under it reachable."""
+        (tmp_path / "ssh_config").write_text("Host *.cluster.edu\n    User tony\n")
+        client.post("/api/agents", json={"name": "smith"})
+        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://n1.cluster.edu:~/x"})
+        assert client.get("/api/agents/smith").get_json()["valid"] is True
+
+
+class TestSshUpdateConvention:
+    def test_rename_repoints_the_agents_on_that_host(self, client):
+        client.post("/api/ssh/hosts", json={"alias": "old", "hostname": "old.example"})
+        client.post("/api/agents", json={"name": "smith", "home": "ssh://old:~/msm.smith"})
+        r = client.put("/api/ssh/hosts/old", json={"alias": "new", "hostname": "old.example"})
+        assert r.status_code == 200, r.get_json()
+        body = r.get_json()
+        assert body["host"]["alias"] == "new"
+        assert body["agents_repointed"] == ["smith"]
+        # the agent followed the host rather than being left naming nothing
+        agent = client.get("/api/agents/smith").get_json()
+        assert agent["home"] == "ssh://new:~/msm.smith"
+        assert agent["valid"] is True
+
+    def test_rename_keeps_what_the_host_resolved_to(self, client, project_root):
+        """Same machine, same directory -- only the alias moved."""
+        client.post("/api/ssh/hosts", json={"alias": "old", "hostname": "old.example"})
+        client.post("/api/agents", json={"name": "smith", "home": "ssh://old:~/msm.smith"})
+        p = Project(project_root)
+        agent = op_agent.load_agent(str(p.agent_path("smith")))
+        agent.real_path = Path("/scratch/tony/msm.smith")
+        agent.Save(p.agent_path("smith"))
+        client.put("/api/ssh/hosts/old", json={"alias": "new", "hostname": "old.example"})
+        # cleared, this would make a cosmetic rename cost a redeploy
+        assert client.get("/api/agents/smith").get_json()["real_path"] == "/scratch/tony/msm.smith"
+
+    def test_a_repoint_of_the_home_itself_does_clear_it(self, client, project_root):
+        client.post("/api/agents", json={"name": "smith", "home": "ssh://old:~/msm.smith"})
+        p = Project(project_root)
+        agent = op_agent.load_agent(str(p.agent_path("smith")))
+        agent.real_path = Path("/scratch/tony/msm.smith")
+        agent.Save(p.agent_path("smith"))
+        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://old:~/elsewhere"})
+        assert client.get("/api/agents/smith").get_json()["real_path"] is None
+
+    def test_a_rename_through_patch_is_ignored(self, client):
+        """PATCH cannot rename: it would move the host and strand the agents."""
+        client.post("/api/ssh/hosts", json={"alias": "one", "hostname": "one.example"})
+        body = client.patch("/api/ssh/hosts/one", json={"alias": "two"}).get_json()
+        assert body["host"]["alias"] == "one"
+
+    def test_an_edit_without_an_alias_is_not_a_rename(self, client):
+        client.post("/api/ssh/hosts", json={"alias": "one", "hostname": "one.example"})
+        body = client.put("/api/ssh/hosts/one", json={"hostname": "two.example"}).get_json()
+        assert body["host"]["alias"] == "one"
+        assert body["renamed_from"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -747,6 +944,29 @@ class TestWorkflowRename:
         name = _make_workflow(client)
         r = client.post(f"/api/workflows/{name}/rename", json={"name": "My Assembly Run"})
         assert r.get_json()["name"] == "my-assembly-run"
+
+    def test_the_put_renames_it_too(self, client):
+        """The same convention the agent and the host are saved by."""
+        name = _make_workflow(client)
+        r = client.put(f"/api/workflows/{name}", json={"name": "chosen-name"})
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["name"] == "chosen-name"
+        assert client.get(f"/api/workflows/{name}").status_code == 409
+
+    def test_the_put_saves_the_recipe_and_the_name_at_once(self, client):
+        name = _make_workflow(client)
+        r = client.put(f"/api/workflows/{name}", json={
+            "name": "chosen-name", "target_types": ["mock::bam"],
+        })
+        assert r.status_code == 200, r.get_json()
+        body = client.get("/api/workflows/chosen-name").get_json()
+        assert body["request"]["target_types"] == ["mock::bam"]
+        assert body["request"]["name"] == "chosen-name"
+
+    def test_a_put_without_a_name_only_saves_the_recipe(self, client):
+        name = _make_workflow(client)
+        r = client.put(f"/api/workflows/{name}", json={"target_types": ["mock::bam"]})
+        assert r.status_code == 200 and r.get_json()["name"] == name
 
     def test_an_empty_name_is_refused(self, client):
         name = _make_workflow(client)

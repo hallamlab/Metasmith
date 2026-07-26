@@ -5,6 +5,7 @@
     app,
     attempt,
     clearNotice,
+    createAgent,
     createWorkflow,
     forkWorkflow,
     loadProject,
@@ -18,7 +19,6 @@
   import SshHost from './views/SshHost.svelte'
   import SshEditor from './views/SshEditor.svelte'
   import SshNew from './views/SshNew.svelte'
-  import AgentNew from './views/AgentNew.svelte'
   import AgentView from './views/AgentView.svelte'
   import WorkflowView from './views/WorkflowView.svelte'
   import RunView from './views/RunView.svelte'
@@ -48,6 +48,12 @@
   async function newWorkflow() {
     creating = true
     await createWorkflow()
+    creating = false
+  }
+
+  async function newAgent() {
+    creating = true
+    await createAgent()
     creating = false
   }
 
@@ -219,7 +225,11 @@
   </header>
 
   {#if app.notice}
-    <div class="notice" class:refused={app.notice.kind === 'refused'}>
+    <div
+      class="notice"
+      class:refused={app.notice.kind === 'refused'}
+      class:info={app.notice.kind === 'info'}
+    >
       <span class="grow">{app.notice.message}</span>
       <button class="small" onclick={clearNotice}>dismiss</button>
     </div>
@@ -271,7 +281,7 @@
         ontoggleArchived={(v) => (app.showArchived = v)}
       >
         {#snippet actions()}
-          <button class="small" onclick={() => select('agents', 'new')}>+ agent</button>
+          <button class="small" disabled={creating} onclick={newAgent}>+ agent</button>
         {/snippet}
         {#snippet row(item)}
           <div class="spread">
@@ -280,6 +290,12 @@
               <div class="small muted truncate mono">{item.agent.home ?? item.agent.error}</div>
             </div>
             <div class="row">
+              <!-- an agent can be half-filled-in for as long as it takes to set
+                   the host up, so the list says which ones are ready rather
+                   than pretending they all are -->
+              {#if item.agent.valid === false}
+                <span class="tag warn" title={item.agent.problems?.join(' · ')}>·&nbsp;·&nbsp;·</span>
+              {/if}
               {#if item.agent.archived_at}<span class="tag warn">arch</span>{/if}
               <DeleteControl
                 title="delete agent"
@@ -396,9 +412,7 @@
           </div>
         {/if}
       {:else if app.section === 'agents'}
-        {#if sel === 'new'}
-          <AgentNew />
-        {:else if sel}
+        {#if sel}
           {#key sel}<AgentView name={sel} />{/key}
         {:else}
           <div class="blank">
@@ -408,6 +422,11 @@
               machine or on a host you reach over ssh. Deploying one installs
               everything it needs there.
             </p>
+            <div>
+              <button class="primary" disabled={creating} onclick={newAgent}>
+                {creating ? 'creating…' : 'new agent'}
+              </button>
+            </div>
           </div>
         {/if}
       {:else if app.section === 'workflows'}
@@ -540,4 +559,7 @@
     font-size: 13px;
   }
   .notice.refused { background: #3a3320; border-color: #6b5a2f; color: #efe0bc; }
+  /* not everything worth saying is a failure: a rename that moved other objects
+     with it is a report, and colouring it like an error reads as one */
+  .notice.info { background: #1e2b33; border-color: #33525f; color: #cfe4ee; }
 </style>

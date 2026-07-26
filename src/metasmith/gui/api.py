@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import shutil
 import threading
+from fnmatch import fnmatch
 from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request
@@ -29,8 +30,22 @@ bp = Blueprint("api", __name__, url_prefix="/api")
 
 # What a new agent's home is set to before the user touches it. `~` is the one
 # path spelling that means the same thing whether the agent runs here or on a
-# cluster, and it is expanded by whichever side ends up resolving it.
-DEFAULT_AGENT_HOME = "~/msm_home"
+# cluster, and it is expanded by whichever side ends up resolving it. The name
+# is in the path because a host with three agents on it otherwise has three
+# directories called the same thing, and which one you are looking at is then
+# only knowable from this side.
+DEFAULT_AGENT_HOME_PREFIX = "~/msm."
+
+
+def default_agent_home(name: str) -> str:
+    return f"{DEFAULT_AGENT_HOME_PREFIX}{name}"
+
+
+# A setup block starts as a shebang and nothing else. It is a comment wherever
+# it ends up -- the lines are run one at a time over a live shell, and pasted
+# into the launcher script under their own marker -- so it costs nothing, and
+# it says what the box is: bash, not a list of module names.
+DEFAULT_SETUP_COMMANDS = ["#!/bin/bash"]
 
 # Planning is not reentrant. TransformInstance.Load imports each transform by
 # bare module name, mutates sys.path, calls importlib.reload, and hands the
@@ -83,6 +98,42 @@ def _wants_archived() -> bool:
     return request.args.get("archived", "").lower() in {"1", "true", "yes"}
 
 
+# -- the update convention ---------------------------------------------------
+#
+# Every editable object -- an agent, a workflow, an ssh host -- is saved the
+# same way: `PUT /<collection>/<id>` carrying the *whole* object. There is no
+# partial form. These objects are a dozen short fields; a diff protocol would
+# cost more to specify, implement and get wrong than the bytes it saves, and it
+# leaves two ways to write every field.
+#
+# Identity travels inside the object like any other field, so an id in the body
+# that differs from the one in the url is a rename, applied as part of the save.
+# That is the whole reason for the convention: a name someone was given -- an
+# agent's, a workflow's -- is a field they should be able to correct in the
+# place they read it, not a thing needing a second route and a second gesture.
+#
+# The reply is the object as it now stands, at its new id if it moved, so a
+# caller adopts one response rather than saving and then re-fetching.
+#
+# The `PATCH` routes that predate this are kept and delegate here; they take a
+# subset and cannot rename.
+
+
+def _renamed_to(body: dict, current: str, *, field: str = "name", slug: bool = True) -> str | None:
+    """The id this update wants, or None when it is not moving.
+
+    Absent means "not stated", which is not the same as unchanged-by-request:
+    a client sending only the fields it edited still gets the rename skipped
+    rather than a blank name asserted at it.
+    """
+    if field not in body:
+        return None
+    wanted = str(body[field] or "").strip()
+    wanted = slugify(wanted) if slug else wanted
+    assert wanted, f"a {field} is required"
+    return None if wanted == current else wanted
+
+
 # -- project -----------------------------------------------------------------
 
 
@@ -119,17 +170,21 @@ def get_project():
 
 @bp.get("/defaults/agent")
 def agent_defaults():
-    """What the new-agent view is pre-filled with.
+    """What a new agent is made with.
 
     Generated here rather than in the browser because the name has to avoid the
-    ones already taken, and only this side knows them.
+    ones already taken, and only this side knows them. `runtimes` is read off
+    the `env.Runtime` enum, so the dropdown gains a runtime when the enum does.
     """
     p = _project()
+    name = generate_workflow_name(taken=p.agent_names(include_archived=True))
     return jsonify({
-        "name": generate_workflow_name(taken=p.agent_names(include_archived=True)),
-        "home": DEFAULT_AGENT_HOME,
+        "name": name,
+        "home": default_agent_home(name),
+        "home_prefix": DEFAULT_AGENT_HOME_PREFIX,
         "runtime": "APPTAINER",
-        "setup_commands": [],
+        "runtimes": op_agent.runtimes(),
+        "setup_commands": list(DEFAULT_SETUP_COMMANDS),
     })
 
 
@@ -201,9 +256,78 @@ def ssh_delete_key(alias):
     return jsonify(_ssh().delete_identity(alias))
 
 
+@bp.put("/ssh/hosts/<alias>")
+def ssh_put_host(alias):
+    """Save a host whole -- see the update convention above.
+
+    An `alias` that differs from the url renames it. An alias is not slugified:
+    it is an ssh pattern the user chose, and `Host tony@big-iron.example` is a
+    legal thing to be called.
+
+    An agent's home names its host, so a rename would otherwise leave every
+    agent on that host pointing at nothing. They are re-pointed here and named
+    in the reply -- the alternative, refusing the rename while an agent uses
+    the host, makes the one case where the name matters the one case you
+    cannot fix.
+    """
+    b = _body()
+    cfg = _ssh()
+    renamed = _renamed_to(b, alias, field="alias", slug=False)
+    host = cfg.update_host(alias, **b)
+    repointed = _repoint_agents(alias, renamed) if renamed else []
+    return jsonify({
+        "host": host,
+        "renamed_from": alias if renamed else None,
+        "agents_repointed": repointed,
+    })
+
+
 @bp.patch("/ssh/hosts/<alias>")
 def ssh_update_host(alias):
-    return jsonify({"host": _ssh().update_host(alias, **_body())})
+    """The partial form, kept for callers that predate the convention.
+
+    `alias` is dropped rather than honoured: renaming through here would move
+    the host without re-pointing the agents whose home names it, which is the
+    half of the operation the PUT exists to carry.
+    """
+    fields = {k: v for k, v in _body().items() if k != "alias"}
+    return jsonify({"host": _ssh().update_host(alias, **fields)})
+
+
+def _agents_on_host(alias: str) -> list[str]:
+    """Agents whose home is on this host, by name."""
+    project = _project()
+    out = []
+    for name in project.agent_names(include_archived=True):
+        try:
+            info = op_agent.info(str(project.agent_path(name)))
+        except Exception:
+            continue
+        if info.get("home_type") != "SSH":
+            continue
+        if info.get("home", "")[len("ssh://"):].partition(":")[0] == alias:
+            out.append(name)
+    return out
+
+
+def _repoint_agents(old_alias: str, new_alias: str) -> list[str]:
+    project = _project()
+    moved = []
+    for name in _agents_on_host(old_alias):
+        info = op_agent.info(str(project.agent_path(name)))
+        _, _, path = info["home"][len("ssh://"):].partition(":")
+        op_agent.save_agent(
+            path=str(project.agent_path(name)),
+            home_uri=f"ssh://{new_alias}:{path}",
+            container=info["container"],
+            runtime=info["runtime"],
+            setup_commands=info["setup_commands"],
+            globus_uuid=info["globus_uuid"],
+            # the machine and the directory are unchanged; only the alias moved
+            renaming_host=True,
+        )
+        moved.append(name)
+    return moved
 
 
 @bp.delete("/ssh/hosts/<alias>")
@@ -213,15 +337,7 @@ def ssh_delete_host(alias):
     Their storage is the user's own config file, so an unused entry costs
     nothing and a stale one is confusing. If an agent needs it, refuse.
     """
-    project = _project()
-    dependents = []
-    for name in project.agent_names(include_archived=True):
-        try:
-            info = op_agent.info(str(project.agent_path(name)))
-        except Exception:
-            continue
-        if info.get("home_type") == "SSH" and f"{alias}:" in info.get("home", ""):
-            dependents.append(name)
+    dependents = _agents_on_host(alias)
     if dependents:
         raise SshConfigError(
             f"host [{alias}] is the home of agent(s) {', '.join(dependents)}; "
@@ -267,21 +383,76 @@ def ssh_write_config():
 # -- agents ------------------------------------------------------------------
 
 
+def _host_patterns() -> list[str]:
+    """Every pattern the user's ssh config declares, wildcards included.
+
+    `cfg.hosts()` is concrete destinations only -- what an agent may be pointed
+    at -- but reachability is a wider question: someone with `Host *.cluster.edu`
+    can ssh to a name that is nowhere in that list. Judging an agent against the
+    concrete list alone would call a working host missing, and that verdict now
+    stops a launch.
+    """
+    return [e.pattern for e in _ssh().resolved()]
+
+
+def _agent_problems(info: dict, hosts: list[str]) -> list[str]:
+    """What stops this agent from being run on, in the user's words.
+
+    An agent is editable long before it is usable -- you make one, you know it
+    is going on a cluster, and the host does not exist in your ssh config yet.
+    Saving that is the normal way to work, so the incompleteness is *reported*
+    rather than refused: it costs nothing here, and it is checked where it
+    actually matters, which is the moment something is launched on it.
+    """
+    if info.get("error"):
+        return [f"this agent's file could not be read: {info['error']}"]
+    problems = []
+    home = info.get("home") or ""
+    if info.get("home_type") == "SSH":
+        # the scheme carries a colon of its own, so the split is after it
+        host, _, path = home[len("ssh://"):].partition(":")
+        if not host:
+            problems.append("no host chosen")
+        elif not any(fnmatch(host, pattern) for pattern in hosts):
+            problems.append(f"host [{host}] is not in your ssh config")
+        if not path.strip():
+            problems.append("no home directory")
+    elif not home.strip():
+        problems.append("no home directory")
+    if info.get("runtime") not in set(op_agent.runtimes()):
+        problems.append(f"unknown runtime [{info.get('runtime')}]")
+    return problems
+
+
+def _agent_payload(p: Project, name: str, hosts: list[str] | None = None) -> dict:
+    """One agent, the shape every route that returns one returns.
+
+    A save answers with this too, so a client adopts the reply rather than
+    saving and then re-fetching what it just sent.
+    """
+    path = p.agent_path(name)
+    try:
+        info = op_agent.info(str(path))
+    except Exception as exc:
+        info = {"name": name, "error": str(exc)}
+    info["name"] = name
+    info["path"] = str(path)
+    info["archived_at"] = p.archived_at("agents", name)
+    if hosts is None:
+        hosts = _host_patterns()
+    info["problems"] = _agent_problems(info, hosts)
+    info["valid"] = not info["problems"]
+    return info
+
+
 @bp.get("/agents")
 def list_agents():
     p = _project()
-    names = p.agent_names(include_archived=_wants_archived())
-    out = []
-    for name in names:
-        path = p.agent_path(name)
-        try:
-            info = op_agent.info(str(path))
-        except Exception as exc:
-            info = {"name": name, "error": str(exc)}
-        info["archived_at"] = p.archived_at("agents", name)
-        info["path"] = str(path)
-        out.append(info)
-    return jsonify(out)
+    hosts = _host_patterns()
+    return jsonify([
+        _agent_payload(p, name, hosts)
+        for name in p.agent_names(include_archived=_wants_archived())
+    ])
 
 
 @bp.get("/agents/<name>")
@@ -289,8 +460,7 @@ def get_agent(name):
     p = _project()
     if not p.agent_exists(name):
         raise ProjectError(f"no agent named [{name}]")
-    info = op_agent.info(str(p.agent_path(name)))
-    info["archived_at"] = p.archived_at("agents", name)
+    info = _agent_payload(p, name)
     info["runs"] = [
         {"name": r.name, "workflow": r.workflow, "state": r.state}
         for r in p.list_runs(include_archived=True) if r.record.get("agent") == name
@@ -300,9 +470,15 @@ def get_agent(name):
 
 @bp.post("/agents")
 def create_agent():
+    """Make an agent, immediately, from whatever was sent -- usually nothing.
+
+    Same shape as a workflow: `+ agent` posts an empty body and lands you on
+    the result. There is no form in front of it because there is nothing a
+    blank agent needs that cannot be defaulted, and a name and a home you were
+    given are easier to correct in place than to invent on an empty screen.
+    """
     b = _body()
     p = _project()
-    # an unnamed agent gets a generated name, the same as an unnamed workflow
     name = slugify(b["name"]) if b.get("name") else generate_workflow_name(
         taken=p.agent_names(include_archived=True)
     )
@@ -310,32 +486,53 @@ def create_agent():
     if p.agent_exists(name):
         raise ProjectError(f"agent [{name}] already exists")
     p.initialize()
-    home = b.get("home") or DEFAULT_AGENT_HOME
-    return jsonify(op_agent.save_agent(
+    op_agent.save_agent(
         path=str(p.agent_path(name)),
-        home_uri=home,
+        home_uri=b.get("home") or default_agent_home(name),
         container=b.get("container") or None,
         runtime=(b.get("runtime") or "APPTAINER").upper(),
-        setup_commands=b.get("setup_commands") or [],
+        setup_commands=b.get("setup_commands", list(DEFAULT_SETUP_COMMANDS)),
         globus_uuid=b.get("globus_uuid") or None,
-    )), 201
+    )
+    return jsonify(_agent_payload(p, name)), 201
 
 
 @bp.put("/agents/<name>")
 def update_agent(name):
+    """Save an agent whole -- see the update convention above.
+
+    A `name` that differs from the url renames it, which for an agent is a file
+    move plus a rewrite of the run records that point at it. Everything else is
+    written as sent; a field left out keeps what is on disk, which is what lets
+    the two the page does not draw (the container image, the gpu flags) survive
+    an edit made in the browser.
+    """
     b = _body()
     p = _project()
     if not p.agent_exists(name):
         raise ProjectError(f"no agent named [{name}]")
     current = op_agent.info(str(p.agent_path(name)))
-    return jsonify(op_agent.save_agent(
+    home = b.get("home") or current["home"]
+    runtime = (b.get("runtime") or current["runtime"]).upper()
+    # asserted before the move, not after: a rename that lands and a save that
+    # is then refused would leave the object under a name the caller does not
+    # know it is at, and its next read would 404
+    assert home and home.strip(), "a home directory is required"
+    assert runtime in set(op_agent.runtimes()), (
+        f"unknown runtime [{runtime}]; expected one of {', '.join(op_agent.runtimes())}"
+    )
+    renamed = _renamed_to(b, name)
+    if renamed is not None:
+        name = p.rename_agent(name, renamed)["name"]
+    op_agent.save_agent(
         path=str(p.agent_path(name)),
-        home_uri=b.get("home") or current["home"],
+        home_uri=home,
         container=b.get("container") or current["container"],
-        runtime=(b.get("runtime") or current["runtime"]).upper(),
+        runtime=runtime,
         setup_commands=b.get("setup_commands", current["setup_commands"]),
         globus_uuid=b.get("globus_uuid", current["globus_uuid"]),
-    ))
+    )
+    return jsonify(_agent_payload(p, name))
 
 
 @bp.delete("/agents/<name>")
@@ -442,18 +639,34 @@ def create_workflow():
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
 
 
+@bp.put("/workflows/<name>")
+def put_workflow(name):
+    """Save a workflow whole -- see the update convention above.
+
+    The object here is its request: the recipe, the libraries, the name. A
+    `name` that differs from the url renames it, under the conditions
+    `store.rename_workflow` holds -- a workflow is created the moment it is
+    asked for, under a made-up name, so this is where a user corrects it.
+    """
+    p = _project()
+    b = _body()
+    renamed = _renamed_to(b, name)
+    if renamed is not None:
+        name = p.rename_workflow(name, renamed).name
+    request_fields = {k: v for k, v in b.items() if k != "name"}
+    wf = p.write_request(name, request_fields) if request_fields else p.read_workflow(name)
+    return jsonify(_workflow_summary(wf))
+
+
 @bp.patch("/workflows/<name>")
 def patch_workflow(name):
+    """The partial form, kept for callers that predate the convention."""
     return jsonify(_workflow_summary(_project().write_request(name, _body())))
 
 
 @bp.post("/workflows/<name>/rename")
 def rename_workflow(name):
-    """Correct the made-up name, while there is still nothing keyed to it.
-
-    A workflow is created the moment it is asked for, under a generated name, so
-    this is where a user names it. `store.rename_workflow` holds the conditions.
-    """
+    """The rename-only form, kept for callers that predate the convention."""
     new_name = slugify(_body().get("name") or "")
     assert new_name, "a name is required"
     return jsonify(_workflow_summary(_project().rename_workflow(name, new_name)))
@@ -759,6 +972,14 @@ def create_run():
         raise ProjectError(f"workflow [{workflow}] has no successful plan to run")
     if not p.agent_exists(agent_name):
         raise ProjectError(f"no agent named [{agent_name}]")
+    # an agent is saveable while it is still being filled in; this is the point
+    # where the missing half stops being a work-in-progress and starts being a
+    # staging that would fail on the host, several minutes from now
+    problems = _agent_payload(p, agent_name)["problems"]
+    if problems:
+        raise ProjectError(
+            f"agent [{agent_name}] is not ready to run on: {'; '.join(problems)}"
+        )
 
     agent_path = str(p.agent_path(agent_name))
     rec = p.create_run(workflow, {

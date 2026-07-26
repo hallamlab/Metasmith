@@ -5,8 +5,15 @@
   // paints. The two stay aligned because they share font, padding and wrapping,
   // and the underlay is scrolled to match on every scroll event.
   //
-  // ssh_config's grammar is small enough that this needs no parser: a line is a
-  // comment, or a keyword and a value, and `Host`/`Match` open a block.
+  // Two grammars, both line-at-a-time and neither a parser. ssh_config's is
+  // small enough not to need one: a line is a comment, or a keyword and a
+  // value, and `Host`/`Match` open a block. Bash's is not, but the box it is
+  // used in holds setup commands -- `module load`, `export`, the occasional
+  // `if` -- so a scanner that knows comments, strings, variables, the control
+  // words and what sits in command position covers what is actually typed
+  // there. A construct that spans lines (a heredoc, a quote left open) is
+  // painted per line and will look wrong; that is the price of no parser, and
+  // it is paid in colour, never in what is saved.
 
   let {
     value = $bindable(''),
@@ -15,6 +22,7 @@
     spellcheck = false,
     readonly = false,
     label = null,
+    language = 'ssh',
   } = $props()
 
   let ta
@@ -27,7 +35,87 @@
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   }
 
-  function highlightLine(line) {
+  function tag(cls, text) {
+    return `<span class="${cls}">${escapeHtml(text)}</span>`
+  }
+
+  // -- bash ------------------------------------------------------------------
+
+  // the words that structure a script, as opposed to the ones that run something
+  const BASH_KEYWORDS = new Set([
+    'if', 'then', 'elif', 'else', 'fi', 'for', 'in', 'do', 'done', 'while',
+    'until', 'case', 'esac', 'function', 'select', 'return', 'break', 'continue',
+    'local', 'export', 'declare', 'readonly', 'source', 'eval', 'exec', 'set',
+    'unset', 'shift', 'trap', 'alias', 'time',
+  ])
+
+  // after one of these the next word starts something again -- either a command
+  // (`then ls`) or a name being assigned (`export FOO=bar`) -- rather than
+  // being an argument to the keyword itself
+  const OPENS_COMMAND = new Set([
+    'then', 'else', 'do', 'in', 'function', 'time', 'export', 'local',
+    'declare', 'readonly', 'unset', 'eval', 'exec', 'source',
+  ])
+
+  const BASH_TOKEN = new RegExp(
+    [
+      "(?<comment>#.*$)",
+      // an unterminated quote is still a string to the end of the line: it is
+      // what the character means, and refusing to colour it would flag a
+      // heredoc body as ordinary code
+      "(?<string>'[^']*'?|\"(?:\\\\.|[^\"\\\\])*\"?)",
+      "(?<variable>\\$\\{[^}]*\\}?|\\$[A-Za-z_]\\w*|\\$[-@*#?$!0-9])",
+      "(?<word>[A-Za-z_][\\w./+-]*)",
+      "(?<op>\\|\\||&&|[|&;()<>]+)",
+    ].join('|'),
+    'g',
+  )
+
+  function highlightBash(line) {
+    if (!line.trim()) return ''
+    // the shebang is not a comment in the way the rest are: it says what the
+    // box is, and it is the one line that is there before anything is typed
+    if (line.startsWith('#!')) return tag('t-marker', line)
+
+    let out = ''
+    let last = 0
+    // a word here runs something; a word after it is an argument to it
+    let atCommand = true
+    for (const m of line.matchAll(BASH_TOKEN)) {
+      const g = m.groups
+      out += escapeHtml(line.slice(last, m.index))
+      last = m.index + m[0].length
+      if (g.comment !== undefined) {
+        out += tag('t-comment', g.comment)
+      } else if (g.string !== undefined) {
+        out += tag('t-value', g.string)
+        atCommand = false
+      } else if (g.variable !== undefined) {
+        out += tag('t-var', g.variable)
+        atCommand = false
+      } else if (g.op !== undefined) {
+        out += tag('t-op', g.op)
+        atCommand = true
+      } else {
+        const word = g.word
+        if (BASH_KEYWORDS.has(word)) {
+          out += tag('t-block', word)
+          atCommand = OPENS_COMMAND.has(word)
+        } else if (line[last] === '=' && atCommand) {
+          // FOO=bar in command position is an assignment, not a call
+          out += tag('t-key', word)
+        } else {
+          out += tag(atCommand ? 't-cmd' : 't-value', word)
+          atCommand = false
+        }
+      }
+    }
+    return out + escapeHtml(line.slice(last))
+  }
+
+  // -- ssh_config ------------------------------------------------------------
+
+  function highlightSsh(line) {
     if (!line.trim()) return ''
     if (MARKER.test(line.trim())) return `<span class="t-marker">${escapeHtml(line)}</span>`
     if (line.trimStart().startsWith('#')) return `<span class="t-comment">${escapeHtml(line)}</span>`
@@ -44,7 +132,8 @@
 
   // The trailing newline matters: without it the underlay is one line shorter
   // than the textarea and the last line drifts as you scroll to the bottom.
-  let html = $derived(value.split('\n').map(highlightLine).join('\n') + '\n')
+  let highlight = $derived(language === 'bash' ? highlightBash : highlightSsh)
+  let html = $derived(value.split('\n').map(highlight).join('\n') + '\n')
 
   function syncScroll() {
     if (!underlay || !ta) return
@@ -139,4 +228,8 @@
   .underlay :global(.t-block) { color: var(--accent); font-weight: 600; }
   .underlay :global(.t-key) { color: #c39be0; }
   .underlay :global(.t-value) { color: var(--text); }
+  /* bash only: what is being run, a variable, and the plumbing between them */
+  .underlay :global(.t-cmd) { color: #7fd1b9; }
+  .underlay :global(.t-var) { color: #e0b877; }
+  .underlay :global(.t-op) { color: var(--muted); }
 </style>

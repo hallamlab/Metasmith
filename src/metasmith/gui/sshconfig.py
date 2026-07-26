@@ -494,7 +494,18 @@ class SshConfig:
         self.write_managed_block(self._render(current))
         return self.find(alias).to_dict()
 
-    def update_host(self, alias: str, **fields) -> dict:
+    def update_host(self, alias: str, /, **fields) -> dict:
+        """Rewrite one managed host.
+
+        `alias` is positional-only: `alias` is also a field an update may carry,
+        and a signature that took it either way could not tell "the host I am
+        editing" from "what I want it called".
+
+        `alias` in `fields` is a rename: the alias is the host's identity, and
+        an update that carries the whole object carries its identity too (see
+        the update convention in `api.py`). It is applied in the same rewrite
+        as the rest, so a host is never briefly present under both names.
+        """
         entry = self.find(alias)
         if entry is None:
             raise SshConfigError(f"no host named [{alias}]")
@@ -503,6 +514,18 @@ class SshConfig:
                 f"[{alias}] is defined in [{entry.source}:{entry.line}], outside the "
                 f"metasmith block. Edit it there, or in the config editor."
             )
+        new_alias = str(fields.get("alias") or alias).strip()
+        if new_alias != alias:
+            assert not _WILDCARD.search(new_alias), (
+                f"[{new_alias}] is a pattern, not a host; metasmith only manages "
+                f"concrete hosts"
+            )
+            clash = self.find(new_alias)
+            if clash is not None:
+                raise SshConfigError(
+                    f"[{new_alias}] is already defined in "
+                    f"[{clash.source}:{clash.line}]; pick another alias"
+                )
         hosts = self.managed_entries()
         for h in hosts:
             if h["alias"] != alias:
@@ -511,8 +534,9 @@ class SshConfig:
                 if k in fields:
                     v = fields[k]
                     h[k] = str(v).strip() or None if v not in (None, "") else None
+            h["alias"] = new_alias
         self.write_managed_block(self._render(hosts))
-        return self.find(alias).to_dict()
+        return self.find(new_alias).to_dict()
 
     def remove_host(self, alias: str) -> dict:
         entry = self.find(alias)

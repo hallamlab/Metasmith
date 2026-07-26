@@ -220,6 +220,44 @@ class Project:
     def agent_exists(self, name: str) -> bool:
         return self.agent_path(name).is_file()
 
+    def rename_agent(self, name: str, new_name: str) -> dict:
+        """Move an agent's file, which is its name, and take its runs with it.
+
+        Unlike a workflow -- whose directory *is* the task bundle a run stages
+        from, and so cannot move once a plan is keyed to it -- an agent is one
+        yaml that nothing points into. What does point *at* it is a run record,
+        by name, and three things read that back: an agent's run list, the tail,
+        and the cancel. So the rename re-points them rather than refusing, which
+        is what makes correcting a made-up name an ordinary edit.
+
+        `Path.rename` overwrites silently on posix, so the destination is
+        reserved with an exclusive create first: two requests racing here would
+        otherwise both pass the existence check and one agent would vanish.
+        """
+        src = self.agent_path(name)
+        if not src.is_file():
+            raise ProjectError(f"no agent named [{name}]")
+        assert_valid_name(new_name, "agent name")
+        if new_name == name:
+            return {"name": name, "renamed": False, "runs_repointed": []}
+        dest = self.agent_path(new_name)
+        try:
+            with open(dest, "x"):
+                pass
+        except FileExistsError:
+            raise ProjectError(f"agent [{new_name}] already exists") from None
+        src.rename(dest)
+        if self.archived_at("agents", name) is not None:
+            self._forget_archive("agents", name)
+            self.set_archived("agents", new_name, True)
+        repointed = []
+        for rec in self.list_runs(include_archived=True):
+            if rec.record.get("agent") != name:
+                continue
+            self.update_run(rec.workflow, rec.name, {"agent": new_name})
+            repointed.append(rec.name)
+        return {"name": new_name, "renamed": True, "runs_repointed": repointed}
+
     def delete_agent(self, name: str) -> dict:
         """Delete an agent, or archive it if any run still points at it.
 

@@ -670,6 +670,50 @@ is**. Routes call ops functions directly; nothing shells out to the command line
 
 These are load-bearing:
 
+- **One update convention, and identity travels inside the object.** Every editable
+  thing here — an agent, a workflow, an ssh host — is saved by `PUT /<collection>/<id>`
+  carrying the *whole* object. There is no partial form: these are a dozen short fields,
+  and a diff protocol would cost more to specify and get wrong than the bytes it saves,
+  while leaving two ways to write each one. The id is a field like any other, so an id in
+  the body that differs from the url is a **rename applied as part of the save** — which is
+  the point, because a name someone was *given* (`blazing-ape`) is a thing to correct where
+  you read it, not a second route and a second gesture. The reply is the object as it now
+  stands, at its new id, so a caller adopts one response rather than saving and re-fetching.
+  The pre-existing `PATCH` and `/rename` routes are kept and delegate; they take a subset
+  and cannot rename. Renaming is not free in the same way for all three, and the difference
+  is what each id is load-bearing *for*: a workflow's directory becomes the task bundle a
+  run stages from, so `rename_workflow` still refuses after a generate; an agent is one yaml
+  that nothing points *into*, so `rename_agent` moves it and rewrites the run records that
+  name it; an ssh alias is named by every agent home on that host, so the route re-points
+  them and says which. Two traps. `Path.rename` overwrites silently on posix, so the
+  destination is reserved with an exclusive create — the existence check alone is not a
+  lock. And the fields are validated *before* the move: a rename that lands and a save that
+  is then refused leaves the object at an id the caller does not know, and its next read
+  404s.
+- **An agent is saveable long before it is usable.** You make one, you know it is going on
+  a cluster, and the host does not exist in your ssh config for another week. So an
+  incomplete agent is *reported*, never refused: `problems`/`valid` ride on every agent
+  payload, the rail marks it, and the launch route refuses the same list at the one moment
+  it costs something — otherwise the failure surfaces as a staging error on the host,
+  minutes later. A remote agent with no host chosen is spelled `ssh://:<path>`, which
+  round-trips, reads as unfinished rather than as local, and survives a reload. A *blank*
+  home is the one thing refused outright, because `Source.Parse("")` silently resolves to
+  the cwd — an agent that claims the project directory as its home is worse than a refusal.
+  Host membership is tested against every pattern in the config, wildcards included: someone
+  with `Host *.cluster.edu` can reach a name that is nowhere in `cfg.hosts()`, and judging
+  against the concrete list would call a working host missing — a verdict that now stops a
+  launch.
+- **A save edits the agent file; it does not rebuild it.** `save_agent` loads what is there
+  and sets the fields it was given. Three fields no editor draws depend on that: `real_path`,
+  resolved at deploy time, and `native`/`gpu_args`, which are host facts someone set
+  deliberately. Constructing a fresh `Agent` reverted all three on the next save from the
+  browser. `real_path` *is* cleared when the home changes, because it is what the old home
+  resolved to and carrying it over has the agent claim a directory it no longer names.
+- **The runtime list comes off the enum.** `ops.agent.runtimes()` reads `env.Runtime`, and
+  `/defaults/agent` hands it to the page — so `MAMBA` appeared in the dropdown with nothing
+  to change but the merge that added it. The container *image* is not drawn at all: it is a
+  developer's field, pinned from the CLI, and it is carried through the form untouched so
+  that a whole-object save does not erase it.
 - **The task bundle sits at the root of the workflow directory.** That is what makes
   `metasmith workflow stage AGENT workflows/blazing-ape` work: `ops.workspace`
   resolution accepts a bundle directory as well as a workspace key. `input.xgdb`
@@ -941,6 +985,38 @@ never a user's to register, and listing them buries the requirement that is.
   list offers: whether a type exists is still the exact `typeNames.has(...)` test on the
   row, and a name that merely ranked well is not a name you can register.
 
+- **An agent is created on click, like a workflow, and lands on the screen it is edited
+  on.** There was a form in front of it that asked for exactly what the server would have
+  defaulted, on a page you could not ping or deploy from — so `AgentNew.svelte` is gone and
+  `+ agent` posts an empty body. The default home is `~/msm.<name>`, because a host with
+  three agents on it otherwise has three directories called the same thing and which one you
+  are looking at is knowable only from this side. The path **follows the name** for as long
+  as it is still what the name would have made it, and one edit to the path stops that
+  forever; the test has to accept the expanded form as well as `~/…`, since `Source.Parse`
+  expands `~` for a local home and the path would otherwise stop following the moment the
+  agent was saved once — which is immediately.
+- **Where an agent lives is a tab strip over a box, and the box holds what the tabs decide.**
+  Nothing for a local agent, the host for a remote one. It was a `where it lives` dropdown
+  whose consequence — a host field — appeared somewhere below it, which said the same thing
+  while hiding what it controlled. That row cannot be a `Field`: `Field` is a `<label>`, and
+  a label belongs to exactly one control, not to a tablist over another one.
+- **`ConfigEditor` carries two grammars and still has no parser.** `language="bash"` puts a
+  scanner over the setup-commands box that knows comments, strings, variables, the control
+  words, and what sits in *command position* — the first word of a line, or the first after
+  `|`, `&&`, `;`, `then`, `do`. That last distinction is the one that makes a setup block
+  readable: `module` is what runs, `load gcc` is what it is told. A construct spanning lines
+  — a heredoc, a quote left open — is painted per line and will look wrong, which is the
+  price of no parser and is paid in colour, never in what is saved. The box starts at
+  `#!/bin/bash` (highlighted apart from an ordinary comment, since it says what the box *is*)
+  and is not resizable; the shebang is a comment wherever it ends up — the lines are run one
+  at a time over a live shell and pasted into the launcher under their own marker — so it
+  costs nothing to keep.
+- **`attempt` clears the standing notice on the way in, and a background read must not.**
+  Right for an action: pressing a button should not leave the last failure beside the new
+  result. Wrong for a view that fetches on mount — and a rename *causes* a mount, so the
+  ssh host pane's identity fetch was wiping the very notice the rename had just written
+  ("re-pointed agent(s) …"). Those pass `quiet`. The report is also written *after* `attempt`
+  resolves, not inside it, for the same reason it is in the recipe's `apply`.
 - **Every call goes through one api service, which is what pays for the header's dot.**
   `lib/api.svelte.js` is a class holding `$state` and exported as a single instance; every
   component imports that one, and `components/StatusDot.svelte` reads `api.status` — nothing

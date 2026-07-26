@@ -135,8 +135,14 @@ export function clearNotice() {
 }
 
 // Wrap an action so a refusal reaches the user instead of the console.
-export async function attempt(fn, { onSuccess } = {}) {
-  clearNotice()
+//
+// Clearing on the way in is right for an action -- pressing a button should not
+// leave the last failure standing beside the new result. It is wrong for a
+// *background* read: a view that fetches something on mount would otherwise
+// wipe whatever the action that navigated there had just said. Those pass
+// `quiet`, which keeps the standing notice and still reports their own failure.
+export async function attempt(fn, { onSuccess, quiet = false } = {}) {
+  if (!quiet) clearNotice()
   try {
     const out = await fn()
     onSuccess?.(out)
@@ -193,6 +199,21 @@ export async function refresh(section = app.section) {
 export function select(section, id) {
   app.section = section
   app.selected[section] = id
+}
+
+// An agent is made the same way a workflow is: on click, under a generated
+// name, with a home named after it -- and you land on it with every field
+// editable, the name included. There was a form in front of this, and it asked
+// for exactly what the server would have defaulted, on a screen you could not
+// deploy or ping from.
+export async function createAgent() {
+  const out = await attempt(async () => {
+    const body = await api.post('/agents', {})
+    await loadAgents()
+    return body
+  })
+  if (out) select('agents', out.name)
+  return out
 }
 
 // A workflow is made the moment it is asked for, under a name picked for you,

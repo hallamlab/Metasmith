@@ -243,7 +243,8 @@
   function persist() {
     writing = writing.then(() =>
       attempt(async () => {
-        await api.patch(`/workflows/${name}`, requestBody())
+        // no `name` in the body, so this only ever saves the recipe
+        await api.put(`/workflows/${name}`, requestBody())
         await loadWorkflows()
       }),
     )
@@ -642,7 +643,9 @@
     const next = draft.trim()
     if (!next || next === wf.name) return
     const out = await attempt(async () => {
-      const body = await api.post(`/workflows/${name}/rename`, { name: next })
+      // the same PUT the recipe saves through: a workflow's name is a field of
+      // it, and an id in the body that differs from the url is a rename
+      const body = await api.put(`/workflows/${name}`, { name: next })
       await loadWorkflows()
       return body
     })
@@ -803,11 +806,17 @@
       {#if wf.success}
         <div class="card col" style="gap:10px">
           <h3>run it</h3>
+          <!-- An agent that is still being filled in is listed and disabled,
+               not hidden: "the one I made is missing" is a worse thing to work
+               out than "the one I made says it has no host yet". The route
+               refuses the same agents, so this is a signpost, not the check. -->
           <Field label="on which agent">
             <select bind:value={agentChoice}>
               <option value="">choose an agent…</option>
               {#each app.agents.filter((a) => !a.archived_at) as a}
-                <option value={a.name}>{a.name}</option>
+                <option value={a.name} disabled={a.valid === false}>
+                  {a.name}{a.valid === false ? ` — ${a.problems.join(', ')}` : ''}
+                </option>
               {/each}
             </select>
           </Field>

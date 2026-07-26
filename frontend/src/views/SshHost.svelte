@@ -1,13 +1,15 @@
 <script>
   import { api } from '../lib/api.svelte.js'
-  import { app, attempt, loadSsh } from '../lib/state.svelte.js'
+  import { app, attempt, loadSsh, notify, select } from '../lib/state.svelte.js'
   import Field from '../components/Field.svelte'
   import IdentityField from '../components/IdentityField.svelte'
 
   let { alias } = $props()
 
   let host = $derived(app.hosts.find((h) => h.alias === alias) ?? null)
-  let draft = $state({ hostname: '', user: '', port: '', proxy_jump: '', identity_file: '' })
+  let draft = $state({
+    alias: '', hostname: '', user: '', port: '', proxy_jump: '', identity_file: '',
+  })
   let lastLoaded = $state(null)
   let identity = $state(null)
 
@@ -15,6 +17,7 @@
     if (host && lastLoaded !== host.alias) {
       lastLoaded = host.alias
       draft = {
+        alias: host.alias,
         hostname: host.hostname ?? '',
         user: host.user ?? '',
         port: host.port ?? '',
@@ -26,22 +29,47 @@
 
   // The public key is read from disk, so it is fetched rather than derived from
   // the host list. Only the public half ever leaves the server.
+  // `quiet`: this runs on mount, including the mount caused by a rename, and a
+  // background read must not wipe what the rename just reported
   $effect(() => {
     const a = alias
     identity = null
-    attempt(async () => (identity = (await api.get(`/ssh/hosts/${a}/identity`)).identity))
+    attempt(
+      async () => (identity = (await api.get(`/ssh/hosts/${a}/identity`)).identity),
+      { quiet: true },
+    )
   })
 
   async function refreshIdentity() {
     identity = (await api.get(`/ssh/hosts/${alias}/identity`)).identity
   }
 
+  // One PUT carrying the whole host, alias included -- the same convention the
+  // agent and the workflow are saved by. An alias that differs is a rename, and
+  // the server re-points every agent whose home was on the old name; it says
+  // which, because that is an edit to objects the user is not looking at.
   async function save() {
-    await attempt(async () => {
-      await api.patch(`/ssh/hosts/${alias}`, draft)
+    const out = await attempt(async () => {
+      const body = await api.put(`/ssh/hosts/${alias}`, draft)
       await loadSsh()
-      await refreshIdentity()
+      return body
     })
+    if (!out) return
+    if (out.renamed_from) {
+      // the alias is the route: reselect, or the pane reloads against a name
+      // that is no longer in the config
+      select('ssh', `host:${out.host.alias}`)
+      // written after `attempt` has resolved, not inside it -- see `attempt`
+      if (out.agents_repointed?.length) {
+        notify(
+          `[${out.renamed_from}] is now [${out.host.alias}]; ` +
+            `re-pointed agent(s) ${out.agents_repointed.join(', ')}`,
+          'info',
+        )
+      }
+      return
+    }
+    await refreshIdentity()
   }
 
   // Deleting the key that a saved host points at would otherwise leave the
@@ -82,6 +110,9 @@
       </div>
     {:else}
       <div class="col" style="gap:10px">
+        <Field label="alias" hint="what you type after `ssh`, and what an agent's home names">
+          <input bind:value={draft.alias} />
+        </Field>
         <Field label="hostname">
           <input bind:value={draft.hostname} />
         </Field>

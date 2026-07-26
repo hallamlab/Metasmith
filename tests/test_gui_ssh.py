@@ -312,6 +312,45 @@ class TestOwnership:
             cfg.remove_host("nope")
 
 
+class TestRenamingAHost:
+    """The alias is the host's identity, and an update carries it like any field."""
+
+    def test_rename_keeps_the_keywords(self, cfg):
+        cfg.add_host("one", "one.example.org", user="a", port="2222")
+        renamed = cfg.update_host("one", alias="uno")
+        assert renamed["alias"] == "uno"
+        assert renamed["user"] == "a"
+        assert renamed["port"] == "2222"
+        assert [h["alias"] for h in cfg.hosts()] == ["uno"]
+
+    def test_rename_and_edit_in_one_write(self, cfg):
+        cfg.add_host("one", "one.example.org")
+        out = cfg.update_host("one", alias="uno", hostname="uno.example.org")
+        assert (out["alias"], out["hostname"]) == ("uno", "uno.example.org")
+
+    def test_rename_onto_a_taken_alias_is_refused(self, cfg):
+        cfg.add_host("one", "one.example.org")
+        cfg.add_host("two", "two.example.org")
+        with pytest.raises(SshConfigError, match="already defined"):
+            cfg.update_host("one", alias="two")
+        assert [h["alias"] for h in cfg.hosts()] == ["one", "two"]
+
+    def test_rename_onto_a_native_alias_is_refused(self, cfg, cfg_path):
+        _write(cfg_path, "Host theirs\n    HostName t\n")
+        cfg.add_host("one", "one.example.org")
+        with pytest.raises(SshConfigError, match="already defined"):
+            cfg.update_host("one", alias="theirs")
+
+    def test_rename_to_a_pattern_is_refused(self, cfg):
+        cfg.add_host("one", "one.example.org")
+        with pytest.raises(AssertionError, match="not a host"):
+            cfg.update_host("one", alias="*.example.org")
+
+    def test_same_alias_is_not_a_rename(self, cfg):
+        cfg.add_host("one", "one.example.org")
+        assert cfg.update_host("one", alias="one", user="b")["user"] == "b"
+
+
 class TestShadowing:
     def test_reports_patterns_that_apply(self, cfg, cfg_path):
         _write(cfg_path, "Host *.example.org\n    User svc\n")
