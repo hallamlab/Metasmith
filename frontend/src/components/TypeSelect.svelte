@@ -1,4 +1,6 @@
 <script>
+  import { rank } from '../lib/fuzzy.js'
+
   // A type picker that looks like a list you chose from, not a hint about what
   // you typed. The native `<input list>` + `<datalist>` this replaces was the
   // right behaviour behind the wrong shape: Chrome renders it as a pale bubble
@@ -42,15 +44,10 @@
     }
   })
 
-  let shown = $derived.by(() => {
-    const q = typed ? query.trim().toLowerCase() : ''
-    if (!q) return options
-    // a whole-string match first, then the substring hits, so typing a full name
-    // never buries it under its own longer relatives
-    const hits = options.filter((o) => o.toLowerCase().includes(q))
-    const exact = hits.filter((o) => o.toLowerCase() === q)
-    return exact.length ? [...exact, ...hits.filter((o) => o.toLowerCase() !== q)] : hits
-  })
+  // Matching is fuzzy and ranked: the characters have to appear in order, not as
+  // one run, so a half-remembered name still finds its type. Ordering is what
+  // makes that usable rather than noisy -- see lib/fuzzy.js.
+  let shown = $derived(typed ? rank(options, query) : options)
 
   function set(next, { close = false } = {}) {
     query = next

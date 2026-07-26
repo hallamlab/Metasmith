@@ -5,24 +5,26 @@
   // One builder for both halves of the recipe. An output is an input with the
   // identity rows taken away and a different set of things it can descend from,
   // so the role is a radio rather than a second component.
+  //
+  // Which libraries are enabled is not part of adding a row -- it is what the
+  // planner is allowed to reach for -- so that control lives in the panel now,
+  // next to the counts and the graph it narrows. `enabled` still arrives here
+  // because the counts below are filtered by it.
   let {
     types = [],
     index = null,
     enabled = null,
-    libraries = [],
     items = [],
     targets = [],
     prefill = null,
     onadd,
     onfocus,
-    ontogglelibrary,
   } = $props()
 
   let role = $state('input')
   let mode = $state('file')
   let form = $state({ path: '', name: '', value: '', dtype: '' })
   let parents = $state([])
-  let libsOpen = $state(false)
   let busy = $state(false)
 
   // a type picked anywhere else -- a row of the recipe, a chip in the panel, a
@@ -125,8 +127,6 @@
     // common case, and retyping it four times is not a feature
     if (ok) form = { ...form, path: '', name: '', value: '' }
   }
-
-  let enabledCount = $derived(libraries.filter((l) => !enabled || enabled.has(l.path)).length)
 </script>
 
 <div class="col" style="gap:10px">
@@ -263,38 +263,6 @@
       <span class="small muted">already wanted, with the same lineage</span>
     {/if}
   </div>
-
-  <!-- Not part of adding a row: it is what the planner is allowed to reach for,
-       and it narrows the counts above and the panel beside it as you touch it. -->
-  <div class="libs">
-    <button class="fold small" onclick={() => (libsOpen = !libsOpen)}>
-      <span class="caret">{libsOpen ? '▾' : '▸'}</span> transform libraries
-      <span class="muted">{enabledCount} of {libraries.length}</span>
-    </button>
-    {#if libsOpen}
-      <div class="picker" style="margin-top:6px">
-        {#each libraries as l (l.path)}
-          <label class="small row" style="gap:4px" title={l.path}>
-            <input
-              type="checkbox"
-              style="width:auto"
-              checked={!enabled || enabled.has(l.path)}
-              onchange={() => ontogglelibrary?.(l.path)}
-            />
-            <span class="mono truncate grow">{l.name}</span>
-            {#if l.error}
-              <span class="tag bad">unreadable</span>
-            {:else}
-              <span class="muted">{l.transform_count}</span>
-            {/if}
-          </label>
-        {/each}
-      </div>
-      <p class="small muted" style="margin:6px 0 0">
-        Narrowing these changes what a generate may use, and marks the result stale.
-      </p>
-    {/if}
-  </div>
 </div>
 
 <style>
@@ -305,16 +273,4 @@
     border-radius: var(--radius);
     padding: 6px 8px;
   }
-  .libs { border-top: 1px dashed var(--line); padding-top: 10px; }
-  .fold {
-    background: none;
-    border: none;
-    padding: 0;
-    color: var(--text);
-    display: flex;
-    gap: 6px;
-    align-items: baseline;
-  }
-  .fold:hover { border: none; color: var(--accent); }
-  .caret { color: var(--muted); }
 </style>

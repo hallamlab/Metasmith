@@ -338,7 +338,12 @@
       </Rail>
     {/if}
 
-    <main>
+    <!-- The workflow pane carries a panel on its right edge, and a panel inside
+         a scrolling box is not a panel: the page's scrollbar ends up outside it
+         and it slides under the header. So for that one view `main` stops being
+         the scroll container and becomes a plain row -- the view scrolls its own
+         column, the panel scrolls its own list. Every other view is unchanged. -->
+    <main class:flush={app.section === 'workflows' && sel}>
       {#if app.section === 'ssh'}
         {#if sel === 'new'}
           <SshNew />
@@ -479,6 +484,7 @@
   .tab.on { color: var(--text); border-bottom-color: var(--accent); }
   .body { display: flex; flex: 1; min-height: 0; }
   main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
+  main.flush { overflow: hidden; padding: 0; display: flex; min-height: 0; }
   .blank { max-width: 560px; display: flex; flex-direction: column; gap: 10px; }
   .notice {
     display: flex;

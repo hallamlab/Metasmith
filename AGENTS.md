@@ -677,6 +677,54 @@ whichever type is in focus. Container and `lib::` requirements are hidden from t
 readout (counted as "supplied"), the same namespaces `render_dag` blacklists: they are
 never a user's to register, and listing them buries the requirement that is.
 
+- **The panel is outside the scroll, not inside it.** A panel within the scrolling box is
+  not a panel: the page's scrollbar ends up to the *right* of it and it slides under the
+  header, which is why it used to fake staying put with `position: sticky` and a `100vh`
+  guess. So `main` drops out of the scrolling business for this one view — `App.svelte`
+  gives it a `flush` modifier (no padding, no overflow, a flex row) whenever a workflow is
+  selected — and `WorkflowView` scrolls its own column instead. Left to right that reads:
+  the page, the page's scrollbar, the panel, the panel's scrollbar. The modifier and the
+  panel have to appear together; a `main` left flush under another view would silently kill
+  that view's scrolling. The panel is furniture like the rail (full height, one border on
+  the inner edge, no radius) and is split across as well as down: a fixed upper section
+  holding the libraries and the graph, a horizontal grip, and the lower list that scrolls.
+  All three remembered widths/heights live in `lib/state.svelte.js` beside `railWidth`.
+
+- **The graph is laid out in the browser, from the index already in it.** No route and no
+  fetch — the index is shipped whole precisely so a library toggle costs nothing, and a
+  server-rendered picture would put a round trip back in front of every click. `lib/graphs.js`
+  turns the index into `{nodes, edges}` for three cases (a tool, a library, a type's
+  neighbourhood, capped per side); `lib/dagLayout.js` is a Sugiyama pipeline in miniature —
+  break cycles, longest-path rows, thread long edges through invisible lane nodes, median
+  ordering, bounded straightening; `components/MiniGraph.svelte` draws edges in one SVG layer
+  with the nodes as ordinary buttons over it, so clicking one moves the panel onto it.
+  Four things there are load-bearing. **Cycles must be broken first** — a library graph is not
+  guaranteed acyclic (one tool consuming and producing the same type is enough) and a
+  longest-path walk over a cycle does not terminate. **Straightening is bounded by the widest
+  row**: pulling a node toward its parents only enforces a *minimum* gap, so without a ceiling
+  rows drift apart and the assembly library lays out at 1269px instead of 613px. **Lanes are
+  charged a sliver of clearance, not a column**, or routing costs more width than it saves.
+  And boxes are a **fixed width**, which is what removes the measure pass: layout is pure data.
+  Two of the three cases match on properties, not names — a library's chain is only continuous
+  because the `as`/`match` entries bridge a narrower product to a broader requirement.
+
+- **Which libraries are enabled is not part of adding a row.** It is what the planner may
+  reach for, so `views/LibraryList.svelte` holds it in the panel — beside the counts and the
+  graph it narrows — rather than in a fold in the middle of the builder. Each row carries an
+  eye and a checkbox, and they are deliberately independent: the eye draws a library whether
+  or not it is enabled, and switching one off does not yank the graph out from under you. A
+  refused toggle has to be undone by hand: the last library may not be switched off, but a
+  native checkbox has already flipped itself by then and nothing re-renders it, so the row
+  would show unticked over a library that is still enabled.
+
+- **Fuzzy matching is ranking, not membership.** `lib/fuzzy.js` scores every type name against
+  what was typed — exact, prefix, the bare name under a namespace, a whole word, a word start,
+  a substring, then a subsequence, with ties broken on how tightly the matched characters sit
+  and how early they start. Subsequence matching alone is far too generous (`gbk` is a
+  subsequence of half the library), so the ranking *is* the feature. It only decides what the
+  list offers: whether a type exists is still the exact `typeNames.has(...)` test in the
+  builder, and a name that merely ranked well is not a name you can register.
+
 The page has no network of its own — it is served from a bundle and never reaches a CDN.
 So anything that would normally be a small dependency is inlined instead:
 `components/Icon.svelte` carries the header glyphs as SVG paths (the docs site's own set),

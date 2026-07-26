@@ -1,10 +1,15 @@
 <script>
+  import { isPlumbing } from '../lib/graphs.js'
+
   // What sits on either side of a type. This is the question the builder cannot
   // answer on its own -- you pick a type and immediately want to know what could
   // make it, what could take it, and what *else* those transforms want before
   // they will run. The last one is the payoff: it names the input you have not
   // registered yet, before a failed generate has to tell you.
-  let { type = null, index = null, enabled = null, onpick } = $props()
+  //
+  // A card is also how you get a tool drawn: clicking one hands its index up, and
+  // the graph above takes it over until the focus moves to another type.
+  let { type = null, index = null, enabled = null, selected = null, onpick, onselect } = $props()
 
   // An entry is {i, as, match}: which transform, the type it actually declared,
   // and how that relates to the one in focus. A transform is here because its
@@ -35,9 +40,9 @@
   // Container images and bundled scripts are requirements, but never ones a
   // person registers -- the resource libraries supply them. Listing them here
   // would bury the requirement that *is* the user's to satisfy, which is the
-  // whole reason this section exists. Same namespaces the DAG renderer hides.
-  const PLUMBING = new Set(['containers', 'lib'])
-  const plumbing = (t) => PLUMBING.has(t.split('::')[0])
+  // whole reason this section exists. Same namespaces the DAG renderer hides,
+  // and the same ones the graphs leave out -- one definition, in lib/graphs.js.
+  const plumbing = isPlumbing
 
   // everything the transform wants that is not the type being looked at. `self`
   // is a list, not one name: the type in focus and the one the transform
@@ -85,11 +90,11 @@
           <!-- the type in focus and the name the transform declared for it are
                both shown above, so neither repeats in the lines below -->
           {@const seen = [type, entry.as]}
-          <div class="tr col">
-            <div class="spread">
+          <div class="tr col" class:sel={entry.i === selected}>
+            <button class="spread head" onclick={() => onselect?.(entry.i)} title="draw {tr.name}">
               <span class="mono truncate" title={tr.path}>{tr.name}</span>
               <span class="tag">{tr.library_name}</span>
-            </div>
+            </button>
             {#if rel && entry.as}
               <!-- the match the type system made, spelled out: without this the
                    transform looks like it named this type and did not -->
@@ -141,6 +146,19 @@
     border-radius: var(--radius);
     background: var(--bg);
   }
+  .tr.sel { border-color: var(--accent); }
+  /* the card's name is what selects it; it carries no chrome of its own so the
+     card still reads as a card rather than as a button holding one */
+  .head {
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    text-align: left;
+  }
+  .head:hover { border: none; }
+  .head:hover .mono { color: var(--accent); }
   .line { display: flex; gap: 6px; align-items: baseline; }
   .lbl { flex: 0 0 auto; }
   .chips { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }

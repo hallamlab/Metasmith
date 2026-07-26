@@ -3,11 +3,14 @@
   import { app, attempt, loadRuns, loadWorkflows, notify, select } from '../lib/state.svelte.js'
   import Field from '../components/Field.svelte'
   import JobLog from '../components/JobLog.svelte'
+  import MiniGraph from '../components/MiniGraph.svelte'
   import SidePanel from '../components/SidePanel.svelte'
   import EntryBuilder from './EntryBuilder.svelte'
   import HintsPanel from './HintsPanel.svelte'
+  import LibraryList from './LibraryList.svelte'
   import RecipeCard from './RecipeCard.svelte'
   import TypeInspector from './TypeInspector.svelte'
+  import { libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
 
   let { name } = $props()
 
@@ -21,6 +24,26 @@
   let presetChoice = $state('')
   let presets = $state({})
   let focus = $state(null)
+
+  // What the upper half of the panel is drawing. A type in focus draws its own
+  // neighbourhood; picking a tool or a library takes it over until the focus
+  // moves again, so clicking through the list below never fights the picture.
+  let drawing = $state(null)
+
+  function pickType(type) {
+    focus = type
+    drawing = null
+  }
+
+  function pickTransform(i) {
+    drawing = { kind: 'transform', i }
+  }
+
+  function pickLibrary(path) {
+    drawing = drawing?.kind === 'library' && drawing.path === path
+      ? null
+      : { kind: 'library', path }
+  }
 
   // the editable recipe, kept separate from the frozen result below it
   let recipe = $state({ sample_type: '', targets: [], transform_libraries: [] })
@@ -57,6 +80,7 @@
     wf = null
     jobId = null
     focus = null
+    drawing = null
     loadedFor = null
     attempt(async () => {
       types = await api.get('/project/types')
@@ -79,6 +103,26 @@
   let enabled = $derived(
     recipe.transform_libraries.length ? new Set(recipe.transform_libraries) : null,
   )
+
+  // laid out in the browser from the index it already holds, so a library toggle
+  // redraws with no round trip
+  let graph = $derived.by(() => {
+    if (!index) return null
+    if (drawing?.kind === 'transform') return transformGraph(index, drawing.i)
+    if (drawing?.kind === 'library') return libraryGraph(index, drawing.path)
+    return focus ? typeGraph(index, focus, enabled) : null
+  })
+
+  let graphFocus = $derived(
+    drawing?.kind === 'transform' ? `x:${drawing.i}` : focus ? `t:${focus}` : null,
+  )
+
+  let drawingLabel = $derived.by(() => {
+    if (drawing?.kind === 'transform') return index?.transforms?.[drawing.i]?.name ?? 'transform'
+    if (drawing?.kind === 'library')
+      return index?.libraries?.find((l) => l.path === drawing.path)?.name ?? 'library'
+    return focus
+  })
 
   let stale = $derived(
     wf?.planned &&
@@ -153,13 +197,13 @@
   // The hints sit below the builder, so filling the type field from one would
   // otherwise change something the reader cannot see.
   function useType(type) {
-    focus = type
+    pickType(type)
     document.getElementById('msm-builder')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
   function setSample(type) {
     recipe.sample_type = type
-    focus = type
+    pickType(type)
     persist()
   }
 
@@ -246,7 +290,7 @@
 </script>
 
 {#if !wf}
-  <p class="muted">loading…</p>
+  <p class="muted loading">loading…</p>
 {:else}
   <div class="pane">
     <div class="col main" style="gap:14px">
@@ -296,7 +340,7 @@
           targets={recipe.targets}
           sampleType={recipe.sample_type}
           {focus}
-          onfocus={(t) => (focus = t)}
+          onfocus={pickType}
           onsample={setSample}
           onremoveInput={removeInput}
           onremoveTarget={removeTarget}
@@ -308,13 +352,11 @@
           {types}
           {index}
           {enabled}
-          libraries={index?.libraries ?? []}
           {items}
           targets={recipe.targets}
           prefill={focus}
           onadd={addEntry}
-          onfocus={(t) => (focus = t)}
-          ontogglelibrary={toggleLibrary}
+          onfocus={pickType}
         />
       </div>
 
@@ -441,14 +483,46 @@
       {/if}
     </div>
 
-    <SidePanel title={focus ?? 'types'} subtitle={focus ? null : 'nothing selected'}>
-      <TypeInspector type={focus} {index} {enabled} onpick={(t) => (focus = t)} />
+    <SidePanel
+      title={drawingLabel ?? 'types'}
+      subtitle={graph?.caption ?? (focus ? null : 'nothing selected')}
+    >
+      {#snippet top()}
+        <LibraryList
+          libraries={index?.libraries ?? []}
+          {enabled}
+          viewing={drawing?.kind === 'library' ? drawing.path : null}
+          ontoggle={toggleLibrary}
+          onview={pickLibrary}
+        />
+        <MiniGraph
+          {graph}
+          focus={graphFocus}
+          empty="Pick a type, a transform, or a library’s eye — this draws what it connects to."
+          onpicktype={pickType}
+          onpicktransform={pickTransform}
+        />
+      {/snippet}
+
+      <TypeInspector
+        type={focus}
+        {index}
+        {enabled}
+        selected={drawing?.kind === 'transform' ? drawing.i : null}
+        onpick={pickType}
+        onselect={pickTransform}
+      />
     </SidePanel>
   </div>
 {/if}
 
 <style>
-  .pane { display: flex; gap: 14px; align-items: flex-start; }
+  /* The column scrolls, not the page: that puts its scrollbar at its own right
+     edge, with the panel outside it rather than behind it. `main` is in flush
+     mode for this view (App.svelte) so this row owns the height. */
+  .pane { display: flex; flex: 1; min-width: 0; height: 100%; align-items: stretch; }
+  .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
+  .loading { padding: 18px; }
   /* a heading that happens to be clickable, not a button that happens to hold
      one: no chrome until the pointer is on it */
   .asname {
@@ -467,7 +541,6 @@
     width: auto;
     max-width: 420px;
   }
-  .main { flex: 1; min-width: 0; }
   .scroll { overflow-x: auto; }
   .dag { background: #fff; border-radius: var(--radius); padding: 8px; overflow: auto; }
   .dag img { max-width: 100%; }

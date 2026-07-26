@@ -56,11 +56,24 @@ export const PANEL_DEFAULT = 320
 export const PANEL_MIN = 240
 export const PANEL_MAX = 720
 
+// The panel is split across, not just down: a graph above, the list below. The
+// height of the upper half is remembered the same way the widths are -- a graph
+// wants more room on a tall screen than on a laptop, and being told that once
+// should be enough.
+export const PANEL_TOP_DEFAULT = 420
+export const PANEL_TOP_MIN = 96
+export const PANEL_TOP_MAX = 1200
+
 const PANEL_KEY = 'metasmith.panelWidth'
 const PANEL_OPEN_KEY = 'metasmith.panelOpen'
+const PANEL_TOP_KEY = 'metasmith.panelTop'
 
 export function clampPanel(w) {
   return Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(w)))
+}
+
+export function clampPanelTop(h) {
+  return Math.min(PANEL_TOP_MAX, Math.max(PANEL_TOP_MIN, Math.round(h)))
 }
 
 function stored(key, fallback, parse) {
@@ -79,6 +92,10 @@ export const ui = $state({
     return Number.isFinite(n) && n > 0 ? clampPanel(n) : PANEL_DEFAULT
   }),
   panelOpen: stored(PANEL_OPEN_KEY, true, (r) => r !== '0'),
+  panelTop: stored(PANEL_TOP_KEY, PANEL_TOP_DEFAULT, (r) => {
+    const n = Number(r)
+    return Number.isFinite(n) && n > 0 ? clampPanelTop(n) : PANEL_TOP_DEFAULT
+  }),
 })
 
 function remember(key, value) {
@@ -97,6 +114,11 @@ export function setRailWidth(w) {
 export function setPanelWidth(w) {
   ui.panelWidth = clampPanel(w)
   remember(PANEL_KEY, String(ui.panelWidth))
+}
+
+export function setPanelTop(h) {
+  ui.panelTop = clampPanelTop(h)
+  remember(PANEL_TOP_KEY, String(ui.panelTop))
 }
 
 export function setPanelOpen(open) {

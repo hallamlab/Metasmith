@@ -30,6 +30,12 @@ body.resizing {
   user-select: none;
 }
 
+/* the same, for the grip that splits the panel across rather than down */
+body.resizing-v {
+  cursor: row-resize;
+  user-select: none;
+}
+
 button {
   font: inherit;
   color: var(--text);
