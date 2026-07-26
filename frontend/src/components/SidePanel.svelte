@@ -20,7 +20,7 @@
   // it scrolls on its own, so left to right you get the page, the page's
   // scrollbar, this panel, and this panel's scrollbar. Only the lower section
   // scrolls -- the head and whatever `top` holds stay put while it does.
-  let { title, subtitle = null, top = null, children } = $props()
+  let { title, subtitle = null, action = null, top = null, children } = $props()
 
   // reassigned when the panel is folded and unfolded, so it has to be reactive
   let el = $state(null)
@@ -131,7 +131,12 @@
     <div class="head">
       <div class="spread">
         <h3 class="truncate">{title}</h3>
-        <button class="fold" onclick={() => setPanelOpen(false)} title="collapse">▸</button>
+        <div class="row">
+          <!-- whatever the panel's contents can do to the page it is beside;
+               it sits by the title because it acts on what the title names -->
+          {#if action}{@render action()}{/if}
+          <button class="fold" onclick={() => setPanelOpen(false)} title="collapse">▸</button>
+        </div>
       </div>
       {#if subtitle}<div class="small muted truncate">{subtitle}</div>{/if}
     </div>

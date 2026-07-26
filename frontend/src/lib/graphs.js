@@ -79,14 +79,50 @@ export function transformGraph(index, i) {
   )
   for (const t of outputs) add(typeNode(t))
 
+  const lineage = requirementLineage(tr)
+  const caption = [
+    tr.group_by ? `one run per ${tr.group_by}` : null,
+    lineage.length ? `${lineage.length} lineage constraint(s) between inputs` : null,
+  ].filter(Boolean)
+
   return {
     nodes,
     edges: [
       ...inputs.map((t) => ({ from: typeId(t), to: transformId(i) })),
       ...outputs.map((t) => ({ from: transformId(i), to: typeId(t) })),
+      ...lineage,
     ],
-    caption: tr.group_by ? `one run per ${tr.group_by}` : null,
+    caption: caption.length ? caption.join(' · ') : null,
   }
+}
+
+/**
+ * The constraints *between* a tool's inputs: not "it needs three files" but
+ * "the reads must belong to the metadata, and the stats to those reads".
+ *
+ * A third of the standard library declares these, and without them a tool that
+ * only runs on a properly related set looks exactly like one that takes any
+ * three files. The index ships them as slot positions (`requires`); type nodes
+ * here are keyed by name, so two slots of one type collapse onto one box and the
+ * constraint between them has nowhere to be drawn -- those are dropped rather
+ * than drawn as a self-loop.
+ */
+function requirementLineage(tr) {
+  const slots = tr.requires ?? []
+  const out = []
+  const drawn = new Set()
+  slots.forEach((slot, k) => {
+    if (!slot?.as || isPlumbing(slot.as)) return
+    for (const p of slot.parents ?? []) {
+      const parent = slots[p]
+      if (!parent?.as || isPlumbing(parent.as) || parent.as === slot.as) continue
+      const key = `${parent.as} -> ${slot.as}`
+      if (drawn.has(key)) continue
+      drawn.add(key)
+      out.push({ from: typeId(parent.as), to: typeId(slot.as), kind: 'lineage' })
+    }
+  })
+  return out
 }
 
 /**

@@ -56,9 +56,9 @@
             <div class="miss small">
               <span class="mono">{miss}</span>
               {#if onadd}
-                <!-- fills the builder's type field rather than registering
-                     anything: a near miss still needs a path or a value -->
-                <button class="small" onclick={() => onadd(miss)}>use this type</button>
+                <!-- makes the row rather than registering anything: a near miss
+                     still needs a path or a value before it is an input -->
+                <button class="small" onclick={() => onadd(miss)}>add a row for this</button>
               {/if}
             </div>
           {/each}

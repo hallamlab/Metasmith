@@ -6,6 +6,7 @@
     attempt,
     clearNotice,
     createWorkflow,
+    forkWorkflow,
     loadProject,
     refresh,
     select,
@@ -39,6 +40,7 @@
 
   let copied = $state(false)
   let creating = $state(false)
+  let forking = $state(null)
 
   // guarded because two clicks would make two workflows, and the second one is
   // never what was wanted
@@ -46,6 +48,17 @@
     creating = true
     await createWorkflow()
     creating = false
+  }
+
+  // Copying a workflow is a list action, so it is on the row: a button in the
+  // pane could only ever copy the one workflow already open, and getting a copy
+  // of a *different* one meant opening it first. Guarded like the create above,
+  // and by name rather than a flag, so two rows do not disable each other.
+  async function copyWorkflow(e, name) {
+    e.stopPropagation()
+    forking = name
+    await forkWorkflow(name)
+    forking = null
   }
 
   async function copyPath() {
@@ -296,6 +309,15 @@
             <div class="row">
               {#if item.wf.live_runs}<span class="tag live">live</span>{/if}
               {#if item.wf.archived_at}<span class="tag warn">arch</span>{/if}
+              <button
+                class="rowact"
+                disabled={forking === item.wf.name}
+                onclick={(e) => copyWorkflow(e, item.wf.name)}
+                title="copy — the same recipe under a new identity, so it re-runs from scratch"
+                aria-label="copy workflow"
+              >
+                <Icon name="copy" size={12} />
+              </button>
               <DeleteControl
                 title="delete workflow"
                 archives
@@ -445,6 +467,16 @@
     color: var(--muted);
   }
   .copy:hover { color: var(--text); background: var(--panel-2); }
+  /* an action that lives on a rail row: the same weight as the × beside it, so
+     neither reads as the row's purpose */
+  .rowact {
+    display: flex;
+    padding: 3px;
+    background: none;
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .rowact:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
   .path {
     min-width: 0;
     overflow: hidden;

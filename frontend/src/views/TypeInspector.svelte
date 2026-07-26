@@ -9,7 +9,15 @@
   //
   // A card is also how you get a tool drawn: clicking one hands its index up, and
   // the graph above takes it over until the focus moves to another type.
-  let { type = null, index = null, enabled = null, selected = null, onpick, onselect } = $props()
+  let {
+    type = null,
+    index = null,
+    enabled = null,
+    selected = null,
+    onpick,
+    onselect,
+    onapply,
+  } = $props()
 
   // An entry is {i, as, match}: which transform, the type it actually declared,
   // and how that relates to the one in focus. A transform is here because its
@@ -91,10 +99,21 @@
                both shown above, so neither repeats in the lines below -->
           {@const seen = [type, entry.as]}
           <div class="tr col" class:sel={entry.i === selected}>
-            <button class="spread head" onclick={() => onselect?.(entry.i)} title="draw {tr.name}">
-              <span class="mono truncate" title={tr.path}>{tr.name}</span>
-              <span class="tag">{tr.library_name}</span>
-            </button>
+            <div class="spread">
+              <button class="head grow spread" onclick={() => onselect?.(entry.i)} title="draw {tr.name}">
+                <span class="mono truncate" title={tr.path}>{tr.name}</span>
+                <span class="tag">{tr.library_name}</span>
+              </button>
+              {#if onapply}
+                <!-- the card already says what this tool needs; this is that
+                     list, put into the recipe as rows you can fill in -->
+                <button
+                  class="apply small"
+                  onclick={() => onapply(entry.i)}
+                  title="add a row to the recipe for each input {tr.name} needs"
+                >apply</button>
+              {/if}
+            </div>
             {#if rel && entry.as}
               <!-- the match the type system made, spelled out: without this the
                    transform looks like it named this type and did not -->
@@ -159,6 +178,15 @@
   }
   .head:hover { border: none; }
   .head:hover .mono { color: var(--accent); }
+  /* an action on the card, not the card's purpose: quiet until it is reached for */
+  .apply {
+    flex: 0 0 auto;
+    background: none;
+    border-color: transparent;
+    color: var(--muted);
+    padding: 1px 6px;
+  }
+  .apply:hover { color: var(--text); border-color: var(--line); background: var(--panel-2); }
   .line { display: flex; gap: 6px; align-items: baseline; }
   .lbl { flex: 0 0 auto; }
   .chips { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }

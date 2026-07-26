@@ -152,6 +152,27 @@ def set_item_parents(
     return {"library": str(library_path), "path": item_path, "parents": parent_paths}
 
 
+def replace_item_parents(
+    library_path: str,
+    item_path: str,
+    parent_paths: list[str],
+    save: bool = True,
+) -> dict:
+    """The same, but as a replacement: what is not listed is unlinked.
+
+    `set_item_parents` can only ever add, so it cannot express "this no longer
+    descends from that" -- and an editable lineage has to. An empty list clears
+    an item's parents outright.
+    """
+    lib = load_data_lib(library_path)
+    item = Path(item_path)
+    assert item in lib.manifest, f"not found [{item_path}]"
+    lib.SetParentsOf(item, [lib.Get(Path(p)) for p in parent_paths])
+    if save:
+        lib.Save()
+    return {"library": str(library_path), "path": item_path, "parents": parent_paths}
+
+
 def remove_item(library_path: str, item_path: str, save: bool = True) -> dict:
     lib = load_data_lib(library_path)
     lib.Remove(Path(item_path))

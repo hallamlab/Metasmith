@@ -210,6 +210,20 @@ export async function createWorkflow() {
   return out
 }
 
+// A fork is a copy of a workflow under a fresh identity, so it belongs on the
+// row it copies -- beside the delete that is its opposite -- rather than inside
+// the workflow it makes a second of. Same reasoning as createWorkflow for
+// living here: both are changes to the list, and both land you on the result.
+export async function forkWorkflow(name) {
+  const out = await attempt(async () => {
+    const body = await api.post(`/workflows/${name}/fork`, {})
+    await loadWorkflows()
+    return body
+  })
+  if (out) select('workflows', out.name)
+  return out
+}
+
 export const selection = () => app.selected[app.section]
 
 export function runId(run) {

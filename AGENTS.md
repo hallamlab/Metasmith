@@ -596,7 +596,7 @@ These are load-bearing:
 - **The type index is built whole and filtered in the browser.** `stdlib.type_index`
   walks *every* transform library found, not the enabled subset, and returns one
   `transforms` list plus a `by_type` map of entries pointing into it. Toggling a library
-  is then instant and never refetches, which is what lets the builder show live
+  is then instant and never refetches, which is what lets a row of the recipe show live
   produced-by / consumed-by counts while a type is being typed. It is cached against
   the stdlib commit; one unloadable library records its error and costs only itself.
 
@@ -668,9 +668,10 @@ the field, which unmounts the input, which fires `blur` — so the view has to r
 second commit or the rename is sent twice and races itself.
 
 The workflow pane is one column plus a panel. The recipe card holds inputs and outputs
-as one flat list under two headings; one builder card below it adds to either half, the
-role being a radio rather than a second component; the generate button sits between the
-builder and the result, which renders the DAG on success and the planner's hints on
+as one flat list under two headings, and that list *is* the form — `+ a file` /
+`+ a value` / `+ an output` append an empty row you fill in place, rather than a builder
+card below the list whose result appears somewhere else. The generate button sits between
+the recipe and the result, which renders the DAG on success and the planner's hints on
 failure in the same slot. The right-hand `SidePanel` is the rail's mirror — same grip,
 same remembered width, collapsing to a strip — and shows what sits on either side of
 whichever type is in focus. Container and `lib::` requirements are hidden from that
@@ -708,9 +709,61 @@ never a user's to register, and listing them buries the requirement that is.
   Two of the three cases match on properties, not names — a library's chain is only continuous
   because the `as`/`match` entries bridge a narrower product to a broader requirement.
 
+- **A transform's requirements are indexed per slot, not just as a set of names.** A third of
+  the standard library declares `AddRequirement(..., parents={...})` — bbduk does not want
+  three files, it wants the reads belonging to the metadata and the stats belonging to those
+  reads — and `inputs`/`outputs` cannot carry that, because they de-dupe and a slot has no
+  stable position in them. So `type_index` also emits `requires`: one entry per slot in
+  declaration order, `{as, parents}` with `parents` holding positions in that same list.
+  Plumbing slots stay in it so the positions are the transform's own; the consumer drops them
+  by namespace. **Parents are resolved by object identity first**: `Dependency` inherits
+  `Node.__eq__`, which compares property *signatures*, so two slots of one type are equal and
+  `==` alone would answer with whichever came first. `transformGraph` turns those into
+  `kind: 'lineage'` edges between the input boxes, styled apart from the grey flow edges
+  because "this input must descend from that one" is not the same statement as "this tool
+  takes that type"; two slots of one type collapse onto one node and are dropped rather than
+  drawn as a self-loop.
+
+- **A half-built input row is a draft, not a library item.** `add_item` needs a type *and* a
+  path, so a row you have only started cannot live in `input.xgdb`. It lives in `request.yml`
+  under `input_drafts`, beside the targets that have always been request-only, and it POSTs
+  itself the moment it has a type, an identity, and every parent it names is registered — so
+  a chain of drafts commits in cascade as the top of it is filled in, each commit rewriting
+  the `#<draft-id>` references below it to the path that just landed. Two consequences.
+  Editing is written back **when a field is left**, not per keystroke, and `persist()` is
+  serialised: it is one file written by write-then-rename, so two overlapping writes raced
+  for one `.tmp` path (`_write_yaml` now names it per pid/thread as well). And a *registered*
+  row's path and type stay delete-and-re-add — `Rename` moves the user's own file on disk and
+  nothing retypes in place — which the row says rather than offering a field that does
+  nothing.
+
+- **Lineage is edited on the row, and unticking has to work.** `components/LineageMenu.svelte`
+  is a menu anchored to one row (the shape `TypeSelect` already uses), listing what it
+  descends from as editable ticks and what descends from it as a statement — a child's lineage
+  belongs to the child's row, and offering it twice gives one link two places to be changed
+  from. Children are inverted in the browser; the server only ever states parents. Two traps.
+  `set_item_parents` → `AddParentsTo` is a **union**, so it can add a parent and never take one
+  away; the route now goes through `replace_item_parents` → `SetParentsOf`, and PUT was already
+  the right verb for it. And `show_item_lineage` reports the **transitive closure**, because
+  the library expands the chain on `Load` and collapses it again on `Save` — left alone, the
+  menu offers a grandparent with a tick beside it and taking that tick off silently reverts on
+  the next load, so the browser collapses it the same way. Removing an item clears the links
+  into it in both halves and says how many, since the library leaves them dangling.
+
+- **`apply` stamps a transform's input shape into the recipe.** Beside each card in
+  `TypeInspector`, and in the panel header while a tool is drawn: one draft per non-plumbing
+  requirement, typed as declared and wired per the declared lineage, with the paths left for
+  the user. A requirement an existing input already satisfies is skipped, and "satisfies" is
+  read off `by_type[T].consumed_by` — property matching that the index already did, not name
+  equality, so a registered `flye_assembly` counts for a slot wanting an `assembly`. A draft
+  of the same type counts too, or applying twice would build a second copy of everything. The
+  index keeps only the *best* match per transform per side, so a tool wanting both a broad and
+  a narrow flavour of one type gets one extra row; that is a spare row to delete, not a wrong
+  plan.
+
 - **Which libraries are enabled is not part of adding a row.** It is what the planner may
   reach for, so `views/LibraryList.svelte` holds it in the panel — beside the counts and the
-  graph it narrows — rather than in a fold in the middle of the builder. Each row carries an
+  graph it narrows — rather than in a fold in the middle of the recipe. Each row carries an
   eye and a checkbox, and they are deliberately independent: the eye draws a library whether
   or not it is enabled, and switching one off does not yank the graph out from under you. A
   refused toggle has to be undone by hand: the last library may not be switched off, but a
@@ -722,8 +775,8 @@ never a user's to register, and listing them buries the requirement that is.
   a substring, then a subsequence, with ties broken on how tightly the matched characters sit
   and how early they start. Subsequence matching alone is far too generous (`gbk` is a
   subsequence of half the library), so the ranking *is* the feature. It only decides what the
-  list offers: whether a type exists is still the exact `typeNames.has(...)` test in the
-  builder, and a name that merely ranked well is not a name you can register.
+  list offers: whether a type exists is still the exact `typeNames.has(...)` test on the
+  row, and a name that merely ranked well is not a name you can register.
 
 The page has no network of its own — it is served from a bundle and never reaches a CDN.
 So anything that would normally be a small dependency is inlined instead:

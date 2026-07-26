@@ -62,14 +62,29 @@
             >
               <path d="M 0 1 L 7 4 L 0 7 z" fill="var(--muted)" fill-opacity="0.55" />
             </marker>
+            <!-- a second head in the accent, because a lineage arrow is a
+                 different statement to a data-flow one and sharing a grey head
+                 would leave only the line weight to tell them apart -->
+            <marker
+              id="msm-arrow-lin"
+              viewBox="0 0 8 8"
+              refX="7"
+              refY="4"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 7 4 L 0 7 z" fill="var(--accent)" fill-opacity="0.75" />
+            </marker>
           </defs>
           {#each laid.edges as e, i (i)}
             <path
               class="edge"
               class:back={e.back}
               class:soft={e.kind === 'satisfies'}
+              class:lineage={e.kind === 'lineage'}
               d={e.d}
-              marker-end="url(#msm-arrow)"
+              marker-end={e.kind === 'lineage' ? 'url(#msm-arrow-lin)' : 'url(#msm-arrow)'}
             />
           {/each}
         </svg>
@@ -130,6 +145,9 @@
      type system rather than by a name lining up */
   .edge.soft { stroke-dasharray: 3 3; }
   .edge.back { stroke-dasharray: 2 4; }
+  /* one input having to descend from another: not data moving, so it is drawn in
+     the accent rather than in the grey every flow edge shares */
+  .edge.lineage { stroke: var(--accent); stroke-opacity: 0.7; }
 
   .node {
     position: absolute;

@@ -671,6 +671,22 @@ class DataInstanceLibrary:
         self.parents[p] = current
         self._invalidate_endpoint_cache()
 
+    def SetParentsOf(self, path: Path|str, parents: Iterable[DataInstance]):
+        """Declare an item's lineage to be exactly this, dropping what it was.
+
+        `AddParentsTo` is a union, which is what declaring lineage as items
+        arrive wants and what taking a link back cannot use. Editing needs both
+        directions, so this clears first and then goes through the same add --
+        the parent metadata is built in one place either way.
+        """
+        p = Path(path)
+        if p in self.parents:
+            del self.parents[p]
+            # ...even when the new list is empty, which AddParentsTo returns
+            # early on: an endpoint cached with the old parents is now wrong
+            self._invalidate_endpoint_cache()
+        self.AddParentsTo(p, parents)
+
     def _calculate_key(self, _raw_override=None):
         if _raw_override is not None:
             me_d = {k: v for k, v in _raw_override.items() if k != "remote_src"}

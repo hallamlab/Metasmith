@@ -73,12 +73,23 @@ def _read_yaml(path: Path) -> dict:
 
 
 def _write_yaml(path: Path, data: dict):
-    """Write atomically -- a half-written record is worse than a stale one."""
+    """Write atomically -- a half-written record is worse than a stale one.
+
+    The temp name carries the writer's pid and thread: one fixed `.tmp` beside
+    the record makes two concurrent writes fight over one path, and the loser
+    fails on the rename with a file-not-found that says nothing about the
+    actual cause. The recipe form writes as it is edited, so overlapping
+    requests are ordinary rather than exotic.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w") as f:
-        yaml.dump(data, f, sort_keys=False)
-    os.replace(tmp, path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident():x}.tmp")
+    try:
+        with open(tmp, "w") as f:
+            yaml.dump(data, f, sort_keys=False)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 class ProjectError(Exception):

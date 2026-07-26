@@ -184,6 +184,47 @@ def _named_types(root: Path, found: dict, transform_libs: dict) -> dict[str, fro
     return named
 
 
+def _slot_index(dep, slots: list) -> int | None:
+    """Which requirement slot a parent reference points at.
+
+    Identity first, and this is not fussiness: `Dependency` inherits `Node`'s
+    equality, which compares property signatures, so two slots of the same type
+    are equal to each other and `==` would answer with whichever came first.
+    `d.parents` is a set built from the very objects in `requires`, so identity
+    is the answer in every case a transform declared; equality is the fallback
+    for a parent rebuilt rather than referenced.
+    """
+    for i, s in enumerate(slots):
+        if s is dep:
+            return i
+    for i, s in enumerate(slots):
+        if s == dep:
+            return i
+    return None
+
+
+def _slots(slots: list, lib) -> list[dict]:
+    """One entry per requirement slot, in declaration order, with its lineage.
+
+    `parents` holds positions in this same list -- the constraint the transform
+    declared, that this input must descend from that one. Plumbing slots
+    (container images, bundled scripts) stay in the list so the positions are the
+    transform's own; the consumer drops them by namespace as it already does
+    elsewhere. `as` is null for a slot whose properties no type file names.
+    """
+    from ..ops._common import dep_info
+
+    out = []
+    for d in slots:
+        parents = []
+        for p in getattr(d, "parents", None) or ():
+            i = _slot_index(p, slots)
+            if i is not None and i not in parents:
+                parents.append(i)
+        out.append({"as": dep_info(d, lib).get("type"), "parents": sorted(parents)})
+    return out
+
+
 def type_index(root: Path, refresh: bool = False) -> dict:
     """A map of type -> the transforms on either side of it.
 
@@ -242,6 +283,7 @@ def type_index(root: Path, refresh: bool = False) -> dict:
                         out.append((name, props))
                 return out
 
+            slots = list(tr.model.requires)
             requires = _resolve(tr.model.requires)
             produces = _resolve([d for group in tr.model.produces for d in group])
             transforms.append({
@@ -252,6 +294,10 @@ def type_index(root: Path, refresh: bool = False) -> dict:
                 # what the transform itself says, for the "also needs" lines
                 "inputs": [n for n, _ in requires if n],
                 "outputs": [n for n, _ in produces if n],
+                # ...and the same requirements *unflattened*: one entry per slot,
+                # carrying the lineage declared between them. `inputs` cannot say
+                # this -- it de-dupes, so a slot has no stable position in it.
+                "requires": _slots(slots, lib),
                 "group_by": dep_info(tr.group_by, lib).get("type") if tr.group_by else None,
             })
             declared.append({"requires": requires, "produces": produces})

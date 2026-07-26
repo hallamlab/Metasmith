@@ -642,8 +642,14 @@ def remove_input(name):
 
 @bp.put("/workflows/<name>/inputs/items/parents")
 def set_input_parents(name):
+    """The item's lineage becomes exactly what is sent.
+
+    A replacement, not an addition: the page edits lineage after the fact, and
+    the additive `set_item_parents` the CLI uses cannot take a link back -- a
+    parent unticked would have stayed on. PUT is already the right verb for it.
+    """
     b = _body()
-    return jsonify(op_data.set_item_parents(
+    return jsonify(op_data.replace_item_parents(
         str(_project().input_library_path(name)), b["path"], b.get("parents") or [],
     ))
 
