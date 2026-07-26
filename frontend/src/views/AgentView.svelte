@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../lib/api.js'
+  import { api } from '../lib/api.svelte.js'
   import { attempt, loadAgents, select } from '../lib/state.svelte.js'
   import { agentPayload, formFromAgent, homeUri } from '../lib/agentform.js'
   import AgentFields from './AgentFields.svelte'

@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../lib/api.js'
+  import { api } from '../lib/api.svelte.js'
   import { attempt, loadSsh } from '../lib/state.svelte.js'
   import ConfigEditor from '../components/ConfigEditor.svelte'
 

@@ -1,5 +1,5 @@
 <script>
-  import { streamJob } from '../lib/api.js'
+  import { api } from '../lib/api.svelte.js'
 
   // Follows a background job over server-sent events. The stream replays what
   // has already happened before following, so opening this late still shows the
@@ -14,7 +14,7 @@
     if (!id) return
     lines = []
     status = 'running'
-    const stop = streamJob(
+    const stop = api.stream(
       id,
       (line) => {
         lines = [...lines.slice(-2000), line]

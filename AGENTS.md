@@ -848,6 +848,25 @@ never a user's to register, and listing them buries the requirement that is.
   list offers: whether a type exists is still the exact `typeNames.has(...)` test on the
   row, and a name that merely ranked well is not a name you can register.
 
+- **Every call goes through one api service, which is what pays for the header's dot.**
+  `lib/api.svelte.js` is a class holding `$state` and exported as a single instance; every
+  component imports that one, and `components/StatusDot.svelte` reads `api.status` — nothing
+  subscribes by hand and nothing else keeps a copy. Green means the server answered, yellow
+  that a mutating request is in flight, red that one never arrived. Four things there are
+  load-bearing. A reply of **any** status is proof of life — a 409 refusal and a 500 are both
+  the server talking — so only a `fetch` rejection turns the dot red. A save is held yellow for
+  a floor of **200ms**: most of them return inside a frame, and a light that lasts one frame is
+  a light nobody sees; overlapping saves share one window, ending when the last has landed and
+  the newest has had its 200ms. The dot cannot be only as fresh as the last click — a server
+  killed in its terminal would read green until someone tried to save into it — so `api.watch()`
+  polls `GET /api/health` every 5s, skipping a hidden tab and re-pulsing the moment it is looked
+  at again; that route is deliberately the cheapest in `api.py` (no project, no disk), because
+  `/project` answers the same question but re-walks the standard library each time. And the
+  label renders **all three words stacked in one grid cell** with the inactive ones
+  `visibility: hidden`, so the box is as wide as the widest word: sizing it to the live text
+  would shove the path and the four links sideways every time a save started. `visibility`
+  rather than opacity, so the hidden words stay out of the accessibility tree.
+
 The page has no network of its own — it is served from a bundle and never reaches a CDN.
 So anything that would normally be a small dependency is inlined instead:
 `components/Icon.svelte` carries the header glyphs as SVG paths (the docs site's own set),

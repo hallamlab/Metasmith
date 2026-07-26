@@ -1,5 +1,5 @@
 <script>
-  import { api } from './lib/api.js'
+  import { api } from './lib/api.svelte.js'
   import {
     SECTIONS,
     app,
@@ -14,6 +14,7 @@
   import Rail from './components/Rail.svelte'
   import DeleteControl from './components/DeleteControl.svelte'
   import Icon from './components/Icon.svelte'
+  import StatusDot from './components/StatusDot.svelte'
   import SshHost from './views/SshHost.svelte'
   import SshEditor from './views/SshEditor.svelte'
   import SshNew from './views/SshNew.svelte'
@@ -84,6 +85,10 @@
   $effect(() => {
     attempt(loadProject)
   })
+
+  // the dot would otherwise only be as fresh as the last thing that was
+  // clicked: a server killed in its terminal reads green until someone saves
+  $effect(() => api.watch())
 
   // reload the section's list whenever the section or the archive filter changes
   $effect(() => {
@@ -176,10 +181,12 @@
       {/each}
     </nav>
 
-    {#if app.project}
-      <!-- takes all the slack: a project path is long and the interesting end
-           of it is the last segment, so it gets the room and the tabs do not -->
-      <div class="where small muted">
+    <!-- takes all the slack: a project path is long and the interesting end
+         of it is the last segment, so it gets the room and the tabs do not.
+         Empty before the project loads -- it is still the spacer that pushes
+         the dot and the links to the right edge. -->
+    <div class="where small muted">
+      {#if app.project}
         {#if !app.project.stdlib.present}
           <span class="tag bad">standard library not cloned</span>
         {/if}
@@ -192,8 +199,14 @@
         >
           <Icon name={copied ? 'check' : 'copy'} size={13} />
         </button>
-      </div>
+      {/if}
+    </div>
 
+    <!-- outside the project check on purpose: whether the server is answering
+         is exactly the thing you want to read when nothing has loaded -->
+    <StatusDot />
+
+    {#if app.project}
       <div class="links">
         {#each LINKS as l}
           <a href={app.project.links?.[l.id]} target="_blank" rel="noreferrer noopener" title={l.title}>
@@ -202,8 +215,6 @@
           </a>
         {/each}
       </div>
-    {:else}
-      <div class="where"></div>
     {/if}
   </header>
 

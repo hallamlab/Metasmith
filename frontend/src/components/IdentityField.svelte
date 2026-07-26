@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../lib/api.js'
+  import { api } from '../lib/api.svelte.js'
   import { attempt } from '../lib/state.svelte.js'
   import Field from './Field.svelte'
 

@@ -1,4 +1,4 @@
-import { api } from './api.js'
+import { api } from './api.svelte.js'
 
 export const SECTIONS = [
   // in setup order: you need a host before an agent, an agent before a run

@@ -86,6 +86,18 @@ def _wants_archived() -> bool:
 # -- project -----------------------------------------------------------------
 
 
+@bp.get("/health")
+def health():
+    """Is the server still there.
+
+    The page polls this on a timer to colour the dot in the header, so it is
+    deliberately the cheapest route in the file: no project, no disk, no
+    stdlib walk. `/project` would answer the same question but re-walks the
+    standard library every time, which is not something to do on a heartbeat.
+    """
+    return jsonify({"ok": True})
+
+
 @bp.get("/project")
 def get_project():
     from ..constants import CONDA_URL, CONTAINER_URL, DOCS_URL, GIT_URL, VERSION

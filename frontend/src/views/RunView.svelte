@@ -1,5 +1,5 @@
 <script>
-  import { api } from '../lib/api.js'
+  import { api } from '../lib/api.svelte.js'
   import { attempt, loadRuns, select } from '../lib/state.svelte.js'
   import JobLog from '../components/JobLog.svelte'
 

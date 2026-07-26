@@ -14,6 +14,7 @@ from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
 from metasmith.models.solver import Endpoint
 from metasmith.testing.mock_transforms import identity_transform
 
+from metasmith.gui import stdlib
 from metasmith.gui.app import create_app
 from metasmith.gui.store import Project
 from metasmith.ops import workspace as op_workspace
@@ -89,6 +90,22 @@ def _make_workflow(client, name=None, sample="mock::assembly", targets=("mock::b
 # ---------------------------------------------------------------------------
 # project + agents
 # ---------------------------------------------------------------------------
+
+
+class TestHealth:
+    """What the header's dot polls."""
+
+    def test_health_answers(self, client):
+        res = client.get("/api/health")
+        assert res.status_code == 200
+        assert res.get_json() == {"ok": True}
+
+    def test_health_touches_nothing(self, client):
+        # it runs on a timer for as long as the page is open, so it must not do
+        # the stdlib walk `/project` does -- patching that walk to explode is
+        # the cheapest way to state "this route does not go near it"
+        with mock.patch.object(stdlib, "discover", side_effect=AssertionError("walked")):
+            assert client.get("/api/health").status_code == 200
 
 
 class TestProject:
