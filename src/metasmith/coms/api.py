@@ -25,7 +25,12 @@ class Api:
             Path(workspace), int(step_index), host,
             stage_root=Path(stage_root) if stage_root else None,
         )
-        exit(res.success)
+        # `exit(True)` is exit status 1 -- success reported failure and failure
+        # reported success. Invisible under a container runtime, where this call
+        # sits mid-script in msm_bootstrap and the relay teardown supplies the
+        # script's status; on the relay-free path it IS the last command, so the
+        # inversion made every successful mamba step a failed nextflow task.
+        exit(0 if res.success else 1)
 
     def stage_workflow(self, body: dict):
         task_key = body.get("task_key")

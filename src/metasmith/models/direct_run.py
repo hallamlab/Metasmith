@@ -195,11 +195,9 @@ def RunTransform(
 
     original_cwd = Path.cwd()
     Log.Info(f"direct-run [{inst.name}] in [{work_dir}]")
-    # ExecWithContainer writes its bounce script to ./_metasmith/.bounce.<k>. On the
-    # nextflow path that directory already exists in the task work dir; here nobody
-    # has made it, so ANY containerized transform died with a bare
-    # `FileNotFoundError: _metasmith/.bounce.*` -- i.e. the direct-run dev loop only
-    # ever worked for transforms that shell out without a container.
+    # The internals dir the bounce script lives in. ExecWithEnv makes it too, but
+    # a plain host work dir should have it either way -- transforms and the step
+    # log both assume it exists.
     (work_dir / "_metasmith").mkdir(parents=True, exist_ok=True)
     os.chdir(work_dir)
     try:

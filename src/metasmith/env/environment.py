@@ -345,9 +345,15 @@ class Environment:
                 """
         wrapper = self.MakeWrapperPrefix()
         prefix = f"{wrapper} " if wrapper else ""
+        # No container means nothing is mounted at the container roots, so
+        # hand metasmith the real ones. Both point at the agent home, which
+        # is what the container case sees too: the `msm` wrapper carries no
+        # workdir, and deploy dual-binds the home at /msm_home and /ws.
         return f"""
             #!/bin/bash
-            AGENT_HOME={agent_home}
+            export AGENT_HOME={agent_home}
+            export METASMITH_HOME_ROOT={agent_home}
+            export METASMITH_WORK_ROOT={agent_home}
             {prefix}metasmith $@
             """
 
@@ -370,11 +376,11 @@ class Environment:
                 HOST_NAME=$3
                 CWD=${{4:-$(pwd -P)}}
                 cd $CWD
-                if [ -e "{AgentPaths.HOME_ROOT}" ]; then
+                if [ -e "{AgentPaths.CONTAINER_HOME_ROOT}" ]; then
                     echo "bootstrap called from container, bouncing to external [$@]"
-                    REL_CWD=$(realpath --relative-to="{AgentPaths.HOME_ROOT}" $CWD)
+                    REL_CWD=$(realpath --relative-to="{AgentPaths.CONTAINER_HOME_ROOT}" $CWD)
                     CMD="{AgentPaths.to_bootstrap(Path('$AGENT_HOME'))} $@ $AGENT_HOME/$REL_CWD"
-                    /app/msm_relay.x86_64-linux --io {AgentPaths.to_relay().parent}/$HOST_NAME bounce "$CMD"
+                    /app/msm_relay.x86_64-linux --io {AgentPaths.to_relay(AgentPaths.CONTAINER_HOME_ROOT).parent}/$HOST_NAME bounce "$CMD"
                     exit
                 fi
 
@@ -547,15 +553,20 @@ class Environment:
                 """
         wrapper = self.MakeWrapperPrefix()
         prefix = f"{wrapper} " if wrapper else ""
+        # No container means nothing is mounted at the container roots. The
+        # home root is the agent home; the work root is this step's own cwd,
+        # which is exactly what /ws is bound to in the per-step container.
         return f"""
             #!/bin/bash
 
-            AGENT_HOME={agent_home}
+            export AGENT_HOME={agent_home}
             TASK_DIR=$1
             STEP=$2
             HOST_NAME=$3
             CWD=${{4:-$(pwd -P)}}
             cd $CWD
+            export METASMITH_HOME_ROOT={agent_home}
+            export METASMITH_WORK_ROOT="$(pwd -P)"
             echo "bootstrap ======================"
             [ -z $STEP ] && echo "no step provided" && exit 1
             echo "cwd [$(pwd -P)]"

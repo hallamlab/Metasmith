@@ -170,6 +170,35 @@ class PlanHint:
     near_misses: list[str] = field(default_factory=list)
 
 
+def _read_env_declarations(step) -> dict[str, list[str]]:
+    """Which of `container:` / `conda:` each env resource this step names carries.
+
+    Keyed by the resource's own file name. A resource that cannot be read (not
+    yet staged, binary, unparseable) is recorded as `null` -- unknown, which the
+    preflight must not read as absent, or a workspace staged before the resource
+    landed would fail for the wrong reason.
+    """
+    found: dict[str, list[str]|None] = {}
+    for dep in getattr(step.transform, "_env_deps", []):
+        for inst in step.dependency_map.get(dep, []):
+            try:
+                p = inst.ResolvePath()
+                name = Path(p).name
+                if name in found: continue
+                with open(p) as f:
+                    parsed = yaml.safe_load(f.read())
+            except Exception:
+                found[Path(str(getattr(inst, "dtype_name", dep.key))).name] = None
+                continue
+            if isinstance(parsed, dict):
+                found[name] = sorted(k for k in ("container", "conda") if parsed.get(k))
+            else:
+                # A legacy bare-URI (*.oci) resource is a container image and
+                # nothing else -- that is exactly what ResolveEnvImage does with it.
+                found[name] = ["container"]
+    return found
+
+
 def _diagnose_plan_failure(
     target_model: Transform,
     target_names: list[str],
@@ -1305,6 +1334,20 @@ class WorkflowTask:
                     "gpu_memory_gb": None if res.gpu_memory is None else res.gpu_memory.value_gb,
                 }
                 gpu_requirements[process_name] = gpu_req
+            # Which worlds this step can run in. `arms` is a fact about the
+            # transform's source; `envs` is a fact about the resource it names.
+            # Both are needed: an arm with no matching field in the declaration
+            # has nothing to run, and a declaration with no arm to use it is
+            # equally unrunnable. `arms: null` means the source could not be
+            # scanned -- unknown, not "declared nothing".
+            _scan = step.transform._env_scan
+            env_requirements[process_name] = {
+                "step": step.order,
+                "transform": str(step.transform.name),
+                "process": process_name,
+                "arms": None if _scan is None else _scan.arms,
+                "envs": _read_env_declarations(step),
+            }
             duration_is_strict = res is not None and res.duration is not None and res.duration.strict
             memory_is_strict = res is not None and res.memory is not None and res.memory.strict
             if duration_is_strict and memory_is_strict:
@@ -1528,6 +1571,7 @@ class WorkflowTask:
         published_channels: dict[str, tuple[int, DataInstance]] = {}
         resources = {}
         gpu_requirements: dict[str, dict] = {}
+        env_requirements: dict[str, dict] = {}
 
         # NOTE: DSL2 implicitly forks channels even when wrapped in [name, channel]
         # tuples and consumed inside Orchestrator.group(). multiMap forking was
@@ -1625,6 +1669,14 @@ class WorkflowTask:
         # the JSON and turned the whole preflight into a no-op.
         with open(context.work_dir/AgentPaths.GPU_MANIFEST, "w") as f:
             json.dump({"schema": 1, "steps": gpu_requirements}, f, separators=(",", ":"))
+            f.write("\n")
+
+        # Same contract as the GPU manifest above, for the same reasons: always
+        # (re)written so a re-stage cannot strand a requirement, and one compact
+        # line with a trailing newline so `cat`-ing it back over the agent shell
+        # cannot silently truncate.
+        with open(context.work_dir/AgentPaths.ENV_MANIFEST, "w") as f:
+            json.dump({"schema": 1, "steps": env_requirements}, f, separators=(",", ":"))
             f.write("\n")
 
         wf_output = []

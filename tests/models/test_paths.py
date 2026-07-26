@@ -361,3 +361,24 @@ class TestContextPathClassmethods:
     def test_for_output_rejects_path_with_slash(self, pm: PathMap) -> None:
         with pytest.raises(ValueError, match="bare filename"):
             ContextPath.ForOutput("subdir/file.fa", pm)
+
+    def test_for_output_collapses_all_three_views_host_local(self) -> None:
+        """With no container boundary nothing is bound at /ws, so every view
+        must be the host path -- `container` included, or a protocol writing
+        to `out.container` targets a directory that does not exist."""
+        pm = PathMap(
+            extern_home=Path("/scratch/agent"),
+            task_key="K",
+            extern_cwd=Path("/scratch/agent/runs/K/nxf_work/aa/bb"),
+            host_local=True,
+        )
+        cp = ContextPath.ForOutput("out.fa", pm)
+        expected = Path("/scratch/agent/runs/K/nxf_work/aa/bb/out.fa")
+        assert cp.external == expected
+        assert cp.local == expected
+        assert cp.container == expected
+
+    def test_for_output_host_local_falls_back_to_extern_work(self) -> None:
+        pm = PathMap(extern_home=Path("/scratch/agent"), task_key="K", host_local=True)
+        cp = ContextPath.ForOutput("out.fa", pm)
+        assert cp.local == cp.container == cp.external == pm.extern_work / "out.fa"

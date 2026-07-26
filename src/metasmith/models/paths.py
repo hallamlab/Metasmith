@@ -243,18 +243,20 @@ class ContextPath:
         ``external`` view is the host filesystem location, which is
         ``path_map.extern_cwd`` (the per-step nxf_work dir) when set,
         or ``path_map.extern_work`` (the task workspace) when not.
+
+        With no container boundary (``path_map.host_local``) all three
+        views collapse onto the host path: nothing is bound at ``/ws``,
+        so a protocol interpolating ``out.container`` would otherwise
+        hand the tool a directory that does not exist.
         """
         if "/" in name or name in ("", ".", ".."):
             raise ValueError(f"ForOutput expects a bare filename, got: {name!r}")
-        container = AgentPaths.WORK_ROOT / name
         external_base = path_map.extern_cwd if path_map.extern_cwd is not None else path_map.extern_work
         external = external_base / name
-        # Under nextflow the bootstrap is itself containerized with cwd bound to
-        # /ws, so the local and container views coincide. On the direct-run path
-        # the bootstrap is a plain host process and nothing is bound at /ws, so
-        # `local` there IS the host path -- see PathMap.host_local.
-        local = external if path_map.host_local else container
-        return cls(local=local, external=external, container=container)
+        if path_map.host_local:
+            return cls(local=external, external=external, container=external)
+        container = AgentPaths.WORK_ROOT / name
+        return cls(local=container, external=external, container=container)
 
 
 @dataclass
@@ -283,13 +285,19 @@ class PathMap:
     extern_home: Path
     task_key: str
     extern_cwd: Path | None = None
-    # True when the bootstrap itself is NOT running inside a container -- i.e. the
-    # direct-run path, where cwd is a plain host directory and nothing is bound at
-    # /ws. ForOutput's `local` view depends on this: under nextflow the bootstrap
-    # runs containerized with cwd bound to /ws, so local==container==/ws/<name>;
-    # host-local there is no such bind, and local must be the host path or every
+    # True when this execution crosses NO container boundary, so cwd is a plain
+    # host directory and nothing is bound at /ws or /msm_home. Two paths reach
+    # it: direct-run (never containerized), and a nextflow run on a mamba/native
+    # agent (Environment.needs_relay is False). It is emphatically not a
+    # direct-run-only flag -- reading it as one is how the mamba path came to
+    # hand tools unwritable /ws paths in the first place.
+    #
+    # ForOutput's views depend on it: with a boundary the bootstrap runs
+    # containerized with cwd bound to /ws, so local==container==/ws/<name>;
+    # without one all three views are the host path, or every
     # `output.local.exists()` success check reads False for a step that in fact
-    # succeeded. Default False keeps the nextflow path byte-identical.
+    # succeeded and `out.container` names a directory that does not exist.
+    # Default False keeps the containerized nextflow path byte-identical.
     host_local: bool = False
     extern_work: Path = field(init=False)
 

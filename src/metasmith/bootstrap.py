@@ -248,6 +248,19 @@ def ExecuteStep(
                 Log.Info(m)
     try:
         results = step.transform.protocol(context)
+        # An ExecWithEnv chain with no arm for this runtime runs nothing. Left
+        # alone that is a step which reports success and produces no output --
+        # the exact silent failure the arms exist to make impossible. The
+        # transform author is not asked to remember; the framework checks.
+        unmatched = context.UnmatchedEnvDispatches()
+        if unmatched:
+            runtime = agent.runtime.name
+            declared = sorted({a for d in unmatched for a in d.declared})
+            raise AssertionError(
+                f"transform [{step_name}] reached [{len(unmatched)}] ExecWithEnv "
+                f"declaration(s) with no arm for runtime [{runtime}]; "
+                f"arms declared: {declared or ['<none>']}"
+            )
         if not isinstance(results, list):
             results = [results]
         for i, result in enumerate(results):
@@ -448,4 +461,8 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
             input_by_dep=input_by_dep,
             dep2output=dep2output,
             params=params,
+            # A mamba/native agent crosses no container boundary even under
+            # nextflow, so the three path views must collapse exactly as they
+            # do on the direct-run path.
+            host_local=not agent_env.needs_relay,
         )

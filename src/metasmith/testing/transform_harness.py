@@ -29,7 +29,7 @@ from ..models.workflow import WorkflowStep, WorkflowTask, METADATA_FILE
 class MockShell:
     """Mock RemoteShell that satisfies the interface without actual shell execution.
 
-    Sufficient for transforms that don't call context.ExecWithContainer().
+    Sufficient for transforms that don't call context.ExecWithEnv().
     """
 
     def __init__(self):

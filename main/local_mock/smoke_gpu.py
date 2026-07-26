@@ -18,6 +18,7 @@ which must still succeed (the probe is Gpus.OPTIONAL) and must report no
 device, so the CPU fallback is exercised rather than assumed.
 """
 import argparse
+import re
 import subprocess
 import sys
 import time
@@ -106,15 +107,15 @@ def build_task(smith: Agent, workdir: Path, tag: str, mamba_env: str | None = No
     # Written INSIDE the library dir so its manifest entry is relative: an
     # absolute path outside the library would have to exist on the execution
     # host too, which for a remote agent it does not.
-    oci = containers.location / "metasmith.oci"
+    oci = containers.location / "metasmith.env"
+    declaration = (EXAMPLES / "metasmith.env").read_text()
     if mamba_env:
-        # Under the mamba runtime the resource file's *content* is the conda
-        # env name rather than an image URI -- same type, same slot, different
-        # thing to run in. The transform is unchanged and does not know.
-        oci.write_text(f"{mamba_env}\n")
-    else:
-        oci.write_text((EXAMPLES / "metasmith.oci").read_text())
-    containers.AddItem(Path("metasmith.oci"), "containers::metasmith.oci")
+        # Same slot, same declaration shape -- only the conda side is pointed at
+        # the env this host actually has. The transform is unchanged and never
+        # learns which arm it got.
+        declaration = re.sub(r"^conda:.*$", f"conda: {mamba_env}", declaration, flags=re.M)
+    oci.write_text(declaration)
+    containers.AddItem(Path("metasmith.env"), "containers::metasmith.env")
     containers.Save()
 
     transforms = TransformInstanceLibrary.Load(EXAMPLES)

@@ -110,7 +110,7 @@ A :python:`ExecutionContext` object will be provided to the protocol at runtime.
 
 - the paths to inputs and expected outputs :python:`context.Get(lib.GetType("namespace::type"))`
 - access to a `bash <https://en.wikipedia.org/wiki/Bash_(Unix_shell)>`_ terminal environment :python:`context.external_shell`
-- a utility function to run containers :python:`context.ExecWithContainer(image, command)`
+- a declaration of how the tool runs in each world :python:`context.ExecWithEnv().ifContainerDo(env, cmd).ifVirtualEnvDo(env, cmd)`
 - and additional parameters like CPU and memory limits :python:`context.params`
 
 Prodigal Example
@@ -134,8 +134,8 @@ from studying its `documentation <https://github.com/hyattpd/prodigal/wiki/Gene-
 
     def protocol(context: ExecutionContext):
         out_path = context.Get(orfs)
-        context.ExecWithContainer(
-            image = image,
+        context.ExecWithEnv().ifContainerDo(
+            env = image,
             cmd = f"""\
                 prodigal \
                     -i {context.Get(contigs).container} \
@@ -177,8 +177,8 @@ obtained from studying its `documentation <https://www.ncbi.nlm.nih.gov/books/NB
     def protocol(context: ExecutionContext):
         out_path = context.Get(annot)
         COLUMNS = f"qseqid sseqid bitscore evalue pident"
-        context.ExecWithContainer(
-            image = image,
+        context.ExecWithEnv().ifContainerDo(
+            env = image,
             cmd = f"""\
                 blastp \
                     -query {context.Get(orfs).container} \

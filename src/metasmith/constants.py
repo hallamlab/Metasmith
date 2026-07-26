@@ -34,8 +34,19 @@ FULL_VERSION = f"{VERSION}+{BUILD_HASH}" if BUILD_HASH else VERSION
 CONTAINER_TAG = FULL_VERSION.replace('+', '-')
 
 class AgentPaths:
-    WORK_ROOT = Path("/ws")
-    HOME_ROOT = Path("/msm_home")
+    # The task container's fixed internal layout, established by the bind
+    # tuples Agent.Deploy writes. Shell text that will run *inside* a
+    # container must interpolate these literals; they are not overridable.
+    CONTAINER_WORK_ROOT = Path("/ws")
+    CONTAINER_HOME_ROOT = Path("/msm_home")
+
+    # The roots this process resolves agent paths against. Under a container
+    # runtime they equal the literals above, because the agent home is
+    # dual-bound at both. Under mamba/native nothing is mounted anywhere, so
+    # the deployed `msm` / `msm_bootstrap` scripts export the real host paths
+    # and every consumer follows without branching on the runtime.
+    WORK_ROOT = Path(os.environ.get("METASMITH_WORK_ROOT") or CONTAINER_WORK_ROOT)
+    HOME_ROOT = Path(os.environ.get("METASMITH_HOME_ROOT") or CONTAINER_HOME_ROOT)
     CONTAINER_CACHE = Path("container_images")
     INTERNALS = Path("_metasmith")
     STAGED = Path("runs")
@@ -51,6 +62,12 @@ class AgentPaths:
     # only run time knows what a device is on the target, so the two halves
     # meet through this file rather than in the emitted nextflow.
     GPU_MANIFEST = "workflow.gpu.json"
+    # Per-step tool-environment portability, written at stage time and read by
+    # RunWorkflow's preflight. Stage time knows which arms each transform
+    # declared and which fields its env resource carries; only run time knows
+    # what runtime the agent is. Same split, and same file-shaped seam, as the
+    # GPU manifest above.
+    ENV_MANIFEST = "workflow.env.json"
 
     @classmethod
     def to_staged(cls, root: Path|None=None):

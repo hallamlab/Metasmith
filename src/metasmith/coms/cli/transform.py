@@ -42,7 +42,8 @@ def register(subs):
     _scaf.add_argument("--out", action="append", required=True, dest="outputs",
                        help="output type (repeatable)")
     _scaf.add_argument("--group-by", help="input type to group by (defaults to first --in)")
-    _scaf.add_argument("--container", help="env type, e.g. env::myimage.env")
+    _scaf.add_argument("--env", "--container", dest="env_type",
+                       help="env type, e.g. env::myimage.env (--container is a deprecated alias)")
     _scaf.add_argument("--cpus", type=int)
     _scaf.add_argument("--memory-gb", type=float)
     _scaf.add_argument("--duration-h", type=float)
@@ -76,5 +77,5 @@ def _cmd_scaffold(args):
     if args.duration_h is not None: resources["duration_h"] = args.duration_h
     return _ops.scaffold_transform(
         args.library, args.name, args.inputs, args.outputs,
-        args.group_by, args.container, resources or None,
+        args.group_by, args.env_type, resources or None,
     )

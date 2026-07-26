@@ -8,7 +8,7 @@ types:
   container:
     properties:
       Format: OCI
-  metasmith.oci:
+  metasmith.env:
     properties:
       Format: OCI
       provides:

@@ -14,7 +14,7 @@ from metasmith.python_api import *
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-image = model.AddRequirement(lib.GetType("containers::metasmith.oci"))
+image = model.AddRequirement(lib.GetType("containers::metasmith.env"))
 name = model.AddRequirement(lib.GetType("examples::name"))
 out = model.AddProduct(lib.GetType("examples::gpu_report"))
 
@@ -32,18 +32,20 @@ def protocol(context: ExecutionContext):
         f"detected_devices={len(detected)}",
         f"detected_gb={','.join(f'{d.value_gb:.1f}' for d in detected)}",
     ]
-    # The load-bearing line: ask the tool container itself. `|| echo` so a
+    # The load-bearing line: ask the tool environment itself. `|| echo` so a
     # CPU-only host produces a report rather than a failed step.
-    context.ExecWithContainer(
-        image=image,
-        cmd=(
-            f'{{ '
-            f'echo "{" ".join(header)}"; '
-            f'echo "CUDA_VISIBLE_DEVICES=${{CUDA_VISIBLE_DEVICES:-unset}}"; '
-            f'nvidia-smi -L 2>&1 || echo "no gpu visible in tool environment"; '
-            f'}} > {out_path.container} 2>&1'
-        ),
+    cmd = (
+        f'{{ '
+        f'echo "{" ".join(header)}"; '
+        f'echo "CUDA_VISIBLE_DEVICES=${{CUDA_VISIBLE_DEVICES:-unset}}"; '
+        f'nvidia-smi -L 2>&1 || echo "no gpu visible in tool environment"; '
+        f'}} > {out_path.container} 2>&1'
     )
+    # The whole point is asking from inside whichever environment the agent
+    # chose, so both arms are declared and the question is asked either way.
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=cmd) \
+        .ifVirtualEnvDo(env=image, cmd=cmd)
     return ExecutionResult(
         manifest=[{out: out_path.local}],
         success=out_path.local.exists(),

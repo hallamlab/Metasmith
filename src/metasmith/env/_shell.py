@@ -15,7 +15,7 @@ from ..coms.terminals import ShellResult
 class Shell(Protocol):
     """Structural type shared by RemoteShell (relay) and LiveShell (local).
 
-    `ExecWithContainer` and transform protocols depend only on this surface,
+    `ExecWithEnv` arms and transform protocols depend only on this surface,
     so the relay shell and the local shell are interchangeable from their
     point of view.
     """
