@@ -4,7 +4,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 import tempfile
 import shutil
-from typing import Iterable, Literal
+from typing import Callable, Iterable, Literal
 import yaml
 import json
 import re
@@ -16,13 +16,12 @@ from glob import glob
 from .serialization import StdTime
 from .hashing import KeyGenerator
 from .logging import Log
-from .coms.containers import Container, ContainerRuntime
+from .env import ContainerDef, Environment, Runtime
 from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
-from .coms.via_file_watcher import RemoteShell
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
-from .models.libraries import TransformInstance, Resources
+from .models.libraries import TransformInstance, Resources, Size, Gpu, Gpus, GPU_LABEL
 from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint, Solution, Transform
 from .constants import VERSION, CONTAINER_TAG, MODULE_PATH, AgentPaths
@@ -44,13 +43,17 @@ class AgentShell:
             shell.RegisterOnOut(_on_out)
             shell.RegisterOnErr(_on_err)
             shell.Exec(f"cd {self.agent.home.GetPath()}")
-            res = shell.Exec('[ -e ./relay/msm_relay ] && echo "relay-present"', history=True)
-            assert "relay-present" in res.out, (
-                f"relay binary not present at [{self.agent.home.GetPath()}/relay/msm_relay]; "
-                f"agent home may be partially deployed — rerun Agent.Deploy()"
-            )
-            Log.Info(f"starting relay service")
-            shell.Exec(f'./relay/msm_relay start')
+            # mamba/native cross no container boundary, so there is no relay to
+            # find or start; requiring one would make those runtimes
+            # undeployable rather than merely un-bounced.
+            if self.agent._environment().needs_relay:
+                res = shell.Exec('[ -e ./relay/msm_relay ] && echo "relay-present"', history=True)
+                assert "relay-present" in res.out, (
+                    f"relay binary not present at [{self.agent.home.GetPath()}/relay/msm_relay]; "
+                    f"agent home may be partially deployed — rerun Agent.Deploy()"
+                )
+                Log.Info(f"starting relay service")
+                shell.Exec(f'./relay/msm_relay start')
             self.shell = shell
             return self.shell
         except BaseException:
@@ -95,14 +98,202 @@ class TargetBuilder:
         return len(self._items)
 
 ResourceOverrides = dict[int|Literal["all"]|Literal["*"]|str|TransformInstance, Resources]
+
+class GpuRequirementError(Exception):
+    """A staged workflow's GPU requirements cannot be met by this run's declaration."""
+
+# Emitted into workflow.config.nf whenever a run declares a GPU. Apptainer runs
+# tool containers with --cleanenv (see env/environment.py), which strips
+# CUDA_VISIBLE_DEVICES and so hides a partial allocation -- or a MIG slice, whose
+# handle is a MIG-<uuid> rather than an index -- from the tool. Re-exporting it
+# under the APPTAINERENV_/SINGULARITYENV_ prefixes is the way back in, and is a
+# harmless no-op under Docker and mamba/native. Single-quoted in the emitted
+# Groovy so `$` survives to the shell rather than being interpolated.
+_GPU_BEFORE_SCRIPT = (
+    'export APPTAINERENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"; '
+    'export SINGULARITYENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"'
+)
+
+def _read_gpu_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
+    # Per-step GPU asks recorded at stage time. Absent for workspaces staged by
+    # an older metasmith, which is indistinguishable from "no step wants a GPU"
+    # and is treated as such.
+    path = workspace/AgentPaths.GPU_MANIFEST
+    res = shell.Exec(f'[ -e "{path}" ] && cat "{path}"', history=True, quiet=True)
+    text = "\n".join(res.out)
+    if "{" not in text: return {}
+    try:
+        text = text[text.index("{"):text.rindex("}")+1]
+        return json.loads(text).get("steps", {})
+    except (json.JSONDecodeError, ValueError) as e:
+        # A file that exists but does not parse means we cannot tell whether a
+        # step requires a GPU. Proceeding would silently skip the very check
+        # this feature exists to perform, so refuse instead.
+        raise GpuRequirementError(
+            f"GPU manifest at [{path}] exists but could not be parsed ({e});"
+            f" cannot verify GPU requirements. Re-stage the workflow."
+        ) from e
+
+class EnvPortabilityError(Exception):
+    """A staged workflow names a tool this agent's runtime cannot provide."""
+
+def _read_env_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
+    # Per-step tool-environment declarations recorded at stage time. Absent for
+    # workspaces staged by an older metasmith, which is indistinguishable from
+    # "nothing to check" and is treated as such -- otherwise every already-staged
+    # workspace would start failing at run.
+    path = workspace/AgentPaths.ENV_MANIFEST
+    res = shell.Exec(f'[ -e "{path}" ] && cat "{path}"', history=True, quiet=True)
+    text = "\n".join(res.out)
+    if "{" not in text: return {}
+    try:
+        text = text[text.index("{"):text.rindex("}")+1]
+        return json.loads(text).get("steps", {})
+    except (json.JSONDecodeError, ValueError) as e:
+        # Same reasoning as the GPU manifest: a file that exists but does not
+        # parse means the check cannot be performed, and skipping it silently is
+        # the failure mode this exists to prevent.
+        raise EnvPortabilityError(
+            f"env manifest at [{path}] exists but could not be parsed ({e});"
+            f" cannot verify tool-environment portability. Re-stage the workflow."
+        ) from e
+
+def _check_env_portability(manifest: dict[str, dict], env: Environment) -> None:
+    """Refuse a run whose steps have no tool form this agent can execute.
+
+    Under a container runtime every declaration is satisfiable by construction
+    (a `container:` entry is the legacy default and the arms only gate *which*
+    command runs), so the check is about the relay-free runtimes, where a third
+    of a typical tool library simply has no conda form.
+    """
+    if not manifest or env.needs_relay: return
+    ARM, FIELD = "ifVirtualEnvDo", "conda"
+    offenders: list[str] = []
+    for _, v in sorted(manifest.items()):
+        who = f"{v.get('transform')} (step {v.get('step')})"
+        arms = v.get("arms")
+        if arms is None:
+            # Source could not be scanned at stage time -- unknown, not absent.
+            continue
+        if ARM not in arms:
+            offenders.append(f"{who}: declares no {ARM} arm (has {arms or ['no arms']})")
+            continue
+        for name, fields in sorted((v.get("envs") or {}).items()):
+            if fields is None: continue  # resource unreadable at stage time
+            if FIELD not in fields:
+                offenders.append(f"{who}: env resource [{name}] has no '{FIELD}:' entry (has {fields or ['nothing']})")
+    if offenders:
+        raise EnvPortabilityError(
+            f"agent runtime [{env.runtime.name}] runs tools without a container, but"
+            f" [{len(offenders)}] step(s) have no form it can execute:\n  "
+            + "\n  ".join(offenders)
+        )
+
+def _plan_gpu_requests(
+        manifest: dict[str, dict],
+        device: Gpu|None,
+        detect: "Callable[[], str]|None" = None,
+    ) -> dict[str, int]:
+    """Reconcile the staged per-step GPU asks against this run's declaration.
+
+    Returns process-name -> device count for the steps that should be submitted
+    with a GPU request. Raises GpuRequirementError when a REQUIRED step cannot
+    be satisfied; OPTIONAL steps never fail here -- they render without GPU
+    flags and let the protocol's own detection take the CPU branch.
+    """
+    if not manifest: return {}
+    required = [v for v in manifest.values() if v.get("gpus") == Gpus.REQUIRED.value]
+    if device is None:
+        if not required: return {}
+        offenders = ", ".join(sorted(f"{v['transform']} (step {v['step']})" for v in required))
+        detail = ""
+        if detect is not None:
+            found = detect()
+            if found:
+                detail = (
+                    f" a GPU does appear to be present on the target"
+                    f" [{found}] -- declare it with RunWorkflow(gpus=Gpu(memory=Size.GB(...)))."
+                )
+        raise GpuRequirementError(
+            f"workflow requires a GPU but none was declared for this run;"
+            f" offending transforms: {offenders}.{detail}"
+        )
+
+    planned: dict[str, int] = {}
+    over: list[str] = []
+    for process, v in sorted(manifest.items()):
+        ask = v.get("gpu_memory_gb")
+        n = device.DevicesFor(None if ask is None else Size.GB(ask))
+        if device.count is not None and n > device.count:
+            over.append(
+                f"{v['transform']} (step {v['step']}) needs {ask} GB"
+                f" -> {n} device(s), but only {device.count} are declared"
+            )
+            continue
+        if n > 1:
+            # Splitting a VRAM ask across cards only works for tools that can
+            # shard; most cannot, and they fail deep inside CUDA rather than at
+            # submission. Loud, per-step, and named.
+            Log.Warn(
+                f"GPU request for [{v['transform']}] (step {v['step']}) spans {n} devices"
+                f" ({ask} GB over {device.memory.value_gb:g} GB per device) -- the tool must"
+                f" be able to shard across cards, or this will fail at run time"
+            )
+        planned[process] = n
+    if over:
+        raise GpuRequirementError(
+            "declared GPU cannot satisfy the workflow: " + "; ".join(over)
+        )
+    return planned
+
+def _render_gpu_config(planned: dict[str, int], device: Gpu|None, scheduler: bool) -> list[str]:
+    # The shared label block carries only what does not vary per step; the
+    # per-step withName blocks carry the device count, which is the one thing
+    # that could not be known at stage time. withName outranks withLabel in
+    # nextflow, and this file is loaded after workflow.resources.nf, so a
+    # resource_overrides entry for the same step still wins per-directive.
+    if not planned: return []
+    TAB = "\t"
+    lines = ["", "process {", TAB+f"withLabel: 'x{GPU_LABEL}x' "+"{",
+             TAB+TAB+f"beforeScript = '{_GPU_BEFORE_SCRIPT}'", TAB+"}"]
+    if scheduler and device is not None:
+        for process, n in planned.items():
+            # clusterOptions is a scalar directive: setting it here REPLACES the
+            # base string, so the base flags have to be restated or every job is
+            # rejected by SLURM for a missing account.
+            base = (
+                "(params.process.clusterOptions ?: "
+                '"--nodes=1 --ntasks=1 --account=${params.slurmGpuAccount ?: params.slurmAccount}")'
+            )
+            extra = '(params.process.clusterOptionsExtra ? " ${params.process.clusterOptionsExtra}" : "")'
+            lines += [
+                TAB+f"withName: '{process}' "+"{",
+                TAB+TAB+f'clusterOptions = {base} + " {device.MakeRequestFlag(n)}" + {extra}',
+                TAB+"}",
+            ]
+    lines += ["}", ""]
+    return lines
+
 @dataclass
 class Agent:
     home: Source
     setup_commands: list[str] = field(default_factory=list)
     container: str = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
     globus_uuid: str|None = None
-    runtime: ContainerRuntime=ContainerRuntime.APPTAINER
+    runtime: Runtime=Runtime.APPTAINER
+    native: bool = False
+    # Extra flags this host needs to expose its GPUs to a tool, appended after
+    # the runtime's own switch. Empty on a normal Linux box; WSL2 needs
+    # ["--bind", "/usr/lib/wsl:/usr/lib/wsl", "--env",
+    #  "LD_LIBRARY_PATH=/usr/lib/wsl/lib"] because apptainer's `--nv` discovery
+    # misses the WSL driver stack. A host fact, so it is declared here rather
+    # than sniffed at run time.
+    gpu_args: list[str] = field(default_factory=list)
     real_path: Path|None = None
+
+    def _environment(self) -> Environment:
+        # The agent's own Environment — how metasmith itself runs on the host.
+        return Environment(image=self.container, runtime=self.runtime, native=self.native)
 
     def _is_ssh(self):
         return self.home.type == SourceType.SSH
@@ -118,6 +309,8 @@ class Agent:
             home=self.home.Pack(),
             container=self.container,
             runtime=self.runtime.name,
+            native=self.native,
+            gpu_args=list(self.gpu_args),
         ) | optional
 
     def Save(self, file_path: Path):
@@ -127,7 +320,11 @@ class Agent:
     @classmethod
     def Unpack(cls, data):
         data["home"] = Source.Unpack(data["home"])
-        data["runtime"] = ContainerRuntime[data["runtime"]]
+        data["runtime"] = Runtime[data["runtime"]]
+        # `native` is newer than the original agent.yml format; legacy files
+        # omit it and default to a wrapped (non-native) environment.
+        data.setdefault("native", False)
+        data.setdefault("gpu_args", [])
         k = "real_path"
         if k in data:
             data[k] = Path(data[k])
@@ -169,8 +366,19 @@ class Agent:
     def _run_cleanup(self, shell: LiveShell):
         pass
 
-    def Deploy(self, assertive: bool=False):
-        Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}]")
+    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None):
+        # Deploy is the entry point where the runtime is chosen and then
+        # persisted into agent.yml; everything downstream reads it back
+        # transparently. Passing nothing keeps the agent's current runtime.
+        # `native=True` selects the orthogonal "already inside, no wrapper"
+        # mode (not a runtime — composes with one).
+        if runtime is not None:
+            self.runtime = runtime
+        if image is not None:
+            self.container = image
+        if native is not None:
+            self.native = native
+        Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}] using runtime [{self.runtime.name}] (native={self.native})")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
             _quiet = False
@@ -232,80 +440,62 @@ class Agent:
 
             dev_src = "$AGENT_HOME/dev/metasmith"
             dev_target = "/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith"
-            dev_mock = Container(
+            dev_mock = Environment(
                 image=self.container,
-                binds=[
-                    (dev_src, Path(dev_target)),
-                ],
                 runtime=self.runtime,
+                native=self.native,
+                container=ContainerDef(binds=[
+                    (dev_src, Path(dev_target)),
+                ]),
+            )
+            # The bootstrap may stage the dev overlay to node-local scratch
+            # before binding it (SLURM array fan-out), so it binds whatever
+            # $DEV_BIND_SRC resolves to at run time rather than dev_src.
+            dev_mock_staged = Environment(
+                image=self.container,
+                runtime=self.runtime,
+                native=self.native,
+                container=ContainerDef(binds=[
+                    ("$DEV_BIND_SRC", Path(dev_target)),
+                ]),
             )
 
-            container = Container(
+            container = Environment(
                 image=self.container,
-                container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
-                binds=[
-                    ("$(pwd -P)", Path("/ws")),
-                    ("$AGENT_HOME", Path("/msm_home")),
-                    ("$AGENT_HOME", Path(str(resolved_agent_home))),
-                    ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
-                    (resolved_home/".globus", resolved_home/".globus"),
-                    (resolved_home/".globusonline", resolved_home/".globusonline"),
-                ],
                 runtime=self.runtime,
+                native=self.native,
+                container=ContainerDef(
+                    cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
+                    binds=[
+                        ("$(pwd -P)", Path("/ws")),
+                        ("$AGENT_HOME", Path("/msm_home")),
+                        ("$AGENT_HOME", Path(str(resolved_agent_home))),
+                        ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
+                        (resolved_home/".globus", resolved_home/".globus"),
+                        (resolved_home/".globusonline", resolved_home/".globusonline"),
+                    ],
+                ),
             )
             _cmds = [
                 f"AGENT_HOME={resolved_agent_home}"
             ] + [
-                f"mkdir -p {p}" for p, _ in container.binds
+                f"mkdir -p {p}" for p, _ in container.container.binds
             ]
             do_step("\n".join(_cmds))
-            _local_path = container.GetLocalPath()
-            if _local_path:
-                _pull_cmd = container.MakePullCommand()
-                do_step(
-                    cmd=f'mkdir -p "{_local_path.parent}" && [ -e {_local_path} ] || {_pull_cmd}',
-                    display_cmd=f"{{if not exists}}: {_pull_cmd.replace(str(resolved_agent_home), '$AGENT_HOME')}",
-                )
-
-                # Decide per-host whether to deliver the rootfs as SIF or as
-                # an unpacked sandbox dir. The probe is a static two-axis
-                # check (setuid starter-suid + apptainer major.minor); SIF is
-                # preferred when safe (no disk doubling). Sandbox is built
-                # only on apptainer >=1.4 without setuid — the case where SIF
-                # engages squashfuse_ll (Bug E.2 wedge under msm_relay on
-                # WSL2) and the sandbox path goes through kernel overlayfs.
-                # On apptainer 1.3.x without setuid the sandbox path itself
-                # falls back to fuse-overlayfs (Bug E.4 SIGBUS on fir under
-                # SLURM array contention), so we keep SIF there too. Verdict
-                # is re-evaluated on every Deploy(); a stale sandbox from a
-                # prior host config is removed when the verdict flips.
-                _sandbox_path = container.GetSandboxPath()
-                _probe = container.MakeSandboxDecisionProbe()
-                _build_sandbox = container.MakeBuildSandboxCommand()
-                _force = f'rm -rf {_sandbox_path} && ' if assertive else ''
-                do_step(
-                    cmd=(
-                        f'{_force}'
-                        f'VERDICT=$({_probe}); '
-                        f'if [ "$VERDICT" = "use-sandbox" ]; then '
-                        f'[ -d {_sandbox_path} ] || {_build_sandbox}; '
-                        f'else rm -rf {_sandbox_path}; fi'
-                    ),
-                    display_cmd=f"{{probe host; build sandbox iff apptainer>=1.4 and no setuid}}: apptainer build --sandbox {_sandbox_path.name} {_local_path.name}".replace(str(resolved_agent_home), '$AGENT_HOME'),
-                )
+            # Per-host provisioning (image pull + SIF/sandbox decision) is
+            # owned by the Environment so Deploy never branches on a runtime.
+            # Empty for runtimes with nothing to pull (mamba/native).
+            for _cmd, _display_cmd in container.ProvisionSteps(agent_home=resolved_agent_home, assertive=assertive):
+                do_step(cmd=_cmd, display_cmd=_display_cmd)
 
             _remote_file(
-                f"""
-                #!/bin/bash
-                AGENT_HOME={resolved_agent_home}
-                BINDS="$BINDS {container.MakeBindsParam()}"
-                if [ -e "{dev_src}" ]; then
-                    echo "including dev binds"
-                    BINDS="$BINDS {dev_mock.MakeBindsParam()}"
-                fi
-                echo "binds [$BINDS]"
-                {container.MakeRunCommand(local=True, custom_bind_param="$BINDS")} metasmith $@
-                """,
+                container.RenderMsmWrapper(
+                    agent_home=resolved_agent_home,
+                    run_command=container.MakeRunCommand(local=True, custom_bind_param="$BINDS"),
+                    main_binds=container.MakeBindsParam(),
+                    dev_binds=dev_mock.MakeBindsParam(),
+                    dev_src=dev_src,
+                ),
                 dest="msm",
                 executable=True,
             )
@@ -318,201 +508,28 @@ class Agent:
                 dest=AgentPaths.to_definition(Path(".")),
             )
 
-            bootstrap_container = Container(
+            bootstrap_container = Environment(
                 image=self.container,
-                binds=[
-                    ("$(pwd -P)", Path("/ws")),
-                    ("$AGENT_HOME", Path("/msm_home")),
-                ],
-                workdir=Path("/ws"),
                 runtime=self.runtime,
-                container_cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE
+                native=self.native,
+                container=ContainerDef(
+                    cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
+                    workdir=Path("/ws"),
+                    binds=[
+                        ("$(pwd -P)", Path("/ws")),
+                        ("$AGENT_HOME", Path("/msm_home")),
+                    ],
+                ),
             )
             _remote_file(
-                f"""
-                #!/bin/bash
-
-                AGENT_HOME={resolved_agent_home}
-                TASK_DIR=$1
-                STEP=$2
-                HOST_NAME=$3
-                CWD=${{4:-$(pwd -P)}}
-                cd $CWD
-                if [ -e "{AgentPaths.HOME_ROOT}" ]; then
-                    echo "bootstrap called from container, bouncing to external [$@]"
-                    REL_CWD=$(realpath --relative-to="{AgentPaths.HOME_ROOT}" $CWD)
-                    CMD="{AgentPaths.to_bootstrap(Path('$AGENT_HOME'))} $@ $AGENT_HOME/$REL_CWD"
-                    /app/msm_relay.x86_64-linux --io {AgentPaths.to_relay().parent}/$HOST_NAME bounce "$CMD"
-                    exit
-                fi
-
-                echo "bootstrap ======================"
-                INTERNALS="_metasmith"
-                [ -z $STEP ] && echo "no step provided" && exit 1
-                echo "cwd [$(pwd -P)]"
-                echo "task [$TASK_DIR]"
-                echo "step [$STEP]"
-                # --- adaptive de-synchronization of the array fan-out ----------
-                # Under SLURM array fan-out ~N tasks bootstrap at the same instant
-                # and all read the shared Lustre agent home (dev overlay, container
-                # cache, control-plane) at once -> the metadata storm that yields
-                # errno 108 (ESHUTDOWN) + partial reads -> exit 127. Spread the
-                # starts over a window sized to the array so the peak start rate
-                # stays bounded (~1 start / 3s): a big fan-out smears across up to
-                # ~5 min (unnoticeable at that job scale) while a small array barely
-                # waits (efficiency). Skipped for non-array / single-task runs, and
-                # opt-out via METASMITH_NO_START_JITTER=1. RANDOM (<=32767) covers
-                # the capped window directly. This is belt-and-suspenders on top of
-                # the per-node-once overlay staging below, and also de-syncs the
-                # container-extract / control-plane reads that staging doesn't cover.
-                if [ -z "${{METASMITH_NO_START_JITTER:-}}" ] && [ -n "${{SLURM_ARRAY_TASK_COUNT:-}}" ] && [ "$SLURM_ARRAY_TASK_COUNT" -gt 1 ]; then
-                    _win=$(( SLURM_ARRAY_TASK_COUNT * 3 )); [ "$_win" -gt 300 ] && _win=300
-                    _delay=$(( RANDOM % (_win + 1) ))
-                    echo "start jitter: sleep ${{_delay}}s (window ${{_win}}s, array=$SLURM_ARRAY_TASK_COUNT)"
-                    sleep "$_delay"
-                fi
-                # Exponential backoff with full jitter (bounded), for transient
-                # errno-108 retries in the staging paths below. Efficient (near-zero
-                # wait) when there is no contention; backs off dynamically when reads
-                # actually fail. Arg: attempt number (1-based).
-                msm_backoff() {{ _a="$1"; _b=$(( 1 << _a )); [ "$_b" -gt 60 ] && _b=60; sleep "$(( RANDOM % (_b + 1) ))"; }}
-                function run_container {{
-                    BINDS="{bootstrap_container.MakeBindsParam()}"
-                    if [ -e "{dev_src}" ]; then
-                        echo "including dev binds"
-                        # Node-local staging of the dev overlay before binding it.
-                        # Under SLURM array fan-out up to ~array-size tasks land on
-                        # ONE node; if each reads the shared Lustre overlay tree at
-                        # once (import-time, or an rsync tree-walk of ~70 files) the
-                        # metadata storm evicts the Lustre client with errno 108
-                        # (ESHUTDOWN) and returns a SILENTLY-INCOMPLETE copy -> a
-                        # submodule (e.g. models.workflow) vanishes ->
-                        # ModuleNotFoundError -> exit 127 (reproduced: 100-way naive
-                        # fan-out -> 93/97 incomplete, 558 errno-108). Two-layer fix:
-                        # (1) deliver the overlay as a single tarball so the per-node
-                        # Lustre read is ONE streaming file (what Lustre stays healthy
-                        # under) instead of a readdir walk, the ~70 small-file writes
-                        # land on node-local disk during `tar -x`, and a truncated
-                        # archive fails `tar -x` LOUDLY instead of silently; (2)
-                        # collapse the N per-node reads to ONE with an flock. The cache
-                        # is keyed by the tarball's own stat (mtime+size) -- a single
-                        # metadata op, scheduler-agnostic, content-fresh (a reused node
-                        # never serves a stale overlay; an identical tarball is reused
-                        # for free) -- so there is NO dependence on SLURM_ARRAY_JOB_ID.
-                        # The winner copies the tarball to node-local scratch, extracts,
-                        # verifies completeness (key submodule + non-trivial file count)
-                        # before stamping, and retries transient errno-108 with backoff.
-                        # All paths fail-open to the shared Lustre tree bind, so staging
-                        # is never worse than the old behaviour.
-                        # See plans/03-tarball-dev-overlay.md.
-                        DEV_BIND_SRC="{dev_src}"
-                        DEV_TARBALL="{dev_src}.tar"
-                        if [ -e "$DEV_TARBALL" ] && [ -n "$SLURM_TMPDIR" ] && command -v flock >/dev/null 2>&1; then
-                            STAGE_KEY=$(stat -c '%Y-%s' "$DEV_TARBALL" 2>/dev/null || echo nokey)
-                            STAGE_BASE="/tmp/msm_devstage_${{USER:-$(id -un)}}"
-                            STAGE_DIR="$STAGE_BASE/$STAGE_KEY"
-                            NODE_DEV="$STAGE_DIR/metasmith"
-                            STAMP="$STAGE_DIR/.msm_stage_ok"
-                            mkdir -p "$STAGE_BASE"
-                            # best-effort prune of other overlays' stale stages (bounded disk)
-                            find "$STAGE_BASE" -maxdepth 1 -mindepth 1 ! -name "$STAGE_KEY" -mmin +120 -exec rm -rf {{}} + 2>/dev/null || true
-                            (
-                                exec 9>"$STAGE_DIR.lock" 2>/dev/null || exec 9>"$STAGE_BASE/$STAGE_KEY.lock"
-                                if flock -w 300 9; then
-                                    if [ ! -e "$STAMP" ]; then
-                                        _t=0
-                                        while [ "$_t" -lt 3 ]; do
-                                            _t=$((_t+1))
-                                            rm -rf "$NODE_DEV"; mkdir -p "$STAGE_DIR"
-                                            _lt="$SLURM_TMPDIR/msm_overlay.$STAGE_KEY.tar"
-                                            # native copy to node-local, then extract, then bind
-                                            if cp -f "$DEV_TARBALL" "$_lt" 2>"$STAGE_DIR/.stage.err" \
-                                                && tar -xf "$_lt" -C "$STAGE_DIR" 2>>"$STAGE_DIR/.stage.err"; then
-                                                _n=$(find "$NODE_DEV" -type f 2>/dev/null | wc -l)
-                                                if [ -e "$NODE_DEV/models/workflow.py" ] && [ -e "$NODE_DEV/coms" ] && [ "$_n" -ge 50 ]; then
-                                                    rm -f "$_lt" 2>/dev/null || true
-                                                    : > "$STAMP"; break
-                                                fi
-                                            fi
-                                            rm -f "$_lt" 2>/dev/null || true
-                                            echo "dev overlay stage attempt $_t incomplete; retrying" >&2
-                                            msm_backoff "$_t"
-                                        done
-                                    fi
-                                fi
-                            )
-                            if [ -e "$STAMP" ]; then
-                                DEV_BIND_SRC="$NODE_DEV"
-                                echo "staged dev overlay (per-node-once tarball, key $STAGE_KEY) -> [$NODE_DEV]"
-                            else
-                                rm -rf "$NODE_DEV" 2>/dev/null || true
-                                echo "dev overlay tarball staging failed; using shared Lustre read"
-                            fi
-                        fi
-                        BINDS="$BINDS --bind $DEV_BIND_SRC:{dev_target}"
-                    fi
-                    if [ -e "./{BIND_FILE}" ]; then
-                        echo "including linked data binds"
-                        BINDS="$BINDS $(cat ./{BIND_FILE})"
-                    fi
-                    echo "final binds:"
-                    echo "$BINDS"
-                    {bootstrap_container.MakeRunCommand(local=True, custom_bind_param="$BINDS")} $@
-                }}
-                echo "deploy relay ==================="
-                run_container metasmith api deploy_from_container -a workspace=$INTERNALS architecture=$(uname -m) system=$(uname -s)
-                find $INTERNALS/relay/
-                echo "pre execute ===================="
-                find .
-                ls -lh .
-                echo "relay =========================="
-                $INTERNALS/relay/msm_relay start --local
-                echo "stage control-plane ============"
-                # Under SLURM array fan-out, copy the small shared control-plane
-                # subset into this task's node-local scratch so N tasks don't all
-                # read the same files through the /msm_home bind (errno 108). Runs
-                # bare on the host, so it reads the real $AGENT_HOME (Lustre), never
-                # /msm_home. Fail-open: any failure leaves STAGE_ROOT empty and the
-                # task reads the shared copy exactly as before.
-                STAGE_ROOT=""
-                if [ -n "$SLURM_TMPDIR" ] && command -v rsync >/dev/null 2>&1; then
-                    KEY=$(basename "$TASK_DIR")
-                    HOST_STAGE="$(pwd -P)/$INTERNALS/stage"
-                    # This subset is task-specific (the task dir), so per-node-once
-                    # sharing does not apply as it does for the dev overlay; but the
-                    # same Lustre concurrent-read eviction (errno 108) hits it, so
-                    # retry the copy with backoff before giving up. Fail-open: on
-                    # persistent failure leave STAGE_ROOT empty and read the shared
-                    # copy exactly as before.
-                    _c=0
-                    while [ "$_c" -lt 3 ]; do
-                        _c=$((_c+1))
-                        if mkdir -p "$HOST_STAGE/lib" "$HOST_STAGE/runs/$KEY/$INTERNALS" "$HOST_STAGE/data" \
-                            && rsync -a "$AGENT_HOME/lib/agent.yml" "$HOST_STAGE/lib/agent.yml" \
-                            && rsync -a "$AGENT_HOME/runs/$KEY/$INTERNALS/task" "$HOST_STAGE/runs/$KEY/$INTERNALS/" \
-                            && rsync -a --prune-empty-dirs --include='*/' --include='_metadata/***' --exclude='*' "$AGENT_HOME/data/" "$HOST_STAGE/data/"; then
-                            STAGE_ROOT="/ws/$INTERNALS/stage"
-                            echo "staged control-plane -> [$HOST_STAGE] (container view [$STAGE_ROOT])"
-                            break
-                        fi
-                        echo "control-plane staging attempt $_c failed; retrying" >&2
-                        STAGE_ROOT=""
-                        msm_backoff "$_c"
-                    done
-                    [ -z "$STAGE_ROOT" ] && echo "control-plane staging failed; falling back to shared read"
-                else
-                    echo "no SLURM_TMPDIR or rsync; using shared control-plane read"
-                fi
-                echo "execute ========================"
-                run_container metasmith api execute_transform -a step_index=$STEP -a workspace=$TASK_DIR -a stage_root=$STAGE_ROOT host=$(hostname)
-                echo "post execute ==================="
-                find .
-                ls -lh .
-                echo "cleanup ========================"
-                $INTERNALS/relay/msm_relay stop
-                echo "relay logs ====================="
-                $INTERNALS/relay/msm_relay logs
-                """,
+                bootstrap_container.RenderBootstrap(
+                    agent_home=resolved_agent_home,
+                    run_command=bootstrap_container.MakeRunCommand(local=True, custom_bind_param="$BINDS"),
+                    run_binds=bootstrap_container.MakeBindsParam(),
+                    dev_binds=dev_mock_staged.MakeBindsParam(),
+                    dev_src=dev_src,
+                    bind_file=BIND_FILE,
+                ),
                 dest=AgentPaths.to_bootstrap(Path(".")),
                 executable=True,
             )
@@ -525,11 +542,19 @@ class Agent:
             # a partial deploy (sif present, relay missing) self-heals on the
             # next call without needing assertive=True.
             relay_bin = AgentPaths.to_relay(self.home.GetPath())
-            res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True)
-            if "relay-present" in res.out and not assertive:
+            if not container.needs_relay:
+                # The relay exists solely to bounce tool launches back across a
+                # container boundary. mamba/native have no boundary, and the
+                # extraction step reads from inside the metasmith container --
+                # which is not running. Nothing to deploy.
+                Log.Info(f"runtime [{self.runtime.name}] needs no relay, skipping container extraction")
+            elif "relay-present" in shell.Exec(
+                    f'[[ -e "{relay_bin}" ]] && echo "relay-present"', history=True).out and not assertive:
                 Log.Info(f"relay binary present at [{relay_bin}], skipping container extraction")
             else:
-                do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
+                # Runs *inside* the metasmith container via the msm wrapper, so
+                # the workspace is the container's own view of the agent home.
+                do_step(f"{resolved_agent_home}/msm api deploy_from_container -a workspace={AgentPaths.CONTAINER_HOME_ROOT} architecture=$(uname -m) system=$(uname -s)")
                 res = shell.Exec(f'[[ -e "{relay_bin}" ]] && echo "relay-deployed"', history=True)
                 assert "relay-deployed" in res.out, f"deploy_from_container completed but relay binary missing at [{relay_bin}]"
             self._run_cleanup(shell)
@@ -593,13 +618,14 @@ class Agent:
 
     def _get_mock_container(self, task: WorkflowTask):
         binds = task.GetCommonInputFolders(method="external")
-        mock = Container(
+        mock = Environment(
             image=self.container,
-            binds=[
+            runtime=self.runtime,
+            native=self.native,
+            container=ContainerDef(binds=[
                 (p, p)
                 for p in binds
-            ],
-            runtime=self.runtime,
+            ]),
         )
         return mock
 
@@ -642,8 +668,8 @@ class Agent:
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
             binds = mock.MakeBindsParam()
-            if len(mock.binds)>0:
-                Log.Info(f"external binds {[a for a, b in mock.binds]}")
+            if len(mock.container.binds)>0:
+                Log.Info(f"external binds {[a for a, b in mock.container.binds]}")
             sh_remote.Exec(f"""\
                 export BINDS="{binds}"
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname)
@@ -665,8 +691,9 @@ class Agent:
             self, 
             task: WorkflowTask|str, 
             config_file: Path|None=None, 
-            params: dict|Path|str|None=None, 
+            params: dict|Path|str|None=None,
             resource_overrides: ResourceOverrides|None=None,
+            gpus: Gpu|None=None,
             stub_delay: float=0,
         ) -> None:
         is_dry_run = stub_delay>0
@@ -681,6 +708,30 @@ class Agent:
             FLAG = "workspace exists"
             res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True, quiet=True)
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
+
+            # GPU preflight, deliberately BEFORE anything is transferred and
+            # long before the detached `nohup nextflow ... &` launch -- the run
+            # is fire-and-forget, so a failure raised any later is invisible to
+            # this caller.
+            def _detect_gpu_on_target() -> str:
+                probe = sh_remote.Exec(
+                    "command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L 2>/dev/null | head -4",
+                    history=True, quiet=True,
+                )
+                return "; ".join(x.strip() for x in probe.out if x.strip())
+            gpu_manifest = _read_gpu_manifest(sh_remote, workspace)
+            gpu_planned = _plan_gpu_requests(gpu_manifest, gpus, _detect_gpu_on_target)
+            if gpu_planned:
+                Log.Info(f"GPU requests planned for [{len(gpu_planned)}] of [{len(gpu_manifest)}] declaring steps")
+
+            # Tool-environment preflight, same placement and same reasoning: a
+            # step whose tool has no form this agent can run must be caught here
+            # rather than mid-run, after everything upstream has already been
+            # computed.
+            env_manifest = _read_env_manifest(sh_remote, workspace)
+            _check_env_portability(env_manifest, Environment(
+                image=self.container, runtime=self.runtime, native=self.native,
+            ))
 
             Log.Info(f"sending config and params")
             mover = Logistics()
@@ -701,16 +752,24 @@ class Agent:
                             k = str(k)
                             if isinstance(v, dict):
                                 v = _parse(v)
-                            if "_" in k:
-                                stacks = [x for x in k.split("_") if x != ""]
-                                if len(stacks)>1:
-                                    _d_curr = parsed
-                                    for k in stacks[:-1]:
-                                        _d_curr[k] = {}
-                                        _d_curr = _d_curr[k]
-                                    _d_curr[stacks[-1]] = v
+                            stacks = [x for x in k.split("_") if x != ""] if "_" in k else [k]
+                            if len(stacks)>1:
+                                # setdefault, not assignment: two keys sharing a
+                                # prefix (process_tries + process_clusterOptionsExtra)
+                                # must merge into one nested dict rather than the
+                                # later one wiping the earlier.
+                                _d_curr = parsed
+                                for _k in stacks[:-1]:
+                                    _nxt = _d_curr.get(_k)
+                                    if not isinstance(_nxt, dict): _nxt = {}
+                                    _d_curr[_k] = _nxt
+                                    _d_curr = _nxt
+                                _d_curr[stacks[-1]] = v
                             else:
-                                parsed[k] = v
+                                # stacks[0] rather than k so a leading/trailing
+                                # underscore ("_foo") lands as "foo" instead of
+                                # being silently dropped as it used to be.
+                                parsed[stacks[0]] = v
                         return parsed
 
                     with open(params_local, "w") as f:
@@ -723,6 +782,18 @@ class Agent:
                 local_config = temp_dir/config_file.name
                 shutil.copy(config_file, local_config)
                 mover.QueueTransfer(src=Source.FromLocal(local_config), dest=ws_dest/AgentPaths.NXF_CONFIG)
+                # GPU blocks first, so an explicit resource_overrides entry for
+                # the same step is still last-defined and wins per-directive.
+                if gpu_planned:
+                    # Only a grid executor has a scheduler to ask; the local
+                    # executor inherits whatever devices the host has, so the
+                    # declaration there exists purely to pass the preflight and
+                    # switch on the runtime's GPU flags.
+                    is_scheduler = "slurmAccount" in local_config.read_text()
+                    gpu_lines = _render_gpu_config(gpu_planned, gpus, is_scheduler)
+                    if gpu_lines:
+                        with open(local_config, "a") as f:
+                            f.write("\n".join(gpu_lines))
                 # lines = [
                 #     # "",
                 #     # "lineage.enabled = true",
@@ -1055,7 +1126,8 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     data_dir = AgentPaths.to_data()
     data_dir.mkdir(parents=True, exist_ok=True)
     work_internals.mkdir(parents=True, exist_ok=True)
-    with RemoteShell(AgentPaths.to_local_relay_coms(host=host), timeout=60) as extern_shell:
+    _agent_env = Environment(image=agent.container, runtime=agent.runtime, native=agent.native)
+    with _agent_env.ConnectShell(AgentPaths.to_local_relay_coms(host=host)) as extern_shell:
         extern_root = agent.real_path
         assert extern_root is not None
         path_map = PathMap(extern_home=Path(str(extern_root)), task_key=task._key)
@@ -1066,7 +1138,12 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
             Log.Info(f"skipping verification of external inputs paths")
         else:
             given_paths = [inst.ResolvePath() for inst in task.plan.given]
-            given_paths = [p for p in given_paths if not p.is_relative_to(AgentPaths.HOME_ROOT)]
+            # Container-internal paths cannot be stat'd from the external shell,
+            # so they are skipped. Without a container boundary the home root IS
+            # a real host path and every given path under it is verifiable --
+            # applying the filter there would silently narrow verification.
+            if _agent_env.needs_relay:
+                given_paths = [p for p in given_paths if not p.is_relative_to(AgentPaths.HOME_ROOT)]
             def batchify(iterable: Iterable, n):
                 batch: list[str] = []
                 for x in iterable:
@@ -1135,7 +1212,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
         external_work=extern_work,
         home_dir=AgentPaths.HOME_ROOT,
         external_home=agent.home.GetPath(),
-        container_runtime=agent.runtime,
+        runtime=agent.runtime,
         resources_file=AgentPaths.NXF_RES,
     ))
     nxflib_dir = work_dir/"lib"
@@ -1148,8 +1225,8 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     Log.Info(f"creating launcher script at [{launcher_path}]")
     mock = agent._get_mock_container(task)
     binds = mock.MakeBindsParam()
-    if len(mock.binds)>0:
-        Log.Info(f"external binds {[a for a, b in mock.binds]}")
+    if len(mock.container.binds)>0:
+        Log.Info(f"external binds {[a for a, b in mock.container.binds]}")
     with open(launcher_path, "w") as f:
         f.write("\n".join([
             f'#!/bin/bash',

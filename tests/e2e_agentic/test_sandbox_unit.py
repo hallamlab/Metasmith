@@ -30,7 +30,7 @@ def install_ctx(project_root):
 
 
 def test_sif_basename_matches_metasmith_sanitizer():
-    # Mirrors src/metasmith/coms/containers.py:35 — keep this in sync.
+    # Mirrors src/metasmith/env/environment.py — keep this in sync.
     assert sif_basename("docker://quay.io/hallamlab/metasmith:0.18.1") == (
         "docker..quay.io_hallamlab_metasmith..0.18.1.sif"
     )
@@ -46,7 +46,7 @@ def test_expected_sif_path_lives_under_container_images(tmp_path):
 
 def test_expected_sif_path_honors_apptainer_cachedir(tmp_path):
     # Override: APPTAINER_CACHEDIR set → store is that dir, mirroring
-    # Container._store_root() in src/metasmith/coms/containers.py.
+    # Environment._store_root() in src/metasmith/env/environment.py.
     cache = tmp_path / "scratch" / "apptainer"
     p = expected_sif_path(tmp_path / "agent_home",
                           "docker://quay.io/hallamlab/metasmith:1.2.3",

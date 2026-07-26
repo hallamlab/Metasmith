@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..agents import Agent
-from ..coms.containers import ContainerRuntime
+from ..env import Runtime
 from ..models.remote import Source
 
 
@@ -68,7 +68,7 @@ def save_agent(
     agent = Agent(
         home=home,
         setup_commands=setup_commands or [],
-        runtime=ContainerRuntime[runtime],
+        runtime=Runtime[runtime],
         globus_uuid=globus_uuid,
     )
     if container:

@@ -17,7 +17,7 @@ from pathlib import Path
 
 from metasmith.agents import CollectResults
 from metasmith.constants import MODULE_PATH, AgentPaths
-from metasmith.coms.containers import ContainerRuntime
+from metasmith.env import Runtime
 from metasmith.models.libraries import DataInstanceLibrary, DataInstanceLibraryView, DataTypeLibrary
 from metasmith.models.solver import Endpoint, Transform
 from metasmith.models.workflow import WorkflowPlan, WorkflowTask, NextflowGenContext
@@ -84,7 +84,7 @@ def run_stub_workflow(
         external_work=work_dir,
         home_dir=work_dir,
         external_home=work_dir,
-        container_runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
         resources_file=AgentPaths.NXF_RES,
     )
     task.PrepareNextflow(context)
@@ -650,7 +650,7 @@ class TestTraceSharedInputs:
             external_work=work_dir,
             home_dir=work_dir,
             external_home=work_dir,
-            container_runtime=ContainerRuntime.DOCKER,
+            runtime=Runtime.DOCKER,
             resources_file=AgentPaths.NXF_RES,
         )
         task.PrepareNextflow(context)

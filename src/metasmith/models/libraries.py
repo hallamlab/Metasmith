@@ -4,18 +4,24 @@ import subprocess
 import shutil
 from pathlib import Path
 import yaml
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from enum import Enum
 from typing import Callable, Iterable
 from importlib import reload, __import__
+import math
+import re
+import shlex
 import tempfile
 import time
 from datetime import timedelta
 import json
 
 from ..serialization import IsText
-from ..coms.containers import ContainerRuntime, Container
+from ..env import ContainerDef, Environment, Runtime
+from ..env.dispatch_scan import EnvScan, ScanFile
 from ..coms.terminals import RemoveLeadingIndent
-from ..coms.via_file_watcher import RemoteShell, GenerateId
+from ..coms.ipc import GenerateId
+from ..env import Shell
 from .solver import Dependency, Endpoint, Transform
 from .remote import Logistics, Source, SourceType
 from ..hashing import KeyGenerator
@@ -1102,11 +1108,71 @@ class Duration:
         if len(s) == 0: s = [ss]
         return f"'{' '.join(s)}'"
 
+class Gpus(Enum):
+    # A pure toggle: whether the transform's tool needs a GPU, and how badly.
+    # Deliberately carries no count and no device type -- how many devices a
+    # given VRAM ask resolves to, and what a device is called, are facts about
+    # the *host*, not the tool. Those live on `Gpu` (the run-side declaration).
+    NONE = "none"
+    OPTIONAL = "optional"
+    REQUIRED = "required"
+
+# Label attached at stage time to every process whose transform declared a GPU.
+# Follows the existing `label 'x<name>x'` convention (see `xlocalx` in slurm.nf).
+GPU_LABEL = "gpu"
+
+@dataclass
+class Gpu:
+    """What a GPU *is* on the target host — the run-side half of the contract.
+
+    Declared once per run via `Agent.RunWorkflow(gpus=...)`. This is the only
+    place device vocabulary appears: per-device VRAM, the site's device/gres
+    type token, how many devices a node has, and the scheduler flag shape used
+    to ask for them. A transform never names any of these.
+
+    `flag` is the request syntax including its separator, so the count appends
+    directly: `--gpus-per-node=` -> `--gpus-per-node=2`, `--gres=gpu:` ->
+    `--gres=gpu:2` (or `--gres=gpu:a100:2` when `type` is set).
+    """
+    memory: Size|None = None
+    type: str|None = None
+    count: int|None = None
+    flag: str = "--gpus-per-node="
+    # Scheduler flags a GPU step needs beyond the device count -- typically the
+    # GPU partition, since a site's default partition has no cards. These go on
+    # GPU steps only, which is what distinguishes them from
+    # `params.process.clusterOptionsExtra` (every step). Sockeye needs
+    # ["--partition=gpu"].
+    extra: list[str] = field(default_factory=list)
+
+    def DevicesFor(self, required: Size|None) -> int:
+        # How many of *this* device it takes to total `required` VRAM. No ask
+        # (or no declared per-device memory to divide by) means one device --
+        # the transform said it wants a GPU without saying how much.
+        if required is None or self.memory is None: return 1
+        if self.memory.value_gb <= 0: return 1
+        return max(1, math.ceil(required.value_gb / self.memory.value_gb))
+
+    def MakeRequestFlag(self, devices: int) -> str:
+        req = f"{self.flag}{self.type}:{devices}" if self.type else f"{self.flag}{devices}"
+        return " ".join([req, *self.extra])
+
 @dataclass
 class Resources:
     cpus: int|None = None
     memory: Size|None = None
     duration: Duration|None = None
+    # GPU need. `gpus` is the toggle; `gpu_memory` is the TOTAL VRAM the tool
+    # needs, which is the unit a tool actually cares about. Unlike the three
+    # fields above, `gpu_memory` is NOT a Nextflow directive -- Nextflow has no
+    # VRAM concept -- so AsNextflowFormat never renders it. It is metasmith-side
+    # input to the run-time device-count computation and to the protocol.
+    gpus: Gpus = Gpus.NONE
+    gpu_memory: Size|None = None
+
+    @property
+    def wants_gpu(self) -> bool:
+        return self.gpus is not Gpus.NONE
 
     def AsNextflowFormat(self, is_config=False):
         def _parse_res(r:int|Duration|Size|None, var: str, field: str, norm: str, strict: str=""):
@@ -1162,6 +1228,16 @@ class TransformInstance:
     _path: Path = field(default_factory=Path)
     _key: str = ""
     _hash: int = -1
+    # Which worlds this transform declared it can run in, read statically off
+    # its own source at load. Set by `Load`; None when the source could not be
+    # scanned, which is distinct from "declared nothing" and must not be read
+    # as a portability answer.
+    _env_scan: "EnvScan|None" = None
+    # The Dependency each arm named as its `env=`, resolved through the module
+    # globals. Lets stage time find the env *resource* behind an arm and read
+    # which of `container:` / `conda:` it actually carries.
+    _env_deps: list[Dependency] = field(default_factory=list)
+
     def __post_init__(self):
         assert self.batch_size>0, self.model
         assert self.group_by in self.model.requires, self.model
@@ -1199,6 +1275,24 @@ class TransformInstance:
             tr = cls._last_loaded_transform
             tr.name = definition.stem
             tr._path = definition
+            # Read the ExecWithEnv declarations off the source now, while the
+            # file and the module namespace are both in hand. `env=` is written
+            # as a bare name bound to a Dependency at module scope, so the
+            # identifier the scan returns resolves straight through the module.
+            try:
+                tr._env_scan = ScanFile(parent_lib/definition)
+            except (OSError, SyntaxError) as e:
+                Log.Warn(f"could not scan env declarations in [{definition}]: {e}")
+                tr._env_scan = None
+            if tr._env_scan is not None:
+                seen: list[Dependency] = []
+                for chain in tr._env_scan.chains:
+                    for name in chain.envs:
+                        if name is None: continue
+                        d = getattr(m, name, None)
+                        if isinstance(d, Dependency) and d not in seen:
+                            seen.append(d)
+                tr._env_deps = seen
             # with open(definition) as f:
             #     raw = "".join(f.readlines())
             #     h, k = KeyGenerator.FromStr(raw, l=5)
@@ -1312,18 +1406,173 @@ class ExecutionResult:
 class ExecutionFailed(Exception):
     pass
 
+def ResolveEnvImage(content: str, runtime: Runtime, source: str|Path="<env>") -> str:
+    """Resolve a generic env-declaration file's content to the image / env-name
+    the active runtime should use.
+
+    The generic format is a YAML mapping with an optional ``container:`` (a
+    ``docker://…`` URI, used by the container runtimes) and/or an optional
+    ``conda:`` (a conda/mamba env name, used by ``Runtime.MAMBA``). Selection is
+    by the single global runtime; a missing key for the selected runtime is a
+    hard error naming the file.
+
+    Legacy resources (``*.oci`` whose whole content is a bare URI) parse as a
+    YAML scalar, not a mapping, and are treated verbatim as the container image
+    so existing container runs keep working unchanged.
+    """
+    try:
+        parsed = yaml.safe_load(content)
+    except yaml.YAMLError:
+        parsed = None
+    if isinstance(parsed, dict):
+        key = "conda" if runtime == Runtime.MAMBA else "container"
+        value = parsed.get(key)
+        assert value, (
+            f"env declaration [{source}] has no '{key}:' entry for runtime "
+            f"[{runtime.value}] (keys present: {sorted(parsed)})"
+        )
+        return str(value).strip()
+    # legacy bare-URI (*.oci) or unparseable content -> use verbatim as the image
+    return content.strip()
+
+CONTAINER_ARM = "ifContainerDo"
+VIRTUAL_ENV_ARM = "ifVirtualEnvDo"
+
+# Names whose meaning belongs to the framework, not the transform. Overwriting
+# any of these from a protocol reshapes the environment metasmith just built
+# (PATH/LD_LIBRARY_PATH), relocates the workdir the bounce script cd'd into
+# (PWD), or redirects scratch the runtime already agreed on (TMPDIR, HOME).
+# Tool-native names like GTDBTK_DATA_PATH are exactly what exports are for.
+_RESERVED_EXPORTS = frozenset({"PATH", "HOME", "LD_LIBRARY_PATH", "TMPDIR", "PWD"})
+
+def _validate_exports(exports: dict[str, "str|Path"]|None) -> dict[str, str]:
+    if not exports: return {}
+    out: dict[str, str] = {}
+    for k, v in exports.items():
+        k = str(k)
+        assert k not in _RESERVED_EXPORTS, (
+            f"export [{k}] is reserved by the framework; "
+            f"reserved names are {sorted(_RESERVED_EXPORTS)}"
+        )
+        assert re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k), (
+            f"export name [{k}] is not a valid shell identifier"
+        )
+        out[k] = str(v)
+    return out
+
+
+class EnvDispatch:
+    """The chain returned by :meth:`ExecutionContext.ExecWithEnv`.
+
+    Holds no command of its own — each arm is dispatched the instant it is
+    declared, if it matches. What it does hold is the record of which arms the
+    transform declared, which is what makes the "no arm matched" failure
+    reportable and what the stage-time portability manifest reads.
+    """
+
+    def __init__(self, context: "ExecutionContext"):
+        self._context = context
+        self.declared: list[str] = []
+        self._matched: str|None = None
+
+    @property
+    def matched(self) -> str|None:
+        return self._matched
+
+    def _dispatch(self, arm: str, applies: bool, **kw):
+        self.declared.append(arm)
+        if not applies:
+            Log.Info(f"skipping [{arm}] (does not apply to this runtime)")
+            return self
+        assert self._matched is None, (
+            f"[{arm}] and [{self._matched}] both apply to this runtime; "
+            "an ExecWithEnv chain must have exactly one matching arm"
+        )
+        self._matched = arm
+        self._context._ExecInEnv(**kw)
+        return self
+
+    def ifContainerDo(
+        self,
+        env: Dependency,
+        cmd: str,
+        shell: str="bash",
+        binds: list[tuple[Path|str, Path|str]]|None=None,
+        args: list[str]|None=None,
+        exports: dict[str, str|Path]|None=None,
+        history: bool=True,
+    ) -> "EnvDispatch":
+        """How this step runs when the tool lives in a container image.
+
+        `binds` are host->container mount pairs and `args` are extra flags for
+        the runtime's own run command; both are meaningless without a mount
+        namespace, which is why they live here and not on the venv arm.
+        """
+        return self._dispatch(
+            CONTAINER_ARM, self._context._crosses_boundary,
+            image=env, cmd=cmd, shell=shell, binds=binds, args=args,
+            exports=exports, history=history,
+        )
+
+    def ifVirtualEnvDo(
+        self,
+        env: Dependency,
+        cmd: str,
+        shell: str="bash",
+        exports: dict[str, str|Path]|None=None,
+        history: bool=True,
+    ) -> "EnvDispatch":
+        """How this step runs when the tool is a package set on PATH.
+
+        There is no mount namespace here, so there is no `binds` — accepting one
+        could only mean ignoring it, which is the bug this API replaced. Hand the
+        tool its paths directly (every ContextPath view is the host path under
+        this runtime) or through `exports`.
+        """
+        return self._dispatch(
+            VIRTUAL_ENV_ARM, not self._context._crosses_boundary,
+            image=env, cmd=cmd, shell=shell, exports=exports, history=history,
+        )
+
+
 # work as if batch of 1 item
 # until explicitly batch iterated
 @dataclass
 class ExecutionContext:
     _inputs: list[dict[Dependency, ContextData]]
     _get_output_paths: Callable[[Dependency, int, int], ContextPath]
-    external_shell: RemoteShell # since metasmith will bootstrap into its own container
+    external_shell: Shell # relay shell for container runtimes, local shell otherwise
     external_cwd: Path
     external_agent_home: Path
-    container_runtime: ContainerRuntime
+    # The environment a *tool* runs in on this host. Private: a protocol has no
+    # business branching on the runtime, and everything that used to require it
+    # (GPU flags, bind dialect, whether there is a boundary at all) is answered
+    # by the env package. Never `native` -- native describes whether metasmith
+    # itself is containerized, which says nothing about the tool's own image.
+    _environment: Runtime|Environment = Runtime.DOCKER
     params: dict = field(default_factory=dict)
     _batch_index: int = 0
+    _detected_gpus: list|None = None
+    _env_dispatches: list["EnvDispatch"] = field(default_factory=list)
+
+    def __post_init__(self):
+        # Accept a bare Runtime for the many construction sites that only have
+        # one; normalise to an Environment so routing has a single shape.
+        if isinstance(self._environment, Runtime):
+            self._environment = Environment(image="", runtime=self._environment)
+
+    @property
+    def _crosses_boundary(self) -> bool:
+        # Whether a tool launched from here lands on the other side of a
+        # container boundary. The single question every arm dispatch turns on.
+        assert isinstance(self._environment, Environment)
+        return self._environment.needs_relay
+
+    def _tool_environment(self, image: str, **kw) -> Environment:
+        # The container half is rebuilt per call (each tool has its own image,
+        # workdir and binds); runtime/native carry over from the template.
+        container = replace(self._environment.container, **kw) if kw else self._environment.container
+        return replace(self._environment, image=image, container=container)
 
     def GetMeta(self, key: Dependency):
         d = self._inputs[self._batch_index]
@@ -1353,16 +1602,83 @@ class ExecutionContext:
             Log.Info(f"    {line}")
         subprocess.run(cmd, shell=True, executable='/bin/bash')
 
+    def DeclaredGpus(self) -> tuple[Gpus, Size|None]:
+        # What this step *asked* for at stage time. Staged by the generator into
+        # the step meta file; absent (-> Gpus.NONE) for any step that declared
+        # no GPU and for workspaces staged before GPU support existed.
+        raw = self.params.get("gpus")
+        if not isinstance(raw, dict): return Gpus.NONE, None
+        try:
+            toggle = Gpus(raw.get("gpus", Gpus.NONE.value))
+        except ValueError:
+            toggle = Gpus.NONE
+        mem = raw.get("gpu_memory_gb")
+        return toggle, None if mem is None else Size.GB(mem)
+
+    def DetectGpus(self, refresh: bool=False) -> list[Size]:
+        """Per-device VRAM of the GPUs this task actually got, on the exec host.
+
+        Probes through `external_shell`, which is the relay for container
+        runtimes and the local shell for mamba/native -- so the answer is about
+        the machine the tool will run on, under every runtime. Reports what was
+        *allocated*, not what was asked for: under a partial SLURM allocation or
+        a MIG slice (where CUDA_VISIBLE_DEVICES is a MIG-<uuid> rather than an
+        index) those differ, and the allocated figure is the one a tool sizing
+        its own offload needs. A host with no nvidia-smi is a valid empty
+        answer, not an error.
+
+        Memoized: the answer cannot change within a task, and GetContainerModel
+        consults it on every ExecWithEnv call. Pass refresh=True to probe
+        again.
+        """
+        if self._detected_gpus is not None and not refresh:
+            return list(self._detected_gpus)
+        FLAG = "msm_gpu"
+        probe = (
+            'command -v nvidia-smi >/dev/null 2>&1 && '
+            f'nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null'
+            f' | sed "s/^/{FLAG} /" || true'
+        )
+        try:
+            res = self.external_shell.Exec(probe, history=True)
+        except Exception as e:
+            Log.Warn(f"gpu detection failed: {e}")
+            self._detected_gpus = []
+            return []
+        found: list[Size] = []
+        for line in res.out:
+            line = line.strip()
+            if not line.startswith(FLAG): continue
+            val = line[len(FLAG):].strip()
+            try:
+                found.append(Size.MB(float(val)))
+            except ValueError:
+                continue
+        self._detected_gpus = found
+        return list(found)
+
     def GetContainerModel(self, image: Dependency, binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None):
         path = self._inputs[self._batch_index][image].path
         if IsText(path.local):
             with open(path.local) as f:
-                image_path = f.read().strip() # using the uri
+                content = f.read()
+            # Generic env declaration: select container: / conda: by the global
+            # runtime (legacy bare-URI *.oci files resolve verbatim).
+            image_path = ResolveEnvImage(content, self._environment.runtime, path.local)
         else:
             image_path = str(path.external)
     
+        # Probe whether this runtime crosses a container boundary. When it
+        # does not (mamba/native), paths are identity: the tool runs on the
+        # host filesystem in the real cwd, so there is no /ws remap and no
+        # binds to compute. The PathMap views collapse to equal.
+        _probe = self._tool_environment(str(image_path))
+
         _binds: list[tuple[Path, Path]] = []
-        for batch_item in self._inputs:
+        # Accumulating implicit input binds is dead work with no boundary --
+        # and a half-computed bind list is exactly what invites a future
+        # reader to "just use it" and reintroduce the silent-drop bug.
+        for batch_item in (self._inputs if _probe.needs_relay else []):
             for _, v in list(batch_item.items()):
                 for p in v.input_group:
                     if p.container.is_relative_to(AgentPaths.HOME_ROOT): continue
@@ -1386,32 +1702,95 @@ class ExecutionContext:
                     else:
                         _binds.append((src, dest))
         if binds is None: binds = []
-        container_ws = Path("/ws")
-        binds += [
-            ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
-            (self.external_agent_home, AgentPaths.HOME_ROOT),
-            (self.external_cwd, container_ws),
-        ]
-        binds += sorted([(s, d) for s, d in _binds])
-        
-        container = Container(
-            image = str(image_path),
-            workdir = container_ws,
-            runtime = self.container_runtime,
-            binds = binds,
-            extra_args = list(args) if args else [],
-            container_cache = self.external_agent_home/AgentPaths.CONTAINER_CACHE,
-        )
-        return container
+        if _probe.needs_relay:
+            container_ws = AgentPaths.WORK_ROOT
+            binds += [
+                ('${TMPDIR-"/tmp"}', '${TMPDIR-"/tmp"}'),
+                (self.external_agent_home, AgentPaths.HOME_ROOT),
+                (self.external_cwd, container_ws),
+            ]
+            binds += sorted([(s, d) for s, d in _binds])
+        else:
+            # No mount namespace to bind into. Callers must not reach here with
+            # binds -- ExecWithEnv routes them through ifContainerDo, which only
+            # runs under a container runtime.
+            assert not binds, (
+                f"binds are meaningless without a container boundary "
+                f"(runtime [{_probe.runtime.name}]): {binds}"
+            )
+            container_ws = self.external_cwd
 
-    def ExecWithContainer(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, history: bool=True):
-        container = self.GetContainerModel(image, binds, args)
-        assert container.workdir is not None # for typing
+        extra_args = list(args) if args else []
+        # A step that declared a GPU gets its runtime's GPU flags for free --
+        # the transform author never writes `--nv` / `--gpus all`, and never
+        # branches on the runtime to pick the dialect. Transforms that still
+        # pass them by hand keep working: framework flags whose leading token is
+        # already present in `args=` are dropped rather than duplicated.
+        #
+        # Gated on a device actually being present, not merely declared: a
+        # Gpus.OPTIONAL step is expected to land on CPU-only hosts, and there
+        # `docker run --gpus all` fails outright ("could not select device
+        # driver"), turning a graceful fallback into a dead task.
+        declared, _ = self.DeclaredGpus()
+        if declared is not Gpus.NONE and self.DetectGpus():
+            gpu_args = _probe.MakeGpuArgs()
+            if gpu_args and gpu_args[0] not in extra_args:
+                extra_args = gpu_args + extra_args
+
+        env = self._tool_environment(
+            str(image_path),
+            workdir = container_ws,
+            binds = binds,
+            cache = self.external_agent_home/AgentPaths.CONTAINER_CACHE,
+        )
+        env.extra_args = extra_args
+        return env
+
+    def ExecWithEnv(self) -> "EnvDispatch":
+        """Declare how this step invokes its tool in each world.
+
+        A container is a filesystem layout with an entrypoint; a conda env is a
+        package set on PATH. They are not interchangeable -- a third of the tool
+        library has no conda form, and where both exist the invocation often
+        differs. So the transform declares each world it supports and metasmith
+        runs the one that matches the agent::
+
+            context.ExecWithEnv() \\
+                .ifContainerDo(env=dep, cmd=..., binds=[...], args=[...]) \\
+                .ifVirtualEnvDo(env=dep, cmd=..., exports={...})
+
+        Arms are declarations evaluated in place, not a sequence: the matching
+        one runs the moment it is called and the other is recorded and skipped,
+        so writing side effects between arms makes their order observable. There
+        is no terminal call; a chain whose every arm was skipped is caught by the
+        framework after the protocol returns (see `UnmatchedEnvDispatches`),
+        because a silently-empty step is worse than a loud one.
+
+        Either arm may be omitted. A container-only tool simply has no
+        `ifVirtualEnvDo`, which is what makes "can this run without containers?"
+        a question the tooling can answer statically.
+        """
+        d = EnvDispatch(self)
+        self._env_dispatches.append(d)
+        return d
+
+    def UnmatchedEnvDispatches(self) -> list["EnvDispatch"]:
+        """The `ExecWithEnv()` chains this execution reached that ran nothing.
+
+        Read by `bootstrap.ExecuteStep` after the protocol returns: a chain that
+        declares only a container arm on a mamba agent would otherwise no-op its
+        way to a step that reports success and produces nothing.
+        """
+        return [d for d in self._env_dispatches if not d._matched]
+
+    def _ExecInEnv(self, image: Dependency, cmd: str, shell="bash", binds: list[tuple[Path|str, Path|str]]|None=None, args: list[str]|None=None, exports: dict[str, str|Path]|None=None, history: bool=True):
+        env = self.GetContainerModel(image, binds, args)
+        assert env.container.workdir is not None # for typing
         use_cache = False
-        cached_path = container.GetLocalPath()
+        cached_path = env.GetLocalPath()
         if cached_path is not None:
             FLAG = "cached image exists"
-            sandbox_path = container.GetSandboxPath()
+            sandbox_path = env.GetSandboxPath()
             res = self.external_shell.Exec(
                 f'( [ -e {cached_path} ] || [ -d {sandbox_path} ] ) && echo "{FLAG}"',
                 history=True,
@@ -1420,18 +1799,27 @@ class ExecutionContext:
                 use_cache = True
 
         cmd = RemoveLeadingIndent(cmd)
-        Log.Info(f"executing container [{container.image}] using [{container.runtime.name}]")
+        Log.Info(f"executing container [{env.image}] using [{env.runtime.name}]")
         h, k = KeyGenerator.FromStr(cmd)
         _bounce_script = Path(f"./_metasmith/.bounce.{k}")
+        # Whoever set up this cwd may or may not have made the internals dir: the
+        # relay bootstrap does (it deploys the relay there), the relay-free
+        # bootstrap and direct-run do not. Owning it here means the arm works the
+        # same under every runtime instead of each caller remembering.
+        _bounce_script.parent.mkdir(parents=True, exist_ok=True)
         exit_codef = Path(f"exitcode.{GenerateId()}")
         with open(_bounce_script, "w") as f:
             script = [
-                "cd /ws",
+                f"cd {env.container.workdir}",
                 "on_exit() {",
                 f"    echo $? > {exit_codef}",
                 "}",
                 "trap on_exit EXIT",
                 "set -e",
+                # Exports ride in the bounce script rather than a per-runtime
+                # flag (`-e` / `--env` / nothing), so one mechanism serves every
+                # runtime and the tool sees its own vocabulary either way.
+                *(f"export {k}={shlex.quote(str(v))}" for k, v in _validate_exports(exports).items()),
                 cmd,
             ]
             f.write("\n".join(script))
@@ -1439,15 +1827,15 @@ class ExecutionContext:
         for line in cmd.split("\n"):
             Log.Info(f"    {line}")
         Log.Info(f"binds:")
-        for s, d in container.binds:
+        for s, d in env.container.binds:
             Log.Info(f"    {s} -> {d}")
-        _container_start = f"{container.MakeRunCommand(local=use_cache)} {shell}"
+        _container_start = f"{env.MakeRunCommand(local=use_cache)} {shell}"
         Log.Info(f"-> container start: [{_container_start}]")
         BREAK_LENGTH = 60
         msg = "-> container ->"
         Log.Info(msg+"-"*(BREAK_LENGTH-len(msg)))
         result = self.external_shell.Exec(
-            f"{_container_start} {container.workdir/_bounce_script}",
+            f"{_container_start} {env.container.workdir/_bounce_script}",
             timeout=None, history=history
         )
         try:

@@ -160,7 +160,7 @@ def render_dag(
 ) -> dict:
     task = _ws.load_task(workspace, task_key)
     out_base = _ws.task_path(workspace, task_key) / "plan.dag"
-    bl = set(blacklist_namespaces) if blacklist_namespaces else {"lib", "containers"}
+    bl = set(blacklist_namespaces) if blacklist_namespaces else {"lib", "containers", "env"}
     task.plan.RenderDAG(out_base, format, blacklist_namespaces=bl)
     rendered = out_base.with_suffix(f".{format}")
     return {"task_key": task_key, "format": format, "path": str(rendered)}

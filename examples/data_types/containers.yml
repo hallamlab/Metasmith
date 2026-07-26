@@ -2,7 +2,7 @@ types:
   container:
     properties:
       Format: OCI
-  metasmith.oci:
+  metasmith.env:
     extends: container
     properties:
       provides:

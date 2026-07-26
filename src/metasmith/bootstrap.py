@@ -15,7 +15,7 @@ from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint
 from .hashing import KeyGenerator
 from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
-from .coms.via_file_watcher import RemoteShell
+from .env import Environment
 
 def DeployFromContainer(workspace: Path, architecture: str, system: str):
     deploy_root = workspace
@@ -198,7 +198,10 @@ def ExecuteStep(
         external_shell=shell,
         external_cwd=external_cwd,
         external_agent_home=Path(agent_home),
-        container_runtime=agent.runtime,
+        # The TOOL environment, not the agent's own: never native (whether
+        # metasmith itself is containerized says nothing about the tool's
+        # image), but it does carry the host's GPU flag configuration.
+        _environment=Environment(image="", runtime=agent.runtime, gpu_args=list(agent.gpu_args)),
         params=params,
     )
     BREAK_LENGTH = 60
@@ -245,6 +248,19 @@ def ExecuteStep(
                 Log.Info(m)
     try:
         results = step.transform.protocol(context)
+        # An ExecWithEnv chain with no arm for this runtime runs nothing. Left
+        # alone that is a step which reports success and produces no output --
+        # the exact silent failure the arms exist to make impossible. The
+        # transform author is not asked to remember; the framework checks.
+        unmatched = context.UnmatchedEnvDispatches()
+        if unmatched:
+            runtime = agent.runtime.name
+            declared = sorted({a for d in unmatched for a in d.declared})
+            raise AssertionError(
+                f"transform [{step_name}] reached [{len(unmatched)}] ExecWithEnv "
+                f"declaration(s) with no arm for runtime [{runtime}]; "
+                f"arms declared: {declared or ['<none>']}"
+            )
         if not isinstance(results, list):
             results = [results]
         for i, result in enumerate(results):
@@ -273,21 +289,27 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
     cp_root = stage_root if stage_root is not None else AgentPaths.HOME_ROOT
     if stage_root is not None:
         Log.Info(f"reading control-plane from node-local stage [{stage_root}]")
-    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS, host=host)
-    MAX_WAIT = 3
-    for i in range(MAX_WAIT):
-        if server_path.exists(): break
-        Log.Warn(f"waiting {i+1} of {MAX_WAIT} for relay to start")
-        time.sleep(1)
-    assert server_path.exists(), f"server not started [{server_path}]"
 
     Log.Info(f"loading agent config")
     agent = Agent.Load(AgentPaths.to_definition(root=cp_root))
     agent_home = str(agent.home.GetPath())
     Log.Info(f"agent home [{agent_home}]")
 
-    Log.Info(f"connecting to relay [{server_path}]")
-    with RemoteShell(server_path, timeout=60, setup_commands=agent.setup_commands) as shell:
+    agent_env = Environment(image=agent.container, runtime=agent.runtime, native=agent.native)
+    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS, host=host)
+    if agent_env.needs_relay:
+        # Container runtimes launch each tool across the boundary, so they
+        # depend on the relay daemon the bootstrap started. mamba/native run
+        # the tool in-process — there is no relay to wait on.
+        MAX_WAIT = 3
+        for i in range(MAX_WAIT):
+            if server_path.exists(): break
+            Log.Warn(f"waiting {i+1} of {MAX_WAIT} for relay to start")
+            time.sleep(1)
+        assert server_path.exists(), f"server not started [{server_path}]"
+
+    Log.Info(f"connecting shell (relay={agent_env.needs_relay})")
+    with agent_env.ConnectShell(server_path, agent.setup_commands) as shell:
         _paused = False
         class PausedStdOut:
             def __enter__(self):
@@ -344,6 +366,15 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
                     except ValueError:
                         continue
                     params[k] = v
+                # The GPU declaration is static per step (it comes from the
+                # transform's Resources, not a nextflow interpolation), so it
+                # rides in via the staged step meta file. Absent for every
+                # non-GPU step and for workspaces staged before GPU support.
+                if "gpu" in raw_meta:
+                    try:
+                        params["gpus"] = json.loads(raw_meta["gpu"])
+                    except json.JSONDecodeError as e:
+                        Log.Warn(f"could not parse gpu metadata [{raw_meta['gpu']}]: {e}")
         except Exception as e:
             Log.Error(f"failed to read [{METADATA_FILE}]: {e}")
         lineages = raw_meta.get("lin", "[]")
@@ -431,4 +462,8 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
             input_by_dep=input_by_dep,
             dep2output=dep2output,
             params=params,
+            # A mamba/native agent crosses no container boundary even under
+            # nextflow, so the three path views must collapse exactly as they
+            # do on the direct-run path.
+            host_local=not agent_env.needs_relay,
         )

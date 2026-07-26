@@ -1,31 +1,29 @@
 """Tests for the per-call `args=` plumbing on container runs.
 
-Covers `Container.extra_args` rendering in `MakeRunCommand` for both Docker
+Covers `Environment.extra_args` rendering in `MakeRunCommand` for both Docker
 and Apptainer runtimes, and confirms the default is empty (so transforms
 that don't pass `args=` see no change in the emitted command).
 """
 
 from pathlib import Path
 
-from metasmith.coms.containers import Container, ContainerRuntime
+from metasmith.env import ContainerDef, Environment, Runtime
 
 
-def _docker(**kw) -> Container:
-    return Container(
-        image="docker://example/tool:1.0",
-        workdir=Path("/ws"),
-        runtime=ContainerRuntime.DOCKER,
+def _env(runtime, *, binds=None, **kw) -> Environment:
+    return Environment(
+        image="docker://example/tool:1.0", runtime=runtime,
+        container=ContainerDef(workdir=Path("/ws"), binds=list(binds or [])),
         **kw,
     )
 
 
-def _apptainer(**kw) -> Container:
-    return Container(
-        image="docker://example/tool:1.0",
-        workdir=Path("/ws"),
-        runtime=ContainerRuntime.APPTAINER,
-        **kw,
-    )
+def _docker(**kw) -> Environment:
+    return _env(Runtime.DOCKER, **kw)
+
+
+def _apptainer(**kw) -> Environment:
+    return _env(Runtime.APPTAINER, **kw)
 
 
 class TestExtraArgsRendering:

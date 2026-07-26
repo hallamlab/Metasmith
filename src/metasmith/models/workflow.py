@@ -10,15 +10,17 @@ import yaml
 import json
 from hashlib import md5
 
-from ..coms.containers import Container, ContainerRuntime
+from ..env import ContainerDef, Environment, Runtime
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
+from .libraries import GPU_LABEL, Gpus
 from .paths import PathMap
 from .remote import Logistics, Source, SourceType
 from .solver import Application, Endpoint, Dependency, Transform, solve_by_mcts, Solution as SolverResult
 from ..hashing import KeyGenerator
 from ..logging import Log
+from ..constants import AgentPaths
 
 METADATA_FILE = ".command.metadata"
 BIND_FILE = ".command.binds"
@@ -152,7 +154,7 @@ class NextflowGenContext:
     external_work: Path
     home_dir: Path
     external_home: Path
-    container_runtime: ContainerRuntime
+    runtime: Runtime
     resources_file: str
     external_home_var: str = "${params.home}"
     external_work_var: str = "${params.workspace}"
@@ -166,6 +168,35 @@ class PlanHint:
     chain: list[str] = field(default_factory=list)
     candidate_transforms: list[str] = field(default_factory=list)
     near_misses: list[str] = field(default_factory=list)
+
+
+def _read_env_declarations(step) -> dict[str, list[str]]:
+    """Which of `container:` / `conda:` each env resource this step names carries.
+
+    Keyed by the resource's own file name. A resource that cannot be read (not
+    yet staged, binary, unparseable) is recorded as `null` -- unknown, which the
+    preflight must not read as absent, or a workspace staged before the resource
+    landed would fail for the wrong reason.
+    """
+    found: dict[str, list[str]|None] = {}
+    for dep in getattr(step.transform, "_env_deps", []):
+        for inst in step.dependency_map.get(dep, []):
+            try:
+                p = inst.ResolvePath()
+                name = Path(p).name
+                if name in found: continue
+                with open(p) as f:
+                    parsed = yaml.safe_load(f.read())
+            except Exception:
+                found[Path(str(getattr(inst, "dtype_name", dep.key))).name] = None
+                continue
+            if isinstance(parsed, dict):
+                found[name] = sorted(k for k in ("container", "conda") if parsed.get(k))
+            else:
+                # A legacy bare-URI (*.oci) resource is a container image and
+                # nothing else -- that is exactly what ResolveEnvImage does with it.
+                found[name] = ["container"]
+    return found
 
 
 def _diagnose_plan_failure(
@@ -999,7 +1030,7 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}):
         # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
         # todo: propogate errors, those might be important...
         import logging
@@ -1274,19 +1305,49 @@ class WorkflowTask:
             external_binds = self._get_common_folders(raw_external_binds)
             external_binds_param = ""
             if len(external_binds)>0:
-                external_binds_param = Container(
+                external_binds_param = Environment(
                     image="",
-                    binds=[
+                    runtime=context.runtime,
+                    container=ContainerDef(binds=[
                         (_make_bind_var(i), _make_bind_var(i))
                         for i, _ in enumerate(external_binds)
-                    ],
-                    runtime=context.container_runtime,
+                    ]),
                 ).MakeBindsParam()
 
             res = step.transform.resources
             src_res = [] # goes to config to not mess with caching
-            if res is not None: 
+            if res is not None:
                 src_res += [x for x in res.AsNextflowFormat(is_config=True)] # config!
+            # GPU need is declared on the resources, not on transform.labels, so
+            # an author writes it once. The label is the shared channel (the
+            # `xlocalx` precedent in slurm.nf); the per-step device count cannot
+            # be rendered here because stage time does not know what a device is
+            # on the target -- that lands in workflow.config.nf at run time.
+            gpu_req = None
+            if res is not None and res.wants_gpu:
+                src.append(TAB+f"label 'x{GPU_LABEL}x'")
+                gpu_req = {
+                    "step": step.order,
+                    "transform": str(step.transform.name),
+                    "process": process_name,
+                    "gpus": res.gpus.value,
+                    "gpu_memory_gb": None if res.gpu_memory is None else res.gpu_memory.value_gb,
+                }
+                gpu_requirements[process_name] = gpu_req
+            # Which worlds this step can run in. `arms` is a fact about the
+            # transform's source; `envs` is a fact about the resource it names.
+            # Both are needed: an arm with no matching field in the declaration
+            # has nothing to run, and a declaration with no arm to use it is
+            # equally unrunnable. `arms: null` means the source could not be
+            # scanned -- unknown, not "declared nothing".
+            _scan = step.transform._env_scan
+            env_requirements[process_name] = {
+                "step": step.order,
+                "transform": str(step.transform.name),
+                "process": process_name,
+                "arms": None if _scan is None else _scan.arms,
+                "envs": _read_env_declarations(step),
+            }
             duration_is_strict = res is not None and res.duration is not None and res.duration.strict
             memory_is_strict = res is not None and res.memory is not None and res.memory.strict
             if duration_is_strict and memory_is_strict:
@@ -1319,6 +1380,13 @@ class WorkflowTask:
                 f.write(f"dot {json.dumps(dep_out, separators=(',',':'))}\n")
                 f.write(f"sar {json.dumps(structure_arity, separators=(',',':'))}\n")
                 f.write(f"par {sample_arity}\n")
+                # Static per-step GPU declaration, surfaced to the protocol as
+                # context.params["gpus"]. Only written when the transform asked
+                # for a GPU, so previously staged workspaces (and every non-GPU
+                # step) produce byte-identical metadata to before.
+                if gpu_req is not None:
+                    _gpu_meta = {k: gpu_req[k] for k in ("gpus", "gpu_memory_gb")}
+                    f.write(f"gpu {json.dumps(_gpu_meta, separators=(',',':'))}\n")
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
                 for branch, g in enumerate(produced_archetypes) for x in g
@@ -1412,7 +1480,7 @@ class WorkflowTask:
         
         # goal:
         # _tK9GI0FH = (o.post([in("inputs/tK9GI0FH")], ["tK9GI0FH"]))[0] // lib::pangenome_heatmap.py
-        # _7A15qSzL = (o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]))[0] // containers::python_for_data_science.oci
+        # _7A15qSzL = (o.post([in("inputs/7A15qSzL")], ["7A15qSzL"]))[0] // env::python_for_data_science.env
         # _urCt2PG9 = (o.post([in("inputs/urCt2PG9")], ["urCt2PG9"]))[0] // sequences::gbk
         # _seen = set()
         unsorted_input_channels: dict[Endpoint, list[DataInstance]] = {}
@@ -1502,6 +1570,8 @@ class WorkflowTask:
         wf_publish = set()       
         published_channels: dict[str, tuple[int, DataInstance]] = {}
         resources = {}
+        gpu_requirements: dict[str, dict] = {}
+        env_requirements: dict[str, dict] = {}
 
         # NOTE: DSL2 implicitly forks channels even when wrapped in [name, channel]
         # tuples and consumed inside Orchestrator.group(). multiMap forking was
@@ -1589,6 +1659,25 @@ class WorkflowTask:
             _src.append("}")
             for line in _src:
                 f.write(line+"\n")
+
+        # Always (re)written, including empty, so an `update_workflow` re-stage
+        # that drops a GPU transform cannot leave a stale requirement behind for
+        # the run-time preflight to trip over.
+        # One compact line plus a trailing newline, deliberately. RunWorkflow
+        # reads this back by `cat`-ing it over the agent shell, and a line
+        # reader drops a final line with no newline -- which silently truncated
+        # the JSON and turned the whole preflight into a no-op.
+        with open(context.work_dir/AgentPaths.GPU_MANIFEST, "w") as f:
+            json.dump({"schema": 1, "steps": gpu_requirements}, f, separators=(",", ":"))
+            f.write("\n")
+
+        # Same contract as the GPU manifest above, for the same reasons: always
+        # (re)written so a re-stage cannot strand a requirement, and one compact
+        # line with a trailing newline so `cat`-ing it back over the agent shell
+        # cannot silently truncate.
+        with open(context.work_dir/AgentPaths.ENV_MANIFEST, "w") as f:
+            json.dump({"schema": 1, "steps": env_requirements}, f, separators=(",", ":"))
+            f.write("\n")
 
         wf_output = []
         _e2target = {x.instance.dtype:x for x in the_plan.targets}

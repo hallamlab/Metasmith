@@ -156,11 +156,11 @@ class VirtualE2ERuntime:
 
     def _install_agent_definition(self) -> None:
         from ..agents import Agent
-        from ..coms.containers import ContainerRuntime
+        from ..env import Runtime
 
         agent = Agent(
             home=Source.FromLocal(self.home),
-            runtime=ContainerRuntime.DOCKER,
+            runtime=Runtime.DOCKER,
             container="virtual/metasmith:test",
         )
         lib = self.home / "lib"
