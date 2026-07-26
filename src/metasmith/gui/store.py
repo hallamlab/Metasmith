@@ -288,9 +288,55 @@ class Project:
     def write_request(self, name: str, request: dict) -> WorkflowRecord:
         wf = self.read_workflow(name)
         merged = wf.request | request
-        merged["name"] = name  # the directory is the name; a form cannot rename it
+        # the directory is the name; the recipe form cannot move it -- that is
+        # `rename_workflow`, which has conditions this path does not check
+        merged["name"] = name
         _write_yaml(wf.path / REQUEST_FILE, merged)
         return self.read_workflow(name)
+
+    def rename_workflow(self, name: str, new_name: str) -> WorkflowRecord:
+        """Move a workflow's directory, which is its name.
+
+        Only before it has generated. The directory *is* the task bundle once a
+        plan lands in it, and staging a run resolves the workflow by that path --
+        so renaming afterwards would strand the bundle under a name nothing
+        points at any more. `fork` is the deliberate way to get a copy under a
+        new name later, and it says out loud that it discards cache reuse.
+
+        Names are made up for you at create time, so this exists to correct one
+        while the workflow is still empty. The archive mark is keyed by name and
+        moves with the directory.
+        """
+        wf = self.read_workflow(name)
+        assert_valid_name(new_name, "workflow name")
+        if new_name == name:
+            return wf
+        if wf.planned:
+            raise ProjectError(
+                f"[{name}] has already generated; its plan is keyed to this "
+                f"directory. Fork it to get a copy under a new name."
+            )
+        runs = self.list_runs(workflow=name, include_archived=True)
+        if runs:
+            raise ProjectError(
+                f"[{name}] has {len(runs)} run(s) belonging to it and cannot be renamed"
+            )
+        dest = self.workflow_path(new_name)
+        if dest.exists():
+            raise ProjectError(f"workflow [{new_name}] already exists")
+        try:
+            wf.path.rename(dest)
+        except OSError as exc:
+            # the check above is not a lock -- two requests can both pass it, and
+            # the loser must be refused rather than raise out of the route
+            raise ProjectError(f"could not rename [{name}] to [{new_name}]: {exc}") from exc
+        if self.archived_at("workflows", name) is not None:
+            self._forget_archive("workflows", name)
+            self.set_archived("workflows", new_name, True)
+        record = _read_yaml(dest / REQUEST_FILE)
+        record["name"] = new_name
+        _write_yaml(dest / REQUEST_FILE, record)
+        return self.read_workflow(new_name)
 
     def write_result(self, name: str, result: dict) -> WorkflowRecord:
         wf = self.read_workflow(name)

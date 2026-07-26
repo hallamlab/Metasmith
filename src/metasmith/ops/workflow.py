@@ -11,10 +11,37 @@ from ._common import load_data_lib, load_transform_lib
 from . import workspace as _ws
 
 
+def _add_targets(builder: TargetBuilder, target_types: list) -> list[TargetSpec]:
+    """Declare each target, wiring the lineage links between them.
+
+    A target is either a bare type name or `{"type": ..., "parents": [i, ...]}`,
+    where each `i` indexes an *earlier* entry in this same list. That is what
+    keeps two targets of the same type distinct -- without it the second one is
+    a duplicate request and is refused.
+    """
+    specs: list[TargetSpec] = []
+    for i, target in enumerate(target_types):
+        if isinstance(target, str):
+            name, parents = target, ()
+        else:
+            name = target.get("type")
+            assert name, f"target #{i + 1} has no type"
+            parents = tuple(target.get("parents") or ())
+        handles = []
+        for p in parents:
+            assert isinstance(p, int) and 0 <= p < len(specs), (
+                f"target #{i + 1} [{name}] names parent #{p}, which is not one of "
+                f"the {len(specs)} target(s) declared before it"
+            )
+            handles.append(specs[p])
+        specs.append(builder.Add(name, parents=handles or None))
+    return specs
+
+
 def plan_workflow(
     data_library: str,
     sample_type: str,
-    target_types: list[str],
+    target_types: list[str | dict],
     transform_libraries: list[str],
     resource_libraries: list[str] | None = None,
     workspace: str | None = None,
@@ -39,8 +66,7 @@ def plan_workflow(
         raise AssertionError(f"no transforms had the namespace [{ns}]")
 
     targets = TargetBuilder()
-    for t in target_types:
-        targets.Add(t)
+    _add_targets(targets, target_types)
 
     target_model = Transform()
     _spec2dep: dict[TargetSpec, Dependency] = {}

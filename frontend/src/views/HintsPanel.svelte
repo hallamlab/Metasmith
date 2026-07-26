@@ -56,7 +56,9 @@
             <div class="miss small">
               <span class="mono">{miss}</span>
               {#if onadd}
-                <button class="small" onclick={() => onadd(miss)}>add as input</button>
+                <!-- fills the builder's type field rather than registering
+                     anything: a near miss still needs a path or a value -->
+                <button class="small" onclick={() => onadd(miss)}>use this type</button>
               {/if}
             </div>
           {/each}

@@ -102,6 +102,169 @@ class TestProject:
         assert {"mock::assembly", "mock::bam"} <= names
 
 
+class TestTypeIndex:
+    """The map the builder consults while a type is being chosen."""
+
+    def test_both_sides_of_a_type_are_indexed(self, client):
+        body = client.get("/api/project/type-index").get_json()
+        names = [t["name"] for t in body["transforms"]]
+        assert names, "the mock library has one transform; it should be listed"
+
+        # mock::assembly -> mock::bam, so each type appears on one side only
+        consumed = body["by_type"]["mock::assembly"]
+        produced = body["by_type"]["mock::bam"]
+        assert consumed["consumed_by"] and not consumed["produced_by"]
+        assert produced["produced_by"] and not produced["consumed_by"]
+
+        # entries address the shared list rather than repeating the transform
+        entry = consumed["consumed_by"][0]
+        assert entry["match"] == "exact" and entry["as"] == "mock::assembly"
+        tr = body["transforms"][entry["i"]]
+        assert tr["inputs"] == ["mock::assembly"]
+        assert tr["outputs"] == ["mock::bam"]
+        assert tr["library"] == body["libraries"][0]["path"]
+
+    def test_every_named_type_is_a_key(self, client):
+        """Including one no transform mentions.
+
+        The builder offers what it finds here, and asks it for counts before
+        anything has been registered -- a type with no transforms either side is
+        a different answer to a type it has never heard of.
+        """
+        body = client.get("/api/project/type-index").get_json()
+        assert "mock::unreachable" in body["by_type"]
+        assert body["by_type"]["mock::unreachable"] == {"produced_by": [], "consumed_by": []}
+
+    def test_libraries_carry_their_counts(self, client):
+        body = client.get("/api/project/type-index").get_json()
+        assert [l["transform_count"] for l in body["libraries"]] == [1]
+
+    def test_an_unreadable_library_does_not_blank_the_index(self, client, project_root):
+        """One broken library must cost only itself.
+
+        The panel is furniture: it has to keep answering for the libraries that
+        do load, and name the one that did not.
+        """
+        (project_root / "MetasmithLibraries" / "transforms" / "broken.xgdb").mkdir()
+        body = client.get("/api/project/type-index").get_json()
+        broken = [l for l in body["libraries"] if l["name"] == "broken.xgdb"]
+        assert len(broken) == 1 and broken[0]["error"]
+        assert body["by_type"]["mock::bam"]["produced_by"], "the good library still indexed"
+
+
+@pytest.fixture
+def poly_root(tmp_path) -> Path:
+    """A library where one type extends another, and a name repeats across files.
+
+    The stand-in in `project_root` is deliberately flat, so every match in it is
+    an exact one -- which is the shape that hid the property matching the solver
+    actually does.
+    """
+    root = tmp_path / "poly"
+    mlib = root / "MetasmithLibraries"
+    (mlib / "data_types").mkdir(parents=True)
+
+    types = DataTypeLibrary()
+    types["reads"] = Endpoint(properties={"reads"})
+    types["assembly"] = Endpoint(properties={"assembly"})
+    # an assembly, plus the method that made it: strictly more specific
+    types["flye_assembly"] = Endpoint(properties={"assembly", "flye"})
+    types["stats"] = Endpoint(properties={"stats"})
+    types_path = mlib / "data_types" / "mock.yml"
+    types.Save(types_path)
+
+    # the same properties, named again in a second namespace
+    alias = DataTypeLibrary()
+    alias["assembly"] = Endpoint(properties={"assembly"})
+    alias.Save(mlib / "data_types" / "other.yml")
+
+    create_transform_library(
+        mlib / "transforms", types_path,
+        # makes the narrow one; takes the broad one; takes the narrow one
+        identity_transform("mock::reads", "mock::flye_assembly")
+        | identity_transform("mock::assembly", "mock::stats")
+        | identity_transform("mock::flye_assembly", "mock::reads"),
+    )
+    (mlib / "resources").mkdir()
+    return root
+
+
+@pytest.fixture
+def poly_client(poly_root, tmp_path):
+    app = create_app(poly_root, ssh_config_path=tmp_path / "ssh_config", watch=False)
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        c.application = app
+        yield c
+
+
+class TestTypeIndexIsA:
+    """Matching is `Endpoint.IsA`, never name equality.
+
+    Keying the index on names alone told the user "nothing can make this" about
+    a type five transforms produce a subtype of, and "nothing takes this" about
+    an input a dozen transforms accept. Both readings drive a decision -- whether
+    to register a file, whether a target is reachable -- so both have to be the
+    same relation the solver will apply.
+    """
+
+    def _index(self, client):
+        return client.get("/api/project/type-index").get_json()
+
+    def _names(self, body, type_name, side):
+        return {
+            (body["transforms"][e["i"]]["name"], e["match"], e["as"])
+            for e in body["by_type"][type_name][side]
+        }
+
+    def test_a_narrower_product_satisfies_a_broader_want(self, poly_client):
+        body = self._index(poly_client)
+        assert ("identity_flye_assembly", "narrower", "mock::flye_assembly") in self._names(
+            body, "mock::assembly", "produced_by"
+        )
+
+    def test_a_broader_requirement_accepts_a_narrower_input(self, poly_client):
+        body = self._index(poly_client)
+        assert ("identity_stats", "broader", "mock::assembly") in self._names(
+            body, "mock::flye_assembly", "consumed_by"
+        )
+
+    def test_the_relation_is_not_symmetric(self, poly_client):
+        """A supertype cannot stand in for a subtype -- in either direction.
+
+        This is the half that must stay refused: showing it would promise a plan
+        the solver will not find.
+        """
+        body = self._index(poly_client)
+        consumers = {n for n, _, _ in self._names(body, "mock::assembly", "consumed_by")}
+        assert "identity_reads" not in consumers, "wants a flye_assembly specifically"
+        producers = {n for n, _, _ in self._names(body, "mock::flye_assembly", "produced_by")}
+        assert producers == {"identity_flye_assembly"}, "only the narrow product makes it"
+
+    def test_the_same_properties_under_another_name_is_an_alias(self, poly_client):
+        body = self._index(poly_client)
+        assert ("identity_stats", "alias", "mock::assembly") in self._names(
+            body, "other::assembly", "consumed_by"
+        )
+
+    def test_direct_matches_come_first(self, poly_client):
+        """The list is read top-down, so what named this type leads it."""
+        body = self._index(poly_client)
+        rank = {"exact": 0, "alias": 1}
+        for spec in body["by_type"].values():
+            for side in ("produced_by", "consumed_by"):
+                ranks = [rank.get(e["match"], 2) for e in spec[side]]
+                assert ranks == sorted(ranks)
+
+    def test_a_transform_is_listed_once_per_side(self, poly_client):
+        """Under its closest relation, even when several of its deps match."""
+        body = self._index(poly_client)
+        for spec in body["by_type"].values():
+            for side in ("produced_by", "consumed_by"):
+                seen = [e["i"] for e in spec[side]]
+                assert len(seen) == len(set(seen))
+
+
 class TestAgents:
     def test_create_list_get(self, client, tmp_path):
         r = client.post("/api/agents", json={
@@ -149,6 +312,21 @@ class TestWorkflows:
     def test_generated_name_is_readable(self, client):
         name = _make_workflow(client)
         assert "-" in name and name.islower()
+
+    def test_created_empty_and_named_for_you(self, client):
+        """No form precedes the workflow, so create takes nothing.
+
+        The page it lands on is where the recipe is built, and the name it was
+        given is editable there -- see `TestWorkflowRename`.
+        """
+        r = client.post("/api/workflows", json={})
+        assert r.status_code == 201
+        body = r.get_json()
+        assert body["planned"] is False
+        detail = client.get(f"/api/workflows/{body['name']}").get_json()
+        assert detail["request"]["target_types"] == []
+        assert detail["request"]["sample_type"] is None
+        assert detail["input_library"]["exists"] is True
 
     def test_creates_an_editable_input_library(self, client):
         name = _make_workflow(client)
@@ -260,6 +438,32 @@ class TestWorkflows:
         assert body["result"]["hints"]
         assert body["request"]["target_types"] == ["mock::unreachable"]
 
+    def test_targets_may_carry_lineage(self, client):
+        """A target is either a bare name or a name plus the targets it comes off.
+
+        Both spellings reach disk and both plan; the dict form is what lets two
+        targets of one type be distinct requests rather than a duplicate.
+        """
+        name = _make_workflow(client, targets=[{"type": "mock::bam", "parents": []}])
+        _seed_inputs(client, name)
+        result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert result["success"] is True
+
+        stored = client.get(f"/api/workflows/{name}").get_json()["request"]["target_types"]
+        assert stored == [{"type": "mock::bam", "parents": []}]
+
+    def test_a_target_cannot_descend_from_a_later_one(self, client):
+        """Parents are indices into the targets declared *before* this one.
+
+        A forward reference would silently link to the wrong target once the
+        list is renumbered, so it is refused with the position named.
+        """
+        from metasmith.agents import TargetBuilder
+        from metasmith.ops.workflow import _add_targets
+
+        with pytest.raises(AssertionError, match=r"target #1 \[mock::bam\] names parent #1"):
+            _add_targets(TargetBuilder(), [{"type": "mock::bam", "parents": [1]}])
+
     def test_generate_requires_a_sample_type(self, client):
         r = client.post("/api/workflows", json={"target_types": ["mock::bam"]})
         name = r.get_json()["name"]
@@ -308,6 +512,102 @@ class TestWorkflows:
     def test_delete_without_runs(self, client):
         name = _make_workflow(client)
         assert client.delete(f"/api/workflows/{name}").get_json()["action"] == "deleted"
+
+
+class TestWorkflowRename:
+    """Correcting the made-up name, while nothing is keyed to it yet.
+
+    The name is the directory, and once a plan lands in that directory the
+    directory *is* the task bundle a run stages from -- so this is deliberately
+    only open before a generate. `fork` is the way to get a new name afterwards,
+    and it says out loud that it discards cache reuse.
+    """
+
+    def test_renames_the_directory_and_the_record(self, client):
+        name = _make_workflow(client)
+        _seed_inputs(client, name, 1)
+        r = client.post(f"/api/workflows/{name}/rename", json={"name": "chosen-name"})
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["name"] == "chosen-name"
+
+        project = client.application.config["MSM_PROJECT"]
+        assert not project.workflow_path(name).exists()
+        assert project.workflow_path("chosen-name").is_dir()
+        body = client.get("/api/workflows/chosen-name").get_json()
+        assert body["request"]["name"] == "chosen-name"
+        assert client.get(f"/api/workflows/{name}").status_code == 409
+        # the input library moved with it, still live and still holding its item
+        assert len(client.get("/api/workflows/chosen-name/inputs").get_json()["items"]) == 1
+
+    def test_typed_text_is_slugified(self, client):
+        name = _make_workflow(client)
+        r = client.post(f"/api/workflows/{name}/rename", json={"name": "My Assembly Run"})
+        assert r.get_json()["name"] == "my-assembly-run"
+
+    def test_an_empty_name_is_refused(self, client):
+        name = _make_workflow(client)
+        assert client.post(f"/api/workflows/{name}/rename", json={"name": "  "}).status_code == 400
+
+    def test_a_taken_name_is_refused(self, client):
+        a = _make_workflow(client)
+        b = _make_workflow(client)
+        r = client.post(f"/api/workflows/{a}/rename", json={"name": b})
+        assert r.status_code == 409
+        assert "already exists" in r.get_json()["error"]
+
+    def test_renaming_to_itself_is_a_no_op(self, client):
+        name = _make_workflow(client)
+        r = client.post(f"/api/workflows/{name}/rename", json={"name": name})
+        assert r.status_code == 200 and r.get_json()["name"] == name
+
+    def test_refused_once_generated(self, client):
+        """The bundle is keyed to this directory; moving it would strand it."""
+        name = _make_workflow(client)
+        _seed_inputs(client, name)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        r = client.post(f"/api/workflows/{name}/rename", json={"name": "too-late"})
+        assert r.status_code == 409
+        assert "fork" in r.get_json()["error"].lower()
+        assert client.application.config["MSM_PROJECT"].workflow_path(name).is_dir()
+
+    def test_a_repeated_rename_is_refused_not_raised(self, client):
+        """The page can send this twice: Enter closes the field, which blurs it.
+
+        The second request reads the workflow under a name the first one has
+        already moved -- once it is gone that is a plain 409, but if it slips in
+        while the move is still happening the rename itself fails. Either way it
+        must reach the user as a refusal.
+        """
+        name = _make_workflow(client)
+        assert client.post(f"/api/workflows/{name}/rename", json={"name": "once"}).status_code == 200
+        again = client.post(f"/api/workflows/{name}/rename", json={"name": "once"})
+        assert again.status_code == 409
+        assert again.get_json()["kind"] == "refused"
+
+    def test_a_failed_move_is_refused_not_raised(self, client):
+        """The existence check is not a lock, so the move itself can still fail.
+
+        `Path.rename` raises on a non-empty target, which is exactly what the
+        loser of a race meets. That is a refusal, not a server fault.
+        """
+        name = _make_workflow(client)
+        boom = OSError(39, "Directory not empty")
+        with mock.patch("pathlib.Path.rename", side_effect=boom):
+            r = client.post(f"/api/workflows/{name}/rename", json={"name": "wanted"})
+        assert r.status_code == 409
+        assert "could not rename" in r.get_json()["error"]
+        project = client.application.config["MSM_PROJECT"]
+        assert project.workflow_path(name).is_dir(), "the original is left alone"
+
+    def test_the_archive_mark_moves_with_it(self, client):
+        name = _make_workflow(client)
+        client.post(f"/api/workflows/{name}/archive", json={"archived": True})
+        r = client.post(f"/api/workflows/{name}/rename", json={"name": "put-away"})
+        assert r.status_code == 200
+        assert r.get_json()["archived_at"]
+        assert client.get("/api/workflows").get_json() == []
+        listed = client.get("/api/workflows?archived=1").get_json()
+        assert [w["name"] for w in listed] == ["put-away"]
         assert client.get("/api/workflows").get_json() == []
 
 

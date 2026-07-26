@@ -47,15 +47,61 @@ function storedRailWidth() {
   }
 }
 
-export const ui = $state({ railWidth: storedRailWidth() })
+// -- the type inspector's width --------------------------------------------
+// Same furniture on the other edge, and the same reasoning: one width, kept
+// across workflows. Whether it is open is remembered too -- someone who closed
+// it does not want it back on the next workflow they open.
 
-export function setRailWidth(w) {
-  ui.railWidth = clampRail(w)
+export const PANEL_DEFAULT = 320
+export const PANEL_MIN = 240
+export const PANEL_MAX = 720
+
+const PANEL_KEY = 'metasmith.panelWidth'
+const PANEL_OPEN_KEY = 'metasmith.panelOpen'
+
+export function clampPanel(w) {
+  return Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(w)))
+}
+
+function stored(key, fallback, parse) {
   try {
-    localStorage.setItem(RAIL_KEY, String(ui.railWidth))
+    const raw = localStorage.getItem(key)
+    return raw === null ? fallback : parse(raw)
+  } catch {
+    return fallback
+  }
+}
+
+export const ui = $state({
+  railWidth: storedRailWidth(),
+  panelWidth: stored(PANEL_KEY, PANEL_DEFAULT, (r) => {
+    const n = Number(r)
+    return Number.isFinite(n) && n > 0 ? clampPanel(n) : PANEL_DEFAULT
+  }),
+  panelOpen: stored(PANEL_OPEN_KEY, true, (r) => r !== '0'),
+})
+
+function remember(key, value) {
+  try {
+    localStorage.setItem(key, value)
   } catch {
     // a browser with storage denied still resizes; it just forgets on reload
   }
+}
+
+export function setRailWidth(w) {
+  ui.railWidth = clampRail(w)
+  remember(RAIL_KEY, String(ui.railWidth))
+}
+
+export function setPanelWidth(w) {
+  ui.panelWidth = clampPanel(w)
+  remember(PANEL_KEY, String(ui.panelWidth))
+}
+
+export function setPanelOpen(open) {
+  ui.panelOpen = !!open
+  remember(PANEL_OPEN_KEY, ui.panelOpen ? '1' : '0')
 }
 
 export function notify(message, kind = 'error') {
@@ -125,6 +171,21 @@ export async function refresh(section = app.section) {
 export function select(section, id) {
   app.section = section
   app.selected[section] = id
+}
+
+// A workflow is made the moment it is asked for, under a name picked for you,
+// and you land on it. There is nothing to fill in first: a workflow starts empty
+// whatever it is called, and the one field a create form had -- the name -- is
+// editable on the page you arrive at. Held here rather than in the rail because
+// creating one is a change to the list, not a thing the rail knows how to do.
+export async function createWorkflow() {
+  const out = await attempt(async () => {
+    const body = await api.post('/workflows', {})
+    await loadWorkflows()
+    return body
+  })
+  if (out) select('workflows', out.name)
+  return out
 }
 
 export const selection = () => app.selected[app.section]

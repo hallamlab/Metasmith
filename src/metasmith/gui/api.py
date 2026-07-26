@@ -126,6 +126,20 @@ def get_types():
     return jsonify(stdlib.available_types(_project().root))
 
 
+@bp.get("/project/type-index")
+def get_type_index():
+    """Which transforms sit on either side of each type.
+
+    Held behind the plan lock: building this imports every transform in every
+    library, which is the same non-reentrant path a generate takes. Without the
+    lock, opening a workflow while another one plans breaks both.
+    """
+    with _plan_lock:
+        return jsonify(stdlib.type_index(
+            _project().root, refresh=request.args.get("refresh", "") in {"1", "true", "yes"},
+        ))
+
+
 # -- ssh ---------------------------------------------------------------------
 
 
@@ -419,6 +433,18 @@ def create_workflow():
 @bp.patch("/workflows/<name>")
 def patch_workflow(name):
     return jsonify(_workflow_summary(_project().write_request(name, _body())))
+
+
+@bp.post("/workflows/<name>/rename")
+def rename_workflow(name):
+    """Correct the made-up name, while there is still nothing keyed to it.
+
+    A workflow is created the moment it is asked for, under a generated name, so
+    this is where a user names it. `store.rename_workflow` holds the conditions.
+    """
+    new_name = slugify(_body().get("name") or "")
+    assert new_name, "a name is required"
+    return jsonify(_workflow_summary(_project().rename_workflow(name, new_name)))
 
 
 @bp.delete("/workflows/<name>")

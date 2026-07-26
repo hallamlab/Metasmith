@@ -589,7 +589,44 @@ These are load-bearing:
   result through a *class* attribute — all process-global. Two `plan_workflow` calls
   in one process clobber each other and fail with a bare
   `spec not found for the module`. The CLI never hits this (one process, one plan);
-  the GUI can, so `api.py` serialises generates behind `_plan_lock`.
+  the GUI can, so `api.py` serialises generates behind `_plan_lock`. **`stdlib.type_index`
+  goes through the same import path** and so runs under that same lock — without it,
+  opening a workflow while another one plans breaks both.
+
+- **The type index is built whole and filtered in the browser.** `stdlib.type_index`
+  walks *every* transform library found, not the enabled subset, and returns one
+  `transforms` list plus a `by_type` map of entries pointing into it. Toggling a library
+  is then instant and never refetches, which is what lets the builder show live
+  produced-by / consumed-by counts while a type is being typed. It is cached against
+  the stdlib commit; one unloadable library records its error and costs only itself.
+
+- **The index matches on properties, not on names.** `Endpoint.IsA` is a property-subset
+  test (`x.IsA(y)` iff `y.properties ⊆ x.properties`), so `produced_by[T]` is every
+  transform with a product `P` where `P.IsA(T)`, and `consumed_by[T]` every transform with
+  a requirement `R` where `T.IsA(R)`. Keying on names alone told the user
+  "nothing can make this — the plan will not solve" about `sequences::assembly`, which six
+  transforms produce a narrower assembly for, and "nothing takes this" about a
+  `sequences::flye_assembly` twenty transforms accept — 34 produce matches, 159
+  non-plumbing consume matches, and 42 cross-namespace aliases, all invisible. Entries are
+  `{i, as, match}`: which transform, the type it actually *declared*, and how that relates
+  to the one asked about (`exact` | `alias` | `narrower` | `broader`), because
+  "takes it as something more general" is a different thing to know than "takes exactly
+  this" — and without `as` the transform looks like it named your type and did not. Exact
+  matches sort first; a transform appears once per side, under its closest relation. The
+  asymmetry is the point and is pinned by test: a supertype never satisfies a subtype's
+  requirement. `by_type` is keyed over *every* named type, from the standalone type files
+  and each transform library's own `_metadata/types/` — a polymorphic match can exist for
+  a type no transform names, and a key with two empty lists is a different answer to a
+  type the index has never heard of.
+
+- **A target is a type *and* the targets it descends from.** `target_types` entries are
+  either a bare type name or `{"type": ..., "parents": [i, ...]}`, where each `i` indexes
+  an **earlier** entry in the same list — `ops.workflow._add_targets` refuses a forward
+  reference by position. That is what makes two targets of one type distinct requests
+  rather than the duplicate `TargetBuilder.Add` rejects. Both spellings are read from
+  `request.yml`, so workflows written before lineage existed still load. Because the
+  link is positional, removing a target renumbers the rest and drops any link *into*
+  the removed one — the GUI says so out loud when it happens.
 - **The ssh block is written first in the file.** ssh takes the first value it finds
   per keyword, so a `Host *` above it would set User or IdentityFile for a brand-new
   alias — an entry that parses cleanly, displays correctly, and connects as the wrong
@@ -618,12 +655,42 @@ Frontend source is `frontend/` (Svelte 5 + Vite). Node is a **build** dependency
 only and is deliberately absent from `envs/base.yml`; flask and coolname are runtime
 dependencies and are in it.
 
+**A workflow is created the moment it is asked for.** There is no form in front of it:
+`+ workflow` POSTs and selects, and the generated name is editable on the page you land
+on — the heading *is* the field. `store.rename_workflow` allows that only before a
+generate, because the workflow directory becomes the task bundle a run stages from, and
+moving it afterwards would strand the bundle under a name nothing points at; `fork` is the
+deliberate way to get a new name later, and it says out loud that it discards cache reuse.
+The archive mark is keyed by name and moves with the directory. Two things bite here: the
+existence check is not a lock, so a losing race must surface as a refusal rather than an
+`OSError` out of the route (`Path.rename` raises on a non-empty target); and Enter closes
+the field, which unmounts the input, which fires `blur` — so the view has to refuse the
+second commit or the rename is sent twice and races itself.
+
+The workflow pane is one column plus a panel. The recipe card holds inputs and outputs
+as one flat list under two headings; one builder card below it adds to either half, the
+role being a radio rather than a second component; the generate button sits between the
+builder and the result, which renders the DAG on success and the planner's hints on
+failure in the same slot. The right-hand `SidePanel` is the rail's mirror — same grip,
+same remembered width, collapsing to a strip — and shows what sits on either side of
+whichever type is in focus. Container and `lib::` requirements are hidden from that
+readout (counted as "supplied"), the same namespaces `render_dag` blacklists: they are
+never a user's to register, and listing them buries the requirement that is.
+
 The page has no network of its own — it is served from a bundle and never reaches a CDN.
 So anything that would normally be a small dependency is inlined instead:
 `components/Icon.svelte` carries the header glyphs as SVG paths (the docs site's own set),
 and `components/ConfigEditor.svelte` does syntax highlighting with a transparent textarea
 over a painted underlay rather than pulling in an editor. Both layers of that editor must
 keep identical font, padding and wrapping; they are what put the caret on its glyph.
+`components/TypeSelect.svelte` is the third: a combobox written out rather than installed.
+It replaced `<input list>` + `<datalist>`, which was the right behaviour in the wrong shape
+— the browser renders a datalist as its own pale bubble, sized to its taste, with the
+option labels as a dim aside, so the produce/consume counts that are the whole reason to
+open the list read as a hover hint. It is also un-styleable and un-scriptable: there is no
+hook for an active row, a warned row, or a count that narrows as libraries are toggled. The
+caret is a drawn SVG chevron because `▾` renders as a faint speck at that size, and that
+glyph is the affordance saying a list opens at all.
 
 ---
 

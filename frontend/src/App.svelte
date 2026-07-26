@@ -5,6 +5,7 @@
     app,
     attempt,
     clearNotice,
+    createWorkflow,
     loadProject,
     refresh,
     select,
@@ -17,7 +18,6 @@
   import SshNew from './views/SshNew.svelte'
   import AgentNew from './views/AgentNew.svelte'
   import AgentView from './views/AgentView.svelte'
-  import WorkflowNew from './views/WorkflowNew.svelte'
   import WorkflowView from './views/WorkflowView.svelte'
   import RunView from './views/RunView.svelte'
 
@@ -38,6 +38,15 @@
   ]
 
   let copied = $state(false)
+  let creating = $state(false)
+
+  // guarded because two clicks would make two workflows, and the second one is
+  // never what was wanted
+  async function newWorkflow() {
+    creating = true
+    await createWorkflow()
+    creating = false
+  }
 
   async function copyPath() {
     const text = app.project?.root
@@ -269,7 +278,7 @@
         ontoggleArchived={(v) => (app.showArchived = v)}
       >
         {#snippet actions()}
-          <button class="small" onclick={() => select('workflows', 'new')}>+ workflow</button>
+          <button class="small" disabled={creating} onclick={newWorkflow}>+ workflow</button>
         {/snippet}
         {#snippet row(item)}
           <div class="spread">
@@ -364,9 +373,7 @@
           </div>
         {/if}
       {:else if app.section === 'workflows'}
-        {#if sel === 'new'}
-          <WorkflowNew />
-        {:else if sel}
+        {#if sel}
           {#key sel}<WorkflowView name={sel} />{/key}
         {:else}
           <div class="blank">
@@ -376,6 +383,11 @@
               planner finds the steps in between. Workflows are not tied to an
               agent — the same one can run anywhere.
             </p>
+            <div>
+              <button class="primary" disabled={creating} onclick={newWorkflow}>
+                {creating ? 'creating…' : 'new workflow'}
+              </button>
+            </div>
           </div>
         {/if}
       {:else if sel}
