@@ -32,7 +32,9 @@
   // Which row of the recipe a type picked in the panel should land in. The
   // builder used to be one form with one type field, so there was nowhere else
   // for a picked type to go; now every row has a field, and the answer is the
-  // one you were last in. Only rows that *can* be retyped are ever set here.
+  // one you were last in. Only rows the *request* holds are ever set here: a
+  // registered row's field commits a library write, and a pick landing in it
+  // long after the field closed would be a retype nobody asked for.
   let editing = $state(null)
 
   function pickType(type) {
@@ -369,6 +371,46 @@
     await commitDrafts()
   }
 
+  // Correcting a registered row, in place. Both are one route and a reload: the
+  // row keeps its position, its lineage, and everything that descends from it --
+  // which delete-and-add-again could not, and which is why these exist.
+  //
+  // Neither touches the user's file. A path in the library is a pointer, so
+  // re-pointing one is a manifest edit; only a value's own file (which the
+  // library wrote) is ever moved, and that one is the library's to move.
+  async function retypeInput(item, dtype) {
+    await attempt(async () => {
+      await api.put(`/workflows/${name}/inputs/items/type`, { path: item.path, dtype })
+      await loadInputs()
+    })
+    // a draft waiting on a parent of a particular type may now be registerable
+    await commitDrafts()
+  }
+
+  async function repointInput(item, path) {
+    const out = await attempt(async () => {
+      const body = await api.put(`/workflows/${name}/inputs/items/path`, {
+        path: item.path, new_path: path,
+      })
+      // before anything reads the row keys again: a registered row's identity
+      // *is* its path, here and in every other row's lineage options
+      await loadInputs()
+      return body
+    })
+    if (!out) return
+    // the library follows the link for its own items; a draft naming the old
+    // path is ours to follow, or its lineage silently stops resolving
+    const pending = recipe.drafts.some((d) => d.parents.includes(item.path))
+    if (pending) {
+      recipe.drafts = recipe.drafts.map((d) => ({
+        ...d,
+        parents: d.parents.map((p) => (p === item.path ? out.new : p)),
+      }))
+      await persist()
+    }
+    await commitDrafts()
+  }
+
   // Removing an item leaves anything that descended from it pointing at a path
   // the library no longer holds -- the library does not chase those down, and
   // the row would sit there claiming a lineage that is gone. Both halves are
@@ -439,33 +481,51 @@
   // declares, typed as declared and wired with the lineage declared between
   // them. What lands is half-filled rows in the right relationship — the paths
   // are still yours to fill in, and each row registers itself as it completes.
-  function applyTransform(i) {
+  async function applyTransform(i) {
     const tr = index?.transforms?.[i]
     if (!tr) return
 
     // "we already have one of those" is a question about properties, not names,
     // and the index has already answered it: a registered type appears under a
     // transform's `consumed_by` exactly when the solver would accept it there.
-    function satisfiedBy(slot) {
+    //
+    // A filler is *consumed*: what is credited to one requirement is not offered
+    // to the next, or one file would satisfy three slots. And a draft only
+    // stands in once it has an identity -- a blank row this button made itself is
+    // a row you still have to fill in, not an input you have. It still occupies
+    // the requirement, so pressing apply again does not stamp a second copy;
+    // it is reported as blank rather than counted as present.
+    const identity = (d) => (d.mode === 'value' ? d.name : d.path).trim()
+    const used = new Set()
+
+    function claim(slot) {
       for (const it of items) {
+        if (used.has(it.path)) continue
         const entries = index.by_type?.[it.type_name]?.consumed_by ?? []
-        if (entries.some((e) => e.i === i && e.as === slot.as)) return it.path
+        if (entries.some((e) => e.i === i && e.as === slot.as)) {
+          return { key: it.path, by: it.path }
+        }
       }
-      // a row already on its way to being that type counts too, or applying the
-      // same transform twice would build a second copy of everything
-      const d = recipe.drafts.find((x) => x.dtype === slot.as)
-      return d ? `#${d.id}` : null
+      for (const d of recipe.drafts) {
+        const key = `#${d.id}`
+        if (used.has(key) || d.dtype !== slot.as) continue
+        const id = identity(d)
+        return { key, by: id, blank: !id }
+      }
+      return null
     }
 
     const stands = new Map() // slot position -> what fills it in the recipe
     const made = []
-    let skipped = 0
+    const filled = [] // requirements something in the recipe already answers
+    const blank = [] // ...and ones a row is here for but has nothing in it yet
     ;(tr.requires ?? []).forEach((slot, k) => {
       if (!slot.as || isPlumbing(slot.as)) return
-      const have = satisfiedBy(slot)
+      const have = claim(slot)
       if (have) {
-        stands.set(k, have)
-        skipped += 1
+        used.add(have.key)
+        stands.set(k, have.key)
+        ;(have.blank ? blank : filled).push({ as: slot.as, by: have.by })
         return
       }
       // a parent is always declared before the slot that names it -- the model
@@ -480,23 +540,32 @@
         parents: (slot.parents ?? []).map((p) => stands.get(p)).filter(Boolean),
       }
       stands.set(k, `#${d.id}`)
+      used.add(`#${d.id}`)
       made.push(d)
     })
 
     if (made.length) {
       recipe.drafts = [...recipe.drafts, ...made]
-      persist()
+      // awaited, not fired: persist clears the notice on its way in, so a report
+      // written before it lands is a report nobody ever sees
+      await persist()
     }
 
-    // the rows themselves are the report when it is a clean addition; anything
-    // that was *not* done has to be said
+    // A report rather than an assertion. The rows it added speak for themselves;
+    // what it *skipped* has to name what stands in for it, because "every input
+    // is already here" is a claim you cannot check from where you are reading it
+    // — and it was wrong once, off a row that was counted while still blank.
     const said = []
-    if (!made.length) said.push(`nothing to add — every input ${tr.name} needs is already here`)
-    else if (skipped) said.push(`${made.length} row(s) added · ${skipped} already satisfied`)
+    if (made.length) said.push(`${made.length} row(s) added`)
+    for (const f of filled) said.push(`${f.as} ← ${f.by}`)
+    for (const b of blank) said.push(`${b.as} — a row is here, still blank`)
+    if (!made.length && !filled.length && !blank.length) {
+      said.push(`nothing to add — ${tr.name} takes nothing you would register`)
+    }
     if (enabled && !enabled.has(tr.library)) {
       said.push(`${tr.library_name} is not enabled, so the planner cannot reach ${tr.name}`)
     }
-    if (said.length) notify(said.join(' — '), 'refused')
+    if (said.length) notify(said.join(' · '), 'refused')
   }
 
   function setSample(type) {
@@ -641,7 +710,6 @@
           drafts={recipe.drafts}
           targets={recipe.targets}
           sampleType={recipe.sample_type}
-          {focus}
           typeOptions={allTypes}
           {counts}
           onfocus={showType}
@@ -652,8 +720,11 @@
           ondraft={patchDraft}
           ontarget={patchTarget}
           onparents={setParents}
+          onretype={retypeInput}
+          onrepoint={repointInput}
           oncommit={commitRow}
-          ontypefocus={(row) => (editing = { kind: row.kind, id: row.id })}
+          ontypefocus={(row) =>
+            (editing = row.kind === 'item' ? null : { kind: row.kind, id: row.id })}
           onadd={addRow}
         />
       </div>

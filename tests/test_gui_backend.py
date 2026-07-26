@@ -457,11 +457,15 @@ class TestWorkflows:
 
         A forward reference would silently link to the wrong target once the
         list is renumbered, so it is refused with the position named.
+
+        Named 1-based, like the target it is refusing. Positions are stored
+        0-based, and a sentence that says "target #1 names parent #1" about
+        index 1 reads as an off-by-one in whichever half you trust less.
         """
         from metasmith.agents import TargetBuilder
         from metasmith.ops.workflow import _add_targets
 
-        with pytest.raises(AssertionError, match=r"target #1 \[mock::bam\] names parent #1"):
+        with pytest.raises(AssertionError, match=r"target #1 \[mock::bam\] names parent #2"):
             _add_targets(TargetBuilder(), [{"type": "mock::bam", "parents": [1]}])
 
     def test_generate_requires_a_sample_type(self, client):
@@ -512,6 +516,189 @@ class TestWorkflows:
     def test_delete_without_runs(self, client):
         name = _make_workflow(client)
         assert client.delete(f"/api/workflows/{name}").get_json()["action"] == "deleted"
+
+
+class TestInputRowEdits:
+    """Correcting a row that is already registered, in place.
+
+    Both are a manifest edit and neither is a filesystem operation: an input
+    path is a *pointer* at the user's file, so re-pointing one moves nothing --
+    the library's own `Rename` would, which is why these do not route through it.
+    """
+
+    def _one(self, client, name, path, dtype="mock::assembly", parents=None):
+        r = client.post(f"/api/workflows/{name}/inputs/items", json={
+            "path": str(path), "dtype": dtype, "parents": parents,
+        })
+        assert r.status_code == 201, r.get_json()
+        return r.get_json()["path"]
+
+    def _items(self, client, name):
+        return {
+            it["path"]: it
+            for it in client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
+        }
+
+    def test_the_type_changes_in_place(self, client, tmp_path):
+        name = _make_workflow(client)
+        parent = tmp_path / "reads.fa"
+        parent.write_text(">x\nACGT\n")
+        child = tmp_path / "reads.bam"
+        child.write_text("bam")
+        p = self._one(client, name, parent)
+        c = self._one(client, name, child, dtype="mock::bam", parents=[p])
+
+        r = client.put(f"/api/workflows/{name}/inputs/items/type", json={
+            "path": p, "dtype": "mock::reads",
+        })
+        assert r.status_code == 200, r.get_json()
+        items = self._items(client, name)
+        assert items[p]["type_name"] == "mock::reads"
+        # ...and the row is still the same row: it was not removed and re-added,
+        # so what descends from it still does -- under the *new* type name, since
+        # a parent record carries its parent's type as well as its path
+        assert [(x["path"], x["type_name"]) for x in items[c]["parents"]] == [
+            (p, "mock::reads"),
+        ]
+        assert parent.is_file() and child.is_file(), (
+            "changing a type must not touch the filesystem"
+        )
+
+    def test_an_unknown_type_is_refused(self, client, tmp_path):
+        name = _make_workflow(client)
+        f = tmp_path / "reads.fa"
+        f.write_text(">x\nACGT\n")
+        p = self._one(client, name, f)
+        r = client.put(f"/api/workflows/{name}/inputs/items/type", json={
+            "path": p, "dtype": "mock::nonesuch",
+        })
+        assert r.status_code >= 400
+        assert self._items(client, name)[p]["type_name"] == "mock::assembly"
+
+    def test_the_path_changes_and_a_descendant_follows(self, client, tmp_path):
+        name = _make_workflow(client)
+        parent = tmp_path / "run_a.fa"
+        parent.write_text(">x\nACGT\n")
+        child = tmp_path / "run_a.bam"
+        child.write_text("bam")
+        moved_to = tmp_path / "run_b.fa"
+        moved_to.write_text(">y\nTTTT\n")
+
+        p = self._one(client, name, parent)
+        c = self._one(client, name, child, dtype="mock::bam", parents=[p])
+
+        r = client.put(f"/api/workflows/{name}/inputs/items/path", json={
+            "path": p, "new_path": str(moved_to),
+        })
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["moved"] is False
+        assert r.get_json()["relinked"] == 1
+
+        items = self._items(client, name)
+        assert set(items) == {str(moved_to), c}
+        # the child descends from the row, not from the string it used to hold
+        assert [x["path"] for x in items[c]["parents"]] == [str(moved_to)]
+        # ...and neither file went anywhere
+        assert parent.is_file() and moved_to.is_file()
+        assert parent.read_text().startswith(">x")
+        assert moved_to.read_text().startswith(">y")
+
+    def test_a_collision_is_refused_and_the_row_is_left_alone(self, client, tmp_path):
+        name = _make_workflow(client)
+        a, b = tmp_path / "a.fa", tmp_path / "b.fa"
+        for f in (a, b):
+            f.write_text(">x\nACGT\n")
+        pa = self._one(client, name, a)
+        pb = self._one(client, name, b)
+        r = client.put(f"/api/workflows/{name}/inputs/items/path", json={
+            "path": pa, "new_path": pb,
+        })
+        assert r.status_code >= 400
+        assert "already registered" in r.get_json()["error"]
+        assert set(self._items(client, name)) == {pa, pb}
+
+    def test_a_library_owned_value_is_moved_inside_the_library(self, client):
+        """The one case where the file *is* the library's, so a move is right."""
+        name = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib = project.input_library_path(name)
+        r = client.post(f"/api/workflows/{name}/inputs/items", json={
+            "name": "K12", "value": "GCF_000005845.2", "dtype": "mock::assembly",
+        })
+        assert r.status_code == 201, r.get_json()
+        assert (lib / "K12").is_file()
+
+        r = client.put(f"/api/workflows/{name}/inputs/items/path", json={
+            "path": "K12", "new_path": "K12_MG1655",
+        })
+        assert r.status_code == 200, r.get_json()
+        assert r.get_json()["moved"] is True
+        assert not (lib / "K12").exists()
+        assert (lib / "K12_MG1655").read_text() == "GCF_000005845.2"
+        assert list(self._items(client, name)) == ["K12_MG1655"]
+
+    def test_a_pointer_cannot_become_library_owned(self, client, tmp_path):
+        """Relative means the library owns the file; absolute means it does not.
+
+        Flipping between them silently changes what the entry claims, so it is
+        refused rather than guessed at.
+        """
+        name = _make_workflow(client)
+        f = tmp_path / "reads.fa"
+        f.write_text(">x\nACGT\n")
+        p = self._one(client, name, f)
+        r = client.put(f"/api/workflows/{name}/inputs/items/path", json={
+            "path": p, "new_path": "reads.fa",
+        })
+        assert r.status_code >= 400
+        assert list(self._items(client, name)) == [p]
+
+    def test_a_lineage_loop_is_refused(self, client, tmp_path):
+        """A row cannot descend from something that descends from it.
+
+        The browser filters these out of the menu it offers, but this route is
+        reachable without it, and nothing downstream is defined over a cycle:
+        `AsSamples` walks up to the ancestors and then back down to their
+        descendants, so a loop makes every branch the whole library.
+        """
+        name = _make_workflow(client)
+        parent = tmp_path / "reads.fa"
+        parent.write_text(">x\nACGT\n")
+        child = tmp_path / "reads.bam"
+        child.write_text("bam")
+        p = self._one(client, name, parent)
+        c = self._one(client, name, child, dtype="mock::bam", parents=[p])
+
+        # the direct loop, and the one that closes through a third row
+        r = client.put(f"/api/workflows/{name}/inputs/items/parents", json={
+            "path": p, "parents": [c],
+        })
+        assert r.status_code >= 400
+        r = client.put(f"/api/workflows/{name}/inputs/items/parents", json={
+            "path": p, "parents": [p],
+        })
+        assert r.status_code >= 400
+
+        # ...and the lineage that was there is untouched by the refusal
+        items = self._items(client, name)
+        assert [x["path"] for x in items[c]["parents"]] == [p]
+        assert items[p]["parents"] == []
+
+    def test_a_grandparent_link_still_works(self, client, tmp_path):
+        """The guard is about loops, not about depth: a chain is still a chain."""
+        name = _make_workflow(client)
+        a, b, c = (tmp_path / f"{n}.fa" for n in ("a", "b", "c"))
+        for f in (a, b, c):
+            f.write_text(">x\nACGT\n")
+        pa = self._one(client, name, a)
+        pb = self._one(client, name, b, parents=[pa])
+        pc = self._one(client, name, c, parents=[pb])
+
+        r = client.put(f"/api/workflows/{name}/inputs/items/parents", json={
+            "path": pc, "parents": [pb, pa],
+        })
+        assert r.status_code == 200, r.get_json()
+        assert {x["path"] for x in self._items(client, name)[pc]["parents"]} == {pa, pb}
 
 
 class TestWorkflowRename:

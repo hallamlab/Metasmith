@@ -18,6 +18,9 @@
     placeholder = '',
     // (option) => { label?, note?, warn? } for the right-hand side of a row
     describe = null,
+    // a row shows its type as a word until it is clicked, and clicking it is
+    // what mounts this -- so the click has to land in the field it just opened
+    autofocus = false,
     onchange,
     oncommit,
   } = $props()
@@ -103,6 +106,13 @@
       open = false
     }
   }
+
+  // Once, on mount. `input.focus()` fires `onfocus`, which opens the list --
+  // so a field that opened because a word was clicked is already showing what
+  // else that word could have been.
+  $effect(() => {
+    if (autofocus) input?.focus()
+  })
 
   // A click anywhere else closes it. Pointerdown rather than click so a press
   // that starts outside cannot land on a row that moved out from under it.

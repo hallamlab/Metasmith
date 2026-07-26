@@ -732,23 +732,77 @@ never a user's to register, and listing them buries the requirement that is.
   the `#<draft-id>` references below it to the path that just landed. Two consequences.
   Editing is written back **when a field is left**, not per keystroke, and `persist()` is
   serialised: it is one file written by write-then-rename, so two overlapping writes raced
-  for one `.tmp` path (`_write_yaml` now names it per pid/thread as well). And a *registered*
-  row's path and type stay delete-and-re-add — `Rename` moves the user's own file on disk and
-  nothing retypes in place — which the row says rather than offering a field that does
-  nothing.
+  for one `.tmp` path (`_write_yaml` now names it per pid/thread as well).
 
-- **Lineage is edited on the row, and unticking has to work.** `components/LineageMenu.svelte`
-  is a menu anchored to one row (the shape `TypeSelect` already uses), listing what it
-  descends from as editable ticks and what descends from it as a statement — a child's lineage
-  belongs to the child's row, and offering it twice gives one link two places to be changed
-  from. Children are inverted in the browser; the server only ever states parents. Two traps.
-  `set_item_parents` → `AddParentsTo` is a **union**, so it can add a parent and never take one
-  away; the route now goes through `replace_item_parents` → `SetParentsOf`, and PUT was already
-  the right verb for it. And `show_item_lineage` reports the **transitive closure**, because
-  the library expands the chain on `Load` and collapses it again on `Save` — left alone, the
-  menu offers a grandparent with a tick beside it and taking that tick off silently reverts on
-  the next load, so the browser collapses it the same way. Removing an item clears the links
-  into it in both halves and says how many, since the library leaves them dangling.
+- **A registered row is corrected in place, and correcting it moves no file.** An input row is
+  two lines — what it points at, then what it is and what it came from — and clicking either
+  the path or the type on a *registered* row opens the same field a draft row has. Both go
+  through new ops beside `rename_item`: `retype_item` (validate through the library's own
+  `GetType`, swap the manifest value) and `repoint_item`, which branches on one thing only.
+  An **absolute** entry is a pointer at the user's file, so re-pointing it is a manifest
+  re-key and the filesystem is never touched; a **relative** entry is library-owned (what
+  `AddValue` writes) and delegates to `DataInstanceLibrary.Rename`, where moving the file is
+  the correct behaviour. `PUT .../inputs/items/{type,path}`, PUT for the same reason the
+  parents route is. Three traps. A parent is stored as metadata carrying the parent's path
+  *and* type, so a re-keyed or retyped row leaves its children describing something the
+  manifest no longer holds — `_relink_children` rebuilds each affected child through
+  `SetParentsOf` rather than reaching into the metadata objects (`Rename` does *not* do this,
+  which is a latent bug, not a licence). `AddItem`/`Rename` assert against a taken key, so a
+  collision is asserted for up front and comes back as a notice. And identity is derived from
+  path and type, so either edit changes the row's `instance_id` and costs cache reuse
+  downstream — which the row says, in place of the old "remove and add it again".
+
+- **The parents are the control; the menu is the add button.** `components/ParentPicker.svelte`
+  states what a row descends from one line per parent, each removable on its own `×`, under a
+  `+ parent` dropdown that only ever *adds*. It replaced a menu of every candidate with ticks,
+  which put what a row *does* descend from behind a click inside a list of what it does not —
+  and those are not equally interesting: the parents are part of reading the row, the
+  candidates are wanted only while you are adding one. What descends from a row is not shown
+  at all; it is stated on those rows, and offering it twice gives one link two places to be
+  edited from. Hovering a parent line — or an option in the menu — marks the row it names,
+  because the label is a path on an input and a type name on an output and neither is unique
+  enough to find by eye. Three traps. `set_item_parents` → `AddParentsTo` is a **union**, so
+  it can add a parent and never take one away; the route goes through `replace_item_parents` →
+  `SetParentsOf`, and PUT was already the right verb for it. `show_item_lineage` reports the
+  **transitive closure**, because the library expands the chain on `Load` and collapses it
+  again on `Save` — left alone, the menu offers a grandparent whose removal silently reverts
+  on the next load, so the browser collapses it the same way. And a target's parents are
+  stored as **numbers** while every row on the page is keyed by string, so `targetRows`
+  converts at the row model and `setParents` converts back: left unconverted the two key
+  spaces never met, and the tick never rendered, the children readout was always empty, and
+  the summary fell through to printing the raw 0-based position — which is the one place a
+  person ever saw an output's index. Removing an item clears the links into it in both halves
+  and says how many, since the library leaves them dangling.
+
+- **A cycle is filtered out of the menu, and refused by the route.** A row cannot descend from
+  something that descends from it: nothing downstream is defined over a loop — `AsSamples`
+  walks up to the ancestors and then back down to their descendants, so one mask becomes the
+  whole library, and the expand-on-load / collapse-on-save pair has no meaning over a cycle.
+  The browser excludes self, existing parents, and the whole descendant closure (a fixpoint
+  over the collapsed links, since items arrive as a closure and drafts state one level);
+  `ops.data._assert_acyclic` refuses the same thing on `set_item_parents` and
+  `replace_item_parents`, because the route is reachable without the page. Outputs need none
+  of that: they may only name a target declared *before* them, which `_add_targets` already
+  asserts, so ordering does the check for free — and the menu offers only earlier rows rather
+  than offering a link the generate then throws out.
+
+- **An output row is an input row with the path line taken off.** Not a resemblance to be
+  re-derived in two places: `RecipeCard` renders one `detail` snippet for both, so the type
+  field, the parents and the trailing `×` cannot drift apart by a column (the output's
+  typecell was `max-width: none` while the input's capped at 360px, which is exactly how they
+  did). The trailing cell is fixed-width whether or not it holds a delete, which is what puts
+  an output's `×` over the one on an input's first line. An output carries no ordinal: it is
+  named by its **type** everywhere a person reads it, with the 1-based position appended only
+  when two outputs share a type and the name alone would point at either.
+
+- **A type is a word until it is clicked, on every row.** A registered input, a draft and an
+  output all name a type, and one of them rendering a permanently-open combobox while the
+  others read as a word made the list look like three kinds of thing. Clicking the word moves
+  the panel onto that type *and* opens the field — which is the whole reason the type is the
+  thing you click — so `TypeSelect` takes an `autofocus`, or the click lands in a field that
+  is not listening. Nothing is highlighted by that click: the row mark used to key on the
+  focused *type*, so touching an input lit up every row sharing its name, in both halves. The
+  only mark left comes from a pointer resting on a parent line somewhere else.
 
 - **`apply` stamps a transform's input shape into the recipe.** Beside each card in
   `TypeInspector`, and in the panel header while a tool is drawn: one draft per non-plumbing
@@ -756,10 +810,26 @@ never a user's to register, and listing them buries the requirement that is.
   the user. A requirement an existing input already satisfies is skipped, and "satisfies" is
   read off `by_type[T].consumed_by` — property matching that the index already did, not name
   equality, so a registered `flye_assembly` counts for a slot wanting an `assembly`. A draft
-  of the same type counts too, or applying twice would build a second copy of everything. The
-  index keeps only the *best* match per transform per side, so a tool wanting both a broad and
-  a narrow flavour of one type gets one extra row; that is a spare row to delete, not a wrong
-  plan.
+  of the same type occupies the requirement too, or applying twice would build a second copy
+  of everything — but a draft only *satisfies* it once it has an identity: a blank row this
+  same button made is a row you still have to fill in, and counting it is what let a second
+  press claim every input was already here. A filler is consumed, so one file cannot answer
+  three slots. What it skipped is reported per requirement, naming what stands in for each,
+  because "every input is already here" is a claim you cannot check from where you read it —
+  and the notice has to be written *after* `persist()` resolves, since `attempt` clears the
+  notice on its way in. The index keeps only the *best* match per transform per side, so a
+  tool wanting both a broad and a narrow flavour of one type gets one extra row; that is a
+  spare row to delete, not a wrong plan.
+
+- **A transform card in the panel is two plain lists.** `inputs` over one de-duped type name
+  per line with `+N supplied` as the last line of that list, then `outputs` the same way —
+  not prose fragments ("takes" / "also needs" / "produces") with the types as chips wrapped
+  across a line, which reads as a sentence rather than as what goes in and what comes out.
+  The type in focus stays in the list like any other: filtering it out made a card look like
+  it named a type it did not. Two consequences — the supplied count is over the transform's
+  *whole* requirement list (excluding the focus left it one short on the cards where the focus
+  is itself plumbing), and a line has to `word-break`, since the card is the narrowest column
+  on the page.
 
 - **Which libraries are enabled is not part of adding a row.** It is what the planner may
   reach for, so `views/LibraryList.svelte` holds it in the panel — beside the counts and the

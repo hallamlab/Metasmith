@@ -654,6 +654,34 @@ def set_input_parents(name):
     ))
 
 
+@bp.put("/workflows/<name>/inputs/items/type")
+def retype_input(name):
+    """The row is that type instead. PUT for the same reason parents is: it
+    replaces a property of a row that already exists."""
+    b = _body()
+    assert b.get("path"), "path is required"
+    assert b.get("dtype"), "a data type is required"
+    return jsonify(op_data.retype_item(
+        str(_project().input_library_path(name)), b["path"], b["dtype"],
+    ))
+
+
+@bp.put("/workflows/<name>/inputs/items/path")
+def repoint_input(name):
+    """The row points somewhere else.
+
+    Deliberately not `rename`: for an absolute entry -- a pointer to the user's
+    own file -- nothing on disk moves. Only a library-owned (relative) entry is
+    a real rename, and `repoint_item` is the one that knows the difference.
+    """
+    b = _body()
+    assert b.get("path"), "path is required"
+    assert b.get("new_path"), "a new path is required"
+    return jsonify(op_data.repoint_item(
+        str(_project().input_library_path(name)), b["path"], b["new_path"],
+    ))
+
+
 @bp.post("/workflows/<name>/inputs/types")
 def attach_input_types(name):
     b = _body()

@@ -29,9 +29,12 @@ def _add_targets(builder: TargetBuilder, target_types: list) -> list[TargetSpec]
             parents = tuple(target.get("parents") or ())
         handles = []
         for p in parents:
+            # Positions are stored 0-based and said 1-based, here as everywhere
+            # else a target is named to a person -- one sentence carrying both
+            # counts reads as an off-by-one in whichever half you trust less.
             assert isinstance(p, int) and 0 <= p < len(specs), (
-                f"target #{i + 1} [{name}] names parent #{p}, which is not one of "
-                f"the {len(specs)} target(s) declared before it"
+                f"target #{i + 1} [{name}] names parent #{p + 1 if isinstance(p, int) else p}, "
+                f"which is not one of the {len(specs)} target(s) declared before it"
             )
             handles.append(specs[p])
         specs.append(builder.Add(name, parents=handles or None))

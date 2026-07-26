@@ -33,13 +33,6 @@
   let produced = $derived(resolve(index?.by_type?.[type]?.produced_by))
   let consumed = $derived(resolve(index?.by_type?.[type]?.consumed_by))
 
-  // said from the point of view of the type in focus, not the transform's
-  const RELATION = {
-    alias: { label: 'as', why: 'the same type under another name' },
-    narrower: { label: 'makes', why: 'more specific than this, so it stands in for it' },
-    broader: { label: 'takes', why: 'more general than this, so this satisfies it' },
-  }
-
   let visible = $derived(
     (index?.transforms ?? []).filter((t) => !enabled || enabled.has(t.library)),
   )
@@ -52,12 +45,15 @@
   // and the same ones the graphs leave out -- one definition, in lib/graphs.js.
   const plumbing = isPlumbing
 
-  // everything the transform wants that is not the type being looked at. `self`
-  // is a list, not one name: the type in focus and the one the transform
-  // declared for it can differ, and both are already shown above.
-  const rest = (list, self) => (list ?? []).filter((t) => !self.includes(t))
-  const others = (list, self) => rest(list, self).filter((t) => !plumbing(t))
-  const hidden = (list, self) => rest(list, self).filter((t) => plumbing(t)).length
+  // What goes in and what comes out, as a list of names -- including the type in
+  // focus. Filtering it out used to make a card look like it named a type it did
+  // not: the focused type is part of what the tool takes, and reading the card as
+  // "these in, these out" only works if all of them are on it.
+  const listed = (list) => [...new Set(list ?? [])].filter((t) => !plumbing(t))
+  // ...counted over the whole requirement list, not what is left after a filter:
+  // the focus is itself plumbing on the container cards, and excluding it there
+  // left the count one short.
+  const supplied = (list) => (list ?? []).filter(plumbing).length
 </script>
 
 {#if !index}
@@ -94,10 +90,6 @@
         {/if}
         {#each section.list as entry}
           {@const tr = entry.tr}
-          {@const rel = RELATION[entry.match]}
-          <!-- the type in focus and the name the transform declared for it are
-               both shown above, so neither repeats in the lines below -->
-          {@const seen = [type, entry.as]}
           <div class="tr col" class:sel={entry.i === selected}>
             <div class="spread">
               <button class="head grow spread" onclick={() => onselect?.(entry.i)} title="draw {tr.name}">
@@ -114,35 +106,29 @@
                 >apply</button>
               {/if}
             </div>
-            {#if rel && entry.as}
-              <!-- the match the type system made, spelled out: without this the
-                   transform looks like it named this type and did not -->
-              <div class="line small">
-                <span class="muted lbl">{rel.label}</span>
-                <span class="chips">
-                  <button class="chip mono" onclick={() => onpick?.(entry.as)} title={rel.why}>
-                    {entry.as}
-                  </button>
-                </span>
-              </div>
-            {/if}
-            {#each [{ label: 'also needs', list: others(tr.inputs, seen), extra: hidden(tr.inputs, seen) }, { label: 'produces', list: others(tr.outputs, seen), extra: 0 }] as line}
-              {#if line.list.length || line.extra}
-                <div class="line small">
-                  <span class="muted lbl">{line.label}</span>
-                  <span class="chips">
-                    {#each line.list as t}
-                      <button class="chip mono" onclick={() => onpick?.(t)} title="look at {t}">
-                        {t}
-                      </button>
-                    {/each}
-                    {#if line.extra}
-                      <span class="muted" title="container images and bundled scripts, supplied for you">
-                        +{line.extra} supplied
-                      </span>
-                    {/if}
-                  </span>
-                </div>
+            <!-- Two plain lists rather than a sentence in fragments: what goes
+                 in, what comes out, one name per line. The prose form ("takes",
+                 "also needs", "produces") with the types as chips wrapped across
+                 a line read as a sentence, and the card is the narrowest column
+                 on the page -- so a list it is. -->
+            {#each [{ label: 'inputs', list: listed(tr.inputs), extra: supplied(tr.inputs) }, { label: 'outputs', list: listed(tr.outputs), extra: 0 }] as group}
+              {#if group.list.length || group.extra}
+                <div class="group small muted">{group.label}</div>
+                {#each group.list as t}
+                  <button
+                    class="item mono small"
+                    class:on={t === type || t === entry.as}
+                    onclick={() => onpick?.(t)}
+                    title="look at {t}"
+                  >{t}</button>
+                {/each}
+                {#if group.extra}
+                  <!-- its own line at the end of the list, not an aside on the
+                       last name in it -->
+                  <div class="supplied small muted" title="container images and bundled scripts, supplied for you">
+                    +{group.extra} supplied
+                  </div>
+                {/if}
               {/if}
             {/each}
           </div>
@@ -187,17 +173,29 @@
     padding: 1px 6px;
   }
   .apply:hover { color: var(--text); border-color: var(--line); background: var(--panel-2); }
-  .line { display: flex; gap: 6px; align-items: baseline; }
-  .lbl { flex: 0 0 auto; }
-  .chips { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
-  .chip {
+  /* the heading over a list, not a label beside one */
+  .group {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10.5px;
+    margin-top: 2px;
+  }
+  /* one type per line: the card is the narrowest column on the page, so a long
+     namespace::type has to be allowed to break rather than widen it */
+  .item {
+    display: block;
+    width: 100%;
     background: none;
     border: none;
+    border-radius: 0;
     color: var(--accent);
-    padding: 0;
+    padding: 0 0 0 8px;
     font-size: 12px;
     text-align: left;
     word-break: break-all;
   }
-  .chip:hover { text-decoration: underline; border: none; }
+  button.item:hover { text-decoration: underline; border: none; }
+  /* the type you are looking at, in the list like any other -- just findable */
+  .item.on { color: var(--text); }
+  .supplied { padding-left: 8px; }
 </style>
