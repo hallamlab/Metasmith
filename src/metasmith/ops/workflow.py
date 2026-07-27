@@ -130,10 +130,11 @@ def render_dag(
     workspace: str | None = None,
 ) -> dict:
     task = _ws.load_task(workspace, task_key)
-    out_base = _ws.task_path(workspace, task_key) / "plan.dag"
+    # name the file with its real extension: `plan.dag` alone reads back as a
+    # `.dag` suffix, which RenderDAG would take for the requested format
+    out = _ws.task_path(workspace, task_key) / f"plan.dag.{format}"
     bl = set(blacklist_namespaces) if blacklist_namespaces else {"lib", "containers"}
-    task.plan.RenderDAG(out_base, format, blacklist_namespaces=bl)
-    rendered = out_base.with_suffix(f".{format}")
+    rendered = task.plan.RenderDAG(out, blacklist_namespaces=bl)
     return {"task_key": task_key, "format": format, "path": str(rendered)}
 
 

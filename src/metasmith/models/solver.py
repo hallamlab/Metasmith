@@ -305,7 +305,7 @@ class Solution:
                 r.add_edge(name, transform_name)
             for name in outputs:
                 r.add_edge(transform_name, name)
-        r.render(path_base, format)
+        return r.render(path_base, format)
     
 def solve_by_mcts(
     given: list[set[Endpoint]],

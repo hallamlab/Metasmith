@@ -21,7 +21,9 @@ def register(subs):
 
     _dag = sp.add_parser("dag", help="render the plan DAG to disk")
     _dag.add_argument("task_key")
-    _dag.add_argument("--format", default="svg")
+    _dag.add_argument("--format", default="svg",
+                      help="svg (default), text, dot, or any raster format"
+                           " graphviz can write (needs the `neato` binary)")
     _dag.add_argument("--blacklist-namespace", action="append", default=None,
                       dest="blacklist_namespaces")
     _dag.set_defaults(func=lambda a: _ops.render_dag(

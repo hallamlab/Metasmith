@@ -4,8 +4,7 @@ channels:
 dependencies:
   - python=3.12
   - nextflow=26.04.1
-  - graphviz=13.1.1 # DAG renderer
-  - python-graphviz=0.21 # Python bindings
+  - graphviz=13.1.1 # `neato -n2` rasterizes raster DAG formats; layout is ours
   - pyyaml=6.0.2
   - numpy=2.2.5
   - rsync=3.4.1

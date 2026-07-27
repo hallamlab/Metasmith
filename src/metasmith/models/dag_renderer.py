@@ -1,14 +1,20 @@
-"""Graphviz DAG rendering — abstract node/edge API shared by every metasmith
-caller that needs to draw a transform/data graph (currently `WorkflowPlan` and
-solver `Solution`).
+"""DAG rendering — the abstract node/edge API shared by every metasmith caller
+that needs to draw a transform/data graph (currently `WorkflowPlan` and solver
+`Solution`).
 
-Consumers declare TRANSFORM and DATA nodes plus directed edges; the class
-handles graphviz logger silencing, styling, and the `Source.render` call.
+Consumers declare TRANSFORM and DATA nodes plus directed edges. Placement is
+metasmith's own (`dag_layout`); the backends in `dag_draw` turn that placement
+into text, SVG, or — for raster formats only — pre-placed DOT that graphviz
+rasterizes without laying anything out. `to_dot()` stays a plain description of
+the graph with no positions, for consumers that want to run their own graphviz.
 """
 from __future__ import annotations
 
 from enum import Enum, auto
 from pathlib import Path
+
+from .dag_draw import Style, raster_dot, render_raster, render_svg, render_text
+from .dag_layout import Layout, layout
 
 
 class NodeKind(Enum):
@@ -16,8 +22,25 @@ class NodeKind(Enum):
     DATA      = auto()
 
 
+# Kind is only ever a visual distinction — layout treats every node the same.
+STYLES: dict[NodeKind, Style] = {
+    NodeKind.TRANSFORM: Style(
+        marker="●", ascii_marker="*",
+        fill="#CCCCCC", stroke="#555555", rx=12,
+        gv_style="filled,rounded", ansi="\033[1;36m",
+    ),
+    NodeKind.DATA: Style(
+        marker="○", ascii_marker="o",
+        fill="#FFFFFF", stroke="#777777", rx=3,
+        gv_style="filled", ansi="\033[0;37m",
+    ),
+}
+
+TEXT_FORMATS = {"text", "txt"}
+
+
 class DagRenderer:
-    """Build a directed graph of transform/data nodes and render via graphviz."""
+    """Build a directed graph of transform/data nodes and draw it."""
 
     def __init__(self, *, font: str = "Arial", rankdir: str = "TB"):
         self._font    = font
@@ -38,7 +61,11 @@ class DagRenderer:
         self._nodes.setdefault(src, NodeKind.DATA)
         self._nodes.setdefault(dst, NodeKind.DATA)
 
+    def layout(self) -> Layout:
+        return layout(self._nodes, self._edges)
+
     def to_dot(self) -> str:
+        """Plain DOT: the graph, no positions. Nothing here invokes graphviz."""
         lines = ["digraph G {"]
         lines += [
             f'graph [fontname="{self._font}", rankdir="{self._rankdir}"];',
@@ -52,54 +79,36 @@ class DagRenderer:
         lines.append("}")
         return "\n".join(lines)
 
+    def to_text(self, *, unicode: bool = True, color: bool = False) -> str:
+        return render_text(self.layout(), STYLES, unicode=unicode, color=color)
+
+    def to_svg(self) -> str:
+        return render_svg(self.layout(), STYLES, font=self._font)
+
+    def to_raster_dot(self) -> str:
+        return raster_dot(self.layout(), STYLES, font=self._font)
+
     def render(self, path_base: Path | str, format: str = "svg") -> Path:
         path_base = Path(path_base)
         ext = path_base.suffix
         if ext:
             format    = ext.lstrip(".")
             path_base = path_base.with_suffix("")
-        graphviz = _import_graphviz_quietly()
-        src = graphviz.Source(self.to_dot(), filename=str(path_base), format=format)
-        src.render(cleanup=True, quiet=True)
-        return path_base.parent / f"{path_base.name}.{format}"
+        format = format.lower()
+        out = path_base.parent / f"{path_base.name}.{format}"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if format == "dot":
+            out.write_text(self.to_dot() + "\n", encoding="utf-8")
+        elif format in TEXT_FORMATS:
+            out.write_text(self.to_text(), encoding="utf-8")
+        elif format == "svg":
+            out.write_text(self.to_svg(), encoding="utf-8")
+        else:
+            render_raster(self.to_raster_dot(), out, format)
+        return out
 
     @staticmethod
     def _render_node(kind: NodeKind, name: str) -> str:
         if kind is NodeKind.TRANSFORM:
             return f'"{name}" [shape="oval", style="filled", fillcolor="#CCCCCC"]'
         return f'"{name}" [shape="box"]'
-
-
-def _import_graphviz_quietly():
-    """Import graphviz with its loggers muted.
-
-    graphviz's module-scope logger emits noisy lines at import time; both
-    historical consumers monkey-patched logging.getLogger around the import to
-    suppress them, then walked graphviz.__dict__ two levels deep flipping every
-    logger to ERROR. That dance now lives here, once.
-    """
-    import logging
-    _real_getLogger = logging.getLogger
-
-    class _Mute:
-        def debug(self, *a, **kw): pass
-        def info (self, *a, **kw): pass
-        def warn (self, *a, **kw): pass
-        def error(self, *a, **kw): pass
-
-    logging.getLogger = lambda *a, **kw: _Mute()
-    try:
-        import graphviz
-    finally:
-        logging.getLogger = _real_getLogger
-
-    todo = [(graphviz, 0)]
-    while todo:
-        m, depth = todo.pop()
-        if hasattr(m, "log") and hasattr(m.log, "setLevel"):
-            m.log.setLevel(logging.ERROR)
-        if depth >= 2:
-            continue
-        if hasattr(m, "__dict__"):
-            todo += [(x, depth + 1) for x in m.__dict__.values()]
-    return graphviz
