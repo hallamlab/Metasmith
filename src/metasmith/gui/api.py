@@ -1141,7 +1141,10 @@ def get_inputs(name):
         raise ProjectError(f"workflow [{name}] has no input library")
     info = op_data.inspect_library(str(lib_path))
     info["items"] = [
-        op_data.show_item_lineage(str(lib_path), item["path"]) for item in info["items"]
+        # render=False: this maps over every item in the library, and the page
+        # wants declared identity and manifest parents, not a trace walk each.
+        op_data.show_item_lineage(str(lib_path), item["path"], render=False)
+        for item in info["items"]
     ]
     return jsonify(info)
 

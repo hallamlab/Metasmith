@@ -482,18 +482,50 @@ def show_item_lineage(
     fmt: str = "json",
     depth: int | None = None,
     include_logs: bool = False,
+    render: bool = True,
 ) -> dict:
-    """Render an item's lineage tree.
+    """Describe an item: declared identity, manifest parents, and lineage tree.
 
-    S7: walks the trace-backed ancestor graph via `get_lineage_of` and
-    renders as JSON or mermaid. `--of PATH` writes to disk; otherwise
-    returns the rendered text in the result dict so the CLI can print
-    it. `--logs` attaches per-invocation `.command.*` log paths via
-    `get_logs_of`.
+    Two different notions of ancestry meet here and they are not
+    interchangeable. `parents` is the *manifest* relationship a user
+    declares and edits -- it is what the GUI's parent picker writes and
+    what its orphan detection reads, and it exists for an input library
+    that has never been run. `rendered` is the *trace-derived* ancestor
+    graph, which only exists for workflow-produced instances and needs a
+    trace index the input library does not have. Returning only the
+    second empties every consumer of the first with no error to notice,
+    which is exactly what happened once.
+
+    S7: the trace walk goes through `get_lineage_of` and renders as JSON
+    or mermaid. `of=PATH` writes to disk; otherwise the rendered text
+    comes back in the dict so the CLI can print it. `include_logs`
+    attaches per-invocation `.command.*` paths via `get_logs_of`.
+
+    `render=False` returns the cheap half only. List endpoints map this
+    over every item in a library and must not pay for a trace walk per
+    item.
     """
     lib = load_data_lib(library_path)
     p = Path(item_path)
     inst = lib.Get(p)
+
+    result = {
+        "path": str(inst.path),
+        "type_name": inst.dtype_name,
+        "properties": inst.dtype.Pack()["properties"],
+        "parents": [
+            {"path": str(pm.path), "type_name": pm.name}
+            for pm in lib.parents.get(p, [])
+        ],
+        "format": fmt,
+        "depth": depth,
+        "rendered": None,
+        "written_to": None,
+        "logs": None,
+    }
+    if not render:
+        return result
+
     node = lib.get_lineage_of(inst)
 
     if fmt == "mermaid":
@@ -501,25 +533,19 @@ def show_item_lineage(
     else:
         rendered = node.to_json(indent=2, depth=depth)
 
-    logs: dict | None = None
     if include_logs:
         try:
             bundle = lib.get_logs_of(inst)
-            logs = bundle.to_dict() if hasattr(bundle, "to_dict") else None
+            result["logs"] = bundle.to_dict() if hasattr(bundle, "to_dict") else None
         except Exception as e:
-            logs = {"error": repr(e)}
+            result["logs"] = {"error": repr(e)}
 
     if of is not None:
         out_path = Path(of)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(rendered, encoding="utf-8")
+        result["written_to"] = str(of)
+    else:
+        result["rendered"] = rendered
 
-    return {
-        "path": str(inst.path),
-        "type_name": inst.dtype_name,
-        "format": fmt,
-        "depth": depth,
-        "rendered": rendered if of is None else None,
-        "written_to": str(of) if of is not None else None,
-        "logs": logs,
-    }
+    return result

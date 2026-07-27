@@ -171,6 +171,46 @@ class TestDataOps:
         assert tree["dtype_key"] == "mock::assembly"
         assert tree["produced_by"]["kind"] == "leaf"
 
+    def test_show_item_lineage_keeps_manifest_parents_and_properties(self, mock_samples):
+        """The declared half of the answer survives alongside the trace half.
+
+        `parents` here is the manifest relationship the user declares and
+        edits -- distinct from the trace-derived ancestor graph in
+        `rendered`, and the only one an input library that has never run
+        can answer. The GUI's orphan detection and parent picker read it,
+        and they fail silently -- an empty list, not an error -- if it
+        goes missing.
+        """
+        items = op_data.list_items(str(mock_samples.location), type_filter="mock::assembly")
+        r = op_data.show_item_lineage(str(mock_samples.location), items[0]["path"])
+
+        assert r["properties"], "dtype properties dropped from the result"
+        assert {p["type_name"] for p in r["parents"]} == {
+            "mock::reads",
+            "mock::sample_metadata",
+        }
+
+    def test_show_item_lineage_render_false_skips_the_trace_walk(self, mock_samples):
+        """`render=False` still answers identity and parents, and does not walk.
+
+        List endpoints map this over every item in a library; paying for a
+        trace walk per item is the reason the option exists.
+        """
+        items = op_data.list_items(str(mock_samples.location), type_filter="mock::assembly")
+        path = items[0]["path"]
+
+        with mock.patch.object(
+            DataInstanceLibrary, "get_lineage_of", side_effect=AssertionError("walked")
+        ):
+            r = op_data.show_item_lineage(str(mock_samples.location), path, render=False)
+
+        assert r["rendered"] is None
+        assert r["type_name"] == "mock::assembly"
+        assert {p["type_name"] for p in r["parents"]} == {
+            "mock::reads",
+            "mock::sample_metadata",
+        }
+
     def test_create_and_add(self, tmp_path, mock_types):
         lib_path = tmp_path / "new.xgdb"
         r = op_data.create_library(str(lib_path), type_library_paths=[str(mock_types)])
