@@ -14,6 +14,11 @@ from pathlib import Path
 
 import pytest
 
+
+# the GUI's own suite: `dev.sh -tg` runs exactly the files carrying this,
+# and it is the inner loop while working on the page -- keep it fast.
+pytestmark = pytest.mark.gui
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEV_SH = REPO_ROOT / "dev.sh"
 

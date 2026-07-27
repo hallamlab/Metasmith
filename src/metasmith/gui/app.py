@@ -60,19 +60,24 @@ def warm_type_index(project_root: Path) -> None:
         Log.Warn(f"could not pre-build the type index: {exc}")
 
 
-def create_app(
+def bind_project(
+    app: "Flask",  # noqa: F821
     project_root: Path | str = ".",
     ssh_config_path: Path | str | None = None,
     watch: bool = True,
 ) -> "Flask":  # noqa: F821
-    from flask import Flask, Response, send_from_directory
+    """Point an app at a project: everything a run of the server is *about*.
 
+    Split out from `create_app` because the routes are the expensive half and
+    they hold no state -- werkzeug compiles a builder per rule, which costs more
+    than the project side does. Nothing in production rebinds; the GUI's own
+    tests do, once per case over one app, and that is the point.
+    """
     project = Project(project_root)
     project.initialize()
     install_log_capture()
     threading.Thread(target=warm_type_index, args=(project.root,), daemon=True).start()
 
-    app = Flask(__name__, static_folder=None)
     app.config["MSM_PROJECT"] = project
     app.config["MSM_JOBS"] = JobRunner()
     app.config["MSM_SSH"] = SshConfig(ssh_config_path)
@@ -80,6 +85,18 @@ def create_app(
     app.config["MSM_WATCHER"] = watcher
     if watch:
         watcher.start()
+    return app
+
+
+def create_app(
+    project_root: Path | str = ".",
+    ssh_config_path: Path | str | None = None,
+    watch: bool = True,
+) -> "Flask":  # noqa: F821
+    from flask import Flask, Response, send_from_directory
+
+    app = Flask(__name__, static_folder=None)
+    bind_project(app, project_root, ssh_config_path=ssh_config_path, watch=watch)
 
     app.register_blueprint(api_bp)
 

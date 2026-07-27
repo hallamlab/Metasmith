@@ -7,4 +7,5 @@ markers = [
     "docker: tests requiring Docker daemon",
     "nextflow: tests requiring Nextflow execution inside Docker",
     "slow: tests that take more than 30 seconds",
+    "gui: the web GUI's own suite -- the inner loop while working on it (dev.sh -tg)",
 ]

@@ -13,6 +13,9 @@ from metasmith.gui.sshconfig import (
     SshConfigError,
 )
 
+# the GUI's own suite: `dev.sh -tg` runs exactly the files carrying this,
+# and it is the inner loop while working on the page -- keep it fast.
+pytestmark = pytest.mark.gui
 
 @pytest.fixture
 def cfg_path(tmp_path):

@@ -9,6 +9,9 @@ import pytest
 from metasmith.coms.cli._main import _build_parser
 from metasmith.gui import stdlib
 
+# the GUI's own suite: `dev.sh -tg` runs exactly the files carrying this,
+# and it is the inner loop while working on the page -- keep it fast.
+pytestmark = pytest.mark.gui
 
 class TestCommandSurface:
     def test_gui_is_registered(self):

@@ -815,6 +815,23 @@ def generate_workflow(name):
     return jsonify(job.summary()), 202
 
 
+def _load_task(bundle: Path):
+    """Read a staged bundle back, under the planner's lock.
+
+    Loading a task imports every transform it names, through the same
+    process-global machinery `plan_workflow` uses -- so it is subject to the
+    same non-reentrancy and takes the same lock. It is not enough to hold it
+    over the plan alone: a generate reading its own bundle back while a second
+    generate was planning handed one of them a half-imported module, and the
+    two report it differently -- a bare `spec not found`, or a transform that
+    silently loaded as None.
+    """
+    from ..ops import workspace as op_workspace
+
+    with _plan_lock:
+        return op_workspace.load_task(None, str(bundle))
+
+
 def _step_display(bundle: Path) -> list[dict]:
     """A readable summary of the plan's steps.
 
@@ -823,10 +840,8 @@ def _step_display(bundle: Path) -> list[dict]:
     carry `uses` and `produces`, so the summary is built once at generate time
     and stored beside the result.
     """
-    from ..ops import workspace as op_workspace
-
     try:
-        task = op_workspace.load_task(None, str(bundle))
+        task = _load_task(bundle)
     except Exception:
         return []
     out = []
@@ -853,8 +868,7 @@ def workflow_dag(name):
         raise ProjectError(f"workflow [{name}] has no successful plan to draw")
     svg = wf.path / "plan.dag.svg"
     if not svg.is_file():
-        from ..ops import workspace as op_workspace
-        task = op_workspace.load_task(None, str(wf.path))
+        task = _load_task(wf.path)
         task.plan.RenderDAG(str(svg))
     return Response(svg.read_text(), mimetype="image/svg+xml")
 

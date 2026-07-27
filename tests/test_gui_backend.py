@@ -15,13 +15,16 @@ from metasmith.models.solver import Endpoint
 from metasmith.testing.mock_transforms import identity_transform
 
 from metasmith.gui import stdlib
-from metasmith.gui.app import create_app
+from metasmith.gui.app import bind_project, create_app
 from metasmith.gui.store import Project
 from metasmith.ops import agent as op_agent
 from metasmith.ops import workspace as op_workspace
 
 from tests.integration.conftest import create_transform_library
 
+# the GUI's own suite: `dev.sh -tg` runs exactly the files carrying this,
+# and it is the inner loop while working on the page -- keep it fast.
+pytestmark = pytest.mark.gui
 
 @pytest.fixture
 def project_root(tmp_path) -> Path:
@@ -51,13 +54,31 @@ def project_root(tmp_path) -> Path:
     return root
 
 
-@pytest.fixture
-def client(project_root, tmp_path):
-    app = create_app(project_root, ssh_config_path=tmp_path / "ssh_config", watch=False)
+@pytest.fixture(scope="session")
+def _app(tmp_path_factory):
+    """One app for the whole file, re-pointed per test.
+
+    The routes are the expensive half of `create_app` -- werkzeug compiles a
+    builder per rule -- and they hold nothing a test could leak through. What a
+    test *does* own is the project behind them, so that half is rebuilt for each
+    one by `bind_project`, exactly as a fresh app would have.
+    """
+    scratch = tmp_path_factory.mktemp("app")
+    app = create_app(scratch, ssh_config_path=scratch / "ssh_config", watch=False)
     app.config["TESTING"] = True
+    return app
+
+
+def _client_on(app, project_root, ssh_config_path):
+    bind_project(app, project_root, ssh_config_path=ssh_config_path, watch=False)
     with app.test_client() as c:
         c.application = app
         yield c
+
+
+@pytest.fixture
+def client(_app, project_root, tmp_path):
+    yield from _client_on(_app, project_root, tmp_path / "ssh_config")
 
 
 def _finish(client, job_summary, timeout=120) -> dict:
@@ -208,12 +229,8 @@ def poly_root(tmp_path) -> Path:
 
 
 @pytest.fixture
-def poly_client(poly_root, tmp_path):
-    app = create_app(poly_root, ssh_config_path=tmp_path / "ssh_config", watch=False)
-    app.config["TESTING"] = True
-    with app.test_client() as c:
-        c.application = app
-        yield c
+def poly_client(_app, poly_root, tmp_path):
+    yield from _client_on(_app, poly_root, tmp_path / "ssh_config")
 
 
 class TestTypeIndexIsA:
@@ -656,6 +673,33 @@ class TestWorkflows:
             assert body["success"] is True
             assert (Path(body["path"]) / "task.yml").is_file()
             assert op_workspace.load_task(None, body["path"]).GetKey() == keys[n]
+
+    def test_reading_a_bundle_back_is_serialised_too(self, client):
+        """Not just the plan: everything that imports a transform.
+
+        Transforms are imported by bare module name through a process-global
+        class attribute, so two of anything doing it at once can hand one of
+        them a transform that loaded as None. The plan is the obvious one and
+        was locked; reading the bundle back for the step summary, and drawing
+        the DAG, do it too, and were not. This asserts the *route* holds the
+        lock, since the race it guards against is one in ~6 runs by wall clock.
+        """
+        from metasmith.gui import api
+
+        name = _make_workflow(client)
+        _seed_inputs(client, name, 1)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        wf_dir = Path(client.get(f"/api/workflows/{name}").get_json()["path"])
+
+        real = op_workspace.load_task
+        held = []
+        def _spy(*args, **kwargs):
+            held.append(api._plan_lock.locked())
+            return real(*args, **kwargs)
+
+        with mock.patch.object(op_workspace, "load_task", _spy):
+            assert api._load_task(wf_dir).GetKey()
+        assert held == [True], "the task load ran without the planner's lock"
 
     def test_regenerating_replaces_the_bundle(self, client):
         name = _make_workflow(client)
