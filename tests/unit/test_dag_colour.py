@@ -12,7 +12,7 @@ from metasmith.models.dag_colour import (
 from metasmith.models.dag_layout import repeat_motifs
 from metasmith.models.dag_renderer import STYLES, DagRenderer, NodeKind
 
-from .fixtures import load_dag
+from tests.fixtures import load_dag
 
 T, D = NodeKind.TRANSFORM, NodeKind.DATA
 

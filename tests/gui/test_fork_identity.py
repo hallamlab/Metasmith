@@ -32,8 +32,9 @@ from metasmith.ops import (
 
 from tests.e2e.docker.conftest import create_transform_library
 
-# the GUI's own suite: `dev.sh -tg` runs exactly the files carrying this,
-# and it is the inner loop while working on the page -- keep it fast.
+# tests/gui/ IS the GUI's own suite -- conftest stamps `gui` (and `fast`) on
+# everything under it, and `dev.sh -tg` runs the directory. This line is kept
+# as a local reminder of what the file is for; it is no longer what selects it.
 pytestmark = pytest.mark.gui
 
 # the key of `fixed_lib` below. Pack() drops None-valued entries, so an unforked

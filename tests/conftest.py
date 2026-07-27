@@ -29,7 +29,12 @@ _DIR_MARKERS: list[tuple[str, list[str]]] = [
     ("unit", ["fast"]),
     ("flow", ["fast"]),
     ("cache", ["fast"]),
-    ("bootstrap", ["slow"]),
+    ("gui", ["fast", "gui"]),
+    # bootstrap was `slow` because one 10k-scale class lived in its biggest
+    # file. Everything else in the axis is sub-millisecond, so ~100 tests sat
+    # out the daily loop to contain six. The scale tests moved to `perf`.
+    ("bootstrap", ["fast"]),
+    ("perf", ["slow"]),
     ("deploy", ["slow"]),
     ("e2e/virtual", ["e2e_virtual"]),
     ("e2e/docker", ["e2e_docker", "slow", "requires_docker"]),
@@ -41,6 +46,12 @@ _DIR_MARKERS: list[tuple[str, list[str]]] = [
 
 
 def pytest_collection_modifyitems(config, items):
+    # A file matching no prefix gets NO marker and therefore runs in no gate.
+    # That is silent by construction -- the tests collect, pass locally, and are
+    # simply never selected again -- and it had already swallowed four files
+    # before anyone noticed. Directory-as-declaration is only a contract if
+    # violating it is loud, so an unclaimed item fails collection.
+    unclaimed: list[str] = []
     for item in items:
         rel = Path(item.fspath).resolve().relative_to(_TESTS_ROOT)
         rel_str = rel.as_posix()
@@ -50,6 +61,18 @@ def pytest_collection_modifyitems(config, items):
                 for m in markers:
                     item.add_marker(getattr(pytest.mark, m))
                 break
+        else:
+            unclaimed.append(rel_str)
+
+    if unclaimed:
+        listing = "\n  ".join(sorted(set(unclaimed)))
+        raise pytest.UsageError(
+            "these test files sit under no axis in tests/conftest.py::_DIR_MARKERS, "
+            "so they carry no marker and run in no gate:\n  "
+            f"{listing}\n"
+            "Move each into the directory naming what it is (unit / flow / cache / "
+            "gui / bootstrap / deploy / e2e/*), or add a row to _DIR_MARKERS."
+        )
 
 
 def _configure_agent_paths(monkeypatch, home: Path) -> None:

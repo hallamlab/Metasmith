@@ -14,7 +14,7 @@ import pytest
 from metasmith.models.dag_layout import measure, repeat_motifs
 from metasmith.models.dag_renderer import LabelMode, NodeKind
 
-from .fixtures import load_dag
+from tests.fixtures import load_dag
 
 
 @pytest.fixture(scope="module")

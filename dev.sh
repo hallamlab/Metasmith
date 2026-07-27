@@ -390,16 +390,15 @@ case $1 in
         # against the cwd of every process and every temp dir a test chdirs to,
         # and the stat misses alone doubled this suite's wall time.
         export PYTHONPATH=$HERE/src
-        # The marker is the definition of the set; the file list is derived from
-        # it rather than repeated here, so marking a new file is all it takes.
-        # Handing pytest the paths matters as much as the -m does: collection
-        # imports every module it walks, and importing the e2e ones costs more
-        # than this whole suite takes to run.
-        gui_files=$(grep -rl '^pytestmark = pytest.mark.gui' $HERE/tests)
-        [ -z "$gui_files" ] && { echo "no test file carries \`pytestmark = pytest.mark.gui\`"; exit 1; }
+        # The directory is the definition of the set -- tests/conftest.py stamps
+        # `gui` on everything under it, and a file that lands under no axis at
+        # all fails collection rather than going quiet. Handing pytest the path
+        # matters as much as the -m: collection imports every module it walks,
+        # and importing the e2e ones costs more than this whole suite takes.
+        [ -d "$HERE/tests/gui" ] || { echo "tests/gui/ is missing"; exit 1; }
         # -q and no per-test names: this is meant to be run every minute, so
         # what it prints is the count and the failures, not a 200-line roster.
-        pytest -m gui -q --durations=0 --durations-min=0.25 $gui_files $@
+        pytest -m gui -q --durations=0 --durations-min=0.25 $HERE/tests/gui $@
     ;;
 
     -td) # inject updates to an agent home for dev binds
