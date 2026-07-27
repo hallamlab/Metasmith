@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..agents import Agent
+from ..agents import Agent, GetNxfConfigPresets
 from ..env import Runtime
 from ..models.remote import Source
 
@@ -25,6 +25,12 @@ def _agent_info(name: str, agent: Agent) -> dict:
         "real_path": str(agent.real_path) if agent.real_path else None,
         "setup_commands": list(agent.setup_commands),
         "config_presets": presets,
+        # which of `config_presets` a run uses when the caller names none;
+        # `None` is the built-in `local`
+        "default_preset": agent.default_preset,
+        # params every run on this agent starts from -- where a scheduler preset
+        # gets the account it needs
+        "default_params": dict(agent.default_params),
     }
 
 
@@ -36,6 +42,28 @@ def runtimes() -> list[str]:
     nothing else to update.
     """
     return [r.name for r in Runtime]
+
+
+def default_container() -> str:
+    """The image an agent runs metasmith from when it names none.
+
+    Read off the dataclass rather than rebuilt from the version, so it cannot
+    drift from what an agent created without one actually gets.
+    """
+    return Agent.__dataclass_fields__["container"].default
+
+
+def config_presets() -> list[str]:
+    """The nextflow config presets an agent may declare, by name.
+
+    Same shape and same reason as `runtimes()`: a fixed list read off what
+    metasmith ships, so a preset added to the package folder reaches the CLI's
+    `--preset` and the page's dropdown with nothing else to update.
+    """
+    try:
+        return sorted(GetNxfConfigPresets())
+    except Exception:
+        return []
 
 
 def load_agent(agent_path: str) -> Agent:
@@ -72,6 +100,8 @@ def save_agent(
     setup_commands: list[str] | None = None,
     globus_uuid: str | None = None,
     renaming_host: bool = False,
+    default_preset: str | None = None,
+    default_params: dict | None = None,
 ) -> dict:
     """Write an agent YAML to disk.
 
@@ -85,6 +115,11 @@ def save_agent(
     the caller renamed an ssh alias and is bringing the agents on it along. The
     machine and the directory are the same, so the resolution the agent already
     has still holds; clearing it would make a cosmetic rename cost a redeploy.
+
+    The named fields *are* set, including to nothing: omitting `globus_uuid` or
+    `default_preset` clears it. That is the contract a save-the-whole-object
+    caller wants, and it is why the two lists above are worth reading -- what is
+    preserved is what is not named here.
     """
     p = Path(path).resolve()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -103,6 +138,8 @@ def save_agent(
     agent.setup_commands = list(setup_commands or [])
     agent.runtime = Runtime[runtime]
     agent.globus_uuid = globus_uuid
+    agent.default_preset = default_preset or None
+    agent.default_params = dict(default_params or {})
     if container:
         agent.container = container
     agent.Save(p)
@@ -123,4 +160,14 @@ def ping(agent_path: str, timeout_s: int = 15) -> dict:
 def deploy(agent_path: str, assertive: bool = False) -> dict:
     agent = load_agent(agent_path)
     agent.Deploy(assertive)
-    return {"status": "deployed", "agent": Path(agent_path).stem, "home": agent.home.address}
+    # Saved back, because the deploy resolved something the file did not know:
+    # `real_path`. Without this the record is indistinguishable from one that
+    # was never deployed, and that distinction is what the launch route needs
+    # in order to refuse a run rather than fail inside staging minutes later.
+    agent.Save(Path(agent_path))
+    return {
+        "status": "deployed",
+        "agent": Path(agent_path).stem,
+        "home": agent.home.address,
+        "real_path": str(agent.real_path) if agent.real_path else None,
+    }

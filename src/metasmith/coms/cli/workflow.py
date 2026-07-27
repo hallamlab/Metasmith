@@ -30,7 +30,12 @@ def register(subs):
                         help="task key in the workspace, or a path to a task bundle directory")
     _stage.add_argument("--on-exist", default="skip",
                         choices=["skip", "error", "clear", "update", "update_workflow", "update_data"])
-    _stage.set_defaults(func=lambda a: _rt.stage(a.agent, a.task_ref, a.on_exist, a.workspace))
+    _stage.add_argument("--timeout", type=float, default=None, dest="idle_timeout",
+                        help="seconds an agent-side step may produce no output before "
+                             "staging gives up (default: METASMITH_IDLE_TIMEOUT, else 300)")
+    _stage.set_defaults(func=lambda a: _rt.stage(
+        a.agent, a.task_ref, a.on_exist, a.workspace, a.idle_timeout,
+    ))
 
     _run = sp.add_parser("run", help="launch a staged workflow")
     _run.add_argument("agent")

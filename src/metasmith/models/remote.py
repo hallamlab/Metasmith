@@ -11,7 +11,7 @@ import re
 import json
 from tempfile import TemporaryDirectory
 
-from ..coms.terminals import LiveShell
+from ..coms.terminals import LiveShell, IDLE_TIMEOUT, SSH_CONNECT_TIMEOUT
 from ..hashing import KeyGenerator
 from ..logging import Log
 
@@ -307,9 +307,32 @@ class Logistics:
     def RemoveTransfer(self, src: Source, dest: Source):
         self._queue.remove((src, dest))
 
-    def ExecuteTransfers(self, label: str|None = None, wait_for_complete: bool=True, resolve_symlinks: bool=False) -> LogisticsResult:
+    def ExecuteTransfers(
+        self,
+        label: str|None = None,
+        wait_for_complete: bool=True,
+        resolve_symlinks: bool=False,
+        exclude: list[str]|None = None,
+        idle_timeout: float|None = IDLE_TIMEOUT,
+    ) -> LogisticsResult:
+        """
+        `exclude` is a list of rsync patterns, relative to each transfer's own
+        root. A pattern containing a slash is anchored there, which is what lets
+        a caller skip one known path without also skipping anything a workflow
+        happened to name similarly deeper in the tree.
+
+        `idle_timeout` bounds the rsync arms by silence -- `-P` keeps a live
+        transfer talking, so a stretch of nothing means the far end is gone.
+        None waits forever. It is not applied to the curl arm, which is silent
+        by construction, nor to globus, which polls.
+        """
         to_dispose: list[LiveShell] = []
         result = LogisticsResult(completed=[], errors=[])
+        exclude = list(exclude) if exclude else []
+        _rsync_flags = " ".join(
+            (["-L"] if resolve_symlinks else []) +
+            [f'--exclude="{p}"' for p in exclude]
+        )
 
         with TemporaryDirectory(prefix="msm.") as tmpdir:
             def _execute_local(todo: list[tuple[Source, Source]]):
@@ -338,6 +361,7 @@ class Logistics:
                 # dir, a data library and a transform library spent 145ms of
                 # its 170ms waiting for three of them.
                 def _copy_file(src_path: Path, dest_path: Path) -> bool:
+                    if exclude: return False # no notion of patterns here; rsync's
                     if src_path.is_symlink() or not src_path.is_file():
                         return False
                     if dest_path.exists() and not dest_path.is_file():
@@ -388,7 +412,10 @@ class Logistics:
                     if not src_path.is_dir() or src_path.is_symlink(): return False
                     if dest_path.exists() and not dest_path.is_dir(): return False
                     # -L resolves symlinks, and following one can walk out of
-                    # the tree entirely; rsync owns that case.
+                    # the tree entirely; rsync owns that case. Same for excludes
+                    # -- and both checks come before anything is written, so a
+                    # declined tree is handed to rsync whole rather than half done.
+                    if exclude: return False
                     if resolve_symlinks and _contains_symlink(src_path): return False
 
                     plan: list[tuple[Path, Path, str]] = []
@@ -449,13 +476,15 @@ class Logistics:
                             cmd += f'rm -r "{dest_path}" && '
                         if not dest_path.parent.exists():
                             cmd += f'mkdir -p "{dest_path.parent}" && '
-                        rs = "-L" if resolve_symlinks else ""
-                        cmd += f'rsync -auP {rs} "{sa}" "{dest_path}"'
+                        cmd += f'rsync -auP {_rsync_flags} "{sa}" "{dest_path}"'
                         last_hash = _shell().ExecAsync(cmd)
 
                 def _join():
                     if last_hash is not None and shell is not None:
-                        shell.AwaitDone(_hash=last_hash, timeout=None)
+                        shell.AwaitDone(
+                            _hash=last_hash, timeout=None,
+                            idle_timeout=idle_timeout, what=f"local transfer{f' [{label}]' if label else ''}",
+                        )
                     completed = []
                     for src, dest in todo:
                         dest_path = Path(dest.address)
@@ -465,6 +494,10 @@ class Logistics:
                 return _join
 
             def _execute_globus(todo: list[tuple[Source, Source]]):
+                # Refused rather than ignored: globus has no equivalent, and a
+                # silently-copied excluded path is the failure this argument exists
+                # to prevent.
+                assert not exclude, "globus transfers cannot honour an exclusion"
                 def _to_globus(s: Source):
                     if s.type == SourceType.GLOBUS:
                         return GlobusSource.Parse(s.address)
@@ -566,7 +599,10 @@ class Logistics:
                     with LiveShell() as remote_shell:
                         remote = src_host if src_host != "" else dest_host
                         remote_shell.RegisterOnErr(lambda x: result.errors.append(f"ssh {remote}: {x}"))
-                        res = remote_shell.Exec(f"ssh {remote}", history=True, inherit_stdin=True)
+                        res = remote_shell.Exec(
+                            f"ssh -o ConnectTimeout={SSH_CONNECT_TIMEOUT:g} {remote}",
+                            history=True, inherit_stdin=True,
+                        )
                         if res.exit_code not in (0, None):
                             Log.Error(f"failed to ssh into {remote}: exit={res.exit_code}")
                             continue
@@ -599,11 +635,13 @@ class Logistics:
                         src_addr, dest_addr = src_s.CompileAddress(), dest_s.CompileAddress()
                         s_resolved = f"{src_addr}"
                         if src_is_dir[(src_host, src_s.path)]: s_resolved += "/"
-                        rs = "-L" if resolve_symlinks else ""
-                        last_hash = shell.ExecAsync(f'rsync -auP {rs} "{s_resolved}" "{dest_addr}"')
+                        last_hash = shell.ExecAsync(f'rsync -auP {_rsync_flags} "{s_resolved}" "{dest_addr}"')
                 def _join():
                     if last_hash is not None:
-                        shell.AwaitDone(_hash=last_hash, timeout=None)
+                        shell.AwaitDone(
+                            _hash=last_hash, timeout=None,
+                            idle_timeout=idle_timeout, what=f"ssh transfer{f' [{label}]' if label else ''}",
+                        )
                     completed = []
                     # One shared LiveShell for all dest-host batches: for remote
                     # dests we enter via SubShell("ssh host") which pops cleanly
@@ -621,7 +659,7 @@ class Logistics:
                                 )
                                 return FLAG in res.out
                             if dest_host != "":
-                                with check_shell.SubShell(f"ssh {dest_host}"):
+                                with check_shell.SubShell(f"ssh -o ConnectTimeout={SSH_CONNECT_TIMEOUT:g} {dest_host}"):
                                     for _, dest_s, src, dest in batch:
                                         if _check_remote(dest_s.path):
                                             completed.append((src, dest))
@@ -635,6 +673,7 @@ class Logistics:
                 return _join
 
             def _execute_http(todo: list[tuple[Source, Source]]):
+                assert not exclude, "http transfers cannot honour an exclusion"
                 shell = LiveShell()
                 shell.RegisterOnErr(lambda x: result.errors.append(f"http: {x}"))
                 to_dispose.append(shell)

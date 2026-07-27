@@ -14,6 +14,26 @@ import pty
 from ..logging import Log
 from .ipc import NonBlockingReader, GenerateId, ResetGenerator, RemoveTrailingNewline, RemoveLeadingIndent, CurrentTimeMillis
 
+def _env_seconds(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if not raw: return default
+    try:
+        return float(raw)
+    except ValueError:
+        Log.Warn(f"ignoring [{name}={raw}]: not a number of seconds")
+        return default
+
+# How long an operation on an agent may say *nothing* before we call it wedged.
+# Silence, not elapsed time: a working stage emits log lines or rsync progress
+# the whole way, so these only have to cover the longest stretch a healthy one
+# is quiet -- the DAG compile, which is CPU-bound and mute while it runs. A
+# false timeout is worse than a slow failure, so they err high.
+IDLE_TIMEOUT = _env_seconds("METASMITH_IDLE_TIMEOUT", 300)      # compile, transfers
+PROBE_TIMEOUT = _env_seconds("METASMITH_PROBE_TIMEOUT", 60)     # cd, test -e, relay check
+# Not a shell bound: one on the connect would also cut off someone typing a key
+# passphrase, which the connect deliberately allows. This bounds the handshake.
+SSH_CONNECT_TIMEOUT = _env_seconds("METASMITH_SSH_CONNECT_TIMEOUT", 15)
+
 @dataclass
 class ShellResult:
     out: list[str]
@@ -118,6 +138,19 @@ class TerminalProcess:
         or never started)."""
         if self._console is None: return None
         return self._console.poll()
+
+    def SecondsSinceRead(self) -> float:
+        """Seconds since either stream last produced bytes.
+
+        The shorter of the two marks: a command talking on stdout alone is
+        still talking.
+        """
+        marks = [
+            r.SecondsSinceRead()
+            for r in (self._out_reader, self._err_reader) if r is not None
+        ]
+        if not marks: return 0.0
+        return min(marks)
 
     def Write(self, msg: str):
         self.Send(bytes('%s\n' % (msg), encoding=self.ENCODING))
@@ -456,7 +489,16 @@ class LiveShell:
             # closing brace is its own token regardless of how `cmd` ended.
             # `__rc=$?` on the next written line still captures this group's
             # exit code, which equals the user cmd's exit code.
-            self._shell.Write("{\n" + body + "\n} </dev/null")
+            #
+            # The leading `:` is what makes a *comment* a legal command. Bash
+            # requires at least one command inside `{ }`, so `{\n# a note\n}`
+            # is a syntax error -- and a non-interactive bash exits on one,
+            # taking the shell down and hanging every Exec after it. A setup
+            # block whose first line is `#!/bin/bash` is exactly that, which
+            # is not exotic: it is what the GUI puts in the box by default.
+            # `:` cannot change the reported status, because whatever the user
+            # wrote runs after it and is what `$?` ends up holding.
+            self._shell.Write("{\n:\n" + body + "\n} </dev/null")
         self._shell.Write(self._marker_emission_bash(nonce))
         return nonce
 
@@ -466,7 +508,12 @@ class LiveShell:
         seen = self._sync_received.get(target, set())
         return "out" in seen and "err" in seen
 
-    def AwaitDone(self, _hash: str, timeout: int|float|None = None) -> int|None:
+    def AwaitDone(
+        self, _hash: str,
+        timeout: int|float|None = None,
+        idle_timeout: int|float|None = None,
+        what: str|None = None,
+    ) -> int|None:
         """
         Block until the command for `_hash` is fully synchronized — both
         stdout and stderr marker lines received. Returns the user command's
@@ -476,16 +523,61 @@ class LiveShell:
         enqueued nonce: bash runs commands sequentially, and both stream
         readers process bytes in order, so the last marker arriving implies
         all prior commands also fully synced.
+
+        `timeout` is a stopwatch and answers None when it runs out, which is
+        the historical behaviour and is why almost nobody passes one -- a
+        legitimate stage of a large library takes as long as it takes.
+        `idle_timeout` asks a different question: has the far end said anything
+        recently. It is measured from the last *byte* off either stream, so a
+        transfer redrawing an rsync progress line counts as alive, and it
+        raises rather than answering None -- a bound nobody notices tripping is
+        worse than no bound. The two compose; a caller may set either or both.
         """
+        # Liveness is a gate here for the same reason it is in `_wait_for_init`,
+        # and for one more: most callers pass no timeout at all. `Agent.Deploy`
+        # does, so a bash that has exited -- on a syntax error, on `exit`, on a
+        # kill -- turns "wait for the marker" into "wait forever", and the only
+        # visible symptom is a job that never finishes and never says why.
+        # Sync is re-checked after the liveness verdict, because a shell can
+        # answer and *then* exit with its bytes still unread.
+        started = time.monotonic()
+        deadline = None if timeout is None else started + timeout
+        went_silent = False
         with self._cond:
-            if not self._is_fully_synced(_hash):
-                self._cond.wait_for(
-                    lambda: self._is_fully_synced(_hash) or self._closed,
-                    timeout=timeout,
-                )
+            while not self._is_fully_synced(_hash) and not self._closed:
+                if self._shell is None or not self._shell.IsAlive():
+                    if not self._is_fully_synced(_hash):
+                        # one poll interval of grace for bytes already in flight
+                        self._cond.wait(timeout=self._INIT_POLL_INTERVAL)
+                    break
+                remaining = self._INIT_POLL_INTERVAL
+                if deadline is not None:
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        break
+                    remaining = min(remaining, left)
+                if idle_timeout is not None:
+                    # Bounded by our own start as well as the reader's mark: a
+                    # shell that sat unused for an hour before this command is
+                    # not a command that has been silent for an hour.
+                    silent = min(
+                        self._shell.SecondsSinceRead(),
+                        time.monotonic() - started,
+                    )
+                    if silent >= idle_timeout:
+                        went_silent = True
+                        break
+                    remaining = min(remaining, idle_timeout - silent)
+                self._cond.wait(timeout=remaining)
             exit_code = self._results.pop(_hash, None)
             self._pending.discard(_hash)
             self._sync_received.pop(_hash, None)
+        if went_silent:
+            # The command is still running on the far end and its marker will
+            # never be claimed, so this shell is spent -- callers dispose it.
+            raise TimeoutError(
+                f"[{what or 'command'}] produced no output for {idle_timeout:g}s"
+            )
         return exit_code
 
     # --- shell-boundary crossing --------------------------------------------
@@ -585,7 +677,13 @@ class LiveShell:
                 return rc
         return None
 
-    def Exec(self, cmd: str, timeout: float|None = None, history: bool=False, quiet: bool=False, inherit_stdin: bool = False) -> ShellResult:
+    def Exec(
+        self, cmd: str, timeout: float|None = None, history: bool=False,
+        quiet: bool=False, inherit_stdin: bool = False,
+        idle_timeout: float|None = None, what: str|None = None,
+    ) -> ShellResult:
+        """`idle_timeout` raises TimeoutError if the command goes silent; see
+        AwaitDone. `what` names the step in that message."""
         _out, _err = [], []
         _log_out = _out.append
         _log_err = _err.append
@@ -603,7 +701,11 @@ class LiveShell:
             _hash = self.ExecAsync(cmd, inherit_stdin=inherit_stdin)
             if _hash is None:
                 return ShellResult(out=_out, err=_err, exit_code=None)
-            exit_code = self.AwaitDone(_hash=_hash, timeout=timeout)
+            exit_code = self.AwaitDone(
+                _hash=_hash, timeout=timeout,
+                idle_timeout=idle_timeout,
+                what=what or " ".join(cmd.split())[:80],
+            )
         finally:
             if history:
                 self.RemoveOnOut(_log_out)

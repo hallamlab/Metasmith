@@ -17,7 +17,10 @@ from .serialization import StdTime
 from .hashing import KeyGenerator
 from .logging import Log
 from .env import ContainerDef, Environment, Runtime
-from .coms.terminals import LiveShell, ShellResult, RemoveLeadingIndent
+from .coms.terminals import (
+    LiveShell, ShellResult, RemoveLeadingIndent,
+    IDLE_TIMEOUT, PROBE_TIMEOUT, SSH_CONNECT_TIMEOUT,
+)
 from .models.remote import GlobusSource, Logistics, Source, SourceType, SshSource
 from .models.workflow import METADATA_FILE, WorkflowStep, WorkflowPlan, WorkflowTarget, WorkflowTask, NextflowGenContext, BIND_FILE
 from .models.libraries import DataInstanceLibrary, DataInstance, DataTypeLibrary, TransformInstanceLibrary, TransformInstanceLibraryView, DataInstanceLibraryView
@@ -42,18 +45,27 @@ class AgentShell:
             self.agent._run_setup(shell)
             shell.RegisterOnOut(_on_out)
             shell.RegisterOnErr(_on_err)
-            shell.Exec(f"cd {self.agent.home.GetPath()}")
+            shell.Exec(
+                f"cd {self.agent.home.GetPath()}",
+                idle_timeout=PROBE_TIMEOUT, what="cd to agent home",
+            )
             # mamba/native cross no container boundary, so there is no relay to
             # find or start; requiring one would make those runtimes
             # undeployable rather than merely un-bounced.
             if self.agent._environment().needs_relay:
-                res = shell.Exec('[ -e ./relay/msm_relay ] && echo "relay-present"', history=True)
+                res = shell.Exec(
+                    '[ -e ./relay/msm_relay ] && echo "relay-present"', history=True,
+                    idle_timeout=PROBE_TIMEOUT, what="relay presence check",
+                )
                 assert "relay-present" in res.out, (
                     f"relay binary not present at [{self.agent.home.GetPath()}/relay/msm_relay]; "
                     f"agent home may be partially deployed — rerun Agent.Deploy()"
                 )
                 Log.Info(f"starting relay service")
-                shell.Exec(f'./relay/msm_relay start')
+                shell.Exec(
+                    f'./relay/msm_relay start',
+                    idle_timeout=PROBE_TIMEOUT, what="relay start",
+                )
             self.shell = shell
             return self.shell
         except BaseException:
@@ -64,7 +76,11 @@ class AgentShell:
         if self.shell is None: return
         Log.Info(f"closing connection")
         self.agent._run_cleanup(self.shell)
-        if self.agent._is_ssh():
+        # A command that timed out is still running on the far end with an
+        # unclaimed marker, so this shell is spent: the polite `exit` would
+        # only burn its own timeout before we disposed it anyway.
+        spent = exc_type is not None and issubclass(exc_type, TimeoutError)
+        if self.agent._is_ssh() and not spent:
             try:
                 self.shell.Exec("exit", timeout=5)
             except (KeyboardInterrupt, TimeoutError):
@@ -274,6 +290,23 @@ def _render_gpu_config(planned: dict[str, int], device: Gpu|None, scheduler: boo
     lines += ["}", ""]
     return lines
 
+def GetNxfConfigPresets(folder: Path = MODULE_PATH/"nextflow_config") -> dict[str, Path]:
+    """The nextflow configs that ship with metasmith, by name.
+
+    A package folder, so the list is the same for every agent: which one an
+    agent uses is a per-agent choice, but the options are not. Module-level so
+    that a caller who only wants to know the names -- validating a
+    `default_preset` before it is written -- does not need an Agent to ask.
+    """
+    if not folder.exists(): raise FileNotFoundError(folder)
+    presets: dict[str, Path] = {}
+    for f in folder.iterdir():
+        if f.is_dir(): continue
+        if not f.name.endswith(".nf"): continue
+        presets[f.stem] = f.absolute()
+    return presets
+
+
 @dataclass
 class Agent:
     home: Source
@@ -289,6 +322,18 @@ class Agent:
     # misses the WSL driver stack. A host fact, so it is declared here rather
     # than sniffed at run time.
     gpu_args: list[str] = field(default_factory=list)
+    # Which nextflow config preset a run on this agent uses when the caller does
+    # not name one. `None` means the built-in `local`, which is the right answer
+    # for a workstation and the wrong one for every scheduler -- and the caller
+    # that most often names nothing is a person clicking launch, who has no way
+    # to know their cluster needs `slurm`. A property of the machine, so it is
+    # declared on the machine.
+    default_preset: str|None = None
+    # Params every run on this agent starts from, layered under whatever the run
+    # itself names. The preset above says *how* to submit; this is where the
+    # facts that preset needs -- the cluster account, the partition -- come from,
+    # and they are properties of the machine for the same reason.
+    default_params: dict = field(default_factory=dict)
     real_path: Path|None = None
 
     def _environment(self) -> Environment:
@@ -301,8 +346,16 @@ class Agent:
     def Pack(self) -> dict:
         optional = {k:str(v) for k, v in dict(
             globus_uuid=self.globus_uuid,
+            default_preset=self.default_preset,
             real_path=self.real_path,
         ).items() if v is not None}
+        # Packed outside `optional`, which stringifies everything it writes --
+        # right for the three strings above, and silently fatal for a mapping,
+        # which would reload as a quoted Python literal and produce no params at
+        # all. Omitted entirely when empty, so an agent that sets none keeps a
+        # file identical to the one it had before this field existed.
+        if self.default_params:
+            optional["default_params"] = dict(self.default_params)
         # if isinstance(self.runtime, str): print(f"##### [{self.runtime}]")
         return dict(
             setup_commands=list(self.setup_commands),
@@ -325,6 +378,10 @@ class Agent:
         # omit it and default to a wrapped (non-native) environment.
         data.setdefault("native", False)
         data.setdefault("gpu_args", [])
+        # newer again; an agent file that never set one names no preset, and
+        # `RunWorkflow` falls back to `local` exactly as it always did
+        data.setdefault("default_preset", None)
+        data.setdefault("default_params", {})
         k = "real_path"
         if k in data:
             data[k] = Path(data[k])
@@ -345,7 +402,15 @@ class Agent:
         if self._is_ssh():
             ssh_src = SshSource.Parse(self.home.address)
             Log.Info(f"starting ssh to [{ssh_src.host}]")
-            shell.Exec(f"ssh {ssh_src.host}", inherit_stdin=True)
+            # ConnectTimeout rather than a shell bound: this Exec deliberately
+            # inherits stdin so a key passphrase can be typed, and a bound here
+            # would cut that off. ConnectTimeout bounds only the handshake, so
+            # a host that accepts nothing fails in seconds instead of holding
+            # the calling thread for the life of the process.
+            shell.Exec(
+                f"ssh -o ConnectTimeout={SSH_CONNECT_TIMEOUT:g} {ssh_src.host}",
+                inherit_stdin=True,
+            )
             SUCCESS = f"ssh_connected_flag.{KeyGenerator.FromInt(2**42)}"
             def on_out(x):
                 if SUCCESS in x: return
@@ -354,14 +419,21 @@ class Agent:
                 Log.Error(f"{x}")
             shell.RegisterOnOut(on_out)
             shell.RegisterOnErr(on_err)
-            res = shell.Exec(f'[ ! -z "$SSH_CONNECTION" ] && echo "{SUCCESS}"', timeout=timeout, history=True)
+            res = shell.Exec(
+                f'[ ! -z "$SSH_CONNECTION" ] && echo "{SUCCESS}"',
+                timeout=timeout, history=True,
+                idle_timeout=PROBE_TIMEOUT, what=f"ssh probe on [{ssh_src.host}]",
+            )
             shell.RemoveOnOut(on_out)
             shell.RemoveOnErr(on_err)
             if not any(SUCCESS in x for x in res.out):
                 assert False, f"ssh connection failed {res.err}"
 
         for cmd in self.setup_commands:
-            shell.Exec(cmd, timeout=timeout)
+            shell.Exec(
+                cmd, timeout=timeout,
+                idle_timeout=IDLE_TIMEOUT, what="agent setup command",
+            )
 
     def _run_cleanup(self, shell: LiveShell):
         pass
@@ -500,6 +572,14 @@ class Agent:
                 executable=True,
             )
 
+            # What the home actually resolved to on the host, kept on *this*
+            # agent as well as on the copy that goes with it. The field's whole
+            # description is "resolved upon deployment", and only the remote
+            # copy was ever getting it -- so a caller that saved the agent after
+            # deploying still had `None`, which reads as "never deployed".
+            # `save_agent` clears it again the moment the home is re-pointed,
+            # which is what keeps the two meanings from drifting.
+            self.real_path = resolved_agent_home
             _remote_copy = Agent.Unpack(self.Pack())
             _remote_copy.home = Source.FromLocal(resolved_agent_home)
             _remote_copy.real_path = resolved_agent_home
@@ -629,7 +709,14 @@ class Agent:
         )
         return mock
 
-    def StageWorkflow(self, task: WorkflowTask, on_exist: str = "update", verify_external_paths: bool=False):
+    def StageWorkflow(
+        self, task: WorkflowTask, on_exist: str = "update",
+        verify_external_paths: bool=False, idle_timeout: float|None = IDLE_TIMEOUT,
+    ):
+        """`idle_timeout` bounds each agent-side step by how long it may say
+        nothing; None restores the old unbounded wait. The file transfers inside
+        SaveAs are bounded too, but by the module default rather than by this
+        argument -- override METASMITH_IDLE_TIMEOUT to move both together."""
         VALID_ON_EXIST = {"skip", "error", "clear", "update", "update_workflow", "update_data"}
         assert on_exist in VALID_ON_EXIST, f"on_exist option [{on_exist}] is not one of {VALID_ON_EXIST}"
         Log.Info(f"staging workflow [{task.GetKey()}]")
@@ -639,7 +726,10 @@ class Agent:
             remote_path = AgentPaths.to_task(task._key, root=self.home.GetPath())
             remote_work_path = remote_path.parent.parent
             FLAG = "task already staged"
-            res = sh_remote.Exec(f'[ -e {remote_work_path} ] && echo "{FLAG}"', history=True, quiet=True)
+            res = sh_remote.Exec(
+                f'[ -e {remote_work_path} ] && echo "{FLAG}"', history=True, quiet=True,
+                idle_timeout=PROBE_TIMEOUT, what="checking whether the task is already staged",
+            )
             if FLAG in res.out:
                 _msg = f"task already staged at [{remote_work_path}]"
                 if on_exist not in {"error"}:
@@ -653,7 +743,10 @@ class Agent:
                         Log.Warn(f"clearing previously staged task")
                         _to_delete_src = remote_work_path
                         _to_delete = _to_delete_src.with_suffix(".to_delete")
-                        sh_remote.Exec(f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}")
+                        sh_remote.Exec(
+                            f"mv {_to_delete_src} {_to_delete} && rm -rf {_to_delete}",
+                            idle_timeout=idle_timeout, what="clearing the previously staged task",
+                        )
                     case "update":
                         Log.Warn(f"updating previously staged task")
                     case "update_data":
@@ -673,19 +766,34 @@ class Agent:
             sh_remote.Exec(f"""\
                 export BINDS="{binds}"
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname)
-            """, timeout=None)
+            """, timeout=None, idle_timeout=idle_timeout, what="compiling the workflow on the agent")
             launcher_path = remote_work_path / AgentPaths.LAUNCHER_FILE
-            res = sh_remote.Exec(f'[ -e {launcher_path} ] && echo "launcher-staged"', history=True, quiet=True)
+            res = sh_remote.Exec(
+                f'[ -e {launcher_path} ] && echo "launcher-staged"', history=True, quiet=True,
+                idle_timeout=PROBE_TIMEOUT, what="checking the compiled launcher",
+            )
             assert "launcher-staged" in res.out, f"stage_workflow returned but launcher missing at [{launcher_path}]"
 
     def GetNxfConfigPresets(self, folder: Path = MODULE_PATH/"nextflow_config"):
-        if not folder.exists(): raise FileNotFoundError(folder)
-        presets: dict[str, Path] = {}
-        for f in folder.iterdir():
-            if f.is_dir(): continue
-            if not f.name.endswith(".nf"): continue
-            presets[f.stem] = f.absolute()
-        return presets
+        return GetNxfConfigPresets(folder)
+
+    def _resolve_params(self, params: dict|Path|str|None):
+        """This agent's declared params, with a run's own layered over them.
+
+        Same reasoning and the same one place as the preset: the caller who most
+        often names nothing is a person clicking launch, who has no way to know
+        their cluster needs an account. A params *file* has nothing to merge
+        into, so it wins whole -- said out loud rather than silently dropping
+        what the agent declared.
+        """
+        if not self.default_params: return params
+        if isinstance(params, (Path, str)):
+            Log.Warn(
+                f"params given as a file [{params}], so this agent's "
+                f"{len(self.default_params)} default param(s) are not applied"
+            )
+            return params
+        return dict(self.default_params) | dict(params or {})
 
     def RunWorkflow(
             self, 
@@ -699,14 +807,30 @@ class Agent:
         is_dry_run = stub_delay>0
         if is_dry_run:
             Log.Info(f"starting dry run")
-        if config_file is None: config_file = self.GetNxfConfigPresets()["local"]
+        # The one place a preset is resolved, so the CLI, the notebook and the
+        # web page all get the agent's declared default without any of them
+        # knowing about it. A named preset that no longer exists is worth saying
+        # out loud: a KeyError here reads as a metasmith bug rather than as a
+        # line in someone's agent.yml.
+        if config_file is None:
+            presets = self.GetNxfConfigPresets()
+            wanted = self.default_preset or "local"
+            assert wanted in presets, (
+                f"this agent's default nextflow preset [{wanted}] is not one of "
+                f"{sorted(presets)}"
+            )
+            config_file = presets[wanted]
+        params = self._resolve_params(params)
         task_key = task.GetKey() if isinstance(task, WorkflowTask) else task
         agent_shell = AgentShell(self)
         with agent_shell as sh_remote:
             task_path = AgentPaths.to_task(task_key, root=self.home.GetPath())
             workspace = task_path.parent.parent
             FLAG = "workspace exists"
-            res = sh_remote.Exec(f"[ -e {workspace} ] && echo '{FLAG}'", history=True, quiet=True)
+            res = sh_remote.Exec(
+                f"[ -e {workspace} ] && echo '{FLAG}'", history=True, quiet=True,
+                idle_timeout=PROBE_TIMEOUT, what="checking the staged workspace",
+            )
             assert FLAG in res.out, f"task not staged, expected [{workspace}] to exist"
 
             # GPU preflight, deliberately BEFORE anything is transferred and
@@ -838,9 +962,16 @@ class Agent:
                 m = "execution"
             Log.Info(f"triggering {m} of [{task_key}]")
             launcher = workspace / AgentPaths.LAUNCHER_FILE
-            res = sh_remote.Exec(f"[ -e {launcher} ] && echo 'launcher-present'", history=True, quiet=True)
+            res = sh_remote.Exec(
+                f"[ -e {launcher} ] && echo 'launcher-present'", history=True, quiet=True,
+                idle_timeout=PROBE_TIMEOUT, what="checking the launcher",
+            )
             assert "launcher-present" in res.out, f"launcher missing at [{launcher}]; re-stage the task"
-            sh_remote.Exec(f"{launcher} {stub_delay:0.3f}")
+            # the launcher detaches; the bound covers reaching that point, not the run
+            sh_remote.Exec(
+                f"{launcher} {stub_delay:0.3f}",
+                idle_timeout=IDLE_TIMEOUT, what="launching the run",
+            )
 
     def CheckWorkflow(self, task: WorkflowTask|str, run: int|None=None):
         key = task._key if isinstance(task, WorkflowTask) else str(task)
@@ -857,7 +988,10 @@ class Agent:
             agent_shell = AgentShell(self)
             with agent_shell as sh_remote:
                 FLAG = "results exist"
-                res = sh_remote.Exec(f"[ -e {result_path} ] && echo '{FLAG}'", history=True, quiet=True)
+                res = sh_remote.Exec(
+                    f"[ -e {result_path} ] && echo '{FLAG}'", history=True, quiet=True,
+                    idle_timeout=PROBE_TIMEOUT, what="checking for results",
+                )
                 assert FLAG in res.out, f"results not found at [{self.home.ReplacePathWith(result_path).address}]"
 
         if self.globus_uuid is not None and allow_globus:
@@ -927,11 +1061,20 @@ class Agent:
         run: int | None = None,
         sentinel: str = "run completed at",
         since_mtime: float | None = None,
+        grace_s: float = 5.0,
     ) -> dict:
         """Block until `sentinel` appears in agent.log of the selected run.
 
         Returns: {task_key, status, run_dir, elapsed_s, last_log_mtime, tail}
         status ∈ {"completed", "timeout", "missing", "errored"}.
+
+        `grace_s` is how long "the driver is gone and nothing said it finished"
+        has to hold before it is believed. It exists for the caller that waits
+        from the moment of launch: a nextflow that has not written its PID lock
+        yet looks exactly like one that died. A caller *polling* an already-old
+        run has no such window to protect and should pass 0 -- otherwise, with
+        `timeout_s` also 0, the timeout branch fires first and `errored` is
+        unreachable, which is how a crashed run stayed `running` forever.
         """
         import time
         task_key = task._key if isinstance(task, WorkflowTask) else str(task)
@@ -981,7 +1124,7 @@ class Agent:
                     "last_log_mtime": last_mtime,
                     "tail": tail.get("lines", []),
                 }
-            if log_exists and pid_line == "PID_GONE" and count == 0 and elapsed > 5.0:
+            if log_exists and pid_line == "PID_GONE" and count == 0 and elapsed >= grace_s:
                 tail = self.TailWorkflowLog(task_key, source="agent", lines=20, run=run)
                 return {
                     "task_key": task_key,

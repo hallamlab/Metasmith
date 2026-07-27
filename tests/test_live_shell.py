@@ -551,6 +551,72 @@ def test_g9_command_path_timeout_none_survives_silence():
     assert res.exit_code == 0
 
 
+class TestIdleTimeout:
+    """Bounding a command by silence rather than by a stopwatch.
+
+    A legitimate stage of a large library takes as long as it takes, so elapsed
+    time is the wrong question; whether the far end is still saying anything is
+    the right one. Opt-in per call, so the pin above stays true.
+    """
+
+    def test_a_silent_command_is_given_up_on(self):
+        t0 = time.monotonic()
+        with LiveShell() as sh:
+            with pytest.raises(TimeoutError, match="no output"):
+                sh.Exec("sleep 30", idle_timeout=0.6)
+        dt = time.monotonic() - t0
+        assert dt < 5, f"gave up too late ({dt:.2f}s)"
+
+    def test_the_message_names_the_step(self):
+        with LiveShell() as sh:
+            with pytest.raises(TimeoutError, match="compiling the workflow"):
+                sh.Exec("sleep 30", idle_timeout=0.4, what="compiling the workflow")
+
+    def test_a_chattering_command_is_not(self):
+        with LiveShell() as sh:
+            res = sh.Exec(
+                "for i in 1 2 3 4 5 6; do echo tick; sleep 0.2; done",
+                history=True, idle_timeout=1.0,
+            )
+        assert res.exit_code == 0
+        assert res.out.count("tick") == 6
+
+    def test_carriage_returns_with_no_newline_count_as_alive(self):
+        """What rsync -P emits: one line redrawn, for minutes, on a big file.
+
+        The mark is taken on the raw read, before the line split, precisely so
+        this reads as activity -- a per-line mark would call a healthy transfer
+        dead.
+        """
+        with LiveShell() as sh:
+            res = sh.Exec(
+                r"for i in 1 2 3 4 5 6; do printf 'pct %s\r' $i; sleep 0.2; done; echo",
+                history=True, idle_timeout=1.0,
+            )
+        assert res.exit_code == 0
+
+    def test_the_defaults_come_from_the_environment(self, monkeypatch):
+        """One knob, since a host slow enough to trip one is slow for all of them."""
+        monkeypatch.setenv("METASMITH_IDLE_TIMEOUT", "42")
+        assert terminals._env_seconds("METASMITH_IDLE_TIMEOUT", 300) == 42
+
+    def test_an_unreadable_override_falls_back_rather_than_dying(self, monkeypatch):
+        monkeypatch.setenv("METASMITH_IDLE_TIMEOUT", "five minutes")
+        assert terminals._env_seconds("METASMITH_IDLE_TIMEOUT", 300) == 300
+
+    def test_a_shell_idle_before_the_command_is_not_a_silent_command(self):
+        """Measured from when we started waiting, too.
+
+        Otherwise a shell reused after a quiet stretch would trip the bound on
+        the first command it was given, before that command had said anything.
+        """
+        with LiveShell() as sh:
+            sh.Exec("echo hello", history=True)
+            time.sleep(0.8)
+            res = sh.Exec("sleep 0.4; echo done", history=True, idle_timeout=0.6)
+        assert res.exit_code == 0
+
+
 @pytest.mark.slow
 def test_g9_init_survives_reader_starvation_under_load():
     """The real deploy trigger: heavy CPU load (GIL contention) starves the
@@ -705,3 +771,50 @@ def test_exec_ssh_then_rsync_compound():
         )
         assert check.exit_code == 0
         assert len(check.out) > 0
+
+
+# ---------------------------------------------------------------------------
+# A command with no command in it, and a shell that has gone.
+#
+# Both were found the same way: the GUI's deploy button hung forever with one
+# line of log. The default setup block it sends is `#!/bin/bash` -- a comment,
+# which made the brace wrapper `{ }` empty, which is a bash syntax error, which
+# a non-interactive bash exits on. Every Exec after that waited on a marker no
+# one would ever emit, and `Agent.Deploy` passes no timeout.
+
+
+def test_a_comment_is_a_legal_command():
+    """`{\n# note\n}` is a syntax error; the wrapper has to survive one."""
+    with LiveShell() as sh:
+        r = sh.Exec("#!/bin/bash", timeout=10, history=True)
+        assert r.exit_code == 0
+        assert not any("syntax error" in ln for ln in r.err), r.err
+        # and the shell is still usable afterwards, which is the actual claim
+        after = sh.Exec("echo still-here", timeout=10, history=True)
+        assert "still-here" in after.out
+
+
+def test_an_empty_command_is_a_legal_command():
+    with LiveShell() as sh:
+        assert sh.Exec("", timeout=10).exit_code == 0
+        assert sh.Exec("   \n  ", timeout=10).exit_code == 0
+
+
+def test_a_comment_does_not_mask_the_next_status():
+    """The `:` that makes the group legal must not become the reported status."""
+    with LiveShell() as sh:
+        assert sh.Exec("# a note\nfalse", timeout=10).exit_code == 1
+        assert sh.Exec("# a note\ntrue", timeout=10).exit_code == 0
+
+
+def test_a_dead_shell_does_not_wait_forever():
+    """No timeout is the common case -- Agent.Deploy passes none anywhere."""
+    with LiveShell() as sh:
+        sh.Exec("echo alive", timeout=10)
+        sh._shell._console.kill()
+        start = time.monotonic()
+        try:
+            sh.Exec("echo after")  # deliberately no timeout
+        except (BrokenPipeError, ConnectionError):
+            pass  # the write is what notices first; either way it is not a hang
+        assert time.monotonic() - start < 30

@@ -172,6 +172,64 @@ class TestDirectories:
         assert (dest/"thing"/"inside.txt").read_text() == "stale"
 
 
+class TestExclusions:
+    """A path named here is not transferred; everything else still is."""
+
+    def test_an_excluded_path_is_left_behind(self, tmp_path, transfer):
+        src = tmp_path/"src"
+        (src/"_metadata").mkdir(parents=True)
+        (src/"_metadata"/"keep.txt").write_text("keep")
+        (src/"_metadata"/"skip.txt").write_text("skip")
+        (src/"data.txt").write_text("data")
+
+        transfer(src, tmp_path/"dest", exclude=["/_metadata/skip.txt"])
+        dest = tmp_path/"dest"
+        assert (dest/"data.txt").read_text() == "data"
+        assert (dest/"_metadata"/"keep.txt").read_text() == "keep"
+        assert not (dest/"_metadata"/"skip.txt").exists()
+
+    def test_a_pattern_is_anchored_at_the_transfer_root(self, tmp_path, transfer):
+        # the slash is what makes it the library's own path rather than any file
+        # a workflow happened to name the same thing further down
+        src = tmp_path/"src"
+        (src/"_metadata").mkdir(parents=True)
+        (src/"_metadata"/"logs.latest").write_text("alias")
+        (src/"deep"/"_metadata").mkdir(parents=True)
+        (src/"deep"/"_metadata"/"logs.latest").write_text("someone else's")
+
+        transfer(src, tmp_path/"dest", exclude=["/_metadata/logs.latest"])
+        dest = tmp_path/"dest"
+        assert not (dest/"_metadata"/"logs.latest").exists()
+        assert (dest/"deep"/"_metadata"/"logs.latest").read_text() == "someone else's"
+
+    def test_the_in_process_arm_declines_rather_than_half_copying(self, tmp_path):
+        # It has no notion of patterns, so it must hand the tree over whole --
+        # a partial copy followed by rsync would be correct but is a much harder
+        # contract to reason about, and the survey exists to avoid it.
+        src = tmp_path/"src"
+        src.mkdir()
+        (src/"a.txt").write_text("a")
+        (src/"b.txt").write_text("b")
+
+        _transfer(src, tmp_path/"dest", exclude=["/b.txt"])
+        assert (tmp_path/"dest"/"a.txt").read_text() == "a"
+        assert not (tmp_path/"dest"/"b.txt").exists()
+
+    def test_following_links_and_excluding_compose(self, tmp_path, transfer):
+        src = tmp_path/"src"
+        src.mkdir()
+        outside = tmp_path/"outside"
+        outside.mkdir()
+        (outside/"real.txt").write_text("out there")
+        (src/"followed").symlink_to(outside)
+        (src/"alias").symlink_to(outside)
+
+        transfer(src, tmp_path/"dest", resolve_symlinks=True, exclude=["/alias"])
+        dest = tmp_path/"dest"
+        assert (dest/"followed"/"real.txt").read_text() == "out there"
+        assert not (dest/"alias").exists()
+
+
 class TestFiles:
     def test_a_plain_file(self, tmp_path, transfer):
         src = tmp_path/"f.txt"

@@ -10,7 +10,7 @@ from typing import IO, Callable, Any
 from threading import Condition, Thread
 from select import select
 import subprocess
-from time import sleep
+from time import sleep, monotonic
 
 # from dataclasses import dataclass, field
 # import json
@@ -91,6 +91,12 @@ class NonBlockingReader:
         self._worker = None
         self._is_closed = False
         self._io_handle = io_handle
+        # Marked on every non-empty read, *before* the line split. A caller
+        # bounding an operation by silence needs to know the far end is still
+        # emitting bytes -- rsync's progress redraws a line with carriage
+        # returns and may not complete one for minutes on a large file, so a
+        # mark taken per line would call a healthy transfer dead.
+        self._last_read_at = monotonic()
         self._start(io_handle)
 
     def _start(self, io_handle: int):
@@ -124,6 +130,7 @@ class NonBlockingReader:
                         # Real EOF on the fd. Flush any remainder and stop.
                         _eof[0] = True
                         break
+                    self._last_read_at = monotonic()
                     _buffer.append(chunk)
                     _buffer_bytes += len(chunk)
                     # Bound the buffer: if a single line exceeds MAX_LINE_BYTES,
@@ -216,6 +223,10 @@ class NonBlockingReader:
     def IsClosed(self):
         with self._lock:
             return self._is_closed
+
+    def SecondsSinceRead(self) -> float:
+        """How long this stream has been silent, in seconds."""
+        return monotonic() - self._last_read_at
 
     def Dispose(self):
         try:

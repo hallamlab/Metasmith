@@ -37,7 +37,9 @@ class FakeShell:
         self.manifest_text = manifest_text
         self.calls: list[str] = []
 
-    def Exec(self, cmd, timeout=None, history=False, quiet=False) -> ShellResult:
+    # **_ so that a new keyword on LiveShell.Exec -- the idle bound, say -- does
+    # not fail every test here for a reason that has nothing to do with GPUs
+    def Exec(self, cmd, timeout=None, history=False, quiet=False, **_) -> ShellResult:
         self.calls.append(cmd)
         if "workspace exists" in cmd:
             return ShellResult(out=["workspace exists"], err=[])

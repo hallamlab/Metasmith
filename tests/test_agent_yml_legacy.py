@@ -94,3 +94,57 @@ def test_mamba_native_round_trip(tmp_path):
     assert reloaded.native is True
     # And the agent's Environment is relay-free.
     assert reloaded._environment().needs_relay is False
+
+
+def test_legacy_file_without_default_preset_loads(tmp_path):
+    # Files predating the field name no preset, which is `local` at run time.
+    p = _legacy_yaml(tmp_path, runtime="APPTAINER", container="docker://x:1")
+    agent = Agent.Load(p)
+    assert agent.default_preset is None
+
+
+def test_an_agent_that_names_no_preset_writes_no_key(tmp_path):
+    """The absence has to stay an absence, not a `default_preset: null`.
+
+    An agent yaml is read by the CLI and the notebook as well as by the page,
+    and a key that appears in every file the moment one caller learns about it
+    is how a format drifts.
+    """
+    agent = Agent(home=Source.FromLocal(tmp_path))
+    assert "default_preset" not in agent.Pack()
+
+
+def test_default_preset_round_trips(tmp_path):
+    agent = Agent(home=Source.FromLocal(tmp_path), default_preset="slurm")
+    assert agent.Pack()["default_preset"] == "slurm"
+    assert Agent.Unpack(agent.Pack()).default_preset == "slurm"
+
+
+def test_legacy_file_without_default_params_loads(tmp_path):
+    p = _legacy_yaml(tmp_path, runtime="APPTAINER", container="docker://x:1")
+    agent = Agent.Load(p)
+    assert agent.default_params == {}
+
+
+def test_an_agent_with_no_params_writes_no_key(tmp_path):
+    agent = Agent(home=Source.FromLocal(tmp_path))
+    assert "default_params" not in agent.Pack()
+
+
+def test_default_params_round_trip_as_a_mapping(tmp_path):
+    """Not as a string.
+
+    The optional block the two fields beside this one go through stringifies
+    every value it writes, which is right for a preset name and silently fatal
+    for a mapping: it reloads as a quoted Python literal, stays truthy, and
+    produces no params at all.
+    """
+    agent = Agent(
+        home=Source.FromLocal(tmp_path),
+        default_params={"slurmAccount": "st-you-1", "process_tries": 3},
+    )
+    p = tmp_path / "agent.yml"
+    agent.Save(p)
+    packed = yaml.safe_load(p.read_text())["default_params"]
+    assert packed == {"slurmAccount": "st-you-1", "process_tries": 3}
+    assert Agent.Load(p).default_params == packed
