@@ -16,13 +16,21 @@ from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
+from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
 from ..ops import data as op_data
 from ..ops import runtime as op_runtime
 from ..ops import workflow as op_workflow
 from . import stdlib
 from .jobs import LogCapture
-from .names import assert_valid_name, generate_workflow_name, slugify
+from .names import (
+    AGENT_LOCAL_HOST,
+    agent_sort_name,
+    assert_valid_name,
+    compose_agent_name,
+    generate_agent_name,
+    slugify,
+)
 from .sshconfig import SshConfig, SshConfigError
 from .store import INPUT_LIBRARY_DIRNAME, Project, ProjectError, utcnow
 
@@ -39,6 +47,27 @@ DEFAULT_AGENT_HOME_PREFIX = "~/msm."
 
 def default_agent_home(name: str) -> str:
     return f"{DEFAULT_AGENT_HOME_PREFIX}{name}"
+
+
+def agent_host_of(home: str | None) -> str | None:
+    """Which machine a home is on, as an auto-composed name spells it.
+
+    `None` means "remote, but no host chosen yet" -- an agent halfway through
+    being pointed at a cluster. That is not a machine to name anything after, so
+    the callers that recompose a name leave it alone until one is picked.
+    """
+    home = (home or "").strip()
+    if not home.startswith("ssh://"):
+        return AGENT_LOCAL_HOST
+    return home[len("ssh://"):].partition(":")[0].strip() or None
+
+
+def rehome(home: str, name: str) -> str:
+    """The default home for `name`, keeping whatever machine `home` names."""
+    path = default_agent_home(name)
+    if not home.startswith("ssh://"):
+        return path
+    return f"ssh://{home[len('ssh://'):].partition(':')[0]}:{path}"
 
 
 def home_is_default(name: str, home: str | None) -> bool:
@@ -203,15 +232,27 @@ def agent_defaults():
     Generated here rather than in the browser because the name has to avoid the
     ones already taken, and only this side knows them. `runtimes` is read off
     the `env.Runtime` enum, so the dropdown gains a runtime when the enum does.
+
+    A new agent is local until it is pointed somewhere, so the name offered here
+    is the local one -- and it is only ever a preview: `POST /agents` with no
+    name generates its own, together with the sort key that goes with it.
     """
     p = _project()
-    name = generate_workflow_name(taken=p.agent_names(include_archived=True))
+    _, name, _ = generate_agent_name(
+        AGENT_LOCAL_HOST, taken=p.agent_names(include_archived=True)
+    )
     return jsonify({
         "name": name,
         "home": default_agent_home(name),
         "home_prefix": DEFAULT_AGENT_HOME_PREFIX,
         "runtime": "APPTAINER",
         "runtimes": op_agent.runtimes(),
+        # The image an agent gets when it names none. Reported so the page can
+        # draw it: it is built from this metasmith's version *and build hash*,
+        # so a copy running from a working tree names an image that was never
+        # published, and the only cure is being able to see and change it.
+        "container": op_agent.default_container(),
+        "presets": op_agent.config_presets(),
         "setup_commands": list(DEFAULT_SETUP_COMMANDS),
     })
 
@@ -339,11 +380,33 @@ def _agents_on_host(alias: str) -> list[str]:
 
 
 def _repoint_agents(old_alias: str, new_alias: str) -> list[str]:
+    """Follow an alias rename into every agent whose home names it.
+
+    An auto-named agent carries the alias in its own name, so it is renamed too
+    -- but its *home path* is left exactly as it was. The directory on that
+    machine has not moved, and a deployed agent whose home silently followed its
+    name would be pointing at somewhere nothing was ever installed.
+    """
     project = _project()
     moved = []
     for name in _agents_on_host(old_alias):
         info = op_agent.info(str(project.agent_path(name)))
         _, _, path = info["home"][len("ssh://"):].partition(":")
+        naming = project.agent_naming(name)
+        label = name
+        if naming:
+            want = compose_agent_name(naming["prefix"], new_alias)
+            if want == name:
+                pass
+            elif project.agent_exists(want):
+                project.forget_agent_naming(name)
+            else:
+                project.rename_agent(name, want)
+                project.set_agent_naming(
+                    want, naming["prefix"], agent_sort_name(naming["prefix"], new_alias)
+                )
+                label = f"{name} → {want}"
+                name = want
         op_agent.save_agent(
             path=str(project.agent_path(name)),
             home_uri=f"ssh://{new_alias}:{path}",
@@ -351,10 +414,12 @@ def _repoint_agents(old_alias: str, new_alias: str) -> list[str]:
             runtime=info["runtime"],
             setup_commands=info["setup_commands"],
             globus_uuid=info["globus_uuid"],
+            default_preset=info["default_preset"],
+            default_params=info["default_params"],
             # the machine and the directory are unchanged; only the alias moved
             renaming_host=True,
         )
-        moved.append(name)
+        moved.append(label)
     return moved
 
 
@@ -423,6 +488,86 @@ def _host_patterns() -> list[str]:
     return [e.pattern for e in _ssh().resolved()]
 
 
+def _checked_preset(value: str | None) -> str | None:
+    """The preset an agent declares, or nothing, which means the built-in local.
+
+    Checked rather than reported, unlike the rest of an agent's incompleteness:
+    the options are a fixed list the page picks from, so a value outside it is a
+    bad request rather than a form still being filled in.
+    """
+    preset = (value or "").strip() or None
+    if preset is not None:
+        known = op_agent.config_presets()
+        assert preset in known, (
+            f"unknown nextflow preset [{preset}]; expected one of {', '.join(known)}"
+        )
+    return preset
+
+
+def _param_value(v):
+    """Text typed into a box, given the type it looks like.
+
+    One rule, so it is the same everywhere: a value that reads as a JSON scalar
+    becomes that scalar, anything else stays the string it was. `50` reaches
+    nextflow as a number, `--partition=x` as a string, and `"50"` as a string on
+    purpose -- which is the escape hatch for the one case the rule gets wrong.
+    """
+    if not isinstance(v, str): return v
+    s = v.strip()
+    if not s: return v
+    try:
+        parsed = json.loads(s)
+    except ValueError:
+        return v
+    if isinstance(parsed, (dict, list)): return v
+    return parsed
+
+
+def _checked_params(raw, what: str = "params") -> dict | None:
+    """Params as sent, with the unfilled rows dropped.
+
+    A row with no name is a row someone has not finished typing, not a param
+    named "" -- sending it would write a params file nextflow refuses.
+    """
+    if raw is None: return None
+    assert isinstance(raw, dict), f"{what} must be a mapping of name to value"
+    out = {}
+    for k, v in raw.items():
+        k = str(k).strip()
+        if not k: continue
+        out[k] = _param_value(v)
+    return out
+
+
+_OVERRIDE_FIELDS = {"cpus": int, "memory_gb": float, "duration_h": float}
+
+
+def _checked_overrides(raw) -> dict | None:
+    """Per-step resource overrides, with the untouched rows dropped.
+
+    Keyed by step position, or by a transform name, or `all` -- the ops layer
+    turns each into a nextflow selector. Rows whose boxes are all empty are
+    dropped here so a page that draws one row per step can send them all.
+    """
+    if raw is None: return None
+    assert isinstance(raw, dict), "resource_overrides must be a mapping keyed by step"
+    out = {}
+    for key, spec in raw.items():
+        assert isinstance(spec, dict), f"resource override for [{key}] must be a mapping"
+        kept = {}
+        for field, cast in _OVERRIDE_FIELDS.items():
+            v = spec.get(field)
+            if v is None or (isinstance(v, str) and not v.strip()): continue
+            try:
+                kept[field] = cast(v)
+            except (TypeError, ValueError):
+                raise AssertionError(f"[{field}] for step [{key}] is not a number: [{v}]")
+            assert kept[field] > 0, f"[{field}] for step [{key}] must be positive"
+        if kept:
+            out[str(key)] = kept
+    return out or None
+
+
 def _agent_problems(info: dict, hosts: list[str]) -> list[str]:
     """What stops this agent from being run on, in the user's words.
 
@@ -467,21 +612,48 @@ def _agent_payload(p: Project, name: str, hosts: list[str] | None = None) -> dic
     info["path"] = str(path)
     info["home_is_default"] = home_is_default(name, info.get("home"))
     info["archived_at"] = p.archived_at("agents", name)
+    # `sort_name` is set only for a name this side made up; an agent named by
+    # hand is sorted as it was typed, and the absence *is* how the two are told
+    # apart. The browser is told both so it can say which is which; it never has
+    # to sort, because the list route is already in order.
+    naming = p.agent_naming(name)
+    info["sort_name"] = (naming or {}).get("sort_name")
+    info["auto_named"] = naming is not None
     if hosts is None:
         hosts = _host_patterns()
     info["problems"] = _agent_problems(info, hosts)
     info["valid"] = not info["problems"]
+    # Deliberately *not* one of `problems`, though it stops a run just as
+    # surely. `problems` is "what is missing before this can be deployed", and
+    # the deploy button reads it -- folding "has not been deployed" into that
+    # list is a deadlock. `real_path` is what a deploy resolves on the host and
+    # what re-pointing the home clears, so this answers for a remote agent as
+    # cheaply as for a local one: no ssh, no stat, just the record.
+    info["deployed"] = bool(info.get("real_path"))
     return info
+
+
+def _agent_order(info: dict) -> str:
+    return (info.get("sort_name") or info["name"]).casefold()
 
 
 @bp.get("/agents")
 def list_agents():
+    """In sort-name order, so every agent on one machine sits with the others.
+
+    Sorted here rather than in the browser: the sort key is stored, this is the
+    side that holds it, and two clients ordering the same list two ways is the
+    kind of difference nobody notices until it matters.
+    """
     p = _project()
     hosts = _host_patterns()
-    return jsonify([
-        _agent_payload(p, name, hosts)
-        for name in p.agent_names(include_archived=_wants_archived())
-    ])
+    return jsonify(sorted(
+        (
+            _agent_payload(p, name, hosts)
+            for name in p.agent_names(include_archived=_wants_archived())
+        ),
+        key=_agent_order,
+    ))
 
 
 @bp.get("/agents/<name>")
@@ -505,24 +677,42 @@ def create_agent():
     the result. There is no form in front of it because there is nothing a
     blank agent needs that cannot be defaulted, and a name and a home you were
     given are easier to correct in place than to invent on an empty screen.
+
+    A made-up name says where the agent runs -- `blazing-local`, and
+    `blazing-sockeye` once it is pointed somewhere -- and comes with a sort key
+    that groups the list by machine. A name that was *sent* is the user's, and
+    gets neither: it is taken as typed and sorted as typed, for good.
     """
     b = _body()
     p = _project()
-    name = slugify(b["name"]) if b.get("name") else generate_workflow_name(
-        taken=p.agent_names(include_archived=True)
-    )
+    home = b.get("home") or None
+    naming = None
+    if b.get("name"):
+        name = slugify(b["name"])
+    else:
+        host = agent_host_of(home) or AGENT_LOCAL_HOST
+        prefix, name, sort_name = generate_agent_name(
+            host, taken=p.agent_names(include_archived=True)
+        )
+        naming = (prefix, sort_name)
     assert_valid_name(name, "agent name")
     if p.agent_exists(name):
         raise ProjectError(f"agent [{name}] already exists")
     p.initialize()
     op_agent.save_agent(
         path=str(p.agent_path(name)),
-        home_uri=b.get("home") or default_agent_home(name),
+        home_uri=home or default_agent_home(name),
         container=b.get("container") or None,
         runtime=(b.get("runtime") or "APPTAINER").upper(),
         setup_commands=b.get("setup_commands", list(DEFAULT_SETUP_COMMANDS)),
         globus_uuid=b.get("globus_uuid") or None,
+        default_preset=_checked_preset(b.get("default_preset")),
+        default_params=_checked_params(b.get("default_params"), "default_params"),
     )
+    # after the save, not before: a naming record for an agent whose file failed
+    # to write would outlive the thing it names
+    if naming is not None:
+        p.set_agent_naming(name, *naming)
     return jsonify(_agent_payload(p, name)), 201
 
 
@@ -535,6 +725,13 @@ def update_agent(name):
     written as sent; a field left out keeps what is on disk, which is what lets
     the two the page does not draw (the container image, the gpu flags) survive
     an edit made in the browser.
+
+    Two things follow from the name being a field. Typing one is what makes an
+    agent manually-named: its naming record is dropped and its name stops
+    following its host, permanently. And an agent that still has that record and
+    is pointed at a different machine is renamed *by this save* -- so the reply
+    is the only thing that knows what it is now called, and the caller adopts it
+    rather than the name it sent.
     """
     b = _body()
     p = _project()
@@ -546,13 +743,56 @@ def update_agent(name):
     # asserted before the move, not after: a rename that lands and a save that
     # is then refused would leave the object under a name the caller does not
     # know it is at, and its next read would 404
+    preset = _checked_preset(b.get("default_preset", current["default_preset"]))
+    params = _checked_params(
+        b.get("default_params", current["default_params"]), "default_params",
+    )
     assert home and home.strip(), "a home directory is required"
     assert runtime in set(op_agent.runtimes()), (
         f"unknown runtime [{runtime}]; expected one of {', '.join(op_agent.runtimes())}"
     )
+    notes: list[str] = []
     renamed = _renamed_to(b, name)
     if renamed is not None:
+        # the home is not moved to match: the caller knew the new name when it
+        # sent this, so what it sent is what it wants. (The page does move it,
+        # for a home it never wrote out -- an empty box is spelled as the
+        # default one, and the default is made out of the name in the form.)
+        p.forget_agent_naming(name)
         name = p.rename_agent(name, renamed)["name"]
+    else:
+        naming = p.agent_naming(name)
+        host = agent_host_of(home)
+        # no host chosen yet is not a machine to be named after; the name waits
+        if naming and host:
+            want = compose_agent_name(naming["prefix"], host)
+            following = True
+            if want != name:
+                # the home moves with the name only while it *is* the name --
+                # an agent someone gave a path to keeps that path, and one that
+                # never had one gets the default under its new machine
+                was_default = home_is_default(name, home)
+                try:
+                    p.rename_agent(name, want)
+                except ProjectError:
+                    # something already holds the composed name. Keeping the
+                    # current one loses nothing and overwrites nothing; the only
+                    # thing missing is being told, so say it.
+                    p.forget_agent_naming(name)
+                    following = False
+                    notes.append(
+                        f"[{want}] is already taken, so this agent keeps the name "
+                        f"[{name}] and is named by hand from now on"
+                    )
+                else:
+                    notes.append(f"renamed [{name}] to [{want}], following its host")
+                    name = want
+                    if was_default:
+                        home = rehome(home, name)
+            if following:
+                p.set_agent_naming(
+                    name, naming["prefix"], agent_sort_name(naming["prefix"], host)
+                )
     op_agent.save_agent(
         path=str(p.agent_path(name)),
         home_uri=home,
@@ -560,8 +800,10 @@ def update_agent(name):
         runtime=runtime,
         setup_commands=b.get("setup_commands", current["setup_commands"]),
         globus_uuid=b.get("globus_uuid", current["globus_uuid"]),
+        default_preset=preset,
+        default_params=params,
     )
-    return jsonify(_agent_payload(p, name))
+    return jsonify(_agent_payload(p, name) | {"notes": notes})
 
 
 @bp.delete("/agents/<name>")
@@ -846,9 +1088,24 @@ def _step_display(bundle: Path) -> list[dict]:
         return []
     out = []
     for step in task.plan.steps:
+        # What the transform asks for, so an empty override box reads as "as
+        # declared" rather than as "nothing". Rendered as plain numbers because
+        # that is what an override is typed as.
+        res = step.transform.resources
+        declared = {}
+        if res is not None:
+            if res.cpus is not None: declared["cpus"] = res.cpus
+            if res.memory is not None: declared["memory_gb"] = round(res.memory.value_gb, 3)
+            if res.duration is not None:
+                declared["duration_h"] = round(res.duration._delta.total_seconds() / 3600, 3)
         out.append({
             "order": step.order,
             "transform": Path(str(step.transform._path)).name,
+            "declared_resources": declared,
+            # The file name above is what a person recognises; this is what
+            # nextflow calls the step, and the two need not be the same string.
+            # A page building a resource selector must address this one.
+            "process": NextflowProcessName(step.order, step.transform.name),
             "library": step.transform_library.GetKey(),
             "uses": sorted({inst.dtype_name for inst in step.uses}),
             "produces": sorted({
@@ -976,6 +1233,8 @@ def _run_summary(r) -> dict:
         **{k: r.record.get(k) for k in (
             "agent", "task_key", "created_at", "launched_at", "finished_at",
             "collected_at", "run_number", "preset", "error",
+            # a run is reproducible only if it says what it was launched with
+            "params", "resource_overrides",
         )},
     }
 
@@ -1021,7 +1280,14 @@ def create_run():
     # an agent is saveable while it is still being filled in; this is the point
     # where the missing half stops being a work-in-progress and starts being a
     # staging that would fail on the host, several minutes from now
-    problems = _agent_payload(p, agent_name)["problems"]
+    payload = _agent_payload(p, agent_name)
+    problems = list(payload["problems"])
+    # Deploy is the step that installs metasmith on that host, and it is
+    # reachable only from its own button -- entirely skippable. Without this a
+    # launch onto a fresh agent was accepted and then failed from inside
+    # staging, minutes later, if it reported at all.
+    if not payload["deployed"]:
+        problems.append("has not been deployed yet")
     if problems:
         raise ProjectError(
             f"agent [{agent_name}] is not ready to run on: {'; '.join(problems)}"
@@ -1031,9 +1297,22 @@ def create_run():
     rec = p.create_run(workflow, {
         "agent": agent_name,
         "preset": b.get("preset"),
-        "params": b.get("params"),
-        "resource_overrides": b.get("resource_overrides"),
+        # what is recorded is what was sent, coerced -- a run says what it was
+        # launched with, and the agent's defaults are layered under it by
+        # RunWorkflow rather than baked in here, so an agent edited later does
+        # not rewrite the history of a run that already happened
+        # `or None`: a mapping left empty once every unfilled row was dropped is
+        # "no params", not "params, but blank" -- which would write an empty
+        # params file where the agent used to write its placeholder one
+        "params": _checked_params(b.get("params")) or None,
+        "resource_overrides": _checked_overrides(b.get("resource_overrides")),
         "on_exist": b.get("on_exist", "update"),
+        # `staging` and `launching` are owned by the thread below and by nothing
+        # on disk, so the record has to say whose thread it was. Without this a
+        # restart -- or a Ctrl-C, or a hung ssh that took the thread with it --
+        # leaves the run claiming to be staging with nothing able to say
+        # otherwise. The watcher reads it back.
+        "launched_by": current_app.config.get("MSM_INSTANCE"),
     })
     run_name = rec.name
     # bind before submitting: the job body runs on a worker thread, with no
@@ -1061,7 +1340,11 @@ def create_run():
                 p.update_run(workflow, run_name, {
                     "state": "running",
                     "launched_at": utcnow(),
-                    "run_number": runs[-1].get("run") if runs else None,
+                    # `index`, which is what ListWorkflowRuns returns -- this
+                    # read `run`, a key it has never had, so every run recorded
+                    # None and every probe fell back to `logs.latest`. On a
+                    # re-run that symlink is the *other* run's directory.
+                    "run_number": runs[-1].get("index") if runs else None,
                 })
             except Exception as exc:
                 p.update_run(workflow, run_name, {
@@ -1140,6 +1423,19 @@ def collect_run(workflow, run):
             for err in out.get("errors", []):
                 job.emit(f"ERROR: {err}")
             job.emit(f"collected {len(out.get('completed', []))} item(s)")
+            # An output whose link had no target on the agent: it is not at the
+            # destination and never will be, so a folder that looks collected
+            # holds nothing. Say so, and do not stamp the run collected.
+            dangling = out.get("dangling", [])
+            if dangling:
+                already = set(out.get("errors", []))
+                for d in dangling[:20]:
+                    if d not in already:
+                        job.emit(f"ERROR: no data behind [{d}]")
+                raise ProjectError(
+                    f"{len(dangling)} output(s) did not come across; the data they "
+                    f"named is gone on the agent (first: {dangling[0]})"
+                )
             p.update_run(workflow, run, {"collected_at": utcnow()})
             return out
 

@@ -16,7 +16,7 @@ CLI or to a person with a text editor.
           run.yml                     GUI: agent, task key, state, timestamps
           outputs/                    collected results
       MetasmithLibraries/             the standard library clone
-      .metasmith_gui.yml              GUI: archive state
+      .metasmith_gui.yml              GUI: archive state, agent naming
 
 Two decisions are load-bearing. The task bundle sits at the *root* of the
 workflow directory, which means the directory is itself a valid task reference --
@@ -28,7 +28,8 @@ the two exist side by side and why re-planning is always explicit.
 Archive state lives in one project-level file rather than in each object, so
 archiving is a single code path and a single write regardless of what is being
 archived. It is a timestamp and a list filter, never a directory move: recorded
-paths stay valid.
+paths stay valid. The same file carries which agent names the GUI made up, for
+the same reason: it is a fact about the list rather than about the agent.
 """
 from __future__ import annotations
 
@@ -184,6 +185,7 @@ class Project:
         archived = state.setdefault("archived", {})
         for kind in ("agents", "workflows", "runs"):
             archived.setdefault(kind, {})
+        state.setdefault("agent_names", {})
         return state
 
     def archived_at(self, kind: str, key: str) -> str | None:
@@ -205,6 +207,37 @@ class Project:
         with self._state_lock:
             state = self._read_state()
             if state["archived"][kind].pop(key, None) is not None:
+                _write_yaml(self._state_path(), state)
+
+    # -- agent naming ------------------------------------------------------
+    #
+    # An auto-named agent is called `<prefix>-<host>` and sorted as `<host><prefix>`,
+    # so a list of them groups by machine. Both halves are recorded here rather
+    # than in the agent yaml: that file is a native artefact the CLI and the
+    # notebook both load, and a list-ordering key is a presentation concern.
+    #
+    # The record *is* the discriminator. An agent with one is auto-named and its
+    # name follows its host; an agent without one is named by hand and is never
+    # touched again. That makes every agent already on disk manual, which is the
+    # right default -- nothing gets surprise-renamed by an upgrade.
+
+    def agent_naming(self, name: str) -> dict | None:
+        with self._state_lock:
+            return self._read_state()["agent_names"].get(name)
+
+    def set_agent_naming(self, name: str, prefix: str, sort_name: str) -> dict:
+        with self._state_lock:
+            state = self._read_state()
+            record = {"prefix": prefix, "sort_name": sort_name}
+            state["agent_names"][name] = record
+            _write_yaml(self._state_path(), state)
+            return record
+
+    def forget_agent_naming(self, name: str):
+        """This agent is named by hand from now on."""
+        with self._state_lock:
+            state = self._read_state()
+            if state["agent_names"].pop(name, None) is not None:
                 _write_yaml(self._state_path(), state)
 
     # -- agents ------------------------------------------------------------
@@ -250,6 +283,14 @@ class Project:
         if self.archived_at("agents", name) is not None:
             self._forget_archive("agents", name)
             self.set_archived("agents", new_name, True)
+        # both marks are keyed by name, so both move with the file. The caller
+        # decides whether the naming record survives at all -- a rename someone
+        # typed drops it, a rename the host caused rewrites it -- but neither
+        # can be done from a record left behind under the old name.
+        naming = self.agent_naming(name)
+        if naming is not None:
+            self.forget_agent_naming(name)
+            self.set_agent_naming(new_name, naming["prefix"], naming["sort_name"])
         repointed = []
         for rec in self.list_runs(include_archived=True):
             if rec.record.get("agent") != name:
@@ -278,6 +319,7 @@ class Project:
             }
         path.unlink()
         self._forget_archive("agents", name)
+        self.forget_agent_naming(name)
         return {"name": name, "action": "deleted"}
 
     # -- workflows ---------------------------------------------------------

@@ -9,9 +9,11 @@
     createWorkflow,
     forkWorkflow,
     loadProject,
+    loadRuns,
     refresh,
     select,
   } from './lib/state.svelte.js'
+  import Ago from './components/Ago.svelte'
   import Rail from './components/Rail.svelte'
   import DeleteControl from './components/DeleteControl.svelte'
   import Icon from './components/Icon.svelte'
@@ -106,6 +108,18 @@
     const a = app.showArchived
     refresh(s)
     void a
+  })
+
+  // A run advances on the agent and is written to disk by the watcher, so the
+  // rail is stale the moment it is drawn. This is what makes it move on its
+  // own: while anything listed is live, re-read the list on the watcher's own
+  // cadence. Conditional on the section *and* on something being live, so an
+  // idle tab left open on Workflows issues nothing at all.
+  const RUN_POLL_MS = 8000
+  $effect(() => {
+    if (app.section !== 'runs' || !app.runs.some((r) => r.live)) return
+    const t = setInterval(() => attempt(loadRuns), RUN_POLL_MS)
+    return () => clearInterval(t)
   })
 
   let sel = $derived(app.selected[app.section])
@@ -374,7 +388,7 @@
             <div class="grow truncate">
               <div class="truncate">{item.run.name}</div>
               <div class="small muted truncate">
-                {item.run.agent} · {item.run.launched_at ?? item.run.created_at}
+                {item.run.agent} · <Ago iso={item.run.launched_at ?? item.run.created_at} />
               </div>
             </div>
             <div class="row">

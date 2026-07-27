@@ -3,13 +3,24 @@
   import { defaultHome } from '../lib/agentform.js'
   import Field from '../components/Field.svelte'
   import ConfigEditor from '../components/ConfigEditor.svelte'
+  import ParamRows from '../components/ParamRows.svelte'
 
   // The one field set an agent has. `form` is bound by the parent; `runtimes`
   // comes from the server, which reads it off the Runtime enum, so a runtime
   // added there appears here with nothing to change. `realPath` is what the
   // agent last reported the home resolves to on its host, and is only worth a
   // line when it is not simply the path above it.
-  let { form = $bindable(), runtimes = ['APPTAINER', 'DOCKER', 'MAMBA'], realPath = null } = $props()
+  let {
+    form = $bindable(),
+    runtimes = ['APPTAINER', 'DOCKER', 'MAMBA'],
+    realPath = null,
+    // the nextflow configs metasmith ships; a package folder, so this is the
+    // same list for every agent -- what is per-agent is which one it picks
+    presets = [],
+    // the image an agent gets when it names none, from the server, which is the
+    // only side that knows this metasmith's version
+    defaultContainer = '',
+  } = $props()
 
   const RUNTIME_LABELS = {
     APPTAINER: 'apptainer',
@@ -85,6 +96,51 @@
     </select>
   </Field>
 
+  <!-- Drawn, though it is a field almost nobody should touch. It was left off
+       on the grounds that pinning an image is a CLI job -- but the default is
+       made out of *this* metasmith's version and build hash, so a copy running
+       from a working tree names an image nobody ever published, and deploy
+       fails with no way to correct it from here. An installed release names its
+       own released image and this box stays empty. -->
+  {#if form.runtime !== 'MAMBA'}
+    <Field
+      label="container image"
+      hint={form.container?.trim() && form.container.trim() !== defaultContainer
+        ? 'pinned to something other than this metasmith’s own image'
+        : 'what metasmith itself runs from on that host — this one matches this copy of metasmith'}
+    >
+      <input class="mono" bind:value={form.container} placeholder={defaultContainer} />
+    </Field>
+  {/if}
+
+  <!-- What "(agent default)" on the launch pane resolves to. Here rather than
+       on the workflow because it is a fact about the machine: a login node
+       needs `slurm` for every run anyone ever launches on it, and the person
+       clicking launch is the one least placed to know that. -->
+  <Field
+    label="nextflow preset"
+    hint="the config a run uses when it does not name one"
+  >
+    <select bind:value={form.preset}>
+      <option value="">local — run here, no scheduler</option>
+      {#each presets.filter((p) => p !== 'local') as p}
+        <option value={p}>{p}</option>
+      {/each}
+    </select>
+  </Field>
+
+  <!-- Beside the preset because it is the other half of it: the `slurm` config
+       ships with a placeholder where the cluster account goes, and this is
+       where the account comes from. A property of the machine for the same
+       reason the preset is -- every run on this login node needs the same one. -->
+  <div class="field">
+    <span class="small muted">default params</span>
+    <ParamRows bind:rows={form.params} />
+    <span class="small muted hint">
+      passed to every run on this agent; a run may add to them or override one
+    </span>
+  </div>
+
   <Field
     label="setup commands"
     hint="run before anything else on that host — one per line, e.g. module load"
@@ -102,8 +158,9 @@
 <style>
   /* One field per row, in the order you fill them, the same as the ssh forms */
   .grid { display: flex; flex-direction: column; gap: 10px; }
-  /* the same shape `Field` renders, for the one row that cannot be a label */
+  /* the same shape `Field` renders, for the rows that cannot be a label */
   .field { display: flex; flex-direction: column; gap: 3px; }
+  .hint { line-height: 1.3; }
 
   .tabs { display: flex; gap: 2px; }
   .tab {

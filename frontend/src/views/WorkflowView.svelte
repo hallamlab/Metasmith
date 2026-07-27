@@ -1,6 +1,7 @@
 <script>
   import { api } from '../lib/api.svelte.js'
   import { app, attempt, loadRuns, loadWorkflows, notify, select } from '../lib/state.svelte.js'
+  import Ago from '../components/Ago.svelte'
   import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
   import JobLog from '../components/JobLog.svelte'
@@ -11,7 +12,10 @@
   import LibraryList from './LibraryList.svelte'
   import RecipeCard from './RecipeCard.svelte'
   import TypeInspector from './TypeInspector.svelte'
+  import ParamRows from '../components/ParamRows.svelte'
   import { isPlumbing, libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
+  import { runSuffix } from '../lib/runname.js'
+  import { paramRows, sameParams, toParams } from '../lib/params.js'
 
   let { name } = $props()
 
@@ -23,7 +27,15 @@
   let launching = $state(false)
   let agentChoice = $state('')
   let presetChoice = $state('')
-  let presets = $state({})
+  // This run's params, pre-filled from the chosen agent so what will be sent is
+  // visible rather than implied, and `seededParams` is what was put there -- how
+  // the page tells "still the agent's defaults" from "someone typed over them".
+  let runParams = $state([])
+  let seededParams = $state({})
+  // Per-step resources, keyed by step position, which is the only form that
+  // produces a selector for one step rather than for every step of a transform.
+  // Boxes are strings; the server reads and checks the numbers.
+  let overrides = $state({})
   let focus = $state(null)
 
   // What the upper half of the panel is drawing. A type in focus draws its own
@@ -151,12 +163,24 @@
     })
   })
 
+  // The runs card is a live list too, for the same reason the rail is: a run
+  // advances on the agent and lands on disk, and a page that only reads it once
+  // shows `staging` until someone clicks something. Same cadence as the rail
+  // and the run detail; stops the moment nothing listed is live.
+  const RUN_POLL_MS = 8000
   $effect(() => {
-    const a = agentChoice
-    presets = {}
-    if (!a) return
-    api.get(`/agents/${a}/presets`).then((p) => (presets = p)).catch(() => (presets = {}))
+    if (!wf?.runs?.some((r) => r.live)) return
+    const t = setInterval(() => load().catch(() => {}), RUN_POLL_MS)
+    return () => clearInterval(t)
   })
+
+  // The chosen agent, off the list already loaded. Nothing is fetched for this:
+  // `/agents` carries both the presets and the one the agent declares, and an
+  // extra round trip on every change of a dropdown bought nothing.
+  let chosenAgent = $derived(app.agents.find((a) => a.name === agentChoice) ?? null)
+  let presets = $derived(Object.keys(chosenAgent?.config_presets ?? {}))
+  // what leaving the box alone will actually use, so the blank option can say it
+  let agentPreset = $derived(chosenAgent?.default_preset ?? 'local')
 
   // an empty list means every library, here and on the server -- so the filter
   // is null rather than an empty Set, which would mean the opposite
@@ -637,10 +661,54 @@
     if (job) jobId = job.id
   }
 
+  // Seeding is a convenience, so it never costs work: rows that are still
+  // exactly what was seeded are replaced, and rows someone has typed over keep
+  // what they say and only gain the keys the new agent names that they do not.
+  function seedFromAgent(nextName) {
+    const defaults = (app.agents.find((a) => a.name === nextName) ?? null)?.default_params ?? {}
+    if (sameParams(toParams(runParams), seededParams)) {
+      runParams = paramRows(defaults)
+    } else {
+      const have = new Set(runParams.map((r) => (r.key ?? '').trim()))
+      let id = runParams.reduce((m, r) => Math.max(m, r.id ?? 0), 0)
+      runParams = [
+        ...runParams,
+        ...paramRows(defaults)
+          .filter((r) => !have.has(r.key))
+          .map((r) => ({ ...r, id: ++id })),
+      ]
+    }
+    seededParams = defaults
+  }
+
+  const OVERRIDE_FIELDS = ['cpus', 'memory_gb', 'duration_h']
+
+  // Only the boxes with something in them, and only the steps with such a box.
+  // An empty string sent as a value would be a resource directive of nothing.
+  function overridePayload() {
+    const out = {}
+    for (const [step, spec] of Object.entries(overrides)) {
+      const kept = {}
+      for (const f of OVERRIDE_FIELDS) {
+        const v = (spec?.[f] ?? '').toString().trim()
+        if (v) kept[f] = v
+      }
+      if (Object.keys(kept).length) out[step] = kept
+    }
+    return Object.keys(out).length ? out : null
+  }
+
   async function launch() {
     launching = true
+    const params = toParams(runParams)
     const out = await attempt(() =>
-      api.post('/runs', { workflow: name, agent: agentChoice, preset: presetChoice || null }),
+      api.post('/runs', {
+        workflow: name,
+        agent: agentChoice,
+        preset: presetChoice || null,
+        params: Object.keys(params).length ? params : null,
+        resource_overrides: overridePayload(),
+      }),
     )
     launching = false
     if (out) {
@@ -742,6 +810,11 @@
           <span class="small muted">two outputs are the same type with the same lineage</span>
         {:else if stale}
           <span class="tag warn">recipe changed — the result below is from the old one</span>
+        {:else if wf.planned}
+          <!-- solving locks the name and nothing else. Said out loud because the
+               plan below reads as the finished article, and a page that only
+               shows a result looks like it stopped taking edits. -->
+          <span class="small muted">the recipe is still editable — solving again replans it</span>
         {/if}
       </div>
 
@@ -789,7 +862,7 @@
             </table>
           </div>
           <p class="small muted">
-            solved {wf.generated_at}{#if wf.result.stdlib_commit}
+            solved <Ago iso={wf.generated_at} />{#if wf.result.stdlib_commit}
               · library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
           </p>
         {:else}
@@ -803,25 +876,96 @@
           <!-- An agent that is still being filled in is listed and disabled,
                not hidden: "the one I made is missing" is a worse thing to work
                out than "the one I made says it has no host yet". The route
-               refuses the same agents, so this is a signpost, not the check. -->
+               refuses the same agents, so this is a signpost, not the check.
+               Never having been deployed is on that list too -- it is not one
+               of the agent's `problems`, because the deploy button reads those
+               and would disable itself, but it stops a run just as surely. -->
           <Field label="on which agent">
-            <select bind:value={agentChoice}>
+            <select
+              bind:value={agentChoice}
+              onchange={(e) => seedFromAgent(e.currentTarget.value)}
+            >
               <option value="">choose an agent…</option>
               {#each app.agents.filter((a) => !a.archived_at) as a}
-                <option value={a.name} disabled={a.valid === false}>
-                  {a.name}{a.valid === false ? ` — ${a.problems.join(', ')}` : ''}
+                {@const said = [
+                  ...(a.problems ?? []),
+                  ...(a.deployed === false ? ['has not been deployed yet'] : []),
+                ]}
+                <option value={a.name} disabled={said.length > 0}>
+                  {a.name}{said.length ? ` — ${said.join(', ')}` : ''}
                 </option>
               {/each}
             </select>
           </Field>
-          {#if Object.keys(presets).length}
+          {#if presets.length}
+            <!-- the blank option names what it resolves to. It used to say
+                 "(agent default)" for a thing agents could not declare, so it
+                 silently meant `local` on every cluster login node. -->
             <Field label="nextflow preset">
               <select bind:value={presetChoice}>
-                <option value="">(agent default)</option>
-                {#each Object.keys(presets) as p}<option value={p}>{p}</option>{/each}
+                <option value="">{agentPreset} — this agent's default</option>
+                {#each presets as p}<option value={p}>{p}</option>{/each}
               </select>
             </Field>
           {/if}
+          <!-- Pre-filled from the agent, so what will be sent is on the screen
+               rather than implied. Editing a row here changes this run only;
+               the agent keeps what it declares. -->
+          <div class="field">
+            <span class="small muted">params</span>
+            <ParamRows bind:rows={runParams} inherited={chosenAgent?.default_params ?? {}} />
+            <span class="small muted hint">
+              this run only — the agent's defaults are already here, and a key
+              typed over one of them wins
+            </span>
+          </div>
+
+          {#if wf.result?.step_display?.length}
+            <!-- Keyed by position, which is what makes a selector address one
+                 step. Empty is "as the transform declared", which is what the
+                 greyed number in each box is. -->
+            <div class="field">
+              <span class="small muted">resources</span>
+              <table class="small res">
+                <thead>
+                  <tr>
+                    <th></th><th>step</th><th>cpus</th><th>memory (GB)</th><th>time (h)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each wf.result.step_display as step}
+                    <tr>
+                      <td class="muted">{step.order}</td>
+                      <td class="mono truncate" title={step.process ?? step.transform}>
+                        {step.transform}
+                      </td>
+                      {#each OVERRIDE_FIELDS as f}
+                        <td>
+                          <input
+                            class="num"
+                            inputmode="decimal"
+                            placeholder={step.declared_resources?.[f] ?? '—'}
+                            aria-label={`${f} for step ${step.order}`}
+                            value={overrides[step.order]?.[f] ?? ''}
+                            oninput={(e) => {
+                              overrides[step.order] = {
+                                ...(overrides[step.order] ?? {}),
+                                [f]: e.currentTarget.value,
+                              }
+                            }}
+                          />
+                        </td>
+                      {/each}
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+              <span class="small muted hint">
+                left empty, a step gets what its transform declared
+              </span>
+            </div>
+          {/if}
+
           <div>
             <button class="primary" onclick={launch} disabled={!agentChoice || launching}>
               {launching ? 'launching…' : 'stage and run'}
@@ -842,11 +986,15 @@
               {#each wf.runs as r}
                 <tr>
                   <td>
+                    <!-- the suffix alone: the heading of this page is the
+                         workflow, and the rest of every one of these names is
+                         that same word -->
                     <button class="link" onclick={() => select('runs', `${wf.name}/${r.name}`)}>
-                      {r.name}
+                      {runSuffix(r.name, wf.name)}
                     </button>
                   </td>
                   <td class="muted">{r.agent}</td>
+                  <td class="muted"><Ago iso={r.launched_at ?? r.created_at} /></td>
                   <td>
                     <span class="tag" class:live={r.live} class:ok={r.state === 'completed'}
                       class:bad={r.state === 'failed'}>{r.state}</span>
@@ -921,4 +1069,17 @@
     text-align: left;
   }
   .link:hover { text-decoration: underline; border: none; }
+
+  /* the same shape `Field` renders, for the two blocks that hold rows rather
+     than a single control and so cannot be a <label> */
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .hint { line-height: 1.3; }
+  /* fixed layout so the step name truncates instead of pushing the number
+     boxes off the card -- a table cell will not shrink on its own */
+  .res { width: 100%; table-layout: fixed; }
+  .res th { font-weight: normal; color: var(--muted); text-align: left; }
+  .res th:first-child { width: 2em; }
+  .res th:nth-child(n + 3) { width: 5.5em; }
+  .res td { padding: 1px 4px 1px 0; }
+  .res .num { width: 100%; min-width: 0; text-align: right; }
 </style>

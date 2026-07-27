@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 import webbrowser
 from pathlib import Path
+from uuid import uuid4
 
 from .api import bp as api_bp
 from .jobs import JobRunner, install_log_capture
@@ -78,10 +79,19 @@ def bind_project(
     install_log_capture()
     threading.Thread(target=warm_type_index, args=(project.root,), daemon=True).start()
 
+    # Who this run of the server is. Recorded on every run it launches, so a
+    # later server can tell "a thread of mine owns this" from "the process that
+    # was staging this is gone" -- the difference between leaving a run alone
+    # and resolving it. Minted here rather than at import: the GUI's own tests
+    # rebind one app per case, and a module-level id would make every one of
+    # them the same server.
+    instance_id = uuid4().hex
+    jobs = JobRunner()
     app.config["MSM_PROJECT"] = project
-    app.config["MSM_JOBS"] = JobRunner()
+    app.config["MSM_JOBS"] = jobs
+    app.config["MSM_INSTANCE"] = instance_id
     app.config["MSM_SSH"] = SshConfig(ssh_config_path)
-    watcher = RunWatcher(project)
+    watcher = RunWatcher(project, instance_id=instance_id, jobs=jobs)
     app.config["MSM_WATCHER"] = watcher
     if watch:
         watcher.start()

@@ -319,7 +319,9 @@
         chosen={chosenFor(row, isTarget ? targetByKey : inputByKey)}
         options={isTarget ? targetOptions(row) : inputOptions(row)}
         note={isTarget
-          ? 'an output can only come off one declared before it'
+          ? row.id === 0
+            ? 'the first output has nothing declared before it to come off'
+            : 'an output can only come off one declared before it'
           : row.kind === 'item'
             ? 'a registered row can only descend from another registered one'
             : 'this row registers itself once it has a type, an identity, and every parent it names is itself registered'}
@@ -561,11 +563,15 @@
   /* fixed whether or not it holds a delete: it is what puts an output's × over
      the × on an input's first line */
   .trail { flex: 0 0 20px; display: flex; justify-content: flex-end; align-items: center; }
-  /* a value that opens as a field when it is reached for: no chrome until then,
-     so the row still reads as a row rather than as a form */
+  /* A value that opens as a field when it is reached for: a row still reads as a
+     row rather than as a form. But with no chrome at all it read as *print* --
+     the path and the type were reported as uneditable -- so one underline stays
+     at rest, and the box arrives on hover as it did. The transparent sides are
+     what keep the resting and hovered states the same height. */
   .asfield {
     background: none;
     border: 1px solid transparent;
+    border-bottom-color: var(--line);
     color: inherit;
     padding: 1px 5px;
     margin-left: -5px;

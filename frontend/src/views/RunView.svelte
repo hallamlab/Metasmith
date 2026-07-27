@@ -1,6 +1,8 @@
 <script>
   import { api } from '../lib/api.svelte.js'
   import { attempt, loadRuns, select } from '../lib/state.svelte.js'
+  import { runSuffix } from '../lib/runname.js'
+  import Ago from '../components/Ago.svelte'
   import JobLog from '../components/JobLog.svelte'
 
   let { workflow, run } = $props()
@@ -100,7 +102,9 @@
   <div class="col" style="gap:16px">
     <div class="spread">
       <div class="row">
-        <h1>{rec.name}</h1>
+        <!-- the suffix alone: the workflow it belongs to is a row of the table
+             a few lines below, and a link to it -->
+        <h1>{runSuffix(rec.name, rec.workflow)}</h1>
         <span
           class="tag"
           class:live={rec.live}
@@ -144,9 +148,41 @@
             </td>
           </tr>
           <tr><td class="muted">task key</td><td class="mono">{rec.task_key}</td></tr>
-          <tr><td class="muted">started</td><td>{rec.launched_at ?? rec.created_at}</td></tr>
-          {#if rec.finished_at}<tr><td class="muted">finished</td><td>{rec.finished_at}</td></tr>{/if}
+          <tr>
+            <td class="muted">started</td>
+            <td><Ago iso={rec.launched_at ?? rec.created_at} /></td>
+          </tr>
+          {#if rec.finished_at}
+            <tr><td class="muted">finished</td><td><Ago iso={rec.finished_at} /></td></tr>
+          {/if}
           {#if rec.preset}<tr><td class="muted">preset</td><td class="mono">{rec.preset}</td></tr>{/if}
+          <!-- A run is reproducible only if it says what it was launched with,
+               and neither of these is visible anywhere else once the launch
+               panel has been left. The agent's own defaults are layered in on
+               the agent, so what is listed here is what this run asked for. -->
+          {#if rec.params && Object.keys(rec.params).length}
+            <tr>
+              <td class="muted">params</td>
+              <td class="mono small">
+                {#each Object.entries(rec.params) as [k, v]}
+                  <div>{k} = {v}</div>
+                {/each}
+              </td>
+            </tr>
+          {/if}
+          {#if rec.resource_overrides && Object.keys(rec.resource_overrides).length}
+            <tr>
+              <td class="muted">resources</td>
+              <td class="mono small">
+                {#each Object.entries(rec.resource_overrides) as [step, spec]}
+                  <div>
+                    step {step} —
+                    {Object.entries(spec).map(([k, v]) => `${k} ${v}`).join(', ')}
+                  </div>
+                {/each}
+              </td>
+            </tr>
+          {/if}
           {#if rec.error}<tr><td class="muted">error</td><td class="bad">{rec.error}</td></tr>{/if}
         </tbody>
       </table>

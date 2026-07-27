@@ -290,6 +290,30 @@ claim is handed over untouched rather than half-copied. And every file is writte
 `os.replace`d into position, because an interrupted plain copy leaves a truncated file whose
 mtime is *newer* than the source — which `-u` then skips forever.
 
+### Bounding a hung agent
+
+Everything metasmith does on an agent goes through one bash subprocess and returns when a
+marker line comes back, so a host that stops answering mid-command holds the calling thread
+for the life of the process. The bound is **silence, not elapsed time**: a stage of a large
+library legitimately takes an hour, and a wedged one can fail in a minute, so the question
+worth asking is whether the far end is still emitting anything. `LiveShell.Exec(idle_timeout=)`
+answers it, and unlike the wall-clock `timeout` — which returns `None`, which nobody checks —
+it **raises**, naming the step.
+
+Two things make it work and would silently break it. The mark is taken on the **raw read,
+before the line split**, because `rsync -P` redraws one line with carriage returns and may
+not complete a line for minutes on a large file. And that output exists at all only because
+the shell is a **pty**; route transfers through a plain pipe and the bound goes blind. The
+`curl` arm of `Logistics` is exempt for the same reason inverted — `--silent` means no
+output is not evidence of anything.
+
+The connect is deliberately *not* bounded this way: `Exec("ssh host", inherit_stdin=True)`
+lets someone type a key passphrase, and a shell bound would cut that off. It carries
+`-o ConnectTimeout` instead, which bounds only the handshake.
+
+A timed-out command is still running on the far end with a marker nobody will claim, so its
+shell is spent — dispose it rather than reusing it, and skip the polite `exit`.
+
 ### Path translation
 
 All local ↔ external ↔ container conversion lives in `src/metasmith/models/paths.py`:
@@ -398,6 +422,13 @@ duration without re-staging. Stage time emits `workflow.resources.nf` with an **
 selector per step (`pNN__<transform.name>`); run time appends a **regex** selector block to
 `workflow.config.nf`, and the runner passes them in that order.
 
+The **key's type is the selector's scope**: an `int` is a step position and addresses that
+step alone, a `str` is a transform name and matches every step running it. Nothing about a
+key spelled `3` says which was meant, so anything arriving over a wire that has only string
+keys — JSON, hence the GUI — must cast before it reaches `ops.runtime.run`. The prefix that
+makes the int form work is minted by `models.workflow.NextflowProcessName`, which the
+compiler and every selector-builder share for the obvious reason.
+
 The precedence rule that makes this work is not "exact beats regex" — Nextflow does not
 apply specificity across config sources. It is **per-directive last-defined wins**, where
 last means the later `-config` flag. So the run-time regex block wins any directive it
@@ -470,12 +501,30 @@ nothing points into. And **incompleteness is reported, never refused, until laun
 make an agent days before its cluster exists in your ssh config, so `problems`/`valid` ride
 on the payload and only the launch route enforces them.
 
+An agent carries a **default preset and default params**, and a run layers its own over them
+per key — the person clicking launch is the one least placed to know their login node needs
+`slurm` and an account, so those are properties of the machine. Two traps sit under that.
+`Agent.Pack`'s optional block **stringifies every value it writes**, which is right for the
+names beside it and silently fatal for a mapping: it reloads as a quoted Python literal,
+stays truthy, and yields no params at all — so a mapping field is packed on its own. And a
+params *file* has nothing to merge into, so it wins whole and says so.
+
+A value typed into a box is given **the type it looks like** — a JSON scalar becomes that
+scalar, anything else stays a string, and a quoted number is the escape hatch. That rule
+lives on the server so the CLI and the notebook get the same answer.
+
 An agent's home field is **empty when the home is still the default**, with the default as
 its placeholder — so the home follows a rename for as long as nobody has chosen one. Whether
 it is still the default is the server's `home_is_default` to say, since `Source.Parse`
 expands `~` and only that side knows what it expanded to. The test has to be exact on both
 spellings: an emptied box saves as the default, so a suffix match would answer `True` for
 someone's `/scratch/.../msm.<name>` and replace it with `~/msm.<name>` on their next save.
+
+An agent created without a name is named after its **host**, not a bare adjective-noun slug —
+`gui/names.py` composes `<word>-<host>` and stores the word as `agent_naming`, which is how
+renaming an ssh alias can re-derive and rename the agent to match (`_repoint_agents`) while
+leaving its home path untouched. A hand-typed name carries no such record, so it does not
+follow a host rename.
 
 ---
 

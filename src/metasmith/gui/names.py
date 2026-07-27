@@ -1,9 +1,14 @@
-"""Readable names for workflows and runs.
+"""Readable names for workflows, runs and agents.
 
 Task keys are content-derived and stable, which is what makes them useful for
 caching and useless for conversation. These are the names people actually say
 out loud: a workflow is "blazing-ape", and each of its runs is "blazing-ape-0XwE9".
 The key is still the identity; the name is the handle.
+
+An agent is the exception, because there is a second thing worth knowing about
+one: which machine it is. So an auto-named agent is "blazing-sockeye" -- one word
+and the host -- and carries a *sort* name, "sockeyeblazing", so that a list of
+them groups by machine without anyone having to name them carefully.
 """
 from __future__ import annotations
 
@@ -52,6 +57,51 @@ def generate_workflow_name(taken: Iterable[str] = ()) -> str:
         if name not in taken:
             return name
     raise AssertionError("could not generate an unused workflow name")
+
+
+# A local agent's home is this machine, which has no alias to be called by.
+AGENT_LOCAL_HOST = "local"
+
+
+def compose_agent_name(prefix: str, host: str) -> str:
+    """'blazing', 'sockeye' -> 'blazing-sockeye'."""
+    return slugify(f"{prefix}-{host}")
+
+
+def agent_sort_name(prefix: str, host: str) -> str:
+    """The same two words, shuffled so that a list of agents groups by machine.
+
+    Kept as a stored field rather than derived at read time, because only the
+    auto-named agents have one: a name someone typed is sorted as it was typed,
+    and there is no way to tell the two apart from the string alone.
+    """
+    return f"{slugify(host)}{slugify(prefix)}"
+
+
+def generate_agent_name(host: str, taken: Iterable[str] = ()) -> tuple[str, str, str]:
+    """A name for an agent on `host`, as (prefix, name, sort_name).
+
+    One word, not two. `generate_slug(2)` is adjective-noun -- 'blazing-ape' --
+    and the noun is the half that says nothing once the host is in the name;
+    'blazing-ape-sockeye' is a mouthful that identifies no better than
+    'blazing-sockeye' does.
+    """
+    import coolname
+
+    taken = set(taken)
+    for _ in range(64):
+        prefix = coolname.generate(2)[0]
+        name = compose_agent_name(prefix, host)
+        if name not in taken and is_valid_name(name):
+            return prefix, name, agent_sort_name(prefix, host)
+    # one word against one host is a small space; fall back on the pair rather
+    # than refuse to make an agent
+    for _ in range(64):
+        prefix = coolname.generate_slug(2)
+        name = compose_agent_name(prefix, host)
+        if name not in taken and is_valid_name(name):
+            return prefix, name, agent_sort_name(prefix, host)
+    raise AssertionError(f"could not generate an unused agent name for host [{host}]")
 
 
 def generate_run_name(workflow_name: str, taken: Iterable[str] = ()) -> str:

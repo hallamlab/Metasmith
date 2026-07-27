@@ -110,8 +110,13 @@
     </div>
   {:else if !chosen.length}
     <!-- the column is still the column: an empty one that collapsed would move
-         the delete on the row above it -->
-    <span class="none small muted">{disabled ? (note ?? '') : 'nothing to descend from'}</span>
+         the delete on the row above it.
+         This is also the only place the note can be said. It used to be drawn
+         only at the foot of the open menu -- which is exactly the thing an empty
+         candidate list has no trigger for -- so the sentence explaining why a row
+         has nothing to descend from was unreachable in every case it explains,
+         and the row said the bare "nothing to descend from" instead. -->
+    <span class="none small muted">{note ?? 'nothing to descend from'}</span>
   {/if}
 </div>
 
@@ -149,19 +154,22 @@
   }
   .x:hover { color: var(--bad); border: none; }
 
-  /* quiet: most rows have no lineage, and a control shouting on every row of a
-     long list is noise. It is a dropdown when it is reached for. */
+  /* Quiet, not absent. Most rows have no lineage and a control shouting on every
+     row of a long list is noise -- but with a fully transparent border on no
+     background this read as plain text, and lineage was reported as a feature
+     that did not exist. A dashed hairline is the least a thing can say and still
+     say "you can press me"; hover firms it into the same box as before. */
   .trigger {
     display: flex;
     align-items: center;
     gap: 5px;
     background: none;
-    border: 1px solid transparent;
+    border: 1px dashed var(--line);
     color: var(--muted);
     padding: 1px 5px;
     text-align: left;
   }
-  .trigger:hover { border-color: var(--line); background: var(--panel-2); }
+  .trigger:hover { border-style: solid; background: var(--panel-2); }
   .trigger svg.up { transform: rotate(180deg); }
   .none { padding: 2px 5px; }
 

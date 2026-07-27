@@ -10,6 +10,8 @@
 // `Source.Parse` expands `~` for a local home, so what comes back from a save is
 // `/home/you/msm.<name>` where `~/msm.<name>` went in, and only the server knows
 // what `~` was. It answers with `home_is_default` on the agent.
+import { paramRows, toParams } from './params.js'
+
 export const HOME_PREFIX = '~/msm.'
 
 export function defaultHome(name) {
@@ -23,10 +25,23 @@ export function blankForm(overrides = {}) {
     host: '',
     path: '',
     runtime: 'APPTAINER',
-    // not drawn anywhere: the image is a developer's field, and pinning one is
-    // done from the CLI. It is carried so that saving the form does not erase
-    // a value someone deliberately set -- an update sends the whole object.
+    // The image metasmith itself runs from on the agent's host. Drawn, unlike
+    // most of what an agent carries, because the default is built out of *this*
+    // metasmith's version and build hash: a copy running from a working tree
+    // names an image that was never published, and without a box there is no
+    // way to say which one to use instead. Emptying it keeps whatever is on
+    // disk -- `save_agent` treats an absent image as "unchanged", which is what
+    // stops a form that never drew it from erasing a pinned one.
     container: '',
+    // '' is "none declared", which resolves to the built-in `local`. Spelled as
+    // the empty option rather than as the string 'local' so that an agent which
+    // never chose one keeps writing no key at all.
+    preset: '',
+    // Params every run on this agent starts from, as key/value rows. Where a
+    // scheduler preset gets the account it needs: the preset ships with a
+    // placeholder for it, and without somewhere to put the real one, choosing
+    // `slurm` produces a run the scheduler rejects.
+    params: [],
     setup: '',
     ...overrides,
   }
@@ -68,6 +83,8 @@ export function formFromAgent(agent) {
     path: agent.home_is_default ? '' : path,
     runtime: agent.runtime ?? 'APPTAINER',
     container: agent.container ?? '',
+    preset: agent.default_preset ?? '',
+    params: paramRows(agent.default_params),
     setup: (agent.setup_commands ?? []).join('\n'),
   }
 }
@@ -78,6 +95,8 @@ export function agentPayload(form) {
     home: homeUri(form),
     runtime: form.runtime,
     container: form.container?.trim() || null,
+    default_preset: form.preset?.trim() || null,
+    default_params: toParams(form.params),
     // blank lines are dropped, but a line that is only a comment is not: the
     // shebang the box starts with is one, and so is every note left beside a
     // module load

@@ -12,6 +12,7 @@
   let agent = $state(null)
   let form = $state(null)
   let runtimes = $state(['APPTAINER', 'DOCKER', 'MAMBA'])
+  let defaultContainer = $state('')
   let jobId = $state(null)
   let ping = $state(null)
   let pinging = $state(false)
@@ -46,13 +47,23 @@
     attempt(async () => {
       const d = await api.get('/defaults/agent').catch(() => null)
       if (d?.runtimes?.length) runtimes = d.runtimes
+      if (d?.container) defaultContainer = d.container
       adopt(await api.get(`/agents/${n}`))
     })
   })
 
+  // What the save did that was not asked for: an auto-named agent pointed at a
+  // different machine is renamed by the save itself, and being renamed behind
+  // your back is only acceptable if you are told. Kept against the name it is
+  // about rather than cleared on navigation, because the rename *is* a
+  // navigation -- the note has to survive the reselect that follows it, and
+  // nothing else.
+  let notice = $state(null) // {name, notes}
+
   async function save() {
     await attempt(async () => {
       const next = await api.put(`/agents/${name}`, agentPayload(form))
+      notice = next.notes?.length ? { name: next.name, notes: next.notes } : null
       await loadAgents()
       // a rename moved the object; the rail and this view are keyed by name, so
       // the selection has to follow it or the next read is a 404
@@ -104,17 +115,37 @@
       </div>
     </div>
 
-    <AgentFields bind:form {runtimes} realPath={agent.real_path} />
+    <AgentFields
+      bind:form
+      {runtimes}
+      realPath={agent.real_path}
+      presets={Object.keys(agent.config_presets ?? {})}
+      {defaultContainer}
+    />
 
     <!-- An agent is saveable long before it can be run on: you know it is going
          on a cluster days before the host exists. So what is missing is stated
          rather than enforced here, and enforced where it costs something --
          launching a run refuses the same list. -->
+    {#if notice?.name === name}
+      {#each notice.notes as note}
+        <p class="small muted" style="margin:0">{note}</p>
+      {/each}
+    {/if}
+
     {#if problems.length}
       <div class="row small wrap incomplete">
         <span class="tag warn">incomplete</span>
         <span>{problems.join(' · ')}</span>
       </div>
+    {:else if agent.deployed === false}
+      <!-- separate from `problems` on purpose: this one is fixed by pressing
+           the button above, not by filling anything in, so it must not be
+           allowed to disable it -->
+      <p class="small muted" style="margin:0">
+        Nothing is installed at this home yet — deploy it before launching a run
+        on it.
+      </p>
     {/if}
 
     {#if ping}
@@ -136,10 +167,6 @@
         adopt(await api.get(`/agents/${name}`))
       }}
     />
-
-    <!-- Nextflow presets are read where they are used: the run panel on a
-         workflow offers the ones the chosen agent has. Listing them here was a
-         readout of something you cannot act on from this page. -->
 
     {#if agent.runs?.length}
       <div class="col" style="gap:6px">

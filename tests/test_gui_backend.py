@@ -5,6 +5,7 @@ because the contract that matters is the one the page sees.
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from unittest import mock
 
@@ -79,6 +80,21 @@ def _client_on(app, project_root, ssh_config_path):
 @pytest.fixture
 def client(_app, project_root, tmp_path):
     yield from _client_on(_app, project_root, tmp_path / "ssh_config")
+
+
+def _deployed(client, name: str):
+    """Stamp an agent as deployed, which is what a launch now requires.
+
+    `real_path` is what `Agent.Deploy` resolves on the host and what
+    re-pointing the home clears, so it is the record's answer to "has anything
+    been installed there". A test cannot deploy for real -- that needs a
+    container and a host -- so it writes the one mark a deploy leaves.
+    """
+    project: Project = client.application.config["MSM_PROJECT"]
+    path = project.agent_path(name)
+    agent = op_agent.load_agent(str(path))
+    agent.real_path = Path(agent.home.GetPath())
+    agent.Save(path)
 
 
 def _finish(client, job_summary, timeout=120) -> dict:
@@ -347,6 +363,10 @@ class TestAgents:
         assert body["home"].endswith(f"msm.{body['name']}")
         assert body["setup_commands"] == ["#!/bin/bash"]
         assert body["valid"] is True
+        # complete, but nothing is installed on that host yet. Kept out of
+        # `problems` -- the deploy button reads those, and a deploy that
+        # disabled itself for want of a deploy is a deadlock.
+        assert body["deployed"] is False
 
     def test_defaults_offer_every_runtime(self, client):
         d = client.get("/api/defaults/agent").get_json()
@@ -365,6 +385,201 @@ class TestAgents:
         r = client.put("/api/agents/smith", json={"name": "smith", "runtime": "PODMAN"})
         assert r.status_code == 400
         assert "PODMAN" in r.get_json()["error"]
+
+
+class TestAgentNaming:
+    """A made-up name says which machine it is; a typed one is left alone."""
+
+    def _prefix(self, project_root, name) -> str:
+        return Project(project_root).agent_naming(name)["prefix"]
+
+    def test_a_made_up_name_carries_its_host(self, client):
+        body = client.post("/api/agents", json={}).get_json()
+        # a new agent is local until it is pointed somewhere
+        assert body["name"].endswith("-local")
+        prefix = body["name"][: -len("-local")]
+        # one word, not the adjective-noun slug: 'blazing-local', never
+        # 'blazing-ape-local'
+        assert "-" not in prefix
+        assert body["sort_name"] == f"local{prefix}"
+        assert body["auto_named"] is True
+
+    def test_a_typed_name_gets_no_sort_key(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        body = client.get("/api/agents/smith").get_json()
+        assert body["sort_name"] is None
+        assert body["auto_named"] is False
+
+    def test_pointing_it_at_a_host_renames_it(self, client, project_root):
+        name = client.post("/api/agents", json={}).get_json()["name"]
+        prefix = self._prefix(project_root, name)
+        body = client.put(f"/api/agents/{name}", json={
+            "name": name, "home": f"ssh://sockeye:~/msm.{name}",
+        }).get_json()
+        assert body["name"] == f"{prefix}-sockeye"
+        assert body["sort_name"] == f"sockeye{prefix}"
+        # the default home is made out of the name, so it moved with it
+        assert body["home"] == f"ssh://sockeye:~/msm.{prefix}-sockeye"
+        assert body["notes"]
+
+    def test_a_home_someone_wrote_out_does_not_move(self, client, project_root):
+        name = client.post("/api/agents", json={}).get_json()["name"]
+        prefix = self._prefix(project_root, name)
+        body = client.put(f"/api/agents/{name}", json={
+            "name": name, "home": "ssh://sockeye:/scratch/tony/here",
+        }).get_json()
+        assert body["name"] == f"{prefix}-sockeye"
+        assert body["home"] == "ssh://sockeye:/scratch/tony/here"
+
+    def test_a_remote_agent_with_no_host_yet_keeps_its_name(self, client):
+        """Half-pointed is not a machine to be named after."""
+        name = client.post("/api/agents", json={}).get_json()["name"]
+        body = client.put(f"/api/agents/{name}", json={
+            "name": name, "home": f"ssh://:~/msm.{name}",
+        }).get_json()
+        assert body["name"] == name
+        assert body["auto_named"] is True
+
+    def test_typing_a_name_stops_it_following(self, client):
+        name = client.post("/api/agents", json={}).get_json()["name"]
+        body = client.put(f"/api/agents/{name}", json={"name": "bertha"}).get_json()
+        assert body["name"] == "bertha"
+        assert body["auto_named"] is False
+        after = client.put("/api/agents/bertha", json={
+            "name": "bertha", "home": "ssh://sockeye:~/msm.bertha",
+        }).get_json()
+        assert after["name"] == "bertha"
+        assert after["sort_name"] is None
+
+    def test_a_taken_name_keeps_the_old_one_and_says_so(self, client, project_root):
+        name = client.post("/api/agents", json={}).get_json()["name"]
+        prefix = self._prefix(project_root, name)
+        client.post("/api/agents", json={"name": f"{prefix}-sockeye"})
+        body = client.put(f"/api/agents/{name}", json={
+            "name": name, "home": f"ssh://sockeye:~/msm.{name}",
+        }).get_json()
+        # nothing lost and nothing overwritten -- only the following stops
+        assert body["name"] == name
+        assert body["auto_named"] is False
+        assert any("already taken" in n for n in body["notes"])
+        assert client.get(f"/api/agents/{prefix}-sockeye").status_code == 200
+
+    def test_an_alias_rename_carries_the_names_on_it(self, client, project_root):
+        client.post("/api/ssh/hosts", json={"alias": "old", "hostname": "old.example"})
+        name = client.post("/api/agents", json={}).get_json()["name"]
+        prefix = self._prefix(project_root, name)
+        client.put(f"/api/agents/{name}", json={
+            "name": name, "home": f"ssh://old:~/msm.{name}",
+        })
+        r = client.put("/api/ssh/hosts/old", json={"alias": "new", "hostname": "old.example"})
+        body = r.get_json()
+        assert body["agents_repointed"] == [f"{prefix}-old → {prefix}-new"]
+        agent = client.get(f"/api/agents/{prefix}-new").get_json()
+        assert agent["sort_name"] == f"new{prefix}"
+        # the directory on that machine did not move, so neither did the home
+        assert agent["home"] == f"ssh://new:~/msm.{prefix}-old"
+
+    def test_the_list_groups_by_host(self, client, tmp_path):
+        for host in ("sockeye", "chamois", "sockeye"):
+            name = client.post("/api/agents", json={}).get_json()["name"]
+            client.put(f"/api/agents/{name}", json={
+                "name": name, "home": f"ssh://{host}:~/msm.{name}",
+            })
+        # a typed name sorts as it was typed, among them
+        client.post("/api/agents", json={"name": "middling", "home": str(tmp_path / "h")})
+        listed = [a["name"] for a in client.get("/api/agents").get_json()]
+        hosts = [n.rsplit("-", 1)[-1] for n in listed]
+        assert hosts == ["chamois", "middling", "sockeye", "sockeye"]
+
+
+class TestAgentDefaultPreset:
+    """`(agent default)` on the launch pane now has something to point at."""
+
+    def test_the_page_is_told_the_options_and_the_choice(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        body = client.get("/api/agents/smith").get_json()
+        assert "local" in body["config_presets"]
+        assert body["default_preset"] is None
+
+    def test_it_saves_and_survives_an_unrelated_edit(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        body = client.put("/api/agents/smith", json={
+            "name": "smith", "default_preset": "slurm",
+        }).get_json()
+        assert body["default_preset"] == "slurm"
+        # a PUT that does not mention it keeps what is on disk, like the image
+        after = client.put("/api/agents/smith", json={
+            "name": "smith", "runtime": "DOCKER",
+        }).get_json()
+        assert after["default_preset"] == "slurm"
+
+    def test_clearing_it_means_the_built_in_local(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        client.put("/api/agents/smith", json={"name": "smith", "default_preset": "slurm"})
+        body = client.put("/api/agents/smith", json={
+            "name": "smith", "default_preset": None,
+        }).get_json()
+        assert body["default_preset"] is None
+
+    def test_an_unknown_preset_is_refused(self, client, tmp_path):
+        """A fixed list the page picks from, so a value outside it is a bad request."""
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        r = client.put("/api/agents/smith", json={
+            "name": "smith", "default_preset": "wishful",
+        })
+        assert r.status_code == 400
+        assert "wishful" in r.get_json()["error"]
+
+
+class TestAgentDefaultParams:
+    """The other half of a scheduler preset: where its account comes from."""
+
+    def test_they_save_and_come_back_as_values(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        body = client.put("/api/agents/smith", json={
+            "name": "smith",
+            "default_params": {"slurmAccount": "st-you-1", "process_tries": "3"},
+        }).get_json()
+        # typed in a text box, stored as what it looks like: one rule, applied
+        # here so the CLI and the notebook get the same answer
+        assert body["default_params"] == {"slurmAccount": "st-you-1", "process_tries": 3}
+
+    def test_a_quoted_number_stays_a_string(self, client, tmp_path):
+        """The escape hatch for the one case the rule gets wrong."""
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        body = client.put("/api/agents/smith", json={
+            "name": "smith", "default_params": {"version": '"50"'},
+        }).get_json()
+        assert body["default_params"] == {"version": "50"}
+
+    def test_a_row_with_no_name_is_dropped(self, client, tmp_path):
+        """A row still being typed is not a param called empty-string."""
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        body = client.put("/api/agents/smith", json={
+            "name": "smith", "default_params": {"": "orphan", "  ": "also", "a": "1"},
+        }).get_json()
+        assert body["default_params"] == {"a": 1}
+
+    def test_a_put_that_does_not_mention_them_keeps_them(self, client, tmp_path):
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        client.put("/api/agents/smith", json={
+            "name": "smith", "default_params": {"acct": "x"},
+        })
+        after = client.put("/api/agents/smith", json={
+            "name": "smith", "runtime": "DOCKER",
+        }).get_json()
+        assert after["default_params"] == {"acct": "x"}
+
+    def test_sending_an_empty_mapping_clears_them(self, client, tmp_path):
+        """Whole-object save: what it does not say, it does not have."""
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        client.put("/api/agents/smith", json={
+            "name": "smith", "default_params": {"acct": "x"},
+        })
+        after = client.put("/api/agents/smith", json={
+            "name": "smith", "default_params": {},
+        }).get_json()
+        assert after["default_params"] == {}
 
 
 class TestAgentUpdateConvention:
@@ -458,6 +673,7 @@ class TestAgentValidity:
         client.post("/api/ssh/hosts", json={"alias": "sockeye", "hostname": "sockeye.example"})
         client.post("/api/agents", json={"name": "smith"})
         client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://sockeye:~/x"})
+        _deployed(client, "smith")
         body = client.get("/api/agents/smith").get_json()
         assert body["valid"] is True, body["problems"]
 
@@ -483,6 +699,7 @@ class TestAgentValidity:
         (tmp_path / "ssh_config").write_text("Host *.cluster.edu\n    User tony\n")
         client.post("/api/agents", json={"name": "smith"})
         client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://n1.cluster.edu:~/x"})
+        _deployed(client, "smith")
         assert client.get("/api/agents/smith").get_json()["valid"] is True
 
 
@@ -521,6 +738,7 @@ class TestSshUpdateConvention:
     def test_rename_repoints_the_agents_on_that_host(self, client):
         client.post("/api/ssh/hosts", json={"alias": "old", "hostname": "old.example"})
         client.post("/api/agents", json={"name": "smith", "home": "ssh://old:~/msm.smith"})
+        _deployed(client, "smith")
         r = client.put("/api/ssh/hosts/old", json={"alias": "new", "hostname": "old.example"})
         assert r.status_code == 200, r.get_json()
         body = r.get_json()
@@ -1135,6 +1353,7 @@ def runnable(client, tmp_path):
     client.post("/api/agents", json={
         "name": "smith", "home": str(tmp_path / "home"), "runtime": "DOCKER",
     })
+    _deployed(client, "smith")
     name = _make_workflow(client)
     _seed_inputs(client, name)
     _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
@@ -1146,7 +1365,12 @@ class TestRuns:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
             mload.return_value = mock.MagicMock()
             mload.return_value.StageWorkflow.return_value = None
-            mload.return_value.ListWorkflowRuns.return_value = [{"run": 1}]
+            # `index` is the key ListWorkflowRuns actually returns. This said
+            # `run` -- a key it has never had -- which is what kept a
+            # permanently-None run_number invisible.
+            mload.return_value.ListWorkflowRuns.return_value = [
+                {"index": 1, "path": "/x/logs.1", "timestamp": "t"},
+            ]
             r = client.post("/api/runs", json={"workflow": workflow, "agent": "smith"})
             assert r.status_code == 202, r.get_json()
             body = r.get_json()
@@ -1160,6 +1384,13 @@ class TestRuns:
         assert body["state"] == "running"
         assert body["task_key"] == client.get(
             f"/api/workflows/{runnable}").get_json()["task_key"]
+
+    def test_the_run_number_is_the_run_index(self, client, runnable):
+        """Without it every probe follows `logs.latest`, which on a re-run is
+        the *other* run's directory."""
+        run = self._launch(client, runnable)
+        body = client.get(f"/api/runs/{runnable}/{run['name']}").get_json()
+        assert body["run_number"] == 1
 
     def test_run_name_extends_the_workflow_name(self, client, runnable):
         run = self._launch(client, runnable)
@@ -1179,6 +1410,17 @@ class TestRuns:
         listed = client.get("/api/runs").get_json()
         assert len(listed) == 2
         assert listed[0]["created_at"] >= listed[1]["created_at"]
+
+    def test_refuses_an_agent_that_was_never_deployed(self, client, runnable, tmp_path):
+        """Deploy is its own button, so it is entirely skippable.
+
+        Before this, a launch onto a fresh agent was accepted and then failed
+        somewhere inside staging, minutes later, if it reported at all.
+        """
+        client.post("/api/agents", json={"name": "fresh", "home": str(tmp_path / "fresh")})
+        r = client.post("/api/runs", json={"workflow": runnable, "agent": "fresh"})
+        assert r.status_code == 409
+        assert "has not been deployed yet" in r.get_json()["error"]
 
     def test_refuses_to_run_an_unplanned_workflow(self, client, tmp_path):
         client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
@@ -1240,6 +1482,30 @@ class TestRuns:
         assert client.get(
             f"/api/runs/{runnable}/{run['name']}").get_json()["collected_at"]
 
+    def test_a_collect_that_lands_broken_links_fails_and_says_which(self, client, runnable):
+        """The folder looks collected and holds nothing.
+
+        A results library links into nextflow's work directory; if what it
+        named is gone on the agent, following the links produces a destination
+        full of pointers at a disk this machine does not have. It used to be
+        stamped collected and reported as a success.
+        """
+        run = self._launch(client, runnable)
+
+        def _collect(agent_path, task_key, dest_uri, allow_globus=True):
+            Path(dest_uri).mkdir(parents=True, exist_ok=True)
+            return {"completed": [], "errors": [], "dangling": ["out.bam"]}
+
+        with mock.patch("metasmith.ops.runtime.collect", side_effect=_collect):
+            r = client.post(f"/api/runs/{runnable}/{run['name']}/collect", json={})
+            job = client.application.config["MSM_JOBS"].get(r.get_json()["id"])
+            assert job.wait(120)
+        assert job.status == "failed", job.status
+        lines = job.lines()
+        assert any("out.bam" in ln for ln in lines), lines
+        assert not client.get(
+            f"/api/runs/{runnable}/{run['name']}").get_json()["collected_at"]
+
     def test_results_leads_with_the_uncollected_state(self, client, runnable):
         run = self._launch(client, runnable)
         body = client.get(f"/api/runs/{runnable}/{run['name']}/results").get_json()
@@ -1253,6 +1519,160 @@ class TestRuns:
         project.agent_path("smith").unlink()
         body = client.get(f"/api/runs/{runnable}/{run['name']}/log").get_json()
         assert "smith" in body["error"]
+
+
+class TestLaunchParams:
+    """What the launch panel sends, and where it ends up."""
+
+    def _launch(self, client, workflow, **body) -> tuple:
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            agent = mock.MagicMock()
+            mload.return_value = agent
+            agent.ListWorkflowRuns.return_value = [{"index": 1}]
+            r = client.post("/api/runs", json={
+                "workflow": workflow, "agent": "smith", **body,
+            })
+            assert r.status_code == 202, r.get_json()
+            _finish(client, r.get_json()["job"])
+            return r.get_json()["run"], agent.RunWorkflow.call_args
+
+    def test_params_reach_the_agent_and_the_record(self, client, runnable):
+        run, call = self._launch(client, runnable, params={"acct": "st-you-1", "n": "4"})
+        assert call.kwargs["params"] == {"acct": "st-you-1", "n": 4}
+        body = client.get(f"/api/runs/{runnable}/{run['name']}").get_json()
+        assert body["params"] == {"acct": "st-you-1", "n": 4}
+
+    def test_a_step_keyed_override_becomes_a_per_step_selector(self, client, runnable):
+        """The whole point of keying by position.
+
+        A JSON object has string keys, and a string key is read as a transform
+        *name* -- which matches every step running it, or nothing. Only an int
+        addresses one step.
+        """
+        run, call = self._launch(client, runnable, resource_overrides={
+            "1": {"cpus": "8", "memory_gb": "16", "duration_h": ""},
+        })
+        ro = call.kwargs["resource_overrides"]
+        assert list(ro) == [1]
+        assert ro[1].cpus == 8
+        assert ro[1].memory.value_gb == 16
+        assert ro[1].duration is None
+        body = client.get(f"/api/runs/{runnable}/{run['name']}").get_json()
+        assert body["resource_overrides"] == {"1": {"cpus": 8, "memory_gb": 16.0}}
+
+    def test_a_step_with_every_box_empty_is_not_sent(self, client, runnable):
+        """The page draws one row per step; only the filled ones are overrides."""
+        _, call = self._launch(client, runnable, resource_overrides={
+            "1": {"cpus": "", "memory_gb": "", "duration_h": ""},
+            "2": {"cpus": "4"},
+        })
+        assert list(call.kwargs["resource_overrides"]) == [2]
+
+    def test_a_non_numeric_override_is_refused(self, client, runnable):
+        r = client.post("/api/runs", json={
+            "workflow": runnable, "agent": "smith",
+            "resource_overrides": {"1": {"cpus": "lots"}},
+        })
+        assert r.status_code == 400
+        assert "cpus" in r.get_json()["error"]
+
+    def test_the_dry_run_delay_does_not_land_in_the_gpu_slot(self, client, runnable):
+        """It used to: the ops-level call was one positional argument short."""
+        _, call = self._launch(client, runnable)
+        assert call.kwargs.get("stub_delay") == 0
+        assert "gpus" not in call.kwargs
+
+
+class TestStepSelectors:
+    """The name a step's resource selector has to address."""
+
+    def test_the_summary_names_the_nextflow_process(self, client, runnable):
+        """The file name a person recognises is not necessarily that name.
+
+        The process is minted from the transform's own `name` with a position
+        prefix; the summary used to carry only the `.py` file it came from, so
+        a page could not build a correct selector from what it had.
+        """
+        steps = client.get(f"/api/workflows/{runnable}").get_json()["result"]["step_display"]
+        assert steps
+        for s in steps:
+            assert s["process"].startswith(f"p{s['order']:02}__")
+            assert "declared_resources" in s
+
+    def test_a_position_selector_matches_the_process_that_position_gets(self):
+        """The two halves that have to agree, pinned against each other.
+
+        `RunWorkflow` renders an int override key as `p03__.*`; the compiler
+        names the process from the transform with the same prefix. They live in
+        different files, and a page addressing a step is trusting them to match.
+        """
+        import re
+        from metasmith.models.workflow import NextflowProcessName
+        assert re.fullmatch("p03__.*", NextflowProcessName(3, "sort/bam"))
+        # a transform whose name has a slash cannot be a nextflow process name
+        assert "/" not in NextflowProcessName(3, "sort/bam")
+
+    def test_a_name_selector_matches_every_step_of_that_transform(self):
+        """Which is the distinction the int key exists to avoid."""
+        import re
+        from metasmith.models.workflow import NextflowProcessName
+        for order in (1, 7):
+            assert re.fullmatch(".*__map_reads", NextflowProcessName(order, "map_reads"))
+
+
+class TestOrphanedLaunches:
+    """`staging` and `launching` are owned by a thread, not by anything on disk.
+
+    So a server that is restarted, Ctrl-C'd, or whose launch thread died on a
+    hung ssh leaves runs claiming to be staged by something that no longer
+    exists. Nothing on the agent can move them -- there is no staged task to
+    probe -- and before this they sat there for good.
+    """
+
+    def _staging_run(self, client, runnable, **record) -> tuple:
+        project: Project = client.application.config["MSM_PROJECT"]
+        rec = project.create_run(runnable, {
+            "agent": "smith", "task_key": "k",
+            "launched_by": client.application.config["MSM_INSTANCE"],
+            **record,
+        })
+        return project, rec
+
+    def _watcher(self, client):
+        return client.application.config["MSM_WATCHER"]
+
+    def test_a_run_from_a_dead_server_is_resolved(self, client, runnable):
+        project, rec = self._staging_run(client, runnable, launched_by="some-other-server")
+        assert self._watcher(client).poll_once() == [{"run": rec.name, "state": "failed"}]
+        body = client.get(f"/api/runs/{runnable}/{rec.name}").get_json()
+        assert body["state"] == "failed"
+        assert "is gone" in body["error"]
+
+    def test_a_launch_this_server_never_started_is_resolved(self, client, runnable):
+        """Mine, but with no job running for it, and old enough to mean it."""
+        project, rec = self._staging_run(client, runnable, created_at="2020-01-01T00:00:00+00:00")
+        self._watcher(client).poll_once()
+        assert client.get(f"/api/runs/{runnable}/{rec.name}").get_json()["state"] == "failed"
+
+    def test_a_launch_submitted_a_moment_ago_is_left_alone(self, client, runnable):
+        """The window between writing the record and the job appearing is real."""
+        project, rec = self._staging_run(client, runnable)
+        assert self._watcher(client).poll_once() == []
+        assert client.get(f"/api/runs/{runnable}/{rec.name}").get_json()["state"] == "staging"
+
+    def test_a_live_job_owns_its_run(self, client, runnable):
+        project, rec = self._staging_run(client, runnable, created_at="2020-01-01T00:00:00+00:00")
+        jobs = client.application.config["MSM_JOBS"]
+        held = threading.Event()
+        job = jobs.submit("run", "held", lambda j: held.wait(10),
+                          subject={"workflow": runnable, "run": rec.name})
+        try:
+            assert self._watcher(client).poll_once() == []
+            assert client.get(
+                f"/api/runs/{runnable}/{rec.name}").get_json()["state"] == "staging"
+        finally:
+            held.set()
+            job.wait(10)
 
 
 class TestResultsFiltering:
@@ -1284,7 +1704,12 @@ class TestResultsFiltering:
     def _name(client, workflow) -> str:
         with mock.patch("metasmith.ops.runtime.load_agent") as mload:
             mload.return_value = mock.MagicMock()
-            mload.return_value.ListWorkflowRuns.return_value = [{"run": 1}]
+            # `index` is the key ListWorkflowRuns actually returns. This said
+            # `run` -- a key it has never had -- which is what kept a
+            # permanently-None run_number invisible.
+            mload.return_value.ListWorkflowRuns.return_value = [
+                {"index": 1, "path": "/x/logs.1", "timestamp": "t"},
+            ]
             body = client.post(
                 "/api/runs", json={"workflow": workflow, "agent": "smith"}).get_json()
             _finish(client, body["job"])
