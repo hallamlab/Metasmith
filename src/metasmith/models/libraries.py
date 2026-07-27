@@ -185,10 +185,30 @@ class DataInstance:
     dtype: Endpoint
     dtype_name: str
     parent_lib: DataInstanceLibrary
+    # S2 — two-source identity. `origin` is one of:
+    #   "leaf"     — user-added via AddItem / AddValue. Unique per call.
+    #   "lineage"  — produced by a transform; instance_id is the lineage_key
+    #                over (transform_key, signature, sorted_input_ids).
+    #   "imported" — round-tripped through msm data import-library from a
+    #                foreign workspace; instance_id and lineage_payload are
+    #                preserved verbatim.
+    origin: str = "leaf"
+    lineage_payload: bytes | None = None
+    instance_id: str | None = None
 
     def __post_init__(self):
-        self.RecalculateKey()
-        # assert self.path.is_absolute(), f"path must be absolute [{self.path}]"
+        # When instance_id is not provided, defer to the parent_lib's
+        # per-path metadata cache. The lib mints + stores a fresh leaf id
+        # on first sight of an unknown path (S2: unique-per-AddItem-call).
+        if self.instance_id is None:
+            meta = self.parent_lib._resolve_instance_meta(
+                self.path, self.dtype_name
+            )
+            self.instance_id = meta["instance_id"]
+            self.origin = meta.get("origin", "leaf")
+            payload = meta.get("lineage_payload")
+            self.lineage_payload = payload
+        self._refresh_derived_keys()
 
     def __hash__(self) -> int:
         return self._hash
@@ -196,20 +216,30 @@ class DataInstance:
     def __eq__(self, other: object) -> bool:
         return isinstance(other, DataInstance) and self.instance_id == other.instance_id
 
-    def RecalculateKey(self):
-        self._hash, self.instance_id = KeyGenerator.FromStr("".join([
-            str(self.path),
-            self.dtype_name,
-            self.parent_lib.GetKey(),
-        ]), l=10)
-        # Legacy typed key is kept for backward compatibility when reading old
-        # task serializations that referenced DataInstances by the old key.
+    def _refresh_derived_keys(self):
+        """Recompute _hash, _key, legacy_key from instance_id + dtype.
+
+        _key tracks instance_id (modern callers); legacy_key preserves the
+        old (path + dtype.key + dtype_name) shape so v0.18 serializations
+        that referenced DataInstances by the old key still resolve.
+        """
+        self._hash, _ = KeyGenerator.FromStr(self.instance_id, l=10)
+        self._key = self.instance_id
         _, self.legacy_key = KeyGenerator.FromStr("".join([
             str(self.path),
             self.dtype.key,
             self.dtype_name,
         ]), l=8)
-        self._key = self.instance_id
+
+    def RecalculateKey(self):
+        """Backward-compat shim — see _refresh_derived_keys.
+
+        Callers that mutate the instance in place (e.g., a dtype rename)
+        used to invoke this to bring _hash / instance_id into sync with
+        path + dtype. Under S2 the instance_id is owned by the library,
+        so this just refreshes the derived shorter keys.
+        """
+        self._refresh_derived_keys()
         return self._key
 
     def WithDType(self, dtype: Endpoint, dtype_name: str | None = None):
@@ -218,6 +248,9 @@ class DataInstance:
             dtype=dtype,
             dtype_name=self.dtype_name if dtype_name is None else dtype_name,
             parent_lib=self.parent_lib,
+            origin=self.origin,
+            lineage_payload=self.lineage_payload,
+            instance_id=self.instance_id,
         )
 
     def GetDataType(self) -> tuple[str, str]:
@@ -231,31 +264,46 @@ class DataInstance:
             return self.parent_lib.location/self.path
 
     def Pack(self):
-        return dict(
+        d = dict(
             path=str(self.path),
             type=f"{self.parent_lib.GetKey()}::{self.dtype_name}",
-            # type=f"{self.dtype_name}",
             type_id=self.dtype.key,
             instance_id=self.instance_id,
+            origin=self.origin,
         )
+        if self.lineage_payload is not None:
+            d["lineage_payload"] = self.lineage_payload.hex()
+        return d
 
     @classmethod
     def Unpack(cls, raw: dict, libraries: dict[str, DataInstanceLibrary]):
         lib_key, namespace, dtype_name = raw["type"].split("::")
         lib = libraries[lib_key]
         dtype = lib.types[namespace][dtype_name]
+        payload = raw.get("lineage_payload")
+        if isinstance(payload, str):
+            payload = bytes.fromhex(payload)
 
         inst = cls(
             path=Path(raw["path"]),
             dtype=dtype,
             dtype_name=f"{namespace}::{dtype_name}",
             parent_lib=lib,
+            origin=raw.get("origin", "leaf"),
+            lineage_payload=payload,
+            instance_id=raw.get("instance_id"),
         )
-        if "instance_id" in raw:
-            # Preserve compatibility with newer serializations.
-            inst.instance_id = raw["instance_id"]
-            inst._key = inst.instance_id
-            inst._hash, _ = KeyGenerator.FromStr(inst.instance_id, l=10)
+        # Mirror the unpacked instance_id back into the library's meta so
+        # subsequent lib.Get(path) calls return the same id rather than
+        # minting a new leaf. Critical for round-trip stability when the
+        # library YAML lacks per-path instance_ids but a referencing
+        # workflow plan does carry them.
+        if raw.get("instance_id"):
+            lib.instance_meta[inst.path] = {
+                "instance_id": inst.instance_id,
+                "origin": inst.origin,
+                "lineage_payload": inst.lineage_payload,
+            }
         return inst
 
 class DataInstanceLibrary:
@@ -279,11 +327,16 @@ class DataInstanceLibrary:
         self.remote_src: Source|None = None
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
         self._endpoint_cache: dict[Path, Endpoint] = {}
+        # S2 — per-path identity metadata. Each entry:
+        #   {"instance_id": str, "origin": "leaf"|"lineage"|"imported",
+        #    "lineage_payload": bytes|None}
+        self.instance_meta: dict[Path, dict] = {}
         if isinstance(location, DataInstanceLibrary):
             other = location
             self.location = other.location
             self.manifest = other.manifest
             self.types = other.types
+            self.instance_meta = other.instance_meta
         else:
             location = Path(location).resolve()
             if not location.exists():
@@ -511,15 +564,140 @@ class DataInstanceLibrary:
             parents = []
         for p in parents:
             assert p in self.manifest
-            # if not p.is_absolute(): p = self.location/p
-            # assert p.exists(), f"parent [{p}] doesn't exist"
         path = Path(path)
         assert path not in self.manifest, f"[{path}] already added"
         type_model = self.GetType(dtype) # check if datatype exists
         self.manifest[path] = dtype
+        # R1: mint the leaf instance_id at AddItem time. When the file is
+        # present the id is derived from (content digest ⊕ relative path)
+        # so two runs on byte-identical inputs at the same layout mint the
+        # same id → cross-run cache reuse, while distinct files that share
+        # bytes stay distinct; when the file is absent it falls back to a
+        # unique-per-call random id (legacy S2 behaviour). See _mint_leaf_id.
+        self._mint_leaf_id(path)
         self.AddParentsTo(path, [self.Get(p) for p in parents])
         self._invalidate_endpoint_cache()
         return path
+
+    def _mint_leaf_id(self, path: Path) -> str:
+        """Create a leaf instance_id for `path`.
+
+        Cross-run reentrancy (R1): when the resolved path is a readable
+        regular file at mint time, the id is derived from the file's
+        content digest AND its library-relative path —
+        `multihash(blake3(file_bytes) || relpath)`. Two independent runs
+        that lay the same input bytes at the same relative path mint the
+        *same* leaf id, so their downstream cache_keys match and the second
+        run resumes from the cache without a manual `metasmith data
+        import-library` bridge.
+
+        The relative path is folded in (not content alone) so that two
+        DISTINCT inputs which happen to share bytes — e.g. N empty/degenerate
+        files, or two samples with byte-identical reads — keep DISTINCT
+        identities. Pure content-addressing would collapse them to one leaf,
+        which both corrupts fan-out (N inputs → 1 identity) and re-triggers
+        the solver's O(n^2) id-collision path. Content is still part of the
+        key, so a different file reusing a path can never cause a false hit.
+
+        When the file is absent/unreadable at mint time (remote or lazily
+        materialized inputs), we fall back to the legacy unique-per-call id
+        (uuid4 + time_ns via the multihash encoding). Such leaves get no
+        cross-run reuse — acceptable, and it preserves the old behaviour
+        exactly for the no-file case.
+
+        Set METASMITH_LEAF_RANDOM=1 to force the legacy random id even when
+        the file is present (opt-out kill-switch). The id is stored in
+        self.instance_meta and returned. `origin` stays "leaf" either way —
+        a content-addressed input is still a user-supplied leaf.
+        """
+        import os
+        import uuid
+
+        from ..caching.keys import (
+            content_multihash_key,
+            multihash_key,
+        )
+
+        key = None
+        if not os.environ.get("METASMITH_LEAF_RANDOM"):
+            abs_path = path if path.is_absolute() else self.location / path
+            # R5 (F2 fix): fold the LIBRARY-RELATIVE path, not the raw argument.
+            # Two runs may add the same file via an absolute path on one host
+            # and a relative path on another (or with different home roots);
+            # folding str(path) verbatim made their leaf ids diverge → cross-run
+            # / cross-host cache miss. Normalizing to the path relative to the
+            # library location makes the id host-independent while still
+            # distinguishing distinct in-library paths. Falls back to the raw
+            # path for inputs that live outside the library root.
+            try:
+                fold_path = abs_path.relative_to(self.location)
+            except ValueError:
+                fold_path = path
+            try:
+                if abs_path.is_file():
+                    # content digest ⊕ library-relative path → stable across
+                    # runs/hosts yet distinct per (path, content) pair.
+                    content = content_multihash_key(abs_path)
+                    key = multihash_key(content + str(fold_path).encode("utf-8"))
+            except OSError:
+                key = None
+        if key is None:
+            raw = uuid.uuid4().bytes + time.time_ns().to_bytes(16, "big", signed=False)
+            key = multihash_key(raw)
+        self.instance_meta[path] = {
+            "instance_id": key.hex(),
+            "origin": "leaf",
+            "lineage_payload": None,
+        }
+        return self.instance_meta[path]["instance_id"]
+
+    def _resolve_instance_meta(self, path: Path, dtype_name: str) -> dict:
+        """Return the {instance_id, origin, lineage_payload} entry for path.
+
+        First lookup is self.instance_meta. A miss represents either a
+        legacy library that pre-dates per-path metadata, or an in-process
+        DataInstance constructed for a path the library doesn't actually
+        track (e.g., a transient view from WithDType on an unrelated lib).
+        In both cases we mint a deterministic legacy-shape id so existing
+        v0.18 serializations resolve identically.
+        """
+        if path in self.instance_meta:
+            return self.instance_meta[path]
+        # Legacy fallback: derive instance_id from (path, dtype_name, lib_key)
+        # so a v0.18 manifest reloads with stable ids. Marked origin="leaf"
+        # per the plan's one-way migration rule.
+        _, legacy_id = KeyGenerator.FromStr("".join([
+            str(path), dtype_name, self.GetKey(),
+        ]), l=10)
+        self.instance_meta[path] = {
+            "instance_id": legacy_id,
+            "origin": "leaf",
+            "lineage_payload": None,
+        }
+        return self.instance_meta[path]
+
+    def SetLineageInstance(
+        self,
+        path: Path,
+        *,
+        instance_id: str,
+        lineage_payload: bytes,
+        origin: str = "lineage",
+    ) -> None:
+        """Register a non-leaf (origin=lineage|imported) entry.
+
+        Used by the post-execution promote step (S5) to record that a
+        transform produced an output whose identity is the lineage_key
+        over its (transform_key, signature, sorted_input_ids).
+        """
+        assert origin in {"lineage", "imported"}, (
+            f"origin must be lineage or imported, got {origin!r}"
+        )
+        self.instance_meta[path] = {
+            "instance_id": instance_id,
+            "origin": origin,
+            "lineage_payload": lineage_payload,
+        }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
         path = Path(name)
@@ -726,6 +904,15 @@ class DataInstanceLibrary:
             )
             if len(d_parents) > 0:
                 d["parents"] = dict(sorted(d_parents.items(), key=lambda t:t[0]))
+            # S2 — embed instance_meta if present. Read directly to avoid
+            # recursing through GetKey -> Pack -> _resolve_instance_meta.
+            meta = self.instance_meta.get(path)
+            if meta is not None:
+                d["instance_id"] = meta["instance_id"]
+                d["origin"] = meta.get("origin", "leaf")
+                payload = meta.get("lineage_payload")
+                if payload is not None:
+                    d["lineage_payload"] = payload.hex()
             return d
         man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
         man = dict(sorted(man.items(), key=lambda t: t[0]))
@@ -745,17 +932,31 @@ class DataInstanceLibrary:
                 f"Was this directory compiled with `metasmith build`?"
             )
         manifest = {}
+        instance_meta: dict[Path, dict] = {}
         for k, v in raw["manifest"].items():
             type_name = v["type"]
             if check_integrity:
                 assert (location/k).exists(), f"[{k}], does not exist"
             cls._get_type(type_name, dtypes) # check if datatype exists
             manifest[Path(k)] = type_name
+            # S2 — pull instance metadata from manifest entry if present.
+            # Legacy entries (no instance_id field) get fresh ids minted
+            # lazily on first Get() via _resolve_instance_meta.
+            if "instance_id" in v:
+                payload = v.get("lineage_payload")
+                if isinstance(payload, str):
+                    payload = bytes.fromhex(payload)
+                instance_meta[Path(k)] = {
+                    "instance_id": v["instance_id"],
+                    "origin": v.get("origin", "leaf"),
+                    "lineage_payload": payload,
+                }
         lib = cls(
             location=location,
         )
         lib.schema = raw["schema"]
         lib.manifest = manifest
+        lib.instance_meta = instance_meta
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
         # First pass: Build immediate parents for all items
@@ -816,7 +1017,7 @@ class DataInstanceLibrary:
             yaml.dump(self.Pack(), f)
 
     @classmethod
-    def Load(cls, path: Path|str, check_integrity=False):
+    def Load(cls, path: Path|str, check_integrity=False, attach_trace: bool=True):
         path = Path(path)
         ext = cls._metadata_ext
         meta_path = path/cls._path_to_meta
@@ -837,6 +1038,20 @@ class DataInstanceLibrary:
         self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
         self._calculate_key(_raw_override=d)
+        # C8 / S7 — auto-attach trace.jsonl if present. Tries the in-dir
+        # path first (library == workspace), then the sibling `_metasmith`
+        # form (library == results/, trace lives in workspace/_metasmith).
+        if attach_trace:
+            for candidate in (
+                path / "_metasmith" / "trace.jsonl",
+                path.parent / "_metasmith" / "trace.jsonl",
+            ):
+                if candidate.exists():
+                    try:
+                        self.attach_trace(candidate)
+                    except Exception as e:
+                        Log.Warn(f"trace.jsonl at {candidate} failed to attach: {e}")
+                    break
         return self
 
     def PrepTransfer(self, dest: Source, mover: Logistics|None=None):
@@ -962,6 +1177,400 @@ class DataInstanceLibrary:
     def AsView(self, mask: set[Path], invert=False):
         """if invert=True, then items in mask are excluded"""
         return DataInstanceLibraryView(self, mask, invert)
+
+    # ------------------------------------------------------------------
+    # Telemetry API (C8 / G5)
+    #
+    # All methods below operate on a `TraceIndex` attached via
+    # `attach_trace` or `Load(attach_trace=True)`. When no trace is
+    # attached they fall back to an empty index — every query is well-
+    # defined; `find_invocations()` returns `[]`, `summary()` reports
+    # zero events, etc. There is no "trace not attached" error path.
+
+    @property
+    def _trace(self) -> "TraceIndex":
+        from ..telemetry import TraceIndex
+        idx = getattr(self, "_trace_index", None)
+        if idx is None:
+            idx = TraceIndex.empty()
+            self._trace_index = idx
+        return idx
+
+    def attach_trace(self, trace_path: Path | str, *, across_sessions: bool = False) -> None:
+        """Load a trace.jsonl file into the in-memory telemetry index.
+
+        Idempotent on the same `(trace_path, across_sessions)`. Calling
+        again with a different value raises `TraceAlreadyAttached`;
+        use `refresh_trace()` to re-read the current file.
+
+        Raises
+        ------
+        TraceCorruptError
+            A trace.jsonl line is not valid JSON; the byte offset is
+            reported.
+        TraceAlreadyAttached
+            A different `trace_path` is already attached.
+        """
+        from ..telemetry import TraceIndex
+        from .lineage import TraceAlreadyAttached
+
+        trace_path = Path(trace_path)
+        existing = getattr(self, "_trace_index", None)
+        if existing is not None and existing.trace_path is not None:
+            if (
+                existing.trace_path == trace_path
+                and existing.across_sessions == across_sessions
+            ):
+                return
+            raise TraceAlreadyAttached(
+                f"trace already attached at {existing.trace_path}; "
+                f"call refresh_trace() to re-read or instantiate a fresh "
+                f"library to switch sources"
+            )
+        self._trace_index = TraceIndex.read(
+            trace_path, across_sessions=across_sessions
+        )
+
+    def refresh_trace(self) -> None:
+        """Re-read the currently attached trace.jsonl. No-op if none attached."""
+        from ..telemetry import TraceIndex
+        idx = getattr(self, "_trace_index", None)
+        if idx is None or idx.trace_path is None:
+            return
+        self._trace_index = TraceIndex.read(
+            idx.trace_path, across_sessions=idx.across_sessions
+        )
+
+    def _resolve_target(self, thing) -> tuple[str, Path | None]:
+        """Normalize a query target. Dispatch order:
+
+          (a) `DataInstance` → its `.instance_id`
+          (b) hex string `^[0-9a-f]{8,}$` → instance_id (no manifest lookup)
+          (c) absolute `Path|str` → manifest entry
+          (d) relative `Path|str` → resolved against `self.location`
+
+        Raises `InstanceNotFound` when (c)/(d) miss.
+        """
+        from ..telemetry import normalize_query_target
+        return normalize_query_target(
+            thing,
+            manifest=self.manifest,
+            instance_meta=self.instance_meta,
+            location=self.location,
+        )
+
+    def get_lineage_of(self, thing) -> "LineageNode":
+        """Return a frozen `LineageNode` for `thing`.
+
+        Walks back through `event.consumes` building a `LineageNode`
+        tree. Cycles are tolerated (revisited nodes appear as leaves);
+        the walk caps at depth 16 as a safety net.
+
+        Raises
+        ------
+        InstanceNotFound
+            `thing` is a path or instance_id not known to the library.
+        """
+        from ..telemetry import build_lineage_node
+        instance_id, _ = self._resolve_target(thing)
+        return build_lineage_node(
+            instance_id, index=self._trace, library=self
+        )
+
+    def get_logs_of(self, thing) -> "LogBundle":
+        """Resolve the `.command.*` logs for the event that produced `thing`.
+
+        Returns a `LogBundle` with `status` ∈ {available, missing, pruned,
+        legacy_shard_no_logs, remote_cache_no_logs, not_applicable}. Bare
+        paths are never returned for "logs unavailable" cases.
+        """
+        from ..telemetry import resolve_log_bundle
+        from .lineage import LogBundle
+        try:
+            instance_id, _ = self._resolve_target(thing)
+        except KeyError:
+            return LogBundle(status="missing", reason="instance not found")
+        cache_root = getattr(self, "_cache_root", None)
+        return resolve_log_bundle(
+            instance_id, index=self._trace, cache_root=cache_root
+        )
+
+    def set_cache_root(self, cache_root: Path | str | None) -> None:
+        """Register the cache_root used by `get_logs_of` for shard lookup.
+
+        The library doesn't know the cache_root on its own — the workflow
+        compile or `msm` CLI sets it post-Load. None means the library
+        cannot resolve logs (returns `LogBundle(status="remote_cache_no_logs")`).
+        """
+        self._cache_root = Path(cache_root) if cache_root is not None else None
+
+    def get_transform_of(self, thing):
+        """Return the `InvocationEvent` or `LeafRecord` that produced `thing`."""
+        from .lineage import LeafRecord
+        instance_id, _ = self._resolve_target(thing)
+        event = self._trace.find_event_for_instance(instance_id)
+        if event is not None:
+            return event
+        return LeafRecord(source="user_added")
+
+    def get_siblings_of(self, thing, scope: str = "slot") -> "list[LineageNode]":
+        """Return other instances produced by the same `(slot|task)` frame.
+
+        scope="slot" → other files emitted into the same `slot_id` by the
+        same event (e.g., all bins from one binner run).
+        scope="task" → all files produced by the same `task_hash` across
+        all slots.
+        Excludes `thing` itself.
+        """
+        from ..telemetry import build_lineage_node
+        assert scope in {"slot", "task"}, f"scope must be slot|task, got {scope!r}"
+        instance_id, _ = self._resolve_target(thing)
+        event = self._trace.find_event_for_instance(instance_id)
+        if event is None:
+            return []
+        sibling_ids: list[str] = []
+        if scope == "slot":
+            target_slot = None
+            for p in event.produces:
+                if p.file_instance_id == instance_id:
+                    target_slot = p.slot_id
+                    break
+            if target_slot is None:
+                return []
+            for p in event.produces:
+                if p.slot_id == target_slot and p.file_instance_id != instance_id:
+                    sibling_ids.append(p.file_instance_id)
+        else:
+            for p in event.produces:
+                if p.file_instance_id != instance_id:
+                    sibling_ids.append(p.file_instance_id)
+        return [
+            build_lineage_node(sid, index=self._trace, library=self)
+            for sid in sibling_ids
+        ]
+
+    def walk_ancestors(self, thing, *, order: str = "bfs", strict: bool = False):
+        """Yield `LineageNode`s for every ancestor of `thing`.
+
+        order ∈ {"bfs","dfs"}. strict=True raises on cycle revisit;
+        strict=False (default) silently de-dups, matching the lenient
+        traversal lineage_robustness needs for group-fanin DAGs.
+
+        Yields
+        ------
+        LineageNode
+        """
+        from ..telemetry import build_lineage_node
+        assert order in {"bfs", "dfs"}, f"order must be bfs|dfs, got {order!r}"
+        instance_id, _ = self._resolve_target(thing)
+        seen: set[str] = {instance_id}
+        queue: list[str] = []
+        event = self._trace.find_event_for_instance(instance_id)
+        if event is None:
+            return
+        for parents in event.consumes.values():
+            for pid in parents:
+                if pid not in seen:
+                    seen.add(pid)
+                    queue.append(pid)
+        while queue:
+            if order == "bfs":
+                cur = queue.pop(0)
+            else:
+                cur = queue.pop()
+            yield build_lineage_node(cur, index=self._trace, library=self)
+            ev = self._trace.find_event_for_instance(cur)
+            if ev is None:
+                continue
+            for parents in ev.consumes.values():
+                for pid in parents:
+                    if pid in seen:
+                        if strict:
+                            raise RuntimeError(
+                                f"cycle revisit at {pid} during walk_ancestors"
+                            )
+                        continue
+                    seen.add(pid)
+                    queue.append(pid)
+
+    def find_by(self, *, dtype=None, transform_key=None, status=None, group_key=None):
+        """Filter library instances. AND across kwargs, OR within iterables.
+
+        Returns `LineageNode`s for matching instances (or plain dtype-only
+        matches when no trace is attached). An empty filter returns
+        every instance in the manifest.
+        """
+        from ..telemetry import build_lineage_node
+
+        def _as_set(v):
+            if v is None:
+                return None
+            if isinstance(v, (list, tuple, set, frozenset)):
+                return set(v)
+            return {v}
+
+        dtype_set = _as_set(dtype)
+        tk_set = _as_set(transform_key)
+        st_set = _as_set(status)
+        gk_set = _as_set(group_key)
+
+        results: list[LineageNode] = []
+        for path, dtype_name in self.manifest.items():
+            if dtype_set is not None and dtype_name not in dtype_set:
+                continue
+            meta = self.instance_meta.get(path)
+            if meta is None:
+                continue
+            instance_id = meta["instance_id"]
+            event = self._trace.find_event_for_instance(instance_id)
+            if tk_set is not None:
+                if event is None or event.transform_key not in tk_set:
+                    continue
+            if st_set is not None:
+                if event is None or event.status not in st_set:
+                    continue
+            if gk_set is not None:
+                if event is None or event.group is None or event.group.group_key not in gk_set:
+                    continue
+            results.append(
+                build_lineage_node(instance_id, index=self._trace, library=self)
+            )
+        return results
+
+    def list_dtypes(self) -> list[str]:
+        """All distinct dtype names present in the manifest, sorted."""
+        return sorted(set(self.manifest.values()))
+
+    def list_transforms(self) -> list[str]:
+        """All distinct transform_keys observed in the attached trace, sorted."""
+        return self._trace.list_transforms()
+
+    def summary(self) -> dict:
+        """Telemetry summary of the library + attached trace.
+
+        Shape:
+          {
+            "schema_version": 2,
+            "counts": {"instances": int, "events": int, "sessions": int},
+            "by_dtype": {dtype: count, ...},
+            "by_transform": {transform_key: count, ...},
+            "by_status": {status: count, ...},
+            "time": {"first_session": int|None, "last_session": int|None},
+          }
+        """
+        idx = self._trace
+        by_dtype: dict[str, int] = {}
+        for dtype in self.manifest.values():
+            by_dtype[dtype] = by_dtype.get(dtype, 0) + 1
+        by_transform: dict[str, int] = {}
+        for e in idx.events:
+            if e.transform_key:
+                by_transform[e.transform_key] = by_transform.get(e.transform_key, 0) + 1
+        session_ids = sorted({s.session_id for s in idx.sentinels})
+        return {
+            "schema_version": 2,
+            "counts": {
+                "instances": len(self.manifest),
+                "events": len(idx.events),
+                "sessions": len(session_ids),
+            },
+            "by_dtype": dict(sorted(by_dtype.items())),
+            "by_transform": dict(sorted(by_transform.items())),
+            "by_status": idx.list_statuses(),
+            "time": {
+                "first_session": session_ids[0] if session_ids else None,
+                "last_session": session_ids[-1] if session_ids else None,
+            },
+        }
+
+    def get_invocation(self, task_hash: str):
+        """Return the `InvocationEvent` with the given `task_hash`.
+
+        Raises `InvocationNotFound` when not present.
+        """
+        from .lineage import InvocationNotFound
+        ev = self._trace.by_task.get(task_hash)
+        if ev is None:
+            raise InvocationNotFound(f"no invocation with task_hash={task_hash!r}")
+        return ev
+
+    def try_get_invocation(self, task_hash: str):
+        """Return the `InvocationEvent` or None when missing (no-raise form)."""
+        return self._trace.by_task.get(task_hash)
+
+    def find_invocations(
+        self,
+        *,
+        transform_key=None,
+        status=None,
+        group_key=None,
+        started_after: str | None = None,
+        started_before: str | None = None,
+        exit_code: int | None = None,
+    ) -> list:
+        """Filter trace events. AND across kwargs, OR within iterables.
+
+        Time filters compare on `started_at` ISO-8601 strings (lexicographic
+        order on ISO-8601 matches chronological order). Events with no
+        timestamp are excluded from time-bounded queries.
+        """
+
+        def _as_set(v):
+            if v is None:
+                return None
+            if isinstance(v, (list, tuple, set, frozenset)):
+                return set(v)
+            return {v}
+
+        tk = _as_set(transform_key)
+        st = _as_set(status)
+        gk = _as_set(group_key)
+
+        out = []
+        for e in self._trace.events:
+            if tk is not None and e.transform_key not in tk:
+                continue
+            if st is not None and e.status not in st:
+                continue
+            if gk is not None:
+                if e.group is None or e.group.group_key not in gk:
+                    continue
+            if started_after is not None:
+                if not e.started_at or e.started_at < started_after:
+                    continue
+            if started_before is not None:
+                if not e.started_at or e.started_at > started_before:
+                    continue
+            if exit_code is not None and e.exit_code != exit_code:
+                continue
+            out.append(e)
+        return out
+
+    def get_outputs_of(self, task_hash: str) -> list:
+        """Return `LineageNode`s for every output file the named task produced."""
+        from ..telemetry import build_lineage_node
+        ev = self._trace.by_task.get(task_hash)
+        if ev is None:
+            return []
+        return [
+            build_lineage_node(p.file_instance_id, index=self._trace, library=self)
+            for p in ev.produces
+        ]
+
+    def find_failures(self) -> list:
+        """Return every `InvocationEvent` representing a failed task.
+
+        Predicate: `status == "fail"` OR (`status == "miss"` AND
+        `exit_code not in (0, None)`).
+        """
+        out = []
+        for e in self._trace.events:
+            if e.status == "fail":
+                out.append(e)
+            elif e.status == "miss" and e.exit_code not in (0, None):
+                out.append(e)
+        return out
+
 
 class DataInstanceLibraryView:
     def __init__(self, original: DataInstanceLibrary, mask: set[Path]|None=None, invert=False) -> None:
@@ -1200,6 +1809,7 @@ class TransformInstance:
     resources: Resources|None = None
     batch_size: int = 1
     labels: list[str] = field(default_factory=list)
+    cacheable: bool = True
     _path: Path = field(default_factory=Path)
     _key: str = ""
     _hash: int = -1
@@ -1212,6 +1822,14 @@ class TransformInstance:
     # globals. Lets stage time find the env *resource* behind an arm and read
     # which of `container:` / `conda:` it actually carries.
     _env_deps: list[Dependency] = field(default_factory=list)
+    # R5 (F1 fix): stable digest of the transform's definition-file bytes.
+    # Folded into the lineage cache signature so that editing a transform's
+    # protocol (its command/logic) busts the cross-run cache even when the
+    # I/O type topology is unchanged. Kept SEPARATE from _key/_hash (which
+    # stay = model.key/model.hash for Nextflow process naming), decoupling
+    # cache correctness from nxf process identity. Empty string when the
+    # definition file was unreadable at Load time (degrades to topology-only).
+    _protocol_source_hash: str = ""
 
     def __post_init__(self):
         assert self.batch_size>0, self.model
@@ -1272,9 +1890,22 @@ class TransformInstance:
             #     raw = "".join(f.readlines())
             #     h, k = KeyGenerator.FromStr(raw, l=5)
             #     tr._hash, tr._key = h, k
-            # use the transform model hash, 
-            # since updates to script should be able to use the existing nxf cache
+            # _key/_hash stay = model topology so that updates to a script
+            # still reuse the existing *Nextflow* work-dir cache (the process
+            # name is derived from these). Do NOT fold protocol identity here.
             tr._hash, tr._key = tr.model.hash, tr.model.key
+            # R5 (F1 fix): separately digest the definition-file bytes so the
+            # *lineage* cache signature (workflow.py) can distinguish two
+            # transforms that share an I/O type topology but differ in body.
+            # Content only (not path) so byte-identical definitions at
+            # different library roots still collide -> cross-run reuse holds.
+            try:
+                src_text = (parent_lib / definition).read_text(
+                    encoding="utf-8", errors="replace"
+                )
+                _, tr._protocol_source_hash = KeyGenerator.FromStr(src_text, l=12)
+            except OSError:
+                tr._protocol_source_hash = ""
             return cls._last_loaded_transform
         finally:
             sys.path = original_path_var

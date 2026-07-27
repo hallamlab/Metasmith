@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
 from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -28,7 +28,7 @@ BIND_FILE = ".command.binds"
 @dataclass
 class WorkflowStep:
     order: int
-    dependency_map: dict[Dependency, list[DataInstance]]
+    dependency_map: InitVar[dict[Dependency, list[DataInstance]]]
     transform: TransformInstance
     transform_library: TransformInstanceLibrary
     uses: list[DataInstance] = field(default_factory=list)
@@ -36,8 +36,25 @@ class WorkflowStep:
     _raw_dependency_map: dict|None = None
     _raw_instances: dict[str, DataInstance]|None = None
 
-    def __post_init__(self):
-        if len(self.dependency_map)>0:
+    def __post_init__(self, dependency_map: dict[Dependency, list[DataInstance]]):
+        # Backing storage for the dependency_map property. Initialized
+        # before assignment so the setter's `self._dependency_map = …`
+        # never runs against an undefined attribute.
+        self._dependency_map: dict[Dependency, list[DataInstance]] = {}
+        self.dependency_map = dependency_map
+
+    # `dependency_map` is bound as a property below the class body so that
+    # the @dataclass decorator doesn't see a class-attribute default
+    # shadowing the InitVar declaration above. The setter auto-refreshes
+    # `uses` and `produces`; an empty dict is treated as 'not resolved
+    # yet' (Unpack pre-`_resolve_dependency_map`) and skips the refresh
+    # so explicitly-passed views survive.
+    def _get_dependency_map(self) -> dict[Dependency, list[DataInstance]]:
+        return self._dependency_map
+
+    def _set_dependency_map(self, value: dict[Dependency, list[DataInstance]]):
+        self._dependency_map = value
+        if value:
             self.RefreshViews()
 
     @property
@@ -45,6 +62,12 @@ class WorkflowStep:
         return self.dependency_map.get(self.transform.group_by, [])
 
     def RefreshViews(self):
+        """Recompute `uses`/`produces` from the current `dependency_map`.
+
+        Called automatically by the `dependency_map` setter; you only
+        need to call it manually if you reach into `_dependency_map`
+        directly (which you shouldn't — go through the property).
+        """
         self.uses = [
             inst
             for dep in self.transform.model.requires
@@ -122,7 +145,14 @@ class WorkflowStep:
                 Log.Warn(f"missing [{len(missing)}] DataInstances for dependency [{dep_key}] while unpacking workflow step [{self.order}]")
             dep_map[deps[dep_key]] = [data[v] for v in ids if v in data]
         self.dependency_map = dep_map
-        self.RefreshViews()
+
+# Bind dependency_map as a property here (post-class-body) so the
+# @dataclass decorator above does not see a class-attribute default
+# shadowing the InitVar declaration in WorkflowStep.
+WorkflowStep.dependency_map = property(  # type: ignore[assignment]
+    WorkflowStep._get_dependency_map,
+    WorkflowStep._set_dependency_map,
+)
 
 @dataclass
 class WorkflowTarget:
@@ -159,6 +189,15 @@ class NextflowGenContext:
     external_home_var: str = "${params.home}"
     external_work_var: str = "${params.workspace}"
     bootstrap_var: str = "${params.bootstrap_def}"
+    # S3 — lineage-addressed task cache. cache_root defaults to
+    # <external_home>/task_cache; set to None to disable cache integration
+    # (synthetic channels, publishDir-to-cache, probe). The env var
+    # METASMITH_CACHE=0 also disables, regardless of this setting.
+    cache_root: Path | None = None
+    # Materialization strategy for publishDir into the cache: 'link'
+    # (hardlink, local FS) or 'copy' (network FS). S6 picks this from
+    # mountinfo; for now the default is 'link'.
+    cache_hit_strategy: str = "link"
 
 @dataclass
 class PlanHint:
@@ -1193,10 +1232,417 @@ class WorkflowTask:
     def GetKey(self):
         return self._key
 
+    def _apply_fs_strategy(self, context: NextflowGenContext) -> None:
+        """Refuse straddle-mounts; pick publishDir mode from mountinfo.
+
+        S6 contract:
+        - If cache_root and work_dir live on different mounts, force the
+          publishDir 'copy' strategy. The only cross-mount-fragile op is
+          Nextflow's publishDir hardlink ('link'); copy works across
+          mounts. promote's own staging uses shutil.move/copy2
+          (cross-mount safe) and its atomic tmp->shard rename is *within*
+          cache_root (always same mount), so the loser-of-race contract is
+          unaffected by a work_dir/cache_root straddle. This is the
+          containerized-agent case: agent_home is bound at both /ws
+          (WORK_ROOT) and its literal path, which are distinct bind mounts
+          that reject cross-mount rename/hardlink (EXDEV) despite sharing a
+          host device.
+        - Otherwise set context.cache_hit_strategy to 'copy' on a network
+          FS (Lustre / NFS / GPFS / BeeGFS / etc.) and 'link' on a local
+          FS. The default was 'link'; this only widens it when needed.
+
+        Silently skipped when cache_root is None or METASMITH_CACHE is
+        falsy (cache integration disabled).
+        """
+        if context.cache_root is None:
+            return
+        if os.environ.get("METASMITH_CACHE", "1").lower() in {
+            "0", "false", "off", "no"
+        }:
+            return
+        from ..caching.fs import (
+            StraddleMountError,
+            assert_same_mount,
+            detect_strategy,
+        )
+
+        # cache_root may not exist yet on a fresh workspace; resolve()
+        # walks up to the first existing parent for the mountinfo match.
+        anchor = context.cache_root
+        while not anchor.exists() and anchor != anchor.parent:
+            anchor = anchor.parent
+        try:
+            assert_same_mount(anchor, context.work_dir)
+        except StraddleMountError as e:
+            # Containerized agent: work_dir (/ws) and cache_root (literal
+            # home bind) are distinct bind mounts of the same host dir.
+            # Hardlink publishDir would EXDEV; fall back to copy.
+            Log.Warn(
+                "cache_root and work_dir straddle mounts; forcing "
+                f"publishDir 'copy' strategy. ({e})"
+            )
+            context.cache_hit_strategy = "copy"
+            return
+        context.cache_hit_strategy = detect_strategy(
+            anchor, default=context.cache_hit_strategy
+        )
+
+    def _compute_cache_decisions(
+        self, context: NextflowGenContext
+    ) -> dict[int, dict]:
+        """Compute per-step cache keys + probe results.
+
+        Returns a dict[step.order, {cache_key, hit, entry?, transform_key,
+        signature, sorted_input_ids, out_instance_ids}]. The OUTPUT
+        instance_ids are needed by downstream steps as their input
+        identities, so the walk runs in topological (step.order) order.
+
+        Cache integration is skipped (returns {} effectively) when:
+        - context.cache_root is None
+        - env METASMITH_CACHE is set to "0" / "false" / "off"
+        """
+        if context.cache_root is None:
+            return {}
+        if os.environ.get("METASMITH_CACHE", "1").lower() in {
+            "0", "false", "off", "no"
+        }:
+            return {}
+
+        from ..caching.keys import (
+            KEY_PREFIX,
+            canonical_cbor,
+            lineage_key,
+            multihash_key,
+        )
+        from ..caching.store import CacheStore
+
+        # Cache STORE is optional — probe-only flow doesn't require the
+        # SQLite db to exist. Only open if the cache_root already exists
+        # on disk (this matches "fresh workspace -> nothing to probe"
+        # and avoids materializing an empty task_cache/ dir during the
+        # first ever run).
+        store = None
+        if context.cache_root.exists():
+            try:
+                store = CacheStore.open(context.cache_root)
+            except Exception:
+                store = None
+
+        decisions: dict[int, dict] = {}
+        # Per-(step.order, slot_key, branch_idx) → output instance_id (hex).
+        # Downstream steps use this to look up their inputs' ids when the
+        # input came from an upstream step's output (not a given leaf).
+        out_id_by_producer: dict[tuple[int, str, int], str] = {}
+
+        # S4a (Bug A fix): use inst.instance_id directly. The old code
+        # called `inst.instance_id.encode("utf-8").hex()` which produces
+        # hex-of-ASCII-hex (double-encoded). The audit
+        # (plans/lineage-quadrant-audit.md, I1) confirmed this leaked
+        # into InvocationEvent.consumes as e.g.
+        # "3165323035396234..." (decodes to the actual hex
+        # "1e2059b4..."). The fix is to just keep the hex string. Cache
+        # sharding changes — existing dev caches need rebuild — but the
+        # consumes dict now carries plain 32-byte hex slot_ids that
+        # TraceIndex.by_slot can actually look up.
+
+        for step in self.plan.steps:
+            transform_key = step.transform.GetKey() or step.transform.name or ""
+            # R5 (F1 fix): the lineage signature captures BOTH the I/O type
+            # topology (_hash = model.hash) AND the transform's protocol-body
+            # identity (_protocol_source_hash = digest of the definition-file
+            # bytes). Topology alone let a protocol edit — or a different tool
+            # with the same in/out types — false-hit the cache with stale
+            # output. Folding the body digest in makes such an edit bust the
+            # cache. Computed once here; promote reads the resulting cache_key
+            # back from workflow.step_N.meta, so probe/promote stay symmetric.
+            protocol_sig = getattr(step.transform, "_protocol_source_hash", "") or ""
+            signature = f"{step.transform._hash}:{protocol_sig}"
+
+            sorted_inputs: list[tuple[str, list[str]]] = []
+            for dep in step.transform.model.requires:
+                insts = step.dependency_map.get(dep, [])
+                if not insts:
+                    continue
+                # Aggregate every instance feeding this slot. Sort the
+                # ids to remove ordering noise from the input set.
+                # S4a (Bug A): store inst.instance_id directly (hex string).
+                slot_ids = sorted(i.instance_id for i in insts)
+                sorted_inputs.append((dep.key, slot_ids))
+            sorted_inputs.sort(key=lambda kv: kv[0])
+
+            cache_key = lineage_key(
+                transform_key,
+                signature,
+                [(k, "+".join(ids).encode()) for k, ids in sorted_inputs],
+            )
+
+            # Compute per-output slot_ids (cache_key + dep.key + branch_idx).
+            # G1 (C4): these `derived_hex` values ARE the slot_ids — the
+            # production-channel identity for the (transform, slot, branch)
+            # triple. They're stored on each produced DataInstance's
+            # `instance_id` field so downstream steps see slot-identity on
+            # their input sides. File-level identity (file_instance_id) is
+            # minted post-facto by CollectResults (C6) over (slot_id, path)
+            # and never travels on the Nextflow channel.
+            #
+            # dependency_map shares the same DataInstance object reference
+            # between the producing step's produced dep and the consuming
+            # step's required dep (via canonical get_or_create in
+            # WorkflowPlan.Generate), so a single mutation propagates. We
+            # run topologically, so each consumer iteration above sees ids
+            # already rewritten.
+            out_slot_ids: dict[tuple[str, int], str] = {}
+            for branch_idx, dep_group in enumerate(step.transform.model.produces):
+                for dep in dep_group:
+                    slot_id_bytes = multihash_key(
+                        canonical_cbor(
+                            {"ck": cache_key, "s": dep.key, "b": branch_idx}
+                        )
+                    )
+                    slot_id = slot_id_bytes.hex()
+                    out_slot_ids[(dep.key, branch_idx)] = slot_id
+                    out_id_by_producer[(step.order, dep.key, branch_idx)] = slot_id
+                    for inst in step.dependency_map.get(dep, []):
+                        inst.instance_id = slot_id
+                        inst.origin = "lineage"
+                        inst._refresh_derived_keys()
+            step.RefreshViews()
+
+            entry = None
+            hit = False
+            if store is not None:
+                entry = store.probe(cache_key)
+                if entry is not None and store.files_exist(entry):
+                    hit = True
+
+            # S3: per-batch decomposition. The compile-time `sorted_inputs`
+            # above is the *aggregate* (step-level) view used for cache_key
+            # byte-identity. For per-task (per-batch) InvocationEvent
+            # emission (S4), we also pre-compute each batch's specific
+            # inputs by mirroring virtual_runtime.py's batching algorithm
+            # (_select_instances at virtual_runtime.py:327):
+            #   group_total = max(1, len(step.group_by_instances))
+            #   batch_size  = max(1, step.transform.batch_size)
+            #   for start in range(0, group_total, batch_size): end=...
+            #     per-dep selected = insts[start:end]  (broadcast 1-inst deps)
+            # The aggregate `sorted_inputs` stays as the cache_key source;
+            # `batches` is emission-only metadata. Cache sharding remains
+            # one-shard-per-step.
+            group_total = max(1, len(step.group_by_instances))
+            batch_size = max(1, int(getattr(step.transform, "batch_size", 1) or 1))
+            batches: list[dict] = []
+            for batch_idx, start in enumerate(range(0, group_total, batch_size)):
+                end = min(group_total, start + batch_size)
+                batch_sorted: list[tuple[str, list[str]]] = []
+                for dep in step.transform.model.requires:
+                    dep_insts = list(step.dependency_map.get(dep, []))
+                    if not dep_insts:
+                        continue
+                    if len(dep_insts) == 1:
+                        selected = dep_insts  # broadcast
+                    else:
+                        chunk = dep_insts[start:end]
+                        if chunk:
+                            selected = chunk
+                        elif start < len(dep_insts):
+                            selected = [dep_insts[start]]
+                        else:
+                            selected = [dep_insts[-1]]
+                    # S4a (Bug A): use inst.instance_id directly.
+                    slot_ids = sorted(i.instance_id for i in selected)
+                    batch_sorted.append((dep.key, slot_ids))
+                batch_sorted.sort(key=lambda kv: kv[0])
+                batches.append({
+                    "batch_idx": batch_idx,
+                    "start": start,
+                    "end": end,
+                    "sorted_inputs": batch_sorted,
+                })
+
+            decisions[step.order] = {
+                "cache_key": cache_key,
+                "transform_key": transform_key,
+                "signature": signature,
+                "sorted_inputs": sorted_inputs,
+                "out_instance_ids": out_slot_ids,
+                "hit": hit,
+                "entry": entry,
+                "cacheable": getattr(step.transform, "cacheable", True),
+                "batches": batches,
+            }
+
+        # C7 — emit the per-run trace.jsonl at compile time as v2
+        # InvocationEvent rows. On each compile: if a prior trace.jsonl
+        # exists, rotate it to `trace.<prev_session_id>.jsonl` (the
+        # session_id read from its SessionStart sentinel, or 0 fallback);
+        # then allocate a fresh session_id via the cache sqlite counter
+        # and open a clean file headed by a SessionStart sentinel. All
+        # subsequent emits in this compile carry the new session_id.
+        # Post-exec promote (promote.py) appends miss/promoted/fail rows
+        # carrying the same session_id, rediscovered from the sentinel.
+        from ..models.lineage import (
+            INVOCATION_EVENT_SCHEMA_VERSION,
+            InvocationEvent,
+            LinPayload,
+            ProducedFile,
+            SessionStart,
+            append_invocation_event,
+        )
+        from ..constants import VERSION
+
+        trace_dir = context.work_dir / "_metasmith"
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = trace_dir / "trace.jsonl"
+
+        prev_session_id = 0
+        if trace_path.exists():
+            try:
+                first_line = next(
+                    (l for l in trace_path.read_text().splitlines() if l.strip()),
+                    "",
+                )
+                if first_line:
+                    head = json.loads(first_line)
+                    if head.get("event") == SessionStart.EVENT_NAME:
+                        prev_session_id = int(head.get("session_id", 0))
+            except Exception:
+                prev_session_id = 0
+            rotated = trace_dir / f"trace.{prev_session_id}.jsonl"
+            try:
+                trace_path.rename(rotated)
+            except OSError:
+                # Falling back to truncate-overwrite is non-fatal: the
+                # archived rows are lost but the fresh session proceeds.
+                pass
+
+        if store is not None:
+            session_id = store.allocate_session_id()
+        else:
+            session_id = prev_session_id + 1
+
+        sentinel = SessionStart(
+            session_id=session_id,
+            compile_started_at="",  # Date.now() omitted — set at writer
+            metasmith_version=VERSION,
+            schema_version=INVOCATION_EVENT_SCHEMA_VERSION,
+        )
+        with open(trace_path, "w", encoding="utf-8") as f:
+            f.write(sentinel.to_jsonl() + "\n")
+
+        for order, decision in sorted(decisions.items()):
+            if not decision["hit"]:
+                continue
+            step_name = ""
+            for step in self.plan.steps:
+                if step.order == order:
+                    step_name = step.transform.name or ""
+                    break
+            # C0.5: read per-file (slot_id, dtype_key, relpath) from the
+            # cache entry's manifest.cbor and emit one ProducedFile per
+            # file. Pre-C0.5 manifests carry only {"relpath"} per file —
+            # detected by missing "slot_id" — and we fall back to the
+            # legacy per-slot degenerate emission with a Log.Warn. The
+            # legacy path also covers the (defensive) empty-files case.
+            from ..caching.store import decode_manifest
+            entry = decision["entry"]
+            files: list[dict] = []
+            if entry is not None and getattr(entry, "payload", None):
+                try:
+                    manifest = decode_manifest(entry.payload)
+                    files = manifest.get("files", []) or []
+                except Exception as e:
+                    Log.Warn(
+                        f"cache-hit decode_manifest failed for "
+                        f"{decision['cache_key'].hex()[:8]}: {e}"
+                    )
+            # S4a (Bug B/C/D fix): ignore `unmatched` files when deciding
+            # legacy fallback. Unmatched files (e.g. virt-host.log,
+            # virt-host.stop) are copied into the cache shard without
+            # slot_id annotation; their presence shouldn't force the
+            # whole event into the legacy degenerate emission (which
+            # collapses slot_id == file_instance_id, drops path, and
+            # uses the consumer's dep_key as dtype_key).
+            matched_files = [f for f in files if not f.get("unmatched")]
+            legacy = (not matched_files) or any(
+                "slot_id" not in f for f in matched_files
+            )
+            produces: list[ProducedFile] = []
+            if legacy:
+                if entry is not None:
+                    Log.Warn(
+                        f"cache-hit: legacy manifest for "
+                        f"{decision['cache_key'].hex()[:8]}; emitting "
+                        "per-slot degenerate ProducedFile rows"
+                    )
+                for (slot_key, branch_idx), slot_id in decision[
+                    "out_instance_ids"
+                ].items():
+                    produces.append(
+                        ProducedFile(
+                            file_instance_id=slot_id,
+                            slot_id=slot_id,
+                            path="",
+                            dtype_key=slot_key,
+                        )
+                    )
+            else:
+                for f in sorted(files, key=lambda d: d.get("relpath", "")):
+                    if f.get("unmatched"):
+                        continue
+                    sid = f.get("slot_id", "")
+                    rel = f.get("relpath", "")
+                    dk = f.get("dtype_key", "")
+                    if not sid:
+                        continue
+                    produces.append(
+                        ProducedFile(
+                            file_instance_id=LinPayload.mint_file_id(
+                                slot_id=sid, relative_path=rel
+                            ),
+                            slot_id=sid,
+                            path=rel,
+                            dtype_key=dk,
+                        )
+                    )
+            # C0-amend: decision["sorted_inputs"] is now
+            # list[tuple[str, list[str]]] — the slot_ids are already
+            # hex strings, no byte-encoding gymnastics. This is the
+            # shape `walk_ancestors` expects to look up `by_slot`.
+            consumes = {
+                slot_key: list(ids)
+                for slot_key, ids in decision["sorted_inputs"]
+            }
+            event = InvocationEvent(
+                task_hash=decision["cache_key"].hex(),
+                transform_key=decision["transform_key"],
+                status="hit",
+                consumes=consumes,
+                produces=produces,
+                session_id=session_id,
+                step_order=order,
+                step_name=step_name,
+                cache_key=decision["cache_key"].hex(),
+            )
+            append_invocation_event(trace_path, event)
+
+        if store is not None:
+            store.close()
+        hits = sum(1 for d in decisions.values() if d["hit"])
+        if hits:
+            Log.Info(
+                f"cache probe matched {hits}/{len(decisions)} step(s); "
+                f"will short-circuit via synthetic Channel.of(...) emission"
+            )
+        return decisions
+
     def PrepareNextflow(self, context: NextflowGenContext):
         TAB = "\t"
         def _strip_var(s: str):
             return s[2:-1]
+        if context.cache_root is None:
+            context.cache_root = context.external_home / "task_cache"
+        self._apply_fs_strategy(context)
+        cache_decisions = self._compute_cache_decisions(context)
         # Derive task key from the per-task workspace name. external_work
         # is always <external_home>/runs/<task_key> by the StageWorkflow
         # invariant (agents.py:874-878), so the basename IS the task key.
@@ -1251,6 +1697,15 @@ class WorkflowTask:
 
         _archetypes: dict[DataInstance, DataInstance] = {}
         def get_archetype(candidates: list[DataInstance]):
+            """Pick a stable representative for a set of equivalent instances.
+
+            The closure body is the canonical-name dance: if any candidate
+            already has a recorded archetype, reuse it (transitive merge);
+            otherwise the first candidate becomes the archetype. The
+            `_archetypes` dict is closure state — extraction would force
+            it to become a class attribute on NextflowGenContext, adding
+            indirection with no behavioral win (A3 decision).
+            """
             a = None
             for c in candidates:
                 if c not in _archetypes: continue
@@ -1292,7 +1747,27 @@ class WorkflowTask:
                 TAB+f"label 'x{x}x'"
                 for x in step.transform.labels
             ]
-            
+            # S3 — emit a publishDir directive into <cache_root>/<key>.tmp/
+            # for cacheable miss steps so Nextflow itself stages outputs
+            # into the cache staging area as it normally would for
+            # publishDir. The post-exec promote step (S5) then validates
+            # and renames the .tmp directory into its final cache slot.
+            # `cacheable=False` and the env kill-switch skip this entirely.
+            decision = cache_decisions.get(step.order)
+            if decision is not None and decision.get("cacheable", True):
+                cache_tmp = (
+                    context.cache_root / f"{decision['cache_key'].hex()}.tmp"
+                )
+                src += [
+                    TAB + (
+                        f"publishDir \"{cache_tmp}\", "
+                        f"mode: '{context.cache_hit_strategy}', "
+                        "overwrite: true, "
+                        "failOnError: true, "
+                        "pattern: '*'"
+                    )
+                ]
+
             def _make_bind_var(i: int, is_assignment=False):
                 s = "\\$" if not is_assignment else ""
                 return f"{s}b{i+1}"
@@ -1375,6 +1850,7 @@ class WorkflowTask:
             }
             sample_arity = len(step.group_by_instances)
             step_meta_file = f"workflow.step_{step.order}.meta"
+            cache_decision = cache_decisions.get(step.order)
             with open(context.work_dir / step_meta_file, "w") as f:
                 f.write(f"din {json.dumps(dep_in, separators=(',',':'))}\n")
                 f.write(f"dot {json.dumps(dep_out, separators=(',',':'))}\n")
@@ -1387,6 +1863,100 @@ class WorkflowTask:
                 if gpu_req is not None:
                     _gpu_meta = {k: gpu_req[k] for k in ("gpus", "gpu_memory_gb")}
                     f.write(f"gpu {json.dumps(_gpu_meta, separators=(',',':'))}\n")
+                # S3 — cache_key + per-output instance_ids land in the
+                # step meta so the post-exec promote step (S5) can locate
+                # what to write, and `msm status <key>` (S8) can render
+                # per-task provenance. cacheable comes from the
+                # TransformInstance (S4 default True); the post-exec
+                # promote skips write when False.
+                if cache_decision is not None:
+                    f.write(
+                        f"cache_key {cache_decision['cache_key'].hex()}\n"
+                    )
+                    out_ids_serialized = {
+                        f"{slot}::{branch}": iid
+                        for (slot, branch), iid
+                        in cache_decision["out_instance_ids"].items()
+                    }
+                    f.write(
+                        "out_identities "
+                        f"{json.dumps(out_ids_serialized, separators=(',',':'))}\n"
+                    )
+                    f.write(
+                        f"cacheable {'true' if cache_decision['cacheable'] else 'false'}\n"
+                    )
+                    f.write(f"transform_key {cache_decision['transform_key']}\n")
+                    # S4a (Bug E): persist step_name so promote_run can
+                    # populate InvocationEvent.step_name on the promote
+                    # route. Cache-hit already populates it from
+                    # step.transform.name; promote couldn't see that.
+                    f.write(f"step_name {step.transform.name or ''}\n")
+                    # C0: persist the compile-time sorted_inputs so the
+                    # post-exec promote route can populate InvocationEvent.consumes
+                    # with the same dict shape as the cache-hit route at
+                    # workflow.py:1419-1422. Without this, promote-side events
+                    # carry consumes={} and BFS over trace.jsonl has no edges.
+                    # C0-amend: serialize as [slot_key, [hex,...]]; promote-side
+                    # parser tolerates the legacy single-string form via split("+").
+                    sorted_inputs_serialized = [
+                        [slot_key, list(ids)]
+                        for slot_key, ids in cache_decision["sorted_inputs"]
+                    ]
+                    f.write(
+                        "sorted_inputs "
+                        f"{json.dumps(sorted_inputs_serialized, separators=(',',':'))}\n"
+                    )
+                    # C0.5: persist per-output-slot file naming info so
+                    # the post-exec promote can match output files to slots
+                    # unambiguously. The canonical filename (bootstrap.py:196,
+                    # virtual_runtime.py:651/665) is
+                    #   "{batch+1}-{i+1}-{branch+1}.{_hash}-{dtype.key}{ext}"
+                    # Critically: the filename embeds the DataInstance's
+                    # `dtype.key` (DataType hash), NOT the Dependency's `key`
+                    # (which is a different hash). The slot_id for a produced
+                    # file is keyed by (dep.key, branch_idx) in out_identities.
+                    # We persist (dtype_key, ext, branch_idx, slot_id) per
+                    # produced slot so promote can match by filename and
+                    # recover the slot_id without re-deriving any hashes.
+                    slot_files: list[dict] = []
+                    for branch_idx, dep_group in enumerate(
+                        step.transform.model.produces
+                    ):
+                        for dep in dep_group:
+                            slot_id = cache_decision[
+                                "out_instance_ids"
+                            ].get((dep.key, branch_idx), "")
+                            insts = step.dependency_map.get(dep, [])
+                            if insts:
+                                dtype_key = insts[0].dtype.key
+                                ext = (
+                                    insts[0].dtype.GetPreferredFileExtension()
+                                    or ""
+                                )
+                            else:
+                                dtype_key = dep.key
+                                ext = dep.GetPreferredFileExtension() or ""
+                            slot_files.append({
+                                "dtype_key": dtype_key,
+                                "ext": ext,
+                                "branch_idx": branch_idx,
+                                "slot_id": slot_id,
+                            })
+                    f.write(
+                        "slot_files "
+                        f"{json.dumps(slot_files, separators=(',',':'))}\n"
+                    )
+                    # S3: persist per-batch decomposition so promote can
+                    # emit one InvocationEvent per batch (= per task) in
+                    # S4. Single-batch steps still emit one event each;
+                    # multi-batch steps stop aggregating across siblings
+                    # (the C2 structural defect from session #268).
+                    # Shape: [{batch_idx, start, end, sorted_inputs:
+                    # [[slot_key, [hex,...]], ...]}, ...]
+                    f.write(
+                        "batches "
+                        f"{json.dumps(cache_decision.get('batches', []), separators=(',',':'))}\n"
+                    )
             mock_outputs = [
                 f'"1-1-{branch+1}.test$hash-{x.dtype.key}{x.dtype.GetPreferredFileExtension()}"'
                 for branch, g in enumerate(produced_archetypes) for x in g
@@ -1411,7 +1981,21 @@ class WorkflowTask:
                 f'echo "step {step.order}, sample $index"',    # this is used to extract logs in agent.RunWorkflow()
                 f'echo "{step.transform.name}"',
                 f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
-                f'echo "lin ${{Orchestrator.JsonforEcho(index)}}" >>{METADATA_FILE}',
+                # C4 — wrap the channel's per-task lineage MAP in the
+                # LinPayload v2 envelope `{"v": 2, "entries": <index_map>}` and
+                # serialise the WHOLE envelope through Orchestrator.JsonforEcho
+                # so the outer `"v"`/`"entries"` keys are bash-escaped (`\"`)
+                # identically to the nested entries. Two prior bugs here:
+                #  (1) hand-escaping only the envelope at the Groovy level
+                #      collapsed those quotes to bare `"` in the bash
+                #      `echo "..."`, producing invalid JSON; and
+                #  (2) `entries` was the whole channel value `index` — a
+                #      length-1 LIST wrapping the map — but LinPayload.entries
+                #      is a dict and Bootstrap (C5) re-wraps it into a list
+                #      itself, so the wire must carry `index[0]` (the map).
+                # `index[0]` matches the stub's own access pattern below.
+                # Bootstrap parses this via `LinPayload.from_json`.
+                f'echo "lin ${{Orchestrator.JsonforEcho([v:2, entries:index[0]])}}" >>{METADATA_FILE}',
                 f'echo "fmt 2" >>{METADATA_FILE}',
                 f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
                 f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
@@ -1512,6 +2096,11 @@ class WorkflowTask:
         _seen_paths = set()
         _given_by_prod_name: dict[str, list[DataInstance]] = {}
         _path2prod_name = {}
+        # path -> the given DataInstance written at that path. Used to source a
+        # parent-ref's canonical instance_id from the SAME given object the
+        # parent leaf itself carries on-channel (so a child's parent-ref equals
+        # the parent's own self-id). See the given-seed below.
+        _path2given_inst: dict[Path, DataInstance] = {}
         for i, (_, lst) in enumerate(input_channels.items()):
             inst = get_archetype(lst)
             p = inputs_dir/f"{get_prod_name(inst.dtype, force_singular=True)}"
@@ -1530,25 +2119,57 @@ class WorkflowTask:
                 for i, x in enumerate(to_write):
                     _path = x.ResolvePath()
                     _path2prod_name[_path] = v
-                    f.write(f"{_path}"+"\n")
-        
+                    _path2given_inst[_path] = x
+                    f.write(f"{_path}\n")
+            # Note: the old input_ids/ sidecar (<path>\t<instance_id>) is gone —
+            # agents.py now derives path->instance_id straight from the given
+            # DataInstances (the record), so there is no second copy to keep in
+            # sync. inputs_dir stays path-CSV only for Nextflow's splitCsv.
+
+        # SELF_ID_KEY must match Orchestrator.SELF_ID_KEY: postIn relocates the
+        # value at this reserved key to index[<name>] and strips it, so a leaf's
+        # on-channel per-file identity is its canonical instance_id (single point
+        # of provenance) rather than the legacy Long(md5(path)[:15]).
+        SELF_ID_KEY = "__self__"
         _given_lineage = {}
         given_lineage_by_keys = {}
         for prod_name, to_write in _given_by_prod_name.items():
-            _indexes = []
+            # Parent-refs per row (instance_id-valued). These drive both the
+            # on-channel join and child2parent (classify()); their VALUE changes
+            # Long->instance_id (injective, byte-exact joins) but their PRESENCE
+            # is gated exactly as before to preserve results.
+            _parent_indexes: list[dict[str, list[str]]] = []
+            _parent_keys: set[str] = set()
             for x in to_write:
-                _index = {}
-                for p in [x.parent_lib.Get(p.path).ResolvePath() for p in x.parent_lib.parents.get(x.path, [])]:
-                    if p not in _path2prod_name: continue # spurious parent, not used in wf
-                    _prod_name = _path2prod_name[p]
-                    _hash = md5(str(p).encode()).hexdigest()
-                    _hash = int(_hash[:15], 16) # 15 is important as it allows us to disregard the sign of a long and match with java
-                    _index[_prod_name] = _index.get(_prod_name, [])+[_hash]
-                _indexes.append(_index)
-            if all(len(idx)>0 for idx in _indexes):
-                k = prod_name.split('_')[0] # in case this will be merged and has a "_1" suffix
-                _given_lineage[str(inputs_dir.relative_to(context.work_dir)/k)] = _indexes
-                given_lineage_by_keys[k] = given_lineage_by_keys.get(k, set())|{k for x in _indexes for k in x.keys()}
+                _pi: dict[str, list[str]] = {}
+                for pm in x.parent_lib.parents.get(x.path, []):
+                    _pp = x.parent_lib.Get(pm.path).ResolvePath()
+                    _parent_inst = _path2given_inst.get(_pp)
+                    if _parent_inst is None: continue # spurious parent, not a workflow input
+                    _prod_name = _path2prod_name[_pp]
+                    # Parent-ref = the parent given instance's canonical id, which
+                    # is exactly the parent leaf's own self-id (both read from the
+                    # same DataInstance).
+                    _pi[_prod_name] = _pi.get(_prod_name, [])+[_parent_inst.instance_id]
+                    _parent_keys.add(_prod_name)
+                _parent_indexes.append(_pi)
+            # Preserve the legacy gate: parent-refs ride the channel (and seed
+            # child2parent) only when EVERY row of this input has ≥1 in-workflow
+            # parent — otherwise they were dropped pre-refactor, so keep dropping
+            # them to hold join behaviour byte-identical.
+            _all_have_parents = all(len(pi) > 0 for pi in _parent_indexes)
+            _indexes = []
+            for x, _pi in zip(to_write, _parent_indexes):
+                _row = dict(_pi) if _all_have_parents else {}
+                # Always carry the leaf's own canonical instance_id so the merge in
+                # in() fires and postIn mints the canonical (not Long) self-id.
+                _row[SELF_ID_KEY] = [x.instance_id]
+                _indexes.append(_row)
+            k = prod_name.split('_')[0] # in case this will be merged and has a "_1" suffix
+            _given_lineage[str(inputs_dir.relative_to(context.work_dir)/k)] = _indexes
+            # child2parent keys only on real parent prod_names — never SELF_ID_KEY.
+            if _all_have_parents and _parent_keys:
+                given_lineage_by_keys[k] = given_lineage_by_keys.get(k, set())|_parent_keys
         LINEAGE_FILE = "workflow.lineage_of_given.json"
         _lineage_file_data = {
             "lineage": _given_lineage,
@@ -1581,13 +2202,111 @@ class WorkflowTask:
         # Do not re-add multiMap here.
 
         for step in the_plan.steps:
-            process_name, src, src_res = prepare_step(step)
-            resources[process_name] = src_res
-            src_process.append(src)
+            decision = cache_decisions.get(step.order)
+            is_hit = bool(decision and decision.get("hit"))
             used_archetypes, produced_archetypes = get_io_signature(step)
             produced_names = [get_prod_name(x.dtype) for g in produced_archetypes for x in g]
             produced_snames = [get_prod_name(x.dtype, force_singular=True) for g in produced_archetypes for x in g]
             produced = ", ".join(f"_{x}" for x in produced_names)
+            produced_k = [f"'{x}'" for x in produced_snames]
+            produced_k = ", ".join(produced_k)
+            wf_main.append(f"k = [{produced_k}]")
+
+            # T2: per-produced-slot identity threaded into o.post so the
+            # on-channel id becomes md5("<slot_id>::<filename>"), byte-identical
+            # to the canonical file_instance_id (LinPayload.mint_file_id).
+            # Order matches produced_names: get_io_signature iterates
+            # step.transform.model.produces, so (branch_idx, dep) enumeration
+            # here is 1:1 with the produced streams/names.
+            _out_ids = (decision or {}).get("out_instance_ids", {})
+            produced_slot_ids = [
+                _out_ids.get((dep.key, branch_idx), "")
+                for branch_idx, dep_group in enumerate(step.transform.model.produces)
+                for dep in dep_group
+            ]
+            slot_ids_literal = (
+                "[" + ", ".join(f"'{s}'" for s in produced_slot_ids) + "]"
+            )
+
+            if is_hit:
+                # S3 — synthetic Channel.of for cache hits. Replace the
+                # process call with N channels (one per produced dep,
+                # ordered by branch then dep) where each channel emits
+                # `(index, file)` tuples for the cached files matching
+                # the canonical `1-1-{branch+1}.*-{dtype_key}{ext}`
+                # filename shape. The tuple re-enters o.post() exactly
+                # as a real process output would (Critic E#1 pin).
+                cache_out = (
+                    context.cache_root
+                    / decision["cache_key"].hex()[:2]
+                    / decision["cache_key"].hex()[2:]
+                    / "out"
+                )
+                cached_channels: list[str] = []
+                cached_channel_var = f"__cached_step_{step.order}"
+                channel_exprs: list[str] = []
+                for branch_idx, dep_group in enumerate(step.transform.model.produces):
+                    for dep in dep_group:
+                        insts = step.dependency_map.get(dep, [])
+                        if not insts:
+                            channel_exprs.append("Channel.empty()")
+                            continue
+                        out_inst = insts[0]
+                        ext = out_inst.dtype.GetPreferredFileExtension()
+                        suffix = f"-{out_inst.dtype.key}{ext}"
+                        branch_prefix = f"1-1-{branch_idx + 1}."
+                        cached_files = sorted(
+                            f for f in (cache_out.glob("*") if cache_out.exists() else [])
+                            if f.is_file()
+                            and f.name.startswith(branch_prefix)
+                            and f.name.endswith(suffix)
+                        )
+                        if not cached_files:
+                            channel_exprs.append("Channel.empty()")
+                            continue
+                        tuples = ", ".join(
+                            f"[[:], file('{fp}')]" for fp in cached_files
+                        )
+                        channel_exprs.append(f"Channel.of({tuples})")
+                wf_main.append(
+                    f"def {cached_channel_var} = [{', '.join(channel_exprs)}]"
+                )
+                if len(produced_names) == 1:
+                    wf_main.append(
+                        f"_{produced_names[0]} = "
+                        f"(o.post(o.asStreams({cached_channel_var}), k, {slot_ids_literal}))[0]"
+                    )
+                else:
+                    wf_main.append(
+                        f"({produced}) = "
+                        f"o.post(o.asStreams({cached_channel_var}), k, {slot_ids_literal})"
+                    )
+                # Final-step merging still applies if the cached step is
+                # the producer of a target.
+                if step.order in final_steps_for_merging:
+                    for e in final_steps_for_merging[step.order]:
+                        names = to_merge_names[e]
+                        to_mix = [f"_{x}" for x in names]
+                        name = get_prod_name(e, force_singular=True)
+                        wf_main.append(
+                            f"_{name} = o.mix([{', '.join(to_mix)}])"
+                        )
+                if the_plan.publish_intermediates:
+                    to_pubish = [x for g in produced_archetypes for x in g]
+                else:
+                    to_pubish = [
+                        x for g in produced_archetypes for x in g
+                        if x.dtype in target_endpoints
+                    ]
+                for inst in to_pubish:
+                    k = inst.dtype.key
+                    wf_publish.add(k)
+                    published_channels[k] = (step.order, inst)
+                continue
+
+            process_name, src, src_res = prepare_step(step)
+            resources[process_name] = src_res
+            src_process.append(src)
             if len(used_archetypes)>0:
                 _inst = step.group_by_instances
                 _dtypes = {x.dtype.key for x in _inst}
@@ -1610,9 +2329,6 @@ class WorkflowTask:
                 used = f"o.group('{gb}', [{using_symbols}], k, {step.transform.batch_size})"
             else:
                 used = ""
-            produced_k = [f"'{x}'" for x in produced_snames]
-            produced_k = ", ".join(produced_k)
-            wf_main.append(f"k = [{produced_k}]")
             if len(produced_names) == 1:
                 # Nextflow 26.04+ strict syntax rejects single-element parenthesized
                 # multiple-assignment `(_x) = expr`; use indexed access instead.
@@ -1620,11 +2336,11 @@ class WorkflowTask:
                 # route through `o.asStreams(...)` (defined in Orchestrator.groovy,
                 # which is loaded via -lib and not subject to strict syntax).
                 wf_main.append(
-                    f"_{produced_names[0]} = (o.post(o.asStreams({process_name}({used})), k))[0]"
+                    f"_{produced_names[0]} = (o.post(o.asStreams({process_name}({used})), k, {slot_ids_literal}))[0]"
                 )
             else:
                 wf_main.append(
-                    f"({produced}) = o.post(o.asStreams({process_name}({used})), k)"
+                    f"({produced}) = o.post(o.asStreams({process_name}({used})), k, {slot_ids_literal})"
                 )
             if step.order in final_steps_for_merging:
                 for e in final_steps_for_merging[step.order]:
@@ -1690,7 +2406,6 @@ class WorkflowTask:
             wf_output += [
                 TAB+f"_{ch}"+"{",
                 TAB+TAB+f"path '{out_name}'",
-                TAB+TAB+f"index {{ path '_manifests/{spec_name}.{inst.dtype.key}.{inst.instance_id}.json' }}",
                 TAB+"}",
             ]
             

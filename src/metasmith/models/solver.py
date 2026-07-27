@@ -1057,33 +1057,56 @@ def solve_by_mcts(
 
         def expand_node(state: SolverState, appl: Application) -> list[SolverState]:
             possibilities = []
-            if len(appl.produced)>1:
+            # Multi-pgroup applications carry two distinct intents that share a
+            # data shape:
+            #   - given_appl: each pgroup is an alternative sample family →
+            #     branch into N timelines, one per sample.
+            #   - user multi-output transforms (e.g. multi_slot_producer,
+            #     failing_at_slot_k): every pgroup is co-produced by one
+            #     invocation → keep them all in a single timeline so downstream
+            #     transforms that require multiple slots can apply.
+            # The DSL is symmetric, so disambiguate by identity against given_tr.
+            is_sample_branching = appl.transform is given_tr and len(appl.produced) > 1
+            if is_sample_branching:
                 state_ks = [new_state_k(state.k) for _ in appl.produced]
-            else:
-                state_ks = [state.k]
-            for group, state_k in zip(appl.produced, state_ks):
-                candidate_transforms = state.candidate_transforms.copy() # was free transform
-                production = state.production.copy()
-                for dep, ep in group.items():
-                    if dep not in product2consumer: continue
-                    for linked in product2consumer[dep]:
-                        candidate_transforms.add(linked)
-                for dep, ep in group.items():
-                    production[dep] = production.get(dep, [])+[ep]
-                if len(appl.produced)>1:
+                for group, state_k in zip(appl.produced, state_ks):
+                    candidate_transforms = state.candidate_transforms.copy() # was free transform
+                    production = state.production.copy()
+                    for dep, ep in group.items():
+                        if dep not in product2consumer: continue
+                        for linked in product2consumer[dep]:
+                            candidate_transforms.add(linked)
+                    for dep, ep in group.items():
+                        production[dep] = production.get(dep, [])+[ep]
                     appl_variant = Application(
                         initial_timeline=state_k,
                         transform=appl.transform,
                         used=appl.used,
-                        produced=[group], # limit to each each possibility 
+                        produced=[group], # limit to each each possibility
                         score=appl.score,
                     )
-                else:
-                    appl_variant = appl # nothing to limit
+                    possibilities.append(SolverState(
+                        k=state_k,
+                        steps=state.steps+[appl_variant],
+                        have=state.have|set(group.values()),
+                        candidate_transforms=candidate_transforms,
+                        production=production,
+                    ))
+            else:
+                candidate_transforms = state.candidate_transforms.copy()
+                production = state.production.copy()
+                co_produced: set[Endpoint] = set()
+                for group in appl.produced:
+                    for dep, ep in group.items():
+                        if dep in product2consumer:
+                            for linked in product2consumer[dep]:
+                                candidate_transforms.add(linked)
+                        production[dep] = production.get(dep, [])+[ep]
+                        co_produced.add(ep)
                 possibilities.append(SolverState(
-                    k=state_k,
-                    steps=state.steps+[appl_variant],
-                    have=state.have|set(group.values()),
+                    k=state.k,
+                    steps=state.steps+[appl],
+                    have=state.have|co_produced,
                     candidate_transforms=candidate_transforms,
                     production=production,
                 ))

@@ -114,10 +114,36 @@ def register(subs):
         a.src_uri, a.dest, a.on_exist, not a.no_image,
     ))
 
-    _lin = sp.add_parser("lineage", help="show an item's type + parents")
+    _il = sp.add_parser(
+        "import-library",
+        help="fetch a library + upsert lineage/imported entries into task_cache",
+    )
+    _il.add_argument("src_uri")
+    _il.add_argument("dest")
+    _il.add_argument("--cache-root", default=None,
+                     help="override cache_root (default: <dest>/../task_cache)")
+    _il.add_argument("--on-exist", default="skip")
+    _il.add_argument("--no-image", action="store_true",
+                     help="treat src as a directory, not a packed image")
+    _il.set_defaults(func=lambda a: _ops.import_library(
+        a.src_uri, a.dest, a.cache_root, a.on_exist, not a.no_image,
+    ))
+
+    _lin = sp.add_parser("lineage", help="show an item's type + ancestors")
     _lin.add_argument("library")
     _lin.add_argument("item_path")
-    _lin.set_defaults(func=lambda a: _ops.show_item_lineage(a.library, a.item_path))
+    _lin.add_argument("--of", default=None, metavar="PATH",
+                      help="write rendered output to PATH (default: stdout)")
+    _lin.add_argument("--format", choices=["json", "mermaid"], default="json",
+                      help="output format (default: json)")
+    _lin.add_argument("--depth", type=int, default=None,
+                      help="cap ancestor walk depth (default: no cap)")
+    _lin.add_argument("--logs", action="store_true",
+                      help="include per-invocation log paths in output")
+    _lin.set_defaults(func=lambda a: _ops.show_item_lineage(
+        a.library, a.item_path,
+        of=a.of, fmt=a.format, depth=a.depth, include_logs=a.logs,
+    ))
 
 
 def _cmd_add_value(args):

@@ -621,7 +621,7 @@ Errors print to stderr and exit non-zero — they are not swallowed into `{"erro
 | Group | Subcommands |
 |-------|-------------|
 | `metasmith type` | `list`, `show`, `compat`, `create`, `add` |
-| `metasmith data` | `inspect`, `list`, `create`, `attach-types`, `add-item`, `add-value`, `set-parents`, `remove`, `rename`, `rename-by-parent`, `prune-types`, `consolidate`, `save`, `trace`, `load-remote`, `lineage` |
+| `metasmith data` | `inspect`, `list`, `create`, `attach-types`, `add-item`, `add-value`, `set-parents`, `remove`, `rename`, `rename-by-parent`, `prune-types`, `consolidate`, `save`, `trace`, `load-remote`, `import-library`, `lineage` |
 | `metasmith transform` | `list`, `libraries`, `show`, `read`, `write`, `scaffold`, `validate`, `propagate-types` |
 | `metasmith plan` | one-shot planner (`--data-library`, `--sample-type`, `--target-type ...`, `--transform-library ...`) |
 | `metasmith workflow` | `stage`, `run`, `wait`, `tail`, `cancel`, `runs`, `check`, `collect`, `result-source`, `presets` |
@@ -629,7 +629,17 @@ Errors print to stderr and exit non-zero — they are not swallowed into `{"erro
 | `metasmith source` | `parse`, `exists`, `transfer` |
 | `metasmith task` | `list`, `show`, `hints`, `dag`, `delete` |
 | `metasmith build` | `all` (default), `types`, `uniques`, `transforms` — compile data type, unique, and transform libraries |
+| `metasmith cache` | `list`, `gc`, `explain` — lineage-addressed task-cache operations |
+| `metasmith status` | `<run_dir>` — render per-task hit/run status from `_metasmith/trace.jsonl` + `workflow.step_N.meta` |
 | top-level legacy | `get`, `lab`, `api`, `help` |
+
+### Task cache (feat/caching)
+
+A lineage-addressed cache lives at `<agent_home>/task_cache/`. Identity is provenance (transform key + sorted input instance_ids encoded as canonical CBOR + blake3-32 multihash), not bytes. Defaults: cache is **ON**; per-transform opt-out via `TransformInstance(..., cacheable=False)`; global kill-switch via `METASMITH_CACHE=0` env. Cache hits short-circuit the executor — compile-time probe rewrites the per-step emission in `workflow.nf` to a synthetic `Channel.of(...)` routed through `o.post(o.asStreams(...), k)` (Critic E#1 invariant preserved); the post-exec promote (`promote_run`) atomic-renames `<key>.tmp/` → `<key[:2]>/<key[2:]>/`. Leaf ids are **content-addressed** — `multihash(blake3(file_bytes) ‖ relpath)` when the input file is present at `AddItem` time — so two independent runs that lay identical input bytes at the same relative path mint identical leaf ids, their `cache_key`s match, and the second run **auto-resumes from the cache** (cross-run reentrancy; default-on, opt-out via `METASMITH_LEAF_RANDOM=1`). The relative path is folded in so distinct inputs that happen to share bytes (N empty/degenerate files, byte-identical samples) keep distinct identities — pure content-addressing would collapse fan-out and trip the solver's O(n²) collision path. Absent/remote inputs fall back to a unique-per-call random id (those leaves get no cross-run reuse). `metasmith data import-library <src> <dest>` remains for bridging already-computed `origin in {"lineage","imported"}` rows from a foreign workspace. See `docs/source/usage/nextflow.rst` for the full surface.
+
+**trace.jsonl is the canonical event log.** `<run_dir>/_metasmith/trace.jsonl` is rotate-on-compile (never truncated); a `SessionStart` sentinel leads every fresh file and a monotonic `session_id` (from the cache sqlite's `trace_session_counter` row) tags every subsequent row. One row schema covers every status — `InvocationEvent.status ∈ {"hit","miss","promoted","fail"}` — and the canonical dataclass with field-by-field semantics lives in `src/metasmith/models/lineage.py` (docstring is the spec). Compile-time emits the `hit` rows; `promote_run` appends the post-exec rows. Legacy v1 rows (no `schema_version`) are tolerated by `InvocationEvent.from_jsonl` for `msm status <old_run_dir>`. Bumping `LIN_PAYLOAD_VERSION` in `caching/keys.py` (currently 2) renders pre-v2 shards unreachable; `SHARD_LAYOUT_VERSION` (currently 2) tracks the `<shard>/logs/.command.{sh,out,err,log}` directory captured by `promote.py:_find_step_logs`. `get_logs_of(any_output).stdout` resolves there after `rm -rf work/` + resume.
+
+**User-facing telemetry API.** On a loaded `DataInstanceLibrary`, the trace is auto-attached via `Load(attach_trace=True)` (default). Methods: `get_lineage_of`, `get_logs_of`, `get_transform_of`, `get_siblings_of(scope="slot"|"task")`, `walk_ancestors`, `find_by`, `list_dtypes`, `list_transforms`, `summary`, `get_invocation`, `try_get_invocation`, `find_invocations`, `get_outputs_of`, `find_failures`. Re-exported from `metasmith.python_api`. Each method's docstring names its closed `Literal` values, exception classes, and AND/OR filter semantics; treat those as the contract.
 
 ### Workflow via CLI
 
@@ -704,7 +714,7 @@ Each call loads its inputs by path; there is no persistent in-memory state. Cold
 - **Test path**: use `_assert_nxf_ok` / `NxfTestRunner.assert_nxf_ok` — they detect the assertion in `stdout`/`stderr`, print `WARN: tolerated upstream nextflow-io/nextflow#6757 …`, and return so downstream parsing proceeds. If `CollectResults` then fails on missing manifests, the test surfaces a clear error blaming #6757.
 - A Groovy `metaClass` override on `Duration.between` was tried and abandoned: Nextflow's caller is `@CompileStatic`, so meta-dispatch isn't intercepted.
 
-**Orchestrator concurrency hygiene.** `pending_tasks` / `index_history` / `child2parent` and the value Sets/Lists they hold are `ConcurrentHashMap` + `ConcurrentHashMap.newKeySet()` + `Collections.synchronizedList`. Defensive — the methods are `synchronized` but the collections they hand out leak to operator callbacks.
+**Orchestrator concurrency hygiene.** `index_history` / `child2parent` and the value Sets/Lists they hold are `ConcurrentHashMap` + `ConcurrentHashMap.newKeySet()` + `Collections.synchronizedList`. Defensive — the methods are `synchronized` but the collections they hand out leak to operator callbacks.
 
 ## Release versioning
 
