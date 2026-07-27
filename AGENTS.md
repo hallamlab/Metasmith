@@ -435,6 +435,38 @@ Never use raw `str.replace(extern_home, ...)`, `str.replace(HOME_ROOT,
 those shapes silently corrupt or misidentify; the helpers above are the
 prefix-aware replacements.
 
+### DAG rendering
+
+Placement is metasmith's own, in three modules under `src/metasmith/models/`:
+`dag_layout` (pure geometry — rows, lanes, routed polylines), `dag_draw`
+(the text / SVG / DOT backends), `dag_renderer` (the node/edge API callers
+use). Graphviz is reached only for raster formats, and only as `neato -n2`,
+which honours our `pos` and lays nothing out; `to_dot()` stays a plain,
+positionless description of the graph for consumers running their own.
+
+Three things about it are load-bearing and not obvious from the code:
+
+- **A node's id is not its label.** `TransformInstance.name` is just the
+  definition file's stem, so a plan running one transform three times has
+  three steps all named `checkm`; the step number in the id is the only thing
+  keeping them apart. `add_node` takes a separate `Label` for what gets drawn.
+  Shorten the id instead and the three fold into one node — and the layout's
+  cycle-breaker then cuts edges to restore acyclicity, silently.
+- **The `target` sink is expensive.** Collecting every requested output into
+  one node holds a rail from each target's row down to the last row; on the
+  spanish-lakes metagenomics plan that is 10 of 24 lanes. Targets are marked
+  on the node (`NodeKind.TARGET`) instead; `RenderDAG(target_sink=True)`
+  restores the old shape.
+- **Corners are chamfered in pixel space, not in the grid.** `_polyline`
+  stays axis-aligned and `_pixel_path` cuts the corners afterwards, which is
+  why the 45° merges cost the layout invariants nothing. Text gets no
+  diagonals on purpose: a lane is two character columns and a diagonal glyph
+  is one cell, so every lane of travel would cost two rows.
+
+`tests/fixtures/stress_dag.json` is a real 73-node plan dumped from that
+recipe; regenerate it with `generate_stress_dag.py` and compare layouts with
+`compare_layouts.py`, both in the same directory and both run by hand.
+
 ---
 
 ## Key Patterns

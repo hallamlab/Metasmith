@@ -8,7 +8,7 @@ from pathlib import Path
 from collections import deque
 
 from ..hashing import KeyGenerator
-from .dag_renderer import DagRenderer, NodeKind
+from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 
 class Node:
     PROPERTY_FIELD = "properties"
@@ -289,23 +289,33 @@ class Solution:
     _refiner_iterations: list[tuple[int, int]] # found at, total expanded
     _relavent_transforms: list[Transform]
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', keys: bool = True):
-        r = DagRenderer(font=font)
+    def BuildDAG(self, *, font: str = 'Arial', keys: bool = True, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN) -> DagRenderer:
+        r = DagRenderer(font=font, label_mode=label_mode)
         for i, step in enumerate(self.dependency_plan):
             if keys:
-                transform_name = f"{i+1} {step.transform.key}"
+                shown   = f"{step.transform.key}"
                 inputs  = [f"{u.key}" for u in step.used.values()]
                 outputs = [f"{o.key}" for pgroup in step.produced for o in pgroup.values()]
             else:
-                transform_name = f"{i+1} {step.transform}"
+                shown   = f"{step.transform}"
                 inputs  = [f"{u}" for u in step.used.values()]
                 outputs = [f"{o}" for pgroup in step.produced for o in pgroup.values()]
-            r.add_node(NodeKind.TRANSFORM, transform_name)
+            # numbered id, unnumbered label — two applications of one transform
+            # share a key and would otherwise collapse into a single node
+            transform_name = f"{i+1} {shown}"
+            r.add_node(NodeKind.TRANSFORM, transform_name, Label(
+                name=shown,
+                namespace=f"step {i+1}" if show_step_order else "",
+                full=transform_name,
+            ))
             for name in inputs:
                 r.add_edge(name, transform_name)
             for name in outputs:
                 r.add_edge(transform_name, name)
-        return r.render(path_base, format)
+        return r
+
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', keys: bool = True, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN):
+        return self.BuildDAG(font=font, keys=keys, show_step_order=show_step_order, label_mode=label_mode).render(path_base, format)
     
 def solve_by_mcts(
     given: list[set[Endpoint]],

@@ -10,7 +10,7 @@ import json
 from hashlib import md5
 
 from ..coms.containers import Container, ContainerRuntime
-from .dag_renderer import DagRenderer, NodeKind
+from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 from .libraries import DataTypeLibrary
 from .libraries import DataInstanceLibraryView, DataInstanceLibrary, DataInstance
 from .libraries import TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView
@@ -999,14 +999,16 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}):
+    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False) -> DagRenderer:
+        """The plan as a renderer, so callers that want the graph — a stress
+        harness, a comparison — do not have to write a file to get it."""
         def _get_ns(name: str) -> str:
             if "::" in name:
                 ns, _ = name.split("::", maxsplit=1)
                 return ns
             return name
 
-        r = DagRenderer(font=font)
+        r = DagRenderer(font=font, label_mode=label_mode)
         r.add_node(NodeKind.TRANSFORM, "given")
 
         k2names: dict[Endpoint, set[str]] = {}
@@ -1035,8 +1037,15 @@ class WorkflowPlan:
                 r.add_edge("given", inst_name)
 
         for step in self.steps:
+            # the id keeps the step number: transform names are just the
+            # definition file's stem, so the three binner-specific checkm steps
+            # are all literally "checkm" and only the number tells them apart
             transform_name = f"{step.order} {step.transform.name}"
-            r.add_node(NodeKind.TRANSFORM, transform_name)
+            r.add_node(NodeKind.TRANSFORM, transform_name, Label(
+                name=step.transform.name or step.transform.GetKey(),
+                namespace=f"step {step.order}" if show_step_order else "",
+                full=transform_name,
+            ))
             inputs, outputs = [], []
             for acc, deps in [
                 (inputs, step.transform.model.requires),
@@ -1052,11 +1061,28 @@ class WorkflowPlan:
             for name in outputs:
                 r.add_edge(transform_name, name)
 
-        r.add_node(NodeKind.TRANSFORM, "target")
+        # The requested outputs are marked on the nodes themselves. Collecting
+        # them into one sink instead costs every target a lane held from
+        # wherever it is produced down to the last row — on the spanish-lakes
+        # metagenomics plan that is 10 of 24 lanes, by far the most expensive
+        # thing in the drawing, and it says nothing the ring does not.
         for target in {x.instance.dtype_name for x in self.targets}:
-            r.add_edge(target, "target")
+            r.mark(NodeKind.TARGET, target)
+        if target_sink:
+            r.add_node(NodeKind.TRANSFORM, "target")
+            for target in {x.instance.dtype_name for x in self.targets}:
+                r.add_edge(target, "target")
 
-        return r.render(path_base, format)
+        return r
+
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False):
+        return self.BuildDAG(
+            font=font,
+            blacklist_namespaces=blacklist_namespaces,
+            show_step_order=show_step_order,
+            label_mode=label_mode,
+            target_sink=target_sink,
+        ).render(path_base, format)
 
 @dataclass
 class WorkflowTask:

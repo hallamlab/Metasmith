@@ -3,7 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from metasmith.models.dag_renderer import STYLES, DagRenderer, NodeKind
+from metasmith.models.dag_renderer import (
+    STYLES, DagRenderer, Label, LabelMode, NodeKind,
+)
 
 
 def test_transform_node_styling():
@@ -93,6 +95,122 @@ def test_to_dot_is_insertion_ordered_and_deterministic():
     assert dot.index('"a"') < dot.index('"b"') < dot.index('"c"')
 
 
+# --- identity vs label ------------------------------------------------------
+#
+# Transform names are just the definition file's stem, so a plan that runs one
+# transform three times has three steps with the same name. The step number in
+# the id is the only thing keeping them apart, and the label is free to drop it.
+
+
+def test_same_named_steps_stay_distinct_nodes():
+    r = DagRenderer()
+    for i in (1, 2, 3):
+        r.add_node(NodeKind.TRANSFORM, f"{i} checkm", Label(name="checkm"))
+        r.add_edge(f"bins::from_binner_{i}", f"{i} checkm")
+        r.add_edge(f"{i} checkm", f"qc::stats_{i}")
+    assert len(r.layout().nodes) == 9
+    assert r.to_text().count("checkm") == 3
+
+
+def test_label_defaults_to_splitting_the_id_on_the_namespace():
+    labels = DagRenderer()._labels  # noqa: F841 - documents the empty case
+    r = DagRenderer()
+    r.add_edge("assembly::contigs", "plain")
+    assert r.labels["assembly::contigs"].namespace == "assembly"
+    assert r.labels["assembly::contigs"].name == "contigs"
+    assert r.labels["plain"].namespace == ""
+    assert r.labels["plain"].full == "plain"
+
+
+def test_dot_output_is_unchanged_for_nodes_whose_label_is_their_id():
+    # consumers run their own graphviz over this; a redundant label= attribute
+    # would churn their output for nothing
+    r = DagRenderer()
+    r.add_edge("a", "b")
+    assert 'label=' not in r.to_dot()
+
+
+def test_dot_carries_the_label_only_when_it_differs_from_the_id():
+    r = DagRenderer()
+    # what the plan caller does: the full form is the id, so plain DOT is
+    # exactly what it was before labels existed
+    r.add_node(NodeKind.TRANSFORM, "7 megahit",
+               Label(name="megahit", full="7 megahit"))
+    r.add_node(NodeKind.TRANSFORM, "8 bbduk", Label(name="bbduk"))
+    dot = r.to_dot()
+    assert '"7 megahit" [shape="oval", style="filled", fillcolor="#CCCCCC"]' in dot
+    assert 'label="bbduk"' in dot  # full defaults to the name, which is shorter
+
+
+def test_first_label_wins_like_the_kind_does():
+    r = DagRenderer()
+    r.add_node(NodeKind.TRANSFORM, "x", Label(name="first"))
+    r.add_node(NodeKind.TRANSFORM, "x", Label(name="second"))
+    assert r.labels["x"].name == "first"
+
+
+# --- markers and the label column -------------------------------------------
+
+
+def test_svg_draws_the_namespace_above_the_name_at_half_size():
+    r = DagRenderer()
+    r.add_node(NodeKind.DATA, "assembly::contigs")
+    svg = r.to_svg()
+    ns = [l for l in svg.splitlines() if ">assembly<" in l][0]
+    name = [l for l in svg.splitlines() if ">contigs<" in l][0]
+    assert 'font-size="6.5"' in ns and 'font-size="13"' in name
+    assert 'text-anchor="start"' in ns and 'text-anchor="start"' in name
+    def _attr(line, key):
+        return line.split(f'{key}="')[1].split('"')[0]
+
+    assert float(_attr(ns, "y")) < float(_attr(name, "y"))
+    assert _attr(ns, "x") == _attr(name, "x")  # same left edge
+
+
+def test_long_names_are_clipped_but_stay_whole_on_hover():
+    long = "x" * 60
+    r = DagRenderer()
+    r.add_node(NodeKind.DATA, f"ns::{long}")
+    svg = r.to_svg()
+    drawn = [l for l in svg.splitlines() if "…" in l][0]
+    shown = drawn.split(">", 1)[1].split("</text>")[0]
+    assert len(shown) == 32 and shown.endswith("…")
+    assert f"<title>ns::{long}</title>" in svg
+
+
+def test_label_column_is_narrower_than_labels_beside_every_marker():
+    r = DagRenderer()
+    r.add_node(NodeKind.TRANSFORM, "given")
+    for i in range(6):
+        r.add_edge("given", f"a_very_long_type_name_number_{i}")
+        r.add_edge(f"a_very_long_type_name_number_{i}", f"sink_{i}")
+
+    def _w(mode):
+        rr = DagRenderer(label_mode=mode)
+        rr._nodes, rr._labels = r._nodes, r._labels
+        rr._edges, rr._seen_edges = r._edges, r._seen_edges
+        return float(rr.to_svg().split('width="')[1].split('"')[0])
+
+    assert _w(LabelMode.COLUMN) < _w(LabelMode.BESIDE)
+
+
+def test_lane_pitch_does_not_depend_on_label_length():
+    # the whole point of moving the label out of the node: one long name must
+    # not shove every branch to its right across the page
+    def _lane_x(name):
+        r = DagRenderer()
+        r.add_node(NodeKind.TRANSFORM, "root")
+        r.add_edge("root", name)
+        r.add_edge("root", "other")
+        svg = r.to_svg()
+        return [
+            float(l.split('cx="')[1].split('"')[0])
+            for l in svg.splitlines() if "<circle" in l
+        ]
+
+    assert _lane_x("short") == _lane_x("a" * 40)
+
+
 # --- format dispatch --------------------------------------------------------
 #
 # Placement is metasmith's; graphviz is only reached for raster formats, and
@@ -156,13 +274,16 @@ def test_svg_is_a_standalone_parsable_document(tmp_path):
 
 
 def test_svg_distinguishes_transform_from_data():
+    # by shape, not by colour: the transform circle is unfilled, so its fill is
+    # the background's and a colour comparison would pass vacuously
     r = DagRenderer()
     r.add_node(NodeKind.TRANSFORM, "step1")
     r.add_node(NodeKind.DATA, "thing")
     r.add_edge("thing", "step1")
     svg = r.to_svg()
-    assert STYLES[NodeKind.TRANSFORM].fill in svg
-    assert STYLES[NodeKind.DATA].fill in svg
+    assert svg.count("<circle") == 1
+    assert svg.count('<rect x=') == 1  # the background rect has no x
+    assert f'fill="{STYLES[NodeKind.DATA].fill}"' in svg
 
 
 def test_text_marks_the_two_kinds_differently():
@@ -195,8 +316,30 @@ def test_raster_dot_pins_every_node_and_edge():
     r = DagRenderer()
     r.add_edge("a", "b")
     dot = r.to_raster_dot()
-    assert dot.count("pos=") == 3  # two nodes, one edge
+    # two markers, their two edge-free label nodes, and one edge
+    assert dot.count("pos=") == 5
     assert '"a" -> "b"' in dot
+
+
+def test_raster_label_nodes_are_separate_and_edge_free():
+    # graphviz cannot position an xlabel or vary font size within one label, so
+    # the label rides on its own pinned plaintext node
+    r = DagRenderer()
+    r.add_edge("ns::a", "ns::b")
+    dot = r.to_raster_dot()
+    assert '"__label__ns::a" [' in dot
+    assert 'shape="plaintext"' in dot
+    assert "__label__" not in dot.split("->")[1]  # never an edge endpoint
+    assert 'POINT-SIZE="6.5"' in dot  # the half-size namespace line
+    assert '<BR ALIGN="LEFT"/>' in dot
+
+
+def test_raster_label_prefix_dodges_a_colliding_node_id():
+    r = DagRenderer()
+    r.add_edge("__label__x", "y")
+    dot = r.to_raster_dot()
+    # a bare "__label__x" would have been unified with the real node by name
+    assert '"___label____label__x" [' in dot
 
 
 @pytest.mark.skipif(shutil.which("neato") is None,
@@ -214,6 +357,60 @@ def test_raster_without_neato_says_what_is_missing(tmp_path, monkeypatch):
     monkeypatch.setattr("metasmith.models.dag_draw.shutil.which", lambda _: None)
     with pytest.raises(RuntimeError, match="neato"):
         DagRenderer().render(tmp_path / "graph.png")
+
+
+# --- height and 45 degree corners -------------------------------------------
+
+
+def test_a_straight_chain_costs_one_line_per_node():
+    r = DagRenderer()
+    for a, b in zip("abcd", "bcde"):
+        r.add_edge(a, b)
+    assert len(r.to_text().rstrip("\n").splitlines()) == 5
+
+
+def test_unconnected_neighbours_in_one_lane_keep_their_separator():
+    # without the blank row these four read as a single chain, because the
+    # second component reuses the lane the first one closed
+    r = DagRenderer()
+    r.add_edge("a", "b")
+    r.add_edge("c", "d")
+    assert r.to_text() == "■  a\n■  b\n\n■  c\n■  d\n"
+
+
+def test_a_one_lane_jog_is_a_single_unbroken_diagonal():
+    r = DagRenderer()
+    r.add_edge("root", "left")
+    r.add_edge("root", "right")
+    r.add_edge("left", "join")
+    r.add_edge("right", "join")
+    for pts in _polylines(r.to_svg()):
+        for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+            if ax != bx:  # every non-vertical segment is exactly 45 degrees
+                assert abs(abs(bx - ax) - abs(by - ay)) < 0.1, pts
+        # ... and none of them is separated by a flat horizontal stub
+        assert not any(ay == by and ax != bx for (ax, ay), (bx, by) in zip(pts, pts[1:]))
+
+
+def test_a_multi_lane_jog_keeps_a_flat_run_between_two_diagonals():
+    r = DagRenderer()
+    for i in range(4):
+        r.add_edge("root", f"child_{i}")
+        r.add_edge(f"child_{i}", "join")
+    flats = [
+        (a, b)
+        for pts in _polylines(r.to_svg())
+        for a, b in zip(pts, pts[1:])
+        if a[1] == b[1] and a[0] != b[0]
+    ]
+    assert flats, "a jog of several lanes should not collapse to one diagonal"
+
+
+def _polylines(svg: str) -> list[list[tuple[float, float]]]:
+    return [
+        [tuple(map(float, p.split(","))) for p in l.split('points="')[1].split('"')[0].split()]
+        for l in svg.splitlines() if "<polyline" in l
+    ]
 
 
 # --- golden text ------------------------------------------------------------
@@ -240,16 +437,13 @@ def test_golden_chain():
         [("reads", "bbduk"), ("bbduk", "clean"),
          ("clean", "megahit"), ("megahit", "contigs")],
     )
+    # a gap where every rail runs straight through costs no row at all
     assert r.to_text() == (
-        "○  reads\n"
-        "│\n"
-        "●  bbduk\n"
-        "│\n"
-        "○  clean\n"
-        "│\n"
-        "●  megahit\n"
-        "│\n"
-        "○  contigs\n"
+        "■  reads\n"
+        "○  bbduk\n"
+        "■  clean\n"
+        "○  megahit\n"
+        "■  contigs\n"
     )
 
 
@@ -259,13 +453,12 @@ def test_golden_diamond():
         [("a", "l"), ("a", "r"), ("l", "j"), ("r", "j")],
     )
     assert r.to_text() == (
-        "○    a\n"
+        "■    a\n"
         "├─┐\n"
-        "● │  l\n"
-        "│ │\n"
-        "│ ●  r\n"
+        "○ │  l\n"
+        "│ ○  r\n"
         "├─┘\n"
-        "○    j\n"
+        "■    j\n"
     )
 
 
@@ -278,17 +471,14 @@ def test_golden_three_way_fan_in():
          ("checkm2", "qc")],
     )
     assert r.to_text() == (
-        "○      contigs\n"
+        "■      contigs\n"
         "├─┬─┐\n"
-        "● │ │  comebin\n"
-        "│ │ │\n"
-        "│ ● │  metabat2\n"
-        "│ │ │\n"
-        "│ │ ●  semibin2\n"
+        "○ │ │  comebin\n"
+        "│ ○ │  metabat2\n"
+        "│ │ ○  semibin2\n"
         "├─┴─┘\n"
-        "●      checkm2\n"
-        "│\n"
-        "○      qc\n"
+        "○      checkm2\n"
+        "■      qc\n"
     )
 
 
@@ -300,13 +490,10 @@ def test_golden_wide_fan_out():
         [("given", f"std::input_{i}") for i in range(4)],
     )
     assert r.to_text() == (
-        "●        given\n"
+        "○        given\n"
         "├─┬─┬─┐\n"
-        "○ │ │ │  std::input_0\n"
-        "  │ │ │\n"
-        "  ○ │ │  std::input_1\n"
-        "    │ │\n"
-        "    ○ │  std::input_2\n"
-        "      │\n"
-        "      ○  std::input_3\n"
+        "■ │ │ │  std::input_0\n"
+        "  ■ │ │  std::input_1\n"
+        "    ■ │  std::input_2\n"
+        "      ■  std::input_3\n"
     )

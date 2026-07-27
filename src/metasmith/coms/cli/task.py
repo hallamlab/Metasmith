@@ -26,8 +26,14 @@ def register(subs):
                            " graphviz can write (needs the `neato` binary)")
     _dag.add_argument("--blacklist-namespace", action="append", default=None,
                       dest="blacklist_namespaces")
+    _dag.add_argument("--label-mode", default="column", choices=["column", "beside"],
+                      help="column (default): one label column right of every"
+                           " rail; beside: label next to each marker")
+    _dag.add_argument("--step-order", action="store_true",
+                      help="show the step number above each transform name")
     _dag.set_defaults(func=lambda a: _ops.render_dag(
         a.task_key, a.format, a.blacklist_namespaces, a.workspace,
+        label_mode=a.label_mode, show_step_order=a.step_order,
     ))
 
     _del = sp.add_parser("delete", help="remove a cached task")

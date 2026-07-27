@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..models.dag_renderer import LabelMode
 from ..models.libraries import DataInstanceLibrary, DataInstanceLibraryView
 from ..models.solver import Transform, Dependency
 from ..models.workflow import WorkflowPlan, WorkflowTask
@@ -128,13 +129,20 @@ def render_dag(
     format: str = "svg",
     blacklist_namespaces: list[str] | None = None,
     workspace: str | None = None,
+    label_mode: str = "column",
+    show_step_order: bool = False,
 ) -> dict:
     task = _ws.load_task(workspace, task_key)
     # name the file with its real extension: `plan.dag` alone reads back as a
     # `.dag` suffix, which RenderDAG would take for the requested format
     out = _ws.task_path(workspace, task_key) / f"plan.dag.{format}"
     bl = set(blacklist_namespaces) if blacklist_namespaces else {"lib", "containers"}
-    rendered = task.plan.RenderDAG(out, blacklist_namespaces=bl)
+    rendered = task.plan.RenderDAG(
+        out,
+        blacklist_namespaces=bl,
+        label_mode=LabelMode(label_mode),
+        show_step_order=show_step_order,
+    )
     return {"task_key": task_key, "format": format, "path": str(rendered)}
 
 
