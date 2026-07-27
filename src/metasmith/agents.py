@@ -760,9 +760,48 @@ class Agent:
             task.SaveAs(self.home.ReplacePathWith(remote_path), partial=task_stage_partial)
             Log.Info(f"staging")
             mock = self._get_mock_container(task)
+            # Pre-flight: external (absolute-path) input folders are bound
+            # verbatim into the remote container -- metasmith does NOT transfer
+            # them. If a bound source is absent on the remote, the runtime
+            # aborts container creation and the launcher is never written, which
+            # surfaces much later as an opaque "launcher missing" assertion.
+            # Catch it here and name the input that caused it. [#240]
+            if len(mock.container.binds) > 0:
+                _srcs = [str(src) for src, _dst in mock.container.binds]
+                _check = "\n".join(f'[ -e "{s}" ] || echo "MISSING::{s}"' for s in _srcs)
+                _res = sh_remote.Exec(_check, history=True, quiet=True)
+                _out = _res.out if isinstance(_res.out, str) else "\n".join(_res.out)
+                _missing = [ln.split("MISSING::", 1)[1].strip()
+                            for ln in _out.splitlines() if "MISSING::" in ln]
+                if _missing:
+                    _culprits: dict[str, list[str]] = {}
+                    for _inst in task.plan.given:
+                        try:
+                            _p = _inst.ResolvePath()
+                        except Exception:
+                            continue
+                        if not _p.is_absolute():
+                            continue
+                        for _m in _missing:
+                            _mp = Path(_m)
+                            if _p == _mp or _p.is_relative_to(_mp):
+                                _culprits.setdefault(_m, []).append(str(_p))
+                    _lines = "\n".join(
+                        f"  - {_m}" + (f"  (from input: {', '.join(_culprits[_m])})"
+                                       if _culprits.get(_m) else "")
+                        for _m in _missing
+                    )
+                    raise FileNotFoundError(
+                        f"cannot stage workflow [{task._key}]: {len(_missing)} external "
+                        f"input folder(s) must be bound into the remote container but do "
+                        f"not exist on the remote host:\n{_lines}\n"
+                        f"External (absolute-path) inputs are bound verbatim into the "
+                        f"remote container -- metasmith does NOT transfer them. Make these "
+                        f"inputs resident on the remote agent host (or reference paths "
+                        f"that exist there) before staging. [#240]"
+                    )
+                Log.Info(f"external binds {_srcs}")
             binds = mock.MakeBindsParam()
-            if len(mock.container.binds)>0:
-                Log.Info(f"external binds {[a for a, b in mock.container.binds]}")
             sh_remote.Exec(f"""\
                 export BINDS="{binds}"
                 ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname)

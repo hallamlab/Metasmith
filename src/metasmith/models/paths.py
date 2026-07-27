@@ -487,13 +487,32 @@ class PathMap:
                 container=_strip_dotdot(Path(container)),
             )
 
-        # Fallthrough: absolute paths not under WORK_ROOT or HOME_ROOT.
         if not p.is_absolute():
             raise ValueError(
                 f"Parse received a non-absolute, non-symlink, non-../ws path: {p!r}. "
                 f"This is the ad-hoc-concat case the overhaul forbids; the caller "
                 f"should either anchor the path or pass a symlink / absolute form."
             )
+
+        # (5) Absolute path under HOME_ROOT (the agent home, container-bound at
+        # /msm_home): a canonical upstream output referenced by its home-view
+        # path -- e.g. a reference DB produced by a sibling process and consumed
+        # by a transform that binds it explicitly (diamond's UniRef50 db -> /db).
+        # Its host path is `extern_home/<tail>`. Without this branch the identity
+        # fallthrough below leaks the container-only `/msm_home` prefix into
+        # apptainer --bind SOURCES, and the mount fails on the host with
+        # "mount source ... doesn't exist".
+        if p.is_relative_to(AgentPaths.HOME_ROOT):
+            tail = p.relative_to(AgentPaths.HOME_ROOT)
+            container = container_override if container_override is not None else p
+            return ContextPath(
+                local=p,
+                external=self.extern_home / tail,
+                container=_strip_dotdot(Path(container)),
+            )
+
+        # Fallthrough: absolute paths under neither WORK_ROOT nor HOME_ROOT
+        # (foreign references, e.g. /project/refdb -- identity bind).
         container = container_override if container_override is not None else p
         return ContextPath(local=p, external=p, container=_strip_dotdot(Path(container)))
 

@@ -138,10 +138,20 @@ class Environment:
             'then echo "use-sandbox"; else echo "use-sif"; fi; fi'
         )
 
-    def MakeBuildSandboxCommand(self):
-        sif = self.GetLocalPath()
+    def MakeBuildSandboxCommand(self, from_image: bool = False):
+        # Build the unpacked sandbox dir. By default this unpacks a
+        # previously-pulled SIF; with from_image=True it builds the sandbox
+        # straight from the OCI registry, which skips SIF creation — and so
+        # skips mksquashfs, which aborts on large images on some hosts
+        # ("malloc(): corrupted top size" on micb0, e.g. external_checkm2,
+        # gtdbtk). On a use-sandbox host the SIF is a throwaway intermediate,
+        # so never invoke mksquashfs when the sandbox is the artifact.
         sandbox = self.GetSandboxPath()
-        if sif is None or sandbox is None: return ""
+        if sandbox is None: return ""
+        if from_image:
+            return f"apptainer build --force --sandbox {sandbox} {self._get_image()}"
+        sif = self.GetLocalPath()
+        if sif is None: return ""
         return f"apptainer build --force --sandbox {sandbox} {sif}"
 
     def MakePullCommand(self):
@@ -276,10 +286,10 @@ class Environment:
         return Runtime.DOCKER
 
     def ProvisionSteps(self, *, agent_home: Path, assertive: bool=False) -> list[tuple[str, str|None]]:
-        # Deploy-time steps that make the image runnable on the host:
-        # pull (if not cached) + the per-host SIF/sandbox decision. Returns
-        # (cmd, display_cmd) pairs; empty for runtimes with nothing to pull
-        # (mamba/native). The probe is a static two-axis check (setuid
+        # Deploy-time steps that make the image runnable on the host: probe
+        # the host, then materialise only the artifact the verdict names.
+        # Returns (cmd, display_cmd) pairs; empty for runtimes with nothing
+        # to pull (mamba/native). The probe is a static two-axis check (setuid
         # starter-suid + apptainer major.minor); SIF is preferred when safe
         # (no disk doubling). Sandbox is built only on apptainer >=1.4
         # without setuid — the case where SIF engages squashfuse_ll (Bug
@@ -287,30 +297,34 @@ class Environment:
         # through kernel overlayfs. On apptainer 1.3.x without setuid the
         # sandbox path itself falls back to fuse-overlayfs (Bug E.4 SIGBUS
         # on fir under SLURM array contention), so SIF is kept there too.
-        # Verdict is re-evaluated on every Deploy(); a stale sandbox from a
-        # prior host config is removed when the verdict flips.
+        # Verdict is re-evaluated on every Deploy(); the unused artifact is
+        # removed when the verdict flips.
+        #
+        # On a use-sandbox host the sandbox is built DIRECTLY from the
+        # registry rather than pull-SIF-then-unpack: `apptainer pull` runs
+        # mksquashfs, which aborts on large images on some hosts, and the SIF
+        # would only be a throwaway intermediate. So the pull is conditional
+        # on the verdict too -- one probe, one artifact.
         steps: list[tuple[str, str|None]] = []
         local_path = self.GetLocalPath()
         if not local_path:
             return steps
         pull_cmd = self.MakePullCommand()
-        steps.append((
-            f'mkdir -p "{local_path.parent}" && [ -e {local_path} ] || {pull_cmd}',
-            f"{{if not exists}}: {pull_cmd.replace(str(agent_home), '$AGENT_HOME')}",
-        ))
         sandbox_path = self.GetSandboxPath()
         probe = self.MakeSandboxDecisionProbe()
-        build_sandbox = self.MakeBuildSandboxCommand()
+        build_sandbox = self.MakeBuildSandboxCommand(from_image=True)
         force = f'rm -rf {sandbox_path} && ' if assertive else ''
         steps.append((
             (
+                f'mkdir -p "{local_path.parent}" && '
                 f'{force}'
                 f'VERDICT=$({probe}); '
                 f'if [ "$VERDICT" = "use-sandbox" ]; then '
                 f'[ -d {sandbox_path} ] || {build_sandbox}; '
-                f'else rm -rf {sandbox_path}; fi'
+                f'else [ -e {local_path} ] || {pull_cmd}; rm -rf {sandbox_path}; fi'
             ),
-            f"{{probe host; build sandbox iff apptainer>=1.4 and no setuid}}: apptainer build --sandbox {sandbox_path.name} {local_path.name}".replace(str(agent_home), '$AGENT_HOME'),
+            "{probe host; use-sandbox: build sandbox from image (no mksquashfs); "
+            "use-sif: pull sif}",
         ))
         return steps
 

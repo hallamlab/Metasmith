@@ -233,20 +233,29 @@ class TestProvisionGolden:
         # no local image store for docker; the daemon owns its own cache
         assert _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME) == []
 
-    def test_apptainer_pulls_then_probes(self):
+    def test_apptainer_probes_then_materialises_one_artifact(self):
+        """One probe, one artifact -- and the sandbox arm never packs a squashfs.
+
+        The pull used to be unconditional, so a use-sandbox host pulled a SIF
+        it would never use. `apptainer pull` runs mksquashfs, which aborts on
+        large images on some hosts, so the throwaway intermediate was the thing
+        that broke the deploy. The sandbox is now built straight from the
+        registry and the pull only happens on the use-sif arm.
+        """
         steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME)
-        assert len(steps) == 2
-        pull, sandbox = steps
-        assert pull[0] == (
-            f'mkdir -p "{STORE}" && [ -e {SIF} ] || '
-            f'apptainer pull {SIF} {IMAGE}'
-        )
-        # the probe decides SIF vs sandbox on the execution host, and a stale
-        # sandbox from a prior host config is removed when the verdict flips
-        assert sandbox[0].startswith("VERDICT=$(")
-        assert f'[ -d {SANDBOX} ] || apptainer build --force --sandbox {SANDBOX} {SIF}' in sandbox[0]
-        assert f"else rm -rf {SANDBOX}; fi" in sandbox[0]
+        assert len(steps) == 1
+        cmd = steps[0][0]
+
+        assert cmd.startswith(f'mkdir -p "{STORE}" && VERDICT=$(')
+        assert (
+            f'[ -d {SANDBOX} ] || apptainer build --force --sandbox {SANDBOX} {IMAGE}'
+            in cmd
+        ), "sandbox arm is not building from the registry"
+        assert f'else [ -e {SIF} ] || apptainer pull {SIF} {IMAGE}; rm -rf {SANDBOX}; fi' in cmd
+        assert "mksquashfs" not in cmd
+        # the pull must be inside the else arm, not ahead of the probe
+        assert cmd.index("VERDICT=$(") < cmd.index("apptainer pull")
 
     def test_assertive_forces_a_rebuild(self):
         steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME, assertive=True)
-        assert steps[1][0].startswith(f"rm -rf {SANDBOX} && VERDICT=$(")
+        assert steps[0][0].startswith(f'mkdir -p "{STORE}" && rm -rf {SANDBOX} && VERDICT=$(')

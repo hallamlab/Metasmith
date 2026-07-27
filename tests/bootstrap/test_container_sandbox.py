@@ -114,6 +114,22 @@ class TestBuildCommand:
         assert str(sandbox) in cmd
         assert str(sif) in cmd
 
+    def test_build_from_image_never_names_a_sif(self):
+        """The use-sandbox arm goes registry -> sandbox, skipping mksquashfs.
+
+        `apptainer build --sandbox <dir> <sif>` needs the SIF to exist, and
+        producing it runs mksquashfs -- which aborts on large images on some
+        hosts. On a use-sandbox host the SIF is a throwaway intermediate, so
+        the build reads the OCI layers directly and the SIF is never made.
+        """
+        c = _apptainer(container_cache=Path("/cache"))
+        cmd = c.MakeBuildSandboxCommand(from_image=True)
+        assert cmd == (
+            f"apptainer build --force --sandbox {c.GetSandboxPath()} "
+            f"docker://quay.io/example/tool:1.0"
+        )
+        assert ".sif" not in cmd
+
     def test_build_empty_for_docker(self):
         # No sandbox concept for docker; helper returns empty string so
         # callers can interpolate without branching.

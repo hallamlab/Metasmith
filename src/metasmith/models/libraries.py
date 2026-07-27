@@ -1695,6 +1695,21 @@ class DataInstanceLibraryView:
         self._original = original
         self._mask = mask
 
+    def __getattr__(self, name):
+        # Delegate anything the view does not override (GetKey, PrepTransfer,
+        # GetPath, manifest, ...) to the wrapped library. The mask only needs
+        # to affect iteration and lookup; identity and transfer -- used by
+        # WorkflowTask.Pack / SaveAs when staging -- come straight from the
+        # original, so a masked view stages like a real library. The masked-out
+        # entries are transferred but never referenced by any plan step.
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        try:
+            original = object.__getattribute__(self, "_original")
+        except AttributeError:
+            raise AttributeError(name)
+        return getattr(original, name)
+
     @property
     def _mask_key(self) -> frozenset[Path]:
         if not hasattr(self, '_cached_mask_key'):
@@ -2512,6 +2527,33 @@ class ExecutionContext:
             sandbox_path = env.GetSandboxPath()
             res = self.external_shell.Exec(
                 f'( [ -e {cached_path} ] || [ -d {sandbox_path} ] ) && echo "{FLAG}"',
+                history=True,
+            )
+            if FLAG in res.out:
+                use_cache = True
+
+        if (not use_cache and cached_path is not None
+                and env.runtime == Runtime.APPTAINER):
+            # Not yet materialised. The default fallback is `apptainer exec
+            # docker://...`, which lazily converts the image to a SIF via
+            # mksquashfs -- and mksquashfs aborts on large images on some hosts
+            # (micb0: "malloc(): corrupted top size", e.g. external_checkm2,
+            # gtdbtk). On use-sandbox hosts (apptainer>=1.4 without setuid
+            # starter-suid) build the rootfs as a sandbox directory instead: it
+            # extracts the OCI layers directly, never invokes mksquashfs, and
+            # is cached for reuse. use-sif hosts are left alone -- a sandbox
+            # there hits the Bug E.4 fuse-overlayfs SIGBUS under SLURM. An
+            # flock guards parallel transforms sharing one image.
+            sandbox_path = env.GetSandboxPath()
+            probe = env.MakeSandboxDecisionProbe()
+            build_sandbox = env.MakeBuildSandboxCommand(from_image=True)
+            FLAG = "transform-sandbox-ready"
+            res = self.external_shell.Exec(
+                f'V=$({probe}); '
+                f'if [ "$V" = "use-sandbox" ]; then '
+                f'mkdir -p "{sandbox_path.parent}"; '
+                f'flock "{sandbox_path}.lock" -c \'[ -d "{sandbox_path}" ] || {build_sandbox}\'; '
+                f'[ -d "{sandbox_path}" ] && echo "{FLAG}"; fi',
                 history=True,
             )
             if FLAG in res.out:

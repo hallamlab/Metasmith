@@ -387,6 +387,16 @@ mode the other avoids:
   `squashfuse_ll` and wedge under the relay daemon's fork chain. The sandbox rootfs is read
   through unprivileged kernel overlayfs, never FUSE.
 
+**A use-sandbox host never runs `mksquashfs`, and that is the point, not an optimisation.**
+`MakeBuildSandboxCommand(from_image=True)` builds the sandbox straight from the registry,
+so no SIF is pulled and no squashfs is packed. Some hosts' `mksquashfs` aborts on large
+images (`malloc(): corrupted top size` on micb0, and the 4.7 series fails most builds of
+anything sizeable), and on those hosts the SIF was only ever a throwaway intermediate.
+Transform containers get the same treatment at execute time: `_ExecInEnv` builds a
+not-yet-cached image as a flock-guarded sandbox rather than falling back to
+`apptainer exec docker://…`, which would convert to SIF and crash on the big ones. So each
+host holds exactly one artifact — a SIF or a sandbox dir, not both.
+
 `MakeRunCommand` emits a run-time ternary picking whichever exists, so Deploy controls the
 choice by controlling the directory's presence; the verdict is re-evaluated every deploy,
 so an apptainer upgrade flips it. The store root is one point of control
