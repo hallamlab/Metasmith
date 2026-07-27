@@ -38,7 +38,7 @@ subsequent tests reuse it.
 ## Layout
 
 ```
-tests/e2e_agentic/
+tests/e2e/agentic/
 ├── harness/
 │   ├── sandbox.py           per-test sandbox builder + env_for_agent
 │   ├── bootstrap_env.py     host-shared mamba+apptainer env
@@ -84,9 +84,9 @@ tests/e2e_agentic/
    bumps:
 
    ```bash
-   tests/e2e_agentic/install_mock/build_local_artifacts.sh             # docker only
-   tests/e2e_agentic/install_mock/build_local_artifacts.sh --apptainer # adds metasmith.sif
-   tests/e2e_agentic/install_mock/build_local_artifacts.sh --force     # rebuild
+   tests/e2e/agentic/install_mock/build_local_artifacts.sh             # docker only
+   tests/e2e/agentic/install_mock/build_local_artifacts.sh --apptainer # adds metasmith.sif
+   tests/e2e/agentic/install_mock/build_local_artifacts.sh --force     # rebuild
    ```
 
    Produces (idempotent):
@@ -114,26 +114,26 @@ tests/e2e_agentic/
 
 ```bash
 # (1) unit tests — no API keys, no containers
-pytest tests/e2e_agentic/ -m "not e2e_agentic"
+pytest tests/e2e/agentic/ -m "not e2e_agentic"
 
 # (2) harness smoke (~90 s, ~10K tokens) — confirms wiring
-pytest tests/e2e_agentic/test_harness_smoke_live.py -m e2e_agentic
+pytest tests/e2e/agentic/test_harness_smoke_live.py -m e2e_agentic
 
 # (3) install test (~2 min)
-pytest tests/e2e_agentic/test_install.py -m e2e_agentic
+pytest tests/e2e/agentic/test_install.py -m e2e_agentic
 
 # (4) deploy test, both runtimes (~3 + 4 min)
-pytest tests/e2e_agentic/test_deploy.py -m e2e_agentic
+pytest tests/e2e/agentic/test_deploy.py -m e2e_agentic
 
 # (5) full tutorial runs
-pytest tests/e2e_agentic/test_my_first_agent.py tests/e2e_agentic/test_custom_transforms.py -m e2e_agentic -s
+pytest tests/e2e/agentic/test_my_first_agent.py tests/e2e/agentic/test_custom_transforms.py -m e2e_agentic -s
 
 # subset by runtime
-pytest tests/e2e_agentic/ -m e2e_agentic -k DOCKER
-pytest tests/e2e_agentic/ -m e2e_agentic -k APPTAINER
+pytest tests/e2e/agentic/ -m e2e_agentic -k DOCKER
+pytest tests/e2e/agentic/ -m e2e_agentic -k APPTAINER
 
 # render prompts only (no model call)
-pytest tests/e2e_agentic/ -m e2e_agentic --dry-run
+pytest tests/e2e/agentic/ -m e2e_agentic --dry-run
 ```
 
 ### Options (`pytest --help` → "e2e_agentic")
@@ -147,7 +147,7 @@ pytest tests/e2e_agentic/ -m e2e_agentic --dry-run
 | `--max-tokens` | 2_000_000 | cumulative across all iterations |
 | `--max-tokens-per-iter` | 200_000 | passed to driver where supported |
 | `--iter-timeout-s` | 900 | per-iteration wall-clock cap (opencode) |
-| `--runs-dir` | `tests/e2e_agentic/.runs/<ts>` | transcript output root |
+| `--runs-dir` | `tests/e2e/agentic/.runs/<ts>` | transcript output root |
 | `--dry-run` | off | render the prompt to disk and skip |
 
 ## The Ralph loop, briefly
@@ -205,7 +205,7 @@ pre-install step, before the agent starts. See
 
 | Symptom | Fix |
 |---|---|
-| `preflight failed: docker image ... not found` | `tests/e2e_agentic/install_mock/build_local_artifacts.sh` |
+| `preflight failed: docker image ... not found` | `tests/e2e/agentic/install_mock/build_local_artifacts.sh` |
 | `preflight failed: no metasmith-...tar.bz2 in conda channel` | same |
 | `preflight failed: apptainer runtime requested but metasmith.sif is missing` | `... build_local_artifacts.sh --apptainer` |
 | `preflight failed: opencode has no credentials configured` | `opencode auth login` (or set `OPENCODE_API_KEY` / `OPENROUTER_API_KEY`) |
@@ -213,4 +213,4 @@ pre-install step, before the agent starts. See
 | Live test stuck — same `PROGRESS.md` every iter | agent is wedged; `--iter-timeout-s` will eventually unstick it |
 | `external_directory` permission spam in opencode log | sandbox tree wasn't materialized correctly; check `test_sandbox_unit.py` first |
 
-Transcripts land under `tests/e2e_agentic/.runs/<timestamp>/<scenario>/<runtime>/iter-NNN/stream.jsonl`.
+Transcripts land under `tests/e2e/agentic/.runs/<timestamp>/<scenario>/<runtime>/iter-NNN/stream.jsonl`.

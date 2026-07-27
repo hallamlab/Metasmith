@@ -85,7 +85,7 @@ def _metasmith_libraries_root() -> Path:
     1. ``METASMITH_LIBRARIES_ROOT`` env var.
     2. Sibling dir ``<project_root>/../metasmith-libraries`` (dev layout).
     3. Auto-bootstrap clone into
-       ``tests/e2e_agentic/.cache/MetasmithLibraries`` (gitignored).
+       ``tests/e2e/agentic/.cache/MetasmithLibraries`` (gitignored).
 
     No ``git pull`` on subsequent runs — the cache clone is a one-shot
     bootstrap. To update, delete the cache dir (or set the env var to a

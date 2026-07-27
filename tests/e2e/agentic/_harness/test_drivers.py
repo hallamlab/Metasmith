@@ -118,6 +118,97 @@ def test_parse_claude_result_text_fallback(tmp_path: Path) -> None:
     assert s.final_text == "the-final-line"
 
 
+def test_parse_claude_stream_result_is_authoritative_for_cache(tmp_path: Path) -> None:
+    """Representative real-shaped stream: usage nested under ``message`` on
+    each assistant event, and a cumulative usage on the terminal ``result``
+    event. The result event is authoritative — the four counts must equal
+    the result's usage, NOT the sum of result + per-message usage (which
+    would double-count, badly so for cache_read).
+    """
+    p = _write_jsonl(tmp_path / "claude.jsonl", [
+        {"type": "system", "subtype": "init"},
+        {"type": "assistant",
+         "message": {"role": "assistant",
+                     "content": [{"type": "text", "text": "first"}],
+                     "usage": {"input_tokens": 100, "output_tokens": 20,
+                               "cache_read_input_tokens": 5_000,
+                               "cache_creation_input_tokens": 800}}},
+        {"type": "assistant",
+         "message": {"role": "assistant",
+                     "content": [{"type": "text", "text": "done"}],
+                     "usage": {"input_tokens": 10, "output_tokens": 40,
+                               "cache_read_input_tokens": 6_000,
+                               "cache_creation_input_tokens": 0}}},
+        {"type": "result", "result": "done",
+         "usage": {"input_tokens": 110, "output_tokens": 60,
+                   "cache_read_input_tokens": 11_000,
+                   "cache_creation_input_tokens": 800}},
+    ])
+    s = parse_claude_stream(p)
+    assert s.final_text == "done"
+    # authoritative == the result event's usage, not the per-message sum
+    assert s.tokens_in == 110
+    assert s.tokens_out == 60
+    assert s.tokens_cached == 11_000
+    assert s.tokens_cache_creation == 800
+
+
+def test_parse_claude_stream_falls_back_to_message_sum(tmp_path: Path) -> None:
+    """When the result event carries no usage (older CLI / truncated stream),
+    accounting falls back to summing the per-assistant-message usage — still
+    four-way, still each event counted once."""
+    p = _write_jsonl(tmp_path / "claude.jsonl", [
+        {"type": "assistant",
+         "message": {"content": [{"type": "text", "text": "a"}],
+                     "usage": {"input_tokens": 100, "output_tokens": 20,
+                               "cache_read_input_tokens": 5_000,
+                               "cache_creation_input_tokens": 800}}},
+        {"type": "assistant",
+         "message": {"content": [{"type": "text", "text": "b"}],
+                     "usage": {"input_tokens": 10, "output_tokens": 40,
+                               "cache_read_input_tokens": 6_000,
+                               "cache_creation_input_tokens": 0}}},
+        {"type": "result", "result": "b"},  # no usage
+    ])
+    s = parse_claude_stream(p)
+    assert s.tokens_in == 110
+    assert s.tokens_out == 60
+    assert s.tokens_cached == 11_000
+    assert s.tokens_cache_creation == 800
+
+
+def test_iterresult_tokens_total_includes_cache() -> None:
+    """The loop stop-condition total is the full billable footprint:
+    input + output + cache_read + cache_creation."""
+    from tests.e2e.agentic.drivers.base import IterResult
+
+    r = IterResult(
+        exit_code=0, tokens_in=100, tokens_out=50,
+        tokens_cached=2_000, tokens_cache_creation=300,
+        final_text="", transcript_path=None, duration_s=0.0,
+    )
+    assert r.tokens_total == 2_450
+
+
+def test_budget_record_tracks_split_and_charges_total() -> None:
+    """TokenBudget.record folds the four-way split for reporting and charges
+    the billable total against the limit (stop semantics unchanged)."""
+    from tests.e2e.agentic.drivers.base import IterResult
+    from tests.e2e.agentic.harness.budget import TokenBudget
+
+    b = TokenBudget(limit=10_000)
+    b.record(IterResult(
+        exit_code=0, tokens_in=100, tokens_out=50,
+        tokens_cached=2_000, tokens_cache_creation=300,
+        final_text="", transcript_path=None, duration_s=0.0,
+    ))
+    assert b.tokens_in == 100
+    assert b.tokens_out == 50
+    assert b.tokens_cached == 2_000
+    assert b.tokens_cache_creation == 300
+    assert b.used == 2_450  # billable total drives the stop condition
+
+
 # ---------------------------------------------------------------------------
 # factory
 # ---------------------------------------------------------------------------
@@ -143,3 +234,77 @@ def test_factory_honors_explicit_model() -> None:
 def test_factory_rejects_unknown_driver() -> None:
     with pytest.raises(ValueError, match="unknown agent driver"):
         make_driver("aider")
+
+
+# ---------------------------------------------------------------------------
+# per-iteration dollar runaway valve (--max-budget-usd)
+# ---------------------------------------------------------------------------
+
+
+def _capture_argv(monkeypatch, module) -> list:
+    """Stub the driver's run_streaming to record argv and return a clean exit."""
+    captured: list = []
+
+    def fake_run_streaming(argv, **kwargs):
+        captured.append(argv)
+        return (0, 0.0)  # exit_code, duration; no transcript written -> zeros
+
+    monkeypatch.setattr(module, "run_streaming", fake_run_streaming)
+    return captured
+
+
+def _invoke_claude(driver, tmp_path, **kw):
+    return driver.invoke(
+        prompt="do the thing", sandbox=tmp_path, env={},
+        max_tokens_per_iter=kw.pop("max_tokens_per_iter", 200_000),
+        log_dir=tmp_path, **kw,
+    )
+
+
+def test_claude_emits_explicit_max_budget_usd(monkeypatch, tmp_path) -> None:
+    from tests.e2e.agentic.drivers import claude as claude_mod
+    captured = _capture_argv(monkeypatch, claude_mod)
+
+    _invoke_claude(ClaudeDriver(model="haiku"), tmp_path, max_usd_per_iter=1.25)
+
+    argv = captured[0]
+    assert "--max-budget-usd" in argv
+    assert argv[argv.index("--max-budget-usd") + 1] == "1.2500"
+    # single-value flag sits before the trailing positional prompt
+    assert argv[-1] == "do the thing"
+
+
+def test_claude_derives_max_budget_usd_when_unset(monkeypatch, tmp_path) -> None:
+    from tests.e2e.agentic.drivers import claude as claude_mod
+    captured = _capture_argv(monkeypatch, claude_mod)
+
+    # haiku output rate $5/MTok * 2 safety factor: 200k -> $2.0000
+    _invoke_claude(ClaudeDriver(model="haiku"), tmp_path,
+                   max_tokens_per_iter=200_000, max_usd_per_iter=None)
+
+    argv = captured[0]
+    assert "--max-budget-usd" in argv
+    assert argv[argv.index("--max-budget-usd") + 1] == "2.0000"
+
+
+def test_claude_omits_max_budget_usd_for_unknown_model(monkeypatch, tmp_path) -> None:
+    from tests.e2e.agentic.drivers import claude as claude_mod
+    captured = _capture_argv(monkeypatch, claude_mod)
+
+    # unknown model + no explicit override -> guard disabled, no flag emitted
+    _invoke_claude(ClaudeDriver(model="sonnet"), tmp_path, max_usd_per_iter=None)
+
+    assert "--max-budget-usd" not in captured[0]
+
+
+def test_opencode_ignores_max_usd_per_iter(monkeypatch, tmp_path) -> None:
+    """opencode accepts the arg (protocol) but never emits a dollar flag."""
+    from tests.e2e.agentic.drivers import opencode as opencode_mod
+    captured = _capture_argv(monkeypatch, opencode_mod)
+
+    d = OpencodeDriver()
+    d.serve_port = 12345  # skip start_session; invoke only needs the port
+    d.invoke(prompt="go", sandbox=tmp_path, env={},
+             max_tokens_per_iter=200_000, log_dir=tmp_path, max_usd_per_iter=1.0)
+
+    assert "--max-budget-usd" not in captured[0]

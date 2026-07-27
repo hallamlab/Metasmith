@@ -28,6 +28,13 @@ Corollaries:
 
 Use the `msm` mamba environment: `mamba run -n msm <command>`.
 
+**Pin `PYTHONPATH` to this worktree's `src/`; do not merely unset it.** `metasmith` is not
+installed into `msm` at all — `tests/conftest.py` inserts `src/` for in-process imports, so
+an unset `PYTHONPATH` looks fine until a subprocess test spawns `python -m metasmith` and
+fails on its own. An ambient workspace `PYTHONPATH` is the opposite trap: it resolves the
+import to some other checkout. `PYTHONPATH="$PWD/src" mamba run -n msm …` is the form that
+is right under both.
+
 ---
 
 ## What Metasmith is

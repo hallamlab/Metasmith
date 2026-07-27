@@ -1,4 +1,6 @@
 manifest:
+  abricate.oci.uri:
+    type: std::oci_image_abricate
   bakta.oci.uri:
     type: std::oci_image_bakta
   bbtools.uri:
@@ -13,10 +15,18 @@ manifest:
     type: std::cazy_annotation_script
   cazy_visualize.py:
     type: std::cazy_visualize_script
+  clusterprofiler.oci.uri:
+    type: std::oci_image_clusterprofiler
+  clusterprofiler_enrich.R:
+    type: std::clusterprofiler_enrich_script
   diamond.oci.uri:
     type: std::oci_image_diamond
+  eggnog_mapper.oci.uri:
+    type: std::oci_image_eggnog_mapper
   fasterq_dump.oci.uri:
     type: std::oci_image_fasterq_dump
+  fastp.oci.uri:
+    type: std::oci_image_fastp
   fastqc.oci.uri:
     type: std::oci_image_fastqc
   filtlong.oci.uri:
@@ -49,5 +59,7 @@ manifest:
     type: std::oci_image_script_runner
   seqtk.uri:
     type: std::oci_image_seqtk
+  spades.oci.uri:
+    type: std::oci_image_spades
   trimmomatic.oci.uri:
     type: std::oci_image_trimmomatic

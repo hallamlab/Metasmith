@@ -1938,6 +1938,10 @@ class TransformInstance:
     batch_size: int = 1
     labels: list[str] = field(default_factory=list)
     cacheable: bool = True
+    # backward-compat shim: `output_signature` was removed from the model but ~23
+    # legacy std transforms still pass it. Accept-and-ignore so the full std
+    # library imports cleanly (outputs derive from context.Output regardless).
+    output_signature: dict = field(default_factory=dict)
     _path: Path = field(default_factory=Path)
     _key: str = ""
     _hash: int = -1
