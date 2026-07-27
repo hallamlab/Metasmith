@@ -47,17 +47,25 @@ def test_launcher_template_writes_valid_yaml_not_touch():
 
 @pytest.fixture(scope="module")
 def nextflow_bin():
-    """Locate a nextflow binary; fall back to msm_env's via mamba."""
+    """Locate a nextflow binary, or skip.
+
+    Order matters: the interpreter running the tests is checked before PATH,
+    because pytest is routinely invoked by absolute path (`.../envs/X/bin/python
+    -m pytest`), which leaves that env's bin/ off PATH even though it is the
+    environment under test. Falling through to a hardcoded env name instead is
+    what made this fixture fail on any machine that did not happen to have an
+    env by that name.
+    """
+    env_nxf = Path(sys.executable).parent / "nextflow"
+    if env_nxf.exists() and os.access(env_nxf, os.X_OK):
+        return [str(env_nxf)]
     path = shutil.which("nextflow")
     if path:
         return [path]
     # Common project layout: lib/nextflow downloaded by docker_builder.ensure_lib_prerequisites
-    repo_nxf = Path(__file__).resolve().parents[1] / "lib" / "nextflow"
+    repo_nxf = Path(__file__).resolve().parents[2] / "lib" / "nextflow"
     if repo_nxf.exists() and os.access(repo_nxf, os.X_OK):
         return [str(repo_nxf)]
-    # mamba fallback
-    if shutil.which("mamba"):
-        return ["mamba", "run", "-n", "msm_env", "nextflow"]
     pytest.skip("no nextflow binary available")
 
 
