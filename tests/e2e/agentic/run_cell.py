@@ -387,7 +387,7 @@ def run(argv: list[str] | None = None) -> int:
     # runs dir: <root>/<ts>/<test>/<arm>/rep<rep>
     ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     runs_root = (args.runs_dir
-                 or project_root / "tests" / "e2e_agentic" / ".runs" / ts)
+                 or project_root / "tests" / "e2e" / "agentic" / ".runs" / ts)
     log_dir = (runs_root / test_name / arm.id / f"rep{rep}").resolve()
     log_dir.mkdir(parents=True, exist_ok=True)
 
