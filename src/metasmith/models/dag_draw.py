@@ -26,12 +26,15 @@ from pathlib import Path
 from typing import Any, Mapping
 from xml.sax.saxutils import escape
 
+from .dag_colour import Colouring
 from .dag_layout import Layout
 
 __all__ = [
     "Style", "Label", "LabelMode", "default_label", "dot_escape", "marker_size",
-    "render_text", "render_svg", "raster_dot", "render_raster",
+    "tint", "render_text", "render_svg", "raster_dot", "render_raster",
 ]
+
+_NO_COLOUR = Colouring()
 
 DEFAULT_LABEL_CHARS = 32  # bound on the drawn name line; the rest is on hover
 BAND = 0.10  # of a row pitch: how far apart the two directions of travel sit
@@ -177,6 +180,7 @@ def render_text(
     labels: Mapping[str, Label] | None = None,
     unicode: bool = True,
     color: bool = False,
+    colour: Colouring | None = None,
 ) -> str:
     """One row per node: rails, marker, then the label in a single column.
 
@@ -186,10 +190,15 @@ def render_text(
     reclaiming horizontal pixels, which a text dump does not pay for. Per-lane
     label columns would need variable-width lanes, which the fixed two-column
     mask painter cannot express.
+
+    A colour scheme reaches the marker as a 24-bit escape and outranks the
+    style's own `ansi`, but only when `color` is on: anything written to a file
+    or a pipe stays exactly the plain text the golden tests pin.
     """
     if lay.height == 0:
         return ""
     style = style or {}
+    colour = colour or _NO_COLOUR
     lab = _labels_for(lay, labels)
     glyphs = _GLYPHS if unicode else _GLYPHS_ASCII
     columns = 2 * lay.width
@@ -208,9 +217,10 @@ def render_text(
         cells = [glyphs[m] for m in mask]
         cells[_column(node.lane, columns)] = st.marker if unicode else st.ascii_marker
         line = "".join(cells) + " " * (label_col - columns)
-        if color and st.ansi:
+        escape_ = _ansi(colour.nodes.get(node.name)) or st.ansi
+        if color and escape_:
             c = _column(node.lane, columns)
-            line = f"{line[:c]}{st.ansi}{line[c]}\033[0m{line[c + 1:]}"
+            line = f"{line[:c]}{escape_}{line[c]}\033[0m{line[c + 1:]}"
         label = lab[node.name].full
         if node.name in back_from:
             label += "  " + " ".join(
@@ -223,6 +233,15 @@ def render_text(
         for connector in _connectors(lay, node.row, columns):
             out.append("".join(glyphs[m] for m in connector).rstrip())
     return "\n".join(out) + "\n"
+
+
+def _ansi(hex_colour: str | None) -> str:
+    """A `#rrggbb` as a 24-bit foreground escape; "" when there is no colour."""
+    if not hex_colour:
+        return ""
+    h = hex_colour.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return f"\033[38;2;{r};{g};{b}m"
 
 
 def _connectors(lay: Layout, row: int, columns: int) -> list[list[int]]:
@@ -589,8 +608,10 @@ def render_svg(
     max_label_chars: int = DEFAULT_LABEL_CHARS,
     font: str = "Arial",
     font_size: float = 13.0,
+    colour: Colouring | None = None,
 ) -> str:
     style = style or {}
+    colour = colour or _NO_COLOUR
     g, drawn = _grid(
         lay, font_size=font_size, labels=labels,
         mode=label_mode, max_chars=max_label_chars,
@@ -609,7 +630,9 @@ def render_svg(
     for e in lay.edges:
         if e.back:
             continue
-        parts.append(f'<path d="{_svg_path(*_pixel_path(lay, e, g, style))}"/>')
+        hue = colour.edges.get((e.src, e.dst))
+        stroke = f' stroke="{hue}"' if hue else ""
+        parts.append(f'<path d="{_svg_path(*_pixel_path(lay, e, g, style))}"{stroke}/>')
     parts.append("</g>")
 
     for node in lay.nodes:
@@ -618,7 +641,7 @@ def render_svg(
         cx, cy = g.x(node.lane), g.y(node.row)
         lx = g.label_x[node.lane]
         parts.append(f'<g><title>{escape(d.full)}</title>')
-        parts.append(_svg_marker(st, cx, cy, g.marker_d))
+        parts.append(_svg_marker(st, cx, cy, g.marker_d, colour.nodes.get(node.name)))
         if d.namespace:
             parts.append(
                 f'<text x="{lx:.1f}" y="{cy - 0.42 * font_size:.1f}"'
@@ -648,12 +671,31 @@ def _svg_path(points: list[tuple[float, float]], arcs: dict[int, _Arc]) -> str:
     return " ".join(d)
 
 
-def _svg_marker(st: Style, cx: float, cy: float, marker_d: float) -> str:
+def tint(st: Style, hue: str | None) -> tuple[str, str]:
+    """A marker's (fill, stroke) once a colour scheme has had its say.
+
+    For a hollow marker the hue goes on the outline, since the fill has
+    nothing of its own to say. The target square is the one shape drawn
+    solid — there the hue goes on the fill instead, and the outline stays
+    the style's own, so a requested output still reads "solid" rather than
+    "outlined" once colour is on.
+    """
+    if not hue:
+        return st.fill, st.stroke
+    if st.svg_shape == "square":
+        return hue, st.stroke
+    return st.fill, hue
+
+
+def _svg_marker(
+    st: Style, cx: float, cy: float, marker_d: float, hue: str | None = None
+) -> str:
     w, h = marker_size(st, marker_d)
+    fill, stroke = tint(st, hue)
     if st.svg_shape == "circle":
         return (
             f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{w / 2:.1f}"'
-            f' fill="{st.fill}" stroke="{st.stroke}" stroke-width="{st.stroke_width}"/>'
+            f' fill="{fill}" stroke="{stroke}" stroke-width="{st.stroke_width}"/>'
         )
     if st.svg_shape == "triangle_down":
         # equilateral on its point, centred on the cell so a rail entering from
@@ -663,14 +705,14 @@ def _svg_marker(st: Style, cx: float, cy: float, marker_d: float) -> str:
             f" {cx:.1f},{cy + h / 2:.1f}"
         )
         return (
-            f'<polygon points="{pts}" fill="{st.fill}" stroke="{st.stroke}"'
+            f'<polygon points="{pts}" fill="{fill}" stroke="{stroke}"'
             f' stroke-width="{st.stroke_width}" stroke-linejoin="round"/>'
         )
 
     return (
         f'<rect x="{cx - w / 2:.1f}" y="{cy - h / 2:.1f}" width="{w:.1f}"'
         f' height="{h:.1f}" rx="{st.rx}"'
-        f' fill="{st.fill}" stroke="{st.stroke}" stroke-width="{st.stroke_width}"/>'
+        f' fill="{fill}" stroke="{stroke}" stroke-width="{st.stroke_width}"/>'
     )
 
 
@@ -683,6 +725,7 @@ def raster_dot(
     max_label_chars: int = DEFAULT_LABEL_CHARS,
     font: str = "Arial",
     font_size: float = 13.0,
+    colour: Colouring | None = None,
 ) -> str:
     """DOT with every node pinned by `pos`, for `neato -n2`.
 
@@ -699,6 +742,7 @@ def raster_dot(
     three backends stop agreeing, and it only affects raster previews.
     """
     style = style or {}
+    colour = colour or _NO_COLOUR
     g, drawn = _grid(
         lay, font_size=font_size, labels=labels,
         mode=label_mode, max_chars=max_label_chars,
@@ -718,12 +762,13 @@ def raster_dot(
         # a global penwidth pinned here is how the PNG used to disagree with
         # the SVG about how heavy an outline was
         w, h = marker_size(st, g.marker_d)
+        fill, stroke = tint(st, colour.nodes.get(node.name))
         lines.append(
             f'  "{node.name}" [pos="{x:.1f},{y:.1f}!", label="",'
             f' width={w / 72:.3f}, height={h / 72:.3f},'
             f' penwidth={st.stroke_width:g},'
             f' shape="{st.shape}", style="{st.gv_style}",'
-            f' fillcolor="{st.fill}", color="{st.stroke}"'
+            f' fillcolor="{fill}", color="{stroke}"'
             f'{", " + st.gv_attrs if st.gv_attrs else ""}];'
         )
         box = max(d.width, 1.0)
@@ -741,7 +786,9 @@ def raster_dot(
         pts = [
             (x, g.height - y) for x, y in _flatten(*_pixel_path(lay, e, g, style))
         ]
-        lines.append(f'  "{e.src}" -> "{e.dst}" [pos="{_spline(pts)}"];')
+        hue = colour.edges.get((e.src, e.dst))
+        tone = f', color="{hue}"' if hue else ""
+        lines.append(f'  "{e.src}" -> "{e.dst}" [pos="{_spline(pts)}"{tone}];')
     lines.append("}")
     return "\n".join(lines)
 

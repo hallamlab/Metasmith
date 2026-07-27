@@ -4,10 +4,11 @@
     python tests/fixtures/compare_layouts.py [OUT_DIR]
     python tests/fixtures/compare_layouts.py --corpus [N]
 
-Writes an SVG (and a PNG where `neato` is on PATH) per label placement, a table
-of their dimensions, and the layout's cost — so both the choice between
-placements and any change to the placement itself are a number rather than an
-impression. Run by hand; nothing in the suite depends on it.
+Writes an SVG (and a PNG where `neato` is on PATH) per label placement, one SVG
+per colour scheme, a table of their dimensions, and the layout's cost — so both
+the choice between placements and any change to the placement itself are a
+number rather than an impression. Run by hand; nothing in the suite depends on
+it.
 
 `--corpus` is the other half of the argument. Symmetry now leads the layout's
 objective, so the question it has to answer is what that costs on graphs where
@@ -38,6 +39,7 @@ sys.path.insert(0, str(HERE.parents[2] / "src"))
 sys.path.insert(0, str(HERE.parents[2]))
 
 import metasmith.models.dag_layout as dag_layout  # noqa: E402
+from metasmith.models.dag_colour import SCHEMES  # noqa: E402
 from metasmith.models.dag_layout import measure  # noqa: E402
 from metasmith.models.dag_renderer import LabelMode  # noqa: E402
 from tests.fixtures import load_dag  # noqa: E402
@@ -68,6 +70,9 @@ def main() -> int:
         except RuntimeError as e:
             print(f"  (no raster for {name}: {e})", file=sys.stderr)
 
+    for scheme in SCHEMES:
+        (out / f"colour-{scheme}.svg").write_text(load_dag(colour=scheme).to_svg())
+
     (out / "rails.txt").write_text(load_dag().to_text())
 
     head = f"{'variant':<10} {'svg w':>7} {'svg h':>7} {'lanes':>6} {'rows':>6} {'text':>6}"
@@ -78,9 +83,10 @@ def main() -> int:
     narrow = min(rows, key=lambda r: r[1])
     wide = max(rows, key=lambda r: r[1])
     print(f"\n{narrow[0]} is {wide[1] / narrow[1]:.1f}x narrower than {wide[0]}")
-    # label placement does not touch the layout, so one measurement covers both
+    # neither label placement nor colour touches the layout, so one measurement
+    # covers all of them
     print(f"cost: {measure(load_dag().layout())}")
-    print(f"wrote {out}/")
+    print(f"wrote {out}/ (+{len(SCHEMES)} colour schemes)")
     return 0
 
 

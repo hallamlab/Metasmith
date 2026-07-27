@@ -437,10 +437,11 @@ prefix-aware replacements.
 
 ### DAG rendering
 
-Placement is metasmith's own, in three modules under `src/metasmith/models/`:
+Placement is metasmith's own, in four modules under `src/metasmith/models/`:
 `dag_layout` (pure geometry — rows, lanes, routed polylines), `dag_draw`
-(the text / SVG / DOT backends), `dag_renderer` (the node/edge API callers
-use). Graphviz is reached only for raster formats, and only as `neato -n2`,
+(the text / SVG / DOT backends), `dag_colour` (schemes over a finished layout,
+off by default), `dag_renderer` (the node/edge API callers use). Graphviz is
+reached only for raster formats, and only as `neato -n2`,
 which honours our `pos` and lays nothing out; `to_dot()` stays a plain,
 positionless description of the graph for consumers running their own.
 
@@ -488,6 +489,12 @@ Three things about it are load-bearing and not obvious from the code:
   Ceilings are pinned in `test_dag_stress.py`, with the pre-change numbers in
   the docstring; a change is free to improve them and has to say so out loud
   to make one worse.
+- **Colour is decoration and the layout must never see it.** Every scheme is a
+  pure function of a finished `Layout`. Two opposite jobs go under the one
+  word: `lane` and `module` are graph colouring — touching things differ, good
+  for tracing one rail — while `repeat` is the reverse, every instance of a
+  motif in one hue. Only the second makes a repetition visible, and only
+  because the layout already put the instances in the same shape.
 
 Two things that were tried on the row order and are *worse*, both measured:
 optimal Sugiyama layer assignment (the network-simplex objective from Gansner

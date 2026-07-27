@@ -131,6 +131,7 @@ def render_dag(
     workspace: str | None = None,
     label_mode: str = "column",
     show_step_order: bool = False,
+    colour: str = "module",
 ) -> dict:
     task = _ws.load_task(workspace, task_key)
     # name the file with its real extension: `plan.dag` alone reads back as a
@@ -142,6 +143,7 @@ def render_dag(
         blacklist_namespaces=bl,
         label_mode=LabelMode(label_mode),
         show_step_order=show_step_order,
+        colour=colour,
     )
     return {"task_key": task_key, "format": format, "path": str(rendered)}
 

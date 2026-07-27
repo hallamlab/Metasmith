@@ -1,6 +1,7 @@
 """`metasmith task ...` subcommands — inspect cached workflow plans."""
 from __future__ import annotations
 
+from ...models.dag_colour import SCHEMES
 from ...ops import workflow as _ops
 
 
@@ -31,9 +32,12 @@ def register(subs):
                            " rail; beside: label next to each marker")
     _dag.add_argument("--step-order", action="store_true",
                       help="show the step number above each transform name")
+    _dag.add_argument("--colour", default="module", choices=list(SCHEMES),
+                      help="colour scheme (default: module)")
     _dag.set_defaults(func=lambda a: _ops.render_dag(
         a.task_key, a.format, a.blacklist_namespaces, a.workspace,
         label_mode=a.label_mode, show_step_order=a.step_order,
+        colour=a.colour,
     ))
 
     _del = sp.add_parser("delete", help="remove a cached task")

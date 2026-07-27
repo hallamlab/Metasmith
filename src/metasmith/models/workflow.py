@@ -999,7 +999,7 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False) -> DagRenderer:
+    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module") -> DagRenderer:
         """The plan as a renderer, so callers that want the graph — a stress
         harness, a comparison — do not have to write a file to get it."""
         def _get_ns(name: str) -> str:
@@ -1008,7 +1008,7 @@ class WorkflowPlan:
                 return ns
             return name
 
-        r = DagRenderer(font=font, label_mode=label_mode)
+        r = DagRenderer(font=font, label_mode=label_mode, colour=colour)
         r.add_node(NodeKind.TRANSFORM, "given")
 
         k2names: dict[Endpoint, set[str]] = {}
@@ -1075,13 +1075,14 @@ class WorkflowPlan:
 
         return r
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module"):
         return self.BuildDAG(
             font=font,
             blacklist_namespaces=blacklist_namespaces,
             show_step_order=show_step_order,
             label_mode=label_mode,
             target_sink=target_sink,
+            colour=colour,
         ).render(path_base, format)
 
 @dataclass

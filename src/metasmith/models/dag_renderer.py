@@ -13,6 +13,7 @@ from __future__ import annotations
 from enum import Enum, auto
 from pathlib import Path
 
+from .dag_colour import SCHEMES, Colouring, colour_layout
 from .dag_draw import (
     Label, LabelMode, Style, default_label, dot_escape,
     raster_dot, render_raster, render_svg, render_text,
@@ -82,10 +83,20 @@ class DagRenderer:
         font: str = "Arial",
         rankdir: str = "TB",
         label_mode: LabelMode = LabelMode.COLUMN,
+        colour: str = "none",
     ):
+        if colour not in SCHEMES:
+            raise ValueError(
+                f"unknown colour scheme {colour!r};"
+                f" expected one of {', '.join(SCHEMES)}"
+            )
         self._font    = font
         self._rankdir = rankdir
         self._label_mode = label_mode
+        # monochrome by default: colour is a thing a caller asks for, and which
+        # of the schemes is worth defaulting to is a question for a reader
+        # looking at them, not for this constructor
+        self._colour = colour
         self._nodes: dict[str, NodeKind] = {}
         self._labels: dict[str, Label] = {}
         self._edges: list[tuple[str, str]] = []
@@ -147,21 +158,31 @@ class DagRenderer:
         lines.append("}")
         return "\n".join(lines)
 
+    def colouring(self, lay: Layout | None = None) -> Colouring:
+        """The scheme applied to this graph; empty unless one was asked for."""
+        return colour_layout(lay or self.layout(), self._colour)
+
     def to_text(self, *, unicode: bool = True, color: bool = False) -> str:
+        lay = self.layout()
         return render_text(
-            self.layout(), STYLES, labels=self.labels, unicode=unicode, color=color
+            lay, STYLES, labels=self.labels, unicode=unicode, color=color,
+            colour=self.colouring(lay),
         )
 
     def to_svg(self) -> str:
+        lay = self.layout()
         return render_svg(
-            self.layout(), STYLES, labels=self.labels,
+            lay, STYLES, labels=self.labels,
             label_mode=self._label_mode, font=self._font,
+            colour=self.colouring(lay),
         )
 
     def to_raster_dot(self) -> str:
+        lay = self.layout()
         return raster_dot(
-            self.layout(), STYLES, labels=self.labels,
+            lay, STYLES, labels=self.labels,
             label_mode=self._label_mode, font=self._font,
+            colour=self.colouring(lay),
         )
 
     def render(self, path_base: Path | str, format: str = "svg") -> Path:
