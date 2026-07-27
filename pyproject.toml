@@ -16,4 +16,5 @@ markers = [
     "requires_apptainer: apptainer CLI must be available",
     "requires_docker_dev_image: ./dev.sh -bd must have produced quay.io/hallamlab/metasmith:<tag>",
     "network: requires LIVESHELL_REMOTE_HOST (ssh-reachable host) env var",
+    "gui: the web GUI's own suite -- the inner loop while working on it (dev.sh -tg)",
 ]

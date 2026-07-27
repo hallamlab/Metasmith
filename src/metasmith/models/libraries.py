@@ -325,6 +325,12 @@ class DataInstanceLibrary:
         self.types: dict[str, DataTypeLibrary] = {}
         self._dtype2name = {}
         self.remote_src: Source|None = None
+        # an optional user-set discriminator. Identity here is deliberately content-free
+        # (inputs reach 100s of GB), so two libraries listing the same paths are the same
+        # library. Setting this is how a user says "no, treat this as new" -- it is packed
+        # into the manifest, so it flows into the library key, every instance_id, and the
+        # plan/task key without any special casing downstream.
+        self.fork_id: str|None = None
         self.parents: dict[Path, list[DataInstanceLibrary.ParentMetadata]] = {}
         self._endpoint_cache: dict[Path, Endpoint] = {}
         # S2 — per-path identity metadata. Each entry:
@@ -337,6 +343,7 @@ class DataInstanceLibrary:
             self.manifest = other.manifest
             self.types = other.types
             self.instance_meta = other.instance_meta
+            self.fork_id = other.fork_id
         else:
             location = Path(location).resolve()
             if not location.exists():
@@ -848,6 +855,22 @@ class DataInstanceLibrary:
         self.parents[p] = current
         self._invalidate_endpoint_cache()
 
+    def SetParentsOf(self, path: Path|str, parents: Iterable[DataInstance]):
+        """Declare an item's lineage to be exactly this, dropping what it was.
+
+        `AddParentsTo` is a union, which is what declaring lineage as items
+        arrive wants and what taking a link back cannot use. Editing needs both
+        directions, so this clears first and then goes through the same add --
+        the parent metadata is built in one place either way.
+        """
+        p = Path(path)
+        if p in self.parents:
+            del self.parents[p]
+            # ...even when the new list is empty, which AddParentsTo returns
+            # early on: an endpoint cached with the old parents is now wrong
+            self._invalidate_endpoint_cache()
+        self.AddParentsTo(p, parents)
+
     def _calculate_key(self, _raw_override=None):
         if _raw_override is not None:
             me_d = {k: v for k, v in _raw_override.items() if k != "remote_src"}
@@ -919,6 +942,7 @@ class DataInstanceLibrary:
         packed = dict(
             schema=self.schema,
             manifest=man,
+            fork_id=self.fork_id,
             remote_src=self.remote_src.Pack() if self.remote_src is not None else None,
         )
         return {k:v for k, v in packed.items() if v is not None}
@@ -957,6 +981,7 @@ class DataInstanceLibrary:
         lib.schema = raw["schema"]
         lib.manifest = manifest
         lib.instance_meta = instance_meta
+        lib.fork_id = raw.get("fork_id")
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
         # First pass: Build immediate parents for all items

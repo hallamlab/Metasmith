@@ -11,21 +11,59 @@ from ._common import load_data_lib, load_transform_lib
 from . import workspace as _ws
 
 
+def _add_targets(builder: TargetBuilder, target_types: list) -> list[TargetSpec]:
+    """Declare each target, wiring the lineage links between them.
+
+    A target is either a bare type name or `{"type": ..., "parents": [i, ...]}`,
+    where each `i` indexes an *earlier* entry in this same list. That is what
+    keeps two targets of the same type distinct -- without it the second one is
+    a duplicate request and is refused.
+    """
+    specs: list[TargetSpec] = []
+    for i, target in enumerate(target_types):
+        if isinstance(target, str):
+            name, parents = target, ()
+        else:
+            name = target.get("type")
+            assert name, f"target #{i + 1} has no type"
+            parents = tuple(target.get("parents") or ())
+        handles = []
+        for p in parents:
+            # Positions are stored 0-based and said 1-based, here as everywhere
+            # else a target is named to a person -- one sentence carrying both
+            # counts reads as an off-by-one in whichever half you trust less.
+            assert isinstance(p, int) and 0 <= p < len(specs), (
+                f"target #{i + 1} [{name}] names parent #{p + 1 if isinstance(p, int) else p}, "
+                f"which is not one of the {len(specs)} target(s) declared before it"
+            )
+            handles.append(specs[p])
+        specs.append(builder.Add(name, parents=handles or None))
+    return specs
+
+
 def plan_workflow(
     data_library: str,
-    sample_type: str,
-    target_types: list[str],
+    sample_type: str | None,
+    target_types: list[str | dict],
     transform_libraries: list[str],
     resource_libraries: list[str] | None = None,
     workspace: str | None = None,
 ) -> dict:
-    """Plan a workflow: chain of transforms from sample_type to target_types.
+    """Plan a workflow: chain of transforms from the given inputs to target_types.
+
+    `sample_type` splits the library into one run per item of that type. Left
+    unset, the library is planned as it stands -- one sample holding everything
+    in it -- which is the whole of what a plan needs; sampling is a way of
+    branching it, not a precondition for having one.
 
     Persists the resulting WorkflowTask under <workspace>/<task_key>/ on success.
     """
     data_lib = load_data_lib(data_library)
-    samples = list(data_lib.AsSamples(sample_type))
-    assert samples, f"no samples of type [{sample_type}] found in [{data_library}]"
+    if sample_type:
+        samples = list(data_lib.AsSamples(sample_type))
+        assert samples, f"no samples of type [{sample_type}] found in [{data_library}]"
+    else:
+        samples = [DataInstanceLibraryView(data_lib)]
 
     tr_libs = [load_transform_lib(p) for p in transform_libraries]
     res_libs = [load_data_lib(p) for p in (resource_libraries or [])]
@@ -39,8 +77,7 @@ def plan_workflow(
         raise AssertionError(f"no transforms had the namespace [{ns}]")
 
     targets = TargetBuilder()
-    for t in target_types:
-        targets.Add(t)
+    _add_targets(targets, target_types)
 
     target_model = Transform()
     _spec2dep: dict[TargetSpec, Dependency] = {}

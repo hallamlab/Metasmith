@@ -18,6 +18,7 @@ from ...logging import Log
 def register(subs):
     _register_get(subs)
     _register_lab(subs)
+    _register_gui(subs)
     _register_api(subs)
 
 
@@ -63,10 +64,10 @@ def _register_lab(subs):
 
 def _cmd_lab(args):
     Log.Info(f"Metasmith {VERSION}")
+    from ...gui.stdlib import bootstrap_project
+
     settings_path = Path("jupyterlab_settings")
     os.environ["JUPYTERLAB_SETTINGS_DIR"] = str(settings_path)
-    examples_path = Path("example_resources")
-    lib_path = Path("MetasmithLibraries")
 
     if not settings_path.exists():
         Log.Info("loading JupyterLab presets...")
@@ -75,17 +76,8 @@ def _cmd_lab(args):
             f"{MODULE_PATH}/jupyter_lab/settings/",
             f"{settings_path}",
         ], text=True)
-    if not examples_path.exists():
-        Log.Info("loading tutorials...")
-        subprocess.run([
-            "rsync", "-auP",
-            f"{MODULE_PATH}/example_resources/",
-            f"./{examples_path}",
-        ], text=True)
-    if not lib_path.exists():
-        libraries_url = "https://github.com/hallamlab/MetasmithLibraries.git"
-        Log.Info(f"downloading standard library from [{libraries_url}]...")
-        subprocess.run(["git", "clone", libraries_url], text=True)
+    # shared with `msm gui`: both front ends open the same working directory
+    bootstrap_project(Path("."))
 
     try:
         Log.Info("starting Jupyter lab...")
@@ -107,6 +99,51 @@ def _cmd_lab(args):
         subprocess.run(cmds, text=True)
     except KeyboardInterrupt:
         pass
+    return None
+
+
+# -- gui --------------------------------------------------------------------
+
+def _register_gui(subs):
+    p = subs.add_parser("gui", help="run the web GUI over the current directory")
+    p.add_argument("--host", default="127.0.0.1",
+                   help="interface to bind (default: loopback only)")
+    p.add_argument("--port", type=int, default=8090)
+    p.add_argument("--project", type=Path, default=Path("."),
+                   help="project directory (default: cwd)")
+    p.add_argument("--no-browser", action="store_true")
+    p.add_argument("--no-bootstrap", action="store_true",
+                   help="skip copying examples and cloning the standard library")
+    p.add_argument("--ssh-config", type=Path, default=None,
+                   help="ssh config to manage (default: ~/.ssh/config)")
+    p.set_defaults(func=_cmd_gui)
+
+
+def _cmd_gui(args):
+    Log.Info(f"Metasmith {VERSION}")
+    try:
+        import flask  # noqa: F401
+        import coolname  # noqa: F401
+    except ImportError as exc:
+        Log.Error(
+            f"the GUI needs flask and coolname ({exc.name} is missing). "
+            f"They ship with the conda package; in a bare environment: "
+            f"conda install -c conda-forge flask coolname"
+        )
+        return None
+
+    from ...gui.app import serve
+    from ...gui.stdlib import bootstrap_project
+
+    if not args.no_bootstrap:
+        bootstrap_project(args.project)
+    serve(
+        project_root=args.project,
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_browser,
+        ssh_config_path=args.ssh_config,
+    )
     return None
 
 

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- A favicon sits on the browser's chrome, not on the page, so the app
+         being dark-only says nothing about which mark to use: the "-dark" file
+         is the one drawn *for* a dark background. A browser that ignores the
+         media attribute takes the last link, and dark is the likelier tab bar. -->
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: light)"
+          href="../src/metasmith/gui/icon/metasmith-logo-light.svg" />
+    <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)"
+          href="../src/metasmith/gui/icon/metasmith-logo-dark.svg" />
+    <title>metasmith</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

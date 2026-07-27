@@ -85,6 +85,31 @@ _assert_real_relays() {
 # whose embedded build hash disagrees with the image tag (and with the conda
 # build). Recompute the live source hash and require a matching sdist in dist/.
 # Override with MSM_SKIP_DIST_CHECK=1.
+# Refuse to package without a built GUI bundle. It is generated rather than
+# committed, so skipping --build-gui ships an empty static/ and `msm gui`
+# serves nothing — a failure invisible until someone opens the page. Same
+# shape as the stub-relay bug in 0.18.4, and guarded the same way. Set
+# MSM_SKIP_GUI_CHECK=1 to override.
+_gui_static="$HERE/src/$NAME/gui/static"
+_assert_gui_bundle() {
+    [ -n "$MSM_SKIP_GUI_CHECK" ] && {
+        echo "MSM_SKIP_GUI_CHECK set — skipping GUI bundle check"
+        return 0
+    }
+    if [ ! -f "$_gui_static/index.html" ]; then
+        echo ""
+        echo "ERROR: the GUI bundle is missing at $_gui_static"
+        echo ""
+        echo "  It is built, not committed, so a fresh checkout has none. Build it first:"
+        echo "    $HERE/dev.sh --build-gui"
+        echo ""
+        echo "  Override (NOT recommended) by setting MSM_SKIP_GUI_CHECK=1."
+        return 1
+    fi
+    echo "gui bundle: $(du -sh "$_gui_static" | cut -f1) at $_gui_static"
+    return 0
+}
+
 _assert_dist_matches_source() {
     [ -n "$MSM_SKIP_DIST_CHECK" ] && {
         echo "MSM_SKIP_DIST_CHECK set — skipping dist/source hash check"
@@ -130,6 +155,7 @@ echo ""
 # # add pypi api token as file to ./secrets [https://pypi.org/help/#apitoken]
 # # make some changes to source
 # # bump up ./src/*/version.txt
+# dev.sh --build-gui # build the frontend bundle (needs node; not committed)
 # dev.sh -bp # build the pip package
 # dev.sh -up # test upload to testpypi
 # dev.sh -upload-pypi # release to pypi index for pip install
@@ -142,6 +168,7 @@ echo ""
 #
 # example workflow 3, containerization:
 # dev.sh --idev # create a local conda dev env
+# dev.sh --build-gui # build the frontend bundle (needs node; not committed)
 # dev.sh -bd # build docker image
 # dev.sh -ud # publish to quay.io
 # dev.sh -bs # build apptainer image from local docker image
@@ -175,8 +202,23 @@ case $1 in
 
     ###################################################
     # build
+    --build-gui) # frontend bundle for `msm gui`
+        # Needs node. It is a build dependency only — the bundle is shipped
+        # prebuilt, so the runtime env has no use for it and base.yml does not
+        # carry it.
+        command -v npm >/dev/null || {
+            echo "ERROR: npm not found. The GUI bundle needs node to build:"
+            echo "  conda create -n msm_node -c conda-forge nodejs"
+            echo "  conda activate msm_node && $HERE/dev.sh --build-gui"
+            exit 1
+        }
+        cd $HERE/frontend
+        [ -d node_modules ] || npm install --no-audit --no-fund
+        npm run build
+    ;;
     -bp) # pip
         # build pip package
+        _assert_gui_bundle || exit 1
         [ -d ./build ] && rm -r build
         [ -d ./dist ] && rm -r dist
         # Stamp build_hash.txt before sdist/wheel so FULL_VERSION is baked in.
@@ -209,6 +251,7 @@ case $1 in
         ./dev.sh -b
     ;;
     -bd) # docker
+        _assert_gui_bundle || exit 1
         # pre-download requirements
         mkdir -p $HERE/lib
         cd $HERE/lib
@@ -337,6 +380,26 @@ case $1 in
         cd $HERE
         export PYTHONPATH=$HERE/src:$PYTHONPATH
         pytest $@
+    ;;
+
+    -tg) # just the GUI's suite -- the inner loop while working on the page
+        shift
+        cd $HERE
+        # Pinned, not prepended: a *relative* entry inherited from the caller's
+        # PYTHONPATH (a workspace that exports `../../src`) is re-resolved
+        # against the cwd of every process and every temp dir a test chdirs to,
+        # and the stat misses alone doubled this suite's wall time.
+        export PYTHONPATH=$HERE/src
+        # The marker is the definition of the set; the file list is derived from
+        # it rather than repeated here, so marking a new file is all it takes.
+        # Handing pytest the paths matters as much as the -m does: collection
+        # imports every module it walks, and importing the e2e ones costs more
+        # than this whole suite takes to run.
+        gui_files=$(grep -rl '^pytestmark = pytest.mark.gui' $HERE/tests)
+        [ -z "$gui_files" ] && { echo "no test file carries \`pytestmark = pytest.mark.gui\`"; exit 1; }
+        # -q and no per-test names: this is meant to be run every minute, so
+        # what it prints is the count and the failures, not a 200-line roster.
+        pytest -m gui -q --durations=0 --durations-min=0.25 $gui_files $@
     ;;
 
     -td) # inject updates to an agent home for dev binds

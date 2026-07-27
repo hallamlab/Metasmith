@@ -314,6 +314,41 @@ class TestAgentOps:
         mdep.assert_called_once_with(False)
 
 
+class TestDefaultPreset:
+    """Which nextflow config a run uses when nobody names one."""
+
+    def test_the_shipped_presets_are_listed(self):
+        assert "local" in op_agent.config_presets()
+
+    def test_a_saved_preset_comes_back_on_info(self, tmp_path):
+        p = tmp_path / "alice.yml"
+        op_agent.save_agent(str(p), home_uri=str(tmp_path / "home"),
+                            default_preset="slurm")
+        assert op_agent.info(str(p))["default_preset"] == "slurm"
+
+    def test_saving_without_one_clears_it(self, tmp_path):
+        """A whole-object save means what it does not say, same as globus_uuid."""
+        p = tmp_path / "alice.yml"
+        op_agent.save_agent(str(p), home_uri=str(tmp_path / "home"),
+                            default_preset="slurm")
+        op_agent.save_agent(str(p), home_uri=str(tmp_path / "home"))
+        assert op_agent.info(str(p))["default_preset"] is None
+
+    def test_a_preset_that_no_longer_exists_says_which(self, tmp_path):
+        """Resolved in one place, so this reaches the CLI, the page and the API.
+
+        Checked before anything is staged or shelled: an agent naming a preset
+        that was removed is a line in someone's yaml, not a metasmith bug, and
+        a bare KeyError several minutes into a launch reads as the latter.
+        """
+        from metasmith.agents import Agent
+        from metasmith.models.remote import Source
+        agent = Agent(home=Source(address=str(tmp_path / "home")),
+                      default_preset="no-such-preset")
+        with pytest.raises(AssertionError, match="no-such-preset"):
+            agent.RunWorkflow("some-task-key")
+
+
 class TestRuntimeOps:
     @pytest.fixture
     def planned(self, tmp_path, mock_samples, transform_lib, workspace):
@@ -354,6 +389,159 @@ class TestRuntimeOps:
             mload.return_value.GetResultSource.return_value = Source(address="/results/x")
             r = op_runtime.result_source(str(agent_path), key)
         assert r["address"] == "/results/x"
+
+    def _run_kwargs(self, agent_path, key, **kwargs):
+        with mock.patch.object(op_runtime, "load_agent") as mload:
+            mload.return_value = mock.MagicMock()
+            op_runtime.run(str(agent_path), key, **kwargs)
+        return mload.return_value.RunWorkflow.call_args
+
+    def test_the_dry_run_delay_reaches_the_delay_argument(self, planned):
+        """It used to land in `gpus`: the call was one positional short.
+
+        Harmless on a workflow with no GPU step, which is why it went unnoticed
+        -- and a type error from inside the GPU preflight on one that has one.
+        Dry run was simply dead through the CLI, the notebook and the page.
+        """
+        agent_path, key, _ = planned
+        call = self._run_kwargs(agent_path, key, stub_delay=2.5)
+        assert call.kwargs["stub_delay"] == 2.5
+        assert "gpus" not in call.kwargs
+        assert call.args == (key,)
+
+    def test_a_numeric_override_key_addresses_one_step(self, planned):
+        """Keys arrive from JSON as strings, and only an int selects a step."""
+        agent_path, key, _ = planned
+        call = self._run_kwargs(
+            agent_path, key,
+            resource_overrides={"3": {"cpus": 8}, "sort_bam": {"cpus": 2}, "all": {"cpus": 1}},
+        )
+        ro = call.kwargs["resource_overrides"]
+        assert 3 in ro and ro[3].cpus == 8
+        assert "sort_bam" in ro
+        assert "all" in ro
+
+
+class TestAgentDefaultParams:
+    """Params an agent carries, and how a run's own layer over them."""
+
+    def test_they_round_trip_as_a_mapping(self, tmp_path):
+        """Not through the optional block, which stringifies what it writes.
+
+        A mapping written that way reloads as a quoted Python literal and
+        produces no params at all -- silently, since it is still truthy.
+        """
+        p = tmp_path / "alice.yml"
+        op_agent.save_agent(
+            str(p), home_uri=str(tmp_path / "home"),
+            default_params={"slurmAccount": "st-you-1", "process_tries": 3},
+        )
+        got = op_agent.info(str(p))["default_params"]
+        assert got == {"slurmAccount": "st-you-1", "process_tries": 3}
+
+    def test_saving_without_them_clears_them(self, tmp_path):
+        p = tmp_path / "alice.yml"
+        op_agent.save_agent(str(p), home_uri=str(tmp_path / "home"),
+                            default_params={"a": 1})
+        op_agent.save_agent(str(p), home_uri=str(tmp_path / "home"))
+        assert op_agent.info(str(p))["default_params"] == {}
+
+    def _agent(self, tmp_path, **kwargs):
+        from metasmith.agents import Agent
+        from metasmith.models.remote import Source
+        return Agent(home=Source.FromLocal(tmp_path / "home"), **kwargs)
+
+    def test_a_runs_params_win_per_key(self, tmp_path):
+        agent = self._agent(tmp_path, default_params={"acct": "st-you-1", "keepMe": "yes"})
+        assert agent._resolve_params({"acct": "other"}) == {
+            "acct": "other", "keepMe": "yes",
+        }
+
+    def test_a_run_that_names_none_inherits_them(self, tmp_path):
+        agent = self._agent(tmp_path, default_params={"acct": "st-you-1"})
+        assert agent._resolve_params(None) == {"acct": "st-you-1"}
+
+    def test_an_agent_with_none_changes_nothing(self, tmp_path):
+        agent = self._agent(tmp_path)
+        assert agent._resolve_params(None) is None
+        assert agent._resolve_params({"a": 1}) == {"a": 1}
+
+    def test_a_params_file_wins_whole(self, tmp_path):
+        """There is nothing to merge into a path, so it is taken verbatim."""
+        agent = self._agent(tmp_path, default_params={"acct": "st-you-1"})
+        given = Path("/somewhere/params.yml")
+        assert agent._resolve_params(given) is given
+
+
+class TestCollect:
+    """The first test of collect that is not a mock.
+
+    A results library publishes its outputs as links into nextflow's work
+    directory, so a verbatim copy is a folder of pointers at a disk the caller
+    does not have.
+    """
+
+    def _library(self, tmp_path):
+        """A results-shaped directory: outputs that are links out of the tree,
+        a log directory that is also a link out, and the `latest` alias."""
+        work = tmp_path / "work"
+        (work / "aa").mkdir(parents=True)
+        (work / "aa" / "out.bam").write_text("bam bytes")
+        logs = tmp_path / "logs.20260726"
+        logs.mkdir()
+        (logs / "agent.log").write_text("a log line")
+
+        results = tmp_path / "results"
+        (results / "_metadata").mkdir(parents=True)
+        (results / "out.bam").symlink_to(work / "aa" / "out.bam")
+        (results / "_metadata" / "index.yml").write_text("out.bam: {}\n")
+        (results / "_metadata" / logs.name).symlink_to(logs)
+        (results / "_metadata" / "logs.latest").symlink_to(logs)
+        return results
+
+    def _collect(self, tmp_path, results, dest):
+        from metasmith.models.remote import Source
+        agent = mock.MagicMock()
+        agent.GetResultSource.return_value = Source.FromLocal(results)
+        with mock.patch.object(op_runtime, "load_agent", return_value=agent):
+            return op_runtime.collect(str(tmp_path / "a.yml"), "key", str(dest))
+
+    def test_outputs_arrive_as_real_files(self, tmp_path):
+        results = self._library(tmp_path)
+        dest = tmp_path / "collected"
+        out = self._collect(tmp_path, results, dest)
+        assert out["errors"] == [], out["errors"]
+        assert not (dest / "out.bam").is_symlink()
+        assert (dest / "out.bam").read_text() == "bam bytes"
+
+    def test_the_logs_come_too_and_the_alias_resolves_locally(self, tmp_path):
+        results = self._library(tmp_path)
+        dest = tmp_path / "collected"
+        self._collect(tmp_path, results, dest)
+        meta = dest / "_metadata"
+        # the log tree crosses once, as real files
+        dirs = sorted(p.name for p in meta.glob("logs.*") if p.is_dir() and not p.is_symlink())
+        assert dirs == ["logs.20260726"]
+        assert (meta / "logs.20260726" / "agent.log").read_text() == "a log line"
+        # and the alias stays an alias, pointing inside the copy rather than at
+        # a path on the agent
+        alias = meta / "logs.latest"
+        assert alias.is_symlink()
+        assert alias.resolve() == (meta / "logs.20260726").resolve()
+
+    def test_a_broken_source_link_is_reported(self, tmp_path):
+        """Asked to follow a link with no target, rsync skips the entry.
+
+        So nothing lands and nothing is broken at the destination -- the whole
+        evidence is one stderr line, which is why it has to be picked up rather
+        than left for a walk of the result to notice.
+        """
+        results = self._library(tmp_path)
+        (tmp_path / "work" / "aa" / "out.bam").unlink()
+        dest = tmp_path / "collected"
+        out = self._collect(tmp_path, results, dest)
+        assert any("out.bam" in d for d in out["dangling"]), out
+        assert not (dest / "out.bam").exists()
 
 
 # ---------------------------------------------------------------------------

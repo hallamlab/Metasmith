@@ -25,6 +25,17 @@ from ..constants import AgentPaths
 METADATA_FILE = ".command.metadata"
 BIND_FILE = ".command.binds"
 
+def NextflowProcessName(order: int, transform_name) -> str:
+    """The name nextflow knows a step by.
+
+    One function because two callers need it to agree: the compiler, which
+    writes it into the .nf, and anything building a `withName:` selector to
+    retarget that step's resources. The position prefix is what makes a
+    selector address *one* step rather than every step running the transform.
+    """
+    name = str(transform_name).replace('/', '_')
+    return f"p{order:02}__{name}"
+
 @dataclass
 class WorkflowStep:
     order: int
@@ -1736,10 +1747,7 @@ class WorkflowTask:
             return used_archetypes, produced_archetypes
 
         def prepare_step(step: WorkflowStep):
-            k = f"p{step.order:02}"
-            process_name = str(step.transform.name)
-            process_name = process_name.replace('/', '_')
-            process_name = f"{k}__{process_name}"
+            process_name = NextflowProcessName(step.order, step.transform.name)
             src = [f"process {process_name}"+" {"]
             src += [
                 TAB+f"label 'x{step.transform.GetKey()}x'",

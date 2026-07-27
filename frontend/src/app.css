@@ -1,0 +1,118 @@
+:root {
+  --bg: #14161a;
+  --panel: #1b1e24;
+  --panel-2: #22262e;
+  --line: #2f3540;
+  --text: #dfe3ea;
+  --muted: #8d97a8;
+  --accent: #6ea8fe;
+  --ok: #5ec98a;
+  --warn: #e0b356;
+  --bad: #e0736b;
+  --radius: 5px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* set while the rail's grip is being dragged: the pointer spends most of the
+   drag over the main pane, where a text cursor and live selection would be */
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* the same, for the grip that splits the panel across rather than down */
+body.resizing-v {
+  cursor: row-resize;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: #2b4a7d; border-color: #3a63a5; }
+button.danger:hover { border-color: var(--bad); color: var(--bad); }
+
+input, select, textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+  width: 100%;
+}
+input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
+textarea { font-family: var(--mono); font-size: 12.5px; }
+
+a { color: var(--accent); }
+
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.col { display: flex; flex-direction: column; gap: 8px; }
+.spread { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.wrap { flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tag.ok { color: var(--ok); border-color: #2f5b42; }
+.tag.bad { color: var(--bad); border-color: #6b3a36; }
+.tag.warn { color: var(--warn); border-color: #6b5a2f; }
+.tag.live { color: var(--accent); border-color: #33507d; }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; }
+h1 { font-size: 18px; }
+h2 { font-size: 15px; }
+h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+
+pre.log {
+  margin: 0;
+  padding: 10px;
+  background: #0e1013;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 12px;
+  max-height: 340px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
