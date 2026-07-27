@@ -21,7 +21,7 @@ from metasmith.gui.store import Project
 from metasmith.ops import agent as op_agent
 from metasmith.ops import workspace as op_workspace
 
-from tests.integration.conftest import create_transform_library
+from tests.e2e.docker.conftest import create_transform_library
 
 # the GUI's own suite: `dev.sh -tg` runs exactly the files carrying this,
 # and it is the inner loop while working on the page -- keep it fast.

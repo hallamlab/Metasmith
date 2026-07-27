@@ -10,7 +10,7 @@ nothing installed on it all went unnoticed together.
 This is the answer to that, and it is deliberately excluded from both fast
 suites: it wants a docker daemon and about a minute. Run it on purpose.
 
-    pytest -m docker tests/integration/test_e2e_gui_run.py
+    pytest -m docker tests/e2e/docker/test_e2e_gui_run.py
 
 The library is the repository's own `examples/`: one transform that turns a name
 into a greeting with a single `echo`, whose tool environment is the metasmith

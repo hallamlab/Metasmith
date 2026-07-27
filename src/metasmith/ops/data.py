@@ -63,11 +63,14 @@ def fork_library(
 ) -> dict:
     """Copy a library's manifest to a new location under a fresh fork id.
 
-    Identity in metasmith is content-free by design, so re-running with new bytes at
-    the same paths reuses the old task. A fork is the explicit way to say the inputs
-    changed: the new fork id lands in the manifest, which changes the library key,
-    every instance_id derived from it, and therefore the task key -- with no file
-    contents read. It also discards all cache reuse, so it is the expensive path.
+    A fork is the explicit way to say "treat these inputs as new", and its
+    whole point is to discard cache reuse. It is the expensive path.
+
+    Instance ids are content+path addressed, so they do not change just
+    because the manifest moved. Setting `fork_id` is what makes every leaf
+    id stale, and `DataInstanceLibrary` re-derives them with the fork id
+    folded in. Lineage-derived ids are left alone: those are the hash of
+    how an output was produced, not of where it sits.
 
     Data is not duplicated: items recorded as absolute paths are only manifest
     entries, symlinks are preserved as symlinks, and library-internal regular files

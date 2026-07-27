@@ -1,10 +1,16 @@
 """Fork discriminator + task-reference resolution.
 
-Metasmith identity is deliberately content-free: two libraries listing the same
-paths and types are the same library, no matter what the bytes at those paths are.
-`fork_id` is the explicit opt-out. These tests pin both halves of that contract --
-that an unforked library's key is exactly what it always was, and that setting a
-fork id propagates all the way to the task key.
+Leaf identity is content+path addressed: a library's key follows the bytes at
+the paths it lists, and two runs over identical inputs collapse onto the same
+task on purpose. `fork_id` is the explicit way to refuse that collapse -- "treat
+these inputs as new" -- and the reason it needs its own tests is that it used to
+work for free. Ids folded in the library key back then, so a fork changed
+everything downstream without anything saying so. Content addressing severed
+that, and cache keys are a pure function of instance ids, so a fork whose ids
+survive verbatim silently replays the original run's cached output.
+
+These tests pin both halves: an unforked library's key stays exactly what it
+was, and setting a fork id reaches the instance ids and the task key.
 """
 from __future__ import annotations
 
@@ -24,17 +30,23 @@ from metasmith.ops import (
     workspace as op_workspace,
 )
 
-from tests.integration.conftest import create_transform_library
+from tests.e2e.docker.conftest import create_transform_library
 
 # the GUI's own suite: `dev.sh -tg` runs exactly the files carrying this,
 # and it is the inner loop while working on the page -- keep it fast.
 pytestmark = pytest.mark.gui
 
-# the key of `fixed_lib` below, captured before fork_id existed. Pack() drops
-# None-valued entries, so an unforked library must still emit byte-identical yaml
-# and hash to exactly this. If this assertion ever fails, every task key, cache
-# entry and staged run in the wild has been invalidated.
-GOLDEN_UNFORKED_KEY = "ROexvB09ILpO"
+# the key of `fixed_lib` below. Pack() drops None-valued entries, so an unforked
+# library must emit byte-identical yaml and hash to exactly this. If this
+# assertion fails, every task key, cache entry and staged run in the wild has
+# been invalidated.
+#
+# Re-captured when the caching line landed: manifest entries now carry
+# instance_id/origin, and those ids follow file content, so the key moved from
+# ROexvB09ILpO. That was a deliberate change of what a library key means -- it
+# is no longer content-free -- not a regression. It has moved once; do not let
+# it move again without knowing why.
+GOLDEN_UNFORKED_KEY = "fqPeg6kww9S3"
 
 
 @pytest.fixture

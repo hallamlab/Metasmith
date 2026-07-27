@@ -645,7 +645,17 @@ class DataInstanceLibrary:
                     # content digest ⊕ library-relative path → stable across
                     # runs/hosts yet distinct per (path, content) pair.
                     content = content_multihash_key(abs_path)
-                    key = multihash_key(content + str(fold_path).encode("utf-8"))
+                    fold = str(fold_path).encode("utf-8")
+                    if self.fork_id:
+                        # A fork is the user saying "treat these inputs as new"
+                        # and its whole purpose is to discard cache reuse. That
+                        # used to happen for free, because ids folded in the
+                        # library key. Content+path addressing severed it, and
+                        # cache keys are a pure function of instance ids -- so
+                        # without this the fork mints identical ids and replays
+                        # the original run's cached output.
+                        fold += b"\x00fork:" + self.fork_id.encode("utf-8")
+                    key = multihash_key(content + fold)
             except OSError:
                 key = None
         if key is None:
@@ -655,8 +665,41 @@ class DataInstanceLibrary:
             "instance_id": key.hex(),
             "origin": "leaf",
             "lineage_payload": None,
+            "fork_id": self.fork_id,
         }
         return self.instance_meta[path]["instance_id"]
+
+    def _refork_leaf_id(self, path: Path, entry: dict) -> dict:
+        """Re-derive a leaf id after the library's fork id changed.
+
+        A fork exists to say "treat these inputs as new", and cache keys
+        are a pure function of instance ids -- so an id that survives a
+        fork verbatim replays the original run's cached output. Ids used
+        to fold in the library key, which made this automatic; content+path
+        addressing severed it.
+
+        A file present at re-fork time goes back through the content-addressed
+        mint, which folds the fork id in. For an absent one (remote, or
+        lazily materialized) there is no content to hash, so the new id is
+        derived from the old -- deterministic across loads rather than
+        re-randomizing on every one.
+        """
+        import os
+
+        from ..caching.keys import multihash_key
+
+        abs_path = path if path.is_absolute() else self.location / path
+        if not os.environ.get("METASMITH_LEAF_RANDOM") and abs_path.is_file():
+            self._mint_leaf_id(path)
+        else:
+            seed = f"{entry['instance_id']}\x00fork:{self.fork_id}".encode("utf-8")
+            self.instance_meta[path] = {
+                "instance_id": multihash_key(seed).hex(),
+                "origin": "leaf",
+                "lineage_payload": None,
+                "fork_id": self.fork_id,
+            }
+        return self.instance_meta[path]
 
     def _resolve_instance_meta(self, path: Path, dtype_name: str) -> dict:
         """Return the {instance_id, origin, lineage_payload} entry for path.
@@ -669,7 +712,16 @@ class DataInstanceLibrary:
         v0.18 serializations resolve identically.
         """
         if path in self.instance_meta:
-            return self.instance_meta[path]
+            entry = self.instance_meta[path]
+            if entry.get("fork_id") == self.fork_id:
+                return entry
+            if entry.get("origin", "leaf") != "leaf":
+                # A lineage/imported id is the hash of how the output was
+                # produced. A fork of the library it happens to sit in does
+                # not change that, so it is stamped, not re-derived.
+                entry["fork_id"] = self.fork_id
+                return entry
+            return self._refork_leaf_id(path, entry)
         # Legacy fallback: derive instance_id from (path, dtype_name, lib_key)
         # so a v0.18 manifest reloads with stable ids. Marked origin="leaf"
         # per the plan's one-way migration rule.
@@ -680,6 +732,7 @@ class DataInstanceLibrary:
             "instance_id": legacy_id,
             "origin": "leaf",
             "lineage_payload": None,
+            "fork_id": self.fork_id,
         }
         return self.instance_meta[path]
 
@@ -937,6 +990,14 @@ class DataInstanceLibrary:
                 if payload is not None:
                     d["lineage_payload"] = payload.hex()
             return d
+        # A fork id set after the entries were minted leaves every leaf id
+        # stale. Re-derive here so what gets serialized is what Get() reports;
+        # _resolve_instance_meta only reaches GetKey (and so back into Pack)
+        # for paths with no entry at all, which this loop skips.
+        for _path, _dtype in self.manifest.items():
+            _meta = self.instance_meta.get(_path)
+            if _meta is not None and _meta.get("fork_id") != self.fork_id:
+                self._resolve_instance_meta(_path, _dtype)
         man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
         man = dict(sorted(man.items(), key=lambda t: t[0]))
         packed = dict(
