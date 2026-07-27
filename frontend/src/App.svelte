@@ -22,6 +22,10 @@
   import AgentView from './views/AgentView.svelte'
   import WorkflowView from './views/WorkflowView.svelte'
   import RunView from './views/RunView.svelte'
+  // The wordmark's own M *is* the logo mark, so this replaces the whole word
+  // rather than sitting beside it. Dark variant only: the page is dark-only
+  // (`color-scheme: dark` in app.css), unlike the favicon, which is not.
+  import wordmark from '$icon/metasmith-lockup-dark.svg'
 
   // where a release lives. The urls themselves come from the server, which reads
   // them from constants.py -- the one place they are written down.
@@ -175,7 +179,7 @@
 <div class="shell">
   <header>
     <div class="brand">
-      Metasmith
+      <img class="wordmark" src={wordmark} alt="Metasmith" />
       {#if app.project}<span class="ver mono">{app.project.version}</span>{/if}
     </div>
 
@@ -475,8 +479,11 @@
     background: var(--panel);
     flex: 0 0 auto;
   }
-  .brand { font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
-  .ver { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .brand { display: flex; align-items: center; white-space: nowrap; }
+  /* height, never width: the lockup is ~5.5:1 and the header is what constrains
+     it. `display: block` so no baseline gap opens under it. */
+  .wordmark { display: block; height: 18px; width: auto; }
+  .ver { color: var(--muted); font-weight: 400; margin-left: 8px; }
   nav { display: flex; }
 
   .where {

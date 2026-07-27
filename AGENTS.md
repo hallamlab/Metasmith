@@ -422,6 +422,13 @@ live runs from disk; `api.py`/`app.py` are the routes and the Flask app. Fronten
 `./dev.sh --build-gui` and never committed, and node is a build dependency deliberately kept
 out of `envs/base.yml`.
 
+The brand marks live in `src/metasmith/gui/icon/` and are reached from the frontend through
+vite's `$icon` alias rather than copied into it, so there is one of each. They are build-time
+inputs despite sitting in the python package: `setup.py` ships `gui/static/**` and nothing
+else under `gui/`, so what actually packages them is vite emitting them into the bundle, and
+an icon referenced by neither `index.html` nor a component would not ship at all. The dir is
+outside the vite root, which is why `server.fs.allow` has to name it for the dev server.
+
 Two conventions shape the routes. **Every editable object is saved by `PUT /<collection>/<id>`
 carrying the whole object**, identity field included, so an id differing from the url is a
 rename applied as part of the save — what that costs differs by collection, since a
