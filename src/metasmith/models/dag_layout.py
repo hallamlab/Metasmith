@@ -17,6 +17,14 @@ Two properties the backends depend on:
 Nothing here depends on the order nodes or edges were added: every choice is
 resolved on the node name, so structurally equivalent graphs lay out
 identically across runs.
+
+`measure` scores a finished layout, and `layout` uses it on itself: where a pass
+has two defensible answers it draws both and keeps the cheaper one, rather than
+carrying a constant tuned against one plan. Cost is the total vertical distance
+the edges travel, then lanes, then crossings — the first of those is the one
+that decides whether the drawing reads as the modules the graph actually has,
+because a step drawn far from what feeds it takes a rail through everything in
+between.
 """
 from __future__ import annotations
 
@@ -24,9 +32,15 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
-__all__ = ["LayoutNode", "LayoutEdge", "Layout", "layout", "natural_key"]
+__all__ = [
+    "LayoutNode", "LayoutEdge", "Layout", "Metrics",
+    "layout", "measure", "dominators", "natural_key",
+]
 
 _DIGITS = re.compile(r"(\d+)")
+# how much smaller than the main line a side branch has to be to be drawn
+# first; 0 means never, and the two are tried against each other
+_SIDE_BRANCH = (2, 0)
 
 
 def natural_key(name: str) -> tuple:
@@ -136,14 +150,64 @@ def layout(
     owner = _ownership(names, parents, depth)
     lane_width, owned_size = _lane_widths(topo, fwd_children, owner)
 
-    order = _row_order(
-        names, parents, fwd_children, topo, spine, lane_width, owned_size
-    )
-    node_lane, edge_lane, width = _assign_lanes(order, fwd_children, weight, spine)
-    packed_node, packed_edge, packed_width = _recolour(order, node_lane, edge_lane)
-    if packed_width < width:  # never accept a repack that costs a lane
-        node_lane, edge_lane, width = packed_node, packed_edge, packed_width
+    # two sibling policies rather than one tuned constant: whether a small side
+    # branch is drawn before the main line or after it is the single choice the
+    # walk makes that a graph's shape can reverse, so both are drawn and the
+    # cheaper one wins. Everything else about the two is identical.
+    best_key = best_layout = None
+    for jump in _SIDE_BRANCH:
+        order = _row_order(
+            names, parents, fwd_children, topo, spine, lane_width, owned_size, jump
+        )
+        cand = _compose(order, kinds, _edges, back, fwd_children, depth, weight, spine)
+        m = measure(cand)
+        key = (m.rail_rows, m.lanes, m.crossings)
+        if best_key is None or key < best_key:
+            best_key, best_layout = key, cand
+    return best_layout  # type: ignore[return-value]
 
+
+def _compose(
+    order: list[str],
+    kinds: dict[str, Any],
+    _edges: list[tuple[str, str]],
+    back: set[tuple[str, str]],
+    fwd_children: dict[str, list[str]],
+    depth: dict[str, int],
+    weight: dict[str, int],
+    spine: set[str],
+) -> Layout:
+    """Lanes and routing for one candidate row order.
+
+    Both lane assignments are drawn and compared on width first and crossings
+    second. Width was the only test for a long time, and it left the greedy
+    result in place whenever the repack merely tied — which is most of the time,
+    and is exactly when the repack is worth having, because closing the gaps a
+    lane left open also stops the rails jogging past one another to reach them.
+    """
+    greedy = _assign_lanes(order, fwd_children, weight, spine)
+    packed = _recolour(order, *greedy[:2])
+
+    best_key = best = None
+    for node_lane, edge_lane, width in (greedy, packed):
+        cand = _build(order, kinds, _edges, back, depth, spine, node_lane, edge_lane, width)
+        key = (width, measure(cand).crossings)
+        if best_key is None or key < best_key:
+            best_key, best = key, cand
+    return best  # type: ignore[return-value]
+
+
+def _build(
+    order: list[str],
+    kinds: dict[str, Any],
+    _edges: list[tuple[str, str]],
+    back: set[tuple[str, str]],
+    depth: dict[str, int],
+    spine: set[str],
+    node_lane: dict[str, int],
+    edge_lane: dict[tuple[str, str], int],
+    width: int,
+) -> Layout:
     laid = tuple(
         LayoutNode(
             name=n,
@@ -337,6 +401,7 @@ def _row_order(
     spine: set[str],
     lane_width: dict[str, int],
     owned_size: dict[str, int],
+    jump: int,
 ) -> list[str]:
     """One row per node, walked depth-first down the spine.
 
@@ -354,43 +419,115 @@ def _row_order(
     stretch its rail; transforms routinely emit a product nobody consumes, and
     those would otherwise trail a line down the whole drawing.
 
-    After that, siblings go narrowest-first: every sibling still waiting holds
-    a lane, so the wide subtree should be the one with the fewest siblings left
-    beside it. Roots are ranked separately, by how much of the graph they own —
-    a reference-database root owning nothing must sink to the bottom, where it
-    is emitted a row above its first consumer instead of holding a lane down
-    the whole drawing. That used to happen by accident, and stating it is what
-    lets the sibling rank change without wrecking it.
+    Then a side branch at least `jump` times smaller than the largest sibling,
+    then the spine, then everything else — each group narrowest-first, because
+    every sibling still waiting holds a lane and the wide subtree should be the
+    one with the fewest siblings left beside it.
 
-    Not doing: emitting a root only when a consumer needs it. It is safe — a
-    parentless node is always emittable and lands strictly before its consumer
-    — but measured on real plans it is a pessimisation, because a root pulled
-    down to its consumer arrives in the middle of an open fan-out instead of
-    before it.
+    Letting a small branch go before the main line is the same trade as putting
+    leaves first, one size up. Making the whole side branch wait costs it a rail
+    as long as the main line's entire subtree — that is where a five-step
+    taxonomy branch off the reads ends up sixty rows below the reads it needs.
+    Letting it go first costs the main line the handful of rows the branch
+    occupies. The threshold is a ratio and not a count so it does not have to
+    know how big the graph is; `jump = 0` disables it, and the caller draws it
+    both ways and keeps the cheaper one.
+
+    Only one root is seeded — the one owning most of the graph. Every other root
+    is *supply*: a reference database, or a second input the graph joins in
+    later. Supply is held back and emitted on demand, immediately above the
+    first step that stalls waiting for it, together with the whole chain behind
+    it. That placement is what keeps a module together: the three gtdbtk steps
+    belong beside the three binners that feed them, and they end up 35 rows
+    below instead if the database they share is emitted at the top or sunk to
+    the bottom.
+
+    Pulling one root at a time, greedily and without the chain, was tried and is
+    a pessimisation — the root arrives in the middle of an open fan-out instead
+    of before it. Moving the closure is what makes the difference: the chain is
+    emitted and consumed in consecutive rows, so it never holds a lane open
+    across anything.
     """
     pending = {n: len(parents[n]) for n in names}
     emitted: set[str] = set()
     order: list[str] = []
 
-    def _rank(n: str):
-        tier = 0 if not children[n] else (1 if n in spine else 2)
+    def _rank(n: str, siblings: list[str]):
+        if not children[n]:
+            tier = 0
+        elif n in spine:
+            tier = 2
+        else:
+            biggest = max(owned_size[s] for s in siblings)
+            small = owned_size[n] * jump <= biggest - owned_size[n]
+            tier = 1 if jump and small else 3
         return (tier, lane_width[n], natural_key(n))
 
     def _root_rank(n: str):
         return (-owned_size[n], natural_key(n))
 
-    roots = (n for n in names if not parents[n])
-    stack = sorted(roots, key=_root_rank, reverse=True)
-    while stack:
-        n = stack.pop()
-        if n in emitted or pending[n] > 0:
-            continue
+    roots = sorted((n for n in names if not parents[n]), key=_root_rank)
+    held = set(roots[1:])
+    # a node is supply when every root above it is being held back; its whole
+    # ancestry is then supply too, which is what makes the pull terminate
+    supply: set[str] = set()
+    for n in topo:
+        if parents[n]:
+            if all(p in supply for p in parents[n]):
+                supply.add(n)
+        elif n in held:
+            supply.add(n)
+
+    stack: list[str] = []
+
+    def _emit(n: str) -> None:
         emitted.add(n)
         order.append(n)
-        kids = sorted(children[n], key=_rank)
+        kids = sorted(children[n], key=lambda c: _rank(c, children[n]))
         for c in kids:
             pending[c] -= 1
-        stack += reversed(kids)
+        stack.extend(reversed(kids))
+
+    def _pull(n: str) -> bool:
+        """Emit the supply behind `n`, deepest chain first. False if `n` is
+        waiting on anything the walk is going to reach on its own."""
+        unmet = [p for p in parents[n] if p not in emitted]
+        if not unmet or any(p not in supply for p in unmet):
+            return False
+        chain: list[str] = []
+        seen: set[str] = set()
+
+        def _visit(x: str) -> None:
+            if x in emitted or x in seen:
+                return
+            seen.add(x)
+            for p in sorted(parents[x], key=natural_key):
+                _visit(p)
+            chain.append(x)
+
+        for p in sorted(unmet, key=natural_key):
+            _visit(p)
+        for x in chain:
+            _emit(x)
+        return True
+
+    remaining = list(roots[1:])
+    stack += roots[:1]
+    while True:
+        while stack:
+            n = stack.pop()
+            if n in emitted:
+                continue
+            if pending[n] > 0 and not _pull(n):
+                continue
+            if pending[n] == 0:
+                _emit(n)
+        # a held root nothing stalled on — a disconnected component, or supply
+        # for a node the cycle breaker cut away from it
+        remaining = [n for n in remaining if n not in emitted]
+        if not remaining or len(order) == len(names):
+            break
+        stack.append(remaining.pop(0))
 
     if len(order) < len(names):  # only reachable if cycle breaking left an island
         order += [n for n in topo if n not in emitted]
@@ -470,9 +607,10 @@ def _recolour(
     beside it. Once the rows are fixed, though, every rail and every chain
     occupies a known contiguous run of rows, and packing intervals is a much
     easier problem. Measured on 300 random DAGs this is a lane narrower 18% of
-    the time and never wider. It does nothing for the spanish-lakes
-    metagenomics plan, whose width is set by rails that really are all live at
-    once — see the caller, which keeps the greedy result unless this beats it.
+    the time and never wider. It does nothing for the width of the spanish-lakes
+    metagenomics plan, which is set by rails that really are all live at once —
+    but it takes a fifth of the crossings out of it, which is why the caller
+    compares the two on crossings and not only on width.
 
     Only lane indices move. Rows, routing and which rail carries which edge are
     all untouched, so nothing downstream can shift underneath this.
@@ -536,6 +674,11 @@ def _recolour(
         # left-edge colouring packs harder but slides branches sideways under
         # each other, which turns a fan-in comb into a zigzag of rails jogging
         # left and right past one another to save a lane nobody missed.
+        #
+        # Packing an item next to the node it hangs off instead, so that a
+        # transform's four products come out side by side, was tried: it is 16%
+        # more crossings for no measured gain in how many fan-outs land on
+        # adjacent lanes, because a lane near the parent is rarely the free one.
         if was < len(end_of_lane) and end_of_lane[was] < lo:
             lane = was
         else:
@@ -579,3 +722,148 @@ def _polyline(
         points += [(row_dst - 0.5, float(lane)), (row_dst - 0.5, float(lane_dst))]
     points.append((float(row_dst), float(lane_dst)))
     return tuple(points)
+
+
+# --- measurement ------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Metrics:
+    """What a drawing costs, as numbers a change can be argued with.
+
+    `rail_rows` is the objective the row order minimises — the total vertical
+    distance the edges have to travel, which is what makes a module read as one
+    block instead of a step and a rail down the rest of the page. `crossings`
+    counts the segment pairs the character backend draws as a `┼`.
+    """
+    rail_rows: int
+    lanes: int
+    longest_rail: int
+    crossings: int
+    modules: int
+    contiguous: int
+    module_spread: int
+
+    @property
+    def contiguity(self) -> float:
+        """Fraction of modules drawn as an unbroken run of rows."""
+        return self.contiguous / self.modules if self.modules else 1.0
+
+    def __str__(self) -> str:
+        return (
+            f"rail={self.rail_rows} lanes={self.lanes} longest={self.longest_rail}"
+            f" crossings={self.crossings}"
+            f" modules={self.contiguous}/{self.modules} ({self.contiguity:.0%})"
+            f" spread={self.module_spread}"
+        )
+
+
+def measure(lay: Layout) -> Metrics:
+    """Score a finished layout. Back edges are excluded throughout — they are
+    drawn as an annotation, not routed, so they cost neither rail nor crossing.
+    """
+    idx = lay.index
+    forward = [e for e in lay.edges if not e.back]
+    spans = [idx[e.dst].row - idx[e.src].row for e in forward]
+
+    crossings = 0
+    for row in range(max(lay.height - 1, 0)):
+        # the same (entered from, rail, left towards) triples the character
+        # backend paints, so this counts what actually gets drawn: a gap is one
+        # sub-row for the fan-out and one for the fan-in, and a pair can cross
+        # in either
+        triples = []
+        for e in lay.gap_edges(row):
+            src, dst = idx[e.src], idx[e.dst]
+            triples.append((
+                src.lane if src.row == row else e.lane,
+                e.lane,
+                dst.lane if dst.row == row + 1 else e.lane,
+            ))
+        for i, a in enumerate(triples):
+            for b in triples[i + 1:]:
+                crossings += sum(
+                    1 for k in (0, 1) if (a[k] - b[k]) * (a[k + 1] - b[k + 1]) < 0
+                )
+
+    names = [n.name for n in lay.nodes]
+    parents: dict[str, list[str]] = {n: [] for n in names}
+    for e in forward:
+        parents[e.dst].append(e.src)
+    idom = dominators(names, parents)
+    kids: dict[str, list[str]] = {n: [] for n in names}
+    for n, d in idom.items():
+        if d is not None:
+            kids[d].append(n)
+
+    rows = {n.name: n.row for n in lay.nodes}
+    modules = contiguous = spread = 0
+    for head in names:
+        block = _dom_subtree(head, kids)
+        # a transform and its one product is a module by construction and is
+        # contiguous whatever the row order does, so counting those would put
+        # the score in the nineties before any work is done
+        if len(block) < 3:
+            continue
+        modules += 1
+        span = [rows[n] for n in block]
+        gap = max(span) - min(span) + 1 - len(block)
+        spread += gap
+        contiguous += gap == 0
+
+    return Metrics(
+        rail_rows=sum(spans),
+        lanes=lay.width,
+        longest_rail=max(spans, default=0),
+        crossings=crossings,
+        modules=modules,
+        contiguous=contiguous,
+        module_spread=spread,
+    )
+
+
+def dominators(names: list[str], parents: dict[str, list[str]]) -> dict[str, str | None]:
+    """Immediate dominator of every node, or None for a graph root.
+
+    Cooper, Harvey and Kennedy's iterative formulation, which needs only one
+    pass here: `names` is in a topological order, so every parent of a node has
+    already been resolved when the node is reached and the fixpoint is immediate.
+
+    The dominator tree is this module's definition of a *module*: everything a
+    node dominates is reachable only through it, so those nodes belong to it and
+    can be moved as one block without any edge to the rest of the graph
+    reversing.
+
+    Plans have many roots, so the meet of two nodes in different components has
+    to land somewhere: a virtual root above every parentless node gives it a
+    place, and is stripped back out to None on the way home.
+    """
+    top = "\0"  # no caller id can collide: node names come from real ids
+    rank = {top: -1}
+    rank.update({n: i for i, n in enumerate(names)})
+    idom: dict[str, str] = {top: top}
+
+    def _meet(a: str, b: str) -> str:
+        while a != b:
+            while rank[a] > rank[b]:
+                a = idom[a]
+            while rank[b] > rank[a]:
+                b = idom[b]
+        return a
+
+    for n in names:
+        ps = [p for p in parents[n] if p in idom] or [top]
+        common = ps[0]
+        for p in ps[1:]:
+            common = _meet(p, common)
+        idom[n] = common
+    return {n: (None if idom[n] == top else idom[n]) for n in names}
+
+
+def _dom_subtree(head: str, kids: dict[str, list[str]]) -> list[str]:
+    out, stack = [], [head]
+    while stack:
+        n = stack.pop()
+        out.append(n)
+        stack += kids[n]
+    return out

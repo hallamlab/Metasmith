@@ -273,17 +273,38 @@ def test_svg_is_a_standalone_parsable_document(tmp_path):
     assert "step <1> & co" in labels
 
 
-def test_svg_distinguishes_transform_from_data():
-    # by shape, not by colour: the transform circle is unfilled, so its fill is
-    # the background's and a colour comparison would pass vacuously
+def test_svg_distinguishes_the_three_kinds_by_shape():
+    # by shape, not by colour: a step and a datum are both unfilled, so their
+    # fill is the background's and a colour comparison would pass vacuously
     r = DagRenderer()
     r.add_node(NodeKind.TRANSFORM, "step1")
     r.add_node(NodeKind.DATA, "thing")
     r.add_edge("thing", "step1")
+    r.add_edge("step1", "wanted")
+    r.mark(NodeKind.TARGET, "wanted")
     svg = r.to_svg()
-    assert svg.count("<circle") == 1
-    assert svg.count('<rect x=') == 1  # the background rect has no x
-    assert f'fill="{STYLES[NodeKind.DATA].fill}"' in svg
+    assert svg.count("<polygon") == 1  # the step, a triangle on its point
+    assert svg.count("<circle") == 1  # the datum
+    assert svg.count("<rect x=") == 1  # the target; the background rect has no x
+    assert f'fill="{STYLES[NodeKind.TARGET].fill}"' in svg
+
+
+def test_svg_draws_no_arrowheads():
+    r = DagRenderer()
+    r.add_edge("a", "b")
+    svg = r.to_svg()
+    assert "marker-end" not in svg
+    assert "<marker" not in svg
+
+
+def test_transform_labels_are_greyer_than_data_labels():
+    assert STYLES[NodeKind.TRANSFORM].text != STYLES[NodeKind.DATA].text
+    r = DagRenderer()
+    r.add_node(NodeKind.TRANSFORM, "step1")
+    r.add_edge("thing", "step1")
+    svg = r.to_svg()
+    for kind in (NodeKind.TRANSFORM, NodeKind.DATA):
+        assert f'fill="{STYLES[kind].text}"' in svg
 
 
 def test_text_marks_the_two_kinds_differently():
@@ -375,42 +396,88 @@ def test_unconnected_neighbours_in_one_lane_keep_their_separator():
     r = DagRenderer()
     r.add_edge("a", "b")
     r.add_edge("c", "d")
-    assert r.to_text() == "■  a\n■  b\n\n■  c\n■  d\n"
+    assert r.to_text() == "○  a\n○  b\n\n○  c\n○  d\n"
 
 
-def test_a_one_lane_jog_is_a_single_unbroken_diagonal():
+def test_a_one_lane_jog_is_a_single_unbroken_curve():
     r = DagRenderer()
     r.add_edge("root", "left")
     r.add_edge("root", "right")
     r.add_edge("left", "join")
     r.add_edge("right", "join")
-    for pts in _polylines(r.to_svg()):
+    for pts in _edge_paths(r.to_svg()):
         for (ax, ay), (bx, by) in zip(pts, pts[1:]):
-            if ax != bx:  # every non-vertical segment is exactly 45 degrees
-                assert abs(abs(bx - ax) - abs(by - ay)) < 0.1, pts
+            # the two quarter-circles meet, so every non-vertical run is the
+            # chord of one of them and rises exactly as far as it travels
+            if ax != bx:
+                assert abs(abs(bx - ax) - abs(by - ay)) < 0.15, pts
         # ... and none of them is separated by a flat horizontal stub
         assert not any(ay == by and ax != bx for (ax, ay), (bx, by) in zip(pts, pts[1:]))
 
 
-def test_a_multi_lane_jog_keeps_a_flat_run_between_two_diagonals():
+def test_a_multi_lane_jog_keeps_a_flat_run_between_two_curves():
     r = DagRenderer()
     for i in range(4):
         r.add_edge("root", f"child_{i}")
         r.add_edge(f"child_{i}", "join")
     flats = [
         (a, b)
-        for pts in _polylines(r.to_svg())
+        for pts in _edge_paths(r.to_svg())
         for a, b in zip(pts, pts[1:])
         if a[1] == b[1] and a[0] != b[0]
     ]
-    assert flats, "a jog of several lanes should not collapse to one diagonal"
+    assert flats, "a jog of several lanes should not collapse to one curve"
 
 
-def _polylines(svg: str) -> list[list[tuple[float, float]]]:
-    return [
-        [tuple(map(float, p.split(","))) for p in l.split('points="')[1].split('"')[0].split()]
-        for l in svg.splitlines() if "<polyline" in l
+def test_every_corner_is_an_arc():
+    r = DagRenderer()
+    r.add_edge("root", "left")
+    r.add_edge("root", "right")
+    bent = [
+        p for p in r.to_svg().splitlines()
+        if p.startswith("<path") and len(_edge_paths(p)[0]) > 2
     ]
+    assert bent, "the fan-out should have produced a jog"
+    assert all(" A " in p for p in bent)
+    assert all("A" not in p.split('d="')[1] for p in r.to_svg().splitlines()
+               if p.startswith("<path") and p not in bent)
+
+
+def test_the_two_directions_of_travel_land_in_different_bands():
+    # a jog leaving a node and a jog merging into the next one share a half-row;
+    # drawn at one y they overlay each other and neither has a direction
+    r = DagRenderer()
+    r.add_edge("a", "b")
+    r.add_edge("a", "c")
+    r.add_edge("b", "d")
+    r.add_edge("c", "d")
+    ys = {y for pts in _edge_paths(r.to_svg()) for _, y in pts}
+    assert len(ys) > 4
+
+
+def _edge_paths(svg: str) -> list[list[tuple[float, float]]]:
+    """The endpoint of every command on each edge path.
+
+    One pair per command, not every pair in the string: an `A` also carries its
+    radii as an `r,r` token, and taking that as a point would put the curve
+    somewhere near the origin.
+    """
+    out = []
+    for line in svg.splitlines():
+        if not line.startswith("<path"):
+            continue
+        points, pending = [], None
+        for tok in line.split('d="')[1].split('"')[0].split():
+            if tok[0].isalpha():
+                if pending is not None:
+                    points.append(pending)
+                pending = None
+            elif "," in tok:
+                pending = tuple(map(float, tok.split(",")))
+        if pending is not None:
+            points.append(pending)
+        out.append(points)
+    return out
 
 
 # --- golden text ------------------------------------------------------------
@@ -439,11 +506,11 @@ def test_golden_chain():
     )
     # a gap where every rail runs straight through costs no row at all
     assert r.to_text() == (
-        "■  reads\n"
-        "○  bbduk\n"
-        "■  clean\n"
-        "○  megahit\n"
-        "■  contigs\n"
+        "○  reads\n"
+        "▽  bbduk\n"
+        "○  clean\n"
+        "▽  megahit\n"
+        "○  contigs\n"
     )
 
 
@@ -452,13 +519,14 @@ def test_golden_diamond():
         [(D, "a"), (T, "l"), (T, "r"), (D, "j")],
         [("a", "l"), ("a", "r"), ("l", "j"), ("r", "j")],
     )
+    # lane 0 is drawn rightmost, against the labels, so the fan opens leftwards
     assert r.to_text() == (
-        "■    a\n"
-        "├─┐\n"
-        "○ │  l\n"
-        "│ ○  r\n"
-        "├─┘\n"
-        "■    j\n"
+        "  ○  a\n"
+        "┌─┤\n"
+        "│ ▽  l\n"
+        "▽ │  r\n"
+        "└─┤\n"
+        "  ○  j\n"
     )
 
 
@@ -470,15 +538,17 @@ def test_golden_three_way_fan_in():
          ("metabat2", "checkm2"), ("semibin2", "checkm2"), ("comebin", "checkm2"),
          ("checkm2", "qc")],
     )
+    # semibin2 last: it is the one carrying the chain below the join, so the
+    # two that end at the join are drawn first and free their lanes
     assert r.to_text() == (
-        "■      contigs\n"
-        "├─┬─┐\n"
-        "○ │ │  comebin\n"
-        "│ ○ │  metabat2\n"
-        "│ │ ○  semibin2\n"
-        "├─┴─┘\n"
-        "○      checkm2\n"
-        "■      qc\n"
+        "    ○  contigs\n"
+        "┌─┬─┤\n"
+        "│ ▽ │  metabat2\n"
+        "│ │ ▽  comebin\n"
+        "▽ │ │  semibin2\n"
+        "└─┴─┤\n"
+        "    ▽  checkm2\n"
+        "    ○  qc\n"
     )
 
 
@@ -490,10 +560,10 @@ def test_golden_wide_fan_out():
         [("given", f"std::input_{i}") for i in range(4)],
     )
     assert r.to_text() == (
-        "○        given\n"
-        "├─┬─┬─┐\n"
-        "■ │ │ │  std::input_0\n"
-        "  ■ │ │  std::input_1\n"
-        "    ■ │  std::input_2\n"
-        "      ■  std::input_3\n"
+        "      ▽  given\n"
+        "┌─┬─┬─┤\n"
+        "│ │ │ ○  std::input_0\n"
+        "│ │ ○    std::input_1\n"
+        "│ ○      std::input_2\n"
+        "○        std::input_3\n"
     )

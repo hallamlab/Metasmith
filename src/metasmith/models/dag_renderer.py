@@ -27,31 +27,35 @@ class NodeKind(Enum):
 
 
 # Kind is only ever a visual distinction — layout treats every node the same.
-# An open circle is a step, a filled square is a thing: the two read apart at a
-# glance even at marker size, where a shape difference is all that survives.
+# Three shapes rather than two variations on one, because at marker size the
+# shape is all that survives: a downward triangle is a step, an open circle is a
+# thing it made, a filled square is a thing that was asked for. Only the target
+# is filled, so the one kind a reader is looking for is the one that is solid.
+# A step's label is greyed for the same reason — the file names are the content.
 STYLES: dict[NodeKind, Style] = {
     NodeKind.TRANSFORM: Style(
-        marker="○", ascii_marker="o",
+        marker="▽", ascii_marker="v",
         fill="#FFFFFF", stroke="#2B2B2B", rx=0,
-        shape="circle", gv_style="filled", ansi="\033[1;36m",
-        svg_shape="circle", marker_scale=1.0, stroke_width=1.7,
+        text="#7A7A7A", muted="#A8A8A8",
+        shape="triangle", gv_attrs="orientation=180, regular=true",
+        gv_style="filled", ansi="\033[1;36m",
+        svg_shape="triangle_down", marker_scale=1.25, stroke_width=1.5,
     ),
     NodeKind.DATA: Style(
-        marker="■", ascii_marker="#",
-        fill="#2B2B2B", stroke="#2B2B2B", rx=1,
-        shape="box", gv_style="filled", ansi="\033[0;37m",
-        svg_shape="square", marker_scale=0.82, stroke_width=1.0,
+        marker="○", ascii_marker="o",
+        fill="#FFFFFF", stroke="#2B2B2B", rx=0,
+        shape="circle", gv_style="filled", ansi="\033[0;37m",
+        svg_shape="circle", marker_scale=0.90, stroke_width=1.5,
     ),
     # marking the requested outputs on the nodes themselves is what lets the
     # drawing skip the synthetic sink that collects them, and that sink is the
     # single most expensive thing in the layout: every target holds a lane from
     # wherever it is produced down to the last row
     NodeKind.TARGET: Style(
-        marker="▣", ascii_marker="@",
+        marker="■", ascii_marker="#",
         fill="#2B2B2B", stroke="#2B2B2B", rx=1,
-        shape="box", gv_attrs="peripheries=2", gv_style="filled",
-        ansi="\033[1;37m",
-        svg_shape="ringed_square", marker_scale=0.82, stroke_width=1.0,
+        shape="box", gv_style="filled", ansi="\033[1;37m",
+        svg_shape="square", marker_scale=0.82, stroke_width=1.0,
     ),
 }
 

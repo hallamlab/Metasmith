@@ -21,6 +21,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from enum import Enum
+from math import atan2, cos, pi, sin
 from pathlib import Path
 from typing import Any, Mapping
 from xml.sax.saxutils import escape
@@ -33,6 +34,7 @@ __all__ = [
 ]
 
 DEFAULT_LABEL_CHARS = 32  # bound on the drawn name line; the rest is on hover
+BAND = 0.10  # of a row pitch: how far apart the two directions of travel sit
 
 
 class LabelMode(Enum):
@@ -62,7 +64,7 @@ class Style:
     gv_style: str = "filled"  # graphviz style, raster path only
     gv_attrs: str = ""  # extra graphviz attributes, raster path only
     ansi: str = ""  # colour, only used when writing to a tty
-    svg_shape: str = "circle"  # "circle" | "square" | "ringed_square"
+    svg_shape: str = "circle"  # "circle" | "square" | "triangle_down"
     marker_scale: float = 1.0  # of the grid's marker diameter
     stroke_width: float = 1.6
 
@@ -118,16 +120,25 @@ _GLYPHS_ASCII = {
 }
 
 
+def _column(lane: int, columns: int) -> int:
+    """Screen column of a lane. Lane 0 is drawn *rightmost*, next to the label
+    column, because that is where most of the nodes are — see `_grid`."""
+    return columns - 2 - 2 * lane
+
+
 def _paint(pairs, columns: int) -> list[int]:
     """OR line segments into a per-column bitmask.
 
     Each pair is (lane entered from above, lane left towards below). Merging as
     a mask rather than writing characters is what makes a rail crossing a jog
     come out as a cross instead of clobbering one of the two.
+
+    Lanes are mirrored into columns before anything else, so the `_LEFT` and
+    `_RIGHT` bits below are already in screen terms.
     """
     mask = [0] * columns
     for a, b in pairs:
-        ca, cb = 2 * a, 2 * b
+        ca, cb = _column(a, columns), _column(b, columns)
         if ca == cb:
             mask[ca] |= _UP | _DOWN
             continue
@@ -179,10 +190,10 @@ def render_text(
         st = style.get(node.kind, _DEFAULT_STYLE)
         mask = _paint([(c, c) for c in sorted(lay.crossing_lanes(node.row))], columns)
         cells = [glyphs[m] for m in mask]
-        cells[2 * node.lane] = st.marker if unicode else st.ascii_marker
+        cells[_column(node.lane, columns)] = st.marker if unicode else st.ascii_marker
         line = "".join(cells) + " " * (label_col - columns)
         if color and st.ansi:
-            c = 2 * node.lane
+            c = _column(node.lane, columns)
             line = f"{line[:c]}{st.ansi}{line[c]}\033[0m{line[c + 1:]}"
         label = lab[node.name].full
         if node.name in back_from:
@@ -250,7 +261,8 @@ def _connectors(lay: Layout, row: int, columns: int) -> list[list[int]]:
 @dataclass(frozen=True)
 class _Grid:
     lane_x: tuple[float, ...]  # centre of each lane's rail
-    label_x: tuple[float, ...]  # left edge of the label block, per lane
+    label_x: tuple[float, ...]  # where the label starts, per lane
+    anchor: str  # "start" or "end" — which end of the label `label_x` pins
     row_pitch: float
     lane_pitch: float
     marker_d: float
@@ -264,6 +276,14 @@ class _Grid:
 
     def y(self, row: float) -> float:
         return self.margin + (row + 0.5) * self.row_pitch
+
+
+@dataclass(frozen=True)
+class _Arc:
+    """A quarter circle standing in for a right-angle corner."""
+    radius: float
+    sweep: int  # svg sweep-flag; 1 is clockwise on screen, where y grows down
+    centre: tuple[float, float]
 
 
 @dataclass(frozen=True)
@@ -297,6 +317,11 @@ def _grid(
     What the label costs is one text column (COLUMN) or one widening of its own
     lane (BESIDE).
 
+    Lanes run right to left, so lane 0 — where most of a plan's nodes sit,
+    because every chain that inherits its parent's lane stays in it — is the one
+    next to the labels. Drawn the other way the busiest lane is the furthest
+    thing on the page from the names of what is in it.
+
     Text widths are a character-count estimate against a nominal advance, not
     font metrics — good enough to size a column, and the reason the raster
     backend's label x is approximate.
@@ -323,32 +348,43 @@ def _grid(
         )
 
     margin = 1.5 * font_size
-    # sized by the two-line label block, not by a text box; the chamfer needs
-    # a vertical leg at least half a lane long at each end of a jog, which is
-    # what this inequality buys
-    row_pitch = 2.4 * font_size
-    assert row_pitch >= lane_pitch + marker_d, "45 degree corners need the room"
+    # sized by the two-line label block, not by a text box. A corner arc needs a
+    # vertical leg half a lane long at each end of a jog or it comes out as a
+    # smaller radius with a flat stub between; the bands eat into that leg from
+    # both sides, so the row has to be tall enough to give it back
+    row_pitch = max(2.4 * font_size, (lane_pitch + marker_d) / (1 - 2 * BAND))
     if mode is LabelMode.BESIDE:
+        # each lane is its own column of [label][marker], laid out from the
+        # highest lane on the left down to lane 0 on the right; the label sits
+        # left of its marker and is right-aligned against it
         col_w = [lane_pitch] * lay.width
         for n in lay.nodes:
             need = marker_d + label_pad + drawn[n.name].width
             col_w[n.lane] = max(col_w[n.lane], need)
-        lane_x, label_x, cursor = [], [], margin
-        for w in col_w:
-            lane_x.append(cursor + marker_d / 2)
-            label_x.append(cursor + marker_d + label_pad)
-            cursor += w
+        lane_x = [0.0] * lay.width
+        label_x = [0.0] * lay.width
+        cursor = margin
+        for lane in range(lay.width - 1, -1, -1):
+            lane_x[lane] = cursor + col_w[lane] - marker_d / 2
+            label_x[lane] = lane_x[lane] - marker_d / 2 - label_pad
+            cursor += col_w[lane]
+        anchor = "end"
         width = cursor + margin
     else:
-        lane_x = [margin + marker_d / 2 + i * lane_pitch for i in range(lay.width)]
+        lane_x = [
+            margin + marker_d / 2 + (lay.width - 1 - i) * lane_pitch
+            for i in range(lay.width)
+        ]
         column = margin + marker_d + (lay.width - 1) * lane_pitch + label_pad
         label_x = [column] * lay.width
+        anchor = "start"
         width = column + max((d.width for d in drawn.values()), default=0.0) + margin
 
     return (
         _Grid(
             lane_x=tuple(lane_x),
             label_x=tuple(label_x),
+            anchor=anchor,
             row_pitch=row_pitch,
             lane_pitch=lane_pitch,
             marker_d=marker_d,
@@ -362,21 +398,50 @@ def _grid(
 
 
 def _pixel_path(lay: Layout, edge, g: _Grid) -> list[tuple[float, float]]:
-    points = [(g.x(lane), g.y(row)) for row, lane in edge.points]
+    """The edge in pixels, with its two jogs pulled into separate bands.
+
+    Both a jog leaving a node at one row and a jog merging into the node at the
+    next land on the same half-row, so with a single band they overlay each
+    other and there is no telling which way either is going. Splitting them
+    gives the gap a direction: the outgoing band sits just under the row that
+    emitted it, the merging band just over the row it feeds.
+
+    That way round and not the other: it is the order the character grid already
+    draws (fan-out row, then fan-in row), and it is the one where the two bands
+    do not have to cross to reach each other.
+    """
+    src, dst = lay[edge.src].row, lay[edge.dst].row
+    offset = BAND * g.row_pitch
+    points = []
+    for row, lane in edge.points:
+        y = g.y(row)
+        if row == src + 0.5:
+            y -= offset
+        elif row == dst - 0.5:
+            y += offset
+        points.append((g.x(lane), y))
     points[0] = (points[0][0], points[0][1] + g.marker_d / 2)
     points[-1] = (points[-1][0], points[-1][1] - g.marker_d / 2)
-    return _chamfer(points, g.lane_pitch / 2)
+    return _round_corners(points, g.lane_pitch / 2)
 
 
-def _chamfer(
+def _round_corners(
     points: list[tuple[float, float]], bevel: float
-) -> list[tuple[float, float]]:
-    """Replace each right-angle corner with a 45 degree cut.
+) -> tuple[list[tuple[float, float]], dict[int, _Arc]]:
+    """Trim each right-angle corner back by `bevel` along both of its legs.
+
+    Returns the trimmed polyline, and an `_Arc` for each segment that replaced a
+    corner. For a right angle the tangent length and the radius are the same
+    number, so `bevel` is both, and the two trimmed points and the corner they
+    replaced are three corners of a square — which is why the centre is just
+    `start + end - corner`. Keeping one description for all three backends is
+    the point: the SVG turns a marked segment into an `A`, and the raster path
+    subdivides it.
 
     This is a pixel-space treatment, deliberately not a change to the routed
-    corridor: `_polyline` stays axis-aligned, and cutting a corner can only
-    move points inside the right angle it replaces, so the guarantee that a
-    rail never crosses a node cell survives untouched.
+    corridor: `_polyline` stays axis-aligned, and trimming a corner can only
+    move points inside the right angle it replaces, so the guarantee that a rail
+    never crosses a node cell survives untouched.
 
     Each corner asks for `bevel`, then any leg whose two corners together want
     more than its length shares it out between them. Splitting per leg rather
@@ -384,19 +449,19 @@ def _chamfer(
     from a marker to the first corner is consumed by one corner, not two, so
     halving it there would shrink the cut for nothing.
 
-    With `bevel` at half a lane, a one-lane jog's two cuts meet exactly in the
-    middle and the horizontal run disappears — one clean diagonal, as git draws
-    it — while a wider jog keeps a flat run between two fixed diagonals.
+    With `bevel` at half a lane, a one-lane jog's two arcs meet exactly in the
+    middle and the horizontal run between them disappears — one clean S — while
+    a wider jog keeps a flat run between two fixed quarter-circles.
     """
     pts: list[tuple[float, float]] = []
     for p in points:
         # an edge spanning adjacent rows can route both of its jogs at the same
         # half-row, emitting a repeated point; a zero-length leg has no
-        # direction to bevel along
+        # direction to trim along
         if not pts or p != pts[-1]:
             pts.append(p)
     if len(pts) < 3:
-        return pts
+        return pts, {}
 
     legs = [
         ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
@@ -410,16 +475,54 @@ def _chamfer(
             cut[i + 1] *= leg / want
 
     out = [pts[0]]
+    arcs: dict[int, _Arc] = {}
     for i in range(1, len(pts) - 1):
         (ax, ay), (bx, by), (cx, cy) = pts[i - 1], pts[i], pts[i + 1]
         d, la, lc = cut[i], legs[i - 1], legs[i]
-        for p in (
-            (bx + (ax - bx) * d / la, by + (ay - by) * d / la),
-            (bx + (cx - bx) * d / lc, by + (cy - by) * d / lc),
-        ):
-            if p != out[-1]:  # the two cuts coincide when a jog fully collapses
-                out.append(p)
+        start = (bx + (ax - bx) * d / la, by + (ay - by) * d / la)
+        end = (bx + (cx - bx) * d / lc, by + (cy - by) * d / lc)
+        if start != out[-1]:  # already there when the flat run between two
+            out.append(start)  # corners has collapsed to nothing
+        if end == out[-1]:
+            continue
+        # y grows downward, so an SVG sweep of 1 is a clockwise turn on screen
+        turn = (bx - ax) * (cy - by) - (by - ay) * (cx - bx)
+        arcs[len(out) - 1] = _Arc(
+            radius=d,
+            sweep=1 if turn > 0 else 0,
+            centre=(start[0] + end[0] - bx, start[1] + end[1] - by),
+        )
+        out.append(end)
     out.append(pts[-1])
+    return out, arcs
+
+
+def _flatten(
+    points: list[tuple[float, float]], arcs: dict[int, _Arc], steps: int = 4
+) -> list[tuple[float, float]]:
+    """The same path as a plain polyline, with each arc subdivided.
+
+    For the raster backend, which hands graphviz a point list. One chord per
+    quarter circle would draw the chamfer this used to be, and the three
+    backends are supposed to agree.
+    """
+    out = [points[0]]
+    for i, end in enumerate(points[1:]):
+        arc = arcs.get(i)
+        if arc is None:
+            out.append(end)
+            continue
+        (cx, cy), start = arc.centre, points[i]
+        a0 = atan2(start[1] - cy, start[0] - cx)
+        a1 = atan2(end[1] - cy, end[0] - cx)
+        # always the short way round: a trimmed right angle is a quarter circle
+        while a1 - a0 > pi:
+            a1 -= 2 * pi
+        while a0 - a1 > pi:
+            a1 += 2 * pi
+        for s in range(1, steps + 1):
+            a = a0 + (a1 - a0) * s / steps
+            out.append((cx + arc.radius * cos(a), cy + arc.radius * sin(a)))
     return out
 
 
@@ -443,18 +546,16 @@ def render_svg(
         f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
         f' width="{g.width:.0f}" height="{g.height:.0f}"'
         f' viewBox="0 0 {g.width:.0f} {g.height:.0f}">',
-        '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"'
-        ' markerWidth="6" markerHeight="6" orient="auto-start-reverse">'
-        '<path d="M 0 0 L 10 5 L 0 10 z" fill="#666666"/></marker></defs>',
         f'<rect width="{g.width:.0f}" height="{g.height:.0f}" fill="#FFFFFF"/>',
+        # no arrowheads: every edge runs down the page, so a head at the end of
+        # each of a hundred of them says only what the geometry already does
         '<g fill="none" stroke="#666666" stroke-width="1.4"'
         ' stroke-linejoin="round" stroke-linecap="round">',
     ]
     for e in lay.edges:
         if e.back:
             continue
-        pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in _pixel_path(lay, e, g))
-        parts.append(f'<polyline points="{pts}" marker-end="url(#arrow)"/>')
+        parts.append(f'<path d="{_svg_path(*_pixel_path(lay, e, g))}"/>')
     parts.append("</g>")
 
     for node in lay.nodes:
@@ -468,15 +569,29 @@ def render_svg(
             parts.append(
                 f'<text x="{lx:.1f}" y="{cy - 0.42 * font_size:.1f}"'
                 f' font-family="{escape(font)}" font-size="{font_size / 2:.1f}"'
-                f' fill="{st.muted}" text-anchor="start">{escape(d.namespace)}</text>'
+                f' fill="{st.muted}" text-anchor="{g.anchor}">{escape(d.namespace)}</text>'
             )
         parts.append(
             f'<text x="{lx:.1f}" y="{cy + 0.36 * font_size:.1f}"'
             f' font-family="{escape(font)}" font-size="{font_size:.0f}" fill="{st.text}"'
-            f' text-anchor="start">{escape(d.name)}</text></g>'
+            f' text-anchor="{g.anchor}">{escape(d.name)}</text></g>'
         )
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
+
+
+def _svg_path(points: list[tuple[float, float]], arcs: dict[int, _Arc]) -> str:
+    """One `path`, with the trimmed corners drawn as quarter circles."""
+    d = [f"M {points[0][0]:.1f},{points[0][1]:.1f}"]
+    for i, (x, y) in enumerate(points[1:]):
+        arc = arcs.get(i)
+        if arc is None:
+            d.append(f"L {x:.1f},{y:.1f}")
+        else:
+            d.append(
+                f"A {arc.radius:.1f},{arc.radius:.1f} 0 0 {arc.sweep} {x:.1f},{y:.1f}"
+            )
+    return " ".join(d)
 
 
 def _svg_marker(st: Style, cx: float, cy: float, marker_d: float) -> str:
@@ -486,17 +601,22 @@ def _svg_marker(st: Style, cx: float, cy: float, marker_d: float) -> str:
             f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}"'
             f' fill="{st.fill}" stroke="{st.stroke}" stroke-width="{st.stroke_width}"/>'
         )
-
-    def _square(half: float, fill: str) -> str:
+    if st.svg_shape == "triangle_down":
+        # equilateral on its point, centred on the cell so a rail entering from
+        # above meets the flat side and one leaving meets the tip
+        h = r * 1.5
+        w = r * 1.732 / 2 * 1.5
+        pts = f"{cx - w:.1f},{cy - h / 2:.1f} {cx + w:.1f},{cy - h / 2:.1f} {cx:.1f},{cy + h / 2:.1f}"
         return (
-            f'<rect x="{cx - half:.1f}" y="{cy - half:.1f}" width="{2 * half:.1f}"'
-            f' height="{2 * half:.1f}" rx="{st.rx}"'
-            f' fill="{fill}" stroke="{st.stroke}" stroke-width="{st.stroke_width}"/>'
+            f'<polygon points="{pts}" fill="{st.fill}" stroke="{st.stroke}"'
+            f' stroke-width="{st.stroke_width}" stroke-linejoin="round"/>'
         )
 
-    if st.svg_shape == "ringed_square":
-        return _square(r * 0.55, st.fill) + _square(r, "none")
-    return _square(r, st.fill)
+    return (
+        f'<rect x="{cx - r:.1f}" y="{cy - r:.1f}" width="{2 * r:.1f}"'
+        f' height="{2 * r:.1f}" rx="{st.rx}"'
+        f' fill="{st.fill}" stroke="{st.stroke}" stroke-width="{st.stroke_width}"/>'
+    )
 
 
 def raster_dot(
@@ -533,7 +653,7 @@ def raster_dot(
         f'graph [fontname="{font}", outputorder="edgesfirst"];',
         f'node  [fontname="{font}", fontsize={font_size:.0f}, fixedsize=true,'
         " penwidth=1.2];",
-        f'edge  [fontname="{font}", color="#666666"];',
+        f'edge  [fontname="{font}", color="#666666", dir="none"];',
     ]
     prefix = _label_prefix(lay)
     for node in lay.nodes:
@@ -549,17 +669,20 @@ def raster_dot(
             f'{", " + st.gv_attrs if st.gv_attrs else ""}];'
         )
         box = max(d.width, 1.0)
+        half = box / 2 if g.anchor == "start" else -box / 2
         lines.append(
-            f'  "{prefix}{node.name}" [pos="{g.label_x[node.lane] + box / 2:.1f},'
+            f'  "{prefix}{node.name}" [pos="{g.label_x[node.lane] + half:.1f},'
             f'{y:.1f}!", shape="plaintext", style="", width={box / 72:.3f},'
             f' height={2.0 * font_size / 72:.3f},'
-            f" label=<{_html_label(d, st, font_size, box)}>];"
+            f" label=<{_html_label(d, st, font_size, box, g.anchor)}>];"
         )
     for e in lay.edges:
         if e.back:
             lines.append(f'  "{e.src}" -> "{e.dst}" [style="dashed"];')
             continue
-        pts = [(x, g.height - y) for x, y in _pixel_path(lay, e, g)]
+        pts = [
+            (x, g.height - y) for x, y in _flatten(*_pixel_path(lay, e, g))
+        ]
         lines.append(f'  "{e.src}" -> "{e.dst}" [pos="{_spline(pts)}"];')
     lines.append("}")
     return "\n".join(lines)
@@ -574,28 +697,33 @@ def _label_prefix(lay: Layout) -> str:
     return prefix
 
 
-def _html_label(d: _Drawn, st: Style, font_size: float, width: float) -> str:
-    """The left-aligned two-line block, as graphviz HTML-like markup.
+def _html_label(
+    d: _Drawn, st: Style, font_size: float, width: float, anchor: str
+) -> str:
+    """The two-line block, as graphviz HTML-like markup.
 
-    `<BR ALIGN="LEFT"/>` justifies a line within the label block, but the block
+    `<BR ALIGN=…/>` justifies a line within the label block, but the block
     itself is centred in its node — so two labels of different lengths pinned
     at the same x would start at different x. A fixed-width table cell pins the
-    block, and then the lines inside it, to one left edge.
+    block, and then the lines inside it, to one edge: the left one where labels
+    run rightwards from a shared column, the right one where each label is
+    tucked against the marker on its right.
     """
+    side = "LEFT" if anchor == "start" else "RIGHT"
     lines = []
     if d.namespace:
         lines.append(
             f'<FONT POINT-SIZE="{font_size / 2:.1f}" COLOR="{st.muted}">'
-            f'{escape(d.namespace)}</FONT><BR ALIGN="LEFT"/>'
+            f'{escape(d.namespace)}</FONT><BR ALIGN="{side}"/>'
         )
     lines.append(
         f'<FONT POINT-SIZE="{font_size:.1f}" COLOR="{st.text}">'
-        f'{escape(d.name)}</FONT><BR ALIGN="LEFT"/>'
+        f'{escape(d.name)}</FONT><BR ALIGN="{side}"/>'
     )
     return (
         '<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0"'
         f' FIXEDSIZE="TRUE" WIDTH="{width:.0f}" HEIGHT="{2.0 * font_size:.0f}">'
-        f'<TR><TD ALIGN="LEFT" BALIGN="LEFT">{"".join(lines)}</TD></TR></TABLE>'
+        f'<TR><TD ALIGN="{side}" BALIGN="{side}">{"".join(lines)}</TD></TR></TABLE>'
     )
 
 
@@ -603,28 +731,20 @@ def dot_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _spline(points: list[tuple[float, float]], head: float = 10.0) -> str:
+def _spline(points: list[tuple[float, float]]) -> str:
     """Encode a polyline as the B-spline `pos` graphviz expects.
 
     The format is a start point followed by (control, control, end) triplets;
     putting the controls on the straight line between the endpoints turns each
-    cubic back into the segment we routed. The arrow tip goes in the leading
-    `e,` field and the path itself stops short of it — graphviz orients the
-    head along the gap, so a path ending exactly on the tip gets a head
-    pointing nowhere.
+    cubic back into the segment we routed. The leading `e,` field is where an
+    arrowhead would go; edges are drawn `dir="none"` so it only has to be the
+    real endpoint, and the path runs all the way to it.
     """
 
     def _fmt(p):
         return f"{p[0]:.1f},{p[1]:.1f}"
 
     end = points[-1]
-    points = list(points)
-    (px, py), (ex, ey) = points[-2], end
-    span = ((ex - px) ** 2 + (ey - py) ** 2) ** 0.5
-    if span > 0:
-        t = min(head, span / 2) / span
-        points[-1] = (ex - (ex - px) * t, ey - (ey - py) * t)
-
     out = [f"e,{_fmt(end)}", _fmt(points[0])]
     for (x0, y0), (x1, y1) in zip(points, points[1:]):
         dx, dy = (x1 - x0) / 3, (y1 - y0) / 3

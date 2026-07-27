@@ -457,11 +457,32 @@ Three things about it are load-bearing and not obvious from the code:
   spanish-lakes metagenomics plan that is 10 of 24 lanes. Targets are marked
   on the node (`NodeKind.TARGET`) instead; `RenderDAG(target_sink=True)`
   restores the old shape.
-- **Corners are chamfered in pixel space, not in the grid.** `_polyline`
-  stays axis-aligned and `_pixel_path` cuts the corners afterwards, which is
-  why the 45° merges cost the layout invariants nothing. Text gets no
-  diagonals on purpose: a lane is two character columns and a diagonal glyph
-  is one cell, so every lane of travel would cost two rows.
+- **Corners are rounded in pixel space, not in the grid.** `_polyline` stays
+  axis-aligned and `_pixel_path` trims the corners afterwards, which is why
+  the arcs cost the layout invariants nothing. Text gets no diagonals on
+  purpose: a lane is two character columns and a diagonal glyph is one cell,
+  so every lane of travel would cost two rows.
+- **Supply is emitted where it is consumed, not where it is declared.** A
+  reference database is a root that owns nothing, and drawn at the top or the
+  bottom it holds a rail across every module in between — and drags its
+  consumers with it, which is what used to put the three gtdbtk steps thirty
+  rows below the three binners that feed them. `_row_order` seeds only the
+  root owning most of the graph and pulls each other root's whole chain in
+  immediately above the first step that stalls on it.
+- **Where a pass has two defensible answers, both are drawn and measured.**
+  `measure` returns rail rows, lanes, crossings and module contiguity, and
+  `layout` picks on `(rail, lanes, crossings)`. Prefer adding a candidate to
+  tuning a constant. Ceilings are pinned in `test_dag_stress.py`, with the
+  pre-change numbers in the docstring; a change is free to improve them and
+  has to say so out loud to make one worse.
+
+Two things that were tried on the row order and are *worse*, both measured:
+optimal Sugiyama layer assignment (the network-simplex objective from Gansner
+et al. 1993) used as a row sort — the ranks are right but many nodes share one,
+so the branch walk's grouping is lost and the drawing costs half again as much
+rail; and sift-based local search on that same rail objective, which does lower
+the cost and scatters every cluster to do it. The objective is a proxy, and it
+stops agreeing with the picture close to its optimum.
 
 `tests/fixtures/stress_dag.json` is a real 73-node plan dumped from that
 recipe; regenerate it with `generate_stress_dag.py` and compare layouts with

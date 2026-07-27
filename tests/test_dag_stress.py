@@ -11,6 +11,7 @@ from xml.etree import ElementTree
 
 import pytest
 
+from metasmith.models.dag_layout import measure
 from metasmith.models.dag_renderer import LabelMode, NodeKind
 
 from .fixtures import load_dag
@@ -105,6 +106,38 @@ def test_the_requested_outputs_are_marked_on_the_nodes(dag):
     kinds = {k for k in dag._nodes.values()}
     assert NodeKind.TARGET in kinds
     assert "target" not in dag._nodes  # no synthetic sink holding a lane each
+
+
+def test_the_drawing_does_not_get_more_expensive(dag):
+    """Ceilings, not goldens: a tuning change is free to improve any of these
+    and has to say so out loud to make one worse.
+
+    Where they came from — this plan drawn before the row order learned to emit
+    a reference database beside the step that wants it, rather than at the top
+    or at the bottom of the page:
+
+        rail=545 lanes=14 longest=56 crossings=127
+    """
+    m = measure(dag.layout())
+    assert m.rail_rows <= 527
+    assert m.lanes <= 13
+    assert m.crossings <= 123
+    # the one that was the whole complaint: a step dragged the length of the
+    # page away from the module it belongs to, by the database it shares
+    assert m.longest_rail <= 35
+
+
+def test_a_shared_reference_database_is_drawn_beside_its_consumer(dag):
+    # all three gtdbtk steps take the one gtdb download, and each belongs with
+    # the binner that feeds it rather than with the other two
+    lay = dag.layout()
+    rows = {n.name: n.row for n in lay.nodes}
+    for binner in ("comebin", "semibin2", "metabat2"):
+        fasta = rows[f"sequences::{binner}_bin_fasta"]
+        gtdbtk = min(
+            r for n, r in rows.items() if n.endswith(" gtdbtk") and r > fasta
+        )
+        assert gtdbtk - fasta <= 4, binner
 
 
 def test_rendering_is_deterministic(dag):
