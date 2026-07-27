@@ -261,7 +261,7 @@ past the run and crashes on a missing results directory. The contract is a senti
 agent home re-parses it on the next save. It was not: `SshSource` renders `ssh://host:path`
 while `Parse` split on `/` and read the `:` as part of the host, so a remote home grew a
 colon per save until nothing could reach it. Pinned by
-`tests/models/test_source_parse.py::TestSshRoundTrip`.
+`tests/unit/test_source_parse.py::TestSshRoundTrip`.
 
 ---
 
@@ -335,7 +335,7 @@ enforcing that all three views are absolute, `..`-free, and mutually consistent.
 The container is **dual-bound**: the host scope dir lands at both `/ws` (`WORK_ROOT`) and
 `/msm_home` (`HOME_ROOT`). Nextflow may resolve a work dir through either, so anything
 mapping a cwd back to the host must check both prefixes and route HOME_ROOT cwds through
-`agent.real_path`. Pinned by `tests/path_overhaul/test_sbatch_home_root_cwd.py`.
+`agent.real_path`. Pinned by `tests/unit/test_sbatch_home_root_cwd.py`.
 
 ### DAG rendering
 
@@ -649,7 +649,7 @@ gitignored, absent in fresh checkouts — everything then degrades to bare semve
 the single `+`→`-` substitution; the wheel name, the default agent container, `dev.sh`'s
 `DOCKER_TAG`, and `testing/docker_builder` all read that one chain. Identical source ↔
 identical hash ↔ identical image tag, which is what removes the chicken-and-egg of an
-embedded commit hash. Pinned by `tests/test_container_tag.py`, `tests/test_dev_sh_tag.py`.
+embedded commit hash. Pinned by `tests/unit/test_container_tag.py`, `tests/unit/test_dev_sh_tag.py`.
 
 Bump: edit `version.txt`, commit, then build+publish (`./dev.sh --build-gui`, `-bp`, `-br`,
 `-bd`, `-ud`, `-bs`), then tag. A release ships **both** a quay image and a conda package.
@@ -659,6 +659,14 @@ skipping them ships something empty that nobody notices for a while:
 
 - `--build-gui` — without it `src/metasmith/gui/static/` is empty until someone opens the
   page. `-bp`/`-bd` run `_assert_gui_bundle` and refuse; override `MSM_SKIP_GUI_CHECK=1`.
+  Note what this does to the hash: `static/` sits inside the tree `_build_hash` walks, so
+  **the version is a function of the git tree *plus* the frontend build**, not of the commit
+  alone — a checkout with no bundle hashes differently from the same checkout with one. That
+  is correct (the bundle is part of what ships) and it is reproducible, but only because
+  `package-lock.json` pins the toolchain: with the lockfile honoured, vite's output is
+  byte-identical across builds, content-hashed asset names included. Measured, not assumed.
+  Don't run `--build-gui` between `-bp` and `-bd` — nothing rebuilds the bundle in between,
+  which is exactly why the two agree.
 - `-br` — `--update_container` skips it, which is how one release shipped with 3 of 4 relay
   binaries replaced by 28-byte `echo 'stub relay'` stubs. `-ud`/`-bs` now run
   `_assert_real_relays` against the tagged image and refuse on a wrong-magic or <100 KB slot;
