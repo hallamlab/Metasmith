@@ -32,7 +32,7 @@ from metasmith.gui.store import Project
 
 pytestmark = pytest.mark.docker
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES = REPO_ROOT / "examples"
 
 # The greeting run is one `echo`; the wall clock is docker start-up and

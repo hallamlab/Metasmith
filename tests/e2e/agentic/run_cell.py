@@ -73,8 +73,8 @@ _STAMP_COLS = ("model", "effort", "commit")
 
 
 def _project_root() -> Path:
-    # tests/e2e/agentic/run_cell.py -> repo root is parents[2].
-    return Path(__file__).resolve().parents[2]
+    # tests/e2e/agentic/run_cell.py -> repo root is parents[3].
+    return Path(__file__).resolve().parents[3]
 
 
 def _test_id(test_name: str) -> int:

@@ -10,7 +10,7 @@ Scenario mirrors metasmith-libraries `assembly_stats` + the three binners,
 with property sets matching the YAML (post-rework).
 
 Run with:
-    mamba run -n msm_env python tests/models/repro_135_duplicate_producer.py
+    PYTHONPATH=$PWD/src mamba run -n msm python tests/flow/repro/repro_135_duplicate_producer.py
 """
 
 from __future__ import annotations

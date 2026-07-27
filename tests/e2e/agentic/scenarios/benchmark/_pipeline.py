@@ -636,7 +636,7 @@ def build_intermediate_contigs(layout: SandboxLayout) -> Path:
 # ---------------------------------------------------------------------------
 
 #: Source of the std transform library authored in parallel.
-_STD_LIB_SRC = Path(__file__).resolve().parents[4] / "main" / "transforms" / "std"
+_STD_LIB_SRC = Path(__file__).resolve().parents[5] / "main" / "transforms" / "std"
 
 
 def provision_metasmith(layout: SandboxLayout, ctx) -> Path:

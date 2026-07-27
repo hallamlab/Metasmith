@@ -184,7 +184,7 @@ if __name__ == "__main__":
     import argparse, sys
     ap = argparse.ArgumentParser()
     ap.add_argument("--project-root", type=Path,
-                    default=Path(__file__).resolve().parents[3])
+                    default=Path(__file__).resolve().parents[4])
     ap.add_argument("--runtime", default="DOCKER", choices=("DOCKER", "APPTAINER"))
     ap.add_argument("--agent", default="opencode", choices=("opencode", "claude"))
     a = ap.parse_args()

@@ -24,11 +24,11 @@ After the pipeline finishes we parse those files and print FILES paths for
 each step so divergence between batched and non-batched is visible at a
 glance.
 
-The whole thing runs on the host via the `nextflow` binary in `msm_env`
+The whole thing runs on the host via the `nextflow` binary in `msm`
 (no Docker, no SLURM). Total runtime ~10s.
 
 Run:
-    mamba run -n msm_env python tests/integration/repro_139_batched_lineage.py
+    PYTHONPATH=$PWD/src mamba run -n msm python tests/flow/repro/repro_139_batched_lineage.py
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ import tempfile
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 ORCHESTRATOR_SRC = REPO_ROOT / "src/metasmith/nextflow_config/Orchestrator.groovy"
 
 N_SAMPLES = 4
