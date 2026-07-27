@@ -289,6 +289,86 @@ def test_svg_distinguishes_the_three_kinds_by_shape():
     assert f'fill="{STYLES[NodeKind.TARGET].fill}"' in svg
 
 
+def _marker_widths(svg: str) -> dict[str, float]:
+    """The drawn width of each marker shape in an SVG, by shape name."""
+    def _attr(line, key):
+        return float(line.split(f'{key}="')[1].split('"')[0])
+
+    out = {}
+    for line in svg.splitlines():
+        if line.startswith("<circle"):
+            out["circle"] = 2 * _attr(line, "r")
+        elif line.startswith("<rect x="):
+            out["square"] = _attr(line, "width")
+        elif line.startswith("<polygon"):
+            xs = [
+                float(p.split(",")[0])
+                for p in line.split('points="')[1].split('"')[0].split()
+            ]
+            out["triangle"] = max(xs) - min(xs)
+    return out
+
+
+def _three_kinds() -> DagRenderer:
+    r = DagRenderer()
+    r.add_node(NodeKind.TRANSFORM, "step1")
+    r.add_node(NodeKind.DATA, "thing")
+    r.add_edge("thing", "step1")
+    r.add_edge("step1", "wanted")
+    r.mark(NodeKind.TARGET, "wanted")
+    return r
+
+
+def test_the_three_markers_all_draw_at_one_width():
+    # they were 1.25 of a circumradius, 0.90 of a diameter and 0.82 of a side —
+    # three different quantities, drawing a 17px triangle beside a 10px circle
+    w = _marker_widths(_three_kinds().to_svg())
+    assert set(w) == {"circle", "square", "triangle"}
+    # the SVG carries one decimal, so equal widths can still differ by 0.1
+    assert max(w.values()) - min(w.values()) < 0.11, w
+
+
+def test_the_triangle_is_equilateral_and_so_shorter_than_it_is_wide():
+    svg = _three_kinds().to_svg()
+    line = [l for l in svg.splitlines() if l.startswith("<polygon")][0]
+    pts = [
+        tuple(map(float, p.split(",")))
+        for p in line.split('points="')[1].split('"')[0].split()
+    ]
+    width = max(x for x, _ in pts) - min(x for x, _ in pts)
+    height = max(y for _, y in pts) - min(y for _, y in pts)
+    assert abs(height / width - 0.866) < 0.01
+
+
+def test_the_circle_outline_is_double_weight_in_both_backends():
+    st = STYLES[NodeKind.DATA]
+    assert st.stroke_width == 3.0  # was 1.5, and read as no outline at all
+    r = _three_kinds()
+    assert f'stroke-width="{st.stroke_width}"' in r.to_svg()
+    dot = r.to_raster_dot()
+    assert "penwidth=3" in dot
+    assert f"penwidth={STYLES[NodeKind.TRANSFORM].stroke_width:g}" in dot
+    # the pinned global that made every PNG outline the same weight
+    assert "penwidth=1.2]" not in dot
+
+
+def test_a_rail_stops_at_the_shape_it_points_at():
+    # a triangle is shorter than it is wide, so trimming every endpoint by one
+    # marker radius leaves a gap under it and overshoots into a square
+    from metasmith.models import dag_draw as dd
+
+    r = _three_kinds()
+    lay = r.layout()
+    g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
+    tri = dd.marker_size(STYLES[NodeKind.TRANSFORM], g.marker_d)[1] / 2
+    circ = dd.marker_size(STYLES[NodeKind.DATA], g.marker_d)[1] / 2
+    into_step = next(e for e in lay.edges if e.dst == "step1")
+    pts = dd._pixel_path(lay, into_step, g, STYLES)[0]
+    assert abs(pts[0][1] - (g.y(lay["thing"].row) + circ)) < 0.05
+    assert abs(pts[-1][1] - (g.y(lay["step1"].row) - tri)) < 0.05
+    assert tri < circ  # the whole reason one radius would not do
+
+
 def test_svg_draws_no_arrowheads():
     r = DagRenderer()
     r.add_edge("a", "b")
@@ -453,6 +533,37 @@ def test_the_two_directions_of_travel_land_in_different_bands():
     r.add_edge("c", "d")
     ys = {y for pts in _edge_paths(r.to_svg()) for _, y in pts}
     assert len(ys) > 4
+
+
+def test_a_jog_one_row_long_is_banded_by_what_it_is_doing():
+    # the band used to be read off the half-row, and for an edge between
+    # adjacent rows `src + 0.5` and `dst - 0.5` are the same number — so every
+    # one-row jog came out in the departure band whatever it was doing
+    from metasmith.models import dag_draw as dd
+
+    r = _build(
+        [(D, "a"), (T, "l"), (T, "r"), (D, "j")],
+        [("a", "l"), ("a", "r"), ("l", "j"), ("r", "j")],
+    )
+    lay = r.layout()
+    g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
+    e = next(x for x in lay.edges if (x.src, x.dst) == ("r", "j"))
+    assert lay["j"].row - lay["r"].row == 1  # the case only exists here
+    assert lay["j"].lane != lay["r"].lane  # ... and there is a jog to band
+
+    pts = dd._pixel_path(lay, e, g, STYLES)[0]
+    lo, hi = sorted((g.x(lay["r"].lane), g.x(lay["j"].lane)))
+    band = [y for x, y in pts if lo < x < hi]
+    assert band, "the jog should have left a point between the two lanes"
+    assert all(y > g.y(lay["r"].row + 0.5) for y in band)  # under, not over
+
+    # ... and a rail that really is departing still hugs the row it left
+    down = next(x for x in lay.edges if (x.src, x.dst) == ("a", "r"))
+    assert lay["r"].row - lay["a"].row > 1
+    pts = dd._pixel_path(lay, down, g, STYLES)[0]
+    lo, hi = sorted((g.x(lay["a"].lane), g.x(down.lane)))
+    band = [y for x, y in pts if lo < x < hi]
+    assert band and all(y < g.y(lay["a"].row + 0.5) for y in band)
 
 
 def _edge_paths(svg: str) -> list[list[tuple[float, float]]]:

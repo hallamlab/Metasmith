@@ -29,7 +29,7 @@ from xml.sax.saxutils import escape
 from .dag_layout import Layout
 
 __all__ = [
-    "Style", "Label", "LabelMode", "default_label", "dot_escape",
+    "Style", "Label", "LabelMode", "default_label", "dot_escape", "marker_size",
     "render_text", "render_svg", "raster_dot", "render_raster",
 ]
 
@@ -65,7 +65,7 @@ class Style:
     gv_attrs: str = ""  # extra graphviz attributes, raster path only
     ansi: str = ""  # colour, only used when writing to a tty
     svg_shape: str = "circle"  # "circle" | "square" | "triangle_down"
-    marker_scale: float = 1.0  # of the grid's marker diameter
+    marker_scale: float = 1.0  # *width*, in units of the grid's marker diameter
     stroke_width: float = 1.6
 
 
@@ -100,6 +100,22 @@ def default_label(node_id: str) -> Label:
 
 
 _DEFAULT_STYLE = Style()
+
+# an equilateral triangle's height, as a fraction of its width
+_TRIANGLE_H = 0.8660254037844386
+
+
+def marker_size(st: Style, marker_d: float) -> tuple[float, float]:
+    """One marker's drawn (width, height) in pixels.
+
+    `marker_scale` is a *width*, so the three shapes are one family: a
+    triangle, a circle and a square with the same scale occupy the same
+    horizontal space. Height follows the shape — only the triangle differs,
+    at 0.866 of its width, because an equilateral one drawn as tall as it is
+    wide stops looking equilateral.
+    """
+    w = marker_d * st.marker_scale
+    return w, (w * _TRIANGLE_H if st.svg_shape == "triangle_down" else w)
 
 
 def _labels_for(lay: Layout, labels: Mapping[str, Label] | None) -> dict[str, Label]:
@@ -397,7 +413,42 @@ def _grid(
     )
 
 
-def _pixel_path(lay: Layout, edge, g: _Grid) -> list[tuple[float, float]]:
+def _jog_roles(lay: Layout, edge) -> list[int]:
+    """Which band each point of `edge.points` belongs in: -1 up, +1 down, 0 none.
+
+    A jog gets its band from what it is *doing*, not from which half-row it
+    happens to sit on. `_polyline` emits the departure pair only when the rail
+    lane differs from the source's and the arrival pair only when it differs
+    from the target's, so the pairs can be identified by index; a departure
+    hugs the row it left and an arrival hugs the row it feeds.
+
+    The one case the row alone gets wrong is an edge between adjacent rows,
+    where `src + 0.5` and `dst - 0.5` are the same number. Both jogs live in
+    the one gap there, and reading it positionally makes every one of them a
+    departure — which is why a fan-in arriving from one lane over used to read
+    as though it were leaving the node above it.
+    """
+    src, dst = lay[edge.src].row, lay[edge.dst].row
+    has_dep = edge.lane != lay[edge.src].lane
+    has_arr = edge.lane != lay[edge.dst].lane
+    roles = [0] * len(edge.points)
+    i = 1
+    if has_dep:
+        # with no arrival pair the rail *is* the target's lane, so on adjacent
+        # rows this single jog is the arrival and belongs under, not over
+        roles[1] = roles[2] = 1 if (not has_arr and dst - src == 1) else -1
+        i = 3
+    if has_arr:
+        roles[i] = roles[i + 1] = 1
+    return roles
+
+
+def _pixel_path(
+    lay: Layout,
+    edge,
+    g: _Grid,
+    style: Mapping[Any, Style] | None = None,
+) -> list[tuple[float, float]]:
     """The edge in pixels, with its two jogs pulled into separate bands.
 
     Both a jog leaving a node at one row and a jog merging into the node at the
@@ -409,19 +460,22 @@ def _pixel_path(lay: Layout, edge, g: _Grid) -> list[tuple[float, float]]:
     That way round and not the other: it is the order the character grid already
     draws (fan-out row, then fan-in row), and it is the one where the two bands
     do not have to cross to reach each other.
+
+    Both ends are trimmed by the marker's own half-height, not by one radius
+    for all three shapes — a triangle is shorter than it is wide, so a fixed
+    trim leaves a gap under it and overshoots into a square.
     """
-    src, dst = lay[edge.src].row, lay[edge.dst].row
+    style = style or {}
     offset = BAND * g.row_pitch
-    points = []
-    for row, lane in edge.points:
-        y = g.y(row)
-        if row == src + 0.5:
-            y -= offset
-        elif row == dst - 0.5:
-            y += offset
-        points.append((g.x(lane), y))
-    points[0] = (points[0][0], points[0][1] + g.marker_d / 2)
-    points[-1] = (points[-1][0], points[-1][1] - g.marker_d / 2)
+    roles = _jog_roles(lay, edge)
+    points = [
+        (g.x(lane), g.y(row) + roles[i] * offset)
+        for i, (row, lane) in enumerate(edge.points)
+    ]
+    top = style.get(lay[edge.src].kind, _DEFAULT_STYLE)
+    bot = style.get(lay[edge.dst].kind, _DEFAULT_STYLE)
+    points[0] = (points[0][0], points[0][1] + marker_size(top, g.marker_d)[1] / 2)
+    points[-1] = (points[-1][0], points[-1][1] - marker_size(bot, g.marker_d)[1] / 2)
     return _round_corners(points, g.lane_pitch / 2)
 
 
@@ -555,7 +609,7 @@ def render_svg(
     for e in lay.edges:
         if e.back:
             continue
-        parts.append(f'<path d="{_svg_path(*_pixel_path(lay, e, g))}"/>')
+        parts.append(f'<path d="{_svg_path(*_pixel_path(lay, e, g, style))}"/>')
     parts.append("</g>")
 
     for node in lay.nodes:
@@ -595,26 +649,27 @@ def _svg_path(points: list[tuple[float, float]], arcs: dict[int, _Arc]) -> str:
 
 
 def _svg_marker(st: Style, cx: float, cy: float, marker_d: float) -> str:
-    r = marker_d * st.marker_scale / 2
+    w, h = marker_size(st, marker_d)
     if st.svg_shape == "circle":
         return (
-            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}"'
+            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{w / 2:.1f}"'
             f' fill="{st.fill}" stroke="{st.stroke}" stroke-width="{st.stroke_width}"/>'
         )
     if st.svg_shape == "triangle_down":
         # equilateral on its point, centred on the cell so a rail entering from
         # above meets the flat side and one leaving meets the tip
-        h = r * 1.5
-        w = r * 1.732 / 2 * 1.5
-        pts = f"{cx - w:.1f},{cy - h / 2:.1f} {cx + w:.1f},{cy - h / 2:.1f} {cx:.1f},{cy + h / 2:.1f}"
+        pts = (
+            f"{cx - w / 2:.1f},{cy - h / 2:.1f} {cx + w / 2:.1f},{cy - h / 2:.1f}"
+            f" {cx:.1f},{cy + h / 2:.1f}"
+        )
         return (
             f'<polygon points="{pts}" fill="{st.fill}" stroke="{st.stroke}"'
             f' stroke-width="{st.stroke_width}" stroke-linejoin="round"/>'
         )
 
     return (
-        f'<rect x="{cx - r:.1f}" y="{cy - r:.1f}" width="{2 * r:.1f}"'
-        f' height="{2 * r:.1f}" rx="{st.rx}"'
+        f'<rect x="{cx - w / 2:.1f}" y="{cy - h / 2:.1f}" width="{w:.1f}"'
+        f' height="{h:.1f}" rx="{st.rx}"'
         f' fill="{st.fill}" stroke="{st.stroke}" stroke-width="{st.stroke_width}"/>'
     )
 
@@ -651,8 +706,7 @@ def raster_dot(
     lines = [
         "digraph G {",
         f'graph [fontname="{font}", outputorder="edgesfirst"];',
-        f'node  [fontname="{font}", fontsize={font_size:.0f}, fixedsize=true,'
-        " penwidth=1.2];",
+        f'node  [fontname="{font}", fontsize={font_size:.0f}, fixedsize=true];',
         f'edge  [fontname="{font}", color="#666666", dir="none"];',
     ]
     prefix = _label_prefix(lay)
@@ -660,10 +714,14 @@ def raster_dot(
         st = style.get(node.kind, _DEFAULT_STYLE)
         d = drawn[node.name]
         x, y = g.x(node.lane), g.height - g.y(node.row)
-        side = g.marker_d * st.marker_scale
+        # the same two numbers the SVG draws from, and the same stroke weight:
+        # a global penwidth pinned here is how the PNG used to disagree with
+        # the SVG about how heavy an outline was
+        w, h = marker_size(st, g.marker_d)
         lines.append(
             f'  "{node.name}" [pos="{x:.1f},{y:.1f}!", label="",'
-            f' width={side / 72:.3f}, height={side / 72:.3f},'
+            f' width={w / 72:.3f}, height={h / 72:.3f},'
+            f' penwidth={st.stroke_width:g},'
             f' shape="{st.shape}", style="{st.gv_style}",'
             f' fillcolor="{st.fill}", color="{st.stroke}"'
             f'{", " + st.gv_attrs if st.gv_attrs else ""}];'
@@ -681,7 +739,7 @@ def raster_dot(
             lines.append(f'  "{e.src}" -> "{e.dst}" [style="dashed"];')
             continue
         pts = [
-            (x, g.height - y) for x, y in _flatten(*_pixel_path(lay, e, g))
+            (x, g.height - y) for x, y in _flatten(*_pixel_path(lay, e, g, style))
         ]
         lines.append(f'  "{e.src}" -> "{e.dst}" [pos="{_spline(pts)}"];')
     lines.append("}")

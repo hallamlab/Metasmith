@@ -11,7 +11,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from metasmith.models.dag_layout import measure
+from metasmith.models.dag_layout import measure, repeat_motifs
 from metasmith.models.dag_renderer import LabelMode, NodeKind
 
 from .fixtures import load_dag
@@ -112,19 +112,29 @@ def test_the_drawing_does_not_get_more_expensive(dag):
     """Ceilings, not goldens: a tuning change is free to improve any of these
     and has to say so out loud to make one worse.
 
-    Where they came from — this plan drawn before the row order learned to emit
-    a reference database beside the step that wants it, rather than at the top
-    or at the bottom of the page:
+    Where they came from, oldest first — this plan drawn before the row order
+    learned to emit a reference database beside the step that wants it, then
+    with that but before it learned to draw a repeated block the same way each
+    time, then now:
 
-        rail=545 lanes=14 longest=56 crossings=127
+        rail=545 lanes=14 longest=56 crossings=127 repeats=-
+        rail=527 lanes=13 longest=35 crossings=123 repeats=1/6
+        rail=536 lanes=13 longest=35 crossings=123 repeats=4/6
+
+    Rail is the one that got worse, by nine rows out of five hundred, and it
+    bought the three binner blocks: contiguous, identically ordered, and the
+    shared database drawn once above all three instead of inside the first.
+    Lanes, crossings and the longest rail are unchanged.
     """
     m = measure(dag.layout())
-    assert m.rail_rows <= 527
+    assert m.rail_rows <= 536
     assert m.lanes <= 13
     assert m.crossings <= 123
     # the one that was the whole complaint: a step dragged the length of the
     # page away from the module it belongs to, by the database it shares
     assert m.longest_rail <= 35
+    # ... and the one this is now optimised for first
+    assert m.congruent >= 4
 
 
 def test_a_shared_reference_database_is_drawn_beside_its_consumer(dag):
@@ -137,7 +147,88 @@ def test_a_shared_reference_database_is_drawn_beside_its_consumer(dag):
         gtdbtk = min(
             r for n, r in rows.items() if n.endswith(" gtdbtk") and r > fasta
         )
-        assert gtdbtk - fasta <= 4, binner
+        assert gtdbtk - fasta == 1, binner
+
+
+# --- the three binners are three copies of one block -------------------------
+
+
+BINNERS = ("comebin", "semibin2", "metabat2")
+
+
+def _blocks(lay):
+    """Each binner's five rows, keyed by the role the node plays.
+
+    The checkm and gtdbtk steps are named per instance only by a step number,
+    so they are found as the first of each below that binner's bin fasta —
+    which is exactly the claim these tests are making about the drawing.
+    """
+    rows = {n.name: n.row for n in lay.nodes}
+    out = {}
+    for b in BINNERS:
+        fasta = rows[f"sequences::{b}_bin_fasta"]
+        out[b] = dict(
+            head=rows[next(n for n in rows if n.endswith(f" {b}"))],
+            table=rows[f"binning::{b}_contig_to_bin_table"],
+            fasta=fasta,
+            gtdbtk=min(r for n, r in rows.items()
+                       if n.endswith(" gtdbtk") and r > fasta),
+            checkm=min(r for n, r in rows.items()
+                       if n.endswith(" checkm") and r > fasta),
+        )
+    return out
+
+
+def test_each_binner_block_is_a_contiguous_run_of_rows(dag):
+    lay = dag.layout()
+    blocks = _blocks(lay)
+    for b, r in blocks.items():
+        span = sorted(r.values())
+        assert span == list(range(span[0], span[0] + 5)), (b, r)
+    # ... and the three runs are back to back, in step order
+    starts = sorted(min(r.values()) for r in blocks.values())
+    assert starts[1] == starts[0] + 5 and starts[2] == starts[1] + 5
+
+
+def test_the_three_blocks_emit_their_children_in_the_same_order(dag):
+    # the single thing that used to differ most: one block put gtdbtk before
+    # checkm and the next put checkm before gtdbtk, because `18 checkm` is on
+    # the spine and `19 checkm` is not
+    offsets = {
+        b: tuple(k for k, _ in sorted(r.items(), key=lambda kv: kv[1]))
+        for b, r in _blocks(dag.layout()).items()
+    }
+    assert len(set(offsets.values())) == 1, offsets
+
+
+def test_the_shared_database_is_emitted_once_above_the_whole_group(dag):
+    lay = dag.layout()
+    rows = {n.name: n.row for n in lay.nodes}
+    first = min(min(r.values()) for r in _blocks(lay).values())
+    assert rows["ref::gtdb"] < first
+    assert rows["3 downloadGtdbDB"] == rows["ref::gtdb"] - 1
+    assert first - rows["ref::gtdb"] == 1  # immediately above, not at the top
+
+
+def test_the_shared_outputs_sit_below_every_block_they_join(dag):
+    # `taxonomy::gtdbtk` used to land in the middle of the third block, because
+    # the walk had it ready while that block still had a node left over
+    lay = dag.layout()
+    rows = {n.name: n.row for n in lay.nodes}
+    last = max(max(r.values()) for r in _blocks(lay).values())
+    for sink in ("taxonomy::gtdbtk", "taxonomy::checkm_stats"):
+        assert rows[sink] > last, sink
+
+
+def test_the_binner_blocks_are_a_repeat_class_the_layout_knows_about(dag):
+    lay = dag.layout()
+    classes = {m.heads for m in repeat_motifs(lay)}
+    binners = next(
+        (h for h in classes if all(any(n.endswith(f" {b}") for n in h) for b in BINNERS)),
+        None,
+    )
+    assert binners is not None, classes
+    assert len(binners) == 3
 
 
 def test_rendering_is_deterministic(dag):

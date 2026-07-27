@@ -32,20 +32,26 @@ class NodeKind(Enum):
 # thing it made, a filled square is a thing that was asked for. Only the target
 # is filled, so the one kind a reader is looking for is the one that is solid.
 # A step's label is greyed for the same reason — the file names are the content.
+#
+# `marker_scale` is one number for all three, because it means a *width* and
+# the three shapes have to read as one family. They were 1.25/0.90/0.82 of
+# three different quantities, which drew a 17px triangle beside a 10px circle
+# and a 9px square. A square of equal width does still read heavier than a
+# circle — that is the shape's own ink, not a size to be tuned away.
 STYLES: dict[NodeKind, Style] = {
     NodeKind.TRANSFORM: Style(
         marker="▽", ascii_marker="v",
         fill="#FFFFFF", stroke="#2B2B2B", rx=0,
         text="#7A7A7A", muted="#A8A8A8",
-        shape="triangle", gv_attrs="orientation=180, regular=true",
+        shape="triangle", gv_attrs="orientation=180",
         gv_style="filled", ansi="\033[1;36m",
-        svg_shape="triangle_down", marker_scale=1.25, stroke_width=1.5,
+        svg_shape="triangle_down", marker_scale=1.0, stroke_width=1.5,
     ),
     NodeKind.DATA: Style(
         marker="○", ascii_marker="o",
         fill="#FFFFFF", stroke="#2B2B2B", rx=0,
         shape="circle", gv_style="filled", ansi="\033[0;37m",
-        svg_shape="circle", marker_scale=0.90, stroke_width=1.5,
+        svg_shape="circle", marker_scale=1.0, stroke_width=3.0,
     ),
     # marking the requested outputs on the nodes themselves is what lets the
     # drawing skip the synthetic sink that collects them, and that sink is the
@@ -53,9 +59,9 @@ STYLES: dict[NodeKind, Style] = {
     # wherever it is produced down to the last row
     NodeKind.TARGET: Style(
         marker="■", ascii_marker="#",
-        fill="#2B2B2B", stroke="#2B2B2B", rx=1,
+        fill="#212121", stroke="#212121", rx=1,
         shape="box", gv_style="filled", ansi="\033[1;37m",
-        svg_shape="square", marker_scale=0.82, stroke_width=1.0,
+        svg_shape="square", marker_scale=1.0, stroke_width=3.0,
     ),
 }
 

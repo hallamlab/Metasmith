@@ -469,12 +469,25 @@ Three things about it are load-bearing and not obvious from the code:
   rows below the three binners that feed them. `_row_order` seeds only the
   root owning most of the graph and pulls each other root's whole chain in
   immediately above the first step that stalls on it.
+- **A repeated block is a shape, never a name.** The three binners' products
+  are named per binner, so nothing matches as a string; a node's signature is
+  its kind, its **fan-in**, and the sorted multiset of its children's
+  signatures to a bounded depth. Fan-in is in there because without it three
+  unrelated merge steps hash alike and get hoisted 14 rows from their readers.
+  An instance's block is its descendants minus everything its siblings also
+  reach — *not* its dominator subtree, which loses any node with a second
+  parent and leaves a stub that the hoist and gate then act on wrongly.
 - **Where a pass has two defensible answers, both are drawn and measured.**
-  `measure` returns rail rows, lanes, crossings and module contiguity, and
-  `layout` picks on `(rail, lanes, crossings)`. Prefer adding a candidate to
-  tuning a constant. Ceilings are pinned in `test_dag_stress.py`, with the
-  pre-change numbers in the docstring; a change is free to improve them and
-  has to say so out loud to make one worse.
+  `measure` returns congruence, rail rows, lanes, crossings and module
+  contiguity, and `layout` picks on `(congruence, rail, lanes, crossings)` —
+  symmetry ahead of length, which costs ~1% on graphs that have none.
+  Congruence is *modal*, the largest set of instances arranged alike: mean
+  agreement is too coarse to separate row orders, and offsets are measured
+  against the previous instance because instances fanning out of one node
+  cannot share absolute lanes. Prefer adding a candidate to tuning a constant.
+  Ceilings are pinned in `test_dag_stress.py`, with the pre-change numbers in
+  the docstring; a change is free to improve them and has to say so out loud
+  to make one worse.
 
 Two things that were tried on the row order and are *worse*, both measured:
 optimal Sugiyama layer assignment (the network-simplex objective from Gansner

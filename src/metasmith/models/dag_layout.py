@@ -33,14 +33,21 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
 __all__ = [
-    "LayoutNode", "LayoutEdge", "Layout", "Metrics",
-    "layout", "measure", "dominators", "natural_key",
+    "LayoutNode", "LayoutEdge", "Layout", "Metrics", "Motif",
+    "layout", "measure", "dominators", "natural_key", "repeat_motifs",
 ]
 
 _DIGITS = re.compile(r"(\d+)")
 # how much smaller than the main line a side branch has to be to be drawn
 # first; 0 means never, and the two are tried against each other
 _SIDE_BRANCH = (2, 0)
+# how far down a node's descendants its shape hash looks. Measured: 1 is too
+# local — it pairs the three merge steps of the metagenomics plan on nothing
+# more than their kind and fan-in — and every depth from 2 to 6 returns exactly
+# the same classes, on that plan and across 300 random DAGs. 3 is taken from
+# the middle of that plateau, since a deeper graph is the case where the depths
+# would start to differ and none of them costs anything measurable.
+_SIGNATURE_DEPTH = 3
 
 
 def natural_key(name: str) -> tuple:
@@ -149,19 +156,28 @@ def layout(
     spine = _choose_spine(names, parents, fwd_children, weight, descendants)
     owner = _ownership(names, parents, depth)
     lane_width, owned_size = _lane_widths(topo, fwd_children, owner)
+    sig = _signatures(topo, fwd_children, kinds, _SIGNATURE_DEPTH)
+    motifs = _motifs(topo, fwd_children, sig)
 
     # two sibling policies rather than one tuned constant: whether a small side
     # branch is drawn before the main line or after it is the single choice the
     # walk makes that a graph's shape can reverse, so both are drawn and the
     # cheaper one wins. Everything else about the two is identical.
+    #
+    # Congruence leads the key, and it is the one place symmetry is allowed to
+    # cost rail: three blocks that read as three copies are worth more than the
+    # rows saved by letting each of them find its own cheapest shape.
     best_key = best_layout = None
     for jump in _SIDE_BRANCH:
         order = _row_order(
-            names, parents, fwd_children, topo, spine, lane_width, owned_size, jump
+            names, parents, fwd_children, topo, spine, lane_width, owned_size,
+            jump, motifs, sig,
         )
-        cand = _compose(order, kinds, _edges, back, fwd_children, depth, weight, spine)
-        m = measure(cand)
-        key = (m.rail_rows, m.lanes, m.crossings)
+        cand = _compose(
+            order, kinds, _edges, back, fwd_children, depth, weight, spine, motifs
+        )
+        m = measure(cand, motifs)
+        key = (-m.congruent, m.rail_rows, m.lanes, m.crossings)
         if best_key is None or key < best_key:
             best_key, best_layout = key, cand
     return best_layout  # type: ignore[return-value]
@@ -176,22 +192,55 @@ def _compose(
     depth: dict[str, int],
     weight: dict[str, int],
     spine: set[str],
+    motifs: Sequence[Motif] = (),
 ) -> Layout:
     """Lanes and routing for one candidate row order.
 
-    Both lane assignments are drawn and compared on width first and crossings
-    second. Width was the only test for a long time, and it left the greedy
-    result in place whenever the repack merely tied — which is most of the time,
-    and is exactly when the repack is worth having, because closing the gaps a
-    lane left open also stops the rails jogging past one another to reach them.
+    Three lane assignments are drawn and compared on congruence, then width,
+    then crossings. Width was the only test for a long time, and it left the
+    greedy result in place whenever the repack merely tied — which is most of
+    the time, and is exactly when the repack is worth having, because closing
+    the gaps a lane left open also stops the rails jogging past one another to
+    reach them.
+
+    The last two are the congruence pass, and it takes both halves of the lane
+    assignment to work. The rows already make the blocks congruent; without
+    these they can still be congruent in shape and sit in unrelated lanes,
+    which is most of what stops them reading as copies. Neither is a
+    constraint — a lane already busy is simply not taken — so on a graph with
+    no repeats they are the repack and cannot lose.
     """
+    # node -> (its counterpart one instance up, its own head, that head).
+    # One instance up and not the first: instances are packed in row order, so
+    # the nearest one already placed is the one whose lanes are still reachable
+    # — chaining them also means an awkward first block does not make every
+    # copy after it awkward too.
+    shift: dict[str, tuple[str, str, str]] = {}
+    for m in motifs:
+        inverse = [{m.twin[y]: y for y in b} for b in m.blocks]
+        for i, (head, block) in enumerate(zip(m.heads, m.blocks)):
+            if i == 0:
+                continue
+            for x in block:
+                mate = inverse[i - 1].get(m.twin[x])
+                if mate is not None:
+                    shift[x] = (mate, head, m.heads[i - 1])
     greedy = _assign_lanes(order, fwd_children, weight, spine)
-    packed = _recolour(order, *greedy[:2])
+    candidates = [greedy, _recolour(order, *greedy[:2])]
+    if shift:
+        candidates.append(_recolour(order, *greedy[:2], shift=shift))
+        even = _assign_lanes(
+            order, fwd_children, weight, spine,
+            _canonical_primaries(motifs, fwd_children, spine, weight),
+        )
+        candidates.append(even)
+        candidates.append(_recolour(order, *even[:2], shift=shift))
 
     best_key = best = None
-    for node_lane, edge_lane, width in (greedy, packed):
+    for node_lane, edge_lane, width in candidates:
         cand = _build(order, kinds, _edges, back, depth, spine, node_lane, edge_lane, width)
-        key = (width, measure(cand).crossings)
+        m = measure(cand, motifs)
+        key = (-m.congruent, width, m.crossings)
         if best_key is None or key < best_key:
             best_key, best = key, cand
     return best  # type: ignore[return-value]
@@ -402,6 +451,8 @@ def _row_order(
     lane_width: dict[str, int],
     owned_size: dict[str, int],
     jump: int,
+    motifs: Sequence[Motif] = (),
+    sig: Mapping[str, int] | None = None,
 ) -> list[str]:
     """One row per node, walked depth-first down the spine.
 
@@ -447,12 +498,45 @@ def _row_order(
     of before it. Moving the closure is what makes the difference: the chain is
     emitted and consumed in consecutive rows, so it never holds a lane open
     across anything.
+
+    Three things then bend that walk towards drawing a repeated block the same
+    way every time, and each of them is a place where a per-instance tie-break
+    used to leak into the picture:
+
+    - **Order inside a block.** Every rule above resolves a tie on the node
+      itself — which of two steps is on the spine, which of them owns the
+      output they share — so one binner emitted gtdbtk before checkm and the
+      next emitted them the other way round. A node inside a repeat class
+      instead ranks its children by the order the class's *first* instance put
+      them in, matched by shape.
+
+    - **Shared supply.** A reference database pulled in by the second step of
+      the first block makes that block two rows longer than its copies. When
+      the stalled consumer is inside a class with more than one instance the
+      chain is hoisted above the first instance instead, so it precedes the
+      whole group and every block starts at the same place.
+
+    - **Shared sinks.** A node joining several instances — the one taxonomy
+      output all three gtdbtk steps write — is held back until every instance
+      is finished, rather than landing wherever the walk happened to have a
+      node left over, which is what used to wedge it into the middle of the
+      third block.
     """
+    sig = sig or {}
     pending = {n: len(parents[n]) for n in names}
     emitted: set[str] = set()
     order: list[str] = []
+    row_of: dict[str, int] = {}
 
-    def _rank(n: str, siblings: list[str]):
+    class_of: dict[str, Motif] = {}
+    instance_of: dict[str, int] = {}
+    for m in motifs:
+        for i, b in enumerate(m.blocks):
+            for x in b:
+                class_of[x] = m
+                instance_of[x] = i
+
+    def _plain_rank(n: str, siblings: list[str]):
         if not children[n]:
             tier = 0
         elif n in spine:
@@ -462,6 +546,22 @@ def _row_order(
             small = owned_size[n] * jump <= biggest - owned_size[n]
             tier = 1 if jump and small else 3
         return (tier, lane_width[n], natural_key(n))
+
+    # the canonical intra-class order, read off each class's first instance
+    # with the ordinary rules and then imposed on the rest of them. Keyed by
+    # shape on both ends because the nodes are named per instance.
+    child_order: dict[tuple[int, int], int] = {}
+    for m in motifs:
+        for x in m.blocks[0]:
+            kids = sorted(children[x], key=lambda c: _plain_rank(c, children[x]))
+            for i, c in enumerate(kids):
+                child_order.setdefault((sig[x], sig[c]), i)
+
+    def _rank(parent: str, n: str, siblings: list[str]):
+        canon = 0
+        if parent in class_of:
+            canon = child_order.get((sig[parent], sig[n]), len(siblings))
+        return (canon,) + _plain_rank(n, siblings)
 
     def _root_rank(n: str):
         return (-owned_size[n], natural_key(n))
@@ -479,14 +579,65 @@ def _row_order(
             supply.add(n)
 
     stack: list[str] = []
+    blocked: list[str] = []  # joins waiting for every instance of their class
+    forced: set[str] = set()  # ... and the ones whose wait cannot be satisfied
+
+    def _gated(n: str) -> bool:
+        """True while `n` joins more than one instance of a class that is not
+        finished. A shared output belongs below every block it joins."""
+        if n in forced:
+            return False
+        spread: dict[int, set[int]] = {}
+        for p in parents[n]:
+            m = class_of.get(p)
+            if m is not None:
+                spread.setdefault(id(m), set()).add(instance_of[p])
+        for p in parents[n]:
+            m = class_of.get(p)
+            if m is None or len(spread[id(m)]) < 2:
+                continue
+            if any(x not in emitted for b in m.blocks for x in b):
+                return True
+        return False
+
+    def _release() -> None:
+        ready = [n for n in blocked if n not in emitted and not _gated(n)]
+        if not ready:
+            return
+        for n in ready:
+            blocked.remove(n)
+        stack.extend(reversed(sorted(ready, key=natural_key)))
 
     def _emit(n: str) -> None:
         emitted.add(n)
         order.append(n)
-        kids = sorted(children[n], key=lambda c: _rank(c, children[n]))
+        row_of[n] = len(order) - 1
+        kids = sorted(children[n], key=lambda c: _rank(n, c, children[n]))
         for c in kids:
             pending[c] -= 1
         stack.extend(reversed(kids))
+        _release()
+
+    def _hoist_to(n: str, chain: list[str]) -> int | None:
+        """Where the supply behind `n` should go: above the first instance of
+        `n`'s class, or None to leave it where it was pulled.
+
+        Only when nothing in the chain has a parent already drawn at or below
+        that row — moving the chain up past one of its own inputs would reverse
+        an edge, and the whole layout is built on that not happening.
+        """
+        m = class_of.get(n)
+        if m is None or len(m.heads) < 2:
+            return None
+        at = min((row_of[h] for h in m.heads if h in row_of), default=None)
+        if at is None:
+            return None
+        inside = set(chain)
+        for x in chain:
+            for p in parents[x]:
+                if p not in inside and row_of.get(p, -1) >= at:
+                    return None
+        return at
 
     def _pull(n: str) -> bool:
         """Emit the supply behind `n`, deepest chain first. False if `n` is
@@ -507,8 +658,16 @@ def _row_order(
 
         for p in sorted(unmet, key=natural_key):
             _visit(p)
+        at = _hoist_to(n, chain)
+        mark = len(order)
         for x in chain:
             _emit(x)
+        if at is not None and at < mark:
+            moved = order[mark:]
+            del order[mark:]
+            order[at:at] = moved
+            row_of.clear()
+            row_of.update({x: i for i, x in enumerate(order)})
         return True
 
     remaining = list(roots[1:])
@@ -521,17 +680,63 @@ def _row_order(
             if pending[n] > 0 and not _pull(n):
                 continue
             if pending[n] == 0:
+                if _gated(n):
+                    if n not in blocked:
+                        blocked.append(n)
+                    continue
                 _emit(n)
         # a held root nothing stalled on — a disconnected component, or supply
         # for a node the cycle breaker cut away from it
         remaining = [n for n in remaining if n not in emitted]
-        if not remaining or len(order) == len(names):
-            break
-        stack.append(remaining.pop(0))
+        if remaining and len(order) < len(names):
+            stack.append(remaining.pop(0))
+            continue
+        # nothing left to finish a class with, so the gate can never open;
+        # drawing the join in the wrong place beats not drawing it at all
+        blocked[:] = [n for n in blocked if n not in emitted]
+        if blocked:
+            forced.update(blocked)
+            stack.extend(reversed(sorted(blocked, key=natural_key)))
+            blocked.clear()
+            continue
+        break
 
     if len(order) < len(names):  # only reachable if cycle breaking left an island
         order += [n for n in topo if n not in emitted]
     return order
+
+
+def _canonical_primaries(
+    motifs: Sequence[Motif],
+    children: dict[str, list[str]],
+    spine: set[str],
+    weight: dict[str, int],
+) -> dict[str, str]:
+    """Give every instance of a class the lane inheritance the first one got.
+
+    Which child continues a node's rail is settled on the node itself — is it
+    on the spine, how much hangs below it — and inside a repeated block those
+    answers differ per instance, so one block keeps its step in the block's own
+    lane and its copies push theirs off to the side. Mapped through the class's
+    pairing, all three make the same choice.
+    """
+    out: dict[str, str] = {}
+    for m in motifs:
+        inverse = [{m.twin[y]: y for y in b} for b in m.blocks]
+        for x in m.blocks[0]:
+            if not children[x]:
+                continue
+            first = _primary_child(children[x], spine, weight)
+            for inv in inverse[1:]:
+                here, mate = inv.get(x), inv.get(first)
+                if here is not None and mate is not None:
+                    out[here] = mate
+    return out
+
+
+def _primary_child(kids: list[str], spine: set[str], weight: dict[str, int]) -> str:
+    """Which child inherits a node's lane, so a chain renders as one rail."""
+    return min(kids, key=lambda c: (0 if c in spine else 1, -weight[c], natural_key(c)))
 
 
 def _assign_lanes(
@@ -539,6 +744,7 @@ def _assign_lanes(
     children: dict[str, list[str]],
     weight: dict[str, int],
     spine: set[str],
+    primary_of: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, int], dict[tuple[str, str], int], int]:
     """Lane bookkeeping in the style of a commit graph.
 
@@ -552,7 +758,16 @@ def _assign_lanes(
     should follow the longest continuation even when a short leaf is drawn
     first. The remaining children take lanes in the order they will be emitted,
     so the nearest branch sits closest to its parent.
+
+    `primary_of` overrides that choice per node, and exists for one reason: it
+    is a per-instance tie-break like every other, and it decides whether a
+    repeated block's steps sit in their block's own lane or somewhere off to
+    the side. Only the first of three bin-fasta nodes continues into its checkm
+    step here — the other two continue into the aggregator every block feeds,
+    which is on the spine and outweighs it — so two of the three checkm steps
+    end up in whatever lane happened to be free.
     """
+    primary_of = primary_of or {}
     rows = {n: i for i, n in enumerate(order)}
     reserved: list[tuple[str, str] | None] = []  # lane -> (child, parent)
     node_lane: dict[str, int] = {}
@@ -580,9 +795,9 @@ def _assign_lanes(
 
         kids = children[n]
         if kids:
-            primary = min(
-                kids, key=lambda c: (0 if c in spine else 1, -weight[c], natural_key(c))
-            )
+            primary = primary_of.get(n) or _primary_child(kids, spine, weight)
+            if primary not in kids:  # defensive: an override must name a child
+                primary = _primary_child(kids, spine, weight)
             reserved[lane] = (primary, n)
             for c in sorted(kids, key=lambda c: rows[c]):
                 if c != primary:
@@ -599,6 +814,7 @@ def _recolour(
     order: list[str],
     node_lane: dict[str, int],
     edge_lane: dict[tuple[str, str], int],
+    shift: Mapping[str, tuple[str, str, str]] | None = None,
 ) -> tuple[dict[str, int], dict[tuple[str, str], int], int]:
     """Repack the lanes once the rows are known.
 
@@ -624,7 +840,17 @@ def _recolour(
       it starts. A rail between adjacent rows spans no row at all and needs no
       lane of its own; it jogs across inside the half-row and is given its
       target's lane, which also keeps its polyline free of repeated points.
+
+    `shift` is the congruence pass: an item with a counterpart in a repeat
+    class's first instance asks for the lane that counterpart was given, offset
+    by however far this instance's head sits from the first one's. Offset and
+    not the absolute lane, because the heads themselves usually cannot line up
+    — three binners fanning out of one node are three parallel rails by
+    construction, one lane apart. Nothing about the packing's correctness rests
+    on this: a lane is still only handed out when no other item holds those
+    rows, so the worst it can do is what the plain repack would have done.
     """
+    shift = shift or {}
     rows = {n: i for i, n in enumerate(order)}
     # a node continues its parent's strand exactly when the edge between them
     # stayed in that one lane; at most one parent per node can qualify, because
@@ -667,9 +893,38 @@ def _recolour(
     end_of_lane: list[int] = []  # lane -> last row it is busy through
     new_node: dict[str, int] = {}
     new_edge: dict[tuple[str, str], int] = {}
+
+    def _offset(x: str) -> int | None:
+        """How far this instance's head sits from the first instance's."""
+        info = shift.get(x)
+        if info is None:
+            return None
+        _, head, ref = info
+        if head not in new_node or ref not in new_node:
+            return None
+        return new_node[head] - new_node[ref]
+
     for lo, hi, item in sorted(items, key=lambda t: (t[0], t[1], _item_key(t[2]))):
         kind, key = item  # type: ignore[misc]
-        was = node_lane[order[lo]] if kind == "strand" else edge_lane[key]  # type: ignore[index]
+        want = None
+        if kind == "strand":
+            head = order[lo]
+            was = node_lane[head]
+            info, delta = shift.get(head), _offset(head)
+            if info is not None and delta is not None and info[0] != head:
+                base = new_node.get(info[0])
+                want = None if base is None else base + delta
+        else:
+            was = edge_lane[key]  # type: ignore[index]
+            u, v = key  # type: ignore[misc]
+            iu, iv, delta = shift.get(u), shift.get(v), _offset(u)
+            if iu is not None and iv is not None and delta is not None:
+                mate = (iu[0], iv[0])
+                if iu[1] == iv[1] and mate != (u, v):
+                    base = new_edge.get(mate)
+                    want = None if base is None else base + delta
+        if want is not None and want < 0:
+            want = None
         # keep an item where it already was whenever that lane is free. Pure
         # left-edge colouring packs harder but slides branches sideways under
         # each other, which turns a fan-in comb into a zigzag of rails jogging
@@ -679,8 +934,18 @@ def _recolour(
         # transform's four products come out side by side, was tried: it is 16%
         # more crossings for no measured gain in how many fan-outs land on
         # adjacent lanes, because a lane near the parent is rarely the free one.
-        if was < len(end_of_lane) and end_of_lane[was] < lo:
-            lane = was
+        #
+        # `want` — where this item's counterpart in the first instance ended up,
+        # shifted by this instance's own head — is tried ahead of `was`, and
+        # both are only preferences. `want` may name a lane no item has reached
+        # yet, and opening it is allowed: the block's copies are worth a lane,
+        # and if they are not this candidate loses to the plain repack on width.
+        if want is not None and want >= len(end_of_lane):
+            end_of_lane += [-1] * (want + 1 - len(end_of_lane))
+        for cand in (want, was):
+            if cand is not None and cand < len(end_of_lane) and end_of_lane[cand] < lo:
+                lane = cand
+                break
         else:
             lane = next(
                 (i for i, end in enumerate(end_of_lane) if end < lo), len(end_of_lane)
@@ -735,6 +1000,10 @@ class Metrics:
     distance the edges have to travel, which is what makes a module read as one
     block instead of a step and a rail down the rest of the page. `crossings`
     counts the segment pairs the character backend draws as a `┼`.
+
+    `congruence` is the one the selection now leads with: where the plan does
+    the same thing three times the drawing has to show three copies of one
+    block, and no amount of saved rail buys that back.
     """
     rail_rows: int
     lanes: int
@@ -743,11 +1012,18 @@ class Metrics:
     modules: int
     contiguous: int
     module_spread: int
+    repeats: int = 0
+    congruent: int = 0
 
     @property
     def contiguity(self) -> float:
         """Fraction of modules drawn as an unbroken run of rows."""
         return self.contiguous / self.modules if self.modules else 1.0
+
+    @property
+    def congruence(self) -> float:
+        """Fraction of repeat instances drawn as a copy of the first one."""
+        return self.congruent / self.repeats if self.repeats else 1.0
 
     def __str__(self) -> str:
         return (
@@ -755,12 +1031,16 @@ class Metrics:
             f" crossings={self.crossings}"
             f" modules={self.contiguous}/{self.modules} ({self.contiguity:.0%})"
             f" spread={self.module_spread}"
+            f" repeats={self.congruent}/{self.repeats} ({self.congruence:.0%})"
         )
 
 
-def measure(lay: Layout) -> Metrics:
+def measure(lay: Layout, motifs: Sequence[Motif] | None = None) -> Metrics:
     """Score a finished layout. Back edges are excluded throughout — they are
     drawn as an annotation, not routed, so they cost neither rail nor crossing.
+
+    `motifs` is only ever an optimisation: `layout` already knows them and
+    passes them in, and anyone else gets them recomputed from the drawing.
     """
     idx = lay.index
     forward = [e for e in lay.edges if not e.back]
@@ -811,6 +1091,10 @@ def measure(lay: Layout) -> Metrics:
         spread += gap
         contiguous += gap == 0
 
+    if motifs is None:
+        motifs = repeat_motifs(lay)
+    repeats, congruent = _congruence(lay, motifs)
+
     return Metrics(
         rail_rows=sum(spans),
         lanes=lay.width,
@@ -819,6 +1103,8 @@ def measure(lay: Layout) -> Metrics:
         modules=modules,
         contiguous=contiguous,
         module_spread=spread,
+        repeats=repeats,
+        congruent=congruent,
     )
 
 
@@ -867,3 +1153,211 @@ def _dom_subtree(head: str, kids: dict[str, list[str]]) -> list[str]:
         out.append(n)
         stack += kids[n]
     return out
+
+
+# --- repeating motifs --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Motif:
+    """A shape the graph draws more than once, and the blocks that draw it.
+
+    `heads` are the instances; `blocks[i]` is everything `heads[i]` dominates,
+    so the blocks are disjoint and each can be moved as one thing. `twin` maps
+    every node of every block onto its counterpart in `blocks[0]`, which is
+    what lets a later instance be given the arrangement the first one got.
+    """
+    heads: tuple[str, ...]
+    blocks: tuple[frozenset[str], ...]
+    twin: dict  # node -> the corresponding node in blocks[0]
+
+    @property
+    def nodes(self) -> frozenset[str]:
+        return frozenset().union(*self.blocks)
+
+
+def _kind_key(kind: Any) -> Any:
+    try:
+        hash(kind)
+    except TypeError:
+        return repr(kind)
+    return kind
+
+
+def _signatures(
+    topo: list[str],
+    children: dict[str, list[str]],
+    kinds: Mapping[str, Any],
+    depth: int,
+) -> dict[str, int]:
+    """Each node's forward shape: its own kind and fan-in, plus the multiset of
+    its children's shapes, to `depth` levels, interned to an int.
+
+    A *shape* hash and not a label hash, because what is being matched is named
+    per instance — a plan's three binners emit `comebin_contig_to_bin_table`
+    and `semibin2_contig_to_bin_table`, so nothing at the block level matches
+    by name, and the step numbers keep even the transforms apart.
+
+    Fan-in is part of a node's own key and not an afterthought. Looking only
+    downward, the metagenomics plan's `aggregator` — which collects all three
+    binners and the checkm summary — is the same four-node chain as a
+    `diamond` annotation step at any depth, and calling them one class puts
+    two reference databases fourteen rows above where they are read.
+    """
+    fan_in: dict[str, int] = dict.fromkeys(topo, 0)
+    for n in topo:
+        for c in children[n]:
+            fan_in[c] += 1
+    own = {n: (_kind_key(kinds.get(n)), fan_in[n]) for n in topo}
+    ids: dict[tuple, int] = {}
+    sig = {n: ids.setdefault((own[n],), len(ids)) for n in topo}
+    for _ in range(depth):
+        sig = {
+            n: ids.setdefault(
+                (own[n], tuple(sorted(sig[c] for c in children[n]))), len(ids)
+            )
+            for n in topo
+        }
+    return sig
+
+
+def _pair_blocks(head_a, block_a, head_b, block_b, children, order_key):
+    """Match `block_b` onto `block_a` node by node, walking both in one order.
+
+    None when they do not line up: the signature says the two nodes look alike
+    to `_SIGNATURE_DEPTH` and the graph is free to differ below that.
+    """
+    twin = {head_b: head_a}
+    stack = [(head_a, head_b)]
+    while stack:
+        a, b = stack.pop()
+        ka = sorted((c for c in children[a] if c in block_a), key=order_key)
+        kb = sorted((c for c in children[b] if c in block_b), key=order_key)
+        if len(ka) != len(kb):
+            return None
+        for x, y in zip(ka, kb):
+            if y in twin:
+                continue
+            twin[y] = x
+            stack.append((x, y))
+    return twin if len(twin) == len(block_b) == len(block_a) else None
+
+
+def _motifs(
+    topo: list[str],
+    children: dict[str, list[str]],
+    sig: dict[str, int],
+) -> tuple[Motif, ...]:
+    """Every shape drawn more than once, biggest first and never nested.
+
+    An instance's *block* is what hangs below it and below none of its
+    siblings. Not the dominator subtree, which is what a module is elsewhere in
+    this file and is the wrong tool here: a step taking a shared reference
+    database is dominated by neither its producer nor the database, so the
+    dominator reading cuts each of the three gtdbtk steps out of the binner
+    block it belongs to and leaves a four-node stub. Subtracting what the
+    siblings share keeps them, and the blocks come out disjoint by
+    construction.
+
+    Three filters after that. A block of one is dropped — every leaf of a kind
+    repeats, and an instance that owns nothing arranges nothing. A class whose
+    blocks do not line up node for node is dropped, because the signature only
+    promises they look alike to `_SIGNATURE_DEPTH`. And a class every one of
+    whose instances sits inside a class already kept is dropped, so what comes
+    back is the whole repeated block rather than each of its parts: the three
+    binners, not also the three bin-fasta subtrees inside them.
+    """
+    desc: dict[str, set[str]] = {}
+    for n in reversed(topo):
+        below: set[str] = set()
+        for c in children[n]:
+            below.add(c)
+            below |= desc[c]
+        desc[n] = below
+
+    groups: dict[int, list[str]] = {}
+    for n in topo:
+        groups.setdefault(sig[n], []).append(n)
+
+    def _order_key(c: str):
+        return (sig[c], natural_key(c))
+
+    found: list[Motif] = []
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        members = sorted(members, key=natural_key)
+        closed = [desc[m] | {m} for m in members]
+        shared: set[str] = set()
+        for i, a in enumerate(closed):
+            for b in closed[i + 1:]:
+                shared |= a & b
+        blocks = [frozenset(c - shared) for c in closed]
+        if any(m not in b for m, b in zip(members, blocks)):
+            continue  # one instance hangs below another; they are not siblings
+        if len(blocks[0]) < 2 or len({len(b) for b in blocks}) != 1:
+            continue
+        twin: dict[str, str] = {}
+        for m, b in zip(members, blocks):
+            pairing = _pair_blocks(members[0], blocks[0], m, b, children, _order_key)
+            if pairing is None:
+                twin = {}
+                break
+            twin.update(pairing)
+        if not twin:
+            continue
+        found.append(Motif(heads=tuple(members), blocks=tuple(blocks), twin=twin))
+
+    found.sort(
+        key=lambda m: (-len(m.blocks[0]), -len(m.heads), natural_key(m.heads[0]))
+    )
+    kept: list[Motif] = []
+    covered: set[str] = set()
+    for m in found:
+        if m.nodes & covered:
+            continue
+        kept.append(m)
+        covered |= m.nodes
+    return tuple(kept)
+
+
+def repeat_motifs(lay: Layout, depth: int = _SIGNATURE_DEPTH) -> tuple[Motif, ...]:
+    """The repeated shapes of a finished layout, for callers that colour or
+    score one. Same answer the row order worked from, recomputed from the
+    drawing so nothing has to be threaded through it."""
+    names = [n.name for n in lay.nodes]  # row order is a topological order
+    kinds = {n.name: n.kind for n in lay.nodes}
+    children: dict[str, list[str]] = {n: [] for n in names}
+    for e in lay.edges:
+        if not e.back:
+            children[e.src].append(e.dst)
+    for n in names:
+        children[n].sort(key=natural_key)
+    return _motifs(names, children, _signatures(names, children, kinds, depth))
+
+
+def _congruence(lay: Layout, motifs: Sequence[Motif]) -> tuple[int, int]:
+    """How many repeat instances are drawn as copies of one another.
+
+    An instance's *arrangement* is where its block's nodes sit relative to its
+    head, in rows and in lanes, with each node named by its counterpart in the
+    first block so two instances are comparable at all. The class's canonical
+    arrangement is whichever one the most instances take, and the score is how
+    many take it — the first instance has no special claim on being right, and
+    scoring against it would call three blocks incongruent because the one at
+    the top had a rail in the way.
+    """
+    rows = {n.name: n.row for n in lay.nodes}
+    lanes = {n.name: n.lane for n in lay.nodes}
+    total = matched = 0
+    for m in motifs:
+        seen: dict[frozenset, int] = {}
+        for head, block in zip(m.heads, m.blocks):
+            shape = frozenset(
+                (rows[x] - rows[head], lanes[x] - lanes[head], m.twin[x])
+                for x in block
+            )
+            seen[shape] = seen.get(shape, 0) + 1
+        total += len(m.heads)
+        matched += max(seen.values())
+    return total, matched

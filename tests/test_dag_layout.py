@@ -7,7 +7,7 @@ import random
 
 import pytest
 
-from metasmith.models.dag_layout import layout
+from metasmith.models.dag_layout import layout, measure, repeat_motifs
 
 
 def _lay(edges, nodes=None):
@@ -148,6 +148,106 @@ def test_step_numbers_sort_numerically():
     # "10 x" must not tie-break ahead of "2 x"
     lay = _lay([("r", "2 b"), ("r", "10 a")])
     assert _rows(lay) == ["r", "2 b", "10 a"]
+
+
+# --- repeating motifs -------------------------------------------------------
+#
+# The graph below is the shape the metagenomics plan has and the reason this
+# pass exists: one input fanning out into three identical blocks, each block
+# taking a shared database and writing into a shared output. The products are
+# named per instance, so nothing here matches by name.
+
+_TAGS = ("a", "b", "c")
+_REPEATS = (
+    [("in", f"{i} run") for i, t in enumerate(_TAGS)]
+    + [(f"{i} run", f"out::{t}_bins") for i, t in enumerate(_TAGS)]
+    + [(f"{i} run", f"out::{t}_table") for i, t in enumerate(_TAGS)]
+    + [(f"out::{t}_bins", f"{i + 3} score") for i, t in enumerate(_TAGS)]
+    + [(f"out::{t}_bins", f"{i + 6} classify") for i, t in enumerate(_TAGS)]
+    + [("db::ref", f"{i + 6} classify") for i, _ in enumerate(_TAGS)]
+    + [(f"{i + 3} score", "sink::quality") for i, _ in enumerate(_TAGS)]
+    + [(f"{i + 6} classify", "sink::taxonomy") for i, _ in enumerate(_TAGS)]
+)
+_KINDS = {
+    **{f"{i} run": "T" for i in range(3)},
+    **{f"{i} score": "T" for i in range(3, 6)},
+    **{f"{i} classify": "T" for i in range(6, 9)},
+}
+
+
+def test_a_repeated_block_is_found_by_shape_not_by_name():
+    lay = _lay(_REPEATS, _KINDS)
+    heads = {m.heads for m in repeat_motifs(lay)}
+    assert ("0 run", "1 run", "2 run") in heads
+    # ... and the class is the whole block, not each of its parts
+    block = next(m for m in repeat_motifs(lay) if m.heads[0] == "0 run").blocks[0]
+    assert block == frozenset(
+        {"0 run", "out::a_bins", "out::a_table", "3 score", "6 classify"}
+    )
+
+
+def test_every_instance_of_a_block_is_a_contiguous_run_of_rows():
+    lay = _lay(_REPEATS, _KINDS)
+    rows = {n.name: n.row for n in lay.nodes}
+    for m in repeat_motifs(lay):
+        for block in m.blocks:
+            span = sorted(rows[x] for x in block)
+            assert span == list(range(span[0], span[0] + len(span))), block
+
+
+def test_every_instance_emits_its_children_in_the_same_order():
+    lay = _lay(_REPEATS, _KINDS)
+    rows = {n.name: n.row for n in lay.nodes}
+    m = next(x for x in repeat_motifs(lay) if x.heads[0] == "0 run")
+    shapes = {
+        tuple(sorted((rows[x] - rows[head], m.twin[x]) for x in block))
+        for head, block in zip(m.heads, m.blocks)
+    }
+    assert len(shapes) == 1, shapes
+
+
+def test_the_shared_supply_is_drawn_once_above_the_first_instance():
+    lay = _lay(_REPEATS, _KINDS)
+    rows = {n.name: n.row for n in lay.nodes}
+    m = next(x for x in repeat_motifs(lay) if x.heads[0] == "0 run")
+    assert rows["db::ref"] < min(rows[h] for h in m.heads)
+
+
+def test_a_shared_output_waits_for_every_instance():
+    lay = _lay(_REPEATS, _KINDS)
+    rows = {n.name: n.row for n in lay.nodes}
+    m = next(x for x in repeat_motifs(lay) if x.heads[0] == "0 run")
+    last = max(rows[x] for b in m.blocks for x in b)
+    for sink in ("sink::quality", "sink::taxonomy"):
+        assert rows[sink] > last, sink
+
+
+def test_congruence_is_the_biggest_set_of_instances_drawn_alike():
+    m = measure(_lay(_REPEATS, _KINDS))
+    assert m.repeats >= 3
+    assert m.congruent >= 3
+    assert m.congruence == m.congruent / m.repeats
+
+
+def test_a_graph_with_nothing_repeated_is_congruent_by_definition():
+    m = measure(_lay([("a", "b"), ("b", "c"), ("c", "d")]))
+    assert (m.repeats, m.congruent, m.congruence) == (0, 0, 1.0)
+
+
+def test_two_nodes_of_a_kind_are_not_a_class_on_their_own():
+    # every leaf of a kind has the same shape; a class that owns nothing
+    # arranges nothing, and treating those as motifs would colour the page
+    lay = _lay([("r", "x"), ("r", "y")])
+    assert repeat_motifs(lay) == ()
+
+
+def test_an_ancestor_and_its_descendant_are_never_two_instances():
+    # a chain of identical steps has one shape at every node, but the blocks
+    # nest, so no two of them can be placed independently
+    lay = _lay([("a", "b"), ("b", "c"), ("c", "d"), ("d", "e")])
+    assert all(
+        not (set(m.blocks[0]) & set(m.blocks[1])) for m in repeat_motifs(lay)
+    )
 
 
 # --- degenerate input -------------------------------------------------------
