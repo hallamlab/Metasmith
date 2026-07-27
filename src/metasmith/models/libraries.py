@@ -783,7 +783,32 @@ class DataInstanceLibrary:
         del self.manifest[path]
         if path in self.parents:
             del self.parents[path]
+        self.instance_meta.pop(path, None)
         self._invalidate_endpoint_cache()
+
+    def _migrate_instance_meta(self, old: Path, new: Path):
+        """Move a path's identity entry through a rename.
+
+        A lineage or imported id hashes how the output was produced and
+        does not depend on where it sits, so it follows the file. A leaf
+        id folds the library-relative path, so it is re-minted at the new
+        path -- which is what a library freshly built over the same bytes
+        at that path holds. Carrying the old id across instead leaves one
+        library state with two possible ids depending on how it got there,
+        and two runs that should share a cache key stop sharing one.
+
+        Re-minting here rather than dropping the entry is deliberate: an
+        absent entry falls through to the legacy `(path, dtype, lib_key)`
+        derivation, which is neither content-addressed nor what a fresh
+        build would produce. That path is for v0.18 manifests only.
+        """
+        meta = self.instance_meta.pop(old, None)
+        if meta is None:
+            return
+        if meta.get("origin", "leaf") != "leaf":
+            self.instance_meta[new] = meta
+        else:
+            self._mint_leaf_id(new)
 
     def Rename(self, path: Path, new: Path, _save=True):
         """
@@ -813,6 +838,7 @@ class DataInstanceLibrary:
         if path in self.parents:
             self.parents[new] = self.parents[path]
             del self.parents[path]
+        self._migrate_instance_meta(path, new)
         self._invalidate_endpoint_cache()
         if _save: self.Save()
 
@@ -888,6 +914,7 @@ class DataInstanceLibrary:
             if old in self.parents:
                 self.parents[new] = self.parents[old]
                 del self.parents[old]
+            self._migrate_instance_meta(old, new)
         # Phase 2: Single pass to update all parent references
         for parent_list in self.parents.values():
             for pm in parent_list:
