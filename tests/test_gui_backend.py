@@ -469,6 +469,37 @@ class TestAgentValidity:
         assert client.get("/api/agents/smith").get_json()["valid"] is True
 
 
+class TestDefaultHome:
+    """`home_is_default` decides whether the page draws the home field empty.
+
+    An empty field saves as the default, so a wrong True replaces a path
+    somebody chose with a different one on their next save. Both spellings of
+    the default count -- the literal `~/msm.<name>` and the expansion a local
+    save leaves behind -- and nothing else does.
+    """
+
+    def test_a_fresh_local_agent_is_default(self, client):
+        client.post("/api/agents", json={"name": "smith"})
+        assert client.get("/api/agents/smith").get_json()["home_is_default"] is True
+
+    def test_the_unexpanded_remote_spelling_is_default(self, client):
+        client.post("/api/agents", json={"name": "smith"})
+        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://h:~/msm.smith"})
+        assert client.get("/api/agents/smith").get_json()["home_is_default"] is True
+
+    def test_another_directory_ending_in_the_same_name_is_not(self, client):
+        """The trap a suffix test walks into: `/scratch/you/msm.smith` is not it."""
+        client.post("/api/agents", json={"name": "smith"})
+        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://h:/scratch/msm.smith"})
+        assert client.get("/api/agents/smith").get_json()["home_is_default"] is False
+
+    def test_a_renamed_agent_stops_being_default(self, client):
+        client.post("/api/agents", json={"name": "smith"})
+        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://h:~/msm.smith"})
+        client.put("/api/agents/smith", json={"name": "jones", "home": "ssh://h:~/msm.smith"})
+        assert client.get("/api/agents/jones").get_json()["home_is_default"] is False
+
+
 class TestSshUpdateConvention:
     def test_rename_repoints_the_agents_on_that_host(self, client):
         client.post("/api/ssh/hosts", json={"alias": "old", "hostname": "old.example"})
@@ -682,10 +713,24 @@ class TestWorkflows:
         with pytest.raises(AssertionError, match=r"target #1 \[mock::bam\] names parent #2"):
             _add_targets(TargetBuilder(), [{"type": "mock::bam", "parents": [1]}])
 
-    def test_generate_requires_a_sample_type(self, client):
-        r = client.post("/api/workflows", json={"target_types": ["mock::bam"]})
+    def test_generate_requires_a_target(self, client):
+        r = client.post("/api/workflows", json={})
         name = r.get_json()["name"]
         assert client.post(f"/api/workflows/{name}/generate", json={}).status_code == 400
+
+    def test_generate_without_a_sample_type_plans_the_whole_library(self, client):
+        """No sample type is not an incomplete request -- it is one sample.
+
+        Sampling splits a library into one run per item of a type; a plan does
+        not need it, and the page does not offer it. What comes back has to be
+        the same plan the sampled form produces for a library holding one item
+        of that type.
+        """
+        name = _make_workflow(client, sample=None)
+        _seed_inputs(client, name, count=1)
+        result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert result["success"], result
+        assert result["step_count"] > 0
 
     def test_fork_changes_the_task_key(self, client):
         """The whole point: same paths, same bytes, different identity."""

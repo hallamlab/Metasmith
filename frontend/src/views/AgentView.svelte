@@ -1,9 +1,11 @@
 <script>
   import { api } from '../lib/api.svelte.js'
   import { attempt, loadAgents, select } from '../lib/state.svelte.js'
-  import { agentPayload, formFromAgent, formProblems, homeUri } from '../lib/agentform.js'
+  import { agentPayload, formFromAgent, formProblems } from '../lib/agentform.js'
   import AgentFields from './AgentFields.svelte'
+  import EditableName from '../components/EditableName.svelte'
   import JobLog from '../components/JobLog.svelte'
+  import SaveChip from '../components/SaveChip.svelte'
 
   let { name } = $props()
 
@@ -13,16 +15,14 @@
   let jobId = $state(null)
   let ping = $state(null)
   let pinging = $state(false)
-  let saved = $state(false)
 
   // The name is a field like any other -- `PUT /agents/<name>` carries the whole
   // object, and a name that differs from the url is a rename. So the agent's
   // file moves and its run records are re-pointed by the save, not by a second
-  // gesture somewhere else.
+  // gesture somewhere else. It is edited on the heading, the way a workflow's is.
   let dirty = $derived(
     !!agent && !!form && JSON.stringify(agentPayload(form)) !== JSON.stringify(agentPayload(formFromAgent(agent))),
   )
-  let home = $derived(form ? homeUri(form) : '')
 
   // Two sources, and they answer different questions. The form's own problems
   // are live as you type; the server's are what it saw at the last save, and
@@ -54,8 +54,6 @@
     await attempt(async () => {
       const next = await api.put(`/agents/${name}`, agentPayload(form))
       await loadAgents()
-      saved = true
-      setTimeout(() => (saved = false), 1500)
       // a rename moved the object; the rail and this view are keyed by name, so
       // the selection has to follow it or the next read is a 404
       if (next.name !== name) select('agents', next.name)
@@ -88,30 +86,25 @@
 {:else}
   <div class="col" style="gap:14px; max-width:760px">
     <div class="spread">
-      <h1>{agent.name}</h1>
+      <div class="row grow">
+        <EditableName
+          value={form.name}
+          hint="enter to accept — the rename happens on save"
+          title="rename this agent"
+          oncommit={(next) => (form.name = next)}
+        />
+        <SaveChip {dirty} />
+        {#if agent.archived_at}<span class="tag warn">archived</span>{/if}
+      </div>
       <div class="row">
-        {#if agent.archived_at}
-          <span class="tag warn">archived</span>
-          <button onclick={unarchive}>restore</button>
-        {/if}
-        {#if saved}<span class="tag ok">saved</span>{/if}
+        {#if agent.archived_at}<button onclick={unarchive}>restore</button>{/if}
         <button onclick={doPing} disabled={pinging}>{pinging ? 'pinging…' : 'ping'}</button>
         <button onclick={save} disabled={!dirty}>save</button>
         <button class="primary" onclick={deploy} disabled={problems.length > 0}>deploy</button>
       </div>
     </div>
 
-    <AgentFields bind:form {runtimes} />
-
-    <div class="row small muted wrap">
-      <span>home</span>
-      <span class="mono">{home || '—'}</span>
-      {#if agent.real_path}
-        <span>· resolves to</span>
-        <span class="mono">{agent.real_path}</span>
-      {/if}
-      {#if dirty}<span class="tag warn">unsaved</span>{/if}
-    </div>
+    <AgentFields bind:form {runtimes} realPath={agent.real_path} />
 
     <!-- An agent is saveable long before it can be run on: you know it is going
          on a cluster days before the host exists. So what is missing is stated
@@ -144,21 +137,9 @@
       }}
     />
 
-    <div class="col" style="gap:6px">
-      <h3>nextflow presets</h3>
-      {#if Object.keys(agent.config_presets ?? {}).length}
-        <p class="small muted">
-          Named configurations found on this agent; pick one when you launch a run.
-        </p>
-        <div class="row wrap">
-          {#each Object.keys(agent.config_presets) as p}<span class="tag">{p}</span>{/each}
-        </div>
-      {:else}
-        <p class="small muted">
-          None yet — they appear once the agent has been deployed.
-        </p>
-      {/if}
-    </div>
+    <!-- Nextflow presets are read where they are used: the run panel on a
+         workflow offers the ones the chosen agent has. Listing them here was a
+         readout of something you cannot act on from this page. -->
 
     {#if agent.runs?.length}
       <div class="col" style="gap:6px">

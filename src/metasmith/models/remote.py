@@ -305,19 +305,51 @@ class Logistics:
 
         with TemporaryDirectory(prefix="msm.") as tmpdir:
             def _execute_local(todo: list[tuple[Source, Source]]):
-                shell = LiveShell()
-                shell.RegisterOnErr(lambda x: result.errors.append(f"local: {x}"))
-                to_dispose.append(shell)
+                # The shell is made only if something actually needs one. A
+                # LiveShell is a subprocess and two threads, and the round trip
+                # dominates a small copy -- one yml file cost ~45ms of shell for
+                # ~0.1ms of work, which is most of the time it took to make a
+                # workflow (16 type libraries, one transfer each).
+                shell: LiveShell|None = None
+                def _shell():
+                    nonlocal shell
+                    if shell is None:
+                        shell = LiveShell()
+                        shell.RegisterOnErr(lambda x: result.errors.append(f"local: {x}"))
+                        to_dispose.append(shell)
+                    return shell
+
+                # What `rsync -auP` does to one plain file, done in process. The
+                # subset is deliberately narrow -- regular file to regular file,
+                # nothing to remove first -- and everything outside it still goes
+                # through rsync, which owns recursion, symlinks and deletion.
+                def _copy_file(src_path: Path, dest_path: Path) -> bool:
+                    if src_path.is_symlink() or not src_path.is_file():
+                        return False
+                    if dest_path.exists() and not dest_path.is_file():
+                        return False  # -> the `rm -r` branch below
+                    # -u: a destination newer than the source is left alone
+                    if dest_path.exists() and dest_path.stat().st_mtime > src_path.stat().st_mtime:
+                        return True
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    # copy2 preserves mode and times, which is the part of -a
+                    # that applies to a single file (ownership is not preserved
+                    # by rsync either, unless it is running as root)
+                    shutil.copy2(src_path, dest_path)
+                    return True
+
                 last_hash = None
                 for src, dest in todo:
                     dest_path = Path(dest.address)
                     if dest_path.exists() and (dest_path.is_symlink() != (dest.type == SourceType.SYMLINK)):
                         dest_path.unlink()
                     if dest.type == SourceType.SYMLINK:
-                        last_hash = shell.ExecAsync(f"ln -s {src.address} {dest.address}")
+                        last_hash = _shell().ExecAsync(f"ln -s {src.address} {dest.address}")
                     elif dest.type == SourceType.DIRECT:
                         src_path = src.GetPath()
                         dest_path = dest.GetPath()
+                        if _copy_file(src_path, dest_path):
+                            continue
                         sa = f"{src.address}/" if src_path.is_dir() else src.address
                         cmd = ""
                         if src_path.exists() and dest_path.exists() and (src_path.is_dir() != dest_path.is_dir()):
@@ -326,10 +358,10 @@ class Logistics:
                             cmd += f'mkdir -p "{dest_path.parent}" && '
                         rs = "-L" if resolve_symlinks else ""
                         cmd += f'rsync -auP {rs} "{sa}" "{dest_path}"'
-                        last_hash = shell.ExecAsync(cmd)
+                        last_hash = _shell().ExecAsync(cmd)
 
                 def _join():
-                    if last_hash is not None:
+                    if last_hash is not None and shell is not None:
                         shell.AwaitDone(_hash=last_hash, timeout=None)
                     completed = []
                     for src, dest in todo:

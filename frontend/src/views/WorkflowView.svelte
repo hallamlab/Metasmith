@@ -1,9 +1,11 @@
 <script>
   import { api } from '../lib/api.svelte.js'
   import { app, attempt, loadRuns, loadWorkflows, notify, select } from '../lib/state.svelte.js'
+  import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
   import JobLog from '../components/JobLog.svelte'
   import MiniGraph from '../components/MiniGraph.svelte'
+  import SaveChip from '../components/SaveChip.svelte'
   import SidePanel from '../components/SidePanel.svelte'
   import HintsPanel from './HintsPanel.svelte'
   import LibraryList from './LibraryList.svelte'
@@ -73,7 +75,7 @@
   }
 
   // the editable recipe, kept separate from the frozen result below it
-  let recipe = $state({ sample_type: '', targets: [], transform_libraries: [], drafts: [] })
+  let recipe = $state({ targets: [], transform_libraries: [], drafts: [] })
   let loadedFor = $state(null)
 
   // Targets were a list of bare type names before they could carry lineage.
@@ -113,7 +115,6 @@
     if (loadedFor !== name) {
       loadedFor = name
       recipe = {
-        sample_type: wf.request.sample_type ?? '',
         targets: normalize(wf.request.target_types),
         transform_libraries: wf.request.transform_libraries ?? [],
         drafts: normalizeDrafts(wf.request.input_drafts),
@@ -125,6 +126,12 @@
     items = (await api.get(`/workflows/${name}/inputs`)).items ?? []
   }
 
+  // Four reads, and only one of them is the page: the workflow itself decides
+  // whether anything renders, while the type vocabulary and the index behind
+  // the panel are what fill it in. Run together rather than in a chain, so the
+  // recipe is up as soon as the workflow lands instead of after the slowest of
+  // the four -- a newly-created workflow is empty, and waiting on the standard
+  // library to describe itself before drawing an empty recipe is all lag.
   $effect(() => {
     const n = name
     wf = null
@@ -134,10 +141,12 @@
     editing = null
     loadedFor = null
     attempt(async () => {
-      types = await api.get('/project/types')
-      index = await api.get('/project/type-index')
-      await load()
-      await loadInputs()
+      await Promise.all([
+        load(),
+        loadInputs(),
+        api.get('/project/types').then((v) => (types = v)),
+        api.get('/project/type-index').then((v) => (index = v)),
+      ])
       void n
     })
   })
@@ -178,7 +187,6 @@
   let stale = $derived(
     wf?.planned &&
       (JSON.stringify(recipe.targets) !== JSON.stringify(normalize(wf.request.target_types)) ||
-        recipe.sample_type !== (wf.request.sample_type ?? '') ||
         JSON.stringify(recipe.transform_libraries) !==
           JSON.stringify(wf.request.transform_libraries ?? [])),
   )
@@ -222,9 +230,14 @@
     }
   }
 
+  // `sample_type` is written out as null on purpose rather than left off: the
+  // server merges a request over the stored one, so omitting the key would keep
+  // whatever a previous version of this page (or the CLI) put there. The page
+  // does not offer sampling -- everything registered is one sample -- and this
+  // is what makes that true of a workflow that once had a type marked.
   function requestBody() {
     return {
-      sample_type: recipe.sample_type,
+      sample_type: null,
       target_types: recipe.targets,
       transform_libraries: recipe.transform_libraries,
       input_drafts: recipe.drafts,
@@ -240,14 +253,34 @@
   // the server finished them in.
   let writing = Promise.resolve()
 
+  // What the chip beside the name reads off. Two things count as unsaved and
+  // both have to: a write still in flight, and an edit made in a field that has
+  // not been left yet -- typing is local until blur, so a chip watching only the
+  // network would say "saved" over a box holding something the server has never
+  // seen.
+  let pending = $state(0)
+  let touched = $state(false)
+  let dirty = $derived(pending > 0 || touched)
+
+  const touch = () => (touched = true)
+
   function persist() {
-    writing = writing.then(() =>
-      attempt(async () => {
+    pending += 1
+    writing = writing.then(async () => {
+      // read the body first, then clear: everything typed up to this point is
+      // in what goes out, and anything after it belongs to the next write
+      const body = requestBody()
+      touched = false
+      const ok = await attempt(async () => {
         // no `name` in the body, so this only ever saves the recipe
-        await api.put(`/workflows/${name}`, requestBody())
+        await api.put(`/workflows/${name}`, body)
         await loadWorkflows()
-      }),
-    )
+        return true
+      })
+      // a refused write leaves the edit where it was: unsaved, and said so
+      if (!ok) touched = true
+      pending -= 1
+    })
     return writing
   }
 
@@ -283,6 +316,7 @@
   // read back on a reload.
   function patchDraft(id, patch) {
     recipe.drafts = recipe.drafts.map((d) => (d.id === id ? { ...d, ...patch } : d))
+    touch()
   }
 
   async function removeDraft(id) {
@@ -296,6 +330,7 @@
 
   function patchTarget(i, patch) {
     recipe.targets = recipe.targets.map((t, j) => (j === i ? { ...t, ...patch } : t))
+    touch()
   }
 
   // Every edit on a row is local until the field is left; this is leaving it.
@@ -569,12 +604,6 @@
     if (said.length) notify(said.join(' · '), 'refused')
   }
 
-  function setSample(type) {
-    recipe.sample_type = type
-    showType(type)
-    persist()
-  }
-
   // An output row exists before it has a type -- that is what "add an output"
   // makes -- so the plan has to wait for it, and say which one it is waiting on.
   let blankTarget = $derived(recipe.targets.some((t) => !t.type?.trim()))
@@ -603,7 +632,7 @@
     persist()
   }
 
-  async function generate() {
+  async function solve() {
     const job = await attempt(() => api.post(`/workflows/${name}/generate`, requestBody()))
     if (job) jobId = job.id
   }
@@ -623,25 +652,9 @@
   // The name was made up at create time -- there is no form before this page to
   // have chosen it on -- so it is editable here, for as long as nothing is keyed
   // to it. The server decides that; this only stops offering once it has said so.
-  let renaming = $state(false)
-  let draft = $state('')
-
   let renameable = $derived(!wf?.planned && !wf?.runs?.length && !wf?.archived_at)
 
-  function startRename() {
-    draft = wf.name
-    renaming = true
-  }
-
-  async function commitRename() {
-    // Enter and blur both land here, and Enter causes the blur: closing the
-    // field unmounts the input. Without this the rename is sent twice, and the
-    // second one races the first -- it reads the workflow under the old name,
-    // then tries to move it onto the directory the first one just created.
-    if (!renaming) return
-    renaming = false
-    const next = draft.trim()
-    if (!next || next === wf.name) return
+  async function commitRename(next) {
     const out = await attempt(async () => {
       // the same PUT the recipe saves through: a workflow's name is a field of
       // it, and an id in the body that differs from the url is a rename
@@ -669,31 +682,16 @@
     <div class="col main" style="gap:14px">
       <div class="spread">
         <div class="row grow">
-          {#if renaming}
-            <input
-              class="rename"
-              bind:value={draft}
-              autofocus
-              spellcheck="false"
-              onblur={commitRename}
-              onkeydown={(e) => {
-                if (e.key === 'Enter') commitRename()
-                if (e.key === 'Escape') renaming = false
-              }}
-            />
-            <span class="small muted">enter to rename</span>
-          {:else if renameable}
-            <!-- the heading is the field: nothing else on the page needs a name
-                 box, and one that only appears once you go for it keeps the
-                 emphasis on the recipe below -->
-            <button class="asname" onclick={startRename} title="rename this workflow">
-              <h1>{wf.name}</h1>
-            </button>
-          {:else}
-            <h1 title={wf.planned
-              ? 'generated workflows keep their name — the plan is keyed to it; copy it from the list to get one under a new name'
-              : 'this workflow has runs and keeps its name'}>{wf.name}</h1>
-          {/if}
+          <EditableName
+            value={wf.name}
+            editable={renameable}
+            title="rename this workflow"
+            lockedTitle={wf.planned
+              ? 'solved workflows keep their name — the plan is keyed to it; copy it from the list to get one under a new name'
+              : 'this workflow has runs and keeps its name'}
+            oncommit={commitRename}
+          />
+          <SaveChip {dirty} />
           {#if wf.archived_at}<span class="tag warn">archived</span>{/if}
           {#if wf.forked_from}
             <span class="tag">forked from {wf.forked_from}</span>
@@ -712,11 +710,9 @@
           {items}
           drafts={recipe.drafts}
           targets={recipe.targets}
-          sampleType={recipe.sample_type}
           typeOptions={allTypes}
           {counts}
           onfocus={showType}
-          onsample={setSample}
           onremoveInput={removeInput}
           onremoveDraft={removeDraft}
           onremoveTarget={removeTarget}
@@ -735,12 +731,10 @@
       <div class="row wrap">
         <button
           class="primary"
-          onclick={generate}
-          disabled={recipe.targets.length === 0 || !recipe.sample_type || blankTarget || dupTarget}
-        >{wf.planned ? 'regenerate' : 'generate'}</button>
-        {#if !recipe.sample_type}
-          <span class="small muted">mark which input each run starts from</span>
-        {:else if recipe.targets.length === 0}
+          onclick={solve}
+          disabled={recipe.targets.length === 0 || blankTarget || dupTarget}
+        >{wf.planned ? 'solve again' : 'solve'}</button>
+        {#if recipe.targets.length === 0}
           <span class="small muted">add at least one output</span>
         {:else if blankTarget}
           <span class="small muted">an output row has no type yet</span>
@@ -763,8 +757,8 @@
         {#if !wf.planned}
           <h3>result</h3>
           <p class="small muted">
-            Nothing generated yet. Register what you have, say what you want, then
-            generate — the planner works out the steps between them.
+            Nothing solved yet. Register what you have, say what you want, then
+            solve — the planner works out the steps between them.
           </p>
         {:else if wf.success}
           <div class="spread">
@@ -795,7 +789,7 @@
             </table>
           </div>
           <p class="small muted">
-            generated {wf.generated_at}{#if wf.result.stdlib_commit}
+            solved {wf.generated_at}{#if wf.result.stdlib_commit}
               · library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
           </p>
         {:else}
@@ -916,24 +910,6 @@
   .pane { display: flex; flex: 1; min-width: 0; height: 100%; align-items: stretch; }
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   .loading { padding: 18px; }
-  /* a heading that happens to be clickable, not a button that happens to hold
-     one: no chrome until the pointer is on it */
-  .asname {
-    background: none;
-    border: 1px solid transparent;
-    padding: 1px 5px;
-    margin-left: -5px;
-    color: inherit;
-    text-align: left;
-  }
-  .asname:hover { border-color: var(--line); background: var(--panel-2); }
-  .rename {
-    font: inherit;
-    font-size: 18px;
-    font-weight: 600;
-    width: auto;
-    max-width: 420px;
-  }
   .scroll { overflow-x: auto; }
   .dag { background: #fff; border-radius: var(--radius); padding: 8px; overflow: auto; }
   .dag img { max-width: 100%; }

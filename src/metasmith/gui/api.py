@@ -41,6 +41,34 @@ def default_agent_home(name: str) -> str:
     return f"{DEFAULT_AGENT_HOME_PREFIX}{name}"
 
 
+def home_is_default(name: str, home: str | None) -> bool:
+    """Is this home still simply the one the name makes?
+
+    Answered here because only this side can answer it: `Source.Parse` expands
+    `~` for a local home, so what comes back from a save is `<your home>/msm.x`
+    where `~/msm.x` went in, and the browser does not know what `~` is. The page
+    leaves the field empty when this is true -- so a wrong `True` would swap a
+    path someone typed for a different one on the next save, and the comparison
+    is exact on both spellings rather than a suffix test.
+    """
+    if not home:
+        return False
+    default = default_agent_home(name)
+    remote = home.startswith("ssh://")
+    if remote:
+        # `ssh://host:path` -- split after the scheme, or the `:` found is the
+        # one in `ssh:` and every remote home reads as having no path at all
+        _, sep, path = home[len("ssh://"):].partition(":")
+        if not sep:
+            return False  # the older `ssh://host/path` spelling; never default
+    else:
+        path = home
+    if path == default:
+        return True
+    # a local home, already expanded; a remote one is never expanded here
+    return not remote and Path(path) == Path(default).expanduser()
+
+
 # A setup block starts as a shebang and nothing else. It is a comment wherever
 # it ends up -- the lines are run one at a time over a live shell, and pasted
 # into the launcher script under their own marker -- so it costs nothing, and
@@ -437,6 +465,7 @@ def _agent_payload(p: Project, name: str, hosts: list[str] | None = None) -> dic
         info = {"name": name, "error": str(exc)}
     info["name"] = name
     info["path"] = str(path)
+    info["home_is_default"] = home_is_default(name, info.get("home"))
     info["archived_at"] = p.archived_at("agents", name)
     if hosts is None:
         hosts = _host_patterns()
@@ -724,9 +753,12 @@ def generate_workflow(name):
     }
     wf = p.write_request(name, request_body)
 
+    # A sample type is optional: without one the inputs are planned as they
+    # stand, as a single sample. The page does not offer one -- it is a way of
+    # branching a plan into one run per item, not something a plan needs -- but
+    # a request written by the CLI may carry one, and it is still honoured.
     sample_type = wf.request.get("sample_type")
     targets = wf.request.get("target_types") or []
-    assert sample_type, "a sample type is required"
     assert targets, "at least one target type is required"
 
     found = stdlib.discover(p.root)

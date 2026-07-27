@@ -1,13 +1,15 @@
 <script>
   import { app } from '../lib/state.svelte.js'
-  import { defaultHome, isDefaultHome } from '../lib/agentform.js'
+  import { defaultHome } from '../lib/agentform.js'
   import Field from '../components/Field.svelte'
   import ConfigEditor from '../components/ConfigEditor.svelte'
 
   // The one field set an agent has. `form` is bound by the parent; `runtimes`
   // comes from the server, which reads it off the Runtime enum, so a runtime
-  // added there appears here with nothing to change.
-  let { form = $bindable(), runtimes = ['APPTAINER', 'DOCKER', 'MAMBA'] } = $props()
+  // added there appears here with nothing to change. `realPath` is what the
+  // agent last reported the home resolves to on its host, and is only worth a
+  // line when it is not simply the path above it.
+  let { form = $bindable(), runtimes = ['APPTAINER', 'DOCKER', 'MAMBA'], realPath = null } = $props()
 
   const RUNTIME_LABELS = {
     APPTAINER: 'apptainer',
@@ -20,26 +22,12 @@
     { id: 'ssh', label: 'a remote host' },
   ]
 
-  // The home is named after the agent until someone names it themselves. It
-  // follows the name only while it is still what the name would have made it --
-  // one edit to the path and it stops moving, forever. Without this, correcting
-  // a generated name straight after creating it leaves the agent living in a
-  // directory called after a name nothing uses any more.
-  function renameTo(next) {
-    if (isDefaultHome(form.path, form.name)) {
-      // a function replacement, so a `$` typed into the name is a character
-      // rather than a capture-group reference
-      form.path = form.path.replace(/msm\.[^/]*$/, () => `msm.${next.trim()}`)
-    }
-    form.name = next
-  }
+  // The name is the heading (`EditableName` in AgentView), not a field here:
+  // the page is already titled with it, and a labelled box repeating it is the
+  // same word twice.
 </script>
 
 <div class="grid">
-  <Field label="name">
-    <input value={form.name} oninput={(e) => renameTo(e.currentTarget.value)} />
-  </Field>
-
   <!-- Two tabs over one box, and the box holds exactly what the tabs decide:
        nothing for a local agent, the host for a remote one. A `where it lives`
        dropdown said the same thing while hiding what it controlled -- the host
@@ -69,16 +57,22 @@
         </select>
         <p class="small muted">an alias from the SSH section</p>
       {:else}
-        <p class="small muted">nothing to choose — the agent runs here.</p>
+        <p class="small muted">the agent runs here</p>
       {/if}
     </div>
   </div>
 
+  <!-- Empty means the default, which is what the placeholder says it is. It is
+       left empty rather than pre-filled: typing the default into the box makes
+       a name change stop moving the home, since a path someone has touched is
+       theirs from then on. -->
   <Field
     label="home directory"
-    hint={form.kind === 'ssh'
-      ? 'a path on that host — on a cluster, prefer scratch over a home quota'
-      : 'a path on this machine'}
+    hint={realPath && realPath !== form.path
+      ? `resolves to ${realPath}`
+      : form.kind === 'ssh'
+        ? 'a path on that host — on a cluster, prefer scratch over a home quota'
+        : 'a path on this machine'}
   >
     <input class="mono" bind:value={form.path} placeholder={defaultHome(form.name)} />
   </Field>

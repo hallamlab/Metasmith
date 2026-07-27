@@ -11,7 +11,9 @@ def register(subs):
     # Planning is its own top-level verb.
     p = subs.add_parser("plan", help="plan a workflow from samples to target types")
     p.add_argument("--data-library", required=True)
-    p.add_argument("--sample-type", required=True)
+    p.add_argument("--sample-type", default=None,
+                   help="split the library into one run per item of this type; "
+                        "omitted, everything in it is planned as a single sample")
     p.add_argument("--target-type", action="append", required=True, dest="target_types")
     p.add_argument("--transform-library", "-r", action="append", required=True,
                    dest="transform_libraries")

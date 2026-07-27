@@ -43,19 +43,27 @@ def _add_targets(builder: TargetBuilder, target_types: list) -> list[TargetSpec]
 
 def plan_workflow(
     data_library: str,
-    sample_type: str,
+    sample_type: str | None,
     target_types: list[str | dict],
     transform_libraries: list[str],
     resource_libraries: list[str] | None = None,
     workspace: str | None = None,
 ) -> dict:
-    """Plan a workflow: chain of transforms from sample_type to target_types.
+    """Plan a workflow: chain of transforms from the given inputs to target_types.
+
+    `sample_type` splits the library into one run per item of that type. Left
+    unset, the library is planned as it stands -- one sample holding everything
+    in it -- which is the whole of what a plan needs; sampling is a way of
+    branching it, not a precondition for having one.
 
     Persists the resulting WorkflowTask under <workspace>/<task_key>/ on success.
     """
     data_lib = load_data_lib(data_library)
-    samples = list(data_lib.AsSamples(sample_type))
-    assert samples, f"no samples of type [{sample_type}] found in [{data_library}]"
+    if sample_type:
+        samples = list(data_lib.AsSamples(sample_type))
+        assert samples, f"no samples of type [{sample_type}] found in [{data_library}]"
+    else:
+        samples = [DataInstanceLibraryView(data_lib)]
 
     tr_libs = [load_transform_lib(p) for p in transform_libraries]
     res_libs = [load_data_lib(p) for p in (resource_libraries or [])]

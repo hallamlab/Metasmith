@@ -216,6 +216,12 @@ sequences::gbk (grouped)  → [ppanggolin]     → pangenome::ppanggolin_matrix
 `parents=` is what makes two targets of the same type **distinct requests** rather than the
 duplicate `Add` rejects. Same type *and* same parents still raises.
 
+**A sample type is a way of branching a plan, not a precondition for one.**
+`plan_workflow(sample_type=None)` plans the library as it stands — one sample holding
+everything in it — and naming a type splits it into one run per item of that type
+(`AsSamples`). The GUI does not offer sampling and always passes `None`; the CLI's
+`--sample-type` is optional for the same reason.
+
 **Planning is not reentrant.** `TransformInstance.Load` imports each transform by bare module
 name, mutates `sys.path`, calls `importlib.reload`, and returns through a *class* attribute —
 all process-global. Two concurrent plans in one process clobber each other and fail with a
@@ -436,6 +442,13 @@ workflow's directory becomes the task bundle a run stages from while an agent is
 nothing points into. And **incompleteness is reported, never refused, until launch**: you
 make an agent days before its cluster exists in your ssh config, so `problems`/`valid` ride
 on the payload and only the launch route enforces them.
+
+An agent's home field is **empty when the home is still the default**, with the default as
+its placeholder — so the home follows a rename for as long as nobody has chosen one. Whether
+it is still the default is the server's `home_is_default` to say, since `Source.Parse`
+expands `~` and only that side knows what it expanded to. The test has to be exact on both
+spellings: an emptied box saves as the default, so a suffix match would answer `True` for
+someone's `/scratch/.../msm.<name>` and replace it with `~/msm.<name>` on their next save.
 
 ---
 

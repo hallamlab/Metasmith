@@ -21,13 +21,11 @@
     items = [],
     drafts = [],
     targets = [],
-    sampleType = '',
     typeOptions = [],
     // (type) => {known, produced, consumed, producedVia, consumedVia} -- what
     // the index says about a type, for the line under a row being edited
     counts = null,
     onfocus,
-    onsample,
     onremoveInput,
     onremoveDraft,
     onremoveTarget,
@@ -245,9 +243,6 @@
     return () => window.removeEventListener('keydown', key)
   })
 
-  let unknownSample = $derived(
-    !!sampleType && !inputRows.some((r) => r.type === sampleType),
-  )
 </script>
 
 <!-- The type, as a word until it is reached for. Every row does it the same way:
@@ -318,7 +313,6 @@
 {#snippet detail(row)}
   {@const isTarget = row.kind === 'target'}
   <div class="row-item detail">
-    <span class="gutter" aria-hidden="true"></span>
     <div class="typecell">{@render typeCell(row)}</div>
     <div class="parentcell">
       <ParentPicker
@@ -367,22 +361,6 @@
              came from go on the second -- and that second line is the whole of an
              output row. -->
         <div class="row-item">
-          <!-- the radio *is* the sample type: it is a property of the inputs you
-               can see, not a select somewhere else that has to agree with them -->
-          <!-- deliberately not one radio *group*: the mark is on the type, so
-               every row sharing it is marked, and a group would let the browser
-               enforce exactly one checked row and hide the rest of the branch -->
-          <!-- it stays on the first line: it marks the type, and beside the type
-               control it would read as belonging to that control -->
-          <label class="gutter" title="one run per item of this type">
-            <input
-              type="radio"
-              disabled={!row.type}
-              checked={!!row.type && sampleType === row.type}
-              onclick={() => row.type && onsample?.(row.type)}
-            />
-          </label>
-
           {#if row.kind === 'item'}
             {#if editingRow(row, 'path')}
               <input
@@ -476,7 +454,7 @@
 
     <div class="heading small muted">outputs</div>
     {#if targetRows.length === 0}
-      <p class="small muted pad">Nothing wanted yet. Add at least one to generate.</p>
+      <p class="small muted pad">Nothing wanted yet. Add at least one to solve.</p>
     {/if}
     {#each targetRows as row (row.key)}
       {@const info = row.type && counts ? counts(row.type) : null}
@@ -520,17 +498,10 @@
     </div>
   </div>
 
-  {#if unknownSample}
-    <p class="small muted">
-      Each run starts from <span class="mono">{sampleType}</span>, which nothing
-      registered has any more — mark a row below, or the plan has nothing to branch on.
-    </p>
-  {:else}
-    <p class="small muted">
-      The radio marks what each run starts from: every input of that type becomes
-      its own branch. Removing an input unregisters it; the file itself is left alone.
-    </p>
-  {/if}
+  <p class="small muted">
+    Everything registered here is one run's worth of input. Removing a row
+    unregisters it; the file itself is left alone.
+  </p>
 </div>
 
 <style>
@@ -571,7 +542,7 @@
   .notes {
     gap: 6px;
     align-items: baseline;
-    padding: 0 10px 6px 40px;
+    padding: 0 10px 6px 10px;
   }
   .notes:empty { display: none; }
   .addrow {
@@ -582,8 +553,6 @@
     padding: 6px 10px;
   }
   .pad { padding: 8px 10px; margin: 0; }
-  .gutter { flex: 0 0 22px; display: flex; align-items: center; }
-  .gutter input { width: auto; margin: 0; }
   /* the type field is a combobox, not a word. It used to fight the path for the
      width of one line; now it owns the detail line's first column instead. */
   .typecell { flex: 1 1 240px; min-width: 140px; max-width: 360px; }

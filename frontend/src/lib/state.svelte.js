@@ -207,12 +207,14 @@ export function select(section, id) {
 // for exactly what the server would have defaulted, on a screen you could not
 // deploy or ping from.
 export async function createAgent() {
-  const out = await attempt(async () => {
-    const body = await api.post('/agents', {})
-    await loadAgents()
-    return body
-  })
-  if (out) select('agents', out.name)
+  const out = await attempt(() => api.post('/agents', {}))
+  if (out) {
+    // land on it first, reload the list behind you: the rail is a list of things
+    // that already exist, and waiting for it to say so before opening the thing
+    // you just made is a second round trip you watch
+    select('agents', out.name)
+    loadAgents()
+  }
   return out
 }
 
@@ -222,12 +224,11 @@ export async function createAgent() {
 // editable on the page you arrive at. Held here rather than in the rail because
 // creating one is a change to the list, not a thing the rail knows how to do.
 export async function createWorkflow() {
-  const out = await attempt(async () => {
-    const body = await api.post('/workflows', {})
-    await loadWorkflows()
-    return body
-  })
-  if (out) select('workflows', out.name)
+  const out = await attempt(() => api.post('/workflows', {}))
+  if (out) {
+    select('workflows', out.name)
+    loadWorkflows()
+  }
   return out
 }
 
@@ -236,12 +237,11 @@ export async function createWorkflow() {
 // the workflow it makes a second of. Same reasoning as createWorkflow for
 // living here: both are changes to the list, and both land you on the result.
 export async function forkWorkflow(name) {
-  const out = await attempt(async () => {
-    const body = await api.post(`/workflows/${name}/fork`, {})
-    await loadWorkflows()
-    return body
-  })
-  if (out) select('workflows', out.name)
+  const out = await attempt(() => api.post(`/workflows/${name}/fork`, {}))
+  if (out) {
+    select('workflows', out.name)
+    loadWorkflows()
+  }
   return out
 }
 

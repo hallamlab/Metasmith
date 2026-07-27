@@ -333,7 +333,7 @@
                   ? item.wf.success
                     ? `${item.wf.step_count} step(s)`
                     : 'no plan'
-                  : 'not generated'}
+                  : 'not solved'}
                 {item.wf.run_count ? ` · ${item.wf.run_count} run(s)` : ''}
               </div>
             </div>

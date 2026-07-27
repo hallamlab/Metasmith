@@ -6,6 +6,7 @@ the person who started it.
 """
 from __future__ import annotations
 
+import threading
 import webbrowser
 from pathlib import Path
 
@@ -39,6 +40,26 @@ def bundle_exists() -> bool:
     return (static_root() / INDEX_FILE).is_file()
 
 
+def warm_type_index(project_root: Path) -> None:
+    """Build the browser's view of the type system before anyone asks for it.
+
+    Indexing imports every transform in the standard library -- ~15s on a cold
+    process -- and the first workflow opened after a start is what pays for it.
+    Held off the request path entirely: this runs on its own thread at startup,
+    under the same lock the planner uses (transform import is process-global),
+    so a request arriving mid-warm waits for the result rather than racing it.
+    """
+    from ..logging import Log
+    from . import stdlib
+    from .api import _plan_lock
+
+    try:
+        with _plan_lock:
+            stdlib.type_index(project_root)
+    except Exception as exc:  # a page that has to load it itself is the fallback
+        Log.Warn(f"could not pre-build the type index: {exc}")
+
+
 def create_app(
     project_root: Path | str = ".",
     ssh_config_path: Path | str | None = None,
@@ -49,6 +70,7 @@ def create_app(
     project = Project(project_root)
     project.initialize()
     install_log_capture()
+    threading.Thread(target=warm_type_index, args=(project.root,), daemon=True).start()
 
     app = Flask(__name__, static_folder=None)
     app.config["MSM_PROJECT"] = project
