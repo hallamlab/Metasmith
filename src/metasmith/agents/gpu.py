@@ -5,11 +5,18 @@ staged manifest, and rendering the `withName:` selectors that ask the scheduler
 for it. In between sits the preflight -- a workflow that declares a GPU and an
 agent with no device is a failure worth having before submission, not after.
 
-`_GPU_BEFORE_SCRIPT` is the awkward part. Apptainer runs tool containers with
-`--cleanenv`, which strips `CUDA_VISIBLE_DEVICES` and so hides a partial
-allocation (or a MIG slice, whose handle is a `MIG-<uuid>` rather than an index)
-from the tool. Re-exporting under the `APPTAINERENV_`/`SINGULARITYENV_` prefixes
-is the way back in, and a harmless no-op under Docker and mamba/native.
+`_GPU_BEFORE_SCRIPT` is the awkward part. The host's `CUDA_VISIBLE_DEVICES` must
+NOT be forwarded verbatim: under a scheduler that constrains devices by cgroup
+(SLURM with ConstrainDevices, the norm) the container sees only the allocated
+device, renumbered from 0, while the host's variable names the index on the
+NODE -- draw anything but GPU 0 and the tool asks for a device outside what it
+can see, and `cuInit` fails with "CUDA driver initialization failed, you might
+not have a CUDA gpu", indistinguishable at a glance from a container with no
+GPU support. Unset on the host, naive forwarding sends the empty string, which
+CUDA reads as "no devices" rather than "unset" -- same symptom, always. So it is
+left unset and CUDA enumerates whatever the cgroup permits, except for a MIG
+slice's handle (`MIG-<uuid>`, not an index) which cannot be re-derived from
+enumeration and so is forwarded verbatim.
 """
 
 from __future__ import annotations
@@ -26,16 +33,17 @@ from ..models.libraries import GPU_LABEL, Gpu, Gpus, Size
 class GpuRequirementError(Exception):
     """A staged workflow's GPU requirements cannot be met by this run's declaration."""
 
-# Emitted into workflow.config.nf whenever a run declares a GPU. Apptainer runs
-# tool containers with --cleanenv (see env/environment.py), which strips
-# CUDA_VISIBLE_DEVICES and so hides a partial allocation -- or a MIG slice, whose
-# handle is a MIG-<uuid> rather than an index -- from the tool. Re-exporting it
-# under the APPTAINERENV_/SINGULARITYENV_ prefixes is the way back in, and is a
-# harmless no-op under Docker and mamba/native. Single-quoted in the emitted
-# Groovy so `$` survives to the shell rather than being interpolated.
+# Emitted into workflow.config.nf whenever a run declares a GPU. Leave
+# CUDA_VISIBLE_DEVICES unset in the container unless it names a MIG slice, which
+# cannot be recovered from enumeration. Single-quoted in the emitted Groovy so
+# `$` survives to the shell rather than being interpolated -- hence no single
+# quotes anywhere in this string.
 _GPU_BEFORE_SCRIPT = (
-    'export APPTAINERENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"; '
-    'export SINGULARITYENV_CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"'
+    'case "${CUDA_VISIBLE_DEVICES:-}" in '
+    '*MIG-*) export APPTAINERENV_CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES"; '
+    'export SINGULARITYENV_CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES";; '
+    '*) unset APPTAINERENV_CUDA_VISIBLE_DEVICES SINGULARITYENV_CUDA_VISIBLE_DEVICES;; '
+    'esac'
 )
 
 def _read_gpu_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
