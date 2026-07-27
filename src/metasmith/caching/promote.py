@@ -28,6 +28,7 @@ import os
 import shutil
 import socket
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -289,18 +290,32 @@ def _find_step_logs(workspace: Path, step_order: int) -> list[Path]:
     return out
 
 
-def recover_orphan_tmp_dirs(cache_root: Path) -> dict[str, str]:
-    """Walk `<cache_root>/*.tmp/`: promote those with manifest.cbor, else rm.
+def recover_orphan_tmp_dirs(
+    cache_root: Path, owned_keys: Iterable[str]
+) -> dict[str, str]:
+    """Reclaim `<key>.tmp/` staging for `owned_keys`: promote if sealed, else rm.
 
-    Returns a {key_hex: 'promoted'|'deleted'} mapping for telemetry.
+    `owned_keys` is mandatory and must name only the keys of the run doing
+    the reclaiming. A cache root is shared by every run on the agent, and a
+    `<key>.tmp/` without `manifest.cbor` is indistinguishable from a
+    still-being-written one -- so sweeping the whole root deletes whatever
+    a concurrent promote has staged and not yet sealed. That can be hundreds
+    of GB of finished work, destroyed by a call that reads as housekeeping.
+    Deliberately holding a step back therefore means moving its `.tmp` aside,
+    not merely omitting it from `owned_keys`.
+
+    Returns {key_hex: 'promoted'|'raced'|'deleted'|'delete-failed: <err>'}
+    for telemetry. Removal failures are reported rather than swallowed;
+    a `.tmp` that cannot be removed is a disk or permissions problem worth
+    seeing, not a no-op.
     """
     actions: dict[str, str] = {}
     if not cache_root.exists():
         return actions
-    for tmp in cache_root.glob("*.tmp"):
+    for key_hex in sorted(set(owned_keys)):
+        tmp = cache_root / f"{key_hex}.tmp"
         if not tmp.is_dir():
             continue
-        key_hex = tmp.name[: -len(".tmp")]
         if (tmp / "manifest.cbor").exists():
             final = _shard_dir(cache_root, key_hex)
             final.parent.mkdir(parents=True, exist_ok=True)
@@ -311,8 +326,11 @@ def recover_orphan_tmp_dirs(cache_root: Path) -> dict[str, str]:
                 tmp.rename(final)
                 actions[key_hex] = "promoted"
         else:
-            shutil.rmtree(tmp, ignore_errors=True)
-            actions[key_hex] = "deleted"
+            try:
+                shutil.rmtree(tmp)
+                actions[key_hex] = "deleted"
+            except OSError as e:
+                actions[key_hex] = f"delete-failed: {e}"
     return actions
 
 
@@ -516,6 +534,18 @@ def promote_run(
     try:
         promoted: list[str] = []
         skipped: list[str] = []
+        # The keys this run owns, collected up front so the reclaim sweep at
+        # the end is scoped to them regardless of how the loop below exits
+        # for any given step. Anything else under cache_root belongs to
+        # another run and must not be touched.
+        owned_keys: list[str] = [
+            spec.cache_key.hex()
+            for spec in (
+                _read_step_meta(mp)
+                for mp in sorted(workspace.glob("workflow.step_*.meta"))
+            )
+            if spec is not None and spec.cacheable
+        ]
         for meta_path in sorted(workspace.glob("workflow.step_*.meta")):
             spec = _read_step_meta(meta_path)
             if spec is None or not spec.cacheable:
@@ -735,7 +765,7 @@ def promote_run(
         return {
             "promoted": promoted,
             "skipped": skipped,
-            "orphan_recovery": recover_orphan_tmp_dirs(cache_root),
+            "orphan_recovery": recover_orphan_tmp_dirs(cache_root, owned_keys),
         }
     finally:
         store.close()

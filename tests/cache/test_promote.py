@@ -52,7 +52,7 @@ def test_promote_picks_up_orphan_tmp(tmp_path):
     (tmp / "out" / "f.txt").write_text("payload")
     (tmp / "manifest.cbor").write_bytes(b"\x00manifest")
 
-    actions = recover_orphan_tmp_dirs(cache_root)
+    actions = recover_orphan_tmp_dirs(cache_root, [key_hex])
     assert actions == {key_hex: "promoted"}
     assert not tmp.exists(), "orphan .tmp should have been renamed"
     final = cache_root / key_hex[:2] / key_hex[2:]
@@ -75,10 +75,80 @@ def test_promote_discards_incomplete_tmp(tmp_path):
     (tmp / "out").mkdir(parents=True)
     (tmp / "out" / "partial.txt").write_text("incomplete")
 
-    actions = recover_orphan_tmp_dirs(cache_root)
+    actions = recover_orphan_tmp_dirs(cache_root, [key_hex])
     assert actions == {key_hex: "deleted"}
     assert not tmp.exists()
     assert not (cache_root / key_hex[:2] / key_hex[2:]).exists()
+
+
+def test_reclaim_leaves_another_runs_staging_alone(tmp_path):
+    """A reclaim sweep must not touch `.tmp` dirs it does not own.
+
+    The cache root is shared by every run on the agent, and an unsealed
+    `<key>.tmp/` is indistinguishable from one still being written. Run A
+    reclaiming its own keys must leave run B's mid-flight staging on disk.
+    """
+    from metasmith.caching.promote import recover_orphan_tmp_dirs
+
+    cache_root = tmp_path / "task_cache"
+    cache_root.mkdir()
+
+    mine = cache_root / "aaaa1111.tmp"
+    (mine / "out").mkdir(parents=True)
+    (mine / "out" / "partial.txt").write_text("mine, abandoned")
+
+    theirs = cache_root / "bbbb2222.tmp"
+    (theirs / "out").mkdir(parents=True)
+    (theirs / "out" / "big.bin").write_text("another run, still writing")
+
+    actions = recover_orphan_tmp_dirs(cache_root, ["aaaa1111"])
+
+    assert actions == {"aaaa1111": "deleted"}
+    assert not mine.exists()
+    assert (theirs / "out" / "big.bin").read_text() == "another run, still writing"
+
+
+def test_promote_run_reclaims_only_its_own_keys(tmp_path, monkeypatch):
+    """End to end: `promote_run` scopes its reclaim to this workspace's steps.
+
+    Guards the wiring, not just the helper -- the hazard was that the sweep
+    was called with the whole cache root regardless of which run was being
+    promoted.
+    """
+    from metasmith.caching import promote as promote_mod
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    cache_root = tmp_path / "task_cache"
+    cache_root.mkdir()
+
+    (workspace / "workflow.step_00.meta").write_text("{}")
+
+    spec = promote_mod.StepPromoteSpec(
+        order=0,
+        cache_key=bytes.fromhex("aaaa1111"),
+        cacheable=True,
+        transform_key="t",
+        signature="s",
+        out_identities={},
+        dep_out=[],
+    )
+    monkeypatch.setattr(promote_mod, "_read_step_meta", lambda _p: spec)
+
+    mine = cache_root / "aaaa1111.tmp"
+    (mine / "out").mkdir(parents=True)
+    (mine / "out" / "partial.txt").write_text("mine, abandoned")
+
+    theirs = cache_root / "bbbb2222.tmp"
+    (theirs / "out").mkdir(parents=True)
+    (theirs / "out" / "big.bin").write_text("another run, still writing")
+
+    summary = promote_mod.promote_run(workspace=workspace, cache_root=cache_root)
+
+    assert summary["orphan_recovery"] == {"aaaa1111": "deleted"}
+    assert (theirs / "out" / "big.bin").exists(), (
+        "promote_run swept a .tmp belonging to another run"
+    )
 
 
 def test_network_fs_uses_copy_strategy(tmp_path, monkeypatch):
