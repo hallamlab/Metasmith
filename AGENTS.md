@@ -330,6 +330,61 @@ The container is **dual-bound**: the host scope dir lands at both `/ws` (`WORK_R
 mapping a cwd back to the host must check both prefixes and route HOME_ROOT cwds through
 `agent.real_path`. Pinned by `tests/path_overhaul/test_sbatch_home_root_cwd.py`.
 
+### DAG rendering
+
+Placement is metasmith's own, in four modules under `src/metasmith/models/`: `dag_layout`
+(pure geometry — rows, lanes, routed polylines), `dag_draw` (the text / SVG / DOT backends),
+`dag_colour` (schemes over a finished layout, off by default), `dag_renderer` (the node/edge
+API callers use). Graphviz is reached only for raster formats, and only as `neato -n2`, which
+honours our `pos` and lays nothing out; `to_dot()` stays a plain, positionless description
+for consumers running their own.
+
+- **A node's id is not its label.** `TransformInstance.name` is the definition file's stem, so
+  a plan running one transform three times has three steps all named `checkm`; the step number
+  in the id is the only thing keeping them apart. Shorten the id and the three fold into one
+  node — and the layout's cycle-breaker then cuts edges to restore acyclicity, silently.
+- **The `target` sink is expensive.** Collecting every requested output into one node holds a
+  rail from each target's row to the last; on the spanish-lakes metagenomics plan that is 10
+  of 24 lanes. Targets are marked on the node instead; `RenderDAG(target_sink=True)` restores
+  the old shape.
+- **Corners are rounded in pixel space, not in the grid.** `_polyline` stays axis-aligned and
+  `_pixel_path` trims corners afterwards, so the arcs cost the layout invariants nothing. Text
+  gets no diagonals on purpose: a lane is two character columns and a diagonal glyph is one
+  cell, so every lane of travel would cost two rows.
+- **Supply is emitted where it is consumed, not where it is declared.** A reference database is
+  a root that owns nothing; drawn at the top or the bottom it holds a rail across every module
+  between, and drags its consumers with it. `_row_order` seeds only the root owning most of the
+  graph and pulls each other root's chain in immediately above the first step that stalls on it.
+- **A repeated block is a shape, never a name.** Products are named per instance, so nothing
+  matches as a string; a node's signature is its kind, its **fan-in**, and the sorted multiset
+  of its children's signatures to a bounded depth. Fan-in is in there because without it three
+  unrelated merge steps hash alike and get hoisted 14 rows from their readers. An instance's
+  block is its descendants minus everything its siblings also reach — *not* its dominator
+  subtree, which loses any node with a second parent and leaves a stub the hoist acts on wrongly.
+- **Where a pass has two defensible answers, both are drawn and measured.** `measure` returns
+  congruence, rail rows, lanes, crossings and module contiguity; `layout` picks on
+  `(congruence, rail, lanes, crossings)` — symmetry ahead of length, which costs ~1% on graphs
+  that have none. Congruence is *modal*, the largest set of instances arranged alike: mean
+  agreement is too coarse to separate row orders, and offsets are measured against the previous
+  instance because instances fanning out of one node cannot share absolute lanes. Prefer adding
+  a candidate to tuning a constant. Ceilings are pinned in `test_dag_stress.py` with the
+  pre-change numbers in the docstring; making one worse has to be said out loud.
+- **Colour is decoration and the layout must never see it.** Every scheme is a pure function of
+  a finished `Layout`. Two opposite jobs share the word: `lane` and `module` are graph colouring
+  — touching things differ, good for tracing one rail — while `repeat` is the reverse, every
+  instance of a motif in one hue. Only the second makes a repetition visible, and only because
+  the layout already put the instances in the same shape.
+
+Two things tried on the row order and measured *worse*: optimal Sugiyama layer assignment
+(Gansner et al. 1993) used as a row sort — the ranks are right but many nodes share one, so the
+branch walk's grouping is lost and the drawing costs half again as much rail; and sift-based
+local search on that same objective, which lowers the cost and scatters every cluster to do it.
+The objective is a proxy, and it stops agreeing with the picture close to its optimum.
+
+`env` is in `blacklist_namespaces` alongside `lib` and `containers`: an environment is a
+declared dependency like any other, so without it every plan DAG grows an `env::*` node per
+step. Three defaults have to agree — `BuildDAG`, `RenderDAG`, and `ops.workflow.render_dag`.
+
 ### GPUs
 
 A transform declares GPU need in the only unit it can honestly know — **total VRAM** —

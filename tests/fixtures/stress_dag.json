@@ -1,0 +1,1064 @@
+{
+ "source": "spanish-lakes-metagenomics/main/metag_workflow_from_reads.py",
+ "nodes": [
+  {
+   "id": "given",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "given",
+    "namespace": "",
+    "full": "given"
+   }
+  },
+  {
+   "id": "sequences::read_pair",
+   "kind": "DATA",
+   "label": {
+    "name": "read_pair",
+    "namespace": "sequences",
+    "full": "sequences::read_pair"
+   }
+  },
+  {
+   "id": "sequences::zipped_reverse_short_reads",
+   "kind": "DATA",
+   "label": {
+    "name": "zipped_reverse_short_reads",
+    "namespace": "sequences",
+    "full": "sequences::zipped_reverse_short_reads"
+   }
+  },
+  {
+   "id": "sequences::read_metadata",
+   "kind": "DATA",
+   "label": {
+    "name": "read_metadata",
+    "namespace": "sequences",
+    "full": "sequences::read_metadata"
+   }
+  },
+  {
+   "id": "sequences::zipped_forward_short_reads",
+   "kind": "DATA",
+   "label": {
+    "name": "zipped_forward_short_reads",
+    "namespace": "sequences",
+    "full": "sequences::zipped_forward_short_reads"
+   }
+  },
+  {
+   "id": "1 downloadKofamDB",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "downloadKofamDB",
+    "namespace": "",
+    "full": "1 downloadKofamDB"
+   }
+  },
+  {
+   "id": "ref::kofamscan_profiles",
+   "kind": "DATA",
+   "label": {
+    "name": "kofamscan_profiles",
+    "namespace": "ref",
+    "full": "ref::kofamscan_profiles"
+   }
+  },
+  {
+   "id": "functional_annotation::kofamscan_ko_list",
+   "kind": "DATA",
+   "label": {
+    "name": "kofamscan_ko_list",
+    "namespace": "functional_annotation",
+    "full": "functional_annotation::kofamscan_ko_list"
+   }
+  },
+  {
+   "id": "2 downloadUniRef50DB",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "downloadUniRef50DB",
+    "namespace": "",
+    "full": "2 downloadUniRef50DB"
+   }
+  },
+  {
+   "id": "functional_annotation::uniref50_diamond_db",
+   "kind": "DATA",
+   "label": {
+    "name": "uniref50_diamond_db",
+    "namespace": "functional_annotation",
+    "full": "functional_annotation::uniref50_diamond_db"
+   }
+  },
+  {
+   "id": "3 downloadGtdbDB",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "downloadGtdbDB",
+    "namespace": "",
+    "full": "3 downloadGtdbDB"
+   }
+  },
+  {
+   "id": "ref::gtdb",
+   "kind": "DATA",
+   "label": {
+    "name": "gtdb",
+    "namespace": "ref",
+    "full": "ref::gtdb"
+   }
+  },
+  {
+   "id": "4 downloadPhyloflashDB",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "downloadPhyloflashDB",
+    "namespace": "",
+    "full": "4 downloadPhyloflashDB"
+   }
+  },
+  {
+   "id": "ref::phyloflash_db",
+   "kind": "DATA",
+   "label": {
+    "name": "phyloflash_db",
+    "namespace": "ref",
+    "full": "ref::phyloflash_db"
+   }
+  },
+  {
+   "id": "5 downloadMetabuliDB",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "downloadMetabuliDB",
+    "namespace": "",
+    "full": "5 downloadMetabuliDB"
+   }
+  },
+  {
+   "id": "ref::metabuli_ref",
+   "kind": "DATA",
+   "label": {
+    "name": "metabuli_ref",
+    "namespace": "ref",
+    "full": "ref::metabuli_ref"
+   }
+  },
+  {
+   "id": "6 interleave_zipped_short_reads",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "interleave_zipped_short_reads",
+    "namespace": "",
+    "full": "6 interleave_zipped_short_reads"
+   }
+  },
+  {
+   "id": "sequences::short_reads",
+   "kind": "DATA",
+   "label": {
+    "name": "short_reads",
+    "namespace": "sequences",
+    "full": "sequences::short_reads"
+   }
+  },
+  {
+   "id": "7 seqkit_reads",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "seqkit_reads",
+    "namespace": "",
+    "full": "7 seqkit_reads"
+   }
+  },
+  {
+   "id": "sequences::read_qc_stats",
+   "kind": "TARGET",
+   "label": {
+    "name": "read_qc_stats",
+    "namespace": "sequences",
+    "full": "sequences::read_qc_stats"
+   }
+  },
+  {
+   "id": "8 phyloflash",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "phyloflash",
+    "namespace": "",
+    "full": "8 phyloflash"
+   }
+  },
+  {
+   "id": "taxonomy::phyloflash_report_html",
+   "kind": "DATA",
+   "label": {
+    "name": "phyloflash_report_html",
+    "namespace": "taxonomy",
+    "full": "taxonomy::phyloflash_report_html"
+   }
+  },
+  {
+   "id": "taxonomy::phyloflash_summary",
+   "kind": "TARGET",
+   "label": {
+    "name": "phyloflash_summary",
+    "namespace": "taxonomy",
+    "full": "taxonomy::phyloflash_summary"
+   }
+  },
+  {
+   "id": "taxonomy::phyloflash_ntu_abundance",
+   "kind": "DATA",
+   "label": {
+    "name": "phyloflash_ntu_abundance",
+    "namespace": "taxonomy",
+    "full": "taxonomy::phyloflash_ntu_abundance"
+   }
+  },
+  {
+   "id": "taxonomy::phyloflash_ssu_spades",
+   "kind": "DATA",
+   "label": {
+    "name": "phyloflash_ssu_spades",
+    "namespace": "taxonomy",
+    "full": "taxonomy::phyloflash_ssu_spades"
+   }
+  },
+  {
+   "id": "9 bbduk",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "bbduk",
+    "namespace": "",
+    "full": "9 bbduk"
+   }
+  },
+  {
+   "id": "sequences::clean_short_reads",
+   "kind": "DATA",
+   "label": {
+    "name": "clean_short_reads",
+    "namespace": "sequences",
+    "full": "sequences::clean_short_reads"
+   }
+  },
+  {
+   "id": "sequences::discarded_short_reads",
+   "kind": "DATA",
+   "label": {
+    "name": "discarded_short_reads",
+    "namespace": "sequences",
+    "full": "sequences::discarded_short_reads"
+   }
+  },
+  {
+   "id": "10 megahit",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "megahit",
+    "namespace": "",
+    "full": "10 megahit"
+   }
+  },
+  {
+   "id": "sequences::megahit_assembly",
+   "kind": "DATA",
+   "label": {
+    "name": "megahit_assembly",
+    "namespace": "sequences",
+    "full": "sequences::megahit_assembly"
+   }
+  },
+  {
+   "id": "11 prodigal",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "prodigal",
+    "namespace": "",
+    "full": "11 prodigal"
+   }
+  },
+  {
+   "id": "sequences::orfs",
+   "kind": "TARGET",
+   "label": {
+    "name": "orfs",
+    "namespace": "sequences",
+    "full": "sequences::orfs"
+   }
+  },
+  {
+   "id": "sequences::gff",
+   "kind": "DATA",
+   "label": {
+    "name": "gff",
+    "namespace": "sequences",
+    "full": "sequences::gff"
+   }
+  },
+  {
+   "id": "12 metabuli",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "metabuli",
+    "namespace": "",
+    "full": "12 metabuli"
+   }
+  },
+  {
+   "id": "taxonomy::metabuli",
+   "kind": "TARGET",
+   "label": {
+    "name": "metabuli",
+    "namespace": "taxonomy",
+    "full": "taxonomy::metabuli"
+   }
+  },
+  {
+   "id": "taxonomy::metabuli_report",
+   "kind": "DATA",
+   "label": {
+    "name": "metabuli_report",
+    "namespace": "taxonomy",
+    "full": "taxonomy::metabuli_report"
+   }
+  },
+  {
+   "id": "taxonomy::metabuli_krona",
+   "kind": "DATA",
+   "label": {
+    "name": "metabuli_krona",
+    "namespace": "taxonomy",
+    "full": "taxonomy::metabuli_krona"
+   }
+  },
+  {
+   "id": "13 assembly_stats",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "assembly_stats",
+    "namespace": "",
+    "full": "13 assembly_stats"
+   }
+  },
+  {
+   "id": "sequences::assembly_stats",
+   "kind": "TARGET",
+   "label": {
+    "name": "assembly_stats",
+    "namespace": "sequences",
+    "full": "sequences::assembly_stats"
+   }
+  },
+  {
+   "id": "sequences::assembly_per_contig_coverage",
+   "kind": "TARGET",
+   "label": {
+    "name": "assembly_per_contig_coverage",
+    "namespace": "sequences",
+    "full": "sequences::assembly_per_contig_coverage"
+   }
+  },
+  {
+   "id": "sequences::assembly_per_bp_coverage",
+   "kind": "TARGET",
+   "label": {
+    "name": "assembly_per_bp_coverage",
+    "namespace": "sequences",
+    "full": "sequences::assembly_per_bp_coverage"
+   }
+  },
+  {
+   "id": "alignment::bam",
+   "kind": "DATA",
+   "label": {
+    "name": "bam",
+    "namespace": "alignment",
+    "full": "alignment::bam"
+   }
+  },
+  {
+   "id": "14 chunkOrfsForAnnotation",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "chunkOrfsForAnnotation",
+    "namespace": "",
+    "full": "14 chunkOrfsForAnnotation"
+   }
+  },
+  {
+   "id": "sequences::orf_chunk",
+   "kind": "DATA",
+   "label": {
+    "name": "orf_chunk",
+    "namespace": "sequences",
+    "full": "sequences::orf_chunk"
+   }
+  },
+  {
+   "id": "15 comebin",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "comebin",
+    "namespace": "",
+    "full": "15 comebin"
+   }
+  },
+  {
+   "id": "sequences::comebin_bin_fasta",
+   "kind": "TARGET",
+   "label": {
+    "name": "comebin_bin_fasta",
+    "namespace": "sequences",
+    "full": "sequences::comebin_bin_fasta"
+   }
+  },
+  {
+   "id": "binning::comebin_contig_to_bin_table",
+   "kind": "TARGET",
+   "label": {
+    "name": "comebin_contig_to_bin_table",
+    "namespace": "binning",
+    "full": "binning::comebin_contig_to_bin_table"
+   }
+  },
+  {
+   "id": "16 semibin2",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "semibin2",
+    "namespace": "",
+    "full": "16 semibin2"
+   }
+  },
+  {
+   "id": "sequences::semibin2_bin_fasta",
+   "kind": "TARGET",
+   "label": {
+    "name": "semibin2_bin_fasta",
+    "namespace": "sequences",
+    "full": "sequences::semibin2_bin_fasta"
+   }
+  },
+  {
+   "id": "binning::semibin2_contig_to_bin_table",
+   "kind": "TARGET",
+   "label": {
+    "name": "semibin2_contig_to_bin_table",
+    "namespace": "binning",
+    "full": "binning::semibin2_contig_to_bin_table"
+   }
+  },
+  {
+   "id": "17 metabat2",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "metabat2",
+    "namespace": "",
+    "full": "17 metabat2"
+   }
+  },
+  {
+   "id": "sequences::metabat2_bin_fasta",
+   "kind": "TARGET",
+   "label": {
+    "name": "metabat2_bin_fasta",
+    "namespace": "sequences",
+    "full": "sequences::metabat2_bin_fasta"
+   }
+  },
+  {
+   "id": "binning::metabat2_contig_to_bin_table",
+   "kind": "TARGET",
+   "label": {
+    "name": "metabat2_contig_to_bin_table",
+    "namespace": "binning",
+    "full": "binning::metabat2_contig_to_bin_table"
+   }
+  },
+  {
+   "id": "18 checkm",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "checkm",
+    "namespace": "",
+    "full": "18 checkm"
+   }
+  },
+  {
+   "id": "taxonomy::checkm_stats",
+   "kind": "TARGET",
+   "label": {
+    "name": "checkm_stats",
+    "namespace": "taxonomy",
+    "full": "taxonomy::checkm_stats"
+   }
+  },
+  {
+   "id": "19 checkm",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "checkm",
+    "namespace": "",
+    "full": "19 checkm"
+   }
+  },
+  {
+   "id": "20 checkm",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "checkm",
+    "namespace": "",
+    "full": "20 checkm"
+   }
+  },
+  {
+   "id": "21 diamond_uniref50",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "diamond_uniref50",
+    "namespace": "",
+    "full": "21 diamond_uniref50"
+   }
+  },
+  {
+   "id": "annotation::diamond_uniref50_results_chunk",
+   "kind": "DATA",
+   "label": {
+    "name": "diamond_uniref50_results_chunk",
+    "namespace": "annotation",
+    "full": "annotation::diamond_uniref50_results_chunk"
+   }
+  },
+  {
+   "id": "22 gtdbtk",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "gtdbtk",
+    "namespace": "",
+    "full": "22 gtdbtk"
+   }
+  },
+  {
+   "id": "taxonomy::gtdbtk",
+   "kind": "TARGET",
+   "label": {
+    "name": "gtdbtk",
+    "namespace": "taxonomy",
+    "full": "taxonomy::gtdbtk"
+   }
+  },
+  {
+   "id": "23 gtdbtk",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "gtdbtk",
+    "namespace": "",
+    "full": "23 gtdbtk"
+   }
+  },
+  {
+   "id": "24 gtdbtk",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "gtdbtk",
+    "namespace": "",
+    "full": "24 gtdbtk"
+   }
+  },
+  {
+   "id": "25 kofamscan",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "kofamscan",
+    "namespace": "",
+    "full": "25 kofamscan"
+   }
+  },
+  {
+   "id": "annotation::kofamscan_results_chunk",
+   "kind": "DATA",
+   "label": {
+    "name": "kofamscan_results_chunk",
+    "namespace": "annotation",
+    "full": "annotation::kofamscan_results_chunk"
+   }
+  },
+  {
+   "id": "26 merge_kofamscan",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "merge_kofamscan",
+    "namespace": "",
+    "full": "26 merge_kofamscan"
+   }
+  },
+  {
+   "id": "annotation::kofamscan_results",
+   "kind": "TARGET",
+   "label": {
+    "name": "kofamscan_results",
+    "namespace": "annotation",
+    "full": "annotation::kofamscan_results"
+   }
+  },
+  {
+   "id": "27 merge_diamond_uniref50",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "merge_diamond_uniref50",
+    "namespace": "",
+    "full": "27 merge_diamond_uniref50"
+   }
+  },
+  {
+   "id": "annotation::diamond_uniref50_results",
+   "kind": "TARGET",
+   "label": {
+    "name": "diamond_uniref50_results",
+    "namespace": "annotation",
+    "full": "annotation::diamond_uniref50_results"
+   }
+  },
+  {
+   "id": "28 aggregator",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "aggregator",
+    "namespace": "",
+    "full": "28 aggregator"
+   }
+  },
+  {
+   "id": "binning_local::quality_bin_fasta",
+   "kind": "DATA",
+   "label": {
+    "name": "quality_bin_fasta",
+    "namespace": "binning_local",
+    "full": "binning_local::quality_bin_fasta"
+   }
+  },
+  {
+   "id": "29 skani_dedup",
+   "kind": "TRANSFORM",
+   "label": {
+    "name": "skani_dedup",
+    "namespace": "",
+    "full": "29 skani_dedup"
+   }
+  },
+  {
+   "id": "binning_local::cluster_table",
+   "kind": "TARGET",
+   "label": {
+    "name": "cluster_table",
+    "namespace": "binning_local",
+    "full": "binning_local::cluster_table"
+   }
+  }
+ ],
+ "edges": [
+  [
+   "sequences::read_pair",
+   "sequences::zipped_reverse_short_reads"
+  ],
+  [
+   "given",
+   "sequences::zipped_reverse_short_reads"
+  ],
+  [
+   "given",
+   "sequences::read_metadata"
+  ],
+  [
+   "sequences::read_metadata",
+   "sequences::read_pair"
+  ],
+  [
+   "given",
+   "sequences::read_pair"
+  ],
+  [
+   "sequences::read_pair",
+   "sequences::zipped_forward_short_reads"
+  ],
+  [
+   "given",
+   "sequences::zipped_forward_short_reads"
+  ],
+  [
+   "1 downloadKofamDB",
+   "ref::kofamscan_profiles"
+  ],
+  [
+   "1 downloadKofamDB",
+   "functional_annotation::kofamscan_ko_list"
+  ],
+  [
+   "2 downloadUniRef50DB",
+   "functional_annotation::uniref50_diamond_db"
+  ],
+  [
+   "3 downloadGtdbDB",
+   "ref::gtdb"
+  ],
+  [
+   "4 downloadPhyloflashDB",
+   "ref::phyloflash_db"
+  ],
+  [
+   "5 downloadMetabuliDB",
+   "ref::metabuli_ref"
+  ],
+  [
+   "sequences::read_pair",
+   "6 interleave_zipped_short_reads"
+  ],
+  [
+   "sequences::zipped_forward_short_reads",
+   "6 interleave_zipped_short_reads"
+  ],
+  [
+   "sequences::zipped_reverse_short_reads",
+   "6 interleave_zipped_short_reads"
+  ],
+  [
+   "6 interleave_zipped_short_reads",
+   "sequences::short_reads"
+  ],
+  [
+   "sequences::short_reads",
+   "7 seqkit_reads"
+  ],
+  [
+   "7 seqkit_reads",
+   "sequences::read_qc_stats"
+  ],
+  [
+   "ref::phyloflash_db",
+   "8 phyloflash"
+  ],
+  [
+   "sequences::short_reads",
+   "8 phyloflash"
+  ],
+  [
+   "8 phyloflash",
+   "taxonomy::phyloflash_report_html"
+  ],
+  [
+   "8 phyloflash",
+   "taxonomy::phyloflash_summary"
+  ],
+  [
+   "8 phyloflash",
+   "taxonomy::phyloflash_ntu_abundance"
+  ],
+  [
+   "8 phyloflash",
+   "taxonomy::phyloflash_ssu_spades"
+  ],
+  [
+   "sequences::read_metadata",
+   "9 bbduk"
+  ],
+  [
+   "sequences::short_reads",
+   "9 bbduk"
+  ],
+  [
+   "sequences::read_qc_stats",
+   "9 bbduk"
+  ],
+  [
+   "9 bbduk",
+   "sequences::clean_short_reads"
+  ],
+  [
+   "9 bbduk",
+   "sequences::discarded_short_reads"
+  ],
+  [
+   "sequences::read_metadata",
+   "10 megahit"
+  ],
+  [
+   "sequences::clean_short_reads",
+   "10 megahit"
+  ],
+  [
+   "10 megahit",
+   "sequences::megahit_assembly"
+  ],
+  [
+   "sequences::megahit_assembly",
+   "11 prodigal"
+  ],
+  [
+   "11 prodigal",
+   "sequences::orfs"
+  ],
+  [
+   "11 prodigal",
+   "sequences::gff"
+  ],
+  [
+   "ref::metabuli_ref",
+   "12 metabuli"
+  ],
+  [
+   "sequences::megahit_assembly",
+   "12 metabuli"
+  ],
+  [
+   "12 metabuli",
+   "taxonomy::metabuli"
+  ],
+  [
+   "12 metabuli",
+   "taxonomy::metabuli_report"
+  ],
+  [
+   "12 metabuli",
+   "taxonomy::metabuli_krona"
+  ],
+  [
+   "sequences::read_metadata",
+   "13 assembly_stats"
+  ],
+  [
+   "sequences::short_reads",
+   "13 assembly_stats"
+  ],
+  [
+   "sequences::read_qc_stats",
+   "13 assembly_stats"
+  ],
+  [
+   "sequences::megahit_assembly",
+   "13 assembly_stats"
+  ],
+  [
+   "13 assembly_stats",
+   "sequences::assembly_stats"
+  ],
+  [
+   "13 assembly_stats",
+   "sequences::assembly_per_contig_coverage"
+  ],
+  [
+   "13 assembly_stats",
+   "sequences::assembly_per_bp_coverage"
+  ],
+  [
+   "13 assembly_stats",
+   "alignment::bam"
+  ],
+  [
+   "sequences::orfs",
+   "14 chunkOrfsForAnnotation"
+  ],
+  [
+   "14 chunkOrfsForAnnotation",
+   "sequences::orf_chunk"
+  ],
+  [
+   "sequences::megahit_assembly",
+   "15 comebin"
+  ],
+  [
+   "alignment::bam",
+   "15 comebin"
+  ],
+  [
+   "15 comebin",
+   "sequences::comebin_bin_fasta"
+  ],
+  [
+   "15 comebin",
+   "binning::comebin_contig_to_bin_table"
+  ],
+  [
+   "sequences::megahit_assembly",
+   "16 semibin2"
+  ],
+  [
+   "alignment::bam",
+   "16 semibin2"
+  ],
+  [
+   "16 semibin2",
+   "sequences::semibin2_bin_fasta"
+  ],
+  [
+   "16 semibin2",
+   "binning::semibin2_contig_to_bin_table"
+  ],
+  [
+   "sequences::megahit_assembly",
+   "17 metabat2"
+  ],
+  [
+   "alignment::bam",
+   "17 metabat2"
+  ],
+  [
+   "17 metabat2",
+   "sequences::metabat2_bin_fasta"
+  ],
+  [
+   "17 metabat2",
+   "binning::metabat2_contig_to_bin_table"
+  ],
+  [
+   "sequences::comebin_bin_fasta",
+   "18 checkm"
+  ],
+  [
+   "18 checkm",
+   "taxonomy::checkm_stats"
+  ],
+  [
+   "sequences::semibin2_bin_fasta",
+   "19 checkm"
+  ],
+  [
+   "19 checkm",
+   "taxonomy::checkm_stats"
+  ],
+  [
+   "sequences::metabat2_bin_fasta",
+   "20 checkm"
+  ],
+  [
+   "20 checkm",
+   "taxonomy::checkm_stats"
+  ],
+  [
+   "sequences::orf_chunk",
+   "21 diamond_uniref50"
+  ],
+  [
+   "functional_annotation::uniref50_diamond_db",
+   "21 diamond_uniref50"
+  ],
+  [
+   "21 diamond_uniref50",
+   "annotation::diamond_uniref50_results_chunk"
+  ],
+  [
+   "ref::gtdb",
+   "22 gtdbtk"
+  ],
+  [
+   "sequences::comebin_bin_fasta",
+   "22 gtdbtk"
+  ],
+  [
+   "22 gtdbtk",
+   "taxonomy::gtdbtk"
+  ],
+  [
+   "ref::gtdb",
+   "23 gtdbtk"
+  ],
+  [
+   "sequences::semibin2_bin_fasta",
+   "23 gtdbtk"
+  ],
+  [
+   "23 gtdbtk",
+   "taxonomy::gtdbtk"
+  ],
+  [
+   "ref::gtdb",
+   "24 gtdbtk"
+  ],
+  [
+   "sequences::metabat2_bin_fasta",
+   "24 gtdbtk"
+  ],
+  [
+   "24 gtdbtk",
+   "taxonomy::gtdbtk"
+  ],
+  [
+   "sequences::orf_chunk",
+   "25 kofamscan"
+  ],
+  [
+   "ref::kofamscan_profiles",
+   "25 kofamscan"
+  ],
+  [
+   "functional_annotation::kofamscan_ko_list",
+   "25 kofamscan"
+  ],
+  [
+   "25 kofamscan",
+   "annotation::kofamscan_results_chunk"
+  ],
+  [
+   "sequences::orfs",
+   "26 merge_kofamscan"
+  ],
+  [
+   "annotation::kofamscan_results_chunk",
+   "26 merge_kofamscan"
+  ],
+  [
+   "26 merge_kofamscan",
+   "annotation::kofamscan_results"
+  ],
+  [
+   "sequences::orfs",
+   "27 merge_diamond_uniref50"
+  ],
+  [
+   "annotation::diamond_uniref50_results_chunk",
+   "27 merge_diamond_uniref50"
+  ],
+  [
+   "27 merge_diamond_uniref50",
+   "annotation::diamond_uniref50_results"
+  ],
+  [
+   "sequences::megahit_assembly",
+   "28 aggregator"
+  ],
+  [
+   "sequences::metabat2_bin_fasta",
+   "28 aggregator"
+  ],
+  [
+   "taxonomy::checkm_stats",
+   "28 aggregator"
+  ],
+  [
+   "sequences::semibin2_bin_fasta",
+   "28 aggregator"
+  ],
+  [
+   "sequences::comebin_bin_fasta",
+   "28 aggregator"
+  ],
+  [
+   "28 aggregator",
+   "binning_local::quality_bin_fasta"
+  ],
+  [
+   "sequences::megahit_assembly",
+   "29 skani_dedup"
+  ],
+  [
+   "binning_local::quality_bin_fasta",
+   "29 skani_dedup"
+  ],
+  [
+   "29 skani_dedup",
+   "binning_local::cluster_table"
+  ]
+ ]
+}
