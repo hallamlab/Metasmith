@@ -35,7 +35,7 @@ READS = Path(
 OUT_DIR = Path("/tmp/metasmith_stress_dag")
 
 from metasmith.python_api import (  # noqa: E402
-    Agent, ContainerRuntime, DataInstanceLibrary, Source, TargetBuilder,
+    Agent, Runtime, DataInstanceLibrary, Source, TargetBuilder,
     TransformInstanceLibrary,
 )
 
@@ -58,7 +58,7 @@ def main() -> int:
     inputs.Save()
 
     smith = Agent(home=Source.FromLocal(OUT_DIR.resolve() / "msm_home"),
-                  runtime=ContainerRuntime.DOCKER)
+                  runtime=Runtime.DOCKER)
 
     targets = TargetBuilder()
     for t in ["sequences::read_qc_stats", "sequences::orfs",

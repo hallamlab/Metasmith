@@ -24,9 +24,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # place the old name is legitimately spelled.
 RENAMED = {"ContainerRuntime": "Runtime"}
 
-SEARCH_ROOTS = ("src", "docs", "examples", "main")
+SEARCH_ROOTS = ("src", "docs", "examples", "main", "tests")
 SUFFIXES = {".py", ".ipynb", ".rst", ".md", ".yml", ".yaml"}
-ALLOWED = {Path("src/metasmith/env/environment.py")}
+ALLOWED = {
+    Path("src/metasmith/env/environment.py"),  # the rename note
+    Path("tests/unit/test_renamed_symbols_are_gone.py"),  # this file
+}
 
 
 def _candidate_files():
