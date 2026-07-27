@@ -1,3 +1,8 @@
+# Packaging-tool overlay applied by `dev.sh --idev <env_name>`, layered on top
+# of an env created from envs/base.yml. NOT a standalone env definition:
+# base.yml owns the runtime dependencies the Docker and Apptainer images
+# consume, and this file adds only the toolchain used to cut wheels, conda
+# packages and tarballs.
 channels:
   - conda-forge
 dependencies:

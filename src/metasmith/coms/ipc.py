@@ -2,24 +2,11 @@ from __future__ import annotations
 import os
 import re
 from typing import IO, Callable, Any
-# import gevent
-# from gevent.lock import Semaphore as Condition
-# from gevent import Greenlet
-# from gevent.select import select
 
 from threading import Condition, Thread
 from select import select
 import subprocess
 from time import sleep, monotonic
-
-# from dataclasses import dataclass, field
-# import json
-# from pathlib import Path
-# import pty
-# import time
-# import random
-# from collections import deque
-# import hashlib
 
 from ..hashing import KeyGenerator
 from ..serialization import StdTime

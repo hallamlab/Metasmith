@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Literal
 
 from ..constants import AgentPaths
@@ -61,24 +61,6 @@ _DIALECT_TOKENS: dict[RenderDialect, str] = {
     "brace": "{agent_home}",
     "groovy": "${params.home}",
 }
-
-
-def _normalise(p: Path | str) -> Path:
-    """Collapse ``..`` segments without touching the filesystem.
-
-    Uses :class:`os.path.normpath` semantics so a relative input that
-    walks up out of a deep cwd still resolves; only absolute outputs
-    are accepted by :class:`ContextPath`'s invariant, so callers that
-    feed relative paths must explicitly anchor them first via
-    :meth:`PathMap.Parse`.
-    """
-    return Path(PurePosixPath(*Path(p).parts).as_posix()).resolve() if False else Path(
-        # Pure-string normalisation; no FS calls. ``Path.resolve()``
-        # would also collapse symlinks, which we explicitly do NOT
-        # want here — the caller may be reasoning about a symlink's
-        # target on a host that is not the current host.
-        str(Path(p))
-    )
 
 
 def reroot_in_text(content: str, old_root: Path | str, new_root: Path | str) -> str:

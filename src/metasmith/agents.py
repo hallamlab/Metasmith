@@ -356,7 +356,6 @@ class Agent:
         # file identical to the one it had before this field existed.
         if self.default_params:
             optional["default_params"] = dict(self.default_params)
-        # if isinstance(self.runtime, str): print(f"##### [{self.runtime}]")
         return dict(
             setup_commands=list(self.setup_commands),
             home=self.home.Pack(),

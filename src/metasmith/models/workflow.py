@@ -768,17 +768,6 @@ class WorkflowPlan:
             if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
             given_endpoints.append(eps)
 
-        # target_e2d: dict[Endpoint, Dependency] = {}
-        # def _add(tr: Transform, e: Endpoint) -> Dependency:
-        #     if e in target_e2d: return target_e2d[e]
-        #     parent_deps = {_add(tr, p) for p in e.parents} # type: ignore
-        #     d = tr.AddRequirement(e, parents=parent_deps)
-        #     target_e2d[e] = d
-        #     return d
-        # target_model = Transform()
-        # for t in targets:
-        #     _add(target_model, t)
-
         transform2inst: dict[Transform, TransformInstance] = {}
         inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}
         for trlib in transforms:

@@ -205,41 +205,39 @@ test suite (fast or e2e) currently exercises.
 
 ## Re-audit checklist (from feat/audit)
 
-**Caveat — read before acting on any row below.** Every "confirmed dead code"
-verdict here was reached by spot-checking against a tree that no longer
-exists in this shape. Before deleting or renaming anything, re-check each
-finding against current callers in `src/metasmith/env/`, `caching/`, `gui/`,
-and `std/` — none of which existed (or existed in their current form) when
-this audit ran.
+The audit ran against 0.18.4, before `env/`, `caching/`, `gui/` and `std/`
+existed in their current form. Every row was re-checked against the
+consolidated tree on 2026-07-27; the **Now** column is that re-check, and it
+supersedes the original verdict wherever the two disagree. One of them does:
+S1 called `main/script_runner/` dead, and it is not.
 
-| ID | Tier → Goal | Finding | Verified how |
+| ID | Tier → Goal | Finding | Now (2026-07-27) |
 |----|------|---------|---------------|
-| S1 | A→G1 | Delete 7 stale `main/` subdirs (`relay_agent.old`, `paramiko`, `pyoxidizer`, `script_runner`, `container_bounce`, `tests`, `create_examples`; optionally `sql/`) | spot-verified: zero grep references from `src/`/`tests/`, all 6+ months untouched |
-| S2 | A→G1 | Dead `if False` arm, `models/paths.py:75` | spot-verified: live arm is the only one ever taken |
-| S3 | A→G1 | 11 commented-out import lines, `coms/ipc.py:5-8,15-22` | spot-verified: superseded by live imports at 10-13, 24-26 |
-| S4 | A→G1 | Leftover debug-print comment, `agents.py:115` (`Agent.Pack()`) | spot-verified |
-| S5 | A→G1 | Commented-out target-resolution block, `models/workflow.py:685-696` | spot-verified: current path uses `target_model` directly |
-| S6 | B→G2 | Rename `coms/cli/legacy.py` → `tools.py`/`misc.py` (not actually deprecated; wires `get`/`lab`/`api`) | not independently re-verified beyond citation |
-| S7 | B→G2 | Resolve `pyproject.toml` vs `setup.py` split (setup.py authoritative) | not independently re-verified beyond citation |
-| S8 | B→G2 | `envs/dev.yml` (14 lines) drifted from `envs/base.yml` (44 lines) | not independently re-verified beyond citation |
-| S9 | B→G2 | Container env name mismatch: `Dockerfile` uses `${CONDA_ENV}`/`for_container`, `metasmith.def` hardcodes `metasmith_env`, bin shebangs hardcode `metasmith_env` | not independently re-verified beyond citation |
-| S10 | C→G3 | Split `agents.py` (1503 LOC) into `agents.py`/`agents/deploy.py`/`agents/workflow.py` | proposal, mechanical, not executed |
-| S11 | C→G3 | Split `models/workflow.py` (1703 LOC): keep plan/step/task; extract Nextflow codegen (~570 LOC from line 1127) to `coms/nextflow.py`; extract `_diagnose_plan_failure` family (~160 LOC) to solver | proposal, not executed |
-| S12 | C→G3 | Split `models/libraries.py` (1435 LOC): keep DataInstance/library/views; extract `Size`/`Duration`/`Resources` to `models/resources.py`; extract `TransformInstance`/`TransformInstanceLibrary`/execution context to `models/transforms.py` | proposal, not executed |
-| S13 | C→G3 | `models/solver.py` (1381 LOC) — optional, deferred unless S11 insufficient | not executed |
-| S14 | D→G4 | Unify Pack/Unpack vs Save/Load vs to_dict/from_dict; collapse `DataInstance` id shadow fields (`instance_id`/`_key`/`legacy_key`) | proposal, not executed |
-| S15 | D→G4 | Introduce shared `Shell` protocol for `LiveShell` (`coms/terminals.py:158`) and `RemoteShell` (`coms/via_file_watcher.py:73`) | proposal, not executed |
-| S16 | D→G4 | Replace `bootstrap.ExecuteStep`'s 9-parameter signature (`bootstrap.py:83`) with an `ExecutionRequest` dataclass | proposal, not executed |
-| S17 | D→G4 | Split `coms/ipc.py`: keep `NonBlockingReader`/IPC; move string/time utils to `coms/utils.py` | proposal, not executed |
-| S18 | E→G5 | Eliminate method/free-function shadow pattern in `agents.py` (`StageWorkflow`, `RunWorkflow`, `CollectResults` each have a method + a same-named free function) | proposal, not executed |
-| S19 | E→G5 | Map every CLI command to exactly one `ops/<group>.<verb>` function (drift noted: `cli/e2e.py` has no ops backing; `cli/run.py` bypasses ops) | proposal, not executed |
-| S20 | E→G5 | Audit `coms/api.py`'s `Api` RPC class — only caller was `cli/legacy.py`'s `HandleRequest`; delete if dead post-MCP-removal, else document the caller | proposal, not executed |
+| S1 | A→G1 | Delete 7 stale `main/` subdirs (`relay_agent.old`, `paramiko`, `pyoxidizer`, `script_runner`, `container_bounce`, `tests`, `create_examples`; optionally `sql/`) | **PARTLY WRONG, rest DONE.** `main/script_runner/` is *not* dead: `src/metasmith/std/` — which did not exist when the audit ran — declares `std::oci_image_script_runner` → `docker://quay.io/hallamlab/metasmith_script_runner:0.1.1`, required by busco, cazy, bakta_db_full and both kofamscan transforms, and that Dockerfile is the repo's only recipe for the published image. **Keep it.** The other six were re-grepped at zero references and deleted. `main/sql/` also has zero references but the audit itself said "confirm before deletion" — still there, still a user call. |
+| S2 | A→G1 | Dead `if False` arm, `models/paths.py:75` | **DONE, and it went further.** `_normalise` had zero callers anywhere — a private no-op whose docstring claimed `..`-collapsing it never did (`Path(str(Path(p)))` leaves `/a/b/../c` untouched). Deleted the whole function rather than tidying its dead branch. |
+| S3 | A→G1 | 11 commented-out import lines, `coms/ipc.py:5-8,15-22` | **DONE.** |
+| S4 | A→G1 | Leftover debug-print comment in `Agent.Pack()` | **DONE** (had drifted to `agents.py:359`). |
+| S5 | A→G1 | Commented-out target-resolution block in `models/workflow.py` | **DONE** (had drifted to `:771-780`). |
+| S6 | B→G2 | Rename `coms/cli/legacy.py` → `tools.py`/`misc.py` (not actually deprecated) | **STILL APPLIES, and grew.** It now wires four commands, not three — `get`, `lab`, `api` and `gui`. Nothing about `gui` is legacy. |
+| S7 | B→G2 | Resolve `pyproject.toml` vs `setup.py` split (setup.py authoritative) | **STILL APPLIES, unchanged.** `pyproject.toml` still holds only `[tool.pytest.ini_options]` and no `[build-system]`. |
+| S8 | B→G2 | `envs/dev.yml` drifted from `envs/base.yml` | **DONE** as option (b): `dev.yml` now states it is a packaging-tool overlay applied by `dev.sh --idev`, layered on base.yml, not a standalone env. |
+| S9 | B→G2 | Container env name mismatch (`Dockerfile` default `for_container` vs `metasmith.def` and the `bin/` shebangs' `metasmith_env`) | **DONE, and half of it is moot.** `metasmith.def` no longer exists — the apptainer image is built from the docker image. `Dockerfile`'s default is now `metasmith_env`, matching the shebangs, so a hand-run `docker build .` no longer produces `/app` shims pointing at a non-existent env. |
+| S10 | C→G3 | Split `agents.py` (1503 LOC) | **STILL APPLIES, more so:** now **2154 LOC**. |
+| S11 | C→G3 | Split `models/workflow.py` (1703 LOC): extract Nextflow codegen, extract `_diagnose_plan_failure` family | **STILL APPLIES, more so:** now **2489 LOC**. |
+| S12 | C→G3 | Split `models/libraries.py` (1435 LOC): extract `Size`/`Duration`/`Resources`, extract the transform/execution contract layer | **STILL APPLIES, most of all:** now **2621 LOC**, the largest file in the tree. |
+| S13 | C→G3 | `models/solver.py` (1381 LOC) — optional | **UNCHANGED at 1367 LOC** — the only god-file that did not grow. Still defer. |
+| S14 | D→G4 | Unify Pack/Unpack vs Save/Load vs to_dict/from_dict; collapse `DataInstance` id shadow fields | **HALF OF THIS IS NOW DANGEROUS.** The serialization unification still applies, but "remove `_key`/`legacy_key`" does not: since the reentrancy work, `instance_id` *is* the cache identity, `_key` tracks it for modern callers and `legacy_key` preserves the pre-content-addressing derivation. Deleting either changes cache keys, which silently invalidates or false-hits every cached run. Do not treat these as redundant copies. |
+| S15 | D→G4 | Shared `Shell` protocol for `LiveShell` and `RemoteShell` | **STILL APPLIES** — both classes still exist, still structurally identical, still no shared ABC. |
+| S16 | D→G4 | Replace `bootstrap.ExecuteStep`'s 9-parameter signature with an `ExecutionRequest` dataclass | **STILL APPLIES; now 10 parameters** (`host_local` was added). |
+| S17 | D→G4 | Split `coms/ipc.py`: move string/time utils to `coms/utils.py` | **STILL APPLIES but shrunk in value** — the file is 268 LOC total, so the split buys a clean seam rather than relief from size. |
+| S18 | E→G5 | Eliminate the method/free-function shadow pattern in `agents.py` | **STILL APPLIES, verbatim.** `StageWorkflow` at `:712` (method) and `:1295` (free); `RunWorkflow` at `:837` and `:1887`; `CollectResults` free-only at `:1438`. |
+| S19 | E→G5 | Map every CLI command to one `ops/<group>.<verb>`, or document the exceptions | **DONE** as "document the exceptions", in `ops/_common.py`. Three exceptions, not two: `e2e` (harness signalling), `run` (deliberate direct_run bypass) and `legacy.py`'s `get`/`lab`/`gui`/`api`. `transform`/`type` → `ops.transforms`/`ops.types` and `task` → `ops.workflow` are naming, not drift. |
+| S20 | E→G5 | Audit `coms/api.py`'s `Api` RPC class; delete if dead | **NOT DEAD — do not delete.** Its caller is still `cli/legacy.py`, which registers it as the internal agent-to-agent RPC endpoint (`"not for manual use"`). Note `gui/app.py`'s `from .api import bp` is a *different* module (`gui/api.py`) and is not evidence either way. |
 
-Only S1–S5 (Tier A) were spot-verified against source at the time; S6 onward
-are citation-based proposals that were never executed or re-checked. Given
-the caveat above, treat every row — including the "spot-verified" Tier A ones
-— as needing a fresh grep before acting, since `env/`, `caching/`, `gui/`,
-and `std/` did not exist in their current form when this audit ran.
+Everything marked STILL APPLIES is a citation-based proposal that has been
+re-grepped but never executed. The Tier C splits are the ones that have
+gotten materially worse: three of the four god-files grew by 40–80% during
+this consolidation.
 
 ## Notes from retired scopes
 
