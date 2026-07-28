@@ -1969,6 +1969,27 @@ class TestStepSelectors:
             assert s["process"].startswith(f"p{s['order']:02}__")
             assert "declared_resources" in s
 
+    def test_the_summary_places_every_step_in_the_drawing(self, client, runnable):
+        """The page lays its step rows out from these, in the SVG's own pixels.
+
+        A row sits level with the node it describes, so `dag_cy` is the whole
+        of that alignment and `row_pitch`/`top_cy` are the only spacings the
+        page is allowed to know -- guessing at either is how the two drifted
+        apart. Nothing here may fall back to `None`: the geometry block is
+        caught broadly, and a silent failure draws every row in the wrong place
+        rather than not at all.
+        """
+        result = client.get(f"/api/workflows/{runnable}").get_json()["result"]
+        geo = result["dag_geometry"]
+        assert set(geo) == {"width", "height", "row_pitch", "top_cy"}
+        assert all(isinstance(v, float) and v > 0 for v in geo.values())
+        # the first drawn row is inside the plate, and a row is not taller
+        # than the plate it is placed on
+        assert geo["top_cy"] < geo["height"]
+        for s in result["step_display"]:
+            assert isinstance(s["dag_cy"], float), s["transform"]
+            assert geo["top_cy"] <= s["dag_cy"] <= geo["height"]
+
     def test_a_position_selector_matches_the_process_that_position_gets(self):
         """The two halves that have to agree, pinned against each other.
 

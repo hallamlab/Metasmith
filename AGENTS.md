@@ -465,10 +465,14 @@ step. Three defaults have to agree — `BuildDAG`, `RenderDAG`, and `ops.workflo
 **`background` (default `True`) paints the plate; `False` renders transparent** — no SVG
 `<rect>`, and raster's `bgcolor` becomes graphviz's `transparent` rather than the theme's hex.
 Every artifact-producing caller keeps the default; the GUI is the one caller that turns it
-off, since its diagram card paints its own ground and a filled plate was never any colour but
-that card's. Node fills are not touched by this — a hollow marker's fill is still the theme's
-literal background hex (`DARK`'s is chosen to match its own painted plate), so it is not
-pixel-exact against an arbitrary transparent-mode background, only very close.
+off, because its diagram sits directly on a card whose ground is the theme's own background
+hex. Node fills are not touched by this — a hollow marker's fill is still that same hex, so a
+transparent-mode drawing is pixel-exact on a card of the theme's colour and only very close
+on any other.
+
+**Only the solid target outlines at double weight.** A hollow circle carries the triangle's
+`stroke_width`, so an intermediate never reads louder than the step that made it; the target
+is the one kind a reader is hunting for and is the only marker allowed to be heavier.
 
 ### GPUs
 
@@ -765,7 +769,20 @@ id already has a slash in it (`workflow/run`), so only the id half is percent-en
 **The workflow diagram's `<img src>` carries `wf.generated_at`, not just the theme.** The
 route serves a file cached beside the bundle, so a url that never changes across a re-solve
 is a url the browser's own cache will keep answering from — `generated_at` is the newest thing
-that changes on every solve, including a re-solve onto an identical plan.
+that changes on every solve, including a re-solve onto an identical plan. The cache is keyed
+on nothing about the *renderer*, so a change to how a node is drawn does not invalidate a
+drawing already on disk; delete the `plan.dag*.svg` beside a bundle to see one redrawn.
+
+**A step's controls sit level with its node, in the drawing's own pixels.** The result card
+places one row per step at the `dag_cy` the server measured off the same `geometry()` that
+`render_svg` is written in terms of, so the only two things that can break it are scaling the
+`<img>` and putting anything — padding, a border, a preceding element — between the image and
+the rows box. Either moves one origin and not the other, and since the displacement is about
+one row tall it reads as rows naming the *next* step rather than as rows a little low. Hence:
+flex siblings with nothing between them, every spacing from `dag_geometry` rather than a
+constant on the page, and a column header nudged into place with `position: relative` so it
+still sizes the box. Each row states the `dag_cy` it was placed at, so this is assertable
+from the page rather than by eye.
 
 ---
 

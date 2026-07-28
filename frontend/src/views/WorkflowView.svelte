@@ -770,10 +770,20 @@
 
   const OVERRIDE_FIELDS = ['cpus', 'memory_gb', 'duration_h']
 
-  // The pitch a step's row falls back to when the backend has no `dag_cy` for
-  // it yet (an old cached result, or a plan whose geometry failed) -- stacked
-  // in order rather than left to collide at the top.
+  // The pitch a step's row falls back to when the backend sent no geometry at
+  // all (an old cached result, or a plan whose geometry failed) -- stacked in
+  // order rather than left to collide at the top. Whenever `dag_geometry` is
+  // there its own `row_pitch` is used instead: this is the diagram's spacing
+  // and guessing at it is how the two stopped agreeing.
   const ROW_H = 26
+
+  // The column header's own height. It has to sit *inside* the rows box and in
+  // normal flow, because it is the only thing there that is -- absolutely
+  // placed rows contribute no width, so it is what sizes the box. It is then
+  // nudged down by `position: relative` onto the diagram's first row, which
+  // costs the layout nothing: the rows' origin stays the image's own top, and
+  // the header takes the space beside a node that never has a row of its own.
+  const HEAD_H = 18
 
   // What the ∞ button puts in the time box. An empty box already means
   // something -- "whatever the transform declared" -- so "no limit at all"
@@ -976,49 +986,75 @@
                only other thing that used to restate it as `# / step / takes /
                produces`, so their rows are pinned to the same vertical
                position as the node they describe rather than a copy of the
-               drawing in words. No fold, no height cap: this card grows with
-               the plan and only the diagram itself scrolls sideways if it's
-               wider than the card. -->
-          <div class="dag-row">
-            <div class="dag-img-wrap">
-              <!-- the theme and the solve time are both in the query string,
-                   not a header: the browser caches by url, so switching
-                   themes or solving again would otherwise show the rendering
-                   it already had for that url. `generated_at` is the newest
-                   thing that changes on every solve, including a re-solve
-                   onto the same plan. Unscaled -- `dag_cy` values only line up
-                   with this image's pixels when nothing resizes it. -->
-              <img
-                src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}&v=${encodeURIComponent(wf.generated_at)}`}
-                alt="workflow diagram"
-              />
-            </div>
+               drawing in words -- which is also why a row carries no name: the
+               node level with it is the name. No fold, no height cap: this
+               card grows with the plan, and only a diagram wider than the card
+               scrolls, sideways.
 
-            {#if wf.result?.step_display?.length}
-              {@const dagHeight =
-                wf.result.dag_geometry?.height ?? wf.result.step_display.length * ROW_H}
-              <div class="res-col">
-                <span class="small muted">resources</span>
-                <div class="res-head">
-                  <span></span><span>step</span><span>cpus</span><span>memory (GB)</span><span>time (h)</span>
-                </div>
-                <!-- Keyed by position, which is what makes a selector address
-                     one step. Empty is "as the transform declared", which is
-                     what the greyed number in each box is. A step with no
-                     `dag_cy` (geometry failed, or an old cached result) falls
-                     back to stacking in order rather than colliding at the
-                     top. -->
-                <div class="res-body" style={`height: ${dagHeight}px`}>
-                  {#each wf.result.step_display as step, i}
-                    {@const top = step.dag_cy ?? (i + 0.5) * ROW_H}
-                    <div class="res-row" style={`top: ${top - ROW_H / 2}px`}>
-                      <span class="small muted">{step.order}</span>
-                      <span class="mono truncate" title={step.process ?? step.transform}>
-                        {step.transform}
-                      </span>
-                      {#each OVERRIDE_FIELDS as f}
-                        {@const v = overrides[step.order]?.[f] ?? ''}
-                        <div class="cell">
+               Everything about the alignment rests on one thing: the image and
+               the rows box are flex siblings with nothing between them, so
+               they share a top by construction rather than by arithmetic, and
+               a row's offset is just its node's `cy` less half a pitch. Both
+               the pitch and the height come from the geometry the server laid
+               the drawing out with, never from a constant here. -->
+          {@const geo = wf.result?.dag_geometry}
+          {@const pitch = geo?.row_pitch ?? ROW_H}
+          {@const dagHeight = geo?.height ?? (wf.result?.step_display?.length ?? 0) * pitch}
+          <div class="dag-scroll">
+            <div
+              class="dag-box"
+              data-dag-width={geo?.width ?? ''}
+              data-dag-height={geo?.height ?? ''}
+              data-row-pitch={pitch}
+              data-dag-top-cy={geo?.top_cy ?? ''}
+              data-head-h={HEAD_H}
+            >
+              <div class="dag-body">
+                <!-- the theme and the solve time are both in the query string,
+                     not a header: the browser caches by url, so switching
+                     themes or solving again would otherwise show the rendering
+                     it already had for that url. `generated_at` is the newest
+                     thing that changes on every solve, including a re-solve
+                     onto the same plan. Unscaled -- `dag_cy` values are in this
+                     image's own pixels and only line up when nothing resizes
+                     it, so it gets no width and no max-width. -->
+                <img
+                  class="dag"
+                  src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}&v=${encodeURIComponent(wf.generated_at)}`}
+                  alt="workflow diagram"
+                />
+
+                {#if wf.result?.step_display?.length}
+                  <!-- Keyed by position, which is what makes a selector address
+                       one step. Empty is "as the transform declared", which is
+                       what the greyed number in each box is. A step with no
+                       `dag_cy` (geometry failed, or an old cached result) falls
+                       back to stacking at the diagram's own pitch rather than
+                       colliding at the top. The `data-` attributes are there so
+                       the alignment can be asserted from the page instead of
+                       eyeballed -- row centre less image top must be `dag_cy`,
+                       with no constant in between. -->
+                  <div class="res-body" style={`height: ${dagHeight}px`}>
+                    <!-- level with the diagram's first node, which is the
+                         synthetic `given` and so never has a row of its own -->
+                    <div
+                      class="res-head"
+                      style={`height: ${HEAD_H}px; top: ${(geo?.top_cy ?? HEAD_H / 2) - HEAD_H / 2}px`}
+                    >
+                      <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
+                    </div>
+                    {#each wf.result.step_display as step, i}
+                      {@const cy = step.dag_cy ?? (i + 0.5) * pitch}
+                      <div
+                        class="res-row"
+                        style={`top: ${cy - pitch / 2}px; height: ${pitch}px`}
+                        title={step.process ?? step.transform}
+                        data-step={step.order}
+                        data-transform={step.transform}
+                        data-dag-cy={step.dag_cy ?? ''}
+                      >
+                        {#each OVERRIDE_FIELDS as f}
+                          {@const v = overrides[step.order]?.[f] ?? ''}
                           {#if f === 'duration_h' && v === UNLIMITED}
                             <!-- The box cannot show a number for this, and
                                  showing an empty one would read as the other
@@ -1034,29 +1070,34 @@
                               oninput={(e) => setOverride(step.order, f, e.currentTarget.value)}
                             />
                           {/if}
-                          {#if f === 'duration_h'}
-                            <button
-                              class="inf"
-                              class:on={v === UNLIMITED}
-                              aria-pressed={v === UNLIMITED}
-                              title={v === UNLIMITED
-                                ? 'back to a time limit'
-                                : 'run with no time limit at all'}
-                              aria-label={`no time limit for step ${step.order}`}
-                              onclick={() =>
-                                setOverride(step.order, f, v === UNLIMITED ? '' : UNLIMITED)}
-                            >∞</button>
-                          {/if}
-                        </div>
-                      {/each}
-                    </div>
-                  {/each}
-                </div>
-                <span class="small muted hint">
-                  left empty, a step gets what its transform declared
-                </span>
+                        {/each}
+                        <!-- a column of its own rather than a passenger in the
+                             time cell: the three headings then sit right over
+                             the three numbers, which are right-aligned -->
+                        <button
+                          class="inf"
+                          class:on={overrides[step.order]?.duration_h === UNLIMITED}
+                          aria-pressed={overrides[step.order]?.duration_h === UNLIMITED}
+                          title={overrides[step.order]?.duration_h === UNLIMITED
+                            ? 'back to a time limit'
+                            : 'run with no time limit at all'}
+                          aria-label={`no time limit for step ${step.order}`}
+                          onclick={() =>
+                            setOverride(
+                              step.order,
+                              'duration_h',
+                              overrides[step.order]?.duration_h === UNLIMITED ? '' : UNLIMITED,
+                            )}
+                        >∞</button>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
               </div>
-            {/if}
+              <span class="small muted hint">
+                left empty, a step gets what its transform declared
+              </span>
+            </div>
           </div>
 
           <p class="small muted">
@@ -1212,27 +1253,22 @@
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   .loading { padding: 18px; }
   .scroll { overflow-x: auto; }
-  /* the svg paints its own ground in either theme, and that ground is the same
-     colour as `--panel` in both -- so a diagram with nothing behind it had no
-     visible edge at all. `--panel-2` is a step lighter, giving the diagram's
-     bounds an edge the fill alone does not have to; a border makes the bounds
-     legible past its own edge too. No fold and no height cap here -- the card
-     grows with the plan; only a diagram wider than the card scrolls, and only
-     sideways. */
-  .dag-row { display: flex; align-items: flex-start; gap: 12px; margin-top: 8px; }
-  .dag-img-wrap {
-    flex: 0 0 auto;
-    overflow-x: auto;
-    overflow-y: visible;
-    background: var(--panel-2);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 8px;
-  }
+  /* The diagram sits on the card's own ground: it is drawn with no plate of its
+     own (`background=False` on the render route), and one painted here was
+     never any colour but this card's. The block it makes with the step rows is
+     narrower than the card, so it is centred as one thing -- and the scroller
+     around it is what keeps a plan wider than the card from widening the card
+     instead of scrolling. No fold and no height cap: this grows with the plan. */
+  .dag-scroll { overflow-x: auto; margin-top: 8px; }
+  .dag-box { width: max-content; margin-inline: auto; display: flex; flex-direction: column; gap: 4px; }
+  /* the image and the rows box, flex siblings with nothing between them: they
+     share a top by construction, which is the whole of the alignment */
+  .dag-body { display: flex; align-items: flex-start; gap: 10px; }
   /* natural pixel size, deliberately unscaled: `dag_cy` is in the SVG's own
-     pixel space, and a `top:` offset built from it only lines up with the
-     node it names when nothing here resizes the image */
-  .dag-img-wrap img { display: block; }
+     pixel space, and a `top:` offset built from it only lines up with the node
+     it names when nothing here resizes the image. Its `margin-top` is set
+     inline from the same constant the rows are offset by. */
+  .dag-body img.dag { display: block; }
   .link {
     background: none;
     border: none;
@@ -1246,34 +1282,60 @@
      than a single control and so cannot be a <label> */
   .field { display: flex; flex-direction: column; gap: 3px; }
   .hint { line-height: 1.3; }
-  /* the steps table beside the diagram: rows can't be independently
-     positioned inside an actual <table>, so each one is an absolutely
-     placed grid row instead, `top:` pinned to its transform's `dag_cy`. Both
-     the header and the rows share one column template so they still line up
-     like a table's columns did. */
-  .res-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  /* the steps beside the diagram: rows can't be independently positioned
+     inside an actual <table>, so each one is an absolutely placed grid row
+     instead, `top:` pinned to its transform's `dag_cy`. The header is the only
+     thing here in normal flow, which is deliberate -- it is what gives this box
+     its width, since absolutely placed rows contribute none. Make it absolute
+     and the box collapses and the centring goes with it. Both share one column
+     template so they line up like a table's columns did; there is no name
+     column, because the node level with the row is the name. */
   .res-head,
   .res-row {
     display: grid;
-    grid-template-columns: 2em 1fr 5.5em 5.5em 8em;
+    /* rem, not em: the header is 12px and a row is the body's 14px, so an
+       em-based track resolves to two different widths and the rows overflow
+       the box the header sized -- which is how the ∞ button ended up outside
+       its own row's outline. The last track is the ∞ button's own, and it is
+       fixed rather than `auto` for the same reason: the header's fourth cell is
+       empty, so an `auto` track is nothing there and a button's width here. */
+    grid-template-columns: 4.5rem 5.75rem 4.5rem 1.75rem;
     align-items: center;
     gap: 4px;
   }
-  .res-head { font-weight: normal; color: var(--muted); font-size: 12px; }
+  /* relative, not absolute: it still occupies its place in flow -- which is
+     what sizes the box -- and is only painted lower */
+  .res-head {
+    position: relative;
+    font-weight: normal;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 0 6px;
+    white-space: nowrap;
+    text-align: right;
+  }
   .res-body { position: relative; }
-  .res-row { position: absolute; left: 0; right: 0; height: 22px; }
-  .res-row .num { width: 100%; min-width: 0; text-align: right; }
-  .cell { display: flex; align-items: center; gap: 4px; }
-  .cell .num { flex: 1; }
+  /* the outline is what lets a value be followed back to the node it sits
+     level with; its height is the diagram's own row pitch, set inline */
+  .res-row {
+    position: absolute;
+    left: 0;
+    right: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0 6px;
+  }
+  /* trimmed to clear the row's outline: growing the row instead would break
+     the alignment, since its height is the diagram's pitch */
+  .res-row .num { width: 100%; min-width: 0; text-align: right; padding: 2px 6px; }
   .unlimited {
-    flex: 1;
     font-size: 11px;
     color: var(--accent);
     white-space: nowrap;
     text-align: right;
   }
   .inf {
-    flex: 0 0 auto;
     padding: 2px 6px;
     line-height: 1;
     font-size: 13px;

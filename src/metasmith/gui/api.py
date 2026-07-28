@@ -9,6 +9,7 @@ never in a route body.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -41,6 +42,8 @@ from .sshconfig import SshConfig, SshConfigError
 from .store import INPUT_LIBRARY_DIRNAME, Project, ProjectError, utcnow
 
 bp = Blueprint("api", __name__, url_prefix="/api")
+
+_LOG = logging.getLogger(__name__)
 
 # What a new agent's home is set to before the user touches it. `~` is the one
 # path spelling that means the same thing whether the agent runs here or on a
@@ -1044,8 +1047,13 @@ def get_workflow(name):
     out = _workflow_summary(wf)
     out["request"] = wf.request
     # backfill for results written before the summary existed, and for anything
-    # planned by the CLI directly into a workflow directory
-    if wf.ok and (not wf.result.get("step_display") or not wf.result.get("dag_geometry")):
+    # planned by the CLI directly into a workflow directory. The geometry is
+    # tested by its newest key rather than by its presence, since a result
+    # stored against an older shape of it would otherwise never be revisited.
+    if wf.ok and (
+        not wf.result.get("step_display")
+        or "top_cy" not in (wf.result.get("dag_geometry") or {})
+    ):
         display, dag_geometry = _step_display(wf.path)
         if display:
             wf = p.write_result(name, wf.result | {
@@ -1382,9 +1390,14 @@ def _step_display(bundle: Path) -> tuple[list[dict], dict | None]:
             step["dag_cy"] = by_order.get(step["order"])
         dag_geometry = {
             "width": geo.width, "height": geo.height, "row_pitch": geo.row_pitch,
+            # the first drawn row, so a caller putting a header beside the
+            # diagram can sit it level with the top node rather than above the
+            # whole thing. The plate's top margin is not otherwise derivable
+            # from `height` without also knowing how many rows there are.
+            "top_cy": min((n.cy for n in geo.nodes), default=None),
         }
     except Exception:
-        pass
+        _LOG.warning("no dag geometry for [%s]; step rows will not line up", bundle, exc_info=True)
 
     return out, dag_geometry
 

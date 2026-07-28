@@ -345,14 +345,22 @@ def test_the_triangle_is_equilateral_and_so_shorter_than_it_is_wide():
     assert abs(height / width - 0.866) < 0.01
 
 
-def test_the_circle_outline_is_double_weight_in_both_backends():
-    st = STYLES[NodeKind.DATA]
-    assert st.stroke_width == 3.0  # was 1.5, and read as no outline at all
+def test_only_the_solid_target_outline_is_double_weight():
+    # an intermediate is not louder than the step that made it, so the hollow
+    # circle carries the triangle's weight; the target is the one a reader is
+    # hunting for and keeps the heavier outline on top of its solid fill
+    step = STYLES[NodeKind.TRANSFORM]
+    data = STYLES[NodeKind.DATA]
+    target = STYLES[NodeKind.TARGET]
+    assert data.stroke_width == step.stroke_width == 1.5
+    assert target.stroke_width == 3.0
     r = _three_kinds()
-    assert f'stroke-width="{st.stroke_width}"' in r.to_svg()
+    svg = r.to_svg()
+    assert f'stroke-width="{data.stroke_width}"' in svg
+    assert f'stroke-width="{target.stroke_width}"' in svg
     dot = r.to_raster_dot()
-    assert "penwidth=3" in dot
-    assert f"penwidth={STYLES[NodeKind.TRANSFORM].stroke_width:g}" in dot
+    assert f"penwidth={target.stroke_width:g}" in dot
+    assert f"penwidth={step.stroke_width:g}" in dot
     # the pinned global that made every PNG outline the same weight
     assert "penwidth=1.2]" not in dot
 

@@ -50,11 +50,13 @@ STYLES: dict[NodeKind, Style] = {
         gv_style="filled", ansi="\033[1;36m",
         svg_shape="triangle_down", marker_scale=1.0, stroke_width=1.5,
     ),
+    # same weight as the triangle: an intermediate is not louder than the step
+    # that made it. Only the solid target keeps the heavier outline.
     NodeKind.DATA: Style(
         marker="○", ascii_marker="o",
         fill="#FFFFFF", stroke="#2B2B2B", rx=0,
         shape="circle", gv_style="filled", ansi="\033[0;37m",
-        svg_shape="circle", marker_scale=1.0, stroke_width=3.0,
+        svg_shape="circle", marker_scale=1.0, stroke_width=1.5,
     ),
     # marking the requested outputs on the nodes themselves is what lets the
     # drawing skip the synthetic sink that collects them, and that sink is the
