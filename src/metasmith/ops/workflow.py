@@ -1,9 +1,8 @@
 """Workflow planning + task introspection."""
 from __future__ import annotations
 
-from ..models.dag_draw import default_label, geometry
-from ..models.dag_layout import layout as _layout
-from ..models.dag_renderer import STYLES, LabelMode, NodeKind
+from ..models.dag_draw import default_label
+from ..models.dag_renderer import DagRenderer, LabelMode, NodeKind
 from ..agents import Spec
 from . import workspace as _ws
 
@@ -151,19 +150,19 @@ def dag_geometry(
     else, which decides only the marker the edge ends are trimmed for. `edges`
     are `{"from", "to"}`. Ids are the caller's and are echoed back untouched.
     """
-    kinds = {}
-    labels = {}
+    renderer = DagRenderer(label_mode=LabelMode(label_mode))
+    ids = set()
     for n in nodes:
         nid = str(n["id"])
-        kinds[nid] = NodeKind.TRANSFORM if n.get("kind") == "transform" else NodeKind.DATA
+        ids.add(nid)
+        kind = NodeKind.TRANSFORM if n.get("kind") == "transform" else NodeKind.DATA
         text = n.get("label")
-        if text: labels[nid] = default_label(str(text))
-    lay = _layout(kinds, [(str(e["from"]), str(e["to"])) for e in edges
-                          if str(e["from"]) in kinds and str(e["to"]) in kinds])
-    geo = geometry(
-        lay, STYLES, labels=labels, label_mode=LabelMode(label_mode),
-        font_size=font_size, max_label_chars=max_label_chars,
-    )
+        renderer.add_node(kind, nid, label=default_label(str(text)) if text else None)
+    for e in edges:
+        src, dst = str(e["from"]), str(e["to"])
+        if src in ids and dst in ids:
+            renderer.add_edge(src, dst)
+    geo = renderer.geometry(font_size=font_size, max_label_chars=max_label_chars)
     return {
         "width": geo.width, "height": geo.height,
         "font_size": geo.font_size, "marker_d": geo.marker_d,

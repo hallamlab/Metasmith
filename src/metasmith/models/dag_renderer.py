@@ -16,9 +16,10 @@ from pathlib import Path
 
 from .dag_colour import SCHEMES, Colouring, colour_layout
 from .dag_draw import (
-    Label, LabelMode, Plate, Style, default_label, dot_escape,
-    raster_dot, render_raster, render_svg, render_text,
+    DEFAULT_LABEL_CHARS, Geometry, Label, LabelMode, Plate, Style,
+    default_label, dot_escape, raster_dot, render_raster, render_svg, render_text,
 )
+from .dag_draw import geometry as _geometry
 from .dag_layout import Layout, layout
 
 
@@ -232,6 +233,23 @@ class DagRenderer:
             lay, self._theme.styles, labels=self.labels,
             unicode=unicode, color=color,
             colour=self.colouring(lay),
+        )
+
+    def geometry(
+        self,
+        lay: Layout | None = None,
+        *,
+        font_size: float = 13.0,
+        max_label_chars: int = DEFAULT_LABEL_CHARS,
+    ) -> Geometry:
+        """The placement `to_svg`/`to_raster_dot` draw from, in pixels — so a
+        caller that wants positions without ink (the panel, a step's row) reads
+        off the same construction rather than reassembling style/label inputs
+        itself."""
+        lay = lay or self.layout()
+        return _geometry(
+            lay, self._theme.styles, labels=self.labels, label_mode=self._label_mode,
+            font_size=font_size, max_label_chars=max_label_chars,
         )
 
     def to_svg(self) -> str:

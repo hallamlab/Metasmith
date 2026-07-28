@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import threading
 from fnmatch import fnmatch
@@ -18,7 +19,7 @@ from pathlib import Path
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..agents import Spec, Template
-from ..models.dag_renderer import THEMES
+from ..models.dag_renderer import THEMES, NodeKind
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
 from ..ops import data as op_data
@@ -1044,10 +1045,12 @@ def get_workflow(name):
     out["request"] = wf.request
     # backfill for results written before the summary existed, and for anything
     # planned by the CLI directly into a workflow directory
-    if wf.ok and not wf.result.get("step_display"):
-        display = _step_display(wf.path)
+    if wf.ok and (not wf.result.get("step_display") or not wf.result.get("dag_geometry")):
+        display, dag_geometry = _step_display(wf.path)
         if display:
-            wf = p.write_result(name, wf.result | {"step_display": display})
+            wf = p.write_result(name, wf.result | {
+                "step_display": display, "dag_geometry": dag_geometry,
+            })
     out["result"] = wf.result
     out["runs"] = [_run_summary(r) for r in p.list_runs(workflow=name, include_archived=True)]
     lib_path = p.input_library_path(name)
@@ -1269,7 +1272,7 @@ def generate_workflow(name):
                 assert staged.is_dir(), f"planner wrote no bundle at [{staged}]"
                 for item in staged.iterdir():
                     shutil.move(str(item), str(wf.path / item.name))
-                result["step_display"] = _step_display(wf.path)
+                result["step_display"], result["dag_geometry"] = _step_display(wf.path)
             if staging.exists():
                 shutil.rmtree(staging)
             result["stdlib_commit"] = commit
@@ -1322,18 +1325,22 @@ def _load_task(bundle: Path):
         return op_workspace.load_task(None, str(bundle))
 
 
-def _step_display(bundle: Path) -> list[dict]:
-    """A readable summary of the plan's steps.
+def _step_display(bundle: Path) -> tuple[list[dict], dict | None]:
+    """A readable summary of the plan's steps, plus where each one sits in the
+    diagram the GUI draws beside it.
 
     The packed form of a step is a wire format -- instance ids and a dependency
     map -- with nothing a person would want to read. The step objects themselves
     carry `uses` and `produces`, so the summary is built once at generate time
-    and stored beside the result.
+    and stored beside the result. The vertical position comes from the same
+    `DagRenderer` that draws the plan's SVG -- `BuildDAG()` is constructed once
+    and its `.geometry()` is the one place a layout becomes pixels, so the row a
+    step's controls sit at is guaranteed to agree with the marker in the image.
     """
     try:
         task = _load_task(bundle)
     except Exception:
-        return []
+        return [], None
     out = []
     for step in task.plan.steps:
         # What the transform asks for, so an empty override box reads as "as
@@ -1359,9 +1366,27 @@ def _step_display(bundle: Path) -> list[dict]:
             "produces": sorted({
                 inst.dtype_name for group in step.produces for inst in group
             }),
+            "dag_cy": None,
         })
     out.sort(key=lambda s: s["order"])
-    return out
+
+    dag_geometry = None
+    try:
+        geo = task.plan.BuildDAG().geometry()
+        by_order = {
+            int(m.group(1)): n.cy
+            for n in geo.nodes
+            if n.kind == NodeKind.TRANSFORM and (m := re.match(r"^(\d+) ", n.name))
+        }
+        for step in out:
+            step["dag_cy"] = by_order.get(step["order"])
+        dag_geometry = {
+            "width": geo.width, "height": geo.height, "row_pitch": geo.row_pitch,
+        }
+    except Exception:
+        pass
+
+    return out, dag_geometry
 
 
 @bp.get("/workflows/<name>/dag")

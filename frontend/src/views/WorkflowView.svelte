@@ -770,6 +770,11 @@
 
   const OVERRIDE_FIELDS = ['cpus', 'memory_gb', 'duration_h']
 
+  // The pitch a step's row falls back to when the backend has no `dag_cy` for
+  // it yet (an old cached result, or a plan whose geometry failed) -- stacked
+  // in order rather than left to collide at the top.
+  const ROW_H = 26
+
   // What the ∞ button puts in the time box. An empty box already means
   // something -- "whatever the transform declared" -- so "no limit at all"
   // needs a value of its own rather than the absence of one. The server knows
@@ -967,38 +972,110 @@
             </div>
           </div>
 
-          <details class="dag" open>
-            <summary class="small muted">diagram</summary>
-            <div class="dag-scroll">
+          <!-- The DAG is the plan, stated once; the steps beside it are the
+               only other thing that used to restate it as `# / step / takes /
+               produces`, so their rows are pinned to the same vertical
+               position as the node they describe rather than a copy of the
+               drawing in words. No fold, no height cap: this card grows with
+               the plan and only the diagram itself scrolls sideways if it's
+               wider than the card. -->
+          <div class="dag-row">
+            <div class="dag-img-wrap">
               <!-- the theme and the solve time are both in the query string,
                    not a header: the browser caches by url, so switching
                    themes or solving again would otherwise show the rendering
                    it already had for that url. `generated_at` is the newest
                    thing that changes on every solve, including a re-solve
-                   onto the same plan. -->
+                   onto the same plan. Unscaled -- `dag_cy` values only line up
+                   with this image's pixels when nothing resizes it. -->
               <img
                 src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}&v=${encodeURIComponent(wf.generated_at)}`}
                 alt="workflow diagram"
               />
             </div>
-          </details>
 
-          <!-- The plan is stated once, above. The table that used to restate it
-               as `# / step / takes / produces` said nothing the drawing does
-               not. `step_display` is still on the payload -- the resources
-               table below reads `declared_resources` off the same array. -->
+            {#if wf.result?.step_display?.length}
+              {@const dagHeight =
+                wf.result.dag_geometry?.height ?? wf.result.step_display.length * ROW_H}
+              <div class="res-col">
+                <span class="small muted">resources</span>
+                <div class="res-head">
+                  <span></span><span>step</span><span>cpus</span><span>memory (GB)</span><span>time (h)</span>
+                </div>
+                <!-- Keyed by position, which is what makes a selector address
+                     one step. Empty is "as the transform declared", which is
+                     what the greyed number in each box is. A step with no
+                     `dag_cy` (geometry failed, or an old cached result) falls
+                     back to stacking in order rather than colliding at the
+                     top. -->
+                <div class="res-body" style={`height: ${dagHeight}px`}>
+                  {#each wf.result.step_display as step, i}
+                    {@const top = step.dag_cy ?? (i + 0.5) * ROW_H}
+                    <div class="res-row" style={`top: ${top - ROW_H / 2}px`}>
+                      <span class="small muted">{step.order}</span>
+                      <span class="mono truncate" title={step.process ?? step.transform}>
+                        {step.transform}
+                      </span>
+                      {#each OVERRIDE_FIELDS as f}
+                        {@const v = overrides[step.order]?.[f] ?? ''}
+                        <div class="cell">
+                          {#if f === 'duration_h' && v === UNLIMITED}
+                            <!-- The box cannot show a number for this, and
+                                 showing an empty one would read as the other
+                                 meaning, so it says which it is. -->
+                            <span class="unlimited mono" title="no time limit">∞ no limit</span>
+                          {:else}
+                            <input
+                              class="num"
+                              inputmode="decimal"
+                              placeholder={step.declared_resources?.[f] ?? '—'}
+                              aria-label={`${f} for step ${step.order}`}
+                              value={v}
+                              oninput={(e) => setOverride(step.order, f, e.currentTarget.value)}
+                            />
+                          {/if}
+                          {#if f === 'duration_h'}
+                            <button
+                              class="inf"
+                              class:on={v === UNLIMITED}
+                              aria-pressed={v === UNLIMITED}
+                              title={v === UNLIMITED
+                                ? 'back to a time limit'
+                                : 'run with no time limit at all'}
+                              aria-label={`no time limit for step ${step.order}`}
+                              onclick={() =>
+                                setOverride(step.order, f, v === UNLIMITED ? '' : UNLIMITED)}
+                            >∞</button>
+                          {/if}
+                        </div>
+                      {/each}
+                    </div>
+                  {/each}
+                </div>
+                <span class="small muted hint">
+                  left empty, a step gets what its transform declared
+                </span>
+              </div>
+            {/if}
+          </div>
+
           <p class="small muted">
             solved <Ago iso={wf.generated_at} />{#if wf.result.stdlib_commit}
               · library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
           </p>
-        {:else}
-          <HintsPanel result={wf.result} onadd={useType} />
-        {/if}
-      </div>
 
-      {#if wf.success}
-        <div class="card col" style="gap:10px">
-          <h3>run it</h3>
+          <!-- Pre-filled from the agent, so what will be sent is on the screen
+               rather than implied. Editing a row here changes this run only;
+               the agent keeps what it declares. -->
+          <div class="field">
+            <span class="small muted">params</span>
+            <ParamRows bind:rows={runParams} inherited={chosenAgent?.default_params ?? {}} />
+            <span class="small muted hint">
+              this run only — the agent's defaults are already here, and a key
+              typed over one of them wins
+            </span>
+          </div>
+
           <!-- An agent that is still being filled in is listed and disabled,
                not hidden: "the one I made is missing" is a worse thing to work
                out than "the one I made says it has no host yet". The route
@@ -1034,81 +1111,6 @@
               </select>
             </Field>
           {/if}
-          <!-- Pre-filled from the agent, so what will be sent is on the screen
-               rather than implied. Editing a row here changes this run only;
-               the agent keeps what it declares. -->
-          <div class="field">
-            <span class="small muted">params</span>
-            <ParamRows bind:rows={runParams} inherited={chosenAgent?.default_params ?? {}} />
-            <span class="small muted hint">
-              this run only — the agent's defaults are already here, and a key
-              typed over one of them wins
-            </span>
-          </div>
-
-          {#if wf.result?.step_display?.length}
-            <!-- Keyed by position, which is what makes a selector address one
-                 step. Empty is "as the transform declared", which is what the
-                 greyed number in each box is. -->
-            <div class="field">
-              <span class="small muted">resources</span>
-              <table class="small res">
-                <thead>
-                  <tr>
-                    <th></th><th>step</th><th>cpus</th><th>memory (GB)</th><th>time (h)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each wf.result.step_display as step}
-                    <tr>
-                      <td class="muted">{step.order}</td>
-                      <td class="mono truncate" title={step.process ?? step.transform}>
-                        {step.transform}
-                      </td>
-                      {#each OVERRIDE_FIELDS as f}
-                        {@const v = overrides[step.order]?.[f] ?? ''}
-                        <td>
-                          <div class="cell">
-                            {#if f === 'duration_h' && v === UNLIMITED}
-                              <!-- The box cannot show a number for this, and
-                                   showing an empty one would read as the other
-                                   meaning, so it says which it is. -->
-                              <span class="unlimited mono" title="no time limit">∞ no limit</span>
-                            {:else}
-                              <input
-                                class="num"
-                                inputmode="decimal"
-                                placeholder={step.declared_resources?.[f] ?? '—'}
-                                aria-label={`${f} for step ${step.order}`}
-                                value={v}
-                                oninput={(e) => setOverride(step.order, f, e.currentTarget.value)}
-                              />
-                            {/if}
-                            {#if f === 'duration_h'}
-                              <button
-                                class="inf"
-                                class:on={v === UNLIMITED}
-                                aria-pressed={v === UNLIMITED}
-                                title={v === UNLIMITED
-                                  ? 'back to a time limit'
-                                  : 'run with no time limit at all'}
-                                aria-label={`no time limit for step ${step.order}`}
-                                onclick={() =>
-                                  setOverride(step.order, f, v === UNLIMITED ? '' : UNLIMITED)}
-                              >∞</button>
-                            {/if}
-                          </div>
-                        </td>
-                      {/each}
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-              <span class="small muted hint">
-                left empty, a step gets what its transform declared
-              </span>
-            </div>
-          {/if}
 
           <div>
             <button class="primary" onclick={launch} disabled={!agentChoice || launching}>
@@ -1119,8 +1121,10 @@
             The same workflow can run on any agent — staging copies it there
             first, then launches and detaches.
           </p>
-        </div>
-      {/if}
+        {:else}
+          <HintsPanel result={wf.result} onadd={useType} />
+        {/if}
+      </div>
 
       {#if wf.runs?.length}
         <div class="card col" style="gap:8px">
@@ -1212,21 +1216,23 @@
      colour as `--panel` in both -- so a diagram with nothing behind it had no
      visible edge at all. `--panel-2` is a step lighter, giving the diagram's
      bounds an edge the fill alone does not have to; a border makes the bounds
-     legible past the scrolled edge too. A `details` now, so a long diagram can
-     be folded away rather than pushing the rest of the result -- run history,
-     resource overrides -- down the page. */
-  .dag { border-radius: var(--radius); padding: 8px; }
-  .dag summary { cursor: pointer; }
-  .dag-scroll {
-    margin-top: 8px;
-    max-height: 60vh;
-    overflow: auto;
+     legible past its own edge too. No fold and no height cap here -- the card
+     grows with the plan; only a diagram wider than the card scrolls, and only
+     sideways. */
+  .dag-row { display: flex; align-items: flex-start; gap: 12px; margin-top: 8px; }
+  .dag-img-wrap {
+    flex: 0 0 auto;
+    overflow-x: auto;
+    overflow-y: visible;
     background: var(--panel-2);
     border: 1px solid var(--line);
     border-radius: var(--radius);
     padding: 8px;
   }
-  .dag img { max-width: 100%; }
+  /* natural pixel size, deliberately unscaled: `dag_cy` is in the SVG's own
+     pixel space, and a `top:` offset built from it only lines up with the
+     node it names when nothing here resizes the image */
+  .dag-img-wrap img { display: block; }
   .link {
     background: none;
     border: none;
@@ -1240,16 +1246,23 @@
      than a single control and so cannot be a <label> */
   .field { display: flex; flex-direction: column; gap: 3px; }
   .hint { line-height: 1.3; }
-  /* fixed layout so the step name truncates instead of pushing the number
-     boxes off the card -- a table cell will not shrink on its own */
-  .res { width: 100%; table-layout: fixed; }
-  .res th { font-weight: normal; color: var(--muted); text-align: left; }
-  .res th:first-child { width: 2em; }
-  .res th:nth-child(n + 3) { width: 5.5em; }
-  /* the time column carries the ∞ button beside its box */
-  .res th:last-child { width: 8em; }
-  .res td { padding: 1px 4px 1px 0; }
-  .res .num { width: 100%; min-width: 0; text-align: right; }
+  /* the steps table beside the diagram: rows can't be independently
+     positioned inside an actual <table>, so each one is an absolutely
+     placed grid row instead, `top:` pinned to its transform's `dag_cy`. Both
+     the header and the rows share one column template so they still line up
+     like a table's columns did. */
+  .res-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .res-head,
+  .res-row {
+    display: grid;
+    grid-template-columns: 2em 1fr 5.5em 5.5em 8em;
+    align-items: center;
+    gap: 4px;
+  }
+  .res-head { font-weight: normal; color: var(--muted); font-size: 12px; }
+  .res-body { position: relative; }
+  .res-row { position: absolute; left: 0; right: 0; height: 22px; }
+  .res-row .num { width: 100%; min-width: 0; text-align: right; }
   .cell { display: flex; align-items: center; gap: 4px; }
   .cell .num { flex: 1; }
   .unlimited {
