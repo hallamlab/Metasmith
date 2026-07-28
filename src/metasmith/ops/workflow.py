@@ -1,118 +1,26 @@
 """Workflow planning + task introspection."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from ..models.dag_draw import default_label, geometry
 from ..models.dag_layout import layout as _layout
 from ..models.dag_renderer import STYLES, LabelMode, NodeKind
-from ..models.libraries import DataInstanceLibrary, DataInstanceLibraryView
-from ..models.solver import Transform, Dependency
-from ..models.workflow import WorkflowPlan, WorkflowTask
-from ..agents import TargetBuilder, TargetSpec
-from ._common import load_data_lib, load_transform_lib
+from ..agents import Spec
 from . import workspace as _ws
 
 
-def _add_targets(builder: TargetBuilder, target_types: list) -> list[TargetSpec]:
-    """Declare each target, wiring the lineage links between them.
+def plan_spec(spec: Spec, workspace: str | None = None) -> dict:
+    """Solve a spec, and report it the way an ops caller needs.
 
-    A target is either a bare type name or `{"type": ..., "parents": [i, ...]}`,
-    where each `i` indexes an *earlier* entry in this same list. That is what
-    keeps two targets of the same type distinct -- without it the second one is
-    a duplicate request and is refused.
+    Two things a notebook does not want and every veneer does: a failure
+    reported as a value with the planner's hints attached rather than as a
+    half-built task, and the bundle persisted under <workspace>/<task_key>/ so
+    that directory becomes a task reference the CLI can stage.
+
+    What the plan *means* -- what a sample type does, what a shared input is --
+    is documented once, on `Spec.Solve`.
     """
-    specs: list[TargetSpec] = []
-    for i, target in enumerate(target_types):
-        if isinstance(target, str):
-            name, parents = target, ()
-        else:
-            name = target.get("type")
-            assert name, f"target #{i + 1} has no type"
-            parents = tuple(target.get("parents") or ())
-        handles = []
-        for p in parents:
-            # Positions are stored 0-based and said 1-based, here as everywhere
-            # else a target is named to a person -- one sentence carrying both
-            # counts reads as an off-by-one in whichever half you trust less.
-            assert isinstance(p, int) and 0 <= p < len(specs), (
-                f"target #{i + 1} [{name}] names parent #{p + 1 if isinstance(p, int) else p}, "
-                f"which is not one of the {len(specs)} target(s) declared before it"
-            )
-            handles.append(specs[p])
-        specs.append(builder.Add(name, parents=handles or None))
-    return specs
-
-
-def plan_workflow(
-    data_library: str,
-    sample_type: str | None,
-    target_types: list[str | dict],
-    transform_libraries: list[str],
-    resource_libraries: list[str] | None = None,
-    workspace: str | None = None,
-    shared_input_paths: list[str] | None = None,
-) -> dict:
-    """Plan a workflow: chain of transforms from the given inputs to target_types.
-
-    `sample_type` splits the library into one run per item of that type. Left
-    unset, the library is planned as it stands -- one sample holding everything
-    in it -- which is the whole of what a plan needs; sampling is a way of
-    branching it, not a precondition for having one.
-
-    `shared_input_paths` names entries of the *input* library that every sample
-    should see -- a reference database sitting beside the per-sample files. A
-    sample mask is one index item's lineage, so anything outside it is invisible
-    to the plan though still staged; and making the database an ancestor of the
-    index instead would collapse every sample into one view. So it goes in
-    alongside the resource libraries, which is where a shared thing belongs.
-
-    Persists the resulting WorkflowTask under <workspace>/<task_key>/ on success.
-    """
-    data_lib = load_data_lib(data_library)
-    if sample_type:
-        samples = list(data_lib.AsSamples(sample_type))
-        assert samples, f"no samples of type [{sample_type}] found in [{data_library}]"
-    else:
-        samples = [DataInstanceLibraryView(data_lib)]
-
-    tr_libs = [load_transform_lib(p) for p in transform_libraries]
-    res_libs = [load_data_lib(p) for p in (resource_libraries or [])]
-
-    def _get_endpoint(dtype_name: str):
-        ns, _ = dtype_name.split("::")
-        for trlib in tr_libs:
-            if ns not in trlib.types:
-                continue
-            return trlib.GetType(dtype_name)
-        raise AssertionError(f"no transforms had the namespace [{ns}]")
-
-    targets = TargetBuilder()
-    _add_targets(targets, target_types)
-
-    target_model = Transform()
-    _spec2dep: dict[TargetSpec, Dependency] = {}
-    target_names: list[str] = []
-    for spec in targets.resolve():
-        e = _get_endpoint(spec.dtype_name)
-        d = target_model.AddRequirement(example=e, parents={_spec2dep[p] for p in spec.parents})
-        _spec2dep[spec] = d
-        target_names.append(spec.dtype_name)
-
-    res_views = [DataInstanceLibraryView(lib) for lib in res_libs]
-    # without a sample type the single view already holds everything, and adding
-    # the same entries a second time offers the solver two of each
-    if shared_input_paths and sample_type:
-        shared = {Path(p) for p in shared_input_paths}
-        missing = sorted(str(p) for p in shared - set(data_lib.manifest))
-        assert not missing, f"shared inputs not in [{data_library}]: {', '.join(missing)}"
-        res_views.append(DataInstanceLibraryView(data_lib, mask=shared))
-    plan = WorkflowPlan.Generate(
-        given=[[sample] + res_views for sample in samples],
-        transforms=tr_libs,
-        target_names=target_names,
-        target_model=target_model,
-    )
+    task = spec.Solve()
+    plan = task.plan
 
     if not plan.steps or plan.dropped_targets:
         return {
@@ -133,12 +41,6 @@ def plan_workflow(
             ],
         }
 
-    task = WorkflowTask(
-        ok=len(plan.dropped_targets) == 0,
-        plan=plan,
-        data_libraries=[data_lib] + res_libs,
-        transform_libraries=tr_libs,
-    )
     task_key = _ws.save_task(workspace, task)
     return {
         "success": True,
@@ -147,6 +49,32 @@ def plan_workflow(
         "targets": [t.Pack() for t in plan.targets],
         "step_count": len(plan.steps),
     }
+
+
+def plan_workflow(
+    data_library: str,
+    sample_type: str | None,
+    target_types: list[str | dict],
+    transform_libraries: list[str],
+    resource_libraries: list[str] | None = None,
+    workspace: str | None = None,
+    shared_input_paths: list[str] | None = None,
+) -> dict:
+    """`plan_spec` for a caller holding loose arguments rather than a spec.
+
+    The CLI's door, and the shape every existing caller was written against.
+    """
+    return plan_spec(
+        Spec(
+            input_library=data_library,
+            target_types=list(target_types),
+            transform_libraries=list(transform_libraries),
+            resource_libraries=list(resource_libraries or []),
+            sample_type=sample_type,
+            shared_input_paths=list(shared_input_paths or []),
+        ),
+        workspace=workspace,
+    )
 
 
 def get_plan(task_key: str, workspace: str | None = None) -> dict:

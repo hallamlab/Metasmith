@@ -17,6 +17,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
+from ..agents import Spec
 from ..models.dag_renderer import THEMES
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
@@ -1065,10 +1066,12 @@ def generate_workflow(name):
     p = _project()
     wf = p.read_workflow(name)
     b = _body()
+    # A workflow record is a spec plus store bookkeeping, so what a generate may
+    # change is exactly the spec's own fields -- named there rather than listed
+    # again here, since a field added to one and not the other is silently
+    # ignored on the way in.
     request_body = wf.request | {
-        k: v for k, v in b.items()
-        if k in {"sample_type", "target_types", "transform_libraries",
-                 "resource_libraries", "shared_input_paths"}
+        k: v for k, v in b.items() if k in set(Spec.FIELDS)
     }
     wf = p.write_request(name, request_body)
 
@@ -1108,16 +1111,17 @@ def generate_workflow(name):
             staging = wf.path / ".staging"
             if staging.exists():
                 shutil.rmtree(staging)
+            # The record IS the spec, give or take the store's own bookkeeping
+            # and the library defaults discovered above.
+            spec = Spec.Unpack(
+                wf.request | {
+                    "transform_libraries": list(transforms),
+                    "resource_libraries": list(resources),
+                },
+                input_library=lib_path,
+            )
             with _plan_lock:
-                result = op_workflow.plan_workflow(
-                    data_library=lib_path,
-                    sample_type=sample_type,
-                    target_types=list(targets),
-                    transform_libraries=list(transforms),
-                    resource_libraries=list(resources) or None,
-                    workspace=str(staging),
-                    shared_input_paths=list(shared) if shared else None,
-                )
+                result = op_workflow.plan_spec(spec, workspace=str(staging))
             if result.get("success"):
                 # promote the bundle to the workflow directory, so the readable
                 # name is the address the CLI can stage

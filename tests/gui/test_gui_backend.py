@@ -1165,10 +1165,9 @@ class TestWorkflowGenerateMore:
         index 1 reads as an off-by-one in whichever half you trust less.
         """
         from metasmith.agents import TargetBuilder
-        from metasmith.ops.workflow import _add_targets
 
         with pytest.raises(AssertionError, match=r"target #1 \[mock::bam\] names parent #2"):
-            _add_targets(TargetBuilder(), [{"type": "mock::bam", "parents": [1]}])
+            TargetBuilder().AddAll([{"type": "mock::bam", "parents": [1]}])
 
     def test_generate_requires_a_target(self, client):
         r = client.post("/api/workflows", json={})

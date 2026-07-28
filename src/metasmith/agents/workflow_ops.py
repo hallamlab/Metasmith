@@ -35,6 +35,7 @@ from ..coms.terminals import IDLE_TIMEOUT, PROBE_TIMEOUT
 from .gpu import _plan_gpu_requests, _read_gpu_manifest, _render_gpu_config
 from .portability import _check_env_portability, _read_env_manifest
 from .shell import AgentShell
+from .spec import Spec
 from .targets import ResourceOverrides, TargetBuilder, TargetSpec
 
 
@@ -62,55 +63,19 @@ class _WorkflowOps:
         resources: Iterable[DataInstanceLibraryView|DataInstanceLibrary],
         transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
         targets: TargetBuilder | list[str],
-        max_iter: int=1024, max_refine: int=256, seed: int=42,
+        max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
-        if isinstance(targets, list):
-            tb = TargetBuilder()
-            for t in targets:
-                tb.Add(t)
-            targets = tb
-        assert len(targets)>0, "[targets] can not be empty"
-        
-        def _get_endpoint(dtype_name: str):
-            ns, _ = dtype_name.split("::")
-            for trlib in transforms:
-                if ns not in trlib.types: continue
-                e = trlib.GetType(dtype_name)
-                N = 3
-                lpath = trlib.location
-                if len(lpath.parts)>N:
-                    loc = "..."+"/".join(lpath.parts[-3:])
-                else:
-                    loc = f"{lpath}"
-                Log.Info(f"[{dtype_name}] resolved by [{loc}]")
-                return e
-            assert False, f"no transforms had the namespace [{ns}]"
+        """Solve, from libraries already in hand.
 
-        target_model = Transform()
-        _spec2dep: dict[TargetSpec, Dependency] = {}
-        target_names: list[str] = []
-        for spec in targets.resolve():
-            e = _get_endpoint(spec.dtype_name)
-            d = target_model.AddRequirement(example=e, parents={_spec2dep[p] for p in spec.parents})
-            _spec2dep[spec] = d
-            target_names.append(spec.dtype_name)
-
-        res_views = [lib if isinstance(lib, DataInstanceLibraryView) else DataInstanceLibraryView(lib) for lib in resources]
-        _samples = [sample if isinstance(sample, DataInstanceLibraryView) else DataInstanceLibraryView(sample) for sample in samples]
-        gen_result = WorkflowPlan.Generate(
-            given=[
-                [sample]+res_views
-                for sample in _samples
-            ], 
-            transforms=transforms,
-            target_names=target_names,
-            target_model=target_model,
-            max_iter=max_iter, max_refine=max_refine, seed=seed
+        A method on `Agent` because that is how every notebook spells it, but it
+        reads nothing off the agent -- planning happens here, and only the
+        result is ever sent anywhere. The body is `Spec.SolveViews`, which the
+        web GUI and the CLI reach through `Spec.Solve`.
+        """
+        return Spec.SolveViews(
+            samples=samples, resources=resources, transforms=transforms,
+            targets=targets, max_iter=max_iter, max_refine=max_refine, seed=seed,
         )
-        sample_libs = {v._original for v in _samples}
-        orig_resources = [lib if isinstance(lib, DataInstanceLibrary) else lib._original for lib in resources]
-        _ok = bool(gen_result.steps) and len(gen_result.dropped_targets) == 0
-        return WorkflowTask(ok=_ok, plan=gen_result, data_libraries=list(sample_libs)+orig_resources, transform_libraries=transforms)
 
     def _get_mock_container(self, task: WorkflowTask):
         binds = task.GetCommonInputFolders(method="external")

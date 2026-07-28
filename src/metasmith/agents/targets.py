@@ -34,6 +34,40 @@ class TargetBuilder:
         self._items.append(spec)
         return spec
 
+    def AddAll(self, target_types: Iterable[str|dict]) -> list[TargetSpec]:
+        """Declare a whole list at once, wiring the lineage links between them.
+
+        The declarative form a stored spec is written in: an entry is either a
+        bare type name or `{"type": ..., "parents": [i, ...]}`, where each `i`
+        indexes an *earlier* entry in this same list. Forward references are
+        refused rather than resolved in a second pass, because a target that
+        names one has been written in an order its author did not intend.
+
+        That positional form is why this is here and not left to the caller:
+        `Add` speaks in handles, which serialize to nothing.
+        """
+        specs: list[TargetSpec] = []
+        for i, target in enumerate(target_types):
+            if isinstance(target, str):
+                name, parents = target, ()
+            else:
+                name = target.get("type")
+                assert name, f"target #{i + 1} has no type"
+                parents = tuple(target.get("parents") or ())
+            handles = []
+            for p in parents:
+                # Positions are stored 0-based and said 1-based, here as
+                # everywhere else a target is named to a person -- one sentence
+                # carrying both counts reads as an off-by-one in whichever half
+                # you trust less.
+                assert isinstance(p, int) and 0 <= p < len(specs), (
+                    f"target #{i + 1} [{name}] names parent #{p + 1 if isinstance(p, int) else p}, "
+                    f"which is not one of the {len(specs)} target(s) declared before it"
+                )
+                handles.append(specs[p])
+            specs.append(self.Add(name, parents=handles or None))
+        return specs
+
     def resolve(self) -> list[TargetSpec]:
         # Insertion order is causal: a parent must have been Add'd before its child,
         # since the child receives the parent's TargetSpec handle.
