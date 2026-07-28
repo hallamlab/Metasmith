@@ -30,8 +30,9 @@ from .dag_colour import Colouring
 from .dag_layout import Layout
 
 __all__ = [
-    "Style", "Label", "LabelMode", "default_label", "dot_escape", "marker_size",
-    "tint", "render_text", "render_svg", "raster_dot", "render_raster",
+    "Style", "Plate", "Label", "LabelMode", "default_label", "dot_escape",
+    "marker_size", "tint", "render_text", "render_svg", "raster_dot",
+    "render_raster", "geometry", "Geometry", "NodeGeometry", "EdgeGeometry",
 ]
 
 _NO_COLOUR = Colouring()
@@ -70,6 +71,29 @@ class Style:
     svg_shape: str = "circle"  # "circle" | "square" | "triangle_down"
     marker_scale: float = 1.0  # *width*, in units of the grid's marker diameter
     stroke_width: float = 1.6
+    # is this marker drawn *filled*? Which is a different question from its
+    # shape, and the two were one thing while the only solid marker was also
+    # the only square. It decides where a colour scheme's hue lands: on the
+    # fill of a solid marker, on the outline of a hollow one.
+    solid: bool = False
+
+
+@dataclass(frozen=True)
+class Plate:
+    """The surface a drawing sits on — the two colours this module invents.
+
+    Every other colour a backend paints arrives on a `Style` or a `Colouring`;
+    these two had nowhere to come from and were literals. The defaults are the
+    light plate, so a caller that passes nothing gets the drawing this module
+    has always made. A plate is deliberately kind-agnostic: `dag_draw` does not
+    know what a node kind means, which is why the per-kind half of a theme
+    lives beside `STYLES` in `dag_renderer` instead.
+    """
+    background: str = "#FFFFFF"
+    edge: str = "#666666"
+
+
+_DEFAULT_PLATE = Plate()
 
 
 @dataclass(frozen=True)
@@ -599,6 +623,92 @@ def _flatten(
     return out
 
 
+@dataclass(frozen=True)
+class NodeGeometry:
+    """One node's placement, in pixels, with the text as it will be drawn."""
+    name: str
+    kind: Any
+    row: int
+    lane: int
+    cx: float
+    cy: float
+    label_x: float
+    marker_w: float
+    marker_h: float
+    namespace: str  # the half-size line, already clipped
+    label: str  # the name line, already clipped
+    full: str  # untruncated, for a tooltip
+    truncated: bool
+
+
+@dataclass(frozen=True)
+class EdgeGeometry:
+    """One edge as an SVG path, already routed, jogged and corner-rounded."""
+    src: str
+    dst: str
+    back: bool
+    d: str
+
+
+@dataclass(frozen=True)
+class Geometry:
+    """Everything a backend needs to draw a `Layout`, and nothing about colour.
+
+    Extracted from `render_svg` so a second consumer can draw the same placement
+    with its own materials — the GUI's info panel replaces markers and text with
+    clickable buttons over the same edge layer. `render_svg` is written in terms
+    of this, which is what stops the two from drifting.
+    """
+    width: float
+    height: float
+    font_size: float
+    marker_d: float
+    row_pitch: float
+    lane_pitch: float
+    anchor: str  # "start" or "end" — which end of the label `label_x` pins
+    nodes: tuple[NodeGeometry, ...]
+    edges: tuple[EdgeGeometry, ...]
+
+
+def geometry(
+    lay: Layout,
+    style: Mapping[Any, Style] | None = None,
+    *,
+    labels: Mapping[str, Label] | None = None,
+    label_mode: LabelMode = LabelMode.COLUMN,
+    max_label_chars: int = DEFAULT_LABEL_CHARS,
+    font_size: float = 13.0,
+) -> Geometry:
+    style = style or {}
+    g, drawn = _grid(
+        lay, font_size=font_size, labels=labels,
+        mode=label_mode, max_chars=max_label_chars,
+    )
+    nodes = []
+    for node in lay.nodes:
+        st = style.get(node.kind, _DEFAULT_STYLE)
+        d = drawn[node.name]
+        mw, mh = marker_size(st, g.marker_d)
+        nodes.append(NodeGeometry(
+            name=node.name, kind=node.kind, row=node.row, lane=node.lane,
+            cx=g.x(node.lane), cy=g.y(node.row), label_x=g.label_x[node.lane],
+            marker_w=mw, marker_h=mh,
+            namespace=d.namespace, label=d.name, full=d.full, truncated=d.truncated,
+        ))
+    edges = [
+        EdgeGeometry(
+            src=e.src, dst=e.dst, back=e.back,
+            d="" if e.back else _svg_path(*_pixel_path(lay, e, g, style)),
+        )
+        for e in lay.edges
+    ]
+    return Geometry(
+        width=g.width, height=g.height, font_size=g.font_size,
+        marker_d=g.marker_d, row_pitch=g.row_pitch, lane_pitch=g.lane_pitch,
+        anchor=g.anchor, nodes=tuple(nodes), edges=tuple(edges),
+    )
+
+
 def render_svg(
     lay: Layout,
     style: Mapping[Any, Style] | None = None,
@@ -609,49 +719,49 @@ def render_svg(
     font: str = "Arial",
     font_size: float = 13.0,
     colour: Colouring | None = None,
+    plate: Plate | None = None,
 ) -> str:
     style = style or {}
     colour = colour or _NO_COLOUR
-    g, drawn = _grid(
-        lay, font_size=font_size, labels=labels,
-        mode=label_mode, max_chars=max_label_chars,
+    plate = plate or _DEFAULT_PLATE
+    g = geometry(
+        lay, style, labels=labels, label_mode=label_mode,
+        max_label_chars=max_label_chars, font_size=font_size,
     )
     parts = [
         '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
         f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
         f' width="{g.width:.0f}" height="{g.height:.0f}"'
         f' viewBox="0 0 {g.width:.0f} {g.height:.0f}">',
-        f'<rect width="{g.width:.0f}" height="{g.height:.0f}" fill="#FFFFFF"/>',
+        f'<rect width="{g.width:.0f}" height="{g.height:.0f}" fill="{plate.background}"/>',
         # no arrowheads: every edge runs down the page, so a head at the end of
         # each of a hundred of them says only what the geometry already does
-        '<g fill="none" stroke="#666666" stroke-width="1.4"'
+        f'<g fill="none" stroke="{plate.edge}" stroke-width="1.4"'
         ' stroke-linejoin="round" stroke-linecap="round">',
     ]
-    for e in lay.edges:
+    for e in g.edges:
         if e.back:
             continue
         hue = colour.edges.get((e.src, e.dst))
         stroke = f' stroke="{hue}"' if hue else ""
-        parts.append(f'<path d="{_svg_path(*_pixel_path(lay, e, g, style))}"{stroke}/>')
+        parts.append(f'<path d="{e.d}"{stroke}/>')
     parts.append("</g>")
 
-    for node in lay.nodes:
-        st = style.get(node.kind, _DEFAULT_STYLE)
-        d = drawn[node.name]
-        cx, cy = g.x(node.lane), g.y(node.row)
-        lx = g.label_x[node.lane]
-        parts.append(f'<g><title>{escape(d.full)}</title>')
-        parts.append(_svg_marker(st, cx, cy, g.marker_d, colour.nodes.get(node.name)))
-        if d.namespace:
+    for n in g.nodes:
+        st = style.get(n.kind, _DEFAULT_STYLE)
+        cx, cy, lx = n.cx, n.cy, n.label_x
+        parts.append(f'<g><title>{escape(n.full)}</title>')
+        parts.append(_svg_marker(st, cx, cy, g.marker_d, colour.nodes.get(n.name)))
+        if n.namespace:
             parts.append(
                 f'<text x="{lx:.1f}" y="{cy - 0.42 * font_size:.1f}"'
                 f' font-family="{escape(font)}" font-size="{font_size / 2:.1f}"'
-                f' fill="{st.muted}" text-anchor="{g.anchor}">{escape(d.namespace)}</text>'
+                f' fill="{st.muted}" text-anchor="{g.anchor}">{escape(n.namespace)}</text>'
             )
         parts.append(
             f'<text x="{lx:.1f}" y="{cy + 0.36 * font_size:.1f}"'
             f' font-family="{escape(font)}" font-size="{font_size:.0f}" fill="{st.text}"'
-            f' text-anchor="{g.anchor}">{escape(d.name)}</text></g>'
+            f' text-anchor="{g.anchor}">{escape(n.label)}</text></g>'
         )
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
@@ -675,14 +785,14 @@ def tint(st: Style, hue: str | None) -> tuple[str, str]:
     """A marker's (fill, stroke) once a colour scheme has had its say.
 
     For a hollow marker the hue goes on the outline, since the fill has
-    nothing of its own to say. The target square is the one shape drawn
-    solid — there the hue goes on the fill instead, and the outline stays
-    the style's own, so a requested output still reads "solid" rather than
-    "outlined" once colour is on.
+    nothing of its own to say. The target is the one marker drawn solid —
+    there the hue goes on the fill instead, and the outline stays the style's
+    own, so a requested output still reads "solid" rather than "outlined"
+    once colour is on.
     """
     if not hue:
         return st.fill, st.stroke
-    if st.svg_shape == "square":
+    if st.solid:
         return hue, st.stroke
     return st.fill, hue
 
@@ -726,6 +836,7 @@ def raster_dot(
     font: str = "Arial",
     font_size: float = 13.0,
     colour: Colouring | None = None,
+    plate: Plate | None = None,
 ) -> str:
     """DOT with every node pinned by `pos`, for `neato -n2`.
 
@@ -743,15 +854,19 @@ def raster_dot(
     """
     style = style or {}
     colour = colour or _NO_COLOUR
+    plate = plate or _DEFAULT_PLATE
     g, drawn = _grid(
         lay, font_size=font_size, labels=labels,
         mode=label_mode, max_chars=max_label_chars,
     )
     lines = [
         "digraph G {",
-        f'graph [fontname="{font}", outputorder="edgesfirst"];',
+        # bgcolor is pinned rather than left to graphviz: unset, a PNG's ground
+        # is whatever the local build defaults to, which is the one way a
+        # raster preview can disagree with the SVG about what it is drawn on
+        f'graph [fontname="{font}", outputorder="edgesfirst", bgcolor="{plate.background}"];',
         f'node  [fontname="{font}", fontsize={font_size:.0f}, fixedsize=true];',
-        f'edge  [fontname="{font}", color="#666666", dir="none"];',
+        f'edge  [fontname="{font}", color="{plate.edge}", dir="none"];',
     ]
     prefix = _label_prefix(lay)
     for node in lay.nodes:

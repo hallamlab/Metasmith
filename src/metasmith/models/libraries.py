@@ -12,6 +12,7 @@ import math
 import re
 import shlex
 import tempfile
+import threading
 import time
 from datetime import timedelta
 import json
@@ -517,9 +518,21 @@ class DataInstanceLibrary:
             if not _accept(name): continue
             ancestors = _get_all_ancestors(path)
             cache_key = frozenset(ancestors)
-            if cache_key not in _desc_cache:
-                _desc_cache[cache_key] = _get_all_descendants(ancestors | {path})
-            siblings = _desc_cache[cache_key]
+            if ancestors:
+                # Everything under the shared ancestors, which is the same set
+                # for every index item beneath them -- that is what makes this
+                # topology collapse to one view, and what makes the cache safe.
+                # `path`'s own subtree is inside it already.
+                if cache_key not in _desc_cache:
+                    _desc_cache[cache_key] = _get_all_descendants(ancestors)
+                siblings = _desc_cache[cache_key]
+            else:
+                # A *root* index item has no ancestors, so every root shares the
+                # empty cache key -- and caching against it handed every sample
+                # the first item's subtree. Three views of the right shape, each
+                # holding s0's files, silently. Roots are walked per item; each
+                # walk covers only its own subtree, so the total is still linear.
+                siblings = _get_all_descendants({path})
             # When path is already in siblings (shared-parent topology),
             # the mask is identical for all items with the same ancestors.
             # Yield only unique masks to avoid O(n^2) downstream.
@@ -1797,15 +1810,35 @@ class Duration:
             milliseconds=milliseconds, minutes=minutes, hours=hours, weeks=weeks
         )
         self.strict=False
-    
+        self.unlimited=False
+
+    @classmethod
+    def Unlimited(cls):
+        """No time limit at all -- which is not the same as saying nothing.
+
+        A step with no `Duration` gets whatever its transform declared; this is
+        the other thing, and it needs a value of its own because the absence of
+        one already means something. Renders as Nextflow's unset directive.
+        """
+        d = cls()
+        d.unlimited = True
+        return d
+
     def __str__(self) -> str:
         return self.AsNextflowFormat()
 
     def SetStrict(self):
+        # Strictness is what makes the compiler emit `errorStrategy 'ignore'`
+        # for the step -- which is how a run whose every step died once
+        # reported `completed`. A duration that cannot time out buys nothing
+        # from it but that suppression, so this is refused rather than ignored.
+        assert not self.unlimited, "an unlimited duration cannot be strict: it can never time out"
         self.strict=True
         return self
 
     def AsNextflowFormat(self):
+        # bare `null`, unquoted: it is the absence of a directive, not a value
+        if self.unlimited: return "null"
         delta = self._delta
         total_seconds = delta.total_seconds()
         days = delta.days
@@ -1922,7 +1955,10 @@ class Resources:
             ),
             _parse_res(
                 self.duration, "<x>", "time",
-                "{"+f" (2**(task.attempt-1)) * (<x> as Duration) "+"}",
+                # an unlimited duration is emitted as it stands: the retry
+                # expression would otherwise double `null` on the second attempt
+                "<x>" if (self.duration is not None and self.duration.unlimited)
+                else "{"+f" (2**(task.attempt-1)) * (<x> as Duration) "+"}",
                 "<x>",
             ),
         ] if x is not None]
@@ -1987,12 +2023,33 @@ class TransformInstance:
     def __hash__(self) -> int:
         return self._hash # from definition file upon load
 
+    # Importing a transform is process-global three times over: it mutates
+    # `sys.path`, it `reload()`s by bare module name, and it hands the result
+    # back through a class attribute. Callers are told to serialise (the GUI's
+    # `_plan_lock`), but "every caller remembers" is not an invariant -- and the
+    # cost of one that forgets is not a visible crash. Two threads in here at
+    # once leave `sys.path` *permanently* longer: each snapshotted a list that
+    # already held the other's entry and restored it on the way out. Nothing
+    # fails; every later import just scans more directories, so a process that
+    # raced once plans an order of magnitude slower for the rest of its life
+    # (measured: 0.4s -> 9s per solve on a day-old GUI server).
+    #
+    # So the lock lives here, where the mutation is, rather than only at the
+    # call sites -- and the entry is inserted and removed by value, so even an
+    # unlocked path can only ever take out its own.
+    _load_lock = threading.RLock()
+
     @classmethod
     def Load(cls, parent_lib: Path, definition: Path) -> TransformInstance|None:
+        with cls._load_lock:
+            return cls._LoadUnlocked(parent_lib, definition)
+
+    @classmethod
+    def _LoadUnlocked(cls, parent_lib: Path, definition: Path) -> TransformInstance|None:
         cls._last_loaded_transform: TransformInstance | None = None
 
-        original_path_var = sys.path
-        sys.path = [str(parent_lib/definition.parent)]+sys.path
+        here = str(parent_lib/definition.parent)
+        sys.path.insert(0, here)
         try:
             m = __import__(f"{definition.stem}")
             reload(m)
@@ -2040,7 +2097,10 @@ class TransformInstance:
                 tr._protocol_source_hash = ""
             return cls._last_loaded_transform
         finally:
-            sys.path = original_path_var
+            try:
+                sys.path.remove(here)
+            except ValueError:
+                pass
 
 class TransformInstanceLibrary(DataInstanceLibrary):
     def __init__(self, location: Path|str|DataInstanceLibrary) -> None:
@@ -2082,12 +2142,51 @@ class TransformInstanceLibrary(DataInstanceLibrary):
         inst = TransformInstance.Load(self.location, path)
         return inst
 
+    # Every transform file opens with `ResolveParentLibrary(__file__)`, so this
+    # runs once per transform *import* -- 115 times for the standard library --
+    # and each miss re-reads the whole manifest off disk. That is where a solve's
+    # wall time went: ~8.5s of yaml for one library's worth of imports, against
+    # ~1s of actual planning. Cached per resolved root, behind a signature so an
+    # edited library is never served stale.
+    _parent_library_cache: dict[Path, tuple[tuple, "TransformInstanceLibrary"]] = {}
+
+    @classmethod
+    def _library_signature(cls, root: Path) -> tuple:
+        """Cheap evidence that a library is the one already loaded.
+
+        One `scandir` and the manifest's own stamp: adding, removing or editing
+        a transform moves this, which is what the notebook needs -- a file
+        edited between two plans in one process must not come back cached.
+        """
+        meta = root/DataInstanceLibrary._path_to_meta
+        try:
+            st = meta.stat()
+            stamp = [(meta.name, st.st_mtime_ns, st.st_size)]
+        except OSError:
+            return ()
+        try:
+            for e in os.scandir(root):
+                if not e.name.endswith(".py"):
+                    continue
+                s = e.stat()
+                stamp.append((e.name, s.st_mtime_ns, s.st_size))
+        except OSError:
+            return ()
+        return tuple(sorted(stamp))
+
     @classmethod
     def ResolveParentLibrary(cls, transform_definition_file: Path|str):
         path = Path(transform_definition_file)
         for p in path.parents:
             if (p/DataInstanceLibrary._path_to_meta).exists():
-                return cls.Load(p)
+                root = p.resolve()
+                sig = cls._library_signature(root)
+                hit = cls._parent_library_cache.get(root)
+                if hit is not None and hit[0] == sig:
+                    return hit[1]
+                lib = cls.Load(p)
+                cls._parent_library_cache[root] = (sig, lib)
+                return lib
         assert False
 
     def __getitem__(self, transform: Path|str):

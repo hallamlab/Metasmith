@@ -440,6 +440,72 @@ def _diagnose_plan_failure(
                 break
         return out
 
+    # ---- "you have the right thing, said too loosely" -----------------------
+    #
+    # `x.IsA(y)` is `y.properties <= x.properties`: more properties means more
+    # specific, and a *supertype* never satisfies a subtype's requirement. That
+    # asymmetry is correct and it is also the single most confusing failure the
+    # planner produces -- registering reads and asking for an assembly dead-ends
+    # somewhere five hops away at an ncbi accession, because every assembler
+    # wants `long_reads` or `short_reads_pe` and plain `reads` is neither.
+    #
+    # So a demand nothing satisfies is worth reporting against the givens that
+    # are *nearly* it in the one direction the type system cares about.
+
+    def _too_general_givens(demand) -> list[tuple[Endpoint, list[DataInstance]]]:
+        """Givens that are strictly more general than `demand`."""
+        out = []
+        for ep, insts in given_map.items():
+            if ep.IsA(demand):       # already satisfies it; not this problem
+                continue
+            if demand.properties > ep.properties:
+                out.append((ep, insts))
+        return out
+
+    def _retypings(demand, given_ep: Endpoint, limit: int = 4) -> list[str]:
+        """Named types that would satisfy `demand` and still describe `given_ep`.
+
+        A retyping is only a suggestion if it is a specialization of what the
+        user already said they have -- otherwise it is a different file, not a
+        better label for this one.
+        """
+        found: list[tuple[int, str]] = []
+        for ep, name in _name_cache.items():
+            props = getattr(ep, "properties", None)
+            if not props:
+                continue
+            if not (props >= demand.properties and props >= given_ep.properties):
+                continue
+            found.append((len(props - given_ep.properties), name))
+        found.sort()
+        seen: set[str] = set()
+        out: list[str] = []
+        for _, name in found:
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append(name)
+            if len(out) >= limit:
+                break
+        return out
+
+    def _unmet_parents(demand) -> list[str]:
+        """Parents the slot declares that nothing registered could stand in for.
+
+        A requirement's lineage is part of it: bbduk does not want three read
+        files, it wants the reads belonging to *this* metadata. When the parent
+        type is not registered at all, no amount of retyping the child will
+        help -- and nothing else in the diagnosis says so.
+        """
+        out = []
+        for parent in getattr(demand, "parents", None) or ():
+            if any(g.properties >= parent.properties for g in all_givens):
+                continue
+            name = _name(parent)
+            if name not in out:
+                out.append(name)
+        return out
+
     # ---- pass (a) + (b): per-target reverse-BFS ----
     for tr_req in target_model.requires:
         target_name = _name(tr_req)
@@ -464,6 +530,8 @@ def _diagnose_plan_failure(
 
         visited: set[str] = set()
         dead_ends: dict[str, tuple[Dependency, list[str]]] = {}
+        # given endpoint -> the demands it is a supertype of, in walk order
+        too_general: dict[Endpoint, list[tuple[Dependency, str]]] = {}
         steps_budget = max_hints_per_target * 16
         while queue and steps_budget > 0:
             steps_budget -= 1
@@ -473,6 +541,13 @@ def _diagnose_plan_failure(
             visited.add(d.key)
             if _matches_any_given(d):
                 continue
+            # Recorded for every demand on the way, not only for the dead ends:
+            # the demand a too-general input was *meant* to answer usually has
+            # producers of its own, so the walk goes straight past it and the
+            # dead end it eventually reports is several hops off the point.
+            for ep, _insts in _too_general_givens(d):
+                wanted_by = chain[-1].split(" produces ")[0] if chain else "a transform"
+                too_general.setdefault(ep, []).append((d, wanted_by))
             sub_producers = _producers_of(d)
             if not sub_producers:
                 sk = _shape_key(d)
@@ -500,6 +575,58 @@ def _diagnose_plan_failure(
                 _name(dc[0]),
             ),
         )
+        # Ahead of the dead ends on purpose: when one of these fires it is
+        # almost always the actual answer, and the dead end is a symptom of it.
+        for ep, wants in too_general.items():
+            insts = given_map.get(ep, [])
+            label = next((i.dtype_name for i in insts if i.dtype_name), _name(ep))
+            where = ", ".join(str(i.path) for i in insts[:3]) or "(no path)"
+            # retypings first, then what the lineage still wants: one is a
+            # correction to a row that exists, the other is a row that does not
+            suggestions: list[str] = []
+            parent_notes: list[str] = []
+            seen_names: set[str] = set()
+            for demand, wanted_by in wants[:max_hints_per_target]:
+                for name in _retypings(demand, ep):
+                    if name in seen_names or name == label:
+                        continue
+                    seen_names.add(name)
+                    suggestions.append(f"{name} — what {wanted_by} asks for")
+                for parent in _unmet_parents(demand):
+                    note = (
+                        f"{parent} — {wanted_by} needs its {_name(demand)} to descend "
+                        f"from one, and nothing registered is one"
+                    )
+                    if note not in parent_notes:
+                        parent_notes.append(note)
+            suggestions += parent_notes
+            if not suggestions:
+                continue
+            # by type, not by asker: three transforms wanting `long_reads` is
+            # one thing to fix, and saying it three times reads as three
+            wanted_names = []
+            said: set[str] = set()
+            for demand, wanted_by in wants:
+                nm = _name(demand)
+                if nm in said:
+                    continue
+                said.add(nm)
+                wanted_names.append(f"{nm} (for {wanted_by})")
+                if len(wanted_names) >= 3:
+                    break
+            hints.append(PlanHint(
+                kind='too_general',
+                target=target_name,
+                message=(
+                    f"{label} @ {where} is more general than what the chain to "
+                    f"{target_name} needs: {', '.join(wanted_names)}. A more specific "
+                    f"type satisfies a general requirement, never the other way round, "
+                    f"so this input is not offered to those steps at all"
+                ),
+                chain=[f"you registered {label}", f"the chain needs {wanted_names[0]}"],
+                near_misses=suggestions[:max_hints_per_target + 2],
+            ))
+
         for d, chain in ranked[:max_hints_per_target]:
             hints.append(PlanHint(
                 kind='missing_input',
@@ -1070,7 +1197,7 @@ class WorkflowPlan:
             hints=plan_hints,
         )
 
-    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module") -> DagRenderer:
+    def BuildDAG(self, *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light") -> DagRenderer:
         """The plan as a renderer, so callers that want the graph — a stress
         harness, a comparison — do not have to write a file to get it."""
         def _get_ns(name: str) -> str:
@@ -1079,7 +1206,7 @@ class WorkflowPlan:
                 return ns
             return name
 
-        r = DagRenderer(font=font, label_mode=label_mode, colour=colour)
+        r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme)
         r.add_node(NodeKind.TRANSFORM, "given")
 
         k2names: dict[Endpoint, set[str]] = {}
@@ -1146,7 +1273,7 @@ class WorkflowPlan:
 
         return r
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module"):
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', blacklist_namespaces: set[str]={"lib", "containers", "env"}, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, target_sink: bool = False, colour: str = "module", theme: str = "light"):
         return self.BuildDAG(
             font=font,
             blacklist_namespaces=blacklist_namespaces,
@@ -1154,6 +1281,7 @@ class WorkflowPlan:
             label_mode=label_mode,
             target_sink=target_sink,
             colour=colour,
+            theme=theme,
         ).render(path_base, format)
 
 @dataclass

@@ -12,6 +12,25 @@
     <link rel="icon" type="image/svg+xml" media="(prefers-color-scheme: dark)"
           href="../src/metasmith/gui/icon/metasmith-logo-dark.svg" />
     <title>metasmith</title>
+    <!-- The same resolution `lib/state.svelte.js` does, run before the first
+         paint: the palette is chosen by a `data-theme` attribute, and a page
+         that waited for the bundle would show the dark default for a frame and
+         then flip. Duplicated on purpose -- the alternative is no stylesheet
+         until the module graph has loaded. Keep the key and the two values in
+         step with `setTheme` there. -->
+    <script>
+      (function () {
+        try {
+          var pick = localStorage.getItem('metasmith.theme')
+          if (pick !== 'light' && pick !== 'dark') {
+            pick = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+          }
+          document.documentElement.setAttribute('data-theme', pick)
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark')
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -3,8 +3,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.fixtures import load_dag
+
+from metasmith.models.dag_draw import geometry, marker_size
 from metasmith.models.dag_renderer import (
-    STYLES, DagRenderer, Label, LabelMode, NodeKind,
+    DARK, STYLES, THEMES, DagRenderer, Label, LabelMode, NodeKind,
 )
 
 
@@ -273,9 +276,10 @@ def test_svg_is_a_standalone_parsable_document(tmp_path):
     assert "step <1> & co" in labels
 
 
-def test_svg_distinguishes_the_three_kinds_by_shape():
-    # by shape, not by colour: a step and a datum are both unfilled, so their
-    # fill is the background's and a colour comparison would pass vacuously
+def test_svg_distinguishes_a_step_by_shape_and_a_target_by_fill():
+    # a step is a shape of its own; a target is not. It is the same circle as
+    # the datum it is, drawn solid -- so this is the one kind distinguished by
+    # its fill, and the two hollow ones share the background's fill
     r = DagRenderer()
     r.add_node(NodeKind.TRANSFORM, "step1")
     r.add_node(NodeKind.DATA, "thing")
@@ -284,9 +288,10 @@ def test_svg_distinguishes_the_three_kinds_by_shape():
     r.mark(NodeKind.TARGET, "wanted")
     svg = r.to_svg()
     assert svg.count("<polygon") == 1  # the step, a triangle on its point
-    assert svg.count("<circle") == 1  # the datum
-    assert svg.count("<rect x=") == 1  # the target; the background rect has no x
+    assert svg.count("<circle") == 2  # the datum and the target
+    assert svg.count("<rect x=") == 0  # nothing is a box; the background has no x
     assert f'fill="{STYLES[NodeKind.TARGET].fill}"' in svg
+    assert STYLES[NodeKind.TARGET].fill != STYLES[NodeKind.DATA].fill
 
 
 def _marker_widths(svg: str) -> dict[str, float]:
@@ -299,7 +304,7 @@ def _marker_widths(svg: str) -> dict[str, float]:
         if line.startswith("<circle"):
             out["circle"] = 2 * _attr(line, "r")
         elif line.startswith("<rect x="):
-            out["square"] = _attr(line, "width")
+            out["square"] = _attr(line, "width")  # nothing draws one today
         elif line.startswith("<polygon"):
             xs = [
                 float(p.split(",")[0])
@@ -319,11 +324,11 @@ def _three_kinds() -> DagRenderer:
     return r
 
 
-def test_the_three_markers_all_draw_at_one_width():
+def test_every_marker_draws_at_one_width():
     # they were 1.25 of a circumradius, 0.90 of a diameter and 0.82 of a side —
     # three different quantities, drawing a 17px triangle beside a 10px circle
     w = _marker_widths(_three_kinds().to_svg())
-    assert set(w) == {"circle", "square", "triangle"}
+    assert set(w) == {"circle", "triangle"}
     # the SVG carries one decimal, so equal widths can still differ by 0.1
     assert max(w.values()) - min(w.values()) < 0.11, w
 
@@ -678,3 +683,127 @@ def test_golden_wide_fan_out():
         "│ ○      std::input_2\n"
         "○        std::input_3\n"
     )
+
+
+# -- themes ------------------------------------------------------------------
+
+
+def _plate_of(svg: str) -> str:
+    """The background rect's fill -- the only rect with no `x`."""
+    line = [l for l in svg.splitlines() if l.startswith("<rect width=")][0]
+    return line.split('fill="')[1].split('"')[0]
+
+
+def test_light_is_the_default_and_is_what_was_always_drawn():
+    # the assertion that matters most: every rendering already on disk was made
+    # by a caller that passed no theme, and this is the one that ages badly
+    assert load_dag().to_svg() == load_dag(theme="light").to_svg()
+    svg = load_dag().to_svg()
+    assert _plate_of(svg) == "#FFFFFF"
+    assert 'stroke="#666666"' in svg
+
+
+def test_dark_repaints_the_ground_and_leaves_the_geometry_alone():
+    light, dark = load_dag().to_svg(), load_dag(theme="dark").to_svg()
+    assert _plate_of(dark) == DARK.plate.background
+    assert f'stroke="{DARK.plate.edge}"' in dark
+    assert "#FFFFFF" not in dark  # no light ink survived onto the dark ground
+    # a theme is ink, never placement: same viewBox, same rails, same markers
+    assert _edge_paths(light) == _edge_paths(dark)
+    assert _marker_widths(light) == _marker_widths(dark)
+    assert (
+        [l for l in light.splitlines() if l.startswith("<svg")]
+        == [l for l in dark.splitlines() if l.startswith("<svg")]
+    )
+
+
+def test_the_two_themes_differ_only_in_colour():
+    # `replace` off the light style is what guarantees this: a marker shape, a
+    # scale or a stroke weight cannot drift between the two drawings
+    colours = {"fill", "stroke", "text", "muted"}
+    for kind, light in STYLES.items():
+        dark = DARK.styles[kind]
+        for f in light.__dataclass_fields__:
+            if f in colours:
+                continue
+            assert getattr(dark, f) == getattr(light, f), (kind, f)
+
+
+def test_an_unknown_theme_raises_like_an_unknown_scheme():
+    with pytest.raises(ValueError, match="unknown theme"):
+        DagRenderer(theme="twilight")
+
+
+def test_the_raster_path_pins_its_own_background():
+    # graphviz would otherwise use whatever the local build defaults to, which
+    # is the one way a PNG can disagree with the SVG about what it sits on
+    assert 'bgcolor="#FFFFFF"' in load_dag().to_raster_dot()
+    dark = load_dag(theme="dark").to_raster_dot()
+    assert f'bgcolor="{DARK.plate.background}"' in dark
+    assert f'color="{DARK.plate.edge}"' in dark
+
+
+def test_the_text_backend_is_theme_independent():
+    # a terminal owns its own background and the only colour here is an ANSI
+    # escape chosen against the reader's palette, so there is nothing to theme
+    for kw in ({}, {"color": True}, {"unicode": False}):
+        assert load_dag().to_text(**kw) == load_dag(theme="dark").to_text(**kw)
+
+
+def test_every_theme_renders_every_scheme():
+    for theme in THEMES:
+        for scheme in ("none", "module"):
+            assert load_dag(theme=theme, colour=scheme).to_svg().startswith("<?xml")
+
+
+class TestGeometryIsWhatTheSvgDraws:
+    """`render_svg` is written in terms of `geometry`, and must stay so.
+
+    The extraction exists so a second consumer -- the GUI's info panel, which
+    draws clickable buttons over the same edge layer -- gets the placement this
+    module already computes instead of running a layout engine of its own. What
+    keeps the two from drifting is that the SVG is not an independent drawing
+    of the same numbers: it *is* these numbers. That is what is asserted here.
+    """
+
+    def _geo(self, r):
+        lay = r.layout()
+        geo = geometry(lay, r._theme.styles, labels=r.labels, label_mode=r._label_mode)
+        return geo, r.to_svg()
+
+    def test_the_canvas_is_the_geometry_canvas(self):
+        g, svg = self._geo(load_dag())
+        assert f'width="{g.width:.0f}" height="{g.height:.0f}"' in svg
+
+    def test_every_edge_path_is_drawn_verbatim(self):
+        g, svg = self._geo(load_dag())
+        drawn = [e for e in g.edges if not e.back]
+        assert drawn, "the fixture has forward edges"
+        for e in drawn:
+            assert f'd="{e.d}"' in svg
+
+    def test_a_back_edge_carries_no_path_and_is_not_drawn(self):
+        # the SVG skips them; a geometry entry with an empty `d` is how a
+        # consumer is told the edge exists without being handed a line to draw
+        g, _ = self._geo(load_dag())
+        assert all(e.d == "" for e in g.edges if e.back)
+
+    def test_every_node_label_lands_at_its_geometry_position(self):
+        g, svg = self._geo(load_dag())
+        for n in g.nodes:
+            assert f'x="{n.label_x:.1f}" y="{n.cy + 0.36 * 13.0:.1f}"' in svg
+
+    def test_a_marker_size_follows_its_style(self):
+        g, _ = self._geo(load_dag())
+        by_kind = {n.kind: n for n in g.nodes}
+        for kind, n in by_kind.items():
+            assert (n.marker_w, n.marker_h) == marker_size(STYLES[kind], g.marker_d)
+
+    def test_both_label_modes_place_labels_differently(self):
+        # BESIDE widens each lane to its own labels; COLUMN pins them all at one
+        # x. A consumer picks by how much room it has, so both must work.
+        col, _ = self._geo(load_dag(label_mode=LabelMode.COLUMN))
+        bes, _ = self._geo(load_dag(label_mode=LabelMode.BESIDE))
+        assert col.anchor == "start" and bes.anchor == "end"
+        assert len({n.label_x for n in col.nodes}) == 1
+        assert len({n.label_x for n in bes.nodes}) > 1

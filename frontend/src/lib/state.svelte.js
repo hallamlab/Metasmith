@@ -47,10 +47,18 @@ function storedRailWidth() {
   }
 }
 
-// -- the type inspector's width --------------------------------------------
-// Same furniture on the other edge, and the same reasoning: one width, kept
-// across workflows. Whether it is open is remembered too -- someone who closed
-// it does not want it back on the next workflow they open.
+// -- the side panels' geometry ---------------------------------------------
+// Same furniture on the other edge as the rail, and the same reasoning within
+// one panel: a width kept across workflows, and an open state remembered
+// because someone who closed it does not want it back on the next thing they
+// open.
+//
+// Unlike the rail, this is keyed *per panel*. There is more than one now -- the
+// workflow's type inspector and the run's file preview -- and they are not the
+// same furniture: one holds a graph and one holds a file tree, so their useful
+// heights differ, and having closed one says nothing about the other. Sharing
+// one set of keys made each panel's geometry a side effect of having visited
+// the other page.
 
 export const PANEL_DEFAULT = 320
 export const PANEL_MIN = 240
@@ -64,9 +72,16 @@ export const PANEL_TOP_DEFAULT = 420
 export const PANEL_TOP_MIN = 96
 export const PANEL_TOP_MAX = 1200
 
-const PANEL_KEY = 'metasmith.panelWidth'
-const PANEL_OPEN_KEY = 'metasmith.panelOpen'
-const PANEL_TOP_KEY = 'metasmith.panelTop'
+// The keys the single shared panel used. Read once, as the starting value for
+// a panel that has none of its own, so nobody's remembered width is thrown
+// away by the split. Never written to again.
+const LEGACY_KEYS = {
+  width: 'metasmith.panelWidth',
+  open: 'metasmith.panelOpen',
+  top: 'metasmith.panelTop',
+}
+
+const panelKey = (id, part) => `metasmith.panel.${id}.${part}`
 
 export function clampPanel(w) {
   return Math.min(PANEL_MAX, Math.max(PANEL_MIN, Math.round(w)))
@@ -74,6 +89,47 @@ export function clampPanel(w) {
 
 export function clampPanelTop(h) {
   return Math.min(PANEL_TOP_MAX, Math.max(PANEL_TOP_MIN, Math.round(h)))
+}
+
+// -- collapsed rail groups -------------------------------------------------
+// The runs rail is grouped by the workflow each run belongs to, and a project
+// with a dozen workflows is otherwise one undifferentiated list. Which groups
+// are shut is remembered because it is a statement about what you are working
+// on, not about this page load.
+//
+// Stored as the *collapsed* set rather than the expanded one so a workflow that
+// appears after you last looked comes in open.
+
+const COLLAPSED_KEY = 'metasmith.runs.collapsed'
+
+function storedCollapsed() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]')
+    return new Set(Array.isArray(raw) ? raw.filter((s) => typeof s === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+// -- light / dark ----------------------------------------------------------
+// The preference is *tri*-state -- follow the OS, light, dark -- because "match
+// what the machine is set to" and "I picked this one" are two different things
+// and collapsing them loses the first: a page that stored `dark` on load can
+// never tell a deliberate dark from an OS that happened to be dark that day.
+// The button is only two-way, though: it flips to the opposite of what is
+// showing, which pins a choice. Nothing cycles back to following the OS except
+// clearing the key.
+
+const THEME_KEY = 'metasmith.theme'
+
+function osTheme() {
+  try {
+    // dark is the fallback, not light: it is what the page was before there
+    // was a choice, so a browser that cannot answer keeps the incumbent
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  } catch {
+    return 'dark'
+  }
 }
 
 function stored(key, fallback, parse) {
@@ -87,15 +143,14 @@ function stored(key, fallback, parse) {
 
 export const ui = $state({
   railWidth: storedRailWidth(),
-  panelWidth: stored(PANEL_KEY, PANEL_DEFAULT, (r) => {
-    const n = Number(r)
-    return Number.isFinite(n) && n > 0 ? clampPanel(n) : PANEL_DEFAULT
-  }),
-  panelOpen: stored(PANEL_OPEN_KEY, true, (r) => r !== '0'),
-  panelTop: stored(PANEL_TOP_KEY, PANEL_TOP_DEFAULT, (r) => {
-    const n = Number(r)
-    return Number.isFinite(n) && n > 0 ? clampPanelTop(n) : PANEL_TOP_DEFAULT
-  }),
+  // one entry per panel id, filled in on first use by `panelState`
+  panels: {},
+  // names of the workflows whose group in the runs rail is shut
+  collapsedRuns: storedCollapsed(),
+  // what was asked for: 'system', 'light' or 'dark'
+  themePref: stored(THEME_KEY, 'system', (r) => (r === 'light' || r === 'dark' ? r : 'system')),
+  // what is actually showing: never 'system'. Everything that draws reads this
+  theme: 'dark',
 })
 
 function remember(key, value) {
@@ -111,19 +166,109 @@ export function setRailWidth(w) {
   remember(RAIL_KEY, String(ui.railWidth))
 }
 
-export function setPanelWidth(w) {
-  ui.panelWidth = clampPanel(w)
-  remember(PANEL_KEY, String(ui.panelWidth))
+/** One panel's remembered geometry, hydrated on first ask.
+ *
+ * `top` defaults per panel: the caller knows what is above the split -- a
+ * graph and a file tree do not want the same room -- and the stored value
+ * wins over it once there is one. */
+export function panelState(id, topDefault = PANEL_TOP_DEFAULT) {
+  if (!ui.panels[id]) {
+    const num = (key, legacy, fallback, clamp) =>
+      stored(key, stored(legacy, fallback, (r) => {
+        const n = Number(r)
+        return Number.isFinite(n) && n > 0 ? clamp(n) : fallback
+      }), (r) => {
+        const n = Number(r)
+        return Number.isFinite(n) && n > 0 ? clamp(n) : fallback
+      })
+    ui.panels[id] = {
+      width: num(panelKey(id, 'width'), LEGACY_KEYS.width, PANEL_DEFAULT, clampPanel),
+      top: num(panelKey(id, 'top'), LEGACY_KEYS.top, clampPanelTop(topDefault), clampPanelTop),
+      open: stored(
+        panelKey(id, 'open'),
+        stored(LEGACY_KEYS.open, true, (r) => r !== '0'),
+        (r) => r !== '0',
+      ),
+    }
+  }
+  return ui.panels[id]
 }
 
-export function setPanelTop(h) {
-  ui.panelTop = clampPanelTop(h)
-  remember(PANEL_TOP_KEY, String(ui.panelTop))
+export function setPanelWidth(id, w) {
+  const st = panelState(id)
+  st.width = clampPanel(w)
+  remember(panelKey(id, 'width'), String(st.width))
 }
 
-export function setPanelOpen(open) {
-  ui.panelOpen = !!open
-  remember(PANEL_OPEN_KEY, ui.panelOpen ? '1' : '0')
+export function setPanelTop(id, h) {
+  const st = panelState(id)
+  st.top = clampPanelTop(h)
+  remember(panelKey(id, 'top'), String(st.top))
+}
+
+export function setPanelOpen(id, open) {
+  const st = panelState(id)
+  st.open = !!open
+  remember(panelKey(id, 'open'), st.open ? '1' : '0')
+}
+
+/** Shut or open one workflow's group in the runs rail. */
+export function toggleRunGroup(workflow) {
+  const next = new Set(ui.collapsedRuns)
+  if (next.has(workflow)) next.delete(workflow)
+  else next.add(workflow)
+  ui.collapsedRuns = next
+  remember(COLLAPSED_KEY, JSON.stringify([...next]))
+}
+
+/** Force one group open -- used when something inside it becomes the selection,
+ *  so a run can never be selected and invisible at the same time. */
+export function openRunGroup(workflow) {
+  if (!ui.collapsedRuns.has(workflow)) return
+  toggleRunGroup(workflow)
+}
+
+export function applyTheme() {
+  ui.theme = ui.themePref === 'system' ? osTheme() : ui.themePref
+  try {
+    // one place decides which palette is showing, and it is an attribute rather
+    // than a class so index.html can stamp it before any of this has loaded
+    document.documentElement.setAttribute('data-theme', ui.theme)
+  } catch {
+    // no document (a test importing the module); the state is still right
+  }
+}
+
+export function setTheme(pref) {
+  ui.themePref = pref === 'light' || pref === 'dark' ? pref : 'system'
+  if (ui.themePref === 'system') {
+    try {
+      localStorage.removeItem(THEME_KEY)
+    } catch {
+      /* storage denied; the choice lasts this session */
+    }
+  } else {
+    remember(THEME_KEY, ui.themePref)
+  }
+  applyTheme()
+}
+
+/** Flip to the opposite of what is showing. Pins an explicit choice -- there is
+ *  deliberately no third press that goes back to following the OS. */
+export function toggleTheme() {
+  setTheme(ui.theme === 'dark' ? 'light' : 'dark')
+}
+
+/** Track the OS for as long as nobody has picked. Called once, at startup. */
+export function watchOsTheme() {
+  try {
+    const mq = window.matchMedia('(prefers-color-scheme: light)')
+    mq.addEventListener('change', () => {
+      if (ui.themePref === 'system') applyTheme()
+    })
+  } catch {
+    /* no matchMedia: the theme is whatever it resolved to at load */
+  }
 }
 
 export function notify(message, kind = 'error') {
@@ -132,6 +277,15 @@ export function notify(message, kind = 'error') {
 
 export function clearNotice() {
   app.notice = null
+}
+
+// A "the server is not answering" banner is about a moment, not a state, and it
+// used to outlive the moment: the dot went back to green on the next heartbeat
+// while the red bar stayed until something else was clicked, so the page said
+// both things at once. Only that one notice is cleared -- a refusal or a bug
+// report is still worth reading after the connection comes back.
+api.onrecover = () => {
+  if (app.notice?.kind === 'offline') clearNotice()
 }
 
 // Wrap an action so a refusal reaches the user instead of the console.

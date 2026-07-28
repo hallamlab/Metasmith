@@ -1219,6 +1219,36 @@ class Agent:
             "lines": out if exists else [],
         }
 
+    def ReadWorkflowTrace(
+        self,
+        task: WorkflowTask | str,
+        run: int | None = None,
+    ) -> dict:
+        """Read nextflow's per-task trace for the selected run.
+
+        The whole file, not a tail: it is one line per task and the caller wants
+        every one of them. A run big enough for that to be expensive is a run
+        whose trace the caller wanted paginated anyway, which nothing asks for
+        yet.
+        """
+        task_key = task._key if isinstance(task, WorkflowTask) else str(task)
+        run_dir = self._resolve_run_dir(task_key, run)
+        trace = run_dir / AgentPaths.NXF_TRACE_FILE
+        res = self._remote_oneshot(
+            f"[ -e {trace} ] && cat {trace} || echo __MSM_MISSING__",
+            timeout=30,
+        )
+        out = res.out
+        exists = not (len(out) == 1 and out[0].strip() == "__MSM_MISSING__")
+        return {
+            "task_key": task_key,
+            "run": run,
+            "run_dir": str(run_dir),
+            "file": str(trace),
+            "exists": exists,
+            "lines": out if exists else [],
+        }
+
     def CancelWorkflow(self, task: WorkflowTask | str, timeout_s: float = 30.0) -> dict:
         """Best-effort cancel an active run by removing workspace/PID.lock.
 
@@ -1434,6 +1464,48 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
     task.plan.RenderDAG(f"{work_dir}/workflow.dag.svg")
     Log.Info(f"[{task._key}] staged to [{workspace_str}]")
         
+def _published_index(output_path: Path) -> dict[str, Path]:
+    """Every published file under the results directory, by basename.
+
+    Basename is the join key because it is the one thing the two sides agree
+    on. A produced file's canonical name already embeds batch, branch, hash and
+    dtype, so it is unique within a run -- the same property `LinPayload`
+    relies on to derive a file id from `slot_id::basename`.
+    """
+    index: dict[str, Path] = {}
+    for here, dirs, files in os.walk(output_path, followlinks=False):
+        rel_dir = Path(here).relative_to(output_path)
+        if rel_dir.parts and rel_dir.parts[0] == "_metadata":
+            dirs[:] = []
+            continue
+        for name in files:
+            index.setdefault(name, rel_dir/name)
+    return index
+
+
+def _published_path(path: Path, output_path: Path, index: dict[str, Path]) -> Path:
+    """Where a produced file actually landed, relative to the results dir.
+
+    The trace records a file by its *cache shard* path (`<shard>/out/<name>`),
+    while nextflow's `output {}` block publishes it under a folder named for
+    the step and dtype. Taking the trace path verbatim wrote a manifest naming
+    files that were not there: every consumer then resolved nothing, and the
+    GUI listed paths that could not be opened.
+
+    The trace path is still preferred when it exists, so a runtime that does
+    publish at that location is unaffected. Only the mismatch is repaired, and
+    a name that matches nothing is left as it was rather than guessed at.
+    """
+    rel = path.relative_to(output_path)
+    if (output_path/rel).exists():
+        return rel
+    found = index.get(rel.name)
+    if found is None:
+        Log.Warn(f"produced file [{rel}] is not in the results directory")
+        return rel
+    return found
+
+
 def CollectResults(
     task: WorkflowTask,
     output_path: Path,
@@ -1770,6 +1842,10 @@ def CollectResults(
             )
     relavent_k = {k for k, v in kv2path}
     given_manifest = []
+    # Taken once, after nextflow has published everything and before a single
+    # manifest entry is written, so every entry is resolved against the same
+    # view of the directory.
+    published = _published_index(output_path)
     todo = dict(enumerate(kv2path.items()))
     prev_len = len(todo) + 1
     while len(todo)>0:
@@ -1805,7 +1881,7 @@ def CollectResults(
                     if _path not in output.manifest:
                         output.AddItem(path=_path, dtype=_name)
                     _parents.append(_path)
-                _path = path.relative_to(output_path)
+                _path = _published_path(path, output_path, published)
                 _path = output.AddItem(
                     path=_path,
                     dtype=cinst.dtype_name,
@@ -1847,7 +1923,7 @@ def _extract_nxf_task_metadata(log_dir_abs: Path) -> "pd.DataFrame | None":
     if the TSV is missing, sanitizing JS-only escapes (`\\'`) that
     strict JSON rejects -- see inbox #162.
     """
-    tsv = log_dir_abs/"nxf_trace.tsv"
+    tsv = log_dir_abs/AgentPaths.NXF_TRACE_FILE
     if tsv.exists():
         try:
             return pd.read_csv(tsv, sep="\t")
@@ -1982,7 +2058,7 @@ def RunWorkflow(key: str, log_dir: Path, host: str, stub_delay: float):
                 -with-report {nxf_report} \
                 -with-dag {nxf_dag} \
                 -with-timeline {log_dir}/nxf_timeline.html \
-                -with-trace {log_dir}/nxf_trace.tsv \
+                -with-trace {log_dir}/{AgentPaths.NXF_TRACE_FILE} \
                 {stub_param} \
                 -lib ./lib \
                 -ansi-log false \

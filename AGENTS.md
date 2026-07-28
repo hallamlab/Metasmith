@@ -134,9 +134,18 @@ filled it. So one transform applied to different inputs is a different applicati
 applied to the same inputs it dedupes.
 
 When no complete plan exists, `WorkflowPlan.hints` carries structured `PlanHint` records
-(`unreachable_target`, `missing_input`, `lineage_mismatch`) with a reverse-BFS chain,
-candidate transforms, and near-misses ranked by property-Jaccard against the givens. Every
-consumer is expected to surface them — a bare "no plan" is not an acceptable failure.
+(`too_general`, `unreachable_target`, `missing_input`, `lineage_mismatch`) with a reverse-BFS
+chain, candidate transforms, and near-misses ranked by property-Jaccard against the givens.
+Every consumer is expected to surface them — a bare "no plan" is not an acceptable failure.
+
+`too_general` leads the list because it is usually the whole answer. The direction rule above
+is the most confusing thing the planner does: registering `reads` and asking for an `assembly`
+satisfies no assembler — they want `long_reads` or `short_reads_pe` — so the walk goes *past*
+the demand that was meant and dead-ends hops later at an accession nobody mentioned. The hint
+is raised for every demand on the walk that a given is a strict supertype of, and it names both
+halves of the fix: the types that would satisfy the demand *and* still describe the file (a
+retyping), and any parent the slot declares that nothing registered could stand in for — which
+no amount of retyping supplies.
 
 ### Types are compiled once per library
 
@@ -226,19 +235,35 @@ duplicate `Add` rejects. Same type *and* same parents still raises.
 **A sample type is a way of branching a plan, not a precondition for one.**
 `plan_workflow(sample_type=None)` plans the library as it stands — one sample holding
 everything in it — and naming a type splits it into one run per item of that type
-(`AsSamples`). The GUI does not offer sampling and always passes `None`; the CLI's
-`--sample-type` is optional for the same reason.
+(`AsSamples`). The GUI passes `None` unless a sample table is attached, in which case it
+passes the type of the templated row marked as the index; the CLI's `--sample-type` is
+optional for the same reason.
 
-**Planning is not reentrant.** `TransformInstance.Load` imports each transform by bare module
-name, mutates `sys.path`, calls `importlib.reload`, and returns through a *class* attribute —
-all process-global. Two concurrent plans in one process clobber each other and fail with a
-bare `spec not found for the module`. The CLI never hits this (one process, one plan);
-anything long-lived must serialise generates, and anything walking the same import path must
-hold the same lock — which is **every** caller that imports a transform, not only the ones
-that plan: building a type index, and reading a staged bundle back with `load_task`, both do
-it. The second failure mode is quieter than the `spec not found` one — `Load` returns through
-the class attribute a concurrent load already reset, so a transform arrives as `None` — and it
-surfaces as an assertion two frames away in `GetTransform`.
+**A sample's mask is one index item's lineage, so both directions of the shape matter.** An
+index item with a *parent* puts that parent's whole subtree in every mask and collapses all
+samples into one view; an item beside the index that nothing links to it lands in no mask at
+all and the planner never sees it, though it is still staged. `ops.samples.validate` refuses
+the first and `plan_workflow(shared_input_paths=…)` is the way out of the second — it appends
+one masked view of the input library alongside the resource libraries, which is where a thing
+every sample sees belongs.
+
+**Planning is not reentrant, and the lock for it lives at the mutation.** `TransformInstance.Load`
+imports each transform by bare module name, mutates `sys.path`, calls `importlib.reload`, and
+returns through a *class* attribute — all process-global — so it takes a class-level lock and
+inserts/removes its own `sys.path` entry rather than snapshotting the list. Callers still
+serialise around it (the GUI's `_plan_lock` covers a whole plan, a type index, and a
+`load_task`), but the correctness of one import no longer depends on every caller remembering.
+Two failure modes taught that: the loud one is `spec not found for the module`, and the quiet
+one is a snapshot-and-restore putting a concurrent load's entry back **permanently** — nothing
+fails, every later import scans more directories, and a day-old server plans an order of
+magnitude slower (0.4s → 9s per solve, measured). Pinned by
+`tests/unit/test_transform_load_is_serialised.py`.
+
+**Every transform file opens with `ResolveParentLibrary(__file__)`**, so a library's own load
+re-enters it once per transform. Without the per-root cache behind that call, loading the
+standard library re-read the manifest 115 times — ~8.5s of yaml against ~1s of actual planning.
+The cache is keyed on a `scandir` signature so a transform edited between two plans in one
+process is not served from it.
 
 ### Agents and execution
 
@@ -604,6 +629,12 @@ else under `gui/`, so what actually packages them is vite emitting them into the
 an icon referenced by neither `index.html` nor a component would not ship at all. The dir is
 outside the vite root, which is why `server.fs.allow` has to name it for the dev server.
 
+**Deleting is archiving.** The first `DELETE` of an agent, a workflow or a run writes a
+tombstone; the second — of something already archived — removes it. Nothing the GUI holds is
+recoverable from anywhere else, and the same gesture is one double-click away on a list of
+near-identical names. It is also what gives the archive filter something to show: while
+deletion was conditional on dependents, an ordinary project never archived anything.
+
 Two conventions shape the routes. **Every editable object is saved by `PUT /<collection>/<id>`
 carrying the whole object**, identity field included, so an id differing from the url is a
 rename applied as part of the save — what that costs differs by collection, since a
@@ -611,6 +642,15 @@ workflow's directory becomes the task bundle a run stages from while an agent is
 nothing points into. And **incompleteness is reported, never refused, until launch**: you
 make an agent days before its cluster exists in your ssh config, so `problems`/`valid` ride
 on the payload and only the launch route enforces them.
+
+**A sample table is a sheet plus one declared row per kind of input.** `ops.samples` parses a
+csv/tsv/excel upload (stored verbatim under a fixed stem, because the workflow directory *is*
+the task bundle root), expands `{column}` tokens in the recipe's input rows into one library
+item per (row × sheet row), and records what it put down in `expansion.yml` beside
+`result.yml` — server-owned deliberately, since the browser rewrites `request.yml` wholesale
+on nearly every edit. A row holding a token is a *template*: not a fourth kind of row, just
+one the commit cascade skips, so nothing has to be kept in step. The recipe shows a template's
+count and never the items it made.
 
 An agent carries a **default preset and default params**, and a run layers its own over them
 per key — the person clicking launch is the one least placed to know their login node needs
@@ -635,7 +675,8 @@ An agent created without a name is named after its **host**, not a bare adjectiv
 `gui/names.py` composes `<word>-<host>` and stores the word as `agent_naming`, which is how
 renaming an ssh alias can re-derive and rename the agent to match (`_repoint_agents`) while
 leaving its home path untouched. A hand-typed name carries no such record, so it does not
-follow a host rename.
+follow a host rename — and the regenerate button beside the name is the only way back from
+that, since it is the one caller that sends a `naming` record *with* the rename.
 
 ---
 

@@ -11,7 +11,11 @@
     loadProject,
     loadRuns,
     refresh,
+    openRunGroup,
     select,
+    toggleRunGroup,
+    toggleTheme,
+    ui,
   } from './lib/state.svelte.js'
   import Ago from './components/Ago.svelte'
   import Rail from './components/Rail.svelte'
@@ -25,9 +29,14 @@
   import WorkflowView from './views/WorkflowView.svelte'
   import RunView from './views/RunView.svelte'
   // The wordmark's own M *is* the logo mark, so this replaces the whole word
-  // rather than sitting beside it. Dark variant only: the page is dark-only
-  // (`color-scheme: dark` in app.css), unlike the favicon, which is not.
-  import wordmark from '$icon/metasmith-lockup-dark.svg'
+  // rather than sitting beside it. Both variants are imported because both now
+  // ship: the "-dark" file is the one drawn *for* a dark ground. Importing is
+  // also what makes them exist -- vite emits only what something references,
+  // and `setup.py` packages the emitted bundle and nothing else under `gui/`.
+  import wordmarkDark from '$icon/metasmith-lockup-dark.svg'
+  import wordmarkLight from '$icon/metasmith-lockup-light.svg'
+
+  const wordmark = $derived(ui.theme === 'light' ? wordmarkLight : wordmarkDark)
 
   // where a release lives. The urls themselves come from the server, which reads
   // them from constants.py -- the one place they are written down.
@@ -124,6 +133,11 @@
 
   let sel = $derived(app.selected[app.section])
 
+  // Which views own their own layout row because they carry a side panel. Named
+  // here rather than spelled into the class expression so the next one to grow
+  // a panel edits a list instead of an `||`.
+  const PANELLED = new Set(['workflows', 'runs'])
+
   // -- rail contents -------------------------------------------------------
 
   // Two runs of hosts under their own headings: the ones metasmith wrote and can
@@ -151,9 +165,45 @@
     app.workflows.map((w) => ({ id: w.name, wf: w, dim: !!w.archived_at })),
   )
 
-  let runItems = $derived(
-    app.runs.map((r) => ({ id: `${r.workflow}/${r.name}`, run: r, dim: !!r.archived_at })),
-  )
+  // Runs under the workflow they belong to. The list handed to the rail is still
+  // flat -- a shut group simply contributes its heading and none of its rows --
+  // and the collapsed set lives outside this derivation, so the eight-second
+  // refresh above redraws the rows without reopening anything.
+  //
+  // Group order follows first appearance in `app.runs`, which the server already
+  // sorts newest-first, so the workflow you last ran leads.
+  let runItems = $derived.by(() => {
+    const groups = new Map()
+    for (const r of app.runs) {
+      if (!groups.has(r.workflow)) groups.set(r.workflow, [])
+      groups.get(r.workflow).push(r)
+    }
+    const out = []
+    for (const [workflow, runs] of groups) {
+      const collapsed = ui.collapsedRuns.has(workflow)
+      out.push({
+        id: `g:${workflow}`,
+        kind: 'heading',
+        label: workflow,
+        count: runs.length,
+        collapsed,
+        ontoggle: () => toggleRunGroup(workflow),
+      })
+      if (collapsed) continue
+      for (const r of runs) {
+        out.push({ id: `${r.workflow}/${r.name}`, run: r, dim: !!r.archived_at })
+      }
+    }
+    return out
+  })
+
+  // Selecting a run inside a shut group would leave it selected and invisible,
+  // and the selection can move without a click -- a deleted run, a fresh launch.
+  $effect(() => {
+    const id = app.selected.runs
+    if (!id) return
+    openRunGroup(String(id).split('/')[0])
+  })
 
   // -- deletions -----------------------------------------------------------
 
@@ -181,10 +231,12 @@
     })
   }
 
+  // Archived is not gone: the pane stays on it so the restore is where you are
+  // already looking. Only a real delete drops the selection.
   async function removeRun(r) {
     await attempt(async () => {
-      await api.del(`/runs/${r.workflow}/${r.name}`)
-      if (sel === `${r.workflow}/${r.name}`) app.selected.runs = null
+      const out = await api.del(`/runs/${r.workflow}/${r.name}`)
+      if (out.action === 'deleted' && sel === `${r.workflow}/${r.name}`) app.selected.runs = null
       await refresh('runs')
     })
   }
@@ -225,6 +277,18 @@
         </button>
       {/if}
     </div>
+
+    <!-- the glyph is the theme you would switch *to*, not the one showing, and
+         the title says so. Outside the project check for the same reason the
+         dot beside it is: neither is about the project. -->
+    <button
+      class="copy"
+      onclick={toggleTheme}
+      title={ui.theme === 'dark' ? 'switch to the light theme' : 'switch to the dark theme'}
+      aria-label={ui.theme === 'dark' ? 'switch to the light theme' : 'switch to the dark theme'}
+    >
+      <Icon name={ui.theme === 'dark' ? 'sun' : 'moon'} size={14} />
+    </button>
 
     <!-- outside the project check on purpose: whether the server is answering
          is exactly the thing you want to read when nothing has loaded -->
@@ -281,7 +345,13 @@
               </div>
               <div class="row">
                 {#if item.host.managed}<span class="tag ok">msm</span>{/if}
-                <DeleteControl title="remove host" onconfirm={() => removeHost(item.host.alias)} />
+                <!-- an ssh host is a block in a text file you can also edit by
+                     hand, so this one really does remove it -->
+                <DeleteControl
+                  title="remove host"
+                  archived
+                  onconfirm={() => removeHost(item.host.alias)}
+                />
               </div>
             </div>
           {/if}
@@ -317,7 +387,7 @@
               {#if item.agent.archived_at}<span class="tag warn">arch</span>{/if}
               <DeleteControl
                 title="delete agent"
-                archives
+                archived={!!item.agent.archived_at}
                 onconfirm={() => removeAgent(item.agent.name)}
               />
             </div>
@@ -365,7 +435,7 @@
               </button>
               <DeleteControl
                 title="delete workflow"
-                archives
+                archived={!!item.wf.archived_at}
                 onconfirm={() => removeWorkflow(item.wf.name)}
               />
             </div>
@@ -398,19 +468,30 @@
                 class:ok={item.run.state === 'completed'}
                 class:bad={item.run.state === 'failed'}
               >{item.run.state}</span>
-              <DeleteControl title="delete run" onconfirm={() => removeRun(item.run)} />
+              <DeleteControl
+                title="delete run"
+                archived={!!item.run.archived_at}
+                onconfirm={() => removeRun(item.run)}
+              />
             </div>
           </div>
         {/snippet}
       </Rail>
     {/if}
 
-    <!-- The workflow pane carries a panel on its right edge, and a panel inside
-         a scrolling box is not a panel: the page's scrollbar ends up outside it
-         and it slides under the header. So for that one view `main` stops being
-         the scroll container and becomes a plain row -- the view scrolls its own
+    <!-- A pane carrying a panel on its right edge cannot live inside a
+         scrolling box: the page's scrollbar ends up outside the panel and it
+         slides under the header. So for those views `main` stops being the
+         scroll container and becomes a plain row -- the view scrolls its own
          column, the panel scrolls its own list. Every other view is unchanged. -->
-    <main class:flush={app.section === 'workflows' && sel}>
+    <main class:flush={PANELLED.has(app.section) && sel}>
+      <!-- Nothing selected draws nothing. Each of these four held a heading, a
+           paragraph of prose about what the section is for, and two of them a
+           second `new` button beside the one already in the rail's header. It
+           is the screen you see for a moment on the way to a selection, so
+           nobody reads it -- and the duplicate button made "new agent" a thing
+           in two places that had to be kept in step. The rail is the section's
+           own explanation. -->
       {#if app.section === 'ssh'}
         {#if sel === 'new'}
           <SshNew />
@@ -418,65 +499,19 @@
           <SshEditor />
         {:else if sel?.startsWith('host:')}
           {#key sel}<SshHost alias={sel.slice(5)} />{/key}
-        {:else}
-          <div class="blank">
-            <h1>ssh hosts</h1>
-            <p class="muted">
-              Metasmith connects to remote machines with a bare <span class="mono">ssh &lt;alias&gt;</span>,
-              so your own ssh config is what makes a host reachable. Pick a host to
-              see it, or add one — metasmith writes into its own block and leaves
-              the rest of the file alone.
-            </p>
-          </div>
         {/if}
       {:else if app.section === 'agents'}
         {#if sel}
           {#key sel}<AgentView name={sel} />{/key}
-        {:else}
-          <div class="blank">
-            <h1>agents</h1>
-            <p class="muted">
-              An agent is a place metasmith can run work: a directory on this
-              machine or on a host you reach over ssh. Deploying one installs
-              everything it needs there.
-            </p>
-            <div>
-              <button class="primary" disabled={creating} onclick={newAgent}>
-                {creating ? 'creating…' : 'new agent'}
-              </button>
-            </div>
-          </div>
         {/if}
       {:else if app.section === 'workflows'}
         {#if sel}
           {#key sel}<WorkflowView name={sel} />{/key}
-        {:else}
-          <div class="blank">
-            <h1>workflows</h1>
-            <p class="muted">
-              A workflow is some inputs and the types you want out of them. The
-              planner finds the steps in between. Workflows are not tied to an
-              agent — the same one can run anywhere.
-            </p>
-            <div>
-              <button class="primary" disabled={creating} onclick={newWorkflow}>
-                {creating ? 'creating…' : 'new workflow'}
-              </button>
-            </div>
-          </div>
         {/if}
       {:else if sel}
         {#key sel}
           <RunView workflow={sel.split('/')[0]} run={sel.split('/').slice(1).join('/')} />
         {/key}
-      {:else}
-        <div class="blank">
-          <h1>runs</h1>
-          <p class="muted">
-            Every launch of a workflow, newest first. Runs keep going on the agent
-            whether or not this page is open.
-          </p>
-        </div>
       {/if}
     </main>
   </div>
@@ -568,19 +603,18 @@
   .body { display: flex; flex: 1; min-height: 0; }
   main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   main.flush { overflow: hidden; padding: 0; display: flex; min-height: 0; }
-  .blank { max-width: 560px; display: flex; flex-direction: column; gap: 10px; }
   .notice {
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 8px 14px;
-    background: #3a2220;
-    border-bottom: 1px solid #6b3a36;
-    color: #f0c9c5;
+    background: var(--notice-bad-bg);
+    border-bottom: 1px solid var(--notice-bad-line);
+    color: var(--notice-bad-text);
     font-size: 13px;
   }
-  .notice.refused { background: #3a3320; border-color: #6b5a2f; color: #efe0bc; }
+  .notice.refused { background: var(--notice-warn-bg); border-color: var(--notice-warn-line); color: var(--notice-warn-text); }
   /* not everything worth saying is a failure: a rename that moved other objects
      with it is a report, and colouring it like an error reads as one */
-  .notice.info { background: #1e2b33; border-color: #33525f; color: #cfe4ee; }
+  .notice.info { background: var(--notice-info-bg); border-color: var(--notice-info-line); color: var(--notice-info-text); }
 </style>

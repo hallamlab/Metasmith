@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..models.dag_renderer import LabelMode
+from ..models.dag_draw import default_label, geometry
+from ..models.dag_layout import layout as _layout
+from ..models.dag_renderer import STYLES, LabelMode, NodeKind
 from ..models.libraries import DataInstanceLibrary, DataInstanceLibraryView
 from ..models.solver import Transform, Dependency
 from ..models.workflow import WorkflowPlan, WorkflowTask
@@ -49,6 +51,7 @@ def plan_workflow(
     transform_libraries: list[str],
     resource_libraries: list[str] | None = None,
     workspace: str | None = None,
+    shared_input_paths: list[str] | None = None,
 ) -> dict:
     """Plan a workflow: chain of transforms from the given inputs to target_types.
 
@@ -56,6 +59,13 @@ def plan_workflow(
     unset, the library is planned as it stands -- one sample holding everything
     in it -- which is the whole of what a plan needs; sampling is a way of
     branching it, not a precondition for having one.
+
+    `shared_input_paths` names entries of the *input* library that every sample
+    should see -- a reference database sitting beside the per-sample files. A
+    sample mask is one index item's lineage, so anything outside it is invisible
+    to the plan though still staged; and making the database an ancestor of the
+    index instead would collapse every sample into one view. So it goes in
+    alongside the resource libraries, which is where a shared thing belongs.
 
     Persists the resulting WorkflowTask under <workspace>/<task_key>/ on success.
     """
@@ -90,6 +100,13 @@ def plan_workflow(
         target_names.append(spec.dtype_name)
 
     res_views = [DataInstanceLibraryView(lib) for lib in res_libs]
+    # without a sample type the single view already holds everything, and adding
+    # the same entries a second time offers the solver two of each
+    if shared_input_paths and sample_type:
+        shared = {Path(p) for p in shared_input_paths}
+        missing = sorted(str(p) for p in shared - set(data_lib.manifest))
+        assert not missing, f"shared inputs not in [{data_library}]: {', '.join(missing)}"
+        res_views.append(DataInstanceLibraryView(data_lib, mask=shared))
     plan = WorkflowPlan.Generate(
         given=[[sample] + res_views for sample in samples],
         transforms=tr_libs,
@@ -169,6 +186,7 @@ def render_dag(
     label_mode: str = "column",
     show_step_order: bool = False,
     colour: str = "module",
+    theme: str = "light",
 ) -> dict:
     task = _ws.load_task(workspace, task_key)
     # name the file with its real extension: `plan.dag` alone reads back as a
@@ -181,8 +199,65 @@ def render_dag(
         label_mode=LabelMode(label_mode),
         show_step_order=show_step_order,
         colour=colour,
+        theme=theme,
     )
     return {"task_key": task_key, "format": format, "path": str(rendered)}
+
+
+def dag_geometry(
+    nodes: list[dict],
+    edges: list[dict],
+    label_mode: str = "column",
+    font_size: float = 13.0,
+    max_label_chars: int = 22,
+) -> dict:
+    """Place an arbitrary graph, in pixels, for a caller that draws it itself.
+
+    Same engine as `render_dag` -- the rails layout and the routed, jogged,
+    corner-rounded edge paths -- but stopping one step short of ink. A caller
+    that wants its nodes to be clickable (the GUI's info panel) cannot use the
+    SVG, and laying the graph out a second way in the browser is how the two
+    drawings came to disagree about what the same plan looks like.
+
+    `nodes` are `{"id", "kind", "label"?}`; `kind` is `transform` or anything
+    else, which decides only the marker the edge ends are trimmed for. `edges`
+    are `{"from", "to"}`. Ids are the caller's and are echoed back untouched.
+    """
+    kinds = {}
+    labels = {}
+    for n in nodes:
+        nid = str(n["id"])
+        kinds[nid] = NodeKind.TRANSFORM if n.get("kind") == "transform" else NodeKind.DATA
+        text = n.get("label")
+        if text: labels[nid] = default_label(str(text))
+    lay = _layout(kinds, [(str(e["from"]), str(e["to"])) for e in edges
+                          if str(e["from"]) in kinds and str(e["to"]) in kinds])
+    geo = geometry(
+        lay, STYLES, labels=labels, label_mode=LabelMode(label_mode),
+        font_size=font_size, max_label_chars=max_label_chars,
+    )
+    return {
+        "width": geo.width, "height": geo.height,
+        "font_size": geo.font_size, "marker_d": geo.marker_d,
+        "row_pitch": geo.row_pitch, "lane_pitch": geo.lane_pitch,
+        "anchor": geo.anchor,
+        "nodes": [
+            {
+                "id": n.name, "row": n.row, "lane": n.lane,
+                "cx": n.cx, "cy": n.cy, "label_x": n.label_x,
+                "marker_w": n.marker_w, "marker_h": n.marker_h,
+                "namespace": n.namespace, "label": n.label,
+                "full": n.full, "truncated": n.truncated,
+            }
+            for n in geo.nodes
+        ],
+        # a back edge is reported so a caller can say the cycle exists; it has
+        # no path because the rails engine does not route one
+        "edges": [
+            {"from": e.src, "to": e.dst, "back": e.back, "d": e.d}
+            for e in geo.edges
+        ],
+    }
 
 
 def list_tasks(workspace: str | None = None) -> list[dict]:

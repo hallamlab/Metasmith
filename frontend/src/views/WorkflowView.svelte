@@ -1,12 +1,13 @@
 <script>
   import { api } from '../lib/api.svelte.js'
-  import { app, attempt, loadRuns, loadWorkflows, notify, select } from '../lib/state.svelte.js'
+  import { app, attempt, loadRuns, loadWorkflows, notify, select, ui } from '../lib/state.svelte.js'
   import Ago from '../components/Ago.svelte'
   import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
   import JobLog from '../components/JobLog.svelte'
   import MiniGraph from '../components/MiniGraph.svelte'
   import SaveChip from '../components/SaveChip.svelte'
+  import SampleTable from '../components/SampleTable.svelte'
   import SidePanel from '../components/SidePanel.svelte'
   import HintsPanel from './HintsPanel.svelte'
   import LibraryList from './LibraryList.svelte'
@@ -43,38 +44,20 @@
   // moves again, so clicking through the list below never fights the picture.
   let drawing = $state(null)
 
-  // Which row of the recipe a type picked in the panel should land in. The
-  // builder used to be one form with one type field, so there was nowhere else
-  // for a picked type to go; now every row has a field, and the answer is the
-  // one you were last in. Only rows the *request* holds are ever set here: a
-  // registered row's field commits a library write, and a pick landing in it
-  // long after the field closed would be a retype nobody asked for.
-  let editing = $state(null)
-
+  // Picking a type in the panel moves the panel, and nothing else. It used to
+  // also write that type into whichever recipe row was last focused -- a
+  // holdover from the builder card, which had one type field and nowhere else
+  // for a pick to go. Now every row has its own field, and clicking a row's
+  // type to look at it is what puts that row in focus: so reading around the
+  // graph afterwards retyped the row you had just been reading about, quietly,
+  // once per click. The panel is for looking; the row is where you type.
   function pickType(type) {
     focus = type
     drawing = null
-    applyToEditing(type)
   }
 
-  function applyToEditing(type) {
-    if (!editing) return
-    if (editing.kind === 'draft') {
-      if (!recipe.drafts.some((d) => d.id === editing.id)) return (editing = null)
-      patchDraft(editing.id, { dtype: type })
-      persist().then(commitDrafts)
-    } else if (editing.kind === 'target') {
-      if (editing.id >= recipe.targets.length) return (editing = null)
-      patchTarget(editing.id, { type })
-      persist()
-    }
-  }
-
-  // a row of the recipe naming its own type: it moves the panel, and nothing else
-  function showType(type) {
-    focus = type
-    drawing = null
-  }
+  // a row of the recipe naming its own type: the same thing, from the other side
+  const showType = pickType
 
   function pickTransform(i) {
     drawing = { kind: 'transform', i }
@@ -116,8 +99,107 @@
         value: d.value ?? '',
         dtype: d.dtype ?? '',
         parents: [...(d.parents ?? [])],
+        index: !!d.index,
       }))
   }
+
+  // -- the sample table --------------------------------------------------------
+  //
+  // A row of the recipe whose path (or a value row's name or value) names a
+  // column of the attached sheet is a *template*: it never registers as it
+  // stands, and expanding it puts down one library item per sheet row. Which
+  // makes it a template is the token, not a flag -- there is one list of input
+  // rows, and a row stops being a template the moment its last token goes.
+  const TOKEN = /\{[^{}]*\}/
+  const isTemplate = (d) =>
+    d.mode === 'value' ? TOKEN.test(d.name ?? '') || TOKEN.test(d.value ?? '')
+                       : TOKEN.test(d.path ?? '')
+
+  let table = $state(null)
+  let expanding = $state(false)
+
+  async function loadTable() {
+    table = await api.get(`/workflows/${name}/table`)
+  }
+
+  async function attachTable(file, text) {
+    const ok = await attempt(async () => {
+      if (file) {
+        const form = new FormData()
+        form.append('file', file)
+        await api.upload(`/workflows/${name}/table`, form)
+      } else {
+        await api.post(`/workflows/${name}/table`, { text })
+      }
+      return true
+    })
+    if (ok) await loadTable()
+  }
+
+  async function detachTable() {
+    await attempt(() => api.del(`/workflows/${name}/table`))
+    await loadTable()
+  }
+
+  async function expandTable() {
+    expanding = true
+    const job = await attempt(() => api.post(`/workflows/${name}/table/expand`, {}))
+    if (job) jobId = job.id
+    else expanding = false
+  }
+
+  async function clearExpansion() {
+    await attempt(() => api.post(`/workflows/${name}/table/clear`, {}))
+    await Promise.all([loadInputs(), loadTable()])
+  }
+
+  // One row is the index, so marking one unmarks the rest. The type of that row
+  // is what the plan is split on, and the server reads it off the same drafts.
+  async function setIndex(id) {
+    recipe.drafts = recipe.drafts.map((d) => ({
+      ...d, index: d.id === id ? !d.index : false,
+    }))
+    await persist()
+    await loadTable()
+  }
+
+  // A registered row that is neither the index nor descended from it is in no
+  // sample's mask at all. Marking it shared is the third way in: the planner is
+  // handed it alongside the resource libraries, once, for every sample.
+  let sharedPaths = $derived(wf?.request?.shared_input_paths ?? [])
+
+  async function setShared(item, on) {
+    const next = on
+      ? [...new Set([...sharedPaths, item.path])]
+      : sharedPaths.filter((p) => p !== item.path)
+    await attempt(async () => {
+      await api.put(`/workflows/${name}`, { shared_input_paths: next })
+      return true
+    })
+    await load()
+  }
+
+  // The index row's declared type -- what the library is split on. Null when no
+  // sheet is attached, which is the unsampled plan the page has always sent.
+  let sampleType = $derived.by(() => {
+    if (!table?.attached) return null
+    const idx = recipe.drafts.find((d) => d.index && isTemplate(d))
+    return idx?.dtype?.trim() || null
+  })
+
+  // What stops a solve. Both are silent failures rather than errors: a sheet
+  // with no index plans one run over everything, and two indexes is a lineage
+  // nothing downstream defines.
+  let templateCount = $derived(recipe.drafts.filter(isTemplate).length)
+  let indexCount = $derived(recipe.drafts.filter((d) => d.index && isTemplate(d)).length)
+  let tableProblem = $derived.by(() => {
+    if (!table?.attached || !templateCount) return null
+    if (indexCount === 0) return 'no templated row is marked as the sample index'
+    if (indexCount > 1) return 'two rows are marked as the sample index'
+    if (!sampleType) return 'the sample index row has no type yet'
+    if (!(table.expansion?.row_count > 0)) return 'the sheet has not been expanded yet'
+    return null
+  })
 
   let draftSeq = 0
   const nextDraftId = () => `d${(draftSeq++).toString(36)}${Math.random().toString(36).slice(2, 7)}`
@@ -147,15 +229,16 @@
   $effect(() => {
     const n = name
     wf = null
+    table = null
     jobId = null
     focus = null
     drawing = null
-    editing = null
     loadedFor = null
     attempt(async () => {
       await Promise.all([
         load(),
         loadInputs(),
+        loadTable(),
         api.get('/project/types').then((v) => (types = v)),
         api.get('/project/type-index').then((v) => (index = v)),
       ])
@@ -254,14 +337,15 @@
     }
   }
 
-  // `sample_type` is written out as null on purpose rather than left off: the
+  // `sample_type` is written out even when it is null rather than left off: the
   // server merges a request over the stored one, so omitting the key would keep
-  // whatever a previous version of this page (or the CLI) put there. The page
-  // does not offer sampling -- everything registered is one sample -- and this
-  // is what makes that true of a workflow that once had a type marked.
+  // whatever a previous version of this page (or the CLI) put there -- and a
+  // sheet that has since been detached would leave the plan still split on a
+  // type nothing is marked with. With a sheet attached it is the index row's
+  // type: that row is what a sample *is*.
   function requestBody() {
     return {
-      sample_type: null,
+      sample_type: sampleType,
       target_types: recipe.targets,
       transform_libraries: recipe.transform_libraries,
       input_drafts: recipe.drafts,
@@ -348,7 +432,6 @@
     recipe.drafts = recipe.drafts
       .filter((d) => d.id !== id)
       .map((d) => ({ ...d, parents: d.parents.filter((p) => p !== key) }))
-    if (editing?.kind === 'draft' && editing.id === id) editing = null
     await persist()
   }
 
@@ -372,6 +455,10 @@
   let committing = false
 
   function draftReady(d, registered) {
+    // a template is not an incomplete row: it is a complete declaration of N
+    // rows, and registering it as it stands would put a path with brace
+    // characters in it into the library
+    if (isTemplate(d)) return false
     const identity = d.mode === 'value' ? d.name.trim() : d.path.trim()
     return !!d.dtype.trim() && !!identity && d.parents.every((p) => registered.has(p))
   }
@@ -397,7 +484,6 @@
         recipe.drafts = recipe.drafts
           .filter((x) => x.id !== d.id)
           .map((x) => ({ ...x, parents: x.parents.map((p) => (p === key ? out.path : p)) }))
-        if (editing?.kind === 'draft' && editing.id === d.id) editing = null
         await loadInputs()
         await persist()
       }
@@ -531,7 +617,6 @@
   // makes the row for it rather than filling a field somewhere else and leaving
   // you to find it -- the hints sit well below the recipe.
   function useType(type) {
-    editing = null
     showType(type)
     addDraft('file', { dtype: type })
     document.getElementById('msm-recipe')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -683,6 +768,16 @@
 
   const OVERRIDE_FIELDS = ['cpus', 'memory_gb', 'duration_h']
 
+  // What the ∞ button puts in the time box. An empty box already means
+  // something -- "whatever the transform declared" -- so "no limit at all"
+  // needs a value of its own rather than the absence of one. The server knows
+  // this token by name; see `UNLIMITED` in gui/api.py.
+  const UNLIMITED = 'unlimited'
+
+  function setOverride(order, field, value) {
+    overrides[order] = { ...(overrides[order] ?? {}), [field]: value }
+  }
+
   // Only the boxes with something in them, and only the steps with such a box.
   // An empty string sent as a value would be a resource directive of nothing.
   function overridePayload() {
@@ -780,6 +875,12 @@
           targets={recipe.targets}
           typeOptions={allTypes}
           {counts}
+          {sharedPaths}
+          columns={table?.columns ?? []}
+          rowCount={table?.row_count ?? 0}
+          expansion={table?.expansion ?? null}
+          onindex={setIndex}
+          onshared={setShared}
           onfocus={showType}
           onremoveInput={removeInput}
           onremoveDraft={removeDraft}
@@ -790,17 +891,26 @@
           onretype={retypeInput}
           onrepoint={repointInput}
           oncommit={commitRow}
-          ontypefocus={(row) =>
-            (editing = row.kind === 'item' ? null : { kind: row.kind, id: row.id })}
           onadd={addRow}
-        />
+        >
+          {#snippet tableStrip()}
+            <SampleTable
+              {table}
+              busy={expanding}
+              onattach={attachTable}
+              ondetach={detachTable}
+              onexpand={expandTable}
+              onclear={clearExpansion}
+            />
+          {/snippet}
+        </RecipeCard>
       </div>
 
       <div class="row wrap">
         <button
           class="primary"
           onclick={solve}
-          disabled={recipe.targets.length === 0 || blankTarget || dupTarget}
+          disabled={recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
         >{wf.planned ? 'solve again' : 'solve'}</button>
         {#if recipe.targets.length === 0}
           <span class="small muted">add at least one output</span>
@@ -808,6 +918,12 @@
           <span class="small muted">an output row has no type yet</span>
         {:else if dupTarget}
           <span class="small muted">two outputs are the same type with the same lineage</span>
+        {:else if tableProblem}
+          <span class="small muted">{tableProblem}</span>
+        {:else if sampleType}
+          <span class="small muted">
+            one run per sheet row, split on <span class="mono">{sampleType}</span>
+          </span>
         {:else if stale}
           <span class="tag warn">recipe changed — the result below is from the old one</span>
         {:else if wf.planned}
@@ -819,11 +935,16 @@
       </div>
 
       <div class="card col" style="gap:10px">
+        <!-- one log for both jobs this page starts: an expand and a solve are
+             the same shape of thing to watch, and only one of them runs at a
+             time -->
         <JobLog
           {jobId}
           onend={async () => {
-            await load()
-            await loadWorkflows()
+            expanding = false
+            // four independent reads, not a chain: solving is ~400ms of server
+            // and this used to add three sequential round trips to the end of it
+            await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
           }}
         />
 
@@ -843,24 +964,16 @@
           </div>
 
           <div class="dag">
-            <img src={`/api/workflows/${wf.name}/dag`} alt="workflow diagram" />
+            <!-- the theme is in the query string, not a header: the browser
+                 caches by url, and switching themes would otherwise show the
+                 rendering it already had -->
+            <img src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}`} alt="workflow diagram" />
           </div>
 
-          <div class="scroll">
-            <table class="small">
-              <thead><tr><th>#</th><th>step</th><th>takes</th><th>produces</th></tr></thead>
-              <tbody>
-                {#each wf.result.step_display ?? [] as step}
-                  <tr>
-                    <td class="muted">{step.order}</td>
-                    <td class="mono">{step.transform}</td>
-                    <td class="mono muted">{step.uses.join(', ') || '—'}</td>
-                    <td class="mono muted">{step.produces.join(', ') || '—'}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+          <!-- The plan is stated once, above. The table that used to restate it
+               as `# / step / takes / produces` said nothing the drawing does
+               not. `step_display` is still on the payload -- the resources
+               table below reads `declared_resources` off the same array. -->
           <p class="small muted">
             solved <Ago iso={wf.generated_at} />{#if wf.result.stdlib_commit}
               · library <span class="mono">{wf.result.stdlib_commit.slice(0, 12)}</span>{/if}
@@ -940,20 +1053,38 @@
                         {step.transform}
                       </td>
                       {#each OVERRIDE_FIELDS as f}
+                        {@const v = overrides[step.order]?.[f] ?? ''}
                         <td>
-                          <input
-                            class="num"
-                            inputmode="decimal"
-                            placeholder={step.declared_resources?.[f] ?? '—'}
-                            aria-label={`${f} for step ${step.order}`}
-                            value={overrides[step.order]?.[f] ?? ''}
-                            oninput={(e) => {
-                              overrides[step.order] = {
-                                ...(overrides[step.order] ?? {}),
-                                [f]: e.currentTarget.value,
-                              }
-                            }}
-                          />
+                          <div class="cell">
+                            {#if f === 'duration_h' && v === UNLIMITED}
+                              <!-- The box cannot show a number for this, and
+                                   showing an empty one would read as the other
+                                   meaning, so it says which it is. -->
+                              <span class="unlimited mono" title="no time limit">∞ no limit</span>
+                            {:else}
+                              <input
+                                class="num"
+                                inputmode="decimal"
+                                placeholder={step.declared_resources?.[f] ?? '—'}
+                                aria-label={`${f} for step ${step.order}`}
+                                value={v}
+                                oninput={(e) => setOverride(step.order, f, e.currentTarget.value)}
+                              />
+                            {/if}
+                            {#if f === 'duration_h'}
+                              <button
+                                class="inf"
+                                class:on={v === UNLIMITED}
+                                aria-pressed={v === UNLIMITED}
+                                title={v === UNLIMITED
+                                  ? 'back to a time limit'
+                                  : 'run with no time limit at all'}
+                                aria-label={`no time limit for step ${step.order}`}
+                                onclick={() =>
+                                  setOverride(step.order, f, v === UNLIMITED ? '' : UNLIMITED)}
+                              >∞</button>
+                            {/if}
+                          </div>
                         </td>
                       {/each}
                     </tr>
@@ -1008,6 +1139,7 @@
     </div>
 
     <SidePanel
+      id="workflow"
       title={drawingLabel ?? 'types'}
       subtitle={graph?.caption ?? (focus ? null : 'nothing selected')}
     >
@@ -1059,7 +1191,9 @@
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   .loading { padding: 18px; }
   .scroll { overflow-x: auto; }
-  .dag { background: #fff; border-radius: var(--radius); padding: 8px; overflow: auto; }
+  /* no background of its own any more: the svg paints its own ground in either
+     theme, and a hard-coded white one was a slab inside a dark card */
+  .dag { border-radius: var(--radius); padding: 8px; overflow: auto; }
   .dag img { max-width: 100%; }
   .link {
     background: none;
@@ -1080,6 +1214,26 @@
   .res th { font-weight: normal; color: var(--muted); text-align: left; }
   .res th:first-child { width: 2em; }
   .res th:nth-child(n + 3) { width: 5.5em; }
+  /* the time column carries the ∞ button beside its box */
+  .res th:last-child { width: 8em; }
   .res td { padding: 1px 4px 1px 0; }
   .res .num { width: 100%; min-width: 0; text-align: right; }
+  .cell { display: flex; align-items: center; gap: 4px; }
+  .cell .num { flex: 1; }
+  .unlimited {
+    flex: 1;
+    font-size: 11px;
+    color: var(--accent);
+    white-space: nowrap;
+    text-align: right;
+  }
+  .inf {
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    line-height: 1;
+    font-size: 13px;
+    background: none;
+    color: var(--muted);
+  }
+  .inf.on { color: var(--accent); border-color: var(--accent); }
 </style>

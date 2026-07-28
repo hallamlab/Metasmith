@@ -1,9 +1,12 @@
 """Workflow runtime: stage / run / wait / tail / cancel / collect on an agent."""
 from __future__ import annotations
 
+import csv
+import io
 import os
 from pathlib import Path
 
+from ..constants import AgentPaths
 from ..models.libraries import Resources, Size, Duration
 from ..models.remote import Source, SourceType, Logistics
 from ..coms.terminals import IDLE_TIMEOUT
@@ -57,7 +60,15 @@ def run(
             kw = {}
             if "cpus" in v: kw["cpus"] = v["cpus"]
             if "memory_gb" in v: kw["memory"] = Size.GB(v["memory_gb"])
-            if "duration_h" in v: kw["duration"] = Duration(hours=v["duration_h"])
+            if "duration_h" in v:
+                d = v["duration_h"]
+                # the sentinel the GUI's infinity button sends: "remove the
+                # limit", which is not the same as sending no duration at all
+                kw["duration"] = (
+                    Duration.Unlimited()
+                    if isinstance(d, str) and d.strip().lower() == "unlimited"
+                    else Duration(hours=float(d))
+                )
             # An int key is the only form that selects *one* step; a str is read
             # as a transform name and matches every step running it. Keys arrive
             # from JSON as strings, so a page addressing step 3 was silently
@@ -101,6 +112,86 @@ def tail(
 ) -> dict:
     agent = load_agent(agent_path)
     return agent.TailWorkflowLog(task_key, source, lines, run)
+
+
+# Nextflow's own task vocabulary, folded onto the four states anything
+# displaying a run cares about. `other` is deliberate rather than a fallthrough
+# to "running": a status this does not know is not evidence of progress.
+_TRACE_STATES = {
+    "COMPLETED": "done",
+    "CACHED":    "done",
+    "FAILED":    "failed",
+    "ABORTED":   "failed",
+    "RUNNING":   "running",
+    "SUBMITTED": "running",
+    "NEW":       "running",
+}
+
+
+def parse_trace(lines) -> list[dict]:
+    """Nextflow's `-with-trace` TSV as rows, with a normalised state.
+
+    Every column is kept as written -- the widths, the `%cpu`, the human sizes
+    are all nextflow's formatting and re-deriving them here would only be a
+    second opinion. What is added is `state` and an integer `exit`, because a
+    caller asking which steps died should not have to know that a task can be
+    COMPLETED and still exit non-zero under an ignoring error strategy.
+    """
+    if isinstance(lines, str):
+        lines = lines.splitlines()
+    reader = csv.DictReader(io.StringIO("\n".join(lines)), delimiter="\t")
+    rows = []
+    for raw in reader:
+        if not raw.get("name"):
+            continue
+        row = {k: v for k, v in raw.items() if k is not None}
+        status = (row.get("status") or "").strip().upper()
+        try:
+            code = int(str(row.get("exit", "")).strip())
+        except (TypeError, ValueError):
+            code = None
+        row["exit"] = code
+        state = _TRACE_STATES.get(status, "other")
+        if state == "done" and code not in (0, None):
+            state = "failed"
+        row["state"] = state
+        rows.append(row)
+    return rows
+
+
+def _trace_envelope(rows: list[dict], source: str, path: str | None) -> dict:
+    return {
+        "source": source,
+        "file": path,
+        "tasks": rows,
+        "failed": sum(1 for r in rows if r["state"] == "failed"),
+        "running": sum(1 for r in rows if r["state"] == "running"),
+        "done": sum(1 for r in rows if r["state"] == "done"),
+    }
+
+
+def read_trace(log_dir: str | Path) -> dict:
+    """The trace of a run whose logs are already on this machine.
+
+    A collected run carries its whole log directory, so the common case needs
+    no agent and no ssh at all.
+    """
+    p = Path(log_dir)
+    if p.is_dir():
+        p = p/AgentPaths.NXF_TRACE_FILE
+    if not p.is_file():
+        return _trace_envelope([], "local", str(p))
+    return _trace_envelope(
+        parse_trace(p.read_text(encoding="utf-8", errors="replace")), "local", str(p),
+    )
+
+
+def trace(agent_path: str, task_key: str, run: int | None = None) -> dict:
+    """The trace of a run that is still only on the agent."""
+    agent = load_agent(agent_path)
+    res = agent.ReadWorkflowTrace(task_key, run)
+    rows = parse_trace(res["lines"]) if res["exists"] else []
+    return _trace_envelope(rows, "agent", res["file"]) | {"run_dir": res["run_dir"]}
 
 
 def cancel(agent_path: str, task_key: str, timeout_s: float = 30.0) -> dict:

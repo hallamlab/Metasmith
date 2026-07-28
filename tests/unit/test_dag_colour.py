@@ -10,7 +10,7 @@ from metasmith.models.dag_colour import (
     PALETTE, SCHEMES, UNMATCHED, Colouring, colour_layout,
 )
 from metasmith.models.dag_layout import repeat_motifs
-from metasmith.models.dag_renderer import STYLES, DagRenderer, NodeKind
+from metasmith.models.dag_renderer import DARK, LIGHT, STYLES, DagRenderer, NodeKind
 
 from tests.fixtures import load_dag
 
@@ -151,7 +151,7 @@ def test_svg_puts_the_hue_on_the_marker_and_the_rail():
     hues = set(r.colouring().nodes.values())
     assert hues <= set(PALETTE)
     for hue in hues:
-        # a target square carries the hue on its fill, not its outline
+        # a target carries the hue on its fill, not its outline
         assert f'stroke="{hue}"' in svg or f'fill="{hue}"' in svg
     assert any(f'<path d=' in l and 'stroke="#' in l for l in svg.splitlines())
 
@@ -163,12 +163,13 @@ def test_a_colour_scheme_tints_the_outline_of_a_hollow_marker_and_the_fill_of_a_
     r.mark(NodeKind.TARGET, "ns::wanted")
     hue = r.colouring().nodes["ns::thing"]
     svg = r.to_svg()
-    circle = [l for l in svg.splitlines() if l.startswith("<circle")][0]
-    square = [l for l in svg.splitlines() if l.startswith("<rect x=")][0]
-    assert f'fill="{STYLES[NodeKind.DATA].fill}"' in circle  # hollow: hue on outline
-    assert f'stroke="{hue}"' in circle
-    assert f'fill="{hue}"' in square  # solid: hue on fill
-    assert f'stroke="{STYLES[NodeKind.TARGET].stroke}"' in square
+    # both are circles, so they are told apart by which one is filled -- which
+    # is exactly the distinction `Style.solid` names and `tint` reads
+    circles = [l for l in svg.splitlines() if l.startswith("<circle")]
+    hollow = [l for l in circles if f'fill="{STYLES[NodeKind.DATA].fill}"' in l][0]
+    solid = [l for l in circles if f'fill="{hue}"' in l][0]
+    assert f'stroke="{hue}"' in hollow  # hollow: hue on the outline
+    assert f'stroke="{STYLES[NodeKind.TARGET].stroke}"' in solid  # solid: on the fill
 
 
 def test_raster_dot_carries_the_hue_on_nodes_and_edges():
@@ -201,3 +202,44 @@ def test_the_colouring_is_deterministic():
 def test_an_empty_colouring_is_falsey():
     assert not Colouring()
     assert Colouring(nodes={"a": "#000000"})
+
+
+# -- one palette, either ground ----------------------------------------------
+
+
+def _luminance(hexcolour: str) -> float:
+    def channel(v):
+        v = int(v, 16) / 255
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+    h = hexcolour.lstrip("#")
+    r, g, b = (channel(h[i:i + 2]) for i in (0, 2, 4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = sorted((_luminance(a), _luminance(b)))
+    return (lb + 0.05) / (la + 0.05)
+
+
+def test_one_palette_reads_on_either_ground():
+    # `PALETTE` is deliberately not themed: these are mid-saturation hues chosen
+    # to sit on white *and* stay distinguishable, and a second set would be two
+    # things to keep in agreement. What justifies the one set is that a hue
+    # already accepted on white is *strictly safer* on the dark ground -- so
+    # this asserts the relation, not an absolute floor the light plate itself
+    # does not meet.
+    for hue in list(PALETTE) + [UNMATCHED]:
+        light = _contrast(hue, LIGHT.plate.background)
+        dark = _contrast(hue, DARK.plate.background)
+        assert dark >= light, (hue, light, dark)
+        assert dark >= 3.0, (hue, dark)
+
+
+def test_the_colouring_does_not_depend_on_the_theme():
+    # colour is a pure function of the finished layout and a theme is a property
+    # of the ground; neither may learn about the other
+    assert (
+        load_dag(colour="module").colouring().nodes
+        == load_dag(colour="module", theme="dark").colouring().nodes
+    )

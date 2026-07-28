@@ -4,6 +4,7 @@
   import { agentPayload, formFromAgent, formProblems } from '../lib/agentform.js'
   import AgentFields from './AgentFields.svelte'
   import EditableName from '../components/EditableName.svelte'
+  import Icon from '../components/Icon.svelte'
   import JobLog from '../components/JobLog.svelte'
   import SaveChip from '../components/SaveChip.svelte'
 
@@ -36,6 +37,37 @@
   function adopt(a) {
     agent = a
     form = formFromAgent(a)
+    naming = null
+  }
+
+  // -- the name, and whether it still follows the host ------------------------
+  //
+  // An auto-named agent is `<word>-<host>`, and pointing it at another machine
+  // renames it on save. Typing a name is what stops that, for good -- which is
+  // right, and left no way back. This is the way back: the button asks the
+  // server for a fresh name for whatever host the form currently names, and the
+  // naming record that comes with it rides along on the save, which is what
+  // re-arms the following.
+  //
+  // Held until the save rather than applied through one: the name is a field of
+  // this form like any other, and a button that renamed the object under an
+  // unsaved form would be the only control here that did not wait.
+  let naming = $state(null)
+  let regenerating = $state(false)
+
+  // what the name would be *about* -- the host as the form has it now, which is
+  // not what is on disk while the tab has been changed and not yet saved
+  let formHost = $derived(form?.kind === 'ssh' ? (form.host ?? '').trim() : 'local')
+
+  async function regenerate() {
+    regenerating = true
+    const out = await attempt(() =>
+      api.get(`/defaults/agent/name?host=${encodeURIComponent(formHost || 'local')}`),
+    )
+    regenerating = false
+    if (!out) return
+    naming = { prefix: out.prefix, sort_name: out.sort_name }
+    form.name = out.name
   }
 
   $effect(() => {
@@ -62,7 +94,12 @@
 
   async function save() {
     await attempt(async () => {
-      const next = await api.put(`/agents/${name}`, agentPayload(form))
+      const next = await api.put(`/agents/${name}`, {
+        ...agentPayload(form),
+        // only when the name in the box came from the button rather than from
+        // a keyboard: that is the difference between an auto name and yours
+        ...(naming ? { naming } : {}),
+      })
       notice = next.notes?.length ? { name: next.name, notes: next.notes } : null
       await loadAgents()
       // a rename moved the object; the rail and this view are keyed by name, so
@@ -102,8 +139,22 @@
           value={form.name}
           hint="enter to accept — the rename happens on save"
           title="rename this agent"
-          oncommit={(next) => (form.name = next)}
+          oncommit={(next) => {
+            // typed, so it is yours: it stops following the host, and a record
+            // left over from the button must not ride along and re-arm it
+            naming = null
+            form.name = next
+          }}
         />
+        <button
+          class="regen"
+          disabled={regenerating}
+          onclick={regenerate}
+          title={`make up another name for ${formHost || 'this machine'} — and let it follow that host again`}
+          aria-label="generate another name"
+        >
+          <Icon name="regenerate" size={13} />
+        </button>
         <SaveChip {dirty} />
         {#if agent.archived_at}<span class="tag warn">archived</span>{/if}
       </div>
@@ -206,4 +257,14 @@
   }
   .link:hover { text-decoration: underline; border: none; }
   .incomplete { color: var(--warn, #efe0bc); }
+  /* beside the name, at the weight of the chip on its other side: an offer, not
+     an action on the object */
+  .regen {
+    display: flex;
+    padding: 4px;
+    background: none;
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .regen:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
 </style>
