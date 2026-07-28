@@ -30,6 +30,6 @@ from .models.lineage import (
 from .logging import Log
 from .coms.terminals import LiveShell
 from .env import RemoteShell, Environment, Runtime
-from .agents import Agent, AgentPaths, Spec, TargetBuilder
+from .agents import Agent, AgentPaths, Spec, TargetBuilder, Template
 from .constants import VERSION as METASMITH_VERSION
 from .coms.jupyter import ipynbButtonLink

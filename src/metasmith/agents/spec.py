@@ -88,32 +88,67 @@ class Spec:
 
     # -- serialization -----------------------------------------------------
 
-    def Pack(self) -> dict:
-        """The spec as plain data. Libraries render as their locations."""
+    def Pack(self, relative_to: Path | str | None = None) -> dict:
+        """The spec as plain data. Libraries render as their locations.
+
+        `relative_to` renders every library reference relative to that root,
+        which is what makes a spec portable: an absolute reference is one
+        machine's `/home/someone/...` and arrives at a colleague naming nothing.
+        A reference that does not live under the root is left absolute rather
+        than silently rewritten -- see `Template.Save`, which refuses to ship
+        one instead of pretending it travelled.
+        """
+        root = Path(relative_to).resolve() if relative_to is not None else None
+
+        def loc(ref) -> str:
+            s = _location(ref)
+            if root is None: return s
+            p = Path(s)
+            if not p.is_absolute(): return s
+            try:
+                return str(p.resolve().relative_to(root))
+            except ValueError:
+                return s
+
         return {
             "sample_type": self.sample_type,
             "target_types": list(self.target_types),
-            "transform_libraries": [_location(x) for x in self.transform_libraries],
-            "resource_libraries": [_location(x) for x in self.resource_libraries],
+            "transform_libraries": [loc(x) for x in self.transform_libraries],
+            "resource_libraries": [loc(x) for x in self.resource_libraries],
             "shared_input_paths": [str(p) for p in self.shared_input_paths],
-            "input_library": _location(self.input_library),
+            "input_library": loc(self.input_library),
         }
 
     @classmethod
-    def Unpack(cls, raw: dict, *, input_library: DataLibRef | None = None) -> "Spec":
+    def Unpack(
+        cls, raw: dict, *,
+        input_library: DataLibRef | None = None,
+        root: Path | str | None = None,
+    ) -> "Spec":
         """Read a spec out of a record that may carry more than a spec.
 
         `input_library` overrides what the record says, which is how a project
         store resolves its own relative directory name to a real path without
         the spec having to know the store exists.
+
+        `root` is the other half of `Pack(relative_to=...)`: relative library
+        references are resolved against it, so a spec written in one checkout
+        loads in another.
         """
+        base = Path(root).resolve() if root is not None else None
+
+        def resolve(ref):
+            if base is None or not isinstance(ref, (str, Path)): return ref
+            p = Path(ref)
+            return str(base / p) if not p.is_absolute() else str(ref)
+
         lib = input_library if input_library is not None else raw.get("input_library")
         assert lib, "a spec needs an input library"
         return cls(
-            input_library=lib,
+            input_library=lib if input_library is not None else resolve(lib),
             target_types=list(raw.get("target_types") or []),
-            transform_libraries=list(raw.get("transform_libraries") or []),
-            resource_libraries=list(raw.get("resource_libraries") or []),
+            transform_libraries=[resolve(x) for x in (raw.get("transform_libraries") or [])],
+            resource_libraries=[resolve(x) for x in (raw.get("resource_libraries") or [])],
             sample_type=raw.get("sample_type"),
             shared_input_paths=list(raw.get("shared_input_paths") or []),
         )
