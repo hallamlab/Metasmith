@@ -1425,16 +1425,16 @@ def get_inputs(name):
         op_data.show_item_lineage(str(lib_path), item["path"], render=False)
         for item in info["items"]
     ]
-    # Which templated row registered each item, so the recipe can show a count
+    # Which sample-array row registered each item, so the recipe can show a count
     # against that row instead of two hundred rows it did not ask for. The
     # attribution is the server's: the record of what an expansion put down is
     # the only place it is known.
     record = op_samples.read_record(str(lib_path))
-    from_template = {
+    from_array = {
         path: tid for tid, paths in (record.get("generated") or {}).items() for path in paths
     }
     for item in info["items"]:
-        item["template_id"] = from_template.get(item["path"])
+        item["array_id"] = from_array.get(item["path"])
     info["expansion"] = {
         "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
         "row_count": record.get("row_count", 0),
@@ -1520,9 +1520,9 @@ def _table_dir(name: str) -> Path:
 def _drafts_of(name: str) -> list[dict]:
     """The recipe's input rows as the browser holds them.
 
-    Templates are not a second list: a template *is* a draft whose path (or a
-    value row's name or value) holds `{column}` tokens, so the two cannot get
-    out of step with each other.
+    Sample arrays are not a second list: an array row *is* a draft whose path
+    (or a value row's name or value) holds `{column}` tokens, so the two cannot
+    get out of step with each other.
     """
     return list(_project().read_workflow(name).request.get("input_drafts") or [])
 
@@ -1584,7 +1584,7 @@ def detach_table(name):
 
 @bp.post("/workflows/<name>/table/expand")
 def expand_table(name):
-    """Register one item per (templated row x table row).
+    """Register one item per (sample-array row x table row).
 
     Runs as a job: minting a leaf id blake3-hashes every input file that exists,
     so a two-hundred-sample sheet would otherwise be a click that hangs.

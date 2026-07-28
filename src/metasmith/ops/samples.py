@@ -6,21 +6,24 @@ as the sample type. What it has never had is a way to *say* that other than one
 `AddItem` call per sample per file. This module is that way: a table you already
 have, plus one declared input row per column, expanded into the library.
 
-A **template** is an ordinary input row whose path (or, for a value row, its
-name or value) holds `{column}` tokens. It is never registered as it stands.
-Exactly one template is the **index**: it becomes one item per table row with
-nothing above it, every other template's items descend from it, and its declared
-type is what the planner is handed as `sample_type`. That shape is not
-incidental --
+A **sample array** is an ordinary input row whose path (or, for a value row, its
+name or value) holds `{column}` tokens: one declaration standing for N items,
+indexed by the sheet. It is never registered as it stands. Exactly one array row
+is the **index**: it becomes one item per table row with nothing above it, every
+other array row's items descend from it, and its declared type is what the
+planner is handed as `sample_type`. That shape is not incidental --
 
   * `AsSamples` masks a sample as {index item} u ancestors u descendants. An
     index item with a *parent* puts that parent's whole subtree in every mask,
-    which collapses all samples into one view. So the index template must have
-    no parents at all.
-  * A template that does not transitively reach the index lands in no mask, and
-    the planner never sees it. So every other template must descend from it.
+    which collapses all samples into one view. So the index row must have no
+    parents at all.
+  * An array row that does not transitively reach the index lands in no mask,
+    and the planner never sees it. So every other one must descend from it.
 
 Both are refusals here rather than warnings, because both fail silently.
+
+(A *template*, elsewhere in metasmith, is a stored workflow you start from --
+a different thing entirely, which is why this one is not called that.)
 
 The generated items are recorded so a re-expansion can take back exactly what
 the last one put down. That record is server-owned and belongs beside
@@ -35,7 +38,7 @@ from pathlib import Path
 from ._common import load_data_lib
 
 # `{column}` -- one level, no nesting, no braces inside. A path is not a
-# template language and the moment it starts to look like one, a person has to
+# templating language and the moment it starts to look like one, a person has to
 # know which of two things `{a{b}}` means.
 TOKEN = re.compile(r"\{([^{}]*)\}")
 
@@ -170,11 +173,11 @@ def detach_table(where: str | Path) -> dict:
     return {"removed": removed}
 
 
-# -- templates ---------------------------------------------------------------
+# -- sample arrays -----------------------------------------------------------
 
 
 def columns_in(text: str | None) -> list[str]:
-    """The column names a template field names, in order, without duplicates."""
+    """The column names a field names, in order, without duplicates."""
     out: list[str] = []
     for m in TOKEN.finditer(text or ""):
         name = m.group(1).strip()
@@ -183,7 +186,7 @@ def columns_in(text: str | None) -> list[str]:
     return out
 
 
-def is_template(row: dict) -> bool:
+def is_array_row(row: dict) -> bool:
     return bool(columns_in(row.get("path")) or columns_in(row.get("name"))
                 or columns_in(row.get("value")))
 
@@ -192,24 +195,24 @@ def substitute(text: str | None, record: dict[str, str]) -> str:
     return TOKEN.sub(lambda m: record[m.group(1).strip()], text or "")
 
 
-def _fields_of(tpl: dict) -> list[tuple[str, str]]:
-    """(label, text) for every field of a template that may hold a token."""
-    if tpl.get("mode") == "value":
-        return [("name", tpl.get("name") or ""), ("value", tpl.get("value") or "")]
-    return [("path", tpl.get("path") or "")]
+def _fields_of(row: dict) -> list[tuple[str, str]]:
+    """(label, text) for every field of an array row that may hold a token."""
+    if row.get("mode") == "value":
+        return [("name", row.get("name") or ""), ("value", row.get("value") or "")]
+    return [("path", row.get("path") or "")]
 
 
-def _template_parents(tpl: dict) -> list[str]:
-    return [str(p)[1:] for p in (tpl.get("parents") or []) if str(p).startswith("#")]
+def _array_parents(row: dict) -> list[str]:
+    return [str(p)[1:] for p in (row.get("parents") or []) if str(p).startswith("#")]
 
 
-def _plain_parents(tpl: dict) -> list[str]:
-    return [str(p) for p in (tpl.get("parents") or []) if not str(p).startswith("#")]
+def _plain_parents(row: dict) -> list[str]:
+    return [str(p) for p in (row.get("parents") or []) if not str(p).startswith("#")]
 
 
-def order_templates(templates: list[dict]) -> list[dict]:
-    """Templates, parents before children. Assumes the lineage is acyclic."""
-    by_id = {str(t["id"]): t for t in templates}
+def order_array_rows(array_rows: list[dict]) -> list[dict]:
+    """Array rows, parents before children. Assumes the lineage is acyclic."""
+    by_id = {str(t["id"]): t for t in array_rows}
     out: list[dict] = []
     seen: set[str] = set()
 
@@ -217,12 +220,12 @@ def order_templates(templates: list[dict]) -> list[dict]:
         if tid in seen or tid not in by_id:
             return
         assert tid not in stack, "these rows descend from each other in a loop"
-        for p in _template_parents(by_id[tid]):
+        for p in _array_parents(by_id[tid]):
             visit(p, stack + (tid,))
         seen.add(tid)
         out.append(by_id[tid])
 
-    for t in templates:
+    for t in array_rows:
         visit(str(t["id"]))
     return out
 
@@ -237,23 +240,23 @@ def _problem(where: str, message: str) -> dict:
 def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
     """Everything wrong with this expansion, without touching the library.
 
-    `rows` is the whole input side of the recipe -- templates and plain drafts
+    `rows` is the whole input side of the recipe -- array rows and plain drafts
     together -- because half of what can be wrong is about how the two relate.
-    Returns `{problems, templates, index_id}`; `problems` empty means expandable.
+    Returns `{problems, array_rows, index_id}`; `problems` empty means expandable.
     """
-    templates = [r for r in rows if is_template(r)]
+    array_rows = [r for r in rows if is_array_row(r)]
     problems: list[dict] = []
-    if not templates:
-        return {"problems": problems, "templates": [], "index_id": None}
+    if not array_rows:
+        return {"problems": problems, "array_rows": [], "index_id": None}
 
     columns = set(table.get("columns") or [])
-    by_id = {str(t["id"]): t for t in templates}
+    by_id = {str(t["id"]): t for t in array_rows}
 
-    marked = [t for t in templates if t.get("index")]
+    marked = [t for t in array_rows if t.get("index")]
     index_id = str(marked[0]["id"]) if len(marked) == 1 else None
     if not marked:
         problems.append(_problem("index", (
-            "no row is marked as the sample index -- one templated row has to say "
+            "no row is marked as the sample index -- one array row has to say "
             "what a sample *is*, and its type is what the planner splits on"
         )))
     elif len(marked) > 1:
@@ -261,7 +264,7 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
             f"{len(marked)} rows are marked as the sample index; exactly one can be"
         )))
 
-    for t in templates:
+    for t in array_rows:
         tid = str(t["id"])
         label = (t.get("path") or t.get("name") or tid)
         if not t.get("dtype"):
@@ -278,15 +281,15 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
                 f"[{label}] is a value row, and a value's name is a filename in "
                 f"the library -- it cannot hold a slash"
             )))
-        for p in _template_parents(t):
+        for p in _array_parents(t):
             if p not in by_id:
                 problems.append(_problem(tid, f"[{label}] descends from a row that is gone"))
 
     try:
-        order_templates(templates)
+        order_array_rows(array_rows)
     except AssertionError as exc:
         problems.append(_problem("lineage", str(exc)))
-        return {"problems": problems, "templates": templates, "index_id": index_id}
+        return {"problems": problems, "array_rows": array_rows, "index_id": index_id}
 
     if index_id is not None:
         index = by_id[index_id]
@@ -296,8 +299,8 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
                 "above it puts every sample's files in every other sample, and the "
                 "plan silently becomes one run over the whole library"
             )))
-        # reachability up the template chain -- a template that cannot get to
-        # the index lands in no sample's mask and the planner never sees it
+        # reachability up the array chain -- a row that cannot get to the
+        # index lands in no sample's mask and the planner never sees it
         reaches: dict[str, bool] = {}
 
         def reaches_index(tid: str, stack: frozenset = frozenset()) -> bool:
@@ -307,11 +310,11 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
                 return reaches[tid]
             if tid in stack or tid not in by_id:
                 return False
-            out = any(reaches_index(p, stack | {tid}) for p in _template_parents(by_id[tid]))
+            out = any(reaches_index(p, stack | {tid}) for p in _array_parents(by_id[tid]))
             reaches[tid] = out
             return out
 
-        for t in templates:
+        for t in array_rows:
             tid = str(t["id"])
             if reaches_index(tid):
                 continue
@@ -321,11 +324,11 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
                 f"belong to no sample and the planner will not see them"
             )))
 
-    problems += _path_problems(library_path, table, templates, by_id)
-    return {"problems": problems, "templates": templates, "index_id": index_id}
+    problems += _path_problems(library_path, table, array_rows, by_id)
+    return {"problems": problems, "array_rows": array_rows, "index_id": index_id}
 
 
-def _path_problems(library_path, table, templates, by_id) -> list[dict]:
+def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
     """What the substituted paths themselves are wrong about.
 
     Checked before anything is registered, because `AddItem` asserts mid-loop on
@@ -338,15 +341,15 @@ def _path_problems(library_path, table, templates, by_id) -> list[dict]:
     problems: list[dict] = []
     minted: dict[str, tuple[str, str, int]] = {}
     columns = set(table.get("columns") or [])
-    # a template naming a column that is not there is already reported, and
+    # an array row naming a column that is not there is already reported, and
     # substituting it here would raise instead of adding to the list
-    templates = [
-        t for t in templates
+    array_rows = [
+        t for t in array_rows
         if all(c in columns for _f, text in _fields_of(t) for c in columns_in(text))
     ]
 
     for i, record in enumerate(table.get("rows") or []):
-        for t in templates:
+        for t in array_rows:
             tid = str(t["id"])
             label = (t.get("path") or t.get("name") or tid)
             fields = dict(_fields_of(t))
@@ -387,7 +390,7 @@ def _path_problems(library_path, table, templates, by_id) -> list[dict]:
             problems.append(_problem("", "...and more; the first forty are shown"))
             break
 
-    for t in templates:
+    for t in array_rows:
         for p in _plain_parents(t):
             if Path(p) not in lib.manifest:
                 problems.append(_problem(str(t["id"]), (
@@ -475,7 +478,7 @@ def expand(
     rows: list[dict],
     on_progress=None,
 ) -> dict:
-    """Register one item per (template x table row). Validates first, saves once.
+    """Register one item per (array row x table row). Validates first, saves once.
 
     The library is loaded once and saved once: `ops.data.add_item` re-loads and
     re-saves per call, which over a two-hundred-row sheet is both slow and a
@@ -483,34 +486,34 @@ def expand(
     """
     checked = validate(library_path, table, rows)
     assert not checked["problems"], "; ".join(p["message"] for p in checked["problems"])
-    templates = checked["templates"]
-    if not templates:
+    array_rows = checked["array_rows"]
+    if not array_rows:
         return {"generated": {}, "counts": {}, "row_count": 0, "sample_type": None}
 
     clear(library_path, save=True)
 
     lib = load_data_lib(library_path)
-    order = order_templates(templates)
+    order = order_array_rows(array_rows)
     index_id = checked["index_id"]
     records = table.get("rows") or []
-    generated: dict[str, list[str]] = {str(t["id"]): [] for t in templates}
+    generated: dict[str, list[str]] = {str(t["id"]): [] for t in array_rows}
     made: list[str] = []
 
     for i, record in enumerate(records):
         per_row: dict[str, Path] = {}
-        for tpl in order:
-            tid = str(tpl["id"])
-            parents = [per_row[p] for p in _template_parents(tpl) if p in per_row]
-            parents += [Path(p) for p in _plain_parents(tpl)]
-            if tpl.get("mode") == "value":
+        for row in order:
+            tid = str(row["id"])
+            parents = [per_row[p] for p in _array_parents(row) if p in per_row]
+            parents += [Path(p) for p in _plain_parents(row)]
+            if row.get("mode") == "value":
                 path = lib.AddValue(
-                    substitute(tpl.get("name"), record),
-                    substitute(tpl.get("value"), record),
-                    tpl["dtype"], parents=parents,
+                    substitute(row.get("name"), record),
+                    substitute(row.get("value"), record),
+                    row["dtype"], parents=parents,
                 )
             else:
                 path = lib.AddItem(
-                    substitute(tpl.get("path"), record), tpl["dtype"], parents=parents,
+                    substitute(row.get("path"), record), row["dtype"], parents=parents,
                 )
             per_row[tid] = path
             generated[tid].append(str(path))
@@ -520,7 +523,7 @@ def expand(
     lib.Save()
 
     sample_type = next(
-        (t.get("dtype") for t in templates if str(t["id"]) == index_id), None,
+        (t.get("dtype") for t in array_rows if str(t["id"]) == index_id), None,
     )
     record = {
         "paths": made,

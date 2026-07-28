@@ -117,7 +117,7 @@
       </ul>
     {:else if !expanded}
       <span class="small muted">
-        Ready — expanding registers one item per templated row, per sheet row.
+        Ready — expanding registers one item per array row, per sheet row.
       </span>
     {/if}
   {/if}

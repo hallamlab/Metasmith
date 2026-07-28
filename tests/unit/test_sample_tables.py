@@ -77,18 +77,18 @@ def test_attach_stores_the_upload_verbatim(tmp_path):
     assert op_samples.attached_table_path(tmp_path) is None
 
 
-# -- templates ---------------------------------------------------------------
+# -- sample arrays -----------------------------------------------------------
 
 
 def test_tokens_and_substitution():
     assert op_samples.columns_in("/d/{a}_{b}.fq") == ["a", "b"]
     assert op_samples.substitute("/d/{a}_{b}.fq", {"a": "x", "b": "y"}) == "/d/x_y.fq"
-    assert not op_samples.is_template({"path": "/d/plain.fq"})
-    assert op_samples.is_template({"mode": "value", "name": "{s}.id", "value": "x"})
+    assert not op_samples.is_array_row({"path": "/d/plain.fq"})
+    assert op_samples.is_array_row({"mode": "value", "name": "{s}.id", "value": "x"})
 
 
-def test_templates_order_parents_first():
-    order = [t["id"] for t in op_samples.order_templates(_rows())]
+def test_array_rows_order_parents_first():
+    order = [t["id"] for t in op_samples.order_array_rows(_rows())]
     assert order[0] == "a"
 
 
@@ -127,7 +127,7 @@ def test_validate_refuses_a_parented_index(tmp_path):
     assert any("cannot descend from anything" in p["message"] for p in problems)
 
 
-def test_validate_refuses_a_template_that_misses_the_index(tmp_path):
+def test_validate_refuses_an_array_row_that_misses_the_index(tmp_path):
     lib = _library(tmp_path)
     problems = op_samples.validate(str(lib), _table(), _rows(c={"parents": []}))["problems"]
     assert any("does not descend from the sample index" in p["message"] for p in problems)
@@ -168,7 +168,7 @@ def test_validate_refuses_an_empty_cell(tmp_path):
 # -- expansion ---------------------------------------------------------------
 
 
-def test_expand_registers_one_item_per_template_per_row(tmp_path):
+def test_expand_registers_one_item_per_array_row_per_sheet_row(tmp_path):
     lib_path = _library(tmp_path)
     out = op_samples.expand(str(lib_path), _table(), _rows())
     assert out["row_count"] == 2

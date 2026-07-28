@@ -232,11 +232,30 @@ sequences::gbk (grouped)  → [ppanggolin]     → pangenome::ppanggolin_matrix
 `parents=` is what makes two targets of the same type **distinct requests** rather than the
 duplicate `Add` rejects. Same type *and* same parents still raises.
 
+**Everything the solver needs before it runs is one serializable object.** `agents/spec.py`'s
+`Spec` holds the input library, the sample type, the target types, the transform and resource
+libraries and the shared input paths, and `Spec.Solve()` is the only door through to
+`WorkflowPlan.Generate`. There used to be two copies of those twenty lines — `Agent.GenerateWorkflow`
+and `ops.workflow.plan_workflow` — which had already drifted apart on `shared_input_paths` and
+on the positional target lineage; both are callers now. The point of collapsing them is that a
+plan then has a *before* representation as well as an after: the GUI's `request.yml` is the store
+envelope merged with a packed Spec rather than a GUI-private format, and a **template** is
+nothing but a Spec whose input paths are deferred.
+
+**`DEFERRED` is a path that is not known yet** (`models/paths.py`) — it plans, and it refuses at
+stage. It is what lets a template ship without the absolute paths of whoever authored it. Three
+properties are load-bearing and none is obvious. It is **absolute**, under the reserved root
+`/msm_deferred/`, because `ops.data.repoint_item` — the operation that fills one in — reads
+`is_absolute()` as "not library-owned", so a relative stand-in would be refused or would try to
+move a file that never existed. It is **minted once and persisted**, because identity derives
+from path, so re-minting on load would give the same spec a different task key every time it is
+opened. And it is a value, not a flag: nothing downstream tests for `None` or a sentinel.
+
 **A sample type is a way of branching a plan, not a precondition for one.**
 `plan_workflow(sample_type=None)` plans the library as it stands — one sample holding
 everything in it — and naming a type splits it into one run per item of that type
 (`AsSamples`). The GUI passes `None` unless a sample table is attached, in which case it
-passes the type of the templated row marked as the index; the CLI's `--sample-type` is
+passes the type of the sample-array row marked as the index; the CLI's `--sample-type` is
 optional for the same reason.
 
 **A sample's mask is one index item's lineage, so both directions of the shape matter.** An
@@ -674,9 +693,33 @@ csv/tsv/excel upload (stored verbatim under a fixed stem, because the workflow d
 the task bundle root), expands `{column}` tokens in the recipe's input rows into one library
 item per (row × sheet row), and records what it put down in `expansion.yml` beside
 `result.yml` — server-owned deliberately, since the browser rewrites `request.yml` wholesale
-on nearly every edit. A row holding a token is a *template*: not a fourth kind of row, just
-one the commit cascade skips, so nothing has to be kept in step. The recipe shows a template's
-count and never the items it made.
+on nearly every edit. A row holding a token is a **sample array**: one declaration standing for
+N items indexed by the sheet, not a fourth kind of row — just one the commit cascade skips, so
+nothing has to be kept in step. The recipe shows an array row's count and never the items it
+made. It is deliberately *not* called a template: that word now means a stored workflow you
+start from, and the two were being confused in the same page.
+
+**A template is a starting point, and `+ workflow` is where you pick one.** Templates live at
+`<stdlib>/templates/<name>/` — a `spec.yml` plus the deferred input rows it names — and are
+authored in the libraries repo as a script that builds a Spec and solves it, so the build is
+what proves a template still plans. Creating from one copies the spec and the rows; nothing is
+merged, because the recipe is new and therefore empty. The DAG the modal shows is **solved on
+demand and cached per (template, stdlib commit, theme)**, never shipped pre-rendered: a solve
+depends on the library clone the user actually has, so a drawing baked at author time would go
+quietly wrong rather than loudly stale.
+
+**Sharing is a string, not a file.** `gui/share.py` encodes an ssh host, an agent or a workflow
+as `msm1:<checksum>:<base64 gzipped yaml>` — a prefix so a later format is refused by name
+instead of misread, and a digest so a payload a mail client wrapped and someone pasted back
+short is refused instead of half-imported. What travels is the object's declaration, never its
+bookkeeping: no identity file, no `real_path`, no deployment state. Resolution on arrival is
+**best effort by name** — an unresolvable library is dropped and named, an unknown type is
+placed as a red draft — because refusing the whole import over one missing name is the worse
+failure. A workflow travels bound (real paths) or unbound (deferred), and in either form a
+library-owned *value* row travels whole, since the row *is* its file rather than a pointer to
+one. Lineage in the payload is stated in row **ids, never paths** — unbound, every row's path
+is the same string, so a parent named by path is a parent that cannot be told apart. Both ends show their contents before they act: the export dialog decodes what you are
+about to copy, and the import dialog lists what would be created before it writes.
 
 An agent carries a **default preset and default params**, and a run layers its own over them
 per key — the person clicking launch is the one least placed to know their login node needs

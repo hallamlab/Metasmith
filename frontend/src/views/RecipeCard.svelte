@@ -54,21 +54,21 @@
   // safe as the draft marker: a library path never starts with one.
   const draftKey = (d) => `#${d.id}`
 
-  // What a template's fields may hold, and how to tell one from a plain row.
-  // A template is not a fourth kind of thing: it is an ordinary row whose path
-  // (or a value row's name and value) names a column, so nothing has to be kept
-  // in step with anything.
+  // What a sample-array row's fields may hold, and how to tell one from a plain
+  // row. An array row is not a fourth kind of thing: it is an ordinary row whose
+  // path (or a value row's name and value) names a column, so nothing has to be
+  // kept in step with anything.
   // not a global regex: `test` on one carries `lastIndex` between calls, so the
   // same row would answer differently depending on what was asked before it
   const TOKEN = /\{[^{}]*\}/
   const hasToken = (s) => TOKEN.test(String(s ?? ''))
-  const isTemplate = (d) =>
+  const isArrayRow = (d) =>
     d.mode === 'value' ? hasToken(d.name) || hasToken(d.value) : hasToken(d.path)
 
   // The items a sheet registered are not rows of this recipe. They are in the
   // library and in the plan, and two hundred of them here would be two hundred
-  // rows with nothing on them to decide -- the template row carries the count.
-  let ownItems = $derived(items.filter((it) => !it.template_id))
+  // rows with nothing on them to decide -- the array row carries the count.
+  let ownItems = $derived(items.filter((it) => !it.array_id))
   let expanded = $derived(items.length - ownItems.length)
 
   // a field's element, so the column picker can insert at the caret rather than
@@ -458,7 +458,7 @@
       {@const info = row.type && counts ? counts(row.type) : null}
       {@const waiting =
         row.kind === 'draft' && row.parents.some((p) => !items.some((it) => it.path === p))}
-      {@const template = row.kind === 'draft' && isTemplate(row.draft)}
+      {@const array = row.kind === 'draft' && isArrayRow(row.draft)}
       <div class="entry" class:hl={hover === row.key}>
         <!-- Two lines, not one: the path is the longest thing on an input row and
              was being squeezed into a sliver beside a combobox and a menu. What
@@ -534,8 +534,8 @@
 
         {@render detail(row)}
 
-        {#if row.kind === 'draft' && template}
-          <!-- A templated row is one declaration, not N rows. What it says about
+        {#if row.kind === 'draft' && array}
+          <!-- An array row is one declaration, not N rows. What it says about
                itself is therefore a count and a role: how many items it stands
                for, and whether it is the one that says what a *sample* is. -->
           <div class="notes row wrap small">
@@ -550,7 +550,7 @@
               aria-pressed={!!row.draft.index}
               title={row.draft.index
                 ? 'this row says what a sample is; its type is what the plan splits on'
-                : 'make this the sample index — one run per sheet row, and every other templated row hangs off it'}
+                : 'make this the sample index — one run per sheet row, and every other array row hangs off it'}
               onclick={() => onindex?.(row.id)}
             >★ sample index</button>
             {#if row.draft.index && row.parents.length}

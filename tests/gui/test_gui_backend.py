@@ -2386,9 +2386,9 @@ class TestJobs:
 
 SHEET = b"sample,asm\nS1,/data/a.fa\nS2,/data/b.fa\n"
 
-# the recipe's input rows as the browser holds them: a templated value row that
-# is the sample index, and a templated file row descending from it
-TEMPLATES = [
+# the recipe's input rows as the browser holds them: a sample-array value row
+# that is the sample index, and an array file row descending from it
+ARRAY_ROWS = [
     {"id": "idx", "mode": "value", "name": "{sample}.id", "value": "{sample}",
      "dtype": "mock::reads", "parents": [], "index": True},
     {"id": "asm", "mode": "file", "path": "{asm}",
@@ -2396,12 +2396,12 @@ TEMPLATES = [
 ]
 
 
-def _attach(client, name, sheet=SHEET, templates=TEMPLATES):
+def _attach(client, name, sheet=SHEET, rows=ARRAY_ROWS):
     r = client.post(f"/api/workflows/{name}/table",
                     json={"text": sheet.decode(), "filename": "sheet.csv"})
     assert r.status_code == 201, r.get_json()
-    if templates is not None:
-        client.put(f"/api/workflows/{name}", json={"input_drafts": templates})
+    if rows is not None:
+        client.put(f"/api/workflows/{name}", json={"input_drafts": rows})
     return r.get_json()
 
 
@@ -2410,7 +2410,7 @@ class TestSampleTable:
 
     def test_pasted_text_is_read_as_a_table(self, client):
         name = _make_workflow(client)
-        body = _attach(client, name, templates=None)
+        body = _attach(client, name, rows=None)
         assert body["columns"] == ["sample", "asm"]
         assert body["row_count"] == 2
 
@@ -2427,7 +2427,7 @@ class TestSampleTable:
 
     def test_the_table_reports_what_is_wrong_without_refusing_it(self, client):
         name = _make_workflow(client)
-        _attach(client, name, templates=[dict(TEMPLATES[0], index=False), TEMPLATES[1]])
+        _attach(client, name, rows=[dict(ARRAY_ROWS[0], index=False), ARRAY_ROWS[1]])
         body = client.get(f"/api/workflows/{name}/table").get_json()
         assert body["attached"] is True
         assert body["index_id"] is None
@@ -2441,12 +2441,12 @@ class TestSampleTable:
 
         inputs = client.get(f"/api/workflows/{name}/inputs").get_json()
         assert inputs["item_count"] == 4
-        # the recipe shows a count against the templated row, never the rows it
+        # the recipe shows a count against the array row, never the rows it
         # made -- which it can only do if the server says which row made what
-        by_template = {}
+        by_array = {}
         for item in inputs["items"]:
-            by_template.setdefault(item["template_id"], []).append(item["path"])
-        assert sorted(by_template) == ["asm", "idx"]
+            by_array.setdefault(item["array_id"], []).append(item["path"])
+        assert sorted(by_array) == ["asm", "idx"]
         assert inputs["expansion"]["sample_type"] == "mock::reads"
 
     def test_re_expanding_replaces_the_previous_generation(self, client):
@@ -2496,11 +2496,11 @@ class TestSharedInputs:
     collapses every sample into one view. Hence a third way in.
     """
 
-    ROWS = [TEMPLATES[0]]  # the index only; the assembly is shared, not per-sample
+    ROWS = [ARRAY_ROWS[0]]  # the index only; the assembly is shared, not per-sample
 
     def _shared_setup(self, client):
         name = _make_workflow(client, sample="mock::reads")
-        _attach(client, name, templates=self.ROWS)
+        _attach(client, name, rows=self.ROWS)
         _finish(client, client.post(f"/api/workflows/{name}/table/expand", json={}).get_json())
         project = client.application.config["MSM_PROJECT"]
         f = project.input_library_path(name) / "shared.fa"
@@ -2813,7 +2813,7 @@ class TestShareWorkflows:
             rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
             assert all(r["type_name"] != "exotic::exotic" for r in rows)
 
-    def test_a_templated_row_travels_but_a_typed_path_does_not(self, client, elsewhere):
+    def test_an_array_row_travels_but_a_typed_path_does_not(self, client, elsewhere):
         """A `{column}` row is a rule, not a file: it is the substance of a
         sample-array recipe and means the same thing anywhere."""
         name = _make_workflow(client)

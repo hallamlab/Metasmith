@@ -108,12 +108,12 @@
   // -- the sample table --------------------------------------------------------
   //
   // A row of the recipe whose path (or a value row's name or value) names a
-  // column of the attached sheet is a *template*: it never registers as it
+  // column of the attached sheet is a *sample array*: it never registers as it
   // stands, and expanding it puts down one library item per sheet row. Which
-  // makes it a template is the token, not a flag -- there is one list of input
-  // rows, and a row stops being a template the moment its last token goes.
+  // makes it an array is the token, not a flag -- there is one list of input
+  // rows, and a row stops being an array the moment its last token goes.
   const TOKEN = /\{[^{}]*\}/
-  const isTemplate = (d) =>
+  const isArrayRow = (d) =>
     d.mode === 'value' ? TOKEN.test(d.name ?? '') || TOKEN.test(d.value ?? '')
                        : TOKEN.test(d.path ?? '')
 
@@ -185,18 +185,18 @@
   // sheet is attached, which is the unsampled plan the page has always sent.
   let sampleType = $derived.by(() => {
     if (!table?.attached) return null
-    const idx = recipe.drafts.find((d) => d.index && isTemplate(d))
+    const idx = recipe.drafts.find((d) => d.index && isArrayRow(d))
     return idx?.dtype?.trim() || null
   })
 
   // What stops a solve. Both are silent failures rather than errors: a sheet
   // with no index plans one run over everything, and two indexes is a lineage
   // nothing downstream defines.
-  let templateCount = $derived(recipe.drafts.filter(isTemplate).length)
-  let indexCount = $derived(recipe.drafts.filter((d) => d.index && isTemplate(d)).length)
+  let arrayCount = $derived(recipe.drafts.filter(isArrayRow).length)
+  let indexCount = $derived(recipe.drafts.filter((d) => d.index && isArrayRow(d)).length)
   let tableProblem = $derived.by(() => {
-    if (!table?.attached || !templateCount) return null
-    if (indexCount === 0) return 'no templated row is marked as the sample index'
+    if (!table?.attached || !arrayCount) return null
+    if (indexCount === 0) return 'no array row is marked as the sample index'
     if (indexCount > 1) return 'two rows are marked as the sample index'
     if (!sampleType) return 'the sample index row has no type yet'
     if (!(table.expansion?.row_count > 0)) return 'the sheet has not been expanded yet'
@@ -457,10 +457,10 @@
   let committing = false
 
   function draftReady(d, registered) {
-    // a template is not an incomplete row: it is a complete declaration of N
+    // an array row is not an incomplete row: it is a complete declaration of N
     // rows, and registering it as it stands would put a path with brace
     // characters in it into the library
-    if (isTemplate(d)) return false
+    if (isArrayRow(d)) return false
     const identity = d.mode === 'value' ? d.name.trim() : d.path.trim()
     return !!d.dtype.trim() && !!identity && d.parents.every((p) => registered.has(p))
   }
