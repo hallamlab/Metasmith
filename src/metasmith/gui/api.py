@@ -982,7 +982,10 @@ def render_template_dag(name):
                 f"dropped {sorted(task.plan.dropped_targets)}"
             )
             svg.parent.mkdir(parents=True, exist_ok=True)
-            task.plan.RenderDAG(str(svg), theme=theme)
+            # transparent: the GUI draws this over its own card background, and
+            # a painted one was never any colour other than the card's own --
+            # see `workflow_dag` below for the same reasoning
+            task.plan.RenderDAG(str(svg), theme=theme, background=False)
             return {
                 "template": name, "theme": theme,
                 "step_count": len(task.plan.steps),
@@ -1378,7 +1381,10 @@ def workflow_dag(name):
     svg = wf.path / _dag_cache_name(theme)
     if not svg.is_file():
         task = _load_task(wf.path)
-        task.plan.RenderDAG(str(svg), theme=theme)
+        # transparent: the diagram card now paints its own ground (`--panel-2`,
+        # so its bounds read against the rest of the page), and a filled plate
+        # here was never any colour but that card's -- see WorkflowView.svelte
+        task.plan.RenderDAG(str(svg), theme=theme, background=False)
     return Response(svg.read_text(), mimetype="image/svg+xml")
 
 

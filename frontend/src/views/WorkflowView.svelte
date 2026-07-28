@@ -967,12 +967,21 @@
             </div>
           </div>
 
-          <div class="dag">
-            <!-- the theme is in the query string, not a header: the browser
-                 caches by url, and switching themes would otherwise show the
-                 rendering it already had -->
-            <img src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}`} alt="workflow diagram" />
-          </div>
+          <details class="dag" open>
+            <summary class="small muted">diagram</summary>
+            <div class="dag-scroll">
+              <!-- the theme and the solve time are both in the query string,
+                   not a header: the browser caches by url, so switching
+                   themes or solving again would otherwise show the rendering
+                   it already had for that url. `generated_at` is the newest
+                   thing that changes on every solve, including a re-solve
+                   onto the same plan. -->
+              <img
+                src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}&v=${encodeURIComponent(wf.generated_at)}`}
+                alt="workflow diagram"
+              />
+            </div>
+          </details>
 
           <!-- The plan is stated once, above. The table that used to restate it
                as `# / step / takes / produces` said nothing the drawing does
@@ -1199,9 +1208,24 @@
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   .loading { padding: 18px; }
   .scroll { overflow-x: auto; }
-  /* no background of its own any more: the svg paints its own ground in either
-     theme, and a hard-coded white one was a slab inside a dark card */
-  .dag { border-radius: var(--radius); padding: 8px; overflow: auto; }
+  /* the svg paints its own ground in either theme, and that ground is the same
+     colour as `--panel` in both -- so a diagram with nothing behind it had no
+     visible edge at all. `--panel-2` is a step lighter, giving the diagram's
+     bounds an edge the fill alone does not have to; a border makes the bounds
+     legible past the scrolled edge too. A `details` now, so a long diagram can
+     be folded away rather than pushing the rest of the result -- run history,
+     resource overrides -- down the page. */
+  .dag { border-radius: var(--radius); padding: 8px; }
+  .dag summary { cursor: pointer; }
+  .dag-scroll {
+    margin-top: 8px;
+    max-height: 60vh;
+    overflow: auto;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 8px;
+  }
   .dag img { max-width: 100%; }
   .link {
     background: none;

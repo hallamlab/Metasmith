@@ -462,6 +462,14 @@ The objective is a proxy, and it stops agreeing with the picture close to its op
 declared dependency like any other, so without it every plan DAG grows an `env::*` node per
 step. Three defaults have to agree — `BuildDAG`, `RenderDAG`, and `ops.workflow.render_dag`.
 
+**`background` (default `True`) paints the plate; `False` renders transparent** — no SVG
+`<rect>`, and raster's `bgcolor` becomes graphviz's `transparent` rather than the theme's hex.
+Every artifact-producing caller keeps the default; the GUI is the one caller that turns it
+off, since its diagram card paints its own ground and a filled plate was never any colour but
+that card's. Node fills are not touched by this — a hollow marker's fill is still the theme's
+literal background hex (`DARK`'s is chosen to match its own painted plate), so it is not
+pixel-exact against an arbitrary transparent-mode background, only very close.
+
 ### GPUs
 
 A transform declares GPU need in the only unit it can honestly know — **total VRAM** —
@@ -746,6 +754,18 @@ renaming an ssh alias can re-derive and rename the agent to match (`_repoint_age
 leaving its home path untouched. A hand-typed name carries no such record, so it does not
 follow a host rename — and the regenerate button beside the name is the only way back from
 that, since it is the one caller that sends a `naming` record *with* the rename.
+
+**The url's hash is the one thing a reload does not lose.** `select(section, id)` writes
+`#<section>/<id>` via `history.replaceState` (never a plain assignment, which would jump the
+page to any element sharing that id, and never `pushState`, which would turn clicking through
+a rail into an undoable history); `state.svelte.js` parses it once at module load, before
+`app`'s starting values are chosen, so the first render lands on what the hash says. A run's
+id already has a slash in it (`workflow/run`), so only the id half is percent-encoded.
+
+**The workflow diagram's `<img src>` carries `wf.generated_at`, not just the theme.** The
+route serves a file cached beside the bundle, so a url that never changes across a re-solve
+is a url the browser's own cache will keep answering from — `generated_at` is the newest thing
+that changes on every solve, including a re-solve onto an identical plan.
 
 ---
 

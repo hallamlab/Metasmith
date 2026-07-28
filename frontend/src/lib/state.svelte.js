@@ -8,10 +8,36 @@ export const SECTIONS = [
   { id: 'runs', label: 'Runs' },
 ]
 
+// -- the url's hash: the one thing that survives a reload on its own ------
+//
+// `#<section>/<id>` -- a run's id already has a slash in it (`workflow/run`),
+// so the id half is percent-encoded and only that half. Read once, before
+// `app` picks its starting values, so the first render lands on what the url
+// says rather than on `ssh` and a beat later somewhere else.
+
+function parseHash() {
+  const raw = window.location.hash.replace(/^#\/?/, '')
+  const cut = raw.indexOf('/')
+  const section = cut === -1 ? raw : raw.slice(0, cut)
+  if (!SECTIONS.some((s) => s.id === section)) return { section: 'ssh', id: null }
+  const id = cut === -1 ? null : decodeURIComponent(raw.slice(cut + 1))
+  return { section, id: id || null }
+}
+
+function writeHash(section, id) {
+  const next = `#${section}${id ? `/${encodeURIComponent(id)}` : ''}`
+  // a plain assignment jumps the page to an element with that id if one
+  // exists; replaceState never scrolls and never grows history, so clicking
+  // through fifty workflows does not turn the back button into fifty steps
+  if (window.location.hash !== next) history.replaceState(null, '', next)
+}
+
+const fromUrl = parseHash()
+
 export const app = $state({
-  section: 'ssh',
+  section: fromUrl.section,
   // one remembered selection per section, so switching tabs does not lose your place
-  selected: { ssh: null, agents: null, workflows: null, runs: null },
+  selected: { ssh: null, agents: null, workflows: null, runs: null, [fromUrl.section]: fromUrl.id },
   showArchived: false,
   project: null,
   hosts: [],
@@ -353,6 +379,15 @@ export async function refresh(section = app.section) {
 export function select(section, id) {
   app.section = section
   app.selected[section] = id
+  writeHash(section, id)
+}
+
+// The tabs themselves change the section without touching what is selected in
+// it -- so this is the other half of `select`, not a call to it with the old
+// id repeated back.
+export function selectSection(section) {
+  app.section = section
+  writeHash(section, app.selected[section])
 }
 
 // An agent is made the same way a workflow is: on click, under a generated

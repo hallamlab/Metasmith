@@ -12,6 +12,7 @@
     refresh,
     openRunGroup,
     select,
+    selectSection,
     toggleRunGroup,
     toggleTheme,
     ui,
@@ -253,7 +254,7 @@
 
     <nav>
       {#each SECTIONS as s}
-        <button class="tab" class:on={app.section === s.id} onclick={() => (app.section = s.id)}>
+        <button class="tab" class:on={app.section === s.id} onclick={() => selectSection(s.id)}>
           {s.label}
         </button>
       {/each}

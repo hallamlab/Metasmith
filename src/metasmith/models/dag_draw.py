@@ -91,6 +91,13 @@ class Plate:
     """
     background: str = "#FFFFFF"
     edge: str = "#666666"
+    # on by default -- every artifact already on disk is painted, and a caller
+    # embedding the drawing on its own ground (a GUI card, a themed page) is
+    # the one that asks for the other. Off skips the SVG `<rect>` outright
+    # rather than making it `fill="none"` on top of one, and raster's `bgcolor`
+    # becomes graphviz's own `"transparent"` keyword -- so a PNG stays exactly
+    # as opaque or as see-through as an SVG viewer would render the SVG.
+    paint_background: bool = True
 
 
 _DEFAULT_PLATE = Plate()
@@ -733,7 +740,8 @@ def render_svg(
         f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
         f' width="{g.width:.0f}" height="{g.height:.0f}"'
         f' viewBox="0 0 {g.width:.0f} {g.height:.0f}">',
-        f'<rect width="{g.width:.0f}" height="{g.height:.0f}" fill="{plate.background}"/>',
+        *([f'<rect width="{g.width:.0f}" height="{g.height:.0f}" fill="{plate.background}"/>']
+          if plate.paint_background else []),
         # no arrowheads: every edge runs down the page, so a head at the end of
         # each of a hundred of them says only what the geometry already does
         f'<g fill="none" stroke="{plate.edge}" stroke-width="1.4"'
@@ -864,7 +872,8 @@ def raster_dot(
         # bgcolor is pinned rather than left to graphviz: unset, a PNG's ground
         # is whatever the local build defaults to, which is the one way a
         # raster preview can disagree with the SVG about what it is drawn on
-        f'graph [fontname="{font}", outputorder="edgesfirst", bgcolor="{plate.background}"];',
+        f'graph [fontname="{font}", outputorder="edgesfirst",'
+        f' bgcolor="{plate.background if plate.paint_background else "transparent"}"];',
         f'node  [fontname="{font}", fontsize={font_size:.0f}, fixedsize=true];',
         f'edge  [fontname="{font}", color="{plate.edge}", dir="none"];',
     ]

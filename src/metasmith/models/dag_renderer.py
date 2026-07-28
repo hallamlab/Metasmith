@@ -129,6 +129,7 @@ class DagRenderer:
         label_mode: LabelMode = LabelMode.COLUMN,
         colour: str = "none",
         theme: str = "light",
+        background: bool = True,
     ):
         if colour not in SCHEMES:
             raise ValueError(
@@ -149,7 +150,14 @@ class DagRenderer:
         self._colour = colour
         # light by default for the same reason: every artifact already on disk
         # is one, and asking for the other is the caller's move
-        self._theme = THEMES[theme]
+        theme_obj = THEMES[theme]
+        # a plate is shared across every renderer of one theme (`LIGHT`/`DARK`
+        # are module-level), so an off toggle replaces this instance's copy
+        # rather than mutating the frozen original out from under every other
+        # caller
+        if not background:
+            theme_obj = replace(theme_obj, plate=replace(theme_obj.plate, paint_background=False))
+        self._theme = theme_obj
         self._nodes: dict[str, NodeKind] = {}
         self._labels: dict[str, Label] = {}
         self._edges: list[tuple[str, str]] = []
