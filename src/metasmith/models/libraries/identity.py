@@ -14,15 +14,20 @@ file someone can read end to end. `_calculate_key` / `GetKey` / `__hash__`
 deliberately stayed on the class: they key the *library*, not a leaf, and
 moving a `__hash__` into a mixin is how one goes missing.
 
-`..caching.keys` is imported at function scope on purpose -- `caching` reaches
-back into this package, so a top-level import here is a genuine cycle.
+The `..caching.keys` imports used to be deferred to function scope, with a
+comment blaming a cycle. There is no cycle: nothing under `caching/` imports
+`models.libraries`, and `caching/__init__.py` is empty. The deferral was an
+artifact of the 2621-line monolith, and it is gone.
 """
 
 from __future__ import annotations
 
+import os
 import time
+import uuid
 from pathlib import Path
 
+from ...caching.keys import content_multihash_key, multihash_key
 from ...hashing import KeyGenerator
 
 
@@ -58,14 +63,6 @@ class _LeafIdentity:
         self.instance_meta and returned. `origin` stays "leaf" either way —
         a content-addressed input is still a user-supplied leaf.
         """
-        import os
-        import uuid
-
-        from ...caching.keys import (
-            content_multihash_key,
-            multihash_key,
-        )
-
         key = None
         if not os.environ.get("METASMITH_LEAF_RANDOM"):
             abs_path = path if path.is_absolute() else self.location / path
@@ -125,10 +122,6 @@ class _LeafIdentity:
         derived from the old -- deterministic across loads rather than
         re-randomizing on every one.
         """
-        import os
-
-        from ...caching.keys import multihash_key
-
         abs_path = path if path.is_absolute() else self.location / path
         if not os.environ.get("METASMITH_LEAF_RANDOM") and abs_path.is_file():
             self._mint_leaf_id(path)
