@@ -133,6 +133,7 @@ class _WorkflowOps:
         nothing; None restores the old unbounded wait. The file transfers inside
         SaveAs are bounded too, but by the module default rather than by this
         argument -- override METASMITH_IDLE_TIMEOUT to move both together."""
+        task.RefuseIfDeferred()
         VALID_ON_EXIST = {"skip", "error", "clear", "update", "update_workflow", "update_data"}
         assert on_exist in VALID_ON_EXIST, f"on_exist option [{on_exist}] is not one of {VALID_ON_EXIST}"
         Log.Info(f"staging workflow [{task.GetKey()}]")

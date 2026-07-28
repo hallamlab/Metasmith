@@ -37,15 +37,90 @@ The Docker shape is exercised by
 ``tests/integration/test_e2e_orchestrator.py::TestPathStringification``.
 The apptainer shape is reproduced as a unit test in
 ``tests/path_overhaul/test_parse_path_apptainer_relative.py``.
+
+This module also owns :data:`DEFERRED`, the fourth thing a path can be: not
+known yet. It lives here rather than beside the code that mints identity from
+it because every path consumer has to be able to ask what kind of path it is
+holding, and this is the module they already import.
 """
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Literal
 
 from ..constants import AgentPaths
+
+
+DEFERRED_ROOT = Path("/msm_deferred")
+"""Reserved root every deferred path is minted under.
+
+Absolute, and deliberately so. `ops.data.repoint_item` -- the operation that
+fills a deferred path in -- reads `is_absolute()` with the opposite meaning to
+everywhere else: a *relative* manifest entry is library-owned, so re-pointing it
+delegates to `Rename`, a real file move. A relative fake path would therefore be
+refused outright (the route asserts old and new agree on absoluteness) and, if
+it slipped past, would try to move a file that never existed. The reserved root
+also makes the stage refusal legible: the message names a path a reader can see
+is not theirs.
+"""
+
+
+class _DeferredPath(Enum):
+    """The type behind :data:`DEFERRED`; one member, which is the constant."""
+
+    DEFERRED = "deferred"
+
+    def __str__(self) -> str:
+        return "DEFERRED"
+
+    __repr__ = __str__
+
+
+DEFERRED = _DeferredPath.DEFERRED
+"""An input whose path is not known yet.
+
+Passed in place of a path -- ``lib.AddItem(DEFERRED, "ns::type")`` -- and that
+is the whole caller-facing surface: a constant, with nothing to name or invent,
+because a caller who had a value to pass would not be deferring. Such a row
+plans normally and is refused at stage.
+
+The value that gets *stored* is not this constant but a distinct path minted by
+:func:`mint_deferred_path` on receipt, because the manifest is a dict keyed by
+path and identity derives from path -- one shared value would collapse two
+deferred rows onto one entry and then raise `already added` on the second.
+"""
+
+
+class DeferredPathError(Exception):
+    """A deferred path reached something that needs a real file."""
+
+
+def mint_deferred_path() -> Path:
+    """A fresh, distinct, absolute stand-in path under :data:`DEFERRED_ROOT`.
+
+    Minted once, at `AddItem` time, and persisted in the manifest thereafter --
+    never re-derived on load. Identity is a function of path, so regenerating
+    would give the same workflow a different task key every time it was opened.
+    """
+    return DEFERRED_ROOT / uuid.uuid4().hex
+
+
+def is_deferred(path) -> bool:
+    """Whether `path` is the constant or a path minted from it.
+
+    Accepts the rendered string form too, so the check survives the round trip
+    through yaml that every manifest and every spec makes.
+    """
+    if path is DEFERRED:
+        return True
+    if not isinstance(path, (str, Path)):
+        return False
+    p = Path(path)
+    return p.is_absolute() and p != DEFERRED_ROOT and p.is_relative_to(DEFERRED_ROOT)
 
 
 RenderDialect = Literal["bash", "brace", "groovy"]

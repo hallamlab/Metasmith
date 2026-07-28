@@ -7,6 +7,9 @@ from .models.workflow import WorkflowTask, WorkflowPlan, WorkflowStep, WorkflowT
 # what runs in the pipeline. This is the transform-authoring dev loop; it was
 # reachable only by importing a private module path.
 from .models.direct_run import RunTransform
+# An input whose path is not known yet: `lib.AddItem(DEFERRED, "ns::type")`.
+# Plans normally, refused at stage.
+from .models.paths import DEFERRED, DeferredPathError
 from .models.remote import Source, SshSource, GlobusSource, HttpSource, SourceType
 from .models.remote import Logistics, LogisticsResult, LogisticsException
 from .models.lineage import (

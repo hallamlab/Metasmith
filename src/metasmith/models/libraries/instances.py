@@ -24,6 +24,7 @@ import yaml
 
 from ...hashing import KeyGenerator
 from ...logging import Log
+from ..paths import DEFERRED, _DeferredPath, mint_deferred_path
 from ..remote import Logistics, Source, SourceType
 from ..solver import Dependency, Endpoint
 from .identity import _LeafIdentity
@@ -431,12 +432,16 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
                     to_inst = self.Get(child_path)
                     yield (from_inst, to_inst)
 
-    def AddItem(self, path: Path|str, dtype: str, parents: Iterable[Path]|None=None):
+    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None):
         if parents is None:
             parents = []
         for p in parents:
             assert p in self.manifest
-        path = Path(path)
+        # DEFERRED is a constant, so what the caller passes carries nothing to
+        # tell two deferred rows apart. The manifest is keyed by path and
+        # identity derives from path, so the distinct value is minted here, on
+        # receipt, and persisted from then on.
+        path = mint_deferred_path() if path is DEFERRED else Path(path)
         assert path not in self.manifest, f"[{path}] already added"
         type_model = self.GetType(dtype) # check if datatype exists
         self.manifest[path] = dtype

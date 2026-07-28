@@ -29,6 +29,10 @@ def stage(
     """
     agent = load_agent(agent_path)
     task = _ws.load_task(workspace, task_ref)
+    # Asked here as well as inside StageWorkflow so the refusal costs no ssh
+    # connection: this is the CLI's and the web page's door, and the message is
+    # about the recipe, not about the agent.
+    task.RefuseIfDeferred()
     agent.StageWorkflow(
         task, on_exist,
         idle_timeout=IDLE_TIMEOUT if idle_timeout is None else idle_timeout,

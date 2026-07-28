@@ -6,7 +6,10 @@ over identical inputs hit the same cache shards with no import step. Folding
 the relative path in is not decoration: pure content-addressing collapses every
 degenerate-but-distinct input -- N empty files, byte-identical samples -- onto
 one id, which flattens fan-out and trips the solver's O(n^2) collision path.
-Absent or remote inputs fall back to a random per-call id and get no reuse.
+Absent or remote inputs fall back to a random per-call id and get no reuse. A
+DEFERRED row is the exception: it has no bytes either, but its minted path is
+persisted, so its id comes from that path and survives the library being rebuilt
+from a spec.
 
 Mixed into `DataInstanceLibrary` rather than left inline because a change here
 silently invalidates or false-hits every cached run, and that deserves to be a
@@ -29,6 +32,7 @@ from pathlib import Path
 
 from ...caching.keys import content_multihash_key, multihash_key
 from ...hashing import KeyGenerator
+from ..paths import is_deferred
 
 
 class _LeafIdentity:
@@ -64,7 +68,15 @@ class _LeafIdentity:
         a content-addressed input is still a user-supplied leaf.
         """
         key = None
-        if not os.environ.get("METASMITH_LEAF_RANDOM"):
+        if is_deferred(path):
+            # A deferred row has no bytes to address, but its minted path is
+            # already unique and already persisted -- so the id derives from it
+            # rather than falling through to the random branch below. That is
+            # what lets a spec rebuild its library from scratch and arrive at
+            # the same task key, which is the whole basis of a template solving
+            # to a fixed DAG.
+            key = multihash_key(b"deferred\x00" + str(path).encode("utf-8"))
+        elif not os.environ.get("METASMITH_LEAF_RANDOM"):
             abs_path = path if path.is_absolute() else self.location / path
             # R5 (F2 fix): fold the LIBRARY-RELATIVE path, not the raw argument.
             # Two runs may add the same file via an absolute path on one host

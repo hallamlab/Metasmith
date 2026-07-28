@@ -21,6 +21,7 @@ from typing import Iterable, Literal
 import yaml
 
 from ..libraries import DataInstance, DataInstanceLibrary, TransformInstanceLibrary
+from ..paths import DeferredPathError, is_deferred
 from ..remote import Logistics, Source, SourceType
 from .cache_decisions import compute_cache_decisions
 from .nextflow_codegen import NextflowGenContext, apply_fs_strategy, prepare_nextflow
@@ -91,6 +92,37 @@ class WorkflowTask:
                     return True
         given = {inst.ResolvePath().parent for inst in self.plan.given if should_keep(inst)}
         return self._get_common_folders(given)
+
+    def DeferredInputs(self) -> list[DataInstance]:
+        """The inputs whose path is still DEFERRED.
+
+        A plan over these is legitimate -- solving needs types and lineage, not
+        files -- so this is not asked during planning. It is asked once, at the
+        boundary where a real file starts to matter.
+        """
+        return [inst for inst in self.plan.given if is_deferred(inst.path)]
+
+    def RefuseIfDeferred(self) -> None:
+        """Raise unless every input has a real path.
+
+        Called at the *top* of both staging entry points, ahead of anything that
+        walks instance paths: `_get_mock_container` -> `GetCommonInputFolders`
+        reads `is_absolute()` on every instance and would happily bind
+        `/msm_deferred/...` into the remote container, turning a message into a
+        mount failure on the far host.
+        """
+        deferred = self.DeferredInputs()
+        if not deferred:
+            return
+        rows = "\n".join(
+            f"  - {inst.dtype_name}  ({inst.path})" for inst in deferred
+        )
+        raise DeferredPathError(
+            f"cannot stage workflow [{self._key}]: {len(deferred)} input(s) have "
+            f"no path yet:\n{rows}\n"
+            f"These plan fine but there is nothing on disk to send. Point each row "
+            f"at a real file before staging."
+        )
 
     def Pack(self):
         return dict(
