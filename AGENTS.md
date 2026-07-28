@@ -288,6 +288,32 @@ while `Parse` split on `/` and read the `:` as part of the host, so a remote hom
 colon per save until nothing could reach it. Pinned by
 `tests/unit/test_source_parse.py::TestSshRoundTrip`.
 
+### Re-exporting packages
+
+`models/libraries`, `models/workflow` and `agents` are packages whose `__init__.py` is a
+module docstring and re-exports, nothing else. They were single files until they reached
+2100–2600 lines; the dotted paths did not change, and are not allowed to. `metasmith/
+__init__.py` is entirely commented out, so those paths *are* the public API — the standard
+library of transforms is a separate repo reaching them through `python_api`. None of the
+three declares `__all__`: notebooks under `main/` star-import them and pick up names they
+never import themselves. `tests/unit/test_module_surface.py` holds a snapshot of the
+pre-split namespace and fails on any name that stops being reachable.
+
+Two things a re-export does *not* give you, both of which cost a debugging session each:
+
+- **A re-exported name is importable, not patchable.** `monkeypatch.setattr` on the package
+  rebinds the package's global; the code still reads the binding in the module that defines
+  it. Patch the module that *runs* the code, not the one that exports it.
+- **`inspect.getsource(pkg)` and `pkg.__file__` resolve to the `__init__`** — pure
+  re-exports. A test that reads a module's source to pin a literal must glob the package,
+  and one that pins an *absence* passes trivially otherwise.
+
+In `agents`, `RunWorkflow`, `StageWorkflow` and `CheckWorkflow` each name two things: an
+`Agent` method (the client asking) and a free function in `agents.runner` (the agent host
+doing). Both are public, so neither is renamed. `coms/api.py` imports the free functions by
+bare name from the package, so the `__init__` import order is load-bearing — `runner` is
+imported last, and must stay last.
+
 ---
 
 ## Adding a transform
