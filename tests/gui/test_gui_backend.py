@@ -12,7 +12,9 @@ from unittest import mock
 
 import pytest
 
+from metasmith.agents import Spec, Template
 from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
+from metasmith.models.paths import DEFERRED
 from metasmith.models.solver import Endpoint
 from metasmith.testing.mock_transforms import identity_transform
 
@@ -1016,6 +1018,143 @@ class TestWorkflowDag:
     def test_a_workflow_with_no_plan_is_refused(self, client):
         name = _make_workflow(client)
         assert client.get(f"/api/workflows/{name}/dag").status_code == 409
+
+
+@pytest.fixture
+def template(project_root) -> str:
+    """One template in the stand-in standard library: deferred assembly in.
+
+    Written the way the libraries repository writes its own -- a `Spec` with
+    `DEFERRED` inputs, saved with references relative to the repository root --
+    because that is the file the GUI has to read.
+    """
+    mlib = project_root / "MetasmithLibraries"
+    lib = DataInstanceLibrary(mlib / "templates" / "assembly_to_bam" / "inputs.xgdb")
+    lib.AddTypeLibrary(mlib / "data_types" / "mock.yml")
+    lib.AddItem(DEFERRED, "mock::assembly")
+    lib.Save()
+    Template(
+        name="assembly_to_bam",
+        description="an assembly in, a bam out",
+        spec=Spec(
+            input_library=lib,
+            target_types=["mock::bam"],
+            transform_libraries=[mlib / "transforms" / "transforms.xgdb"],
+        ),
+    ).Save(mlib)
+    return "assembly_to_bam"
+
+
+class TestTemplates:
+    """The starting points the new-workflow modal offers."""
+
+    def test_listing_reads_yaml_and_never_solves(self, client, template):
+        # the modal opens on every `+ workflow`; if listing planned anything it
+        # would be as slow as a generate and would hold the planner's lock
+        with mock.patch.object(Spec, "Solve", side_effect=AssertionError("solved")):
+            body = client.get("/api/templates").get_json()
+        (entry,) = body
+        assert entry["name"] == template
+        assert entry["description"] == "an assembly in, a bam out"
+        assert entry["target_types"] == ["mock::bam"]
+        assert entry["dag_ready"] is False
+
+    def test_a_project_without_templates_lists_none(self, client):
+        assert client.get("/api/templates").get_json() == []
+
+    def test_drawing_is_a_job_and_is_then_served_from_cache(self, client, template):
+        r = client.post(f"/api/templates/{template}/dag")
+        assert r.status_code == 202, r.get_json()
+        result = _finish(client, r.get_json())
+        assert result["step_count"] >= 1
+
+        drawn = client.get(f"/api/templates/{template}/dag")
+        assert drawn.status_code == 200 and drawn.mimetype == "image/svg+xml"
+        assert "<svg" in drawn.get_data(as_text=True)
+
+        # the second ask costs nothing: no job, no solve
+        again = client.post(f"/api/templates/{template}/dag")
+        assert again.status_code == 200
+        assert again.get_json()["cached"] is True
+        assert client.get("/api/templates").get_json()[0]["dag_ready"] is True
+
+    def test_each_theme_is_drawn_and_cached_separately(self, client, template):
+        _finish(client, client.post(f"/api/templates/{template}/dag").get_json())
+        r = client.post(f"/api/templates/{template}/dag", query_string={"theme": "dark"})
+        assert r.status_code == 202, "a theme drawn once is not a theme drawn"
+        _finish(client, r.get_json())
+        light = client.get(f"/api/templates/{template}/dag").get_data(as_text=True)
+        dark = client.get(
+            f"/api/templates/{template}/dag", query_string={"theme": "dark"}
+        ).get_data(as_text=True)
+        assert light != dark
+
+    def test_a_library_pull_invalidates_the_drawing(self, client, template):
+        """The cache keys on the stdlib commit, not just the name.
+
+        A template names transforms; pulling the library can change what it
+        solves to. Without the commit in the key the modal would keep showing
+        the previous graph, with nothing on screen to say so.
+        """
+        with mock.patch.object(stdlib, "stdlib_commit", return_value="a" * 40):
+            _finish(client, client.post(f"/api/templates/{template}/dag").get_json())
+            assert client.post(f"/api/templates/{template}/dag").status_code == 200
+        with mock.patch.object(stdlib, "stdlib_commit", return_value="b" * 40):
+            assert client.post(f"/api/templates/{template}/dag").status_code == 202
+
+    def test_an_undrawn_template_is_refused_rather_than_drawn_inline(self, client, template):
+        assert client.get(f"/api/templates/{template}/dag").status_code == 409
+
+    def test_an_unknown_template_is_refused(self, client, template):
+        assert client.post("/api/templates/nope/dag").status_code == 409
+        assert client.post("/api/workflows", json={"template": "nope"}).status_code == 409
+
+    def test_creating_from_a_template_takes_its_spec_and_its_rows(self, client, template):
+        r = client.post("/api/workflows", json={"template": template})
+        assert r.status_code == 201, r.get_json()
+        name = r.get_json()["name"]
+
+        detail = client.get(f"/api/workflows/{name}").get_json()
+        assert detail["request"]["target_types"] == ["mock::bam"]
+        assert [Path(p).name for p in detail["request"]["transform_libraries"]] == [
+            "transforms.xgdb"
+        ]
+
+        items = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
+        assert [i["type_name"] for i in items] == ["mock::assembly"]
+
+    def test_the_copied_rows_keep_the_template_s_identity(self, client, template, project_root):
+        """A deferred path is minted once; re-minting would move the task key.
+
+        The template's build asserted a solve at one key. If creating from it
+        re-added the rows, the workflow would plan to a different one and the
+        two could not be said to be the same workflow.
+        """
+        source = DataInstanceLibrary.Load(
+            project_root / "MetasmithLibraries" / "templates" / template / "inputs.xgdb"
+        )
+        name = client.post("/api/workflows", json={"template": template}).get_json()["name"]
+        copied = DataInstanceLibrary.Load(
+            Path(client.get(f"/api/workflows/{name}").get_json()["input_library"]["path"])
+        )
+        assert sorted(str(p) for p in copied.manifest) == sorted(
+            str(p) for p in source.manifest
+        )
+        assert copied.GetKey() == source.GetKey()
+
+    def test_a_created_workflow_can_still_be_typed_beyond_the_template(self, client, template):
+        """The copy carries only the namespaces the template used; the editor
+        needs every one the library offers, or a row cannot be retyped."""
+        name = client.post("/api/workflows", json={"template": template}).get_json()["name"]
+        info = client.get(f"/api/workflows/{name}/inputs").get_json()
+        assert "mock" in info["type_namespaces"]
+
+    def test_creating_without_a_template_is_untouched(self, client, template):
+        """The blank path is the default and must stay exactly what it was."""
+        name = client.post("/api/workflows", json={}).get_json()["name"]
+        detail = client.get(f"/api/workflows/{name}").get_json()
+        assert detail["request"]["target_types"] == []
+        assert client.get(f"/api/workflows/{name}/inputs").get_json()["items"] == []
 
 
 class TestDagLayoutRoute:

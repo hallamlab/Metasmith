@@ -17,7 +17,7 @@ from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
-from ..agents import Spec
+from ..agents import Spec, Template
 from ..models.dag_renderer import THEMES
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
@@ -890,6 +890,120 @@ def deploy_agent(name):
     return jsonify(job.summary()), 202
 
 
+# -- templates ---------------------------------------------------------------
+#
+# A template is a workflow you start from: a spec whose input paths are
+# DEFERRED, shipped in the standard library beside the transforms it names.
+# There is no separate format to keep in step -- these routes read the same
+# `Spec` a stored workflow record is, and creating from one is an ordinary
+# create with that spec and its input rows.
+
+
+def _target_names(targets) -> list[str]:
+    """Target types as plain names, whichever of the two spellings was used."""
+    return [t if isinstance(t, str) else str(t.get("type") or "") for t in targets or []]
+
+
+def _templates(p) -> dict[str, Template]:
+    found = stdlib.discover(p.root)
+    if not found["present"]:
+        return {}
+    return {t.name: t for t in Template.Discover(found["path"])}
+
+
+def _template(p, name: str) -> Template:
+    tmpl = _templates(p).get(name)
+    if tmpl is None:
+        raise ProjectError(f"no template named [{name}]")
+    return tmpl
+
+
+def _template_dag_path(p, name: str, commit: str | None, theme: str) -> Path:
+    """Where a template's drawing is cached.
+
+    Keyed on the stdlib commit as much as on the name: a library pull can
+    change what a template solves to, and a cache that ignored the commit would
+    leave the modal drawing the previous graph with nothing to say it was
+    stale. Files under an old commit simply stop being asked for.
+    """
+    stamp = (commit or "unversioned")[:12]
+    return p.cache_dir / "template_dags" / stamp / f"{name}.{theme}.svg"
+
+
+def _theme_arg() -> str:
+    """An unknown theme falls back rather than raising -- it arrives from a url."""
+    theme = request.args.get("theme", "light")
+    return theme if theme in THEMES else "light"
+
+
+@bp.get("/templates")
+def list_templates():
+    """The starting points on offer, cheaply: this reads yaml, never solves."""
+    p = _project()
+    commit = stdlib.discover(p.root)["commit"]
+    theme = _theme_arg()
+    return jsonify([
+        {
+            "name": t.name,
+            "description": t.description,
+            "sample_type": t.spec.sample_type,
+            "target_types": _target_names(t.spec.target_types),
+            # so the modal can show a cached drawing immediately and only
+            # start a job for one it has never drawn
+            "dag_ready": _template_dag_path(p, t.name, commit, theme).is_file(),
+        }
+        for t in _templates(p).values()
+    ])
+
+
+@bp.post("/templates/<name>/dag")
+def render_template_dag(name):
+    """Solve a template and draw it -- as a job, because a solve is seconds.
+
+    It also holds `_plan_lock` for its whole duration, so a blocking route here
+    would freeze every other page that plans. Cached on (template, stdlib
+    commit, theme): paid once, and every later modal is served from disk.
+    """
+    p = _project()
+    tmpl = _template(p, name)
+    theme = _theme_arg()
+    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    if svg.is_file():
+        return jsonify({"template": name, "theme": theme, "cached": True})
+
+    def _work(job):
+        with LogCapture(job):
+            with _plan_lock:
+                task = tmpl.spec.Solve()
+            assert task.ok, (
+                f"template [{name}] does not solve against this library: "
+                f"dropped {sorted(task.plan.dropped_targets)}"
+            )
+            svg.parent.mkdir(parents=True, exist_ok=True)
+            task.plan.RenderDAG(str(svg), theme=theme)
+            return {
+                "template": name, "theme": theme,
+                "step_count": len(task.plan.steps),
+            }
+
+    job = _jobs().submit(
+        "template_dag", f"draw {name}", _work, subject={"template": name},
+    )
+    return jsonify(job.summary()), 202
+
+
+@bp.get("/templates/<name>/dag")
+def template_dag(name):
+    """The cached drawing. Absent until the job above has drawn it."""
+    p = _project()
+    _template(p, name)  # 4xx on an unknown name rather than a missing file
+    theme = _theme_arg()
+    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    if not svg.is_file():
+        raise ProjectError(f"template [{name}] has not been drawn for theme [{theme}] yet")
+    return Response(svg.read_text(), mimetype="image/svg+xml")
+
+
 # -- workflows ---------------------------------------------------------------
 
 
@@ -943,20 +1057,41 @@ def create_workflow():
     The library is created up front, before anything is planned, because it is
     what the user edits -- the frozen copy inside the task bundle only appears
     once a plan succeeds, and a failed solve produces no bundle at all.
+
+    `template` names a starting point from the standard library. Because this
+    is *new*, taking one is not a merge: the recipe is empty, so the template's
+    spec is simply what the workflow starts as and its deferred rows are its
+    input library.
     """
     b = _body()
     p = _project()
     name = slugify(b["name"]) if b.get("name") else None
-    wf = p.create_workflow(name=name, request={
-        k: v for k, v in b.items()
-        if k in {"sample_type", "target_types", "transform_libraries",
-                 "resource_libraries", "shared_input_paths"}
-    })
+    template = _template(p, b["template"]) if b.get("template") else None
+
+    # A workflow record is a spec plus the store's bookkeeping, so what a create
+    # may set is exactly the spec's fields -- named there rather than listed
+    # again here.
+    request_fields = {k: v for k, v in b.items() if k in set(Spec.FIELDS)}
+    if template is not None:
+        # resolved to this checkout's absolute paths on load; an explicit field
+        # in the body still wins, so a caller can override what it starts from
+        packed = template.spec.Pack()
+        request_fields = {k: packed[k] for k in Spec.FIELDS} | request_fields
+    wf = p.create_workflow(name=name, request=request_fields)
 
     types = b.get("type_libraries")
     if types is None:
         types = stdlib.discover(p.root)["data_types"]
-    op_data.create_library(str(wf.path / INPUT_LIBRARY_DIRNAME), type_library_paths=types)
+    lib_path = str(wf.path / INPUT_LIBRARY_DIRNAME)
+    if template is None:
+        op_data.create_library(lib_path, type_library_paths=types)
+    else:
+        # Copied rather than re-added row by row: a deferred path is minted once
+        # and identity follows it, so re-adding would give this workflow a task
+        # key other than the one the template was validated at.
+        op_data.copy_library(
+            str(template.spec.input_library), lib_path, type_library_paths=types,
+        )
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
 
 

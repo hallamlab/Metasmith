@@ -63,6 +63,10 @@ RUNS_DIRNAME = "runs"
 OUTPUTS_DIRNAME = "outputs"
 INPUT_LIBRARY_DIRNAME = "input.xgdb"
 STDLIB_DIRNAME = "MetasmithLibraries"
+# Derived files that can always be recomputed -- template drawings today. Kept
+# out of the object directories so that deleting one never costs a user
+# anything, and so a stale cache is fixed by removing a directory.
+CACHE_DIRNAME = ".cache"
 
 REQUEST_FILE = "request.yml"
 RESULT_FILE = "result.yml"
@@ -166,6 +170,10 @@ class Project:
     @property
     def stdlib_dir(self) -> Path:
         return self.root / STDLIB_DIRNAME
+
+    @property
+    def cache_dir(self) -> Path:
+        return self.root / CACHE_DIRNAME
 
     def agent_path(self, name: str) -> Path:
         assert_valid_name(name, "agent name")

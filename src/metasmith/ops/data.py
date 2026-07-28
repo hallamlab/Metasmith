@@ -98,6 +98,46 @@ def fork_library(
     }
 
 
+def copy_library(
+    library_path: str,
+    dest_path: str,
+    type_library_paths: list[str] | None = None,
+) -> dict:
+    """Copy a library verbatim: same paths, same ids, same key.
+
+    The counterpart to `fork_library`, which exists to *break* identity. This
+    one keeps it, and that is the whole point of the operation: a deferred path
+    is minted once and identity follows the path, so a workflow started from a
+    template inherits its rows rather than re-adding them -- re-adding would
+    mint new paths and plan to a different task key than the one the template's
+    own build asserted.
+
+    `type_library_paths` are attached on top, skipping namespaces the copy
+    already has. A template ships only the type libraries it used; whoever
+    edits the copy needs the rest offered to them.
+    """
+    src = Path(library_path).resolve()
+    dest = Path(dest_path).resolve()
+    assert src.is_dir(), f"library [{src}] does not exist"
+    assert src != dest, "copy destination must differ from the source"
+    assert not dest.exists() or not any(dest.iterdir()), (
+        f"copy destination [{dest}] already exists and is not empty"
+    )
+    load_data_lib(src)  # fail before copying if the source is not a valid library
+    shutil.copytree(src, dest, symlinks=True, copy_function=_link_or_copy, dirs_exist_ok=True)
+
+    lib = DataInstanceLibrary.Load(dest)
+    for tp in type_library_paths or []:
+        lib.AddTypeLibrary(Path(tp).resolve(), on_exist="skip")
+    lib.Save()
+    return {
+        "library": str(dest),
+        "copied_from": str(src),
+        "type_namespaces": list(lib.types.keys()),
+        "key": lib.GetKey(),
+    }
+
+
 def attach_type_library(
     library_path: str,
     type_library_path: str,

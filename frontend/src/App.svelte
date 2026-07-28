@@ -6,7 +6,6 @@
     attempt,
     clearNotice,
     createAgent,
-    createWorkflow,
     forkWorkflow,
     loadProject,
     loadRuns,
@@ -21,6 +20,7 @@
   import Rail from './components/Rail.svelte'
   import DeleteControl from './components/DeleteControl.svelte'
   import Icon from './components/Icon.svelte'
+  import NewWorkflow from './components/NewWorkflow.svelte'
   import StatusDot from './components/StatusDot.svelte'
   import SshHost from './views/SshHost.svelte'
   import SshEditor from './views/SshEditor.svelte'
@@ -57,14 +57,10 @@
   let copied = $state(false)
   let creating = $state(false)
   let forking = $state(null)
-
-  // guarded because two clicks would make two workflows, and the second one is
-  // never what was wanted
-  async function newWorkflow() {
-    creating = true
-    await createWorkflow()
-    creating = false
-  }
+  // `+ workflow` asks what to start from now: blank, or one of the standard
+  // library's templates. The create itself still happens in `createWorkflow`;
+  // the modal only decides what to pass it.
+  let choosing = $state(false)
 
   async function newAgent() {
     creating = true
@@ -406,7 +402,7 @@
         ontoggleArchived={(v) => (app.showArchived = v)}
       >
         {#snippet actions()}
-          <button class="small" disabled={creating} onclick={newWorkflow}>+ workflow</button>
+          <button class="small" onclick={() => (choosing = true)}>+ workflow</button>
         {/snippet}
         {#snippet row(item)}
           <div class="spread">
@@ -516,6 +512,10 @@
     </main>
   </div>
 </div>
+
+{#if choosing}
+  <NewWorkflow onclose={() => (choosing = false)} />
+{/if}
 
 <style>
   .shell { display: flex; flex-direction: column; height: 100vh; }

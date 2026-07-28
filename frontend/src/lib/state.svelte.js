@@ -372,13 +372,14 @@ export async function createAgent() {
   return out
 }
 
-// A workflow is made the moment it is asked for, under a name picked for you,
-// and you land on it. There is nothing to fill in first: a workflow starts empty
-// whatever it is called, and the one field a create form had -- the name -- is
-// editable on the page you arrive at. Held here rather than in the rail because
-// creating one is a change to the list, not a thing the rail knows how to do.
-export async function createWorkflow() {
-  const out = await attempt(() => api.post('/workflows', {}))
+// A workflow is made under a name picked for you, and you land on it. The name
+// is editable on the page you arrive at, so the only thing the new-workflow
+// modal asks for is what to start from: `{ template }`, or nothing at all for
+// the blank workflow that was always the whole of this. Held here rather than in
+// the rail because creating one is a change to the list, not a thing the rail
+// knows how to do.
+export async function createWorkflow(body = {}) {
+  const out = await attempt(() => api.post('/workflows', body))
   if (out) {
     select('workflows', out.name)
     loadWorkflows()
