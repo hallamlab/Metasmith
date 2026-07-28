@@ -2,6 +2,7 @@
   import { api } from '../lib/api.svelte.js'
   import { attempt, createWorkflow, ui } from '../lib/state.svelte.js'
   import JobLog from './JobLog.svelte'
+  import Modal from './Modal.svelte'
 
   // What `+ workflow` opens. A template is a workflow you start from -- a spec
   // whose input paths are deferred -- so choosing one here is not a merge and
@@ -79,91 +80,51 @@
     creating = false
     if (out) onclose?.()
   }
-
-  function onkey(e) {
-    if (e.key === 'Escape') onclose?.()
-  }
 </script>
 
-<svelte:window on:keydown={onkey} />
-
-<!-- The backdrop closes on click, which is why it carries a role and a key
-     handler; the card stops the click so a press inside it never closes. -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" onclick={() => onclose?.()}>
-  <div
-    class="sheet card col"
-    role="dialog"
-    tabindex="-1"
-    aria-modal="true"
-    aria-label="new workflow"
-    onclick={(e) => e.stopPropagation()}
-  >
-    <div class="spread">
-      <h2>new workflow</h2>
-      <span class="small muted">start from a template, or from nothing</span>
-    </div>
-
-    <div class="stage">
-      {#if error}
-        <p class="small bad pad">{error}</p>
-      {:else if !picked}
-        <p class="small muted pad">
-          an empty workflow — you name the inputs and the targets yourself
-        </p>
-      {:else if chosen?.dag_ready}
-        <img
-          class="dag"
-          src={`/api/templates/${picked}/dag?theme=${ui.theme}&v=${stamp}`}
-          alt={`what ${picked} builds`}
-        />
-      {:else}
-        <p class="small muted pad">solving {picked}…</p>
-      {/if}
-    </div>
-
-    {#if jobId}
-      <JobLog {jobId} onend={drawn} />
+<Modal title="new workflow" subtitle="start from a template, or from nothing" {onclose}>
+  <div class="stage">
+    {#if error}
+      <p class="small bad pad">{error}</p>
+    {:else if !picked}
+      <p class="small muted pad">
+        an empty workflow — you name the inputs and the targets yourself
+      </p>
+    {:else if chosen?.dag_ready}
+      <img
+        class="dag"
+        src={`/api/templates/${picked}/dag?theme=${ui.theme}&v=${stamp}`}
+        alt={`what ${picked} builds`}
+      />
+    {:else}
+      <p class="small muted pad">solving {picked}…</p>
     {/if}
-
-    <label class="col small">
-      <span class="muted">template</span>
-      <select bind:value={picked}>
-        <option value="">blank</option>
-        {#each templates as t (t.name)}
-          <option value={t.name}>{t.name}</option>
-        {/each}
-      </select>
-    </label>
-    <p class="small muted desc">
-      {chosen?.description || (picked ? '' : 'nothing is planned until you generate')}
-    </p>
-
-    <div class="row end">
-      <button onclick={() => onclose?.()}>cancel</button>
-      <button class="primary" disabled={creating || drawing} onclick={create}>create</button>
-    </div>
   </div>
-</div>
+
+  {#if jobId}
+    <JobLog {jobId} onend={drawn} />
+  {/if}
+
+  <label class="col small">
+    <span class="muted">template</span>
+    <select bind:value={picked}>
+      <option value="">blank</option>
+      {#each templates as t (t.name)}
+        <option value={t.name}>{t.name}</option>
+      {/each}
+    </select>
+  </label>
+  <p class="small muted desc">
+    {chosen?.description || (picked ? '' : 'nothing is planned until you generate')}
+  </p>
+
+  {#snippet footer()}
+    <button onclick={() => onclose?.()}>cancel</button>
+    <button class="primary" disabled={creating || drawing} onclick={create}>create</button>
+  {/snippet}
+</Modal>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: color-mix(in srgb, var(--bg) 70%, transparent);
-    backdrop-filter: blur(2px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 20;
-    padding: 24px;
-  }
-  .sheet {
-    width: min(720px, 100%);
-    max-height: 100%;
-    overflow: auto;
-  }
   /* the drawing area keeps its height whatever is in it, so picking a template
      does not make the buttons jump out from under the cursor */
   .stage {
@@ -184,5 +145,4 @@
   .pad { padding: 12px; text-align: center; }
   .bad { color: var(--bad); }
   .desc { min-height: 18px; margin: 0; }
-  .end { justify-content: flex-end; }
 </style>

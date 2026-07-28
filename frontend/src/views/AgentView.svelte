@@ -7,6 +7,7 @@
   import Icon from '../components/Icon.svelte'
   import JobLog from '../components/JobLog.svelte'
   import SaveChip from '../components/SaveChip.svelte'
+  import ShareOut from '../components/ShareOut.svelte'
 
   let { name } = $props()
 
@@ -17,6 +18,7 @@
   let jobId = $state(null)
   let ping = $state(null)
   let pinging = $state(false)
+  let sharing = $state(false)
 
   // The name is a field like any other -- `PUT /agents/<name>` carries the whole
   // object, and a name that differs from the url is a rename. So the agent's
@@ -160,6 +162,7 @@
       </div>
       <div class="row">
         {#if agent.archived_at}<button onclick={unarchive}>restore</button>{/if}
+        <button onclick={() => (sharing = true)}>share</button>
         <button onclick={doPing} disabled={pinging}>{pinging ? 'pinging…' : 'ping'}</button>
         <button onclick={save} disabled={!dirty}>save</button>
         <button class="primary" onclick={deploy} disabled={problems.length > 0}>deploy</button>
@@ -245,6 +248,10 @@
       </div>
     {/if}
   </div>
+
+  {#if sharing}
+    <ShareOut kind="agent" name={agent.name} onclose={() => (sharing = false)} />
+  {/if}
 {/if}
 
 <style>

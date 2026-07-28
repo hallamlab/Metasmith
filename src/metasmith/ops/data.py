@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..hashing import KeyGenerator
 from ..models.libraries import DataInstanceLibrary
+from ..models.paths import DEFERRED
 from ..models.remote import Source
 from ._common import load_data_lib
 
@@ -157,9 +158,16 @@ def add_item(
     parents: list[str] | None = None,
     save: bool = True,
 ) -> dict:
+    """Register a path, or `DEFERRED` for one that is not known yet.
+
+    The constant is accepted by its rendered spelling as well as by identity, so
+    a caller on the far side of yaml or a url can say the same thing this one's
+    caller says without a second vocabulary for it.
+    """
     lib = load_data_lib(library_path)
     parent_paths = [Path(p) for p in (parents or [])]
-    rec_path = lib.AddItem(Path(host_path), dtype, parents=parent_paths)
+    path = DEFERRED if host_path is DEFERRED or host_path == str(DEFERRED) else Path(host_path)
+    rec_path = lib.AddItem(path, dtype, parents=parent_paths)
     if save:
         lib.Save()
     return {"library": str(library_path), "path": str(rec_path), "dtype": dtype}

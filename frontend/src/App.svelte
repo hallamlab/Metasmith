@@ -21,6 +21,7 @@
   import DeleteControl from './components/DeleteControl.svelte'
   import Icon from './components/Icon.svelte'
   import NewWorkflow from './components/NewWorkflow.svelte'
+  import ShareIn from './components/ShareIn.svelte'
   import StatusDot from './components/StatusDot.svelte'
   import SshHost from './views/SshHost.svelte'
   import SshEditor from './views/SshEditor.svelte'
@@ -61,6 +62,11 @@
   // library's templates. The create itself still happens in `createWorkflow`;
   // the modal only decides what to pass it.
   let choosing = $state(false)
+  // One dialog for all three rails: the payload says what it is, so the button
+  // beside `+ add` does not have to, and pasting an agent onto the hosts rail
+  // lands the agent rather than being refused for being on the wrong list.
+  let importing = $state(false)
+  const IMPORT_TITLE = 'paste a host, an agent or a workflow somebody shared with you'
 
   async function newAgent() {
     creating = true
@@ -323,6 +329,7 @@
         empty="no hosts in your ssh config"
       >
         {#snippet actions()}
+          <button class="small" onclick={() => (importing = true)} title={IMPORT_TITLE}>import</button>
           <button class="small" onclick={() => select('ssh', 'new')}>+ host</button>
         {/snippet}
         {#snippet row(item)}
@@ -365,6 +372,7 @@
         ontoggleArchived={(v) => (app.showArchived = v)}
       >
         {#snippet actions()}
+          <button class="small" onclick={() => (importing = true)} title={IMPORT_TITLE}>import</button>
           <button class="small" disabled={creating} onclick={newAgent}>+ agent</button>
         {/snippet}
         {#snippet row(item)}
@@ -402,6 +410,7 @@
         ontoggleArchived={(v) => (app.showArchived = v)}
       >
         {#snippet actions()}
+          <button class="small" onclick={() => (importing = true)} title={IMPORT_TITLE}>import</button>
           <button class="small" onclick={() => (choosing = true)}>+ workflow</button>
         {/snippet}
         {#snippet row(item)}
@@ -512,6 +521,10 @@
     </main>
   </div>
 </div>
+
+{#if importing}
+  <ShareIn onclose={() => (importing = false)} />
+{/if}
 
 {#if choosing}
   <NewWorkflow onclose={() => (choosing = false)} />

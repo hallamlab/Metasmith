@@ -8,6 +8,7 @@
   import MiniGraph from '../components/MiniGraph.svelte'
   import SaveChip from '../components/SaveChip.svelte'
   import SampleTable from '../components/SampleTable.svelte'
+  import ShareOut from '../components/ShareOut.svelte'
   import SidePanel from '../components/SidePanel.svelte'
   import HintsPanel from './HintsPanel.svelte'
   import LibraryList from './LibraryList.svelte'
@@ -25,6 +26,7 @@
   let index = $state(null)
   let items = $state([])
   let jobId = $state(null)
+  let sharing = $state(false)
   let launching = $state(false)
   let agentChoice = $state('')
   let presetChoice = $state('')
@@ -862,10 +864,12 @@
         </div>
         <!-- copying one lives on its row in the rail, next to the delete: it is
              a change to the list, and it is wanted for workflows other than the
-             one that happens to be open -->
-        {#if wf.archived_at}
-          <div class="row"><button onclick={unarchive}>restore</button></div>
-        {/if}
+             one that happens to be open. Sharing is the opposite -- it is about
+             this workflow and what is in it -- so it is here. -->
+        <div class="row">
+          {#if wf.archived_at}<button onclick={unarchive}>restore</button>{/if}
+          <button class="small" onclick={() => (sharing = true)}>share</button>
+        </div>
       </div>
 
       <div class="card" id="msm-recipe">
@@ -1181,6 +1185,10 @@
       />
     </SidePanel>
   </div>
+
+  {#if sharing}
+    <ShareOut kind="workflow" name={wf.name} onclose={() => (sharing = false)} />
+  {/if}
 {/if}
 
 <style>

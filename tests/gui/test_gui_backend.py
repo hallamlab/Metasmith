@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+import yaml
 
 from metasmith.agents import Spec, Template
 from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
@@ -18,7 +19,7 @@ from metasmith.models.paths import DEFERRED
 from metasmith.models.solver import Endpoint
 from metasmith.testing.mock_transforms import identity_transform
 
-from metasmith.gui import stdlib
+from metasmith.gui import share, stdlib
 from metasmith.gui.app import bind_project, create_app
 from metasmith.gui.store import Project
 from metasmith.ops import agent as op_agent
@@ -31,14 +32,13 @@ from tests.e2e.docker.conftest import create_transform_library
 # as a local reminder of what the file is for; it is no longer what selects it.
 pytestmark = pytest.mark.gui
 
-@pytest.fixture
-def project_root(tmp_path) -> Path:
+def _fabricate_project(root: Path) -> Path:
     """A project with a stand-in standard library already in place.
 
     The GUI clones the real one; here it is fabricated so the tests never touch
-    the network.
+    the network. A function as well as a fixture because sharing needs two
+    projects at once -- an export is only worth anything somewhere else.
     """
-    root = tmp_path / "project"
     mlib = root / "MetasmithLibraries"
     (mlib / "data_types").mkdir(parents=True)
 
@@ -57,6 +57,11 @@ def project_root(tmp_path) -> Path:
     )
     (mlib / "resources").mkdir()
     return root
+
+
+@pytest.fixture
+def project_root(tmp_path) -> Path:
+    return _fabricate_project(tmp_path / "project")
 
 
 @pytest.fixture(scope="session")
@@ -2523,3 +2528,338 @@ class TestSharedInputs:
         assert job.wait(120)
         assert job.status == "failed"
         assert "not in" in job.error
+
+
+# ---------------------------------------------------------------------------
+# sharing
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def elsewhere(_app, tmp_path):
+    """A second project on the same app -- where an import has to land.
+
+    Sharing is only worth testing across the seam: a payload that imports into
+    the project it came from proves nothing about names resolving.
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _open():
+        root = _fabricate_project(tmp_path / "other")
+        bind_project(_app, root, ssh_config_path=tmp_path / "other_ssh", watch=False)
+        with _app.test_client() as c:
+            c.application = _app
+            yield c, root
+
+    return _open
+
+
+def _payload(client, kind, name, bound=False):
+    r = client.post("/api/share/export", json={"kind": kind, "name": name, "bound": bound})
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()
+
+
+class TestShareEnvelope:
+    """What the string itself has to promise."""
+
+    def test_a_payload_round_trips(self, client):
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        out = _payload(client, "ssh_host", "big-iron")
+        assert out["payload"].startswith("msm1:")
+        kind, body = share.decode(out["payload"])
+        assert kind == "ssh_host"
+        assert body["hostname"] == "big.example"
+
+    def test_the_body_is_shown_beside_the_payload(self, client):
+        """Exports carry paths and accounts; the page shows what is in one
+        before anyone copies it."""
+        client.post("/api/agents", json={"name": "smith", "home": "ssh://box:~/msm.smith"})
+        out = _payload(client, "agent", "smith")
+        assert out["body"]["home"] == "ssh://box:~/msm.smith"
+
+    def test_a_truncated_payload_is_refused_not_half_read(self, client):
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        text = _payload(client, "ssh_host", "big-iron")["payload"]
+        r = client.post("/api/share/preview", json={"payload": text[:-8]})
+        assert r.status_code == 409
+        assert "whole" in r.get_json()["error"] or "damaged" in r.get_json()["error"]
+
+    def test_a_later_format_is_refused_by_name(self, client):
+        r = client.post("/api/share/preview", json={"payload": "msm9:abc:ZZZZ"})
+        assert r.status_code == 409
+        assert "msm9" in r.get_json()["error"]
+
+    def test_something_that_is_not_a_payload_says_so(self, client):
+        r = client.post("/api/share/preview", json={"payload": "hello there"})
+        assert r.status_code == 409
+        assert "not a metasmith share string" in r.get_json()["error"]
+
+    def test_wrapped_whitespace_survives(self, client):
+        """Mail clients wrap long strings; the wrap is not damage."""
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        text = _payload(client, "ssh_host", "big-iron")["payload"]
+        wrapped = "\n".join(text[i:i + 20] for i in range(0, len(text), 20))
+        assert share.decode(wrapped)[1]["hostname"] == "big.example"
+
+
+class TestShareHosts:
+    def test_a_host_arrives_in_another_config(self, client, elsewhere):
+        client.post("/api/ssh/hosts", json={
+            "alias": "big-iron", "hostname": "big.example", "user": "tony", "port": "2222",
+        })
+        text = _payload(client, "ssh_host", "big-iron")["payload"]
+        with elsewhere() as (other, _):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert prev["kind"] == "ssh_host" and prev["blocked"] is False
+            assert other.post("/api/share/import", json={"payload": text}).status_code == 201
+            hosts = other.get("/api/ssh/hosts").get_json()["hosts"]
+            (host,) = [h for h in hosts if h["alias"] == "big-iron"]
+            assert host["hostname"] == "big.example"
+            assert host["user"] == "tony"
+
+    def test_the_private_key_does_not_travel(self, client):
+        """A shared host names a machine, never a key on the sender's disk."""
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        client.post("/api/ssh/keys", json={"alias": "big-iron"})
+        body = _payload(client, "ssh_host", "big-iron")["body"]
+        assert "identity_file" not in body
+        assert "id_" not in yaml.safe_dump(body)
+
+    def test_an_alias_already_here_is_named_before_it_is_tried(self, client, elsewhere):
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        text = _payload(client, "ssh_host", "big-iron")["payload"]
+        with elsewhere() as (other, _):
+            other.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "mine.example"})
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert prev["blocked"] is True
+            assert "already in your ssh config" in " ".join(prev["notes"])
+            # and the attempt refuses rather than overwriting the user's own host
+            assert other.post("/api/share/import", json={"payload": text}).status_code == 409
+            assert other.get("/api/ssh/hosts").get_json()["hosts"][0]["hostname"] == "mine.example"
+
+
+class TestShareAgents:
+    def test_an_agent_arrives_with_its_params(self, client, elsewhere):
+        """The `Agent.Pack` trap: params outside the stringifying block.
+
+        A mapping written through it reloads as a quoted Python literal -- still
+        truthy, so nothing complains, and the agent runs with no params at all.
+        """
+        client.post("/api/agents", json={
+            "name": "smith", "home": "ssh://box:~/msm.smith", "runtime": "APPTAINER",
+            "setup_commands": ["#!/bin/bash", "module load gcc"],
+            "default_preset": "slurm", "default_params": {"account": "st-x-1", "cpus": 8},
+        })
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, _):
+            assert other.post("/api/share/import", json={"payload": text}).status_code == 201
+            got = other.get("/api/agents/smith").get_json()
+            assert got["default_params"] == {"account": "st-x-1", "cpus": 8}
+            assert got["default_preset"] == "slurm"
+            assert got["setup_commands"] == ["#!/bin/bash", "module load gcc"]
+
+    def test_host_facts_no_editor_draws_still_travel(self, client, elsewhere):
+        client.post("/api/agents", json={"name": "smith", "home": "~/msm.smith"})
+        project = client.application.config["MSM_PROJECT"]
+        agent = op_agent.load_agent(str(project.agent_path("smith")))
+        agent.gpu_args = ["--bind", "/usr/lib/wsl:/usr/lib/wsl"]
+        agent.native = True
+        agent.Save(project.agent_path("smith"))
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, root):
+            other.post("/api/share/import", json={"payload": text})
+            got = op_agent.load_agent(str(Project(root).agent_path("smith")))
+            assert got.gpu_args == ["--bind", "/usr/lib/wsl:/usr/lib/wsl"]
+            assert got.native is True
+
+    def test_where_it_was_deployed_does_not_travel(self, client, elsewhere):
+        """`real_path` is the sender's host. A copy claiming it would skip its
+        own deploy and stage into a directory nothing installed."""
+        client.post("/api/agents", json={"name": "smith", "home": "ssh://box:~/msm.smith"})
+        _deployed(client, "smith")
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, _):
+            other.post("/api/share/import", json={"payload": text})
+            assert other.get("/api/agents/smith").get_json()["deployed"] is False
+
+    def test_an_unknown_host_is_created_red_rather_than_refused(self, client, elsewhere):
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        client.post("/api/agents", json={"name": "smith", "home": "ssh://big-iron:~/msm.smith"})
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, _):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert "not in your ssh config" in " ".join(prev["notes"])
+            assert other.post("/api/share/import", json={"payload": text}).status_code == 201
+            got = other.get("/api/agents/smith").get_json()
+            assert got["valid"] is False
+            assert any("big-iron" in p for p in got["problems"])
+
+    def test_a_name_already_taken_is_moved_aside_and_said(self, client, elsewhere):
+        client.post("/api/agents", json={"name": "smith", "home": "~/msm.smith"})
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, _):
+            other.post("/api/agents", json={"name": "smith", "home": "~/mine"})
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert prev["name"] == "smith-2"
+            other.post("/api/share/import", json={"payload": text})
+            assert other.get("/api/agents/smith").get_json()["home"].endswith("mine")
+            assert other.get("/api/agents/smith-2").get_json()["home"].endswith("msm.smith")
+
+
+class TestShareWorkflows:
+    def _recipe(self, client):
+        name = _make_workflow(client)
+        _seed_inputs(client, name, count=2)
+        return name
+
+    def test_the_spec_travels_and_the_bookkeeping_does_not(self, client):
+        name = self._recipe(client)
+        body = _payload(client, "workflow", name)["body"]
+        assert body["spec"]["target_types"] == ["mock::bam"]
+        assert body["spec"]["sample_type"] == "mock::assembly"
+        for k in ("created_at", "forked_from", "schema"):
+            assert k not in body and k not in body["spec"]
+
+    def test_libraries_travel_as_names_not_as_paths(self, client, project_root):
+        name = self._recipe(client)
+        client.put(f"/api/workflows/{name}", json={
+            "transform_libraries": [str(project_root / "MetasmithLibraries" / "transforms")],
+        })
+        body = _payload(client, "workflow", name)["body"]
+        assert body["spec"]["transform_libraries"] == ["transforms"]
+
+    def test_unbound_is_the_recipe_and_bound_is_the_files(self, client):
+        name = self._recipe(client)
+        unbound = _payload(client, "workflow", name)["body"]
+        assert [r["path"] for r in unbound["inputs"]] == ["DEFERRED", "DEFERRED"]
+        bound = _payload(client, "workflow", name, bound=True)["body"]
+        assert all(r["path"].endswith(".fa") for r in bound["inputs"])
+
+    def test_an_unbound_workflow_lands_and_still_plans(self, client, elsewhere):
+        name = self._recipe(client)
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, root):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert prev["creates"]["input_count"] == 2
+            assert "fill them in" in " ".join(prev["notes"])
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            assert len(rows) == 2
+            assert all(r["type_name"] == "mock::assembly" for r in rows)
+            # deferred rows are minted *here*, so they are this project's paths
+            assert all(r["path"].startswith("/msm_deferred/") for r in rows)
+            assert len({r["path"] for r in rows}) == 2
+            # and the workflow it landed in is the ordinary kind: solving is
+            # refused for the missing paths, not for anything about importing
+            result = _finish(other, other.post(
+                f"/api/workflows/{got['name']}/generate", json={}).get_json())
+            assert result["success"], result
+
+    def test_lineage_survives_the_crossing(self, client, elsewhere):
+        name = _make_workflow(client)
+        _seed_inputs(client, name, count=1)
+        project = client.application.config["MSM_PROJECT"]
+        rows = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
+        parent = rows[0]["path"]
+        f = project.input_library_path(name) / "child.fa"
+        f.write_text(">c\nACGT\n")
+        client.post(f"/api/workflows/{name}/inputs/items", json={
+            "path": str(f), "dtype": "mock::bam", "parents": [parent],
+        })
+        text = _payload(client, "workflow", name, bound=True)["payload"]
+        with elsewhere() as (other, _):
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            child = [r for r in rows if r["type_name"] == "mock::bam"][0]
+            assert [p["path"] for p in child["parents"]] == [parent]
+
+    def test_a_missing_library_is_dropped_and_named(self, client, elsewhere):
+        name = self._recipe(client)
+        client.put(f"/api/workflows/{name}", json={"transform_libraries": ["/nowhere/special"]})
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, _):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert "not in your standard library" in " ".join(prev["notes"])
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            wf = other.get(f"/api/workflows/{got['name']}").get_json()
+            # dropped rather than kept: a path that resolves to nothing here
+            # fails a solve from inside the library loader, saying only that
+            assert wf["request"]["transform_libraries"] == []
+
+    def test_an_unknown_type_arrives_placed_and_red(self, client, elsewhere):
+        """The row is not lost and not registered: it lands as a draft carrying
+        the type it came with, which is what the recipe already draws red."""
+        name = self._recipe(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib = DataInstanceLibrary.Load(project.input_library_path(name))
+        types = DataTypeLibrary()
+        types["exotic"] = Endpoint(properties={"exotic"})
+        types.Save(project.root / "exotic.yml")
+        lib.AddTypeLibrary(project.root / "exotic.yml")
+        f = project.input_library_path(name) / "odd.dat"
+        f.write_text("x")
+        lib.AddItem(f, "exotic::exotic")
+        lib.Save()
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, _):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert "exotic::exotic" in " ".join(prev["notes"])
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            wf = other.get(f"/api/workflows/{got['name']}").get_json()
+            drafts = wf["request"]["input_drafts"]
+            assert [d["dtype"] for d in drafts] == ["exotic::exotic"]
+            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            assert all(r["type_name"] != "exotic::exotic" for r in rows)
+
+    def test_a_templated_row_travels_but_a_typed_path_does_not(self, client, elsewhere):
+        """A `{column}` row is a rule, not a file: it is the substance of a
+        sample-array recipe and means the same thing anywhere."""
+        name = _make_workflow(client)
+        client.put(f"/api/workflows/{name}", json={"input_drafts": [
+            {"id": "a", "mode": "file", "path": "/data/{sample}.fa", "dtype": "mock::assembly",
+             "parents": [], "index": True},
+            {"id": "b", "mode": "file", "path": "/home/me/one_off.fa", "dtype": "mock::assembly",
+             "parents": [], "index": False},
+        ]})
+        body = _payload(client, "workflow", name)["body"]
+        assert [d["path"] for d in body["drafts"]] == ["/data/{sample}.fa", ""]
+        bound = _payload(client, "workflow", name, bound=True)["body"]
+        assert [d["path"] for d in bound["drafts"]] == ["/data/{sample}.fa", "/home/me/one_off.fa"]
+
+    def test_a_typed_in_value_travels_whole(self, client, elsewhere):
+        """A library-owned row *is* its file: a few lines someone typed, under a
+        name the recipe refers to. Deferring it would ship a blank."""
+        name = _make_workflow(client)
+        client.post(f"/api/workflows/{name}/inputs/items", json={
+            "name": "read_pair.txt", "value": "left,right\n", "dtype": "mock::assembly",
+        })
+        body = _payload(client, "workflow", name)["body"]
+        (row,) = body["inputs"]
+        assert row["path"] == "read_pair.txt" and row["value"] == "left,right\n"
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, root):
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            landed = Project(root).input_library_path(got["name"]) / "read_pair.txt"
+            assert landed.read_text() == "left,right\n"
+
+    def test_two_deferred_rows_stay_two_rows_across_the_wire(self, client, elsewhere):
+        """Unbound throws every path away, so lineage cannot be stated in paths:
+        a child naming a deferred parent would have no way to say which one."""
+        name = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib = DataInstanceLibrary.Load(project.input_library_path(name))
+        a = lib.AddItem(DEFERRED, "mock::assembly")
+        lib.AddItem(DEFERRED, "mock::reads")
+        lib.AddItem(DEFERRED, "mock::bam", parents=[a])
+        lib.Save()
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, _):
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            by_type = {r["type_name"]: r for r in rows}
+            assert len(rows) == 3 and len({r["path"] for r in rows}) == 3
+            assert [p["path"] for p in by_type["mock::bam"]["parents"]] == [
+                by_type["mock::assembly"]["path"]
+            ]

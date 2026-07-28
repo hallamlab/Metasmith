@@ -25,6 +25,7 @@ from ..ops import data as op_data
 from ..ops import runtime as op_runtime
 from ..ops import samples as op_samples
 from ..ops import workflow as op_workflow
+from . import share as op_share
 from . import stdlib
 from .jobs import LogCapture
 from .names import (
@@ -136,6 +137,7 @@ def _ssh() -> SshConfig:
 
 @bp.errorhandler(ProjectError)
 @bp.errorhandler(SshConfigError)
+@bp.errorhandler(op_share.ShareError)
 def _handle_refusal(exc):
     # a refusal is a message for the user, not a stack trace
     return jsonify({"error": str(exc), "kind": "refused"}), 409
@@ -2211,6 +2213,35 @@ def agent_presets(name):
     if not p.agent_exists(name):
         raise ProjectError(f"no agent named [{name}]")
     return jsonify(op_runtime.list_presets(str(p.agent_path(name))))
+
+
+# -- sharing -----------------------------------------------------------------
+#
+# Three routes for all three kinds, because the payload says which kind it is:
+# export, preview, commit. Preview is not ceremony -- a payload carries a home
+# directory, a cluster account, someone's absolute input paths -- and pasting a
+# string from a colleague should not be how you find out what was in it.
+
+
+@bp.post("/share/export")
+def share_export():
+    b = _body()
+    kind = b.get("kind")
+    name = b.get("name")
+    assert kind and name, "a kind and a name are required"
+    return jsonify(op_share.export(
+        _project(), _ssh(), kind, name, bound=bool(b.get("bound")),
+    ))
+
+
+@bp.post("/share/preview")
+def share_preview():
+    return jsonify(op_share.preview(_project(), _ssh(), _body().get("payload") or ""))
+
+
+@bp.post("/share/import")
+def share_import():
+    return jsonify(op_share.commit(_project(), _ssh(), _body().get("payload") or "")), 201
 
 
 # -- jobs --------------------------------------------------------------------
