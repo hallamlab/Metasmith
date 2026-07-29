@@ -28,6 +28,7 @@ one place.
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -42,13 +43,21 @@ from ..models.workflow import WorkflowPlan, WorkflowTask
 from .targets import TargetBuilder, TargetSpec
 
 
-DataLibRef = str | Path | DataInstanceLibrary
+DataLibRef = str | Path | dict | DataInstanceLibrary
 TransformLibRef = str | Path | TransformInstanceLibrary | TransformInstanceLibraryView
 
 
 def _as_data_lib(ref: DataLibRef) -> DataInstanceLibrary:
     if isinstance(ref, DataInstanceLibrary):
         return ref
+    if isinstance(ref, dict):
+        # A template's inline input library (see Template.Save/`PackInline`).
+        # Built fresh into a throwaway directory -- a solve never looks at
+        # this library again once it has one, and nothing here is meant to
+        # be committed, so a temp directory is exactly as permanent as it
+        # needs to be.
+        location = Path(tempfile.mkdtemp(prefix="msm-template-"))
+        return DataInstanceLibrary.FromInline(ref, location)
     return DataInstanceLibrary.Load(Path(ref).resolve())
 
 
@@ -59,6 +68,8 @@ def _as_transform_lib(ref: TransformLibRef):
 
 
 def _location(ref) -> str:
+    if isinstance(ref, dict):
+        return "<inline template library>"
     return str(ref.location) if hasattr(ref, "location") else str(ref)
 
 
@@ -110,13 +121,27 @@ class Spec:
             except ValueError:
                 return s
 
+        def input_lib() -> str | dict:
+            ref = self.input_library
+            # A template's input library: small enough to embed as data
+            # rather than reference as a directory. `PackInline` needs a
+            # root to render its type references relative to, so a bare
+            # `DataInstanceLibrary` here (never the case for a stored
+            # workflow, which always names a real directory) only inlines
+            # when one was given.
+            if isinstance(ref, DataInstanceLibrary) and root is not None:
+                return ref.PackInline(root)
+            if isinstance(ref, dict):
+                return ref | {"types": {ns: loc(p) for ns, p in ref.get("types", {}).items()}}
+            return loc(ref)
+
         return {
             "sample_type": self.sample_type,
             "target_types": list(self.target_types),
             "transform_libraries": [loc(x) for x in self.transform_libraries],
             "resource_libraries": [loc(x) for x in self.resource_libraries],
             "shared_input_paths": [str(p) for p in self.shared_input_paths],
-            "input_library": loc(self.input_library),
+            "input_library": input_lib(),
         }
 
     @classmethod
@@ -142,10 +167,18 @@ class Spec:
             p = Path(ref)
             return str(base / p) if not p.is_absolute() else str(ref)
 
+        def resolve_input_lib(ref):
+            # The inline form (a template's input library, see `PackInline`)
+            # carries its own relative references -- just the type namespace
+            # paths -- rather than being one itself.
+            if isinstance(ref, dict):
+                return ref | {"types": {ns: resolve(p) for ns, p in ref.get("types", {}).items()}}
+            return resolve(ref)
+
         lib = input_library if input_library is not None else raw.get("input_library")
         assert lib, "a spec needs an input library"
         return cls(
-            input_library=lib if input_library is not None else resolve(lib),
+            input_library=lib if input_library is not None else resolve_input_lib(lib),
             target_types=list(raw.get("target_types") or []),
             transform_libraries=[resolve(x) for x in (raw.get("transform_libraries") or [])],
             resource_libraries=[resolve(x) for x in (raw.get("resource_libraries") or [])],

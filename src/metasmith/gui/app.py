@@ -62,6 +62,36 @@ def warm_type_index(project_root: Path) -> None:
         Log.Warn(f"could not pre-build the type index: {exc}")
 
 
+def warm_template_dags(p: "Project") -> None:  # noqa: F821
+    """Draw every template's DAG, in every theme, before anyone opens one.
+
+    Same reasoning as `warm_type_index`, and a separate thread from it: this
+    additionally needs the standard library and templates to exist, which
+    `warm_type_index` does not, so the two should degrade independently
+    rather than one's failure blocking the other. Each template+theme takes
+    `_plan_lock` for only its own solve (see `_render_template_dag`), so a
+    real request never queues behind the whole warm-up -- at most one solve.
+    """
+    from ..logging import Log
+    from ..models.dag_renderer import THEMES
+    from . import stdlib
+    from .api import _render_template_dag, _template_dag_path, _templates
+
+    try:
+        commit = stdlib.discover(p.root)["commit"]
+        for name, tmpl in _templates(p).items():
+            for theme in THEMES:
+                svg = _template_dag_path(p, name, commit, theme)
+                if svg.is_file():
+                    continue
+                try:
+                    _render_template_dag(p, tmpl, name, theme)
+                except Exception as exc:
+                    Log.Warn(f"could not pre-draw template [{name}] ({theme}): {exc}")
+    except Exception as exc:  # a modal that has to draw it itself is the fallback
+        Log.Warn(f"could not warm template DAGs: {exc}")
+
+
 def bind_project(
     app: "Flask",  # noqa: F821
     project_root: Path | str = ".",
@@ -79,6 +109,7 @@ def bind_project(
     project.initialize()
     install_log_capture()
     threading.Thread(target=warm_type_index, args=(project.root,), daemon=True).start()
+    threading.Thread(target=warm_template_dags, args=(project,), daemon=True).start()
 
     # Who this run of the server is. Recorded on every run it launches, so a
     # later server can tell "a thread of mine owns this" from "the process that

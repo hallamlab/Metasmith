@@ -1048,9 +1048,8 @@ class TestWorkflowDag:
         assert client.get(f"/api/workflows/{name}/dag").status_code == 409
 
 
-@pytest.fixture
-def template(project_root) -> str:
-    """One template in the stand-in standard library: deferred assembly in.
+def _make_template(project_root: Path) -> str:
+    """Write one template into the stand-in standard library: deferred assembly in.
 
     Written the way the libraries repository writes its own -- a `Spec` with
     `DEFERRED` inputs, saved with references relative to the repository root --
@@ -1073,8 +1072,38 @@ def template(project_root) -> str:
     return "assembly_to_bam"
 
 
+@pytest.fixture
+def template(project_root) -> str:
+    return _make_template(project_root)
+
+
 class TestTemplates:
     """The starting points the new-workflow modal offers."""
+
+    def test_a_fresh_start_warms_every_template_s_dag(self, _app, project_root, tmp_path):
+        """`warm_template_dags` draws every template before anyone asks.
+
+        Unlike the `client` fixture, the template must exist *before*
+        `bind_project` starts the warm thread -- that ordering is the whole
+        point of the test, since a template written after the warm pass has
+        already run would never be picked up by it.
+        """
+        import time
+
+        name = _make_template(project_root)
+        for client in _client_on(_app, project_root, tmp_path / "ssh_config"):
+            deadline = time.monotonic() + 10
+            entry = None
+            while time.monotonic() < deadline:
+                (entry,) = client.get("/api/templates").get_json()
+                if entry["dag_ready"]:
+                    break
+                time.sleep(0.1)
+            assert entry is not None and entry["dag_ready"], (
+                "warm_template_dags did not draw the template in time"
+            )
+            # never asked the route to draw it -- only the warm thread could have
+            assert client.get(f"/api/templates/{name}/dag").status_code == 200
 
     def test_listing_reads_yaml_and_never_solves(self, client, template):
         # the modal opens on every `+ workflow`; if listing planned anything it

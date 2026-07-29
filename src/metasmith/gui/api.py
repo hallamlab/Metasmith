@@ -970,13 +970,37 @@ def list_templates():
     ])
 
 
+def _render_template_dag(p, tmpl: Template, name: str, theme: str) -> tuple[Path, int]:
+    """Solve `tmpl` and draw it, caching under (template, stdlib commit, theme).
+
+    Shared by the request-triggered route below and `warm_template_dags`
+    (`app.py`), which pre-draws every template at server start so the first
+    pick in the GUI never pays for this live. Only the solve needs
+    `_plan_lock` -- transform import is process-global, rendering is not --
+    so a caller holds it for as little of its own turn as this does.
+    """
+    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    with _plan_lock:
+        task = tmpl.spec.Solve()
+    assert task.ok, (
+        f"template [{name}] does not solve against this library: "
+        f"dropped {sorted(task.plan.dropped_targets)}"
+    )
+    svg.parent.mkdir(parents=True, exist_ok=True)
+    # transparent: the GUI draws this over its own card background, and
+    # a painted one was never any colour other than the card's own --
+    # see `workflow_dag` below for the same reasoning
+    task.plan.RenderDAG(str(svg), theme=theme, background=False)
+    return svg, len(task.plan.steps)
+
+
 @bp.post("/templates/<name>/dag")
 def render_template_dag(name):
     """Solve a template and draw it -- as a job, because a solve is seconds.
 
-    It also holds `_plan_lock` for its whole duration, so a blocking route here
-    would freeze every other page that plans. Cached on (template, stdlib
-    commit, theme): paid once, and every later modal is served from disk.
+    Cached on (template, stdlib commit, theme): paid once, and every later
+    modal is served from disk -- often already warmed by `warm_template_dags`
+    before this route is ever hit.
     """
     p = _project()
     tmpl = _template(p, name)
@@ -987,21 +1011,8 @@ def render_template_dag(name):
 
     def _work(job):
         with LogCapture(job):
-            with _plan_lock:
-                task = tmpl.spec.Solve()
-            assert task.ok, (
-                f"template [{name}] does not solve against this library: "
-                f"dropped {sorted(task.plan.dropped_targets)}"
-            )
-            svg.parent.mkdir(parents=True, exist_ok=True)
-            # transparent: the GUI draws this over its own card background, and
-            # a painted one was never any colour other than the card's own --
-            # see `workflow_dag` below for the same reasoning
-            task.plan.RenderDAG(str(svg), theme=theme, background=False)
-            return {
-                "template": name, "theme": theme,
-                "step_count": len(task.plan.steps),
-            }
+            _, step_count = _render_template_dag(p, tmpl, name, theme)
+            return {"template": name, "theme": theme, "step_count": step_count}
 
     job = _jobs().submit(
         "template_dag", f"draw {name}", _work, subject={"template": name},
@@ -1113,11 +1124,12 @@ def create_workflow():
     if template is None:
         op_data.create_library(lib_path, type_library_paths=types)
     else:
-        # Copied rather than re-added row by row: a deferred path is minted once
-        # and identity follows it, so re-adding would give this workflow a task
-        # key other than the one the template was validated at.
-        op_data.copy_library(
-            str(template.spec.input_library), lib_path, type_library_paths=types,
+        # Rebuilt from the template's inline library (see `PackInline`) rather
+        # than re-added row by row: a deferred path is minted once and identity
+        # follows it, so re-adding would give this workflow a task key other
+        # than the one the template was validated at.
+        op_data.materialize_template(
+            template.spec.input_library, lib_path, type_library_paths=types,
         )
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
 

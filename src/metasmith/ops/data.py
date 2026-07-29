@@ -139,6 +139,36 @@ def copy_library(
     }
 
 
+def materialize_template(
+    inline: dict,
+    dest_path: str,
+    type_library_paths: list[str] | None = None,
+) -> dict:
+    """Build a real library from a template's inline input library.
+
+    The counterpart to `copy_library` for a template stored the new way: there
+    is no directory to `shutil.copytree`, only the data `Spec.Pack` embedded in
+    `spec.yml` (see `DataInstanceLibrary.PackInline`). Every id and path in it
+    is exactly what the template's own build asserted a solve against -- this
+    rebuilds rather than copies, but nothing here mints a new one, so a
+    workflow started from a template still shares its task key rather than
+    being re-added row by row.
+    """
+    dest = Path(dest_path).resolve()
+    assert not dest.exists() or not any(dest.iterdir()), (
+        f"copy destination [{dest}] already exists and is not empty"
+    )
+    lib = DataInstanceLibrary.FromInline(inline, dest)
+    for tp in type_library_paths or []:
+        lib.AddTypeLibrary(Path(tp).resolve(), on_exist="skip")
+    lib.Save()
+    return {
+        "library": str(dest),
+        "type_namespaces": list(lib.types.keys()),
+        "key": lib.GetKey(),
+    }
+
+
 def attach_type_library(
     library_path: str,
     type_library_path: str,
