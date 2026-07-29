@@ -338,57 +338,9 @@ def _select_instances(insts: list, start: int, end: int) -> list:
     return [insts[-1]]
 
 
-def _instance_mark(inst) -> tuple[str, str]:
-    return (inst.parent_lib.GetKey(), str(inst.path))
-
-
-def _ancestor_marks(inst) -> set[tuple[str, str]]:
-    """Every instance `inst` descends from, itself included."""
-    marks: set[tuple[str, str]] = set()
-    stack = [inst]
-    while stack:
-        curr = stack.pop()
-        m = _instance_mark(curr)
-        if m in marks:
-            continue
-        marks.add(m)
-        for pm in curr.parent_lib.parents.get(curr.path, []):
-            if pm.path in curr.parent_lib.manifest:
-                stack.append(curr.parent_lib.Get(pm.path))
-    return marks
-
-
-def _select_for_key(dep_insts: list, key_inst, key_idx: int) -> list:
-    """The instances of one dependency that belong to one group_by key.
-
-    Lineage first, position only as a fallback. A positional window is right
-    for a dependency that fans out ALONGSIDE the grouping key (instance i of
-    each lines up), and wrong for one that COLLECTS into it — where N
-    instances all descend from the same key and the key's member must hold
-    every one of them. Slicing there is what hands a collecting transform a
-    single item.
-    """
-    if not dep_insts:
-        return []
-    if len(dep_insts) == 1:
-        # A shared reference DB / container: broadcast to every key.
-        return list(dep_insts)
-    if key_inst is None:
-        return _select_instances(dep_insts, key_idx, key_idx + 1)
-
-    key_mark = _instance_mark(key_inst)
-    key_ancestors = _ancestor_marks(key_inst)
-    related = [
-        inst
-        for inst in dep_insts
-        # Either direction counts: the dep may descend from the key (the
-        # collecting case) or the key may descend from the dep (grouping by
-        # a fan-out output while still needing its shared parent).
-        if key_mark in _ancestor_marks(inst) or _instance_mark(inst) in key_ancestors
-    ]
-    if related:
-        return related
-    return _select_instances(dep_insts, key_idx, key_idx + 1)
+# Single-sourced in models/workflow/grouping.py — the Nextflow codegen reads
+# the same answer to decide when a key is whole, and the two must not drift.
+from ..models.workflow.grouping import select_for_key as _select_for_key
 
 
 def _merge_lineage(maps: list[dict[str, list[int]]]) -> dict[str, list[int]]:

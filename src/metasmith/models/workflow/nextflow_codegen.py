@@ -37,6 +37,7 @@ from ...logging import Log
 from ..libraries import DataInstance, GPU_LABEL
 from ..paths import PathMap
 from ..solver import Endpoint
+from .grouping import expected_per_key
 from .steps import WorkflowStep
 
 
@@ -857,7 +858,35 @@ def prepare_nextflow(task, context: NextflowGenContext):
             _inst = _inst[0]
             gb = _inst.dtype.key
             using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
-            used = f"o.group('{gb}', [{using_symbols}], k, {step.transform.batch_size})"
+            # How many items each by-key will receive per stream, where the
+            # plan can say so unambiguously. Lets `group()` flush a key the
+            # moment it is whole rather than holding every key hostage to the
+            # slowest one's tail. Streams we cannot pin are simply absent and
+            # fall through to the close-flush.
+            _expected: dict[str, int] = {}
+            for dep in step.transform.model.requires:
+                dep_insts = step.dependency_map.get(dep, [])
+                if not dep_insts:
+                    continue
+                sname = dep_insts[0].dtype.key
+                if sname == gb:
+                    continue
+                n = expected_per_key(list(dep_insts), list(step.group_by_instances))
+                if n is not None and n > 0:
+                    _expected[sname] = n
+            expected_literal = (
+                "["
+                + (
+                    ", ".join(f"'{k}': {v}" for k, v in sorted(_expected.items()))
+                    if _expected
+                    else ":"
+                )
+                + "]"
+            )
+            used = (
+                f"o.group('{gb}', [{using_symbols}], k, "
+                f"{step.transform.batch_size}, {expected_literal})"
+            )
         else:
             used = ""
         if len(produced_names) == 1:

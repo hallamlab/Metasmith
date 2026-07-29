@@ -259,16 +259,25 @@ workflow {
 # ===========================================================================
 
 
-def test_c04_descendant_single_bs1_buffer_until_close(nxf_runner):
-    """Non-parent S stream is buffered until upstream closes. Latency bug.
+def test_c04_descendant_key_emits_before_another_keys_tail(nxf_runner):
+    """A whole key emits at t~0 while a DIFFERENT key's tail is still out.
 
-    Lineage declared via seedParents (b descends from a); b items carry
-    idx["a"] = [11L] so the DESCENDANT branch's combine(by:0) can pair
-    them with the by-stream's hash 11L.
+    Reshaped. This case (and `test_group_buffering`) used to give ONE by-key
+    two distinct b items, one of them 5s late, and require an emission inside
+    2s — which is a demand for a PARTIAL group, the split `0088d24` removed
+    early emission to prevent and the failure that handed ppanggolin one
+    genome. Under the group_by contract, that key's answer genuinely is not
+    known until its second item lands.
+
+    What IS achievable, and is what a fan-out actually needs, is cross-key: 2
+    keys of 2 items each, key 11's pair immediate and key 12's pair 5s out.
+    Key 11 is whole at t~0 and must not wait on key 12. `group()` gets the
+    per-key count so it can tell "whole" from "so far".
     """
-    (nxf_runner.work_dir / "a.txt").write_text("a")
-    (nxf_runner.work_dir / "b_early.txt").write_text("be")
-    (nxf_runner.work_dir / "b_late.txt").write_text("bl")
+    (nxf_runner.work_dir / "a0.txt").write_text("a0")
+    (nxf_runner.work_dir / "a1.txt").write_text("a1")
+    for n in ("b_fast_0", "b_fast_1", "b_slow_0", "b_slow_1"):
+        (nxf_runner.work_dir / f"{n}.txt").write_text(n)
 
     script = f'''
 workflow {{
@@ -277,20 +286,23 @@ workflow {{
     def t0 = System.currentTimeMillis()
     println "START:${{t0}}"
 
-    def ch_a = Channel.fromList([[["a": [11L]], file("${{projectDir}}/a.txt")]])
-    def ch_b_early = Channel.fromList([
-        [["a": [11L], "b": [10L]], file("${{projectDir}}/b_early.txt")],
+    def ch_a = Channel.fromList([
+        [["a": [11L]], file("${{projectDir}}/a0.txt")],
+        [["a": [12L]], file("${{projectDir}}/a1.txt")],
     ])
-    def ch_b_late = Channel.fromList([
-        [["a": [11L], "b": [20L]], file("${{projectDir}}/b_late.txt")],
+    def ch_b_fast = Channel.fromList([
+        [["a": [11L], "b": [10L]], file("${{projectDir}}/b_fast_0.txt")],
+        [["a": [11L], "b": [11L]], file("${{projectDir}}/b_fast_1.txt")],
+    ])
+    def ch_b_slow = Channel.fromList([
+        [["a": [12L], "b": [20L]], file("${{projectDir}}/b_slow_0.txt")],
+        [["a": [12L], "b": [21L]], file("${{projectDir}}/b_slow_1.txt")],
     ]).map {{ x -> sleep {SLOW_TAIL_SECONDS * 1000}; return x }}
 
     def pa = new Tuple2("a", ch_a)
-    def pbe = new Tuple2("b", ch_b_early)
-    def pbl = new Tuple2("b", ch_b_late)
-    def mixed_b = o.mix([pbe, pbl])
+    def mixed_b = o.mix([new Tuple2("b", ch_b_fast), new Tuple2("b", ch_b_slow)])
 
-    def grouped = o.group("a", [pa, mixed_b], ["target"], 1)
+    def grouped = o.group("a", [pa, mixed_b], ["target"], 1, ["b": 2])
     grouped.view {{ idx, a_vals, b_vals ->
         def elapsed = System.currentTimeMillis() - t0
         "G:${{elapsed}}:a=${{a_vals.size()}}:b=${{b_vals.size()}}"
@@ -299,12 +311,16 @@ workflow {{
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
+    lines = _emit_lines(result.stdout)
+    assert len(lines) == 2, f"C4 expected one task per key, got {lines}"
+    for line in lines:
+        assert "a=1:b=2" in line, f"C4 emitted a partial group: {line}"
     earliest = _earliest_ms(result.stdout)
     assert earliest is not None, "no emissions at all"
-    # Bug: first emit is delayed until tail closes. Expected after fix: < 2000ms.
     assert earliest < INCREMENTAL_EMIT_THRESHOLD_MS, (
-        f"C4 buffer-until-close bug: first emission at {earliest}ms "
-        f">= {INCREMENTAL_EMIT_THRESHOLD_MS}ms threshold."
+        f"C4: the complete key waited for the other key's tail — first "
+        f"emission at {earliest}ms >= {INCREMENTAL_EMIT_THRESHOLD_MS}ms. "
+        f"All emissions: {lines}"
     )
 
 
@@ -756,7 +772,13 @@ workflow {{
     def pbl = new Tuple2("b", ch_b_late)
     def mixed_b = o.mix([pbe, pbl])
 
-    def grouped = o.group("a", [pa, mixed_b], ["target"], 1)
+    // The late item is `b_early.txt` AGAIN — the same path. Bag-insertion
+    // dedup keys on the value, so it is a replay duplicate (the dimension
+    // C16 pins) and key 11's group is genuinely WHOLE at t~0 with one item.
+    // Telling group() to expect one is therefore not a partial emission; it
+    // is the only thing that lets the key fire before a channel that never
+    // closes. This is the W1 p06__assembly_stats shape.
+    def grouped = o.group("a", [pa, mixed_b], ["target"], 1, ["b": 1])
     grouped.view {{ idx, a_vals, b_vals ->
         def elapsed = System.currentTimeMillis() - t0
         "G:${{elapsed}}:a=${{a_vals.size()}}:b=${{b_vals.size()}}"
@@ -1366,7 +1388,10 @@ workflow {{
     def pc_l = new Tuple2("c", ch_c_late)
     def pc = o.mix([pc_e, pc_l])
 
-    def grouped = o.group("b", [pc, pb], ["target"], 1)
+    // As in C13, the late C is `c_early.txt` again, so dedup makes the bag
+    // whole at t~0 with one item. Note the SIBLING bag is keyed on the shared
+    // ANCESTOR hash rather than the by-key, so the count is per ancestor.
+    def grouped = o.group("b", [pc, pb], ["target"], 1, ["c": 1])
     grouped.view {{ idx, c_vals, b_vals ->
         def elapsed = System.currentTimeMillis() - t0
         "G:${{elapsed}}:b=${{b_vals.size()}}:c=${{c_vals.size()}}"

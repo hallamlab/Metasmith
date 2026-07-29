@@ -221,7 +221,27 @@ class Orchestrator {
         return "WILDCARD"
     }
 
+    // 4-arg form: no per-key expectations, so every key flushes at channel
+    // close. Kept for direct callers and for any step whose attribution the
+    // planner could not pin down.
     public def group(by, streams, targets, batch_size) {
+        return this.group(by, streams, targets, batch_size, null)
+    }
+
+    // `expected` maps a stream name to how many items each by-key will
+    // receive, letting a key emit the instant its bag is whole instead of
+    // waiting for the slowest OTHER key's tail. Absent or non-positive means
+    // "wait for close", which is always safe.
+    //
+    // The asymmetry is the design: over-counting degrades to the close-flush
+    // that already happens, while under-counting emits a PARTIAL group — the
+    // failure this whole path exists to prevent. `grouping.expected_per_key`
+    // therefore answers only where the attribution is unambiguous, and the
+    // `one_null` sentinel stays as the backstop for everything else. It also
+    // has to: `errorStrategy 'ignore'` is process-wide (local.nf, slurm.nf),
+    // so a dropped task means a key that never reaches its count, and that
+    // must degrade to a late flush rather than a hang.
+    public def group(by, streams, targets, batch_size, expected) {
         def parents = streams.collect((k, s) -> k) as Set
         for (t : targets) {
             def existing = this.child2parent.get(t, java.util.concurrent.ConcurrentHashMap.newKeySet())
@@ -298,11 +318,16 @@ class Orchestrator {
                 def _name = name
                 def pending_items = [:]
                 def seen_per_key = [:]
+                def flushed_keys = new HashSet()
+                def n_expected = (expected == null) ? -1 : ((expected[name] ?: -1) as int)
                 return _stream.concat(this.one_null)
                 .flatMap((item) -> {
                     if (item == null) {
-                        // Upstream closed: flush one tuple per accumulated key.
-                        return pending_items.collect((h, items) -> new Tuple2([h], items))
+                        // Upstream closed: flush every key that did not reach
+                        // its expected count (or had none to reach).
+                        return pending_items
+                        .findAll((h, items) -> !flushed_keys.contains(h))
+                        .collect((h, items) -> new Tuple2([h], items))
                     }
                     def (_index, _value) = item
                     def by_hashes = _index[by_name]
@@ -316,6 +341,7 @@ class Orchestrator {
                     // Bag-insertion dedup guards against retry/replay
                     // duplication, matching the WILDCARD branch.
                     def item_hash = "$_value".md5()
+                    def ready = []
                     by_hashes.each((h) -> {
                         def seen_for_key = seen_per_key.get(h, new HashSet())
                         if (seen_for_key.contains(item_hash)) return
@@ -324,8 +350,12 @@ class Orchestrator {
                         def group = pending_items.get(h, [])
                         group.add(item)
                         pending_items[h] = group
+                        if (n_expected > 0 && group.size() >= n_expected && !flushed_keys.contains(h)) {
+                            flushed_keys.add(h)
+                            ready.add(new Tuple2([h], new ArrayList(group)))
+                        }
                     })
-                    return []
+                    return ready
                 })
                 .combine(by_stream.map((item) -> {
                     def (_index, _value) = item
@@ -353,15 +383,23 @@ class Orchestrator {
                 def _name = name
                 def pending_items = [:]
                 def seen_per_key = [:]
+                def flushed_keys = new HashSet()
+                // Note this bag is keyed on the ANCESTOR hash, not the by-key:
+                // two by-items sharing one ancestor share one bag, so an
+                // expected count here is per ancestor, not per by-key.
+                def n_expected = (expected == null) ? -1 : ((expected[name] ?: -1) as int)
                 return _stream.concat(this.one_null)
                 .flatMap((item) -> {
                     if (item == null) {
-                        return pending_items.collect((h, items) -> new Tuple2([h], items))
+                        return pending_items
+                        .findAll((h, items) -> !flushed_keys.contains(h))
+                        .collect((h, items) -> new Tuple2([h], items))
                     }
                     def (_index, _value) = item
                     def anc_hashes = _index[anc_key]
                     if (anc_hashes == null) return []
                     def item_hash = "$_value".md5()
+                    def ready = []
                     anc_hashes.each((h) -> {
                         def seen_for_key = seen_per_key.get(h, new HashSet())
                         if (seen_for_key.contains(item_hash)) return
@@ -370,8 +408,12 @@ class Orchestrator {
                         def group = pending_items.get(h, [])
                         group.add(item)
                         pending_items[h] = group
+                        if (n_expected > 0 && group.size() >= n_expected && !flushed_keys.contains(h)) {
+                            flushed_keys.add(h)
+                            ready.add(new Tuple2([h], new ArrayList(group)))
+                        }
                     })
-                    return []
+                    return ready
                 })
                 .combine(by_stream.flatMap((item) -> {
                     def (_index, _value) = item
