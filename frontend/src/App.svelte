@@ -244,12 +244,27 @@
 
   // Archived is not gone: the pane stays on it so the restore is where you are
   // already looking. Only a real delete drops the selection.
+  //
+  // The row updates on this click, not on the response: a click already armed
+  // through DeleteControl's confirm step, so waiting on the network on top of
+  // that makes the click feel unacknowledged. Guess the outcome from
+  // `archived_at` (first press archives, second press on an archived run
+  // removes it for good), apply it to `app.runs` immediately, then let the
+  // real request run and always resync afterward -- on success this is a
+  // no-op, on failure it corrects the guess back to server truth.
   async function removeRun(r) {
+    const key = `${r.workflow}/${r.name}`
+    const wasArchived = !!r.archived_at
+    app.runs = wasArchived
+      ? app.runs.filter((x) => `${x.workflow}/${x.name}` !== key)
+      : app.runs.map((x) =>
+          `${x.workflow}/${x.name}` === key ? { ...x, archived_at: new Date().toISOString() } : x,
+        )
     await attempt(async () => {
       const out = await api.del(`/runs/${r.workflow}/${r.name}`)
-      if (out.action === 'deleted' && sel === `${r.workflow}/${r.name}`) app.selected.runs = null
-      await refresh('runs')
+      if (out.action === 'deleted' && sel === key) app.selected.runs = null
     })
+    await refresh('runs')
   }
 </script>
 

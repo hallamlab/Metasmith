@@ -26,61 +26,84 @@
   let busy = $state(false)
   let copiedPath = $state(false)
 
-  async function load() {
-    rec = await api.get(`/runs/${workflow}/${run}`)
-    results = await api.get(`/runs/${workflow}/${run}/results`)
+  // Bumped every time the displayed run changes. Each loader below captures
+  // the generation it was launched under and checks it again just before
+  // writing state -- an in-flight fetch for a run the user has since
+  // navigated away from must not win a race and overwrite what is on screen
+  // for the run now selected.
+  let loadGen = 0
+
+  async function load(w, r, gen) {
+    const nextRec = await api.get(`/runs/${w}/${r}`)
+    const nextResults = await api.get(`/runs/${w}/${r}/results`)
+    if (gen !== loadGen) return
+    rec = nextRec
+    results = nextResults
   }
 
   // The plan's steps and the trace answer different halves of the question.
   // The trace lists the tasks that were *attempted*; the plan lists every step
   // there is. A step the run never reached appears in one and not the other,
   // and that difference is exactly what "not started" means.
-  async function loadSteps() {
+  async function loadSteps(w, gen) {
+    let next
     try {
-      const wf = await api.get(`/workflows/${workflow}`)
-      steps = wf?.result?.step_display ?? []
+      const wf = await api.get(`/workflows/${w}`)
+      next = wf?.result?.step_display ?? []
     } catch {
-      steps = []
+      next = []
     }
+    if (gen !== loadGen) return
+    steps = next
   }
 
-  async function loadTrace() {
+  async function loadTrace(w, r, gen) {
+    let next
     try {
-      trace = await api.get(`/runs/${workflow}/${run}/trace`)
+      next = await api.get(`/runs/${w}/${r}/trace`)
     } catch (e) {
-      trace = { tasks: [], failed: 0, error: e.message }
+      next = { tasks: [], failed: 0, error: e.message }
     }
+    if (gen !== loadGen) return
+    trace = next
   }
 
   // The tree deliberately does not join the 8-second poll: there is nothing to
   // walk until collect has run, and once it has the folder does not change.
-  async function loadTree() {
+  async function loadTree(w, r, gen) {
+    let next
     try {
-      tree = await api.get(`/runs/${workflow}/${run}/tree`)
+      next = await api.get(`/runs/${w}/${r}/tree`)
     } catch (e) {
-      tree = { collected: false, root: null, error: e.message }
+      next = { collected: false, root: null, error: e.message }
     }
+    if (gen !== loadGen) return
+    tree = next
   }
 
   // Attach to whatever background job is working on this run. Staging can take
   // a while and the launch was started from the workflow view, so without this
   // the first thing a user sees after pressing the button is an empty log.
-  async function attachJob() {
+  async function attachJob(w, r, gen) {
     try {
-      const jobs = await api.get(`/jobs?run=${encodeURIComponent(run)}`)
-      const mine = jobs.filter((j) => j.subject?.workflow === workflow)
+      const jobs = await api.get(`/jobs?run=${encodeURIComponent(r)}`)
+      const mine = jobs.filter((j) => j.subject?.workflow === w)
+      if (gen !== loadGen) return
       if (mine.length) jobId = mine[0].id
     } catch {
       /* the job list is a convenience; its absence is not an error */
     }
   }
 
-  async function tail() {
+  async function tail(w, r, gen) {
+    let next
     try {
-      log = await api.get(`/runs/${workflow}/${run}/log?lines=200`)
+      next = await api.get(`/runs/${w}/${r}/log?lines=200`)
     } catch (e) {
-      log = { lines: [], error: e.message }
+      next = { lines: [], error: e.message }
     }
+    if (gen !== loadGen) return
+    log = next
   }
 
   async function copyStagedPath() {
@@ -105,6 +128,7 @@
 
   $effect(() => {
     const w = workflow, r = run
+    const gen = ++loadGen
     rec = null
     results = null
     trace = null
@@ -114,10 +138,9 @@
     jobId = null
     log = { lines: [], error: null }
     attempt(async () => {
-      await load()
-      await attachJob()
-      await Promise.all([tail(), loadTrace(), loadSteps(), loadTree()])
-      void w, r
+      await load(w, r, gen)
+      await attachJob(w, r, gen)
+      await Promise.all([tail(w, r, gen), loadTrace(w, r, gen), loadSteps(w, gen), loadTree(w, r, gen)])
     })
   })
 
@@ -140,9 +163,10 @@
   let pollTimer = null
 
   async function pollTick() {
-    await tail()
-    await loadTrace()
-    await load()
+    const w = workflow, r = run, gen = loadGen
+    await tail(w, r, gen)
+    await loadTrace(w, r, gen)
+    await load(w, r, gen)
     await loadRuns()
   }
 
@@ -190,40 +214,36 @@
 
   // -- the progress bar ------------------------------------------------------
   //
-  // Three segments -- staging, executing, finalizing -- one stage at a time:
-  // each segment's color depends only on what happened during its own stage,
-  // never on what a later stage did. A segment that already went `done` stays
-  // `done`; a task failure that Nextflow was told to ignore still lets the run
-  // finish as `completed`, so that failure paints `executing` (where it
-  // actually happened) rather than retroactively repainting a stage that had
-  // already finished.
+  // One (stage, status) pair drives the whole bar: `stage` names the single
+  // stage the run is currently at (0 staging, 1 executing, 2 finalizing) and
+  // `status` is that stage's own condition. Every stage before `stage` is
+  // hardcoded green, every stage after it is hardcoded idle -- only the
+  // current stage's color comes from `status`. That makes a later stage
+  // reading "success" after an earlier one read "fail" structurally
+  // unrepresentable: there is exactly one non-green, non-idle segment, ever.
+  // Collecting results never feeds into this -- `collect()` only sets `jobId`.
   let traceFailed = $derived((trace?.failed ?? 0) > 0)
-  let stageStates = $derived.by(() => {
-    if (!rec) return STAGES.map(() => 'idle')
-    const s = rec.state
-    const staging = s === 'staging' || s === 'launching'
-    const running = s === 'running'
-    const done = s === 'completed'
-    const dead = s === 'failed' || s === 'cancelled'
-    // Whether the run ever got off the ground: a run that died never
-    // launched, so the red belongs on `staging` rather than on `executing`.
+  let stateStatus = $derived.by(() => {
+    if (!rec) return { stage: 0, status: 'pending' }
     const launched = !!rec.launched_at
-    // A dead run never reaches `completed`, and today it can only die during
-    // `staging` or `executing` -- so `finalizing` stays idle rather than
-    // borrowing a color it never earned.
-    if (dead) {
-      const diedAtStaging = !launched
-      return [
-        diedAtStaging ? 'failed' : 'done',
-        diedAtStaging ? 'idle' : 'failed',
-        'idle',
-      ]
+    // A dead run never reaches `completed`; whether it ever got off the
+    // ground decides whether the failure belongs to `staging` or `executing`.
+    if (rec.state === 'failed' || rec.state === 'cancelled') {
+      return launched ? { stage: 1, status: 'fail' } : { stage: 0, status: 'fail' }
     }
-    return [
-      staging ? 'running' : 'done',
-      running ? 'running' : done ? (traceFailed ? 'failed' : 'done') : 'idle',
-      done ? 'done' : 'idle',
-    ]
+    // A task failure that Nextflow was told to ignore still lets the run
+    // finish as `completed` -- but the run is not a success, so this is
+    // reported as soon as it is known rather than waiting for `completed`
+    // and momentarily showing blue over a failure that already happened.
+    if (traceFailed) return { stage: 1, status: 'fail' }
+    if (rec.state === 'staging' || rec.state === 'launching') return { stage: 0, status: 'started' }
+    if (rec.state === 'running') return { stage: 1, status: 'started' }
+    return { stage: 2, status: 'success' }
+  })
+  const STATUS_COLOR = { pending: 'idle', started: 'running', success: 'done', fail: 'failed' }
+  let stageStates = $derived.by(() => {
+    const { stage, status } = stateStatus
+    return STAGES.map((_, i) => (i < stage ? 'done' : i > stage ? 'idle' : STATUS_COLOR[status]))
   })
 
   // -- per-step status -------------------------------------------------------
@@ -283,7 +303,7 @@
     busy = true
     await attempt(async () => {
       await api.post(`/runs/${workflow}/${run}/cancel`, {})
-      await load()
+      await load(workflow, run, loadGen)
       await loadRuns()
     })
     busy = false
@@ -299,15 +319,16 @@
   async function unarchive() {
     await attempt(async () => {
       await api.post(`/runs/${workflow}/${run}/archive`, { archived: false })
-      await load()
+      await load(workflow, run, loadGen)
       await loadRuns()
     })
   }
 
   // A finished job is the one moment the results folder changes under us.
   async function afterJob() {
-    await load()
-    await Promise.all([loadTree(), loadTrace()])
+    const w = workflow, r = run, gen = loadGen
+    await load(w, r, gen)
+    await Promise.all([loadTree(w, r, gen), loadTrace(w, r, gen)])
   }
 </script>
 
@@ -335,9 +356,6 @@
         {/if}
         {#if rec.live}
           <button class="danger" onclick={cancel} disabled={busy}>cancel</button>
-        {/if}
-        {#if rec.state === 'completed'}
-          <button class="primary" onclick={collect}>collect results</button>
         {/if}
       </div>
     </div>
@@ -486,6 +504,7 @@
           {#each stepRows as row}
             <details class="step-details">
               <summary class="steprow">
+                <span class="chevron"></span>
                 <span class="pip {row.state}"></span>
                 <span class="mono">{row.process}</span>
                 <span class="muted">
@@ -498,7 +517,11 @@
                   {/if}
                 </span>
               </summary>
-              <table class="small">
+              <table class="small steps-table">
+                <colgroup>
+                  <col style="width:14%" /><col style="width:32%" /><col style="width:14%" />
+                  <col style="width:10%" /><col style="width:15%" /><col style="width:15%" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>hash</th><th>name</th><th>status</th>
@@ -617,11 +640,12 @@
   .loading { padding: 18px; }
   .treebox { height: 100%; overflow: auto; }
 
-  /* A progress bar rather than a row of dots: the four stages are consecutive,
+  /* A progress bar rather than a row of dots: the three stages are consecutive,
      so the thing that reads them is a filled track, and the four states carry
      the whole meaning -- grey nothing yet, blue underway, green done, red
-     failed. Nothing here is keyed on position; a segment says only what it
-     knows about itself. */
+     failed. Position is exactly what is keyed on: only the current stage
+     (see `stateStatus` above) carries a status color, every stage before it
+     is done and every stage after it is idle. */
   .progress { display: flex; gap: 4px; }
   .seg { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
   .seg .bar { height: 6px; border-radius: 3px; background: var(--line); }
@@ -672,7 +696,33 @@
     align-items: center;
     gap: 8px;
     padding: 6px 0;
+    border-radius: 4px;
   }
+  .steprow:hover { background: var(--panel-2); }
+
+  /* the only replacement for the native disclosure triangle this suppresses --
+     without it nothing but the cursor said a row was clickable */
+  .chevron {
+    flex: 0 0 auto;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 4px 0 4px 6px;
+    border-color: transparent transparent transparent var(--muted);
+    transition: transform 0.15s ease;
+  }
+  .step-details[open] > summary .chevron { transform: rotate(90deg); }
+
+  /* fixed widths shared by every per-step table -- table-layout: auto would
+     otherwise size each table's columns from that table's own row content,
+     so columns drift out of alignment between one expanded step and the next */
+  .steps-table { table-layout: fixed; }
+  .steps-table th, .steps-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .task td { font-size: 12px; }
   .task .done { color: var(--ok); }
   .task .failed { color: var(--bad); }
