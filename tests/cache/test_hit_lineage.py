@@ -113,3 +113,56 @@ def test_a_hit_replays_every_batch_member_not_just_the_first(tmp_path):
     assert [
         f.name for f in cached_files_for_branch(out, 1, "-step_b.txt")
     ] == ["1-1-2.dddd-step_b.txt"]
+
+
+def test_key_attribution_follows_lineage_not_list_order(tmp_path):
+    """Which instances a group key owns is a lineage fact, not a position.
+
+    `cache_decisions` sliced each task's inputs as `insts[start:end]`, which
+    is only right when the dependency list happens to be ordered the same way
+    as `group_by_instances`. Nothing enforces that, and when it does not hold
+    the per-task metadata names another sample's files. `select_for_key` asks
+    the lineage instead, so list order stops mattering.
+
+    On the shipped fixtures the compile-time dependency list holds a single
+    archetype per slot, so this is a defensive change there rather than a
+    fix — the property is what the test pins.
+    """
+    from metasmith.models.workflow.grouping import (
+        positional_slice,
+        select_for_key,
+    )
+
+    task = parallel_then_group.build_task(tmp_path)
+    step = next(
+        s for s in task.plan.steps
+        if len(s.group_by_instances) > 1
+        and any(
+            len(s.dependency_map.get(d, [])) > 1
+            for d in s.transform.model.requires
+        )
+    )
+    keys = list(step.group_by_instances)
+    dep = next(
+        d for d in step.transform.model.requires
+        if len(step.dependency_map.get(d, [])) > 1
+    )
+    shuffled = list(reversed(step.dependency_map[dep]))
+
+    for key_idx, key in enumerate(keys):
+        picked = select_for_key(shuffled, key, key_idx)
+        assert [i.path for i in picked] == [key.path], (
+            f"key {key.path} got {[i.path for i in picked]}"
+        )
+
+    # And the positional fallback really does disagree once order is broken,
+    # which is what makes the change worth making.
+    disagreements = sum(
+        1 for key_idx, key in enumerate(keys)
+        if [i.path for i in positional_slice(shuffled, key_idx, key_idx + 1)]
+        != [key.path]
+    )
+    assert disagreements > 0, (
+        "reversing the dependency list did not change the positional answer; "
+        "the test is not exercising what it claims"
+    )

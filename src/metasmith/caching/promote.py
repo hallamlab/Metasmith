@@ -67,7 +67,7 @@ class StepPromoteSpec:
     # per-slot degenerate emission with a Log.Warn.
     slot_files: list = field(default_factory=list)
     # S3: per-batch decomposition mirroring the compile-time batching
-    # algorithm (virtual_runtime._select_instances). Each entry is
+    # algorithm (models/workflow/grouping.select_for_key). Each entry is
     #   {"batch_idx", "start", "end",
     #    "sorted_inputs": [[slot_key, [iid_hex, ...]], ...]}
     # Used by S4 emission to produce one InvocationEvent per batch

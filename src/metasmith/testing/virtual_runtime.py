@@ -325,19 +325,6 @@ def _seed_lineage(inst) -> dict[str, list[int]]:
     return {k: sorted(set(v)) for k, v in lineage.items()}
 
 
-def _select_instances(insts: list, start: int, end: int) -> list:
-    if len(insts) == 0:
-        return []
-    if len(insts) == 1:
-        return list(insts)
-    chunk = list(insts[start:end])
-    if chunk:
-        return chunk
-    if start < len(insts):
-        return [insts[start]]
-    return [insts[-1]]
-
-
 # Single-sourced in models/workflow/grouping.py — the Nextflow codegen reads
 # the same answer to decide when a key is whole, and the two must not drift.
 from ..models.workflow.grouping import select_for_key as _select_for_key
@@ -666,7 +653,15 @@ def cli_nextflow(argv: list[str]) -> int:
                     insts = list(step.dependency_map.get(dep, []))
                     if not insts:
                         continue
-                    out_inst = _select_instances(insts, start, end)[0]
+                    # The instance whose dtype/extension names this batch's
+                    # output files. Same question as the input side, so same
+                    # answer: lineage first, position after. Produced
+                    # instances usually carry no registered parents, in which
+                    # case this is the positional slice it always was.
+                    _first_key = (
+                        group_insts[start] if start < len(group_insts) else None
+                    )
+                    out_inst = _select_for_key(insts, _first_key, start)[0]
                     ext = out_inst.dtype.GetPreferredFileExtension()
                     pattern = f"*-*-{branch_idx + 1}.*-{out_inst.dtype.key}{ext}"
                     files = sorted(invocation_dir.glob(pattern))
