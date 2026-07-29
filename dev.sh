@@ -335,6 +335,22 @@ case $1 in
         export PYTHONPATH=$HERE/src:$PYTHONPATH
         python -m $NAME $@
     ;;
+    --gui) # serve the web GUI over its own scratch workspace
+        shift
+        # Pinned, not prepended, for the same reason -tg pins it: a workspace
+        # PYTHONPATH resolves `metasmith` to some *other* checkout, and the
+        # page then serves a server none of your edits are in -- which reads
+        # as "my change did nothing" rather than as a wrong interpreter.
+        export PYTHONPATH=$HERE/src
+        # `msm gui` writes its project directory (agents/, workflows/, runs/,
+        # the served config, the standard-library clone) into the cwd, so it
+        # is given one under scratch/ -- already gitignored wholesale -- and
+        # never the repo root, which it would otherwise litter.
+        ws=$HERE/scratch/gui-main
+        mkdir -p $ws
+        cd $ws
+        python -m $NAME gui $@
+    ;;
     -rd) # docker
             # -e XDG_CACHE_HOME="/ws"\
         shift
