@@ -33,6 +33,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .keys import canonical_cbor
+from .layout import (
+    MANIFEST_NAME,
+    lock_file,
+    logs_dir as _logs_dir,
+    out_dir as _out_dir,
+    shard_dir as _shard_dir,
+    staging_dir,
+)
 from .store import CacheStore, encode_manifest
 
 
@@ -73,11 +81,6 @@ class StepPromoteSpec:
     # (= per task) instead of one per step. Empty list signals legacy
     # step_N.meta; emission falls back to step-aggregated path.
     batches: list = field(default_factory=list)
-
-
-def _shard_dir(cache_root: Path, key_hex: str) -> Path:
-    """`<cache_root>/<first 2 hex>/<rest>` — bounded directory fanout."""
-    return cache_root / key_hex[:2] / key_hex[2:]
 
 
 def _read_step_meta(meta_path: Path) -> StepPromoteSpec | None:
@@ -203,7 +206,7 @@ def _acquire_lock(cache_root: Path, key_hex: str) -> Path | None:
     Stale lock detection: same host + dead PID → reclaim; different
     host + ts > 1 hour → reclaim.
     """
-    lock = cache_root / f"{key_hex}.lock"
+    lock = lock_file(cache_root, key_hex)
     pid = os.getpid()
     host = socket.gethostname()
     payload = f"{pid} {host} {time.time():.6f}\n"
@@ -313,10 +316,10 @@ def recover_orphan_tmp_dirs(
     if not cache_root.exists():
         return actions
     for key_hex in sorted(set(owned_keys)):
-        tmp = cache_root / f"{key_hex}.tmp"
+        tmp = staging_dir(cache_root, key_hex)
         if not tmp.is_dir():
             continue
-        if (tmp / "manifest.cbor").exists():
+        if (tmp / MANIFEST_NAME).exists():
             final = _shard_dir(cache_root, key_hex)
             final.parent.mkdir(parents=True, exist_ok=True)
             if final.exists():
@@ -569,11 +572,13 @@ def promote_run(
                 # (nxf_work/step_NN/batch_*/file layout). cache_tmp can
                 # also have a pre-existing `out/` from a re-run we should
                 # not double-process.
-                tmp = cache_root / f"{key_hex}.tmp"
+                tmp = staging_dir(cache_root, key_hex)
                 outputs = _find_step_outputs(workspace, spec.order)
                 if not outputs and tmp.exists():
                     # files-at-root in cache_tmp (real Nextflow publishDir)
-                    skip_names = {"out", "logs", "manifest.cbor"}
+                    skip_names = {
+                        _out_dir(tmp).name, _logs_dir(tmp).name, MANIFEST_NAME,
+                    }
                     outputs = [
                         p for p in tmp.iterdir()
                         if p.is_file()
@@ -584,7 +589,7 @@ def promote_run(
                     skipped.append(key_hex)
                     continue
                 tmp.mkdir(parents=True, exist_ok=True)
-                out_dir = tmp / "out"
+                out_dir = _out_dir(tmp)
                 out_dir.mkdir(parents=True, exist_ok=True)
                 # C0.5: enriched files_meta with (slot_id, dtype_key, branch_idx)
                 # per file so cache-hit emission can read paths back without
@@ -711,7 +716,7 @@ def promote_run(
                 # never fail the promote on a missing/unreadable .command.*.
                 log_srcs = _find_step_logs(workspace, spec.order)
                 if log_srcs:
-                    logs_dir = tmp / "logs"
+                    logs_dir = _logs_dir(tmp)
                     logs_dir.mkdir(parents=True, exist_ok=True)
                     for lsrc in log_srcs:
                         try:
@@ -734,7 +739,7 @@ def promote_run(
                     out_identities=spec.out_identities,
                     index_payload=[],
                 )
-                (tmp / "manifest.cbor").write_bytes(manifest_bytes)
+                (tmp / MANIFEST_NAME).write_bytes(manifest_bytes)
                 final_dir.parent.mkdir(parents=True, exist_ok=True)
                 try:
                     tmp.rename(final_dir)

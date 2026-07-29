@@ -455,8 +455,14 @@ def import_library(
     dest = Path(dest_path).resolve()
     lib = DataInstanceLibrary.LoadFrom(src, dest, as_image, on_exist)
 
+    from ..caching.layout import (
+        MANIFEST_NAME,
+        default_cache_root,
+        imported_shard_dir,
+    )
+
     if cache_root is None:
-        cache_root_path = dest.parent / "task_cache"
+        cache_root_path = default_cache_root(dest.parent)
     else:
         cache_root_path = Path(cache_root).resolve()
     cache_root_path.mkdir(parents=True, exist_ok=True)
@@ -485,8 +491,8 @@ def import_library(
                 # skip the cache row since the key shape doesn't match.
                 continue
             lineage_payload = meta.get("lineage_payload") or b""
-            output_root_rel = f"imported/{instance_id_hex[:2]}/{instance_id_hex[2:]}"
-            output_dir = cache_root_path / output_root_rel
+            output_dir = imported_shard_dir(cache_root_path, instance_id_hex)
+            output_root_rel = str(output_dir.relative_to(cache_root_path))
             output_dir.mkdir(parents=True, exist_ok=True)
             payload = encode_manifest(
                 cache_key=key,
@@ -497,7 +503,7 @@ def import_library(
                 out_identities={},
                 index_payload=[],
             )
-            (output_dir / "manifest.cbor").write_bytes(payload)
+            (output_dir / MANIFEST_NAME).write_bytes(payload)
             size_bytes = 0
             try:
                 size_bytes = (lib.location / path).stat().st_size

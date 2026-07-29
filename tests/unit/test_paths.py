@@ -275,6 +275,67 @@ class TestPathMapParse:
         cp = pm.Parse(Path("/ws/out.fa"), container_override=AgentPaths.WORK_ROOT / "out.fa")
         assert cp.container == AgentPaths.WORK_ROOT / "out.fa"
 
+    def test_home_rooted_absolute_resolves_all_three_views(self, pm: PathMap) -> None:
+        """The container arm: HOME_ROOT in, host path out, no bind needed.
+
+        This is the shape a producer must emit for anything the bootstrap
+        container will read back. Nothing new in `Parse` handles it — case
+        (5) already did — which is the reason the cache-hit fix belongs at
+        the producer rather than here.
+        """
+        cp = pm.Parse(AgentPaths.HOME_ROOT / "task_cache/1e/20ab/out/f.gbk")
+        assert cp.local == AgentPaths.HOME_ROOT / "task_cache/1e/20ab/out/f.gbk"
+        assert cp.external == pm.extern_home / "task_cache/1e/20ab/out/f.gbk"
+        assert cp.container == cp.local
+
+    def test_host_rooted_absolute_stays_foreign(self, pm: PathMap) -> None:
+        """The host spelling of a file inside the agent home is NOT rerouted.
+
+        Deliberate. `Parse` cannot know whether such a path is a producer's
+        coordinate mistake or a legitimate identity bind declared in
+        `.command.binds`, and this module's law is that invariants raise
+        rather than silently normalise. Rerouting here would also rewrite a
+        `metasmith run` user's own input, since that arm's agent home can
+        simply be their cwd.
+        """
+        host_path = pm.extern_home / "task_cache/1e/20ab/out/f.gbk"
+        cp = pm.Parse(host_path)
+        assert cp.local == host_path
+        assert cp.external == host_path
+        assert cp.container == host_path
+
+    def test_direct_run_input_under_cwd_is_untouched(self, tmp_path: Path) -> None:
+        """`metasmith run` binds the agent home to the user's cwd.
+
+        So an input the user names under their own working directory is
+        host-absolute *and* under the agent home — the shape any future
+        "reroute host paths to HOME_ROOT" idea has to survive, since on this
+        arm there is no container and no `/msm_home` to reroute to. The flag
+        that makes it distinguishable is `host_local`; this pins that the
+        distinction is honoured.
+        """
+        real_input = tmp_path / "my_reads.fq"
+        real_input.write_text("ACGT\n")
+        pm = PathMap(
+            extern_home=tmp_path, task_key=tmp_path.name, host_local=True
+        )
+        cp = pm.Parse(real_input)
+        assert cp.local == real_input
+        assert cp.local.exists()
+
+    def test_relay_free_arm_is_the_identity(self) -> None:
+        """When the agent home IS HOME_ROOT, both spellings are one path.
+
+        The mamba/native configuration: no container, no boundary, and the
+        conversion a producer applies must be a no-op rather than a rewrite.
+        """
+        pm = PathMap(extern_home=AgentPaths.HOME_ROOT, task_key="K")
+        p = AgentPaths.HOME_ROOT / "task_cache/1e/20ab/out/f.gbk"
+        assert pm.ExternalToLocal(p) == p
+        cp = pm.Parse(p)
+        assert cp.local == p
+        assert cp.external == p
+
 
 # -----------------------------------------------------------------------
 # Render — token substitution

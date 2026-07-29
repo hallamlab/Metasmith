@@ -6,6 +6,7 @@ import shutil
 import time
 from pathlib import Path
 
+from ..caching.layout import default_cache_root
 from ..caching.store import CacheStore, decode_manifest
 
 
@@ -14,7 +15,7 @@ def _resolve_cache_root(cache_root: str | None) -> Path:
         return Path(cache_root).resolve()
     # Default to <CWD>/task_cache for now; agent-home resolution is the
     # caller's job (CLI passes --cache-root explicitly in agent contexts).
-    return Path.cwd() / "task_cache"
+    return default_cache_root(Path.cwd())
 
 
 def list_cache(

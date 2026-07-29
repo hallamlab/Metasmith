@@ -131,11 +131,28 @@ def test_contract_runtime_two_step_linear_identity(tmp_path, monkeypatch):
         key = f"step_{step.order}"
         assert key in report.step_inputs_reachable
 
+    assert report.address_violations == [], (
+        f"emitted unmountable addresses: {report.address_violations}"
+    )
+
     # Oracle bridge: same result via PlanExecutionOracle.
     oracle = PlanExecutionOracle(compiled.task)
     report2 = oracle.validate_contract_only(compiled.task.plan, compiled)
     assert report2.nf_compiles is True
     assert report2.produces_match_plan is True
+
+    # And again with the host and container views of the agent home held
+    # apart — the containerized-agent shape, where a producer that reaches
+    # for the host spelling emits something no per-step container mounts.
+    split = runtime.stage(task, external_home=tmp_path / "host_agent_home")
+    split_report = runtime.validate(split)
+    assert split_report.nf_compiles is True, (
+        f"nf compile failed under a split home: {split_report.errors}"
+    )
+    assert split_report.address_violations == [], (
+        f"emitted unmountable addresses under a split home: "
+        f"{split_report.address_violations}"
+    )
 
 
 # ---------------------------------------------------------------------------

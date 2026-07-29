@@ -407,6 +407,19 @@ The container is **dual-bound**: the host scope dir lands at both `/ws` (`WORK_R
 mapping a cwd back to the host must check both prefixes and route HOME_ROOT cwds through
 `agent.real_path`. Pinned by `tests/unit/test_sbatch_home_root_cwd.py`.
 
+**Anything codegen writes into the workflow graph must be in container coordinates**, because
+channel values become the FILES manifest and are read back inside the per-step bootstrap
+container — which mounts `WORK_ROOT`, `HOME_ROOT`, and whatever `.command.binds` declares, and
+nothing else. The Nextflow head is not the reader and holds a bind the per-step container
+lacks, so a host-spelled address stages fine and then fails one process later, reported as a
+missing input. Filesystem work at compile time stays in the host view; only the *emitted*
+literal goes through `PathMap`. This holds for host-side targets too — `bin/sbatch` translates
+the two roots outward before submitting, and a host-spelled path is invisible to it.
+`publishDir` is the single deliberate exception. `ContractRuntime.check_emitted_addresses`
+fails a test when a producer breaks this; every `NextflowGenContext` in the suite except
+`tests/cache/test_codegen.py` collapses `external_home` onto `HOME_ROOT`, which is why the
+bug it pins was invisible for so long.
+
 ### DAG rendering
 
 Placement is metasmith's own, in four modules under `src/metasmith/models/`: `dag_layout`
@@ -620,9 +633,12 @@ Absent or remote inputs fall back to a random per-call id and get no reuse.
 that step's emission in `workflow.nf` into a synthetic channel routed through
 `o.post(o.asStreams(...), k)` — every tuple must re-enter `o.post` before any downstream
 `o.group` observes it, or the orchestrator deadlocks. Any change to cache-hit codegen has to
-preserve that. The post-exec promote atomic-renames `<key>.tmp/` into `<key[:2]>/<key[2:]>/`;
-the reclaim sweep that follows is scoped to the promoting run's own keys, because an unsealed
-`.tmp` is indistinguishable from one another run is still writing.
+preserve that. The post-exec promote atomic-renames the staging dir onto the shard; the
+reclaim sweep that follows is scoped to the promoting run's own keys, because an unsealed
+`.tmp` is indistinguishable from one another run is still writing. Every on-disk name in that
+sentence — shard, staging dir, `out/`, `logs/`, `task_cache` itself — is defined once in
+`caching/layout.py`, since compile, promote, telemetry and ops all have to agree and
+disagreeing reads as a cache miss rather than an error.
 
 **`trace.jsonl` is the canonical event log, and it records banked work, not run work.**
 `<run_dir>/_metasmith/trace.jsonl` rotates on compile and is never truncated; a `SessionStart`

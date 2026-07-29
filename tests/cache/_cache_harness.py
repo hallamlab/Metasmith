@@ -30,6 +30,7 @@ from metasmith.models.libraries import (
     DataTypeLibrary,
     TransformInstanceLibrary,
 )
+from metasmith.caching.layout import CACHE_DIR_NAME
 from metasmith.models.remote import Source
 from metasmith.models.solver import Endpoint, Transform
 from metasmith.models.workflow import (
@@ -38,8 +39,6 @@ from metasmith.models.workflow import (
     WorkflowTask,
 )
 
-
-CACHE_DIR_NAME = "task_cache"
 
 
 # ---------------------------------------------------------------------------

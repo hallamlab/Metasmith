@@ -4,12 +4,34 @@ The bulk of this module is one function, and it was one 800-line method before
 that -- a third of the old `workflow.py`. It reads almost nothing off the task
 (`plan`, and three helpers), which is what let it move out whole.
 
-Two invariants the generated Groovy depends on, both easy to break silently:
+Three invariants the generated Groovy depends on, all easy to break silently:
 
 Every tuple must re-enter `o.post(...)` before any downstream `o.group(...)`
 observes it. A cache hit rewrites a step's emission into a synthetic channel,
 and routing that channel around `o.post` deadlocks the orchestrator rather than
 failing.
+
+Every address written into the graph must be one the *consumer* can mount.
+Channel values become the FILES manifest, which is read back inside the
+per-step bootstrap container -- and that container mounts three things: the
+task work dir at `WORK_ROOT`, the agent home at `HOME_ROOT`, and whatever the
+step's own `.command.binds` declares. The head process is not the reader and
+does not get a vote; it holds an extra identity bind the per-step container
+lacks, so a host-spelled address stages fine and then fails to open one process
+later, reported as a missing input. Filesystem work here (globbing a cache
+shard, statting a mount) stays in the host view; what gets *emitted* goes
+through `PathMap` first. Cache-hit channels are the case that got this wrong:
+they were the only producer building an address out of `external_home` instead
+of out of a resolved instance path. `ContractRuntime.check_emitted_addresses`
+fails a test the day a fifth producer repeats it. `publishDir` is the
+deliberate exception -- Nextflow publishes from the head, on the host.
+
+Container coordinates are also right for targets that run *outside* a
+container. `bin/sbatch` rewrites `HOME_ROOT` and the work root back to their
+host spellings throughout `.command.run` and `.command.sh` before submitting,
+so a container-spelled address survives the trip out; a host-spelled one is
+invisible to that rewrite and arrives wherever it was written for. On the
+relay-free arm the two roots are one directory and the conversion is a no-op.
 
 The output targets a strict-syntax parser (nextflow 26.04.1). Single-element
 parenthesized assignment and range-based `for` are both rejected there, so an
@@ -30,6 +52,7 @@ from pathlib import Path
 
 import yaml
 
+from ...caching.layout import default_cache_root, out_dir, staging_dir
 from ...constants import AgentPaths
 from ...env import ContainerDef, Environment, Runtime
 from ...logging import Log
@@ -166,7 +189,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
     def _strip_var(s: str):
         return s[2:-1]
     if context.cache_root is None:
-        context.cache_root = context.external_home / "task_cache"
+        context.cache_root = default_cache_root(context.external_home)
     task._apply_fs_strategy(context)
     cache_decisions = task._compute_cache_decisions(context)
     # Derive task key from the per-task workspace name. external_work
@@ -276,10 +299,14 @@ def prepare_nextflow(task, context: NextflowGenContext):
         # publishDir. The post-exec promote step (S5) then validates
         # and renames the .tmp directory into its final cache slot.
         # `cacheable=False` and the env kill-switch skip this entirely.
+        #
+        # This target and promote's staging dir are the pair that must agree
+        # -- publishDir writes here, promote seals from here -- so both read
+        # it out of `caching.layout` rather than spelling it twice.
         decision = cache_decisions.get(step.order)
         if decision is not None and decision.get("cacheable", True):
-            cache_tmp = (
-                context.cache_root / f"{decision['cache_key'].hex()}.tmp"
+            cache_tmp = staging_dir(
+                context.cache_root, decision["cache_key"].hex()
             )
             src += [
                 TAB + (
@@ -727,6 +754,17 @@ def prepare_nextflow(task, context: NextflowGenContext):
     for step in the_plan.steps:
         decision = cache_decisions.get(step.order)
         is_hit = bool(decision and decision.get("hit"))
+        # A hit without a store entry cannot name its files. Demote it and
+        # let the step run: an assert would vanish under -O and take the
+        # run's correctness with it. `compute_cache_decisions` only sets
+        # hit on a live entry, so this is a belt on top of that brace.
+        if is_hit and decision.get("entry") is None:
+            Log.Warn(
+                f"cache hit for step {step.order} carries no store entry; "
+                "treating as a miss"
+            )
+            decision["hit"] = False
+            is_hit = False
         used_archetypes, produced_archetypes = get_io_signature(step)
         produced_names = [get_prod_name(x.dtype) for g in produced_archetypes for x in g]
         produced_snames = [get_prod_name(x.dtype, force_singular=True) for g in produced_archetypes for x in g]
@@ -759,12 +797,11 @@ def prepare_nextflow(task, context: NextflowGenContext):
             # the canonical `1-1-{branch+1}.*-{dtype_key}{ext}`
             # filename shape. The tuple re-enters o.post() exactly
             # as a real process output would (Critic E#1 pin).
-            cache_out = (
-                context.cache_root
-                / decision["cache_key"].hex()[:2]
-                / decision["cache_key"].hex()[2:]
-                / "out"
-            )
+            #
+            # The shard comes from the entry the probe already returned,
+            # not from re-deriving the layout off the key: a second
+            # derivation is a second thing to keep in sync.
+            cache_out = out_dir(decision["entry"].output_root)
             cached_channels: list[str] = []
             cached_channel_var = f"__cached_step_{step.order}"
             channel_exprs: list[str] = []
@@ -787,8 +824,20 @@ def prepare_nextflow(task, context: NextflowGenContext):
                     if not cached_files:
                         channel_exprs.append("Channel.empty()")
                         continue
+                    # The glob above is filesystem work and stays in the
+                    # host view -- it runs here, in the agent container,
+                    # where the host spelling is bound. The literal below
+                    # is read much later, inside the per-step bootstrap
+                    # container, which mounts the agent home only at
+                    # HOME_ROOT. Emitting the host spelling stages a
+                    # symlink the head process can follow and the consumer
+                    # cannot, and the step stops on inputs that are
+                    # present. Foreign paths (a cache root outside the
+                    # agent home) pass through unchanged and will need a
+                    # bind of their own.
                     tuples = ", ".join(
-                        f"[[:], file('{fp}')]" for fp in cached_files
+                        f"[[:], file('{path_map.ExternalToLocal(fp)}')]"
+                        for fp in cached_files
                     )
                     channel_exprs.append(f"Channel.of({tuples})")
             wf_main.append(

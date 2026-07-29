@@ -405,8 +405,10 @@ def _read_hit_decisions(workspace: Path) -> dict[int, dict]:
     cached files as if they had just been produced — the symmetric pin
     of the synthetic ``Channel.of(...)`` path that real Nextflow uses.
     """
+    from ..caching.layout import default_cache_root, out_dir
+
     home = Path(os.environ.get(HOME_ENV, str(AgentPaths.HOME_ROOT)))
-    cache_root = home / "task_cache"
+    cache_root = default_cache_root(home)
     if not cache_root.exists():
         return {}
     if os.environ.get("METASMITH_CACHE", "1").lower() in {
@@ -447,7 +449,7 @@ def _read_hit_decisions(workspace: Path) -> dict[int, dict]:
                 continue
             hits[order] = {
                 "cache_key": spec["cache_key"],
-                "output_dir": entry.output_root / "out",
+                "output_dir": out_dir(entry.output_root),
             }
             store.touch(spec["cache_key"])
     finally:
