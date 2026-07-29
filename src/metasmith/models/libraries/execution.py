@@ -45,11 +45,29 @@ from .resources import Gpus, Size
 from ..paths import ContextPath, PathMap  # noqa: F401
 
 
+class AmbiguousProvenance(Exception):
+    """A file descends from more than one item of the slot being asked about.
+
+    Raised rather than answered, because every way of picking one is a guess
+    that looks like an answer.
+    """
+
+
+class AmbiguousSlotChannel(Exception):
+    """Two requirements of one dtype share a channel, so the wire cannot tell
+    which of them an ancestry hash refers to."""
+
+
 @dataclass
 class ContextData:
     input_group: list[ContextPath]
     endpoint: Endpoint
     type_name: str
+    # One on-channel index map per entry of `input_group`, in the same order.
+    # Empty when the runtime did not emit provenance; never partially filled --
+    # a length mismatch is downgraded to empty at the construction site,
+    # because a mispaired provenance is worse than an absent one.
+    provenance: list[dict] = field(default_factory=list)
     path: ContextPath = field(init=False)
 
     def __post_init__(self) -> None:
@@ -212,6 +230,16 @@ class ExecutionContext:
     _batch_index: int = 0
     _detected_gpus: list|None = None
     _env_dispatches: list["EnvDispatch"] = field(default_factory=list)
+    # Which on-channel name each required slot's stream carries. Recorded by the
+    # compiler into the step meta and read back here, never re-derived: the name
+    # comes from `get_archetype`, whose merge decisions are compile-time state
+    # bootstrap does not have, and a second implementation of them is how the
+    # emitter and the parser drift apart.
+    _slot_keys: dict[Dependency, str] = field(default_factory=dict)
+    # Channels claimed by more than one slot. Two requirements of one dtype are
+    # genuinely indistinguishable on the wire, so provenance for them is refused
+    # rather than guessed.
+    _ambiguous_slots: set[str] = field(default_factory=set)
 
     def __post_init__(self):
         # Accept a bare Runtime for the many construction sites that only have
@@ -243,6 +271,94 @@ class ExecutionContext:
     
     def InputGroup(self, key: Dependency):
         return self.GetMeta(key).input_group
+
+    def ProvenanceOf(self, path: ContextPath) -> dict|None:
+        """The raw on-channel index `path` arrived with, or None if uncaptured.
+
+        The escape hatch. Prefer `SourceOf` -- this hands back channel-hash
+        keys, which is exactly what a protocol should not have to reason about.
+        """
+        d = self._inputs[self._batch_index]
+        for cd in d.values():
+            if not cd.provenance:
+                continue
+            for i, p in enumerate(cd.input_group):
+                if p == path:
+                    return cd.provenance[i]
+        return None
+
+    def _slot_channel(self, key: Dependency) -> str:
+        chan = self._slot_keys.get(key)
+        if chan is None:
+            raise KeyError(
+                f"no channel recorded for slot [{key}:{key.key}]; provenance "
+                "needs the `slk` line the compiler writes into the step meta"
+            )
+        if chan in self._ambiguous_slots:
+            raise AmbiguousSlotChannel(
+                f"slot [{key}:{key.key}] shares channel [{chan}] with another "
+                "requirement of the same type -- the wire cannot tell them "
+                "apart, so provenance for it is unanswerable. Give the two "
+                "slots distinguishable types."
+            )
+        return chan
+
+    def SourcesOf(self, path: ContextPath, key: Dependency) -> list[ContextPath]:
+        """Every item of slot `key` that `path` shares an ancestry hash with.
+
+        Empty when provenance was not captured, or when `path` genuinely has no
+        ancestor in that slot. Use this when N is legitimately expected;
+        `SourceOf` is the one-answer form.
+        """
+        if key in self._inputs[self._batch_index]:
+            target = self.GetMeta(key)
+            if any(p == path for p in target.input_group):
+                return [path]
+        src = self.ProvenanceOf(path)
+        if not src:
+            return []
+        chan = self._slot_channel(key)
+        # Compare as strings: leaf ids arrive as 32-hex, but the legacy seeds
+        # mint Longs, so a mixed run must degrade to "no match" rather than to
+        # a wrong one.
+        wanted = {str(x) for x in src.get(chan, [])}
+        if not wanted:
+            return []
+        target = self.GetMeta(key)
+        if not target.provenance:
+            return []
+        out = []
+        for i, p in enumerate(target.input_group):
+            ids = {str(x) for x in target.provenance[i].get(chan, [])}
+            if ids & wanted:
+                out.append(p)
+        return out
+
+    def SourceOf(self, path: ContextPath, key: Dependency) -> ContextPath|None:
+        """The single item of slot `key` that `path` descends from.
+
+        None when the ancestry was not captured, or when `path` has no ancestor
+        in that slot -- a caller that cannot proceed without one should say so
+        itself, since the framework cannot tell those two apart.
+
+        Raises `AmbiguousProvenance` when more than one matches. A produced
+        file's index is its producing *task's* combined index, so this is exact
+        only when that task had one ancestor at this slot; picking the first
+        would be the mislabelling bug this mechanism exists to remove, wearing
+        a different hat.
+        """
+        found = self.SourcesOf(path, key)
+        if len(found) == 0:
+            return None
+        if len(found) > 1:
+            raise AmbiguousProvenance(
+                f"[{path.local.name}] descends from {len(found)} items of slot "
+                f"[{key}:{key.key}] ({', '.join(p.local.name for p in found)}). "
+                "The producing task collected more than one, so there is no "
+                "single answer -- group that step per ancestor, or use "
+                "SourcesOf."
+            )
+        return found[0]
 
     def Output(self, key: Dependency, i: int=0):
         return self._get_output_paths(key, i, self._batch_index)  

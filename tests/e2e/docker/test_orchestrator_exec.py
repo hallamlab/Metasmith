@@ -437,6 +437,104 @@ workflow {{
             f"keys leaked descendants into each other: {groups}"
         )
 
+    @staticmethod
+    def _provenance_case(nxf_runner: "NxfTestRunner", n_keys: int, n_outs: int):
+        """Same fan-out-then-collect topology, reporting PROV instead of FILES.
+
+        Returns one entry per task: `{"seed": [...], "out1": [...]}` where each
+        list holds the per-item `seed` hashes of that slot's items, in the same
+        order as that slot's files.
+        """
+        for i in range(n_keys):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+        seeds = ",\n        ".join(
+            f'[[:], file("${{projectDir}}/seed_{i}.txt")]' for i in range(n_keys)
+        )
+        touches = " ".join(
+            f"1-${{stem}}{chr(ord('a') + j)}-out1.txt" for j in range(n_outs)
+        )
+        result = nxf_runner.run(f'''
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-out1.txt")
+    script:
+    def stem = index[0].seed[0]
+    """
+    touch {touches}
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+    def seed_fanout = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+    def seed_collect = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+    def k1 = ["out1"]
+    def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed_fanout], k1, 1))), k1))[0]
+    def collected = o.group("seed", [seed_collect, _out1], ["out2"], 1)
+    collected.view {{ indexes, seed_vals, out1_vals ->
+        def m = indexes[0]
+        def payload = [
+            seed: m.PROV[0].collect {{ ix -> ix.seed }},
+            out1: m.PROV[1].collect {{ ix -> ix.seed }},
+            n_seed_files: m.FILES[0].size(),
+            n_out1_files: m.FILES[1].size(),
+        ]
+        "PROV: " + groovy.json.JsonOutput.toJson(payload)
+    }}
+}}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+        return [
+            json.loads(l.split("PROV: ", 1)[1])
+            for l in result.stdout.split("\n")
+            if l.startswith("PROV:")
+        ]
+
+    def test_collected_items_carry_their_own_provenance(self, nxf_runner):
+        """<LP7> Each collected item arrives with the ancestry it came in with.
+
+        This is the whole point of keeping the per-item indexes: `group()` used
+        to union them into one map, so a task holding three outputs could not
+        say which ancestor any of them had. A protocol pairing two grouped slots
+        -- N genomes against the N names they were fetched under -- has nothing
+        else to go on, since the two lists arrive in independent orders.
+        """
+        tasks = self._provenance_case(nxf_runner, n_keys=1, n_outs=3)
+        assert len(tasks) == 1, tasks
+        t = tasks[0]
+        assert t["n_out1_files"] == 3 and t["n_seed_files"] == 1
+        # aligned 1:1 with the files they describe
+        assert len(t["out1"]) == 3, f"PROV was flattened or unioned: {t}"
+        assert len(t["seed"]) == 1, t
+        # every output names the one seed it descends from
+        (seed_id,) = t["seed"]
+        assert all(ix == seed_id for ix in t["out1"]), (
+            f"an output carries an ancestry that is not its seed's: {t}"
+        )
+
+    def test_provenance_does_not_merge_across_keys(self, nxf_runner):
+        """<LP7> Two keys -> two tasks, each item pointing only at its own key.
+
+        The other half: a union across keys would make every item look like it
+        descended from both, which is precisely the wrong answer a positional
+        or unioned pairing gives.
+        """
+        tasks = self._provenance_case(nxf_runner, n_keys=2, n_outs=2)
+        assert len(tasks) == 2, tasks
+        seen = []
+        for t in tasks:
+            assert len(t["out1"]) == 2, f"PROV not per-item: {t}"
+            (seed_id,) = t["seed"]
+            assert all(ix == seed_id for ix in t["out1"]), t
+            seen.append(seed_id)
+        assert seen[0] != seen[1], f"both tasks claim one seed: {seen}"
+
     def test_batch_size_folds_whole_keys_never_shards_one(self, nxf_runner):
         """batch_size counts GROUPS, not members within a group.
 

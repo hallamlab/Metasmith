@@ -92,7 +92,70 @@ def test_cache_epoch_and_wire_version_are_independent():
     They are not required to hold any particular relative value — only to be
     distinct symbols so a cache-semantics bump never again drags the wire
     version (and its un-synced Groovy emitter) along with it. Pinning the
-    known post-R5 values documents the split and flags any accidental re-merge.
+    known values documents the split and flags any accidental re-merge. They
+    have now moved independently at least once -- the wire went to 4 to carry
+    per-item provenance while the cache epoch stayed at 3, because no cache key
+    changed and existing shards stay valid -- which is the split doing its job.
     """
     assert CACHE_KEY_VERSION == 3
-    assert LIN_PAYLOAD_VERSION == 3
+    assert LIN_PAYLOAD_VERSION == 4
+    assert CACHE_KEY_VERSION != LIN_PAYLOAD_VERSION, (
+        "the two constants having drifted apart is the point; if a change ever "
+        "makes them equal again, it must be a coincidence and not a re-merge"
+    )
+
+
+# -- reserved index keys -----------------------------------------------------
+#
+# `FILES` and `PROV` are the second cross-language pair on this wire: the
+# Groovy Orchestrator writes them into the index and strips them again, and
+# Python reads them back by name. They have exactly the failure mode the
+# version constant had -- two spellings in two languages that nothing checks
+# against each other -- so they get the same guard.
+
+_GROOVY_KEY_RE = re.compile(
+    r"public\s+static\s+final\s+String\s+(FILES_KEY|PROV_KEY)\s*=\s*\"([^\"]+)\""
+)
+
+
+def _orchestrator_source() -> str:
+    src = Path(workflow_mod.__file__).parents[2] / "nextflow_config" / "Orchestrator.groovy"
+    assert src.is_file(), f"Orchestrator.groovy not found at [{src}]"
+    return src.read_text()
+
+
+def test_groovy_reserved_keys_match_the_parser():
+    """The Orchestrator's reserved key names must equal LinPayload's."""
+    found = dict(_GROOVY_KEY_RE.findall(_orchestrator_source()))
+    assert found == {"FILES_KEY": LinPayload.FILES_KEY, "PROV_KEY": LinPayload.PROV_KEY}, (
+        f"Orchestrator.groovy declares {found}, but the parser expects "
+        f"FILES_KEY={LinPayload.FILES_KEY!r} PROV_KEY={LinPayload.PROV_KEY!r}. "
+        "A renamed key on one side leaves the other reading a key nobody writes: "
+        "FILES silently empties every input group, PROV silently disables "
+        "provenance. Neither raises."
+    )
+
+
+def test_reserved_keys_are_the_set_lineage_index_filters():
+    """RESERVED_KEYS must be exactly the keys the Orchestrator injects.
+
+    A key added to one and not the other is how a nested value reaches
+    `promote`'s shard manifest and then the cache-hit `.nf` literal, which
+    stringifies it into silent garbage rather than failing.
+    """
+    assert LinPayload.RESERVED_KEYS == {LinPayload.FILES_KEY, LinPayload.PROV_KEY}
+
+
+def test_the_orchestrator_strips_every_reserved_key_on_the_way_out():
+    """_debatch must remove each reserved key, or it propagates forever.
+
+    A key left in rides into every descendant index through `_post`, grows
+    without bound, and lands in promoted shard manifests.
+    """
+    src = _orchestrator_source()
+    debatch = src.split("public def _debatch(")[1]
+    for key in ("FILES_KEY", "PROV_KEY"):
+        assert f"index.remove({key})" in debatch, (
+            f"_debatch does not strip {key}; it will propagate into every "
+            "downstream index and into promoted shards"
+        )

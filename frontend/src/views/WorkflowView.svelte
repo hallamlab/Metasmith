@@ -120,6 +120,12 @@
         id: String(d.id ?? nextRowId()),
         mode: d.mode === 'value' ? 'value' : 'file',
         path: d.path ?? '',
+        // Carried, never shown, never set on a new row. A value row states no
+        // name any more, but a recipe written when it did is the only thing
+        // that can still say where its *array* items are -- those are not in
+        // the record's row map, only in its generation list, so dropping this
+        // before a sync has run would re-mint every one of them. Delete it a
+        // release after `minted` is populated everywhere.
         name: d.name ?? '',
         value: d.value ?? '',
         dtype: d.dtype ?? '',
@@ -140,7 +146,7 @@
   // row stops being an array the moment its last token goes.
   const TOKEN = /\{[^{}]*\}/
   const isArrayRow = (d) =>
-    d.mode === 'value' ? TOKEN.test(d.name ?? '') || TOKEN.test(d.value ?? '')
+    d.mode === 'value' ? TOKEN.test(d.value ?? '')
                        : TOKEN.test(d.path ?? '')
 
   let table = $state(null)
@@ -528,7 +534,7 @@
     // to the next, or one file would satisfy three slots. A row with nothing in
     // it still occupies the requirement, so pressing apply again does not stamp
     // a second copy; it is reported as blank rather than counted as present.
-    const identity = (d) => (d.mode === 'value' ? d.name : d.path).trim()
+    const identity = (d) => (d.mode === 'value' ? d.value : d.path).trim()
     const used = new Set()
 
     function fits(dtype, slot) {

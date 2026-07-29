@@ -498,3 +498,76 @@ def protocol(context: ExecutionContext):
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 '''
     }
+
+
+def labelled_collection() -> dict[str, str]:
+    """A collecting transform that pairs each item with the label it descends from.
+
+    The ppanggolin shape, reduced: a `root` groups everything; each `label` is a
+    user-supplied value under that root; each `assembly` descends from a label
+    and is transformed per-sample into a `bam`. The collecting step then sees N
+    labels and N bams at once and has to say which goes with which.
+
+    Position cannot answer that — the two groups are accumulated independently
+    in task-arrival order — so the protocol asks `SourceOf`, which reads the
+    ancestry each item arrived with. Drives LP6-LP8.
+
+    A label that resolves to nothing is written as `UNPAIRED` rather than
+    skipped, so a regression shows up as a wrong pairing in the output instead
+    of as a shorter file.
+    """
+    return {
+        "label_item": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+dep = model.AddRequirement(lib.GetType("mock::assembly"))
+out = model.AddProduct(lib.GetType("mock::bam"))
+
+def protocol(context: ExecutionContext):
+    inp = context.Input(dep)
+    out_path = Path("item.txt")
+    out_path.write_text(inp.local.read_text())
+    return ExecutionResult(manifest=[{out: out_path}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=dep)
+''',
+        "collect_labelled": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+root  = model.AddRequirement(lib.GetType("mock::sample_metadata"))
+label = model.AddRequirement(lib.GetType("mock::label"), parents={root})
+item  = model.AddRequirement(lib.GetType("mock::bam"), parents={label})
+out   = model.AddProduct(lib.GetType("mock::merged"))
+
+def protocol(context: ExecutionContext):
+    lines = []
+    for p in context.InputGroup(item):
+        src = context.SourceOf(p, label)
+        name = src.local.read_text().strip() if src is not None else "UNPAIRED"
+        body = p.local.read_text().strip().splitlines()[0]
+        lines.append(name + "\\t" + body)
+    out_path = context.Output(out)
+    out_path.local.write_text("\\n".join(sorted(lines)) + "\\n")
+    return ExecutionResult(manifest=[{out: out_path.local}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=root)
+''',
+    }
