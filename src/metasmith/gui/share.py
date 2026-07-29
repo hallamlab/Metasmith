@@ -43,10 +43,12 @@ import yaml
 from ..models.paths import DEFERRED, is_deferred
 from ..ops import agent as op_agent
 from ..ops import data as op_data
+from ..ops import samples as op_samples
 # by name rather than `from . import stdlib`: importing the *package* from a
 # module the package's own api imports would put this file inside the
 # gui/api/app cycle, which `test_no_import_cycles` pins by exact membership
 from .names import slugify
+from .recipe import rows_of
 from .stdlib import available_types, discover
 from .store import INPUT_LIBRARY_DIRNAME, Project, ProjectError
 from .sshconfig import SshConfig, SshConfigError
@@ -173,84 +175,36 @@ def export_agent(p: Project, name: str) -> dict:
     }
 
 
-# A value row is something typed into a box -- a read-pair descriptor, a few
-# lines of metadata. This bound is far above any of those and well below
-# anything that would make a payload unpasteable; a file that big under a
-# library-owned name is not a value and is left behind rather than shipped.
-MAX_VALUE_BYTES = 64 * 1024
-
-
 def _has_no_path(path) -> bool:
     """Whether a row arrives without one -- the constant, or one minted from it."""
     return not path or path == DEFERRED_WIRE or is_deferred(path)
 
 
-def _read_value(lib_path: Path, item_path: str | None) -> str | None:
-    """The contents of a library-owned row, or `None` if it is not one."""
-    if not item_path or Path(item_path).is_absolute():
-        return None
-    f = lib_path / item_path
-    if not f.is_file() or f.stat().st_size > MAX_VALUE_BYTES:
-        return None
-    try:
-        return f.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-
-
 def export_workflow(p: Project, name: str, bound: bool = False) -> dict:
     """A workflow as its spec and its recipe -- never the store's bookkeeping.
 
-    `bound` keeps the input paths, which is "run exactly this" and only means
-    anything to someone with the same files. Unbound is the recipe: every row
-    that *points* at a file becomes DEFERRED, which is precisely what a template
-    is, and the recipient fills the paths in. A row that *holds* its value
-    travels whole either way -- see below.
+    The recipe is the rows, and the rows are the whole of it: the input library
+    is built from them at solve time, so there is nothing else to carry.
+
+    `bound` keeps the paths, which is "run exactly this" and only means anything
+    to someone with the same files. Unbound is the recipe: every row that
+    *points* at a file arrives blank, which is precisely what a template is, and
+    the recipient fills them in. A row that *holds* its value travels whole
+    either way -- deferring one would throw the recipe away and leave a nameless
+    blank where a read-pair descriptor was. So does a row holding a `{column}`
+    token, which is a rule rather than a path and is the entire substance of a
+    sample-array recipe.
     """
     wf = p.read_workflow(name)
     root = _stdlib_root(p)
     req = wf.request
 
-    lib_path = p.input_library_path(name)
-    inputs: list[dict] = []
-    if lib_path.is_dir():
-        info = op_data.inspect_library(str(lib_path))
-        for item in info.get("items", []):
-            row = op_data.show_item_lineage(str(lib_path), item["path"], render=False)
-            entry = {
-                # The row's name on the sender's side, and the *only* thing
-                # lineage is stated in terms of. `path` is data that may be
-                # thrown away by an unbound export -- and every unbound row
-                # would then be called DEFERRED, so a child naming a deferred
-                # parent would have no way to say which one it meant.
-                "id": row.get("path"),
-                "path": row.get("path"),
-                "type": row.get("type_name"),
-                "parents": [x.get("path") for x in (row.get("parents") or [])],
-            }
-            # A relative entry is library-owned: the file *is* the row, written
-            # by `AddValue` and holding a value someone typed rather than
-            # pointing at one of their files. It travels whole and under its own
-            # name -- deferring it would throw the recipe away and leave the
-            # recipient a nameless blank where a read-pair descriptor was.
-            value = _read_value(lib_path, entry["path"])
-            if value is not None:
-                entry["value"] = value
-            elif not bound:
-                entry["path"] = DEFERRED_WIRE
-            inputs.append(entry)
-
-    drafts = []
-    for d in req.get("input_drafts") or []:
+    rows = []
+    for d in rows_of(p, name):
         d = dict(d)
-        if not bound:
-            # A draft holding a `{column}` token is a rule rather than a path,
-            # and it is the whole substance of a sample-array recipe -- so it
-            # travels either way. A literal path is one machine's file.
-            for k in ("path", "name", "value"):
-                if isinstance(d.get(k), str) and "{" not in d[k]:
-                    d[k] = ""
-        drafts.append(d)
+        if not bound and d.get("mode") != "value" and "{" not in str(d.get("path") or ""):
+            d["path"] = ""
+        rows.append(d)
 
     return {
         "name": name,
@@ -264,11 +218,51 @@ def export_workflow(p: Project, name: str, bound: bool = False) -> dict:
             "resource_libraries": [
                 _lib_name(x, root) for x in req.get("resource_libraries") or []
             ],
+            # already stated in row ids -- see `_rows_from`
             "shared_input_paths": list(req.get("shared_input_paths") or []),
         },
-        "inputs": inputs,
-        "drafts": drafts,
+        # Kept, and empty: a reader from before rows were the recipe expects the
+        # key, and a payload that omits it reads as a workflow with no inputs
+        # rather than one it cannot understand.
+        "inputs": [],
+        "drafts": rows,
     }
+
+
+def _rows_from(body: dict) -> tuple[list[dict], dict[str, str]]:
+    """The payload's recipe as rows, whichever shape it arrived in.
+
+    Older senders describe the input library instead: one entry per registered
+    item, with lineage and shared inputs stated in the sender's own paths. Those
+    become rows too -- which is strictly better than what used to happen to
+    them, since a row keeps its type even when this project has never heard of
+    it. The returned map is from what that sender called a row to what it is
+    called here, for the references stated elsewhere in the payload.
+    """
+    rows = [dict(d) for d in body.get("drafts") or []]
+    ids: dict[str, str] = {}
+    made: list[dict] = []
+    for i, r in enumerate(body.get("inputs") or []):
+        rid = f"imported{i}"
+        ids[str(r.get("id") or r.get("path"))] = rid
+        value = r.get("value")
+        path = "" if _has_no_path(r.get("path")) else str(r.get("path"))
+        made.append({
+            "id": rid,
+            "mode": "value" if value is not None else "file",
+            "path": "" if value is not None else path,
+            "name": path if value is not None else "",
+            "value": value if value is not None else "",
+            "dtype": r.get("type") or "",
+            "parents": list(r.get("parents") or []),
+        })
+    for row in rows + made:
+        row["parents"] = [
+            str(x) if str(x).startswith("#") else f"#{ids[str(x)]}"
+            for x in (row.get("parents") or [])
+            if str(x).startswith("#") or str(x) in ids
+        ]
+    return rows + made, ids
 
 
 def export(p: Project, cfg: SshConfig, kind: str, name: str, bound: bool = False) -> dict:
@@ -407,9 +401,9 @@ def preview_workflow(p: Project, body: dict) -> dict:
     _, missing_res = _resolve_libs(spec.get("resource_libraries"), root)
 
     known = {t["full_name"] for t in available_types(p.root) if t.get("full_name")}
-    rows = body.get("inputs") or []
+    rows, _ = _rows_from(body)
     unknown_types = sorted({
-        r.get("type") for r in rows if r.get("type") and r.get("type") not in known
+        r.get("dtype") for r in rows if r.get("dtype") and r.get("dtype") not in known
     })
 
     notes = []
@@ -418,9 +412,12 @@ def preview_workflow(p: Project, body: dict) -> dict:
     for n in missing_tr + missing_res:
         notes.append(f"library [{n}] is not in your standard library, so it will not be enabled")
     for t in unknown_types:
-        notes.append(f"type [{t}] is not in your standard library; rows of it arrive unregistered and red")
+        notes.append(f"type [{t}] is not in your standard library; rows of it arrive red until you retype them")
     # a value row carries its own contents, so it is not one of the blanks
-    blank = [r for r in rows if r.get("value") is None and _has_no_path(r.get("path"))]
+    blank = [
+        r for r in rows
+        if r.get("mode") != "value" and _has_no_path(r.get("path")) and r.get("dtype")
+    ]
     if not body.get("bound") and blank:
         notes.append(f"{len(blank)} input row(s) arrive with no path -- fill them in before solving")
     return {
@@ -431,7 +428,7 @@ def preview_workflow(p: Project, body: dict) -> dict:
             "target_types": list(spec.get("target_types") or []),
             "transform_libraries": list(spec.get("transform_libraries") or []),
             "input_count": len(rows),
-            "draft_count": len(body.get("drafts") or []),
+            "draft_count": len(rows),
             "bound": bool(body.get("bound")),
         },
         "notes": notes,
@@ -439,14 +436,17 @@ def preview_workflow(p: Project, body: dict) -> dict:
 
 
 def import_workflow(p: Project, body: dict) -> dict:
-    """Create the workflow, then place as much of its recipe as resolves.
+    """Create the workflow and its recipe. Nothing is registered here.
 
-    A row whose type this project does not have cannot be registered -- the
-    library would refuse it -- so it lands as a *draft* carrying that type,
-    which is the form the recipe already draws in red and the user can retype in
-    place. Everything else is registered, parents first, and the paths that
-    changed on the way in (a deferred row is minted here, not there) are
-    followed through parents and shared inputs.
+    The rows are the recipe and the library is built from them at solve time, so
+    an import is a request to write and an empty library to build into. That is
+    what removes the old parents-first registration wave and the special case
+    for a type this project does not have: every row carries its own type, an
+    unknown one is already drawn in red, and it is retyped in place.
+
+    The library is marked adopted even though it is empty -- it *is* the whole
+    of what these rows say, and a later read must not invent rows for what the
+    first solve puts in it.
     """
     prev = preview_workflow(p, body)
     name = prev["name"]
@@ -454,66 +454,27 @@ def import_workflow(p: Project, body: dict) -> dict:
     spec = body.get("spec") or {}
     tr_libs, _ = _resolve_libs(spec.get("transform_libraries"), root)
     res_libs, _ = _resolve_libs(spec.get("resource_libraries"), root)
+    rows, ids = _rows_from(body)
 
     wf = p.create_workflow(name=name, request={
         "sample_type": spec.get("sample_type"),
         "target_types": list(spec.get("target_types") or []),
         "transform_libraries": tr_libs,
         "resource_libraries": res_libs,
-        "shared_input_paths": [],
-        "input_drafts": [dict(d) for d in body.get("drafts") or []],
+        # stated in row ids, so an older payload's paths are translated the same
+        # way the lineage in `_rows_from` is; one naming a row that did not
+        # arrive is dropped rather than left pointing at nothing
+        "shared_input_paths": [
+            str(x) if str(x).startswith("#") else f"#{ids[str(x)]}"
+            for x in (spec.get("shared_input_paths") or [])
+            if str(x).startswith("#") or str(x) in ids
+        ],
+        "input_drafts": rows,
     })
     lib_path = str(wf.path / INPUT_LIBRARY_DIRNAME)
     op_data.create_library(lib_path, type_library_paths=discover(p.root)["data_types"])
-
-    known = {t["full_name"] for t in available_types(p.root) if t.get("full_name")}
-    rows = list(body.get("inputs") or [])
-    placed: dict[str, str] = {}          # the row's id there -> its path here
-    drafts = list(wf.request.get("input_drafts") or [])
-    pending = [r for r in rows if r.get("type") in known]
-    for i, r in enumerate(r for r in rows if r.get("type") not in known):
-        drafts.append({
-            "id": f"imported{i}", "mode": "file", "path": "", "name": "", "value": "",
-            "dtype": r.get("type") or "", "parents": [],
-        })
-
-    # parents first: a row is registered once every parent it names has been,
-    # and a parent that never arrives is dropped from the lineage rather than
-    # blocking the row it belonged to
-    progressed = True
-    while pending and progressed:
-        progressed, rest = False, []
-        for r in pending:
-            rid, src = r.get("id") or r.get("path"), r.get("path")
-            parents = [x for x in (r.get("parents") or []) if x != rid]
-            if any(x not in placed for x in parents):
-                rest.append(r)
-                continue
-            kin = [placed[x] for x in parents]
-            if r.get("value") is not None:
-                out = op_data.add_value(lib_path, src, r["value"], r["type"], parents=kin)
-            else:
-                out = op_data.add_item(
-                    lib_path, DEFERRED if _has_no_path(src) else src, r["type"], parents=kin,
-                )
-            placed[rid] = out["path"]
-            progressed = True
-        pending = rest
-    notes = list(prev["notes"])
-    if pending:
-        notes.append(f"{len(pending)} input row(s) named a parent that did not arrive and were skipped")
-
-    # a draft's parents point at rows that were just re-registered under this
-    # project's paths; one that did not arrive is dropped, or the draft can
-    # never be committed and never says why
-    for d in drafts:
-        d["parents"] = [
-            x if str(x).startswith("#") else placed[x]
-            for x in (d.get("parents") or []) if str(x).startswith("#") or x in placed
-        ]
-    shared = [placed[x] for x in (spec.get("shared_input_paths") or []) if x in placed]
-    p.write_request(name, {"shared_input_paths": shared, "input_drafts": drafts})
-    return {"kind": "workflow", "name": name, "notes": notes}
+    op_samples.write_record(lib_path, {"adopted": True, "rows": {}})
+    return {"kind": "workflow", "name": name, "notes": list(prev["notes"])}
 
 
 # -- the one door ------------------------------------------------------------

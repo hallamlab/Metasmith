@@ -168,7 +168,10 @@ Each `DataInstance` has a stable `instance_id` derived from **path, dtype name, 
 library — never file bytes**. Bioinformatic inputs reach hundreds of GB, so content
 hashing is deliberately off the table; the consequence is that changing a path or a type
 re-registers the row and costs cache reuse downstream, and two different files at one path
-collide. That is worked around by an explicit user-driven fork, not by an automatic fix.
+collide. (`instance_id` is *stored* per path rather than re-derived, so anything that moves a
+manifest entry has to move its `instance_meta` with it — the fallback for a missing one derives
+from the library key, which is a hash of the whole manifest, and that makes one row's identity
+a function of every other row's.) That is worked around by an explicit user-driven fork, not by an automatic fix.
 The id survives `WithDType()` retyping and `Pack()`/`Unpack()`, which is what makes
 `Load()` + `Trace()` the correct way to map results back to inputs — never filename or
 work-directory parsing.
@@ -700,24 +703,37 @@ nothing points into. And **incompleteness is reported, never refused, until laun
 make an agent days before its cluster exists in your ssh config, so `problems`/`valid` ride
 on the payload and only the launch route enforces them.
 
+**The recipe's input rows are the durable thing; the input library is built from them.** A row
+lives in `request.yml`, is saved when a field is left, and never becomes anything else — there
+is no promotion, so nothing changes shape or loses its value editor under the cursor.
+`ops.inputs.sync` is the *one* writer of an input library, and `generate_workflow` calls it
+unconditionally at the top of every solve: no gesture to remember, and no state between an edit
+and a solve that can go stale. Two functions with two ideas of what the library currently holds
+is precisely the state that leaves it half built, which is why registration lives nowhere else.
+
+**The sync is incremental, and that is not tidiness.** Identity here is a function of path, a
+task key is a function of identity, so a clear-and-rebuild would silently re-mint every id on
+every solve and cost every user their cache with nothing on screen to say so. A row whose path,
+type and lineage the library already holds has *nothing called on it*, and a library nothing
+changed in is not saved at all. `tests/unit/test_input_rows.py` pins that directly, because a
+suite that only asserts "the library ends up right" passes a rebuild.
+
+**Which row owns which manifest entry is recorded, not re-derived** — a deferred path is minted,
+not chosen. That record lives in `expansion.yml` beside `result.yml`, server-owned deliberately,
+since the browser rewrites `request.yml` wholesale on nearly every edit. It also carries the
+`adopted` mark: a library that predates all of this (an old project, a copy of a template, an
+import) gets one row per item the first time anything reads it, once and never again. Without
+that mark deleting a row could not be expressed — the item outlives the row until the next
+solve, and every read in between would put it back.
+
 **A sample table is a sheet plus one declared row per kind of input.** `ops.samples` parses a
 csv/tsv/excel upload (stored verbatim under a fixed stem, because the workflow directory *is*
-the task bundle root), expands `{column}` tokens in the recipe's input rows into one library
-item per (row × sheet row), and records what it put down in `expansion.yml` beside
-`result.yml` — server-owned deliberately, since the browser rewrites `request.yml` wholesale
-on nearly every edit. A row holding a token is a **sample array**: one declaration standing for
-N items indexed by the sheet, not a fourth kind of row — just one the commit cascade skips, so
-nothing has to be kept in step. The recipe shows an array row's count and never the items it
-made. It is deliberately *not* called a template: that word now means a stored workflow you
-start from, and the two were being confused in the same page.
-
-**Expansion is not a step a user takes — `generate_workflow` takes it, every solve.** There is
-no `/table/expand` route; `expand()` already clears what the previous call registered before it
-writes the new set (`clear()` is its own first line), so calling it unconditionally at the top of
-every generate keeps the registered items in exact step with the current sheet and rows with
-nothing to remember to redo and no state that can go stale between an edit and a solve. A
-workflow with no table, or no array row left, gets `clear()` instead, for the same reason: what a
-past expansion put down must not outlive the row that put it there.
+the task bundle root) and says what is wrong with it; the sync substitutes `{column}` tokens
+into one library item per (row × sheet row). A row holding a token is a **sample array**: one
+declaration standing for N items indexed by the sheet, not a second kind of row. The recipe
+shows an array row's count and never the items it made. It is deliberately *not* called a
+template: that word now means a stored workflow you start from, and the two were being confused
+in the same page.
 
 **A template is a starting point, and `+ workflow` is where you pick one.** Templates live at
 `<stdlib>/templates/<name>/` — a `spec.yml` plus the deferred input rows it names — and are
@@ -733,11 +749,12 @@ as `msm1:<checksum>:<base64 gzipped yaml>` — a prefix so a later format is ref
 instead of misread, and a digest so a payload a mail client wrapped and someone pasted back
 short is refused instead of half-imported. What travels is the object's declaration, never its
 bookkeeping: no identity file, no `real_path`, no deployment state. Resolution on arrival is
-**best effort by name** — an unresolvable library is dropped and named, an unknown type is
-placed as a red draft — because refusing the whole import over one missing name is the worse
-failure. A workflow travels bound (real paths) or unbound (deferred), and in either form a
-library-owned *value* row travels whole, since the row *is* its file rather than a pointer to
-one. Lineage in the payload is stated in row **ids, never paths** — unbound, every row's path
+**best effort by name** — an unresolvable library is dropped and named, an unknown type arrives
+on a row the recipe draws red — because refusing the whole import over one missing name is the
+worse failure. What travels is the rows: an import writes a recipe and an empty library, and the
+first solve builds one from the other. A workflow travels bound (real paths) or unbound (blank),
+and in either form a *value* row travels whole, since the row *is* its contents rather than a
+pointer to a file. Lineage in the payload is stated in row **ids, never paths** — unbound, every row's path
 is the same string, so a parent named by path is a parent that cannot be told apart. Both ends show their contents before they act: the export dialog decodes what you are
 about to copy, and the import dialog lists what would be created before it writes.
 
