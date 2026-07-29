@@ -106,8 +106,14 @@ go out through the fork and a standing pull request.
 ```
 ./dev.sh -ud    # push the docker image to quay.io/hallamlab/metasmith
 ./dev.sh -uc    # upload the conda package to anaconda.org/hallamlab
-                #   (run `anaconda login` first)
 ```
+
+The anaconda-client token persists at `~/.config/binstar/*.token` and lasts a
+year, so `anaconda login` is rarely needed — check with `anaconda whoami` /
+`anaconda auth --list` before assuming you're logged out. If you do need to
+re-auth, it must run on a real TTY: `conda run`/`mamba run` swallow stdin, so
+the `Username:` prompt dies on `[ERROR] EOF when reading a line`. Pass
+`--no-capture-output`, or invoke the env's `bin/anaconda` directly.
 
 Then:
 
