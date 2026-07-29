@@ -389,20 +389,19 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
                         Log.Warn(f"could not parse gpu metadata [{raw_meta['gpu']}]: {e}")
         except Exception as e:
             Log.Error(f"failed to read [{METADATA_FILE}]: {e}")
-        # C5 — parse the lin payload via LinPayload.from_json. The v2
-        # envelope `{"v":2,"entries":<index_map>}` is emitted by the
-        # workflow stub at workflow.py:1612. The wire carries a single
-        # per-task lineage map; the historical "batches" loop below
-        # always sees a length-1 list with our emit, since each task
-        # gets one combined index. (Multi-sample fan-in folds into the
-        # FILES list-of-lists inside that single entry.)
+        # Parse the lin payload via LinPayload.from_json. The v3 envelope
+        # `{"v":3,"entries":[<index_map>, ...]}` carries one map per batch
+        # member (`Orchestrator._collateBatch` builds one index each), so the
+        # batch loop below gets one row per member and `context.AsBatch()`
+        # yields that many. Wire v2 carried a single map, which is why a
+        # batch_size>1 transform used to run once over member 0.
         lin_raw = raw_meta.get("lin")
         if lin_raw:
             try:
                 lin_payload = LinPayload.from_json(lin_raw)
-                lineages = [lin_payload.entries]
+                lineages = lin_payload.entries
             except ValueError as e:
-                Log.Error(f"failed to parse v2 lin payload: {e}")
+                Log.Error(f"failed to parse v{LinPayload.VERSION} lin payload: {e}")
                 return ExecutionResult(False)
         else:
             lineages = [{}]

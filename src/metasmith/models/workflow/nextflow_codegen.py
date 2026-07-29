@@ -58,8 +58,11 @@ BIND_FILE = ".command.binds"
 # `tests/cache/test_wire_version_sync.py` pins that.
 #
 # Exported so wire tests exercise the expression that actually ships.
+# `index` is always the LIST of per-batch-member maps `_collateBatch` builds
+# — group() routes every step through _batch, so even batch_size=1 arrives as
+# a length-1 list. Sending `index[0]` dropped every member after the first.
 LIN_ECHO_EXPR = (
-    f"${{Orchestrator.JsonforEcho([v:{LIN_PAYLOAD_VERSION}, entries:index[0]])}}"
+    f"${{Orchestrator.JsonforEcho([v:{LIN_PAYLOAD_VERSION}, entries:index])}}"
 )
 
 def NextflowProcessName(order: int, transform_name) -> str:

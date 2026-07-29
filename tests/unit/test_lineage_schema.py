@@ -21,10 +21,12 @@ from metasmith.models.lineage import (
 def _example_payload() -> LinPayload:
     return LinPayload(
         v=LIN_PAYLOAD_VERSION,
-        entries={
-            "slot_a": [123456789, 987654321],
-            "slot_b": [42],
-        },
+        entries=[
+            {
+                "slot_a": [123456789, 987654321],
+                "slot_b": [42],
+            }
+        ],
     )
 
 
@@ -68,13 +70,14 @@ def test_lin_payload_roundtrip():
     decoded = LinPayload.from_json(encoded)
     assert decoded == payload
     assert decoded.v == LIN_PAYLOAD_VERSION
-    assert decoded.entries["slot_a"] == [123456789, 987654321]
-    assert decoded.entries["slot_b"] == [42]
-    # Wire shape matches what Orchestrator.JsonforEcho(index) emits today,
-    # wrapped in {"v": 2, "entries": ...}.
+    assert decoded.entries[0]["slot_a"] == [123456789, 987654321]
+    assert decoded.entries[0]["slot_b"] == [42]
+    # Wire shape matches what Orchestrator.JsonforEcho(index) emits: `index`
+    # is the list of per-batch-member maps, so a batch_size=1 step is a
+    # length-1 list rather than a bare map.
     assert json.loads(encoded) == {
         "v": LIN_PAYLOAD_VERSION,
-        "entries": {"slot_a": [123456789, 987654321], "slot_b": [42]},
+        "entries": [{"slot_a": [123456789, 987654321], "slot_b": [42]}],
     }
     # mint_file_id is deterministic.
     fid1 = LinPayload.mint_file_id("slot_A", "out/x.gbk")
@@ -85,15 +88,6 @@ def test_lin_payload_roundtrip():
     assert fid_diff != fid1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "dc8dd6c collapsed the wire to a single entry map (`lineages = "
-        "[lin_payload.entries]`) and cfd0236 made the emitter conform "
-        "(`entries:index[0]`), so every batch member after the first is "
-        "discarded and AsBatch() yields once"
-    ),
-)
 def test_lin_payload_carries_one_entry_map_per_batch_member():
     """The wire is a LIST of per-member maps, not one map.
 
@@ -130,38 +124,56 @@ def test_lin_payload_rejects_unknown_version():
         LinPayload.from_json(json.dumps({"v": 99, "entries": {}}))
 
 
-def test_lin_payload_rejects_non_dict_entries():
+def test_lin_payload_rejects_non_list_entries():
+    """A bare map is the v2 shape — the one that dropped batch members."""
     with pytest.raises(ValueError):
-        LinPayload.from_json(json.dumps({"v": LIN_PAYLOAD_VERSION, "entries": []}))
+        LinPayload.from_json(json.dumps({"v": LIN_PAYLOAD_VERSION, "entries": {}}))
+
+
+def test_lin_payload_rejects_non_map_member():
+    with pytest.raises(ValueError):
+        LinPayload.from_json(
+            json.dumps({"v": LIN_PAYLOAD_VERSION, "entries": [["not", "a", "map"]]})
+        )
 
 
 def test_lin_payload_file_groups_and_lineage_index():
     """Wire-shape: Orchestrator injects FILES alongside lineage_index hashes.
 
-    `file_groups()` extracts the special FILES key; `lineage_index()`
-    returns everything else. C5's bootstrap consumes both.
+    `file_groups(member)` extracts the special FILES key; `lineage_index(member)`
+    returns everything else. Both take a member index because a batched task's
+    wire carries one map per batch member.
     """
     raw = {
         "v": LIN_PAYLOAD_VERSION,
-        "entries": {
-            "slot_reads": [12345, 67890],
-            "slot_db": [42],
-            LinPayload.FILES_KEY: [["/work/r1.fq", "/work/r2.fq"], ["/work/db.fa"]],
-        },
+        "entries": [
+            {
+                "slot_reads": [12345, 67890],
+                "slot_db": [42],
+                LinPayload.FILES_KEY: [["/work/r1.fq", "/work/r2.fq"], ["/work/db.fa"]],
+            },
+            {
+                "slot_reads": [111],
+                "slot_db": [42],
+                LinPayload.FILES_KEY: [["/work/r3.fq"], ["/work/db.fa"]],
+            },
+        ],
     }
     payload = LinPayload.from_json(json.dumps(raw))
-    assert payload.file_groups() == [
+    assert payload.file_groups(0) == [
         ["/work/r1.fq", "/work/r2.fq"],
         ["/work/db.fa"],
     ]
-    assert payload.lineage_index() == {
+    assert payload.file_groups(1) == [["/work/r3.fq"], ["/work/db.fa"]]
+    assert payload.lineage_index(0) == {
         "slot_reads": [12345, 67890],
         "slot_db": [42],
     }
+    assert payload.lineage_index(1) == {"slot_reads": [111], "slot_db": [42]}
     # Missing FILES key returns empty list (e.g., direct-run path).
-    bare = LinPayload(v=LIN_PAYLOAD_VERSION, entries={"slot_x": [1]})
-    assert bare.file_groups() == []
-    assert bare.lineage_index() == {"slot_x": [1]}
+    bare = LinPayload(v=LIN_PAYLOAD_VERSION, entries=[{"slot_x": [1]}])
+    assert bare.file_groups(0) == []
+    assert bare.lineage_index(0) == {"slot_x": [1]}
 
 
 def test_invocation_event_roundtrip():

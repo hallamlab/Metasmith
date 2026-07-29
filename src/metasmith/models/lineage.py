@@ -130,29 +130,35 @@ class ArityMismatchError(ValueError):
 class LinPayload:
     """Slot-level lineage tag carried on Nextflow channel values.
 
-    The on-wire shape is `{"v": LIN_PAYLOAD_VERSION, "entries": <map>}`
-    where the map is `slot_name -> <value>`. The value is either a list
-    of lineage-index hashes (for normal slots) or a `list[list[str]]`
-    of file groups for the special "FILES" key Orchestrator injects at
-    task entry. `slot_name` keys are the channel-label hashes
-    (`prod_name`) emitted by `Orchestrator.groovy`'s namespace —
-    bootstrap looks up actual `DataInstance` objects via the `din` line
-    of `workflow.step_N.meta`, not via the `lin` payload directly. The
-    payload is the lineage *trace* through the DAG, not the input-id
-    list.
+    The on-wire shape is `{"v": LIN_PAYLOAD_VERSION, "entries": [<map>, ...]}`
+    — ONE map per batch member, mirroring the list of indexes
+    `Orchestrator._collateBatch` builds. A `batch_size=1` step carries a
+    length-1 list; a `batch_size=N` step carries N, and bootstrap turns each
+    into one `context.AsBatch()` member. Carrying a single map (wire v2)
+    silently discarded every member after the first, so a batched transform
+    processed one item and staged the rest unread.
+
+    Each map is `slot_name -> <value>`, where the value is either a list of
+    lineage-index hashes (for normal slots) or a `list[list[str]]` of file
+    groups for the special "FILES" key Orchestrator injects at task entry.
+    `slot_name` keys are the channel-label hashes (`prod_name`) emitted by
+    `Orchestrator.groovy`'s namespace — bootstrap looks up actual
+    `DataInstance` objects via the `din` line of `workflow.step_N.meta`, not
+    via the `lin` payload directly. The payload is the lineage *trace*
+    through the DAG, not the input-id list.
 
     File-level identity (`file_instance_id`) is *not* on the wire — it
     is minted post-facto by `CollectResults` via `mint_file_id`.
     """
 
     v: int
-    entries: dict[str, Any] = field(default_factory=dict)
+    entries: list[dict[str, Any]] = field(default_factory=list)
 
     VERSION: ClassVar[int] = LIN_PAYLOAD_VERSION
     FILES_KEY: ClassVar[str] = "FILES"
 
     def Pack(self) -> dict:
-        return {"v": self.v, "entries": dict(self.entries)}
+        return {"v": self.v, "entries": [dict(m) for m in self.entries]}
 
     def to_json(self) -> str:
         return json.dumps(self.Pack(), separators=(",", ":"))
@@ -164,24 +170,30 @@ class LinPayload:
             raise ValueError(
                 f"unsupported lin payload version {v!r}; expected {LIN_PAYLOAD_VERSION}"
             )
-        entries_raw = raw.get("entries", {})
-        if not isinstance(entries_raw, dict):
+        entries_raw = raw.get("entries", [])
+        if not isinstance(entries_raw, list):
             raise ValueError(
-                f"lin payload entries must be a dict, got {type(entries_raw).__name__}"
+                f"lin payload entries must be a list of per-batch-member maps, "
+                f"got {type(entries_raw).__name__}"
             )
-        return cls(v=v, entries=dict(entries_raw))
+        for i, m in enumerate(entries_raw):
+            if not isinstance(m, dict):
+                raise ValueError(
+                    f"lin payload member {i} must be a map, got {type(m).__name__}"
+                )
+        return cls(v=v, entries=[dict(m) for m in entries_raw])
 
     @classmethod
     def from_json(cls, raw: str) -> "LinPayload":
         return cls.Unpack(json.loads(raw))
 
-    def file_groups(self) -> list[list[str]]:
-        """Pull the Orchestrator-injected `FILES` value if present."""
-        return self.entries.get(self.FILES_KEY, [])
+    def file_groups(self, member: int) -> list[list[str]]:
+        """Pull the Orchestrator-injected `FILES` value for one batch member."""
+        return self.entries[member].get(self.FILES_KEY, [])
 
-    def lineage_index(self) -> dict[str, list[int]]:
-        """Return entries minus the special `FILES` key."""
-        return {k: v for k, v in self.entries.items() if k != self.FILES_KEY}
+    def lineage_index(self, member: int) -> dict[str, list[int]]:
+        """Return one batch member's entries minus the special `FILES` key."""
+        return {k: v for k, v in self.entries[member].items() if k != self.FILES_KEY}
 
     FILE_ID_SEP: ClassVar[str] = "::"
 

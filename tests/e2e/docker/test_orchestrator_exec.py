@@ -857,13 +857,6 @@ class TestLinWire:
     exact expression `nextflow_codegen` compiles into every process.
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "cfd0236's emitter sends `entries:index[0]`, so a batch_size=N "
-            "task puts only member 0 on the wire"
-        ),
-    )
     def test_batched_task_puts_every_member_on_the_wire(self, nxf_runner):
         """A 3-member batch emits 3 lineage maps with 3 distinct FILES groups.
 
