@@ -242,6 +242,22 @@ drifted onto the other reading it did not fail, it silently handed a collecting 
 item, and ppanggolin clustered a single genome. Both axes reach the protocol through
 `context.AsBatch()` — one yield per member, `InputGroup(dep)` for that member's whole group.
 
+**A plan slot holds an archetype, not the runtime multiplicity.** `step.dependency_map[dep]`
+for a collecting step's input carries *one* instance standing for however many the fan-out
+above it produces; only `group_by_instances` counts keys. Anything that reads a slot's length
+as "how many items this key will receive" is wrong in the direction that hurts — it tells the
+runtime a key is already whole and the group ships with one item. `grouping.expected_per_key`
+therefore answers `None` for a one-instance slot, and everything downstream degrades to the
+channel-close flush, which is always safe.
+
+**A cache hit has to put the same lineage on the wire that a real run does.** The synthetic
+channel replays each shard file with the index its producing task carried, captured at promote
+time into the manifest's `index` field — compile time cannot reconstruct it, since which
+inputs a given output descends from is decided inside the task. Emitting a bare `[:]` makes
+`o.group` log `LINEAGE_VIOLATION` and drop the tuple, so the consuming step never runs and the
+warm run quietly computes less than the cold one. A shard that cannot supply an index is
+demoted to a miss rather than replayed.
+
 **The wire carries one lineage map per batch member, not one per task.** `LinPayload.entries`
 is a list, mirroring the list of indexes `Orchestrator._collateBatch` builds; collapsing it to
 a single map costs every member after the first, silently, with the unread files still staged
