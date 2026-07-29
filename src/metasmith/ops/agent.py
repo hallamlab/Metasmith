@@ -16,6 +16,7 @@ def _agent_info(name: str, agent: Agent) -> dict:
         pass
     return {
         "name": name,
+        "id": agent.id,
         "home": agent.home.address,
         "home_type": agent.home.type.name,
         "container": agent.container,
@@ -105,6 +106,7 @@ def save_agent(
     default_params: dict | None = None,
     native: bool | None = None,
     gpu_args: list[str] | None = None,
+    id: str | None = None,
 ) -> dict:
     """Write an agent YAML to disk.
 
@@ -123,6 +125,10 @@ def save_agent(
     machine and the directory are the same, so the resolution the agent already
     has still holds; clearing it would make a cosmetic rename cost a redeploy.
 
+    `id` is only ever honoured the one time it matters: when there is no file
+    here yet. An agent that already exists keeps whatever id `Agent.Load` gave
+    it -- the whole point of the id is that nothing after creation can move it.
+
     The named fields *are* set, including to nothing: omitting `globus_uuid` or
     `default_preset` clears it. That is the contract a save-the-whole-object
     caller wants, and it is why the two lists above are worth reading -- what is
@@ -135,7 +141,10 @@ def save_agent(
         f"unknown runtime [{runtime}]; expected one of {', '.join(r.name for r in Runtime)}"
     )
     home = Source.Parse(home_uri)
-    agent = Agent.Load(p) if p.is_file() else Agent(home=home)
+    if p.is_file():
+        agent = Agent.Load(p)
+    else:
+        agent = Agent(home=home, id=id) if id else Agent(home=home)
     # `real_path` is what the *old* home resolved to on the host; carrying it
     # across a re-point would have the agent claim a directory it no longer
     # names. The next deploy resolves it again.

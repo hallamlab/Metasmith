@@ -380,8 +380,10 @@ class TestAgents:
         assert r.status_code == 201, r.get_json()
         body = r.get_json()
         assert body["name"]
-        # named after itself, so a host with three agents has three directories
-        assert body["home"].endswith(f"msm.{body['name']}")
+        # named after its stable id, not its display name, so a rename can
+        # never relocate it and a host with three agents has three directories
+        assert body["id"]
+        assert body["home"].endswith(f"msm.{body['id']}")
         assert body["setup_commands"] == ["#!/bin/bash"]
         assert body["valid"] is True
         # complete, but nothing is installed on that host yet. Kept out of
@@ -393,7 +395,10 @@ class TestAgents:
         d = client.get("/api/defaults/agent").get_json()
         # read off env.Runtime rather than written out again
         assert set(d["runtimes"]) >= {"APPTAINER", "DOCKER", "MAMBA"}
-        assert d["home"] == f"~/msm.{d['name']}"
+        # a preview only -- the real agent this becomes gets its own id, and
+        # the real home is built from that, not from this name
+        assert d["home"].startswith("~/msm.")
+        assert not d["home"].endswith(f"msm.{d['name']}")
 
     def test_mamba_is_a_runtime(self, client, tmp_path):
         client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
@@ -432,15 +437,20 @@ class TestAgentNaming:
         assert body["auto_named"] is False
 
     def test_pointing_it_at_a_host_renames_it(self, client, project_root):
-        name = client.post("/api/agents", json={}).get_json()["name"]
+        created = client.post("/api/agents", json={}).get_json()
+        name, agent_id = created["name"], created["id"]
         prefix = self._prefix(project_root, name)
+        # the client's home-path box was left blank, so it recomputes the
+        # default home from the agent's (unchanging) id, on whatever host the
+        # form now names
         body = client.put(f"/api/agents/{name}", json={
-            "name": name, "home": f"ssh://sockeye:~/msm.{name}",
+            "name": name, "home": f"ssh://sockeye:~/msm.{agent_id}",
         }).get_json()
         assert body["name"] == f"{prefix}-sockeye"
         assert body["sort_name"] == f"sockeye{prefix}"
-        # the default home is made out of the name, so it moved with it
-        assert body["home"] == f"ssh://sockeye:~/msm.{prefix}-sockeye"
+        # the default home is made out of the id, so it moved with the host
+        assert body["home"] == f"ssh://sockeye:~/msm.{agent_id}"
+        assert body["id"] == agent_id
         assert body["notes"]
 
     def test_a_home_someone_wrote_out_does_not_move(self, client, project_root):
@@ -518,18 +528,20 @@ class TestAgentNaming:
 
     def test_an_alias_rename_carries_the_names_on_it(self, client, project_root):
         client.post("/api/ssh/hosts", json={"alias": "old", "hostname": "old.example"})
-        name = client.post("/api/agents", json={}).get_json()["name"]
+        created = client.post("/api/agents", json={}).get_json()
+        name, agent_id = created["name"], created["id"]
         prefix = self._prefix(project_root, name)
         client.put(f"/api/agents/{name}", json={
-            "name": name, "home": f"ssh://old:~/msm.{name}",
+            "name": name, "home": f"ssh://old:~/msm.{agent_id}",
         })
         r = client.put("/api/ssh/hosts/old", json={"alias": "new", "hostname": "old.example"})
         body = r.get_json()
         assert body["agents_repointed"] == [f"{prefix}-old → {prefix}-new"]
         agent = client.get(f"/api/agents/{prefix}-new").get_json()
         assert agent["sort_name"] == f"new{prefix}"
+        assert agent["id"] == agent_id
         # the directory on that machine did not move, so neither did the home
-        assert agent["home"] == f"ssh://new:~/msm.{prefix}-old"
+        assert agent["home"] == f"ssh://new:~/msm.{agent_id}"
 
     def test_the_list_groups_by_host(self, client, tmp_path):
         for host in ("sockeye", "chamois", "sockeye"):
@@ -760,8 +772,10 @@ class TestDefaultHome:
 
     An empty field saves as the default, so a wrong True replaces a path
     somebody chose with a different one on their next save. Both spellings of
-    the default count -- the literal `~/msm.<name>` and the expansion a local
-    save leaves behind -- and nothing else does.
+    the default count -- the literal `~/msm.<id>` and the expansion a local
+    save leaves behind -- and nothing else does. The id, not the name, is
+    what the default is built from, so renaming an agent must never change
+    the answer.
     """
 
     def test_a_fresh_local_agent_is_default(self, client):
@@ -769,21 +783,30 @@ class TestDefaultHome:
         assert client.get("/api/agents/smith").get_json()["home_is_default"] is True
 
     def test_the_unexpanded_remote_spelling_is_default(self, client):
-        client.post("/api/agents", json={"name": "smith"})
-        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://h:~/msm.smith"})
+        agent_id = client.post("/api/agents", json={"name": "smith"}).get_json()["id"]
+        client.put("/api/agents/smith", json={"name": "smith", "home": f"ssh://h:~/msm.{agent_id}"})
         assert client.get("/api/agents/smith").get_json()["home_is_default"] is True
 
-    def test_another_directory_ending_in_the_same_name_is_not(self, client):
-        """The trap a suffix test walks into: `/scratch/you/msm.smith` is not it."""
-        client.post("/api/agents", json={"name": "smith"})
-        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://h:/scratch/msm.smith"})
+    def test_another_directory_ending_in_the_same_id_is_not(self, client):
+        """The trap a suffix test walks into: `/scratch/you/msm.<id>` is not it."""
+        agent_id = client.post("/api/agents", json={"name": "smith"}).get_json()["id"]
+        client.put("/api/agents/smith", json={"name": "smith", "home": f"ssh://h:/scratch/msm.{agent_id}"})
         assert client.get("/api/agents/smith").get_json()["home_is_default"] is False
 
-    def test_a_renamed_agent_stops_being_default(self, client):
+    def test_a_renamed_agent_stays_default(self, client):
+        """The whole point: a rename must never relocate the default home."""
+        agent_id = client.post("/api/agents", json={"name": "smith"}).get_json()["id"]
+        client.put("/api/agents/smith", json={"name": "smith", "home": f"ssh://h:~/msm.{agent_id}"})
+        client.put("/api/agents/smith", json={"name": "jones", "home": f"ssh://h:~/msm.{agent_id}"})
+        after = client.get("/api/agents/jones").get_json()
+        assert after["home_is_default"] is True
+        assert after["id"] == agent_id
+
+    def test_a_name_shaped_home_is_not_default(self, client):
+        """A path that merely looks like the old name-based scheme is just a path."""
         client.post("/api/agents", json={"name": "smith"})
         client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://h:~/msm.smith"})
-        client.put("/api/agents/smith", json={"name": "jones", "home": "ssh://h:~/msm.smith"})
-        assert client.get("/api/agents/jones").get_json()["home_is_default"] is False
+        assert client.get("/api/agents/smith").get_json()["home_is_default"] is False
 
 
 class TestSshUpdateConvention:

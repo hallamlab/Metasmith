@@ -75,8 +75,8 @@
 
   <!-- Empty means the default, which is what the placeholder says it is. It is
        left empty rather than pre-filled: typing the default into the box makes
-       a name change stop moving the home, since a path someone has touched is
-       theirs from then on. -->
+       a path someone has touched theirs from then on, rather than a stand-in
+       the page can keep recomputing. -->
   <Field
     label="home directory"
     hint={realPath && realPath !== form.path
@@ -85,7 +85,7 @@
         ? 'a path on that host — on a cluster, prefer scratch over a home quota'
         : 'a path on this machine'}
   >
-    <input class="mono" bind:value={form.path} placeholder={defaultHome(form.name)} />
+    <input class="mono" bind:value={form.path} placeholder={defaultHome(form.id)} />
   </Field>
 
   <Field label="runtime" hint="how a tool is provided on that host">

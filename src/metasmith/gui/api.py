@@ -20,6 +20,7 @@ from pathlib import Path
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..agents import Spec, Template
+from ..hashing import KeyGenerator
 from ..models.dag_renderer import THEMES, NodeKind
 from ..models.paths import is_deferred
 from ..models.workflow import NextflowProcessName
@@ -48,15 +49,15 @@ _LOG = logging.getLogger(__name__)
 
 # What a new agent's home is set to before the user touches it. `~` is the one
 # path spelling that means the same thing whether the agent runs here or on a
-# cluster, and it is expanded by whichever side ends up resolving it. The name
-# is in the path because a host with three agents on it otherwise has three
-# directories called the same thing, and which one you are looking at is then
-# only knowable from this side.
+# cluster, and it is expanded by whichever side ends up resolving it. Built
+# from the agent's `id`, not its display name -- a host with three agents on
+# it otherwise has three directories called the same thing, and keying off the
+# id rather than the name means renaming an agent can never relocate it.
 DEFAULT_AGENT_HOME_PREFIX = "~/msm."
 
 
-def default_agent_home(name: str) -> str:
-    return f"{DEFAULT_AGENT_HOME_PREFIX}{name}"
+def default_agent_home(agent_id: str) -> str:
+    return f"{DEFAULT_AGENT_HOME_PREFIX}{agent_id}"
 
 
 def agent_host_of(home: str | None) -> str | None:
@@ -72,16 +73,16 @@ def agent_host_of(home: str | None) -> str | None:
     return home[len("ssh://"):].partition(":")[0].strip() or None
 
 
-def rehome(home: str, name: str) -> str:
-    """The default home for `name`, keeping whatever machine `home` names."""
-    path = default_agent_home(name)
+def rehome(home: str, agent_id: str) -> str:
+    """The default home for `agent_id`, keeping whatever machine `home` names."""
+    path = default_agent_home(agent_id)
     if not home.startswith("ssh://"):
         return path
     return f"ssh://{home[len('ssh://'):].partition(':')[0]}:{path}"
 
 
-def home_is_default(name: str, home: str | None) -> bool:
-    """Is this home still simply the one the name makes?
+def home_is_default(agent_id: str, home: str | None) -> bool:
+    """Is this home still simply the one the id makes?
 
     Answered here because only this side can answer it: `Source.Parse` expands
     `~` for a local home, so what comes back from a save is `<your home>/msm.x`
@@ -92,7 +93,7 @@ def home_is_default(name: str, home: str | None) -> bool:
     """
     if not home:
         return False
-    default = default_agent_home(name)
+    default = default_agent_home(agent_id)
     remote = home.startswith("ssh://")
     if remote:
         # `ssh://host:path` -- split after the scheme, or the `:` found is the
@@ -254,7 +255,9 @@ def agent_defaults():
     )
     return jsonify({
         "name": name,
-        "home": default_agent_home(name),
+        # a preview only -- `POST /agents` mints its own id, and the real home
+        # is built from that, not from this name
+        "home": default_agent_home(KeyGenerator().GenerateUID(l=8)),
         "home_prefix": DEFAULT_AGENT_HOME_PREFIX,
         "runtime": "APPTAINER",
         "runtimes": op_agent.runtimes(),
@@ -287,7 +290,9 @@ def agent_name_suggestion():
         "name": name,
         "prefix": prefix,
         "sort_name": sort_name,
-        "home": default_agent_home(name),
+        # a preview only -- the agent being renamed keeps its own id, and its
+        # own home, regardless of what name it adopts from here
+        "home": default_agent_home(KeyGenerator().GenerateUID(l=8)),
     })
 
 
@@ -654,7 +659,7 @@ def _agent_payload(p: Project, name: str, hosts: list[str] | None = None) -> dic
         info = {"name": name, "error": str(exc)}
     info["name"] = name
     info["path"] = str(path)
-    info["home_is_default"] = home_is_default(name, info.get("home"))
+    info["home_is_default"] = home_is_default(info.get("id"), info.get("home"))
     info["archived_at"] = p.archived_at("agents", name)
     # `sort_name` is set only for a name this side made up; an agent named by
     # hand is sorted as it was typed, and the absence *is* how the two are told
@@ -743,15 +748,17 @@ def create_agent():
     if p.agent_exists(name):
         raise ProjectError(f"agent [{name}] already exists")
     p.initialize()
+    agent_id = KeyGenerator().GenerateUID(l=8)
     op_agent.save_agent(
         path=str(p.agent_path(name)),
-        home_uri=home or default_agent_home(name),
+        home_uri=home or default_agent_home(agent_id),
         container=b.get("container") or None,
         runtime=(b.get("runtime") or "APPTAINER").upper(),
         setup_commands=b.get("setup_commands", list(DEFAULT_SETUP_COMMANDS)),
         globus_uuid=b.get("globus_uuid") or None,
         default_preset=_checked_preset(b.get("default_preset")),
         default_params=_checked_params(b.get("default_params"), "default_params"),
+        id=agent_id,
     )
     # after the save, not before: a naming record for an agent whose file failed
     # to write would outlive the thing it names
@@ -824,10 +831,10 @@ def update_agent(name):
             want = compose_agent_name(naming["prefix"], host)
             following = True
             if want != name:
-                # the home moves with the name only while it *is* the name --
+                # the home moves with the name only while it *is* the default --
                 # an agent someone gave a path to keeps that path, and one that
                 # never had one gets the default under its new machine
-                was_default = home_is_default(name, home)
+                was_default = home_is_default(current["id"], home)
                 try:
                     p.rename_agent(name, want)
                 except ProjectError:
@@ -844,7 +851,7 @@ def update_agent(name):
                     notes.append(f"renamed [{name}] to [{want}], following its host")
                     name = want
                     if was_default:
-                        home = rehome(home, name)
+                        home = rehome(home, current["id"])
             if following:
                 p.set_agent_naming(
                     name, naming["prefix"], agent_sort_name(naming["prefix"], host)

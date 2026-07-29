@@ -293,16 +293,6 @@
   // name a type that no type file exports; both are offerable. This used to
   // live in the builder card, which was the only place a type could be chosen.
 
-  let allTypes = $derived(
-    [
-      ...new Set([
-        ...types.filter((t) => t.full_name).map((t) => t.full_name),
-        ...Object.keys(index?.by_type ?? {}),
-      ]),
-    ].sort(),
-  )
-  let typeNames = $derived(new Set(allTypes))
-
   // entries are {i, as, match} -- a transform is on this list because its
   // *properties* fit, which is not the same as having named this type
   function matching(type, side) {
@@ -310,6 +300,23 @@
     if (!enabled) return entries
     return entries.filter((e) => enabled.has(index.transforms[e.i]?.library))
   }
+
+  // The standard library's type files are offerable regardless of which
+  // transform libraries are toggled -- they aren't owned by any of them. A
+  // type that only exists in the index because a transform named it is
+  // different: that name came from a library, so switching that library off
+  // should take the name off the list too.
+  let allTypes = $derived(
+    [
+      ...new Set([
+        ...types.filter((t) => t.full_name).map((t) => t.full_name),
+        ...Object.keys(index?.by_type ?? {}).filter(
+          (t) => matching(t, 'produced_by').length || matching(t, 'consumed_by').length,
+        ),
+      ]),
+    ].sort(),
+  )
+  let typeNames = $derived(new Set(allTypes))
 
   // How many of those are there because the type system says so rather than
   // because a name lined up. Worth saying: it is the difference between "one
