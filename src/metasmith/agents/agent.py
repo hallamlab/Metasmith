@@ -266,17 +266,6 @@ class Agent(_WorkflowOps, _RunControl):
                     (dev_src, Path(dev_target)),
                 ]),
             )
-            # The bootstrap may stage the dev overlay to node-local scratch
-            # before binding it (SLURM array fan-out), so it binds whatever
-            # $DEV_BIND_SRC resolves to at run time rather than dev_src.
-            dev_mock_staged = Environment(
-                image=self.container,
-                runtime=self.runtime,
-                native=self.native,
-                container=ContainerDef(binds=[
-                    ("$DEV_BIND_SRC", Path(dev_target)),
-                ]),
-            )
 
             container = Environment(
                 image=self.container,

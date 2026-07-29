@@ -48,6 +48,7 @@ import itertools
 import json
 import os
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -68,6 +69,23 @@ from .steps import WorkflowStep
 
 METADATA_FILE = ".command.metadata"
 BIND_FILE = ".command.binds"
+
+
+def AssertBindPathsAreShellSafe(paths: Iterable[Path], step_name: str):
+    # The bind list makes a round trip through the shell as an unquoted string:
+    # it is `echo`ed to BIND_FILE, `cat`ed back, and word-split into argv.
+    # Whitespace does not survive that -- a path is shattered into fragments,
+    # and a run of spaces silently collapses to one -- so refuse it here rather
+    # than emit a mount that is quietly wrong. Callers pass the *common folders*
+    # actually mounted, so the offender may be an ancestor of any path the user
+    # named. Glob characters are left alone; they survive the trip intact.
+    for p in paths:
+        if any(c.isspace() for c in str(p)):
+            raise ValueError(
+                f"cannot mount external path [{p}] for step [{step_name}]:"
+                " bind paths must not contain whitespace"
+            )
+
 
 # The `lin` wire emitter, as it appears inside a process script block.
 #
@@ -398,6 +416,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             p = path_map.LocalToExternal(p)
             raw_external_binds.add(p.parent)
         external_binds = task._get_common_folders(raw_external_binds)
+        AssertBindPathsAreShellSafe(external_binds, str(step.transform.name))
         external_binds_param = ""
         if len(external_binds)>0:
             external_binds_param = Environment(
