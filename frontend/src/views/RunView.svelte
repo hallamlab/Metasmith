@@ -3,6 +3,7 @@
   import { attempt, loadRuns, select } from '../lib/state.svelte.js'
   import { runSuffix } from '../lib/runname.js'
   import Ago from '../components/Ago.svelte'
+  import Icon from '../components/Icon.svelte'
   import JobLog from '../components/JobLog.svelte'
   import SidePanel from '../components/SidePanel.svelte'
   import FileTree from '../components/FileTree.svelte'
@@ -10,7 +11,9 @@
 
   let { workflow, run } = $props()
 
-  const STAGES = ['staged', 'running', 'completed', 'collected']
+  const STAGES = ['staging', 'executing', 'finalizing']
+  const POLL_MIN_MS = 5000
+  const POLL_MAX_MS = 60000
 
   let rec = $state(null)
   let log = $state({ lines: [], error: null })
@@ -21,6 +24,7 @@
   let picked = $state(null)
   let jobId = $state(null)
   let busy = $state(false)
+  let copiedPath = $state(false)
 
   async function load() {
     rec = await api.get(`/runs/${workflow}/${run}`)
@@ -79,6 +83,26 @@
     }
   }
 
+  async function copyStagedPath() {
+    const text = rec?.staged_path
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // clipboard permission can be refused even on localhost; the old path
+      // through a throwaway textarea still works when it is
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.cssText = 'position:fixed;opacity:0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      ta.remove()
+    }
+    copiedPath = true
+    setTimeout(() => (copiedPath = false), 1200)
+  }
+
   $effect(() => {
     const w = workflow, r = run
     rec = null
@@ -100,23 +124,79 @@
   // Polling is server-side rate-limited; this only asks while the run is live.
   // The trace rides along because a live run is exactly when a step turning red
   // is news; a finished one is fetched once and left alone.
+  //
+  // Backs off 5s -> 10s -> 20s -> 40s -> 60s (capped) instead of a flat
+  // interval -- a run that has been executing for twenty minutes does not need
+  // asking every 5 seconds, but the countdown next to the manual refresh
+  // buttons still tells you exactly when the next ask lands. A manual refresh
+  // resets the backoff, so pressing the button does not leave a stale
+  // long-delay timer running behind it.
+  let pollDelay = $state(POLL_MIN_MS)
+  let nextPollAt = $state(null)
+  let nowTick = $state(Date.now())
+  // Plain (non-reactive) handle to the pending tick -- both the scheduling
+  // effect and a manual "refresh now" need to cancel the *same* timer, so it
+  // cannot live only inside the effect's own closure.
+  let pollTimer = null
+
+  async function pollTick() {
+    await tail()
+    await loadTrace()
+    await load()
+    await loadRuns()
+  }
+
+  function scheduleNext() {
+    clearTimeout(pollTimer)
+    nextPollAt = Date.now() + pollDelay
+    pollTimer = setTimeout(async () => {
+      await pollTick()
+      pollDelay = Math.min(pollDelay * 2, POLL_MAX_MS)
+      scheduleNext()
+    }, pollDelay)
+  }
+
   $effect(() => {
-    if (!rec?.live) return
-    const t = setInterval(async () => {
-      await tail()
-      await loadTrace()
-      await load()
-      await loadRuns()
-    }, 8000)
+    if (!rec?.live) {
+      clearTimeout(pollTimer)
+      nextPollAt = null
+      return
+    }
+    scheduleNext()
+    return () => clearTimeout(pollTimer)
+  })
+
+  // A 1Hz clock purely to redraw the countdown text -- it never fetches
+  // anything itself, it just keeps `nowTick` fresh enough to read against
+  // `nextPollAt`.
+  $effect(() => {
+    const t = setInterval(() => (nowTick = Date.now()), 1000)
     return () => clearInterval(t)
   })
 
+  let countdownSeconds = $derived(
+    nextPollAt ? Math.max(0, Math.ceil((nextPollAt - nowTick) / 1000)) : null,
+  )
+
+  // A manual refresh resets the backoff and reschedules from now, cancelling
+  // whatever tick was already pending -- otherwise that stale timer would
+  // still land on its old (possibly much longer) delay and clobber the
+  // countdown this just reset.
+  async function refreshNow() {
+    await pollTick()
+    pollDelay = POLL_MIN_MS
+    if (rec?.live) scheduleNext()
+  }
+
   // -- the progress bar ------------------------------------------------------
   //
-  // Four segments, four states, and the one that matters is `failed`: a run
-  // whose steps died under an ignoring error strategy still reports `completed`,
-  // so "green everywhere" would be the page repeating the lie rather than
-  // reading the trace it already has.
+  // Three segments -- staging, executing, finalizing -- one stage at a time:
+  // each segment's color depends only on what happened during its own stage,
+  // never on what a later stage did. A segment that already went `done` stays
+  // `done`; a task failure that Nextflow was told to ignore still lets the run
+  // finish as `completed`, so that failure paints `executing` (where it
+  // actually happened) rather than retroactively repainting a stage that had
+  // already finished.
   let traceFailed = $derived((trace?.failed ?? 0) > 0)
   let stageStates = $derived.by(() => {
     if (!rec) return STAGES.map(() => 'idle')
@@ -124,22 +204,25 @@
     const staging = s === 'staging' || s === 'launching'
     const running = s === 'running'
     const done = s === 'completed'
-    const collected = !!results?.collected
     const dead = s === 'failed' || s === 'cancelled'
-    // Whether the run ever got off the ground: a stage that failed never
-    // launched, so the red belongs on `staged` rather than on `running`.
+    // Whether the run ever got off the ground: a run that died never
+    // launched, so the red belongs on `staging` rather than on `executing`.
     const launched = !!rec.launched_at
-    const ended = done ? (traceFailed ? 'failed' : 'done') : null
+    // A dead run never reaches `completed`, and today it can only die during
+    // `staging` or `executing` -- so `finalizing` stays idle rather than
+    // borrowing a color it never earned.
+    if (dead) {
+      const diedAtStaging = !launched
+      return [
+        diedAtStaging ? 'failed' : 'done',
+        diedAtStaging ? 'idle' : 'failed',
+        'idle',
+      ]
+    }
     return [
-      staging ? 'running'
-        : dead && !launched ? 'failed'
-        : running || done || collected || dead ? 'done'
-        : 'idle',
-      running ? 'running'
-        : dead && launched ? 'failed'
-        : ended ?? 'idle',
-      dead ? 'failed' : ended ?? 'idle',
-      collected ? 'done' : 'idle',
+      staging ? 'running' : 'done',
+      running ? 'running' : done ? (traceFailed ? 'failed' : 'done') : 'idle',
+      done ? 'done' : 'idle',
     ]
   })
 
@@ -340,10 +423,32 @@
       <JobLog {jobId} onend={afterJob} />
     </div>
 
+    {#if rec.staged_path}
+      <div class="card col" style="gap:8px">
+        <h3>staged directory</h3>
+        <div class="row" style="gap:8px; align-items:center">
+          <p class="small mono muted" style="margin:0">{rec.staged_path}</p>
+          <button
+            class="copy"
+            onclick={copyStagedPath}
+            title={copiedPath ? 'copied' : 'copy the staged directory path'}
+            aria-label="copy the staged directory path"
+          >
+            <Icon name={copiedPath ? 'check' : 'copy'} size={13} />
+          </button>
+        </div>
+      </div>
+    {/if}
+
     <div class="card col" style="gap:8px">
       <div class="spread">
         <h3>run log</h3>
-        <button class="small" onclick={tail}>refresh</button>
+        <div class="row" style="gap:8px; align-items:center">
+          {#if rec.live}
+            <span class="small muted">refreshing in {countdownSeconds}s</span>
+          {/if}
+          <button class="small" onclick={refreshNow}>refresh now</button>
+        </div>
       </div>
       {#if log.error}
         <p class="small muted">{log.error}</p>
@@ -351,8 +456,9 @@
       <pre class="log">{log.lines?.join('\n') || 'nothing yet'}</pre>
       {#if rec.live}
         <p class="small muted">
-          Following every 8 seconds. The run is detached on the agent, so closing
-          this page — or restarting the server — does not stop or lose it.
+          Backing off from 5s up to 60s between refreshes. The run is detached
+          on the agent, so closing this page — or restarting the server — does
+          not stop or lose it.
         </p>
       {/if}
     </div>
@@ -360,7 +466,12 @@
     <div class="card col" style="gap:8px">
       <div class="spread">
         <h3>steps</h3>
-        <button class="small" onclick={loadTrace}>refresh</button>
+        <div class="row" style="gap:8px; align-items:center">
+          {#if rec.live}
+            <span class="small muted">refreshing in {countdownSeconds}s</span>
+          {/if}
+          <button class="small" onclick={refreshNow}>refresh now</button>
+        </div>
       </div>
       {#if trace?.error}
         <p class="small muted">{trace.error}</p>
@@ -371,47 +482,50 @@
           it arrives with the run's logs.
         </p>
       {:else}
-        <div class="scroll">
-          <table class="small">
-            <thead>
-              <tr>
-                <th></th><th>step</th><th>tasks</th>
-                <th>status</th><th>exit</th><th>duration</th><th>peak rss</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each stepRows as row}
-                <tr class="steprow">
-                  <td><span class="pip {row.state}"></span></td>
-                  <td class="mono">{row.process}</td>
-                  <td class="muted">{row.tasks.length || '—'}</td>
-                  <td colspan="4" class="muted">
-                    {row.state === 'idle' ? 'not started' : ''}
-                    {#if row.produces.length}
-                      <span class="produces">→ {row.produces.join(', ')}</span>
-                    {/if}
-                  </td>
-                </tr>
-                {#each row.tasks as t}
-                  <tr class="task">
-                    <td></td>
-                    <td class="mono muted">
-                      {#if stepLogNode(t)}
-                        <button class="link" onclick={() => (picked = stepLogNode(t))}>
-                          {t.hash}
-                        </button>
-                      {:else}{t.hash}{/if}
-                    </td>
-                    <td class="muted">{t.name}</td>
-                    <td class={t.state}>{t.status}</td>
-                    <td class:bad={t.exit !== 0 && t.exit != null}>{t.exit ?? '—'}</td>
-                    <td class="muted">{t.duration ?? '—'}</td>
-                    <td class="muted">{t.peak_rss ?? '—'}</td>
+        <div class="scroll col" style="gap:6px">
+          {#each stepRows as row}
+            <details class="step-details">
+              <summary class="steprow">
+                <span class="pip {row.state}"></span>
+                <span class="mono">{row.process}</span>
+                <span class="muted">
+                  {row.tasks.length || '—'} task{row.tasks.length === 1 ? '' : 's'}
+                </span>
+                <span class="muted">
+                  {row.state === 'idle' ? 'not started' : ''}
+                  {#if row.produces.length}
+                    <span class="produces">→ {row.produces.join(', ')}</span>
+                  {/if}
+                </span>
+              </summary>
+              <table class="small">
+                <thead>
+                  <tr>
+                    <th>hash</th><th>name</th><th>status</th>
+                    <th>exit</th><th>duration</th><th>peak rss</th>
                   </tr>
-                {/each}
-              {/each}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {#each row.tasks as t}
+                    <tr class="task">
+                      <td class="mono muted">
+                        {#if stepLogNode(t)}
+                          <button class="link" onclick={() => (picked = stepLogNode(t))}>
+                            {t.hash}
+                          </button>
+                        {:else}{t.hash}{/if}
+                      </td>
+                      <td class="muted">{t.name}</td>
+                      <td class={t.state}>{t.status}</td>
+                      <td class:bad={t.exit !== 0 && t.exit != null}>{t.exit ?? '—'}</td>
+                      <td class="muted">{t.duration ?? '—'}</td>
+                      <td class="muted">{t.peak_rss ?? '—'}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </details>
+          {/each}
         </div>
       {/if}
     </div>
@@ -540,7 +654,25 @@
 
   .warnline { color: var(--warn); }
   .scroll { max-height: 340px; overflow: auto; }
-  .steprow td { border-top: 1px solid var(--line); }
+
+  /* Each step folds shut by default -- a workflow with many steps otherwise
+     turns this card into a very long always-expanded table. Modeled on the
+     one other accordion in the app (WorkflowView's `.dag-details`), except
+     this one starts closed rather than open. */
+  .step-details { border-top: 1px solid var(--line); }
+  .step-details:first-child { border-top: none; }
+  .step-details > summary {
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+  .step-details > summary::-webkit-details-marker { display: none; }
+  .steprow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+  }
   .task td { font-size: 12px; }
   .task .done { color: var(--ok); }
   .task .failed { color: var(--bad); }
@@ -556,4 +688,15 @@
     text-align: left;
   }
   .link:hover { text-decoration: underline; border: none; }
+
+  /* the same icon-swap clipboard button used on the project path in App.svelte */
+  .copy {
+    flex: 0 0 auto;
+    display: flex;
+    padding: 5px;
+    background: none;
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .copy:hover { color: var(--text); background: var(--panel-2); }
 </style>

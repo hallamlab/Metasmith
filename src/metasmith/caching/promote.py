@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import socket
 import time
@@ -74,7 +75,7 @@ class StepPromoteSpec:
     # per-slot degenerate emission with a Log.Warn.
     slot_files: list = field(default_factory=list)
     # S3: per-batch decomposition mirroring the compile-time batching
-    # algorithm (virtual_runtime._select_instances). Each entry is
+    # algorithm (models/workflow/grouping.select_for_key). Each entry is
     #   {"batch_idx", "start", "end",
     #    "sorted_inputs": [[slot_key, [iid_hex, ...]], ...]}
     # Used by S4 emission to produce one InvocationEvent per batch
@@ -271,6 +272,79 @@ def _find_step_outputs(workspace: Path, step_order: int) -> list[Path]:
         if fp.name == "META":
             continue
         out.append(fp)
+    return out
+
+
+# "{batch+1}-{i+1}-{branch+1}." — the canonical output-name prefix minted by
+# bootstrap._get_output_paths and mirrored by virtual_runtime.
+_CANONICAL_OUTPUT_PREFIX = re.compile(r"^(\d+)-(\d+)-(\d+)\.")
+
+
+def _collect_output_indexes(workspace: Path) -> dict[str, dict]:
+    """basename -> the on-channel lineage index the file travelled with.
+
+    A cache hit replays a step's outputs onto the channel without running
+    the step, so it must replay the index those files carried. Without it
+    the synthetic tuple reaches a downstream `o.group` with no ancestry and
+    the DESCENDANT_OF_BY branch drops it as a LINEAGE_VIOLATION — the warm
+    run loses what the cold run computes.
+
+    Compile time cannot reconstruct this. The index is per output FILE, and
+    which specific inputs a given output descends from is decided inside the
+    task; the shard's own filenames carry only a hash of the index, and that
+    hash folds in `FILES` (absolute task-workdir paths), so it is neither
+    invertible nor reproducible off-host. So it is read here and persisted
+    into the shard manifest, which is what `index_payload` was reserved for.
+
+    Both runtimes write METADATA_FILE beside their outputs — real Nextflow in
+    `nxf_work/<xx>/<hash>/`, the virtual runtime in
+    `nxf_work/step_NN/batch_*/` — so one scan covers both.
+
+    A basename claimed by two tasks with different indexes is dropped rather
+    than guessed: staged inputs share the naming shape with real outputs, and
+    a wrong index is worse than a missing one (a missing one demotes the hit
+    and the step simply re-runs).
+    """
+    from ..models.lineage import LinPayload
+    from ..models.workflow import METADATA_FILE
+
+    root = workspace / "nxf_work"
+    if not root.exists():
+        return {}
+    found: dict[str, list[dict]] = {}
+    for meta in root.rglob(METADATA_FILE):
+        payload = None
+        try:
+            for line in meta.read_text(errors="replace").splitlines():
+                head, _, rest = line.partition(" ")
+                if head == "lin":
+                    payload = LinPayload.from_json(rest)
+                    break
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if payload is None:
+            continue
+        try:
+            siblings = list(meta.parent.iterdir())
+        except OSError:
+            continue
+        for fp in siblings:
+            # Nextflow stages inputs as symlinks; only real files here are
+            # this task's own outputs.
+            if fp.is_symlink() or not fp.is_file():
+                continue
+            m = _CANONICAL_OUTPUT_PREFIX.match(fp.name)
+            if m is None:
+                continue
+            member = int(m.group(1)) - 1
+            if not (0 <= member < len(payload.entries)):
+                continue
+            found.setdefault(fp.name, []).append(payload.lineage_index(member))
+    out: dict[str, dict] = {}
+    for name, candidates in found.items():
+        first = candidates[0]
+        if all(c == first for c in candidates[1:]):
+            out[name] = first
     return out
 
 
@@ -533,6 +607,10 @@ def promote_run(
     """
     log = log if log is not None else []
     cache_root.mkdir(parents=True, exist_ok=True)
+    # One scan for the whole run: the on-channel index each output file
+    # travelled with, so a later hit can replay it instead of emitting an
+    # empty index that `o.group` drops.
+    output_indexes = _collect_output_indexes(workspace)
     store = CacheStore.open(cache_root)
     try:
         promoted: list[str] = []
@@ -610,8 +688,10 @@ def promote_run(
                 # filename tail against each declared (dtype_key, ext, branch_idx)
                 # triple via endswith — robust to multi-segment extensions.
                 files_meta: list[dict] = []
+                index_payload: list[dict] = []
                 total_bytes = 0
                 unmatched: list[str] = []
+                no_index: list[str] = []
                 # S5: files-at-root in cache_tmp (real-Nextflow publishDir
                 # path) loses the per-batch parent-dir signal. Each file
                 # there came from a separate Nextflow task invocation,
@@ -682,6 +762,17 @@ def promote_run(
                                 matched = sf
                                 break
                     if matched is not None:
+                        # The lineage index this file rode in on. Absent
+                        # means the hit route cannot reproduce the channel
+                        # faithfully, which cache_decisions turns into a
+                        # demotion rather than a silent drop downstream.
+                        ix = output_indexes.get(name)
+                        if ix is None:
+                            no_index.append(name)
+                        else:
+                            index_payload.append(
+                                {"relpath": relpath, "index": ix}
+                            )
                         files_meta.append({
                             "relpath": relpath,
                             "slot_id": matched.get("slot_id", ""),
@@ -701,6 +792,13 @@ def promote_run(
                             "unmatched": True,
                         })
                         unmatched.append(src.name)
+                if no_index:
+                    log.append((
+                        "warn",
+                        f"promote {key_hex[:8]}: no on-channel index captured "
+                        f"for {len(no_index)} output(s): {no_index}; a hit on "
+                        "this shard will be demoted to a re-run",
+                    ))
                 if unmatched and spec.slot_files:
                     # Only warn when we DID have a slot declaration to match
                     # against — legacy step_N.meta files have empty slot_files
@@ -737,7 +835,7 @@ def promote_run(
                     lineage_payload=lineage_payload,
                     output_files=files_meta,
                     out_identities=spec.out_identities,
-                    index_payload=[],
+                    index_payload=index_payload,
                 )
                 (tmp / MANIFEST_NAME).write_bytes(manifest_bytes)
                 final_dir.parent.mkdir(parents=True, exist_ok=True)

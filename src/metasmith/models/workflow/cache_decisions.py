@@ -22,6 +22,7 @@ import json
 import os
 
 from ...logging import Log
+from .grouping import select_for_key
 from .nextflow_codegen import NextflowGenContext
 
 def compute_cache_decisions(
@@ -147,26 +148,71 @@ def compute_cache_decisions(
 
         entry = None
         hit = False
+        out_indexes: dict[str, dict] = {}
         if store is not None:
             entry = store.probe(cache_key)
             if entry is not None and store.files_exist(entry):
                 hit = True
 
+        # A hit replays the shard's files onto the channel without running
+        # the step, so it has to replay the on-channel lineage index they
+        # travelled with (captured at promote time, manifest `index`).
+        # Without it the synthetic tuple carries no ancestry and a downstream
+        # `o.group` keyed on an ancestor drops it — the warm run loses what
+        # the cold run computes. A shard that cannot supply an index for
+        # every matched file is DEMOTED to a miss: re-running is slower, a
+        # silent drop is wrong.
+        if hit:
+            from ...caching.store import decode_manifest
+
+            manifest: dict = {}
+            if getattr(entry, "payload", None):
+                try:
+                    manifest = decode_manifest(entry.payload)
+                except Exception as e:
+                    Log.Warn(
+                        f"cache-hit decode_manifest failed for "
+                        f"{cache_key.hex()[:8]}: {e}"
+                    )
+            out_indexes = {
+                str(row.get("relpath", "")).rsplit("/", 1)[-1]: dict(
+                    row.get("index", {})
+                )
+                for row in (manifest.get("index") or [])
+                if row.get("relpath")
+            }
+            need = {
+                str(f.get("relpath", "")).rsplit("/", 1)[-1]
+                for f in (manifest.get("files") or [])
+                if not f.get("unmatched") and f.get("relpath")
+            }
+            missing = need - set(out_indexes)
+            if not need or missing:
+                Log.Warn(
+                    f"cache shard {cache_key.hex()[:8]} carries no on-channel "
+                    f"index for {len(missing) or 'any'} output(s); demoting "
+                    "the hit so the step re-runs rather than emitting a tuple "
+                    "the orchestrator would drop"
+                )
+                hit = False
+                out_indexes = {}
+
         # S3: per-batch decomposition. The compile-time `sorted_inputs`
         # above is the *aggregate* (step-level) view used for cache_key
-        # byte-identity. For per-task (per-batch) InvocationEvent
-        # emission (S4), we also pre-compute each batch's specific
-        # inputs by mirroring virtual_runtime.py's batching algorithm
-        # (_select_instances at virtual_runtime.py:327):
-        #   group_total = max(1, len(step.group_by_instances))
-        #   batch_size  = max(1, step.transform.batch_size)
-        #   for start in range(0, group_total, batch_size): end=...
-        #     per-dep selected = insts[start:end]  (broadcast 1-inst deps)
-        # The aggregate `sorted_inputs` stays as the cache_key source;
-        # `batches` is emission-only metadata. Cache sharding remains
-        # one-shard-per-step.
+        # byte-identity; `batches` is emission-only metadata naming each
+        # task's specific inputs. Cache sharding stays one-shard-per-step.
+        #
+        # `batch_size` folds whole group_by KEYS into one task, so a batch is
+        # the union of its keys' slices — and which instances belong to a key
+        # is a lineage question (`grouping.select_for_key`), the same one the
+        # Nextflow runtime and virtual_runtime now answer. It used to be a
+        # positional `insts[start:end]` here, which lines up only for a
+        # dependency that fans out ALONGSIDE the key; for one that COLLECTS
+        # into it, N instances descend from a single key and the slice named
+        # one of them.
         group_total = max(1, len(step.group_by_instances))
         batch_size = max(1, int(getattr(step.transform, "batch_size", 1) or 1))
+        key_insts = list(step.group_by_instances)
         batches: list[dict] = []
         for batch_idx, start in enumerate(range(0, group_total, batch_size)):
             end = min(group_total, start + batch_size)
@@ -175,16 +221,17 @@ def compute_cache_decisions(
                 dep_insts = list(step.dependency_map.get(dep, []))
                 if not dep_insts:
                     continue
-                if len(dep_insts) == 1:
-                    selected = dep_insts  # broadcast
-                else:
-                    chunk = dep_insts[start:end]
-                    if chunk:
-                        selected = chunk
-                    elif start < len(dep_insts):
-                        selected = [dep_insts[start]]
-                    else:
-                        selected = [dep_insts[-1]]
+                selected: list = []
+                seen_ids: set[int] = set()
+                for key_idx in range(start, end):
+                    key_inst = (
+                        key_insts[key_idx] if key_idx < len(key_insts) else None
+                    )
+                    for inst in select_for_key(dep_insts, key_inst, key_idx):
+                        if id(inst) in seen_ids:
+                            continue
+                        seen_ids.add(id(inst))
+                        selected.append(inst)
                 # S4a (Bug A): use inst.instance_id directly.
                 slot_ids = sorted(i.instance_id for i in selected)
                 batch_sorted.append((dep.key, slot_ids))
@@ -204,6 +251,9 @@ def compute_cache_decisions(
             "out_instance_ids": out_slot_ids,
             "hit": hit,
             "entry": entry,
+            # basename -> the on-channel index that file rode in on; empty
+            # unless `hit`.
+            "out_indexes": out_indexes,
             "cacheable": getattr(step.transform, "cacheable", True),
             "batches": batches,
         }

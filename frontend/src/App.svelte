@@ -1,5 +1,7 @@
 <script>
+  import { untrack } from 'svelte'
   import { api } from './lib/api.svelte.js'
+  import { runSuffix } from './lib/runname.js'
   import {
     SECTIONS,
     app,
@@ -202,10 +204,16 @@
 
   // Selecting a run inside a shut group would leave it selected and invisible,
   // and the selection can move without a click -- a deleted run, a fresh launch.
+  //
+  // `untrack` matters here: `openRunGroup` itself reads `ui.collapsedRuns`, and
+  // without untracking that read becomes one of *this* effect's dependencies
+  // too -- so toggling any group re-runs this effect, and if the selected run
+  // still lives in the group that was just shut, it gets silently reopened in
+  // the same tick. The intent is to react only to the selection changing.
   $effect(() => {
     const id = app.selected.runs
     if (!id) return
-    openRunGroup(String(id).split('/')[0])
+    untrack(() => openRunGroup(String(id).split('/')[0]))
   })
 
   // -- deletions -----------------------------------------------------------
@@ -228,8 +236,8 @@
 
   async function removeWorkflow(name) {
     await attempt(async () => {
-      const out = await api.del(`/workflows/${name}`)
-      if (out.action === 'deleted' && sel === name) app.selected.workflows = null
+      await api.del(`/workflows/${name}`)
+      if (sel === name) app.selected.workflows = null
       await refresh('workflows')
     })
   }
@@ -462,7 +470,7 @@
         {#snippet row(item)}
           <div class="spread">
             <div class="grow truncate">
-              <div class="truncate">{item.run.name}</div>
+              <div class="truncate">{runSuffix(item.run.name, item.run.workflow)}</div>
               <div class="small muted truncate">
                 {item.run.agent} · <Ago iso={item.run.launched_at ?? item.run.created_at} />
               </div>

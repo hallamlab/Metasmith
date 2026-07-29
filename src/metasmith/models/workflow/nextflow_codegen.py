@@ -47,11 +47,13 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
+from ...caching.keys import LIN_PAYLOAD_VERSION
 from ...caching.layout import default_cache_root, out_dir, staging_dir
 from ...constants import AgentPaths
 from ...env import ContainerDef, Environment, Runtime
@@ -59,12 +61,80 @@ from ...logging import Log
 from ..libraries import DataInstance, GPU_LABEL
 from ..paths import PathMap
 from ..solver import Endpoint
+from .grouping import expected_per_key
 from .steps import WorkflowStep
 
 
 
 METADATA_FILE = ".command.metadata"
 BIND_FILE = ".command.binds"
+
+# The `lin` wire emitter, as it appears inside a process script block.
+#
+# The whole envelope goes through `Orchestrator.JsonforEcho` so the outer
+# `"v"`/`"entries"` keys are bash-escaped (`\"`) identically to the nested
+# entries — hand-escaping only the envelope at the Groovy level collapsed
+# those quotes to bare `"` in the bash `echo "..."`, producing invalid JSON.
+#
+# The version is interpolated from `LIN_PAYLOAD_VERSION`, never spelled as a
+# literal: the emitter and `LinPayload` (the parser) live in different files
+# and different languages, and a hardcoded literal here is how R5's desync
+# failed every containerized task while the fast suite stayed green.
+# `tests/cache/test_wire_version_sync.py` pins that.
+#
+# Exported so wire tests exercise the expression that actually ships.
+# `index` is always the LIST of per-batch-member maps `_collateBatch` builds
+# — group() routes every step through _batch, so even batch_size=1 arrives as
+# a length-1 list. Sending `index[0]` dropped every member after the first.
+LIN_ECHO_EXPR = (
+    f"${{Orchestrator.JsonforEcho([v:{LIN_PAYLOAD_VERSION}, entries:index])}}"
+)
+
+def _groovy_index_literal(index: dict) -> str:
+    """Render an on-channel lineage index as a Groovy map literal.
+
+    Used only by the cache-hit path, to put back on the wire the index a
+    file's producing task had. Groovy's empty map is `[:]`, not `[]`.
+    """
+    def _val(v):
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, (int, float)):
+            return str(v)
+        return "'" + str(v).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+    if not index:
+        return "[:]"
+    parts = []
+    for k in sorted(index):
+        v = index[k]
+        vals = v if isinstance(v, (list, tuple)) else [v]
+        parts.append(
+            f"'{k}': [" + ", ".join(_val(x) for x in vals) + "]"
+        )
+    return "[" + ", ".join(parts) + "]"
+
+
+def cached_files_for_branch(
+    cache_out: Path, branch_idx: int, suffix: str
+) -> list[Path]:
+    """The shard files a cache hit replays for one produced branch.
+
+    Canonical output names are `{member+1}-{i+1}-{branch+1}.{hash}-{key}{ext}`
+    (`bootstrap._get_output_paths`). A task at `batch_size=B` writes one file
+    per batch member and a transform may write several per member, so both
+    leading fields vary. Matching a literal `1-1-<branch>.` prefix returns
+    member 0, item 0 of each task and silently drops the rest — the same
+    "a batch is one item long" mistake as the lin-wire collapse.
+    """
+    if not cache_out.exists():
+        return []
+    pat = re.compile(rf"^\d+-\d+-{branch_idx + 1}\.")
+    return sorted(
+        f for f in cache_out.glob("*")
+        if f.is_file() and pat.match(f.name) and f.name.endswith(suffix)
+    )
+
 
 def NextflowProcessName(order: int, transform_name) -> str:
     """The name nextflow knows a step by.
@@ -531,21 +601,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'echo "step {step.order}, sample $index"',    # this is used to extract logs in agent.RunWorkflow()
             f'echo "{step.transform.name}"',
             f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
-            # C4 — wrap the channel's per-task lineage MAP in the
-            # LinPayload v2 envelope `{"v": 2, "entries": <index_map>}` and
-            # serialise the WHOLE envelope through Orchestrator.JsonforEcho
-            # so the outer `"v"`/`"entries"` keys are bash-escaped (`\"`)
-            # identically to the nested entries. Two prior bugs here:
-            #  (1) hand-escaping only the envelope at the Groovy level
-            #      collapsed those quotes to bare `"` in the bash
-            #      `echo "..."`, producing invalid JSON; and
-            #  (2) `entries` was the whole channel value `index` — a
-            #      length-1 LIST wrapping the map — but LinPayload.entries
-            #      is a dict and Bootstrap (C5) re-wraps it into a list
-            #      itself, so the wire must carry `index[0]` (the map).
-            # `index[0]` matches the stub's own access pattern below.
-            # Bootstrap parses this via `LinPayload.from_json`.
-            f'echo "lin ${{Orchestrator.JsonforEcho([v:2, entries:index[0]])}}" >>{METADATA_FILE}',
+            f'echo "lin {LIN_ECHO_EXPR}" >>{METADATA_FILE}',
             f'echo "fmt 2" >>{METADATA_FILE}',
             f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
             f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
@@ -802,6 +858,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             # not from re-deriving the layout off the key: a second
             # derivation is a second thing to keep in sync.
             cache_out = out_dir(decision["entry"].output_root)
+            _out_indexes = decision.get("out_indexes") or {}
             cached_channels: list[str] = []
             cached_channel_var = f"__cached_step_{step.order}"
             channel_exprs: list[str] = []
@@ -814,29 +871,48 @@ def prepare_nextflow(task, context: NextflowGenContext):
                     out_inst = insts[0]
                     ext = out_inst.dtype.GetPreferredFileExtension()
                     suffix = f"-{out_inst.dtype.key}{ext}"
-                    branch_prefix = f"1-1-{branch_idx + 1}."
-                    cached_files = sorted(
-                        f for f in (cache_out.glob("*") if cache_out.exists() else [])
-                        if f.is_file()
-                        and f.name.startswith(branch_prefix)
-                        and f.name.endswith(suffix)
+                    cached_files = cached_files_for_branch(
+                        cache_out, branch_idx, suffix
                     )
                     if not cached_files:
                         channel_exprs.append("Channel.empty()")
                         continue
-                    # The glob above is filesystem work and stays in the
-                    # host view -- it runs here, in the agent container,
-                    # where the host spelling is bound. The literal below
-                    # is read much later, inside the per-step bootstrap
+                    _no_index = [
+                        f.name for f in cached_files
+                        if f.name not in _out_indexes
+                    ]
+                    if _no_index:
+                        # Unreachable: cache_decisions demotes a shard it
+                        # cannot index. Loud rather than silently emitting a
+                        # tuple the orchestrator drops.
+                        raise ValueError(
+                            f"cache hit for step {step.order} "
+                            f"({step.transform.name}) has no on-channel index "
+                            f"for {_no_index}; the shard should have been "
+                            "demoted to a miss"
+                        )
+                    # Two independent corrections meet here.
+                    #
+                    # The index: each file re-enters the channel with the one
+                    # it travelled with on the run that produced it (captured
+                    # at promote time). Emitting `[:]` was warm-run data loss
+                    # -- `_post` stamps only the produced key onto it, so a
+                    # downstream `o.group` keyed on an ancestor logged
+                    # LINEAGE_VIOLATION and dropped the tuple.
+                    #
+                    # The spelling: the glob above is filesystem work and
+                    # stays in the host view -- it runs here, in the agent
+                    # container, where the host spelling is bound. The literal
+                    # below is read much later, inside the per-step bootstrap
                     # container, which mounts the agent home only at
-                    # HOME_ROOT. Emitting the host spelling stages a
-                    # symlink the head process can follow and the consumer
-                    # cannot, and the step stops on inputs that are
-                    # present. Foreign paths (a cache root outside the
-                    # agent home) pass through unchanged and will need a
-                    # bind of their own.
+                    # HOME_ROOT. Emitting the host spelling stages a symlink
+                    # the head process can follow and the consumer cannot, and
+                    # the step stops on inputs that are present. Foreign paths
+                    # (a cache root outside the agent home) pass through
+                    # unchanged and will need a bind of their own.
                     tuples = ", ".join(
-                        f"[[:], file('{path_map.ExternalToLocal(fp)}')]"
+                        f"[{_groovy_index_literal(_out_indexes[fp.name])}, "
+                        f"file('{path_map.ExternalToLocal(fp)}')]"
                         for fp in cached_files
                     )
                     channel_exprs.append(f"Channel.of({tuples})")
@@ -898,7 +974,35 @@ def prepare_nextflow(task, context: NextflowGenContext):
             _inst = _inst[0]
             gb = _inst.dtype.key
             using_symbols = ", ".join(f"_{x.dtype.key}" for x in used_archetypes)
-            used = f"o.group('{gb}', [{using_symbols}], k, {step.transform.batch_size})"
+            # How many items each by-key will receive per stream, where the
+            # plan can say so unambiguously. Lets `group()` flush a key the
+            # moment it is whole rather than holding every key hostage to the
+            # slowest one's tail. Streams we cannot pin are simply absent and
+            # fall through to the close-flush.
+            _expected: dict[str, int] = {}
+            for dep in step.transform.model.requires:
+                dep_insts = step.dependency_map.get(dep, [])
+                if not dep_insts:
+                    continue
+                sname = dep_insts[0].dtype.key
+                if sname == gb:
+                    continue
+                n = expected_per_key(list(dep_insts), list(step.group_by_instances))
+                if n is not None and n > 0:
+                    _expected[sname] = n
+            expected_literal = (
+                "["
+                + (
+                    ", ".join(f"'{k}': {v}" for k, v in sorted(_expected.items()))
+                    if _expected
+                    else ":"
+                )
+                + "]"
+            )
+            used = (
+                f"o.group('{gb}', [{using_symbols}], k, "
+                f"{step.transform.batch_size}, {expected_literal})"
+            )
         else:
             used = ""
         if len(produced_names) == 1:

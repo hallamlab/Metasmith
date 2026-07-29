@@ -44,6 +44,11 @@ from .workflow_ops import _WorkflowOps
 @dataclass
 class Agent(_WorkflowOps, _RunControl):
     home: Source
+    # Stable identity, independent of anything a person types. The default home
+    # is built from this, not from the agent's display name, so renaming an
+    # agent can never relocate the directory it already has on disk. Set once,
+    # at construction, and never reassigned by any save thereafter.
+    id: str = field(default_factory=lambda: KeyGenerator().GenerateUID(l=8))
     setup_commands: list[str] = field(default_factory=list)
     container: str = f"docker://quay.io/hallamlab/metasmith:{CONTAINER_TAG}"
     globus_uuid: str|None = None
@@ -91,6 +96,7 @@ class Agent(_WorkflowOps, _RunControl):
         if self.default_params:
             optional["default_params"] = dict(self.default_params)
         return dict(
+            id=self.id,
             setup_commands=list(self.setup_commands),
             home=self.home.Pack(),
             container=self.container,
@@ -124,7 +130,14 @@ class Agent(_WorkflowOps, _RunControl):
     def Load(cls, file_path: Path):
         with open(file_path, "r") as f:
             data = yaml.safe_load(f)
-        return cls.Unpack(data)
+        agent = cls.Unpack(data)
+        # A legacy file has no `id` at all -- `Unpack`'s `cls(**data)` still
+        # produces one, via the dataclass default, but a fresh random one on
+        # every read is not an identity. Persist it the first time so it is
+        # the same id on every read after this one.
+        if "id" not in data:
+            agent.Save(file_path)
+        return agent
     
     def _get_realpath(self):
         """realpath is resolved upon deployment"""

@@ -139,6 +139,36 @@ def copy_library(
     }
 
 
+def materialize_template(
+    inline: dict,
+    dest_path: str,
+    type_library_paths: list[str] | None = None,
+) -> dict:
+    """Build a real library from a template's inline input library.
+
+    The counterpart to `copy_library` for a template stored the new way: there
+    is no directory to `shutil.copytree`, only the data `Spec.Pack` embedded in
+    `spec.yml` (see `DataInstanceLibrary.PackInline`). Every id and path in it
+    is exactly what the template's own build asserted a solve against -- this
+    rebuilds rather than copies, but nothing here mints a new one, so a
+    workflow started from a template still shares its task key rather than
+    being re-added row by row.
+    """
+    dest = Path(dest_path).resolve()
+    assert not dest.exists() or not any(dest.iterdir()), (
+        f"copy destination [{dest}] already exists and is not empty"
+    )
+    lib = DataInstanceLibrary.FromInline(inline, dest)
+    for tp in type_library_paths or []:
+        lib.AddTypeLibrary(Path(tp).resolve(), on_exist="skip")
+    lib.Save()
+    return {
+        "library": str(dest),
+        "type_namespaces": list(lib.types.keys()),
+        "key": lib.GetKey(),
+    }
+
+
 def attach_type_library(
     library_path: str,
     type_library_path: str,
@@ -151,12 +181,25 @@ def attach_type_library(
     return {"library": str(library_path), "type_namespaces": list(lib.types.keys())}
 
 
+def _lib_for(library_path, lib: DataInstanceLibrary | None):
+    """The library to work on: one handed in, or one loaded for this call.
+
+    Every mutation below loads and saves for itself, which is right for a CLI
+    verb and wrong for a caller making a hundred of them in a row -- both slow
+    and a window in which a failure leaves the library half built. `lib=` is how
+    such a caller (`ops.inputs.sync`) keeps one load and one save while the
+    rules those functions encode stay in one place.
+    """
+    return load_data_lib(library_path) if lib is None else lib
+
+
 def add_item(
     library_path: str,
     host_path: str,
     dtype: str,
     parents: list[str] | None = None,
     save: bool = True,
+    lib: DataInstanceLibrary | None = None,
 ) -> dict:
     """Register a path, or `DEFERRED` for one that is not known yet.
 
@@ -164,7 +207,7 @@ def add_item(
     a caller on the far side of yaml or a url can say the same thing this one's
     caller says without a second vocabulary for it.
     """
-    lib = load_data_lib(library_path)
+    lib = _lib_for(library_path, lib)
     parent_paths = [Path(p) for p in (parents or [])]
     path = DEFERRED if host_path is DEFERRED or host_path == str(DEFERRED) else Path(host_path)
     rec_path = lib.AddItem(path, dtype, parents=parent_paths)
@@ -180,8 +223,9 @@ def add_value(
     dtype: str,
     parents: list[str] | None = None,
     save: bool = True,
+    lib: DataInstanceLibrary | None = None,
 ) -> dict:
-    lib = load_data_lib(library_path)
+    lib = _lib_for(library_path, lib)
     parent_paths = [Path(p) for p in (parents or [])]
     rec_path = lib.AddValue(name, value, dtype, parents=parent_paths)
     if save:
@@ -244,6 +288,7 @@ def replace_item_parents(
     item_path: str,
     parent_paths: list[str],
     save: bool = True,
+    lib: DataInstanceLibrary | None = None,
 ) -> dict:
     """The same, but as a replacement: what is not listed is unlinked.
 
@@ -251,7 +296,7 @@ def replace_item_parents(
     descends from that" -- and an editable lineage has to. An empty list clears
     an item's parents outright.
     """
-    lib = load_data_lib(library_path)
+    lib = _lib_for(library_path, lib)
     item = Path(item_path)
     assert item in lib.manifest, f"not found [{item_path}]"
     _assert_acyclic(lib, item, parent_paths)
@@ -261,8 +306,13 @@ def replace_item_parents(
     return {"library": str(library_path), "path": item_path, "parents": parent_paths}
 
 
-def remove_item(library_path: str, item_path: str, save: bool = True) -> dict:
-    lib = load_data_lib(library_path)
+def remove_item(
+    library_path: str,
+    item_path: str,
+    save: bool = True,
+    lib: DataInstanceLibrary | None = None,
+) -> dict:
+    lib = _lib_for(library_path, lib)
     lib.Remove(Path(item_path))
     if save:
         lib.Save()
@@ -275,7 +325,13 @@ def rename_item(library_path: str, item_path: str, new_path: str) -> dict:
     return {"library": str(library_path), "old": item_path, "new": new_path}
 
 
-def retype_item(library_path: str, item_path: str, dtype: str, save: bool = True) -> dict:
+def retype_item(
+    library_path: str,
+    item_path: str,
+    dtype: str,
+    save: bool = True,
+    lib: DataInstanceLibrary | None = None,
+) -> dict:
     """Say the item is a different type, without moving anything.
 
     Nothing about the row's identity on disk changes: a type is a label on a
@@ -284,7 +340,7 @@ def retype_item(library_path: str, item_path: str, dtype: str, save: bool = True
     carries names its parent's type, so those are rebuilt through the one place
     that knows how to build them, or the old name would be written back out.
     """
-    lib = load_data_lib(library_path)
+    lib = _lib_for(library_path, lib)
     item = Path(item_path)
     assert item in lib.manifest, f"not found [{item_path}]"
     lib.GetType(dtype)  # refuse an unknown type before the manifest is touched
@@ -323,7 +379,13 @@ def _relink_children(lib: DataInstanceLibrary, old: Path, new: Path) -> int:
     return len(affected)
 
 
-def repoint_item(library_path: str, item_path: str, new_path: str, save: bool = True) -> dict:
+def repoint_item(
+    library_path: str,
+    item_path: str,
+    new_path: str,
+    save: bool = True,
+    lib: DataInstanceLibrary | None = None,
+) -> dict:
     """Point the row at a different path, and be honest about the difference.
 
     An absolute entry is a *pointer* to the user's own file: re-pointing it is a
@@ -336,7 +398,7 @@ def repoint_item(library_path: str, item_path: str, new_path: str, save: bool = 
     Identity is derived from path and type, so either way the row's instance_id
     changes and anything downstream of it loses cache reuse.
     """
-    lib = load_data_lib(library_path)
+    lib = _lib_for(library_path, lib)
     old, new = Path(item_path), Path(new_path)
     assert old in lib.manifest, f"not found [{item_path}]"
     if old == new:
@@ -359,6 +421,14 @@ def repoint_item(library_path: str, item_path: str, new_path: str, save: bool = 
         if old in lib.parents:
             lib.parents[new] = lib.parents[old]
             del lib.parents[old]
+        # ...and the identity entry with it. Left behind, the new path has none
+        # at all and `_resolve_instance_meta` falls through to the legacy
+        # `(path, dtype, library key)` derivation -- and the library key is a
+        # hash of the whole packed manifest, so that one row's id would then
+        # move every time any *other* row changed. `Rename` (the branch above)
+        # does this through `_migrate_instance_meta`; this branch has to as
+        # well. Filling in a deferred path is exactly this branch.
+        lib._migrate_instance_meta(old, new)
         lib._invalidate_endpoint_cache()
     relinked = _relink_children(lib, old, new)
     if save:

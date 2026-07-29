@@ -41,18 +41,23 @@ KEY_PREFIX = bytes([BLAKE3_MULTIHASH_CODE, BLAKE3_DIGEST_LEN])
 # cache-key *semantics*, whereas the wire version tracks the Nextflow-channel
 # envelope *shape*. They were one constant until R5; bumping it for the F1
 # cache-key change silently broke the on-wire lin envelope, whose Groovy
-# emitter (`workflow.py` -> `Orchestrator.JsonforEcho([v:2, ...])`) hardcodes
+# emitter (`workflow.py` -> `Orchestrator.JsonforEcho([v:2, ...])`) hardcoded
 # the wire version and did not move in lockstep. Keeping them independent
 # means a future cache-semantics bump never again desyncs the wire protocol.
 CACHE_KEY_VERSION = 3
 
 # On-wire LinPayload envelope version (models/lineage.py). Tracks the SHAPE of
-# the `{"v": N, "entries": <map>}` value carried on the Nextflow channel, which
-# has NOT changed since v2. Must stay in lockstep with the Groovy emitter's
-# hardcoded `[v:2, ...]` in workflow.py; do not bump this for cache-key changes
-# (bump CACHE_KEY_VERSION instead) — only when the envelope shape itself changes
-# (in which case update the Groovy emitter too).
-LIN_PAYLOAD_VERSION = 2
+# the `{"v": N, "entries": [...]}` value carried on the Nextflow channel. Do
+# not bump this for cache-key changes (bump CACHE_KEY_VERSION instead) — only
+# when the envelope shape itself changes.
+#
+# v3: `entries` is a LIST of per-batch-member maps, matching the list of
+#     indexes `_collateBatch` builds. v2 carried a single map (`index[0]`),
+#     which silently discarded every member after the first.
+#
+# The emitter interpolates this constant (`nextflow_codegen.LIN_ECHO_EXPR`)
+# rather than restating it, so emitter and parser cannot drift.
+LIN_PAYLOAD_VERSION = 3
 
 
 def canonical_cbor(payload) -> bytes:

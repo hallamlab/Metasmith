@@ -204,6 +204,59 @@ class _StoreTransfer:
                     break
         return self
 
+    def PackInline(self, root: Path) -> dict:
+        """A small library as data, instead of a directory shipped beside it.
+
+        Only meant for a library small enough to embed: type namespaces are
+        referenced by path into `root` rather than copied in, and any file
+        this library actually wrote (a literal `AddValue` -- a `DEFERRED`
+        placeholder has no file) is embedded as text. That is what makes a
+        template's input library disappear into `spec.yml` rather than
+        needing a committed `inputs.xgdb` beside it.
+        """
+        root = Path(root).resolve()
+        def relpath(p: Path) -> str:
+            try:
+                return str(Path(p).resolve().relative_to(root))
+            except ValueError:
+                return str(p)
+        missing = sorted(ns for ns in self.types if ns not in self._type_sources)
+        assert not missing, (
+            f"can not inline type namespace(s) {missing}: added from something "
+            f"other than a plain path, so there is no source to reference"
+        )
+        packed = self.Pack()
+        packed["types"] = {ns: relpath(p) for ns, p in self._type_sources.items()}
+        values = {}
+        for path in self.manifest:
+            fp = self.location / path
+            if fp.is_file():
+                values[str(path)] = fp.read_text()
+        if values:
+            packed["values"] = values
+        return packed
+
+    @classmethod
+    def FromInline(cls, raw: dict, location: Path):
+        """The other half of `PackInline` -- rebuilds a working library.
+
+        `location` backs the manifest's relative paths and receives any
+        embedded literal content, so it need not exist yet: a fresh temp
+        directory for a solve that never ships anywhere, or a workflow's
+        real input-library directory when a template is the start of one.
+        Every id and path comes back exactly as packed -- nothing here mints
+        a new one -- which is what lets a workflow started from a template
+        share its task key rather than being re-added row by row.
+        """
+        dtypes = {ns: DataTypeLibrary.Load(Path(p)) for ns, p in raw.get("types", {}).items()}
+        lib = cls.Unpack(location=Path(location), raw=raw, dtypes=dtypes)
+        lib.types = dtypes
+        for rel, content in raw.get("values", {}).items():
+            fp = lib.location / rel
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text(content)
+        return lib
+
     def PrepTransfer(self, dest: Source, mover: Logistics|None=None):
         self.Save()
         for p, name, dtype in self.Iterate():

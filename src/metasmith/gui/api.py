@@ -20,14 +20,17 @@ from pathlib import Path
 from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..agents import Spec, Template
+from ..hashing import KeyGenerator
 from ..models.dag_renderer import THEMES, NodeKind
 from ..models.paths import is_deferred
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
 from ..ops import data as op_data
 from ..ops import runtime as op_runtime
+from ..ops import inputs as op_inputs
 from ..ops import samples as op_samples
 from ..ops import workflow as op_workflow
+from . import recipe as op_recipe
 from . import share as op_share
 from . import stdlib
 from .jobs import LogCapture
@@ -48,15 +51,15 @@ _LOG = logging.getLogger(__name__)
 
 # What a new agent's home is set to before the user touches it. `~` is the one
 # path spelling that means the same thing whether the agent runs here or on a
-# cluster, and it is expanded by whichever side ends up resolving it. The name
-# is in the path because a host with three agents on it otherwise has three
-# directories called the same thing, and which one you are looking at is then
-# only knowable from this side.
+# cluster, and it is expanded by whichever side ends up resolving it. Built
+# from the agent's `id`, not its display name -- a host with three agents on
+# it otherwise has three directories called the same thing, and keying off the
+# id rather than the name means renaming an agent can never relocate it.
 DEFAULT_AGENT_HOME_PREFIX = "~/msm."
 
 
-def default_agent_home(name: str) -> str:
-    return f"{DEFAULT_AGENT_HOME_PREFIX}{name}"
+def default_agent_home(agent_id: str) -> str:
+    return f"{DEFAULT_AGENT_HOME_PREFIX}{agent_id}"
 
 
 def agent_host_of(home: str | None) -> str | None:
@@ -72,16 +75,16 @@ def agent_host_of(home: str | None) -> str | None:
     return home[len("ssh://"):].partition(":")[0].strip() or None
 
 
-def rehome(home: str, name: str) -> str:
-    """The default home for `name`, keeping whatever machine `home` names."""
-    path = default_agent_home(name)
+def rehome(home: str, agent_id: str) -> str:
+    """The default home for `agent_id`, keeping whatever machine `home` names."""
+    path = default_agent_home(agent_id)
     if not home.startswith("ssh://"):
         return path
     return f"ssh://{home[len('ssh://'):].partition(':')[0]}:{path}"
 
 
-def home_is_default(name: str, home: str | None) -> bool:
-    """Is this home still simply the one the name makes?
+def home_is_default(agent_id: str, home: str | None) -> bool:
+    """Is this home still simply the one the id makes?
 
     Answered here because only this side can answer it: `Source.Parse` expands
     `~` for a local home, so what comes back from a save is `<your home>/msm.x`
@@ -92,7 +95,7 @@ def home_is_default(name: str, home: str | None) -> bool:
     """
     if not home:
         return False
-    default = default_agent_home(name)
+    default = default_agent_home(agent_id)
     remote = home.startswith("ssh://")
     if remote:
         # `ssh://host:path` -- split after the scheme, or the `:` found is the
@@ -254,7 +257,9 @@ def agent_defaults():
     )
     return jsonify({
         "name": name,
-        "home": default_agent_home(name),
+        # a preview only -- `POST /agents` mints its own id, and the real home
+        # is built from that, not from this name
+        "home": default_agent_home(KeyGenerator().GenerateUID(l=8)),
         "home_prefix": DEFAULT_AGENT_HOME_PREFIX,
         "runtime": "APPTAINER",
         "runtimes": op_agent.runtimes(),
@@ -287,7 +292,9 @@ def agent_name_suggestion():
         "name": name,
         "prefix": prefix,
         "sort_name": sort_name,
-        "home": default_agent_home(name),
+        # a preview only -- the agent being renamed keeps its own id, and its
+        # own home, regardless of what name it adopts from here
+        "home": default_agent_home(KeyGenerator().GenerateUID(l=8)),
     })
 
 
@@ -654,7 +661,7 @@ def _agent_payload(p: Project, name: str, hosts: list[str] | None = None) -> dic
         info = {"name": name, "error": str(exc)}
     info["name"] = name
     info["path"] = str(path)
-    info["home_is_default"] = home_is_default(name, info.get("home"))
+    info["home_is_default"] = home_is_default(info.get("id"), info.get("home"))
     info["archived_at"] = p.archived_at("agents", name)
     # `sort_name` is set only for a name this side made up; an agent named by
     # hand is sorted as it was typed, and the absence *is* how the two are told
@@ -743,15 +750,17 @@ def create_agent():
     if p.agent_exists(name):
         raise ProjectError(f"agent [{name}] already exists")
     p.initialize()
+    agent_id = KeyGenerator().GenerateUID(l=8)
     op_agent.save_agent(
         path=str(p.agent_path(name)),
-        home_uri=home or default_agent_home(name),
+        home_uri=home or default_agent_home(agent_id),
         container=b.get("container") or None,
         runtime=(b.get("runtime") or "APPTAINER").upper(),
         setup_commands=b.get("setup_commands", list(DEFAULT_SETUP_COMMANDS)),
         globus_uuid=b.get("globus_uuid") or None,
         default_preset=_checked_preset(b.get("default_preset")),
         default_params=_checked_params(b.get("default_params"), "default_params"),
+        id=agent_id,
     )
     # after the save, not before: a naming record for an agent whose file failed
     # to write would outlive the thing it names
@@ -824,10 +833,10 @@ def update_agent(name):
             want = compose_agent_name(naming["prefix"], host)
             following = True
             if want != name:
-                # the home moves with the name only while it *is* the name --
+                # the home moves with the name only while it *is* the default --
                 # an agent someone gave a path to keeps that path, and one that
                 # never had one gets the default under its new machine
-                was_default = home_is_default(name, home)
+                was_default = home_is_default(current["id"], home)
                 try:
                     p.rename_agent(name, want)
                 except ProjectError:
@@ -844,7 +853,7 @@ def update_agent(name):
                     notes.append(f"renamed [{name}] to [{want}], following its host")
                     name = want
                     if was_default:
-                        home = rehome(home, name)
+                        home = rehome(home, current["id"])
             if following:
                 p.set_agent_naming(
                     name, naming["prefix"], agent_sort_name(naming["prefix"], host)
@@ -963,13 +972,37 @@ def list_templates():
     ])
 
 
+def _render_template_dag(p, tmpl: Template, name: str, theme: str) -> tuple[Path, int]:
+    """Solve `tmpl` and draw it, caching under (template, stdlib commit, theme).
+
+    Shared by the request-triggered route below and `warm_template_dags`
+    (`app.py`), which pre-draws every template at server start so the first
+    pick in the GUI never pays for this live. Only the solve needs
+    `_plan_lock` -- transform import is process-global, rendering is not --
+    so a caller holds it for as little of its own turn as this does.
+    """
+    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    with _plan_lock:
+        task = tmpl.spec.Solve()
+    assert task.ok, (
+        f"template [{name}] does not solve against this library: "
+        f"dropped {sorted(task.plan.dropped_targets)}"
+    )
+    svg.parent.mkdir(parents=True, exist_ok=True)
+    # transparent: the GUI draws this over its own card background, and
+    # a painted one was never any colour other than the card's own --
+    # see `workflow_dag` below for the same reasoning
+    task.plan.RenderDAG(str(svg), theme=theme, background=False)
+    return svg, len(task.plan.steps)
+
+
 @bp.post("/templates/<name>/dag")
 def render_template_dag(name):
     """Solve a template and draw it -- as a job, because a solve is seconds.
 
-    It also holds `_plan_lock` for its whole duration, so a blocking route here
-    would freeze every other page that plans. Cached on (template, stdlib
-    commit, theme): paid once, and every later modal is served from disk.
+    Cached on (template, stdlib commit, theme): paid once, and every later
+    modal is served from disk -- often already warmed by `warm_template_dags`
+    before this route is ever hit.
     """
     p = _project()
     tmpl = _template(p, name)
@@ -980,21 +1013,8 @@ def render_template_dag(name):
 
     def _work(job):
         with LogCapture(job):
-            with _plan_lock:
-                task = tmpl.spec.Solve()
-            assert task.ok, (
-                f"template [{name}] does not solve against this library: "
-                f"dropped {sorted(task.plan.dropped_targets)}"
-            )
-            svg.parent.mkdir(parents=True, exist_ok=True)
-            # transparent: the GUI draws this over its own card background, and
-            # a painted one was never any colour other than the card's own --
-            # see `workflow_dag` below for the same reasoning
-            task.plan.RenderDAG(str(svg), theme=theme, background=False)
-            return {
-                "template": name, "theme": theme,
-                "step_count": len(task.plan.steps),
-            }
+            _, step_count = _render_template_dag(p, tmpl, name, theme)
+            return {"template": name, "theme": theme, "step_count": step_count}
 
     job = _jobs().submit(
         "template_dag", f"draw {name}", _work, subject={"template": name},
@@ -1047,6 +1067,10 @@ def list_workflows():
 @bp.get("/workflows/<name>")
 def get_workflow(name):
     p = _project()
+    # before the record is read, not after: a library with items and no rows
+    # gets rows here, and the page has to be handed the adopted recipe rather
+    # than the one that was on disk a moment ago
+    _rows_of(name)
     wf = p.read_workflow(name)
     out = _workflow_summary(wf)
     out["request"] = wf.request
@@ -1106,12 +1130,19 @@ def create_workflow():
     if template is None:
         op_data.create_library(lib_path, type_library_paths=types)
     else:
-        # Copied rather than re-added row by row: a deferred path is minted once
-        # and identity follows it, so re-adding would give this workflow a task
-        # key other than the one the template was validated at.
-        op_data.copy_library(
-            str(template.spec.input_library), lib_path, type_library_paths=types,
+        # Rebuilt from the template's inline library (see `PackInline`) rather
+        # than re-added row by row: a deferred path is minted once and identity
+        # follows it, so re-adding would give this workflow a task key other
+        # than the one the template was validated at.
+        op_data.materialize_template(
+            template.spec.input_library, lib_path, type_library_paths=types,
         )
+    # ...and its rows are the copy's rows: the template ships a library, and
+    # this is where those items become the editable recipe. Adopted now rather
+    # than on the first read so a generate posted straight at a fresh workflow
+    # finds them, and so the minted deferred paths are recorded before anything
+    # else can register over them.
+    _rows_of(wf.name)
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
 
 
@@ -1179,6 +1210,14 @@ def fork_workflow(name):
         str(p.input_library_path(name)),
         str(p.input_library_path(forked.name)),
     )
+    # The record travels with the library, because it is what says which row
+    # owns which entry. Without it every copied row arrives claiming a path that
+    # is already there, and the fork re-registers its whole recipe on the first
+    # solve. `fork_library` keeps the paths and changes only the fork id, so the
+    # mapping is still true on the other side.
+    src_record = op_samples.record_path(p.input_library_path(name))
+    if src_record.is_file():
+        shutil.copy2(src_record, op_samples.record_path(p.input_library_path(forked.name)))
     return jsonify(_workflow_summary(p.read_workflow(forked.name))), 201
 
 
@@ -1231,11 +1270,11 @@ def generate_workflow(name):
     wf = p.write_request(name, request_body)
 
     # A sample type is optional: without one the inputs are planned as they
-    # stand, as a single sample. It arrives here already decided -- from the
-    # type of the row a sample table is indexed on, or from a request written by
-    # the CLI -- and either way this route only honours it.
+    # stand, as a single unified view. The GUI's sample table never sets
+    # this -- it always sends `sample_type: null` -- so a non-null value here
+    # only ever comes from a request written directly (e.g. by the CLI).
     sample_type = wf.request.get("sample_type")
-    shared = wf.request.get("shared_input_paths") or None
+    shared_refs = list(wf.request.get("shared_input_paths") or [])
     targets = wf.request.get("target_types") or []
     assert targets, "at least one target type is required"
 
@@ -1249,24 +1288,29 @@ def generate_workflow(name):
     # it can only touch what was resolved before `_jobs().submit` -- the same
     # reason `p`, `wf` and `lib_path` above are captured rather than re-derived.
     table = op_samples.read_attached_table(wf.path)
-    rows = list(wf.request.get("input_drafts") or [])
+    rows = _rows_of(name)
 
     def _work(job):
         with LogCapture(job):
-            # A sample array row is a declaration, not yet a registered input --
-            # solving needs the real, one-per-sheet-row items `AsSamples` can
-            # split on, so this is where the sheet is read against the recipe's
-            # current rows and turned into them. Always, every solve, rather
-            # than behind a separate "expand" a user could forget to redo after
-            # editing a row or the sheet: `expand` clears what the last one
-            # registered before it writes the new set, so this can never leave
-            # two generations' worth of one sample sitting in the library
-            # together, and a workflow with no table or no array row at all
-            # just clears whatever an earlier one left.
-            if table is not None and any(op_samples.is_array_row(r) for r in rows):
-                op_samples.expand(lib_path, table, rows)
-            else:
-                op_samples.clear(lib_path)
+            # The recipe's rows are the durable thing; the input library is
+            # built from them. This is where that happens -- always, every
+            # solve, rather than behind a gesture a user could forget after
+            # editing a row or the sheet, so there is no state between an edit
+            # and a solve that can go stale. It is incremental: a row nothing
+            # changed about has nothing called on it, which is what keeps its
+            # identity (and so the task key, and so the cache) still.
+            synced = op_inputs.sync(lib_path, rows, table)
+
+            # A row with no path yet cannot be named by one, which is the
+            # normal state of a fresh recipe -- so the request says which *row*
+            # every sample should see, and it becomes a path here, between the
+            # sync that made it and the solve that reads it.
+            registered = synced["rows"]
+            shared = [
+                registered[s[1:]] if s.startswith("#") else s
+                for s in shared_refs
+                if not s.startswith("#") or s[1:] in registered
+            ] or None
 
             # a stale bundle from a previous generate must not outlive it: the
             # result the user sees and the bundle the CLI stages have to agree.
@@ -1293,6 +1337,7 @@ def generate_workflow(name):
                 wf.request | {
                     "transform_libraries": list(transforms),
                     "resource_libraries": list(resources),
+                    "shared_input_paths": shared or [],
                 },
                 input_library=lib_path,
             )
@@ -1483,6 +1528,13 @@ def dag_layout():
 
 @bp.get("/workflows/<name>/inputs")
 def get_inputs(name):
+    """What the library holds -- a readout, not a form.
+
+    The recipe's rows are what the page edits and what the library is built
+    from; this says what the last solve made of them. It is how a sample-array
+    row learns it stands for two hundred items, and how a row learns which
+    manifest entry it ended up as.
+    """
     p = _project()
     lib_path = p.input_library_path(name)
     if not lib_path.is_dir():
@@ -1494,91 +1546,26 @@ def get_inputs(name):
         op_data.show_item_lineage(str(lib_path), item["path"], render=False)
         for item in info["items"]
     ]
-    # Which sample-array row registered each item, so the recipe can show a count
-    # against that row instead of two hundred rows it did not ask for. The
-    # attribution is the server's: the record of what an expansion put down is
-    # the only place it is known.
+    # Which row registered each item. The attribution is the server's: a
+    # deferred path is minted rather than chosen, so the record beside the
+    # library is the only place the answer is known.
     record = op_samples.read_record(str(lib_path))
     from_array = {
         path: tid for tid, paths in (record.get("generated") or {}).items() for path in paths
     }
+    from_row = {str(v): str(k) for k, v in (record.get("rows") or {}).items()}
     for item in info["items"]:
         item["array_id"] = from_array.get(item["path"])
-        # a template's rows point at the deferred marker, not a real file yet --
-        # the browser is not equipped to make sense of `/msm_deferred/<hex>` and
-        # should show nothing rather than that string
+        item["row_id"] = from_row.get(item["path"])
+        # a row with no path yet points at the deferred marker, not a real file
+        # -- the browser is not equipped to make sense of `/msm_deferred/<hex>`
+        # and should show nothing rather than that string
         item["deferred"] = is_deferred(item["path"])
     info["expansion"] = {
         "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
         "row_count": record.get("row_count", 0),
-        "sample_type": record.get("sample_type"),
-        "index_id": record.get("index_id"),
     }
     return jsonify(info)
-
-
-@bp.post("/workflows/<name>/inputs/items")
-def add_input(name):
-    b = _body()
-    lib_path = str(_project().input_library_path(name))
-    dtype = b.get("dtype")
-    assert dtype, "a data type is required"
-    parents = b.get("parents") or None
-    if b.get("value") is not None:
-        return jsonify(op_data.add_value(
-            lib_path, b.get("name") or "", b["value"], dtype, parents,
-        )), 201
-    assert b.get("path"), "either a path or a value is required"
-    return jsonify(op_data.add_item(lib_path, b["path"], dtype, parents)), 201
-
-
-@bp.delete("/workflows/<name>/inputs/items")
-def remove_input(name):
-    item = request.args.get("path")
-    assert item, "path is required"
-    return jsonify(op_data.remove_item(str(_project().input_library_path(name)), item))
-
-
-@bp.put("/workflows/<name>/inputs/items/parents")
-def set_input_parents(name):
-    """The item's lineage becomes exactly what is sent.
-
-    A replacement, not an addition: the page edits lineage after the fact, and
-    the additive `set_item_parents` the CLI uses cannot take a link back -- a
-    parent unticked would have stayed on. PUT is already the right verb for it.
-    """
-    b = _body()
-    return jsonify(op_data.replace_item_parents(
-        str(_project().input_library_path(name)), b["path"], b.get("parents") or [],
-    ))
-
-
-@bp.put("/workflows/<name>/inputs/items/type")
-def retype_input(name):
-    """The row is that type instead. PUT for the same reason parents is: it
-    replaces a property of a row that already exists."""
-    b = _body()
-    assert b.get("path"), "path is required"
-    assert b.get("dtype"), "a data type is required"
-    return jsonify(op_data.retype_item(
-        str(_project().input_library_path(name)), b["path"], b["dtype"],
-    ))
-
-
-@bp.put("/workflows/<name>/inputs/items/path")
-def repoint_input(name):
-    """The row points somewhere else.
-
-    Deliberately not `rename`: for an absolute entry -- a pointer to the user's
-    own file -- nothing on disk moves. Only a library-owned (relative) entry is
-    a real rename, and `repoint_item` is the one that knows the difference.
-    """
-    b = _body()
-    assert b.get("path"), "path is required"
-    assert b.get("new_path"), "a new path is required"
-    return jsonify(op_data.repoint_item(
-        str(_project().input_library_path(name)), b["path"], b["new_path"],
-    ))
 
 
 # -- the sample table --------------------------------------------------------
@@ -1590,14 +1577,8 @@ def _table_dir(name: str) -> Path:
     return p.workflow_path(name)
 
 
-def _drafts_of(name: str) -> list[dict]:
-    """The recipe's input rows as the browser holds them.
-
-    Sample arrays are not a second list: an array row *is* a draft whose path
-    (or a value row's name or value) holds `{column}` tokens, so the two cannot
-    get out of step with each other.
-    """
-    return list(_project().read_workflow(name).request.get("input_drafts") or [])
+def _rows_of(name: str) -> list[dict]:
+    return op_recipe.rows_of(_project(), name)
 
 
 @bp.get("/workflows/<name>/table")
@@ -1605,7 +1586,7 @@ def get_table(name):
     table = op_samples.read_attached_table(_table_dir(name))
     if table is None:
         return jsonify({"attached": False})
-    rows = _drafts_of(name)
+    rows = _rows_of(name)
     checked = op_samples.validate(str(_project().input_library_path(name)), table, rows)
     record = op_samples.read_record(str(_project().input_library_path(name)))
     return jsonify({
@@ -1617,11 +1598,9 @@ def get_table(name):
         # a peek, not the sheet: the page shows counts, never instances
         "preview": table["rows"][:5],
         "problems": checked["problems"],
-        "index_id": checked["index_id"],
         "expansion": {
             "row_count": record.get("row_count", 0),
             "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
-            "sample_type": record.get("sample_type"),
             "stale": record.get("row_count", 0) != table["row_count"],
         },
     })
@@ -1678,7 +1657,7 @@ def _run_summary(r) -> dict:
         "live": r.live,
         "archived_at": r.archived_at,
         **{k: r.record.get(k) for k in (
-            "agent", "task_key", "created_at", "launched_at", "finished_at",
+            "agent", "task_key", "staged_path", "created_at", "launched_at", "finished_at",
             "collected_at", "run_number", "preset", "error",
             # a run is reproducible only if it says what it was launched with
             "params", "resource_overrides",
@@ -1774,6 +1753,7 @@ def create_run():
                 )
                 p.update_run(workflow, run_name, {
                     "state": "staged", "task_key": staged["task_key"],
+                    "staged_path": op_runtime.staged_path(agent_path, staged["task_key"]),
                 })
                 p.update_run(workflow, run_name, {"state": "launching"})
                 op_runtime.run(

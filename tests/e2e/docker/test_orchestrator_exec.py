@@ -298,6 +298,161 @@ workflow {
         assert "b=9" in lines[0]
 
 
+    # --- group_by collection contract -------------------------------------
+    #
+    # `group_by` partitions the incoming streams by the grouping dependency's
+    # instances. Each key yields ONE task member holding ALL the items matched
+    # to it; `batch_size` folds N whole keys into one task and never shards
+    # within a key. Four other parts of the system already encode this —
+    # `checkm`/`gtdbtk` pairing `group_by=asm` with `batch_size=25`/`100`,
+    # `plan_oracle` predicting `ceil(len(group_by_instances) / batch_size)`
+    # tasks, and `cache_decisions` + `virtual_runtime` both chunking
+    # `group_by_instances` by `batch_size`.
+    #
+    # `bbbb599` (2026-05-30) replaced the accumulating branch with per-relation
+    # streaming dispatch that emits one result per *descendant item*, then
+    # re-collected with `groupTuple(by: 0, size: batch_size, remainder: true)`.
+    # Because `batch_size` is the group-COUNT axis, the bag closes after one
+    # item on the default — so a collecting transform receives a fraction of
+    # its input and no error is raised. Bisected against the same scripts:
+    #
+    #   one key / 3 descendants / bs=1   release + bbbb599^ -> 1 task x 3 files
+    #                                    bbbb599 + HEAD     -> 3 tasks x 1 file
+    #   two keys / 2 each   / bs=1       release            -> 2 tasks x 2 files
+    #                                    HEAD               -> 4 tasks x 1 file
+    #   two keys / 2 each   / bs=2       release            -> 1 task, 2 members
+    #                                                          x 2 files each
+    #                                    HEAD               -> 2 tasks, 2 members
+    #                                                          x 1 file each
+    #
+    # Fixed by aggregating per by-key inside the dispatch branches, upstream of
+    # the cartesian fold, so `_batch` only ever collates whole groups.
+
+    @staticmethod
+    def _collection_case(
+        nxf_runner: "NxfTestRunner",
+        n_keys: int,
+        n_outs: int,
+        batch_size: int,
+    ) -> list[list[list[str]]]:
+        """Run the fan-out-then-collect topology and report what each task got.
+
+        `step1` runs once per seed (the fan-out) and emits `n_outs` files.
+        The second `o.group` collects those outputs back by the SAME seed key,
+        which is the ppanggolin shape: one pangenome entry parenting N
+        accessions.
+
+        Returns one entry per emitted task: the list of per-batch-member
+        out1 basenames. So `[[["a", "b"]]]` is one task, one member, two
+        files.
+        """
+        for i in range(n_keys):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+
+        seeds = ",\n        ".join(
+            f'[[:], file("${{projectDir}}/seed_{i}.txt")]' for i in range(n_keys)
+        )
+        # metasmith output names are `<batch>-<i>-<branch>.<hash>-<key><ext>`;
+        # `_debatch` routes on the leading batch index, so every file emitted
+        # by one (unbatched) task must share the `1-` prefix.
+        touches = " ".join(f"1-${{stem}}{chr(ord('a') + j)}-out1.txt" for j in range(n_outs))
+
+        result = nxf_runner.run(f'''
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-out1.txt")
+    script:
+    def stem = index[0].seed[0]
+    """
+    touch {touches}
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+
+    // Two independent postIn calls over the same files: Nextflow channels are
+    // single-consumer, and the real generator forks shared streams with
+    // multiMap. postIn's fallback id is md5 of the path, so both copies carry
+    // identical seed hashes.
+    def seed_fanout = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+    def seed_collect = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+
+    def k1 = ["out1"]
+    def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed_fanout], k1, 1))), k1))[0]
+
+    def collected = o.group("seed", [seed_collect, _out1], ["out2"], {batch_size})
+    collected.view {{ indexes, seed_vals, out1_vals ->
+        // FILES is written per batch member by `_collateBatch`, positionally
+        // per stream in the order they were passed to group(): [seed, out1].
+        def per_member = indexes.collect {{ m -> m.FILES[1].collect {{ p -> p.split("/")[-1] }} }}
+        "TASK: " + groovy.json.JsonOutput.toJson(per_member)
+    }}
+}}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+        return [
+            json.loads(l.split("TASK: ", 1)[1])
+            for l in result.stdout.split("\n")
+            if l.startswith("TASK:")
+        ]
+
+    def test_one_key_collects_all_its_descendants(self, nxf_runner):
+        """One grouping instance + 3 descendants + batch_size=1 -> ONE task.
+
+        The ppanggolin regression: the run handed each of two accessions to
+        its own task, so ppanggolin clustered a single genome and died in
+        scipy with "empty distance matrix". `release` and `bbbb599^` emit one
+        task holding both; `bbbb599` onward shatters it.
+        """
+        tasks = self._collection_case(nxf_runner, n_keys=1, n_outs=3, batch_size=1)
+        assert len(tasks) == 1, (
+            f"expected the whole group in one task, got {len(tasks)} tasks: {tasks}"
+        )
+        assert len(tasks[0]) == 1, f"batch_size=1 means one member per task: {tasks}"
+        assert len(tasks[0][0]) == 3, (
+            f"the single member must carry all 3 descendants, got {tasks[0][0]}"
+        )
+
+    def test_each_key_collects_only_its_own_descendants(self, nxf_runner):
+        """Two grouping instances -> two tasks, each complete and disjoint.
+
+        Guards the other half of the contract: collecting must not merge
+        across keys either.
+        """
+        tasks = self._collection_case(nxf_runner, n_keys=2, n_outs=2, batch_size=1)
+        assert len(tasks) == 2, f"expected one task per key, got {len(tasks)}: {tasks}"
+        groups = []
+        for t in tasks:
+            assert len(t) == 1, f"batch_size=1 means one member per task: {tasks}"
+            assert len(t[0]) == 2, f"each key must collect both its files: {tasks}"
+            groups.append(set(t[0]))
+        assert groups[0].isdisjoint(groups[1]), (
+            f"keys leaked descendants into each other: {groups}"
+        )
+
+    def test_batch_size_folds_whole_keys_never_shards_one(self, nxf_runner):
+        """batch_size counts GROUPS, not members within a group.
+
+        Two keys of two descendants at batch_size=2 is one task with two
+        members, each holding its own pair — the shape `checkm` relies on
+        (`group_by=asm, batch_size=25` iterating `context.AsBatch()`), and the
+        shape `plan_oracle` predicts with `ceil(n_keys / batch_size)`.
+        """
+        tasks = self._collection_case(nxf_runner, n_keys=2, n_outs=2, batch_size=2)
+        assert len(tasks) == 1, (
+            f"ceil(2 keys / batch_size 2) == 1 task, got {len(tasks)}: {tasks}"
+        )
+        assert len(tasks[0]) == 2, f"expected 2 batch members, got {tasks[0]}"
+        for member in tasks[0]:
+            assert len(member) == 2, f"each member keeps its whole group: {tasks[0]}"
+
     def test_channel_reuse_across_group_calls(self, nxf_runner):
         """Two group() calls sharing a posted stream — second gets empty channel.
 
@@ -692,6 +847,99 @@ workflow {
             assert "FILES" not in idx
 
 
+class TestLinWire:
+    """The `lin` envelope a batched task actually puts on the wire.
+
+    This is the one seam the fast suite structurally cannot cover: its
+    harnesses synthesize payloads with `json.dumps` and never go through the
+    Groovy emitter, which is how R5's version desync failed every
+    containerized task with a green fast run. The script below emits the
+    exact expression `nextflow_codegen` compiles into every process.
+    """
+
+    def test_batched_task_puts_every_member_on_the_wire(self, nxf_runner):
+        """A 3-member batch emits 3 lineage maps with 3 distinct FILES groups.
+
+        Reproduced on real Nextflow: the task's `index` has size 3 (three
+        `_collateBatch` members) while the envelope carries one FILES group
+        holding one file. `bootstrap` then wraps that single map — the
+        `for batch, batch_lineage in enumerate(lineages)` loop runs once —
+        so a `checkm`-shaped transform at `batch_size=25` processes one
+        assembly and stages twenty-four it never opens.
+        """
+        from metasmith.models.lineage import LinPayload
+        from metasmith.models.workflow.nextflow_codegen import LIN_ECHO_EXPR
+
+        n = 3
+        for i in range(n):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+        seeds = ",\n        ".join(
+            f'[[:], file("${{projectDir}}/seed_{i}.txt")]' for i in range(n)
+        )
+
+        result = nxf_runner.run(f'''
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-out1.txt")
+    script:
+    def stem = index[0].seed[0]
+    """
+    touch 1-${{stem}}-out1.txt
+    """
+}}
+
+process step2 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        path "lin.json"
+    script:
+    """
+    echo "{LIN_ECHO_EXPR}" > lin.json
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+
+    def seed = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+
+    def k1 = ["out1"]
+    def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed], k1, 1))), k1))[0]
+
+    step2(o.group("out1", [_out1], ["out2"], {n}))
+}}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+
+        lin_files = sorted(nxf_runner.work_dir.rglob("work/*/*/lin.json"))
+        assert len(lin_files) == 1, (
+            f"expected {n} keys at batch_size={n} to fold into one task, "
+            f"got {len(lin_files)}"
+        )
+        # `echo` renders Groovy's bash-escaped quotes; undo them the same way
+        # `bootstrap` does when it reads the `lin` line back.
+        raw = lin_files[0].read_text().strip().replace('\\"', '"')
+        payload = LinPayload.from_json(raw)
+        assert isinstance(payload.entries, list), (
+            f"the wire must carry a list of per-member maps, got "
+            f"{type(payload.entries).__name__}: {raw}"
+        )
+        assert len(payload.entries) == n, (
+            f"batch of {n} members put {len(payload.entries)} lineage map(s) "
+            f"on the wire: {raw}"
+        )
+        groups = [m.get(LinPayload.FILES_KEY) for m in payload.entries]
+        assert all(g for g in groups), f"a member carried no FILES: {groups}"
+        assert len({json.dumps(g) for g in groups}) == n, (
+            f"members must carry their own inputs, got duplicates: {groups}"
+        )
+
+
 class TestOrchestratorMix:
     """Test stream mixing."""
 
@@ -817,4 +1065,89 @@ workflow {
         # `relative_to(WORK_ROOT)` to succeed.
         assert ".." not in rendered.split("/"), (
             f"Docker emitted `..` segment unexpectedly: {rendered!r}."
+        )
+
+
+class TestCacheHitLineage:
+    """What a cache-hit step puts on the channel, and what group() does with it.
+
+    `nextflow_codegen` replaces a hit step's process call with
+    `Channel.of([[:], file(...)])` — an EMPTY index — posted straight into
+    `o.post`. `_post` stamps the produced key onto that empty map, so the
+    tuple reaches a downstream `o.group` carrying nothing about where it
+    came from. These two tests are the same workflow twice, differing only
+    in whether the synthetic tuple carries its ancestry.
+    """
+
+    # Mirrors tests/cache/fixtures/cache_fixtures/parallel_then_group.py:
+    # a shared `root` leaf is the declared parent of each per-sample `seed`,
+    # `step_a` is produced per seed, and the next step groups by `root`.
+    # classify("step_a", "root") therefore returns DESCENDANT_OF_BY.
+    _SCRIPT = '''
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+    o.seedParents(["seed": ["root"], "step_a": ["seed"]])
+
+    ch_root = Channel.fromList([
+        [[(Orchestrator.SELF_ID_KEY): ["ROOT1"]], file("${{projectDir}}/root.txt")],
+    ])
+    def _root = (o.postIn([ch_root], ["root"]))[0]
+
+    // Exactly what codegen emits for a cache hit, modulo the index.
+    ch_a = Channel.of(
+        [{index}, file("${{projectDir}}/a0.txt")],
+        [{index}, file("${{projectDir}}/a1.txt")],
+    )
+    def _step_a = (o.post([ch_a], ["step_a"], ["SLOT_A"]))[0]
+
+    def grouped = o.group("root", [_root, _step_a], ["step_b"], 1)
+    grouped.view {{ it ->
+        def files = it[1..-1].collect {{ g -> g.collect {{ f -> f.name }}.sort().join("+") }}
+        return "G:" + files.join("|")
+    }}
+    workflow.onComplete {{
+        println "DISPATCH:" + groovy.json.JsonOutput.toJson(o.getDispatchLog())
+    }}
+}}
+'''
+
+    def _run(self, nxf_runner, index_literal):
+        for n in ("root", "a0", "a1"):
+            (nxf_runner.work_dir / f"{n}.txt").write_text(n)
+        result = nxf_runner.run(self._SCRIPT.format(index=index_literal))
+        NxfTestRunner.assert_nxf_ok(result)
+        emits = [l for l in result.stdout.splitlines() if l.startswith("G:")]
+        dispatch = [l for l in result.stdout.splitlines() if l.startswith("DISPATCH:")]
+        return emits, "".join(dispatch), result
+
+    def test_empty_index_is_dropped_as_a_lineage_violation(self, nxf_runner):
+        """The bug: a hit's files never reach the transform that consumes them.
+
+        `[[:], file(...)]` is what `nextflow_codegen` emits today. The
+        DESCENDANT_OF_BY branch looks for `index["root"]`, finds null, logs
+        LINEAGE_VIOLATION and drops the item — so the grouped channel is
+        empty and the downstream step is never submitted at all. A warm run
+        silently loses what a cold run computes.
+        """
+        emits, dispatch, result = self._run(nxf_runner, "[:]")
+        assert "LINEAGE_VIOLATION" in dispatch, (
+            "expected the empty-index tuples to be logged as lineage "
+            f"violations; dispatch log was: {dispatch}"
+        )
+        assert emits == [], (
+            "if group() no longer drops empty-index tuples this test has "
+            f"outlived its premise; emissions: {emits}"
+        )
+
+    def test_ancestor_bearing_index_reaches_the_group(self, nxf_runner):
+        """The contract: carry the ancestry and the hit is indistinguishable.
+
+        Same workflow, same synthetic channel, with the index the executed
+        task would have produced. Both files land in root's group, which is
+        what the cold run gives.
+        """
+        emits, dispatch, result = self._run(nxf_runner, '["root": ["ROOT1"]]')
+        assert "LINEAGE_VIOLATION" not in dispatch, dispatch
+        assert emits == ["G:root.txt|a0.txt+a1.txt"], (
+            f"expected one whole group carrying both cached files, got {emits}"
         )

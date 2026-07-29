@@ -46,11 +46,36 @@ from .types import DataTypeLibrary
 # this should function like a view provided by the parent library
 @dataclass
 class TransformInstance:
+    """One runnable transform: a protocol plus the two axes that turn a plan
+    step into tasks.
+
+    `group_by` and `batch_size` are separate axes and must not be confused —
+    conflating them is what shattered a collecting transform's input into
+    singletons (see `Orchestrator.groovy::group`):
+
+    - `group_by` names the requirement whose instances PARTITION the step's
+      inputs. Each of its instances is one key, and one key yields one task
+      member holding EVERY item matched to it. A fan-out followed by
+      `group_by` on the fan-out's parent is how you collect back to a fan-in.
+    - `batch_size` folds N whole KEYS into a single task. It never shards
+      within a key. A step therefore runs
+      `ceil(len(group_by_instances) / batch_size)` tasks — the count
+      `plan_oracle`, `cache_decisions` and `virtual_runtime` all predict.
+
+    Both reach the protocol through `context.AsBatch()`, which yields one
+    item per batch member. `item.Input(dep)` is that member's single instance
+    for `dep`; `item.InputGroup(dep)` is the whole group matched to that
+    member's key. `checkm` is the canonical shape: `group_by=asm`,
+    `batch_size=25`, iterating `AsBatch()` 25 times and reading one assembly
+    per iteration.
+    """
+
     protocol: Callable[[ExecutionContext], ExecutionResult|list[ExecutionResult]]
     model: Transform
     group_by: Dependency
     name: str|None = None
     resources: Resources|None = None
+    # Number of whole `group_by` keys per task; never a within-key count.
     batch_size: int = 1
     labels: list[str] = field(default_factory=list)
     cacheable: bool = True

@@ -8,26 +8,32 @@ have, plus one declared input row per column, expanded into the library.
 
 A **sample array** is an ordinary input row whose path (or, for a value row, its
 name or value) holds `{column}` tokens: one declaration standing for N items,
-indexed by the sheet. It is never registered as it stands. Exactly one array row
-is the **index**: it becomes one item per table row with nothing above it, every
-other array row's items descend from it, and its declared type is what the
-planner is handed as `sample_type`. That shape is not incidental --
+indexed by the sheet. It is never registered as it stands. Array rows wire into
+an arbitrary parent DAG the same way any other input row does -- a column with
+no parents, a column parented to another -- and every table row instances that
+whole DAG once. There is no privileged "index" column and no per-sample masking
+here: multiplicity (how many distinct pangenomes, how many distinct samples)
+falls out of ordinary lineage, the same way `group_by` resolves it at the
+transform level. Two rows that substitute to the same path share one instance
+-- a deliberate grouping, not a collision -- so long as a value row agrees with
+itself about what that shared name holds.
 
-  * `AsSamples` masks a sample as {index item} u ancestors u descendants. An
-    index item with a *parent* puts that parent's whole subtree in every mask,
-    which collapses all samples into one view. So the index row must have no
-    parents at all.
-  * An array row that does not transitively reach the index lands in no mask,
-    and the planner never sees it. So every other one must descend from it.
-
-Both are refusals here rather than warnings, because both fail silently.
+(`AsSamples`, elsewhere in metasmith, masks a library by an index item's
+ancestors/descendants; it is a valid, separate, lower-level primitive that this
+module does not use or produce.)
 
 (A *template*, elsewhere in metasmith, is a stored workflow you start from --
 a different thing entirely, which is why this one is not called that.)
 
-The generated items are recorded so a re-expansion can take back exactly what
-the last one put down. That record is server-owned and belongs beside
-`result.yml`, never in the request the browser rewrites wholesale.
+This module reads the sheet and says what is wrong with it; it does not write
+to a library. `ops.inputs.sync` is the one writer, and it registers array rows
+and plain rows in the same pass -- they are the same kind of row and there is
+one library state, so two functions with two ideas of what is in it is exactly
+the state that leaves it half built.
+
+The record of what was put down lives here because this module owns its shape.
+It is server-owned and belongs beside `result.yml`, never in the request the
+browser rewrites wholesale.
 """
 from __future__ import annotations
 
@@ -261,27 +267,16 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
 
     `rows` is the whole input side of the recipe -- array rows and plain drafts
     together -- because half of what can be wrong is about how the two relate.
-    Returns `{problems, array_rows, index_id}`; `problems` empty means expandable.
+    Returns `{problems, array_rows}`; `problems` empty means expandable.
     """
     array_rows = [r for r in rows if is_array_row(r)]
     problems: list[dict] = []
     if not array_rows:
-        return {"problems": problems, "array_rows": [], "index_id": None}
+        return {"problems": problems, "array_rows": []}
 
     columns = set(table.get("columns") or [])
     by_id = {str(t["id"]): t for t in array_rows}
-
-    marked = [t for t in array_rows if t.get("index")]
-    index_id = str(marked[0]["id"]) if len(marked) == 1 else None
-    if not marked:
-        problems.append(_problem("index", (
-            "no row is marked as the sample index -- one array row has to say "
-            "what a sample *is*, and its type is what the planner splits on"
-        )))
-    elif len(marked) > 1:
-        problems.append(_problem("index", (
-            f"{len(marked)} rows are marked as the sample index; exactly one can be"
-        )))
+    all_ids = {str(r["id"]) for r in rows if r.get("id") is not None}
 
     for t in array_rows:
         tid = str(t["id"])
@@ -301,53 +296,41 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
                 f"the library -- it cannot hold a slash"
             )))
         for p in _array_parents(t):
-            if p not in by_id:
+            # ...against every row, not just the array ones: an array row
+            # descending from a plain row is one declared DAG hung off a single
+            # shared input, which is the ordinary shape of a sample recipe
+            if p not in all_ids:
                 problems.append(_problem(tid, f"[{label}] descends from a row that is gone"))
 
     try:
         order_array_rows(array_rows)
     except AssertionError as exc:
         problems.append(_problem("lineage", str(exc)))
-        return {"problems": problems, "array_rows": array_rows, "index_id": index_id}
+        return {"problems": problems, "array_rows": array_rows}
 
-    if index_id is not None:
-        index = by_id[index_id]
-        if index.get("parents"):
-            problems.append(_problem(index_id, (
-                "the sample index cannot descend from anything: a shared ancestor "
-                "above it puts every sample's files in every other sample, and the "
-                "plan silently becomes one run over the whole library"
-            )))
-        # reachability up the array chain -- a row that cannot get to the
-        # index lands in no sample's mask and the planner never sees it
-        reaches: dict[str, bool] = {}
-
-        def reaches_index(tid: str, stack: frozenset = frozenset()) -> bool:
-            if tid == index_id:
-                return True
-            if tid in reaches:
-                return reaches[tid]
-            if tid in stack or tid not in by_id:
-                return False
-            out = any(reaches_index(p, stack | {tid}) for p in _array_parents(by_id[tid]))
-            reaches[tid] = out
-            return out
-
-        for t in array_rows:
-            tid = str(t["id"])
-            if reaches_index(tid):
-                continue
-            label = (t.get("path") or t.get("name") or tid)
-            problems.append(_problem(tid, (
-                f"[{label}] does not descend from the sample index, so its files "
-                f"belong to no sample and the planner will not see them"
-            )))
-
-    problems += _path_problems(library_path, table, array_rows, by_id)
-    return {"problems": problems, "array_rows": array_rows, "index_id": index_id}
+    problems += _path_problems(library_path, table, array_rows, by_id, rows)
+    return {"problems": problems, "array_rows": array_rows}
 
 
-def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
+def _plain_paths(rows: list[dict]) -> set[str]:
+    """What the recipe's non-array rows will occupy once they are registered.
+
+    Read off the rows rather than off the manifest: a plain row is registered
+    from the row on every solve, so what the library holds right now is the
+    *previous* answer -- it still lists a row that has since been deleted, and
+    does not list one that has since been typed in.
+    """
+    out: set[str] = set()
+    for r in rows:
+        if is_array_row(r) or not (r.get("dtype") or "").strip():
+            continue
+        name = (r.get("name") if r.get("mode") == "value" else r.get("path")) or ""
+        if name.strip():
+            out.add(name.strip())
+    return out
+
+
+def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
     """What the substituted paths themselves are wrong about.
 
     Checked before anything is registered, because `AddItem` asserts mid-loop on
@@ -355,10 +338,12 @@ def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
     the hard way leaves a half-expanded library on disk.
     """
     lib = load_data_lib(library_path)
-    previous = set(read_record(library_path).get("paths", []))
-    existing = {str(p) for p in lib.manifest} - previous
+    record = read_record(library_path)
+    previous = set(record.get("paths", []))
+    owned = {str(v) for v in (record.get("rows") or {}).values()}
+    existing = _plain_paths(rows) | ({str(p) for p in lib.manifest} - previous - owned)
     problems: list[dict] = []
-    minted: dict[str, tuple[str, str, int]] = {}
+    minted: dict[str, tuple[str, str, int, str | None]] = {}
     columns = set(table.get("columns") or [])
     # an array row naming a column that is not there is already reported, and
     # substituting it here would raise instead of adding to the list
@@ -382,8 +367,10 @@ def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
                     f"{', '.join(sorted(set(missing)))}, which [{label}] needs"
                 )))
                 continue
-            key = fields.get("path") if t.get("mode") != "value" else fields.get("name")
+            is_value = t.get("mode") == "value"
+            key = fields.get("name") if is_value else fields.get("path")
             path = substitute(key, record)
+            value = substitute(fields.get("value"), record) if is_value else None
             if not path:
                 problems.append(_problem(tid, f"[{label}] comes out empty on row {i + 1}"))
             elif path in existing:
@@ -392,26 +379,36 @@ def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
                     f"already registered"
                 )))
             elif path in minted:
-                other_tid, other_label, other_row = minted[path]
+                other_tid, other_label, other_row, other_value = minted[path]
                 if other_tid == tid:
-                    problems.append(_problem(tid, (
-                        f"[{label}] comes out as [{path}] on both row {other_row} "
-                        f"and row {i + 1} -- it does not vary per row"
-                    )))
+                    # the same declared column landing on the same path again is a
+                    # deliberate grouping -- rows sharing one name become one shared
+                    # instance. Only a value row can disagree with itself: two rows
+                    # naming the same thing but writing different content into it.
+                    if is_value and value != other_value:
+                        problems.append(_problem(tid, (
+                            f"[{label}] comes out as [{path}] on both row {other_row} "
+                            f"and row {i + 1}, but with different values -- rows "
+                            f"sharing a name must agree on what it holds"
+                        )))
                 else:
                     problems.append(_problem(tid, (
                         f"[{label}] comes out as [{path}] on row {i + 1}, which is "
                         f"also what [{other_label}] comes out as on row {other_row}"
                     )))
             else:
-                minted[path] = (tid, label, i + 1)
+                minted[path] = (tid, label, i + 1, value)
         if len(problems) > 40:
             problems.append(_problem("", "...and more; the first forty are shown"))
             break
 
+    # A literal path in a lineage is a leftover from when a registered row was
+    # named by its path; a row is named by its id now. It still has to point at
+    # something -- either an entry that is there, or a row that will put one there.
+    reachable = _plain_paths(rows) | {str(p) for p in lib.manifest}
     for t in array_rows:
         for p in _plain_parents(t):
-            if Path(p) not in lib.manifest:
+            if p not in reachable:
                 problems.append(_problem(str(t["id"]), (
                     f"descends from [{p}], which is not registered"
                 )))
@@ -454,109 +451,3 @@ def write_record(library_path: str | Path, record: dict) -> Path:
     return p
 
 
-# -- expansion ---------------------------------------------------------------
-
-
-def clear(library_path: str, save: bool = True) -> dict:
-    """Unregister everything the last expansion registered.
-
-    Survivors are repaired first: `Remove` drops the item's own parent list but
-    never touches its *children's* records, and neither `Pack` nor `Unpack`
-    notices a dangling one -- the first `Get` on the child raises `KeyError`, a
-    long way from here. Removal takes the paths from the record but intersects
-    them with the manifest, since a generated row may have been deleted by hand.
-    """
-    lib = load_data_lib(library_path)
-    record = read_record(library_path)
-    doomed = [Path(p) for p in record.get("paths", [])]
-    present = [p for p in doomed if p in lib.manifest]
-    doomed_set = set(present)
-
-    for path in list(lib.manifest):
-        if path in doomed_set:
-            continue
-        current = lib.parents.get(path)
-        if not current:
-            continue
-        kept = [m for m in current if m.path not in doomed_set]
-        if len(kept) != len(current):
-            lib.parents[path] = kept
-
-    for path in present:
-        lib.Remove(path)
-    if save:
-        lib.Save()
-    if record:
-        write_record(library_path, record | {"paths": [], "generated": {}})
-    return {"removed": [str(p) for p in present]}
-
-
-def expand(
-    library_path: str,
-    table: dict,
-    rows: list[dict],
-    on_progress=None,
-) -> dict:
-    """Register one item per (array row x table row). Validates first, saves once.
-
-    The library is loaded once and saved once: `ops.data.add_item` re-loads and
-    re-saves per call, which over a two-hundred-row sheet is both slow and a
-    window in which a failure leaves the library half-built.
-    """
-    checked = validate(library_path, table, rows)
-    assert not checked["problems"], "; ".join(p["message"] for p in checked["problems"])
-    array_rows = checked["array_rows"]
-    if not array_rows:
-        return {"generated": {}, "counts": {}, "row_count": 0, "sample_type": None}
-
-    clear(library_path, save=True)
-
-    lib = load_data_lib(library_path)
-    order = order_array_rows(array_rows)
-    index_id = checked["index_id"]
-    records = table.get("rows") or []
-    generated: dict[str, list[str]] = {str(t["id"]): [] for t in array_rows}
-    made: list[str] = []
-
-    for i, record in enumerate(records):
-        per_row: dict[str, Path] = {}
-        for row in order:
-            tid = str(row["id"])
-            parents = [per_row[p] for p in _array_parents(row) if p in per_row]
-            parents += [Path(p) for p in _plain_parents(row)]
-            if row.get("mode") == "value":
-                path = lib.AddValue(
-                    substitute(row.get("name"), record),
-                    substitute(row.get("value"), record),
-                    row["dtype"], parents=parents,
-                )
-            else:
-                path = lib.AddItem(
-                    substitute(row.get("path"), record), row["dtype"], parents=parents,
-                )
-            per_row[tid] = path
-            generated[tid].append(str(path))
-            made.append(str(path))
-        if on_progress and (i + 1) % 25 == 0:
-            on_progress(i + 1, len(records))
-    lib.Save()
-
-    sample_type = next(
-        (t.get("dtype") for t in array_rows if str(t["id"]) == index_id), None,
-    )
-    record = {
-        "paths": made,
-        "generated": generated,
-        "row_count": len(records),
-        "index_id": index_id,
-        "sample_type": sample_type,
-        "columns": list(table.get("columns") or []),
-    }
-    write_record(library_path, record)
-    return {
-        "generated": generated,
-        "counts": {k: len(v) for k, v in generated.items()},
-        "row_count": len(records),
-        "sample_type": sample_type,
-        "item_count": len(made),
-    }

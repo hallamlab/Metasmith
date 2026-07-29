@@ -24,6 +24,8 @@
   let wf = $state(null)
   let types = $state([])
   let index = $state(null)
+  // a readout of what the last solve built the library into, not a form:
+  // the recipe's rows are the form
   let items = $state([])
   let jobId = $state(null)
   let sharing = $state(false)
@@ -93,7 +95,7 @@
   }
 
   // the editable recipe, kept separate from the frozen result below it
-  let recipe = $state({ targets: [], transform_libraries: [], drafts: [] })
+  let recipe = $state({ targets: [], transform_libraries: [], rows: [] })
   let loadedFor = $state(null)
 
   // Targets were a list of bare type names before they could carry lineage.
@@ -106,23 +108,22 @@
     )
   }
 
-  // Half-built inputs. A registered input lives in the library, which needs a
-  // type *and* a path before it will take one -- so a row that is not complete
-  // yet has to live somewhere else, and the request is where the outputs have
-  // always waited. Read defensively: the key is new, and a workflow written
-  // before it simply has none.
-  function normalizeDrafts(list) {
+  // The input rows. These are the recipe: the input library is built from them
+  // when the workflow is solved, so a row is never anything else and never
+  // stops being editable. Read defensively -- a workflow written before the key
+  // existed simply has none, and one written before it was the whole story gets
+  // the rest of its rows from the server on the first read.
+  function normalizeRows(list) {
     return (list ?? [])
       .filter((d) => d && typeof d === 'object')
       .map((d) => ({
-        id: String(d.id ?? nextDraftId()),
+        id: String(d.id ?? nextRowId()),
         mode: d.mode === 'value' ? 'value' : 'file',
         path: d.path ?? '',
         name: d.name ?? '',
         value: d.value ?? '',
         dtype: d.dtype ?? '',
         parents: [...(d.parents ?? [])],
-        index: !!d.index,
       }))
   }
 
@@ -167,26 +168,17 @@
     await loadTable()
   }
 
-  // One row is the index, so marking one unmarks the rest -- a plain set, not
-  // a toggle: the dropdown that drives this has its own "— none —" option, so
-  // there is always an explicit target rather than "whichever one was clicked
-  // again". The type of that row is what the plan is split on, and the server
-  // reads it off the same drafts.
-  async function setIndex(id) {
-    recipe.drafts = recipe.drafts.map((d) => ({ ...d, index: !!id && d.id === id }))
-    await persist()
-    await loadTable()
-  }
-
-  // A registered row that is neither the index nor descended from it is in no
-  // sample's mask at all. Marking it shared is the third way in: the planner is
-  // handed it alongside the resource libraries, once, for every sample.
+  // Which rows every sample should see. Held as row references (`#id`), not as
+  // paths: a row may not have a path yet, which is the normal state of a fresh
+  // recipe, and the generate turns each one into a path between building the
+  // library and solving from it. The key name is the spec's own, because both
+  // the create and generate routes filter incoming bodies against that list.
   let sharedPaths = $derived(wf?.request?.shared_input_paths ?? [])
 
-  async function setShared(item, on) {
+  async function setShared(key, on) {
     const next = on
-      ? [...new Set([...sharedPaths, item.path])]
-      : sharedPaths.filter((p) => p !== item.path)
+      ? [...new Set([...sharedPaths, key])]
+      : sharedPaths.filter((p) => p !== key)
     await attempt(async () => {
       await api.put(`/workflows/${name}`, { shared_input_paths: next })
       return true
@@ -194,33 +186,19 @@
     await load()
   }
 
-  // The index row's declared type -- what the library is split on. Null when no
-  // sheet is attached, which is the unsampled plan the page has always sent.
-  let sampleType = $derived.by(() => {
-    if (!table?.attached) return null
-    const idx = recipe.drafts.find((d) => d.index && isArrayRow(d))
-    return idx?.dtype?.trim() || null
-  })
-
-  // What stops a solve. Both are silent failures rather than errors: a sheet
-  // with no index plans one run over everything, and two indexes is a lineage
-  // nothing downstream defines.
-  let arrayCount = $derived(recipe.drafts.filter(isArrayRow).length)
-  let indexCount = $derived(recipe.drafts.filter((d) => d.index && isArrayRow(d)).length)
+  // What stops a solve. Solving is what registers a sample row now, and it
+  // refuses the same way the old manual expand did -- surfaced here too, so
+  // the button says why rather than a solve starting and failing on the same
+  // thing a moment later.
+  let arrayCount = $derived(recipe.rows.filter(isArrayRow).length)
   let tableProblem = $derived.by(() => {
     if (!table?.attached || !arrayCount) return null
-    if (indexCount === 0) return 'no array row is marked as the sample index'
-    if (indexCount > 1) return 'two rows are marked as the sample index'
-    if (!sampleType) return 'the sample index row has no type yet'
-    // solving is what registers a sample row now, and it refuses the same way
-    // the old manual expand did -- surfaced here too, so the button says why
-    // rather than a solve starting and failing on the same thing a moment later
     if (table.problems?.length) return table.problems[0].message
     return null
   })
 
-  let draftSeq = 0
-  const nextDraftId = () => `d${(draftSeq++).toString(36)}${Math.random().toString(36).slice(2, 7)}`
+  let rowSeq = 0
+  const nextRowId = () => `d${(rowSeq++).toString(36)}${Math.random().toString(36).slice(2, 7)}`
 
   async function load() {
     wf = await api.get(`/workflows/${name}`)
@@ -229,7 +207,7 @@
       recipe = {
         targets: normalize(wf.request.target_types),
         transform_libraries: wf.request.transform_libraries ?? [],
-        drafts: normalizeDrafts(wf.request.input_drafts),
+        rows: normalizeRows(wf.request.input_drafts),
       }
     }
   }
@@ -322,16 +300,6 @@
   // name a type that no type file exports; both are offerable. This used to
   // live in the builder card, which was the only place a type could be chosen.
 
-  let allTypes = $derived(
-    [
-      ...new Set([
-        ...types.filter((t) => t.full_name).map((t) => t.full_name),
-        ...Object.keys(index?.by_type ?? {}),
-      ]),
-    ].sort(),
-  )
-  let typeNames = $derived(new Set(allTypes))
-
   // entries are {i, as, match} -- a transform is on this list because its
   // *properties* fit, which is not the same as having named this type
   function matching(type, side) {
@@ -339,6 +307,23 @@
     if (!enabled) return entries
     return entries.filter((e) => enabled.has(index.transforms[e.i]?.library))
   }
+
+  // The standard library's type files are offerable regardless of which
+  // transform libraries are toggled -- they aren't owned by any of them. A
+  // type that only exists in the index because a transform named it is
+  // different: that name came from a library, so switching that library off
+  // should take the name off the list too.
+  let allTypes = $derived(
+    [
+      ...new Set([
+        ...types.filter((t) => t.full_name).map((t) => t.full_name),
+        ...Object.keys(index?.by_type ?? {}).filter(
+          (t) => matching(t, 'produced_by').length || matching(t, 'consumed_by').length,
+        ),
+      ]),
+    ].sort(),
+  )
+  let typeNames = $derived(new Set(allTypes))
 
   // How many of those are there because the type system says so rather than
   // because a name lined up. Worth saying: it is the difference between "one
@@ -355,18 +340,17 @@
     }
   }
 
-  // `sample_type` is written out even when it is null rather than left off: the
-  // server merges a request over the stored one, so omitting the key would keep
-  // whatever a previous version of this page (or the CLI) put there -- and a
-  // sheet that has since been detached would leave the plan still split on a
-  // type nothing is marked with. With a sheet attached it is the index row's
-  // type: that row is what a sample *is*.
+  // `sample_type` is written out as null, always, rather than left off: the
+  // server merges a request over the stored one, so omitting the key would
+  // keep whatever a previous version of this page (or the CLI) put there. The
+  // table never derives one -- every table-driven solve is one unified view
+  // over the whole DAG the sheet describes.
   function requestBody() {
     return {
-      sample_type: sampleType,
+      sample_type: null,
       target_types: recipe.targets,
       transform_libraries: recipe.transform_libraries,
-      input_drafts: recipe.drafts,
+      input_drafts: recipe.rows,
     }
   }
 
@@ -410,7 +394,7 @@
     return writing
   }
 
-  // -- drafts, and the moment they stop being drafts ---------------------------
+  // -- editing the recipe ------------------------------------------------------
 
   function addRow(kind) {
     if (kind === 'output') {
@@ -418,12 +402,15 @@
       persist()
       return
     }
-    addDraft(kind)
+    // 'input' is the only add-input gesture -- what the row holds, file or
+    // value, is a field on the row itself (the mode switch), not a choice made
+    // up front. 'file' is just the starting mode.
+    addInput(kind === 'value' ? 'value' : 'file')
   }
 
-  function addDraft(mode, extra = {}) {
+  function addInput(mode, extra = {}) {
     const d = {
-      id: nextDraftId(),
+      id: nextRowId(),
       mode,
       path: '',
       name: '',
@@ -432,25 +419,37 @@
       parents: [],
       ...extra,
     }
-    recipe.drafts = [...recipe.drafts, d]
+    recipe.rows = [...recipe.rows, d]
     persist()
     return d
   }
 
   // Typing is local; it is written back when the field is left. Persisting per
-  // keystroke would be a round trip per character, and a draft is only ever
-  // read back on a reload.
-  function patchDraft(id, patch) {
-    recipe.drafts = recipe.drafts.map((d) => (d.id === id ? { ...d, ...patch } : d))
+  // keystroke would be a round trip per character, and the field is the truth
+  // until then either way.
+  function patchRow(id, patch) {
+    recipe.rows = recipe.rows.map((d) => (d.id === id ? { ...d, ...patch } : d))
     touch()
   }
 
-  async function removeDraft(id) {
+  // The row goes, and so does every link into it -- here and in the shared
+  // list, which is keyed the same way. What it registered as goes at the next
+  // solve: the library is built from the rows, so a row that is not there
+  // registers nothing.
+  async function removeRow(id) {
     const key = `#${id}`
-    recipe.drafts = recipe.drafts
+    recipe.rows = recipe.rows
       .filter((d) => d.id !== id)
       .map((d) => ({ ...d, parents: d.parents.filter((p) => p !== key) }))
+    if (sharedPaths.includes(key)) {
+      await attempt(() =>
+        api.put(`/workflows/${name}`, {
+          shared_input_paths: sharedPaths.filter((p) => p !== key),
+        }),
+      )
+    }
     await persist()
+    await load()
   }
 
   function patchTarget(i, patch) {
@@ -458,155 +457,26 @@
     touch()
   }
 
-  // Every edit on a row is local until the field is left; this is leaving it.
+  // Every edit on a row is local until the field is left; this is leaving it,
+  // and saving the recipe is the whole of what it does. There is no second step
+  // and nothing changes shape: the row is what the user is editing, and the
+  // input library is built from it when the workflow is solved.
+  //
   // A type field is a combobox rather than a plain input, so "left" is focus
   // moving out of the whole control, not out of the box inside it.
-  async function commitRow() {
-    await persist()
-    await commitDrafts()
-  }
+  const commitRow = persist
 
-  // A draft becomes a library item the moment it can: it has a type, it has an
-  // identity, and everything it descends from is itself registered. That last
-  // condition is what makes a chain of them commit in cascade -- filling in the
-  // top row registers it, which unblocks the one below, and so on down.
-  let committing = false
-
-  function draftReady(d, registered) {
-    // an array row is not an incomplete row: it is a complete declaration of N
-    // rows, and registering it as it stands would put a path with brace
-    // characters in it into the library
-    if (isArrayRow(d)) return false
-    const identity = d.mode === 'value' ? d.name.trim() : d.path.trim()
-    return !!d.dtype.trim() && !!identity && d.parents.every((p) => registered.has(p))
-  }
-
-  async function commitDrafts() {
-    if (committing) return
-    committing = true
-    try {
-      // the list only ever shrinks in here, so this terminates even if a commit
-      // lands somewhere the reload does not show it
-      for (;;) {
-        const registered = new Set(items.map((it) => it.path))
-        const d = recipe.drafts.find((x) => draftReady(x, registered))
-        if (!d) break
-        const payload = { dtype: d.dtype.trim(), parents: d.parents }
-        if (d.mode === 'value') Object.assign(payload, { name: d.name.trim(), value: d.value })
-        else payload.path = d.path.trim()
-        const out = await attempt(() => api.post(`/workflows/${name}/inputs/items`, payload))
-        // refused: the notice says why, and the row stays a draft so it can be
-        // corrected rather than lost
-        if (!out) break
-        const key = `#${d.id}`
-        recipe.drafts = recipe.drafts
-          .filter((x) => x.id !== d.id)
-          .map((x) => ({ ...x, parents: x.parents.map((p) => (p === key ? out.path : p)) }))
-        await loadInputs()
-        await persist()
-      }
-    } finally {
-      committing = false
-    }
-  }
-
-  // Lineage, whichever half of the recipe the row is in. Outputs are positions
-  // in the request; registered inputs are a write to the library, which is the
-  // one place a parent link is stored rather than described.
+  // Lineage, whichever half of the recipe the row is in. Both are positions in
+  // the request now -- an input by its row id, an output by its index.
   async function setParents(row, keys) {
     if (row.kind === 'target') {
       patchTarget(row.id, {
         parents: keys.map((k) => Number(k.slice(1))).sort((a, b) => a - b),
       })
-      await persist()
-      return
+    } else {
+      patchRow(row.id, { parents: keys })
     }
-    if (row.kind === 'draft') {
-      patchDraft(row.id, { parents: keys })
-      await persist()
-      await commitDrafts()
-      return
-    }
-    await attempt(async () => {
-      await api.put(`/workflows/${name}/inputs/items/parents`, { path: row.id, parents: keys })
-      await loadInputs()
-    })
-    // a row that descended from this one may now be registerable, or not
-    await commitDrafts()
-  }
-
-  // Correcting a registered row, in place. Both are one route and a reload: the
-  // row keeps its position, its lineage, and everything that descends from it --
-  // which delete-and-add-again could not, and which is why these exist.
-  //
-  // Neither touches the user's file. A path in the library is a pointer, so
-  // re-pointing one is a manifest edit; only a value's own file (which the
-  // library wrote) is ever moved, and that one is the library's to move.
-  async function retypeInput(item, dtype) {
-    await attempt(async () => {
-      await api.put(`/workflows/${name}/inputs/items/type`, { path: item.path, dtype })
-      await loadInputs()
-    })
-    // a draft waiting on a parent of a particular type may now be registerable
-    await commitDrafts()
-  }
-
-  async function repointInput(item, path) {
-    const out = await attempt(async () => {
-      const body = await api.put(`/workflows/${name}/inputs/items/path`, {
-        path: item.path, new_path: path,
-      })
-      // before anything reads the row keys again: a registered row's identity
-      // *is* its path, here and in every other row's lineage options
-      await loadInputs()
-      return body
-    })
-    if (!out) return
-    // the library follows the link for its own items; a draft naming the old
-    // path is ours to follow, or its lineage silently stops resolving
-    const pending = recipe.drafts.some((d) => d.parents.includes(item.path))
-    if (pending) {
-      recipe.drafts = recipe.drafts.map((d) => ({
-        ...d,
-        parents: d.parents.map((p) => (p === item.path ? out.new : p)),
-      }))
-      await persist()
-    }
-    await commitDrafts()
-  }
-
-  // Removing an item leaves anything that descended from it pointing at a path
-  // the library no longer holds -- the library does not chase those down, and
-  // the row would sit there claiming a lineage that is gone. Both halves are
-  // cleared here, and both are said out loud: it changes the plan silently
-  // otherwise. Same reasoning as removeTarget below.
-  async function removeInput(item) {
-    const orphaned = items.filter((it) => (it.parents ?? []).some((p) => p.path === item.path))
-    const ok = await attempt(async () => {
-      await api.del(`/workflows/${name}/inputs/items?path=${encodeURIComponent(item.path)}`)
-      for (const child of orphaned) {
-        await api.put(`/workflows/${name}/inputs/items/parents`, {
-          path: child.path,
-          parents: (child.parents ?? [])
-            .map((p) => p.path)
-            .filter((p) => p !== item.path && p !== child.path),
-        })
-      }
-      await loadInputs()
-      return true
-    })
-    const pending = recipe.drafts.filter((d) => d.parents.includes(item.path))
-    if (ok && pending.length) {
-      recipe.drafts = recipe.drafts.map((d) => ({
-        ...d,
-        parents: d.parents.filter((p) => p !== item.path),
-      }))
-      await persist()
-    }
-    const cut = orphaned.length + (ok ? pending.length : 0)
-    if (ok && cut) {
-      notify(`${cut} row(s) descended from that one; the link was dropped`, 'refused')
-    }
+    await persist()
   }
 
   // Targets are addressed by position, so removing one has to renumber the
@@ -636,7 +506,7 @@
   // you to find it -- the hints sit well below the recipe.
   function useType(type) {
     showType(type)
-    addDraft('file', { dtype: type })
+    addInput('file', { dtype: type })
     document.getElementById('msm-recipe')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
@@ -649,31 +519,30 @@
     if (!tr) return
 
     // "we already have one of those" is a question about properties, not names,
-    // and the index has already answered it: a registered type appears under a
-    // transform's `consumed_by` exactly when the solver would accept it there.
+    // and the index has already answered it: a type appears under a transform's
+    // `consumed_by` exactly when the solver would accept it there. A row whose
+    // type is not in the index at all falls back to naming the slot's type
+    // outright, which is what a row typed by hand against an unknown library is.
     //
     // A filler is *consumed*: what is credited to one requirement is not offered
-    // to the next, or one file would satisfy three slots. And a draft only
-    // stands in once it has an identity -- a blank row this button made itself is
-    // a row you still have to fill in, not an input you have. It still occupies
-    // the requirement, so pressing apply again does not stamp a second copy;
-    // it is reported as blank rather than counted as present.
+    // to the next, or one file would satisfy three slots. A row with nothing in
+    // it still occupies the requirement, so pressing apply again does not stamp
+    // a second copy; it is reported as blank rather than counted as present.
     const identity = (d) => (d.mode === 'value' ? d.name : d.path).trim()
     const used = new Set()
 
+    function fits(dtype, slot) {
+      const entries = index.by_type?.[dtype]?.consumed_by ?? []
+      return entries.length ? entries.some((e) => e.i === i && e.as === slot.as)
+                            : dtype === slot.as
+    }
+
     function claim(slot) {
-      for (const it of items) {
-        if (used.has(it.path)) continue
-        const entries = index.by_type?.[it.type_name]?.consumed_by ?? []
-        if (entries.some((e) => e.i === i && e.as === slot.as)) {
-          return { key: it.path, by: it.path }
-        }
-      }
-      for (const d of recipe.drafts) {
+      for (const d of recipe.rows) {
         const key = `#${d.id}`
-        if (used.has(key) || d.dtype !== slot.as) continue
+        if (used.has(key) || !d.dtype || !fits(d.dtype, slot)) continue
         const id = identity(d)
-        return { key, by: id, blank: !id }
+        return { key, by: id || `a new ${d.dtype}`, blank: !id }
       }
       return null
     }
@@ -694,7 +563,7 @@
       // a parent is always declared before the slot that names it -- the model
       // asserts it -- so everything this descends from already has a key
       const d = {
-        id: nextDraftId(),
+        id: nextRowId(),
         mode: 'file',
         path: '',
         name: '',
@@ -708,7 +577,7 @@
     })
 
     if (made.length) {
-      recipe.drafts = [...recipe.drafts, ...made]
+      recipe.rows = [...recipe.rows, ...made]
       // awaited, not fired: persist clears the notice on its way in, so a report
       // written before it lands is a report nobody ever sees
       await persist()
@@ -921,7 +790,7 @@
       <div class="card" id="msm-recipe">
         <RecipeCard
           {items}
-          drafts={recipe.drafts}
+          rows={recipe.rows}
           targets={recipe.targets}
           typeOptions={allTypes}
           {counts}
@@ -929,17 +798,13 @@
           columns={table?.columns ?? []}
           rowCount={table?.row_count ?? 0}
           expansion={table?.expansion ?? null}
-          onindex={setIndex}
           onshared={setShared}
           onfocus={showType}
-          onremoveInput={removeInput}
-          onremoveDraft={removeDraft}
+          onremoveRow={removeRow}
           onremoveTarget={removeTarget}
-          ondraft={patchDraft}
+          onrow={patchRow}
           ontarget={patchTarget}
           onparents={setParents}
-          onretype={retypeInput}
-          onrepoint={repointInput}
           oncommit={commitRow}
           onadd={addRow}
         >
@@ -963,9 +828,10 @@
           <span class="small muted">two outputs are the same type with the same lineage</span>
         {:else if tableProblem}
           <span class="small muted">{tableProblem}</span>
-        {:else if sampleType}
+        {:else if arrayCount}
           <span class="small muted">
-            one run per sheet row, split on <span class="mono">{sampleType}</span>
+            one unified solve over the sheet's {arrayCount}
+            {arrayCount === 1 ? 'column' : 'columns'}
           </span>
         {:else if stale}
           <span class="tag warn">recipe changed — the result below is from the old one</span>

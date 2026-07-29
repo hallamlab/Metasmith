@@ -17,6 +17,7 @@ from typing import Any
 import yaml
 
 from ..constants import AgentPaths
+from ..models.lineage import LinPayload
 from ..models.remote import Source
 
 
@@ -324,17 +325,9 @@ def _seed_lineage(inst) -> dict[str, list[int]]:
     return {k: sorted(set(v)) for k, v in lineage.items()}
 
 
-def _select_instances(insts: list, start: int, end: int) -> list:
-    if len(insts) == 0:
-        return []
-    if len(insts) == 1:
-        return list(insts)
-    chunk = list(insts[start:end])
-    if chunk:
-        return chunk
-    if start < len(insts):
-        return [insts[start]]
-    return [insts[-1]]
+# Single-sourced in models/workflow/grouping.py — the Nextflow codegen reads
+# the same answer to decide when a key is whole, and the two must not drift.
+from ..models.workflow.grouping import select_for_key as _select_for_key
 
 
 def _merge_lineage(maps: list[dict[str, list[int]]]) -> dict[str, list[int]]:
@@ -380,7 +373,10 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
 
     with open(invocation_dir / METADATA_FILE, "w", encoding="utf-8") as f:
         f.write("res 1/1.GB/1\n")
-        f.write(f"lin {json.dumps(lineages, separators=(',', ':'))}\n")
+        # Same envelope the Groovy emitter puts on the wire — bootstrap parses
+        # both through `LinPayload.from_json`, so a bare list here would be a
+        # silent divergence between the two runtimes.
+        f.write(f"lin {LinPayload(v=LinPayload.VERSION, entries=lineages).to_json()}\n")
         f.write("fmt 2\n")
         f.write(f"din {json.dumps(dep_in, separators=(',', ':'))}\n")
         f.write(f"dot {json.dumps(dep_out, separators=(',', ':'))}\n")
@@ -578,27 +574,40 @@ def cli_nextflow(argv: list[str]) -> int:
             invocation_dir = nxf_work / f"step_{step.order:02}" / f"batch_{start:04}_{end:04}"
             invocation_dir.mkdir(parents=True, exist_ok=True)
 
-            lineage_entry: dict[str, Any] = {}
-            files: list[list[str]] = []
+            # One lineage member per group key in the window — the same arity
+            # the real runtime puts on the wire (`Orchestrator._collateBatch`
+            # builds one index per member, `LinPayload.entries` carries them
+            # all). Writing one member for the whole window would make
+            # `context.AsBatch()` yield once here and `batch_size` times under
+            # Nextflow, and this runtime is what pins the contract cheaply.
+            members: list[dict[str, Any]] = []
             input_maps: list[dict[str, list[int]]] = []
+            group_insts = step.group_by_instances
 
-            for dep in step.transform.model.requires:
-                dep_insts = list(step.dependency_map.get(dep, []))
-                selected = _select_instances(dep_insts, start, end)
-                dtype_key = selected[0].dtype.key if selected else dep.key
-                paths = [str(inst.ResolvePath()) for inst in selected]
-                files.append(paths)
-                hashes = [hash15(str(Path(p))) for p in paths]
-                lineage_entry[dtype_key] = hashes
+            for key_idx in range(start, end):
+                key_inst = group_insts[key_idx] if key_idx < len(group_insts) else None
+                lineage_entry: dict[str, Any] = {}
+                files: list[list[str]] = []
 
-                lineages = [
-                    lineage_by_instance.get(inst.instance_id, {dtype_key: hashes})
-                    for inst in selected
-                ]
-                input_maps.append(_merge_lineage(lineages))
+                for dep in step.transform.model.requires:
+                    dep_insts = list(step.dependency_map.get(dep, []))
+                    selected = _select_for_key(dep_insts, key_inst, key_idx)
+                    dtype_key = selected[0].dtype.key if selected else dep.key
+                    paths = [str(inst.ResolvePath()) for inst in selected]
+                    files.append(paths)
+                    hashes = [hash15(str(Path(p))) for p in paths]
+                    lineage_entry[dtype_key] = hashes
 
-            lineage_entry["FILES"] = files
-            _write_metadata_file(step, invocation_dir, [lineage_entry])
+                    lineages = [
+                        lineage_by_instance.get(inst.instance_id, {dtype_key: hashes})
+                        for inst in selected
+                    ]
+                    input_maps.append(_merge_lineage(lineages))
+
+                lineage_entry["FILES"] = files
+                members.append(lineage_entry)
+
+            _write_metadata_file(step, invocation_dir, members)
 
             dep_arity = {
                 dep.key: len(step.dependency_map.get(dep, []))
@@ -646,7 +655,15 @@ def cli_nextflow(argv: list[str]) -> int:
                     insts = list(step.dependency_map.get(dep, []))
                     if not insts:
                         continue
-                    out_inst = _select_instances(insts, start, end)[0]
+                    # The instance whose dtype/extension names this batch's
+                    # output files. Same question as the input side, so same
+                    # answer: lineage first, position after. Produced
+                    # instances usually carry no registered parents, in which
+                    # case this is the positional slice it always was.
+                    _first_key = (
+                        group_insts[start] if start < len(group_insts) else None
+                    )
+                    out_inst = _select_for_key(insts, _first_key, start)[0]
                     ext = out_inst.dtype.GetPreferredFileExtension()
                     pattern = f"*-*-{branch_idx + 1}.*-{out_inst.dtype.key}{ext}"
                     files = sorted(invocation_dir.glob(pattern))

@@ -23,6 +23,7 @@ from metasmith.gui import share, stdlib
 from metasmith.gui.app import bind_project, create_app
 from metasmith.gui.store import Project
 from metasmith.ops import agent as op_agent
+from metasmith.ops import inputs as op_inputs
 from metasmith.ops import workspace as op_workspace
 
 from tests.e2e.docker.conftest import create_transform_library
@@ -114,16 +115,44 @@ def _finish(client, job_summary, timeout=120) -> dict:
     return job.result
 
 
+def _row(rid, path="", dtype="mock::assembly", parents=None, **over):
+    """One input row of the recipe, in the shape the browser saves."""
+    return {
+        "id": rid, "mode": "file", "path": str(path), "name": "", "value": "",
+        "dtype": dtype, "parents": list(parents or []),
+    } | over
+
+
+def _put_rows(client, workflow: str, rows: list[dict]):
+    """Save the recipe's rows, and build the library from them.
+
+    The rows are what a workflow *has*; the library is what a solve makes of
+    them. A test that wants the library without paying for a solve calls the
+    same sync the generate calls -- there is deliberately no route that does it
+    on its own, because there is no gesture in the page that would.
+    """
+    r = client.put(f"/api/workflows/{workflow}", json={"input_drafts": rows})
+    assert r.status_code == 200, r.get_json()
+    project = client.application.config["MSM_PROJECT"]
+    op_inputs.sync(str(project.input_library_path(workflow)), rows)
+    return rows
+
+
+def _rows_of(client, workflow: str) -> list[dict]:
+    return list(
+        client.get(f"/api/workflows/{workflow}").get_json()["request"].get("input_drafts") or []
+    )
+
+
 def _seed_inputs(client, workflow: str, count: int = 2, prefix: str = "sample"):
     project = client.application.config["MSM_PROJECT"]
     lib_path = project.input_library_path(workflow)
+    rows = _rows_of(client, workflow)
     for i in range(count):
         f = lib_path / f"{prefix}_{i}.fa"
         f.write_text(f">contig_{i}\nACGT\n")
-        r = client.post(f"/api/workflows/{workflow}/inputs/items", json={
-            "path": str(f), "dtype": "mock::assembly",
-        })
-        assert r.status_code == 201, r.get_json()
+        rows.append(_row(f"{prefix}{i}", f))
+    return _put_rows(client, workflow, rows)
 
 
 def _make_workflow(client, name=None, sample="mock::assembly", targets=("mock::bam",)) -> str:
@@ -380,8 +409,10 @@ class TestAgents:
         assert r.status_code == 201, r.get_json()
         body = r.get_json()
         assert body["name"]
-        # named after itself, so a host with three agents has three directories
-        assert body["home"].endswith(f"msm.{body['name']}")
+        # named after its stable id, not its display name, so a rename can
+        # never relocate it and a host with three agents has three directories
+        assert body["id"]
+        assert body["home"].endswith(f"msm.{body['id']}")
         assert body["setup_commands"] == ["#!/bin/bash"]
         assert body["valid"] is True
         # complete, but nothing is installed on that host yet. Kept out of
@@ -393,7 +424,10 @@ class TestAgents:
         d = client.get("/api/defaults/agent").get_json()
         # read off env.Runtime rather than written out again
         assert set(d["runtimes"]) >= {"APPTAINER", "DOCKER", "MAMBA"}
-        assert d["home"] == f"~/msm.{d['name']}"
+        # a preview only -- the real agent this becomes gets its own id, and
+        # the real home is built from that, not from this name
+        assert d["home"].startswith("~/msm.")
+        assert not d["home"].endswith(f"msm.{d['name']}")
 
     def test_mamba_is_a_runtime(self, client, tmp_path):
         client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
@@ -432,15 +466,20 @@ class TestAgentNaming:
         assert body["auto_named"] is False
 
     def test_pointing_it_at_a_host_renames_it(self, client, project_root):
-        name = client.post("/api/agents", json={}).get_json()["name"]
+        created = client.post("/api/agents", json={}).get_json()
+        name, agent_id = created["name"], created["id"]
         prefix = self._prefix(project_root, name)
+        # the client's home-path box was left blank, so it recomputes the
+        # default home from the agent's (unchanging) id, on whatever host the
+        # form now names
         body = client.put(f"/api/agents/{name}", json={
-            "name": name, "home": f"ssh://sockeye:~/msm.{name}",
+            "name": name, "home": f"ssh://sockeye:~/msm.{agent_id}",
         }).get_json()
         assert body["name"] == f"{prefix}-sockeye"
         assert body["sort_name"] == f"sockeye{prefix}"
-        # the default home is made out of the name, so it moved with it
-        assert body["home"] == f"ssh://sockeye:~/msm.{prefix}-sockeye"
+        # the default home is made out of the id, so it moved with the host
+        assert body["home"] == f"ssh://sockeye:~/msm.{agent_id}"
+        assert body["id"] == agent_id
         assert body["notes"]
 
     def test_a_home_someone_wrote_out_does_not_move(self, client, project_root):
@@ -518,18 +557,20 @@ class TestAgentNaming:
 
     def test_an_alias_rename_carries_the_names_on_it(self, client, project_root):
         client.post("/api/ssh/hosts", json={"alias": "old", "hostname": "old.example"})
-        name = client.post("/api/agents", json={}).get_json()["name"]
+        created = client.post("/api/agents", json={}).get_json()
+        name, agent_id = created["name"], created["id"]
         prefix = self._prefix(project_root, name)
         client.put(f"/api/agents/{name}", json={
-            "name": name, "home": f"ssh://old:~/msm.{name}",
+            "name": name, "home": f"ssh://old:~/msm.{agent_id}",
         })
         r = client.put("/api/ssh/hosts/old", json={"alias": "new", "hostname": "old.example"})
         body = r.get_json()
         assert body["agents_repointed"] == [f"{prefix}-old → {prefix}-new"]
         agent = client.get(f"/api/agents/{prefix}-new").get_json()
         assert agent["sort_name"] == f"new{prefix}"
+        assert agent["id"] == agent_id
         # the directory on that machine did not move, so neither did the home
-        assert agent["home"] == f"ssh://new:~/msm.{prefix}-old"
+        assert agent["home"] == f"ssh://new:~/msm.{agent_id}"
 
     def test_the_list_groups_by_host(self, client, tmp_path):
         for host in ("sockeye", "chamois", "sockeye"):
@@ -760,8 +801,10 @@ class TestDefaultHome:
 
     An empty field saves as the default, so a wrong True replaces a path
     somebody chose with a different one on their next save. Both spellings of
-    the default count -- the literal `~/msm.<name>` and the expansion a local
-    save leaves behind -- and nothing else does.
+    the default count -- the literal `~/msm.<id>` and the expansion a local
+    save leaves behind -- and nothing else does. The id, not the name, is
+    what the default is built from, so renaming an agent must never change
+    the answer.
     """
 
     def test_a_fresh_local_agent_is_default(self, client):
@@ -769,21 +812,30 @@ class TestDefaultHome:
         assert client.get("/api/agents/smith").get_json()["home_is_default"] is True
 
     def test_the_unexpanded_remote_spelling_is_default(self, client):
-        client.post("/api/agents", json={"name": "smith"})
-        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://h:~/msm.smith"})
+        agent_id = client.post("/api/agents", json={"name": "smith"}).get_json()["id"]
+        client.put("/api/agents/smith", json={"name": "smith", "home": f"ssh://h:~/msm.{agent_id}"})
         assert client.get("/api/agents/smith").get_json()["home_is_default"] is True
 
-    def test_another_directory_ending_in_the_same_name_is_not(self, client):
-        """The trap a suffix test walks into: `/scratch/you/msm.smith` is not it."""
-        client.post("/api/agents", json={"name": "smith"})
-        client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://h:/scratch/msm.smith"})
+    def test_another_directory_ending_in_the_same_id_is_not(self, client):
+        """The trap a suffix test walks into: `/scratch/you/msm.<id>` is not it."""
+        agent_id = client.post("/api/agents", json={"name": "smith"}).get_json()["id"]
+        client.put("/api/agents/smith", json={"name": "smith", "home": f"ssh://h:/scratch/msm.{agent_id}"})
         assert client.get("/api/agents/smith").get_json()["home_is_default"] is False
 
-    def test_a_renamed_agent_stops_being_default(self, client):
+    def test_a_renamed_agent_stays_default(self, client):
+        """The whole point: a rename must never relocate the default home."""
+        agent_id = client.post("/api/agents", json={"name": "smith"}).get_json()["id"]
+        client.put("/api/agents/smith", json={"name": "smith", "home": f"ssh://h:~/msm.{agent_id}"})
+        client.put("/api/agents/smith", json={"name": "jones", "home": f"ssh://h:~/msm.{agent_id}"})
+        after = client.get("/api/agents/jones").get_json()
+        assert after["home_is_default"] is True
+        assert after["id"] == agent_id
+
+    def test_a_name_shaped_home_is_not_default(self, client):
+        """A path that merely looks like the old name-based scheme is just a path."""
         client.post("/api/agents", json={"name": "smith"})
         client.put("/api/agents/smith", json={"name": "smith", "home": "ssh://h:~/msm.smith"})
-        client.put("/api/agents/smith", json={"name": "jones", "home": "ssh://h:~/msm.smith"})
-        assert client.get("/api/agents/jones").get_json()["home_is_default"] is False
+        assert client.get("/api/agents/smith").get_json()["home_is_default"] is False
 
 
 class TestSshUpdateConvention:
@@ -867,14 +919,15 @@ class TestWorkflows:
         assert Path(body["input_library"]["path"]).name == "input.xgdb"
 
     def test_add_and_remove_inputs(self, client):
+        """A row is the input, and removing one is removing the row.
+
+        Nothing calls the library either way: it is built from the rows, so what
+        a row registered goes when the row does, at the next solve.
+        """
         name = _make_workflow(client)
-        _seed_inputs(client, name, 2)
-        items = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
-        assert len(items) == 2
-        r = client.delete(
-            f"/api/workflows/{name}/inputs/items", query_string={"path": items[0]["path"]},
-        )
-        assert r.status_code == 200
+        rows = _seed_inputs(client, name, 2)
+        assert len(client.get(f"/api/workflows/{name}/inputs").get_json()["items"]) == 2
+        _put_rows(client, name, rows[:1])
         assert len(client.get(f"/api/workflows/{name}/inputs").get_json()["items"]) == 1
 
     def test_generate_success(self, client):
@@ -930,9 +983,7 @@ class TestWorkflows:
         shared.write_text(">x\nACGT\n")
         names = [_make_workflow(client) for _ in range(2)]
         for n in names:
-            client.post(f"/api/workflows/{n}/inputs/items", json={
-                "path": str(shared), "dtype": "mock::assembly",
-            })
+            _put_rows(client, n, [_row("a", shared)])
 
         # generate returns 202 immediately, so both jobs are in flight at once
         jobs = {n: client.post(f"/api/workflows/{n}/generate", json={}).get_json() for n in names}
@@ -1025,9 +1076,8 @@ class TestWorkflowDag:
         assert client.get(f"/api/workflows/{name}/dag").status_code == 409
 
 
-@pytest.fixture
-def template(project_root) -> str:
-    """One template in the stand-in standard library: deferred assembly in.
+def _make_template(project_root: Path) -> str:
+    """Write one template into the stand-in standard library: deferred assembly in.
 
     Written the way the libraries repository writes its own -- a `Spec` with
     `DEFERRED` inputs, saved with references relative to the repository root --
@@ -1050,8 +1100,38 @@ def template(project_root) -> str:
     return "assembly_to_bam"
 
 
+@pytest.fixture
+def template(project_root) -> str:
+    return _make_template(project_root)
+
+
 class TestTemplates:
     """The starting points the new-workflow modal offers."""
+
+    def test_a_fresh_start_warms_every_template_s_dag(self, _app, project_root, tmp_path):
+        """`warm_template_dags` draws every template before anyone asks.
+
+        Unlike the `client` fixture, the template must exist *before*
+        `bind_project` starts the warm thread -- that ordering is the whole
+        point of the test, since a template written after the warm pass has
+        already run would never be picked up by it.
+        """
+        import time
+
+        name = _make_template(project_root)
+        for client in _client_on(_app, project_root, tmp_path / "ssh_config"):
+            deadline = time.monotonic() + 10
+            entry = None
+            while time.monotonic() < deadline:
+                (entry,) = client.get("/api/templates").get_json()
+                if entry["dag_ready"]:
+                    break
+                time.sleep(0.1)
+            assert entry is not None and entry["dag_ready"], (
+                "warm_template_dags did not draw the template in time"
+            )
+            # never asked the route to draw it -- only the warm thread could have
+            assert client.get(f"/api/templates/{name}/dag").status_code == 200
 
     def test_listing_reads_yaml_and_never_solves(self, client, template):
         # the modal opens on every `+ workflow`; if listing planned anything it
@@ -1351,23 +1431,14 @@ class TestWorkflowGenerateMore:
         b = _make_workflow(client)
         project = client.application.config["MSM_PROJECT"]
         for name in (a, b):
-            lib = project.input_library_path(name)
-            f = lib / "same.fa"
+            f = project.input_library_path(name) / "same.fa"
             f.write_text(">x\nACGT\n")
-            client.post(f"/api/workflows/{name}/inputs/items", json={
-                "path": str(f.resolve()), "dtype": "mock::assembly",
-            })
+            _put_rows(client, name, [_row("a", f.resolve())])
         # different files at different paths -> different keys; now point both at one path
         shared = project.root / "shared.fa"
         shared.write_text(">x\nACGT\n")
         for name in (a, b):
-            lib = project.input_library_path(name)
-            items = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
-            client.delete(f"/api/workflows/{name}/inputs/items",
-                          query_string={"path": items[0]["path"]})
-            client.post(f"/api/workflows/{name}/inputs/items", json={
-                "path": str(shared), "dtype": "mock::assembly",
-            })
+            _put_rows(client, name, [_row("a", shared)])
         ka = _finish(client, client.post(f"/api/workflows/{a}/generate", json={}).get_json())
         kb = _finish(client, client.post(f"/api/workflows/{b}/generate", json={}).get_json())
         assert ka["task_key"] == kb["task_key"]
@@ -1380,189 +1451,6 @@ class TestWorkflowGenerateMore:
         assert project.workflow_path(name).is_dir()
         assert client.delete(f"/api/workflows/{name}").get_json()["action"] == "deleted"
         assert not project.workflow_path(name).exists()
-
-
-class TestInputRowEdits:
-    """Correcting a row that is already registered, in place.
-
-    Both are a manifest edit and neither is a filesystem operation: an input
-    path is a *pointer* at the user's file, so re-pointing one moves nothing --
-    the library's own `Rename` would, which is why these do not route through it.
-    """
-
-    def _one(self, client, name, path, dtype="mock::assembly", parents=None):
-        r = client.post(f"/api/workflows/{name}/inputs/items", json={
-            "path": str(path), "dtype": dtype, "parents": parents,
-        })
-        assert r.status_code == 201, r.get_json()
-        return r.get_json()["path"]
-
-    def _items(self, client, name):
-        return {
-            it["path"]: it
-            for it in client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
-        }
-
-    def test_the_type_changes_in_place(self, client, tmp_path):
-        name = _make_workflow(client)
-        parent = tmp_path / "reads.fa"
-        parent.write_text(">x\nACGT\n")
-        child = tmp_path / "reads.bam"
-        child.write_text("bam")
-        p = self._one(client, name, parent)
-        c = self._one(client, name, child, dtype="mock::bam", parents=[p])
-
-        r = client.put(f"/api/workflows/{name}/inputs/items/type", json={
-            "path": p, "dtype": "mock::reads",
-        })
-        assert r.status_code == 200, r.get_json()
-        items = self._items(client, name)
-        assert items[p]["type_name"] == "mock::reads"
-        # ...and the row is still the same row: it was not removed and re-added,
-        # so what descends from it still does -- under the *new* type name, since
-        # a parent record carries its parent's type as well as its path
-        assert [(x["path"], x["type_name"]) for x in items[c]["parents"]] == [
-            (p, "mock::reads"),
-        ]
-        assert parent.is_file() and child.is_file(), (
-            "changing a type must not touch the filesystem"
-        )
-
-    def test_an_unknown_type_is_refused(self, client, tmp_path):
-        name = _make_workflow(client)
-        f = tmp_path / "reads.fa"
-        f.write_text(">x\nACGT\n")
-        p = self._one(client, name, f)
-        r = client.put(f"/api/workflows/{name}/inputs/items/type", json={
-            "path": p, "dtype": "mock::nonesuch",
-        })
-        assert r.status_code >= 400
-        assert self._items(client, name)[p]["type_name"] == "mock::assembly"
-
-    def test_the_path_changes_and_a_descendant_follows(self, client, tmp_path):
-        name = _make_workflow(client)
-        parent = tmp_path / "run_a.fa"
-        parent.write_text(">x\nACGT\n")
-        child = tmp_path / "run_a.bam"
-        child.write_text("bam")
-        moved_to = tmp_path / "run_b.fa"
-        moved_to.write_text(">y\nTTTT\n")
-
-        p = self._one(client, name, parent)
-        c = self._one(client, name, child, dtype="mock::bam", parents=[p])
-
-        r = client.put(f"/api/workflows/{name}/inputs/items/path", json={
-            "path": p, "new_path": str(moved_to),
-        })
-        assert r.status_code == 200, r.get_json()
-        assert r.get_json()["moved"] is False
-        assert r.get_json()["relinked"] == 1
-
-        items = self._items(client, name)
-        assert set(items) == {str(moved_to), c}
-        # the child descends from the row, not from the string it used to hold
-        assert [x["path"] for x in items[c]["parents"]] == [str(moved_to)]
-        # ...and neither file went anywhere
-        assert parent.is_file() and moved_to.is_file()
-        assert parent.read_text().startswith(">x")
-        assert moved_to.read_text().startswith(">y")
-
-    def test_a_collision_is_refused_and_the_row_is_left_alone(self, client, tmp_path):
-        name = _make_workflow(client)
-        a, b = tmp_path / "a.fa", tmp_path / "b.fa"
-        for f in (a, b):
-            f.write_text(">x\nACGT\n")
-        pa = self._one(client, name, a)
-        pb = self._one(client, name, b)
-        r = client.put(f"/api/workflows/{name}/inputs/items/path", json={
-            "path": pa, "new_path": pb,
-        })
-        assert r.status_code >= 400
-        assert "already registered" in r.get_json()["error"]
-        assert set(self._items(client, name)) == {pa, pb}
-
-    def test_a_library_owned_value_is_moved_inside_the_library(self, client):
-        """The one case where the file *is* the library's, so a move is right."""
-        name = _make_workflow(client)
-        project = client.application.config["MSM_PROJECT"]
-        lib = project.input_library_path(name)
-        r = client.post(f"/api/workflows/{name}/inputs/items", json={
-            "name": "K12", "value": "GCF_000005845.2", "dtype": "mock::assembly",
-        })
-        assert r.status_code == 201, r.get_json()
-        assert (lib / "K12").is_file()
-
-        r = client.put(f"/api/workflows/{name}/inputs/items/path", json={
-            "path": "K12", "new_path": "K12_MG1655",
-        })
-        assert r.status_code == 200, r.get_json()
-        assert r.get_json()["moved"] is True
-        assert not (lib / "K12").exists()
-        assert (lib / "K12_MG1655").read_text() == "GCF_000005845.2"
-        assert list(self._items(client, name)) == ["K12_MG1655"]
-
-    def test_a_pointer_cannot_become_library_owned(self, client, tmp_path):
-        """Relative means the library owns the file; absolute means it does not.
-
-        Flipping between them silently changes what the entry claims, so it is
-        refused rather than guessed at.
-        """
-        name = _make_workflow(client)
-        f = tmp_path / "reads.fa"
-        f.write_text(">x\nACGT\n")
-        p = self._one(client, name, f)
-        r = client.put(f"/api/workflows/{name}/inputs/items/path", json={
-            "path": p, "new_path": "reads.fa",
-        })
-        assert r.status_code >= 400
-        assert list(self._items(client, name)) == [p]
-
-    def test_a_lineage_loop_is_refused(self, client, tmp_path):
-        """A row cannot descend from something that descends from it.
-
-        The browser filters these out of the menu it offers, but this route is
-        reachable without it, and nothing downstream is defined over a cycle:
-        `AsSamples` walks up to the ancestors and then back down to their
-        descendants, so a loop makes every branch the whole library.
-        """
-        name = _make_workflow(client)
-        parent = tmp_path / "reads.fa"
-        parent.write_text(">x\nACGT\n")
-        child = tmp_path / "reads.bam"
-        child.write_text("bam")
-        p = self._one(client, name, parent)
-        c = self._one(client, name, child, dtype="mock::bam", parents=[p])
-
-        # the direct loop, and the one that closes through a third row
-        r = client.put(f"/api/workflows/{name}/inputs/items/parents", json={
-            "path": p, "parents": [c],
-        })
-        assert r.status_code >= 400
-        r = client.put(f"/api/workflows/{name}/inputs/items/parents", json={
-            "path": p, "parents": [p],
-        })
-        assert r.status_code >= 400
-
-        # ...and the lineage that was there is untouched by the refusal
-        items = self._items(client, name)
-        assert [x["path"] for x in items[c]["parents"]] == [p]
-        assert items[p]["parents"] == []
-
-    def test_a_grandparent_link_still_works(self, client, tmp_path):
-        """The guard is about loops, not about depth: a chain is still a chain."""
-        name = _make_workflow(client)
-        a, b, c = (tmp_path / f"{n}.fa" for n in ("a", "b", "c"))
-        for f in (a, b, c):
-            f.write_text(">x\nACGT\n")
-        pa = self._one(client, name, a)
-        pb = self._one(client, name, b, parents=[pa])
-        pc = self._one(client, name, c, parents=[pb])
-
-        r = client.put(f"/api/workflows/{name}/inputs/items/parents", json={
-            "path": pc, "parents": [pb, pa],
-        })
-        assert r.status_code == 200, r.get_json()
-        assert {x["path"] for x in self._items(client, name)[pc]["parents"]} == {pa, pb}
 
 
 class TestWorkflowRename:
@@ -2408,10 +2296,10 @@ class TestJobs:
 SHEET = b"sample,asm\nS1,/data/a.fa\nS2,/data/b.fa\n"
 
 # the recipe's input rows as the browser holds them: a sample-array value row
-# that is the sample index, and an array file row descending from it
+# with nothing above it, and an array file row descending from it
 ARRAY_ROWS = [
     {"id": "idx", "mode": "value", "name": "{sample}.id", "value": "{sample}",
-     "dtype": "mock::reads", "parents": [], "index": True},
+     "dtype": "mock::reads", "parents": []},
     {"id": "asm", "mode": "file", "path": "{asm}",
      "dtype": "mock::assembly", "parents": ["#idx"]},
 ]
@@ -2446,13 +2334,12 @@ class TestSampleTable:
         stored = Path(r.get_json()["path"])
         assert stored.read_bytes() == SHEET
 
-    def test_the_table_reports_what_is_wrong_without_refusing_it(self, client):
+    def test_the_table_reports_nothing_wrong_for_an_ordinary_dag(self, client):
         name = _make_workflow(client)
-        _attach(client, name, rows=[dict(ARRAY_ROWS[0], index=False), ARRAY_ROWS[1]])
+        _attach(client, name)
         body = client.get(f"/api/workflows/{name}/table").get_json()
         assert body["attached"] is True
-        assert body["index_id"] is None
-        assert any("sample index" in p["message"] for p in body["problems"])
+        assert body["problems"] == []
 
     def test_solving_registers_and_attributes_every_item(self, client):
         # there is no standalone expand any more: `generate` is what turns an
@@ -2471,7 +2358,6 @@ class TestSampleTable:
         for item in inputs["items"]:
             by_array.setdefault(item["array_id"], []).append(item["path"])
         assert sorted(by_array) == ["asm", "idx"]
-        assert inputs["expansion"]["sample_type"] == "mock::reads"
 
     def test_solving_again_replaces_the_previous_generation(self, client):
         name = _make_workflow(client)
@@ -2538,15 +2424,13 @@ class TestSharedInputs:
 
     def _shared_setup(self, client):
         name = _make_workflow(client, sample="mock::reads")
-        _attach(client, name, rows=self.ROWS)
-        # the sample rows register as a side effect of the `generate` each test
-        # method below calls -- nothing here has to pre-register them
         project = client.application.config["MSM_PROJECT"]
         f = project.input_library_path(name) / "shared.fa"
         f.write_text(">contig\nACGT\n")
-        client.post(f"/api/workflows/{name}/inputs/items",
-                    json={"path": str(f), "dtype": "mock::assembly"})
-        return name, str(f)
+        # every row registers as a side effect of the `generate` each test method
+        # below calls -- nothing here has to pre-register them
+        _attach(client, name, rows=self.ROWS + [_row("shared", f)])
+        return name, "#shared"
 
     def test_an_unshared_neighbour_is_invisible_to_every_sample(self, client):
         name, _ = self._shared_setup(client)
@@ -2554,8 +2438,14 @@ class TestSharedInputs:
         assert not result["success"]
 
     def test_marking_it_shared_puts_it_in_every_sample(self, client):
-        name, path = self._shared_setup(client)
-        client.put(f"/api/workflows/{name}", json={"shared_input_paths": [path]})
+        """Named by the row, not by the path.
+
+        A row may not have a path yet -- the normal state of a fresh recipe --
+        so the request says which row, and the generate turns it into a path
+        between building the library and solving from it.
+        """
+        name, key = self._shared_setup(client)
+        client.put(f"/api/workflows/{name}", json={"shared_input_paths": [key]})
         result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
         assert result["success"], result
 
@@ -2770,11 +2660,12 @@ class TestShareWorkflows:
         assert body["spec"]["transform_libraries"] == ["transforms"]
 
     def test_unbound_is_the_recipe_and_bound_is_the_files(self, client):
+        """The recipe is the rows, and a path is what an unbound share drops."""
         name = self._recipe(client)
         unbound = _payload(client, "workflow", name)["body"]
-        assert [r["path"] for r in unbound["inputs"]] == ["DEFERRED", "DEFERRED"]
+        assert [r["path"] for r in unbound["drafts"]] == ["", ""]
         bound = _payload(client, "workflow", name, bound=True)["body"]
-        assert all(r["path"].endswith(".fa") for r in bound["inputs"])
+        assert all(r["path"].endswith(".fa") for r in bound["drafts"])
 
     def test_an_unbound_workflow_lands_and_still_plans(self, client, elsewhere):
         name = self._recipe(client)
@@ -2784,35 +2675,40 @@ class TestShareWorkflows:
             assert prev["creates"]["input_count"] == 2
             assert "fill them in" in " ".join(prev["notes"])
             got = other.post("/api/share/import", json={"payload": text}).get_json()
-            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            rows = _rows_of(other, got["name"])
             assert len(rows) == 2
-            assert all(r["type_name"] == "mock::assembly" for r in rows)
-            # deferred rows are minted *here*, so they are this project's paths
-            assert all(r["path"].startswith("/msm_deferred/") for r in rows)
-            assert len({r["path"] for r in rows}) == 2
-            # and the workflow it landed in is the ordinary kind: solving is
-            # refused for the missing paths, not for anything about importing
+            assert all(r["dtype"] == "mock::assembly" for r in rows)
+            assert all(not r["path"] for r in rows), "an unbound share carries no paths"
+
+            # and the workflow it landed in is the ordinary kind: solving builds
+            # the library from those rows, and a row with no path yet is a
+            # deferred input -- minted *here*, so they are this project's paths
             result = _finish(other, other.post(
                 f"/api/workflows/{got['name']}/generate", json={}).get_json())
             assert result["success"], result
+            items = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            assert len(items) == 2
+            assert all(r["path"].startswith("/msm_deferred/") for r in items)
+            assert len({r["path"] for r in items}) == 2
 
     def test_lineage_survives_the_crossing(self, client, elsewhere):
         name = _make_workflow(client)
-        _seed_inputs(client, name, count=1)
         project = client.application.config["MSM_PROJECT"]
-        rows = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
-        parent = rows[0]["path"]
-        f = project.input_library_path(name) / "child.fa"
-        f.write_text(">c\nACGT\n")
-        client.post(f"/api/workflows/{name}/inputs/items", json={
-            "path": str(f), "dtype": "mock::bam", "parents": [parent],
-        })
+        parent = project.input_library_path(name) / "parent.fa"
+        parent.write_text(">p\nACGT\n")
+        child = project.input_library_path(name) / "child.fa"
+        child.write_text(">c\nACGT\n")
+        _put_rows(client, name, [
+            _row("p", parent),
+            _row("c", child, dtype="mock::bam", parents=["#p"]),
+        ])
         text = _payload(client, "workflow", name, bound=True)["payload"]
         with elsewhere() as (other, _):
             got = other.post("/api/share/import", json={"payload": text}).get_json()
-            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
-            child = [r for r in rows if r["type_name"] == "mock::bam"][0]
-            assert [p["path"] for p in child["parents"]] == [parent]
+            rows = {r["dtype"]: r for r in _rows_of(other, got["name"])}
+            # stated in row ids, not paths: unbound there is no path to state it in
+            assert rows["mock::bam"]["parents"] == [f"#{rows['mock::assembly']['id']}"]
+            assert rows["mock::assembly"]["path"] == str(parent)
 
     def test_a_missing_library_is_dropped_and_named(self, client, elsewhere):
         name = self._recipe(client)
@@ -2828,29 +2724,22 @@ class TestShareWorkflows:
             assert wf["request"]["transform_libraries"] == []
 
     def test_an_unknown_type_arrives_placed_and_red(self, client, elsewhere):
-        """The row is not lost and not registered: it lands as a draft carrying
-        the type it came with, which is what the recipe already draws red."""
-        name = self._recipe(client)
-        project = client.application.config["MSM_PROJECT"]
-        lib = DataInstanceLibrary.Load(project.input_library_path(name))
-        types = DataTypeLibrary()
-        types["exotic"] = Endpoint(properties={"exotic"})
-        types.Save(project.root / "exotic.yml")
-        lib.AddTypeLibrary(project.root / "exotic.yml")
-        f = project.input_library_path(name) / "odd.dat"
-        f.write_text("x")
-        lib.AddItem(f, "exotic::exotic")
-        lib.Save()
+        """The row is not lost and not dropped: it lands carrying the type it
+        came with, which is what the recipe already draws red."""
+        name = _make_workflow(client)
+        client.put(f"/api/workflows/{name}", json={
+            "input_drafts": [_row("odd", "/data/odd.dat", dtype="exotic::exotic")],
+        })
         text = _payload(client, "workflow", name)["payload"]
         with elsewhere() as (other, _):
             prev = other.post("/api/share/preview", json={"payload": text}).get_json()
             assert "exotic::exotic" in " ".join(prev["notes"])
             got = other.post("/api/share/import", json={"payload": text}).get_json()
-            wf = other.get(f"/api/workflows/{got['name']}").get_json()
-            drafts = wf["request"]["input_drafts"]
-            assert [d["dtype"] for d in drafts] == ["exotic::exotic"]
-            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
-            assert all(r["type_name"] != "exotic::exotic" for r in rows)
+            assert [d["dtype"] for d in _rows_of(other, got["name"])] == ["exotic::exotic"]
+            # ...and nothing was registered for it: the library refuses a type it
+            # does not have, and a solve is where that is said
+            items = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            assert items == []
 
     def test_an_array_row_travels_but_a_typed_path_does_not(self, client, elsewhere):
         """A `{column}` row is a rule, not a file: it is the substance of a
@@ -2858,9 +2747,9 @@ class TestShareWorkflows:
         name = _make_workflow(client)
         client.put(f"/api/workflows/{name}", json={"input_drafts": [
             {"id": "a", "mode": "file", "path": "/data/{sample}.fa", "dtype": "mock::assembly",
-             "parents": [], "index": True},
+             "parents": []},
             {"id": "b", "mode": "file", "path": "/home/me/one_off.fa", "dtype": "mock::assembly",
-             "parents": [], "index": False},
+             "parents": []},
         ]})
         body = _payload(client, "workflow", name)["body"]
         assert [d["path"] for d in body["drafts"]] == ["/data/{sample}.fa", ""]
@@ -2868,37 +2757,40 @@ class TestShareWorkflows:
         assert [d["path"] for d in bound["drafts"]] == ["/data/{sample}.fa", "/home/me/one_off.fa"]
 
     def test_a_typed_in_value_travels_whole(self, client, elsewhere):
-        """A library-owned row *is* its file: a few lines someone typed, under a
-        name the recipe refers to. Deferring it would ship a blank."""
+        """A value row *is* its contents: a few lines someone typed, under a name
+        the recipe refers to. Blanking it would ship a nameless nothing."""
         name = _make_workflow(client)
-        client.post(f"/api/workflows/{name}/inputs/items", json={
-            "name": "read_pair.txt", "value": "left,right\n", "dtype": "mock::assembly",
-        })
+        _put_rows(client, name, [_row(
+            "v", mode="value", name="read_pair.txt", value="left,right\n",
+        )])
         body = _payload(client, "workflow", name)["body"]
-        (row,) = body["inputs"]
-        assert row["path"] == "read_pair.txt" and row["value"] == "left,right\n"
+        (row,) = body["drafts"]
+        assert row["name"] == "read_pair.txt" and row["value"] == "left,right\n"
         text = _payload(client, "workflow", name)["payload"]
         with elsewhere() as (other, root):
             got = other.post("/api/share/import", json={"payload": text}).get_json()
-            landed = Project(root).input_library_path(got["name"]) / "read_pair.txt"
-            assert landed.read_text() == "left,right\n"
+            (landed,) = _rows_of(other, got["name"])
+            assert landed["name"] == "read_pair.txt"
+            assert landed["value"] == "left,right\n"
+            # ...and the file it stands for is written when the library is built
+            _finish(other, other.post(
+                f"/api/workflows/{got['name']}/generate", json={}).get_json())
+            f = Project(root).input_library_path(got["name"]) / "read_pair.txt"
+            assert f.read_text() == "left,right\n"
 
     def test_two_deferred_rows_stay_two_rows_across_the_wire(self, client, elsewhere):
         """Unbound throws every path away, so lineage cannot be stated in paths:
-        a child naming a deferred parent would have no way to say which one."""
+        a child naming a pathless parent would have no way to say which one."""
         name = _make_workflow(client)
-        project = client.application.config["MSM_PROJECT"]
-        lib = DataInstanceLibrary.Load(project.input_library_path(name))
-        a = lib.AddItem(DEFERRED, "mock::assembly")
-        lib.AddItem(DEFERRED, "mock::reads")
-        lib.AddItem(DEFERRED, "mock::bam", parents=[a])
-        lib.Save()
+        client.put(f"/api/workflows/{name}", json={"input_drafts": [
+            _row("a", dtype="mock::assembly"),
+            _row("b", dtype="mock::reads"),
+            _row("c", dtype="mock::bam", parents=["#a"]),
+        ]})
         text = _payload(client, "workflow", name)["payload"]
         with elsewhere() as (other, _):
             got = other.post("/api/share/import", json={"payload": text}).get_json()
-            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
-            by_type = {r["type_name"]: r for r in rows}
-            assert len(rows) == 3 and len({r["path"] for r in rows}) == 3
-            assert [p["path"] for p in by_type["mock::bam"]["parents"]] == [
-                by_type["mock::assembly"]["path"]
-            ]
+            rows = _rows_of(other, got["name"])
+            assert len(rows) == 3 and len({r["id"] for r in rows}) == 3
+            by_type = {r["dtype"]: r for r in rows}
+            assert by_type["mock::bam"]["parents"] == [f"#{by_type['mock::assembly']['id']}"]

@@ -160,11 +160,13 @@ def _ready_to_launch(gui, tmp_path, docker_image) -> tuple[str, str]:
 
     # -- the recipe -------------------------------------------------------
     wf_name = gui.post("/api/workflows", json={}).get_json()["name"]
-    added = gui.post(f"/api/workflows/{wf_name}/inputs/items", json={
-        "path": str(name_file), "dtype": "examples::name",
-    })
-    assert added.status_code == 201, added.get_json()
+    # the recipe *is* the input rows; the library is built from them by the
+    # generate below, which is the only thing that writes one
     gui.put(f"/api/workflows/{wf_name}", json={
+        "input_drafts": [{
+            "id": "name", "mode": "file", "path": str(name_file), "name": "", "value": "",
+            "dtype": "examples::name", "parents": [],
+        }],
         "target_types": [{"type": "examples::greeting", "parents": []}],
     })
     result = _await_job(

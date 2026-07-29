@@ -73,6 +73,33 @@ def _emit_lines(stdout: str, prefix: str = "G:") -> list[str]:
     return [line for line in stdout.splitlines() if line.startswith(prefix)]
 
 
+def _member_shapes(stdout: str) -> list[list[list[int]]]:
+    """Parse `M:<json>` lines emitted by the batch-axis cases.
+
+    Each line is one task; the JSON is that task's per-batch-member
+    `[n_stream0_files, n_stream1_files]`, read out of the `FILES` entry
+    `_collateBatch` writes into every member's index. Assertions on the
+    flattened `a_vals`/`b_vals` sizes cannot tell a 3-member batch from a
+    3-item group, which is exactly the axis these cases pin.
+    """
+    import json
+
+    return [
+        json.loads(l.split("M:", 1)[1])
+        for l in stdout.splitlines()
+        if l.startswith("M:")
+    ]
+
+
+# The view closure that produces those lines. `FILES` is positional per
+# stream, in the order the streams were passed to `group()`.
+MEMBER_SHAPE_VIEW = (
+    'grouped.view { indexes, s0, s1 -> '
+    '"M:" + groovy.json.JsonOutput.toJson('
+    'indexes.collect { m -> [m.FILES[0].size(), m.FILES[1].size()] }) }'
+)
+
+
 def _earliest_ms(stdout: str, prefix: str = "G:") -> int | None:
     lines = _emit_lines(stdout, prefix)
     if not lines:
@@ -232,16 +259,25 @@ workflow {
 # ===========================================================================
 
 
-def test_c04_descendant_single_bs1_buffer_until_close(nxf_runner):
-    """Non-parent S stream is buffered until upstream closes. Latency bug.
+def test_c04_descendant_key_emits_before_another_keys_tail(nxf_runner):
+    """A whole key emits at t~0 while a DIFFERENT key's tail is still out.
 
-    Lineage declared via seedParents (b descends from a); b items carry
-    idx["a"] = [11L] so the DESCENDANT branch's combine(by:0) can pair
-    them with the by-stream's hash 11L.
+    Reshaped. This case (and `test_group_buffering`) used to give ONE by-key
+    two distinct b items, one of them 5s late, and require an emission inside
+    2s — which is a demand for a PARTIAL group, the split `0088d24` removed
+    early emission to prevent and the failure that handed ppanggolin one
+    genome. Under the group_by contract, that key's answer genuinely is not
+    known until its second item lands.
+
+    What IS achievable, and is what a fan-out actually needs, is cross-key: 2
+    keys of 2 items each, key 11's pair immediate and key 12's pair 5s out.
+    Key 11 is whole at t~0 and must not wait on key 12. `group()` gets the
+    per-key count so it can tell "whole" from "so far".
     """
-    (nxf_runner.work_dir / "a.txt").write_text("a")
-    (nxf_runner.work_dir / "b_early.txt").write_text("be")
-    (nxf_runner.work_dir / "b_late.txt").write_text("bl")
+    (nxf_runner.work_dir / "a0.txt").write_text("a0")
+    (nxf_runner.work_dir / "a1.txt").write_text("a1")
+    for n in ("b_fast_0", "b_fast_1", "b_slow_0", "b_slow_1"):
+        (nxf_runner.work_dir / f"{n}.txt").write_text(n)
 
     script = f'''
 workflow {{
@@ -250,20 +286,23 @@ workflow {{
     def t0 = System.currentTimeMillis()
     println "START:${{t0}}"
 
-    def ch_a = Channel.fromList([[["a": [11L]], file("${{projectDir}}/a.txt")]])
-    def ch_b_early = Channel.fromList([
-        [["a": [11L], "b": [10L]], file("${{projectDir}}/b_early.txt")],
+    def ch_a = Channel.fromList([
+        [["a": [11L]], file("${{projectDir}}/a0.txt")],
+        [["a": [12L]], file("${{projectDir}}/a1.txt")],
     ])
-    def ch_b_late = Channel.fromList([
-        [["a": [11L], "b": [20L]], file("${{projectDir}}/b_late.txt")],
+    def ch_b_fast = Channel.fromList([
+        [["a": [11L], "b": [10L]], file("${{projectDir}}/b_fast_0.txt")],
+        [["a": [11L], "b": [11L]], file("${{projectDir}}/b_fast_1.txt")],
+    ])
+    def ch_b_slow = Channel.fromList([
+        [["a": [12L], "b": [20L]], file("${{projectDir}}/b_slow_0.txt")],
+        [["a": [12L], "b": [21L]], file("${{projectDir}}/b_slow_1.txt")],
     ]).map {{ x -> sleep {SLOW_TAIL_SECONDS * 1000}; return x }}
 
     def pa = new Tuple2("a", ch_a)
-    def pbe = new Tuple2("b", ch_b_early)
-    def pbl = new Tuple2("b", ch_b_late)
-    def mixed_b = o.mix([pbe, pbl])
+    def mixed_b = o.mix([new Tuple2("b", ch_b_fast), new Tuple2("b", ch_b_slow)])
 
-    def grouped = o.group("a", [pa, mixed_b], ["target"], 1)
+    def grouped = o.group("a", [pa, mixed_b], ["target"], 1, ["b": 2])
     grouped.view {{ idx, a_vals, b_vals ->
         def elapsed = System.currentTimeMillis() - t0
         "G:${{elapsed}}:a=${{a_vals.size()}}:b=${{b_vals.size()}}"
@@ -272,12 +311,16 @@ workflow {{
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
+    lines = _emit_lines(result.stdout)
+    assert len(lines) == 2, f"C4 expected one task per key, got {lines}"
+    for line in lines:
+        assert "a=1:b=2" in line, f"C4 emitted a partial group: {line}"
     earliest = _earliest_ms(result.stdout)
     assert earliest is not None, "no emissions at all"
-    # Bug: first emit is delayed until tail closes. Expected after fix: < 2000ms.
     assert earliest < INCREMENTAL_EMIT_THRESHOLD_MS, (
-        f"C4 buffer-until-close bug: first emission at {earliest}ms "
-        f">= {INCREMENTAL_EMIT_THRESHOLD_MS}ms threshold."
+        f"C4: the complete key waited for the other key's tail — first "
+        f"emission at {earliest}ms >= {INCREMENTAL_EMIT_THRESHOLD_MS}ms. "
+        f"All emissions: {lines}"
     )
 
 
@@ -288,13 +331,20 @@ workflow {{
 # ===========================================================================
 
 
-def test_c05_descendant_single_bs3_per_key_bag(nxf_runner):
-    """3 b items per by-key should form per-by-key bag of 3.
+def test_c05_descendant_single_bs3_folds_three_keys(nxf_runner):
+    """3 by-keys at batch_size=3 fold into ONE task of 3 members.
 
     b is declared descendant of a (seedParents). Each b carries
     idx["a"] = [11L, 12L, 13L] (all 3 a-hashes) — i.e., every b descends
-    from every a. With incremental DESCENDANT dispatch, combine(by:0)
-    produces 3 per-by-key bags of 3 b's each.
+    from every a, so each of the 3 a-keys collects all 3 b's.
+
+    `batch_size` is the GROUP-COUNT axis: ceil(3 keys / 3) == 1 task, and
+    that task carries 3 members of `a=1, b=3`. This case previously asserted
+    3 tasks of `a=1:b=3`, i.e. `batch_size` as the within-key member count —
+    the reading `bbbb599` implemented and the one that shattered collecting
+    transforms. `plan_oracle`, `cache_decisions` and `virtual_runtime` all
+    predict `ceil(len(group_by_instances) / batch_size)`; the runtime now
+    agrees with them.
     """
     for i in range(3):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
@@ -319,22 +369,16 @@ workflow {
     def pb = new Tuple2("b", ch_b)
 
     def grouped = o.group("a", [pa, pb], ["target"], 3)
-    grouped.view { idx, a_vals, b_vals ->
-        "G:0:a=${a_vals.size()}:b=${b_vals.size()}"
-    }
+    ''' + MEMBER_SHAPE_VIEW + '''
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
-    lines = _emit_lines(result.stdout)
-    # Required: 3 emits with `a=1:b=3` each.
-    # Today: 1 emit `a=3:b=3` (buffer-until-close + outer _batch collation).
-    assert len(lines) == 3, (
-        f"C5 required 3 per-by-key bags, today produces {len(lines)}: {lines}. "
-        f"Required shape: 3 emits of `a=1:b=3`; got buffered-then-cartesian."
+    tasks = _member_shapes(result.stdout)
+    assert len(tasks) == 1, f"C5: ceil(3 keys / 3) == 1 task, got {tasks}"
+    assert tasks[0] == [[1, 3], [1, 3], [1, 3]], (
+        f"C5: expected 3 members of (a=1, b=3), got {tasks[0]}"
     )
-    for line in lines:
-        assert "a=1:b=3" in line, f"C5 wrong bag shape: {line}"
 
 
 # ===========================================================================
@@ -728,7 +772,13 @@ workflow {{
     def pbl = new Tuple2("b", ch_b_late)
     def mixed_b = o.mix([pbe, pbl])
 
-    def grouped = o.group("a", [pa, mixed_b], ["target"], 1)
+    // The late item is `b_early.txt` AGAIN — the same path. Bag-insertion
+    // dedup keys on the value, so it is a replay duplicate (the dimension
+    // C16 pins) and key 11's group is genuinely WHOLE at t~0 with one item.
+    // Telling group() to expect one is therefore not a partial emission; it
+    // is the only thing that lets the key fire before a channel that never
+    // closes. This is the W1 p06__assembly_stats shape.
+    def grouped = o.group("a", [pa, mixed_b], ["target"], 1, ["b": 1])
     grouped.view {{ idx, a_vals, b_vals ->
         def elapsed = System.currentTimeMillis() - t0
         "G:${{elapsed}}:a=${{a_vals.size()}}:b=${{b_vals.size()}}"
@@ -1137,12 +1187,11 @@ workflow {
 # ===========================================================================
 
 
-def test_c22_descendant_multi_bs3_per_key_bags(nxf_runner):
+def test_c22_descendant_multi_bs3_folds_three_keys(nxf_runner):
     """3 multi-hash S items, each carrying all 3 a-hashes; group by a, bs=3.
 
-    s is declared descendant of a (seedParents). Each S carries
-    idx["a"] = [11L, 12L, 13L]. With incremental DESCENDANT dispatch,
-    combine(by:0) produces 3 per-by-key bags of 3 S items each.
+    Same axis correction as C5, on the multi-hash S shape: 3 by-keys at
+    batch_size=3 is one task of 3 members, each `a=1, s=3`.
     """
     for i in range(3):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
@@ -1167,21 +1216,16 @@ workflow {
     def ps = new Tuple2("s", ch_s)
 
     def grouped = o.group("a", [pa, ps], ["target"], 3)
-    grouped.view { idx, a_vals, s_vals ->
-        "G:0:a=${a_vals.size()}:s=${s_vals.size()}"
-    }
+    ''' + MEMBER_SHAPE_VIEW + '''
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
-    lines = _emit_lines(result.stdout)
-    # Required: 3 per-by-key bags. Today: 1 cross-key aggregate.
-    assert len(lines) == 3, (
-        f"C22 required 3 per-by-key bags of 3, today produces "
-        f"{len(lines)}: {lines}. Required: 3 emits with `a=1:s=3`."
+    tasks = _member_shapes(result.stdout)
+    assert len(tasks) == 1, f"C22: ceil(3 keys / 3) == 1 task, got {tasks}"
+    assert tasks[0] == [[1, 3], [1, 3], [1, 3]], (
+        f"C22: expected 3 members of (a=1, s=3), got {tasks[0]}"
     )
-    for line in lines:
-        assert "a=1:s=3" in line, f"C22 wrong bag shape: {line}"
 
 
 # ===========================================================================
@@ -1192,11 +1236,12 @@ workflow {
 # ===========================================================================
 
 
-def test_c23_sibling_single_bs3_per_key_bags(nxf_runner):
+def test_c23_sibling_single_bs3_folds_three_keys(nxf_runner):
     """3 B items and 3 C items all sharing a-hash 5; group by b, bs=3.
 
-    Required: 3 per-by-key bags, each `b=1:c=3` (every B pairs with every C
-    via shared-ancestor overlap; collated per by-key).
+    Same axis correction as C5/C22, on the SIBLING branch: every B pairs with
+    every C via shared-ancestor overlap, so each of the 3 b-keys collects all
+    3 c's, and batch_size=3 folds those 3 keys into one task of 3 members.
     """
     for i in range(3):
         (nxf_runner.work_dir / f"b{i}.txt").write_text(f"b{i}")
@@ -1221,21 +1266,17 @@ workflow {
     def pc = new Tuple2("c", ch_c)
 
     def grouped = o.group("b", [pc, pb], ["target"], 3)
-    grouped.view { idx, c_vals, b_vals ->
-        "G:0:b=${b_vals.size()}:c=${c_vals.size()}"
-    }
+    ''' + MEMBER_SHAPE_VIEW + '''
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
-    lines = _emit_lines(result.stdout)
-    # Required: 3 per-by-key bags. Today: buffered-then-cartesian-then-batch.
-    assert len(lines) == 3, (
-        f"C23 required 3 per-by-key bags of 3 sibling c-items, "
-        f"today produces {len(lines)}: {lines}. Required: 3 emits with `b=1:c=3`."
+    tasks = _member_shapes(result.stdout)
+    assert len(tasks) == 1, f"C23: ceil(3 keys / 3) == 1 task, got {tasks}"
+    # streams are [pc, pb], so FILES is positionally (c, b).
+    assert tasks[0] == [[3, 1], [3, 1], [3, 1]], (
+        f"C23: expected 3 members of (c=3, b=1), got {tasks[0]}"
     )
-    for line in lines:
-        assert "b=1:c=3" in line, f"C23 wrong bag shape: {line}"
 
 
 # ===========================================================================
@@ -1347,7 +1388,10 @@ workflow {{
     def pc_l = new Tuple2("c", ch_c_late)
     def pc = o.mix([pc_e, pc_l])
 
-    def grouped = o.group("b", [pc, pb], ["target"], 1)
+    // As in C13, the late C is `c_early.txt` again, so dedup makes the bag
+    // whole at t~0 with one item. Note the SIBLING bag is keyed on the shared
+    // ANCESTOR hash rather than the by-key, so the count is per ancestor.
+    def grouped = o.group("b", [pc, pb], ["target"], 1, ["c": 1])
     grouped.view {{ idx, c_vals, b_vals ->
         def elapsed = System.currentTimeMillis() - t0
         "G:${{elapsed}}:b=${{b_vals.size()}}:c=${{c_vals.size()}}"
