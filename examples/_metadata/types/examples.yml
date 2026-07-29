@@ -5,6 +5,11 @@ ontology:
   version: '1.25'
 schema: v1
 types:
+  gpu_report:
+    properties:
+      _:
+      - gpu visibility report produced by gpu_probe
+      ext: txt
   greeting:
     properties:
       _:

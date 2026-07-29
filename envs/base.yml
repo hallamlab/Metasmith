@@ -4,8 +4,7 @@ channels:
 dependencies:
   - python=3.12
   - nextflow=26.04.1
-  - graphviz=13.1.1 # DAG renderer
-  - python-graphviz=0.21 # Python bindings
+  - graphviz=13.1.1 # `neato -n2` rasterizes raster DAG formats; layout is ours
   - pyyaml=6.0.2
   - numpy=2.2.5
   - rsync=3.4.1
@@ -13,7 +12,6 @@ dependencies:
   - unzip=6.0
   - git=2.52.0 # to pull transform libraries
   - tk=8.6.13 # for globus
-  - git # to pull transforms
 
   # # relay now just uses files
   # # networking (mostly for relay)
@@ -23,6 +21,11 @@ dependencies:
   # - requests=2.32.3
   # - aiohttp=3.13.1
   
+  # UI: `msm gui` serves a prebuilt bundle, so only the server side is needed
+  # here — node is a build dependency, not a runtime one.
+  - flask=3.1.3
+  - coolname=2.2.0 # readable workflow names: blazing-ape, crystalline-lake
+
   # UI via jupyterlab
   - jupyterlab=4.5.0
   - jupyterlab-lsp=5.2.0
@@ -39,6 +42,10 @@ dependencies:
   # globus
   - globus-cli=3.40.0
   - globus-sdk=4.1.0
+
+  # caching: canonical CBOR encoding + blake3 multihash keys
+  - cbor2=5.6.5
+  - blake3=0.4.1
 
 # there can NOT be any pip dependencies,
 # since those will not be installed with the conda package

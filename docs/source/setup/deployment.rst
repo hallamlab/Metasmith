@@ -12,7 +12,7 @@ Agents are deployed to their specified home:
     agent_home = Source.FromLocal("/local/path/")
     smith = Agent(
         home = agent_home,
-        runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
     )
     smith.Deploy()
 
@@ -95,13 +95,13 @@ The agent must be configured to use the installed container runtime.
 
     smith = Agent(
         ...
-        runtime=ContainerRuntime.APPTAINER,
+        runtime=Runtime.APPTAINER,
     )
 
     # or
     smith = Agent(
         ...
-        runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
     )
 
 SLURM

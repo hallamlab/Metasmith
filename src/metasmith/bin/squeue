@@ -5,7 +5,7 @@ import sys
 import time
 import random
 from pathlib import Path
-from metasmith.coms.via_file_watcher import RemoteShell
+from metasmith.env import RemoteShell
 from metasmith.agents import AgentPaths
 from metasmith.logging import Log
 

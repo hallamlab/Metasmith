@@ -5,10 +5,10 @@ import numpy as np
 import json
 import re
 from pathlib import Path
-from enum import Enum
 from collections import deque
 
 from ..hashing import KeyGenerator
+from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 
 class Node:
     PROPERTY_FIELD = "properties"
@@ -289,70 +289,33 @@ class Solution:
     _refiner_iterations: list[tuple[int, int]] # found at, total expanded
     _relavent_transforms: list[Transform]
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', keys: bool = True):
-        # do some ju jitsu to prevent graphviz from dumping out garbage into the logs
-        # todo: propogate errors, those might be important...
-        import logging
-        _temp = logging.getLogger
-        class DummyLogger:
-            def debug(self, *args, **kwargs):
-                pass
-            def info(self, *args, **kwargs):
-                pass
-            def warn(self, *args, **kwargs):
-                pass
-            def error(self, *args, **kwargs):
-                pass
-        logging.getLogger = lambda *args, **kwargs: DummyLogger()
-        import graphviz
-        logging.getLogger = _temp
+    def BuildDAG(self, *, font: str = 'Arial', keys: bool = True, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, colour: str = "module", theme: str = "light", background: bool = True) -> DagRenderer:
+        r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background)
+        for i, step in enumerate(self.dependency_plan):
+            if keys:
+                shown   = f"{step.transform.key}"
+                inputs  = [f"{u.key}" for u in step.used.values()]
+                outputs = [f"{o.key}" for pgroup in step.produced for o in pgroup.values()]
+            else:
+                shown   = f"{step.transform}"
+                inputs  = [f"{u}" for u in step.used.values()]
+                outputs = [f"{o}" for pgroup in step.produced for o in pgroup.values()]
+            # numbered id, unnumbered label — two applications of one transform
+            # share a key and would otherwise collapse into a single node
+            transform_name = f"{i+1} {shown}"
+            r.add_node(NodeKind.TRANSFORM, transform_name, Label(
+                name=shown,
+                namespace=f"step {i+1}" if show_step_order else "",
+                full=transform_name,
+            ))
+            for name in inputs:
+                r.add_edge(name, transform_name)
+            for name in outputs:
+                r.add_edge(transform_name, name)
+        return r
 
-        todo = [(graphviz, 0)]
-        while len(todo)>0:
-            m, depth = todo.pop()
-            if hasattr(m, "log") and hasattr(m.log, "setLevel"):
-                m.log.setLevel(logging.ERROR)
-            if depth >= 2: continue
-            if hasattr(m, "__dict__"):
-                todo += [(x, depth+1) for x in m.__dict__.values()]
-
-        class NodeType(Enum):
-            TRANSFORM = 1
-            DATA      = 2
-        def _render_node(type: NodeType, name: str) -> str:
-            match type:
-                case NodeType.TRANSFORM:
-                    return f'"{name}" [shape="oval", style="filled", fillcolor="#CCCCCC"]'
-                case NodeType.DATA:
-                    return f'"{name}" [shape="box"]'
-
-        def _as_DAG(*, font: str = 'Arial') -> str:
-            lines = ["digraph G {"]
-            lines += [f'graph [fontname="{font}"];', f'node  [fontname="{font}"];', f'edge  [fontname="{font}"];']
-            for i, step in enumerate(self.dependency_plan):
-                if keys:
-                    transform_name = f"{i+1} {step.transform.key}"
-                else:
-                    transform_name = f"{i+1} {step.transform}"
-                lines.append(_render_node(NodeType.TRANSFORM, str(transform_name)))
-                if keys:
-                    inputs  = [f"{u.key}" for u in step.used.values()]
-                    outputs = [f"{o.key}" for pgroup in step.produced for o in pgroup.values()]
-                else:
-                    inputs  = [f"{u}" for u in step.used.values()]
-                    outputs = [f"{o}" for pgroup in step.produced for o in pgroup.values()]
-                for name in inputs:
-                    lines.append(_render_node(NodeType.DATA, name))
-                    lines.append(f'    "{name}" -> "{transform_name}";')
-                for name in outputs:
-                    lines.append(_render_node(NodeType.DATA, name))
-                    lines.append(f'    "{transform_name}" -> "{name}";')
-            lines.append("}")
-            return "\n".join(lines)
-        
-        dag_str = _as_DAG(font=font)
-        src = graphviz.Source(dag_str, filename=path_base, format=format)
-        src.render(cleanup=True, quiet=True)
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', keys: bool = True, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, colour: str = "module", theme: str = "light", background: bool = True):
+        return self.BuildDAG(font=font, keys=keys, show_step_order=show_step_order, label_mode=label_mode, colour=colour, theme=theme, background=background).render(path_base, format)
     
 def solve_by_mcts(
     given: list[set[Endpoint]],
@@ -1057,33 +1020,56 @@ def solve_by_mcts(
 
         def expand_node(state: SolverState, appl: Application) -> list[SolverState]:
             possibilities = []
-            if len(appl.produced)>1:
+            # Multi-pgroup applications carry two distinct intents that share a
+            # data shape:
+            #   - given_appl: each pgroup is an alternative sample family →
+            #     branch into N timelines, one per sample.
+            #   - user multi-output transforms (e.g. multi_slot_producer,
+            #     failing_at_slot_k): every pgroup is co-produced by one
+            #     invocation → keep them all in a single timeline so downstream
+            #     transforms that require multiple slots can apply.
+            # The DSL is symmetric, so disambiguate by identity against given_tr.
+            is_sample_branching = appl.transform is given_tr and len(appl.produced) > 1
+            if is_sample_branching:
                 state_ks = [new_state_k(state.k) for _ in appl.produced]
-            else:
-                state_ks = [state.k]
-            for group, state_k in zip(appl.produced, state_ks):
-                candidate_transforms = state.candidate_transforms.copy() # was free transform
-                production = state.production.copy()
-                for dep, ep in group.items():
-                    if dep not in product2consumer: continue
-                    for linked in product2consumer[dep]:
-                        candidate_transforms.add(linked)
-                for dep, ep in group.items():
-                    production[dep] = production.get(dep, [])+[ep]
-                if len(appl.produced)>1:
+                for group, state_k in zip(appl.produced, state_ks):
+                    candidate_transforms = state.candidate_transforms.copy() # was free transform
+                    production = state.production.copy()
+                    for dep, ep in group.items():
+                        if dep not in product2consumer: continue
+                        for linked in product2consumer[dep]:
+                            candidate_transforms.add(linked)
+                    for dep, ep in group.items():
+                        production[dep] = production.get(dep, [])+[ep]
                     appl_variant = Application(
                         initial_timeline=state_k,
                         transform=appl.transform,
                         used=appl.used,
-                        produced=[group], # limit to each each possibility 
+                        produced=[group], # limit to each each possibility
                         score=appl.score,
                     )
-                else:
-                    appl_variant = appl # nothing to limit
+                    possibilities.append(SolverState(
+                        k=state_k,
+                        steps=state.steps+[appl_variant],
+                        have=state.have|set(group.values()),
+                        candidate_transforms=candidate_transforms,
+                        production=production,
+                    ))
+            else:
+                candidate_transforms = state.candidate_transforms.copy()
+                production = state.production.copy()
+                co_produced: set[Endpoint] = set()
+                for group in appl.produced:
+                    for dep, ep in group.items():
+                        if dep in product2consumer:
+                            for linked in product2consumer[dep]:
+                                candidate_transforms.add(linked)
+                        production[dep] = production.get(dep, [])+[ep]
+                        co_produced.add(ep)
                 possibilities.append(SolverState(
-                    k=state_k,
-                    steps=state.steps+[appl_variant],
-                    have=state.have|set(group.values()),
+                    k=state.k,
+                    steps=state.steps+[appl],
+                    have=state.have|co_produced,
                     candidate_transforms=candidate_transforms,
                     production=production,
                 ))

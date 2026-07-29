@@ -37,15 +37,90 @@ The Docker shape is exercised by
 ``tests/integration/test_e2e_orchestrator.py::TestPathStringification``.
 The apptainer shape is reproduced as a unit test in
 ``tests/path_overhaul/test_parse_path_apptainer_relative.py``.
+
+This module also owns :data:`DEFERRED`, the fourth thing a path can be: not
+known yet. It lives here rather than beside the code that mints identity from
+it because every path consumer has to be able to ask what kind of path it is
+holding, and this is the module they already import.
 """
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from enum import Enum
+from pathlib import Path
 from typing import Literal
 
 from ..constants import AgentPaths
+
+
+DEFERRED_ROOT = Path("/msm_deferred")
+"""Reserved root every deferred path is minted under.
+
+Absolute, and deliberately so. `ops.data.repoint_item` -- the operation that
+fills a deferred path in -- reads `is_absolute()` with the opposite meaning to
+everywhere else: a *relative* manifest entry is library-owned, so re-pointing it
+delegates to `Rename`, a real file move. A relative fake path would therefore be
+refused outright (the route asserts old and new agree on absoluteness) and, if
+it slipped past, would try to move a file that never existed. The reserved root
+also makes the stage refusal legible: the message names a path a reader can see
+is not theirs.
+"""
+
+
+class _DeferredPath(Enum):
+    """The type behind :data:`DEFERRED`; one member, which is the constant."""
+
+    DEFERRED = "deferred"
+
+    def __str__(self) -> str:
+        return "DEFERRED"
+
+    __repr__ = __str__
+
+
+DEFERRED = _DeferredPath.DEFERRED
+"""An input whose path is not known yet.
+
+Passed in place of a path -- ``lib.AddItem(DEFERRED, "ns::type")`` -- and that
+is the whole caller-facing surface: a constant, with nothing to name or invent,
+because a caller who had a value to pass would not be deferring. Such a row
+plans normally and is refused at stage.
+
+The value that gets *stored* is not this constant but a distinct path minted by
+:func:`mint_deferred_path` on receipt, because the manifest is a dict keyed by
+path and identity derives from path -- one shared value would collapse two
+deferred rows onto one entry and then raise `already added` on the second.
+"""
+
+
+class DeferredPathError(Exception):
+    """A deferred path reached something that needs a real file."""
+
+
+def mint_deferred_path() -> Path:
+    """A fresh, distinct, absolute stand-in path under :data:`DEFERRED_ROOT`.
+
+    Minted once, at `AddItem` time, and persisted in the manifest thereafter --
+    never re-derived on load. Identity is a function of path, so regenerating
+    would give the same workflow a different task key every time it was opened.
+    """
+    return DEFERRED_ROOT / uuid.uuid4().hex
+
+
+def is_deferred(path) -> bool:
+    """Whether `path` is the constant or a path minted from it.
+
+    Accepts the rendered string form too, so the check survives the round trip
+    through yaml that every manifest and every spec makes.
+    """
+    if path is DEFERRED:
+        return True
+    if not isinstance(path, (str, Path)):
+        return False
+    p = Path(path)
+    return p.is_absolute() and p != DEFERRED_ROOT and p.is_relative_to(DEFERRED_ROOT)
 
 
 RenderDialect = Literal["bash", "brace", "groovy"]
@@ -61,24 +136,6 @@ _DIALECT_TOKENS: dict[RenderDialect, str] = {
     "brace": "{agent_home}",
     "groovy": "${params.home}",
 }
-
-
-def _normalise(p: Path | str) -> Path:
-    """Collapse ``..`` segments without touching the filesystem.
-
-    Uses :class:`os.path.normpath` semantics so a relative input that
-    walks up out of a deep cwd still resolves; only absolute outputs
-    are accepted by :class:`ContextPath`'s invariant, so callers that
-    feed relative paths must explicitly anchor them first via
-    :meth:`PathMap.Parse`.
-    """
-    return Path(PurePosixPath(*Path(p).parts).as_posix()).resolve() if False else Path(
-        # Pure-string normalisation; no FS calls. ``Path.resolve()``
-        # would also collapse symlinks, which we explicitly do NOT
-        # want here — the caller may be reasoning about a symlink's
-        # target on a host that is not the current host.
-        str(Path(p))
-    )
 
 
 def reroot_in_text(content: str, old_root: Path | str, new_root: Path | str) -> str:
@@ -243,14 +300,20 @@ class ContextPath:
         ``external`` view is the host filesystem location, which is
         ``path_map.extern_cwd`` (the per-step nxf_work dir) when set,
         or ``path_map.extern_work`` (the task workspace) when not.
+
+        With no container boundary (``path_map.host_local``) all three
+        views collapse onto the host path: nothing is bound at ``/ws``,
+        so a protocol interpolating ``out.container`` would otherwise
+        hand the tool a directory that does not exist.
         """
         if "/" in name or name in ("", ".", ".."):
             raise ValueError(f"ForOutput expects a bare filename, got: {name!r}")
-        container = AgentPaths.WORK_ROOT / name
-        local = container  # same workdir bind from both container views
         external_base = path_map.extern_cwd if path_map.extern_cwd is not None else path_map.extern_work
         external = external_base / name
-        return cls(local=local, external=external, container=container)
+        if path_map.host_local:
+            return cls(local=external, external=external, container=external)
+        container = AgentPaths.WORK_ROOT / name
+        return cls(local=container, external=external, container=container)
 
 
 @dataclass
@@ -279,6 +342,20 @@ class PathMap:
     extern_home: Path
     task_key: str
     extern_cwd: Path | None = None
+    # True when this execution crosses NO container boundary, so cwd is a plain
+    # host directory and nothing is bound at /ws or /msm_home. Two paths reach
+    # it: direct-run (never containerized), and a nextflow run on a mamba/native
+    # agent (Environment.needs_relay is False). It is emphatically not a
+    # direct-run-only flag -- reading it as one is how the mamba path came to
+    # hand tools unwritable /ws paths in the first place.
+    #
+    # ForOutput's views depend on it: with a boundary the bootstrap runs
+    # containerized with cwd bound to /ws, so local==container==/ws/<name>;
+    # without one all three views are the host path, or every
+    # `output.local.exists()` success check reads False for a step that in fact
+    # succeeded and `out.container` names a directory that does not exist.
+    # Default False keeps the containerized nextflow path byte-identical.
+    host_local: bool = False
     extern_work: Path = field(init=False)
 
     def __post_init__(self) -> None:
@@ -467,13 +544,32 @@ class PathMap:
                 container=_strip_dotdot(Path(container)),
             )
 
-        # Fallthrough: absolute paths not under WORK_ROOT or HOME_ROOT.
         if not p.is_absolute():
             raise ValueError(
                 f"Parse received a non-absolute, non-symlink, non-../ws path: {p!r}. "
                 f"This is the ad-hoc-concat case the overhaul forbids; the caller "
                 f"should either anchor the path or pass a symlink / absolute form."
             )
+
+        # (5) Absolute path under HOME_ROOT (the agent home, container-bound at
+        # /msm_home): a canonical upstream output referenced by its home-view
+        # path -- e.g. a reference DB produced by a sibling process and consumed
+        # by a transform that binds it explicitly (diamond's UniRef50 db -> /db).
+        # Its host path is `extern_home/<tail>`. Without this branch the identity
+        # fallthrough below leaks the container-only `/msm_home` prefix into
+        # apptainer --bind SOURCES, and the mount fails on the host with
+        # "mount source ... doesn't exist".
+        if p.is_relative_to(AgentPaths.HOME_ROOT):
+            tail = p.relative_to(AgentPaths.HOME_ROOT)
+            container = container_override if container_override is not None else p
+            return ContextPath(
+                local=p,
+                external=self.extern_home / tail,
+                container=_strip_dotdot(Path(container)),
+            )
+
+        # Fallthrough: absolute paths under neither WORK_ROOT nor HOME_ROOT
+        # (foreign references, e.g. /project/refdb -- identity bind).
         container = container_override if container_override is not None else p
         return ContextPath(local=p, external=p, container=_strip_dotdot(Path(container)))
 

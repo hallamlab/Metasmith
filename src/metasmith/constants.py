@@ -8,6 +8,18 @@ USER = "hallamlab" # github id
 GIT_URL = f"https://github.com/{USER}/{NAME}"
 SHORT_SUMMARY = "Automated generation of workflows for Nextflow executed using agents"
 
+# Where a release ends up, and where it is documented. The GUI links these from
+# its header, so they live here rather than being retyped in the frontend.
+DOCS_URL = f"https://{NAME}.readthedocs.io/en/latest/index.html"
+CONDA_URL = f"https://anaconda.org/{USER}/{NAME}"
+CONTAINER_URL = f"https://quay.io/repository/{USER}/{NAME}"
+
+# The standard library of data types, transforms, and resources. Both `msm lab`
+# and `msm gui` clone this into the working directory; there is no configuration
+# for it, so this is the single place the URL is written down.
+STDLIB_NAME = "MetasmithLibraries"
+STDLIB_URL = f"https://github.com/{USER}/{STDLIB_NAME}.git"
+
 _cli_call = "metasmith.coms.cli:main"
 ENTRY_POINTS = [
     f"metasmith={_cli_call}",
@@ -34,8 +46,19 @@ FULL_VERSION = f"{VERSION}+{BUILD_HASH}" if BUILD_HASH else VERSION
 CONTAINER_TAG = FULL_VERSION.replace('+', '-')
 
 class AgentPaths:
-    WORK_ROOT = Path("/ws")
-    HOME_ROOT = Path("/msm_home")
+    # The task container's fixed internal layout, established by the bind
+    # tuples Agent.Deploy writes. Shell text that will run *inside* a
+    # container must interpolate these literals; they are not overridable.
+    CONTAINER_WORK_ROOT = Path("/ws")
+    CONTAINER_HOME_ROOT = Path("/msm_home")
+
+    # The roots this process resolves agent paths against. Under a container
+    # runtime they equal the literals above, because the agent home is
+    # dual-bound at both. Under mamba/native nothing is mounted anywhere, so
+    # the deployed `msm` / `msm_bootstrap` scripts export the real host paths
+    # and every consumer follows without branching on the runtime.
+    WORK_ROOT = Path(os.environ.get("METASMITH_WORK_ROOT") or CONTAINER_WORK_ROOT)
+    HOME_ROOT = Path(os.environ.get("METASMITH_HOME_ROOT") or CONTAINER_HOME_ROOT)
     CONTAINER_CACHE = Path("container_images")
     INTERNALS = Path("_metasmith")
     STAGED = Path("runs")
@@ -46,6 +69,22 @@ class AgentPaths:
     NXF_CONFIG = "workflow.config.nf"
     NXF_RES = "workflow.resources.nf"
     NXF_PARAMS = "workflow.params.yml"
+    # Per-step GPU requirement manifest, written at stage time and read by
+    # RunWorkflow's preflight. Stage time knows what each transform asked for;
+    # only run time knows what a device is on the target, so the two halves
+    # meet through this file rather than in the emitted nextflow.
+    GPU_MANIFEST = "workflow.gpu.json"
+    # Per-step tool-environment portability, written at stage time and read by
+    # RunWorkflow's preflight. Stage time knows which arms each transform
+    # declared and which fields its env resource carries; only run time knows
+    # what runtime the agent is. Same split, and same file-shaped seam, as the
+    # GPU manifest above.
+    ENV_MANIFEST = "workflow.env.json"
+    # Nextflow's own `-with-trace` table, one row per task attempt. It is the
+    # only per-step record that survives `rm -rf work/`, and the only one that
+    # reports an exit code, so every consumer asking "which steps died" reads
+    # this rather than scraping the log.
+    NXF_TRACE_FILE = "nxf_trace.tsv"
 
     @classmethod
     def to_staged(cls, root: Path|None=None):

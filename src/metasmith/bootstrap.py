@@ -15,6 +15,8 @@ from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint
 from .hashing import KeyGenerator
 from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
+from .env import Environment
+from .models.lineage import ArityMismatchError, LinPayload, MissingInstanceError
 from .coms.via_file_watcher import RemoteShell
 
 def DeployFromContainer(workspace: Path, architecture: str, system: str):
@@ -80,6 +82,28 @@ def _parse_path(
     return path_map.Parse(p, container_override=container_override)
 
 
+def _as_home_rooted(path_map: PathMap, p: Path) -> Path | None:
+    """The HOME_ROOT spelling of `p`, if `p` is the host spelling of it.
+
+    Returns None whenever the question does not arise: a path already under
+    HOME_ROOT, a path outside the agent home entirely (a legitimate
+    identity-bound foreign input), the relay-free arm where the two roots are
+    the same directory, or the host-local (`metasmith run`) arm where there
+    is no container and the agent home may just be the user's cwd -- pointing
+    them at a `/msm_home` spelling there would be advice to introduce the
+    very bug this message exists to name.
+    """
+    if not p.is_absolute() or path_map.host_local:
+        return None
+    if p.is_relative_to(AgentPaths.HOME_ROOT):
+        return None
+    if path_map.extern_home == AgentPaths.HOME_ROOT:
+        return None
+    if not p.is_relative_to(path_map.extern_home):
+        return None
+    return path_map.ExternalToLocal(p)
+
+
 def ExecuteStep(
     step,
     agent,
@@ -90,6 +114,7 @@ def ExecuteStep(
     input_by_dep: dict,
     dep2output: list,
     params: dict,
+    host_local: bool = False,
 ) -> ExecutionResult:
     """Run a single workflow step's protocol against pre-bound inputs.
 
@@ -108,6 +133,7 @@ def ExecuteStep(
         extern_home=Path(agent_home),
         task_key=task_key,
         extern_cwd=external_cwd,
+        host_local=host_local,
     )
     def _shorten_home(s: str):
         # Log-line shortener: replace the host-side agent_home in a
@@ -138,22 +164,49 @@ def ExecuteStep(
     inputs: list[dict[Dependency, ContextData]] = []
     Log.Info("uses:")
     missing_input=False
+    # Every address on the FILES manifest is read here, inside the bootstrap
+    # container, whose mounts are the work dir, the agent home at HOME_ROOT,
+    # and whatever `.command.binds` declares. A missing input spelled as a
+    # HOST path under the agent home is worth a second line of output: the
+    # same file has a HOME_ROOT spelling, and if that one resolves then the
+    # file was never missing -- an address reached the manifest in the wrong
+    # coordinate system. Collected only for paths that already failed, so it
+    # costs nothing when inputs are fine. The message states the alternative
+    # rather than blaming a producer, because the SLURM arm reaches the host
+    # spelling legitimately: `bin/sbatch` rewrites HOME_ROOT outward before
+    # submitting. On the relay-free arm the two roots are one directory and
+    # the branch is unreachable by construction.
+    miscoordinated: list[tuple[Path, Path]] = []
     ordered_input_deps = list(step.transform.model.requires)
     for batch, batch_lineage in enumerate(lineages):
         if len(lineages)>1:
             Log.Info(f"  > batch [{batch+1}]:")
         g: dict[Dependency, ContextData] = {}
-        file_groups = batch_lineage['FILES']
-        for dep, file_names in zip(ordered_input_deps, file_groups):
+        # C5 — derive a dep-keyed file map up front instead of relying on
+        # the implicit positional zip between FILES and ordered_input_deps.
+        # The wire still emits FILES positionally (Nextflow input: directive
+        # ordering matches model.requires), but routing now reads dep.key
+        # explicitly so misalignment shows up at the construction site.
+        file_groups: list = batch_lineage.get(LinPayload.FILES_KEY, [])
+        files_by_dep_key: dict[str, list] = {
+            dep.key: list(fnames)
+            for dep, fnames in zip(ordered_input_deps, file_groups)
+        }
+        for dep in ordered_input_deps:
             insts = input_by_dep.get(dep, [])
             if len(insts)==0:
                 continue
             e = insts[0].dtype
             inst_names = {x.dtype_name for x in insts}
             Log.Info(f"    [{e.key} {'/'.join(inst_names)}] at:")
+            file_names = files_by_dep_key.get(dep.key, [])
             input_group = [_parse(Path(p)) for p in file_names]
             for p in input_group:
-                missing_input = missing_input or not p.local.exists()
+                if not p.local.exists():
+                    missing_input = True
+                    alt = _as_home_rooted(path_map, p.local)
+                    if alt is not None:
+                        miscoordinated.append((p.local, alt))
                 Log.Info(_shorten_home(f"        {_status(p)} [{_get_formatted_size(p.local)}] [{p.local}]"))
             g[dep] = ContextData(
                 input_group=input_group,
@@ -162,6 +215,16 @@ def ExecuteStep(
             )
         inputs.append(g)
     if missing_input:
+        for host_view, home_view in miscoordinated:
+            m = (
+                f"input [{host_view}] is a HOST path under the agent home, "
+                f"and [{home_view}] is the same file as this container sees "
+                "it. If that one exists, the file was never missing -- an "
+                "address reached the FILES manifest in host coordinates and "
+                "this container has no mount for it."
+            )
+            Log.Error(m)
+            Log.Info(m)
         m = "detected missing inputs, stopping"
         Log.Error(m)
         Log.Info(m)
@@ -196,7 +259,10 @@ def ExecuteStep(
         external_shell=shell,
         external_cwd=external_cwd,
         external_agent_home=Path(agent_home),
-        container_runtime=agent.runtime,
+        # The TOOL environment, not the agent's own: never native (whether
+        # metasmith itself is containerized says nothing about the tool's
+        # image), but it does carry the host's GPU flag configuration.
+        _environment=Environment(image="", runtime=agent.runtime, gpu_args=list(agent.gpu_args)),
         params=params,
     )
     BREAK_LENGTH = 60
@@ -243,6 +309,19 @@ def ExecuteStep(
                 Log.Info(m)
     try:
         results = step.transform.protocol(context)
+        # An ExecWithEnv chain with no arm for this runtime runs nothing. Left
+        # alone that is a step which reports success and produces no output --
+        # the exact silent failure the arms exist to make impossible. The
+        # transform author is not asked to remember; the framework checks.
+        unmatched = context.UnmatchedEnvDispatches()
+        if unmatched:
+            runtime = agent.runtime.name
+            declared = sorted({a for d in unmatched for a in d.declared})
+            raise AssertionError(
+                f"transform [{step_name}] reached [{len(unmatched)}] ExecWithEnv "
+                f"declaration(s) with no arm for runtime [{runtime}]; "
+                f"arms declared: {declared or ['<none>']}"
+            )
         if not isinstance(results, list):
             results = [results]
         for i, result in enumerate(results):
@@ -271,21 +350,26 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
     cp_root = stage_root if stage_root is not None else AgentPaths.HOME_ROOT
     if stage_root is not None:
         Log.Info(f"reading control-plane from node-local stage [{stage_root}]")
-    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS, host=host)
-    MAX_WAIT = 3
-    for i in range(MAX_WAIT):
-        if server_path.exists(): break
-        Log.Warn(f"waiting {i+1} of {MAX_WAIT} for relay to start")
-        time.sleep(1)
-    assert server_path.exists(), f"server not started [{server_path}]"
-
     Log.Info(f"loading agent config")
     agent = Agent.Load(AgentPaths.to_definition(root=cp_root))
     agent_home = str(agent.home.GetPath())
     Log.Info(f"agent home [{agent_home}]")
 
-    Log.Info(f"connecting to relay [{server_path}]")
-    with RemoteShell(server_path, timeout=60, setup_commands=agent.setup_commands) as shell:
+    agent_env = Environment(image=agent.container, runtime=agent.runtime, native=agent.native)
+    server_path = AgentPaths.to_local_relay_coms(root=AgentPaths.INTERNALS, host=host)
+    if agent_env.needs_relay:
+        # Container runtimes launch each tool across the boundary, so they
+        # depend on the relay daemon the bootstrap started. mamba/native run
+        # the tool in-process — there is no relay to wait on.
+        MAX_WAIT = 3
+        for i in range(MAX_WAIT):
+            if server_path.exists(): break
+            Log.Warn(f"waiting {i+1} of {MAX_WAIT} for relay to start")
+            time.sleep(1)
+        assert server_path.exists(), f"server not started [{server_path}]"
+
+    Log.Info(f"connecting shell (relay={agent_env.needs_relay})")
+    with agent_env.ConnectShell(server_path, agent.setup_commands) as shell:
         _paused = False
         class PausedStdOut:
             def __enter__(self):
@@ -342,11 +426,33 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
                     except ValueError:
                         continue
                     params[k] = v
+                # The GPU declaration is static per step (it comes from the
+                # transform's Resources, not a nextflow interpolation), so it
+                # rides in via the staged step meta file. Absent for every
+                # non-GPU step and for workspaces staged before GPU support.
+                if "gpu" in raw_meta:
+                    try:
+                        params["gpus"] = json.loads(raw_meta["gpu"])
+                    except json.JSONDecodeError as e:
+                        Log.Warn(f"could not parse gpu metadata [{raw_meta['gpu']}]: {e}")
         except Exception as e:
             Log.Error(f"failed to read [{METADATA_FILE}]: {e}")
-        lineages = raw_meta.get("lin", "[]")
-        lineages = json.loads(lineages)
-        if not isinstance(lineages, list): lineages = [lineages]
+        # Parse the lin payload via LinPayload.from_json. The v3 envelope
+        # `{"v":3,"entries":[<index_map>, ...]}` carries one map per batch
+        # member (`Orchestrator._collateBatch` builds one index each), so the
+        # batch loop below gets one row per member and `context.AsBatch()`
+        # yields that many. Wire v2 carried a single map, which is why a
+        # batch_size>1 transform used to run once over member 0.
+        lin_raw = raw_meta.get("lin")
+        if lin_raw:
+            try:
+                lin_payload = LinPayload.from_json(lin_raw)
+                lineages = lin_payload.entries
+            except ValueError as e:
+                Log.Error(f"failed to parse v{LinPayload.VERSION} lin payload: {e}")
+                return ExecutionResult(False)
+        else:
+            lineages = [{}]
         group_by_inst = step.group_by_instances
         if len(group_by_inst)==0:
             Log.Error(f"group_by dependency has no bound instances for step [{step_name}]")
@@ -365,6 +471,19 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
         fmt = int(raw_meta.get("fmt", "1"))
         dep_in_raw = {}
         dep_out_raw = []
+        # C5 — greenfield sar/par preflight. Both are pre-written to
+        # workflow.step_N.meta at workflow.py:1525-1526 and cat'd into
+        # METADATA_FILE — no schema change needed at the emit site.
+        # `sar` is `dict[dep_key, int]` (expected arity per dep); `par`
+        # is the int sample-arity. We only assert on inputs — produced
+        # slots may legitimately be empty (optional-branch produces, see
+        # the `continue` at the dep2output construction below).
+        sar: dict[str, int] = {}
+        if "sar" in raw_meta:
+            try:
+                sar = json.loads(raw_meta["sar"])
+            except json.JSONDecodeError:
+                Log.Warn("failed to parse sar (structural arity); skipping preflight")
         if fmt >= 2 and "din" in raw_meta and "dot" in raw_meta:
             try:
                 dep_in_raw = json.loads(raw_meta["din"])
@@ -378,15 +497,36 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
             for dep in step.transform.model.requires:
                 ids = dep_in_raw.get(dep.key, [])
                 resolved = [inst_lookup[k] for k in ids if k in inst_lookup]
-                if len(resolved) == 0:
-                    resolved = step.dependency_map.get(dep, [])
+                if not resolved and ids:
+                    # G4 — required input dep had non-empty id list but
+                    # none resolved against inst_lookup. The silent
+                    # fallback to step.dependency_map.get(dep, []) used
+                    # to mask drift between the compile-time plan and
+                    # the runtime channel; now it raises so the failure
+                    # surfaces at the routing site.
+                    raise MissingInstanceError(
+                        instance_id=ids[0] if ids else None,
+                        dep_key=dep.key,
+                    )
+                if dep.key in sar and len(resolved) != sar[dep.key]:
+                    raise ArityMismatchError(
+                        expected=sar[dep.key],
+                        actual=len(resolved),
+                        dep_key=dep.key,
+                    )
                 input_by_dep[dep] = resolved
         else:
             inp_keys = [x for x in raw_meta.get("inp", "").split(",") if len(x)>0]
             for dep, k in zip(step.transform.model.requires, inp_keys):
                 resolved = [x for x in step.dependency_map.get(dep, []) if x.dtype.key == k]
-                if len(resolved) == 0:
-                    resolved = step.dependency_map.get(dep, [])
+                if not resolved:
+                    # G4 (fmt<2 / legacy path) — same hard-raise once the
+                    # compile-time plan has declared a key but no instance
+                    # matches it.
+                    raise MissingInstanceError(
+                        instance_id=None,
+                        dep_key=dep.key,
+                    )
                 input_by_dep[dep] = resolved
             for dep in step.transform.model.requires:
                 if dep in input_by_dep:
@@ -429,4 +569,8 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
             input_by_dep=input_by_dep,
             dep2output=dep2output,
             params=params,
+            # A mamba/native agent crosses no container boundary even under
+            # nextflow, so the three path views must collapse exactly as they
+            # do on the direct-run path.
+            host_local=not agent_env.needs_relay,
         )

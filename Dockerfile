@@ -1,4 +1,9 @@
-ARG CONDA_ENV=for_container
+# Default must match the hard-coded shebangs in src/metasmith/bin/
+# (`#!/opt/conda/envs/metasmith_env/bin/python`). `dev.sh -bd` passes
+# --build-arg CONDA_ENV=${NAME}_env, so a scripted build is fine either way;
+# a hand-run `docker build .` with the old `for_container` default produced
+# an image whose /app shims pointed at an env that does not exist in it.
+ARG CONDA_ENV=metasmith_env
 
 FROM condaforge/miniforge3
 ENV DEBIAN_FRONTEND=noninteractive

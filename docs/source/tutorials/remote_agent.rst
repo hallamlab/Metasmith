@@ -161,7 +161,7 @@ Save the following as :bash:`deploy_remote.py` on your laptop. Adjust the
     :caption: deploy_remote.py
     :linenos:
 
-    from metasmith.python_api import Agent, ContainerRuntime, Source
+    from metasmith.python_api import Agent, Runtime, Source
 
     agent_home = Source.FromSsh(
         host="my_remote",                # must match an SSH config Host entry
@@ -170,7 +170,7 @@ Save the following as :bash:`deploy_remote.py` on your laptop. Adjust the
 
     smith = Agent(
         home=agent_home,
-        runtime=ContainerRuntime.APPTAINER,
+        runtime=Runtime.APPTAINER,
         setup_commands=[
             'export TMPDIR="/home/$USER/tmp"',
             'mkdir -p $TMPDIR',

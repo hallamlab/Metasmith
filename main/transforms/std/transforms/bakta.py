@@ -17,30 +17,37 @@ def protocol(context: ExecutionContext):
     assembly_path = context.Input(assembly)
     out_path = context.Output(out)
 
-    cpus = context.params.get("cpus")
-    cpus_string = ""
-    if cpus is not None:
-        cpus_string = f"--threads {cpus}"
-    cpus_string = ""
+    # Thread count from $task.cpus (params["cpus"]); default so bakta is never
+    # silently single-threaded. The pipeline only consumes bakta.faa (the CDS
+    # amino-acid FASTA) for downstream eggNOG annotation, so the non-CDS feature
+    # scans (tRNA/rRNA/ncRNA/CRISPR/sORF/gap/ori) and the circular plot are
+    # skipped: this cuts a fragmented-assembly annotation from ~8.5 min to ~15 s
+    # with no effect on the CDS proteins that flow downstream.
+    cpus = context.params.get("cpus") or 8
     context.ExecWithContainer(
         image = image,
         cmd = f"""
             export MPLBACKEND=Agg
             bakta \
                 --db {db_path.container} \
-                {cpus_string} \
+                --threads {cpus} \
+                --skip-trna --skip-tmrna --skip-rrna --skip-ncrna \
+                --skip-ncrna-region --skip-crispr --skip-sorf \
+                --skip-gap --skip-ori --skip-plot \
                 --prefix bakta \
                 --output {out_path.container} \
                 {assembly_path.container}
         """
     )
-    return ExecutionResult(success=out_path.local.exists())
+    return ExecutionResult(
+        manifest=[{
+            out: out_path.local,
+        }],
+        success=out_path.local.exists(),
+    )
 
 TransformInstance(
     protocol = protocol,
     group_by=assembly,
     model = model,
-    output_signature = {
-        out: "bakta_out/",
-    },
 )
