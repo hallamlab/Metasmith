@@ -68,10 +68,26 @@ and writes no SQLite row, but its outputs still flow into downstream
 lineage keys — the downstream entries' identity therefore captures the
 fact that the non-deterministic step ran on a specific input chain.
 
-Global kill-switch: set ``METASMITH_CACHE=0`` in the environment to
-disable probe + promote for the entire run. Useful for forcing a
-known-good baseline run or for diagnosing a cache-correlated bug
-without editing transforms.
+Global kill-switch: ``METASMITH_CACHE=0`` disables probe + promote for
+the entire run. Useful for forcing a known-good baseline run or for
+diagnosing a cache-correlated bug without editing transforms.
+
+.. warning::
+
+   It has to be set in the environment of the **agent process**, not the
+   client's. The reads that matter — the probe in
+   ``models/workflow/cache_decisions.py`` and promote in
+   ``agents/runner.py`` — happen inside the agent, and a containerised
+   agent does not inherit the environment of whatever drove it. Exporting
+   ``METASMITH_CACHE=0`` in the shell that calls ``RunWorkflow``, or in
+   the agent's ``setup_commands``, was measured to leave the cache fully
+   active (the run still logged ``cache probe matched N/M step(s)``).
+   Both were tried against 0.20.1; neither worked, and no client-side
+   spelling is currently known to. Until that is plumbed, the reliable
+   levers are ``cacheable=False`` on the transform and ``msm cache gc``
+   on the shard — and if you need certainty that a run used no cached
+   result, check the agent log for the ``cache probe`` line rather than
+   assuming the variable took effect.
 
 Cross-workspace library import
 ============================================================
