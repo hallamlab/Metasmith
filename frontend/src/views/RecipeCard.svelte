@@ -238,9 +238,12 @@
     return row.parents.map((k) => {
       const r = byKey.get(k)
       if (!r) return { key: k, label: String(k) }
+      // A deferred item's path is a marker nobody has set yet, not a value --
+      // showing it here is the same mistake as showing it on the row itself.
+      const label = r.kind === 'item' && r.deferred ? '— empty —' : r.label
       return {
         key: k,
-        label: r.label,
+        label,
         sub: r.kind === 'target' ? null : r.type,
         draft: r.kind === 'draft',
       }
@@ -288,13 +291,6 @@
     else onretype?.(row.item, next)
   }
 
-  // A request-held row writes through as it is picked, so leaving the field is
-  // only a save and a close.
-  function closeRow(row) {
-    if (edit?.key === row.key) edit = null
-    oncommit?.()
-  }
-
   const setType = (row, v) =>
     row.kind === 'draft' ? ondraft?.(row.id, { dtype: v }) : ontarget?.(row.id, { type: v })
 
@@ -326,33 +322,24 @@
 
 </script>
 
-<!-- The type, as a word until it is reached for. Every row does it the same way:
-     a registered input, a draft and an output all name a type, and one of them
-     rendering a permanently-open combobox while the others read as a word made
-     the list look like three kinds of thing. Clicking it moves the panel onto
-     that type as well as opening the field -- which is the whole reason the type
-     is the thing you click.
+<!-- The type is always the field, never a word standing in for it -- a
+     registered input, a draft and an output all name a type the same combobox
+     the same way, at rest and while being changed alike. Focusing it is what
+     moves the panel onto that type, in place of the click that used to open it.
 
-     What decides which of the two is drawn is `edit`, and only `edit`. It used
-     to be "has a type and is not being edited", which works for a registered
-     row -- that one edits a local copy -- and fails for the two that write
-     through as you type: an empty row opened its field, the first character
-     landed in `row.type`, and the row promptly redrew itself as a word with the
-     field gone. One keystroke per attempt. -->
+     A registered row's box holds a local buffer (`draft`) rather than writing
+     through as it is typed: retyping it is a re-registration on the server,
+     and firing that on every keystroke would be a request per character. A
+     draft's and an output's box writes straight through, the same as any other
+     field on those two -- there is nothing behind them to protect. -->
 {#snippet typeCell(row)}
-  {#if row.type && !editingRow(row, 'type')}
-    <button
-      class="asfield type mono truncate"
-      title={`${row.type} — ${row.kind === 'item' ? EDITABLE : 'click to change it'}`}
-      onclick={() => {
-        onfocus?.(row.type)
-        startEdit(row, 'type')
-      }}
-    >{row.type}</button>
-  {:else if row.kind === 'item'}
+  {#if row.kind === 'item'}
     <div
       class="typefield"
-      onfocusin={() => ontypefocus?.(row)}
+      onfocusin={() => {
+        onfocus?.(row.type)
+        if (!editingRow(row, 'type')) startEdit(row, 'type')
+      }}
       onfocusout={(e) => {
         // the caret button is part of this control, so moving onto it is not
         // leaving the field
@@ -360,37 +347,26 @@
       }}
     >
       <TypeSelect
-        value={draft}
+        value={editingRow(row, 'type') ? draft : (row.type ?? '')}
         options={typeOptions}
         placeholder="namespace::type"
-        autofocus
         describe={describeType(row)}
         onchange={(v) => (draft = v)}
         oncommit={() => commitEdit(row)}
       />
     </div>
   {:else}
-    <!-- A draft's and an output's type is written through as it is typed, so
-         the row is only *held open* by `edit` -- taking focus is what puts it
-         there, and the field would otherwise collapse back into a word on the
-         first character. Leaving the control is what takes it out again. -->
     <div
       class="typefield"
-      onfocusin={() => {
-        if (!editingRow(row, 'type')) edit = { key: row.key, field: 'type' }
-      }}
-      onfocusout={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) closeRow(row)
-      }}
+      onfocusin={() => onfocus?.(row.type)}
     >
       <TypeSelect
         value={row.type}
         options={typeOptions}
         placeholder="namespace::type"
-        autofocus={editingRow(row, 'type')}
         describe={describeType(row)}
         onchange={(v) => setType(row, v)}
-        oncommit={() => closeRow(row)}
+        oncommit={() => oncommit?.()}
       />
     </div>
   {/if}
@@ -537,37 +513,30 @@
              output row. -->
         <div class="row-item">
           {#if row.kind === 'item'}
-            {#if editingRow(row, 'path')}
-              <input
-                class="grow mono"
-                bind:value={draft}
-                autofocus
-                spellcheck="false"
-                placeholder={row.deferred ? '/data/sample_01.fastq.gz' : ''}
-                onblur={() => commitEdit(row)}
-                onkeydown={(e) => {
-                  if (e.key === 'Enter') commitEdit(row)
-                  if (e.key === 'Escape') edit = null
-                }}
-              />
-              <span class="small muted">enter to re-point</span>
-            {:else if row.deferred}
-              <!-- the marker a template ships instead of a path, and the whole
-                   point of a template: showing it as text would read as a real
-                   value someone forgot to fill in, when it is one nobody has
-                   set yet -->
-              <button
-                class="asfield grow truncate mono empty"
-                title={`not set yet — ${EDITABLE}`}
-                onclick={() => startEdit(row, 'path')}
-              >— empty —</button>
-            {:else}
-              <button
-                class="asfield grow truncate mono"
-                title={`${row.label} — ${EDITABLE}`}
-                onclick={() => startEdit(row, 'path')}
-              >{row.label}</button>
-            {/if}
+            <!-- Always the field, never a word standing in for it -- a
+                 registered path lives in a local buffer while focused, the
+                 same reason the type box does: retyping it re-registers the
+                 row on the server, and that has to wait for a blur, not fire
+                 on every keystroke. -->
+            <input
+              class="grow mono"
+              value={editingRow(row, 'path') ? draft : row.deferred ? '' : row.label}
+              spellcheck="false"
+              title={row.deferred ? 'not set yet' : EDITABLE}
+              placeholder={row.deferred ? '/data/sample_01.fastq.gz' : ''}
+              onfocus={() => {
+                if (!editingRow(row, 'path')) startEdit(row, 'path')
+              }}
+              oninput={(e) => (draft = e.currentTarget.value)}
+              onblur={() => commitEdit(row)}
+              onkeydown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+                if (e.key === 'Escape') {
+                  edit = null
+                  e.currentTarget.blur()
+                }
+              }}
+            />
           {:else if row.draft.mode === 'value'}
             {@render sampleField(row, 'name', row.draft.name, columns.length ? '{sample}' : 'K12', false)}
             {@render sampleField(row, 'value', row.draft.value, 'GCF_000005845.2', false)}
@@ -622,16 +591,8 @@
           <div class="notes row wrap small">
             {#if row.type && !info?.known}
               <span class="tag warn">not a type in this library</span>
-            {:else if info?.known}
-              <span
-                class="tag"
-                title={info.consumedVia
-                  ? `${info.consumedVia} of them ask for a more general type, which this one satisfies`
-                  : null}
-              >{info.consumed} consume it{info.consumedVia ? ` (${info.consumedVia} indirectly)` : ''}</span>
-              {#if info.consumed === 0}
-                <span class="muted">nothing takes this — it would sit unused</span>
-              {/if}
+            {:else if info?.known && info.consumed === 0}
+              <span class="muted">nothing takes this — it would sit unused</span>
             {/if}
             {#if waiting}
               <span class="muted">waiting on a parent that is not registered yet</span>
@@ -642,8 +603,23 @@
     {/each}
 
     <div class="entry addrow">
-      <button class="small" onclick={() => onadd?.('file')}>+ a file</button>
-      <button class="small" onclick={() => onadd?.('value')}>+ a value</button>
+      <!-- One button, not two: a path and a value are the same kind of thing to
+           add, a row, and the choice between them is what the row is going to
+           hold rather than a different action to take. -->
+      <select
+        class="small"
+        aria-label="add an input"
+        value=""
+        onchange={(e) => {
+          const kind = e.currentTarget.value
+          e.currentTarget.value = ''
+          if (kind) onadd?.(kind)
+        }}
+      >
+        <option value="" disabled>+ an input</option>
+        <option value="file">a path</option>
+        <option value="value">a value</option>
+      </select>
       <span class="small muted">
         a row registers itself once it is complete; nothing is copied
       </span>
@@ -672,17 +648,8 @@
           <div class="notes row wrap small">
             {#if row.type && !info?.known}
               <span class="tag warn">not a type in this library</span>
-            {:else if info?.known}
-              <span
-                class="tag"
-                class:bad={info.produced === 0}
-                title={info.producedVia
-                  ? `${info.producedVia} of them by a more specific type, which satisfies this one`
-                  : null}
-              >{info.produced} produce it{info.producedVia ? ` (${info.producedVia} indirectly)` : ''}</span>
-              {#if info.produced === 0}
-                <span class="muted">nothing can make this — the plan will not solve</span>
-              {/if}
+            {:else if info?.known && info.produced === 0}
+              <span class="muted">nothing can make this — the plan will not solve</span>
             {/if}
             {#if dup}
               <span class="tag warn">already wanted, with the same lineage</span>
@@ -767,27 +734,6 @@
   /* fixed whether or not it holds a delete: it is what puts an output's × over
      the × on an input's first line */
   .trail { flex: 0 0 20px; display: flex; justify-content: flex-end; align-items: center; }
-  /* A value that opens as a field when it is reached for: a row still reads as a
-     row rather than as a form. But with no chrome at all it read as *print* --
-     the path and the type were reported as uneditable -- so one underline stays
-     at rest, and the box arrives on hover as it did. The transparent sides are
-     what keep the resting and hovered states the same height. */
-  .asfield {
-    background: none;
-    border: 1px solid transparent;
-    border-bottom-color: var(--line);
-    color: inherit;
-    padding: 1px 5px;
-    margin-left: -5px;
-    text-align: left;
-  }
-  .asfield:hover { border-color: var(--line); background: var(--panel-2); }
-  .asfield.empty { color: var(--muted); font-style: italic; }
-  .type {
-    display: block;
-    max-width: 100%;
-    color: var(--accent);
-  }
   /* narrow on purpose: it sits beside a field that wants the width, and what it
      holds is one short word at a time */
   .cols { flex: 0 0 auto; width: 4.5em; padding: 2px 2px; }
