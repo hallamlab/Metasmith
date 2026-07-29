@@ -20,6 +20,22 @@ from metasmith.env.environment import ContainerDef, Environment, Runtime
 AH = Path("/arc/home/u/msm_home")
 IMG = "docker://quay.io/hallamlab/metasmith:9.9.9-abc"
 DEV_SRC = "$AGENT_HOME/dev/metasmith"
+DEV_TARGET = "/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith"
+
+# The bootstrap stages the dev overlay to node-local scratch before binding it
+# (SLURM array fan-out), so the mount it renders sources from $DEV_BIND_SRC --
+# whatever the staging block left there -- and not from DEV_SRC.
+STAGED_SRC = "$DEV_BIND_SRC"
+
+
+def _dev_binds(env: Environment, src: str) -> str:
+    # What deploy hands the wrapper, and what the bootstrap derives internally.
+    return Environment(
+        image=env.image,
+        runtime=env.runtime,
+        native=env.native,
+        container=ContainerDef(binds=[(src, Path(DEV_TARGET))]),
+    ).MakeBindsParam()
 
 
 def _container(runtime: Runtime, **kw) -> Environment:
@@ -39,7 +55,7 @@ def _render_wrapper(env: Environment) -> str:
         agent_home=AH,
         run_command=env.MakeRunCommand(local=True, custom_bind_param="$BINDS"),
         main_binds=env.MakeBindsParam(),
-        dev_binds="--bind x:y",
+        dev_binds=_dev_binds(env, DEV_SRC),
         dev_src=DEV_SRC,
     )
 
@@ -50,7 +66,7 @@ def _render_bootstrap(env: Environment) -> str:
         run_command=env.MakeRunCommand(local=True, custom_bind_param="$BINDS"),
         run_binds=env.MakeBindsParam(),
         dev_src=DEV_SRC,
-        dev_target="/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith",
+        dev_target=DEV_TARGET,
         bind_file="binds.txt",
     )
 
@@ -96,6 +112,46 @@ class TestContainerScripts:
         script = _render_bootstrap(_container(runtime, workdir=Path("/ws")))
         assert 'if [ -e "/msm_home" ]; then' in script
         assert "--io /msm_home/relay/" in script
+
+
+@pytest.mark.parametrize("runtime", [Runtime.DOCKER, Runtime.APPTAINER])
+class TestBindDialectPurity:
+    """Every mount in a rendered script must be spelled by `MakeBindsParam` for
+    that runtime. Hand-writing a flag is how the dev-overlay mount ended up
+    emitting apptainer's `--bind` into a docker command line."""
+
+    # Tokens that only ever belong to the *other* runtime's dialect. The
+    # trailing space on `--bind ` keeps `--bind_file`-alikes from matching.
+    FOREIGN = {
+        Runtime.DOCKER: ["--bind "],
+        Runtime.APPTAINER: ["--mount ", "type=bind,"],
+    }
+
+    def test_scripts_carry_no_foreign_dialect(self, runtime):
+        scripts = {
+            "wrapper": _render_wrapper(_container(runtime)),
+            "bootstrap": _render_bootstrap(_container(runtime, workdir=Path("/ws"))),
+        }
+        for name, script in scripts.items():
+            for token in self.FOREIGN[runtime]:
+                assert token not in script, f"{runtime.value} {name} carries [{token}]"
+
+    def test_dev_overlay_mount_is_dialect_correct(self, runtime):
+        # Positive control: without this the scan above passes vacuously on a
+        # render that emits no mounts at all.
+        bootstrap = _render_bootstrap(_container(runtime, workdir=Path("/ws")))
+        # The bootstrap binds the *staged* copy, not the shared source tree --
+        # binding the latter silently undoes the errno-108 fan-out fix and is
+        # invisible outside a large SLURM array.
+        assert f'BINDS="$BINDS {_dev_binds(_container(runtime), STAGED_SRC)}"' in bootstrap
+        assert _dev_binds(_container(runtime), DEV_SRC) in _render_wrapper(_container(runtime))
+
+
+def test_apptainer_dev_overlay_line_is_pinned():
+    # Exact bytes of the line the e2e-validated HPC path runs. Pinned rather
+    # than derived so a change to `MakeBindsParam` cannot move it silently.
+    bootstrap = _render_bootstrap(_container(Runtime.APPTAINER, workdir=Path("/ws")))
+    assert f'BINDS="$BINDS --bind $DEV_BIND_SRC:{DEV_TARGET}"' in bootstrap
 
 
 class TestRelayFreeScripts:

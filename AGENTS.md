@@ -206,7 +206,12 @@ than as a set of types.
 arm per world (`ifContainerDo` / `ifVirtualEnvDo`, either omissible — omitting the venv arm
 is how a container-only tool says so) and the `env` package owns every per-runtime
 difference: bind dialect, whether a container boundary exists at all, GPU flags. Code that
-branches on the runtime is a bug; declare the need instead. `ifContainerDo(args=[...])`
+branches on the runtime is a bug; declare the need instead. That holds inside the `env`
+package too: `MakeBindsParam` is the only place a mount is spelled, and the shell templates
+`env` renders must interpolate it rather than hand-write a flag — a literal reads correctly
+under whichever runtime the author had in mind and is silently wrong under the other.
+`TestBindDialectPurity` in `tests/bootstrap/test_env_deploy_scripts.py` holds that line by
+scanning each rendered script for the other dialect's tokens. `ifContainerDo(args=[...])`
 appends verbatim runtime flags just before the image, so a flag passed there beats the
 framework default of the same name — but the dialect is the caller's problem, and mounts go
 through the typed `binds=`, never `args=`.
@@ -723,14 +728,15 @@ live runs from disk; `api.py`/`app.py` are the routes and the Flask app. Fronten
 `./dev.sh --build-gui` and never committed, and node is a build dependency deliberately kept
 out of `envs/base.yml`.
 
-The GUI's own tests carry `pytestmark = pytest.mark.gui`, and `./dev.sh -tg` derives the file
-list from that mark rather than repeating it — so marking a new file is all it takes to join
-the set. Handing pytest those paths matters as much as the `-m` does: `-m gui` alone still
-*collects* the whole tree, and importing the e2e modules costs more than this suite takes to
-run. It is meant to be run every minute, so the number to hold is a few seconds; the two
-things that would quietly undo that are per-test `create_app` (`bind_project` is split out
-precisely so one app can be re-pointed instead — werkzeug compiles a builder per route) and
-anything that shells out per item.
+Test selection is by **directory**, not by hand-written marks: `tests/conftest.py` maps each
+directory under `tests/` to its markers and stamps them at collection, failing loudly on a
+file that sits under no axis — so dropping a file into `tests/gui/` is all it takes to join
+the set, and a `pytestmark` line is redundant. Handing pytest those paths matters as much as
+the `-m` does: `-m gui` alone still *collects* the whole tree, and importing the e2e modules
+costs more than this suite takes to run. It is meant to be run every minute, so the number to
+hold is a few seconds; the two things that would quietly undo that are per-test `create_app`
+(`bind_project` is split out precisely so one app can be re-pointed instead — werkzeug
+compiles a builder per route) and anything that shells out per item.
 
 The brand marks live in `src/metasmith/gui/icon/` and are reached from the frontend through
 vite's `$icon` alias rather than copied into it, so there is one of each. They are build-time

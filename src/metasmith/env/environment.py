@@ -381,6 +381,17 @@ class Environment:
         # `run_command` is computed by the caller from the bootstrap's
         # /ws-workdir sub-environment.
         if self.needs_relay:
+            # The bootstrap may stage the dev overlay to node-local scratch
+            # before binding it (SLURM array fan-out), so it binds whatever
+            # $DEV_BIND_SRC resolves to at run time rather than dev_src.
+            dev_binds = Environment(
+                image=self.image,
+                runtime=self.runtime,
+                native=self.native,
+                container=ContainerDef(binds=[
+                    ("$DEV_BIND_SRC", Path(dev_target)),
+                ]),
+            ).MakeBindsParam()
             return f"""
                 #!/bin/bash
 
@@ -501,7 +512,7 @@ class Environment:
                                 echo "dev overlay tarball staging failed; using shared Lustre read"
                             fi
                         fi
-                        BINDS="$BINDS --bind $DEV_BIND_SRC:{dev_target}"
+                        BINDS="$BINDS {dev_binds}"
                     fi
                     if [ -e "./{bind_file}" ]; then
                         echo "including linked data binds"
