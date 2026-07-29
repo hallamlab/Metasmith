@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte'
   import { api } from '../lib/api.svelte.js'
 
   // The same engine that draws the plan, drawn again with clickable parts.
@@ -119,8 +120,13 @@
   $effect(() => {
     const target = laid?.nodes.find((n) => n.id === focus)
     if (!frame || !target) return
-    tx = frame.clientWidth / 2 - target.cx * scale
-    ty = frame.clientHeight / 2 - target.cy * scale
+    // read outside tracking -- a wheel-zoom tick sets `scale`, and picking it
+    // up as a dependency here would re-fire this effect on every zoom step,
+    // stomping the `tx`/`ty` that `onWheel` just computed to keep the point
+    // under the cursor fixed
+    const s = untrack(() => scale)
+    tx = frame.clientWidth / 2 - target.cx * s
+    ty = frame.clientHeight / 2 - target.cy * s
   })
 
   function onWheel(e) {
