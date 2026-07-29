@@ -1674,7 +1674,7 @@ def _run_summary(r) -> dict:
         "live": r.live,
         "archived_at": r.archived_at,
         **{k: r.record.get(k) for k in (
-            "agent", "task_key", "created_at", "launched_at", "finished_at",
+            "agent", "task_key", "staged_path", "created_at", "launched_at", "finished_at",
             "collected_at", "run_number", "preset", "error",
             # a run is reproducible only if it says what it was launched with
             "params", "resource_overrides",
@@ -1770,6 +1770,7 @@ def create_run():
                 )
                 p.update_run(workflow, run_name, {
                     "state": "staged", "task_key": staged["task_key"],
+                    "staged_path": op_runtime.staged_path(agent_path, staged["task_key"]),
                 })
                 p.update_run(workflow, run_name, {"state": "launching"})
                 op_runtime.run(

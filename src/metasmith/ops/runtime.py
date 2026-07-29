@@ -40,6 +40,13 @@ def stage(
     return {"status": "staged", "task_key": task.GetKey(), "agent": Path(agent_path).stem}
 
 
+def staged_path(agent_path: str, task_key: str) -> str:
+    """Where a staged task's workspace lives on the agent's own host -- may be
+    remote over SSH, but is still the path a user would want to go look at."""
+    agent = load_agent(agent_path)
+    return str(agent._task_workspace(task_key))
+
+
 def run(
     agent_path: str,
     task_key: str,

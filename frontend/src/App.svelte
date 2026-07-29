@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte'
   import { api } from './lib/api.svelte.js'
   import { runSuffix } from './lib/runname.js'
   import {
@@ -203,10 +204,16 @@
 
   // Selecting a run inside a shut group would leave it selected and invisible,
   // and the selection can move without a click -- a deleted run, a fresh launch.
+  //
+  // `untrack` matters here: `openRunGroup` itself reads `ui.collapsedRuns`, and
+  // without untracking that read becomes one of *this* effect's dependencies
+  // too -- so toggling any group re-runs this effect, and if the selected run
+  // still lives in the group that was just shut, it gets silently reopened in
+  // the same tick. The intent is to react only to the selection changing.
   $effect(() => {
     const id = app.selected.runs
     if (!id) return
-    openRunGroup(String(id).split('/')[0])
+    untrack(() => openRunGroup(String(id).split('/')[0]))
   })
 
   // -- deletions -----------------------------------------------------------
