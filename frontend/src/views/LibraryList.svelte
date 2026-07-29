@@ -1,103 +1,143 @@
 <script>
-  import Icon from '../components/Icon.svelte'
-
-  // The libraries, stacked, with the two things you do to one kept apart: the
-  // eye draws it, the checkbox decides whether the planner may reach for it.
-  // They are deliberately independent -- looking at a library you have switched
-  // off is a reasonable thing to want, and switching one off should not yank the
-  // graph out from under you.
+  // The libraries, as chips: the eye and the checkbox from the old list
+  // collapsed into one gesture each. A chip *is* an enabled library -- clicking
+  // its name draws it, its × disables it -- and a library that is off is not
+  // drawn as a struck-through row any more, it is just not a chip; it waits in
+  // the dropdown instead, which is the only place left to turn one back on.
   //
   // This used to be a fold in the middle of the builder, a long way from the
-  // counts and the list it narrows. It lives here now, above both.
+  // counts and the list it narrows. It lives here now, above both, with a rule
+  // under it to keep it from reading as part of the graph below.
   let { libraries = [], enabled = null, viewing = null, ontoggle, onview } = $props()
 
   // `enabled` is null for "all of them" and a Set otherwise -- stored that way so
   // a library added to the standard library later is picked up rather than
-  // silently excluded. Read it the wrong way round and every box renders off.
+  // silently excluded. Read it the wrong way round and every chip renders off.
   const on = (l) => !enabled || enabled.has(l.path)
 
-  let count = $derived(libraries.filter(on).length)
+  let onLibs = $derived(libraries.filter(on))
+  let offLibs = $derived(libraries.filter((l) => !on(l)))
 
-  // A checkbox flips itself the moment it is clicked, and the last library may
-  // not be switched off -- so on a refusal the box would sit unticked over a
-  // library that is still enabled. Nothing else re-renders it, because from the
-  // page's point of view nothing changed. Put it back to whatever the state
-  // actually says, once that state has had its turn.
-  function toggle(l, box) {
-    ontoggle?.(l.path)
-    queueMicrotask(() => (box.checked = on(l)))
+  function addFromSelect(e) {
+    const path = e.currentTarget.value
+    e.currentTarget.value = ''
+    if (path) ontoggle?.(path)
   }
 </script>
 
-<div class="head small">
-  <span class="muted grow">transform libraries</span>
-  <span class="muted" title={count < libraries.length
-    ? 'a generate may only use the ticked ones, and narrowing marks a result stale'
-    : 'all of them are offered to the planner'}>
-    {count} of {libraries.length}
-  </span>
-</div>
+<div class="wrap">
+  <div class="head small">
+    <span class="muted grow">transform libraries</span>
+    <span class="muted" title={offLibs.length
+      ? 'a generate may only use the ticked ones, and narrowing marks a result stale'
+      : 'all of them are offered to the planner'}>
+      {onLibs.length} of {libraries.length}
+    </span>
+  </div>
 
-<div class="rows">
-  {#each libraries as l (l.path)}
-    <div class="row lib" class:off={!on(l)} class:viewing={viewing === l.path}>
-      <button
-        class="eye"
-        class:on={viewing === l.path}
-        title="draw this library"
-        aria-label="draw {l.name}"
-        aria-pressed={viewing === l.path}
-        onclick={() => onview?.(l.path)}
-      >
-        <Icon name="eye" size={13} />
-      </button>
-      <span class="mono truncate grow" title={l.path}>{l.name}</span>
-      {#if l.error}
-        <span class="tag bad" title={l.error}>unreadable</span>
-      {:else}
-        <span class="small muted">{l.transform_count}</span>
-      {/if}
-      <input
-        type="checkbox"
-        title="offer this library to the planner"
-        aria-label="enable {l.name}"
-        checked={on(l)}
-        onchange={(e) => toggle(l, e.currentTarget)}
-      />
-    </div>
-  {/each}
-  {#if !libraries.length}
-    <p class="small muted">no transform libraries found</p>
+  <div class="chips">
+    {#each onLibs as l (l.path)}
+      <span class="chip" class:viewing={viewing === l.path} class:bad={!!l.error}>
+        <button
+          class="name truncate"
+          title={l.error ?? l.path}
+          aria-pressed={viewing === l.path}
+          onclick={() => onview?.(l.path)}
+        >{l.name}{#if !l.error}<span class="count muted">{l.transform_count}</span>{/if}</button>
+        <button
+          class="x"
+          title="disable this library"
+          aria-label="disable {l.name}"
+          onclick={() => ontoggle?.(l.path)}
+        >×</button>
+      </span>
+    {/each}
+    {#if !libraries.length}
+      <p class="small muted empty">no transform libraries found</p>
+    {:else if !onLibs.length}
+      <p class="small muted empty">nothing enabled — pick one below</p>
+    {/if}
+  </div>
+
+  {#if offLibs.length}
+    <select class="add small" value="" onchange={addFromSelect}>
+      <option value="" disabled>+ add a library…</option>
+      {#each offLibs as l (l.path)}
+        <option value={l.path}>{l.name}</option>
+      {/each}
+    </select>
   {/if}
 </div>
 
 <style>
+  .wrap {
+    flex: 0 0 auto;
+    padding-bottom: 8px;
+    margin-bottom: 6px;
+    /* the line the DAG window sits under -- without it the chips and the
+       graph read as one scrolling list rather than two things */
+    border-bottom: 1px solid var(--line);
+  }
   .head {
     display: flex;
     gap: 8px;
     align-items: baseline;
-    padding: 8px 12px 4px;
+    padding: 8px 12px 6px;
   }
-  .rows {
-    /* a fixed ceiling rather than a share of the panel: the graph below is what
-       wants the room, and a library list that grows into it as libraries are
-       added would take that room without being asked */
-    max-height: 118px;
-    overflow-y: auto;
-    padding: 0 12px 6px;
-    flex: 0 0 auto;
-  }
-  .lib { gap: 6px; padding: 1px 0; }
-  .lib.off .mono { color: var(--muted); text-decoration: line-through; }
-  .lib input { width: auto; flex: 0 0 auto; }
-  .eye {
-    flex: 0 0 auto;
+  .chips {
     display: flex;
-    padding: 3px;
-    background: none;
-    border-color: transparent;
-    color: var(--muted);
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 0 12px;
+    /* a ceiling rather than a share of the panel, same reasoning the old list
+       used: the graph below is what wants the room */
+    max-height: 96px;
+    overflow-y: auto;
   }
-  .eye:hover { color: var(--text); background: var(--panel-2); }
-  .eye.on { color: var(--accent); border-color: var(--line); background: var(--panel-2); }
+  .empty { margin: 0; padding: 2px 0; }
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel-2);
+    padding-left: 2px;
+  }
+  .chip.viewing { border-color: var(--accent); }
+  .chip.bad { border-color: var(--tag-bad-line); }
+  .chip .name {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+    max-width: 200px;
+    background: none;
+    border: none;
+    border-radius: 10px;
+    padding: 2px 4px 2px 8px;
+    font-size: 12px;
+    font-family: var(--mono, monospace);
+    color: var(--text);
+  }
+  .chip.bad .name { color: var(--bad); }
+  .chip .name:hover { background: var(--panel); }
+  .chip.viewing .name { color: var(--accent); }
+  .chip .count { font-size: 10px; }
+  .chip .x {
+    flex: 0 0 auto;
+    background: none;
+    border: none;
+    border-radius: 50%;
+    color: var(--muted);
+    line-height: 1;
+    padding: 2px 7px 2px 3px;
+    font-size: 13px;
+  }
+  .chip .x:hover { color: var(--bad); }
+  .add {
+    margin: 6px 12px 0;
+    width: calc(100% - 24px);
+  }
 </style>
