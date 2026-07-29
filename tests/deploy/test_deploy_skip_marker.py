@@ -80,8 +80,10 @@ def test_relay_extraction_is_artifact_gated():
     relay = AgentPaths.to_relay(Path("/probe"))
     assert relay == Path("/probe/relay/msm_relay"), \
         "AgentPaths.to_relay contract changed; update this test"
-    assert "AgentPaths.to_relay(self.home.GetPath())" in block, (
-        "relay extraction must derive its gate path from AgentPaths.to_relay"
+    assert "AgentPaths.to_relay(resolved_agent_home)" in block, (
+        "relay extraction must derive its gate path from AgentPaths.to_relay, "
+        "applied to the *resolved* home -- self.home.GetPath() may still carry "
+        "a literal ~ that a quoted bash check would never expand"
     )
     assert "deploy_from_container" in block, \
         "this test pins the relay-extract step; if it's gone, re-think the gate"
