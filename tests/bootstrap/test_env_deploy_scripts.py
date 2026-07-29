@@ -49,8 +49,8 @@ def _render_bootstrap(env: Environment) -> str:
         agent_home=AH,
         run_command=env.MakeRunCommand(local=True, custom_bind_param="$BINDS"),
         run_binds=env.MakeBindsParam(),
-        dev_binds="--bind x:y",
         dev_src=DEV_SRC,
+        dev_target="/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith",
         bind_file="binds.txt",
     )
 

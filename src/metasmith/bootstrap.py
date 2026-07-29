@@ -350,7 +350,6 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
     cp_root = stage_root if stage_root is not None else AgentPaths.HOME_ROOT
     if stage_root is not None:
         Log.Info(f"reading control-plane from node-local stage [{stage_root}]")
-
     Log.Info(f"loading agent config")
     agent = Agent.Load(AgentPaths.to_definition(root=cp_root))
     agent_home = str(agent.home.GetPath())

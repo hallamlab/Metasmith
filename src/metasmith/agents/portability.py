@@ -58,6 +58,12 @@ def _check_env_portability(manifest: dict[str, dict], env: Environment) -> None:
         if arms is None:
             # Source could not be scanned at stage time -- unknown, not absent.
             continue
+        if not arms:
+            # Scanned fine and declares NO arms: the step invokes no external tool at
+            # all (a pure-python declaration, a verify, a refusal). There is nothing
+            # for a runtime to fail to provide, so it is not an offender -- the empty
+            # list is a different fact from None above, which is "we could not look".
+            continue
         if ARM not in arms:
             offenders.append(f"{who}: declares no {ARM} arm (has {arms or ['no arms']})")
             continue

@@ -371,7 +371,7 @@ class Environment:
             {prefix}metasmith $@
             """
 
-    def RenderBootstrap(self, *, agent_home: Path, run_command: str, run_binds: str, dev_binds: str, dev_src: str, bind_file: str) -> str:
+    def RenderBootstrap(self, *, agent_home: Path, run_command: str, run_binds: str, dev_src: str, dev_target: str, bind_file: str) -> str:
         # Body of `msm_bootstrap`, the per-step launcher Nextflow calls.
         # For container runtimes it (a) bounces back to the host via the
         # relay when invoked from inside the container, then (b) runs each
@@ -501,7 +501,7 @@ class Environment:
                                 echo "dev overlay tarball staging failed; using shared Lustre read"
                             fi
                         fi
-                        BINDS="$BINDS {dev_binds}"
+                        BINDS="$BINDS --bind $DEV_BIND_SRC:{dev_target}"
                     fi
                     if [ -e "./{bind_file}" ]; then
                         echo "including linked data binds"

@@ -33,15 +33,34 @@ def RemoveTrailingNewline(s):
     return s
 
 def RemoveLeadingIndent(s: str):
+    """Dedent by the COMMON indent, not by the first non-empty line's.
+
+    Measuring off the first line and slicing that many characters off every line
+    destroys any line that is deliberately less indented -- and a heredoc body is
+    exactly that. An embedded
+
+        python3 - <<'PY'
+    lines of script at column 0
+    PY
+
+    lost 8 characters from every line of the script and the terminator lost its
+    own line, so the shell never saw `PY` and the command died on an unterminated
+    heredoc. Taking the minimum leaves such a block untouched.
+
+    Whitespace-only lines carry no indent information (a blank line inside an
+    otherwise indented block is usually truly empty), so they do not drag the
+    minimum to zero.
+    """
     lines = s.split("\n")
     if len(lines) == 0: return s
-    indent = 0
-    for line in lines:
-        if line == "": continue
+    def _indent_of(line: str):
+        n = 0
         for c in line:
-            if c not in {" ", "\t"}: break
-            indent += 1
-        break
+            if c not in {" ", "\t"}: return n
+            n += 1
+        return None  # whitespace-only
+    indents = [i for i in (_indent_of(l) for l in lines) if i is not None]
+    indent = min(indents) if indents else 0
     cleaned = "\n".join([l[indent:] for l in lines])
     cleaned = cleaned.strip()
     if lines[-1][indent:] == "": cleaned += "\n"
