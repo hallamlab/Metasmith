@@ -1066,3 +1066,88 @@ workflow {
         assert ".." not in rendered.split("/"), (
             f"Docker emitted `..` segment unexpectedly: {rendered!r}."
         )
+
+
+class TestCacheHitLineage:
+    """What a cache-hit step puts on the channel, and what group() does with it.
+
+    `nextflow_codegen` replaces a hit step's process call with
+    `Channel.of([[:], file(...)])` — an EMPTY index — posted straight into
+    `o.post`. `_post` stamps the produced key onto that empty map, so the
+    tuple reaches a downstream `o.group` carrying nothing about where it
+    came from. These two tests are the same workflow twice, differing only
+    in whether the synthetic tuple carries its ancestry.
+    """
+
+    # Mirrors tests/cache/fixtures/cache_fixtures/parallel_then_group.py:
+    # a shared `root` leaf is the declared parent of each per-sample `seed`,
+    # `step_a` is produced per seed, and the next step groups by `root`.
+    # classify("step_a", "root") therefore returns DESCENDANT_OF_BY.
+    _SCRIPT = '''
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+    o.seedParents(["seed": ["root"], "step_a": ["seed"]])
+
+    ch_root = Channel.fromList([
+        [[(Orchestrator.SELF_ID_KEY): ["ROOT1"]], file("${{projectDir}}/root.txt")],
+    ])
+    def _root = (o.postIn([ch_root], ["root"]))[0]
+
+    // Exactly what codegen emits for a cache hit, modulo the index.
+    ch_a = Channel.of(
+        [{index}, file("${{projectDir}}/a0.txt")],
+        [{index}, file("${{projectDir}}/a1.txt")],
+    )
+    def _step_a = (o.post([ch_a], ["step_a"], ["SLOT_A"]))[0]
+
+    def grouped = o.group("root", [_root, _step_a], ["step_b"], 1)
+    grouped.view {{ it ->
+        def files = it[1..-1].collect {{ g -> g.collect {{ f -> f.name }}.sort().join("+") }}
+        return "G:" + files.join("|")
+    }}
+    workflow.onComplete {{
+        println "DISPATCH:" + groovy.json.JsonOutput.toJson(o.getDispatchLog())
+    }}
+}}
+'''
+
+    def _run(self, nxf_runner, index_literal):
+        for n in ("root", "a0", "a1"):
+            (nxf_runner.work_dir / f"{n}.txt").write_text(n)
+        result = nxf_runner.run(self._SCRIPT.format(index=index_literal))
+        NxfTestRunner.assert_nxf_ok(result)
+        emits = [l for l in result.stdout.splitlines() if l.startswith("G:")]
+        dispatch = [l for l in result.stdout.splitlines() if l.startswith("DISPATCH:")]
+        return emits, "".join(dispatch), result
+
+    def test_empty_index_is_dropped_as_a_lineage_violation(self, nxf_runner):
+        """The bug: a hit's files never reach the transform that consumes them.
+
+        `[[:], file(...)]` is what `nextflow_codegen` emits today. The
+        DESCENDANT_OF_BY branch looks for `index["root"]`, finds null, logs
+        LINEAGE_VIOLATION and drops the item — so the grouped channel is
+        empty and the downstream step is never submitted at all. A warm run
+        silently loses what a cold run computes.
+        """
+        emits, dispatch, result = self._run(nxf_runner, "[:]")
+        assert "LINEAGE_VIOLATION" in dispatch, (
+            "expected the empty-index tuples to be logged as lineage "
+            f"violations; dispatch log was: {dispatch}"
+        )
+        assert emits == [], (
+            "if group() no longer drops empty-index tuples this test has "
+            f"outlived its premise; emissions: {emits}"
+        )
+
+    def test_ancestor_bearing_index_reaches_the_group(self, nxf_runner):
+        """The contract: carry the ancestry and the hit is indistinguishable.
+
+        Same workflow, same synthetic channel, with the index the executed
+        task would have produced. Both files land in root's group, which is
+        what the cold run gives.
+        """
+        emits, dispatch, result = self._run(nxf_runner, '["root": ["ROOT1"]]')
+        assert "LINEAGE_VIOLATION" not in dispatch, dispatch
+        assert emits == ["G:root.txt|a0.txt+a1.txt"], (
+            f"expected one whole group carrying both cached files, got {emits}"
+        )
