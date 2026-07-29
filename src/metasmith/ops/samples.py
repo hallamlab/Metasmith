@@ -131,6 +131,12 @@ def read_table_file(path: str | Path, fmt: str | None = None) -> dict:
 
 TABLE_STEM = "sample_table"
 DEFAULT_SUFFIX = ".csv"
+# The upload's own name, or its absence: the sheet itself is always stored
+# under the fixed stem above, so this is the only place a paste is told apart
+# from an upload once the request that made it is gone. Named with an
+# underscore rather than a dot so `{TABLE_STEM}.*` -- which finds the sheet
+# itself -- never matches it.
+ORIGIN_FILE = f"{TABLE_STEM}_origin.txt"
 
 
 def attached_table_path(where: str | Path) -> Path | None:
@@ -155,14 +161,23 @@ def attach_table(
     where.mkdir(parents=True, exist_ok=True)
     dest = where / f"{TABLE_STEM}{suffix}"
     dest.write_bytes(data)
-    return {"filename": filename or dest.name, "path": str(dest), **parsed}
+    # Written unconditionally, even empty for a paste: its mere presence is what
+    # tells "attached with no name, on purpose" apart from "attached before this
+    # file existed", which `read_attached_table` falls back to `dest.name` for.
+    (where / ORIGIN_FILE).write_text(filename or "", encoding="utf-8")
+    return {"filename": filename or "pasted", "path": str(dest), **parsed}
 
 
 def read_attached_table(where: str | Path) -> dict | None:
     p = attached_table_path(where)
     if p is None:
         return None
-    return {"filename": p.name, "path": str(p), **read_table_file(p)}
+    origin = Path(where) / ORIGIN_FILE
+    if origin.is_file():
+        name = origin.read_text(encoding="utf-8").strip() or "pasted"
+    else:
+        name = p.name  # attached before ORIGIN_FILE existed
+    return {"filename": name, "path": str(p), **read_table_file(p)}
 
 
 def detach_table(where: str | Path) -> dict:
@@ -170,6 +185,10 @@ def detach_table(where: str | Path) -> dict:
     for p in sorted(Path(where).glob(f"{TABLE_STEM}.*")):
         p.unlink()
         removed.append(p.name)
+    origin = Path(where) / ORIGIN_FILE
+    if origin.is_file():
+        origin.unlink()
+        removed.append(origin.name)
     return {"removed": removed}
 
 

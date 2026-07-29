@@ -18,6 +18,7 @@
   <div class="spread">
     <h3>why it did not solve</h3>
     <span class="tag bad">no plan</span>
+    <span class="tag">experimental</span>
   </div>
 
   <p class="small">{result.message}</p>

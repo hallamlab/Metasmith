@@ -9,11 +9,8 @@
 
   let {
     table = null, // {attached, filename, columns, row_count, preview, problems, expansion}
-    busy = false,
     onattach, // (File|null, text|null) => Promise
     ondetach,
-    onexpand,
-    onclear,
   } = $props()
 
   let pasting = $state(false)
@@ -22,8 +19,11 @@
 
   let attached = $derived(!!table?.attached)
   let problems = $derived(table?.problems ?? [])
-  let expanded = $derived(table?.expansion?.row_count ?? 0)
-  let stale = $derived(attached && expanded > 0 && table.expansion.stale)
+  // What the last solve registered -- solving is what turns an array row into
+  // real items now, one per sheet row, so there is nothing to expand or
+  // unregister by hand here any more; solving again is also what refreshes
+  // this count against however the sheet or the rows have since changed.
+  let registered = $derived(table?.expansion?.row_count ?? 0)
 
   async function paste() {
     if (!text.trim()) return
@@ -68,16 +68,17 @@
     {/if}
   {:else}
     <div class="row wrap">
+      <!-- an empty `details` -- its content is rendered below, as a sibling,
+           not inside it. What is wanted here is the native disclosure toggle
+           and nothing else about the element: on the left, ahead of the
+           filename it is a peek *of*, the same way the plan's own diagram
+           folds behind a `summary` rather than a button. -->
+      <details class="peek-toggle" bind:open={peeking}>
+        <summary class="small muted">{peeking ? 'hide' : 'peek'}</summary>
+      </details>
       <span class="mono truncate grow" title={table.filename}>{table.filename}</span>
       <span class="small muted">{table.row_count} row(s) · {table.columns.length} column(s)</span>
-      <button class="small" onclick={() => (peeking = !peeking)}>
-        {peeking ? 'hide' : 'peek'}
-      </button>
       <DeleteControl title="take the sheet away — what it registered stays" onconfirm={ondetach} />
-    </div>
-
-    <div class="row wrap cols">
-      {#each table.columns as c}<span class="tag mono">{c}</span>{/each}
     </div>
 
     {#if peeking}
@@ -98,26 +99,15 @@
       </div>
     {/if}
 
-    <div class="row wrap">
-      <button class="small" onclick={onexpand} disabled={busy || problems.length > 0}>
-        {expanded ? 'expand again' : 'expand'}
-      </button>
-      {#if expanded}
-        <button class="small" onclick={onclear} disabled={busy}>unregister</button>
-        <span class="small muted">{expanded} row(s) registered</span>
-      {/if}
-      {#if stale}
-        <span class="tag warn">the sheet changed since this was expanded</span>
-      {/if}
-    </div>
-
     {#if problems.length}
       <ul class="small problems">
         {#each problems as p}<li>{p.message}</li>{/each}
       </ul>
-    {:else if !expanded}
+    {:else if registered}
+      <span class="small muted">{registered} row(s) registered, as of the last solve</span>
+    {:else}
       <span class="small muted">
-        Ready — expanding registers one item per array row, per sheet row.
+        Ready — solving registers one item per array row, per sheet row.
       </span>
     {/if}
   {/if}
@@ -134,7 +124,15 @@
   }
   .strip.on { background: none; }
   textarea { width: 100%; resize: vertical; }
-  .cols { gap: 4px; }
+  /* same look as the fold around the plan's own diagram (WorkflowView's
+     `.dag-details`): no button chrome, just a hand cursor and a quiet
+     brightening on hover, so the two read as one convention. */
+  .peek-toggle summary {
+    cursor: pointer;
+    width: fit-content;
+    user-select: none;
+  }
+  .peek-toggle summary:hover { color: var(--text); }
   /* a peek, not the sheet: it scrolls sideways rather than widening the card */
   .peek { overflow-x: auto; }
   .peek th { font-weight: normal; color: var(--muted); text-align: left; padding-right: 10px; }

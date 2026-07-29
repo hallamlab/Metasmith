@@ -53,6 +53,27 @@
   // type to look at it is what puts that row in focus: so reading around the
   // graph afterwards retyped the row you had just been reading about, quietly,
   // once per click. The panel is for looking; the row is where you type.
+  // The task key is how this plan is named on the server side of a bug
+  // report or a log line, and typing it out by hand is where a transposed
+  // character comes from -- so the chip that shows it is the way to get it,
+  // not just a label. `execCommand` is the fallback for a browser that
+  // refuses clipboard permission even on localhost.
+  async function copyTaskKey(key) {
+    if (!key) return
+    try {
+      await navigator.clipboard.writeText(key)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = key
+      ta.style.cssText = 'position:fixed;opacity:0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      ta.remove()
+    }
+    notify(`copied [${key}]`, 'info')
+  }
+
   function pickType(type) {
     focus = type
     drawing = null
@@ -109,16 +130,19 @@
   //
   // A row of the recipe whose path (or a value row's name or value) names a
   // column of the attached sheet is a *sample array*: it never registers as it
-  // stands, and expanding it puts down one library item per sheet row. Which
-  // makes it an array is the token, not a flag -- there is one list of input
-  // rows, and a row stops being an array the moment its last token goes.
+  // stands. What puts one library item per sheet row down is solving, not a
+  // separate step here to remember -- `generate_workflow` re-syncs the
+  // registered items against the current table and rows on every solve, so
+  // there is no "expanded" state on this side of the wire to go stale, and
+  // nothing here unregisters anything by hand either. Which makes a row an
+  // array is the token, not a flag -- there is one list of input rows, and a
+  // row stops being an array the moment its last token goes.
   const TOKEN = /\{[^{}]*\}/
   const isArrayRow = (d) =>
     d.mode === 'value' ? TOKEN.test(d.name ?? '') || TOKEN.test(d.value ?? '')
                        : TOKEN.test(d.path ?? '')
 
   let table = $state(null)
-  let expanding = $state(false)
 
   async function loadTable() {
     table = await api.get(`/workflows/${name}/table`)
@@ -143,24 +167,13 @@
     await loadTable()
   }
 
-  async function expandTable() {
-    expanding = true
-    const job = await attempt(() => api.post(`/workflows/${name}/table/expand`, {}))
-    if (job) jobId = job.id
-    else expanding = false
-  }
-
-  async function clearExpansion() {
-    await attempt(() => api.post(`/workflows/${name}/table/clear`, {}))
-    await Promise.all([loadInputs(), loadTable()])
-  }
-
-  // One row is the index, so marking one unmarks the rest. The type of that row
-  // is what the plan is split on, and the server reads it off the same drafts.
+  // One row is the index, so marking one unmarks the rest -- a plain set, not
+  // a toggle: the dropdown that drives this has its own "— none —" option, so
+  // there is always an explicit target rather than "whichever one was clicked
+  // again". The type of that row is what the plan is split on, and the server
+  // reads it off the same drafts.
   async function setIndex(id) {
-    recipe.drafts = recipe.drafts.map((d) => ({
-      ...d, index: d.id === id ? !d.index : false,
-    }))
+    recipe.drafts = recipe.drafts.map((d) => ({ ...d, index: !!id && d.id === id }))
     await persist()
     await loadTable()
   }
@@ -199,7 +212,10 @@
     if (indexCount === 0) return 'no array row is marked as the sample index'
     if (indexCount > 1) return 'two rows are marked as the sample index'
     if (!sampleType) return 'the sample index row has no type yet'
-    if (!(table.expansion?.row_count > 0)) return 'the sheet has not been expanded yet'
+    // solving is what registers a sample row now, and it refuses the same way
+    // the old manual expand did -- surfaced here too, so the button says why
+    // rather than a solve starting and failing on the same thing a moment later
+    if (table.problems?.length) return table.problems[0].message
     return null
   })
 
@@ -831,19 +847,34 @@
 
   // The name was made up at create time -- there is no form before this page to
   // have chosen it on -- so it is editable here, for as long as nothing is keyed
-  // to it. The server decides that; this only stops offering once it has said so.
+  // to it. The server decides that; past that point the *directory* keeps its
+  // name (the plan is keyed to it), but the label everyone reads does not have
+  // to be — `display_name` rides in `request.yml` beside it, an ordinary field
+  // `write_request` already merges through, and changes it without moving
+  // anything a run or a cache key points at.
   let renameable = $derived(!wf?.planned && !wf?.runs?.length && !wf?.archived_at)
+  let displayName = $derived(wf?.request?.display_name || wf?.name || '')
 
   async function commitRename(next) {
-    const out = await attempt(async () => {
-      // the same PUT the recipe saves through: a workflow's name is a field of
-      // it, and an id in the body that differs from the url is a rename
-      const body = await api.put(`/workflows/${name}`, { name: next })
-      await loadWorkflows()
-      return body
+    if (renameable) {
+      const out = await attempt(async () => {
+        // the same PUT the recipe saves through: a workflow's name is a field
+        // of it, and an id in the body that differs from the url is a rename
+        const body = await api.put(`/workflows/${name}`, { name: next })
+        await loadWorkflows()
+        return body
+      })
+      // the name is the route: reselect so the pane reloads against the new one
+      if (out) select('workflows', out.name)
+      return
+    }
+    // locked: the label changes, the directory does not, so there is nothing
+    // to reselect -- just a field of the same record to reload
+    await attempt(async () => {
+      await api.put(`/workflows/${name}`, { display_name: next })
+      await load()
+      return true
     })
-    // the name is the route: reselect so the pane reloads against the new one
-    if (out) select('workflows', out.name)
   }
 
   async function unarchive() {
@@ -863,12 +894,12 @@
       <div class="spread">
         <div class="row grow">
           <EditableName
-            value={wf.name}
-            editable={renameable}
-            title="rename this workflow"
-            lockedTitle={wf.planned
-              ? 'solved workflows keep their name — the plan is keyed to it; copy it from the list to get one under a new name'
-              : 'this workflow has runs and keeps its name'}
+            value={displayName}
+            editable={!wf.archived_at}
+            title={renameable
+              ? 'rename this workflow'
+              : 'give this workflow a label — the plan underneath keeps its own name'}
+            lockedTitle="an archived workflow keeps its name"
             oncommit={commitRename}
           />
           <SaveChip {dirty} />
@@ -913,14 +944,7 @@
           onadd={addRow}
         >
           {#snippet tableStrip()}
-            <SampleTable
-              {table}
-              busy={expanding}
-              onattach={attachTable}
-              ondetach={detachTable}
-              onexpand={expandTable}
-              onclear={clearExpansion}
-            />
+            <SampleTable {table} onattach={attachTable} ondetach={detachTable} />
           {/snippet}
         </RecipeCard>
       </div>
@@ -954,13 +978,12 @@
       </div>
 
       <div class="card col" style="gap:10px">
-        <!-- one log for both jobs this page starts: an expand and a solve are
-             the same shape of thing to watch, and only one of them runs at a
-             time -->
+        <!-- one log for both jobs this page starts: a solve and a bundle
+             expand are the same shape of thing to watch, and only one of them
+             runs at a time -->
         <JobLog
           {jobId}
           onend={async () => {
-            expanding = false
             // four independent reads, not a chain: solving is ~400ms of server
             // and this used to add three sequential round trips to the end of it
             await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
@@ -968,17 +991,21 @@
         />
 
         {#if !wf.planned}
-          <h3>result</h3>
+          <h3>plan</h3>
           <p class="small muted">
             Nothing solved yet. Register what you have, say what you want, then
             solve — the planner works out the steps between them.
           </p>
         {:else if wf.success}
           <div class="spread">
-            <h3>result</h3>
+            <h3>plan</h3>
             <div class="row">
               <span class="tag ok">{wf.step_count} step(s)</span>
-              <span class="tag mono">{wf.task_key}</span>
+              <button
+                class="tag mono copyable"
+                onclick={() => copyTaskKey(wf.task_key)}
+                title="copy this plan's task key"
+              >{wf.task_key}</button>
             </div>
           </div>
 
@@ -987,9 +1014,12 @@
                produces`, so their rows are pinned to the same vertical
                position as the node they describe rather than a copy of the
                drawing in words -- which is also why a row carries no name: the
-               node level with it is the name. No fold, no height cap: this
-               card grows with the plan, and only a diagram wider than the card
-               scrolls, sideways.
+               node level with it is the name. No height cap: this grows with
+               the plan, and only a diagram wider than the card scrolls,
+               sideways. It does fold, though -- behind a `<details>`, open by
+               default -- because a plan with enough steps to need that room is
+               also tall enough to push the run controls below it off screen,
+               and closing it is the way back to them without scrolling past.
 
                Everything about the alignment rests on one thing: the image and
                the rows box are flex siblings with nothing between them, so
@@ -1000,105 +1030,107 @@
           {@const geo = wf.result?.dag_geometry}
           {@const pitch = geo?.row_pitch ?? ROW_H}
           {@const dagHeight = geo?.height ?? (wf.result?.step_display?.length ?? 0) * pitch}
-          <div class="dag-scroll">
-            <div
-              class="dag-box"
-              data-dag-width={geo?.width ?? ''}
-              data-dag-height={geo?.height ?? ''}
-              data-row-pitch={pitch}
-              data-dag-top-cy={geo?.top_cy ?? ''}
-              data-head-h={HEAD_H}
-            >
-              <div class="dag-body">
-                <!-- the theme and the solve time are both in the query string,
-                     not a header: the browser caches by url, so switching
-                     themes or solving again would otherwise show the rendering
-                     it already had for that url. `generated_at` is the newest
-                     thing that changes on every solve, including a re-solve
-                     onto the same plan. Unscaled -- `dag_cy` values are in this
-                     image's own pixels and only line up when nothing resizes
-                     it, so it gets no width and no max-width. -->
-                <img
-                  class="dag"
-                  src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}&v=${encodeURIComponent(wf.generated_at)}`}
-                  alt="workflow diagram"
-                />
+          <details class="dag-details" open>
+            <summary class="small muted">diagram</summary>
+            <div class="dag-scroll">
+              <div
+                class="dag-box"
+                data-dag-width={geo?.width ?? ''}
+                data-dag-height={geo?.height ?? ''}
+                data-row-pitch={pitch}
+                data-dag-top-cy={geo?.top_cy ?? ''}
+                data-head-h={HEAD_H}
+              >
+                <div class="dag-body">
+                  <!-- the theme and the solve time are both in the query
+                       string, not a header: the browser caches by url, so
+                       switching themes or solving again would otherwise show
+                       the rendering it already had for that url. `generated_at`
+                       is the newest thing that changes on every solve,
+                       including a re-solve onto the same plan. Unscaled --
+                       `dag_cy` values are in this image's own pixels and only
+                       line up when nothing resizes it, so it gets no width and
+                       no max-width. -->
+                  <img
+                    class="dag"
+                    src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}&v=${encodeURIComponent(wf.generated_at)}`}
+                    alt="workflow diagram"
+                  />
 
-                {#if wf.result?.step_display?.length}
-                  <!-- Keyed by position, which is what makes a selector address
-                       one step. Empty is "as the transform declared", which is
-                       what the greyed number in each box is. A step with no
-                       `dag_cy` (geometry failed, or an old cached result) falls
-                       back to stacking at the diagram's own pitch rather than
-                       colliding at the top. The `data-` attributes are there so
-                       the alignment can be asserted from the page instead of
-                       eyeballed -- row centre less image top must be `dag_cy`,
-                       with no constant in between. -->
-                  <div class="res-body" style={`height: ${dagHeight}px`}>
-                    <!-- level with the diagram's first node, which is the
-                         synthetic `given` and so never has a row of its own -->
-                    <div
-                      class="res-head"
-                      style={`height: ${HEAD_H}px; top: ${(geo?.top_cy ?? HEAD_H / 2) - HEAD_H / 2}px`}
-                    >
-                      <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
-                    </div>
-                    {#each wf.result.step_display as step, i}
-                      {@const cy = step.dag_cy ?? (i + 0.5) * pitch}
+                  {#if wf.result?.step_display?.length}
+                    <!-- Keyed by position, which is what makes a selector
+                         address one step. Empty is "as the transform
+                         declared", which is what the greyed number in each box
+                         is. A step with no `dag_cy` (geometry failed, or an
+                         old cached result) falls back to stacking at the
+                         diagram's own pitch rather than colliding at the top.
+                         The `data-` attributes are there so the alignment can
+                         be asserted from the page instead of eyeballed -- row
+                         centre less image top must be `dag_cy`, with no
+                         constant in between. -->
+                    <div class="res-body" style={`height: ${dagHeight}px`}>
+                      <!-- level with the diagram's first node, which is the
+                           synthetic `given` and so never has a row of its own -->
                       <div
-                        class="res-row"
-                        style={`top: ${cy - pitch / 2}px; height: ${pitch}px`}
-                        title={step.process ?? step.transform}
-                        data-step={step.order}
-                        data-transform={step.transform}
-                        data-dag-cy={step.dag_cy ?? ''}
+                        class="res-head"
+                        style={`height: ${HEAD_H}px; top: ${(geo?.top_cy ?? HEAD_H / 2) - HEAD_H / 2}px`}
                       >
-                        {#each OVERRIDE_FIELDS as f}
-                          {@const v = overrides[step.order]?.[f] ?? ''}
-                          {#if f === 'duration_h' && v === UNLIMITED}
-                            <!-- The box cannot show a number for this, and
-                                 showing an empty one would read as the other
-                                 meaning, so it says which it is. -->
-                            <span class="unlimited mono" title="no time limit">∞ no limit</span>
-                          {:else}
-                            <input
-                              class="num"
-                              inputmode="decimal"
-                              placeholder={step.declared_resources?.[f] ?? '—'}
-                              aria-label={`${f} for step ${step.order}`}
-                              value={v}
-                              oninput={(e) => setOverride(step.order, f, e.currentTarget.value)}
-                            />
-                          {/if}
-                        {/each}
-                        <!-- a column of its own rather than a passenger in the
-                             time cell: the three headings then sit right over
-                             the three numbers, which are right-aligned -->
-                        <button
-                          class="inf"
-                          class:on={overrides[step.order]?.duration_h === UNLIMITED}
-                          aria-pressed={overrides[step.order]?.duration_h === UNLIMITED}
-                          title={overrides[step.order]?.duration_h === UNLIMITED
-                            ? 'back to a time limit'
-                            : 'run with no time limit at all'}
-                          aria-label={`no time limit for step ${step.order}`}
-                          onclick={() =>
-                            setOverride(
-                              step.order,
-                              'duration_h',
-                              overrides[step.order]?.duration_h === UNLIMITED ? '' : UNLIMITED,
-                            )}
-                        >∞</button>
+                        <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
                       </div>
-                    {/each}
-                  </div>
-                {/if}
+                      {#each wf.result.step_display as step, i}
+                        {@const cy = step.dag_cy ?? (i + 0.5) * pitch}
+                        <div
+                          class="res-row"
+                          style={`top: ${cy - pitch / 2}px; height: ${pitch}px`}
+                          title={step.process ?? step.transform}
+                          data-step={step.order}
+                          data-transform={step.transform}
+                          data-dag-cy={step.dag_cy ?? ''}
+                        >
+                          {#each OVERRIDE_FIELDS as f}
+                            {@const v = overrides[step.order]?.[f] ?? ''}
+                            {#if f === 'duration_h' && v === UNLIMITED}
+                              <!-- The box cannot show a number for this, and
+                                   showing an empty one would read as the other
+                                   meaning, so it says which it is. -->
+                              <span class="unlimited mono" title="no time limit">∞ no limit</span>
+                            {:else}
+                              <input
+                                class="num"
+                                inputmode="decimal"
+                                placeholder={step.declared_resources?.[f] ?? '—'}
+                                aria-label={`${f} for step ${step.order}`}
+                                value={v}
+                                oninput={(e) => setOverride(step.order, f, e.currentTarget.value)}
+                              />
+                            {/if}
+                          {/each}
+                          <!-- a column of its own rather than a passenger in
+                               the time cell: the three headings then sit right
+                               over the three numbers, which are right-aligned -->
+                          <button
+                            class="inf"
+                            class:on={overrides[step.order]?.duration_h === UNLIMITED}
+                            aria-pressed={overrides[step.order]?.duration_h === UNLIMITED}
+                            title={overrides[step.order]?.duration_h === UNLIMITED
+                              ? 'back to a time limit'
+                              : 'run with no time limit at all'}
+                            aria-label={`no time limit for step ${step.order}`}
+                            onclick={() =>
+                              setOverride(
+                                step.order,
+                                'duration_h',
+                                overrides[step.order]?.duration_h === UNLIMITED ? '' : UNLIMITED,
+                              )}
+                          >∞</button>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
               </div>
-              <span class="small muted hint">
-                left empty, a step gets what its transform declared
-              </span>
             </div>
-          </div>
+          </details>
 
           <p class="small muted">
             solved <Ago iso={wf.generated_at} />{#if wf.result.stdlib_commit}
@@ -1269,6 +1301,15 @@
      it names when nothing here resizes the image. Its `margin-top` is set
      inline from the same constant the rows are offset by. */
   .dag-body img.dag { display: block; }
+  /* the fold around the diagram: a `summary` its own row, not indented under
+     the drawing the way a browser default reads, since this one is a sibling
+     of the run controls it is standing between the plan and */
+  .dag-details summary {
+    cursor: pointer;
+    width: fit-content;
+    user-select: none;
+  }
+  .dag-details summary:hover { color: var(--text); }
   .link {
     background: none;
     border: none;
@@ -1277,6 +1318,15 @@
     text-align: left;
   }
   .link:hover { text-decoration: underline; border: none; }
+
+  /* a `.tag` that happens to be a `<button>`: reset to the plain pill it looks
+     like everywhere else, then say so is only a hover away */
+  .tag.copyable {
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .tag.copyable:hover { color: var(--text); border-color: var(--accent); }
 
   /* the same shape `Field` renders, for the two blocks that hold rows rather
      than a single control and so cannot be a <label> */
@@ -1312,7 +1362,7 @@
     font-size: 12px;
     padding: 0 6px;
     white-space: nowrap;
-    text-align: right;
+    text-align: center;
   }
   .res-body { position: relative; }
   /* the outline is what lets a value be followed back to the node it sits
@@ -1328,12 +1378,12 @@
   }
   /* trimmed to clear the row's outline: growing the row instead would break
      the alignment, since its height is the diagram's pitch */
-  .res-row .num { width: 100%; min-width: 0; text-align: right; padding: 2px 6px; }
+  .res-row .num { width: 100%; min-width: 0; text-align: center; padding: 2px 6px; }
   .unlimited {
     font-size: 11px;
     color: var(--accent);
     white-space: nowrap;
-    text-align: right;
+    text-align: center;
   }
   .inf {
     padding: 2px 6px;

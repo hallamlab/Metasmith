@@ -2454,13 +2454,16 @@ class TestSampleTable:
         assert body["index_id"] is None
         assert any("sample index" in p["message"] for p in body["problems"])
 
-    def test_expand_registers_and_attributes_every_item(self, client):
+    def test_solving_registers_and_attributes_every_item(self, client):
+        # there is no standalone expand any more: `generate` is what turns an
+        # array row into real items now, every time, so this is what a solve
+        # does as a side effect rather than a step of its own to call first
         name = _make_workflow(client)
         _attach(client, name)
-        out = _finish(client, client.post(f"/api/workflows/{name}/table/expand", json={}).get_json())
-        assert out["counts"] == {"idx": 2, "asm": 2}
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
 
         inputs = client.get(f"/api/workflows/{name}/inputs").get_json()
+        assert inputs["expansion"]["counts"] == {"idx": 2, "asm": 2}
         assert inputs["item_count"] == 4
         # the recipe shows a count against the array row, never the rows it
         # made -- which it can only do if the server says which row made what
@@ -2470,31 +2473,46 @@ class TestSampleTable:
         assert sorted(by_array) == ["asm", "idx"]
         assert inputs["expansion"]["sample_type"] == "mock::reads"
 
-    def test_re_expanding_replaces_the_previous_generation(self, client):
+    def test_solving_again_replaces_the_previous_generation(self, client):
         name = _make_workflow(client)
         _attach(client, name)
-        _finish(client, client.post(f"/api/workflows/{name}/table/expand", json={}).get_json())
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
         _attach(client, name, sheet=b"sample,asm\nS9,/data/z.fa\n")
-        _finish(client, client.post(f"/api/workflows/{name}/table/expand", json={}).get_json())
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
         paths = {i["path"] for i in client.get(f"/api/workflows/{name}/inputs").get_json()["items"]}
         assert paths == {"S9.id", "/data/z.fa"}
 
     def test_detach_leaves_what_was_registered(self, client):
         name = _make_workflow(client)
         _attach(client, name)
-        _finish(client, client.post(f"/api/workflows/{name}/table/expand", json={}).get_json())
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
         assert client.delete(f"/api/workflows/{name}/table").status_code == 200
         assert client.get(f"/api/workflows/{name}/table").get_json() == {"attached": False}
         assert client.get(f"/api/workflows/{name}/inputs").get_json()["item_count"] == 4
 
-    def test_clear_unregisters_it(self, client):
+    def test_solving_with_no_table_left_clears_what_was_registered(self, client):
+        # the symmetric case: nothing to call "unregister" on any more either --
+        # a solve with no table (or no array row left) clears a past
+        # generation's items the same way a solve with one replaces them
         name = _make_workflow(client)
         _attach(client, name)
-        _finish(client, client.post(f"/api/workflows/{name}/table/expand", json={}).get_json())
-        client.post(f"/api/workflows/{name}/table/clear", json={})
-        assert client.get(f"/api/workflows/{name}/inputs").get_json()["item_count"] == 0
+        # a plain input beside the array rows, so the library is not left
+        # completely empty once they are cleared -- solving *that* is its own
+        # question and not this test's; this one only cares whether a past
+        # generation's items outlive the row that made them
+        _seed_inputs(client, name, count=1, prefix="plain")
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert client.delete(f"/api/workflows/{name}/table").status_code == 200
+        # the browser always resends `sample_type` fresh off the current recipe,
+        # null once there is no table to index against -- done by hand here,
+        # since this client posts the body directly rather than through it
+        client.put(f"/api/workflows/{name}", json={"sample_type": None})
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        items = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
+        assert len(items) == 1
+        assert not items[0].get("array_id")
 
-    def test_an_expanded_table_solves_under_its_index_type(self, client):
+    def test_a_sample_table_solves_under_its_index_type(self, client):
         """The whole point: a sheet in, a sampled plan out.
 
         One step, not two: the planner folds structurally identical samples into
@@ -2503,7 +2521,6 @@ class TestSampleTable:
         """
         name = _make_workflow(client, sample="mock::reads")
         _attach(client, name)
-        _finish(client, client.post(f"/api/workflows/{name}/table/expand", json={}).get_json())
         result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
         assert result["success"], result
         assert result["step_count"] > 0
@@ -2522,7 +2539,8 @@ class TestSharedInputs:
     def _shared_setup(self, client):
         name = _make_workflow(client, sample="mock::reads")
         _attach(client, name, rows=self.ROWS)
-        _finish(client, client.post(f"/api/workflows/{name}/table/expand", json={}).get_json())
+        # the sample rows register as a side effect of the `generate` each test
+        # method below calls -- nothing here has to pre-register them
         project = client.application.config["MSM_PROJECT"]
         f = project.input_library_path(name) / "shared.fa"
         f.write_text(">contig\nACGT\n")
