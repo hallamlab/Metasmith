@@ -122,7 +122,6 @@
         value: d.value ?? '',
         dtype: d.dtype ?? '',
         parents: [...(d.parents ?? [])],
-        index: !!d.index,
       }))
   }
 
@@ -167,20 +166,6 @@
     await loadTable()
   }
 
-  // One row is the index, so marking one unmarks the rest -- a plain set, not
-  // a toggle: the dropdown that drives this has its own "— none —" option, so
-  // there is always an explicit target rather than "whichever one was clicked
-  // again". The type of that row is what the plan is split on, and the server
-  // reads it off the same drafts.
-  async function setIndex(id) {
-    recipe.drafts = recipe.drafts.map((d) => ({ ...d, index: !!id && d.id === id }))
-    await persist()
-    await loadTable()
-  }
-
-  // A registered row that is neither the index nor descended from it is in no
-  // sample's mask at all. Marking it shared is the third way in: the planner is
-  // handed it alongside the resource libraries, once, for every sample.
   let sharedPaths = $derived(wf?.request?.shared_input_paths ?? [])
 
   async function setShared(item, on) {
@@ -194,27 +179,13 @@
     await load()
   }
 
-  // The index row's declared type -- what the library is split on. Null when no
-  // sheet is attached, which is the unsampled plan the page has always sent.
-  let sampleType = $derived.by(() => {
-    if (!table?.attached) return null
-    const idx = recipe.drafts.find((d) => d.index && isArrayRow(d))
-    return idx?.dtype?.trim() || null
-  })
-
-  // What stops a solve. Both are silent failures rather than errors: a sheet
-  // with no index plans one run over everything, and two indexes is a lineage
-  // nothing downstream defines.
+  // What stops a solve. Solving is what registers a sample row now, and it
+  // refuses the same way the old manual expand did -- surfaced here too, so
+  // the button says why rather than a solve starting and failing on the same
+  // thing a moment later.
   let arrayCount = $derived(recipe.drafts.filter(isArrayRow).length)
-  let indexCount = $derived(recipe.drafts.filter((d) => d.index && isArrayRow(d)).length)
   let tableProblem = $derived.by(() => {
     if (!table?.attached || !arrayCount) return null
-    if (indexCount === 0) return 'no array row is marked as the sample index'
-    if (indexCount > 1) return 'two rows are marked as the sample index'
-    if (!sampleType) return 'the sample index row has no type yet'
-    // solving is what registers a sample row now, and it refuses the same way
-    // the old manual expand did -- surfaced here too, so the button says why
-    // rather than a solve starting and failing on the same thing a moment later
     if (table.problems?.length) return table.problems[0].message
     return null
   })
@@ -355,15 +326,14 @@
     }
   }
 
-  // `sample_type` is written out even when it is null rather than left off: the
-  // server merges a request over the stored one, so omitting the key would keep
-  // whatever a previous version of this page (or the CLI) put there -- and a
-  // sheet that has since been detached would leave the plan still split on a
-  // type nothing is marked with. With a sheet attached it is the index row's
-  // type: that row is what a sample *is*.
+  // `sample_type` is written out as null, always, rather than left off: the
+  // server merges a request over the stored one, so omitting the key would
+  // keep whatever a previous version of this page (or the CLI) put there. The
+  // table never derives one -- every table-driven solve is one unified view
+  // over the whole DAG the sheet describes.
   function requestBody() {
     return {
-      sample_type: sampleType,
+      sample_type: null,
       target_types: recipe.targets,
       transform_libraries: recipe.transform_libraries,
       input_drafts: recipe.drafts,
@@ -929,7 +899,6 @@
           columns={table?.columns ?? []}
           rowCount={table?.row_count ?? 0}
           expansion={table?.expansion ?? null}
-          onindex={setIndex}
           onshared={setShared}
           onfocus={showType}
           onremoveInput={removeInput}
@@ -963,9 +932,10 @@
           <span class="small muted">two outputs are the same type with the same lineage</span>
         {:else if tableProblem}
           <span class="small muted">{tableProblem}</span>
-        {:else if sampleType}
+        {:else if arrayCount}
           <span class="small muted">
-            one run per sheet row, split on <span class="mono">{sampleType}</span>
+            one unified solve over the sheet's {arrayCount}
+            {arrayCount === 1 ? 'column' : 'columns'}
           </span>
         {:else if stale}
           <span class="tag warn">recipe changed — the result below is from the old one</span>

@@ -35,7 +35,7 @@ def _library(tmp_path: Path) -> Path:
 def _rows(**over) -> list[dict]:
     rows = [
         {"id": "a", "mode": "value", "name": "{sample}.id", "value": "{sample}",
-         "dtype": "mock::marker", "parents": [], "index": True},
+         "dtype": "mock::marker", "parents": []},
         {"id": "b", "mode": "file", "path": "/data/{fwd}",
          "dtype": "mock::fwd", "parents": ["#a"]},
         {"id": "c", "mode": "file", "path": "/data/{rev}",
@@ -104,33 +104,14 @@ def test_validate_accepts_the_ordinary_shape(tmp_path):
     assert op_samples.validate(str(lib), _table(), _rows())["problems"] == []
 
 
-def test_validate_refuses_no_index(tmp_path):
+def test_validate_accepts_ordinary_dag_rows_with_no_index_field(tmp_path):
+    """No row is ever "the index" any more -- a plain parent-wired array set
+    validates cleanly with no `index` key anywhere in the row dicts."""
     lib = _library(tmp_path)
-    rows = _rows(a={"index": False})
-    problems = op_samples.validate(str(lib), _table(), rows)["problems"]
-    assert any("sample index" in p["message"] for p in problems)
-
-
-def test_validate_refuses_two_indexes(tmp_path):
-    lib = _library(tmp_path)
-    problems = op_samples.validate(str(lib), _table(), _rows(b={"index": True}))["problems"]
-    assert any("exactly one" in p["message"] for p in problems)
-
-
-def test_validate_refuses_a_parented_index(tmp_path):
-    """A shared ancestor above the index collapses every sample into one view."""
-    lib = _library(tmp_path)
-    rows = _rows() + [{"id": "z", "mode": "file", "path": "/d/meta.json",
-                       "dtype": "mock::marker", "parents": []}]
-    rows[0]["parents"] = ["#z"]
-    problems = op_samples.validate(str(lib), _table(), rows)["problems"]
-    assert any("cannot descend from anything" in p["message"] for p in problems)
-
-
-def test_validate_refuses_an_array_row_that_misses_the_index(tmp_path):
-    lib = _library(tmp_path)
-    problems = op_samples.validate(str(lib), _table(), _rows(c={"parents": []}))["problems"]
-    assert any("does not descend from the sample index" in p["message"] for p in problems)
+    rows = _rows(a={"parents": []})
+    for r in rows:
+        assert "index" not in r
+    assert op_samples.validate(str(lib), _table(), rows)["problems"] == []
 
 
 def test_validate_refuses_an_unknown_column(tmp_path):
@@ -139,16 +120,17 @@ def test_validate_refuses_an_unknown_column(tmp_path):
     assert any("does not have" in p["message"] for p in problems)
 
 
-def test_validate_refuses_a_path_that_does_not_vary(tmp_path):
-    """A token that happens to hold the same value on every row is the usual
-    cause -- the row registers once and then collides with itself."""
+def test_validate_accepts_a_path_that_does_not_vary(tmp_path):
+    """A token that happens to hold the same value on every row is a deliberate
+    grouping now -- the same declared column landing on the same path again
+    collapses onto one shared instance, not an error."""
     lib = _library(tmp_path)
     table = op_samples.parse_table(
         b"sample,fwd,rev,batch\nS1,a_R1.fq,a_R2.fq,B\nS2,b_R1.fq,b_R2.fq,B\n",
         filename="s.csv",
     )
     problems = op_samples.validate(str(lib), table, _rows(b={"path": "/d/{batch}.fq"}))["problems"]
-    assert any("does not vary per row" in p["message"] for p in problems)
+    assert problems == []
 
 
 def test_validate_refuses_two_rows_landing_on_one_path(tmp_path):
@@ -173,7 +155,6 @@ def test_expand_registers_one_item_per_array_row_per_sheet_row(tmp_path):
     out = op_samples.expand(str(lib_path), _table(), _rows())
     assert out["row_count"] == 2
     assert out["counts"] == {"a": 2, "b": 2, "c": 2}
-    assert out["sample_type"] == "mock::marker"
 
     lib = DataInstanceLibrary.Load(lib_path)
     assert {str(p) for p in lib.manifest} == {
@@ -186,18 +167,66 @@ def test_expand_registers_one_item_per_array_row_per_sheet_row(tmp_path):
     assert parents["/data/b_R2.fq"] == ["S2.id"]
 
 
-def test_expanded_library_splits_into_one_sample_per_row(tmp_path):
-    lib_path = _library(tmp_path)
-    op_samples.expand(str(lib_path), _table(), _rows())
-    lib = DataInstanceLibrary.Load(lib_path)
-    masks = sorted(
-        (sorted(str(p) for p in v._mask) for v in lib.AsSamples("mock::marker")),
-        key=lambda m: m[0],
+def _grouped_table():
+    # two accessions share pangenome "P1", one is alone under "P2"
+    return op_samples.parse_table(
+        b"pangenome,accession\nP1,GCF_1\nP1,GCF_2\nP2,GCF_3\n", filename="s.csv",
     )
-    assert masks == [
-        ["/data/a_R1.fq", "/data/a_R2.fq", "S1.id"],
-        ["/data/b_R1.fq", "/data/b_R2.fq", "S2.id"],
+
+
+def _grouped_rows(**over) -> list[dict]:
+    rows = [
+        {"id": "pan", "mode": "value", "name": "{pangenome}.pan", "value": "{pangenome}",
+         "dtype": "mock::marker", "parents": []},
+        {"id": "acc", "mode": "value", "name": "{accession}.acc", "value": "{accession}",
+         "dtype": "mock::fwd", "parents": ["#pan"]},
     ]
+    for r in rows:
+        r.update(over.get(r["id"], {}))
+    return rows
+
+
+def test_expand_groups_rows_that_share_a_column_value(tmp_path):
+    lib_path = _library(tmp_path)
+    out = op_samples.expand(str(lib_path), _grouped_table(), _grouped_rows())
+    # 3 accession rows but only 2 distinct pangenome names
+    assert out["counts"] == {"pan": 3, "acc": 3}
+
+    lib = DataInstanceLibrary.Load(lib_path)
+    assert {str(p) for p in lib.manifest} == {
+        "P1.pan", "P2.pan", "GCF_1.acc", "GCF_2.acc", "GCF_3.acc",
+    }
+    parents = {str(p): sorted(str(m.path) for m in ms) for p, ms in lib.parents.items()}
+    # both accessions under P1 parent to the *same* single P1.pan instance
+    assert parents["GCF_1.acc"] == ["P1.pan"]
+    assert parents["GCF_2.acc"] == ["P1.pan"]
+    assert parents["GCF_3.acc"] == ["P2.pan"]
+
+
+def test_validate_refuses_a_shared_name_with_disagreeing_values(tmp_path):
+    lib = _library(tmp_path)
+    table = op_samples.parse_table(
+        b"pangenome,accession\nP1,GCF_1\nP1,GCF_2\n", filename="s.csv",
+    )
+    rows = _grouped_rows(pan={
+        # the pangenome's own value diverges even though its name does not
+        "value": "{pangenome}-{accession}",
+    })
+    problems = op_samples.validate(str(lib), table, rows)["problems"]
+    assert any("different values" in p["message"] for p in problems)
+
+
+def test_clear_then_reexpand_a_grouped_shape_round_trips(tmp_path):
+    lib_path = _library(tmp_path)
+    op_samples.expand(str(lib_path), _grouped_table(), _grouped_rows())
+    removed = op_samples.clear(str(lib_path))["removed"]
+    assert set(removed) == {"P1.pan", "P2.pan", "GCF_1.acc", "GCF_2.acc", "GCF_3.acc"}
+    assert DataInstanceLibrary.Load(lib_path).manifest == {}
+
+    op_samples.expand(str(lib_path), _grouped_table(), _grouped_rows())
+    assert {str(p) for p in DataInstanceLibrary.Load(lib_path).manifest} == {
+        "P1.pan", "P2.pan", "GCF_1.acc", "GCF_2.acc", "GCF_3.acc",
+    }
 
 
 def test_re_expanding_takes_back_exactly_what_it_put_down(tmp_path):

@@ -8,19 +8,19 @@ have, plus one declared input row per column, expanded into the library.
 
 A **sample array** is an ordinary input row whose path (or, for a value row, its
 name or value) holds `{column}` tokens: one declaration standing for N items,
-indexed by the sheet. It is never registered as it stands. Exactly one array row
-is the **index**: it becomes one item per table row with nothing above it, every
-other array row's items descend from it, and its declared type is what the
-planner is handed as `sample_type`. That shape is not incidental --
+indexed by the sheet. It is never registered as it stands. Array rows wire into
+an arbitrary parent DAG the same way any other input row does -- a column with
+no parents, a column parented to another -- and every table row instances that
+whole DAG once. There is no privileged "index" column and no per-sample masking
+here: multiplicity (how many distinct pangenomes, how many distinct samples)
+falls out of ordinary lineage, the same way `group_by` resolves it at the
+transform level. Two rows that substitute to the same path share one instance
+-- a deliberate grouping, not a collision -- so long as a value row agrees with
+itself about what that shared name holds.
 
-  * `AsSamples` masks a sample as {index item} u ancestors u descendants. An
-    index item with a *parent* puts that parent's whole subtree in every mask,
-    which collapses all samples into one view. So the index row must have no
-    parents at all.
-  * An array row that does not transitively reach the index lands in no mask,
-    and the planner never sees it. So every other one must descend from it.
-
-Both are refusals here rather than warnings, because both fail silently.
+(`AsSamples`, elsewhere in metasmith, masks a library by an index item's
+ancestors/descendants; it is a valid, separate, lower-level primitive that this
+module does not use or produce.)
 
 (A *template*, elsewhere in metasmith, is a stored workflow you start from --
 a different thing entirely, which is why this one is not called that.)
@@ -261,27 +261,15 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
 
     `rows` is the whole input side of the recipe -- array rows and plain drafts
     together -- because half of what can be wrong is about how the two relate.
-    Returns `{problems, array_rows, index_id}`; `problems` empty means expandable.
+    Returns `{problems, array_rows}`; `problems` empty means expandable.
     """
     array_rows = [r for r in rows if is_array_row(r)]
     problems: list[dict] = []
     if not array_rows:
-        return {"problems": problems, "array_rows": [], "index_id": None}
+        return {"problems": problems, "array_rows": []}
 
     columns = set(table.get("columns") or [])
     by_id = {str(t["id"]): t for t in array_rows}
-
-    marked = [t for t in array_rows if t.get("index")]
-    index_id = str(marked[0]["id"]) if len(marked) == 1 else None
-    if not marked:
-        problems.append(_problem("index", (
-            "no row is marked as the sample index -- one array row has to say "
-            "what a sample *is*, and its type is what the planner splits on"
-        )))
-    elif len(marked) > 1:
-        problems.append(_problem("index", (
-            f"{len(marked)} rows are marked as the sample index; exactly one can be"
-        )))
 
     for t in array_rows:
         tid = str(t["id"])
@@ -308,43 +296,10 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
         order_array_rows(array_rows)
     except AssertionError as exc:
         problems.append(_problem("lineage", str(exc)))
-        return {"problems": problems, "array_rows": array_rows, "index_id": index_id}
-
-    if index_id is not None:
-        index = by_id[index_id]
-        if index.get("parents"):
-            problems.append(_problem(index_id, (
-                "the sample index cannot descend from anything: a shared ancestor "
-                "above it puts every sample's files in every other sample, and the "
-                "plan silently becomes one run over the whole library"
-            )))
-        # reachability up the array chain -- a row that cannot get to the
-        # index lands in no sample's mask and the planner never sees it
-        reaches: dict[str, bool] = {}
-
-        def reaches_index(tid: str, stack: frozenset = frozenset()) -> bool:
-            if tid == index_id:
-                return True
-            if tid in reaches:
-                return reaches[tid]
-            if tid in stack or tid not in by_id:
-                return False
-            out = any(reaches_index(p, stack | {tid}) for p in _array_parents(by_id[tid]))
-            reaches[tid] = out
-            return out
-
-        for t in array_rows:
-            tid = str(t["id"])
-            if reaches_index(tid):
-                continue
-            label = (t.get("path") or t.get("name") or tid)
-            problems.append(_problem(tid, (
-                f"[{label}] does not descend from the sample index, so its files "
-                f"belong to no sample and the planner will not see them"
-            )))
+        return {"problems": problems, "array_rows": array_rows}
 
     problems += _path_problems(library_path, table, array_rows, by_id)
-    return {"problems": problems, "array_rows": array_rows, "index_id": index_id}
+    return {"problems": problems, "array_rows": array_rows}
 
 
 def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
@@ -358,7 +313,7 @@ def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
     previous = set(read_record(library_path).get("paths", []))
     existing = {str(p) for p in lib.manifest} - previous
     problems: list[dict] = []
-    minted: dict[str, tuple[str, str, int]] = {}
+    minted: dict[str, tuple[str, str, int, str | None]] = {}
     columns = set(table.get("columns") or [])
     # an array row naming a column that is not there is already reported, and
     # substituting it here would raise instead of adding to the list
@@ -382,8 +337,10 @@ def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
                     f"{', '.join(sorted(set(missing)))}, which [{label}] needs"
                 )))
                 continue
-            key = fields.get("path") if t.get("mode") != "value" else fields.get("name")
+            is_value = t.get("mode") == "value"
+            key = fields.get("name") if is_value else fields.get("path")
             path = substitute(key, record)
+            value = substitute(fields.get("value"), record) if is_value else None
             if not path:
                 problems.append(_problem(tid, f"[{label}] comes out empty on row {i + 1}"))
             elif path in existing:
@@ -392,19 +349,25 @@ def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
                     f"already registered"
                 )))
             elif path in minted:
-                other_tid, other_label, other_row = minted[path]
+                other_tid, other_label, other_row, other_value = minted[path]
                 if other_tid == tid:
-                    problems.append(_problem(tid, (
-                        f"[{label}] comes out as [{path}] on both row {other_row} "
-                        f"and row {i + 1} -- it does not vary per row"
-                    )))
+                    # the same declared column landing on the same path again is a
+                    # deliberate grouping -- rows sharing one name become one shared
+                    # instance. Only a value row can disagree with itself: two rows
+                    # naming the same thing but writing different content into it.
+                    if is_value and value != other_value:
+                        problems.append(_problem(tid, (
+                            f"[{label}] comes out as [{path}] on both row {other_row} "
+                            f"and row {i + 1}, but with different values -- rows "
+                            f"sharing a name must agree on what it holds"
+                        )))
                 else:
                     problems.append(_problem(tid, (
                         f"[{label}] comes out as [{path}] on row {i + 1}, which is "
                         f"also what [{other_label}] comes out as on row {other_row}"
                     )))
             else:
-                minted[path] = (tid, label, i + 1)
+                minted[path] = (tid, label, i + 1, value)
         if len(problems) > 40:
             problems.append(_problem("", "...and more; the first forty are shown"))
             break
@@ -469,7 +432,7 @@ def clear(library_path: str, save: bool = True) -> dict:
     lib = load_data_lib(library_path)
     record = read_record(library_path)
     doomed = [Path(p) for p in record.get("paths", [])]
-    present = [p for p in doomed if p in lib.manifest]
+    present = list(dict.fromkeys(p for p in doomed if p in lib.manifest))
     doomed_set = set(present)
 
     for path in list(lib.manifest):
@@ -507,13 +470,12 @@ def expand(
     assert not checked["problems"], "; ".join(p["message"] for p in checked["problems"])
     array_rows = checked["array_rows"]
     if not array_rows:
-        return {"generated": {}, "counts": {}, "row_count": 0, "sample_type": None}
+        return {"generated": {}, "counts": {}, "row_count": 0}
 
     clear(library_path, save=True)
 
     lib = load_data_lib(library_path)
     order = order_array_rows(array_rows)
-    index_id = checked["index_id"]
     records = table.get("rows") or []
     generated: dict[str, list[str]] = {str(t["id"]): [] for t in array_rows}
     made: list[str] = []
@@ -525,15 +487,22 @@ def expand(
             parents = [per_row[p] for p in _array_parents(row) if p in per_row]
             parents += [Path(p) for p in _plain_parents(row)]
             if row.get("mode") == "value":
+                path = Path(substitute(row.get("name"), record))
+            else:
+                path = Path(substitute(row.get("path"), record))
+            if path in lib.manifest:
+                # a shared name/path repeating within this same expansion --
+                # rows sharing a column value collapse onto one instance;
+                # `_path_problems` already ruled out a value mismatch or a
+                # collision with a different declared column.
+                lib.AddParentsTo(path, [lib.Get(p) for p in parents])
+            elif row.get("mode") == "value":
                 path = lib.AddValue(
-                    substitute(row.get("name"), record),
-                    substitute(row.get("value"), record),
+                    str(path), substitute(row.get("value"), record),
                     row["dtype"], parents=parents,
                 )
             else:
-                path = lib.AddItem(
-                    substitute(row.get("path"), record), row["dtype"], parents=parents,
-                )
+                path = lib.AddItem(path, row["dtype"], parents=parents)
             per_row[tid] = path
             generated[tid].append(str(path))
             made.append(str(path))
@@ -541,15 +510,10 @@ def expand(
             on_progress(i + 1, len(records))
     lib.Save()
 
-    sample_type = next(
-        (t.get("dtype") for t in array_rows if str(t["id"]) == index_id), None,
-    )
     record = {
         "paths": made,
         "generated": generated,
         "row_count": len(records),
-        "index_id": index_id,
-        "sample_type": sample_type,
         "columns": list(table.get("columns") or []),
     }
     write_record(library_path, record)
@@ -557,6 +521,5 @@ def expand(
         "generated": generated,
         "counts": {k: len(v) for k, v in generated.items()},
         "row_count": len(records),
-        "sample_type": sample_type,
         "item_count": len(made),
     }

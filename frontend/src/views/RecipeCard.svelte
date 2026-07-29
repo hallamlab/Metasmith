@@ -22,8 +22,8 @@
     drafts = [],
     targets = [],
     typeOptions = [],
-    // the attached sheet: its column names, what the last expansion registered
-    // per row, and which row is the sample index
+    // the attached sheet: its column names and what the last expansion
+    // registered per row
     columns = [],
     rowCount = 0,
     expansion = null,
@@ -31,7 +31,6 @@
     // the sheet's own strip, rendered under the inputs band by the view above --
     // it belongs inside this box but it is not this card's business
     tableStrip = null,
-    onindex,
     onshared,
     // (type) => {known, produced, consumed, producedVia, consumedVia} -- what
     // the index says about a type, for the line under a row being edited
@@ -502,7 +501,6 @@
 
   <div class="rows">
     {#if tableStrip}
-      {@const arrayDrafts = drafts.filter(isArrayRow)}
       <div class="heading samples small muted spread">
         <span>samples</span>
         <span class="count">
@@ -510,25 +508,6 @@
         </span>
       </div>
       {@render tableStrip()}
-      {#if columns.length && arrayDrafts.length}
-        <!-- one run per row of *this* one -- the type it is given is what the
-             plan is split on. Bottom of the section, not beside each array
-             row: there is exactly one, so a picker per row would be the same
-             choice offered N times with N-1 wrong answers. -->
-        <div class="row wrap indexpick small">
-          <span class="muted">sample index</span>
-          <select
-            aria-label="which row says what a sample is"
-            value={arrayDrafts.find((d) => d.index)?.id ?? ''}
-            onchange={(e) => onindex?.(e.currentTarget.value || null)}
-          >
-            <option value="">— none — one run over everything</option>
-            {#each arrayDrafts as d}
-              <option value={d.id}>{draftLabel(d)}</option>
-            {/each}
-          </select>
-        </div>
-      {/if}
     {/if}
 
     <div class="heading in small muted spread">
@@ -614,28 +593,13 @@
         {@render detail(row)}
 
         {#if row.kind === 'draft' && array}
-          <!-- An array row is one declaration, not N rows. What it says about
-               itself is therefore a count and a role: how many items it stands
-               for, and whether it is the one that says what a *sample* is. -->
+          <!-- An array row is one declaration, not N rows: what it says about
+               itself is a count of how many items it stands for. -->
           <div class="notes row wrap small">
             {#if expansion?.counts?.[row.id]}
               <span class="tag">× {expansion.counts[row.id]} registered</span>
             {:else}
               <span class="tag">× {rowCount} once expanded</span>
-            {/if}
-            <button
-              class="star"
-              class:on={row.draft.index}
-              aria-pressed={!!row.draft.index}
-              title={row.draft.index
-                ? 'this row says what a sample is; its type is what the plan splits on'
-                : 'make this the sample index — one run per sheet row, and every other array row hangs off it'}
-              onclick={() => onindex?.(row.id)}
-            >★ sample index</button>
-            {#if row.draft.index && row.parents.length}
-              <span class="tag warn">
-                the index cannot descend from anything, or every sample sees every other
-              </span>
             {/if}
           </div>
         {/if}
@@ -795,13 +759,6 @@
     padding: 6px 10px;
   }
   .pad { padding: 8px 10px; margin: 0; }
-  .indexpick {
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-top: 1px solid var(--line);
-    background: var(--panel-2);
-  }
   /* the type field is a combobox, not a word. It used to fight the path for the
      width of one line; now it owns the detail line's first column instead. */
   .typecell { flex: 1 1 240px; min-width: 140px; max-width: 360px; }
@@ -834,14 +791,4 @@
   /* narrow on purpose: it sits beside a field that wants the width, and what it
      holds is one short word at a time */
   .cols { flex: 0 0 auto; width: 4.5em; padding: 2px 2px; }
-  /* a role, toggled -- not a delete and not a link. On, it reads as the accent
-     it marks the row with; off, it is as quiet as the tags beside it. */
-  .star {
-    padding: 1px 6px;
-    font-size: 11px;
-    background: none;
-    color: var(--muted);
-    border-color: var(--line);
-  }
-  .star.on { color: var(--accent); border-color: var(--accent); }
 </style>

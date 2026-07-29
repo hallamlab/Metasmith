@@ -474,7 +474,7 @@ def import_workflow(p: Project, body: dict) -> dict:
     for i, r in enumerate(r for r in rows if r.get("type") not in known):
         drafts.append({
             "id": f"imported{i}", "mode": "file", "path": "", "name": "", "value": "",
-            "dtype": r.get("type") or "", "parents": [], "index": False,
+            "dtype": r.get("type") or "", "parents": [],
         })
 
     # parents first: a row is registered once every parent it names has been,

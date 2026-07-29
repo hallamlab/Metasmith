@@ -228,8 +228,8 @@
 
   async function removeWorkflow(name) {
     await attempt(async () => {
-      const out = await api.del(`/workflows/${name}`)
-      if (out.action === 'deleted' && sel === name) app.selected.workflows = null
+      await api.del(`/workflows/${name}`)
+      if (sel === name) app.selected.workflows = null
       await refresh('workflows')
     })
   }

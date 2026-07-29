@@ -1231,9 +1231,9 @@ def generate_workflow(name):
     wf = p.write_request(name, request_body)
 
     # A sample type is optional: without one the inputs are planned as they
-    # stand, as a single sample. It arrives here already decided -- from the
-    # type of the row a sample table is indexed on, or from a request written by
-    # the CLI -- and either way this route only honours it.
+    # stand, as a single unified view. The GUI's sample table never sets
+    # this -- it always sends `sample_type: null` -- so a non-null value here
+    # only ever comes from a request written directly (e.g. by the CLI).
     sample_type = wf.request.get("sample_type")
     shared = wf.request.get("shared_input_paths") or None
     targets = wf.request.get("target_types") or []
@@ -1511,8 +1511,6 @@ def get_inputs(name):
     info["expansion"] = {
         "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
         "row_count": record.get("row_count", 0),
-        "sample_type": record.get("sample_type"),
-        "index_id": record.get("index_id"),
     }
     return jsonify(info)
 
@@ -1617,11 +1615,9 @@ def get_table(name):
         # a peek, not the sheet: the page shows counts, never instances
         "preview": table["rows"][:5],
         "problems": checked["problems"],
-        "index_id": checked["index_id"],
         "expansion": {
             "row_count": record.get("row_count", 0),
             "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
-            "sample_type": record.get("sample_type"),
             "stale": record.get("row_count", 0) != table["row_count"],
         },
     })

@@ -2408,10 +2408,10 @@ class TestJobs:
 SHEET = b"sample,asm\nS1,/data/a.fa\nS2,/data/b.fa\n"
 
 # the recipe's input rows as the browser holds them: a sample-array value row
-# that is the sample index, and an array file row descending from it
+# with nothing above it, and an array file row descending from it
 ARRAY_ROWS = [
     {"id": "idx", "mode": "value", "name": "{sample}.id", "value": "{sample}",
-     "dtype": "mock::reads", "parents": [], "index": True},
+     "dtype": "mock::reads", "parents": []},
     {"id": "asm", "mode": "file", "path": "{asm}",
      "dtype": "mock::assembly", "parents": ["#idx"]},
 ]
@@ -2446,13 +2446,12 @@ class TestSampleTable:
         stored = Path(r.get_json()["path"])
         assert stored.read_bytes() == SHEET
 
-    def test_the_table_reports_what_is_wrong_without_refusing_it(self, client):
+    def test_the_table_reports_nothing_wrong_for_an_ordinary_dag(self, client):
         name = _make_workflow(client)
-        _attach(client, name, rows=[dict(ARRAY_ROWS[0], index=False), ARRAY_ROWS[1]])
+        _attach(client, name)
         body = client.get(f"/api/workflows/{name}/table").get_json()
         assert body["attached"] is True
-        assert body["index_id"] is None
-        assert any("sample index" in p["message"] for p in body["problems"])
+        assert body["problems"] == []
 
     def test_solving_registers_and_attributes_every_item(self, client):
         # there is no standalone expand any more: `generate` is what turns an
@@ -2471,7 +2470,6 @@ class TestSampleTable:
         for item in inputs["items"]:
             by_array.setdefault(item["array_id"], []).append(item["path"])
         assert sorted(by_array) == ["asm", "idx"]
-        assert inputs["expansion"]["sample_type"] == "mock::reads"
 
     def test_solving_again_replaces_the_previous_generation(self, client):
         name = _make_workflow(client)
@@ -2858,9 +2856,9 @@ class TestShareWorkflows:
         name = _make_workflow(client)
         client.put(f"/api/workflows/{name}", json={"input_drafts": [
             {"id": "a", "mode": "file", "path": "/data/{sample}.fa", "dtype": "mock::assembly",
-             "parents": [], "index": True},
+             "parents": []},
             {"id": "b", "mode": "file", "path": "/home/me/one_off.fa", "dtype": "mock::assembly",
-             "parents": [], "index": False},
+             "parents": []},
         ]})
         body = _payload(client, "workflow", name)["body"]
         assert [d["path"] for d in body["drafts"]] == ["/data/{sample}.fa", ""]
