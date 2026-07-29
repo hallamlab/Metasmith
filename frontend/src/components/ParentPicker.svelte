@@ -13,7 +13,8 @@
   // which is where changing it belongs -- offering it twice gives one link two
   // places to be edited from and no way to tell which one you are looking at.
   let {
-    chosen = [], // {key, label, sub?} -- in the order they were added
+    chosen = [], // {key, sub?} -- in the order they were added. No label: which
+    // row a chip names is the hover highlight's job, not this text's.
     options = [], // {key, label, sub?} -- legal to add: no self, no cycle, not already here
     disabled = false,
     // shown at the foot of the menu: why the list is what it is
@@ -49,13 +50,12 @@
   {#if chosen.length}
     <ul class="stack">
       {#each chosen as p (p.key)}
-        <!-- a stated parent, hoverable so the row it names can be found: the
-             label is a type name on an output and a path on an input, and
-             neither is unique enough on its own to point at one row -->
+        <!-- a stated parent, hoverable so the row it names can be found: which
+             row it is is what the hover highlight is for, so the chip states
+             only its type -->
         <li class="parent" onmouseenter={() => onhover?.(p.key)} onmouseleave={leave}>
-          <span class="mono truncate grow">{p.label}</span>
+          <span class="muted truncate grow small">{p.sub ?? '—'}</span>
           {#if p.draft}<span class="draft small">draft</span>{/if}
-          {#if p.sub}<span class="muted truncate sub small">{p.sub}</span>{/if}
           {#if !disabled}
             <!-- one click, not two: a lineage link is re-added from the menu
                  right below it, so there is nothing here to protect against -->
