@@ -1,5 +1,6 @@
 <script>
   import { api } from './lib/api.svelte.js'
+  import { runSuffix } from './lib/runname.js'
   import {
     SECTIONS,
     app,
@@ -462,7 +463,7 @@
         {#snippet row(item)}
           <div class="spread">
             <div class="grow truncate">
-              <div class="truncate">{item.run.name}</div>
+              <div class="truncate">{runSuffix(item.run.name, item.run.workflow)}</div>
               <div class="small muted truncate">
                 {item.run.agent} · <Ago iso={item.run.launched_at ?? item.run.created_at} />
               </div>
