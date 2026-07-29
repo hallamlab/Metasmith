@@ -25,6 +25,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,6 +90,27 @@ def _groovy_index_literal(index: dict) -> str:
             f"'{k}': [" + ", ".join(_val(x) for x in vals) + "]"
         )
     return "[" + ", ".join(parts) + "]"
+
+
+def cached_files_for_branch(
+    cache_out: Path, branch_idx: int, suffix: str
+) -> list[Path]:
+    """The shard files a cache hit replays for one produced branch.
+
+    Canonical output names are `{member+1}-{i+1}-{branch+1}.{hash}-{key}{ext}`
+    (`bootstrap._get_output_paths`). A task at `batch_size=B` writes one file
+    per batch member and a transform may write several per member, so both
+    leading fields vary. Matching a literal `1-1-<branch>.` prefix returns
+    member 0, item 0 of each task and silently drops the rest — the same
+    "a batch is one item long" mistake as the lin-wire collapse.
+    """
+    if not cache_out.exists():
+        return []
+    pat = re.compile(rf"^\d+-\d+-{branch_idx + 1}\.")
+    return sorted(
+        f for f in cache_out.glob("*")
+        if f.is_file() and pat.match(f.name) and f.name.endswith(suffix)
+    )
 
 
 def NextflowProcessName(order: int, transform_name) -> str:
@@ -812,12 +834,8 @@ def prepare_nextflow(task, context: NextflowGenContext):
                     out_inst = insts[0]
                     ext = out_inst.dtype.GetPreferredFileExtension()
                     suffix = f"-{out_inst.dtype.key}{ext}"
-                    branch_prefix = f"1-1-{branch_idx + 1}."
-                    cached_files = sorted(
-                        f for f in (cache_out.glob("*") if cache_out.exists() else [])
-                        if f.is_file()
-                        and f.name.startswith(branch_prefix)
-                        and f.name.endswith(suffix)
+                    cached_files = cached_files_for_branch(
+                        cache_out, branch_idx, suffix
                     )
                     if not cached_files:
                         channel_exprs.append("Channel.empty()")

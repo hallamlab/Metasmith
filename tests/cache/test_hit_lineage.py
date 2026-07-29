@@ -76,3 +76,40 @@ def test_a_hit_emits_the_ancestry_a_run_would_have(tmp_path, virtual_runtime):
         "expected a populated index map on the synthetic channel, got:\n"
         + "\n".join(synthetic)
     )
+
+
+def test_a_hit_replays_every_batch_member_not_just_the_first(tmp_path):
+    """Which shard files a hit puts back for one produced branch.
+
+    Canonical output names are `{member+1}-{i+1}-{branch+1}.{hash}-{key}{ext}`
+    (`bootstrap._get_output_paths`), so a task at `batch_size=B` writes
+    `1-...` through `B-...` and a transform writing several files per member
+    varies the second field too. The hit path matched a literal `1-1-<branch>.`
+    prefix, which is member 0 item 0 of every task — the same "a batch is one
+    item long" mistake the lin wire had, on the other side of the cache.
+    """
+    from metasmith.models.workflow.nextflow_codegen import (
+        cached_files_for_branch,
+    )
+
+    out = tmp_path / "out"
+    out.mkdir()
+    names = [
+        "1-1-1.aaaa-step_a.txt",   # member 0, item 0
+        "2-1-1.bbbb-step_a.txt",   # member 1 — dropped by the old prefix
+        "1-2-1.cccc-step_a.txt",   # member 0, second file — also dropped
+        "1-1-2.dddd-step_b.txt",   # a different produced branch
+    ]
+    for n in names:
+        (out / n).write_text(n)
+
+    assert [
+        f.name for f in cached_files_for_branch(out, 0, "-step_a.txt")
+    ] == ["1-1-1.aaaa-step_a.txt", "1-2-1.cccc-step_a.txt",
+          "2-1-1.bbbb-step_a.txt"]
+    # The old literal prefix would have found exactly one of those three.
+    assert len([n for n in names if n.startswith("1-1-1.")]) == 1
+    # Branch selection still discriminates.
+    assert [
+        f.name for f in cached_files_for_branch(out, 1, "-step_b.txt")
+    ] == ["1-1-2.dddd-step_b.txt"]
