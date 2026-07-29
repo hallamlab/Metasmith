@@ -19,6 +19,8 @@
   let ping = $state(null)
   let pinging = $state(false)
   let sharing = $state(false)
+  let deployMenuOpen = $state(false)
+  let deployMenuRoot = $state(null)
 
   // The name is a field like any other -- `PUT /agents/<name>` carries the whole
   // object, and a name that differs from the url is a rename. So the agent's
@@ -74,6 +76,7 @@
 
   $effect(() => {
     const n = name
+    clearTimeout(saveTimer)
     agent = null
     form = null
     jobId = null
@@ -111,16 +114,51 @@
     })
   }
 
+  // Autosave, the same as the recipe: a write in flight and a write not yet
+  // sent both count as unsaved, and the two are serialised through one chain
+  // so a rename landing mid-edit cannot cross an edit sent a moment later.
+  let writing = Promise.resolve()
+  let saveTimer = null
+
+  function persist() {
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      writing = writing.then(save)
+    }, 600)
+  }
+
+  // `dirty` already answers "does the form differ from what is on disk" --
+  // both a keystroke and a button-driven change (a tab, a param row) show up
+  // in it, so watching it here is enough to autosave either without wiring
+  // every control underneath by hand.
+  $effect(() => {
+    if (dirty) persist()
+    return () => clearTimeout(saveTimer)
+  })
+
   async function doPing() {
     pinging = true
     ping = await attempt(() => api.post(`/agents/${name}/ping`))
     pinging = false
   }
 
-  async function deploy() {
-    const job = await attempt(() => api.post(`/agents/${name}/deploy`, {}))
+  async function deploy(assertive = false) {
+    deployMenuOpen = false
+    const job = await attempt(() =>
+      api.post(`/agents/${name}/deploy`, assertive ? { assertive: true } : {}),
+    )
     if (job) jobId = job.id
   }
+
+  // outside click closes the force-redeploy menu, the same gesture ParentPicker uses
+  $effect(() => {
+    if (!deployMenuOpen) return
+    const away = (e) => {
+      if (!deployMenuRoot?.contains(e.target)) deployMenuOpen = false
+    }
+    window.addEventListener('pointerdown', away, true)
+    return () => window.removeEventListener('pointerdown', away, true)
+  })
 
   async function unarchive() {
     await attempt(async () => {
@@ -139,7 +177,7 @@
       <div class="row grow">
         <EditableName
           value={form.name}
-          hint="enter to accept — the rename happens on save"
+          hint="enter to accept — the rename is saved automatically"
           title="rename this agent"
           oncommit={(next) => {
             // typed, so it is yours: it stops following the host, and a record
@@ -163,9 +201,54 @@
       <div class="row">
         {#if agent.archived_at}<button onclick={unarchive}>restore</button>{/if}
         <button onclick={() => (sharing = true)}>share</button>
-        <button onclick={doPing} disabled={pinging}>{pinging ? 'pinging…' : 'ping'}</button>
-        <button onclick={save} disabled={!dirty}>save</button>
-        <button class="primary" onclick={deploy} disabled={problems.length > 0}>deploy</button>
+        <button
+          class="ping-btn"
+          class:ok={!pinging && ping?.ok}
+          class:bad={!pinging && ping && !ping.ok}
+          onclick={doPing}
+          disabled={pinging}
+          title={pinging ? 'pinging…' : ping ? (ping.ok ? 'reachable' : 'no answer — click to retry') : 'ping this agent'}
+        >
+          {#if pinging}
+            <span class="spinner" aria-hidden="true"></span>
+          {:else if ping?.ok}
+            <Icon name="check" size={11} />
+          {:else if ping}
+            <Icon name="x" size={11} />
+          {:else}
+            <span class="dot" aria-hidden="true"></span>
+          {/if}
+          ping
+        </button>
+        <div class="split" bind:this={deployMenuRoot}>
+          <button
+            class="primary"
+            onclick={() => deploy(false)}
+            disabled={problems.length > 0}
+          >deploy</button>
+          <button
+            class="primary chevron"
+            aria-expanded={deployMenuOpen}
+            aria-label="more deploy options"
+            title="more deploy options"
+            disabled={problems.length > 0}
+            onclick={() => (deployMenuOpen = !deployMenuOpen)}
+          >
+            <svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" class:up={deployMenuOpen}>
+              <path d="M1 1L5 5L9 1" fill="none" stroke="currentColor" stroke-width="1.6"
+                    stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          {#if deployMenuOpen}
+            <div class="menu">
+              <button
+                class="opt"
+                onclick={() => deploy(true)}
+                title="redeploy even if this agent already looks up to date"
+              >force redeploy</button>
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
 
@@ -274,4 +357,75 @@
     color: var(--muted);
   }
   .regen:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
+
+  /* the last result rides in the button itself, so you do not have to look
+     away from it to see whether the ping landed */
+  .ping-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ping-btn.ok { border-color: var(--tag-ok-line, var(--ok)); color: var(--ok); }
+  .ping-btn.bad { border-color: var(--tag-bad-line, var(--bad)); color: var(--bad); }
+  .ping-btn .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.5;
+  }
+  .spinner {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    opacity: 0.7;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* deploy, and beside it the one thing worth a second click: skipping past
+     "already looks deployed" when that judgement is wrong */
+  .split {
+    position: relative;
+    display: flex;
+  }
+  .split .primary:first-child {
+    border-right: none;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .split .chevron {
+    padding: 0 6px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  .split .chevron svg { transition: transform 0.12s; }
+  .split .chevron svg.up { transform: rotate(180deg); }
+  .split .menu {
+    position: absolute;
+    z-index: 30;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    min-width: 150px;
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 24px var(--shadow);
+    overflow: hidden;
+  }
+  .split .opt {
+    display: block;
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: 0;
+    padding: 6px 10px;
+    text-align: left;
+  }
+  .split .opt:hover { background: var(--panel-2); border-color: transparent; }
 </style>
