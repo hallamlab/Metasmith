@@ -112,6 +112,7 @@ def _seed_cache_from_meta(agent_home: Path, workspace: Path, step_name: str):
 
     seeded: list[Path] = []
     files_meta: list[dict] = []
+    index_meta: list[dict] = []
     for sf in slot_files:
         name = (
             f"1-1-{sf['branch_idx'] + 1}.cachedseed"
@@ -120,11 +121,22 @@ def _seed_cache_from_meta(agent_home: Path, workspace: Path, step_name: str):
         fp = outs / name
         fp.write_text("cached\n")
         seeded.append(fp)
+        relpath = str(fp.relative_to(shard))
         files_meta.append({
-            "relpath": str(fp.relative_to(shard)),
+            "relpath": relpath,
             "slot_id": sf["slot_id"],
             "dtype_key": sf["dtype_key"],
             "branch_idx": sf["branch_idx"],
+        })
+        # Every seeded file needs the on-channel index it "travelled with",
+        # because a shard that cannot supply one for every matched file is
+        # demoted to a miss (cache_decisions) — which would make these
+        # codegen tests assert against a step that never became a hit.
+        # The contents are arbitrary here; only presence and round-tripping
+        # are under test.
+        index_meta.append({
+            "relpath": relpath,
+            "index": {sf["dtype_key"]: ["cachedseed"]},
         })
 
     payload = encode_manifest(
@@ -134,7 +146,7 @@ def _seed_cache_from_meta(agent_home: Path, workspace: Path, step_name: str):
         lineage_payload=b"",
         output_files=files_meta,
         out_identities={},
-        index_payload=[],
+        index_payload=index_meta,
     )
     (shard / "manifest.cbor").write_bytes(payload)
     store = CacheStore.open(cache_root)
