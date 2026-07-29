@@ -847,6 +847,106 @@ workflow {
             assert "FILES" not in idx
 
 
+class TestLinWire:
+    """The `lin` envelope a batched task actually puts on the wire.
+
+    This is the one seam the fast suite structurally cannot cover: its
+    harnesses synthesize payloads with `json.dumps` and never go through the
+    Groovy emitter, which is how R5's version desync failed every
+    containerized task with a green fast run. The script below emits the
+    exact expression `nextflow_codegen` compiles into every process.
+    """
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "cfd0236's emitter sends `entries:index[0]`, so a batch_size=N "
+            "task puts only member 0 on the wire"
+        ),
+    )
+    def test_batched_task_puts_every_member_on_the_wire(self, nxf_runner):
+        """A 3-member batch emits 3 lineage maps with 3 distinct FILES groups.
+
+        Reproduced on real Nextflow: the task's `index` has size 3 (three
+        `_collateBatch` members) while the envelope carries one FILES group
+        holding one file. `bootstrap` then wraps that single map — the
+        `for batch, batch_lineage in enumerate(lineages)` loop runs once —
+        so a `checkm`-shaped transform at `batch_size=25` processes one
+        assembly and stages twenty-four it never opens.
+        """
+        from metasmith.models.lineage import LinPayload
+        from metasmith.models.workflow.nextflow_codegen import LIN_ECHO_EXPR
+
+        n = 3
+        for i in range(n):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+        seeds = ",\n        ".join(
+            f'[[:], file("${{projectDir}}/seed_{i}.txt")]' for i in range(n)
+        )
+
+        result = nxf_runner.run(f'''
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-out1.txt")
+    script:
+    def stem = index[0].seed[0]
+    """
+    touch 1-${{stem}}-out1.txt
+    """
+}}
+
+process step2 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        path "lin.json"
+    script:
+    """
+    echo "{LIN_ECHO_EXPR}" > lin.json
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+
+    def seed = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+
+    def k1 = ["out1"]
+    def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed], k1, 1))), k1))[0]
+
+    step2(o.group("out1", [_out1], ["out2"], {n}))
+}}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+
+        lin_files = sorted(nxf_runner.work_dir.rglob("work/*/*/lin.json"))
+        assert len(lin_files) == 1, (
+            f"expected {n} keys at batch_size={n} to fold into one task, "
+            f"got {len(lin_files)}"
+        )
+        # `echo` renders Groovy's bash-escaped quotes; undo them the same way
+        # `bootstrap` does when it reads the `lin` line back.
+        raw = lin_files[0].read_text().strip().replace('\\"', '"')
+        payload = LinPayload.from_json(raw)
+        assert isinstance(payload.entries, list), (
+            f"the wire must carry a list of per-member maps, got "
+            f"{type(payload.entries).__name__}: {raw}"
+        )
+        assert len(payload.entries) == n, (
+            f"batch of {n} members put {len(payload.entries)} lineage map(s) "
+            f"on the wire: {raw}"
+        )
+        groups = [m.get(LinPayload.FILES_KEY) for m in payload.entries]
+        assert all(g for g in groups), f"a member carried no FILES: {groups}"
+        assert len({json.dumps(g) for g in groups}) == n, (
+            f"members must carry their own inputs, got duplicates: {groups}"
+        )
+
+
 class TestOrchestratorMix:
     """Test stream mixing."""
 

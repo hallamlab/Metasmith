@@ -18,9 +18,13 @@ with `unsupported lin payload version <emitted>; expected <parser>`.
 That is exactly what happened in R5: bumping the (then-shared) version
 constant for the F1 cache-key change moved the parser to 3 while the Groovy
 emitter stayed hardcoded at 2. The cache-key epoch and the wire version are
-now separate constants (`CACHE_KEY_VERSION` vs `LIN_PAYLOAD_VERSION`); this
-test pins the wire invariant so the split cannot silently rot: a future edit
-to either the emitter literal or the parser constant must move the other.
+now separate constants (`CACHE_KEY_VERSION` vs `LIN_PAYLOAD_VERSION`).
+
+The emitter no longer spells the version as a literal — it interpolates
+`LIN_PAYLOAD_VERSION` into `nextflow_codegen.LIN_ECHO_EXPR`, so the desync is
+unrepresentable rather than merely detected. These tests pin that: the
+rendered expression must stamp the parser's version, and no module in the
+workflow package may reintroduce a hardcoded one.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ from pathlib import Path
 
 from metasmith.caching.keys import CACHE_KEY_VERSION, LIN_PAYLOAD_VERSION
 from metasmith.models.lineage import LinPayload
+from metasmith.models.workflow.nextflow_codegen import LIN_ECHO_EXPR
 import metasmith.models.workflow as workflow_mod
 
 
@@ -37,7 +42,7 @@ import metasmith.models.workflow as workflow_mod
 _EMITTER_RE = re.compile(r"\[\s*v\s*:\s*(\d+)\s*,\s*entries\s*:")
 
 
-def _emitter_wire_versions() -> list[int]:
+def _hardcoded_wire_versions() -> list[int]:
     # Scan the whole package, not one module. The emitter used to sit in
     # workflow.py; it now lives in workflow/nextflow_codegen.py, and reading
     # `workflow_mod.__file__` after the split would have read an __init__ of
@@ -50,21 +55,30 @@ def _emitter_wire_versions() -> list[int]:
     return found
 
 
-def test_groovy_emitter_matches_parser_version():
-    """Every `[v:N, entries:...]` the compiler emits must equal the parser's."""
-    emitted = _emitter_wire_versions()
-    assert emitted, (
-        "no `[v:N, entries:...]` lin-envelope emitter literal found in "
-        "workflow.py; the regex guard is stale — update it to track the "
-        "current emitter so this invariant keeps being checked"
+def test_rendered_emitter_stamps_the_parser_version():
+    """The expression the compiler emits carries `LIN_PAYLOAD_VERSION`."""
+    found = _EMITTER_RE.findall(LIN_ECHO_EXPR)
+    assert found, (
+        f"no `[v:N, entries:...]` envelope in the rendered emitter "
+        f"{LIN_ECHO_EXPR!r}; the guard is stale — update it to track the "
+        f"current emitter so this invariant keeps being checked"
     )
-    for n in emitted:
-        assert n == LIN_PAYLOAD_VERSION, (
+    for n in found:
+        assert int(n) == LIN_PAYLOAD_VERSION, (
             f"Groovy lin emitter stamps wire version {n} but the parser "
             f"(LinPayload) expects {LIN_PAYLOAD_VERSION}; a real deploy would "
-            f"fail every task with 'unsupported lin payload version'. Move the "
-            f"emitter literal and LIN_PAYLOAD_VERSION together."
+            f"fail every task with 'unsupported lin payload version'."
         )
+
+
+def test_no_module_hardcodes_the_wire_version():
+    """The version must be interpolated, never typed as a literal."""
+    assert _hardcoded_wire_versions() == [], (
+        "a module in metasmith.models.workflow spells the lin-envelope "
+        "version as a literal. Interpolate LIN_PAYLOAD_VERSION instead — a "
+        "literal is how R5 desynced the emitter from the parser and failed "
+        "every containerized task with a green fast suite."
+    )
 
 
 def test_parser_classvar_tracks_module_constant():

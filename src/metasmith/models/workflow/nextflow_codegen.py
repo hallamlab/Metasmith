@@ -30,6 +30,7 @@ from pathlib import Path
 
 import yaml
 
+from ...caching.keys import LIN_PAYLOAD_VERSION
 from ...constants import AgentPaths
 from ...env import ContainerDef, Environment, Runtime
 from ...logging import Log
@@ -42,6 +43,24 @@ from .steps import WorkflowStep
 
 METADATA_FILE = ".command.metadata"
 BIND_FILE = ".command.binds"
+
+# The `lin` wire emitter, as it appears inside a process script block.
+#
+# The whole envelope goes through `Orchestrator.JsonforEcho` so the outer
+# `"v"`/`"entries"` keys are bash-escaped (`\"`) identically to the nested
+# entries — hand-escaping only the envelope at the Groovy level collapsed
+# those quotes to bare `"` in the bash `echo "..."`, producing invalid JSON.
+#
+# The version is interpolated from `LIN_PAYLOAD_VERSION`, never spelled as a
+# literal: the emitter and `LinPayload` (the parser) live in different files
+# and different languages, and a hardcoded literal here is how R5's desync
+# failed every containerized task while the fast suite stayed green.
+# `tests/cache/test_wire_version_sync.py` pins that.
+#
+# Exported so wire tests exercise the expression that actually ships.
+LIN_ECHO_EXPR = (
+    f"${{Orchestrator.JsonforEcho([v:{LIN_PAYLOAD_VERSION}, entries:index[0]])}}"
+)
 
 def NextflowProcessName(order: int, transform_name) -> str:
     """The name nextflow knows a step by.
@@ -504,21 +523,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'echo "step {step.order}, sample $index"',    # this is used to extract logs in agent.RunWorkflow()
             f'echo "{step.transform.name}"',
             f'echo "res $task.cpus/$task.memory/$task.attempt" >>{METADATA_FILE}',
-            # C4 — wrap the channel's per-task lineage MAP in the
-            # LinPayload v2 envelope `{"v": 2, "entries": <index_map>}` and
-            # serialise the WHOLE envelope through Orchestrator.JsonforEcho
-            # so the outer `"v"`/`"entries"` keys are bash-escaped (`\"`)
-            # identically to the nested entries. Two prior bugs here:
-            #  (1) hand-escaping only the envelope at the Groovy level
-            #      collapsed those quotes to bare `"` in the bash
-            #      `echo "..."`, producing invalid JSON; and
-            #  (2) `entries` was the whole channel value `index` — a
-            #      length-1 LIST wrapping the map — but LinPayload.entries
-            #      is a dict and Bootstrap (C5) re-wraps it into a list
-            #      itself, so the wire must carry `index[0]` (the map).
-            # `index[0]` matches the stub's own access pattern below.
-            # Bootstrap parses this via `LinPayload.from_json`.
-            f'echo "lin ${{Orchestrator.JsonforEcho([v:2, entries:index[0]])}}" >>{METADATA_FILE}',
+            f'echo "lin {LIN_ECHO_EXPR}" >>{METADATA_FILE}',
             f'echo "fmt 2" >>{METADATA_FILE}',
             f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
             f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',

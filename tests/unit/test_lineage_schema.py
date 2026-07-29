@@ -85,6 +85,46 @@ def test_lin_payload_roundtrip():
     assert fid_diff != fid1
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "dc8dd6c collapsed the wire to a single entry map (`lineages = "
+        "[lin_payload.entries]`) and cfd0236 made the emitter conform "
+        "(`entries:index[0]`), so every batch member after the first is "
+        "discarded and AsBatch() yields once"
+    ),
+)
+def test_lin_payload_carries_one_entry_map_per_batch_member():
+    """The wire is a LIST of per-member maps, not one map.
+
+    `_collateBatch` builds one index per batch member and the process
+    receives them as a list, so a `batch_size=3` task has three lineage maps
+    — three FILES groups, three sets of slot hashes. Bootstrap turns each
+    into one `context.AsBatch()` member.
+
+    Observed on real Nextflow (3 seeds, batch_size=3): the task's `index`
+    has size 3 while the emitted envelope carries member 0 only — one FILES
+    group holding one file. The other two members' files are staged in the
+    task directory and never reach the protocol, silently.
+
+    `release` is the reference: it emits `JsonforEcho(index)` (the whole
+    list) and parses it with `json.loads` + a list check.
+    """
+    members = [
+        {"slot_a": ["h1"], LinPayload.FILES_KEY: [["/w/a1.fq"]]},
+        {"slot_a": ["h2"], LinPayload.FILES_KEY: [["/w/a2.fq"]]},
+        {"slot_a": ["h3"], LinPayload.FILES_KEY: [["/w/a3.fq"]]},
+    ]
+    payload = LinPayload(v=LIN_PAYLOAD_VERSION, entries=members)
+    decoded = LinPayload.from_json(payload.to_json())
+    assert decoded.entries == members
+    assert [m[LinPayload.FILES_KEY] for m in decoded.entries] == [
+        [["/w/a1.fq"]],
+        [["/w/a2.fq"]],
+        [["/w/a3.fq"]],
+    ]
+
+
 def test_lin_payload_rejects_unknown_version():
     with pytest.raises(ValueError):
         LinPayload.from_json(json.dumps({"v": 99, "entries": {}}))
