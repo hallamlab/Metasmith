@@ -130,15 +130,24 @@
     // launched, so the red belongs on `staged` rather than on `running`.
     const launched = !!rec.launched_at
     const ended = done ? (traceFailed ? 'failed' : 'done') : null
+    // A dead run never reached `completed` -- `rec.state` only becomes
+    // 'completed' by getting there -- so the stages after wherever it died
+    // stay idle instead of borrowing a color they didn't earn.
+    if (dead) {
+      const diedAtStaging = !launched
+      return [
+        diedAtStaging ? 'failed' : 'done',
+        diedAtStaging ? 'idle' : 'failed',
+        'idle',
+        'idle',
+      ]
+    }
     return [
       staging ? 'running'
-        : dead && !launched ? 'failed'
-        : running || done || collected || dead ? 'done'
+        : running || done || collected ? 'done'
         : 'idle',
-      running ? 'running'
-        : dead && launched ? 'failed'
-        : ended ?? 'idle',
-      dead ? 'failed' : ended ?? 'idle',
+      running ? 'running' : ended ?? 'idle',
+      ended ?? 'idle',
       collected ? 'done' : 'idle',
     ]
   })
