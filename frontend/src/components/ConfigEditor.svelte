@@ -181,7 +181,7 @@
     line-height: var(--lh);
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    background: #0e1013;
+    background: var(--sunken);
     overflow: hidden;
   }
   .editor:focus-within { outline: 1px solid var(--accent); }
@@ -220,16 +220,16 @@
     border-radius: 0;
   }
   .editor textarea:focus { outline: none; }
-  .editor textarea::selection { background: #2b4a7d; color: transparent; }
+  .editor textarea::selection { background: var(--select); color: transparent; }
   .editor.fixed textarea { resize: none; }
 
   .underlay :global(.t-comment) { color: var(--muted); font-style: italic; }
   .underlay :global(.t-marker) { color: var(--ok); }
   .underlay :global(.t-block) { color: var(--accent); font-weight: 600; }
-  .underlay :global(.t-key) { color: #c39be0; }
+  .underlay :global(.t-key) { color: var(--code-key); }
   .underlay :global(.t-value) { color: var(--text); }
   /* bash only: what is being run, a variable, and the plumbing between them */
-  .underlay :global(.t-cmd) { color: #7fd1b9; }
-  .underlay :global(.t-var) { color: #e0b877; }
+  .underlay :global(.t-cmd) { color: var(--code-cmd); }
+  .underlay :global(.t-var) { color: var(--code-var); }
   .underlay :global(.t-op) { color: var(--muted); }
 </style>

@@ -1,6 +1,6 @@
 <script>
   import {
-    ui,
+    panelState,
     setPanelOpen,
     setPanelWidth,
     setPanelTop,
@@ -20,7 +20,28 @@
   // it scrolls on its own, so left to right you get the page, the page's
   // scrollbar, this panel, and this panel's scrollbar. Only the lower section
   // scrolls -- the head and whatever `top` holds stay put while it does.
-  let { title, subtitle = null, action = null, top = null, children } = $props()
+  //
+  // `id` names which panel's remembered geometry this is. There is more than
+  // one panel now and they are not interchangeable furniture, so sharing one
+  // width and one open state made each page's layout depend on which other
+  // page had been visited.
+  let {
+    id,
+    title,
+    subtitle = null,
+    action = null,
+    top = null,
+    topDefault = PANEL_TOP_DEFAULT,
+    children,
+  } = $props()
+
+  // Read once, at init, rather than through `$derived`: the first read of a
+  // panel id is what *hydrates* it from localStorage, and hydrating writes into
+  // `ui.panels` -- a state write, which Svelte refuses inside a derived
+  // (`state_unsafe_mutation`) and which took the whole view down with it. A
+  // panel's id never changes for a mounted panel, and what it returns is a
+  // `$state` object, so nothing reactive is lost by asking for it once.
+  const st = panelState(id, topDefault)
 
   // reassigned when the panel is folded and unfolded, so it has to be reactive
   let el = $state(null)
@@ -37,7 +58,7 @@
   // measured from the right edge, since that is the one that stays put
   function onDrag(e) {
     if (!dragging) return
-    setPanelWidth(el.getBoundingClientRect().right - e.clientX)
+    setPanelWidth(id, el.getBoundingClientRect().right - e.clientX)
   }
 
   function endDrag(e) {
@@ -48,9 +69,9 @@
 
   function onGripKey(e) {
     const step = e.shiftKey ? 40 : 10
-    if (e.key === 'ArrowLeft') setPanelWidth(ui.panelWidth + step)
-    else if (e.key === 'ArrowRight') setPanelWidth(ui.panelWidth - step)
-    else if (e.key === 'Home') setPanelWidth(PANEL_DEFAULT)
+    if (e.key === 'ArrowLeft') setPanelWidth(id, st.width + step)
+    else if (e.key === 'ArrowRight') setPanelWidth(id, st.width - step)
+    else if (e.key === 'Home') setPanelWidth(id, PANEL_DEFAULT)
     else return
     e.preventDefault()
   }
@@ -73,7 +94,7 @@
     if (!box) return
     const head = el.querySelector('.head')?.getBoundingClientRect().height ?? 0
     const room = box.height - head - 120
-    setPanelTop(Math.min(room, e.clientY - box.top - head))
+    setPanelTop(id, Math.min(room, e.clientY - box.top - head))
   }
 
   function endTopDrag(e) {
@@ -84,9 +105,9 @@
 
   function onTopGripKey(e) {
     const step = e.shiftKey ? 40 : 10
-    if (e.key === 'ArrowUp') setPanelTop(ui.panelTop - step)
-    else if (e.key === 'ArrowDown') setPanelTop(ui.panelTop + step)
-    else if (e.key === 'Home') setPanelTop(PANEL_TOP_DEFAULT)
+    if (e.key === 'ArrowUp') setPanelTop(id, st.top - step)
+    else if (e.key === 'ArrowDown') setPanelTop(id, st.top + step)
+    else if (e.key === 'Home') setPanelTop(id, topDefault)
     else return
     e.preventDefault()
   }
@@ -101,12 +122,12 @@
   })
 </script>
 
-{#if ui.panelOpen}
+{#if st.open}
   <aside
     class="panel"
     class:dragging
     bind:this={el}
-    style="--panel-w: {ui.panelWidth}px; --top-h: {ui.panelTop}px"
+    style="--panel-w: {st.width}px; --top-h: {st.top}px"
   >
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -115,7 +136,7 @@
       role="separator"
       aria-orientation="vertical"
       aria-label="resize the panel"
-      aria-valuenow={ui.panelWidth}
+      aria-valuenow={st.width}
       aria-valuemin={PANEL_MIN}
       aria-valuemax={PANEL_MAX}
       tabindex="0"
@@ -124,7 +145,7 @@
       onpointermove={onDrag}
       onpointerup={endDrag}
       onpointercancel={endDrag}
-      ondblclick={() => setPanelWidth(PANEL_DEFAULT)}
+      ondblclick={() => setPanelWidth(id, PANEL_DEFAULT)}
       onkeydown={onGripKey}
     ></div>
 
@@ -135,7 +156,7 @@
           <!-- whatever the panel's contents can do to the page it is beside;
                it sits by the title because it acts on what the title names -->
           {#if action}{@render action()}{/if}
-          <button class="fold" onclick={() => setPanelOpen(false)} title="collapse">▸</button>
+          <button class="fold" onclick={() => setPanelOpen(id, false)} title="collapse">▸</button>
         </div>
       </div>
       {#if subtitle}<div class="small muted truncate">{subtitle}</div>{/if}
@@ -151,7 +172,7 @@
         role="separator"
         aria-orientation="horizontal"
         aria-label="resize the upper section"
-        aria-valuenow={ui.panelTop}
+        aria-valuenow={st.top}
         aria-valuemin={PANEL_TOP_MIN}
         aria-valuemax={PANEL_TOP_MAX}
         tabindex="0"
@@ -160,7 +181,7 @@
         onpointermove={onTopDrag}
         onpointerup={endTopDrag}
         onpointercancel={endTopDrag}
-        ondblclick={() => setPanelTop(PANEL_TOP_DEFAULT)}
+        ondblclick={() => setPanelTop(id, topDefault)}
         onkeydown={onTopGripKey}
       ></div>
     {/if}
@@ -168,7 +189,7 @@
     <div class="body">{@render children()}</div>
   </aside>
 {:else}
-  <button class="strip" onclick={() => setPanelOpen(true)} title="show the panel">
+  <button class="strip" onclick={() => setPanelOpen(id, true)} title="show the panel">
     <span class="vert">◂ {title}</span>
   </button>
 {/if}

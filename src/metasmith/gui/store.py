@@ -10,6 +10,8 @@ CLI or to a person with a text editor.
       workflows/<workflow>/
         request.yml                   GUI: the filled form
         result.yml                    GUI: task key on success, hints on failure
+        sample_table.csv|xlsx|…       the attached sheet, stored verbatim
+        expansion.yml                 what the last expansion registered
         input.xgdb/                   the live, editable input library
         task.yml, data/, transforms/  native task bundle (WorkflowTask.SaveAs)
         runs/<run>/
@@ -30,6 +32,15 @@ archiving is a single code path and a single write regardless of what is being
 archived. It is a timestamp and a list filter, never a directory move: recorded
 paths stay valid. The same file carries which agent names the GUI made up, for
 the same reason: it is a fact about the list rather than about the agent.
+
+**Deleting is archiving.** The first delete of an agent, a workflow or a run
+only writes that timestamp; the directory is removed on a delete of something
+*already* archived. Nothing here is recoverable from anywhere else -- a
+workflow directory is the task bundle, a run directory is the only record of a
+run -- and the same gesture that removes it is one double-click away on a list
+of near-identical names. It also gives the archive filter something to show:
+while deletion was conditional on dependents, an ordinary project never
+archived anything and "show archived" was a switch over an always-empty set.
 """
 from __future__ import annotations
 
@@ -52,6 +63,10 @@ RUNS_DIRNAME = "runs"
 OUTPUTS_DIRNAME = "outputs"
 INPUT_LIBRARY_DIRNAME = "input.xgdb"
 STDLIB_DIRNAME = "MetasmithLibraries"
+# Derived files that can always be recomputed -- template drawings today. Kept
+# out of the object directories so that deleting one never costs a user
+# anything, and so a stale cache is fixed by removing a directory.
+CACHE_DIRNAME = ".cache"
 
 REQUEST_FILE = "request.yml"
 RESULT_FILE = "result.yml"
@@ -155,6 +170,10 @@ class Project:
     @property
     def stdlib_dir(self) -> Path:
         return self.root / STDLIB_DIRNAME
+
+    @property
+    def cache_dir(self) -> Path:
+        return self.root / CACHE_DIRNAME
 
     def agent_path(self, name: str) -> Path:
         assert_valid_name(name, "agent name")
@@ -300,23 +319,36 @@ class Project:
         return {"name": new_name, "renamed": True, "runs_repointed": repointed}
 
     def delete_agent(self, name: str) -> dict:
-        """Delete an agent, or archive it if any run still points at it.
+        """Archive an agent; delete it outright only if it is already archived.
 
-        A run record names its agent, and a run whose agent has vanished cannot
-        be tailed, cancelled, or collected -- so the agent outlives its runs.
+        See § *Deleting is archiving* for why the first press never removes
+        anything. The dependency check survives as a *reason* rather than as
+        the discriminator: a run whose agent has vanished cannot be tailed,
+        cancelled or collected, so it is worth saying which runs are why this
+        one is worth keeping.
         """
         path = self.agent_path(name)
         if not path.is_file():
             raise ProjectError(f"no agent named [{name}]")
         dependents = [r.name for r in self.list_runs(include_archived=True)
                       if r.record.get("agent") == name]
-        if dependents:
+        if self.archived_at("agents", name) is None:
             self.set_archived("agents", name, True)
             return {
                 "name": name, "action": "archived",
-                "reason": f"{len(dependents)} run(s) still reference this agent",
+                "reason": (
+                    f"{len(dependents)} run(s) still reference this agent"
+                    if dependents else
+                    "archived rather than deleted; delete it again to remove it for good"
+                ),
                 "dependents": dependents,
             }
+        if dependents:
+            raise ProjectError(
+                f"agent [{name}] is named by {len(dependents)} run(s) "
+                f"({', '.join(dependents[:3])}{'…' if len(dependents) > 3 else ''}); "
+                f"a run whose agent is gone cannot be tailed, cancelled or collected"
+            )
         path.unlink()
         self._forget_archive("agents", name)
         self.forget_agent_naming(name)
@@ -439,18 +471,32 @@ class Project:
         return wf.path / wf.request.get("input_library", INPUT_LIBRARY_DIRNAME)
 
     def delete_workflow(self, name: str) -> dict:
+        """Archive it; delete the directory only on a second press. See
+        § *Deleting is archiving*."""
         wf = self.read_workflow(name)
         runs = self.list_runs(workflow=name, include_archived=True)
-        if runs:
+        if self.archived_at("workflows", name) is None:
             self.set_archived("workflows", name, True)
             return {
                 "name": name, "action": "archived",
-                "reason": f"{len(runs)} run(s) belong to this workflow",
+                "reason": (
+                    f"{len(runs)} run(s) belong to this workflow"
+                    if runs else
+                    "archived rather than deleted; delete it again to remove it for good"
+                ),
                 "dependents": [r.name for r in runs],
             }
+        live = [r.name for r in runs if r.live]
+        if live:
+            raise ProjectError(
+                f"workflow [{name}] has {len(live)} live run(s) ({', '.join(live[:3])}); "
+                f"cancel them before deleting it"
+            )
         shutil.rmtree(wf.path)
         self._forget_archive("workflows", name)
-        return {"name": name, "action": "deleted"}
+        for r in runs:
+            self._forget_archive("runs", f"{name}/{r.name}")
+        return {"name": name, "action": "deleted", "dependents": [r.name for r in runs]}
 
     # -- runs --------------------------------------------------------------
 
@@ -515,20 +561,29 @@ class Project:
         return self.run_path(workflow, run) / OUTPUTS_DIRNAME
 
     def delete_run(self, workflow: str, run: str) -> dict:
-        """Runs delete outright -- but never while live.
+        """Archive it; remove the directory only on a second press -- and never
+        while live.
 
         The GUI is not the run's parent process; Nextflow is detached on the
         agent. Deleting the record while it runs orphans that process with
-        nothing left pointing at it, so cancel first.
+        nothing left pointing at it, so cancel first. That check is made on
+        *both* presses: a live run must not be archived out of sight either.
         """
         rec = self.read_run(workflow, run)
+        key = f"{workflow}/{run}"
         if rec.live:
             raise ProjectError(
                 f"run [{run}] is {rec.state}; cancel it before deleting, "
                 f"otherwise the workflow keeps running on the agent with nothing tracking it"
             )
+        if self.archived_at("runs", key) is None:
+            self.set_archived("runs", key, True)
+            return {
+                "name": run, "workflow": workflow, "action": "archived",
+                "reason": "archived rather than deleted; delete it again to remove it for good",
+            }
         shutil.rmtree(rec.path)
-        self._forget_archive("runs", f"{workflow}/{run}")
+        self._forget_archive("runs", key)
         return {"name": run, "workflow": workflow, "action": "deleted"}
 
     # -- live runs ---------------------------------------------------------

@@ -38,8 +38,16 @@ _EMITTER_RE = re.compile(r"\[\s*v\s*:\s*(\d+)\s*,\s*entries\s*:")
 
 
 def _emitter_wire_versions() -> list[int]:
-    src = Path(workflow_mod.__file__).read_text(encoding="utf-8")
-    return [int(m) for m in _EMITTER_RE.findall(src)]
+    # Scan the whole package, not one module. The emitter used to sit in
+    # workflow.py; it now lives in workflow/nextflow_codegen.py, and reading
+    # `workflow_mod.__file__` after the split would have read an __init__ of
+    # pure re-exports -- no literals, and this guard blind to the one desync
+    # it exists to catch. Globbing keeps it honest through the next move too.
+    pkg = Path(workflow_mod.__file__).parent
+    found: list[int] = []
+    for src in sorted(pkg.rglob("*.py")):
+        found += [int(m) for m in _EMITTER_RE.findall(src.read_text(encoding="utf-8"))]
+    return found
 
 
 def test_groovy_emitter_matches_parser_version():

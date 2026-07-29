@@ -80,6 +80,11 @@ class AgentPaths:
     # what runtime the agent is. Same split, and same file-shaped seam, as the
     # GPU manifest above.
     ENV_MANIFEST = "workflow.env.json"
+    # Nextflow's own `-with-trace` table, one row per task attempt. It is the
+    # only per-step record that survives `rm -rf work/`, and the only one that
+    # reports an exit code, so every consumer asking "which steps died" reads
+    # this rather than scraping the log.
+    NXF_TRACE_FILE = "nxf_trace.tsv"
 
     @classmethod
     def to_staged(cls, root: Path|None=None):

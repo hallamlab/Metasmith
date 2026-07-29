@@ -18,7 +18,11 @@ from pathlib import Path
 
 import pytest
 
-from metasmith import agents as _agents
+# Patched on the module that *runs* the verb, not the package that re-exports
+# it: `Agent.RunWorkflow` lives in workflow_ops and resolves `Logistics` and
+# `AgentShell` through that module's globals, so patching the package would
+# leave the real ones in place and this test would drive a live transfer.
+import metasmith.agents.workflow_ops as _agents
 from metasmith.agents import Agent, GpuRequirementError
 from metasmith.constants import AgentPaths
 from metasmith.coms.terminals import ShellResult

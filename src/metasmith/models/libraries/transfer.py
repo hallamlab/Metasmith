@@ -1,0 +1,325 @@
+"""Getting a library on and off disk, and between hosts.
+
+Mixed into `DataInstanceLibrary`. The pairs here are the ones audit row S14
+wants unified one day -- `Pack`/`Unpack`, `Save`/`Load`, `SaveAs`/`LoadFrom` --
+and collecting them in one file is the precondition for that, not the change
+itself.
+
+`Pack` writes `_key`/`legacy_key` alongside `instance_id` and all three are
+load-bearing: since content-addressing landed, `instance_id` *is* the cache
+identity, `_key` tracks it for modern callers, and `legacy_key` preserves the
+pre-content-addressing derivation so v0.18 serializations still resolve.
+Dropping either of the latter two changes cache keys, which silently
+invalidates or false-hits every cached run. They are not redundant copies.
+"""
+
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+import yaml
+
+from ...logging import Log
+from ..remote import Logistics, Source
+from .types import DataTypeLibrary, yaml_safe_load
+
+
+class _StoreTransfer:
+    def Pack(self):
+        def _pack_instance(path, dtype_name):
+            grandparents = set()
+            for p in self.parents.get(path, []):
+                for gp in self.parents.get(p.path, []):
+                    grandparents.add(gp.path)
+            d_parents = {}
+            for p in self.parents.get(path, []):
+                if p.path in grandparents: continue
+                p.library_key
+                k = f"{p.library_key}@{p.path}"
+                v = p.name
+                d_parents[k] = v
+            d = dict(
+                type=dtype_name,
+            )
+            if len(d_parents) > 0:
+                d["parents"] = dict(sorted(d_parents.items(), key=lambda t:t[0]))
+            # S2 — embed instance_meta if present. Read directly to avoid
+            # recursing through GetKey -> Pack -> _resolve_instance_meta.
+            meta = self.instance_meta.get(path)
+            if meta is not None:
+                d["instance_id"] = meta["instance_id"]
+                d["origin"] = meta.get("origin", "leaf")
+                payload = meta.get("lineage_payload")
+                if payload is not None:
+                    d["lineage_payload"] = payload.hex()
+            return d
+        # A fork id set after the entries were minted leaves every leaf id
+        # stale. Re-derive here so what gets serialized is what Get() reports;
+        # _resolve_instance_meta only reaches GetKey (and so back into Pack)
+        # for paths with no entry at all, which this loop skips.
+        for _path, _dtype in self.manifest.items():
+            _meta = self.instance_meta.get(_path)
+            if _meta is not None and _meta.get("fork_id") != self.fork_id:
+                self._resolve_instance_meta(_path, _dtype)
+        man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
+        man = dict(sorted(man.items(), key=lambda t: t[0]))
+        packed = dict(
+            schema=self.schema,
+            manifest=man,
+            fork_id=self.fork_id,
+            remote_src=self.remote_src.Pack() if self.remote_src is not None else None,
+        )
+        return {k:v for k, v in packed.items() if v is not None}
+
+    @classmethod
+    def Unpack(cls, location: Path, raw: dict, dtypes: dict[str, DataTypeLibrary], check_integrity: bool=False):
+        if "manifest" not in raw:
+            raise ValueError(
+                f"library index at [{location/cls._path_to_meta/(cls._index_name+cls._metadata_ext)}] "
+                f"is malformed: missing 'manifest' key. "
+                f"Was this directory compiled with `metasmith build`?"
+            )
+        manifest = {}
+        instance_meta: dict[Path, dict] = {}
+        for k, v in raw["manifest"].items():
+            type_name = v["type"]
+            if check_integrity:
+                assert (location/k).exists(), f"[{k}], does not exist"
+            cls._get_type(type_name, dtypes) # check if datatype exists
+            manifest[Path(k)] = type_name
+            # S2 — pull instance metadata from manifest entry if present.
+            # Legacy entries (no instance_id field) get fresh ids minted
+            # lazily on first Get() via _resolve_instance_meta.
+            if "instance_id" in v:
+                payload = v.get("lineage_payload")
+                if isinstance(payload, str):
+                    payload = bytes.fromhex(payload)
+                instance_meta[Path(k)] = {
+                    "instance_id": v["instance_id"],
+                    "origin": v.get("origin", "leaf"),
+                    "lineage_payload": payload,
+                }
+        lib = cls(
+            location=location,
+        )
+        lib.schema = raw["schema"]
+        lib.manifest = manifest
+        lib.instance_meta = instance_meta
+        lib.fork_id = raw.get("fork_id")
+        remote_src = raw.get("remote_src")
+        lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
+        # First pass: Build immediate parents for all items
+        for k, v in raw["manifest"].items():
+            parents: dict[Path, cls.ParentMetadata] = {}
+            for p_key, p_name in v.get("parents", {}).items():
+                lib_key, p_path_str = p_key.split("@", maxsplit=1)
+                p_path = Path(p_path_str)
+                namespace, dtype_name = p_name.split("::")
+                _lib = dtypes[namespace]
+                dtype = _lib.types[dtype_name]
+                parents[p_path] = cls.ParentMetadata(
+                    dtype=dtype,
+                    name=p_name,
+                    library_key=lib_key,
+                    path=p_path,
+                )
+            if len(parents) > 0:
+                lib.parents[Path(k)] = list(parents.values())
+
+        # Second pass: Memoized transitive closure for full ancestor aggregation
+        ancestor_cache: dict[Path, dict[Path, cls.ParentMetadata]] = {}
+
+        def _get_all_ancestors(k_path: Path) -> dict[Path, cls.ParentMetadata]:
+            if k_path in ancestor_cache:
+                return ancestor_cache[k_path]
+            ancestors: dict[Path, cls.ParentMetadata] = {}
+            for p in lib.parents.get(k_path, []):
+                ancestors[p.path] = p
+                for gp_path, gp in _get_all_ancestors(p.path).items():
+                    if gp_path not in ancestors:
+                        ancestors[gp_path] = gp
+            ancestor_cache[k_path] = ancestors
+            return ancestors
+
+        for k in raw["manifest"].keys():
+            k_path = Path(k)
+            if k_path not in lib.parents:
+                continue
+            lib.parents[k_path] = list(_get_all_ancestors(k_path).values())
+
+        return lib
+
+    def Save(self, update_types=True):
+        ext = self._metadata_ext
+        types_path = self.location/self._path_to_types
+        types_path.mkdir(parents=True, exist_ok=True)
+        for namespace, types_lib in self.types.items():
+            local_path = types_path/(namespace+ext)
+            if not update_types and local_path.exists(): continue
+            types_lib.Save(local_path)
+
+        metadata_path = self.location/self._path_to_meta
+        metadata_path.mkdir(parents=True, exist_ok=True)
+        index_path = metadata_path/(self._index_name+ext)
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(index_path, "w") as f:
+            yaml.dump(self.Pack(), f)
+
+    @classmethod
+    def Load(cls, path: Path|str, check_integrity=False, attach_trace: bool=True):
+        path = Path(path)
+        ext = cls._metadata_ext
+        meta_path = path/cls._path_to_meta
+        types_path = path/cls._path_to_types
+        index_path = meta_path/(cls._index_name+ext)
+        assert path.exists(), f"path [{path}] does not exist"
+        assert index_path.exists(), f"index file [{index_path}] does not exist"
+
+        dtypes = {}
+        for p in types_path.iterdir():
+            if p.is_dir(): continue
+            if p == index_path: continue
+            k = p.relative_to(types_path).with_suffix("")
+            k = str(k)
+            dtypes[k] = DataTypeLibrary.Load(p)
+
+        d = yaml_safe_load(index_path)
+        self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
+        self.types = dtypes
+        self._calculate_key(_raw_override=d)
+        # C8 / S7 — auto-attach trace.jsonl if present. Tries the in-dir
+        # path first (library == workspace), then the sibling `_metasmith`
+        # form (library == results/, trace lives in workspace/_metasmith).
+        if attach_trace:
+            for candidate in (
+                path / "_metasmith" / "trace.jsonl",
+                path.parent / "_metasmith" / "trace.jsonl",
+            ):
+                if candidate.exists():
+                    try:
+                        self.attach_trace(candidate)
+                    except Exception as e:
+                        Log.Warn(f"trace.jsonl at {candidate} failed to attach: {e}")
+                    break
+        return self
+
+    def PrepTransfer(self, dest: Source, mover: Logistics|None=None):
+        self.Save()
+        for p, name, dtype in self.Iterate():
+            assert p.is_absolute() or (self.location/p).exists(), f"file not found [{p}]"
+        if mover is None:
+            mover = Logistics()
+        mover.QueueTransfer(
+            src=Source.FromLocal(self.location),
+            dest=dest,
+        )
+        return mover
+
+    def SaveAs(self, dest: Source, label: str|None=None):
+        mover = self.PrepTransfer(dest)
+        res = mover.ExecuteTransfers(label=label)
+        assert len(res.completed) == 1, f"move failed"
+        return res
+
+    @classmethod
+    def LoadFrom(cls, src: Source, dest: Path|str, as_image=True, on_exist: str = "skip", label: str|None=None, resolve_symlinks: bool=True):
+        assert isinstance(src, Source)
+        assert on_exist in {"skip", "error", "clear", "update"}
+        if not isinstance(dest, Path):
+            dest = Path(dest)
+
+        def _transfer():
+            mover = Logistics()
+            if as_image:
+                _src = src/cls._path_to_meta
+                _dest = dest/cls._path_to_meta
+            else:
+                _src, _dest = src, dest
+            mover.QueueTransfer(
+                src=_src,
+                dest=Source.FromLocal(_dest),
+            )
+            res = mover.ExecuteTransfers(label=label, resolve_symlinks=resolve_symlinks)
+            assert len(res.completed) == 1, f"move failed"
+        if dest.exists():
+            if on_exist == "error":
+                raise FileExistsError(f"[{dest}] already exists")
+            elif on_exist == "update":
+                _transfer()
+            elif on_exist == "clear":
+                Log.Warn("clearing previously loaded library")
+                shutil.rmtree(dest)
+                _transfer()
+            elif on_exist == "skip":
+                pass
+        else:
+            _transfer()
+
+        lib = cls.Load(dest, check_integrity=False)
+        if as_image:
+            lib.remote_src = src
+            lib.Save()
+        return lib
+
+    def Consolidate(self):
+        digits = len(f"{len(self.manifest)}")
+        new_paths: dict[Path, Path] = {}
+        for i, p in enumerate(self.manifest):
+            if not p.is_absolute(): continue
+            local_link = Path(f"{i+1:0{digits}}_{p.name}")
+            new_paths[p] = local_link
+            lp = self.location/local_link
+            if lp.exists(): continue
+            lp.symlink_to(p, p.is_dir())
+        # self.manifest = {new_paths.get(k, k):v for k, v in self.manifest.items()}
+        return new_paths
+
+    def ActualizeRemote(self, extern_dest: Source|None=None, label: str|None=None):
+        if self.remote_src is None:
+            return self
+        _lib = None
+        try:
+            _lib = self.Load(self.location, check_integrity=True)
+            return _lib
+        except AssertionError:
+            pass
+        if _lib is None: # so that errors don't stack
+            mover = Logistics()
+            if extern_dest is None:
+                extern_dest = Source.FromLocal(self.location)
+            mover.QueueTransfer(
+                src=self.remote_src,
+                dest=extern_dest,
+            )
+            res = mover.ExecuteTransfers(label=label)
+            assert len(res.completed) == 1, f"failed to load library from [{self.remote_src}]; [{res.errors}]"
+        _lib = self.Load(self.location, check_integrity=True)
+        return _lib
+    
+    def LocalizeContents(self):
+        to_move = {}
+        for path in self.manifest:
+            if not path.is_absolute(): continue
+            k = path.name
+            to_move[k] = to_move.get(k, [])+[path]
+        mover = Logistics()
+        moved: list[tuple[Path, Path]] = []
+        for dest, srcs in to_move.items():
+            dest = Path(dest)
+            plural = len(srcs)>1
+            for i, src in enumerate(srcs):
+                if plural:
+                    dest_path = self.location/f"{dest.stem}_{i+1}{dest.suffix}"
+                else:
+                    dest_path = self.location/f"{dest.stem}{dest.suffix}"
+                mover.QueueTransfer(src=Source.FromLocal(src), dest=Source.FromLocal(dest_path))
+                moved.append((Path(src), dest_path.relative_to(self.location)))
+        mover.ExecuteTransfers()
+        for src, dest in moved:
+            self.manifest[dest] = self.manifest[src]
+            del self.manifest[src]
+            if src in self.parents:
+                self.parents[dest] = self.parents[src]
+                del self.parents[src]
+        return moved

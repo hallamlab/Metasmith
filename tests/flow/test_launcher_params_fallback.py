@@ -22,6 +22,17 @@ from metasmith import agents as agents_mod
 from metasmith.constants import AgentPaths
 
 
+def _agents_source() -> str:
+    # The whole package, not one module. `inspect.getsource` on a package
+    # returns its __init__ -- pure re-exports since the split -- and the second
+    # assertion below pins an *absence*, so it would have passed against a
+    # string with no launcher in it at all. Globbing keeps it honest.
+    pkg = Path(agents_mod.__file__).parent
+    return "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(pkg.rglob("*.py"))
+    )
+
+
 def test_launcher_template_writes_valid_yaml_not_touch():
     """Static check: the launcher source emits an echo redirect for
     NXF_PARAMS, never a `touch`. This pins the source-code shape so a
@@ -31,7 +42,7 @@ def test_launcher_template_writes_valid_yaml_not_touch():
     interpolates `{AgentPaths.NXF_PARAMS}`), so the assertions match the
     literal source text rather than the runtime-expanded form.
     """
-    src = inspect.getsource(agents_mod)
+    src = _agents_source()
     # Post-fix: `echo '{{}}' > {AgentPaths.NXF_PARAMS}` in source
     # (`{{}}` is an f-string-escaped literal `{}`).
     assert "echo '{}' > {AgentPaths.NXF_PARAMS}".replace("{}", "{{}}") in src, (

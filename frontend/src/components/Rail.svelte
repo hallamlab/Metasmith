@@ -72,14 +72,20 @@
       <div class="row">{@render actions?.()}</div>
     </div>
     {#if showArchivedToggle}
-      <label class="small muted archived">
-        <input
-          type="checkbox"
-          checked={showArchived}
-          onchange={(e) => ontoggleArchived?.(e.currentTarget.checked)}
-        />
-        show archived
-      </label>
+      <!-- a chip, not a checkbox: it is a filter on the list below it, the same
+           kind of thing as the group headings, and a lone tickbox in a header
+           read as a setting rather than as a view -->
+      <div class="row">
+        <button
+          class="chip small"
+          class:on={showArchived}
+          aria-pressed={showArchived}
+          title={showArchived
+            ? 'hide the ones that were deleted'
+            : 'show the ones that were deleted — deleting archives, so they are still here'}
+          onclick={() => ontoggleArchived?.(!showArchived)}
+        >archived</button>
+      </div>
     {/if}
   </div>
 
@@ -89,9 +95,18 @@
     {/if}
     {#each items as item (item.id)}
       {#if item.kind === 'heading'}
-        <!-- A label over a run of rows. Still one flat list: the rows below it
-             are siblings of the rows above, not children of anything. -->
-        <div class="heading small muted">{item.label}</div>
+        <!-- A label over a run of rows. The list stays flat: a heading that can
+             be shut does it by dropping its rows from `items`, so nothing here
+             is nested inside anything else. -->
+        {#if item.ontoggle}
+          <button class="heading toggle small muted" onclick={() => item.ontoggle()}>
+            <span class="caret" class:open={!item.collapsed}>▸</span>
+            <span class="truncate grow">{item.label}</span>
+            <span class="count">{item.count}</span>
+          </button>
+        {:else}
+          <div class="heading small muted">{item.label}</div>
+        {/if}
       {:else}
         <div
           class="item"
@@ -170,8 +185,18 @@
     flex-direction: column;
     gap: 6px;
   }
-  .archived { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-  .archived input { width: auto; }
+  /* off, it is as quiet as the muted text it sits under; on, it says which
+     view you are in -- the same on/off shape as the sample-index star */
+  .chip {
+    padding: 1px 8px;
+    font-size: 11px;
+    background: none;
+    color: var(--muted);
+    border-color: var(--line);
+    border-radius: 999px;
+  }
+  .chip:hover { color: var(--text); }
+  .chip.on { color: var(--accent); border-color: var(--accent); }
   .list { overflow-y: auto; flex: 1; min-height: 0; }
   .pad { padding: 12px; }
   .heading {
@@ -184,6 +209,27 @@
     position: sticky;
     top: 0;
     z-index: 1;
+  }
+  .heading.toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    text-align: left;
+    border-radius: 0;
+    cursor: pointer;
+    /* the same box as the static heading, less the button chrome */
+    padding: 8px 12px 6px;
+    color: var(--muted);
+  }
+  .heading.toggle:hover { background: var(--panel-2); }
+  .caret { font-size: 9px; transition: transform 0.1s; }
+  .caret.open { transform: rotate(90deg); }
+  .count {
+    font-variant-numeric: tabular-nums;
+    text-transform: none;
+    letter-spacing: 0;
+    opacity: 0.7;
   }
   .item {
     padding: 8px 12px;

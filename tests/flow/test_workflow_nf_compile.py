@@ -15,13 +15,20 @@ the fully-qualified instantiation in the emitter source.
 """
 from __future__ import annotations
 
-import inspect
+from pathlib import Path
 
 from metasmith.models import workflow as _wf
 
 
 def _emitter_source() -> str:
-    return inspect.getsource(_wf)
+    # The whole package, not one module. `inspect.getsource` on a package
+    # returns its __init__ -- pure re-exports since the split -- so both
+    # assertions below would have passed on an empty string, which is the
+    # worst outcome available to a test that pins an absence.
+    pkg = Path(_wf.__file__).parent
+    return "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(pkg.rglob("*.py"))
+    )
 
 
 def test_emitter_does_not_inject_groovy_import():

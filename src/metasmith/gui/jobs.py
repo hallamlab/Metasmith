@@ -66,6 +66,20 @@ class Job:
         with self._lock:
             return list(self._lines)
 
+    def finish(self):
+        """Mark the job done and wake everyone following it.
+
+        The wake matters as much as the flag: a subscriber blocked in `get`
+        would otherwise sit out the rest of its timeout before noticing, which
+        is half a second of a page looking like it is still working on a solve
+        that finished. `None` is the sentinel -- a log line is always a string.
+        """
+        with self._lock:
+            subscribers = list(self._subscribers)
+        self._done.set()
+        for q in subscribers:
+            q.put(None)
+
     def subscribe(self) -> Iterator[str]:
         """Replay what has happened, then follow. Ends when the job ends."""
         q: queue.Queue = queue.Queue()
@@ -79,9 +93,12 @@ class Job:
                 if self._done.is_set() and q.empty():
                     return
                 try:
-                    yield q.get(timeout=0.5)
+                    line = q.get(timeout=0.5)
                 except queue.Empty:
                     continue
+                if line is None:  # the job ended; drain what is left and stop
+                    continue
+                yield line
         finally:
             with self._lock:
                 self._subscribers.discard(q)
@@ -142,7 +159,7 @@ class JobRunner:
                     job.emit(line)
             finally:
                 job.finished_at = utcnow()
-                job._done.set()
+                job.finish()
 
         threading.Thread(target=_run, name=f"msm-gui-{job.id}", daemon=True).start()
         return job

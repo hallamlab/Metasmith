@@ -127,6 +127,14 @@ Every method on `DataInstanceLibrary` gets one positive + one negative case.
 | T7 | `summary()` aggregate | counts match sum of events; by_transform/by_status non-empty | empty library returns zeros, no exception |
 | T8 | `summary()['by_dtype']` | counts per dtype match events | dtype with zero events absent or zero |
 
+## Axis 12 — Sample splitting (`AsSamples`)
+
+| ID | Invariant | DAG shape | File |
+|---|---|---|---|
+| AS1 | Parentless index items yield one view each, masking only that item's own subtree | N roots, one child each | `test_as_samples.py` |
+| AS2 | Index items sharing any ancestor collapse to a single view over the library | one `meta` above N markers | `test_as_samples.py` |
+| AS3 | The per-root descendant walk reaches grandchildren, not just direct children | root → reads → trimmed | `test_as_samples.py` |
+
 ---
 
 ## Trap cases (historical bug shapes — each gets a `repro/repro_*.py` pin)

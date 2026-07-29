@@ -21,6 +21,7 @@ def _agent_info(name: str, agent: Agent) -> dict:
         "container": agent.container,
         "runtime": agent.runtime.name,
         "native": agent.native,
+        "gpu_args": list(agent.gpu_args),
         "globus_uuid": agent.globus_uuid,
         "real_path": str(agent.real_path) if agent.real_path else None,
         "setup_commands": list(agent.setup_commands),
@@ -102,14 +103,20 @@ def save_agent(
     renaming_host: bool = False,
     default_preset: str | None = None,
     default_params: dict | None = None,
+    native: bool | None = None,
+    gpu_args: list[str] | None = None,
 ) -> dict:
     """Write an agent YAML to disk.
 
     An agent that is already there is *edited*, not rebuilt: the fields below
-    are set and everything else the file carries is kept. That matters for the
-    two an editor never shows -- `real_path`, resolved at deploy time, and
-    `gpu_args`/`native`, which are host facts someone set deliberately. Building
-    a fresh Agent here silently reverted all three on the next save.
+    are set and everything else the file carries is kept. That matters for
+    `real_path`, resolved at deploy time: building a fresh Agent here silently
+    reverted it on the next save.
+
+    `native` and `gpu_args` are host facts no editor draws. They are kept when
+    not given, which is what an editor saving a form wants, and set when they
+    are, which is what an importer wants: an agent arriving from a colleague has
+    no file on this side to preserve them from.
 
     `renaming_host` says the home changed only in how its host is *spelled* --
     the caller renamed an ssh alias and is bringing the agents on it along. The
@@ -140,6 +147,10 @@ def save_agent(
     agent.globus_uuid = globus_uuid
     agent.default_preset = default_preset or None
     agent.default_params = dict(default_params or {})
+    if native is not None:
+        agent.native = bool(native)
+    if gpu_args is not None:
+        agent.gpu_args = list(gpu_args)
     if container:
         agent.container = container
     agent.Save(p)

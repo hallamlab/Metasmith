@@ -19,7 +19,9 @@ from metasmith.coms.terminals import ShellResult
 from metasmith.env import ContainerDef, Environment, Runtime
 from metasmith.models.libraries import ContextData, ContextPath, ExecutionContext
 from metasmith.models.solver import Dependency, Endpoint
-import metasmith.models.libraries as libraries_mod
+# Patched on the module that runs the arm, not the package that re-exports
+# it -- see the note in test_exec_with_env_contract.py.
+import metasmith.models.libraries.execution as libraries_mod
 
 
 FIXED_ID = "MAMBAID00000"

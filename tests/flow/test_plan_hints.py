@@ -425,3 +425,65 @@ TransformInstance(protocol=protocol, model=model, group_by=near)
     assert "mock::near_to_given" in missing[0].message, (
         f"expected near_to_given first, got order: {[h.message for h in missing]}"
     )
+
+
+def test_too_general_input_names_the_retyping_and_the_missing_parent(temp_dir):
+    """A supertype registered where a subtype is wanted, and a parent nothing has.
+
+    This is the shape of nearly every real "why did it not solve": someone
+    registers `reads` and asks for an `assembly`, every assembler wants
+    `long_reads` or `short_reads`, and a supertype satisfies neither. The old
+    diagnosis followed the chain past that point and reported a dead end five
+    hops away at an accession nobody had heard of.
+
+    The transform here also declares per-slot lineage, which is the second half
+    of the same failure: even retyped, the reads have to descend from metadata
+    that is not registered at all.
+    """
+    types_path = temp_dir / "mock.yml"
+    _write_types_yml(types_path, {
+        "metadata": {"properties": {"_": "read metadata", "ext": "json"}},
+        "reads": {"properties": {"_": "reads", "ext": "fq"}},
+        "long_reads": {"properties": {"_": "reads", "ext": "fq", "length": "long"}},
+        "assembly": {"properties": {"_": "assembly", "ext": "fa"}},
+    })
+
+    transforms = {
+        "assembler": """
+from pathlib import Path
+from metasmith.models.libraries import TransformInstanceLibrary, TransformInstance, ExecutionContext, ExecutionResult
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+meta = model.AddRequirement(lib.GetType("mock::metadata"))
+dep = model.AddRequirement(lib.GetType("mock::long_reads"), parents={meta})
+out = model.AddProduct(lib.GetType("mock::assembly"))
+
+def protocol(context: ExecutionContext):
+    return ExecutionResult(manifest=[{out: Path("out.fa")}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=dep)
+""",
+    }
+    tr_lib = _make_transform_lib(temp_dir, types_path, transforms)
+
+    lib_path = temp_dir / "inputs.xgdb"
+    inputs = DataInstanceLibrary(lib_path)
+    inputs.AddTypeLibrary(types_path, namespace="mock")
+    inputs.AddValue("sample.fq", "x", "mock::reads")
+    inputs.Save()
+
+    plan = _generate(inputs, tr_lib, "mock::reads", "mock::assembly")
+    assert plan.steps == []
+
+    general = [h for h in plan.hints if h.kind == "too_general"]
+    assert general, f"expected a too_general hint, got: {[h.kind for h in plan.hints]}"
+    hit = general[0]
+    assert "mock::reads" in hit.message and "mock::long_reads" in hit.message
+    # the retyping that would actually work, by name
+    assert any(m.startswith("mock::long_reads") for m in hit.near_misses), hit.near_misses
+    # ...and the lineage the slot declares, which no retyping can supply
+    assert any(m.startswith("mock::metadata") for m in hit.near_misses), hit.near_misses
+    # it leads: the dead ends below it are symptoms of this one
+    assert plan.hints[0].kind == "too_general"
