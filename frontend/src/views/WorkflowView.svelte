@@ -388,7 +388,10 @@
       persist()
       return
     }
-    addDraft(kind)
+    // 'input' is the only add-input gesture now -- what the row holds, file or
+    // value, is a field on the row itself (the mode switch), not a choice made
+    // up front. 'file' is just the starting mode.
+    addDraft(kind === 'value' ? 'value' : 'file')
   }
 
   function addDraft(mode, extra = {}) {

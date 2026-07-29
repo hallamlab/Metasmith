@@ -233,20 +233,15 @@
   }
 
   // A parent whose row has since gone still has to be shown, or an entry would
-  // sit in a lineage nothing on the page admits to.
+  // sit in a lineage nothing on the page admits to. The path a parent chip used
+  // to lead with is not unique enough to tell rows apart either -- the hover
+  // highlight on the row itself already does that -- so the chip states only
+  // what the parent *is*.
   function chosenFor(row, byKey) {
     return row.parents.map((k) => {
       const r = byKey.get(k)
-      if (!r) return { key: k, label: String(k) }
-      // A deferred item's path is a marker nobody has set yet, not a value --
-      // showing it here is the same mistake as showing it on the row itself.
-      const label = r.kind === 'item' && r.deferred ? '— empty —' : r.label
-      return {
-        key: k,
-        label,
-        sub: r.kind === 'target' ? null : r.type,
-        draft: r.kind === 'draft',
-      }
+      if (!r) return { key: k, sub: null, draft: false }
+      return { key: k, sub: r.type, draft: r.kind === 'draft' }
     })
   }
 
@@ -278,6 +273,35 @@
     edit = { key: row.key, field }
   }
 
+  // Committing writes through to the server and then waits for `items` to come
+  // back around before the field trusts it again -- and that round trip is not
+  // instant. Clearing `edit` the moment the request goes out used to make the
+  // box show the *old* value for exactly that long: a visible revert-then-
+  // accept, on every path and type edit. `pending` is what the field shows
+  // instead until the prop actually catches up with what was sent.
+  let pending = $state(null) // {key, field, value}
+  const pendingFor = (row, field) =>
+    pending?.key === row.key && pending.field === field ? pending.value : null
+
+  // The stand-in for a path nobody has set yet. Minted here rather than on the
+  // server for the same reason the field takes it optimistically at all: the
+  // point is not to make the caller wait on a round trip to see it. It is only
+  // ever compared by prefix, never parsed, so a plain uuid under the reserved
+  // root is enough -- `models/paths.py` mints the same shape server-side.
+  const DEFERRED_PREFIX = '/msm_deferred/'
+  const isDeferredPath = (p) => typeof p === 'string' && p.startsWith(DEFERRED_PREFIX)
+  const mintDeferredPath = () => `${DEFERRED_PREFIX}${crypto.randomUUID().replace(/-/g, '')}`
+
+  // What the path field shows: the live edit, then the optimistic value still
+  // in flight, then the registered value -- a deferred one (real or pending)
+  // rendering as the placeholder rather than the marker itself.
+  function pathView(row) {
+    if (editingRow(row, 'path')) return { value: draft, deferred: false }
+    const p = pendingFor(row, 'path')
+    if (p != null) return isDeferredPath(p) ? { value: '', deferred: true } : { value: p, deferred: false }
+    return { value: row.deferred ? '' : row.label, deferred: row.deferred }
+  }
+
   // Enter closes the field, and closing it unmounts the input, which fires blur
   // -- so both land here and without the guard every edit is sent twice, the
   // second one racing the first. Same trap as renaming the workflow itself.
@@ -285,17 +309,37 @@
     if (edit?.key !== row.key) return
     const field = edit.field
     edit = null
-    const next = draft.trim()
-    if (!next || next === wasValue(row, field)) return
+    let next = draft.trim()
+    if (field === 'path' && !next) {
+      // An emptied path is not "no change", it is "I don't have this yet" --
+      // and that is exactly what a deferred marker means. A row already
+      // deferred stays as it is; nothing was said.
+      if (row.deferred) return
+      next = mintDeferredPath()
+    } else if (!next || next === wasValue(row, field)) {
+      return
+    }
+    pending = { key: row.key, field, value: next }
     if (field === 'path') onrepoint?.(row.item, next)
     else onretype?.(row.item, next)
   }
 
+  // `items`/props are the only things that can retire a pending value: once the
+  // row the request touched actually reads back what was sent, there is nothing
+  // left for the optimistic value to cover for.
+  $effect(() => {
+    if (!pending) return
+    const caughtUp =
+      pending.field === 'path'
+        ? items.some((it) => it.path === pending.value)
+        : inputByKey.get(pending.key)?.type === pending.value
+    if (caughtUp) pending = null
+  })
+
   const setType = (row, v) =>
     row.kind === 'draft' ? ondraft?.(row.id, { dtype: v }) : ontarget?.(row.id, { type: v })
 
-  // An input that nothing takes would sit unused; an output nothing makes will
-  // not solve. Same list, different thing to warn about.
+  // An output nothing makes will not solve.
   const describeType = (row) =>
     counts
       ? (t) => {
@@ -347,7 +391,7 @@
       }}
     >
       <TypeSelect
-        value={editingRow(row, 'type') ? draft : (row.type ?? '')}
+        value={editingRow(row, 'type') ? draft : (pendingFor(row, 'type') ?? row.type ?? '')}
         options={typeOptions}
         placeholder="namespace::type"
         describe={describeType(row)}
@@ -472,6 +516,27 @@
   {/if}
 {/snippet}
 
+<!-- What a draft row holds -- a path or a literal value -- is a switch on the
+     row, not a choice made once when it was added. Two labelled halves, one of
+     them lit: a slider reads as one thing to flip, and a flip is exactly what
+     changing which fields the row shows underneath it is. -->
+{#snippet modeSwitch(row)}
+  <div class="modeswitch" role="group" aria-label="a path or a value">
+    <button
+      type="button"
+      class:on={row.draft.mode !== 'value'}
+      title="a path on disk"
+      onclick={() => ondraft?.(row.id, { mode: 'file' })}
+    >file</button>
+    <button
+      type="button"
+      class:on={row.draft.mode === 'value'}
+      title="a literal value"
+      onclick={() => ondraft?.(row.id, { mode: 'value' })}
+    >value</button>
+  </div>
+{/snippet}
+
 <div class="col" style="gap:10px">
   <h3>recipe</h3>
 
@@ -518,12 +583,13 @@
                  same reason the type box does: retyping it re-registers the
                  row on the server, and that has to wait for a blur, not fire
                  on every keystroke. -->
+            {@const pv = pathView(row)}
             <input
               class="grow mono"
-              value={editingRow(row, 'path') ? draft : row.deferred ? '' : row.label}
+              value={pv.value}
               spellcheck="false"
-              title={row.deferred ? 'not set yet' : EDITABLE}
-              placeholder={row.deferred ? '/data/sample_01.fastq.gz' : ''}
+              title={pv.deferred ? 'not set yet' : EDITABLE}
+              placeholder={pv.deferred ? '/data/sample_01.fastq.gz' : ''}
               onfocus={() => {
                 if (!editingRow(row, 'path')) startEdit(row, 'path')
               }}
@@ -538,9 +604,11 @@
               }}
             />
           {:else if row.draft.mode === 'value'}
+            {@render modeSwitch(row)}
             {@render sampleField(row, 'name', row.draft.name, columns.length ? '{sample}' : 'K12', false)}
             {@render sampleField(row, 'value', row.draft.value, 'GCF_000005845.2', false)}
           {:else}
+            {@render modeSwitch(row)}
             {@render sampleField(
               row,
               'path',
@@ -591,8 +659,6 @@
           <div class="notes row wrap small">
             {#if row.type && !info?.known}
               <span class="tag warn">not a type in this library</span>
-            {:else if info?.known && info.consumed === 0}
-              <span class="muted">nothing takes this — it would sit unused</span>
             {/if}
             {#if waiting}
               <span class="muted">waiting on a parent that is not registered yet</span>
@@ -603,23 +669,10 @@
     {/each}
 
     <div class="entry addrow">
-      <!-- One button, not two: a path and a value are the same kind of thing to
-           add, a row, and the choice between them is what the row is going to
-           hold rather than a different action to take. -->
-      <select
-        class="small"
-        aria-label="add an input"
-        value=""
-        onchange={(e) => {
-          const kind = e.currentTarget.value
-          e.currentTarget.value = ''
-          if (kind) onadd?.(kind)
-        }}
-      >
-        <option value="" disabled>+ an input</option>
-        <option value="file">a path</option>
-        <option value="value">a value</option>
-      </select>
+      <!-- One button, not a choice up front: a path and a value are the same
+           kind of thing to add, a row, and what it holds is a switch on the row
+           itself rather than a different action to take here. -->
+      <button class="small" onclick={() => onadd?.('input')}>+ an input</button>
       <span class="small muted">
         a row registers itself once it is complete; nothing is copied
       </span>
@@ -737,4 +790,22 @@
   /* narrow on purpose: it sits beside a field that wants the width, and what it
      holds is one short word at a time */
   .cols { flex: 0 0 auto; width: 4.5em; padding: 2px 2px; }
+
+  /* two labelled halves, one lit -- a slider read as one control to flip
+     rather than two buttons doing different things */
+  .modeswitch {
+    flex: 0 0 auto;
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .modeswitch button {
+    border: none;
+    background: none;
+    color: var(--muted);
+    padding: 2px 9px;
+    font-size: 11px;
+  }
+  .modeswitch button.on { background: var(--accent); color: var(--panel); }
 </style>
