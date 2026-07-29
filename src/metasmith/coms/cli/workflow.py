@@ -11,7 +11,9 @@ def register(subs):
     # Planning is its own top-level verb.
     p = subs.add_parser("plan", help="plan a workflow from samples to target types")
     p.add_argument("--data-library", required=True)
-    p.add_argument("--sample-type", required=True)
+    p.add_argument("--sample-type", default=None,
+                   help="split the library into one run per item of this type; "
+                        "omitted, everything in it is planned as a single sample")
     p.add_argument("--target-type", action="append", required=True, dest="target_types")
     p.add_argument("--transform-library", "-r", action="append", required=True,
                    dest="transform_libraries")
@@ -24,10 +26,16 @@ def register(subs):
 
     _stage = sp.add_parser("stage", help="compile DAG to Nextflow and transfer to agent")
     _stage.add_argument("agent")
-    _stage.add_argument("task_key")
+    _stage.add_argument("task_ref", metavar="TASK",
+                        help="task key in the workspace, or a path to a task bundle directory")
     _stage.add_argument("--on-exist", default="skip",
                         choices=["skip", "error", "clear", "update", "update_workflow", "update_data"])
-    _stage.set_defaults(func=lambda a: _rt.stage(a.agent, a.task_key, a.on_exist, a.workspace))
+    _stage.add_argument("--timeout", type=float, default=None, dest="idle_timeout",
+                        help="seconds an agent-side step may produce no output before "
+                             "staging gives up (default: METASMITH_IDLE_TIMEOUT, else 300)")
+    _stage.set_defaults(func=lambda a: _rt.stage(
+        a.agent, a.task_ref, a.on_exist, a.workspace, a.idle_timeout,
+    ))
 
     _run = sp.add_parser("run", help="launch a staged workflow")
     _run.add_argument("agent")

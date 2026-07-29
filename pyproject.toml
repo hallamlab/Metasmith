@@ -4,7 +4,17 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
 markers = [
-    "docker: tests requiring Docker daemon",
-    "nextflow: tests requiring Nextflow execution inside Docker",
-    "slow: tests that take more than 30 seconds",
+    "fast: <100ms, no I/O beyond tmp_path; the default dev loop (pytest -m fast)",
+    "slow: >30s or pulls real images / runs real shells",
+    "docker: requires Docker daemon",
+    "nextflow: requires Nextflow execution inside Docker",
+    "e2e_virtual: end-to-end via virtual_runtime / contract_runtime (no Docker, no JVM); CI smoke gate",
+    "e2e_docker: end-to-end via real Nextflow + Docker; opt-in",
+    "e2e_agentic: end-to-end via opencode/claude driver; opt-in, model-billable",
+    "requires_ssh_localhost: ssh-to-self target must be reachable",
+    "requires_docker: docker CLI + daemon must be reachable",
+    "requires_apptainer: apptainer CLI must be available",
+    "requires_docker_dev_image: ./dev.sh -bd must have produced quay.io/hallamlab/metasmith:<tag>",
+    "network: requires LIVESHELL_REMOTE_HOST (ssh-reachable host) env var",
+    "gui: the web GUI's own suite -- the inner loop while working on it (dev.sh -tg)",
 ]

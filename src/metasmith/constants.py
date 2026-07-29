@@ -8,6 +8,18 @@ USER = "hallamlab" # github id
 GIT_URL = f"https://github.com/{USER}/{NAME}"
 SHORT_SUMMARY = "Automated generation of workflows for Nextflow executed using agents"
 
+# Where a release ends up, and where it is documented. The GUI links these from
+# its header, so they live here rather than being retyped in the frontend.
+DOCS_URL = f"https://{NAME}.readthedocs.io/en/latest/index.html"
+CONDA_URL = f"https://anaconda.org/{USER}/{NAME}"
+CONTAINER_URL = f"https://quay.io/repository/{USER}/{NAME}"
+
+# The standard library of data types, transforms, and resources. Both `msm lab`
+# and `msm gui` clone this into the working directory; there is no configuration
+# for it, so this is the single place the URL is written down.
+STDLIB_NAME = "MetasmithLibraries"
+STDLIB_URL = f"https://github.com/{USER}/{STDLIB_NAME}.git"
+
 _cli_call = "metasmith.coms.cli:main"
 ENTRY_POINTS = [
     f"metasmith={_cli_call}",
@@ -68,6 +80,11 @@ class AgentPaths:
     # what runtime the agent is. Same split, and same file-shaped seam, as the
     # GPU manifest above.
     ENV_MANIFEST = "workflow.env.json"
+    # Nextflow's own `-with-trace` table, one row per task attempt. It is the
+    # only per-step record that survives `rm -rf work/`, and the only one that
+    # reports an exit code, so every consumer asking "which steps died" reads
+    # this rather than scraping the log.
+    NXF_TRACE_FILE = "nxf_trace.tsv"
 
     @classmethod
     def to_staged(cls, root: Path|None=None):

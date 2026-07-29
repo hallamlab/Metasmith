@@ -395,6 +395,117 @@ def _manifest_name_for_target(target) -> str:
     return f"{spec}.{target.instance.dtype.key}.{target.instance.instance_id}.json"
 
 
+def _read_hit_decisions(workspace: Path) -> dict[int, dict]:
+    """Probe cache.sqlite for each step's cache_key from workflow.step_*.meta.
+
+    Mirrors the codegen path's compile-time probe: a step is "hit" when
+    its meta file declares ``cacheable true`` AND the cache_key resolves
+    to an entry whose output_root is still on disk. The virtual nextflow
+    runtime uses this to skip the bootstrap call entirely and emit the
+    cached files as if they had just been produced — the symmetric pin
+    of the synthetic ``Channel.of(...)`` path that real Nextflow uses.
+    """
+    home = Path(os.environ.get(HOME_ENV, str(AgentPaths.HOME_ROOT)))
+    cache_root = home / "task_cache"
+    if not cache_root.exists():
+        return {}
+    if os.environ.get("METASMITH_CACHE", "1").lower() in {
+        "0", "false", "off", "no"
+    }:
+        return {}
+    meta_specs: dict[int, dict] = {}
+    for meta_path in sorted(workspace.glob("workflow.step_*.meta")):
+        try:
+            order = int(meta_path.stem.rsplit("_", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        cache_key_hex: str | None = None
+        cacheable = True
+        for line in meta_path.read_text().splitlines():
+            if line.startswith("cache_key "):
+                cache_key_hex = line.split(" ", 1)[1].strip()
+            elif line.startswith("cacheable "):
+                cacheable = line.split(" ", 1)[1].strip().lower() == "true"
+        if cache_key_hex is None:
+            continue
+        meta_specs[order] = {
+            "cache_key": bytes.fromhex(cache_key_hex),
+            "cacheable": cacheable,
+        }
+    if not meta_specs:
+        return {}
+    from ..caching.store import CacheStore
+
+    hits: dict[int, dict] = {}
+    store = CacheStore.open(cache_root)
+    try:
+        for order, spec in meta_specs.items():
+            if not spec["cacheable"]:
+                continue
+            entry = store.probe(spec["cache_key"])
+            if entry is None or not store.files_exist(entry):
+                continue
+            hits[order] = {
+                "cache_key": spec["cache_key"],
+                "output_dir": entry.output_root / "out",
+            }
+            store.touch(spec["cache_key"])
+    finally:
+        store.close()
+    return hits
+
+
+def _populate_hit_outputs(
+    step,
+    hit: dict,
+    lineage_by_instance: dict[str, dict[str, list[int]]],
+    produced_by_dep: dict[str, list],
+) -> None:
+    """Build produced_by_dep + lineage_by_instance from a cached step's outputs.
+
+    The cached output directory holds per-branch files matching the
+    ``1-1-{branch+1}.*-{dtype_key}{ext}`` shape that virtual nextflow
+    emits at miss time. Group them by (branch, dep) and route each into
+    the corresponding produced DataInstance just as the miss path would.
+    """
+    output_dir: Path = hit["output_dir"]
+    cached_files = sorted(p for p in output_dir.glob("*") if p.is_file())
+
+    input_maps: list[dict[str, list[int]]] = []
+    for dep in step.transform.model.requires:
+        dep_insts = list(step.dependency_map.get(dep, []))
+        if not dep_insts:
+            continue
+        lineages = [
+            lineage_by_instance.get(inst.instance_id, _seed_lineage(inst))
+            for inst in dep_insts
+        ]
+        input_maps.append(_merge_lineage(lineages))
+    merged_inputs = _merge_lineage(input_maps)
+
+    for branch_idx, dep_group in enumerate(step.transform.model.produces):
+        for dep in dep_group:
+            insts = list(step.dependency_map.get(dep, []))
+            if not insts:
+                continue
+            out_inst = insts[0]
+            ext = out_inst.dtype.GetPreferredFileExtension()
+            suffix = f"-{out_inst.dtype.key}{ext}"
+            branch_prefix = f"1-1-{branch_idx + 1}."
+            matching = [
+                f for f in cached_files
+                if f.name.startswith(branch_prefix) and f.name.endswith(suffix)
+            ]
+            for fpath in matching:
+                curr = dict(merged_inputs)
+                curr[out_inst.dtype.key] = [hash15(str(fpath))]
+                curr = {k: sorted(set(v)) for k, v in curr.items()}
+                lineage_by_instance[out_inst.instance_id] = curr
+                produced_by_dep.setdefault(out_inst.dtype.key, []).append(
+                    (fpath.resolve(), curr, out_inst.instance_id)
+                )
+
+
 def cli_nextflow(argv: list[str]) -> int:
     write_trace({"type": "nextflow_call", "argv": argv})
 
@@ -417,9 +528,7 @@ def cli_nextflow(argv: list[str]) -> int:
 
     workspace = Path.cwd()
     output_root = (workspace / output_name).resolve()
-    manifests_dir = output_root / "_manifests"
     output_root.mkdir(parents=True, exist_ok=True)
-    manifests_dir.mkdir(parents=True, exist_ok=True)
 
     task = _load_task_from_workspace(workspace)
     bootstrap = Path(os.environ.get(HOME_ENV, str(AgentPaths.HOME_ROOT))) / "lib/msm_bootstrap"
@@ -433,7 +542,32 @@ def cli_nextflow(argv: list[str]) -> int:
     nxf_work = workspace / "nxf_work"
     nxf_work.mkdir(exist_ok=True)
 
+    # S3 — probe cache before walking steps. On hit, the step's outputs
+    # are sourced from <cache_root>/<key>/out/ and the executor never
+    # fires. Misses fall through to the existing bootstrap path and the
+    # post-exec promote (S5) deposits their outputs into the cache.
+    # The `_metasmith/trace.jsonl` rows for hits are written at compile
+    # time by `_compute_cache_decisions`; the executor only emits its
+    # own virtual-runtime trace event for diagnostics here.
+    hit_decisions = _read_hit_decisions(workspace)
+
     for step in task.plan.steps:
+        if step.order in hit_decisions:
+            hit = hit_decisions[step.order]
+            write_trace(
+                {
+                    "type": "cache_hit",
+                    "step": step.order,
+                    "step_name": step.transform.name,
+                    "cache_key": hit["cache_key"].hex(),
+                    "host": host,
+                }
+            )
+            _populate_hit_outputs(
+                step, hit, lineage_by_instance, produced_by_dep
+            )
+            continue
+
         group_total = max(1, len(step.group_by_instances))
         batch_size = max(1, int(step.transform.batch_size))
 
@@ -550,7 +684,7 @@ def cli_nextflow(argv: list[str]) -> int:
                             (fpath.resolve(), curr, out_inst.instance_id)
                         )
 
-    # Publish manifests for targets.
+    # Publish target outputs (lineage now rides on trace.jsonl).
     for target in task.plan.targets:
         dep_key = target.instance.dtype.key
         entries = produced_by_dep.get(dep_key, [])
@@ -559,24 +693,9 @@ def cli_nextflow(argv: list[str]) -> int:
 
         out_dir = output_root / target.name.replace(" ", "_")
         out_dir.mkdir(parents=True, exist_ok=True)
-        manifest_rows: list[list[str]] = []
-        for i, (src, lineage, _inst_id) in enumerate(entries):
+        for i, (src, _lineage, _inst_id) in enumerate(entries):
             dest = out_dir / f"{i + 1:04}_{src.name}"
             shutil.copy2(src, dest)
-            manifest_rows.append([json.dumps(lineage, separators=(",", ":")), str(dest)])
-
-        manifest = manifests_dir / _manifest_name_for_target(target)
-        with open(manifest, "w", encoding="utf-8") as f:
-            json.dump(manifest_rows, f)
-        write_trace(
-            {
-                "type": "manifest_written",
-                "target": target.name,
-                "dep_key": dep_key,
-                "count": len(manifest_rows),
-                "manifest": str(manifest),
-            }
-        )
 
     # Produce optional report files if requested.
     for k in ["-with-report", "-with-dag", "-with-timeline", "-with-trace"]:

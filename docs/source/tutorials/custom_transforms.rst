@@ -535,7 +535,7 @@ target :python:`ani::table`; the solver discovers the chain
     agent_home = Source.FromLocal(WORKSPACE/"msm_home")
     smith = Agent(
         home = agent_home,
-        runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
     )
 
     upstream_targets = TargetBuilder()

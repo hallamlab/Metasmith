@@ -71,7 +71,7 @@ The first cell of the Jupyter notebook loads the required elements from the Meta
     :linenos:
 
     from pathlib import Path
-    from metasmith.python_api import Agent, ContainerRuntime
+    from metasmith.python_api import Agent, Runtime
     from metasmith.python_api import DataTypeLibrary, DataInstanceLibrary, TransformInstanceLibrary
     from metasmith.python_api import Source, Logistics
     from metasmith.python_api import TargetBuilder, Resources, Size, Duration
@@ -117,7 +117,7 @@ Autocomplete is configured within Jupyter lab with the :python:`TAB` key.
     agent_home = Source.FromLocal(WORKSPACE/"msm_home")
     smith = Agent(
         home = agent_home,
-        runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
     )
 
     smith.Gen

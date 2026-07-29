@@ -51,7 +51,7 @@ We will instruct :python:`smith` to manage containers with :python:`DOCKER`.
     agent_home = Source.FromLocal(WORKSPACE/"msm_home")
     smith = Agent(
         home = agent_home,
-        runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
     )
 
     smith.Deploy()

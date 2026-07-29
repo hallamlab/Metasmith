@@ -1,7 +1,31 @@
 """`metasmith agent ...` subcommands."""
 from __future__ import annotations
 
+import json
+
 from ...ops import agent as _ops
+
+
+def _parse_params(entries: list[str]) -> dict | None:
+    """`NAME=VALUE` pairs, with VALUE given the type it looks like.
+
+    The same rule the web form uses: a value that reads as a JSON scalar
+    becomes that scalar and anything else stays a string, so `tries=3` is a
+    number and `partition=gpu` is not.
+    """
+    if not entries: return None
+    out = {}
+    for e in entries:
+        assert "=" in e, f"--param expects NAME=VALUE; got [{e}]"
+        k, _, v = e.partition("=")
+        k = k.strip()
+        assert k, f"--param has no name: [{e}]"
+        try:
+            parsed = json.loads(v)
+            out[k] = v if isinstance(parsed, (dict, list)) else parsed
+        except ValueError:
+            out[k] = v
+    return out
 
 
 def register(subs):
@@ -25,9 +49,17 @@ def register(subs):
     _save.add_argument("--runtime", default="DOCKER", choices=["DOCKER", "APPTAINER"])
     _save.add_argument("--setup", action="append", default=[], dest="setup_commands")
     _save.add_argument("--globus-uuid")
+    _save.add_argument("--preset", dest="default_preset",
+                       help="nextflow config preset to use when a run names none (default: local)")
+    _save.add_argument("--param", action="append", default=[], dest="default_params",
+                       metavar="NAME=VALUE",
+                       help="a param every run on this agent starts from, e.g. "
+                            "slurmAccount=st-you-1; repeatable")
     _save.set_defaults(func=lambda a: _ops.save_agent(
         a.path, a.home_uri, a.container, a.runtime,
         a.setup_commands or None, a.globus_uuid,
+        default_preset=a.default_preset,
+        default_params=_parse_params(a.default_params),
     ))
 
     _ping = sp.add_parser("ping", help="echo+hostname over SSH to the agent")
