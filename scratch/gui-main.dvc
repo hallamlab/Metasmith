@@ -1,0 +1,6 @@
+outs:
+- md5: 79cb51d5e666100984db08ae5023e7f6.dir
+  size: 153653
+  nfiles: 31
+  hash: md5
+  path: gui-main
