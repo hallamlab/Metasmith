@@ -105,7 +105,7 @@ metasmith from the shell environment.
 ```
 unset PYTHONPATH
 
-./dev.sh -brc        # one-time: build the rust cross-compile container
+./dev.sh -brc        # one-time: fetch the rust cross-compile container
 ./dev.sh -br         # build the relay binaries (all four arch/os targets)
 ./dev.sh --build-gui # build the frontend bundle (needs node; see below)
 ./dev.sh -bp         # build the pip wheel + sdist  (stamps build_hash.txt)
@@ -117,6 +117,14 @@ unset PYTHONPATH
 `-brc`/`-br` produce the relay binaries that get baked into the docker image;
 build them before `-bd`. `-bp` stamps `build_hash.txt`, which fixes the build
 hash that ties the wheel, image tag, and SIF to the exact source state.
+
+The cross-compile container is an **upstream** image
+(`joseluisq/rust-linux-darwin-builder`) and `-brc` now pulls it. It used to
+`docker build` a local Dockerfile over that same tag, which replaced the
+osxcross toolchain with a plain rust image; `-br` then failed both
+`*-apple-darwin` targets and left 28-byte stubs in `target/` for `-bd` to bake.
+`_assert_real_relays` catches that at `-bs`/`-ud`, not at `-bd` — so if `-br`
+reports a compile error, stop and fix it rather than continuing to `-bd`.
 
 `--build-gui` compiles the web GUI into `src/metasmith/gui/static/`. That
 directory is generated and never committed, so a fresh checkout has none, and
@@ -161,7 +169,7 @@ Then:
 |------|---------|----------|
 | Test | `pytest -m "not docker and not e2e_docker and not e2e_agentic and not nextflow and not network and not requires_*"` | green gate |
 | Bump | edit `src/metasmith/version.txt` + commit | new version |
-| Relay | `./dev.sh -brc` then `./dev.sh -br` | relay binaries |
+| Relay | `./dev.sh -brc` (pull) then `./dev.sh -br` | relay binaries — 4 targets, none stubs |
 | GUI | `./dev.sh --build-gui` (needs node) | `src/metasmith/gui/static/` |
 | Wheel | `./dev.sh -bp` | pip wheel + sdist, build hash |
 | Docker | `./dev.sh -bd` | local image `<version>-<hash>` |
