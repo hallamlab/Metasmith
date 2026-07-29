@@ -711,6 +711,14 @@ nothing has to be kept in step. The recipe shows an array row's count and never 
 made. It is deliberately *not* called a template: that word now means a stored workflow you
 start from, and the two were being confused in the same page.
 
+**Expansion is not a step a user takes — `generate_workflow` takes it, every solve.** There is
+no `/table/expand` route; `expand()` already clears what the previous call registered before it
+writes the new set (`clear()` is its own first line), so calling it unconditionally at the top of
+every generate keeps the registered items in exact step with the current sheet and rows with
+nothing to remember to redo and no state that can go stale between an edit and a solve. A
+workflow with no table, or no array row left, gets `clear()` instead, for the same reason: what a
+past expansion put down must not outlive the row that put it there.
+
 **A template is a starting point, and `+ workflow` is where you pick one.** Templates live at
 `<stdlib>/templates/<name>/` — a `spec.yml` plus the deferred input rows it names — and are
 authored in the libraries repo as a script that builds a Spec and solves it, so the build is

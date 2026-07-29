@@ -65,6 +65,29 @@
   const isArrayRow = (d) =>
     d.mode === 'value' ? hasToken(d.name) || hasToken(d.value) : hasToken(d.path)
 
+  // A field that names exactly one column and nothing else -- no surrounding
+  // path, no second token -- is not a pattern to type, it is a choice from a
+  // list. `wholeToken` is the whole-string form of the same `{col}` syntax
+  // `columnPicker` splices into the middle of one; the two agree because
+  // `expand()` on the server reads both the same way, as a token to substitute.
+  const WHOLE_TOKEN = /^\{([^{}]*)\}$/
+  const wholeToken = (s) => WHOLE_TOKEN.exec(String(s ?? '').trim())?.[1] ?? null
+
+  // A field a dropdown would otherwise own, held open as free text -- typing a
+  // pattern like `/data/{sample}_R1.fq.gz` around a token needs the field
+  // back. Keyed per row and field so switching one back does not touch
+  // another drawn from the same set of columns.
+  let freeform = $state(new Set())
+  const fieldKey = (row, field) => `${row.key}::${field}`
+  const isFreeform = (row, field) => freeform.has(fieldKey(row, field))
+  const setFreeform = (row, field, on) => {
+    const k = fieldKey(row, field)
+    const next = new Set(freeform)
+    if (on) next.add(k)
+    else next.delete(k)
+    freeform = next
+  }
+
   // The items a sheet registered are not rows of this recipe. They are in the
   // library and in the plan, and two hundred of them here would be two hundred
   // rows with nothing on them to decide -- the array row carries the count.
@@ -103,6 +126,7 @@
       id: it.path,
       type: it.type_name,
       label: it.path,
+      deferred: !!it.deferred,
       parents: immediate.get(it.path) ?? [],
       item: it,
     })),
@@ -245,7 +269,10 @@
   const wasValue = (row, field) => (field === 'path' ? row.label : row.type)
 
   function startEdit(row, field) {
-    draft = wasValue(row, field)
+    // A deferred row's path is a marker, not a value to correct one character
+    // of -- offering it as the starting text would make "set the real path"
+    // read as "edit this one", when there is nothing in it worth keeping.
+    draft = field === 'path' && row.deferred ? '' : wasValue(row, field)
     edit = { key: row.key, field }
   }
 
@@ -385,7 +412,7 @@
         options={isTarget ? targetOptions(row) : inputOptions(row)}
         note={isTarget
           ? row.id === 0
-            ? 'the first output has nothing declared before it to come off'
+            ? null
             : 'an output can only come off one declared before it'
           : row.kind === 'item'
             ? 'a registered row can only descend from another registered one'
@@ -432,13 +459,78 @@
   {/if}
 {/snippet}
 
+<!-- A field that names one column and nothing else: a choice from the sheet's
+     own columns, not a string to type -- which is what a sample table attached
+     is *for*. A field around a token in a longer pattern (a path with a column
+     in the middle of it) is still free text with `columnPicker` to insert into,
+     since a dropdown cannot represent that shape at all. -->
+{#snippet sampleField(row, field, value, placeholder, mono)}
+  {@const col = wholeToken(value)}
+  {#if columns.length && col !== null && !isFreeform(row, field)}
+    <select
+      class="grow{mono ? ' mono' : ''}"
+      aria-label={`${field}, a column of the attached sheet`}
+      value={col}
+      onchange={(e) => ondraft?.(row.id, { [field]: `{${e.currentTarget.value}}` })}
+    >
+      {#each columns as c}<option value={c}>{c}</option>{/each}
+    </select>
+    <button
+      class="star"
+      title="type a pattern around a column instead of naming one plainly"
+      onclick={() => setFreeform(row, field, true)}
+    >pattern</button>
+  {:else}
+    <input
+      class="grow{mono ? ' mono' : ''}"
+      id={fieldId(row, field)}
+      {value}
+      {placeholder}
+      spellcheck="false"
+      oninput={(e) => ondraft?.(row.id, { [field]: e.currentTarget.value })}
+      onblur={() => {
+        oncommit?.()
+        setFreeform(row, field, false)
+      }}
+    />
+    {@render columnPicker(row, field)}
+  {/if}
+{/snippet}
+
 <div class="col" style="gap:10px">
-  <div class="spread">
-    <h3>recipe</h3>
-    <span class="small muted">{ownItems.length} in · {targets.length} out</span>
-  </div>
+  <h3>recipe</h3>
 
   <div class="rows">
+    {#if tableStrip}
+      {@const arrayDrafts = drafts.filter(isArrayRow)}
+      <div class="heading samples small muted spread">
+        <span>samples</span>
+        <span class="count">
+          {columns.length ? `${rowCount} row(s) · ${columns.length} column(s)` : 'none attached'}
+        </span>
+      </div>
+      {@render tableStrip()}
+      {#if columns.length && arrayDrafts.length}
+        <!-- one run per row of *this* one -- the type it is given is what the
+             plan is split on. Bottom of the section, not beside each array
+             row: there is exactly one, so a picker per row would be the same
+             choice offered N times with N-1 wrong answers. -->
+        <div class="row wrap indexpick small">
+          <span class="muted">sample index</span>
+          <select
+            aria-label="which row says what a sample is"
+            value={arrayDrafts.find((d) => d.index)?.id ?? ''}
+            onchange={(e) => onindex?.(e.currentTarget.value || null)}
+          >
+            <option value="">— none — one run over everything</option>
+            {#each arrayDrafts as d}
+              <option value={d.id}>{draftLabel(d)}</option>
+            {/each}
+          </select>
+        </div>
+      {/if}
+    {/if}
+
     <div class="heading in small muted spread">
       <span>inputs</span>
       <span class="count">
@@ -447,7 +539,6 @@
           : ''}
       </span>
     </div>
-    {#if tableStrip}{@render tableStrip()}{/if}
     {#if inputRows.length === 0}
       <p class="small muted pad">
         Nothing registered. Add the files and values you have — the planner works
@@ -473,6 +564,7 @@
                 bind:value={draft}
                 autofocus
                 spellcheck="false"
+                placeholder={row.deferred ? '/data/sample_01.fastq.gz' : ''}
                 onblur={() => commitEdit(row)}
                 onkeydown={(e) => {
                   if (e.key === 'Enter') commitEdit(row)
@@ -480,6 +572,16 @@
                 }}
               />
               <span class="small muted">enter to re-point</span>
+            {:else if row.deferred}
+              <!-- the marker a template ships instead of a path, and the whole
+                   point of a template: showing it as text would read as a real
+                   value someone forgot to fill in, when it is one nobody has
+                   set yet -->
+              <button
+                class="asfield grow truncate mono empty"
+                title={`not set yet — ${EDITABLE}`}
+                onclick={() => startEdit(row, 'path')}
+              >— empty —</button>
             {:else}
               <button
                 class="asfield grow truncate mono"
@@ -488,39 +590,16 @@
               >{row.label}</button>
             {/if}
           {:else if row.draft.mode === 'value'}
-            <input
-              class="grow"
-              id={fieldId(row, 'name')}
-              value={row.draft.name}
-              placeholder={columns.length ? '{sample}' : 'K12'}
-              spellcheck="false"
-              oninput={(e) => ondraft?.(row.id, { name: e.currentTarget.value })}
-              onblur={() => oncommit?.()}
-            />
-            {@render columnPicker(row, 'name')}
-            <input
-              class="grow"
-              id={fieldId(row, 'value')}
-              value={row.draft.value}
-              placeholder="GCF_000005845.2"
-              spellcheck="false"
-              oninput={(e) => ondraft?.(row.id, { value: e.currentTarget.value })}
-              onblur={() => oncommit?.()}
-            />
-            {@render columnPicker(row, 'value')}
+            {@render sampleField(row, 'name', row.draft.name, columns.length ? '{sample}' : 'K12', false)}
+            {@render sampleField(row, 'value', row.draft.value, 'GCF_000005845.2', false)}
           {:else}
-            <input
-              class="grow mono"
-              id={fieldId(row, 'path')}
-              value={row.draft.path}
-              placeholder={columns.length
-                ? '/data/{sample}_R1.fastq.gz'
-                : '/data/sample_01.fastq.gz'}
-              spellcheck="false"
-              oninput={(e) => ondraft?.(row.id, { path: e.currentTarget.value })}
-              onblur={() => oncommit?.()}
-            />
-            {@render columnPicker(row, 'path')}
+            {@render sampleField(
+              row,
+              'path',
+              row.draft.path,
+              columns.length ? '/data/{sample}_R1.fastq.gz' : '/data/sample_01.fastq.gz',
+              true,
+            )}
           {/if}
 
           <span class="trail">
@@ -654,11 +733,6 @@
       <span class="small muted">a type you want out of this — the planner finds the way to it</span>
     </div>
   </div>
-
-  <p class="small muted">
-    Everything registered here is one run's worth of input. Removing a row
-    unregisters it; the file itself is left alone.
-  </p>
 </div>
 
 <style>
@@ -682,8 +756,10 @@
     letter-spacing: 0.06em;
     font-size: 11px;
   }
-  /* the outputs band is a seam mid-box, not a label at the top of one */
-  .heading.out { border-top: 3px solid var(--line); }
+  /* a band midway down the box is a seam, not a label at its top -- which one
+     that is shifts now that samples can lead, so it is structural rather than
+     pinned to `.out` */
+  .heading:not(:first-child) { border-top: 3px solid var(--line); }
   .heading .count { text-transform: none; letter-spacing: 0; }
   /* the border is on the entry rather than the row, so a row and the line of
      tags under it read as one thing rather than two */
@@ -719,6 +795,13 @@
     padding: 6px 10px;
   }
   .pad { padding: 8px 10px; margin: 0; }
+  .indexpick {
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-top: 1px solid var(--line);
+    background: var(--panel-2);
+  }
   /* the type field is a combobox, not a word. It used to fight the path for the
      width of one line; now it owns the detail line's first column instead. */
   .typecell { flex: 1 1 240px; min-width: 140px; max-width: 360px; }
@@ -742,6 +825,7 @@
     text-align: left;
   }
   .asfield:hover { border-color: var(--line); background: var(--panel-2); }
+  .asfield.empty { color: var(--muted); font-style: italic; }
   .type {
     display: block;
     max-width: 100%;

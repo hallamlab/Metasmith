@@ -417,7 +417,7 @@
         {#snippet row(item)}
           <div class="spread">
             <div class="grow truncate">
-              <div>{item.wf.name}</div>
+              <div>{item.wf.display_name || item.wf.name}</div>
               <div class="small muted">
                 {item.wf.planned
                   ? item.wf.success

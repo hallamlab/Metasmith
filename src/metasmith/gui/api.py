@@ -21,6 +21,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..agents import Spec, Template
 from ..models.dag_renderer import THEMES, NodeKind
+from ..models.paths import is_deferred
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
 from ..ops import data as op_data
@@ -1021,6 +1022,9 @@ def _workflow_summary(wf) -> dict:
     runs = p.list_runs(workflow=wf.name, include_archived=True)
     return {
         "name": wf.name,
+        # a cosmetic label, independent of the directory name a solved plan is
+        # keyed to -- see `commitRename` in WorkflowView.svelte
+        "display_name": wf.request.get("display_name"),
         "path": str(wf.path),
         "created_at": wf.request.get("created_at"),
         "archived_at": wf.archived_at,
@@ -1240,9 +1244,30 @@ def generate_workflow(name):
     resources = wf.request.get("resource_libraries") or found["resource_libraries"]
     lib_path = str(p.input_library_path(name))
     commit = found["commit"]
+    # Read here, in the request thread, not inside `_work` below: everything in
+    # this function runs on a job thread with no Flask app/request context, so
+    # it can only touch what was resolved before `_jobs().submit` -- the same
+    # reason `p`, `wf` and `lib_path` above are captured rather than re-derived.
+    table = op_samples.read_attached_table(wf.path)
+    rows = list(wf.request.get("input_drafts") or [])
 
     def _work(job):
         with LogCapture(job):
+            # A sample array row is a declaration, not yet a registered input --
+            # solving needs the real, one-per-sheet-row items `AsSamples` can
+            # split on, so this is where the sheet is read against the recipe's
+            # current rows and turned into them. Always, every solve, rather
+            # than behind a separate "expand" a user could forget to redo after
+            # editing a row or the sheet: `expand` clears what the last one
+            # registered before it writes the new set, so this can never leave
+            # two generations' worth of one sample sitting in the library
+            # together, and a workflow with no table or no array row at all
+            # just clears whatever an earlier one left.
+            if table is not None and any(op_samples.is_array_row(r) for r in rows):
+                op_samples.expand(lib_path, table, rows)
+            else:
+                op_samples.clear(lib_path)
+
             # a stale bundle from a previous generate must not outlive it: the
             # result the user sees and the bundle the CLI stages have to agree.
             stale_names = ("task.yml", "data", "transforms")
@@ -1479,6 +1504,10 @@ def get_inputs(name):
     }
     for item in info["items"]:
         item["array_id"] = from_array.get(item["path"])
+        # a template's rows point at the deferred marker, not a real file yet --
+        # the browser is not equipped to make sense of `/msm_deferred/<hex>` and
+        # should show nothing rather than that string
+        item["deferred"] = is_deferred(item["path"])
     info["expansion"] = {
         "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
         "row_count": record.get("row_count", 0),
@@ -1621,40 +1650,11 @@ def attach_table(name):
 
 @bp.delete("/workflows/<name>/table")
 def detach_table(name):
-    """Take the sheet away. What it registered stays until it is cleared -- the
-    two are separate gestures because one of them unregisters library items."""
+    """Take the sheet away. What it registered stays until the next solve --
+    `generate_workflow` re-syncs the registered items against the current
+    table and rows every time, so a detach with no table left just clears them
+    at that point rather than needing its own gesture."""
     return jsonify(op_samples.detach_table(_table_dir(name)))
-
-
-@bp.post("/workflows/<name>/table/expand")
-def expand_table(name):
-    """Register one item per (sample-array row x table row).
-
-    Runs as a job: minting a leaf id blake3-hashes every input file that exists,
-    so a two-hundred-sample sheet would otherwise be a click that hangs.
-    """
-    p = _project()
-    table = op_samples.read_attached_table(_table_dir(name))
-    assert table is not None, "no table is attached to this workflow"
-    rows = _drafts_of(name)
-    lib_path = str(p.input_library_path(name))
-
-    def _work(job):
-        with LogCapture(job):
-            from ..logging import Log
-
-            def _progress(done, total):
-                Log.Info(f"registered {done}/{total} rows")
-
-            return op_samples.expand(lib_path, table, rows, on_progress=_progress)
-
-    job = _jobs().submit("expand", f"expand {name}", _work, subject={"workflow": name})
-    return jsonify(job.summary()), 202
-
-
-@bp.post("/workflows/<name>/table/clear")
-def clear_table_expansion(name):
-    return jsonify(op_samples.clear(str(_project().input_library_path(name))))
 
 
 @bp.post("/workflows/<name>/inputs/types")
