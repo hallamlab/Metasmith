@@ -7,6 +7,17 @@ class Orchestrator {
     // with workflow.py's given-seed (SELF_ID_KEY).
     public static final String SELF_ID_KEY = "__self__"
 
+    // Reserved index keys the task reads and nothing downstream may see.
+    // FILES is the staged path per slot; PROV is the per-item index maps
+    // behind those paths, kept un-flattened so a protocol can ask which item
+    // of one grouped slot another descends from. Both are added on the way
+    // into a task and stripped on the way out (_debatch) -- leaving either in
+    // would propagate it through every descendant index forever and put a
+    // nested value into promoted shard manifests. Kept in lockstep with
+    // models/lineage.py's LinPayload.FILES_KEY / PROV_KEY.
+    public static final String FILES_KEY = "FILES"
+    public static final String PROV_KEY = "PROV"
+
     private Map index_history
     private Map child2parent
     private def one_null
@@ -123,7 +134,11 @@ class Orchestrator {
 
     private def combineIndexes(indexes) {
         def combined_index = [:]
-        def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) // reduce
+        // Reserved keys hold nested structures, not hash lists; unioning them
+        // would be meaningless. Unreachable today (they are stripped before
+        // anything re-enters here), but it makes "an index value is a list of
+        // hashes" true locally instead of true by argument elsewhere.
+        def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) - [FILES_KEY, PROV_KEY] // reduce
         for (key : keys) {
             // if any is missing, use the remainder
             // if remainder different, skip
@@ -493,8 +508,19 @@ class Orchestrator {
                 def (key, name, gg) = xx
                 // println(" . $by_name // $key // $name // $gg")
             }))
-            def common_index = this.combineIndexes(groups.collect(channel -> channel.collect(group -> group[0])).flatten())
+            // Per-item indexes, kept UN-flattened. combineIndexes unions and
+            // uniques these into one map, which is the right answer for the
+            // task's own lineage and destroys the only record of which item
+            // came from where. Built from the same `groups` in the same
+            // closure as `values` below, so PROV[s][i] describes values[s][i]
+            // by construction rather than by an ordering to maintain.
+            // Defensive copy: these maps are the ones _post handed out and are
+            // also held by index_history, and the task serialises them -- the
+            // shared-collection race the .view/formatMap trap is made of.
+            def per_item = groups.collect(channel -> channel.collect(group -> [:] + group[0]))
+            def common_index = this.combineIndexes(per_item.flatten())
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
+            common_index[PROV_KEY] = per_item
             return [common_index, *values]
         }))
     }
@@ -503,7 +529,7 @@ class Orchestrator {
         def streams = batch.collect(item -> {
             def index = [:]+item[0] // copy to avoid mutating shared state
             def values = item[1..-1]
-            index['FILES'] = values.collect(group -> group*.toString())
+            index[FILES_KEY] = values.collect(group -> group*.toString())
             return [index, *values]
         }).transpose()
         def indexes = streams[0]
@@ -538,7 +564,8 @@ class Orchestrator {
                 def is_batched = indexes instanceof List
                 indexes = is_batched ? indexes : [indexes]
                 indexes = indexes.collect(index -> {
-                    index.remove('FILES')
+                    index.remove(FILES_KEY)
+                    index.remove(PROV_KEY)
                     return index
                 })
                 bag = (bag instanceof List)? bag : [bag]

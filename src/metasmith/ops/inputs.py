@@ -22,10 +22,27 @@ Which row owns which manifest entry cannot be re-derived -- a deferred path is
 minted, not chosen -- so it is recorded beside the library, in the same
 server-owned file the sheet's expansion has always used. Server-owned for the
 same reason: the browser rewrites the request wholesale on nearly every edit.
+
+A **value row states no path at all**: the library names its own file, with a
+minted uuid. The name the user used to have to type only ever named a file
+nobody opens, and typing one had a cost nothing on the page explained -- a
+rename re-points the item, which re-mints its identity and silently loses its
+cache. Minting is subject to the same rule as a deferred path, for the same
+reason: once, then recorded, never re-derived.
+
+For an **array** value row the mint is per (row x grouping key), where the key
+is the sheet cells that row's `value` field actually names -- NOT per sheet row.
+Two sheet rows naming one pangenome are two samples of *one* pangenome, and that
+shared parent is how multiplicity is expressed here; a uuid per sheet row would
+quietly turn it into three pangenomes with one genome each. Keying on the cells
+rather than on the substituted text also means editing the template around a
+token rewrites contents without moving the path.
 """
 from __future__ import annotations
 
 import hashlib
+import json
+import uuid
 from pathlib import Path
 
 from ..models.libraries import DataInstanceLibrary
@@ -89,26 +106,44 @@ def literal_parents(row: dict) -> list[str]:
     return [str(p) for p in (row.get("parents") or []) if not str(p).startswith("#")]
 
 
+def mint_value_path() -> str:
+    """A fresh library-relative name for a value nobody has to type.
+
+    Minted once, at add time, and recorded beside the library thereafter --
+    never re-derived, for the reason ``mint_deferred_path`` gives: identity is a
+    function of path, so regenerating would hand the same workflow a different
+    task key every time it was opened.
+
+    Deliberately carries no type prefix and no extension. A retype is an
+    in-place manifest edit, and folding the type into the path would turn every
+    retype into a re-mint.
+    """
+    return uuid.uuid4().hex
+
+
 def row_identity(row: dict) -> str:
-    """What the row says it is: a value's name, or a path."""
+    """What the row says it is: a path, or -- for a value row written before the
+    library minted its own -- the name the user typed.
+
+    A value row states no path now; it is recorded. This is only how a row from
+    before that is matched to the item it already owns.
+    """
     if row.get("mode") == "value":
         return (row.get("name") or "").strip()
     return (row.get("path") or "").strip()
 
 
 def registerable(row: dict) -> bool:
-    """Whether this row has enough on it to be an input.
+    """Whether this row has enough on it to be an input: a type.
 
-    A type, and -- for a value row -- a name to hold it under. A *file* row with
-    no path is registerable and lands as a deferred input: "I will have one of
-    these" is a complete statement about a plan, it is what a template's rows
-    are, and the refusal belongs at stage rather than here.
+    Neither mode states a path. A *file* row with none lands as a deferred
+    input -- "I will have one of these" is a complete statement about a plan,
+    and the refusal belongs at stage. A value row's path is the library's to
+    mint, so it never had to say one either; requiring a non-empty *value*
+    instead would be worse than useless, since blanking the box would drop the
+    row out of `want`, delete its item, and re-mint the identity on retype.
     """
-    if not (row.get("dtype") or "").strip():
-        return False
-    if row.get("mode") == "value":
-        return bool((row.get("name") or "").strip())
-    return True
+    return bool((row.get("dtype") or "").strip())
 
 
 def assert_acyclic(rows: list[dict]):
@@ -148,7 +183,14 @@ def _desired(rows: list[dict]) -> dict[str, dict]:
         if r.get("mode") == "value":
             out[rid] = {
                 "rid": rid, "dtype": dtype, "mode": "value",
-                "path": Path((r.get("name") or "").strip()),
+                # The library owns a value's path and mints it. The row states
+                # none -- the same thing a deferred file row says, and for the
+                # same reason: whether this keeps the path it has or gets a
+                # fresh one is a question about the library, not about the row.
+                "path": None,
+                # ...except for a row written when a value was named by hand,
+                # which still carries that name. Believed once, by `_claim`.
+                "legacy": (r.get("name") or "").strip() or None,
                 "value": r.get("value") or "",
             }
         else:
@@ -178,11 +220,19 @@ def _claim(lib, want: dict[str, dict], prior: dict[str, str]) -> dict[str, Path]
             taken.add(p)
     spoken_for = {v for k, v in prior.items() if k in want} | taken
     for rid, spec in want.items():
-        if rid in held or spec["path"] is None:
+        if rid in held:
             continue
-        p = str(spec["path"])
+        # A value row states no path, so the only thing it can be matched by is
+        # the name it was written with before the library minted its own. That
+        # binding happens once here; from then on the record answers.
+        want_path = spec["path"] or (
+            Path(spec["legacy"]) if spec.get("legacy") else None
+        )
+        if want_path is None:
+            continue
+        p = str(want_path)
         if Path(p) in lib.manifest and p not in spoken_for:
-            held[rid] = spec["path"]
+            held[rid] = want_path
             taken.add(p)
     return held
 
@@ -190,7 +240,43 @@ def _claim(lib, want: dict[str, dict], prior: dict[str, str]) -> dict[str, Path]
 # -- the sheet ---------------------------------------------------------------
 
 
-def _array_plan(table: dict, array_rows: list[dict]) -> list[dict]:
+def _group_key(row: dict, record: dict) -> str:
+    """The sheet cells an array value row's `value` field reads.
+
+    This is what its minted path is keyed on, and the choice is load-bearing.
+    Keying per *sheet row* would give two rows naming one pangenome two separate
+    pangenome instances, turning a shared parent -- which is the entire way
+    multiplicity is expressed here -- into a fan-out of one. Keying on the cells
+    rather than on the substituted text means editing the template around a
+    token (`{p}` -> `pangenome: {p}`) rewrites contents without moving the path.
+    """
+    cols = sorted(op_samples.columns_in(row.get("value")))
+    return json.dumps([[c, record.get(c)] for c in cols], separators=(",", ":"))
+
+
+def _legacy_array_path(row, record, lib, prior_paths) -> str | None:
+    """Where the last expansion put a legacy array value row's item.
+
+    An array row is not in the record's `rows` map -- only its generation is
+    recorded, as a flat unkeyed list -- so a row written when a value was named
+    by hand has one place left to say where its items are: that name. Believed
+    only if the library still holds it and the last expansion put it there, and
+    recorded under the row's key from then on so this is never asked again.
+    """
+    legacy = (row.get("name") or "").strip()
+    if not legacy:
+        return None
+    try:
+        p = op_samples.substitute(legacy, record)
+    except KeyError:
+        return None
+    return p if p and p in prior_paths and Path(p) in lib.manifest else None
+
+
+def _array_plan(
+    table: dict, array_rows: list[dict], lib=None,
+    prior_minted: dict | None = None, prior_paths: set | None = None,
+) -> list[dict]:
     """One entry per (array row x sheet row), parents already resolved.
 
     A parent that is another array row resolves to that row's own item on this
@@ -199,12 +285,11 @@ def _array_plan(table: dict, array_rows: list[dict]) -> list[dict]:
     first and their paths are not known until they are.
 
     Two entries landing on the same path is a deliberate grouping, not a
-    collision -- `samples.validate` has already ruled out the case where they
-    disagree about what that shared name holds -- so the second one contributes
-    only its lineage.
+    collision -- for a value row it is the *only* way to say "these samples share
+    one of these" -- so the second one contributes only its lineage.
     """
     if not array_rows:
-        return [], {}
+        return [], {}, {}
     order = op_samples.order_array_rows(array_rows)
     by_id = {str(t["id"]): t for t in array_rows}
     plan: list[dict] = []
@@ -213,13 +298,28 @@ def _array_plan(table: dict, array_rows: list[dict]) -> list[dict]:
     # distinct path: "x 3 registered" is a statement about the sheet, and two
     # sheet rows sharing one instance are still two sheet rows
     generated: dict[str, list[str]] = {str(t["id"]): [] for t in array_rows}
+    prior_minted = prior_minted or {}
+    prior_paths = prior_paths or set()
+    # Rebuilt each call and carried forward only on a hit, so a key the sheet no
+    # longer produces drops out rather than growing the record without bound --
+    # and never resurrects a path whose file `Remove` left on disk.
+    minted: dict[str, dict[str, str]] = {str(t["id"]): {} for t in array_rows}
     for record in table.get("rows") or []:
         here: dict[str, str] = {}
         for row in order:
             rid = str(row["id"])
             is_value = row.get("mode") == "value"
-            key = row.get("name") if is_value else row.get("path")
-            path = op_samples.substitute(key, record)
+            if is_value:
+                gkey = _group_key(row, record)
+                path = minted[rid].get(gkey) or prior_minted.get(rid, {}).get(gkey)
+                if path is None:
+                    path = (
+                        _legacy_array_path(row, record, lib, prior_paths)
+                        or mint_value_path()
+                    )
+                minted[rid][gkey] = path
+            else:
+                path = op_samples.substitute(row.get("path"), record)
             parents = []
             for p in parent_ids(row):
                 if p in by_id:
@@ -243,7 +343,7 @@ def _array_plan(table: dict, array_rows: list[dict]) -> list[dict]:
             }
             seen[path] = entry
             plan.append(entry)
-    return plan, generated
+    return plan, generated, minted
 
 
 # -- the sync ----------------------------------------------------------------
@@ -289,7 +389,14 @@ def sync(
 
     want = _desired(plain_rows)
     held = _claim(lib, want, prior_rows)
-    plan, generated = _array_plan(table, array_rows) if array_rows else ([], {})
+    prior_minted = {
+        str(k): {str(kk): str(vv) for kk, vv in (v or {}).items()}
+        for k, v in (record.get("minted") or {}).items()
+    }
+    plan, generated, minted = (
+        _array_plan(table, array_rows, lib, prior_minted, prior_array)
+        if array_rows else ([], {}, {})
+    )
 
     keep = set(held.values())
     wanted_array = {e["path"] for e in plan}
@@ -331,6 +438,19 @@ def sync(
     for rid, spec in want.items():
         at = held.get(rid)
         if at is None:
+            continue
+        if spec["mode"] == "value":
+            # The library owns this path and never moves it: `at` is either what
+            # the record remembered or what was minted for it, and re-pointing
+            # would re-mint the identity hanging off it for nothing. The one
+            # exception is a path the library cannot own at all -- what a row
+            # switched over from file mode leaves behind. Giving that up matters:
+            # `lib.location / at` with an absolute `at` discards the left side,
+            # so a deferred path would be written at the filesystem root.
+            if at.is_absolute():
+                op_data.remove_item(library_path, str(at), save=False, lib=lib)
+                del held[rid]
+                changed = True
             continue
         to = spec["path"]
         if to is None:
@@ -376,7 +496,7 @@ def sync(
         changed = True
         if spec["mode"] == "value":
             out = op_data.add_value(
-                library_path, str(spec["path"]), spec["value"], spec["dtype"],
+                library_path, mint_value_path(), spec["value"], spec["dtype"],
                 save=False, lib=lib,
             )
         else:
@@ -450,6 +570,10 @@ def sync(
         "rows": dict(sorted(mapping.items())),
         "paths": made,
         "generated": generated,
+        # Per array value row, grouping key -> the path minted for it. Without
+        # this the mint is not a mint but a re-roll on every solve, and every
+        # sheet item loses its identity (and its cache) each time it is opened.
+        "minted": minted,
         "row_count": len(table.get("rows") or []) if table is not None else 0,
         "columns": list(table.get("columns") or []) if table is not None else [],
     }
@@ -506,11 +630,10 @@ def _problems(lib, want, held, plan, rows, table, array_rows, doomed) -> list[st
             lib.GetType(spec["dtype"])
         except (AssertionError, ValueError, KeyError):
             problems.append(f"[{spec['dtype']}] is not a type in this library")
-        if spec["mode"] == "value" and "/" in str(spec["path"]):
-            problems.append(
-                f"[{spec['path']}] is a value's name, which is a filename in the "
-                f"library -- it cannot hold a slash"
-            )
+        # The no-slash guard that used to live here is gone with the name it
+        # guarded: a value's path is minted, so there is no user input to
+        # sanitise. Every guard below short-circuits on `path is None`, which is
+        # what a value row now always states, so they are file-row guards now.
         if (
             spec["mode"] != "value"
             and spec["path"] is not None
@@ -632,7 +755,11 @@ def adopt(library_path: str, rows: list[dict], record: dict | None = None) -> di
             row = {"id": rid, "mode": "file", "path": "", "name": "", "value": "",
                    "dtype": dtype, "parents": []}
         elif value is not None:
-            row = {"id": rid, "mode": "value", "path": "", "name": s, "value": value,
+            # No name: the row is bound to this item by the record written
+            # below, not by restating the path on the row. So a value adopted
+            # from a library that named its files keeps that filename forever,
+            # invisibly, and nothing is re-minted.
+            row = {"id": rid, "mode": "value", "path": "", "name": "", "value": value,
                    "dtype": dtype, "parents": []}
         else:
             row = {"id": rid, "mode": "file", "path": s, "name": "", "value": "",

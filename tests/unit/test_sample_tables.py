@@ -33,9 +33,18 @@ def _library(tmp_path: Path) -> Path:
     return path
 
 
+def _ids(lib_path) -> dict[str, str]:
+    """{path: instance_id} — what a re-mint would change and a re-expand must not."""
+    lib = DataInstanceLibrary.Load(lib_path)
+    return {
+        str(p): lib._resolve_instance_meta(p, dtype)["instance_id"]
+        for p, dtype in lib.manifest.items()
+    }
+
+
 def _rows(**over) -> list[dict]:
     rows = [
-        {"id": "a", "mode": "value", "name": "{sample}.id", "value": "{sample}",
+        {"id": "a", "mode": "value", "value": "{sample}",
          "dtype": "mock::marker", "parents": []},
         {"id": "b", "mode": "file", "path": "/data/{fwd}",
          "dtype": "mock::fwd", "parents": ["#a"]},
@@ -158,14 +167,20 @@ def test_expand_registers_one_item_per_array_row_per_sheet_row(tmp_path):
     assert out["counts"] == {"a": 2, "b": 2, "c": 2}
 
     lib = DataInstanceLibrary.Load(lib_path)
-    assert {str(p) for p in lib.manifest} == {
-        "S1.id", "S2.id", "/data/a_R1.fq", "/data/a_R2.fq",
-        "/data/b_R1.fq", "/data/b_R2.fq",
+    paths = {str(p) for p in lib.manifest}
+    # the file rows keep their spelled-out paths; the two markers are minted
+    assert {p for p in paths if p.startswith("/data/")} == {
+        "/data/a_R1.fq", "/data/a_R2.fq", "/data/b_R1.fq", "/data/b_R2.fq",
     }
-    # each row's reads name that row's marker, not the other one's
+    markers = sorted(p for p in paths if not p.startswith("/data/"))
+    assert len(markers) == 2 and all(len(m) == 32 for m in markers), markers
+    # each row's reads name that row's marker, not the other one's -- asserted
+    # by identity now that the marker has no name to assert on
     parents = {str(p): sorted(str(m.path) for m in ms) for p, ms in lib.parents.items()}
-    assert parents["/data/a_R1.fq"] == ["S1.id"]
-    assert parents["/data/b_R2.fq"] == ["S2.id"]
+    assert parents["/data/a_R1.fq"] == parents["/data/a_R2.fq"]
+    assert parents["/data/b_R1.fq"] == parents["/data/b_R2.fq"]
+    assert parents["/data/a_R1.fq"] != parents["/data/b_R1.fq"]
+    assert set(parents["/data/a_R1.fq"]) | set(parents["/data/b_R1.fq"]) == set(markers)
 
 
 def _grouped_table():
@@ -177,9 +192,9 @@ def _grouped_table():
 
 def _grouped_rows(**over) -> list[dict]:
     rows = [
-        {"id": "pan", "mode": "value", "name": "{pangenome}.pan", "value": "{pangenome}",
+        {"id": "pan", "mode": "value", "value": "{pangenome}",
          "dtype": "mock::marker", "parents": []},
-        {"id": "acc", "mode": "value", "name": "{accession}.acc", "value": "{accession}",
+        {"id": "acc", "mode": "value", "value": "{accession}",
          "dtype": "mock::fwd", "parents": ["#pan"]},
     ]
     for r in rows:
@@ -194,39 +209,73 @@ def test_expand_groups_rows_that_share_a_column_value(tmp_path):
     assert out["counts"] == {"pan": 3, "acc": 3}
 
     lib = DataInstanceLibrary.Load(lib_path)
-    assert {str(p) for p in lib.manifest} == {
-        "P1.pan", "P2.pan", "GCF_1.acc", "GCF_2.acc", "GCF_3.acc",
+    # 2 pangenomes + 3 accessions. A path minted per *sheet row* rather than per
+    # distinct pangenome would make this 6, silently: three pangenomes with one
+    # genome each, which plans fine and is the wrong science.
+    assert len(lib.manifest) == 5
+    by_value = {
+        (lib_path / p).read_text(): str(p)
+        for p in lib.manifest if not str(p).startswith("/")
     }
+    assert set(by_value) == {"P1", "P2", "GCF_1", "GCF_2", "GCF_3"}
     parents = {str(p): sorted(str(m.path) for m in ms) for p, ms in lib.parents.items()}
-    # both accessions under P1 parent to the *same* single P1.pan instance
-    assert parents["GCF_1.acc"] == ["P1.pan"]
-    assert parents["GCF_2.acc"] == ["P1.pan"]
-    assert parents["GCF_3.acc"] == ["P2.pan"]
+    # both accessions under P1 parent to the *same* single P1 instance
+    assert parents[by_value["GCF_1"]] == [by_value["P1"]]
+    assert parents[by_value["GCF_2"]] == [by_value["P1"]]
+    assert parents[by_value["GCF_3"]] == [by_value["P2"]]
 
 
-def test_validate_refuses_a_shared_name_with_disagreeing_values(tmp_path):
-    lib = _library(tmp_path)
+def test_a_rows_grouping_follows_the_columns_its_value_reads(tmp_path):
+    """The refusal this replaces cannot happen any more, and here is why.
+
+    It used to be possible for two sheet rows to agree on a value row's *name*
+    and disagree on its contents -- name and value were two independent
+    templates. There is no name now: the path is keyed on exactly the columns
+    the value reads, and `substitute` reads exactly those, so one key implies
+    one value by construction.
+
+    What is left is the useful half of that, which nothing asserted before:
+    widening the value to read a second column *is* how you say these are no
+    longer the same thing, and the grouping follows.
+    """
+    lib_path = _library(tmp_path)
     table = op_samples.parse_table(
         b"pangenome,accession\nP1,GCF_1\nP1,GCF_2\n", filename="s.csv",
     )
-    rows = _grouped_rows(pan={
-        # the pangenome's own value diverges even though its name does not
-        "value": "{pangenome}-{accession}",
-    })
-    problems = op_samples.validate(str(lib), table, rows)["problems"]
-    assert any("different values" in p["message"] for p in problems)
+    op_inputs.sync(str(lib_path), _grouped_rows(), table)
+    lib = DataInstanceLibrary.Load(lib_path)
+    # one shared pangenome + two accessions
+    assert len(lib.manifest) == 3
+    assert {(lib_path / p).read_text() for p in lib.manifest} == {"P1", "GCF_1", "GCF_2"}
+
+    # now the pangenome row reads the accession too, so the two sheet rows no
+    # longer name one pangenome -- two instances, and no problem reported
+    second = tmp_path / "second"
+    second.mkdir()
+    lib_path = _library(second)
+    rows = _grouped_rows(pan={"value": "{pangenome}-{accession}"})
+    assert op_samples.validate(str(lib_path), table, rows)["problems"] == []
+    op_inputs.sync(str(lib_path), rows, table)
+    lib = DataInstanceLibrary.Load(lib_path)
+    assert len(lib.manifest) == 4
+    assert {(lib_path / p).read_text() for p in lib.manifest} == {
+        "P1-GCF_1", "P1-GCF_2", "GCF_1", "GCF_2",
+    }
 
 
 def test_clear_then_reexpand_a_grouped_shape_round_trips(tmp_path):
     lib_path = _library(tmp_path)
     op_inputs.sync(str(lib_path), _grouped_rows(), _grouped_table())
+    before = {str(p) for p in DataInstanceLibrary.Load(lib_path).manifest}
     removed = op_inputs.sync(str(lib_path), [])["removed"]
-    assert set(removed) == {"P1.pan", "P2.pan", "GCF_1.acc", "GCF_2.acc", "GCF_3.acc"}
+    assert set(removed) == before
     assert DataInstanceLibrary.Load(lib_path).manifest == {}
 
     op_inputs.sync(str(lib_path), _grouped_rows(), _grouped_table())
-    assert {str(p) for p in DataInstanceLibrary.Load(lib_path).manifest} == {
-        "P1.pan", "P2.pan", "GCF_1.acc", "GCF_2.acc", "GCF_3.acc",
+    lib = DataInstanceLibrary.Load(lib_path)
+    assert len(lib.manifest) == 5
+    assert {(lib_path / p).read_text() for p in lib.manifest} == {
+        "P1", "P2", "GCF_1", "GCF_2", "GCF_3",
     }
 
 
@@ -243,9 +292,12 @@ def test_re_expanding_takes_back_exactly_what_it_put_down(tmp_path):
     assert out["row_count"] == 1
 
     lib = DataInstanceLibrary.Load(lib_path)
-    assert {str(p) for p in lib.manifest} == {
-        "/data/ref.db", "S9.id", "/data/z_R1.fq", "/data/z_R2.fq",
+    paths = {str(p) for p in lib.manifest}
+    assert {p for p in paths if p.startswith("/data/")} == {
+        "/data/ref.db", "/data/z_R1.fq", "/data/z_R2.fq",
     }
+    minted = [p for p in paths if not p.startswith("/data/")]
+    assert len(minted) == 1 and (lib_path / minted[0]).read_text() == "S9"
     # nothing is left naming a parent that is gone
     for path in lib.manifest:
         for meta in lib.parents.get(path, []):
@@ -258,3 +310,60 @@ def test_clear_unregisters_the_generation(tmp_path):
     removed = op_inputs.sync(str(lib_path), [])["removed"]
     assert len(removed) == 6
     assert DataInstanceLibrary.Load(lib_path).manifest == {}
+
+
+# -- the mint is a mint ------------------------------------------------------
+
+
+def test_reordering_the_sheet_changes_nothing(tmp_path):
+    """The whole point of keying on cells rather than on sheet position.
+
+    A record keyed by position would re-mint every item the moment someone
+    sorted their spreadsheet, and every downstream cache_key with it -- with
+    nothing on screen to say so.
+    """
+    lib_path = _library(tmp_path)
+    op_inputs.sync(str(lib_path), _grouped_rows(), _grouped_table())
+    before = _ids(lib_path)
+
+    reversed_sheet = op_samples.parse_table(
+        b"pangenome,accession\nP2,GCF_3\nP1,GCF_2\nP1,GCF_1\n", filename="s.csv",
+    )
+    out = op_inputs.sync(str(lib_path), _grouped_rows(), reversed_sheet)
+    assert out["changed"] is False
+    assert _ids(lib_path) == before
+
+
+def test_adding_a_sheet_row_mints_only_that_one(tmp_path):
+    lib_path = _library(tmp_path)
+    op_inputs.sync(str(lib_path), _grouped_rows(), _grouped_table())
+    before = _ids(lib_path)
+
+    bigger = op_samples.parse_table(
+        b"pangenome,accession\nP1,GCF_1\nP1,GCF_2\nP2,GCF_3\nP2,GCF_4\n",
+        filename="s.csv",
+    )
+    op_inputs.sync(str(lib_path), _grouped_rows(), bigger)
+    after = _ids(lib_path)
+    # P2 was already there, so only the new accession is new
+    assert set(before) < set(after)
+    assert len(after) == len(before) + 1
+    for path, iid in before.items():
+        assert after[path] == iid
+
+
+def test_editing_the_text_around_a_token_keeps_the_items(tmp_path):
+    """Contents change, paths and identities do not.
+
+    The payoff for keying on the columns a value reads rather than on the text
+    it produces: rewording a template is not a re-registration.
+    """
+    lib_path = _library(tmp_path)
+    op_inputs.sync(str(lib_path), _grouped_rows(), _grouped_table())
+    before = _ids(lib_path)
+
+    rows = _grouped_rows(pan={"value": "pangenome: {pangenome}"})
+    op_inputs.sync(str(lib_path), rows, _grouped_table())
+    assert _ids(lib_path) == before
+    lib = DataInstanceLibrary.Load(lib_path)
+    assert "pangenome: P1" in {(lib_path / p).read_text() for p in lib.manifest}

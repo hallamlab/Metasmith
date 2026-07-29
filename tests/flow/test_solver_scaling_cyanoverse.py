@@ -87,10 +87,13 @@ class TestSolverScalingCyanoverse:
         n = 21081
         inputs, lib_path = self._build_pangenome_lib(temp_dir, mlib, n=n)
 
-        # Container resource library — same shape as pairwise_ani.py.
-        # fastani.oci is required by the fastani transform contract.
-        containers = DataInstanceLibrary.Load(mlib / "resources" / "containers")
-        res_views = [DataInstanceLibraryView(containers)]
+        # Environment resource library — same shape as pairwise_ani.py.
+        # fastani's env is required by the fastani transform contract.
+        # (`resources/containers` was renamed to `resources/env` by the env
+        # migration; this kept passing off an untracked leftover on disk until
+        # a rebuild cleared it.)
+        envs = DataInstanceLibrary.Load(mlib / "resources" / "env")
+        res_views = [DataInstanceLibraryView(envs)]
 
         # Load the metagenomics transforms (fastani lives under taxonomy/).
         # The _metadata/index.yml sits at transforms/metagenomics/.

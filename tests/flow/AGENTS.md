@@ -73,6 +73,11 @@ Reuse: `src/metasmith/testing/{virtual_runtime.py, contract_runtime.py, plan_ora
 | LP3 | walk_ancestors(LP2 target A) excludes anything from LP2 target B's lineage | as LP2 with cross-check | `test_lineage_parents.py` |
 | LP4 | Solver rejects impossible lineage (parents={missing_type}) with PlanHint, not silent drop | parametrized | `test_lineage_parents.py` |
 | LP5 | WithDType retypes without changing instance_id (pinned in test_data_instance_identity.py); preserve | move from `tests/models/test_data_instance_identity.py` | `test_lineage_parents.py` |
+| LP6 | Each item of a grouped slot reaches the task with its OWN index map, aligned 1:1 with its file and carrying an id that distinguishes it — the union `group()` used to emit cannot | `root → {[label], [T1] → out}` collected at `group_by=root` | `test_grouped_provenance.py` |
+| LP7 | A protocol resolves N items against N items of a second grouped slot by ancestry, never by position — **real-channel**, since this tier carries a produced slot as its archetype (`sar` = 1) rather than materializing the fan-out | LP6 shape at N=3, both slots materialized | `tests/e2e/docker/test_orchestrator_exec.py` |
+| LP8 | `PROV` is task-scoped: stripped at `_debatch`, absent from every recorded invocation and every promoted shard | LP6 shape, post-run telemetry | `test_grouped_provenance.py` |
+
+`SourceOf`'s own semantics — the None/raise boundary, the two-slots-one-channel refusal, and the mispairing a positional zip produces — are unit-pinned in `tests/unit/test_context_provenance.py`; they are decisions, not data motion, and do not need a runtime.
 
 ## Axis 7 — Mixed cacheability
 

@@ -156,6 +156,15 @@ class LinPayload:
 
     VERSION: ClassVar[int] = LIN_PAYLOAD_VERSION
     FILES_KEY: ClassVar[str] = "FILES"
+    PROV_KEY: ClassVar[str] = "PROV"
+
+    # Keys the Orchestrator injects at task entry and strips at task exit.
+    # Neither is lineage: their values are not ancestry-hash lists, so anything
+    # that treats an entry as `{slot: [hash, ...]}` has to exclude them. That
+    # includes the cache -- `promote` captures `lineage_index` into a shard
+    # manifest and the cache-hit path renders it back into a generated `.nf`,
+    # where a nested value would stringify into silent garbage.
+    RESERVED_KEYS: ClassVar[frozenset[str]] = frozenset({"FILES", "PROV"})
 
     def Pack(self) -> dict:
         return {"v": self.v, "entries": [dict(m) for m in self.entries]}
@@ -199,9 +208,26 @@ class LinPayload:
         """Pull the Orchestrator-injected `FILES` value for one batch member."""
         return self.entries[member].get(self.FILES_KEY, [])
 
+    def provenance_groups(self, member: int) -> list[list[dict]]:
+        """Per-item index maps for one batch member, aligned 1:1 with `file_groups`.
+
+        `group()` builds this and `FILES` from one value in one closure, so
+        `provenance_groups(m)[s][i]` describes `file_groups(m)[s][i]` by
+        construction rather than by an ordering anyone has to maintain.
+
+        Empty when the producing runtime did not emit it -- the virtual runtime,
+        a direct run, the transform harness, or any step with no inputs. Absence
+        means "not captured", never "this file has no ancestors", and every
+        consumer has to treat the two differently.
+        """
+        return self.entries[member].get(self.PROV_KEY, [])
+
     def lineage_index(self, member: int) -> dict[str, list[int]]:
-        """Return one batch member's entries minus the special `FILES` key."""
-        return {k: v for k, v in self.entries[member].items() if k != self.FILES_KEY}
+        """Return one batch member's entries minus the Orchestrator's own keys."""
+        return {
+            k: v for k, v in self.entries[member].items()
+            if k not in self.RESERVED_KEYS
+        }
 
     FILE_ID_SEP: ClassVar[str] = "::"
 

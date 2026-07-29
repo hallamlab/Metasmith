@@ -2298,7 +2298,7 @@ SHEET = b"sample,asm\nS1,/data/a.fa\nS2,/data/b.fa\n"
 # the recipe's input rows as the browser holds them: a sample-array value row
 # with nothing above it, and an array file row descending from it
 ARRAY_ROWS = [
-    {"id": "idx", "mode": "value", "name": "{sample}.id", "value": "{sample}",
+    {"id": "idx", "mode": "value", "value": "{sample}",
      "dtype": "mock::reads", "parents": []},
     {"id": "asm", "mode": "file", "path": "{asm}",
      "dtype": "mock::assembly", "parents": ["#idx"]},
@@ -2366,7 +2366,10 @@ class TestSampleTable:
         _attach(client, name, sheet=b"sample,asm\nS9,/data/z.fa\n")
         _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
         paths = {i["path"] for i in client.get(f"/api/workflows/{name}/inputs").get_json()["items"]}
-        assert paths == {"S9.id", "/data/z.fa"}
+        # the value row's path is minted, so what is asserted is that the
+        # previous generation is gone and exactly one of each remains
+        assert "/data/z.fa" in paths and len(paths) == 2
+        assert not any(p.endswith(".id") for p in paths)
 
     def test_detach_leaves_what_was_registered(self, client):
         name = _make_workflow(client)
@@ -2757,25 +2760,27 @@ class TestShareWorkflows:
         assert [d["path"] for d in bound["drafts"]] == ["/data/{sample}.fa", "/home/me/one_off.fa"]
 
     def test_a_typed_in_value_travels_whole(self, client, elsewhere):
-        """A value row *is* its contents: a few lines someone typed, under a name
-        the recipe refers to. Blanking it would ship a nameless nothing."""
+        """A value row *is* its contents: a few lines someone typed.
+
+        The recipe refers to it by row id, not by a filename -- the library
+        names its own file and the sender's name for it is not the receiver's
+        business, so what has to survive the trip is the text.
+        """
         name = _make_workflow(client)
-        _put_rows(client, name, [_row(
-            "v", mode="value", name="read_pair.txt", value="left,right\n",
-        )])
+        _put_rows(client, name, [_row("v", mode="value", value="left,right\n")])
         body = _payload(client, "workflow", name)["body"]
         (row,) = body["drafts"]
-        assert row["name"] == "read_pair.txt" and row["value"] == "left,right\n"
+        assert row["value"] == "left,right\n"
         text = _payload(client, "workflow", name)["payload"]
         with elsewhere() as (other, root):
             got = other.post("/api/share/import", json={"payload": text}).get_json()
             (landed,) = _rows_of(other, got["name"])
-            assert landed["name"] == "read_pair.txt"
             assert landed["value"] == "left,right\n"
             # ...and the file it stands for is written when the library is built
             _finish(other, other.post(
                 f"/api/workflows/{got['name']}/generate", json={}).get_json())
-            f = Project(root).input_library_path(got["name"]) / "read_pair.txt"
+            lib = Project(root).input_library_path(got["name"])
+            (f,) = [x for x in lib.iterdir() if x.is_file() and len(x.name) == 32]
             assert f.read_text() == "left,right\n"
 
     def test_two_deferred_rows_stay_two_rows_across_the_wire(self, client, elsewhere):

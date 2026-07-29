@@ -59,6 +59,7 @@ from ...constants import AgentPaths
 from ...env import ContainerDef, Environment, Runtime
 from ...logging import Log
 from ..libraries import DataInstance, GPU_LABEL
+from ..lineage import LinPayload
 from ..paths import PathMap
 from ..solver import Endpoint
 from .grouping import expected_per_key
@@ -88,6 +89,13 @@ BIND_FILE = ".command.binds"
 # a length-1 list. Sending `index[0]` dropped every member after the first.
 LIN_ECHO_EXPR = (
     f"${{Orchestrator.JsonforEcho([v:{LIN_PAYLOAD_VERSION}, entries:index])}}"
+)
+
+# The Orchestrator's own index keys, as a Groovy list literal, for the generated
+# code that has to skip them. Interpolated from `LinPayload` for the same reason
+# the version above is: spelled twice, they drift.
+_RESERVED_KEYS_GROOVY = (
+    "[" + ", ".join(f"'{k}'" for k in sorted(LinPayload.RESERVED_KEYS)) + "]"
 )
 
 def _groovy_index_literal(index: dict) -> str:
@@ -468,6 +476,17 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 [d for g in step.transform.model.produces for d in g],
             )
         }
+        # The on-channel name each required slot's stream carries -- the same
+        # `used_archetypes` the `using_symbols` list is built from further down.
+        # Recorded rather than left for bootstrap to re-derive from its own
+        # instances: the name comes from `get_archetype`, and for a merged
+        # endpoint that returns a different instance than `insts[0]`, so
+        # re-deriving would be a second implementation of a merge decision only
+        # the compiler has the state to make.
+        slot_channels = {
+            d.key: a.dtype.key
+            for d, a in zip(step.transform.model.requires, used_archetypes)
+        }
         sample_arity = len(step.group_by_instances)
         step_meta_file = f"workflow.step_{step.order}.meta"
         cache_decision = cache_decisions.get(step.order)
@@ -475,6 +494,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f.write(f"din {json.dumps(dep_in, separators=(',',':'))}\n")
             f.write(f"dot {json.dumps(dep_out, separators=(',',':'))}\n")
             f.write(f"sar {json.dumps(structure_arity, separators=(',',':'))}\n")
+            f.write(f"slk {json.dumps(slot_channels, separators=(',',':'))}\n")
             f.write(f"par {sample_arity}\n")
             # Static per-step GPU declaration, surfaced to the protocol as
             # context.params["gpus"]. Only written when the transform asked
@@ -620,7 +640,12 @@ def prepare_nextflow(task, context: NextflowGenContext):
             '"""',
             'stub:',
             'def dt = new Random().nextFloat()*params.testSpread',
-            'def hash = "${index[0].sort().collectEntries { k, v -> [k, v.sort()] }}".md5()[0..11]', # 12 characters
+            # Reserved keys hold nested structures, so `v.sort()` throws on
+            # them. Names interpolated from LinPayload rather than typed, for
+            # the reason LIN_ECHO_EXPR is: a cross-language constant spelled
+            # twice is a desync waiting to happen.
+            f'def hash = "${{index[0].findAll {{ k, v -> !({_RESERVED_KEYS_GROOVY}.contains(k)) }}'
+            '.sort().collectEntries { k, v -> [k, v.sort()] }}".md5()[0..11]', # 12 characters
             f'"""',
             f'sleep $dt',
             f'touch {" ".join(mock_outputs)}',
@@ -764,6 +789,21 @@ def prepare_nextflow(task, context: NextflowGenContext):
         # parent — otherwise they were dropped pre-refactor, so keep dropping
         # them to hold join behaviour byte-identical.
         _all_have_parents = all(len(pi) > 0 for pi in _parent_indexes)
+        if not _all_have_parents and any(len(pi) > 0 for pi in _parent_indexes):
+            # All-or-nothing, so one unparented row silently costs every OTHER
+            # row of this input its lineage on the channel -- and with it any
+            # `SourceOf` answer downstream, with nothing failing anywhere. Say
+            # which rows did it, since the fix is to give them a parent.
+            _orphans = [
+                str(x.path) for x, pi in zip(to_write, _parent_indexes) if len(pi) == 0
+            ]
+            Log.Warn(
+                f"[{prod_name}]: {len(_orphans)} of {len(to_write)} rows declare "
+                f"no in-workflow parent, so parent lineage is dropped for ALL of "
+                f"them -- anything downstream asking which input one of these "
+                f"descends from will get no answer. Unparented: "
+                f"{', '.join(_orphans[:5])}{' ...' if len(_orphans) > 5 else ''}"
+            )
         _indexes = []
         for x, _pi in zip(to_write, _parent_indexes):
             _row = dict(_pi) if _all_have_parents else {}

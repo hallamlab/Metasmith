@@ -368,6 +368,17 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
         + [d for group in step.transform.model.produces for d in group]
     }
 
+    # Slot -> on-channel name. The real compiler takes this from the archetype
+    # `get_archetype` picked; here the dependency_map's own first instance is
+    # that archetype, since this runtime does no endpoint merging. Omitting a
+    # slot with no instances matches the real emitter, which zips against
+    # `used_archetypes`.
+    slot_channels = {
+        dep.key: insts[0].dtype.key
+        for dep in step.transform.model.requires
+        if (insts := step.dependency_map.get(dep, []))
+    }
+
     inp = ",".join(x.dtype.key for x in used)
     out = ";".join(",".join(x.dtype.key for x in group) for group in produced)
 
@@ -381,6 +392,7 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
         f.write(f"din {json.dumps(dep_in, separators=(',', ':'))}\n")
         f.write(f"dot {json.dumps(dep_out, separators=(',', ':'))}\n")
         f.write(f"sar {json.dumps(structure_arity, separators=(',', ':'))}\n")
+        f.write(f"slk {json.dumps(slot_channels, separators=(',', ':'))}\n")
         f.write(f"par {len(step.group_by_instances)}\n")
         f.write(f"inp {inp}\n")
         f.write(f"out {out}\n")
@@ -588,6 +600,7 @@ def cli_nextflow(argv: list[str]) -> int:
                 key_inst = group_insts[key_idx] if key_idx < len(group_insts) else None
                 lineage_entry: dict[str, Any] = {}
                 files: list[list[str]] = []
+                prov: list[list[dict]] = []
 
                 for dep in step.transform.model.requires:
                     dep_insts = list(step.dependency_map.get(dep, []))
@@ -603,8 +616,18 @@ def cli_nextflow(argv: list[str]) -> int:
                         for inst in selected
                     ]
                     input_maps.append(_merge_lineage(lineages))
+                    # The per-item maps the real Orchestrator keeps un-flattened
+                    # in `group()`. Emitted here so a protocol correlating two
+                    # grouped slots has a fast test at all -- without it the
+                    # only proof is a containerized run.
+                    prov.append([
+                        lineage_by_instance.get(inst.instance_id)
+                        or _seed_lineage(inst)
+                        for inst in selected
+                    ])
 
-                lineage_entry["FILES"] = files
+                lineage_entry[LinPayload.FILES_KEY] = files
+                lineage_entry[LinPayload.PROV_KEY] = prov
                 members.append(lineage_entry)
 
             _write_metadata_file(step, invocation_dir, members)

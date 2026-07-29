@@ -65,7 +65,7 @@
   const TOKEN = /\{[^{}]*\}/
   const hasToken = (s) => TOKEN.test(String(s ?? ''))
   const isArrayRow = (d) =>
-    d.mode === 'value' ? hasToken(d.name) || hasToken(d.value) : hasToken(d.path)
+    d.mode === 'value' ? hasToken(d.value) : hasToken(d.path)
 
   // A field that names exactly one column and nothing else -- no surrounding
   // path, no second token -- is not a pattern to type, it is a choice from a
@@ -101,8 +101,18 @@
 
   // A row has nothing to be called until it is filled in, and an empty string
   // in another row's lineage reads as a bug. Its type is the next best name.
+  // A value row has nothing it is *called*: the library names its file and that
+  // name is a uuid nobody types. What it is, is what was typed into it -- so a
+  // lineage line points at that, clamped, because a value is not a label and a
+  // read-pair descriptor is three lines long.
+  const firstLine = (s) => {
+    const t = String(s ?? '').trim()
+    const head = t.split('\n')[0]
+    return head.length > 40 ? `${head.slice(0, 40)}\u2026` : head
+  }
   const rowLabel = (d) =>
-    (d.mode === 'value' ? d.name : d.path) || (d.dtype ? `a new ${d.dtype}` : 'a new row')
+    (d.mode === 'value' ? firstLine(d.value) : d.path) ||
+    (d.dtype ? `a new ${d.dtype}` : 'a new row')
 
   let inputRows = $derived(
     rows.map((d) => ({
@@ -418,8 +428,11 @@
         <div class="row-item">
           {@render modeSwitch(row)}
           {#if row.row.mode === 'value'}
-            {@render sampleField(row, 'name', row.row.name, columns.length ? '{sample}' : 'K12', false)}
-            {@render sampleField(row, 'value', row.row.value, 'GCF_000005845.2', false)}
+            <!-- One field, not two. The library names its own file, so there is
+                 nothing here to call it; a token in the value is what makes the
+                 row a sample array, which is why the placeholder advertises one
+                 as soon as a sheet is attached. -->
+            {@render sampleField(row, 'value', row.row.value, columns.length ? '{sample}' : 'GCF_000005845.2', false)}
           {:else}
             {@render sampleField(
               row,

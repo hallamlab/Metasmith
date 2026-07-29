@@ -139,6 +139,9 @@ _MOCK_TYPE_PROPERTIES: dict[str, set[str]] = {
     "annotated": {"annotated"},
     "grouped": {"grouped"},
     "unfolded": {"unfolded"},
+    # A user-supplied name sitting between the root and the thing it names —
+    # the shape LP6-LP8 pair by ancestry rather than by position.
+    "label": {"label"},
     # 5-hop chain dtypes for build_5hop_dag_plan / build_linear_plan(n>=5).
     "h1": {"h1"},
     "h2": {"h2"},
@@ -470,6 +473,46 @@ def build_group_then_split_plan(tmp_path: Path) -> BuiltPlan:
         target_names=["unfolded"],
     )
     return BuiltPlan(plan=plan, data_library=samples, transform_libraries=[tr_lib])
+
+
+def build_labelled_collection_plan(
+    tmp_path: Path, n_samples: int = 3, shuffle: bool = False
+) -> BuiltPlan:
+    """root → label → assembly → [per-sample] → bam, collected at `group_by=root`.
+
+    Drives LP6-LP8. `shuffle` reverses the order the labels are registered in
+    relative to the assemblies, so that anything pairing the two groups by
+    position gets it wrong — the labels' arrival order and the bams' are then
+    deliberately unrelated.
+    """
+    types_path = _build_type_lib(tmp_path / "types.yml")
+    lib = DataInstanceLibrary(tmp_path / "labelled.xgdb")
+    lib.AddTypeLibrary(types_path, namespace="mock")
+    (lib.location / "root.json").write_text('{"id": "root"}', encoding="utf-8")
+    root = lib.AddItem(Path("root.json"), "mock::sample_metadata")
+
+    order = list(range(n_samples))
+    for i in order[::-1] if shuffle else order:
+        sid = f"sample_{i:02d}"
+        (lib.location / f"{sid}.label").write_text(f"name-of-{sid}", encoding="utf-8")
+        label = lib.AddItem(Path(f"{sid}.label"), "mock::label", parents=[root])
+        sdir = lib.location / sid
+        sdir.mkdir(parents=True, exist_ok=True)
+        (sdir / "assembly.txt").write_text(f">{sid}\nACGT\n", encoding="utf-8")
+        lib.AddItem(Path(f"{sid}/assembly.txt"), "mock::assembly", parents=[label])
+    lib.Save()
+
+    tr_lib = _build_transform_lib(
+        tmp_path / "tr", types_path, mt.labelled_collection()
+    )
+    plan = _generate_plan(
+        lib,
+        tr_lib,
+        sample_dtype="assembly",
+        target_props=[_MOCK_TYPE_PROPERTIES["merged"]],
+        target_names=["merged"],
+    )
+    return BuiltPlan(plan=plan, data_library=lib, transform_libraries=[tr_lib])
 
 
 def build_lineage_fork_plan(tmp_path: Path, parent_count: int = 2) -> BuiltPlan:

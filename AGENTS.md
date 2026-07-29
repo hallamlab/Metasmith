@@ -258,6 +258,28 @@ inputs a given output descends from is decided inside the task. Emitting a bare 
 warm run quietly computes less than the cold one. A shard that cannot supply an index is
 demoted to a miss rather than replayed.
 
+**Two grouped slots are paired by ancestry, never by position.** A collecting step receives each
+of its slots as an independently accumulated, independently deduped list in task-arrival order,
+so `InputGroup(a)[i]` and `InputGroup(b)[i]` are related only by luck — and the lists can even
+differ in length when a producer is dropped. `context.SourceOf(path, dep)` answers which item of
+`dep` a given item descends from, reading the per-item index each item arrived with. It answers
+`None` when uncaptured or unrelated and **raises** on more than one match: a produced file's
+index is its producing *task's*, so the answer is exact only when that task had one ancestor at
+that slot, and picking the first would be the mislabelling this exists to remove. Two slots of
+one dtype share a channel and are refused outright, because the wire genuinely cannot tell them
+apart — `Dependency.key` is a function of the property set, so they have already collapsed in
+every dict by the time anything asks.
+
+Three things make that work and are easy to break. The per-item maps ride the index under a
+reserved key (`PROV`, beside `FILES`) so the channel tuple arity never changes; they are stripped
+where the batch is undone, or they propagate into every descendant index forever and into
+promoted shard manifests; and the slot→channel mapping is **emitted by the compiler**, never
+re-derived, since the name comes from `get_archetype` and its merge decisions are compile-time
+state bootstrap does not have. A gate in codegen drops parent-refs from *every* row of an input
+unless all of them have an in-workflow parent, so one unparented row silently zeroes provenance
+for the whole set — it warns now, and that warning is the first thing to check when `SourceOf`
+returns `None` for everything.
+
 **The wire carries one lineage map per batch member, not one per task.** `LinPayload.entries`
 is a list, mirroring the list of indexes `Orchestrator._collateBatch` builds; collapsing it to
 a single map costs every member after the first, silently, with the unread files still staged
@@ -776,14 +798,33 @@ import) gets one row per item the first time anything reads it, once and never a
 that mark deleting a row could not be expressed — the item outlives the row until the next
 solve, and every read in between would put it back.
 
+**A value row states no path at all: the library mints one.** The name a user used to type only
+ever named a file nothing opens, and typing one carried a cost the page never explained — a
+rename re-points the item, re-minting its identity and silently losing its cache. So the path is
+a uuid, minted once and recorded, never re-derived, for the same reason a deferred path is. A row
+written before this keeps the name it has: `_claim` believes the record first, then the old name
+exactly once, then mints. Because an array row lives in the record's *generation list* rather
+than its row map, its legacy binding is a separate fallback — and the browser carries `name` as
+an inert passthrough for one release so that binding survives the first sync.
+
 **A sample table is a sheet plus one declared row per kind of input.** `ops.samples` parses a
 csv/tsv/excel upload (stored verbatim under a fixed stem, because the workflow directory *is*
-the task bundle root) and says what is wrong with it; the sync substitutes `{column}` tokens
-into one library item per (row × sheet row). A row holding a token is a **sample array**: one
-declaration standing for N items indexed by the sheet, not a second kind of row. The recipe
-shows an array row's count and never the items it made. It is deliberately *not* called a
-template: that word now means a stored workflow you start from, and the two were being confused
-in the same page.
+the task bundle root) and says what is wrong with it. A row carrying a `{column}` token — in its
+path, or in a value row's *value* — is a **sample array**: one declaration standing for N items
+indexed by the sheet, not a second kind of row. The recipe shows an array row's count and never
+the items it made. It is deliberately *not* called a template: that word now means a stored
+workflow you start from, and the two were being confused in the same page.
+
+**What an array row expands into is keyed on identity, not on sheet position.** A file row
+substitutes its path per sheet row; a value row has no path to substitute, so its mint is keyed
+on the sheet cells its `value` reads. That distinction is the whole of how multiplicity is
+expressed here: two sheet rows naming one pangenome are two samples of *one* pangenome, and a
+per-sheet-row key would turn that shared parent into three pangenomes holding one genome each —
+which plans fine, and is wrong. Keying on the cells rather than the text they produce also means
+rewording a template around a token rewrites contents without re-registering anything. Two
+entries landing on one path is therefore a deliberate grouping, and a value row can no longer
+disagree with itself about what a shared entry holds: one key implies one substituted value by
+construction, since `substitute` reads exactly the columns the key is built from.
 
 **A template is a starting point, and `+ workflow` is where you pick one.** Templates live at
 `<stdlib>/templates/<name>/` — a `spec.yml` plus the deferred input rows it names — and are

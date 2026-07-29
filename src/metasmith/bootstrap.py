@@ -115,6 +115,7 @@ def ExecuteStep(
     dep2output: list,
     params: dict,
     host_local: bool = False,
+    slot_channels: dict[str, str]|None = None,
 ) -> ExecutionResult:
     """Run a single workflow step's protocol against pre-bound inputs.
 
@@ -192,6 +193,16 @@ def ExecuteStep(
             dep.key: list(fnames)
             for dep, fnames in zip(ordered_input_deps, file_groups)
         }
+        # PROV rides the same positional shape as FILES and is built from one
+        # value in one closure with it, so the same zip routes it. Absent for a
+        # runtime that does not emit it (virtual, direct_run, the harness) and
+        # for any step with no inputs -- absent means "not captured", never
+        # "no ancestors".
+        prov_groups: list = batch_lineage.get(LinPayload.PROV_KEY, [])
+        prov_by_dep_key: dict[str, list] = {
+            dep.key: list(maps)
+            for dep, maps in zip(ordered_input_deps, prov_groups)
+        }
         for dep in ordered_input_deps:
             insts = input_by_dep.get(dep, [])
             if len(insts)==0:
@@ -208,10 +219,24 @@ def ExecuteStep(
                     if alt is not None:
                         miscoordinated.append((p.local, alt))
                 Log.Info(_shorten_home(f"        {_status(p)} [{_get_formatted_size(p.local)}] [{p.local}]"))
+            prov = prov_by_dep_key.get(dep.key, [])
+            if prov and len(prov) != len(input_group):
+                # Structural alignment gone wrong is worse than no alignment:
+                # a mispaired provenance answers confidently and wrongly, which
+                # is the failure this whole mechanism exists to remove. Drop it
+                # and say so, rather than let a reordering upstream turn into a
+                # silently mislabelled result.
+                Log.Warn(
+                    f"provenance arity [{len(prov)}] != input arity "
+                    f"[{len(input_group)}] for dep [{dep.key}]; dropping "
+                    "provenance for this slot rather than mispairing it"
+                )
+                prov = []
             g[dep] = ContextData(
                 input_group=input_group,
                 endpoint=e,
                 type_name=insts[0].dtype_name,
+                provenance=prov,
             )
         inputs.append(g)
     if missing_input:
@@ -240,7 +265,16 @@ def ExecuteStep(
                 break
         assert found, f"[{key}] not found in [{dep2output}]"
         if batch not in _hashes:
-            lin = lineages[batch]
+            # PROV only, NOT LinPayload.lineage_index(): FILES *is* folded into
+            # this hash today, and dropping it would rename every output file,
+            # which re-mints every file_instance_id and severs the link between
+            # existing shards and new runs. PROV's values are maps, so sorted()
+            # below raises on them -- this exclusion is what keeps the wire
+            # addition from failing every task in output naming.
+            lin = {
+                k: v for k, v in lineages[batch].items()
+                if k != LinPayload.PROV_KEY
+            }
             slin = {k:sorted(lin[k]) for k in sorted(lin.keys())}
             _, _hash = KeyGenerator.FromStr(json.dumps(slin), l=16)
             _hashes[batch] = _hash
@@ -253,6 +287,26 @@ def ExecuteStep(
         for line in agent.setup_commands:
             Log.Info(f"    {line}")
 
+    # Two slots of one type are `==` AND share a `.key` -- both derive from the
+    # property set -- so every dict in this area (including `din` and
+    # `files_by_dep_key`) has already collapsed them. Count over the requires
+    # LIST, which is the only place the duplication is still visible; counting
+    # the collapsed dict would report one and the refusal below would never
+    # fire.
+    _slot_channels = slot_channels or {}
+    slot_keys: dict[Dependency, str] = {}
+    _chans: list[str] = []
+    for dep in step.transform.model.requires:
+        chan = _slot_channels.get(dep.key)
+        if chan is None:
+            continue
+        slot_keys[dep] = chan
+        _chans.append(chan)
+    _seen: dict[str, int] = {}
+    for chan in _chans:
+        _seen[chan] = _seen.get(chan, 0) + 1
+    ambiguous_slots = {c for c, n in _seen.items() if n > 1}
+
     context = ExecutionContext(
         _inputs=inputs,
         _get_output_paths=_get_output_paths,
@@ -264,6 +318,8 @@ def ExecuteStep(
         # image), but it does carry the host's GPU flag configuration.
         _environment=Environment(image="", runtime=agent.runtime, gpu_args=list(agent.gpu_args)),
         params=params,
+        _slot_keys=slot_keys,
+        _ambiguous_slots=ambiguous_slots,
     )
     BREAK_LENGTH = 60
     Log.Info(f">>> executing")
@@ -484,6 +540,16 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
                 sar = json.loads(raw_meta["sar"])
             except json.JSONDecodeError:
                 Log.Warn("failed to parse sar (structural arity); skipping preflight")
+        # `slk` maps a slot to the on-channel name its stream carries. Written
+        # by the compiler, which is the only side that knows -- see the note at
+        # its emit site. Absent for a workspace staged before this existed, in
+        # which case provenance simply is not answerable and SourceOf says so.
+        slk: dict[str, str] = {}
+        if "slk" in raw_meta:
+            try:
+                slk = json.loads(raw_meta["slk"])
+            except json.JSONDecodeError:
+                Log.Warn("failed to parse slk (slot channels); provenance unavailable")
         if fmt >= 2 and "din" in raw_meta and "dot" in raw_meta:
             try:
                 dep_in_raw = json.loads(raw_meta["din"])
@@ -573,4 +639,5 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
             # nextflow, so the three path views must collapse exactly as they
             # do on the direct-run path.
             host_local=not agent_env.needs_relay,
+            slot_channels=slk,
         )

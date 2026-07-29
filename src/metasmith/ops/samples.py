@@ -6,17 +6,25 @@ as the sample type. What it has never had is a way to *say* that other than one
 `AddItem` call per sample per file. This module is that way: a table you already
 have, plus one declared input row per column, expanded into the library.
 
-A **sample array** is an ordinary input row whose path (or, for a value row, its
-name or value) holds `{column}` tokens: one declaration standing for N items,
+A **sample array** is an ordinary input row whose path -- or, for a value row,
+whose *value* -- holds `{column}` tokens: one declaration standing for N items,
 indexed by the sheet. It is never registered as it stands. Array rows wire into
 an arbitrary parent DAG the same way any other input row does -- a column with
 no parents, a column parented to another -- and every table row instances that
 whole DAG once. There is no privileged "index" column and no per-sample masking
 here: multiplicity (how many distinct pangenomes, how many distinct samples)
 falls out of ordinary lineage, the same way `group_by` resolves it at the
-transform level. Two rows that substitute to the same path share one instance
--- a deliberate grouping, not a collision -- so long as a value row agrees with
-itself about what that shared name holds.
+transform level. Two rows that substitute to the same thing share one instance
+-- a deliberate grouping, not a collision, and the only way to say "these
+samples share one of these".
+
+A value row has no path to substitute into: the library mints one, keyed on the
+columns that row's `value` reads. So the sharing above is decided by those
+columns, and a value row can no longer disagree with itself about what a shared
+entry holds -- one key implies one substituted value by construction, since
+`substitute` reads exactly the columns the key is built from. Widening the value
+to read a second column is how you say two sheet rows are no longer the same
+thing, and the grouping follows.
 
 (`AsSamples`, elsewhere in metasmith, masks a library by an index item's
 ancestors/descendants; it is a valid, separate, lower-level primitive that this
@@ -212,12 +220,35 @@ def columns_in(text: str | None) -> list[str]:
 
 
 def is_array_row(row: dict) -> bool:
-    return bool(columns_in(row.get("path")) or columns_in(row.get("name"))
-                or columns_in(row.get("value")))
+    # Mode-aware: a value row states no path and a file row has no value, so
+    # reading all three regardless would let a field the row does not use decide
+    # whether it fans out. `name` stays in the value arm only for a row written
+    # before the library minted its own path -- dropping it early would take
+    # back every item such a row already has.
+    if row.get("mode") == "value":
+        return bool(columns_in(row.get("value")) or columns_in(row.get("name")))
+    return bool(columns_in(row.get("path")))
 
 
 def substitute(text: str | None, record: dict[str, str]) -> str:
     return TOKEN.sub(lambda m: record[m.group(1).strip()], text or "")
+
+
+def row_label(row: dict) -> str:
+    """What to call a row in a message about it.
+
+    A value row is not called anything -- the library names its file and that
+    name is a uuid nobody typed. What it *holds* is the only thing a person
+    would recognise it by, so a clamped first line of that is the label.
+    """
+    if row.get("mode") == "value":
+        head = (row.get("value") or "").strip().splitlines()
+        text = head[0] if head else ""
+        if len(text) > 40:
+            text = text[:40] + "\u2026"
+    else:
+        text = (row.get("path") or "").strip()
+    return text or str(row.get("id"))
 
 
 def _fields_of(row: dict) -> list[tuple[str, str]]:
@@ -280,7 +311,7 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
 
     for t in array_rows:
         tid = str(t["id"])
-        label = (t.get("path") or t.get("name") or tid)
+        label = row_label(t)
         if not t.get("dtype"):
             problems.append(_problem(tid, f"[{label}] has no type"))
         for field, text in _fields_of(t):
@@ -324,6 +355,9 @@ def _plain_paths(rows: list[dict]) -> set[str]:
     for r in rows:
         if is_array_row(r) or not (r.get("dtype") or "").strip():
             continue
+        # A plain value row contributes nothing here: its path is minted, so it
+        # is not in the namespace a sheet row could collide with. Only a legacy
+        # row still names one, and that name is a real manifest entry.
         name = (r.get("name") if r.get("mode") == "value" else r.get("path")) or ""
         if name.strip():
             out.add(name.strip())
@@ -355,7 +389,7 @@ def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
     for i, record in enumerate(table.get("rows") or []):
         for t in array_rows:
             tid = str(t["id"])
-            label = (t.get("path") or t.get("name") or tid)
+            label = row_label(t)
             fields = dict(_fields_of(t))
             missing = [
                 c for text in fields.values() for c in columns_in(text)
@@ -367,10 +401,16 @@ def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
                     f"{', '.join(sorted(set(missing)))}, which [{label}] needs"
                 )))
                 continue
-            is_value = t.get("mode") == "value"
-            key = fields.get("name") if is_value else fields.get("path")
-            path = substitute(key, record)
-            value = substitute(fields.get("value"), record) if is_value else None
+            if t.get("mode") == "value":
+                # A value row states no path -- the library mints one, keyed on
+                # the cells this row's value reads. It cannot collide with a
+                # file row's path, with another value row's, or with anything
+                # already registered, so the whole path-collision story below
+                # simply does not apply to it. The empty-cell check above is
+                # what is left, and it is the useful one.
+                continue
+            path = substitute(fields.get("path"), record)
+            value = None
             if not path:
                 problems.append(_problem(tid, f"[{label}] comes out empty on row {i + 1}"))
             elif path in existing:
@@ -382,15 +422,10 @@ def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
                 other_tid, other_label, other_row, other_value = minted[path]
                 if other_tid == tid:
                     # the same declared column landing on the same path again is a
-                    # deliberate grouping -- rows sharing one name become one shared
-                    # instance. Only a value row can disagree with itself: two rows
-                    # naming the same thing but writing different content into it.
-                    if is_value and value != other_value:
-                        problems.append(_problem(tid, (
-                            f"[{label}] comes out as [{path}] on both row {other_row} "
-                            f"and row {i + 1}, but with different values -- rows "
-                            f"sharing a name must agree on what it holds"
-                        )))
+                    # deliberate grouping -- rows sharing one path become one
+                    # shared instance, which is how "these samples share one of
+                    # these" is said.
+                    pass
                 else:
                     problems.append(_problem(tid, (
                         f"[{label}] comes out as [{path}] on row {i + 1}, which is "

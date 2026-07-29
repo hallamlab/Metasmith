@@ -54,10 +54,17 @@ CACHE_KEY_VERSION = 3
 # v3: `entries` is a LIST of per-batch-member maps, matching the list of
 #     indexes `_collateBatch` builds. v2 carried a single map (`index[0]`),
 #     which silently discarded every member after the first.
+# v4: each member may carry `PROV` -- the per-item index maps, one per entry
+#     of `FILES`, kept un-flattened so a protocol can ask which item of one
+#     grouped slot another item descends from. Additive, but NOT compatible:
+#     a v3 parser hashes every value of the raw entry and dies on a nested
+#     one, and the `.nf` is written by the client's metasmith while bootstrap
+#     runs from the agent container's, so the two ends can be different
+#     builds. The bump turns that into a named refusal.
 #
 # The emitter interpolates this constant (`nextflow_codegen.LIN_ECHO_EXPR`)
 # rather than restating it, so emitter and parser cannot drift.
-LIN_PAYLOAD_VERSION = 3
+LIN_PAYLOAD_VERSION = 4
 
 
 def canonical_cbor(payload) -> bytes:

@@ -21,6 +21,7 @@ import pytest
 from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
 from metasmith.models.solver import Endpoint
 from metasmith.ops import inputs as op_inputs
+from metasmith.ops import samples as op_samples
 
 
 @pytest.fixture
@@ -135,28 +136,107 @@ def test_a_swap_is_refused_by_name(lib_path, tmp_path):
         op_inputs.sync(str(lib_path), rows)
 
 
-def test_a_value_row_is_written_and_moved_inside_the_library(lib_path):
-    """The one case where the file *is* the library's, so a move is right."""
-    rows = [row("v", mode="value", name="K12", value="GCF_000005845.2")]
-    op_inputs.sync(str(lib_path), rows)
-    assert (lib_path / "K12").read_text() == "GCF_000005845.2"
+def test_a_value_rows_path_is_minted_and_never_moves(lib_path):
+    """The library names its own file, and keeps that name.
 
-    rows[0]["name"] = "K12_MG1655"
-    op_inputs.sync(str(lib_path), rows)
-    assert not (lib_path / "K12").exists()
-    assert (lib_path / "K12_MG1655").read_text() == "GCF_000005845.2"
-    assert [str(p) for p in loaded(lib_path).manifest] == ["K12_MG1655"]
+    There is nothing for the user to type, and so nothing to retype: a rename
+    used to re-point the item, which re-mints its identity and silently costs
+    the cache -- a price nothing on the page mentioned.
+    """
+    rows = [row("v", mode="value", value="GCF_000005845.2")]
+    out = op_inputs.sync(str(lib_path), rows)
+    path = out["rows"]["v"]
+    assert len(path) == 32 and set(path) <= set("0123456789abcdef"), path
+    assert (lib_path / path).read_text() == "GCF_000005845.2"
+
+    before = ids(lib_path)
+    rows[0]["value"] = "GCF_000005845.3"
+    out = op_inputs.sync(str(lib_path), rows)
+    assert out["rows"]["v"] == path, "the mint is a mint, not a re-roll"
+    assert (lib_path / path).read_text() == "GCF_000005845.3"
+    assert ids(lib_path) == before
 
 
 def test_a_value_row_whose_contents_change_keeps_its_identity(lib_path):
     """Identity here is provenance, not bytes -- `fork` is the way to say new."""
-    rows = [row("v", mode="value", name="K12", value="one")]
-    op_inputs.sync(str(lib_path), rows)
+    rows = [row("v", mode="value", value="one")]
+    out = op_inputs.sync(str(lib_path), rows)
+    path = out["rows"]["v"]
     before = ids(lib_path)
     rows[0]["value"] = "two"
     op_inputs.sync(str(lib_path), rows)
-    assert (lib_path / "K12").read_text() == "two"
+    assert (lib_path / path).read_text() == "two"
     assert ids(lib_path) == before
+
+
+def test_two_value_rows_with_the_same_contents_are_two_items(lib_path):
+    """The guard against anyone turning the mint into a content hash.
+
+    Two rows are two inputs however alike they look; collapsing them would
+    flatten a fan-out into one.
+    """
+    rows = [row("a", mode="value", value="same"), row("b", mode="value", value="same")]
+    out = op_inputs.sync(str(lib_path), rows)
+    pa, pb = out["rows"]["a"], out["rows"]["b"]
+    assert pa != pb
+    assert len(set(ids(lib_path).values())) == 2
+
+
+def test_a_legacy_named_value_row_keeps_the_file_it_already_has(lib_path):
+    """A project written before the library minted its own paths.
+
+    Re-pathing it to a uuid would re-mint every instance_id at once, for no
+    visible benefit -- so the record is believed and nothing moves.
+    """
+    lib = loaded(lib_path)
+    lib.AddValue("K12", "GCF_000005845.2", "mock::assembly")
+    lib.Save()
+    op_samples.write_record(str(lib_path), {"adopted": True, "rows": {"v": "K12"}})
+
+    before = ids(lib_path)
+    out = op_inputs.sync(str(lib_path), [row("v", mode="value", value="GCF_000005845.2")])
+    assert out["rows"]["v"] == "K12"
+    assert ids(lib_path) == before
+
+
+def test_a_legacy_named_value_row_with_no_record_is_bound_once(lib_path):
+    """The torn-write fallback, doing double duty.
+
+    The row still carries the name it was written with; it is believed exactly
+    once, to find the item it already owns, and recorded from then on.
+    """
+    lib = loaded(lib_path)
+    lib.AddValue("K12", "GCF_000005845.2", "mock::assembly")
+    lib.Save()
+    before = ids(lib_path)
+
+    out = op_inputs.sync(
+        str(lib_path), [row("v", mode="value", name="K12", value="GCF_000005845.2")]
+    )
+    assert out["rows"]["v"] == "K12"
+    assert ids(lib_path) == before
+
+    # ...and once the browser stops sending the name, nothing moves.
+    out = op_inputs.sync(str(lib_path), [row("v", mode="value", value="GCF_000005845.2")])
+    assert out["rows"]["v"] == "K12"
+    assert ids(lib_path) == before
+
+
+def test_switching_a_deferred_row_to_a_value_stays_inside_the_library(lib_path):
+    """A value row states no path, and a deferred one is absolute.
+
+    `lib.location / <absolute>` discards the left side, so the deferred stand-in
+    has to be given up rather than carried into the value write -- otherwise the
+    file lands at the filesystem root.
+    """
+    rows = [row("a")]
+    op_inputs.sync(str(lib_path), rows)
+    rows[0].update(mode="value", value="x")
+    out = op_inputs.sync(str(lib_path), rows)
+    path = out["rows"]["a"]
+    assert not Path(path).is_absolute(), path
+    assert (lib_path / path).read_text() == "x"
+    assert not Path("/msm_deferred").exists()
 
 
 def test_a_file_row_cannot_be_library_owned(lib_path, tmp_path):
@@ -234,7 +314,9 @@ def test_a_row_that_goes_takes_its_item_with_it(lib_path, tmp_path):
 def test_an_incomplete_row_registers_nothing(lib_path, tmp_path):
     """A row with no type is a row someone is still filling in."""
     f = _file(tmp_path / "a.fa")
-    op_inputs.sync(str(lib_path), [row("a", f, dtype=""), row("v", mode="value", name="")])
+    op_inputs.sync(
+        str(lib_path), [row("a", f, dtype=""), row("v", mode="value", dtype="", value="x")]
+    )
     assert loaded(lib_path).manifest == {}
 
 
@@ -353,7 +435,10 @@ def test_adoption_makes_one_row_per_item(lib_path, tmp_path):
     assert by_type["mock::assembly"]["path"] == str(a)
     # a library-owned file is a value: its contents are the row
     assert by_type["mock::reads"]["mode"] == "value"
-    assert by_type["mock::reads"]["name"] == "K12"
+    # the row is bound to the item by the record, not by restating its path, so
+    # an adopted value keeps whatever filename it arrived with, invisibly
+    assert by_type["mock::reads"]["name"] == ""
+    assert out["record"]["rows"][by_type["mock::reads"]["id"]] == "K12"
     assert by_type["mock::reads"]["value"] == "GCF_000005845.2"
     # a minted path is remembered rather than shown, so identity does not move
     assert by_type["mock::bam"]["path"] == ""
