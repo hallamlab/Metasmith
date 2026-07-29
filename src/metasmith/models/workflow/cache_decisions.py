@@ -147,10 +147,54 @@ def compute_cache_decisions(
 
         entry = None
         hit = False
+        out_indexes: dict[str, dict] = {}
         if store is not None:
             entry = store.probe(cache_key)
             if entry is not None and store.files_exist(entry):
                 hit = True
+
+        # A hit replays the shard's files onto the channel without running
+        # the step, so it has to replay the on-channel lineage index they
+        # travelled with (captured at promote time, manifest `index`).
+        # Without it the synthetic tuple carries no ancestry and a downstream
+        # `o.group` keyed on an ancestor drops it — the warm run loses what
+        # the cold run computes. A shard that cannot supply an index for
+        # every matched file is DEMOTED to a miss: re-running is slower, a
+        # silent drop is wrong.
+        if hit:
+            from ...caching.store import decode_manifest
+
+            manifest: dict = {}
+            if getattr(entry, "payload", None):
+                try:
+                    manifest = decode_manifest(entry.payload)
+                except Exception as e:
+                    Log.Warn(
+                        f"cache-hit decode_manifest failed for "
+                        f"{cache_key.hex()[:8]}: {e}"
+                    )
+            out_indexes = {
+                str(row.get("relpath", "")).rsplit("/", 1)[-1]: dict(
+                    row.get("index", {})
+                )
+                for row in (manifest.get("index") or [])
+                if row.get("relpath")
+            }
+            need = {
+                str(f.get("relpath", "")).rsplit("/", 1)[-1]
+                for f in (manifest.get("files") or [])
+                if not f.get("unmatched") and f.get("relpath")
+            }
+            missing = need - set(out_indexes)
+            if not need or missing:
+                Log.Warn(
+                    f"cache shard {cache_key.hex()[:8]} carries no on-channel "
+                    f"index for {len(missing) or 'any'} output(s); demoting "
+                    "the hit so the step re-runs rather than emitting a tuple "
+                    "the orchestrator would drop"
+                )
+                hit = False
+                out_indexes = {}
 
         # S3: per-batch decomposition. The compile-time `sorted_inputs`
         # above is the *aggregate* (step-level) view used for cache_key
@@ -204,6 +248,9 @@ def compute_cache_decisions(
             "out_instance_ids": out_slot_ids,
             "hit": hit,
             "entry": entry,
+            # basename -> the on-channel index that file rode in on; empty
+            # unless `hit`.
+            "out_indexes": out_indexes,
             "cacheable": getattr(step.transform, "cacheable", True),
             "batches": batches,
         }

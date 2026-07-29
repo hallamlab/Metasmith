@@ -66,6 +66,31 @@ LIN_ECHO_EXPR = (
     f"${{Orchestrator.JsonforEcho([v:{LIN_PAYLOAD_VERSION}, entries:index])}}"
 )
 
+def _groovy_index_literal(index: dict) -> str:
+    """Render an on-channel lineage index as a Groovy map literal.
+
+    Used only by the cache-hit path, to put back on the wire the index a
+    file's producing task had. Groovy's empty map is `[:]`, not `[]`.
+    """
+    def _val(v):
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, (int, float)):
+            return str(v)
+        return "'" + str(v).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+    if not index:
+        return "[:]"
+    parts = []
+    for k in sorted(index):
+        v = index[k]
+        vals = v if isinstance(v, (list, tuple)) else [v]
+        parts.append(
+            f"'{k}': [" + ", ".join(_val(x) for x in vals) + "]"
+        )
+    return "[" + ", ".join(parts) + "]"
+
+
 def NextflowProcessName(order: int, transform_name) -> str:
     """The name nextflow knows a step by.
 
@@ -774,6 +799,7 @@ def prepare_nextflow(task, context: NextflowGenContext):
                 / decision["cache_key"].hex()[2:]
                 / "out"
             )
+            _out_indexes = decision.get("out_indexes") or {}
             cached_channels: list[str] = []
             cached_channel_var = f"__cached_step_{step.order}"
             channel_exprs: list[str] = []
@@ -796,8 +822,32 @@ def prepare_nextflow(task, context: NextflowGenContext):
                     if not cached_files:
                         channel_exprs.append("Channel.empty()")
                         continue
+                    _no_index = [
+                        f.name for f in cached_files
+                        if f.name not in _out_indexes
+                    ]
+                    if _no_index:
+                        # Unreachable: cache_decisions demotes a shard it
+                        # cannot index. Loud rather than silently emitting a
+                        # tuple the orchestrator drops.
+                        raise ValueError(
+                            f"cache hit for step {step.order} "
+                            f"({step.transform.name}) has no on-channel index "
+                            f"for {_no_index}; the shard should have been "
+                            "demoted to a miss"
+                        )
+                    # Each file re-enters the channel with the index it
+                    # travelled with on the run that produced it (captured at
+                    # promote time). Emitting `[:]` here was warm-run data
+                    # loss: `_post` stamps only the produced key onto it, so
+                    # a downstream `o.group` keyed on an ancestor logged
+                    # LINEAGE_VIOLATION and dropped the tuple. Coverage is
+                    # guaranteed by cache_decisions, which demotes a hit it
+                    # cannot index.
                     tuples = ", ".join(
-                        f"[[:], file('{fp}')]" for fp in cached_files
+                        f"[{_groovy_index_literal(_out_indexes[fp.name])}, "
+                        f"file('{fp}')]"
+                        for fp in cached_files
                     )
                     channel_exprs.append(f"Channel.of({tuples})")
             wf_main.append(

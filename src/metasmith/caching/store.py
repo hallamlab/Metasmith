@@ -320,9 +320,13 @@ def encode_manifest(
 
     `output_files` is a list of `{slot_key, branch, dtype_key, relpath}`
     dicts (relpath relative to the entry's output_root). `out_identities`
-    maps dep_key → instance_id (hex). `index_payload` is the list of
-    index Maps emitted into the Nextflow channel (one per per-sample
-    invocation), preserved so synthetic channels reproduce them exactly.
+    maps dep_key → instance_id (hex). `index_payload` is a list of
+    `{relpath, index}` — the on-channel lineage index each output file
+    travelled with, so a hit's synthetic channel reproduces the ancestry a
+    real run puts on the wire. Without it a downstream `o.group` keyed on an
+    ancestor drops the tuple; with it a hit is indistinguishable from a miss
+    to everything downstream. An empty list means the shard predates the
+    capture and a hit on it is demoted to a re-run.
     """
     from .keys import canonical_cbor
 
