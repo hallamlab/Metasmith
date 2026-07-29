@@ -298,6 +298,173 @@ workflow {
         assert "b=9" in lines[0]
 
 
+    # --- group_by collection contract -------------------------------------
+    #
+    # `group_by` partitions the incoming streams by the grouping dependency's
+    # instances. Each key yields ONE task member holding ALL the items matched
+    # to it; `batch_size` folds N whole keys into one task and never shards
+    # within a key. Four other parts of the system already encode this —
+    # `checkm`/`gtdbtk` pairing `group_by=asm` with `batch_size=25`/`100`,
+    # `plan_oracle` predicting `ceil(len(group_by_instances) / batch_size)`
+    # tasks, and `cache_decisions` + `virtual_runtime` both chunking
+    # `group_by_instances` by `batch_size`.
+    #
+    # `bbbb599` (2026-05-30) replaced the accumulating branch with per-relation
+    # streaming dispatch that emits one result per *descendant item*, then
+    # re-collected with `groupTuple(by: 0, size: batch_size, remainder: true)`.
+    # Because `batch_size` is the group-COUNT axis, the bag closes after one
+    # item on the default — so a collecting transform receives a fraction of
+    # its input and no error is raised. Bisected against the same scripts:
+    #
+    #   one key / 3 descendants / bs=1   release + bbbb599^ -> 1 task x 3 files
+    #                                    bbbb599 + HEAD     -> 3 tasks x 1 file
+    #   two keys / 2 each   / bs=1       release            -> 2 tasks x 2 files
+    #                                    HEAD               -> 4 tasks x 1 file
+    #   two keys / 2 each   / bs=2       release            -> 1 task, 2 members
+    #                                                          x 2 files each
+    #                                    HEAD               -> 2 tasks, 2 members
+    #                                                          x 1 file each
+    #
+    # The three tests below are the contract. They are xfail(strict) until the
+    # dispatch branches aggregate per key again; strict so the marker has to be
+    # removed the moment they pass.
+
+    _COLLECTION_XFAIL = pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "bbbb599 collects with groupTuple(size: batch_size), so the bag "
+            "closes after batch_size ITEMS instead of holding one whole group"
+        ),
+    )
+
+    @staticmethod
+    def _collection_case(
+        nxf_runner: "NxfTestRunner",
+        n_keys: int,
+        n_outs: int,
+        batch_size: int,
+    ) -> list[list[list[str]]]:
+        """Run the fan-out-then-collect topology and report what each task got.
+
+        `step1` runs once per seed (the fan-out) and emits `n_outs` files.
+        The second `o.group` collects those outputs back by the SAME seed key,
+        which is the ppanggolin shape: one pangenome entry parenting N
+        accessions.
+
+        Returns one entry per emitted task: the list of per-batch-member
+        out1 basenames. So `[[["a", "b"]]]` is one task, one member, two
+        files.
+        """
+        for i in range(n_keys):
+            (nxf_runner.work_dir / f"seed_{i}.txt").write_text(f"seed {i}\n")
+
+        seeds = ",\n        ".join(
+            f'[[:], file("${{projectDir}}/seed_{i}.txt")]' for i in range(n_keys)
+        )
+        # metasmith output names are `<batch>-<i>-<branch>.<hash>-<key><ext>`;
+        # `_debatch` routes on the leading batch index, so every file emitted
+        # by one (unbatched) task must share the `1-` prefix.
+        touches = " ".join(f"1-${{stem}}{chr(ord('a') + j)}-out1.txt" for j in range(n_outs))
+
+        result = nxf_runner.run(f'''
+process step1 {{
+    input:
+        tuple val(index), path(_01)
+    output:
+        tuple val(index), path("*-out1.txt")
+    script:
+    def stem = index[0].seed[0]
+    """
+    touch {touches}
+    """
+}}
+
+workflow {{
+    o = new Orchestrator(Channel.fromList([null]))
+
+    // Two independent postIn calls over the same files: Nextflow channels are
+    // single-consumer, and the real generator forks shared streams with
+    // multiMap. postIn's fallback id is md5 of the path, so both copies carry
+    // identical seed hashes.
+    def seed_fanout = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+    def seed_collect = (o.postIn([Channel.fromList([
+        {seeds},
+    ])], ["seed"]))[0]
+
+    def k1 = ["out1"]
+    def _out1 = (o.post(o.asStreams(step1(o.group("seed", [seed_fanout], k1, 1))), k1))[0]
+
+    def collected = o.group("seed", [seed_collect, _out1], ["out2"], {batch_size})
+    collected.view {{ indexes, seed_vals, out1_vals ->
+        // FILES is written per batch member by `_collateBatch`, positionally
+        // per stream in the order they were passed to group(): [seed, out1].
+        def per_member = indexes.collect {{ m -> m.FILES[1].collect {{ p -> p.split("/")[-1] }} }}
+        "TASK: " + groovy.json.JsonOutput.toJson(per_member)
+    }}
+}}
+''', timeout=180)
+        NxfTestRunner.assert_nxf_ok(result)
+        return [
+            json.loads(l.split("TASK: ", 1)[1])
+            for l in result.stdout.split("\n")
+            if l.startswith("TASK:")
+        ]
+
+    @_COLLECTION_XFAIL
+    def test_one_key_collects_all_its_descendants(self, nxf_runner):
+        """One grouping instance + 3 descendants + batch_size=1 -> ONE task.
+
+        The ppanggolin regression: the run handed each of two accessions to
+        its own task, so ppanggolin clustered a single genome and died in
+        scipy with "empty distance matrix". `release` and `bbbb599^` emit one
+        task holding both; `bbbb599` onward shatters it.
+        """
+        tasks = self._collection_case(nxf_runner, n_keys=1, n_outs=3, batch_size=1)
+        assert len(tasks) == 1, (
+            f"expected the whole group in one task, got {len(tasks)} tasks: {tasks}"
+        )
+        assert len(tasks[0]) == 1, f"batch_size=1 means one member per task: {tasks}"
+        assert len(tasks[0][0]) == 3, (
+            f"the single member must carry all 3 descendants, got {tasks[0][0]}"
+        )
+
+    @_COLLECTION_XFAIL
+    def test_each_key_collects_only_its_own_descendants(self, nxf_runner):
+        """Two grouping instances -> two tasks, each complete and disjoint.
+
+        Guards the other half of the contract: collecting must not merge
+        across keys either.
+        """
+        tasks = self._collection_case(nxf_runner, n_keys=2, n_outs=2, batch_size=1)
+        assert len(tasks) == 2, f"expected one task per key, got {len(tasks)}: {tasks}"
+        groups = []
+        for t in tasks:
+            assert len(t) == 1, f"batch_size=1 means one member per task: {tasks}"
+            assert len(t[0]) == 2, f"each key must collect both its files: {tasks}"
+            groups.append(set(t[0]))
+        assert groups[0].isdisjoint(groups[1]), (
+            f"keys leaked descendants into each other: {groups}"
+        )
+
+    @_COLLECTION_XFAIL
+    def test_batch_size_folds_whole_keys_never_shards_one(self, nxf_runner):
+        """batch_size counts GROUPS, not members within a group.
+
+        Two keys of two descendants at batch_size=2 is one task with two
+        members, each holding its own pair — the shape `checkm` relies on
+        (`group_by=asm, batch_size=25` iterating `context.AsBatch()`), and the
+        shape `plan_oracle` predicts with `ceil(n_keys / batch_size)`.
+        """
+        tasks = self._collection_case(nxf_runner, n_keys=2, n_outs=2, batch_size=2)
+        assert len(tasks) == 1, (
+            f"ceil(2 keys / batch_size 2) == 1 task, got {len(tasks)}: {tasks}"
+        )
+        assert len(tasks[0]) == 2, f"expected 2 batch members, got {tasks[0]}"
+        for member in tasks[0]:
+            assert len(member) == 2, f"each member keeps its whole group: {tasks[0]}"
+
     def test_channel_reuse_across_group_calls(self, nxf_runner):
         """Two group() calls sharing a posted stream — second gets empty channel.
 
