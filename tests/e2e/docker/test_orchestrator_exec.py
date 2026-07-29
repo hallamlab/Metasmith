@@ -325,17 +325,8 @@ workflow {
     #                                    HEAD               -> 2 tasks, 2 members
     #                                                          x 1 file each
     #
-    # The three tests below are the contract. They are xfail(strict) until the
-    # dispatch branches aggregate per key again; strict so the marker has to be
-    # removed the moment they pass.
-
-    _COLLECTION_XFAIL = pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "bbbb599 collects with groupTuple(size: batch_size), so the bag "
-            "closes after batch_size ITEMS instead of holding one whole group"
-        ),
-    )
+    # Fixed by aggregating per by-key inside the dispatch branches, upstream of
+    # the cartesian fold, so `_batch` only ever collates whole groups.
 
     @staticmethod
     def _collection_case(
@@ -412,7 +403,6 @@ workflow {{
             if l.startswith("TASK:")
         ]
 
-    @_COLLECTION_XFAIL
     def test_one_key_collects_all_its_descendants(self, nxf_runner):
         """One grouping instance + 3 descendants + batch_size=1 -> ONE task.
 
@@ -430,7 +420,6 @@ workflow {{
             f"the single member must carry all 3 descendants, got {tasks[0][0]}"
         )
 
-    @_COLLECTION_XFAIL
     def test_each_key_collects_only_its_own_descendants(self, nxf_runner):
         """Two grouping instances -> two tasks, each complete and disjoint.
 
@@ -448,7 +437,6 @@ workflow {{
             f"keys leaked descendants into each other: {groups}"
         )
 
-    @_COLLECTION_XFAIL
     def test_batch_size_folds_whole_keys_never_shards_one(self, nxf_runner):
         """batch_size counts GROUPS, not members within a group.
 

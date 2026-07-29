@@ -73,6 +73,33 @@ def _emit_lines(stdout: str, prefix: str = "G:") -> list[str]:
     return [line for line in stdout.splitlines() if line.startswith(prefix)]
 
 
+def _member_shapes(stdout: str) -> list[list[list[int]]]:
+    """Parse `M:<json>` lines emitted by the batch-axis cases.
+
+    Each line is one task; the JSON is that task's per-batch-member
+    `[n_stream0_files, n_stream1_files]`, read out of the `FILES` entry
+    `_collateBatch` writes into every member's index. Assertions on the
+    flattened `a_vals`/`b_vals` sizes cannot tell a 3-member batch from a
+    3-item group, which is exactly the axis these cases pin.
+    """
+    import json
+
+    return [
+        json.loads(l.split("M:", 1)[1])
+        for l in stdout.splitlines()
+        if l.startswith("M:")
+    ]
+
+
+# The view closure that produces those lines. `FILES` is positional per
+# stream, in the order the streams were passed to `group()`.
+MEMBER_SHAPE_VIEW = (
+    'grouped.view { indexes, s0, s1 -> '
+    '"M:" + groovy.json.JsonOutput.toJson('
+    'indexes.collect { m -> [m.FILES[0].size(), m.FILES[1].size()] }) }'
+)
+
+
 def _earliest_ms(stdout: str, prefix: str = "G:") -> int | None:
     lines = _emit_lines(stdout, prefix)
     if not lines:
@@ -288,13 +315,20 @@ workflow {{
 # ===========================================================================
 
 
-def test_c05_descendant_single_bs3_per_key_bag(nxf_runner):
-    """3 b items per by-key should form per-by-key bag of 3.
+def test_c05_descendant_single_bs3_folds_three_keys(nxf_runner):
+    """3 by-keys at batch_size=3 fold into ONE task of 3 members.
 
     b is declared descendant of a (seedParents). Each b carries
     idx["a"] = [11L, 12L, 13L] (all 3 a-hashes) — i.e., every b descends
-    from every a. With incremental DESCENDANT dispatch, combine(by:0)
-    produces 3 per-by-key bags of 3 b's each.
+    from every a, so each of the 3 a-keys collects all 3 b's.
+
+    `batch_size` is the GROUP-COUNT axis: ceil(3 keys / 3) == 1 task, and
+    that task carries 3 members of `a=1, b=3`. This case previously asserted
+    3 tasks of `a=1:b=3`, i.e. `batch_size` as the within-key member count —
+    the reading `bbbb599` implemented and the one that shattered collecting
+    transforms. `plan_oracle`, `cache_decisions` and `virtual_runtime` all
+    predict `ceil(len(group_by_instances) / batch_size)`; the runtime now
+    agrees with them.
     """
     for i in range(3):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
@@ -319,22 +353,16 @@ workflow {
     def pb = new Tuple2("b", ch_b)
 
     def grouped = o.group("a", [pa, pb], ["target"], 3)
-    grouped.view { idx, a_vals, b_vals ->
-        "G:0:a=${a_vals.size()}:b=${b_vals.size()}"
-    }
+    ''' + MEMBER_SHAPE_VIEW + '''
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
-    lines = _emit_lines(result.stdout)
-    # Required: 3 emits with `a=1:b=3` each.
-    # Today: 1 emit `a=3:b=3` (buffer-until-close + outer _batch collation).
-    assert len(lines) == 3, (
-        f"C5 required 3 per-by-key bags, today produces {len(lines)}: {lines}. "
-        f"Required shape: 3 emits of `a=1:b=3`; got buffered-then-cartesian."
+    tasks = _member_shapes(result.stdout)
+    assert len(tasks) == 1, f"C5: ceil(3 keys / 3) == 1 task, got {tasks}"
+    assert tasks[0] == [[1, 3], [1, 3], [1, 3]], (
+        f"C5: expected 3 members of (a=1, b=3), got {tasks[0]}"
     )
-    for line in lines:
-        assert "a=1:b=3" in line, f"C5 wrong bag shape: {line}"
 
 
 # ===========================================================================
@@ -1137,12 +1165,11 @@ workflow {
 # ===========================================================================
 
 
-def test_c22_descendant_multi_bs3_per_key_bags(nxf_runner):
+def test_c22_descendant_multi_bs3_folds_three_keys(nxf_runner):
     """3 multi-hash S items, each carrying all 3 a-hashes; group by a, bs=3.
 
-    s is declared descendant of a (seedParents). Each S carries
-    idx["a"] = [11L, 12L, 13L]. With incremental DESCENDANT dispatch,
-    combine(by:0) produces 3 per-by-key bags of 3 S items each.
+    Same axis correction as C5, on the multi-hash S shape: 3 by-keys at
+    batch_size=3 is one task of 3 members, each `a=1, s=3`.
     """
     for i in range(3):
         (nxf_runner.work_dir / f"a{i}.txt").write_text(f"a{i}")
@@ -1167,21 +1194,16 @@ workflow {
     def ps = new Tuple2("s", ch_s)
 
     def grouped = o.group("a", [pa, ps], ["target"], 3)
-    grouped.view { idx, a_vals, s_vals ->
-        "G:0:a=${a_vals.size()}:s=${s_vals.size()}"
-    }
+    ''' + MEMBER_SHAPE_VIEW + '''
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
-    lines = _emit_lines(result.stdout)
-    # Required: 3 per-by-key bags. Today: 1 cross-key aggregate.
-    assert len(lines) == 3, (
-        f"C22 required 3 per-by-key bags of 3, today produces "
-        f"{len(lines)}: {lines}. Required: 3 emits with `a=1:s=3`."
+    tasks = _member_shapes(result.stdout)
+    assert len(tasks) == 1, f"C22: ceil(3 keys / 3) == 1 task, got {tasks}"
+    assert tasks[0] == [[1, 3], [1, 3], [1, 3]], (
+        f"C22: expected 3 members of (a=1, s=3), got {tasks[0]}"
     )
-    for line in lines:
-        assert "a=1:s=3" in line, f"C22 wrong bag shape: {line}"
 
 
 # ===========================================================================
@@ -1192,11 +1214,12 @@ workflow {
 # ===========================================================================
 
 
-def test_c23_sibling_single_bs3_per_key_bags(nxf_runner):
+def test_c23_sibling_single_bs3_folds_three_keys(nxf_runner):
     """3 B items and 3 C items all sharing a-hash 5; group by b, bs=3.
 
-    Required: 3 per-by-key bags, each `b=1:c=3` (every B pairs with every C
-    via shared-ancestor overlap; collated per by-key).
+    Same axis correction as C5/C22, on the SIBLING branch: every B pairs with
+    every C via shared-ancestor overlap, so each of the 3 b-keys collects all
+    3 c's, and batch_size=3 folds those 3 keys into one task of 3 members.
     """
     for i in range(3):
         (nxf_runner.work_dir / f"b{i}.txt").write_text(f"b{i}")
@@ -1221,21 +1244,17 @@ workflow {
     def pc = new Tuple2("c", ch_c)
 
     def grouped = o.group("b", [pc, pb], ["target"], 3)
-    grouped.view { idx, c_vals, b_vals ->
-        "G:0:b=${b_vals.size()}:c=${c_vals.size()}"
-    }
+    ''' + MEMBER_SHAPE_VIEW + '''
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
     NxfTestRunner.assert_nxf_ok(result)
-    lines = _emit_lines(result.stdout)
-    # Required: 3 per-by-key bags. Today: buffered-then-cartesian-then-batch.
-    assert len(lines) == 3, (
-        f"C23 required 3 per-by-key bags of 3 sibling c-items, "
-        f"today produces {len(lines)}: {lines}. Required: 3 emits with `b=1:c=3`."
+    tasks = _member_shapes(result.stdout)
+    assert len(tasks) == 1, f"C23: ceil(3 keys / 3) == 1 task, got {tasks}"
+    # streams are [pc, pb], so FILES is positionally (c, b).
+    assert tasks[0] == [[3, 1], [3, 1], [3, 1]], (
+        f"C23: expected 3 members of (c=3, b=1), got {tasks[0]}"
     )
-    for line in lines:
-        assert "b=1:c=3" in line, f"C23 wrong bag shape: {line}"
 
 
 # ===========================================================================

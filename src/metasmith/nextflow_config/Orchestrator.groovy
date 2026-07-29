@@ -239,19 +239,14 @@ class Orchestrator {
             return name!=by_name
         })
 
-        // Classify each non-by stream once, up front. The result drives both
-        // the dispatch branch in `to_group.collect` AND the bag-mode the
-        // outer `_batch` uses. DESCENDANT_OF_BY and SIBLING want per-by-key
-        // bagging (each by-item gets its own bag of descendant items, sized
-        // batch_size); PARENT_OF_BY and WILDCARD want the legacy
-        // consecutive-collate behavior (N adjacent emissions in one batch).
+        // Classify each non-by stream once, up front. The result drives the
+        // dispatch branch each stream takes in `to_group.collect` below.
+        // Every branch emits ONE tuple per by-key carrying that key's whole
+        // list of matched items — see the contract note on `_batch`.
         def stream_relations = [:]
         to_group.each { stream ->
             def (s_name, s_chan) = stream
             stream_relations[s_name] = this.classify(s_name, by_name)
-        }
-        def per_key_bag_mode = stream_relations.values().any { r ->
-            r == "DESCENDANT_OF_BY" || r == "SIBLING"
         }
 
         def by_parsed = by_stream.map(item -> {
@@ -262,7 +257,7 @@ class Orchestrator {
             ]
         })
 
-        return _batch(batch_size, by_name, per_key_bag_mode, to_group
+        return _batch(batch_size, to_group
         .collect((stream) -> {
             def (name, _stream) = stream
             def relation = stream_relations[name]
@@ -288,13 +283,27 @@ class Orchestrator {
             }
 
             if (relation == "DESCENDANT_OF_BY") {
-                // DESCENDANT branch (NEW, incremental): S items carry the
-                // by-hashes they descend from in idx[by_name]. Mirror of the
-                // PARENT branch with the join key inverted. Each S flatMaps
-                // into one tuple per by-hash; we then combine(by:0) against
-                // by_stream's own hash. No shared mutable state needed.
+                // DESCENDANT branch: S items carry the by-hashes they descend
+                // from in idx[by_name]. Mirror of the PARENT branch with the
+                // join key inverted, then combine(by:0) against by_stream's
+                // own hash.
+                //
+                // Items are AGGREGATED per by-hash before the join, so the
+                // branch emits one tuple per key carrying that key's whole
+                // list. Emitting one tuple per (key, item) — as this branch
+                // did between bbbb599 and the fix — multiplies through the
+                // cartesian `inject` fold below and forces `_batch` to try to
+                // reassemble the group afterwards, which is what shattered a
+                // collecting transform's input into singletons.
                 def _name = name
-                return _stream.flatMap((item) -> {
+                def pending_items = [:]
+                def seen_per_key = [:]
+                return _stream.concat(this.one_null)
+                .flatMap((item) -> {
+                    if (item == null) {
+                        // Upstream closed: flush one tuple per accumulated key.
+                        return pending_items.collect((h, items) -> new Tuple2([h], items))
+                    }
                     def (_index, _value) = item
                     def by_hashes = _index[by_name]
                     if (by_hashes == null) {
@@ -304,7 +313,19 @@ class Orchestrator {
                         this._logDispatch(_name, "LINEAGE_VIOLATION", null, null)
                         return []
                     }
-                    return by_hashes.collect((h) -> new Tuple2([h], item))
+                    // Bag-insertion dedup guards against retry/replay
+                    // duplication, matching the WILDCARD branch.
+                    def item_hash = "$_value".md5()
+                    by_hashes.each((h) -> {
+                        def seen_for_key = seen_per_key.get(h, new HashSet())
+                        if (seen_for_key.contains(item_hash)) return
+                        seen_for_key.add(item_hash)
+                        seen_per_key[h] = seen_for_key
+                        def group = pending_items.get(h, [])
+                        group.add(item)
+                        pending_items[h] = group
+                    })
+                    return []
                 })
                 .combine(by_stream.map((item) -> {
                     def (_index, _value) = item
@@ -315,24 +336,42 @@ class Orchestrator {
                     return new Tuple2([by_h[0]], _index[by])
                 }), by: 0)
                 .map((combined) -> {
-                    def (_, item, key) = combined
-                    return [new Tuple3(key, _name, [item])]
+                    def (_, items, key) = combined
+                    return [new Tuple3(key, _name, items)]
                 })
             }
 
             if (relation == "SIBLING") {
-                // SIBLING branch (NEW, incremental): join on a shared
-                // ancestor's hash. Both sides flatMap on idx[anc_key] and
-                // combine(by:0). The final key emitted is the by-item's own
-                // hash, so the downstream set-overlap filter still matches
-                // by_parsed cleanly.
+                // SIBLING branch: join on a shared ancestor's hash. Both sides
+                // key on idx[anc_key] and combine(by:0). The final key emitted
+                // is the by-item's own hash, so the downstream set-overlap
+                // filter still matches by_parsed cleanly.
+                //
+                // Aggregated per ancestor hash for the same reason as
+                // DESCENDANT_OF_BY above.
                 def anc_key = this._firstSharedAncestor(name, by_name)
                 def _name = name
-                return _stream.flatMap((item) -> {
+                def pending_items = [:]
+                def seen_per_key = [:]
+                return _stream.concat(this.one_null)
+                .flatMap((item) -> {
+                    if (item == null) {
+                        return pending_items.collect((h, items) -> new Tuple2([h], items))
+                    }
                     def (_index, _value) = item
                     def anc_hashes = _index[anc_key]
                     if (anc_hashes == null) return []
-                    return anc_hashes.collect((h) -> new Tuple2([h], item))
+                    def item_hash = "$_value".md5()
+                    anc_hashes.each((h) -> {
+                        def seen_for_key = seen_per_key.get(h, new HashSet())
+                        if (seen_for_key.contains(item_hash)) return
+                        seen_for_key.add(item_hash)
+                        seen_per_key[h] = seen_for_key
+                        def group = pending_items.get(h, [])
+                        group.add(item)
+                        pending_items[h] = group
+                    })
+                    return []
                 })
                 .combine(by_stream.flatMap((item) -> {
                     def (_index, _value) = item
@@ -341,8 +380,8 @@ class Orchestrator {
                     return anc_hashes.collect((h) -> new Tuple2([h], _index[by]))
                 }), by: 0)
                 .map((combined) -> {
-                    def (_, item, key) = combined
-                    return [new Tuple3(key, _name, [item])]
+                    def (_, items, key) = combined
+                    return [new Tuple3(key, _name, items)]
                 })
             }
 
@@ -432,35 +471,15 @@ class Orchestrator {
         return [indexes, *values]
     }
 
-    // Legacy 2-arg form preserved for direct callers (test harnesses,
-    // external workflow code). Routes to consecutive-collate mode, which
-    // matches the historical behavior before per-key bagging existed.
+    // `size` is the GROUP-COUNT axis, never the within-group member count:
+    // every branch of group() emits one result per by-key holding that key's
+    // whole list, so collating `size` of them folds `size` whole groups into
+    // one task. This is what `batch_size` means everywhere else in the system
+    // — `plan_oracle` predicts `ceil(len(group_by_instances) / batch_size)`
+    // tasks, `cache_decisions` and `virtual_runtime` both chunk
+    // `group_by_instances` by it, and `checkm`/`gtdbtk` pair `group_by=asm`
+    // with `batch_size=25`/`100` while iterating `context.AsBatch()`.
     public def _batch(size, channel) {
-        return this._batch(size, null, false, channel)
-    }
-
-    public def _batch(size, by_name, per_key_bag_mode, channel) {
-        if (per_key_bag_mode) {
-            // Per-by-key bagging: a result whose common_index[by_name] == k
-            // joins bag k. groupTuple emits each bag as soon as it fills to
-            // `size`, and remainder:true flushes partial bags at close. This
-            // is the right semantic for DESCENDANT_OF_BY / SIBLING joins —
-            // each by-item drives one downstream task with a bag of its
-            // matching descendant items.
-            return channel
-            .map(_result -> {
-                def common_index = _result[0]
-                def bag_key = common_index[by_name]
-                return new Tuple2(bag_key, _result)
-            })
-            .groupTuple(by: 0, size: size, remainder: true)
-            .map(entry -> {
-                def (bag_key, batch) = entry
-                return this._collateBatch(batch)
-            })
-        }
-        // Consecutive collate (legacy): PARENT_OF_BY and WILDCARD shapes
-        // where the user wants N adjacent emissions folded into one task.
         return channel.collate(size).map(batch -> this._collateBatch(batch))
     }
 
