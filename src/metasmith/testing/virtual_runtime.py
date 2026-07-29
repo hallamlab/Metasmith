@@ -17,6 +17,7 @@ from typing import Any
 import yaml
 
 from ..constants import AgentPaths
+from ..models.lineage import LinPayload
 from ..models.remote import Source
 
 
@@ -337,6 +338,59 @@ def _select_instances(insts: list, start: int, end: int) -> list:
     return [insts[-1]]
 
 
+def _instance_mark(inst) -> tuple[str, str]:
+    return (inst.parent_lib.GetKey(), str(inst.path))
+
+
+def _ancestor_marks(inst) -> set[tuple[str, str]]:
+    """Every instance `inst` descends from, itself included."""
+    marks: set[tuple[str, str]] = set()
+    stack = [inst]
+    while stack:
+        curr = stack.pop()
+        m = _instance_mark(curr)
+        if m in marks:
+            continue
+        marks.add(m)
+        for pm in curr.parent_lib.parents.get(curr.path, []):
+            if pm.path in curr.parent_lib.manifest:
+                stack.append(curr.parent_lib.Get(pm.path))
+    return marks
+
+
+def _select_for_key(dep_insts: list, key_inst, key_idx: int) -> list:
+    """The instances of one dependency that belong to one group_by key.
+
+    Lineage first, position only as a fallback. A positional window is right
+    for a dependency that fans out ALONGSIDE the grouping key (instance i of
+    each lines up), and wrong for one that COLLECTS into it — where N
+    instances all descend from the same key and the key's member must hold
+    every one of them. Slicing there is what hands a collecting transform a
+    single item.
+    """
+    if not dep_insts:
+        return []
+    if len(dep_insts) == 1:
+        # A shared reference DB / container: broadcast to every key.
+        return list(dep_insts)
+    if key_inst is None:
+        return _select_instances(dep_insts, key_idx, key_idx + 1)
+
+    key_mark = _instance_mark(key_inst)
+    key_ancestors = _ancestor_marks(key_inst)
+    related = [
+        inst
+        for inst in dep_insts
+        # Either direction counts: the dep may descend from the key (the
+        # collecting case) or the key may descend from the dep (grouping by
+        # a fan-out output while still needing its shared parent).
+        if key_mark in _ancestor_marks(inst) or _instance_mark(inst) in key_ancestors
+    ]
+    if related:
+        return related
+    return _select_instances(dep_insts, key_idx, key_idx + 1)
+
+
 def _merge_lineage(maps: list[dict[str, list[int]]]) -> dict[str, list[int]]:
     out: dict[str, list[int]] = {}
     for m in maps:
@@ -380,7 +434,10 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
 
     with open(invocation_dir / METADATA_FILE, "w", encoding="utf-8") as f:
         f.write("res 1/1.GB/1\n")
-        f.write(f"lin {json.dumps(lineages, separators=(',', ':'))}\n")
+        # Same envelope the Groovy emitter puts on the wire — bootstrap parses
+        # both through `LinPayload.from_json`, so a bare list here would be a
+        # silent divergence between the two runtimes.
+        f.write(f"lin {LinPayload(v=LinPayload.VERSION, entries=lineages).to_json()}\n")
         f.write("fmt 2\n")
         f.write(f"din {json.dumps(dep_in, separators=(',', ':'))}\n")
         f.write(f"dot {json.dumps(dep_out, separators=(',', ':'))}\n")
@@ -576,27 +633,40 @@ def cli_nextflow(argv: list[str]) -> int:
             invocation_dir = nxf_work / f"step_{step.order:02}" / f"batch_{start:04}_{end:04}"
             invocation_dir.mkdir(parents=True, exist_ok=True)
 
-            lineage_entry: dict[str, Any] = {}
-            files: list[list[str]] = []
+            # One lineage member per group key in the window — the same arity
+            # the real runtime puts on the wire (`Orchestrator._collateBatch`
+            # builds one index per member, `LinPayload.entries` carries them
+            # all). Writing one member for the whole window would make
+            # `context.AsBatch()` yield once here and `batch_size` times under
+            # Nextflow, and this runtime is what pins the contract cheaply.
+            members: list[dict[str, Any]] = []
             input_maps: list[dict[str, list[int]]] = []
+            group_insts = step.group_by_instances
 
-            for dep in step.transform.model.requires:
-                dep_insts = list(step.dependency_map.get(dep, []))
-                selected = _select_instances(dep_insts, start, end)
-                dtype_key = selected[0].dtype.key if selected else dep.key
-                paths = [str(inst.ResolvePath()) for inst in selected]
-                files.append(paths)
-                hashes = [hash15(str(Path(p))) for p in paths]
-                lineage_entry[dtype_key] = hashes
+            for key_idx in range(start, end):
+                key_inst = group_insts[key_idx] if key_idx < len(group_insts) else None
+                lineage_entry: dict[str, Any] = {}
+                files: list[list[str]] = []
 
-                lineages = [
-                    lineage_by_instance.get(inst.instance_id, {dtype_key: hashes})
-                    for inst in selected
-                ]
-                input_maps.append(_merge_lineage(lineages))
+                for dep in step.transform.model.requires:
+                    dep_insts = list(step.dependency_map.get(dep, []))
+                    selected = _select_for_key(dep_insts, key_inst, key_idx)
+                    dtype_key = selected[0].dtype.key if selected else dep.key
+                    paths = [str(inst.ResolvePath()) for inst in selected]
+                    files.append(paths)
+                    hashes = [hash15(str(Path(p))) for p in paths]
+                    lineage_entry[dtype_key] = hashes
 
-            lineage_entry["FILES"] = files
-            _write_metadata_file(step, invocation_dir, [lineage_entry])
+                    lineages = [
+                        lineage_by_instance.get(inst.instance_id, {dtype_key: hashes})
+                        for inst in selected
+                    ]
+                    input_maps.append(_merge_lineage(lineages))
+
+                lineage_entry["FILES"] = files
+                members.append(lineage_entry)
+
+            _write_metadata_file(step, invocation_dir, members)
 
             dep_arity = {
                 dep.key: len(step.dependency_map.get(dep, []))

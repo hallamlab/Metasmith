@@ -231,6 +231,24 @@ sequences::gbk (grouped)  → [ppanggolin]     → pangenome::ppanggolin_matrix
                           → [heatmap]        → pangenome::heatmap
 ```
 
+**`group_by` and `batch_size` are two different axes and five files have to agree on which
+is which.** `group_by` partitions a step's inputs by the named requirement's instances: one
+instance is one key, and one key yields one task member holding *every* item matched to it —
+that is what turns the fan-out above back into a fan-in. `batch_size` folds N whole keys into
+one task and never shards within a key, so a step runs `ceil(len(group_by_instances) /
+batch_size)` tasks. `plan_oracle`, `cache_decisions`, `virtual_runtime`, the `TransformInstance`
+field and `Orchestrator.groovy::group` each restate that count independently; when the runtime
+drifted onto the other reading it did not fail, it silently handed a collecting transform one
+item, and ppanggolin clustered a single genome. Both axes reach the protocol through
+`context.AsBatch()` — one yield per member, `InputGroup(dep)` for that member's whole group.
+
+**The wire carries one lineage map per batch member, not one per task.** `LinPayload.entries`
+is a list, mirroring the list of indexes `Orchestrator._collateBatch` builds; collapsing it to
+a single map costs every member after the first, silently, with the unread files still staged
+in the task directory. `LIN_PAYLOAD_VERSION` and the Groovy emitter must move together — the
+emitter interpolates the constant rather than restating it, because when they were two literals
+they desynced and failed every containerized task while the fast suite stayed green.
+
 `TargetBuilder.Add(target_type, parents=None)` returns an opaque handle; passing handles in
 `parents=` is what makes two targets of the same type **distinct requests** rather than the
 duplicate `Add` rejects. Same type *and* same parents still raises.

@@ -165,6 +165,14 @@ class LinPayload:
 
     @classmethod
     def Unpack(cls, raw: dict) -> "LinPayload":
+        if not isinstance(raw, dict):
+            # A bare list is the pre-envelope shape. Report it as a wire
+            # error rather than an AttributeError three frames deep, so the
+            # caller's `except ValueError` actually catches it.
+            raise ValueError(
+                f"lin payload must be a {{v, entries}} envelope, got "
+                f"{type(raw).__name__}"
+            )
         v = raw.get("v")
         if v != LIN_PAYLOAD_VERSION:
             raise ValueError(
