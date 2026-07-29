@@ -873,8 +873,10 @@ the single `+`→`-` substitution; the wheel name, the default agent container, 
 identical hash ↔ identical image tag, which is what removes the chicken-and-egg of an
 embedded commit hash. Pinned by `tests/unit/test_container_tag.py`, `tests/unit/test_dev_sh_tag.py`.
 
-Bump: edit `version.txt`, commit, then build+publish (`./dev.sh --build-gui`, `-bp`, `-br`,
-`-bd`, `-ud`, `-bs`), then tag. A release ships **both** a quay image and a conda package.
+Bump: edit `version.txt`, commit, then build+publish, then tag. A release ships **both** a
+quay image and a conda package — `RELEASE_PROTOCOL.md` is the followable sequence and the
+order in it is load-bearing, not stylistic: relays before the image that bakes them, GUI
+bundle before the wheel whose hash covers it, and nothing rebuilt between `-bp` and `-bd`.
 
 Two steps are load-bearing because their output is generated and never committed, so
 skipping them ships something empty that nobody notices for a while:
@@ -892,7 +894,11 @@ skipping them ships something empty that nobody notices for a while:
 - `-br` — `--update_container` skips it, which is how one release shipped with 3 of 4 relay
   binaries replaced by 28-byte `echo 'stub relay'` stubs. `-ud`/`-bs` now run
   `_assert_real_relays` against the tagged image and refuse on a wrong-magic or <100 KB slot;
-  override `MSM_SKIP_RELAY_CHECK=1`.
+  override `MSM_SKIP_RELAY_CHECK=1`. Note the gap that guard leaves: `-bd` does **not** run it,
+  so a failed `-br` still produces a stub-bearing image locally and is only caught later.
+  Treat a non-zero `-br` as fatal rather than continuing. The cross-compile image is upstream
+  and `-brc` pulls it — it must never `docker build` over that tag, because the replacement
+  has no osxcross and silently reduces `-br` to linux-only.
 
 ## `examples/` — minimal regression library
 
