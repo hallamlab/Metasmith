@@ -191,6 +191,11 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         #   {"instance_id": str, "origin": "leaf"|"lineage"|"imported",
         #    "lineage_payload": bytes|None}
         self.instance_meta: dict[Path, dict] = {}
+        # Where each type namespace in `self.types` was loaded from, when that
+        # was a plain path -- not needed for the normal directory-backed
+        # round trip (Save/Load copy the namespace itself), only for
+        # PackInline, which references the namespace instead of copying it.
+        self._type_sources: dict[str, Path] = {}
         if isinstance(location, DataInstanceLibrary):
             other = location
             self.location = other.location
@@ -198,6 +203,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
             self.types = other.types
             self.instance_meta = other.instance_meta
             self.fork_id = other.fork_id
+            self._type_sources = other._type_sources
         else:
             location = Path(location).resolve()
             if not location.exists():
@@ -219,6 +225,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         if isinstance(lib, str) and isinstance(namespace, DataTypeLibrary):
             lib, namespace = namespace, lib
         assert on_exist in {"skip", "error", "overwrite"}
+        _source = Path(lib).resolve() if isinstance(lib, (Path, str)) else None
         if isinstance(lib, Path) or isinstance(lib, str):
             lib = Source.FromLocal(lib)
         if namespace is None:
@@ -251,6 +258,8 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
             assert len(res.completed) == 1, f"failed to add type library [{namespace}]"
             lib = DataTypeLibrary.Load(lib_dest.address)
         self.types[namespace] = lib
+        if _source is not None:
+            self._type_sources[namespace] = _source
         return self.types[namespace]
 
     @classmethod

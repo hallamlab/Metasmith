@@ -50,9 +50,13 @@ def test_a_saved_template_is_written_with_relative_references(tmp_path: Path):
     out = Template(name="assembly_to_bam", spec=spec, description="mock").Save(root)
 
     packed = Template.Load(out).Pack()
-    for ref in [packed["input_library"], *packed["transform_libraries"]]:
+    for ref in packed["transform_libraries"]:
         assert not Path(ref).is_absolute(), ref
-    assert packed["input_library"] == "templates/assembly_to_bam/inputs.xgdb"
+    # input_library is inline data (see `PackInline`), not a directory
+    # reference -- only its type namespace paths are references to check.
+    for ref in packed["input_library"]["types"].values():
+        assert not Path(ref).is_absolute(), ref
+    assert packed["input_library"]["types"] == {"mock": "data_types/mock.yml"}
     assert packed["description"] == "mock"
 
 

@@ -3,11 +3,16 @@
 A template is a `Spec` whose inputs are `DEFERRED` -- the same object a stored
 workflow is, so there is no template format to design, version or validate
 separately. What a template adds is only where it lives and what it is called:
-a directory in a library repository, holding the spec and the deferred input
-library the spec points at.
+one file in a library repository, holding the spec, a name and a blurb.
 
-    <root>/templates/<name>/spec.yml      the spec, plus a name and a blurb
-    <root>/templates/<name>/inputs.xgdb   the deferred rows, typed, with lineage
+    <root>/templates/<name>/spec.yml
+
+The deferred rows -- typed, with lineage -- live inline in that same file
+(`Spec.Pack`'s `input_library`, via `DataInstanceLibrary.PackInline`) rather
+than as a sibling directory: a template's input library never leaves the repo
+it ships in, so the self-contained, copy-everything format `Save`/`Load` use
+for a real run's data -- built for shipping over ssh/globus to another host --
+has nothing here to do.
 
 Shipping them inside the library repository is what makes versioning free: a
 template arrives in the same commit as the transforms it names and cannot be
@@ -61,9 +66,18 @@ class Template:
         """
         root = Path(root).resolve()
         packed = self.spec.Pack(relative_to=root)
+
+        def _refs(v) -> list[str]:
+            # input_library is a plain string for a stored workflow, but a
+            # template's is inline data (see `Spec.Pack`) -- only its type
+            # namespace references are paths that could escape the root.
+            if isinstance(v, dict): return list(v.get("types", {}).values())
+            if isinstance(v, str): return [v]
+            return list(v)
+
         escaped = sorted(
-            str(v) for k in ("input_library", "transform_libraries", "resource_libraries")
-            for v in ([packed[k]] if isinstance(packed[k], str) else packed[k])
+            v for k in ("input_library", "transform_libraries", "resource_libraries")
+            for v in _refs(packed[k])
             if Path(v).is_absolute()
         )
         assert not escaped, (
