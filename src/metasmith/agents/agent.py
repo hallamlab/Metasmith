@@ -242,7 +242,7 @@ class Agent(_WorkflowOps, _RunControl):
             self._run_setup(shell)
             _quiet = False
 
-            shell.Exec(f'mkdir -p "{self.home.GetPath()}"')
+            shell.Exec(f'mkdir -p {self.home.GetPath()}')
             _quiet = True
             cmds = [
                 f'realpath {self.home.GetPath()}',
@@ -367,7 +367,13 @@ class Agent(_WorkflowOps, _RunControl):
             # Skip extraction only when its actual output already exists, so
             # a partial deploy (sif present, relay missing) self-heals on the
             # next call without needing assertive=True.
-            relay_bin = AgentPaths.to_relay(self.home.GetPath())
+            # Built from the already-resolved absolute path, not the raw
+            # `self.home.GetPath()` -- that one may still carry a literal `~`
+            # (unexpanded, since it's just a Path over the config string),
+            # which double-quoting in the shell checks below would break: bash
+            # does not expand `~` inside double quotes, so the existence
+            # checks would always report the relay missing.
+            relay_bin = AgentPaths.to_relay(resolved_agent_home)
             if not container.needs_relay:
                 # The relay exists solely to bounce tool launches back across a
                 # container boundary. mamba/native have no boundary, and the
