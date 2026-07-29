@@ -12,7 +12,9 @@ __pycache__
 /lib/relay_agent/*.spec
 
 /data
-/scratch
+/scratch/*
+!/scratch/gui-main.dvc
+!/scratch/.gitignore
 /secrets
 /lib/*
 !/lib/local
