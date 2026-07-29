@@ -1,8 +1,8 @@
 """Parsing, substitution and expansion of a sample table.
 
 The library-touching half is here rather than in `tests/gui/` because none of it
-is about a route: `ops.samples` is the one implementation and the GUI is a
-veneer over it.
+is about a route: `ops.samples` reads the sheet, `ops.inputs.sync` writes the
+library, and the GUI is a veneer over both.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import pytest
 
 from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
 from metasmith.models.solver import Endpoint
+from metasmith.ops import inputs as op_inputs
 from metasmith.ops import samples as op_samples
 
 CSV = b"sample,fwd,rev\nS1,a_R1.fq,a_R2.fq\nS2,b_R1.fq,b_R2.fq\n"
@@ -152,7 +153,7 @@ def test_validate_refuses_an_empty_cell(tmp_path):
 
 def test_expand_registers_one_item_per_array_row_per_sheet_row(tmp_path):
     lib_path = _library(tmp_path)
-    out = op_samples.expand(str(lib_path), _table(), _rows())
+    out = op_inputs.sync(str(lib_path), _rows(), _table())
     assert out["row_count"] == 2
     assert out["counts"] == {"a": 2, "b": 2, "c": 2}
 
@@ -188,7 +189,7 @@ def _grouped_rows(**over) -> list[dict]:
 
 def test_expand_groups_rows_that_share_a_column_value(tmp_path):
     lib_path = _library(tmp_path)
-    out = op_samples.expand(str(lib_path), _grouped_table(), _grouped_rows())
+    out = op_inputs.sync(str(lib_path), _grouped_rows(), _grouped_table())
     # 3 accession rows but only 2 distinct pangenome names
     assert out["counts"] == {"pan": 3, "acc": 3}
 
@@ -218,12 +219,12 @@ def test_validate_refuses_a_shared_name_with_disagreeing_values(tmp_path):
 
 def test_clear_then_reexpand_a_grouped_shape_round_trips(tmp_path):
     lib_path = _library(tmp_path)
-    op_samples.expand(str(lib_path), _grouped_table(), _grouped_rows())
-    removed = op_samples.clear(str(lib_path))["removed"]
+    op_inputs.sync(str(lib_path), _grouped_rows(), _grouped_table())
+    removed = op_inputs.sync(str(lib_path), [])["removed"]
     assert set(removed) == {"P1.pan", "P2.pan", "GCF_1.acc", "GCF_2.acc", "GCF_3.acc"}
     assert DataInstanceLibrary.Load(lib_path).manifest == {}
 
-    op_samples.expand(str(lib_path), _grouped_table(), _grouped_rows())
+    op_inputs.sync(str(lib_path), _grouped_rows(), _grouped_table())
     assert {str(p) for p in DataInstanceLibrary.Load(lib_path).manifest} == {
         "P1.pan", "P2.pan", "GCF_1.acc", "GCF_2.acc", "GCF_3.acc",
     }
@@ -231,14 +232,14 @@ def test_clear_then_reexpand_a_grouped_shape_round_trips(tmp_path):
 
 def test_re_expanding_takes_back_exactly_what_it_put_down(tmp_path):
     lib_path = _library(tmp_path)
-    op_samples.expand(str(lib_path), _table(), _rows())
+    op_inputs.sync(str(lib_path), _rows(), _table())
     # a hand-registered row that no expansion owns
     lib = DataInstanceLibrary.Load(lib_path)
     lib.AddItem(Path("/data/ref.db"), "mock::fwd")
     lib.Save()
 
     smaller = op_samples.parse_table(b"sample,fwd,rev\nS9,z_R1.fq,z_R2.fq\n", filename="s.csv")
-    out = op_samples.expand(str(lib_path), smaller, _rows())
+    out = op_inputs.sync(str(lib_path), _rows(), smaller)
     assert out["row_count"] == 1
 
     lib = DataInstanceLibrary.Load(lib_path)
@@ -253,7 +254,7 @@ def test_re_expanding_takes_back_exactly_what_it_put_down(tmp_path):
 
 def test_clear_unregisters_the_generation(tmp_path):
     lib_path = _library(tmp_path)
-    op_samples.expand(str(lib_path), _table(), _rows())
-    removed = op_samples.clear(str(lib_path))["removed"]
+    op_inputs.sync(str(lib_path), _rows(), _table())
+    removed = op_inputs.sync(str(lib_path), [])["removed"]
     assert len(removed) == 6
     assert DataInstanceLibrary.Load(lib_path).manifest == {}

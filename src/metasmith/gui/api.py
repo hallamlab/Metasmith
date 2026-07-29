@@ -26,8 +26,10 @@ from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
 from ..ops import data as op_data
 from ..ops import runtime as op_runtime
+from ..ops import inputs as op_inputs
 from ..ops import samples as op_samples
 from ..ops import workflow as op_workflow
+from . import recipe as op_recipe
 from . import share as op_share
 from . import stdlib
 from .jobs import LogCapture
@@ -1047,6 +1049,10 @@ def list_workflows():
 @bp.get("/workflows/<name>")
 def get_workflow(name):
     p = _project()
+    # before the record is read, not after: a library with items and no rows
+    # gets rows here, and the page has to be handed the adopted recipe rather
+    # than the one that was on disk a moment ago
+    _rows_of(name)
     wf = p.read_workflow(name)
     out = _workflow_summary(wf)
     out["request"] = wf.request
@@ -1112,6 +1118,12 @@ def create_workflow():
         op_data.copy_library(
             str(template.spec.input_library), lib_path, type_library_paths=types,
         )
+    # ...and its rows are the copy's rows: the template ships a library, and
+    # this is where those items become the editable recipe. Adopted now rather
+    # than on the first read so a generate posted straight at a fresh workflow
+    # finds them, and so the minted deferred paths are recorded before anything
+    # else can register over them.
+    _rows_of(wf.name)
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
 
 
@@ -1179,6 +1191,14 @@ def fork_workflow(name):
         str(p.input_library_path(name)),
         str(p.input_library_path(forked.name)),
     )
+    # The record travels with the library, because it is what says which row
+    # owns which entry. Without it every copied row arrives claiming a path that
+    # is already there, and the fork re-registers its whole recipe on the first
+    # solve. `fork_library` keeps the paths and changes only the fork id, so the
+    # mapping is still true on the other side.
+    src_record = op_samples.record_path(p.input_library_path(name))
+    if src_record.is_file():
+        shutil.copy2(src_record, op_samples.record_path(p.input_library_path(forked.name)))
     return jsonify(_workflow_summary(p.read_workflow(forked.name))), 201
 
 
@@ -1235,7 +1255,7 @@ def generate_workflow(name):
     # this -- it always sends `sample_type: null` -- so a non-null value here
     # only ever comes from a request written directly (e.g. by the CLI).
     sample_type = wf.request.get("sample_type")
-    shared = wf.request.get("shared_input_paths") or None
+    shared_refs = list(wf.request.get("shared_input_paths") or [])
     targets = wf.request.get("target_types") or []
     assert targets, "at least one target type is required"
 
@@ -1249,24 +1269,29 @@ def generate_workflow(name):
     # it can only touch what was resolved before `_jobs().submit` -- the same
     # reason `p`, `wf` and `lib_path` above are captured rather than re-derived.
     table = op_samples.read_attached_table(wf.path)
-    rows = list(wf.request.get("input_drafts") or [])
+    rows = _rows_of(name)
 
     def _work(job):
         with LogCapture(job):
-            # A sample array row is a declaration, not yet a registered input --
-            # solving needs the real, one-per-sheet-row items `AsSamples` can
-            # split on, so this is where the sheet is read against the recipe's
-            # current rows and turned into them. Always, every solve, rather
-            # than behind a separate "expand" a user could forget to redo after
-            # editing a row or the sheet: `expand` clears what the last one
-            # registered before it writes the new set, so this can never leave
-            # two generations' worth of one sample sitting in the library
-            # together, and a workflow with no table or no array row at all
-            # just clears whatever an earlier one left.
-            if table is not None and any(op_samples.is_array_row(r) for r in rows):
-                op_samples.expand(lib_path, table, rows)
-            else:
-                op_samples.clear(lib_path)
+            # The recipe's rows are the durable thing; the input library is
+            # built from them. This is where that happens -- always, every
+            # solve, rather than behind a gesture a user could forget after
+            # editing a row or the sheet, so there is no state between an edit
+            # and a solve that can go stale. It is incremental: a row nothing
+            # changed about has nothing called on it, which is what keeps its
+            # identity (and so the task key, and so the cache) still.
+            synced = op_inputs.sync(lib_path, rows, table)
+
+            # A row with no path yet cannot be named by one, which is the
+            # normal state of a fresh recipe -- so the request says which *row*
+            # every sample should see, and it becomes a path here, between the
+            # sync that made it and the solve that reads it.
+            registered = synced["rows"]
+            shared = [
+                registered[s[1:]] if s.startswith("#") else s
+                for s in shared_refs
+                if not s.startswith("#") or s[1:] in registered
+            ] or None
 
             # a stale bundle from a previous generate must not outlive it: the
             # result the user sees and the bundle the CLI stages have to agree.
@@ -1293,6 +1318,7 @@ def generate_workflow(name):
                 wf.request | {
                     "transform_libraries": list(transforms),
                     "resource_libraries": list(resources),
+                    "shared_input_paths": shared or [],
                 },
                 input_library=lib_path,
             )
@@ -1483,6 +1509,13 @@ def dag_layout():
 
 @bp.get("/workflows/<name>/inputs")
 def get_inputs(name):
+    """What the library holds -- a readout, not a form.
+
+    The recipe's rows are what the page edits and what the library is built
+    from; this says what the last solve made of them. It is how a sample-array
+    row learns it stands for two hundred items, and how a row learns which
+    manifest entry it ended up as.
+    """
     p = _project()
     lib_path = p.input_library_path(name)
     if not lib_path.is_dir():
@@ -1494,89 +1527,26 @@ def get_inputs(name):
         op_data.show_item_lineage(str(lib_path), item["path"], render=False)
         for item in info["items"]
     ]
-    # Which sample-array row registered each item, so the recipe can show a count
-    # against that row instead of two hundred rows it did not ask for. The
-    # attribution is the server's: the record of what an expansion put down is
-    # the only place it is known.
+    # Which row registered each item. The attribution is the server's: a
+    # deferred path is minted rather than chosen, so the record beside the
+    # library is the only place the answer is known.
     record = op_samples.read_record(str(lib_path))
     from_array = {
         path: tid for tid, paths in (record.get("generated") or {}).items() for path in paths
     }
+    from_row = {str(v): str(k) for k, v in (record.get("rows") or {}).items()}
     for item in info["items"]:
         item["array_id"] = from_array.get(item["path"])
-        # a template's rows point at the deferred marker, not a real file yet --
-        # the browser is not equipped to make sense of `/msm_deferred/<hex>` and
-        # should show nothing rather than that string
+        item["row_id"] = from_row.get(item["path"])
+        # a row with no path yet points at the deferred marker, not a real file
+        # -- the browser is not equipped to make sense of `/msm_deferred/<hex>`
+        # and should show nothing rather than that string
         item["deferred"] = is_deferred(item["path"])
     info["expansion"] = {
         "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
         "row_count": record.get("row_count", 0),
     }
     return jsonify(info)
-
-
-@bp.post("/workflows/<name>/inputs/items")
-def add_input(name):
-    b = _body()
-    lib_path = str(_project().input_library_path(name))
-    dtype = b.get("dtype")
-    assert dtype, "a data type is required"
-    parents = b.get("parents") or None
-    if b.get("value") is not None:
-        return jsonify(op_data.add_value(
-            lib_path, b.get("name") or "", b["value"], dtype, parents,
-        )), 201
-    assert b.get("path"), "either a path or a value is required"
-    return jsonify(op_data.add_item(lib_path, b["path"], dtype, parents)), 201
-
-
-@bp.delete("/workflows/<name>/inputs/items")
-def remove_input(name):
-    item = request.args.get("path")
-    assert item, "path is required"
-    return jsonify(op_data.remove_item(str(_project().input_library_path(name)), item))
-
-
-@bp.put("/workflows/<name>/inputs/items/parents")
-def set_input_parents(name):
-    """The item's lineage becomes exactly what is sent.
-
-    A replacement, not an addition: the page edits lineage after the fact, and
-    the additive `set_item_parents` the CLI uses cannot take a link back -- a
-    parent unticked would have stayed on. PUT is already the right verb for it.
-    """
-    b = _body()
-    return jsonify(op_data.replace_item_parents(
-        str(_project().input_library_path(name)), b["path"], b.get("parents") or [],
-    ))
-
-
-@bp.put("/workflows/<name>/inputs/items/type")
-def retype_input(name):
-    """The row is that type instead. PUT for the same reason parents is: it
-    replaces a property of a row that already exists."""
-    b = _body()
-    assert b.get("path"), "path is required"
-    assert b.get("dtype"), "a data type is required"
-    return jsonify(op_data.retype_item(
-        str(_project().input_library_path(name)), b["path"], b["dtype"],
-    ))
-
-
-@bp.put("/workflows/<name>/inputs/items/path")
-def repoint_input(name):
-    """The row points somewhere else.
-
-    Deliberately not `rename`: for an absolute entry -- a pointer to the user's
-    own file -- nothing on disk moves. Only a library-owned (relative) entry is
-    a real rename, and `repoint_item` is the one that knows the difference.
-    """
-    b = _body()
-    assert b.get("path"), "path is required"
-    assert b.get("new_path"), "a new path is required"
-    return jsonify(op_data.repoint_item(
-        str(_project().input_library_path(name)), b["path"], b["new_path"],
-    ))
 
 
 # -- the sample table --------------------------------------------------------
@@ -1588,14 +1558,8 @@ def _table_dir(name: str) -> Path:
     return p.workflow_path(name)
 
 
-def _drafts_of(name: str) -> list[dict]:
-    """The recipe's input rows as the browser holds them.
-
-    Sample arrays are not a second list: an array row *is* a draft whose path
-    (or a value row's name or value) holds `{column}` tokens, so the two cannot
-    get out of step with each other.
-    """
-    return list(_project().read_workflow(name).request.get("input_drafts") or [])
+def _rows_of(name: str) -> list[dict]:
+    return op_recipe.rows_of(_project(), name)
 
 
 @bp.get("/workflows/<name>/table")
@@ -1603,7 +1567,7 @@ def get_table(name):
     table = op_samples.read_attached_table(_table_dir(name))
     if table is None:
         return jsonify({"attached": False})
-    rows = _drafts_of(name)
+    rows = _rows_of(name)
     checked = op_samples.validate(str(_project().input_library_path(name)), table, rows)
     record = op_samples.read_record(str(_project().input_library_path(name)))
     return jsonify({

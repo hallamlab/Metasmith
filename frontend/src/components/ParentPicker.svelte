@@ -55,7 +55,6 @@
              only its type -->
         <li class="parent" onmouseenter={() => onhover?.(p.key)} onmouseleave={leave}>
           <span class="muted truncate grow small">{p.sub ?? '—'}</span>
-          {#if p.draft}<span class="draft small">draft</span>{/if}
           {#if !disabled}
             <!-- one click, not two: a lineage link is re-added from the menu
                  right below it, so there is nothing here to protect against -->
@@ -102,10 +101,6 @@
               }}
             >
               <span class="mono truncate grow">{o.label}</span>
-              <!-- offerable, but not registered yet: a row that descends from
-                   one of these waits for it, and the wait is invisible unless
-                   the list says which rows are which -->
-              {#if o.draft}<span class="draft small">draft</span>{/if}
               {#if o.sub}<span class="muted truncate sub">{o.sub}</span>{/if}
             </button>
           {/each}
@@ -147,16 +142,6 @@
   }
   .parent:hover { border-color: var(--line); background: var(--panel-2); }
   .sub { flex: 0 1 auto; }
-  /* not a warning -- a draft parent is a legitimate thing to name, it just has
-     not registered yet */
-  .draft {
-    flex: 0 0 auto;
-    color: var(--warn);
-    border: 1px solid var(--line);
-    border-radius: var(--radius);
-    padding: 0 4px;
-    font-size: 10px;
-  }
   .x {
     flex: 0 0 auto;
     background: none;

@@ -25,9 +25,15 @@ module does not use or produce.)
 (A *template*, elsewhere in metasmith, is a stored workflow you start from --
 a different thing entirely, which is why this one is not called that.)
 
-The generated items are recorded so a re-expansion can take back exactly what
-the last one put down. That record is server-owned and belongs beside
-`result.yml`, never in the request the browser rewrites wholesale.
+This module reads the sheet and says what is wrong with it; it does not write
+to a library. `ops.inputs.sync` is the one writer, and it registers array rows
+and plain rows in the same pass -- they are the same kind of row and there is
+one library state, so two functions with two ideas of what is in it is exactly
+the state that leaves it half built.
+
+The record of what was put down lives here because this module owns its shape.
+It is server-owned and belongs beside `result.yml`, never in the request the
+browser rewrites wholesale.
 """
 from __future__ import annotations
 
@@ -270,6 +276,7 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
 
     columns = set(table.get("columns") or [])
     by_id = {str(t["id"]): t for t in array_rows}
+    all_ids = {str(r["id"]) for r in rows if r.get("id") is not None}
 
     for t in array_rows:
         tid = str(t["id"])
@@ -289,7 +296,10 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
                 f"the library -- it cannot hold a slash"
             )))
         for p in _array_parents(t):
-            if p not in by_id:
+            # ...against every row, not just the array ones: an array row
+            # descending from a plain row is one declared DAG hung off a single
+            # shared input, which is the ordinary shape of a sample recipe
+            if p not in all_ids:
                 problems.append(_problem(tid, f"[{label}] descends from a row that is gone"))
 
     try:
@@ -298,11 +308,29 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
         problems.append(_problem("lineage", str(exc)))
         return {"problems": problems, "array_rows": array_rows}
 
-    problems += _path_problems(library_path, table, array_rows, by_id)
+    problems += _path_problems(library_path, table, array_rows, by_id, rows)
     return {"problems": problems, "array_rows": array_rows}
 
 
-def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
+def _plain_paths(rows: list[dict]) -> set[str]:
+    """What the recipe's non-array rows will occupy once they are registered.
+
+    Read off the rows rather than off the manifest: a plain row is registered
+    from the row on every solve, so what the library holds right now is the
+    *previous* answer -- it still lists a row that has since been deleted, and
+    does not list one that has since been typed in.
+    """
+    out: set[str] = set()
+    for r in rows:
+        if is_array_row(r) or not (r.get("dtype") or "").strip():
+            continue
+        name = (r.get("name") if r.get("mode") == "value" else r.get("path")) or ""
+        if name.strip():
+            out.add(name.strip())
+    return out
+
+
+def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
     """What the substituted paths themselves are wrong about.
 
     Checked before anything is registered, because `AddItem` asserts mid-loop on
@@ -310,8 +338,10 @@ def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
     the hard way leaves a half-expanded library on disk.
     """
     lib = load_data_lib(library_path)
-    previous = set(read_record(library_path).get("paths", []))
-    existing = {str(p) for p in lib.manifest} - previous
+    record = read_record(library_path)
+    previous = set(record.get("paths", []))
+    owned = {str(v) for v in (record.get("rows") or {}).values()}
+    existing = _plain_paths(rows) | ({str(p) for p in lib.manifest} - previous - owned)
     problems: list[dict] = []
     minted: dict[str, tuple[str, str, int, str | None]] = {}
     columns = set(table.get("columns") or [])
@@ -372,9 +402,13 @@ def _path_problems(library_path, table, array_rows, by_id) -> list[dict]:
             problems.append(_problem("", "...and more; the first forty are shown"))
             break
 
+    # A literal path in a lineage is a leftover from when a registered row was
+    # named by its path; a row is named by its id now. It still has to point at
+    # something -- either an entry that is there, or a row that will put one there.
+    reachable = _plain_paths(rows) | {str(p) for p in lib.manifest}
     for t in array_rows:
         for p in _plain_parents(t):
-            if Path(p) not in lib.manifest:
+            if p not in reachable:
                 problems.append(_problem(str(t["id"]), (
                     f"descends from [{p}], which is not registered"
                 )))
@@ -417,109 +451,3 @@ def write_record(library_path: str | Path, record: dict) -> Path:
     return p
 
 
-# -- expansion ---------------------------------------------------------------
-
-
-def clear(library_path: str, save: bool = True) -> dict:
-    """Unregister everything the last expansion registered.
-
-    Survivors are repaired first: `Remove` drops the item's own parent list but
-    never touches its *children's* records, and neither `Pack` nor `Unpack`
-    notices a dangling one -- the first `Get` on the child raises `KeyError`, a
-    long way from here. Removal takes the paths from the record but intersects
-    them with the manifest, since a generated row may have been deleted by hand.
-    """
-    lib = load_data_lib(library_path)
-    record = read_record(library_path)
-    doomed = [Path(p) for p in record.get("paths", [])]
-    present = list(dict.fromkeys(p for p in doomed if p in lib.manifest))
-    doomed_set = set(present)
-
-    for path in list(lib.manifest):
-        if path in doomed_set:
-            continue
-        current = lib.parents.get(path)
-        if not current:
-            continue
-        kept = [m for m in current if m.path not in doomed_set]
-        if len(kept) != len(current):
-            lib.parents[path] = kept
-
-    for path in present:
-        lib.Remove(path)
-    if save:
-        lib.Save()
-    if record:
-        write_record(library_path, record | {"paths": [], "generated": {}})
-    return {"removed": [str(p) for p in present]}
-
-
-def expand(
-    library_path: str,
-    table: dict,
-    rows: list[dict],
-    on_progress=None,
-) -> dict:
-    """Register one item per (array row x table row). Validates first, saves once.
-
-    The library is loaded once and saved once: `ops.data.add_item` re-loads and
-    re-saves per call, which over a two-hundred-row sheet is both slow and a
-    window in which a failure leaves the library half-built.
-    """
-    checked = validate(library_path, table, rows)
-    assert not checked["problems"], "; ".join(p["message"] for p in checked["problems"])
-    array_rows = checked["array_rows"]
-    if not array_rows:
-        return {"generated": {}, "counts": {}, "row_count": 0}
-
-    clear(library_path, save=True)
-
-    lib = load_data_lib(library_path)
-    order = order_array_rows(array_rows)
-    records = table.get("rows") or []
-    generated: dict[str, list[str]] = {str(t["id"]): [] for t in array_rows}
-    made: list[str] = []
-
-    for i, record in enumerate(records):
-        per_row: dict[str, Path] = {}
-        for row in order:
-            tid = str(row["id"])
-            parents = [per_row[p] for p in _array_parents(row) if p in per_row]
-            parents += [Path(p) for p in _plain_parents(row)]
-            if row.get("mode") == "value":
-                path = Path(substitute(row.get("name"), record))
-            else:
-                path = Path(substitute(row.get("path"), record))
-            if path in lib.manifest:
-                # a shared name/path repeating within this same expansion --
-                # rows sharing a column value collapse onto one instance;
-                # `_path_problems` already ruled out a value mismatch or a
-                # collision with a different declared column.
-                lib.AddParentsTo(path, [lib.Get(p) for p in parents])
-            elif row.get("mode") == "value":
-                path = lib.AddValue(
-                    str(path), substitute(row.get("value"), record),
-                    row["dtype"], parents=parents,
-                )
-            else:
-                path = lib.AddItem(path, row["dtype"], parents=parents)
-            per_row[tid] = path
-            generated[tid].append(str(path))
-            made.append(str(path))
-        if on_progress and (i + 1) % 25 == 0:
-            on_progress(i + 1, len(records))
-    lib.Save()
-
-    record = {
-        "paths": made,
-        "generated": generated,
-        "row_count": len(records),
-        "columns": list(table.get("columns") or []),
-    }
-    write_record(library_path, record)
-    return {
-        "generated": generated,
-        "counts": {k: len(v) for k, v in generated.items()},
-        "row_count": len(records),
-        "item_count": len(made),
-    }
