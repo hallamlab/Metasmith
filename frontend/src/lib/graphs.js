@@ -1,9 +1,10 @@
 // What the panel draws, built from the type index the browser already holds.
 //
 // No route and no fetch: the index is shipped whole precisely so that toggling a
-// library is instant, and a graph that had to be rendered on the server would
-// put a round trip back in front of every click. Three shapes come out of here,
-// all in the same `{nodes, edges}` form that lib/dagLayout.js lays out:
+// library is instant. What a node *is*, and which ones are plumbing, are content
+// rules and stay here; where they sit on the page is `POST /api/dag/layout`,
+// which runs the same engine that draws the plan. Three shapes come out of here,
+// all in the same `{nodes, edges}` form that MiniGraph sends for placement:
 //
 //   transformGraph -- one tool: what it needs above it, what it makes below
 //   libraryGraph   -- a library: its tools and the types that join them

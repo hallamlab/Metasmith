@@ -79,7 +79,15 @@
       <h3>native — yours</h3>
       <span class="small muted">everything outside the block</span>
     </div>
-    <ConfigEditor bind:value={native} rows={18} label="the rest of your ssh config" />
+    <!-- fixed, like the managed box above it: a drag handle in the corner of a
+         box whose height is already the whole of the file is a control that
+         only ever gets used by accident -->
+    <ConfigEditor
+      bind:value={native}
+      rows={18}
+      resizable={false}
+      label="the rest of your ssh config"
+    />
   </div>
 </div>
 

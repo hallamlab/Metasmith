@@ -23,6 +23,7 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, Optional, Union
 
+from .caching.layout import logs_dir as _logs_dir, shard_dir
 from .models.lineage import (
     GroupingFrame,
     InstanceNotFound,
@@ -303,10 +304,10 @@ def resolve_log_bundle(
     key_hex = event.cache_key or event.task_hash
     if not key_hex:
         return LogBundle(status="missing", reason="event has no cache_key")
-    shard = cache_root / key_hex[:2] / key_hex[2:]
+    shard = shard_dir(cache_root, key_hex)
     if not shard.exists():
         return LogBundle(status="pruned", reason=f"shard not found at {shard}")
-    logs_dir = shard / "logs"
+    logs_dir = _logs_dir(shard)
     if not logs_dir.exists():
         return LogBundle(
             status="legacy_shard_no_logs",

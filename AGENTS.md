@@ -134,9 +134,18 @@ filled it. So one transform applied to different inputs is a different applicati
 applied to the same inputs it dedupes.
 
 When no complete plan exists, `WorkflowPlan.hints` carries structured `PlanHint` records
-(`unreachable_target`, `missing_input`, `lineage_mismatch`) with a reverse-BFS chain,
-candidate transforms, and near-misses ranked by property-Jaccard against the givens. Every
-consumer is expected to surface them — a bare "no plan" is not an acceptable failure.
+(`too_general`, `unreachable_target`, `missing_input`, `lineage_mismatch`) with a reverse-BFS
+chain, candidate transforms, and near-misses ranked by property-Jaccard against the givens.
+Every consumer is expected to surface them — a bare "no plan" is not an acceptable failure.
+
+`too_general` leads the list because it is usually the whole answer. The direction rule above
+is the most confusing thing the planner does: registering `reads` and asking for an `assembly`
+satisfies no assembler — they want `long_reads` or `short_reads_pe` — so the walk goes *past*
+the demand that was meant and dead-ends hops later at an accession nobody mentioned. The hint
+is raised for every demand on the walk that a given is a strict supertype of, and it names both
+halves of the fix: the types that would satisfy the demand *and* still describe the file (a
+retyping), and any parent the slot declares that nothing registered could stand in for — which
+no amount of retyping supplies.
 
 ### Types are compiled once per library
 
@@ -223,22 +232,57 @@ sequences::gbk (grouped)  → [ppanggolin]     → pangenome::ppanggolin_matrix
 `parents=` is what makes two targets of the same type **distinct requests** rather than the
 duplicate `Add` rejects. Same type *and* same parents still raises.
 
+**Everything the solver needs before it runs is one serializable object.** `agents/spec.py`'s
+`Spec` holds the input library, the sample type, the target types, the transform and resource
+libraries and the shared input paths, and `Spec.Solve()` is the only door through to
+`WorkflowPlan.Generate`. There used to be two copies of those twenty lines — `Agent.GenerateWorkflow`
+and `ops.workflow.plan_workflow` — which had already drifted apart on `shared_input_paths` and
+on the positional target lineage; both are callers now. The point of collapsing them is that a
+plan then has a *before* representation as well as an after: the GUI's `request.yml` is the store
+envelope merged with a packed Spec rather than a GUI-private format, and a **template** is
+nothing but a Spec whose input paths are deferred.
+
+**`DEFERRED` is a path that is not known yet** (`models/paths.py`) — it plans, and it refuses at
+stage. It is what lets a template ship without the absolute paths of whoever authored it. Three
+properties are load-bearing and none is obvious. It is **absolute**, under the reserved root
+`/msm_deferred/`, because `ops.data.repoint_item` — the operation that fills one in — reads
+`is_absolute()` as "not library-owned", so a relative stand-in would be refused or would try to
+move a file that never existed. It is **minted once and persisted**, because identity derives
+from path, so re-minting on load would give the same spec a different task key every time it is
+opened. And it is a value, not a flag: nothing downstream tests for `None` or a sentinel.
+
 **A sample type is a way of branching a plan, not a precondition for one.**
 `plan_workflow(sample_type=None)` plans the library as it stands — one sample holding
 everything in it — and naming a type splits it into one run per item of that type
-(`AsSamples`). The GUI does not offer sampling and always passes `None`; the CLI's
-`--sample-type` is optional for the same reason.
+(`AsSamples`). The GUI passes `None` unless a sample table is attached, in which case it
+passes the type of the sample-array row marked as the index; the CLI's `--sample-type` is
+optional for the same reason.
 
-**Planning is not reentrant.** `TransformInstance.Load` imports each transform by bare module
-name, mutates `sys.path`, calls `importlib.reload`, and returns through a *class* attribute —
-all process-global. Two concurrent plans in one process clobber each other and fail with a
-bare `spec not found for the module`. The CLI never hits this (one process, one plan);
-anything long-lived must serialise generates, and anything walking the same import path must
-hold the same lock — which is **every** caller that imports a transform, not only the ones
-that plan: building a type index, and reading a staged bundle back with `load_task`, both do
-it. The second failure mode is quieter than the `spec not found` one — `Load` returns through
-the class attribute a concurrent load already reset, so a transform arrives as `None` — and it
-surfaces as an assertion two frames away in `GetTransform`.
+**A sample's mask is one index item's lineage, so both directions of the shape matter.** An
+index item with a *parent* puts that parent's whole subtree in every mask and collapses all
+samples into one view; an item beside the index that nothing links to it lands in no mask at
+all and the planner never sees it, though it is still staged. `ops.samples.validate` refuses
+the first and `plan_workflow(shared_input_paths=…)` is the way out of the second — it appends
+one masked view of the input library alongside the resource libraries, which is where a thing
+every sample sees belongs.
+
+**Planning is not reentrant, and the lock for it lives at the mutation.** `TransformInstance.Load`
+imports each transform by bare module name, mutates `sys.path`, calls `importlib.reload`, and
+returns through a *class* attribute — all process-global — so it takes a class-level lock and
+inserts/removes its own `sys.path` entry rather than snapshotting the list. Callers still
+serialise around it (the GUI's `_plan_lock` covers a whole plan, a type index, and a
+`load_task`), but the correctness of one import no longer depends on every caller remembering.
+Two failure modes taught that: the loud one is `spec not found for the module`, and the quiet
+one is a snapshot-and-restore putting a concurrent load's entry back **permanently** — nothing
+fails, every later import scans more directories, and a day-old server plans an order of
+magnitude slower (0.4s → 9s per solve, measured). Pinned by
+`tests/unit/test_transform_load_is_serialised.py`.
+
+**Every transform file opens with `ResolveParentLibrary(__file__)`**, so a library's own load
+re-enters it once per transform. Without the per-root cache behind that call, loading the
+standard library re-read the manifest 115 times — ~8.5s of yaml against ~1s of actual planning.
+The cache is keyed on a `scandir` signature so a transform edited between two plans in one
+process is not served from it.
 
 ### Agents and execution
 
@@ -262,6 +306,32 @@ agent home re-parses it on the next save. It was not: `SshSource` renders `ssh:/
 while `Parse` split on `/` and read the `:` as part of the host, so a remote home grew a
 colon per save until nothing could reach it. Pinned by
 `tests/unit/test_source_parse.py::TestSshRoundTrip`.
+
+### Re-exporting packages
+
+`models/libraries`, `models/workflow` and `agents` are packages whose `__init__.py` is a
+module docstring and re-exports, nothing else. They were single files until they reached
+2100–2600 lines; the dotted paths did not change, and are not allowed to. `metasmith/
+__init__.py` is entirely commented out, so those paths *are* the public API — the standard
+library of transforms is a separate repo reaching them through `python_api`. None of the
+three declares `__all__`: notebooks under `main/` star-import them and pick up names they
+never import themselves. `tests/unit/test_module_surface.py` holds a snapshot of the
+pre-split namespace and fails on any name that stops being reachable.
+
+Two things a re-export does *not* give you, both of which cost a debugging session each:
+
+- **A re-exported name is importable, not patchable.** `monkeypatch.setattr` on the package
+  rebinds the package's global; the code still reads the binding in the module that defines
+  it. Patch the module that *runs* the code, not the one that exports it.
+- **`inspect.getsource(pkg)` and `pkg.__file__` resolve to the `__init__`** — pure
+  re-exports. A test that reads a module's source to pin a literal must glob the package,
+  and one that pins an *absence* passes trivially otherwise.
+
+In `agents`, `RunWorkflow`, `StageWorkflow` and `CheckWorkflow` each name two things: an
+`Agent` method (the client asking) and a free function in `agents.runner` (the agent host
+doing). Both are public, so neither is renamed. `coms/api.py` imports the free functions by
+bare name from the package, so the `__init__` import order is load-bearing — `runner` is
+imported last, and must stay last.
 
 ---
 
@@ -337,6 +407,19 @@ The container is **dual-bound**: the host scope dir lands at both `/ws` (`WORK_R
 mapping a cwd back to the host must check both prefixes and route HOME_ROOT cwds through
 `agent.real_path`. Pinned by `tests/unit/test_sbatch_home_root_cwd.py`.
 
+**Anything codegen writes into the workflow graph must be in container coordinates**, because
+channel values become the FILES manifest and are read back inside the per-step bootstrap
+container — which mounts `WORK_ROOT`, `HOME_ROOT`, and whatever `.command.binds` declares, and
+nothing else. The Nextflow head is not the reader and holds a bind the per-step container
+lacks, so a host-spelled address stages fine and then fails one process later, reported as a
+missing input. Filesystem work at compile time stays in the host view; only the *emitted*
+literal goes through `PathMap`. This holds for host-side targets too — `bin/sbatch` translates
+the two roots outward before submitting, and a host-spelled path is invisible to it.
+`publishDir` is the single deliberate exception. `ContractRuntime.check_emitted_addresses`
+fails a test when a producer breaks this; every `NextflowGenContext` in the suite except
+`tests/cache/test_codegen.py` collapses `external_home` onto `HOME_ROOT`, which is why the
+bug it pins was invisible for so long.
+
 ### DAG rendering
 
 Placement is metasmith's own, in four modules under `src/metasmith/models/`: `dag_layout`
@@ -391,6 +474,18 @@ The objective is a proxy, and it stops agreeing with the picture close to its op
 `env` is in `blacklist_namespaces` alongside `lib` and `containers`: an environment is a
 declared dependency like any other, so without it every plan DAG grows an `env::*` node per
 step. Three defaults have to agree — `BuildDAG`, `RenderDAG`, and `ops.workflow.render_dag`.
+
+**`background` (default `True`) paints the plate; `False` renders transparent** — no SVG
+`<rect>`, and raster's `bgcolor` becomes graphviz's `transparent` rather than the theme's hex.
+Every artifact-producing caller keeps the default; the GUI is the one caller that turns it
+off, because its diagram sits directly on a card whose ground is the theme's own background
+hex. Node fills are not touched by this — a hollow marker's fill is still that same hex, so a
+transparent-mode drawing is pixel-exact on a card of the theme's colour and only very close
+on any other.
+
+**Only the solid target outlines at double weight.** A hollow circle carries the triangle's
+`stroke_width`, so an intermediate never reads louder than the step that made it; the target
+is the one kind a reader is hunting for and is the only marker allowed to be heavier.
 
 ### GPUs
 
@@ -538,9 +633,12 @@ Absent or remote inputs fall back to a random per-call id and get no reuse.
 that step's emission in `workflow.nf` into a synthetic channel routed through
 `o.post(o.asStreams(...), k)` — every tuple must re-enter `o.post` before any downstream
 `o.group` observes it, or the orchestrator deadlocks. Any change to cache-hit codegen has to
-preserve that. The post-exec promote atomic-renames `<key>.tmp/` into `<key[:2]>/<key[2:]>/`;
-the reclaim sweep that follows is scoped to the promoting run's own keys, because an unsealed
-`.tmp` is indistinguishable from one another run is still writing.
+preserve that. The post-exec promote atomic-renames the staging dir onto the shard; the
+reclaim sweep that follows is scoped to the promoting run's own keys, because an unsealed
+`.tmp` is indistinguishable from one another run is still writing. Every on-disk name in that
+sentence — shard, staging dir, `out/`, `logs/`, `task_cache` itself — is defined once in
+`caching/layout.py`, since compile, promote, telemetry and ops all have to agree and
+disagreeing reads as a cache miss rather than an error.
 
 **`trace.jsonl` is the canonical event log, and it records banked work, not run work.**
 `<run_dir>/_metasmith/trace.jsonl` rotates on compile and is never truncated; a `SessionStart`
@@ -604,6 +702,12 @@ else under `gui/`, so what actually packages them is vite emitting them into the
 an icon referenced by neither `index.html` nor a component would not ship at all. The dir is
 outside the vite root, which is why `server.fs.allow` has to name it for the dev server.
 
+**Deleting is archiving.** The first `DELETE` of an agent, a workflow or a run writes a
+tombstone; the second — of something already archived — removes it. Nothing the GUI holds is
+recoverable from anywhere else, and the same gesture is one double-click away on a list of
+near-identical names. It is also what gives the archive filter something to show: while
+deletion was conditional on dependents, an ordinary project never archived anything.
+
 Two conventions shape the routes. **Every editable object is saved by `PUT /<collection>/<id>`
 carrying the whole object**, identity field included, so an id differing from the url is a
 rename applied as part of the save — what that costs differs by collection, since a
@@ -611,6 +715,47 @@ workflow's directory becomes the task bundle a run stages from while an agent is
 nothing points into. And **incompleteness is reported, never refused, until launch**: you
 make an agent days before its cluster exists in your ssh config, so `problems`/`valid` ride
 on the payload and only the launch route enforces them.
+
+**A sample table is a sheet plus one declared row per kind of input.** `ops.samples` parses a
+csv/tsv/excel upload (stored verbatim under a fixed stem, because the workflow directory *is*
+the task bundle root), expands `{column}` tokens in the recipe's input rows into one library
+item per (row × sheet row), and records what it put down in `expansion.yml` beside
+`result.yml` — server-owned deliberately, since the browser rewrites `request.yml` wholesale
+on nearly every edit. A row holding a token is a **sample array**: one declaration standing for
+N items indexed by the sheet, not a fourth kind of row — just one the commit cascade skips, so
+nothing has to be kept in step. The recipe shows an array row's count and never the items it
+made. It is deliberately *not* called a template: that word now means a stored workflow you
+start from, and the two were being confused in the same page.
+
+**Expansion is not a step a user takes — `generate_workflow` takes it, every solve.** There is
+no `/table/expand` route; `expand()` already clears what the previous call registered before it
+writes the new set (`clear()` is its own first line), so calling it unconditionally at the top of
+every generate keeps the registered items in exact step with the current sheet and rows with
+nothing to remember to redo and no state that can go stale between an edit and a solve. A
+workflow with no table, or no array row left, gets `clear()` instead, for the same reason: what a
+past expansion put down must not outlive the row that put it there.
+
+**A template is a starting point, and `+ workflow` is where you pick one.** Templates live at
+`<stdlib>/templates/<name>/` — a `spec.yml` plus the deferred input rows it names — and are
+authored in the libraries repo as a script that builds a Spec and solves it, so the build is
+what proves a template still plans. Creating from one copies the spec and the rows; nothing is
+merged, because the recipe is new and therefore empty. The DAG the modal shows is **solved on
+demand and cached per (template, stdlib commit, theme)**, never shipped pre-rendered: a solve
+depends on the library clone the user actually has, so a drawing baked at author time would go
+quietly wrong rather than loudly stale.
+
+**Sharing is a string, not a file.** `gui/share.py` encodes an ssh host, an agent or a workflow
+as `msm1:<checksum>:<base64 gzipped yaml>` — a prefix so a later format is refused by name
+instead of misread, and a digest so a payload a mail client wrapped and someone pasted back
+short is refused instead of half-imported. What travels is the object's declaration, never its
+bookkeeping: no identity file, no `real_path`, no deployment state. Resolution on arrival is
+**best effort by name** — an unresolvable library is dropped and named, an unknown type is
+placed as a red draft — because refusing the whole import over one missing name is the worse
+failure. A workflow travels bound (real paths) or unbound (deferred), and in either form a
+library-owned *value* row travels whole, since the row *is* its file rather than a pointer to
+one. Lineage in the payload is stated in row **ids, never paths** — unbound, every row's path
+is the same string, so a parent named by path is a parent that cannot be told apart. Both ends show their contents before they act: the export dialog decodes what you are
+about to copy, and the import dialog lists what would be created before it writes.
 
 An agent carries a **default preset and default params**, and a run layers its own over them
 per key — the person clicking launch is the one least placed to know their login node needs
@@ -635,7 +780,33 @@ An agent created without a name is named after its **host**, not a bare adjectiv
 `gui/names.py` composes `<word>-<host>` and stores the word as `agent_naming`, which is how
 renaming an ssh alias can re-derive and rename the agent to match (`_repoint_agents`) while
 leaving its home path untouched. A hand-typed name carries no such record, so it does not
-follow a host rename.
+follow a host rename — and the regenerate button beside the name is the only way back from
+that, since it is the one caller that sends a `naming` record *with* the rename.
+
+**The url's hash is the one thing a reload does not lose.** `select(section, id)` writes
+`#<section>/<id>` via `history.replaceState` (never a plain assignment, which would jump the
+page to any element sharing that id, and never `pushState`, which would turn clicking through
+a rail into an undoable history); `state.svelte.js` parses it once at module load, before
+`app`'s starting values are chosen, so the first render lands on what the hash says. A run's
+id already has a slash in it (`workflow/run`), so only the id half is percent-encoded.
+
+**The workflow diagram's `<img src>` carries `wf.generated_at`, not just the theme.** The
+route serves a file cached beside the bundle, so a url that never changes across a re-solve
+is a url the browser's own cache will keep answering from — `generated_at` is the newest thing
+that changes on every solve, including a re-solve onto an identical plan. The cache is keyed
+on nothing about the *renderer*, so a change to how a node is drawn does not invalidate a
+drawing already on disk; delete the `plan.dag*.svg` beside a bundle to see one redrawn.
+
+**A step's controls sit level with its node, in the drawing's own pixels.** The result card
+places one row per step at the `dag_cy` the server measured off the same `geometry()` that
+`render_svg` is written in terms of, so the only two things that can break it are scaling the
+`<img>` and putting anything — padding, a border, a preceding element — between the image and
+the rows box. Either moves one origin and not the other, and since the displacement is about
+one row tall it reads as rows naming the *next* step rather than as rows a little low. Hence:
+flex siblings with nothing between them, every spacing from `dag_geometry` rather than a
+constant on the page, and a column header nudged into place with `position: relative` so it
+still sizes the box. Each row states the `dag_cy` it was placed at, so this is assertable
+from the page rather than by eye.
 
 ---
 

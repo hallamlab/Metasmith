@@ -9,6 +9,9 @@ never in a route body.
 from __future__ import annotations
 
 import json
+import logging
+import os
+import re
 import shutil
 import threading
 from fnmatch import fnmatch
@@ -16,11 +19,16 @@ from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
+from ..agents import Spec, Template
+from ..models.dag_renderer import THEMES, NodeKind
+from ..models.paths import is_deferred
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
 from ..ops import data as op_data
 from ..ops import runtime as op_runtime
+from ..ops import samples as op_samples
 from ..ops import workflow as op_workflow
+from . import share as op_share
 from . import stdlib
 from .jobs import LogCapture
 from .names import (
@@ -35,6 +43,8 @@ from .sshconfig import SshConfig, SshConfigError
 from .store import INPUT_LIBRARY_DIRNAME, Project, ProjectError, utcnow
 
 bp = Blueprint("api", __name__, url_prefix="/api")
+
+_LOG = logging.getLogger(__name__)
 
 # What a new agent's home is set to before the user touches it. `~` is the one
 # path spelling that means the same thing whether the agent runs here or on a
@@ -132,6 +142,7 @@ def _ssh() -> SshConfig:
 
 @bp.errorhandler(ProjectError)
 @bp.errorhandler(SshConfigError)
+@bp.errorhandler(op_share.ShareError)
 def _handle_refusal(exc):
     # a refusal is a message for the user, not a stack trace
     return jsonify({"error": str(exc), "kind": "refused"}), 409
@@ -254,6 +265,29 @@ def agent_defaults():
         "container": op_agent.default_container(),
         "presets": op_agent.config_presets(),
         "setup_commands": list(DEFAULT_SETUP_COMMANDS),
+    })
+
+
+@bp.get("/defaults/agent/name")
+def agent_name_suggestion():
+    """A fresh auto-name for an agent on `host` (default: this machine).
+
+    What the regenerate button beside an agent's name reads. It only *offers* a
+    name -- nothing is renamed until the form is saved -- and it returns the
+    naming record that goes with it, because a name adopted from here is an
+    auto name: sending it back on the save is what re-arms the agent to follow
+    its host again after someone typed over it once.
+    """
+    host = (request.args.get("host") or "").strip() or AGENT_LOCAL_HOST
+    p = _project()
+    prefix, name, sort_name = generate_agent_name(
+        host, taken=p.agent_names(include_archived=True)
+    )
+    return jsonify({
+        "name": name,
+        "prefix": prefix,
+        "sort_name": sort_name,
+        "home": default_agent_home(name),
     })
 
 
@@ -541,6 +575,12 @@ def _checked_params(raw, what: str = "params") -> dict | None:
 
 _OVERRIDE_FIELDS = {"cpus": int, "memory_gb": float, "duration_h": float}
 
+# "no limit at all", as opposed to an empty box, which means "whatever the
+# transform declared". A sentinel *string* rather than a JSON null so the two
+# cannot collapse into each other on the wire: null and an absent key look the
+# same to anything that drops empties, and this one has to survive that.
+UNLIMITED = "unlimited"
+
 
 def _checked_overrides(raw) -> dict | None:
     """Per-step resource overrides, with the untouched rows dropped.
@@ -558,6 +598,10 @@ def _checked_overrides(raw) -> dict | None:
         for field, cast in _OVERRIDE_FIELDS.items():
             v = spec.get(field)
             if v is None or (isinstance(v, str) and not v.strip()): continue
+            if isinstance(v, str) and v.strip().lower() == UNLIMITED:
+                assert field == "duration_h", f"[{field}] for step [{key}] cannot be unlimited"
+                kept[field] = UNLIMITED
+                continue
             try:
                 kept[field] = cast(v)
             except (TypeError, ValueError):
@@ -760,6 +804,18 @@ def update_agent(name):
         # default one, and the default is made out of the name in the form.)
         p.forget_agent_naming(name)
         name = p.rename_agent(name, renamed)["name"]
+        # ...unless the name came from `GET /defaults/agent/name` rather than
+        # from a keyboard. Typing a name is what makes an agent manually-named;
+        # regenerating one is the opposite gesture, and it has to be able to
+        # undo that, or the button works once and then stops meaning anything.
+        adopted = b.get("naming") or None
+        if isinstance(adopted, dict) and adopted.get("prefix"):
+            p.set_agent_naming(
+                name,
+                str(adopted["prefix"]),
+                str(adopted.get("sort_name")
+                    or agent_sort_name(adopted["prefix"], agent_host_of(home) or AGENT_LOCAL_HOST)),
+            )
     else:
         naming = p.agent_naming(name)
         host = agent_host_of(home)
@@ -841,6 +897,123 @@ def deploy_agent(name):
     return jsonify(job.summary()), 202
 
 
+# -- templates ---------------------------------------------------------------
+#
+# A template is a workflow you start from: a spec whose input paths are
+# DEFERRED, shipped in the standard library beside the transforms it names.
+# There is no separate format to keep in step -- these routes read the same
+# `Spec` a stored workflow record is, and creating from one is an ordinary
+# create with that spec and its input rows.
+
+
+def _target_names(targets) -> list[str]:
+    """Target types as plain names, whichever of the two spellings was used."""
+    return [t if isinstance(t, str) else str(t.get("type") or "") for t in targets or []]
+
+
+def _templates(p) -> dict[str, Template]:
+    found = stdlib.discover(p.root)
+    if not found["present"]:
+        return {}
+    return {t.name: t for t in Template.Discover(found["path"])}
+
+
+def _template(p, name: str) -> Template:
+    tmpl = _templates(p).get(name)
+    if tmpl is None:
+        raise ProjectError(f"no template named [{name}]")
+    return tmpl
+
+
+def _template_dag_path(p, name: str, commit: str | None, theme: str) -> Path:
+    """Where a template's drawing is cached.
+
+    Keyed on the stdlib commit as much as on the name: a library pull can
+    change what a template solves to, and a cache that ignored the commit would
+    leave the modal drawing the previous graph with nothing to say it was
+    stale. Files under an old commit simply stop being asked for.
+    """
+    stamp = (commit or "unversioned")[:12]
+    return p.cache_dir / "template_dags" / stamp / f"{name}.{theme}.svg"
+
+
+def _theme_arg() -> str:
+    """An unknown theme falls back rather than raising -- it arrives from a url."""
+    theme = request.args.get("theme", "light")
+    return theme if theme in THEMES else "light"
+
+
+@bp.get("/templates")
+def list_templates():
+    """The starting points on offer, cheaply: this reads yaml, never solves."""
+    p = _project()
+    commit = stdlib.discover(p.root)["commit"]
+    theme = _theme_arg()
+    return jsonify([
+        {
+            "name": t.name,
+            "description": t.description,
+            "sample_type": t.spec.sample_type,
+            "target_types": _target_names(t.spec.target_types),
+            # so the modal can show a cached drawing immediately and only
+            # start a job for one it has never drawn
+            "dag_ready": _template_dag_path(p, t.name, commit, theme).is_file(),
+        }
+        for t in _templates(p).values()
+    ])
+
+
+@bp.post("/templates/<name>/dag")
+def render_template_dag(name):
+    """Solve a template and draw it -- as a job, because a solve is seconds.
+
+    It also holds `_plan_lock` for its whole duration, so a blocking route here
+    would freeze every other page that plans. Cached on (template, stdlib
+    commit, theme): paid once, and every later modal is served from disk.
+    """
+    p = _project()
+    tmpl = _template(p, name)
+    theme = _theme_arg()
+    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    if svg.is_file():
+        return jsonify({"template": name, "theme": theme, "cached": True})
+
+    def _work(job):
+        with LogCapture(job):
+            with _plan_lock:
+                task = tmpl.spec.Solve()
+            assert task.ok, (
+                f"template [{name}] does not solve against this library: "
+                f"dropped {sorted(task.plan.dropped_targets)}"
+            )
+            svg.parent.mkdir(parents=True, exist_ok=True)
+            # transparent: the GUI draws this over its own card background, and
+            # a painted one was never any colour other than the card's own --
+            # see `workflow_dag` below for the same reasoning
+            task.plan.RenderDAG(str(svg), theme=theme, background=False)
+            return {
+                "template": name, "theme": theme,
+                "step_count": len(task.plan.steps),
+            }
+
+    job = _jobs().submit(
+        "template_dag", f"draw {name}", _work, subject={"template": name},
+    )
+    return jsonify(job.summary()), 202
+
+
+@bp.get("/templates/<name>/dag")
+def template_dag(name):
+    """The cached drawing. Absent until the job above has drawn it."""
+    p = _project()
+    _template(p, name)  # 4xx on an unknown name rather than a missing file
+    theme = _theme_arg()
+    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    if not svg.is_file():
+        raise ProjectError(f"template [{name}] has not been drawn for theme [{theme}] yet")
+    return Response(svg.read_text(), mimetype="image/svg+xml")
+
+
 # -- workflows ---------------------------------------------------------------
 
 
@@ -849,6 +1022,9 @@ def _workflow_summary(wf) -> dict:
     runs = p.list_runs(workflow=wf.name, include_archived=True)
     return {
         "name": wf.name,
+        # a cosmetic label, independent of the directory name a solved plan is
+        # keyed to -- see `commitRename` in WorkflowView.svelte
+        "display_name": wf.request.get("display_name"),
         "path": str(wf.path),
         "created_at": wf.request.get("created_at"),
         "archived_at": wf.archived_at,
@@ -875,11 +1051,18 @@ def get_workflow(name):
     out = _workflow_summary(wf)
     out["request"] = wf.request
     # backfill for results written before the summary existed, and for anything
-    # planned by the CLI directly into a workflow directory
-    if wf.ok and not wf.result.get("step_display"):
-        display = _step_display(wf.path)
+    # planned by the CLI directly into a workflow directory. The geometry is
+    # tested by its newest key rather than by its presence, since a result
+    # stored against an older shape of it would otherwise never be revisited.
+    if wf.ok and (
+        not wf.result.get("step_display")
+        or "top_cy" not in (wf.result.get("dag_geometry") or {})
+    ):
+        display, dag_geometry = _step_display(wf.path)
         if display:
-            wf = p.write_result(name, wf.result | {"step_display": display})
+            wf = p.write_result(name, wf.result | {
+                "step_display": display, "dag_geometry": dag_geometry,
+            })
     out["result"] = wf.result
     out["runs"] = [_run_summary(r) for r in p.list_runs(workflow=name, include_archived=True)]
     lib_path = p.input_library_path(name)
@@ -894,19 +1077,41 @@ def create_workflow():
     The library is created up front, before anything is planned, because it is
     what the user edits -- the frozen copy inside the task bundle only appears
     once a plan succeeds, and a failed solve produces no bundle at all.
+
+    `template` names a starting point from the standard library. Because this
+    is *new*, taking one is not a merge: the recipe is empty, so the template's
+    spec is simply what the workflow starts as and its deferred rows are its
+    input library.
     """
     b = _body()
     p = _project()
     name = slugify(b["name"]) if b.get("name") else None
-    wf = p.create_workflow(name=name, request={
-        k: v for k, v in b.items()
-        if k in {"sample_type", "target_types", "transform_libraries", "resource_libraries"}
-    })
+    template = _template(p, b["template"]) if b.get("template") else None
+
+    # A workflow record is a spec plus the store's bookkeeping, so what a create
+    # may set is exactly the spec's fields -- named there rather than listed
+    # again here.
+    request_fields = {k: v for k, v in b.items() if k in set(Spec.FIELDS)}
+    if template is not None:
+        # resolved to this checkout's absolute paths on load; an explicit field
+        # in the body still wins, so a caller can override what it starts from
+        packed = template.spec.Pack()
+        request_fields = {k: packed[k] for k in Spec.FIELDS} | request_fields
+    wf = p.create_workflow(name=name, request=request_fields)
 
     types = b.get("type_libraries")
     if types is None:
         types = stdlib.discover(p.root)["data_types"]
-    op_data.create_library(str(wf.path / INPUT_LIBRARY_DIRNAME), type_library_paths=types)
+    lib_path = str(wf.path / INPUT_LIBRARY_DIRNAME)
+    if template is None:
+        op_data.create_library(lib_path, type_library_paths=types)
+    else:
+        # Copied rather than re-added row by row: a deferred path is minted once
+        # and identity follows it, so re-adding would give this workflow a task
+        # key other than the one the template was validated at.
+        op_data.copy_library(
+            str(template.spec.input_library), lib_path, type_library_paths=types,
+        )
     return jsonify(_workflow_summary(p.read_workflow(wf.name))), 201
 
 
@@ -977,6 +1182,33 @@ def fork_workflow(name):
     return jsonify(_workflow_summary(p.read_workflow(forked.name))), 201
 
 
+def _given_summary(lib_path: str) -> list[dict]:
+    """Every input the planner was handed, as type + identity + lineage.
+
+    Deliberately read from the library at plan time rather than copied from the
+    request: the request holds drafts and intentions, and what a plan succeeded
+    or failed on is what was registered.
+    """
+    try:
+        info = op_data.inspect_library(lib_path)
+        items = [
+            op_data.show_item_lineage(lib_path, item["path"], render=False)
+            for item in info.get("items", [])
+        ]
+    except Exception:
+        return []
+    return [
+        {
+            "path": item.get("path"),
+            "type": item.get("type_name"),
+            # the closure, as the library reports it -- this is a readout, not
+            # something anything writes back, so it is not collapsed
+            "parents": [p.get("path") for p in (item.get("parents") or [])],
+        }
+        for item in items
+    ]
+
+
 @bp.post("/workflows/<name>/generate")
 def generate_workflow(name):
     """Plan, and persist both halves of the outcome.
@@ -989,17 +1221,21 @@ def generate_workflow(name):
     p = _project()
     wf = p.read_workflow(name)
     b = _body()
+    # A workflow record is a spec plus store bookkeeping, so what a generate may
+    # change is exactly the spec's own fields -- named there rather than listed
+    # again here, since a field added to one and not the other is silently
+    # ignored on the way in.
     request_body = wf.request | {
-        k: v for k, v in b.items()
-        if k in {"sample_type", "target_types", "transform_libraries", "resource_libraries"}
+        k: v for k, v in b.items() if k in set(Spec.FIELDS)
     }
     wf = p.write_request(name, request_body)
 
     # A sample type is optional: without one the inputs are planned as they
-    # stand, as a single sample. The page does not offer one -- it is a way of
-    # branching a plan into one run per item, not something a plan needs -- but
-    # a request written by the CLI may carry one, and it is still honoured.
+    # stand, as a single sample. It arrives here already decided -- from the
+    # type of the row a sample table is indexed on, or from a request written by
+    # the CLI -- and either way this route only honours it.
     sample_type = wf.request.get("sample_type")
+    shared = wf.request.get("shared_input_paths") or None
     targets = wf.request.get("target_types") or []
     assert targets, "at least one target type is required"
 
@@ -1008,12 +1244,35 @@ def generate_workflow(name):
     resources = wf.request.get("resource_libraries") or found["resource_libraries"]
     lib_path = str(p.input_library_path(name))
     commit = found["commit"]
+    # Read here, in the request thread, not inside `_work` below: everything in
+    # this function runs on a job thread with no Flask app/request context, so
+    # it can only touch what was resolved before `_jobs().submit` -- the same
+    # reason `p`, `wf` and `lib_path` above are captured rather than re-derived.
+    table = op_samples.read_attached_table(wf.path)
+    rows = list(wf.request.get("input_drafts") or [])
 
     def _work(job):
         with LogCapture(job):
+            # A sample array row is a declaration, not yet a registered input --
+            # solving needs the real, one-per-sheet-row items `AsSamples` can
+            # split on, so this is where the sheet is read against the recipe's
+            # current rows and turned into them. Always, every solve, rather
+            # than behind a separate "expand" a user could forget to redo after
+            # editing a row or the sheet: `expand` clears what the last one
+            # registered before it writes the new set, so this can never leave
+            # two generations' worth of one sample sitting in the library
+            # together, and a workflow with no table or no array row at all
+            # just clears whatever an earlier one left.
+            if table is not None and any(op_samples.is_array_row(r) for r in rows):
+                op_samples.expand(lib_path, table, rows)
+            else:
+                op_samples.clear(lib_path)
+
             # a stale bundle from a previous generate must not outlive it: the
             # result the user sees and the bundle the CLI stages have to agree.
-            for stale in ("task.yml", "data", "transforms"):
+            stale_names = ("task.yml", "data", "transforms")
+            stale_names += tuple(_dag_cache_name(t) for t in THEMES)
+            for stale in stale_names:
                 target = wf.path / stale
                 if target.is_dir():
                     shutil.rmtree(target)
@@ -1028,15 +1287,17 @@ def generate_workflow(name):
             staging = wf.path / ".staging"
             if staging.exists():
                 shutil.rmtree(staging)
+            # The record IS the spec, give or take the store's own bookkeeping
+            # and the library defaults discovered above.
+            spec = Spec.Unpack(
+                wf.request | {
+                    "transform_libraries": list(transforms),
+                    "resource_libraries": list(resources),
+                },
+                input_library=lib_path,
+            )
             with _plan_lock:
-                result = op_workflow.plan_workflow(
-                    data_library=lib_path,
-                    sample_type=sample_type,
-                    target_types=list(targets),
-                    transform_libraries=list(transforms),
-                    resource_libraries=list(resources) or None,
-                    workspace=str(staging),
-                )
+                result = op_workflow.plan_spec(spec, workspace=str(staging))
             if result.get("success"):
                 # promote the bundle to the workflow directory, so the readable
                 # name is the address the CLI can stage
@@ -1044,17 +1305,40 @@ def generate_workflow(name):
                 assert staged.is_dir(), f"planner wrote no bundle at [{staged}]"
                 for item in staged.iterdir():
                     shutil.move(str(item), str(wf.path / item.name))
-                result["step_display"] = _step_display(wf.path)
+                result["step_display"], result["dag_geometry"] = _step_display(wf.path)
             if staging.exists():
                 shutil.rmtree(staging)
             result["stdlib_commit"] = commit
             result["transform_libraries"] = list(transforms)
             result["resource_libraries"] = list(resources)
+            # What the planner was actually given, read back off the library
+            # rather than off the request. A failure is nearly always a wrong
+            # *type* somewhere -- a row retyped by a stray click, a supertype
+            # where a subtype was needed -- and the recipe above shows what the
+            # browser believes rather than what the server planned from. So the
+            # result says it in the server's own words, beside the hints.
+            result["given"] = _given_summary(lib_path)
+            result["targets"] = [
+                {"type": t, "parents": []} if isinstance(t, str)
+                else {"type": t.get("type", ""), "parents": list(t.get("parents") or [])}
+                for t in targets
+            ]
+            result["sample_type"] = sample_type
             p.write_result(name, result)
             return result
 
     job = _jobs().submit("generate", f"generate {name}", _work, subject={"workflow": name})
     return jsonify(job.summary()), 202
+
+
+def _dag_cache_name(theme: str) -> str:
+    """Where a rendering is cached beside the bundle, one file per theme.
+
+    The suffix has to stay `.svg`: `DagRenderer.render` derives the format from
+    it. And the light name is the historical one, since the CLI stages that
+    exact file into the bundle.
+    """
+    return "plan.dag.svg" if theme == "light" else f"plan.dag.{theme}.svg"
 
 
 def _load_task(bundle: Path):
@@ -1074,18 +1358,22 @@ def _load_task(bundle: Path):
         return op_workspace.load_task(None, str(bundle))
 
 
-def _step_display(bundle: Path) -> list[dict]:
-    """A readable summary of the plan's steps.
+def _step_display(bundle: Path) -> tuple[list[dict], dict | None]:
+    """A readable summary of the plan's steps, plus where each one sits in the
+    diagram the GUI draws beside it.
 
     The packed form of a step is a wire format -- instance ids and a dependency
     map -- with nothing a person would want to read. The step objects themselves
     carry `uses` and `produces`, so the summary is built once at generate time
-    and stored beside the result.
+    and stored beside the result. The vertical position comes from the same
+    `DagRenderer` that draws the plan's SVG -- `BuildDAG()` is constructed once
+    and its `.geometry()` is the one place a layout becomes pixels, so the row a
+    step's controls sit at is guaranteed to agree with the marker in the image.
     """
     try:
         task = _load_task(bundle)
     except Exception:
-        return []
+        return [], None
     out = []
     for step in task.plan.steps:
         # What the transform asks for, so an empty override box reads as "as
@@ -1111,9 +1399,32 @@ def _step_display(bundle: Path) -> list[dict]:
             "produces": sorted({
                 inst.dtype_name for group in step.produces for inst in group
             }),
+            "dag_cy": None,
         })
     out.sort(key=lambda s: s["order"])
-    return out
+
+    dag_geometry = None
+    try:
+        geo = task.plan.BuildDAG().geometry()
+        by_order = {
+            int(m.group(1)): n.cy
+            for n in geo.nodes
+            if n.kind == NodeKind.TRANSFORM and (m := re.match(r"^(\d+) ", n.name))
+        }
+        for step in out:
+            step["dag_cy"] = by_order.get(step["order"])
+        dag_geometry = {
+            "width": geo.width, "height": geo.height, "row_pitch": geo.row_pitch,
+            # the first drawn row, so a caller putting a header beside the
+            # diagram can sit it level with the top node rather than above the
+            # whole thing. The plate's top margin is not otherwise derivable
+            # from `height` without also knowing how many rows there are.
+            "top_cy": min((n.cy for n in geo.nodes), default=None),
+        }
+    except Exception:
+        _LOG.warning("no dag geometry for [%s]; step rows will not line up", bundle, exc_info=True)
+
+    return out, dag_geometry
 
 
 @bp.get("/workflows/<name>/dag")
@@ -1123,11 +1434,48 @@ def workflow_dag(name):
     wf = p.read_workflow(name)
     if not wf.ok:
         raise ProjectError(f"workflow [{name}] has no successful plan to draw")
-    svg = wf.path / "plan.dag.svg"
+    # an unknown theme falls back rather than raising: the value arrives from a
+    # url, and a malformed one should not turn the diagram into an error card
+    theme = request.args.get("theme", "light")
+    if theme not in THEMES:
+        theme = "light"
+    # the light drawing keeps the historical name, so a bundle staged by the
+    # CLI and one drawn here are still one file; another theme is a sibling
+    svg = wf.path / _dag_cache_name(theme)
     if not svg.is_file():
         task = _load_task(wf.path)
-        task.plan.RenderDAG(str(svg))
+        # transparent: the diagram card now paints its own ground (`--panel-2`,
+        # so its bounds read against the rest of the page), and a filled plate
+        # here was never any colour but that card's -- see WorkflowView.svelte
+        task.plan.RenderDAG(str(svg), theme=theme, background=False)
     return Response(svg.read_text(), mimetype="image/svg+xml")
+
+
+@bp.post("/dag/layout")
+def dag_layout():
+    """Place a graph the page built, so both drawings use the one engine.
+
+    The info panel's nodes are buttons -- you click one to move the panel onto
+    it -- so it cannot show the rendered SVG, and it used to run a layout of its
+    own. Two engines meant the plan and the panel disagreed about the shape of
+    the same graph. The page still *builds* its graph (what a node means, and
+    which ones are plumbing, are content rules with another consumer); only the
+    geometry comes from here.
+    """
+    b = _body()
+    nodes = b.get("nodes") or []
+    edges = b.get("edges") or []
+    assert isinstance(nodes, list) and isinstance(edges, list), "nodes and edges must be lists"
+    return jsonify(op_workflow.dag_geometry(
+        nodes, edges,
+        # COLUMN, so every label starts at one x, clear of the rails: the panel
+        # draws a node as a row you click, and a row wants its text in a column.
+        # BESIDE would put the label left of its own marker, which is the same
+        # placement mirrored and not what the markup there is built for.
+        label_mode=b.get("label_mode", "column"),
+        font_size=float(b.get("font_size", 13.0)),
+        max_label_chars=int(b.get("max_label_chars", 22)),
+    ))
 
 
 # -- the input library -------------------------------------------------------
@@ -1146,6 +1494,26 @@ def get_inputs(name):
         op_data.show_item_lineage(str(lib_path), item["path"], render=False)
         for item in info["items"]
     ]
+    # Which sample-array row registered each item, so the recipe can show a count
+    # against that row instead of two hundred rows it did not ask for. The
+    # attribution is the server's: the record of what an expansion put down is
+    # the only place it is known.
+    record = op_samples.read_record(str(lib_path))
+    from_array = {
+        path: tid for tid, paths in (record.get("generated") or {}).items() for path in paths
+    }
+    for item in info["items"]:
+        item["array_id"] = from_array.get(item["path"])
+        # a template's rows point at the deferred marker, not a real file yet --
+        # the browser is not equipped to make sense of `/msm_deferred/<hex>` and
+        # should show nothing rather than that string
+        item["deferred"] = is_deferred(item["path"])
+    info["expansion"] = {
+        "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
+        "row_count": record.get("row_count", 0),
+        "sample_type": record.get("sample_type"),
+        "index_id": record.get("index_id"),
+    }
     return jsonify(info)
 
 
@@ -1211,6 +1579,82 @@ def repoint_input(name):
     return jsonify(op_data.repoint_item(
         str(_project().input_library_path(name)), b["path"], b["new_path"],
     ))
+
+
+# -- the sample table --------------------------------------------------------
+
+
+def _table_dir(name: str) -> Path:
+    p = _project()
+    p.read_workflow(name)  # refuses a name that is not a workflow
+    return p.workflow_path(name)
+
+
+def _drafts_of(name: str) -> list[dict]:
+    """The recipe's input rows as the browser holds them.
+
+    Sample arrays are not a second list: an array row *is* a draft whose path
+    (or a value row's name or value) holds `{column}` tokens, so the two cannot
+    get out of step with each other.
+    """
+    return list(_project().read_workflow(name).request.get("input_drafts") or [])
+
+
+@bp.get("/workflows/<name>/table")
+def get_table(name):
+    table = op_samples.read_attached_table(_table_dir(name))
+    if table is None:
+        return jsonify({"attached": False})
+    rows = _drafts_of(name)
+    checked = op_samples.validate(str(_project().input_library_path(name)), table, rows)
+    record = op_samples.read_record(str(_project().input_library_path(name)))
+    return jsonify({
+        "attached": True,
+        "filename": table["filename"],
+        "format": table["format"],
+        "columns": table["columns"],
+        "row_count": table["row_count"],
+        # a peek, not the sheet: the page shows counts, never instances
+        "preview": table["rows"][:5],
+        "problems": checked["problems"],
+        "index_id": checked["index_id"],
+        "expansion": {
+            "row_count": record.get("row_count", 0),
+            "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
+            "sample_type": record.get("sample_type"),
+            "stale": record.get("row_count", 0) != table["row_count"],
+        },
+    })
+
+
+@bp.post("/workflows/<name>/table")
+def attach_table(name):
+    """Attach a sheet, uploaded as multipart or pasted as text.
+
+    One route rather than two: which of the two the browser used is a transport
+    detail, and the thing being created -- the attached table -- is the same.
+    """
+    where = _table_dir(name)
+    upload = request.files.get("file") if request.files else None
+    if upload is not None:
+        data, filename = upload.read(), upload.filename
+        fmt = request.form.get("format") or None
+    else:
+        b = _body()
+        text = b.get("text")
+        assert text, "paste a table, or upload one as a file"
+        data, filename = str(text).encode(), b.get("filename")
+        fmt = b.get("format") or None
+    return jsonify(op_samples.attach_table(where, data, filename=filename, fmt=fmt)), 201
+
+
+@bp.delete("/workflows/<name>/table")
+def detach_table(name):
+    """Take the sheet away. What it registered stays until the next solve --
+    `generate_workflow` re-syncs the registered items against the current
+    table and rows every time, so a detach with no table left just clears them
+    at that point rather than needing its own gesture."""
+    return jsonify(op_samples.detach_table(_table_dir(name)))
 
 
 @bp.post("/workflows/<name>/inputs/types")
@@ -1388,6 +1832,54 @@ def run_log(workflow, run):
     return jsonify(out)
 
 
+def _collected_log_dir(outputs: Path) -> Path | None:
+    """The timestamped log directory inside a collected result library.
+
+    Never `logs.latest`: it is an alias for one of its own siblings, so taking
+    it would name the same directory twice and, on a re-collect, could name a
+    stale one. The newest real directory sorts last because the names are
+    timestamps.
+    """
+    meta = outputs/"_metadata"
+    if not meta.is_dir():
+        return None
+    dirs = sorted(
+        p for p in meta.glob("logs.*") if p.is_dir() and p.name != "logs.latest"
+    )
+    return dirs[-1] if dirs else None
+
+
+@bp.get("/runs/<workflow>/<run>/trace")
+def run_trace(workflow, run):
+    """Nextflow's per-task trace: which steps ran, and which of them died.
+
+    A collected run answers this from its own copy of the log directory, so the
+    common case costs no ssh. Only a run whose results are still on the agent
+    goes over the wire.
+    """
+    p = _project()
+    rec = p.read_run(workflow, run)
+    local = _collected_log_dir(p.outputs_path(workflow, run))
+    if local is not None:
+        return jsonify(op_runtime.read_trace(local))
+    agent_name = rec.record.get("agent")
+    key = rec.record.get("task_key")
+    if not key:
+        return jsonify(op_runtime.read_trace("/nonexistent"))
+    if not agent_name or not p.agent_exists(agent_name):
+        out = op_runtime.read_trace("/nonexistent")
+        out["error"] = f"agent [{agent_name}] is gone"
+        return jsonify(out)
+    try:
+        return jsonify(op_runtime.trace(
+            str(p.agent_path(agent_name)), key, rec.record.get("run_number"),
+        ))
+    except Exception as exc:
+        out = op_runtime.read_trace("/nonexistent")
+        out["error"] = str(exc)
+        return jsonify(out)
+
+
 @bp.post("/runs/<workflow>/<run>/cancel")
 def cancel_run(workflow, run):
     p = _project()
@@ -1464,7 +1956,285 @@ def run_results(workflow, run):
     except Exception as exc:
         return jsonify({"collected": True, "items": [], "path": str(outputs), "error": str(exc)})
     items = [i for i in info["items"] if not Path(i["path"]).is_absolute()]
-    return jsonify({"collected": True, "path": str(outputs), "items": items})
+    return jsonify({
+        "collected": True, "path": str(outputs), "items": items,
+        "targets": _delivered_targets(p, workflow, items),
+    })
+
+
+def _delivered_targets(p, workflow: str, items: list[dict]) -> list[dict]:
+    """What was asked for, against what actually came back.
+
+    A run whose steps died under an ignoring error strategy finishes clean and
+    is stamped completed, so the collected folder is the only place the loss is
+    visible -- and only if something compares it to the request. Matching is by
+    dtype *name* because that is what both sides record; the solver's property
+    matching does not apply here, since these are the very types the plan was
+    built to produce.
+    """
+    try:
+        wanted = p.read_workflow(workflow).request.get("target_types") or []
+    except Exception:
+        return []
+    have: dict[str, list[str]] = {}
+    for i in items:
+        have.setdefault(i["type_name"], []).append(i["path"])
+    out = []
+    for t in wanted:
+        name = t.get("type") if isinstance(t, dict) else str(t)
+        paths = have.get(name, [])
+        out.append({"type": name, "count": len(paths), "paths": paths[:20]})
+    return out
+
+
+# -- browsing a collected result library -------------------------------------
+#
+# Everything here reads files the run produced, so every one of them goes
+# through `_resolve_output` and nothing else ever joins a user string onto a
+# path. The window sizes are the whole large-file policy: a preview is one
+# window, and a file of any size costs one seek and one read.
+PREVIEW_WINDOW = 256 * 1024   # one request's byte budget, and the "load more" step
+PREVIEW_MAX_TOTAL = 8 * 1024 * 1024   # how much the page may accumulate
+TREE_MAX_ENTRIES = 20000
+TREE_MAX_DEPTH = 12
+# What may be served with its own content type rather than as an attachment.
+# SVG is in here because it is previewed through `<img>`, which does not run
+# script; HTML deliberately is not, since nextflow's report carries its own.
+_INLINE_TYPES = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+}
+
+
+def _resolve_output(p, workflow: str, run: str) -> Path:
+    """The run's outputs directory, resolved.
+
+    Resolved, because the project may itself sit under a symlinked home and a
+    containment test between a resolved candidate and an unresolved root
+    answers no every time.
+    """
+    return p.outputs_path(workflow, run).resolve()
+
+
+def _resolve_within(root: Path, rel: str) -> Path:
+    """`rel` under `root`, or a refusal.
+
+    Symlinks are followed on purpose -- `logs.latest/main.log` is a real thing
+    to want -- so containment is asserted against the *target*, and with
+    `relative_to` rather than a string prefix: `/x/outputs2` starts with
+    `/x/outputs` and is not inside it.
+    """
+    if not rel or "\x00" in rel or Path(rel).is_absolute():
+        raise ProjectError("that is not a path inside this run's results")
+    try:
+        cand = (root / rel).resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise ProjectError(f"[{rel}] is not there")
+    try:
+        cand.relative_to(root)
+    except ValueError:
+        raise ProjectError("that is not a path inside this run's results")
+    return cand
+
+
+def _node(entry_path: Path, root: Path, name: str) -> dict:
+    rel = entry_path.relative_to(root).as_posix()
+    link = entry_path.is_symlink()
+    try:
+        st = entry_path.stat()   # follows the link: a copied output is a real file
+        size, mtime, dangling = st.st_size, st.st_mtime, False
+    except OSError:
+        size, mtime, dangling = None, None, link
+    # Anything under `_metadata` is bookkeeping rather than a product. The log
+    # directory is called out separately because it is the audit trail collect
+    # goes out of its way to bring across, and a reader looks for it by name.
+    role = "output"
+    if rel == "_metadata" or rel.startswith("_metadata/"):
+        role = "log" if rel.startswith("_metadata/logs") else "metadata"
+    return {
+        "name": name, "path": rel,
+        "type": "dir" if (entry_path.is_dir() and not dangling) else "file",
+        "size": size, "mtime": mtime,
+        "symlink": link, "dangling": dangling,
+        "role": role, "type_name": None, "is_item": False,
+        "children": [] if entry_path.is_dir() and not dangling else None,
+    }
+
+
+@bp.get("/runs/<workflow>/<run>/tree")
+def run_tree(workflow, run):
+    """The collected folder as it actually is on disk.
+
+    Built by walking, not from the library manifest: `_metadata/` holds the
+    per-step logs and is not a manifest entry, so a tree derived from the
+    manifest could not show them at all.
+    """
+    p = _project()
+    outputs = p.outputs_path(workflow, run)
+    if not _has_results(outputs):
+        return jsonify({"collected": False, "path": str(outputs), "root": None})
+    root = outputs.resolve()
+    budget = {"left": TREE_MAX_ENTRIES, "truncated": False}
+
+    def walk(here: Path, depth: int) -> list[dict]:
+        if depth >= TREE_MAX_DEPTH:
+            budget["truncated"] = True
+            return []
+        try:
+            entries = sorted(
+                os.scandir(here), key=lambda e: (not e.is_dir(follow_symlinks=False), e.name),
+            )
+        except OSError:
+            return []
+        out = []
+        for e in entries:
+            if budget["left"] <= 0:
+                budget["truncated"] = True
+                break
+            budget["left"] -= 1
+            node = _node(Path(e.path), root, e.name)
+            # A directory symlink is an alias for a sibling -- `logs.latest` is
+            # one -- so descending it would carry the whole subtree twice under
+            # two names. It is listed, and the sibling holds the contents.
+            if node["type"] == "dir" and not node["symlink"]:
+                node["children"] = walk(Path(e.path), depth + 1)
+            out.append(node)
+        return out
+
+    tree = {
+        "name": "", "path": "", "type": "dir", "role": "output",
+        "size": None, "mtime": None, "symlink": False, "dangling": False,
+        "type_name": None, "is_item": False, "children": walk(root, 0),
+    }
+    _tag_manifest_types(outputs, tree)
+    # `_metadata` last: it is the bookkeeping, and a reader is looking for
+    # products first.
+    tree["children"].sort(key=lambda n: (n["role"] != "output", n["name"]))
+    return jsonify({
+        "collected": True, "path": str(outputs),
+        "truncated": budget["truncated"], "root": tree,
+    })
+
+
+def _tag_manifest_types(outputs: Path, tree: dict) -> None:
+    """Stamp the library's dtype names onto the nodes they name.
+
+    Best effort: a folder that does not read as a library still gets a tree,
+    the same way `/results` still answers with an `error` rather than a 500.
+    A manifest key may name a directory, so this tags whatever node matches
+    rather than assuming a leaf.
+    """
+    try:
+        info = op_data.inspect_library(str(outputs))
+    except Exception:
+        return
+    named = {
+        i["path"]: i["type_name"] for i in info["items"]
+        if not Path(i["path"]).is_absolute()
+    }
+    if not named:
+        return
+    # A library collected before the manifest recorded published locations
+    # names its files by their cache-shard path, which is nowhere on disk. The
+    # basename still matches, and it is unique within a run, so an old folder
+    # keeps its type names instead of showing a column of blanks.
+    by_name = {}
+    for k, v in named.items():
+        by_name.setdefault(Path(k).name, v)
+
+    def visit(node):
+        t = named.get(node["path"])
+        if t is None and node["type"] == "file":
+            t = by_name.get(node["name"])
+        if t is not None:
+            node["type_name"] = t
+            node["is_item"] = True
+        for c in node.get("children") or []:
+            visit(c)
+
+    visit(tree)
+
+
+@bp.get("/runs/<workflow>/<run>/file")
+def run_file(workflow, run):
+    """One window of a file, addressed in bytes.
+
+    Bytes rather than lines so that `load more` can resume from where it
+    stopped: a line-addressed window has to re-read from zero to find line N,
+    which is the one thing a 40 GB output cannot afford.
+    """
+    p = _project()
+    root = _resolve_output(p, workflow, run)
+    target = _resolve_within(root, request.args.get("path", ""))
+    if not target.is_file():
+        raise ProjectError("that is a directory, not a file")
+    size = target.stat().st_size
+    limit = max(1, min(int(request.args.get("limit", PREVIEW_WINDOW)), PREVIEW_WINDOW))
+    mode = request.args.get("mode", "head")
+    if mode == "tail":
+        offset = max(0, size - limit)
+    else:
+        offset = max(0, min(int(request.args.get("offset", 0)), size))
+    with open(target, "rb") as f:
+        f.seek(offset)
+        raw = f.read(limit)
+
+    out = {
+        "path": target.relative_to(root).as_posix(),
+        "size": size, "mtime": target.stat().st_mtime,
+        "offset": offset, "length": len(raw), "eof": offset + len(raw) >= size,
+        "window": PREVIEW_WINDOW, "max_total": PREVIEW_MAX_TOTAL,
+    }
+    # A NUL in a text file is the cheap, reliable tell. Nothing is sniffed
+    # beyond this window, because nothing beyond it is ever read.
+    if b"\x00" in raw[:8192]:
+        return jsonify(out | {"encoding": "binary", "text": None})
+    text = raw.decode("utf-8", errors="replace")
+    if text.count("�") > max(16, len(text) // 20):
+        return jsonify(out | {"encoding": "binary", "text": None})
+    # A window almost never lands on a line boundary. Trimming the partial ends
+    # is cosmetic, so the byte counts are reported and the caller still pages by
+    # `offset + length` -- never by counting the lines it was shown.
+    dropped_head = dropped_tail = 0
+    if offset > 0:
+        cut = text.find("\n")
+        if cut >= 0:
+            dropped_head = len(text[: cut + 1].encode("utf-8"))
+            text = text[cut + 1 :]
+    if not out["eof"]:
+        cut = text.rfind("\n")
+        if cut >= 0:
+            dropped_tail = len(text[cut + 1 :].encode("utf-8"))
+            text = text[: cut + 1]
+    return jsonify(out | {
+        "encoding": "utf-8", "text": text,
+        "dropped_head_bytes": dropped_head, "dropped_tail_bytes": dropped_tail,
+    })
+
+
+@bp.get("/runs/<workflow>/<run>/download")
+def run_download(workflow, run):
+    """The file itself, streamed.
+
+    Everything outside a small media allowlist is served as an attachment with
+    a generic type: these are files a pipeline wrote, and `nxf_report.html` in
+    particular is same-origin HTML carrying its own script.
+    """
+    from flask import send_file
+
+    p = _project()
+    root = _resolve_output(p, workflow, run)
+    target = _resolve_within(root, request.args.get("path", ""))
+    if not target.is_file():
+        raise ProjectError("that is a directory, not a file")
+    mime = _INLINE_TYPES.get(target.suffix.lower())
+    res = send_file(
+        target, conditional=True,
+        mimetype=mime or "application/octet-stream",
+        as_attachment=mime is None, download_name=target.name,
+    )
+    res.headers["X-Content-Type-Options"] = "nosniff"
+    return res
 
 
 @bp.delete("/runs/<workflow>/<run>")
@@ -1487,6 +2257,35 @@ def agent_presets(name):
     if not p.agent_exists(name):
         raise ProjectError(f"no agent named [{name}]")
     return jsonify(op_runtime.list_presets(str(p.agent_path(name))))
+
+
+# -- sharing -----------------------------------------------------------------
+#
+# Three routes for all three kinds, because the payload says which kind it is:
+# export, preview, commit. Preview is not ceremony -- a payload carries a home
+# directory, a cluster account, someone's absolute input paths -- and pasting a
+# string from a colleague should not be how you find out what was in it.
+
+
+@bp.post("/share/export")
+def share_export():
+    b = _body()
+    kind = b.get("kind")
+    name = b.get("name")
+    assert kind and name, "a kind and a name are required"
+    return jsonify(op_share.export(
+        _project(), _ssh(), kind, name, bound=bool(b.get("bound")),
+    ))
+
+
+@bp.post("/share/preview")
+def share_preview():
+    return jsonify(op_share.preview(_project(), _ssh(), _body().get("payload") or ""))
+
+
+@bp.post("/share/import")
+def share_import():
+    return jsonify(op_share.commit(_project(), _ssh(), _body().get("payload") or "")), 201
 
 
 # -- jobs --------------------------------------------------------------------

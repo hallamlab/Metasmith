@@ -22,6 +22,17 @@
     drafts = [],
     targets = [],
     typeOptions = [],
+    // the attached sheet: its column names, what the last expansion registered
+    // per row, and which row is the sample index
+    columns = [],
+    rowCount = 0,
+    expansion = null,
+    sharedPaths = [],
+    // the sheet's own strip, rendered under the inputs band by the view above --
+    // it belongs inside this box but it is not this card's business
+    tableStrip = null,
+    onindex,
+    onshared,
     // (type) => {known, produced, consumed, producedVia, consumedVia} -- what
     // the index says about a type, for the line under a row being edited
     counts = null,
@@ -35,7 +46,6 @@
     onretype,
     onrepoint,
     oncommit,
-    ontypefocus,
     onadd,
   } = $props()
 
@@ -43,6 +53,50 @@
   // output by its position -- so lineage needs one key space per half. `#` is
   // safe as the draft marker: a library path never starts with one.
   const draftKey = (d) => `#${d.id}`
+
+  // What a sample-array row's fields may hold, and how to tell one from a plain
+  // row. An array row is not a fourth kind of thing: it is an ordinary row whose
+  // path (or a value row's name and value) names a column, so nothing has to be
+  // kept in step with anything.
+  // not a global regex: `test` on one carries `lastIndex` between calls, so the
+  // same row would answer differently depending on what was asked before it
+  const TOKEN = /\{[^{}]*\}/
+  const hasToken = (s) => TOKEN.test(String(s ?? ''))
+  const isArrayRow = (d) =>
+    d.mode === 'value' ? hasToken(d.name) || hasToken(d.value) : hasToken(d.path)
+
+  // A field that names exactly one column and nothing else -- no surrounding
+  // path, no second token -- is not a pattern to type, it is a choice from a
+  // list. `wholeToken` is the whole-string form of the same `{col}` syntax
+  // `columnPicker` splices into the middle of one; the two agree because
+  // `expand()` on the server reads both the same way, as a token to substitute.
+  const WHOLE_TOKEN = /^\{([^{}]*)\}$/
+  const wholeToken = (s) => WHOLE_TOKEN.exec(String(s ?? '').trim())?.[1] ?? null
+
+  // A field a dropdown would otherwise own, held open as free text -- typing a
+  // pattern like `/data/{sample}_R1.fq.gz` around a token needs the field
+  // back. Keyed per row and field so switching one back does not touch
+  // another drawn from the same set of columns.
+  let freeform = $state(new Set())
+  const fieldKey = (row, field) => `${row.key}::${field}`
+  const isFreeform = (row, field) => freeform.has(fieldKey(row, field))
+  const setFreeform = (row, field, on) => {
+    const k = fieldKey(row, field)
+    const next = new Set(freeform)
+    if (on) next.add(k)
+    else next.delete(k)
+    freeform = next
+  }
+
+  // The items a sheet registered are not rows of this recipe. They are in the
+  // library and in the plan, and two hundred of them here would be two hundred
+  // rows with nothing on them to decide -- the array row carries the count.
+  let ownItems = $derived(items.filter((it) => !it.array_id))
+  let expanded = $derived(items.length - ownItems.length)
+
+  // a field's element, so the column picker can insert at the caret rather than
+  // at the end -- the usual gesture is `/data/` then a column then `_R1.fq.gz`
+  const fieldId = (row, field) => `msm-f-${row.key}-${field}`
 
   // A draft has nothing to be called until it is filled in, and an empty string
   // in another row's lineage reads as a bug. Its type is the next best name.
@@ -56,7 +110,7 @@
   // collapsed the same way it is on the way to disk. One level is enough,
   // because what arrives is already the full closure.
   let immediate = $derived.by(() => {
-    const of = new Map(items.map((it) => [it.path, (it.parents ?? []).map((p) => p.path)]))
+    const of = new Map(ownItems.map((it) => [it.path, (it.parents ?? []).map((p) => p.path)]))
     const out = new Map()
     for (const [path, direct] of of) {
       const inherited = new Set(direct.flatMap((p) => of.get(p) ?? []))
@@ -66,12 +120,13 @@
   })
 
   let inputRows = $derived([
-    ...items.map((it) => ({
+    ...ownItems.map((it) => ({
       kind: 'item',
       key: it.path,
       id: it.path,
       type: it.type_name,
       label: it.path,
+      deferred: !!it.deferred,
       parents: immediate.get(it.path) ?? [],
       item: it,
     })),
@@ -136,6 +191,20 @@
     return out
   })
 
+  // Listed in the order the data descends: parents above the things made from
+  // them, so a pangenome leads the assemblies it was built from rather than
+  // turning up wherever its path happened to sort.
+  //
+  // The ancestor *count* is enough to order this. A row's ancestors always
+  // strictly contain each of its parents' ancestors plus that parent, so the
+  // count rises along every edge and sorting by it is a topological order --
+  // no traversal, and no answer at all to give for a cycle. The sort is stable,
+  // so rows at the same depth keep the position they arrived in and nothing
+  // reshuffles under a draft being filled in.
+  let orderedInputRows = $derived(
+    [...inputRows].sort((a, b) => (ancestors.get(a.key)?.size ?? 0) - (ancestors.get(b.key)?.size ?? 0)),
+  )
+
   // What a row may be given as a parent. Three things are excluded, and the
   // third is the one worth saying out loud: a row cannot descend from something
   // that descends from *it*. Nothing downstream defines a cycle -- `AsSamples`
@@ -145,7 +214,12 @@
     const have = new Set(row.parents)
     return pool
       .filter((r) => r.key !== row.key && !have.has(r.key) && !ancestors.get(r.key)?.has(row.key))
-      .map((r) => ({ key: r.key, label: r.label, sub: r.type }))
+      // A draft is offerable on purpose -- that is what lets a chain of rows
+      // commit in cascade from the top down, and what `apply` stamps out. But
+      // it is not *registered*, and a row that descends from one waits for it:
+      // pointing at a row you can already see, and then finding nothing
+      // happened, is the same list failing to say which kind of thing it holds.
+      .map((r) => ({ key: r.key, label: r.label, sub: r.type, draft: r.kind === 'draft' }))
   }
 
   // Outputs are positions, and a target may only name one declared *before* it
@@ -165,7 +239,12 @@
     return row.parents.map((k) => {
       const r = byKey.get(k)
       if (!r) return { key: k, label: String(k) }
-      return { key: k, label: r.label, sub: r.kind === 'target' ? null : r.type }
+      return {
+        key: k,
+        label: r.label,
+        sub: r.kind === 'target' ? null : r.type,
+        draft: r.kind === 'draft',
+      }
     })
   }
 
@@ -190,7 +269,10 @@
   const wasValue = (row, field) => (field === 'path' ? row.label : row.type)
 
   function startEdit(row, field) {
-    draft = wasValue(row, field)
+    // A deferred row's path is a marker, not a value to correct one character
+    // of -- offering it as the starting text would make "set the real path"
+    // read as "edit this one", when there is nothing in it worth keeping.
+    draft = field === 'path' && row.deferred ? '' : wasValue(row, field)
     edit = { key: row.key, field }
   }
 
@@ -250,7 +332,14 @@
      rendering a permanently-open combobox while the others read as a word made
      the list look like three kinds of thing. Clicking it moves the panel onto
      that type as well as opening the field -- which is the whole reason the type
-     is the thing you click. -->
+     is the thing you click.
+
+     What decides which of the two is drawn is `edit`, and only `edit`. It used
+     to be "has a type and is not being edited", which works for a registered
+     row -- that one edits a local copy -- and fails for the two that write
+     through as you type: an empty row opened its field, the first character
+     landed in `row.type`, and the row promptly redrew itself as a word with the
+     field gone. One keystroke per attempt. -->
 {#snippet typeCell(row)}
   {#if row.type && !editingRow(row, 'type')}
     <button
@@ -282,9 +371,15 @@
       />
     </div>
   {:else}
+    <!-- A draft's and an output's type is written through as it is typed, so
+         the row is only *held open* by `edit` -- taking focus is what puts it
+         there, and the field would otherwise collapse back into a word on the
+         first character. Leaving the control is what takes it out again. -->
     <div
       class="typefield"
-      onfocusin={() => ontypefocus?.(row)}
+      onfocusin={() => {
+        if (!editingRow(row, 'type')) edit = { key: row.key, field: 'type' }
+      }}
       onfocusout={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) closeRow(row)
       }}
@@ -295,10 +390,7 @@
         placeholder="namespace::type"
         autofocus={editingRow(row, 'type')}
         describe={describeType(row)}
-        onchange={(v) => {
-          ontypefocus?.(row)
-          setType(row, v)
-        }}
+        onchange={(v) => setType(row, v)}
         oncommit={() => closeRow(row)}
       />
     </div>
@@ -320,7 +412,7 @@
         options={isTarget ? targetOptions(row) : inputOptions(row)}
         note={isTarget
           ? row.id === 0
-            ? 'the first output has nothing declared before it to come off'
+            ? null
             : 'an output can only come off one declared before it'
           : row.kind === 'item'
             ? 'a registered row can only descend from another registered one'
@@ -338,24 +430,126 @@
   </div>
 {/snippet}
 
+<!-- The columns of the attached sheet, as something to put in a field rather
+     than something to type from memory. It inserts at the caret and hands focus
+     back, because the usual gesture is `/data/` then a column then `_R1.fq.gz`. -->
+{#snippet columnPicker(row, field)}
+  {#if columns.length}
+    <select
+      class="cols small"
+      aria-label="insert a column"
+      value=""
+      onchange={(e) => {
+        const col = e.currentTarget.value
+        e.currentTarget.value = ''
+        if (!col) return
+        const box = document.getElementById(fieldId(row, field))
+        if (!box) return
+        const at = box.selectionStart ?? box.value.length
+        const next = `${box.value.slice(0, at)}{${col}}${box.value.slice(box.selectionEnd ?? at)}`
+        ondraft?.(row.id, { [field]: next })
+        box.focus()
+        const caret = at + col.length + 2
+        requestAnimationFrame(() => box.setSelectionRange(caret, caret))
+      }}
+    >
+      <option value="">{'{ }'}</option>
+      {#each columns as c}<option value={c}>{c}</option>{/each}
+    </select>
+  {/if}
+{/snippet}
+
+<!-- A field that names one column and nothing else: a choice from the sheet's
+     own columns, not a string to type -- which is what a sample table attached
+     is *for*. A field around a token in a longer pattern (a path with a column
+     in the middle of it) is still free text with `columnPicker` to insert into,
+     since a dropdown cannot represent that shape at all. -->
+{#snippet sampleField(row, field, value, placeholder, mono)}
+  {@const col = wholeToken(value)}
+  {#if columns.length && col !== null && !isFreeform(row, field)}
+    <select
+      class="grow{mono ? ' mono' : ''}"
+      aria-label={`${field}, a column of the attached sheet`}
+      value={col}
+      onchange={(e) => ondraft?.(row.id, { [field]: `{${e.currentTarget.value}}` })}
+    >
+      {#each columns as c}<option value={c}>{c}</option>{/each}
+    </select>
+    <button
+      class="star"
+      title="type a pattern around a column instead of naming one plainly"
+      onclick={() => setFreeform(row, field, true)}
+    >pattern</button>
+  {:else}
+    <input
+      class="grow{mono ? ' mono' : ''}"
+      id={fieldId(row, field)}
+      {value}
+      {placeholder}
+      spellcheck="false"
+      oninput={(e) => ondraft?.(row.id, { [field]: e.currentTarget.value })}
+      onblur={() => {
+        oncommit?.()
+        setFreeform(row, field, false)
+      }}
+    />
+    {@render columnPicker(row, field)}
+  {/if}
+{/snippet}
+
 <div class="col" style="gap:10px">
-  <div class="spread">
-    <h3>recipe</h3>
-    <span class="small muted">{items.length} in · {targets.length} out</span>
-  </div>
+  <h3>recipe</h3>
 
   <div class="rows">
-    <div class="heading small muted">inputs</div>
+    {#if tableStrip}
+      {@const arrayDrafts = drafts.filter(isArrayRow)}
+      <div class="heading samples small muted spread">
+        <span>samples</span>
+        <span class="count">
+          {columns.length ? `${rowCount} row(s) · ${columns.length} column(s)` : 'none attached'}
+        </span>
+      </div>
+      {@render tableStrip()}
+      {#if columns.length && arrayDrafts.length}
+        <!-- one run per row of *this* one -- the type it is given is what the
+             plan is split on. Bottom of the section, not beside each array
+             row: there is exactly one, so a picker per row would be the same
+             choice offered N times with N-1 wrong answers. -->
+        <div class="row wrap indexpick small">
+          <span class="muted">sample index</span>
+          <select
+            aria-label="which row says what a sample is"
+            value={arrayDrafts.find((d) => d.index)?.id ?? ''}
+            onchange={(e) => onindex?.(e.currentTarget.value || null)}
+          >
+            <option value="">— none — one run over everything</option>
+            {#each arrayDrafts as d}
+              <option value={d.id}>{draftLabel(d)}</option>
+            {/each}
+          </select>
+        </div>
+      {/if}
+    {/if}
+
+    <div class="heading in small muted spread">
+      <span>inputs</span>
+      <span class="count">
+        {ownItems.length} registered{drafts.length ? ` · ${drafts.length} draft` : ''}{expanded
+          ? ` · ${expanded} from the sheet`
+          : ''}
+      </span>
+    </div>
     {#if inputRows.length === 0}
       <p class="small muted pad">
         Nothing registered. Add the files and values you have — the planner works
         out the steps from their types alone.
       </p>
     {/if}
-    {#each inputRows as row (row.key)}
+    {#each orderedInputRows as row (row.key)}
       {@const info = row.type && counts ? counts(row.type) : null}
       {@const waiting =
         row.kind === 'draft' && row.parents.some((p) => !items.some((it) => it.path === p))}
+      {@const array = row.kind === 'draft' && isArrayRow(row.draft)}
       <div class="entry" class:hl={hover === row.key}>
         <!-- Two lines, not one: the path is the longest thing on an input row and
              was being squeezed into a sliver beside a combobox and a menu. What
@@ -370,6 +564,7 @@
                 bind:value={draft}
                 autofocus
                 spellcheck="false"
+                placeholder={row.deferred ? '/data/sample_01.fastq.gz' : ''}
                 onblur={() => commitEdit(row)}
                 onkeydown={(e) => {
                   if (e.key === 'Enter') commitEdit(row)
@@ -377,6 +572,16 @@
                 }}
               />
               <span class="small muted">enter to re-point</span>
+            {:else if row.deferred}
+              <!-- the marker a template ships instead of a path, and the whole
+                   point of a template: showing it as text would read as a real
+                   value someone forgot to fill in, when it is one nobody has
+                   set yet -->
+              <button
+                class="asfield grow truncate mono empty"
+                title={`not set yet — ${EDITABLE}`}
+                onclick={() => startEdit(row, 'path')}
+              >— empty —</button>
             {:else}
               <button
                 class="asfield grow truncate mono"
@@ -385,31 +590,16 @@
               >{row.label}</button>
             {/if}
           {:else if row.draft.mode === 'value'}
-            <input
-              class="grow"
-              value={row.draft.name}
-              placeholder="K12"
-              spellcheck="false"
-              oninput={(e) => ondraft?.(row.id, { name: e.currentTarget.value })}
-              onblur={() => oncommit?.()}
-            />
-            <input
-              class="grow"
-              value={row.draft.value}
-              placeholder="GCF_000005845.2"
-              spellcheck="false"
-              oninput={(e) => ondraft?.(row.id, { value: e.currentTarget.value })}
-              onblur={() => oncommit?.()}
-            />
+            {@render sampleField(row, 'name', row.draft.name, columns.length ? '{sample}' : 'K12', false)}
+            {@render sampleField(row, 'value', row.draft.value, 'GCF_000005845.2', false)}
           {:else}
-            <input
-              class="grow mono"
-              value={row.draft.path}
-              placeholder="/data/sample_01.fastq.gz"
-              spellcheck="false"
-              oninput={(e) => ondraft?.(row.id, { path: e.currentTarget.value })}
-              onblur={() => oncommit?.()}
-            />
+            {@render sampleField(
+              row,
+              'path',
+              row.draft.path,
+              columns.length ? '/data/{sample}_R1.fastq.gz' : '/data/sample_01.fastq.gz',
+              true,
+            )}
           {/if}
 
           <span class="trail">
@@ -422,6 +612,47 @@
         </div>
 
         {@render detail(row)}
+
+        {#if row.kind === 'draft' && array}
+          <!-- An array row is one declaration, not N rows. What it says about
+               itself is therefore a count and a role: how many items it stands
+               for, and whether it is the one that says what a *sample* is. -->
+          <div class="notes row wrap small">
+            {#if expansion?.counts?.[row.id]}
+              <span class="tag">× {expansion.counts[row.id]} registered</span>
+            {:else}
+              <span class="tag">× {rowCount} once expanded</span>
+            {/if}
+            <button
+              class="star"
+              class:on={row.draft.index}
+              aria-pressed={!!row.draft.index}
+              title={row.draft.index
+                ? 'this row says what a sample is; its type is what the plan splits on'
+                : 'make this the sample index — one run per sheet row, and every other array row hangs off it'}
+              onclick={() => onindex?.(row.id)}
+            >★ sample index</button>
+            {#if row.draft.index && row.parents.length}
+              <span class="tag warn">
+                the index cannot descend from anything, or every sample sees every other
+              </span>
+            {/if}
+          </div>
+        {/if}
+
+        {#if row.kind === 'item' && columns.length}
+          <div class="notes row wrap small">
+            <button
+              class="star"
+              class:on={sharedPaths.includes(row.id)}
+              aria-pressed={sharedPaths.includes(row.id)}
+              title={sharedPaths.includes(row.id)
+                ? 'every sample sees this'
+                : 'let every sample see this — a reference beside the per-sample files is otherwise in no sample at all'}
+              onclick={() => onshared?.(row.item, !sharedPaths.includes(row.id))}
+            >shared by every sample</button>
+          </div>
+        {/if}
 
         {#if row.kind === 'draft' && (row.type || waiting)}
           <div class="notes row wrap small">
@@ -454,7 +685,10 @@
       </span>
     </div>
 
-    <div class="heading small muted">outputs</div>
+    <div class="heading out small muted spread">
+      <span>outputs</span>
+      <span class="count">{targets.length} wanted</span>
+    </div>
     {#if targetRows.length === 0}
       <p class="small muted pad">Nothing wanted yet. Add at least one to solve.</p>
     {/if}
@@ -499,11 +733,6 @@
       <span class="small muted">a type you want out of this — the planner finds the way to it</span>
     </div>
   </div>
-
-  <p class="small muted">
-    Everything registered here is one run's worth of input. Removing a row
-    unregisters it; the file itself is left alone.
-  </p>
 </div>
 
 <style>
@@ -513,14 +742,25 @@
     /* not hidden: a parent menu and a type list both hang out of their row */
     overflow: visible;
   }
+  /* The two halves stay siblings in the one box, so the band is the only thing
+     telling them apart -- it has to be loud enough to read as a division rather
+     than as another row. An accent edge and the half's own count do that; a
+     wrapper element around each half would do it too, and would also change
+     what `:last-child` and `:first-child` mean two rules down. */
   .heading {
     padding: 6px 10px;
     background: var(--panel-2);
     border-bottom: 1px solid var(--line);
+    box-shadow: inset 3px 0 0 var(--accent);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-size: 11px;
   }
+  /* a band midway down the box is a seam, not a label at its top -- which one
+     that is shifts now that samples can lead, so it is structural rather than
+     pinned to `.out` */
+  .heading:not(:first-child) { border-top: 3px solid var(--line); }
+  .heading .count { text-transform: none; letter-spacing: 0; }
   /* the border is on the entry rather than the row, so a row and the line of
      tags under it read as one thing rather than two */
   .entry { border-bottom: 1px solid var(--line); }
@@ -555,6 +795,13 @@
     padding: 6px 10px;
   }
   .pad { padding: 8px 10px; margin: 0; }
+  .indexpick {
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-top: 1px solid var(--line);
+    background: var(--panel-2);
+  }
   /* the type field is a combobox, not a word. It used to fight the path for the
      width of one line; now it owns the detail line's first column instead. */
   .typecell { flex: 1 1 240px; min-width: 140px; max-width: 360px; }
@@ -578,9 +825,23 @@
     text-align: left;
   }
   .asfield:hover { border-color: var(--line); background: var(--panel-2); }
+  .asfield.empty { color: var(--muted); font-style: italic; }
   .type {
     display: block;
     max-width: 100%;
     color: var(--accent);
   }
+  /* narrow on purpose: it sits beside a field that wants the width, and what it
+     holds is one short word at a time */
+  .cols { flex: 0 0 auto; width: 4.5em; padding: 2px 2px; }
+  /* a role, toggled -- not a delete and not a link. On, it reads as the accent
+     it marks the row with; off, it is as quiet as the tags beside it. */
+  .star {
+    padding: 1px 6px;
+    font-size: 11px;
+    background: none;
+    color: var(--muted);
+    border-color: var(--line);
+  }
+  .star.on { color: var(--accent); border-color: var(--accent); }
 </style>

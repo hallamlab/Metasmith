@@ -5,17 +5,21 @@ because the contract that matters is the one the page sees.
 """
 from __future__ import annotations
 
+import io
 import threading
 from pathlib import Path
 from unittest import mock
 
 import pytest
+import yaml
 
+from metasmith.agents import Spec, Template
 from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
+from metasmith.models.paths import DEFERRED
 from metasmith.models.solver import Endpoint
 from metasmith.testing.mock_transforms import identity_transform
 
-from metasmith.gui import stdlib
+from metasmith.gui import share, stdlib
 from metasmith.gui.app import bind_project, create_app
 from metasmith.gui.store import Project
 from metasmith.ops import agent as op_agent
@@ -28,14 +32,13 @@ from tests.e2e.docker.conftest import create_transform_library
 # as a local reminder of what the file is for; it is no longer what selects it.
 pytestmark = pytest.mark.gui
 
-@pytest.fixture
-def project_root(tmp_path) -> Path:
+def _fabricate_project(root: Path) -> Path:
     """A project with a stand-in standard library already in place.
 
     The GUI clones the real one; here it is fabricated so the tests never touch
-    the network.
+    the network. A function as well as a fixture because sharing needs two
+    projects at once -- an export is only worth anything somewhere else.
     """
-    root = tmp_path / "project"
     mlib = root / "MetasmithLibraries"
     (mlib / "data_types").mkdir(parents=True)
 
@@ -54,6 +57,11 @@ def project_root(tmp_path) -> Path:
     )
     (mlib / "resources").mkdir()
     return root
+
+
+@pytest.fixture
+def project_root(tmp_path) -> Path:
+    return _fabricate_project(tmp_path / "project")
 
 
 @pytest.fixture(scope="session")
@@ -333,11 +341,23 @@ class TestAgents:
         assert r.status_code == 409
         assert "already exists" in r.get_json()["error"]
 
-    def test_delete(self, client, tmp_path):
+    def test_delete_archives_first(self, client, tmp_path):
+        """Deleting is archiving; deleting again is the removal.
+
+        Nothing here is recoverable from anywhere else, and the gesture is one
+        double-click on a list of near-identical names -- so the first press
+        tombstones and the second one means it.
+        """
         client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
-        r = client.delete("/api/agents/smith")
-        assert r.get_json()["action"] == "deleted"
+        assert client.delete("/api/agents/smith").get_json()["action"] == "archived"
         assert client.get("/api/agents").get_json() == []
+        assert len(client.get("/api/agents?archived=1").get_json()) == 1
+        # and it comes back
+        client.post("/api/agents/smith/archive", json={"archived": False})
+        assert len(client.get("/api/agents").get_json()) == 1
+        client.delete("/api/agents/smith")
+        assert client.delete("/api/agents/smith").get_json()["action"] == "deleted"
+        assert client.get("/api/agents?archived=1").get_json() == []
 
     def test_deploy_is_a_job(self, client, tmp_path):
         client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
@@ -440,6 +460,37 @@ class TestAgentNaming:
         }).get_json()
         assert body["name"] == name
         assert body["auto_named"] is True
+
+    def test_regenerating_a_name_re_arms_it(self, client):
+        """The ↻ beside the name is the undo for having typed one.
+
+        A typed name makes an agent manually-named for good, which is right --
+        but then there is no way back to a name that follows its host, and the
+        button that offers one has to be able to say "this came from you, not
+        from a keyboard". That is what the `naming` record on the save is.
+        """
+        name = client.post("/api/agents", json={}).get_json()["name"]
+        client.put(f"/api/agents/{name}", json={"name": "bertha"})
+        assert client.get("/api/agents/bertha").get_json()["auto_named"] is False
+
+        suggestion = client.get(
+            "/api/defaults/agent/name", query_string={"host": "sockeye"}).get_json()
+        assert suggestion["name"].endswith("-sockeye")
+        # nothing is renamed by asking
+        assert client.get("/api/agents/bertha").status_code == 200
+
+        body = client.put("/api/agents/bertha", json={
+            "name": suggestion["name"],
+            "home": f"ssh://sockeye:~/msm.{suggestion['name']}",
+            "naming": {"prefix": suggestion["prefix"], "sort_name": suggestion["sort_name"]},
+        }).get_json()
+        assert body["name"] == suggestion["name"]
+        assert body["auto_named"] is True
+        # and it follows its host again
+        after = client.put(f"/api/agents/{body['name']}", json={
+            "name": body["name"], "home": f"ssh://mira:~/msm.{body['name']}",
+        }).get_json()
+        assert after["name"] == f"{suggestion['prefix']}-mira"
 
     def test_typing_a_name_stops_it_following(self, client):
         name = client.post("/api/agents", json={}).get_json()["name"]
@@ -920,6 +971,275 @@ class TestWorkflows:
             assert api._load_task(wf_dir).GetKey()
         assert held == [True], "the task load ran without the planner's lock"
 
+
+class TestWorkflowDag:
+    """The drawing the page shows, and the two files it caches to."""
+
+    def _drawn(self, client, name, **query):
+        r = client.get(f"/api/workflows/{name}/dag", query_string=query)
+        assert r.status_code == 200, r.get_json()
+        assert r.mimetype == "image/svg+xml"
+        return r.get_data(as_text=True)
+
+    def test_the_theme_is_honoured_and_cached_per_theme(self, client):
+        name = _make_workflow(client)
+        _seed_inputs(client, name, 1)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        wf_dir = Path(client.get(f"/api/workflows/{name}").get_json()["path"])
+
+        light = self._drawn(client, name)
+        dark = self._drawn(client, name, theme="dark")
+        assert light != dark
+        assert 'fill="#FFFFFF"' in light and 'fill="#FFFFFF"' not in dark
+
+        # two files, not one repainted: the light name is the historical one,
+        # since the CLI stages that exact file into the bundle
+        assert (wf_dir / "plan.dag.svg").read_text() == light
+        assert (wf_dir / "plan.dag.dark.svg").read_text() == dark
+
+    def test_an_unknown_theme_draws_the_default_rather_than_failing(self, client):
+        # the value comes off a url; a malformed one must not turn the diagram
+        # into an error card
+        name = _make_workflow(client)
+        _seed_inputs(client, name, 1)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert self._drawn(client, name, theme="twilight") == self._drawn(client, name)
+
+    def test_a_resolve_drops_every_cached_theme(self, client):
+        name = _make_workflow(client)
+        _seed_inputs(client, name, 1)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        wf_dir = Path(client.get(f"/api/workflows/{name}").get_json()["path"])
+        self._drawn(client, name)
+        self._drawn(client, name, theme="dark")
+
+        _seed_inputs(client, name, 2, prefix="more")
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        # a stale drawing outliving its plan is the bug; one theme swept and the
+        # other left is the same bug wearing the other hat
+        for f in ("plan.dag.svg", "plan.dag.dark.svg"):
+            assert not (wf_dir / f).exists(), f
+
+    def test_a_workflow_with_no_plan_is_refused(self, client):
+        name = _make_workflow(client)
+        assert client.get(f"/api/workflows/{name}/dag").status_code == 409
+
+
+@pytest.fixture
+def template(project_root) -> str:
+    """One template in the stand-in standard library: deferred assembly in.
+
+    Written the way the libraries repository writes its own -- a `Spec` with
+    `DEFERRED` inputs, saved with references relative to the repository root --
+    because that is the file the GUI has to read.
+    """
+    mlib = project_root / "MetasmithLibraries"
+    lib = DataInstanceLibrary(mlib / "templates" / "assembly_to_bam" / "inputs.xgdb")
+    lib.AddTypeLibrary(mlib / "data_types" / "mock.yml")
+    lib.AddItem(DEFERRED, "mock::assembly")
+    lib.Save()
+    Template(
+        name="assembly_to_bam",
+        description="an assembly in, a bam out",
+        spec=Spec(
+            input_library=lib,
+            target_types=["mock::bam"],
+            transform_libraries=[mlib / "transforms" / "transforms.xgdb"],
+        ),
+    ).Save(mlib)
+    return "assembly_to_bam"
+
+
+class TestTemplates:
+    """The starting points the new-workflow modal offers."""
+
+    def test_listing_reads_yaml_and_never_solves(self, client, template):
+        # the modal opens on every `+ workflow`; if listing planned anything it
+        # would be as slow as a generate and would hold the planner's lock
+        with mock.patch.object(Spec, "Solve", side_effect=AssertionError("solved")):
+            body = client.get("/api/templates").get_json()
+        (entry,) = body
+        assert entry["name"] == template
+        assert entry["description"] == "an assembly in, a bam out"
+        assert entry["target_types"] == ["mock::bam"]
+        assert entry["dag_ready"] is False
+
+    def test_a_project_without_templates_lists_none(self, client):
+        assert client.get("/api/templates").get_json() == []
+
+    def test_drawing_is_a_job_and_is_then_served_from_cache(self, client, template):
+        r = client.post(f"/api/templates/{template}/dag")
+        assert r.status_code == 202, r.get_json()
+        result = _finish(client, r.get_json())
+        assert result["step_count"] >= 1
+
+        drawn = client.get(f"/api/templates/{template}/dag")
+        assert drawn.status_code == 200 and drawn.mimetype == "image/svg+xml"
+        assert "<svg" in drawn.get_data(as_text=True)
+
+        # the second ask costs nothing: no job, no solve
+        again = client.post(f"/api/templates/{template}/dag")
+        assert again.status_code == 200
+        assert again.get_json()["cached"] is True
+        assert client.get("/api/templates").get_json()[0]["dag_ready"] is True
+
+    def test_each_theme_is_drawn_and_cached_separately(self, client, template):
+        _finish(client, client.post(f"/api/templates/{template}/dag").get_json())
+        r = client.post(f"/api/templates/{template}/dag", query_string={"theme": "dark"})
+        assert r.status_code == 202, "a theme drawn once is not a theme drawn"
+        _finish(client, r.get_json())
+        light = client.get(f"/api/templates/{template}/dag").get_data(as_text=True)
+        dark = client.get(
+            f"/api/templates/{template}/dag", query_string={"theme": "dark"}
+        ).get_data(as_text=True)
+        assert light != dark
+
+    def test_a_library_pull_invalidates_the_drawing(self, client, template):
+        """The cache keys on the stdlib commit, not just the name.
+
+        A template names transforms; pulling the library can change what it
+        solves to. Without the commit in the key the modal would keep showing
+        the previous graph, with nothing on screen to say so.
+        """
+        with mock.patch.object(stdlib, "stdlib_commit", return_value="a" * 40):
+            _finish(client, client.post(f"/api/templates/{template}/dag").get_json())
+            assert client.post(f"/api/templates/{template}/dag").status_code == 200
+        with mock.patch.object(stdlib, "stdlib_commit", return_value="b" * 40):
+            assert client.post(f"/api/templates/{template}/dag").status_code == 202
+
+    def test_an_undrawn_template_is_refused_rather_than_drawn_inline(self, client, template):
+        assert client.get(f"/api/templates/{template}/dag").status_code == 409
+
+    def test_an_unknown_template_is_refused(self, client, template):
+        assert client.post("/api/templates/nope/dag").status_code == 409
+        assert client.post("/api/workflows", json={"template": "nope"}).status_code == 409
+
+    def test_creating_from_a_template_takes_its_spec_and_its_rows(self, client, template):
+        r = client.post("/api/workflows", json={"template": template})
+        assert r.status_code == 201, r.get_json()
+        name = r.get_json()["name"]
+
+        detail = client.get(f"/api/workflows/{name}").get_json()
+        assert detail["request"]["target_types"] == ["mock::bam"]
+        assert [Path(p).name for p in detail["request"]["transform_libraries"]] == [
+            "transforms.xgdb"
+        ]
+
+        items = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
+        assert [i["type_name"] for i in items] == ["mock::assembly"]
+
+    def test_the_copied_rows_keep_the_template_s_identity(self, client, template, project_root):
+        """A deferred path is minted once; re-minting would move the task key.
+
+        The template's build asserted a solve at one key. If creating from it
+        re-added the rows, the workflow would plan to a different one and the
+        two could not be said to be the same workflow.
+        """
+        source = DataInstanceLibrary.Load(
+            project_root / "MetasmithLibraries" / "templates" / template / "inputs.xgdb"
+        )
+        name = client.post("/api/workflows", json={"template": template}).get_json()["name"]
+        copied = DataInstanceLibrary.Load(
+            Path(client.get(f"/api/workflows/{name}").get_json()["input_library"]["path"])
+        )
+        assert sorted(str(p) for p in copied.manifest) == sorted(
+            str(p) for p in source.manifest
+        )
+        assert copied.GetKey() == source.GetKey()
+
+    def test_a_created_workflow_can_still_be_typed_beyond_the_template(self, client, template):
+        """The copy carries only the namespaces the template used; the editor
+        needs every one the library offers, or a row cannot be retyped."""
+        name = client.post("/api/workflows", json={"template": template}).get_json()["name"]
+        info = client.get(f"/api/workflows/{name}/inputs").get_json()
+        assert "mock" in info["type_namespaces"]
+
+    def test_creating_without_a_template_is_untouched(self, client, template):
+        """The blank path is the default and must stay exactly what it was."""
+        name = client.post("/api/workflows", json={}).get_json()["name"]
+        detail = client.get(f"/api/workflows/{name}").get_json()
+        assert detail["request"]["target_types"] == []
+        assert client.get(f"/api/workflows/{name}/inputs").get_json()["items"] == []
+
+
+class TestDagLayoutRoute:
+    """Geometry for the graph the info panel draws itself.
+
+    The panel's nodes are buttons, so it cannot show the rendered SVG -- and it
+    used to lay its graph out with an engine of its own, which is how it came to
+    disagree with the plan diagram about the shape of the same graph. The page
+    still builds the graph; only the placement is here.
+    """
+
+    def _lay(self, client, nodes, edges, **body):
+        r = client.post("/api/dag/layout", json={"nodes": nodes, "edges": edges, **body})
+        assert r.status_code == 200, r.get_json()
+        return r.get_json()
+
+    def test_a_chain_is_placed_top_down_with_a_path_per_edge(self, client):
+        geo = self._lay(
+            client,
+            [
+                {"id": "t:sequences::gbk", "kind": "type", "label": "sequences::gbk"},
+                {"id": "x:0", "kind": "transform", "label": "ppanggolin"},
+                {"id": "t:pangenome::heatmap", "kind": "type", "label": "pangenome::heatmap"},
+            ],
+            [
+                {"from": "t:sequences::gbk", "to": "x:0"},
+                {"from": "x:0", "to": "t:pangenome::heatmap"},
+            ],
+        )
+        rows = {n["id"]: n["row"] for n in geo["nodes"]}
+        assert rows["t:sequences::gbk"] < rows["x:0"] < rows["t:pangenome::heatmap"]
+        assert geo["width"] > 0 and geo["height"] > 0
+        assert all(e["d"].startswith("M ") for e in geo["edges"])
+
+    def test_the_label_is_split_the_way_the_svg_splits_it(self, client):
+        geo = self._lay(
+            client, [{"id": "a", "kind": "type", "label": "sequences::gbk"}], [],
+        )
+        n = geo["nodes"][0]
+        assert (n["namespace"], n["label"], n["full"]) == ("sequences", "gbk", "sequences::gbk")
+
+    def test_ids_are_the_callers_and_come_back_untouched(self, client):
+        """`t:<type>` and `x:<index>` are how the panel knows what was clicked."""
+        geo = self._lay(
+            client,
+            [{"id": "x:12", "kind": "transform", "label": "t"}, {"id": "t:a::b", "kind": "type"}],
+            [{"from": "x:12", "to": "t:a::b"}],
+        )
+        assert {n["id"] for n in geo["nodes"]} == {"x:12", "t:a::b"}
+        assert geo["edges"][0]["from"] == "x:12"
+
+    def test_an_edge_naming_a_node_that_is_not_there_is_dropped(self, client):
+        # the panel trims a graph to what fits and leaves the `+N more` stub
+        # behind; an edge into what was trimmed must not invent a node
+        geo = self._lay(
+            client, [{"id": "a", "kind": "type"}], [{"from": "a", "to": "gone"}],
+        )
+        assert [n["id"] for n in geo["nodes"]] == ["a"]
+        assert geo["edges"] == []
+
+    def test_an_empty_graph_is_an_empty_canvas_not_an_error(self, client):
+        geo = self._lay(client, [], [])
+        assert geo["nodes"] == [] and geo["edges"] == []
+
+    def test_a_cycle_is_reported_without_a_path_to_draw(self, client):
+        """One tool consuming and producing the same type is legal input."""
+        geo = self._lay(
+            client,
+            [{"id": "a", "kind": "type"}, {"id": "b", "kind": "transform"}],
+            [{"from": "a", "to": "b"}, {"from": "b", "to": "a"}],
+        )
+        back = [e for e in geo["edges"] if e["back"]]
+        assert len(back) == 1 and back[0]["d"] == ""
+
+    def test_nodes_and_edges_must_be_lists(self, client):
+        r = client.post("/api/dag/layout", json={"nodes": {"a": 1}, "edges": []})
+        assert r.status_code == 400
+
+
+class TestWorkflowGenerateMore:
     def test_regenerating_replaces_the_bundle(self, client):
         name = _make_workflow(client)
         _seed_inputs(client, name, 1)
@@ -946,6 +1266,24 @@ class TestWorkflows:
         assert body["result"]["hints"]
         assert body["request"]["target_types"] == ["mock::unreachable"]
 
+    def test_a_result_echoes_what_it_planned_from(self, client):
+        """The server says what it was given, in its own words.
+
+        A plan fails almost always because a type is not what the person
+        thought it was, and the recipe on the page is the browser's belief
+        about that -- so a failure that only lists hints leaves the one fact
+        worth checking unstated.
+        """
+        name = _make_workflow(client, targets=["mock::unreachable"])
+        _seed_inputs(client, name, 2)
+        result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert result["success"] is False
+        assert [g["type"] for g in result["given"]] == ["mock::assembly"] * 2
+        assert all(g["path"] for g in result["given"])
+        assert result["targets"] == [{"type": "mock::unreachable", "parents": []}]
+        # and it survives the reload, like the hints beside it
+        assert client.get(f"/api/workflows/{name}").get_json()["result"]["given"]
+
     def test_targets_may_carry_lineage(self, client):
         """A target is either a bare name or a name plus the targets it comes off.
 
@@ -971,10 +1309,9 @@ class TestWorkflows:
         index 1 reads as an off-by-one in whichever half you trust less.
         """
         from metasmith.agents import TargetBuilder
-        from metasmith.ops.workflow import _add_targets
 
         with pytest.raises(AssertionError, match=r"target #1 \[mock::bam\] names parent #2"):
-            _add_targets(TargetBuilder(), [{"type": "mock::bam", "parents": [1]}])
+            TargetBuilder().AddAll([{"type": "mock::bam", "parents": [1]}])
 
     def test_generate_requires_a_target(self, client):
         r = client.post("/api/workflows", json={})
@@ -1035,9 +1372,14 @@ class TestWorkflows:
         kb = _finish(client, client.post(f"/api/workflows/{b}/generate", json={}).get_json())
         assert ka["task_key"] == kb["task_key"]
 
-    def test_delete_without_runs(self, client):
+    def test_delete_without_runs_archives_first(self, client):
+        project: Project = client.application.config["MSM_PROJECT"]
         name = _make_workflow(client)
+        assert client.delete(f"/api/workflows/{name}").get_json()["action"] == "archived"
+        # the directory is still there -- that is what makes it recoverable
+        assert project.workflow_path(name).is_dir()
         assert client.delete(f"/api/workflows/{name}").get_json()["action"] == "deleted"
+        assert not project.workflow_path(name).exists()
 
 
 class TestInputRowEdits:
@@ -1444,6 +1786,8 @@ class TestRuns:
             assert client.post(
                 f"/api/runs/{runnable}/{run['name']}/cancel", json={}).status_code == 200
         assert client.delete(
+            f"/api/runs/{runnable}/{run['name']}").get_json()["action"] == "archived"
+        assert client.delete(
             f"/api/runs/{runnable}/{run['name']}").get_json()["action"] == "deleted"
 
     def test_workflow_with_runs_archives_instead_of_deleting(self, client, runnable):
@@ -1569,6 +1913,31 @@ class TestLaunchParams:
         })
         assert list(call.kwargs["resource_overrides"]) == [2]
 
+    def test_unlimited_time_is_not_the_same_as_an_empty_box(self, client, runnable):
+        """The two things an empty time box could not both mean.
+
+        Nothing in the box is "whatever the transform declared"; the infinity
+        button sends a token, and it has to survive the pass that drops empties.
+        """
+        run, call = self._launch(client, runnable, resource_overrides={
+            "1": {"duration_h": "unlimited"},
+            "2": {"duration_h": "3"},
+        })
+        ro = call.kwargs["resource_overrides"]
+        assert ro[1].duration.unlimited
+        assert ro[1].duration.AsNextflowFormat() == "null"
+        assert not ro[2].duration.unlimited
+        body = client.get(f"/api/runs/{runnable}/{run['name']}").get_json()
+        assert body["resource_overrides"]["1"] == {"duration_h": "unlimited"}
+
+    def test_only_the_time_can_be_unlimited(self, client, runnable):
+        r = client.post("/api/runs", json={
+            "workflow": runnable, "agent": "smith",
+            "resource_overrides": {"1": {"memory_gb": "unlimited"}},
+        })
+        assert r.status_code == 400
+        assert "memory_gb" in r.get_json()["error"]
+
     def test_a_non_numeric_override_is_refused(self, client, runnable):
         r = client.post("/api/runs", json={
             "workflow": runnable, "agent": "smith",
@@ -1599,6 +1968,27 @@ class TestStepSelectors:
         for s in steps:
             assert s["process"].startswith(f"p{s['order']:02}__")
             assert "declared_resources" in s
+
+    def test_the_summary_places_every_step_in_the_drawing(self, client, runnable):
+        """The page lays its step rows out from these, in the SVG's own pixels.
+
+        A row sits level with the node it describes, so `dag_cy` is the whole
+        of that alignment and `row_pitch`/`top_cy` are the only spacings the
+        page is allowed to know -- guessing at either is how the two drifted
+        apart. Nothing here may fall back to `None`: the geometry block is
+        caught broadly, and a silent failure draws every row in the wrong place
+        rather than not at all.
+        """
+        result = client.get(f"/api/workflows/{runnable}").get_json()["result"]
+        geo = result["dag_geometry"]
+        assert set(geo) == {"width", "height", "row_pitch", "top_cy"}
+        assert all(isinstance(v, float) and v > 0 for v in geo.values())
+        # the first drawn row is inside the plate, and a row is not taller
+        # than the plate it is placed on
+        assert geo["top_cy"] < geo["height"]
+        for s in result["step_display"]:
+            assert isinstance(s["dag_cy"], float), s["transform"]
+            assert geo["top_cy"] <= s["dag_cy"] <= geo["height"]
 
     def test_a_position_selector_matches_the_process_that_position_gets(self):
         """The two halves that have to agree, pinned against each other.
@@ -1676,6 +2066,265 @@ class TestOrphanedLaunches:
             job.wait(10)
 
 
+TRACE_TSV = "\n".join([
+    "task_id\thash\tnative_id\tname\tstatus\texit\tsubmit\tduration\tpeak_rss",
+    "1\te9/18a9b7\t297940\tp01__getNcbiAssembly (1)\tCOMPLETED\t0\t2026-07-28 02:10:01\t19.6s\t8.5 MB",
+    "2\te4/015949\t301869\tp02__ppanggolin (1)\tFAILED\t1\t2026-07-28 02:10:21\t55.6s\t2 GB",
+]) + "\n"
+
+
+class TestTrace:
+    """The per-task record, and the one thing it exists to make visible.
+
+    A step failing under `errorStrategy 'ignore'` leaves the run reported as
+    completed, so the trace is the only place the loss is written down.
+    """
+
+    def test_a_collected_run_reads_its_own_trace(self, client, runnable):
+        run = TestResultsFiltering._name(client, runnable)
+        project: Project = client.application.config["MSM_PROJECT"]
+        logs = project.outputs_path(runnable, run) / "_metadata" / "logs.2026-01-01"
+        logs.mkdir(parents=True)
+        (logs / "nxf_trace.tsv").write_text(TRACE_TSV)
+
+        body = client.get(f"/api/runs/{runnable}/{run}/trace").get_json()
+        assert body["source"] == "local"
+        assert body["done"] == 1 and body["failed"] == 1
+        assert [t["state"] for t in body["tasks"]] == ["done", "failed"]
+        assert body["tasks"][1]["exit"] == 1
+
+    def test_the_alias_is_never_the_log_directory(self, client, runnable):
+        """`logs.latest` names one of its own siblings, so taking it would read
+        the same run twice and, after a re-collect, could read a stale one."""
+        run = TestResultsFiltering._name(client, runnable)
+        project: Project = client.application.config["MSM_PROJECT"]
+        meta = project.outputs_path(runnable, run) / "_metadata"
+        real = meta / "logs.2026-01-01"
+        real.mkdir(parents=True)
+        (real / "nxf_trace.tsv").write_text(TRACE_TSV)
+        (meta / "logs.latest").symlink_to(real.name)
+
+        body = client.get(f"/api/runs/{runnable}/{run}/trace").get_json()
+        assert body["file"].endswith("logs.2026-01-01/nxf_trace.tsv")
+
+    def test_no_trace_is_an_empty_answer_not_an_error(self, client, runnable):
+        run = TestResultsFiltering._name(client, runnable)
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            mload.return_value = mock.MagicMock()
+            mload.return_value.ReadWorkflowTrace.return_value = {
+                "exists": False, "lines": [], "file": "/x", "run_dir": "/x",
+            }
+            body = client.get(f"/api/runs/{runnable}/{run}/trace").get_json()
+        assert body["tasks"] == [] and body["failed"] == 0
+
+    def test_a_nonzero_exit_is_failed_whatever_the_status_says(self):
+        """Nextflow can call a task COMPLETED and still hand back an exit code;
+        a caller asking which steps died should not have to know that."""
+        from metasmith.ops import runtime as op_runtime
+        rows = op_runtime.parse_trace(
+            "name\tstatus\texit\nx (1)\tCOMPLETED\t137\n"
+        )
+        assert rows[0]["state"] == "failed"
+
+
+class TestResultTree:
+    """Walking the collected folder, and refusing to walk out of it."""
+
+    @staticmethod
+    def _collected(client, workflow, tmp_path) -> tuple[str, Path]:
+        run = TestResultsFiltering._name(client, workflow)
+        project: Project = client.application.config["MSM_PROJECT"]
+        outputs = project.outputs_path(workflow, run)
+        (outputs / "1_mock-bam").mkdir(parents=True)
+        (outputs / "1_mock-bam" / "a.bam").write_text("x" * 4096)
+        logs = outputs / "_metadata" / "logs.2026-01-01"
+        logs.mkdir(parents=True)
+        (logs / "agent.log").write_text("hello\nworld\n")
+        (outputs / "_metadata" / "logs.latest").symlink_to("logs.2026-01-01")
+        return run, outputs
+
+    def _flat(self, node, out=None):
+        out = {} if out is None else out
+        for c in node.get("children") or []:
+            out[c["path"]] = c
+            self._flat(c, out)
+        return out
+
+    def test_the_logs_are_in_the_tree(self, client, runnable, tmp_path):
+        """They are not manifest entries, so a tree built from the manifest
+        could not show them -- and they are what a failed step is read from."""
+        run, _ = self._collected(client, runnable, tmp_path)
+        body = client.get(f"/api/runs/{runnable}/{run}/tree").get_json()
+        flat = self._flat(body["root"])
+        assert flat["_metadata/logs.2026-01-01/agent.log"]["role"] == "log"
+        assert flat["1_mock-bam/a.bam"]["size"] == 4096
+
+    def test_the_alias_is_listed_but_not_descended(self, client, runnable, tmp_path):
+        """`logs.latest` names its own sibling; walking into it would carry the
+        whole log tree across twice under two names."""
+        run, _ = self._collected(client, runnable, tmp_path)
+        flat = self._flat(client.get(f"/api/runs/{runnable}/{run}/tree").get_json()["root"])
+        alias = flat["_metadata/logs.latest"]
+        assert alias["symlink"] is True
+        assert not alias["children"]
+        assert "_metadata/logs.latest/agent.log" not in flat
+
+    def test_products_lead_and_metadata_trails(self, client, runnable, tmp_path):
+        run, _ = self._collected(client, runnable, tmp_path)
+        top = [
+            n["name"]
+            for n in client.get(f"/api/runs/{runnable}/{run}/tree").get_json()["root"]["children"]
+        ]
+        assert top[-1] == "_metadata"
+
+    @pytest.mark.parametrize("bad", ["../../../etc/passwd", "/etc/passwd", "", "nope"])
+    def test_a_path_outside_the_run_is_refused(self, client, runnable, tmp_path, bad):
+        run, _ = self._collected(client, runnable, tmp_path)
+        r = client.get(f"/api/runs/{runnable}/{run}/file", query_string={"path": bad})
+        assert r.status_code >= 400
+
+    def test_a_symlink_pointing_out_is_refused(self, client, runnable, tmp_path):
+        """Containment is asserted against the link's *target*, so planting one
+        is not a way around it."""
+        run, outputs = self._collected(client, runnable, tmp_path)
+        secret = tmp_path / "secret.txt"
+        secret.write_text("nope")
+        (outputs / "escape.txt").symlink_to(secret)
+        r = client.get(
+            f"/api/runs/{runnable}/{run}/file", query_string={"path": "escape.txt"})
+        assert r.status_code >= 400
+
+    def test_the_alias_resolves_for_reading(self, client, runnable, tmp_path):
+        """Following links is the point -- `logs.latest/agent.log` is a real
+        thing to want -- it is only leaving the root that is refused."""
+        run, _ = self._collected(client, runnable, tmp_path)
+        body = client.get(
+            f"/api/runs/{runnable}/{run}/file",
+            query_string={"path": "_metadata/logs.latest/agent.log"},
+        ).get_json()
+        assert body["text"] == "hello\nworld\n" and body["eof"] is True
+
+    def test_a_window_pages_by_byte_offset(self, client, runnable, tmp_path):
+        """Line counts cannot resume a window: the ends are trimmed at line
+        boundaries for looks, so bytes shown and lines shown differ."""
+        run, outputs = self._collected(client, runnable, tmp_path)
+        (outputs / "big.txt").write_text("".join(f"line {i}\n" for i in range(4000)))
+        q = {"path": "big.txt", "limit": 200}
+        first = client.get(f"/api/runs/{runnable}/{run}/file", query_string=q).get_json()
+        assert first["eof"] is False and first["offset"] == 0
+        second = client.get(
+            f"/api/runs/{runnable}/{run}/file",
+            query_string=q | {"offset": first["offset"] + first["length"]},
+        ).get_json()
+        assert second["offset"] == first["length"]
+        # the partial line the first window ended on is where the second starts
+        assert second["dropped_head_bytes"] >= 0
+
+    def test_tail_reaches_the_end(self, client, runnable, tmp_path):
+        run, outputs = self._collected(client, runnable, tmp_path)
+        (outputs / "big.txt").write_text("".join(f"line {i}\n" for i in range(4000)))
+        body = client.get(
+            f"/api/runs/{runnable}/{run}/file",
+            query_string={"path": "big.txt", "mode": "tail", "limit": 200},
+        ).get_json()
+        assert body["eof"] is True and body["text"].endswith("line 3999\n")
+
+    def test_a_binary_file_is_named_not_decoded(self, client, runnable, tmp_path):
+        run, outputs = self._collected(client, runnable, tmp_path)
+        (outputs / "x.bin").write_bytes(b"\x00\x01\x02" * 100)
+        body = client.get(
+            f"/api/runs/{runnable}/{run}/file", query_string={"path": "x.bin"}).get_json()
+        assert body["encoding"] == "binary" and body["text"] is None
+
+    def test_a_download_is_an_attachment_unless_it_is_an_image(
+        self, client, runnable, tmp_path,
+    ):
+        run, outputs = self._collected(client, runnable, tmp_path)
+        (outputs / "heat.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+        img = client.get(f"/api/runs/{runnable}/{run}/download",
+                         query_string={"path": "heat.png"})
+        assert img.headers["Content-Type"].startswith("image/png")
+        assert "attachment" not in img.headers.get("Content-Disposition", "")
+        assert img.headers["X-Content-Type-Options"] == "nosniff"
+
+        rep = client.get(f"/api/runs/{runnable}/{run}/download",
+                         query_string={"path": "1_mock-bam/a.bam"})
+        assert rep.headers["Content-Type"] == "application/octet-stream"
+        assert "attachment" in rep.headers["Content-Disposition"]
+
+
+class TestPublishedPaths:
+    def test_a_produced_file_is_recorded_where_it_landed(self, tmp_path):
+        """The trace records a file by its cache-shard path; nextflow publishes
+        it under a folder named for the step. Writing the shard path made a
+        manifest of names that were not in the directory."""
+        from metasmith.agents import _published_index, _published_path
+
+        out = tmp_path / "results"
+        (out / "1_seq-gbk").mkdir(parents=True)
+        (out / "1_seq-gbk" / "a.gbk").write_text("x")
+        index = _published_index(out)
+        assert _published_path(out / "out" / "a.gbk", out, index) == Path("1_seq-gbk/a.gbk")
+
+    def test_a_path_that_is_already_right_is_left_alone(self, tmp_path):
+        from metasmith.agents import _published_index, _published_path
+
+        out = tmp_path / "results"
+        (out / "out").mkdir(parents=True)
+        (out / "out" / "a.gbk").write_text("x")
+        index = _published_index(out)
+        assert _published_path(out / "out" / "a.gbk", out, index) == Path("out/a.gbk")
+
+    def test_a_name_that_matches_nothing_is_not_guessed_at(self, tmp_path):
+        from metasmith.agents import _published_index, _published_path
+
+        out = tmp_path / "results"
+        out.mkdir()
+        assert _published_path(out / "out" / "gone.gbk", out, {}) == Path("out/gone.gbk")
+
+
+class TestDeliveredTargets:
+    def test_a_requested_type_that_never_arrived_is_named(self, client, runnable, tmp_path):
+        run = TestResultsFiltering._name(client, runnable)
+        project: Project = client.application.config["MSM_PROJECT"]
+        outputs = project.outputs_path(runnable, run)
+
+        types = DataTypeLibrary()
+        types["assembly"] = Endpoint(properties={"assembly"})
+        types["bam"] = Endpoint(properties={"bam"})
+        tp = tmp_path / "t.yml"
+        types.Save(tp)
+        lib = DataInstanceLibrary(outputs)
+        lib.AddTypeLibrary(tp, namespace="mock")
+        (outputs / "mid.fa").write_text("acgt")
+        lib.AddItem(Path("mid.fa"), "mock::assembly")
+        lib.Save()
+
+        body = client.get(f"/api/runs/{runnable}/{run}/results").get_json()
+        # the workflow asks for mock::bam; only an intermediate came back
+        assert body["targets"] == [{"type": "mock::bam", "count": 0, "paths": []}]
+
+    def test_a_delivered_target_counts_its_files(self, client, runnable, tmp_path):
+        run = TestResultsFiltering._name(client, runnable)
+        project: Project = client.application.config["MSM_PROJECT"]
+        outputs = project.outputs_path(runnable, run)
+
+        types = DataTypeLibrary()
+        types["bam"] = Endpoint(properties={"bam"})
+        tp = tmp_path / "t.yml"
+        types.Save(tp)
+        lib = DataInstanceLibrary(outputs)
+        lib.AddTypeLibrary(tp, namespace="mock")
+        for n in ("a.bam", "b.bam"):
+            (outputs / n).write_text("bam")
+            lib.AddItem(Path(n), "mock::bam")
+        lib.Save()
+
+        [target] = client.get(
+            f"/api/runs/{runnable}/{run}/results").get_json()["targets"]
+        assert target["type"] == "mock::bam" and target["count"] == 2
+
+
 class TestResultsFiltering:
     def test_absolute_paths_are_treated_as_inputs(self, client, runnable, tmp_path):
         run = self._name(client, runnable)
@@ -1749,3 +2398,507 @@ class TestJobs:
         _finish(client, r.get_json())
         listed = client.get("/api/jobs", query_string={"workflow": name}).get_json()
         assert [j["kind"] for j in listed] == ["generate"]
+
+
+# ---------------------------------------------------------------------------
+# sample tables
+# ---------------------------------------------------------------------------
+
+
+SHEET = b"sample,asm\nS1,/data/a.fa\nS2,/data/b.fa\n"
+
+# the recipe's input rows as the browser holds them: a sample-array value row
+# that is the sample index, and an array file row descending from it
+ARRAY_ROWS = [
+    {"id": "idx", "mode": "value", "name": "{sample}.id", "value": "{sample}",
+     "dtype": "mock::reads", "parents": [], "index": True},
+    {"id": "asm", "mode": "file", "path": "{asm}",
+     "dtype": "mock::assembly", "parents": ["#idx"]},
+]
+
+
+def _attach(client, name, sheet=SHEET, rows=ARRAY_ROWS):
+    r = client.post(f"/api/workflows/{name}/table",
+                    json={"text": sheet.decode(), "filename": "sheet.csv"})
+    assert r.status_code == 201, r.get_json()
+    if rows is not None:
+        client.put(f"/api/workflows/{name}", json={"input_drafts": rows})
+    return r.get_json()
+
+
+class TestSampleTable:
+    """A sheet you already have, one declared row per kind of input."""
+
+    def test_pasted_text_is_read_as_a_table(self, client):
+        name = _make_workflow(client)
+        body = _attach(client, name, rows=None)
+        assert body["columns"] == ["sample", "asm"]
+        assert body["row_count"] == 2
+
+    def test_an_upload_is_stored_verbatim(self, client):
+        name = _make_workflow(client)
+        r = client.post(
+            f"/api/workflows/{name}/table",
+            data={"file": (io.BytesIO(SHEET), "sheet.csv")},
+            content_type="multipart/form-data",
+        )
+        assert r.status_code == 201, r.get_json()
+        stored = Path(r.get_json()["path"])
+        assert stored.read_bytes() == SHEET
+
+    def test_the_table_reports_what_is_wrong_without_refusing_it(self, client):
+        name = _make_workflow(client)
+        _attach(client, name, rows=[dict(ARRAY_ROWS[0], index=False), ARRAY_ROWS[1]])
+        body = client.get(f"/api/workflows/{name}/table").get_json()
+        assert body["attached"] is True
+        assert body["index_id"] is None
+        assert any("sample index" in p["message"] for p in body["problems"])
+
+    def test_solving_registers_and_attributes_every_item(self, client):
+        # there is no standalone expand any more: `generate` is what turns an
+        # array row into real items now, every time, so this is what a solve
+        # does as a side effect rather than a step of its own to call first
+        name = _make_workflow(client)
+        _attach(client, name)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+
+        inputs = client.get(f"/api/workflows/{name}/inputs").get_json()
+        assert inputs["expansion"]["counts"] == {"idx": 2, "asm": 2}
+        assert inputs["item_count"] == 4
+        # the recipe shows a count against the array row, never the rows it
+        # made -- which it can only do if the server says which row made what
+        by_array = {}
+        for item in inputs["items"]:
+            by_array.setdefault(item["array_id"], []).append(item["path"])
+        assert sorted(by_array) == ["asm", "idx"]
+        assert inputs["expansion"]["sample_type"] == "mock::reads"
+
+    def test_solving_again_replaces_the_previous_generation(self, client):
+        name = _make_workflow(client)
+        _attach(client, name)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        _attach(client, name, sheet=b"sample,asm\nS9,/data/z.fa\n")
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        paths = {i["path"] for i in client.get(f"/api/workflows/{name}/inputs").get_json()["items"]}
+        assert paths == {"S9.id", "/data/z.fa"}
+
+    def test_detach_leaves_what_was_registered(self, client):
+        name = _make_workflow(client)
+        _attach(client, name)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert client.delete(f"/api/workflows/{name}/table").status_code == 200
+        assert client.get(f"/api/workflows/{name}/table").get_json() == {"attached": False}
+        assert client.get(f"/api/workflows/{name}/inputs").get_json()["item_count"] == 4
+
+    def test_solving_with_no_table_left_clears_what_was_registered(self, client):
+        # the symmetric case: nothing to call "unregister" on any more either --
+        # a solve with no table (or no array row left) clears a past
+        # generation's items the same way a solve with one replaces them
+        name = _make_workflow(client)
+        _attach(client, name)
+        # a plain input beside the array rows, so the library is not left
+        # completely empty once they are cleared -- solving *that* is its own
+        # question and not this test's; this one only cares whether a past
+        # generation's items outlive the row that made them
+        _seed_inputs(client, name, count=1, prefix="plain")
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert client.delete(f"/api/workflows/{name}/table").status_code == 200
+        # the browser always resends `sample_type` fresh off the current recipe,
+        # null once there is no table to index against -- done by hand here,
+        # since this client posts the body directly rather than through it
+        client.put(f"/api/workflows/{name}", json={"sample_type": None})
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        items = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
+        assert len(items) == 1
+        assert not items[0].get("array_id")
+
+    def test_a_sample_table_solves_under_its_index_type(self, client):
+        """The whole point: a sheet in, a sampled plan out.
+
+        One step, not two: the planner folds structurally identical samples into
+        one case and the runtime fans that case back out per sample. That the
+        library really splits per row is pinned in `tests/unit/test_sample_tables`.
+        """
+        name = _make_workflow(client, sample="mock::reads")
+        _attach(client, name)
+        result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert result["success"], result
+        assert result["step_count"] > 0
+
+
+class TestSharedInputs:
+    """A reference the whole study uses, under a sampled plan.
+
+    A sample's mask is one index item's lineage, so anything beside it is
+    invisible to the planner -- and making it an *ancestor* of the index instead
+    collapses every sample into one view. Hence a third way in.
+    """
+
+    ROWS = [ARRAY_ROWS[0]]  # the index only; the assembly is shared, not per-sample
+
+    def _shared_setup(self, client):
+        name = _make_workflow(client, sample="mock::reads")
+        _attach(client, name, rows=self.ROWS)
+        # the sample rows register as a side effect of the `generate` each test
+        # method below calls -- nothing here has to pre-register them
+        project = client.application.config["MSM_PROJECT"]
+        f = project.input_library_path(name) / "shared.fa"
+        f.write_text(">contig\nACGT\n")
+        client.post(f"/api/workflows/{name}/inputs/items",
+                    json={"path": str(f), "dtype": "mock::assembly"})
+        return name, str(f)
+
+    def test_an_unshared_neighbour_is_invisible_to_every_sample(self, client):
+        name, _ = self._shared_setup(client)
+        result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert not result["success"]
+
+    def test_marking_it_shared_puts_it_in_every_sample(self, client):
+        name, path = self._shared_setup(client)
+        client.put(f"/api/workflows/{name}", json={"shared_input_paths": [path]})
+        result = _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert result["success"], result
+
+    def test_a_shared_path_that_is_not_registered_is_refused(self, client):
+        name, _ = self._shared_setup(client)
+        client.put(f"/api/workflows/{name}", json={"shared_input_paths": ["/nope.fa"]})
+        job = client.application.config["MSM_JOBS"].get(
+            client.post(f"/api/workflows/{name}/generate", json={}).get_json()["id"])
+        assert job.wait(120)
+        assert job.status == "failed"
+        assert "not in" in job.error
+
+
+# ---------------------------------------------------------------------------
+# sharing
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def elsewhere(_app, tmp_path):
+    """A second project on the same app -- where an import has to land.
+
+    Sharing is only worth testing across the seam: a payload that imports into
+    the project it came from proves nothing about names resolving.
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _open():
+        root = _fabricate_project(tmp_path / "other")
+        bind_project(_app, root, ssh_config_path=tmp_path / "other_ssh", watch=False)
+        with _app.test_client() as c:
+            c.application = _app
+            yield c, root
+
+    return _open
+
+
+def _payload(client, kind, name, bound=False):
+    r = client.post("/api/share/export", json={"kind": kind, "name": name, "bound": bound})
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()
+
+
+class TestShareEnvelope:
+    """What the string itself has to promise."""
+
+    def test_a_payload_round_trips(self, client):
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        out = _payload(client, "ssh_host", "big-iron")
+        assert out["payload"].startswith("msm1:")
+        kind, body = share.decode(out["payload"])
+        assert kind == "ssh_host"
+        assert body["hostname"] == "big.example"
+
+    def test_the_body_is_shown_beside_the_payload(self, client):
+        """Exports carry paths and accounts; the page shows what is in one
+        before anyone copies it."""
+        client.post("/api/agents", json={"name": "smith", "home": "ssh://box:~/msm.smith"})
+        out = _payload(client, "agent", "smith")
+        assert out["body"]["home"] == "ssh://box:~/msm.smith"
+
+    def test_a_truncated_payload_is_refused_not_half_read(self, client):
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        text = _payload(client, "ssh_host", "big-iron")["payload"]
+        r = client.post("/api/share/preview", json={"payload": text[:-8]})
+        assert r.status_code == 409
+        assert "whole" in r.get_json()["error"] or "damaged" in r.get_json()["error"]
+
+    def test_a_later_format_is_refused_by_name(self, client):
+        r = client.post("/api/share/preview", json={"payload": "msm9:abc:ZZZZ"})
+        assert r.status_code == 409
+        assert "msm9" in r.get_json()["error"]
+
+    def test_something_that_is_not_a_payload_says_so(self, client):
+        r = client.post("/api/share/preview", json={"payload": "hello there"})
+        assert r.status_code == 409
+        assert "not a metasmith share string" in r.get_json()["error"]
+
+    def test_wrapped_whitespace_survives(self, client):
+        """Mail clients wrap long strings; the wrap is not damage."""
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        text = _payload(client, "ssh_host", "big-iron")["payload"]
+        wrapped = "\n".join(text[i:i + 20] for i in range(0, len(text), 20))
+        assert share.decode(wrapped)[1]["hostname"] == "big.example"
+
+
+class TestShareHosts:
+    def test_a_host_arrives_in_another_config(self, client, elsewhere):
+        client.post("/api/ssh/hosts", json={
+            "alias": "big-iron", "hostname": "big.example", "user": "tony", "port": "2222",
+        })
+        text = _payload(client, "ssh_host", "big-iron")["payload"]
+        with elsewhere() as (other, _):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert prev["kind"] == "ssh_host" and prev["blocked"] is False
+            assert other.post("/api/share/import", json={"payload": text}).status_code == 201
+            hosts = other.get("/api/ssh/hosts").get_json()["hosts"]
+            (host,) = [h for h in hosts if h["alias"] == "big-iron"]
+            assert host["hostname"] == "big.example"
+            assert host["user"] == "tony"
+
+    def test_the_private_key_does_not_travel(self, client):
+        """A shared host names a machine, never a key on the sender's disk."""
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        client.post("/api/ssh/keys", json={"alias": "big-iron"})
+        body = _payload(client, "ssh_host", "big-iron")["body"]
+        assert "identity_file" not in body
+        assert "id_" not in yaml.safe_dump(body)
+
+    def test_an_alias_already_here_is_named_before_it_is_tried(self, client, elsewhere):
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        text = _payload(client, "ssh_host", "big-iron")["payload"]
+        with elsewhere() as (other, _):
+            other.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "mine.example"})
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert prev["blocked"] is True
+            assert "already in your ssh config" in " ".join(prev["notes"])
+            # and the attempt refuses rather than overwriting the user's own host
+            assert other.post("/api/share/import", json={"payload": text}).status_code == 409
+            assert other.get("/api/ssh/hosts").get_json()["hosts"][0]["hostname"] == "mine.example"
+
+
+class TestShareAgents:
+    def test_an_agent_arrives_with_its_params(self, client, elsewhere):
+        """The `Agent.Pack` trap: params outside the stringifying block.
+
+        A mapping written through it reloads as a quoted Python literal -- still
+        truthy, so nothing complains, and the agent runs with no params at all.
+        """
+        client.post("/api/agents", json={
+            "name": "smith", "home": "ssh://box:~/msm.smith", "runtime": "APPTAINER",
+            "setup_commands": ["#!/bin/bash", "module load gcc"],
+            "default_preset": "slurm", "default_params": {"account": "st-x-1", "cpus": 8},
+        })
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, _):
+            assert other.post("/api/share/import", json={"payload": text}).status_code == 201
+            got = other.get("/api/agents/smith").get_json()
+            assert got["default_params"] == {"account": "st-x-1", "cpus": 8}
+            assert got["default_preset"] == "slurm"
+            assert got["setup_commands"] == ["#!/bin/bash", "module load gcc"]
+
+    def test_host_facts_no_editor_draws_still_travel(self, client, elsewhere):
+        client.post("/api/agents", json={"name": "smith", "home": "~/msm.smith"})
+        project = client.application.config["MSM_PROJECT"]
+        agent = op_agent.load_agent(str(project.agent_path("smith")))
+        agent.gpu_args = ["--bind", "/usr/lib/wsl:/usr/lib/wsl"]
+        agent.native = True
+        agent.Save(project.agent_path("smith"))
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, root):
+            other.post("/api/share/import", json={"payload": text})
+            got = op_agent.load_agent(str(Project(root).agent_path("smith")))
+            assert got.gpu_args == ["--bind", "/usr/lib/wsl:/usr/lib/wsl"]
+            assert got.native is True
+
+    def test_where_it_was_deployed_does_not_travel(self, client, elsewhere):
+        """`real_path` is the sender's host. A copy claiming it would skip its
+        own deploy and stage into a directory nothing installed."""
+        client.post("/api/agents", json={"name": "smith", "home": "ssh://box:~/msm.smith"})
+        _deployed(client, "smith")
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, _):
+            other.post("/api/share/import", json={"payload": text})
+            assert other.get("/api/agents/smith").get_json()["deployed"] is False
+
+    def test_an_unknown_host_is_created_red_rather_than_refused(self, client, elsewhere):
+        client.post("/api/ssh/hosts", json={"alias": "big-iron", "hostname": "big.example"})
+        client.post("/api/agents", json={"name": "smith", "home": "ssh://big-iron:~/msm.smith"})
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, _):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert "not in your ssh config" in " ".join(prev["notes"])
+            assert other.post("/api/share/import", json={"payload": text}).status_code == 201
+            got = other.get("/api/agents/smith").get_json()
+            assert got["valid"] is False
+            assert any("big-iron" in p for p in got["problems"])
+
+    def test_a_name_already_taken_is_moved_aside_and_said(self, client, elsewhere):
+        client.post("/api/agents", json={"name": "smith", "home": "~/msm.smith"})
+        text = _payload(client, "agent", "smith")["payload"]
+        with elsewhere() as (other, _):
+            other.post("/api/agents", json={"name": "smith", "home": "~/mine"})
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert prev["name"] == "smith-2"
+            other.post("/api/share/import", json={"payload": text})
+            assert other.get("/api/agents/smith").get_json()["home"].endswith("mine")
+            assert other.get("/api/agents/smith-2").get_json()["home"].endswith("msm.smith")
+
+
+class TestShareWorkflows:
+    def _recipe(self, client):
+        name = _make_workflow(client)
+        _seed_inputs(client, name, count=2)
+        return name
+
+    def test_the_spec_travels_and_the_bookkeeping_does_not(self, client):
+        name = self._recipe(client)
+        body = _payload(client, "workflow", name)["body"]
+        assert body["spec"]["target_types"] == ["mock::bam"]
+        assert body["spec"]["sample_type"] == "mock::assembly"
+        for k in ("created_at", "forked_from", "schema"):
+            assert k not in body and k not in body["spec"]
+
+    def test_libraries_travel_as_names_not_as_paths(self, client, project_root):
+        name = self._recipe(client)
+        client.put(f"/api/workflows/{name}", json={
+            "transform_libraries": [str(project_root / "MetasmithLibraries" / "transforms")],
+        })
+        body = _payload(client, "workflow", name)["body"]
+        assert body["spec"]["transform_libraries"] == ["transforms"]
+
+    def test_unbound_is_the_recipe_and_bound_is_the_files(self, client):
+        name = self._recipe(client)
+        unbound = _payload(client, "workflow", name)["body"]
+        assert [r["path"] for r in unbound["inputs"]] == ["DEFERRED", "DEFERRED"]
+        bound = _payload(client, "workflow", name, bound=True)["body"]
+        assert all(r["path"].endswith(".fa") for r in bound["inputs"])
+
+    def test_an_unbound_workflow_lands_and_still_plans(self, client, elsewhere):
+        name = self._recipe(client)
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, root):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert prev["creates"]["input_count"] == 2
+            assert "fill them in" in " ".join(prev["notes"])
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            assert len(rows) == 2
+            assert all(r["type_name"] == "mock::assembly" for r in rows)
+            # deferred rows are minted *here*, so they are this project's paths
+            assert all(r["path"].startswith("/msm_deferred/") for r in rows)
+            assert len({r["path"] for r in rows}) == 2
+            # and the workflow it landed in is the ordinary kind: solving is
+            # refused for the missing paths, not for anything about importing
+            result = _finish(other, other.post(
+                f"/api/workflows/{got['name']}/generate", json={}).get_json())
+            assert result["success"], result
+
+    def test_lineage_survives_the_crossing(self, client, elsewhere):
+        name = _make_workflow(client)
+        _seed_inputs(client, name, count=1)
+        project = client.application.config["MSM_PROJECT"]
+        rows = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
+        parent = rows[0]["path"]
+        f = project.input_library_path(name) / "child.fa"
+        f.write_text(">c\nACGT\n")
+        client.post(f"/api/workflows/{name}/inputs/items", json={
+            "path": str(f), "dtype": "mock::bam", "parents": [parent],
+        })
+        text = _payload(client, "workflow", name, bound=True)["payload"]
+        with elsewhere() as (other, _):
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            child = [r for r in rows if r["type_name"] == "mock::bam"][0]
+            assert [p["path"] for p in child["parents"]] == [parent]
+
+    def test_a_missing_library_is_dropped_and_named(self, client, elsewhere):
+        name = self._recipe(client)
+        client.put(f"/api/workflows/{name}", json={"transform_libraries": ["/nowhere/special"]})
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, _):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert "not in your standard library" in " ".join(prev["notes"])
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            wf = other.get(f"/api/workflows/{got['name']}").get_json()
+            # dropped rather than kept: a path that resolves to nothing here
+            # fails a solve from inside the library loader, saying only that
+            assert wf["request"]["transform_libraries"] == []
+
+    def test_an_unknown_type_arrives_placed_and_red(self, client, elsewhere):
+        """The row is not lost and not registered: it lands as a draft carrying
+        the type it came with, which is what the recipe already draws red."""
+        name = self._recipe(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib = DataInstanceLibrary.Load(project.input_library_path(name))
+        types = DataTypeLibrary()
+        types["exotic"] = Endpoint(properties={"exotic"})
+        types.Save(project.root / "exotic.yml")
+        lib.AddTypeLibrary(project.root / "exotic.yml")
+        f = project.input_library_path(name) / "odd.dat"
+        f.write_text("x")
+        lib.AddItem(f, "exotic::exotic")
+        lib.Save()
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, _):
+            prev = other.post("/api/share/preview", json={"payload": text}).get_json()
+            assert "exotic::exotic" in " ".join(prev["notes"])
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            wf = other.get(f"/api/workflows/{got['name']}").get_json()
+            drafts = wf["request"]["input_drafts"]
+            assert [d["dtype"] for d in drafts] == ["exotic::exotic"]
+            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            assert all(r["type_name"] != "exotic::exotic" for r in rows)
+
+    def test_an_array_row_travels_but_a_typed_path_does_not(self, client, elsewhere):
+        """A `{column}` row is a rule, not a file: it is the substance of a
+        sample-array recipe and means the same thing anywhere."""
+        name = _make_workflow(client)
+        client.put(f"/api/workflows/{name}", json={"input_drafts": [
+            {"id": "a", "mode": "file", "path": "/data/{sample}.fa", "dtype": "mock::assembly",
+             "parents": [], "index": True},
+            {"id": "b", "mode": "file", "path": "/home/me/one_off.fa", "dtype": "mock::assembly",
+             "parents": [], "index": False},
+        ]})
+        body = _payload(client, "workflow", name)["body"]
+        assert [d["path"] for d in body["drafts"]] == ["/data/{sample}.fa", ""]
+        bound = _payload(client, "workflow", name, bound=True)["body"]
+        assert [d["path"] for d in bound["drafts"]] == ["/data/{sample}.fa", "/home/me/one_off.fa"]
+
+    def test_a_typed_in_value_travels_whole(self, client, elsewhere):
+        """A library-owned row *is* its file: a few lines someone typed, under a
+        name the recipe refers to. Deferring it would ship a blank."""
+        name = _make_workflow(client)
+        client.post(f"/api/workflows/{name}/inputs/items", json={
+            "name": "read_pair.txt", "value": "left,right\n", "dtype": "mock::assembly",
+        })
+        body = _payload(client, "workflow", name)["body"]
+        (row,) = body["inputs"]
+        assert row["path"] == "read_pair.txt" and row["value"] == "left,right\n"
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, root):
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            landed = Project(root).input_library_path(got["name"]) / "read_pair.txt"
+            assert landed.read_text() == "left,right\n"
+
+    def test_two_deferred_rows_stay_two_rows_across_the_wire(self, client, elsewhere):
+        """Unbound throws every path away, so lineage cannot be stated in paths:
+        a child naming a deferred parent would have no way to say which one."""
+        name = _make_workflow(client)
+        project = client.application.config["MSM_PROJECT"]
+        lib = DataInstanceLibrary.Load(project.input_library_path(name))
+        a = lib.AddItem(DEFERRED, "mock::assembly")
+        lib.AddItem(DEFERRED, "mock::reads")
+        lib.AddItem(DEFERRED, "mock::bam", parents=[a])
+        lib.Save()
+        text = _payload(client, "workflow", name)["payload"]
+        with elsewhere() as (other, _):
+            got = other.post("/api/share/import", json={"payload": text}).get_json()
+            rows = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
+            by_type = {r["type_name"]: r for r in rows}
+            assert len(rows) == 3 and len({r["path"] for r in rows}) == 3
+            assert [p["path"] for p in by_type["mock::bam"]["parents"]] == [
+                by_type["mock::assembly"]["path"]
+            ]

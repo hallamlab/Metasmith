@@ -82,6 +82,28 @@ def _parse_path(
     return path_map.Parse(p, container_override=container_override)
 
 
+def _as_home_rooted(path_map: PathMap, p: Path) -> Path | None:
+    """The HOME_ROOT spelling of `p`, if `p` is the host spelling of it.
+
+    Returns None whenever the question does not arise: a path already under
+    HOME_ROOT, a path outside the agent home entirely (a legitimate
+    identity-bound foreign input), the relay-free arm where the two roots are
+    the same directory, or the host-local (`metasmith run`) arm where there
+    is no container and the agent home may just be the user's cwd -- pointing
+    them at a `/msm_home` spelling there would be advice to introduce the
+    very bug this message exists to name.
+    """
+    if not p.is_absolute() or path_map.host_local:
+        return None
+    if p.is_relative_to(AgentPaths.HOME_ROOT):
+        return None
+    if path_map.extern_home == AgentPaths.HOME_ROOT:
+        return None
+    if not p.is_relative_to(path_map.extern_home):
+        return None
+    return path_map.ExternalToLocal(p)
+
+
 def ExecuteStep(
     step,
     agent,
@@ -142,6 +164,19 @@ def ExecuteStep(
     inputs: list[dict[Dependency, ContextData]] = []
     Log.Info("uses:")
     missing_input=False
+    # Every address on the FILES manifest is read here, inside the bootstrap
+    # container, whose mounts are the work dir, the agent home at HOME_ROOT,
+    # and whatever `.command.binds` declares. A missing input spelled as a
+    # HOST path under the agent home is worth a second line of output: the
+    # same file has a HOME_ROOT spelling, and if that one resolves then the
+    # file was never missing -- an address reached the manifest in the wrong
+    # coordinate system. Collected only for paths that already failed, so it
+    # costs nothing when inputs are fine. The message states the alternative
+    # rather than blaming a producer, because the SLURM arm reaches the host
+    # spelling legitimately: `bin/sbatch` rewrites HOME_ROOT outward before
+    # submitting. On the relay-free arm the two roots are one directory and
+    # the branch is unreachable by construction.
+    miscoordinated: list[tuple[Path, Path]] = []
     ordered_input_deps = list(step.transform.model.requires)
     for batch, batch_lineage in enumerate(lineages):
         if len(lineages)>1:
@@ -167,7 +202,11 @@ def ExecuteStep(
             file_names = files_by_dep_key.get(dep.key, [])
             input_group = [_parse(Path(p)) for p in file_names]
             for p in input_group:
-                missing_input = missing_input or not p.local.exists()
+                if not p.local.exists():
+                    missing_input = True
+                    alt = _as_home_rooted(path_map, p.local)
+                    if alt is not None:
+                        miscoordinated.append((p.local, alt))
                 Log.Info(_shorten_home(f"        {_status(p)} [{_get_formatted_size(p.local)}] [{p.local}]"))
             g[dep] = ContextData(
                 input_group=input_group,
@@ -176,6 +215,16 @@ def ExecuteStep(
             )
         inputs.append(g)
     if missing_input:
+        for host_view, home_view in miscoordinated:
+            m = (
+                f"input [{host_view}] is a HOST path under the agent home, "
+                f"and [{home_view}] is the same file as this container sees "
+                "it. If that one exists, the file was never missing -- an "
+                "address reached the FILES manifest in host coordinates and "
+                "this container has no mount for it."
+            )
+            Log.Error(m)
+            Log.Info(m)
         m = "detected missing inputs, stopping"
         Log.Error(m)
         Log.Info(m)

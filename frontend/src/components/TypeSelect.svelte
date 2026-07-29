@@ -255,7 +255,7 @@
     border: 1px solid var(--accent);
     border-top-color: var(--line);
     border-radius: 0 0 var(--radius) var(--radius);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 10px 24px var(--shadow);
   }
   .opt {
     display: flex;

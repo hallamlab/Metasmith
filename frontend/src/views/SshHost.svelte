@@ -3,8 +3,11 @@
   import { app, attempt, loadSsh, notify, select } from '../lib/state.svelte.js'
   import Field from '../components/Field.svelte'
   import IdentityField from '../components/IdentityField.svelte'
+  import ShareOut from '../components/ShareOut.svelte'
 
   let { alias } = $props()
+
+  let sharing = $state(false)
 
   let host = $derived(app.hosts.find((h) => h.alias === alias) ?? null)
   let draft = $state({
@@ -87,9 +90,12 @@
   <div class="col" style="gap:14px; max-width:760px">
     <div class="spread">
       <h1>{host.alias}</h1>
-      <span class="tag" class:ok={host.managed}>
-        {host.managed ? 'managed by metasmith' : 'yours'}
-      </span>
+      <div class="row">
+        <button class="small" onclick={() => (sharing = true)}>share</button>
+        <span class="tag" class:ok={host.managed}>
+          {host.managed ? 'managed by metasmith' : 'yours'}
+        </span>
+      </div>
     </div>
     <p class="small muted mono">{host.source}:{host.line}</p>
 
@@ -175,6 +181,10 @@
       </div>
     {/if}
   </div>
+
+  {#if sharing}
+    <ShareOut kind="ssh_host" name={host.alias} onclose={() => (sharing = false)} />
+  {/if}
 {/if}
 
 <style>

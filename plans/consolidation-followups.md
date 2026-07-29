@@ -222,22 +222,26 @@ S1 called `main/script_runner/` dead, and it is not.
 | S7 | B→G2 | Resolve `pyproject.toml` vs `setup.py` split (setup.py authoritative) | **STILL APPLIES, unchanged.** `pyproject.toml` still holds only `[tool.pytest.ini_options]` and no `[build-system]`. |
 | S8 | B→G2 | `envs/dev.yml` drifted from `envs/base.yml` | **DONE** as option (b): `dev.yml` now states it is a packaging-tool overlay applied by `dev.sh --idev`, layered on base.yml, not a standalone env. |
 | S9 | B→G2 | Container env name mismatch (`Dockerfile` default `for_container` vs `metasmith.def` and the `bin/` shebangs' `metasmith_env`) | **DONE, and half of it is moot.** `metasmith.def` no longer exists — the apptainer image is built from the docker image. `Dockerfile`'s default is now `metasmith_env`, matching the shebangs, so a hand-run `docker build .` no longer produces `/app` shims pointing at a non-existent env. |
-| S10 | C→G3 | Split `agents.py` (1503 LOC) | **STILL APPLIES, more so:** now **2154 LOC**. |
-| S11 | C→G3 | Split `models/workflow.py` (1703 LOC): extract Nextflow codegen, extract `_diagnose_plan_failure` family | **STILL APPLIES, more so:** now **2489 LOC**. |
-| S12 | C→G3 | Split `models/libraries.py` (1435 LOC): extract `Size`/`Duration`/`Resources`, extract the transform/execution contract layer | **STILL APPLIES, most of all:** now **2621 LOC**, the largest file in the tree. |
+| S10 | C→G3 | Split `agents.py` (1503 LOC) | **DONE 2026-07-27.** Now the `agents/` package: 10 modules, largest 494 LOC. Divided by which side of the wire runs the code — client (`targets`, `agent`, `workflow_ops`, `run_control`, `shell`, `gpu`, `portability`) versus agent host (`runner`, `collect`). |
+| S11 | C→G3 | Split `models/workflow.py` (1703 LOC): extract Nextflow codegen, extract `_diagnose_plan_failure` family | **DONE 2026-07-27.** Now the `models/workflow/` package: 7 modules. Both extractions landed, plus `cache_decisions`. **Misses the ≤700 LOC target at one file:** `nextflow_codegen.py` is 964, of which `prepare_nextflow` is 801 — one function. Splitting it is a refactor of Groovy emitted against a strict-syntax parser, not a move, so it was left whole deliberately. That function is the remaining Tier C item in this file. |
+| S12 | C→G3 | Split `models/libraries.py` (1435 LOC): extract `Size`/`Duration`/`Resources`, extract the transform/execution contract layer | **DONE 2026-07-27.** Now the `models/libraries/` package: 9 modules, largest `instances.py` at 739 (`DataInstance` 126 + `DataInstanceLibrary` 538 + the view). Both named extractions landed as `resources.py` and `execution.py`; the leaf-identity, transfer and telemetry blocks came out as mixins. |
 | S13 | C→G3 | `models/solver.py` (1381 LOC) — optional | **UNCHANGED at 1367 LOC** — the only god-file that did not grow. Still defer. |
 | S14 | D→G4 | Unify Pack/Unpack vs Save/Load vs to_dict/from_dict; collapse `DataInstance` id shadow fields | **HALF OF THIS IS NOW DANGEROUS.** The serialization unification still applies, but "remove `_key`/`legacy_key`" does not: since the reentrancy work, `instance_id` *is* the cache identity, `_key` tracks it for modern callers and `legacy_key` preserves the pre-content-addressing derivation. Deleting either changes cache keys, which silently invalidates or false-hits every cached run. Do not treat these as redundant copies. |
 | S15 | D→G4 | Shared `Shell` protocol for `LiveShell` and `RemoteShell` | **STILL APPLIES** — both classes still exist, still structurally identical, still no shared ABC. |
 | S16 | D→G4 | Replace `bootstrap.ExecuteStep`'s 9-parameter signature with an `ExecutionRequest` dataclass | **STILL APPLIES; now 10 parameters** (`host_local` was added). |
 | S17 | D→G4 | Split `coms/ipc.py`: move string/time utils to `coms/utils.py` | **STILL APPLIES but shrunk in value** — the file is 268 LOC total, so the split buys a clean seam rather than relief from size. |
-| S18 | E→G5 | Eliminate the method/free-function shadow pattern in `agents.py` | **STILL APPLIES, verbatim.** `StageWorkflow` at `:712` (method) and `:1295` (free); `RunWorkflow` at `:837` and `:1887`; `CollectResults` free-only at `:1438`. |
+| S18 | E→G5 | Eliminate the method/free-function shadow pattern in `agents.py` | **ADDRESSED, NOT ELIMINATED (2026-07-27).** The S10 split made the shadow legible instead of removing it: the methods are `Agent.RunWorkflow`/`StageWorkflow`/`CheckWorkflow` in `agents/workflow_ops.py`, the free functions are `agents.runner.RunWorkflow` and siblings. Same name, but the module now says which side of the wire you are on. **Eliminating it is off the table:** both halves are public entry points and `coms/api.py` imports the free functions by bare name from the package. That import is why `runner` is imported last in the package `__init__` — it has to win those three names. `CollectResults` was free-only and shadows nothing, so it moved to `agents/collect.py`. |
 | S19 | E→G5 | Map every CLI command to one `ops/<group>.<verb>`, or document the exceptions | **DONE** as "document the exceptions", in `ops/_common.py`. Three exceptions, not two: `e2e` (harness signalling), `run` (deliberate direct_run bypass) and `legacy.py`'s `get`/`lab`/`gui`/`api`. `transform`/`type` → `ops.transforms`/`ops.types` and `task` → `ops.workflow` are naming, not drift. |
 | S20 | E→G5 | Audit `coms/api.py`'s `Api` RPC class; delete if dead | **NOT DEAD — do not delete.** Its caller is still `cli/legacy.py`, which registers it as the internal agent-to-agent RPC endpoint (`"not for manual use"`). Note `gui/app.py`'s `from .api import bp` is a *different* module (`gui/api.py`) and is not evidence either way. |
 
 Everything marked STILL APPLIES is a citation-based proposal that has been
-re-grepped but never executed. The Tier C splits are the ones that have
-gotten materially worse: three of the four god-files grew by 40–80% during
-this consolidation.
+re-grepped but never executed.
+
+The Tier C splits (S10/S11/S12) were executed on 2026-07-27, one commit each:
+7258 lines across three files became 26 modules across three packages, with the
+dotted import paths unchanged. S13 (`models/solver.py`, 1367 LOC) was left
+alone deliberately — it is the one god-file that did not grow, and the audit
+said defer. The one target missed is `prepare_nextflow` at 801 lines; see S11.
 
 ## Notes from retired scopes
 

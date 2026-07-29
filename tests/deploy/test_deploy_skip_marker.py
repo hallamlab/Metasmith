@@ -22,10 +22,21 @@ from metasmith.constants import AgentPaths, MODULE_PATH
 
 
 def _deploy_block() -> str:
-    text = (MODULE_PATH / "agents.py").read_text()
-    start = text.index("def Deploy(")
-    end = text.index("\n    def ", start + 1)
-    return text[start:end]
+    # Find Deploy wherever in the package it lives. This used to read
+    # `agents.py` by name; `agents` became a package and the path stopped
+    # existing, which at least failed loudly -- a source-pattern test that
+    # silently reads the wrong file passes on an absence it never checked.
+    for src in sorted((MODULE_PATH / "agents").rglob("*.py")):
+        text = src.read_text()
+        if "def Deploy(" not in text:
+            continue
+        start = text.index("def Deploy(")
+        # Deploy is now the last method in its module, so "up to the next
+        # method" has to fall back to end-of-file or the block comes out empty
+        # -- and every assertion here that pins an *absence* would pass on it.
+        end = text.find("\n    def ", start + 1)
+        return text[start:] if end == -1 else text[start:end]
+    raise AssertionError(f"no `def Deploy(` found under {MODULE_PATH / 'agents'}")
 
 
 def test_no_home_dir_short_circuit():

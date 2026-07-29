@@ -35,6 +35,14 @@ export class ApiService {
   online = $state(true)
   saving = $state(false)
 
+  /** Called when the server starts answering again after having gone silent.
+   *
+   * The dot recovers by itself -- the heartbeat sets `online` back -- but the
+   * *message* a failed request left on screen does not, so the page could sit
+   * there reading `connected` beside a banner saying the server was not
+   * answering. Whoever owns the notice registers here and clears its own. */
+  onrecover = null
+
   #pending = 0
   #startedAt = 0
   #timer = null
@@ -52,9 +60,15 @@ export class ApiService {
   patch = (p, b) => this.#request('PATCH', p, b ?? {})
   del = (p) => this.#request('DELETE', p)
 
+  /** POST a file. The one route that takes bytes rather than a json object;
+   * the browser sets the multipart content type itself, boundary and all. */
+  upload = (p, form) => this.#request('POST', p, form)
+
   async #request(method, path, body) {
     const opts = { method, headers: {} }
-    if (body !== undefined) {
+    if (body instanceof FormData) {
+      opts.body = body
+    } else if (body !== undefined) {
       opts.headers['Content-Type'] = 'application/json'
       opts.body = JSON.stringify(body)
     }
@@ -75,7 +89,7 @@ export class ApiService {
     }
     // a reply of any status is proof the server answered -- a 409 refusal and a
     // 500 are both the server talking, not silence
-    this.online = true
+    this.#markOnline()
 
     let data = null
     if (text) {
@@ -101,7 +115,9 @@ export class ApiService {
         /* a malformed frame is not worth breaking the view over */
       }
     }
+    let ended = false
     source.addEventListener('end', (e) => {
+      ended = true
       source.close()
       try {
         onEnd?.(JSON.parse(e.data))
@@ -109,10 +125,21 @@ export class ApiService {
         onEnd?.(null)
       }
     })
-    // a stream ending is not evidence about the server: it closes normally at
-    // the end of every job, so it is deliberately not reported to the dot
-    source.onerror = () => source.close()
-    return () => source.close()
+    // A stream that ends *after* its job has is not evidence about anything:
+    // that is how every job ends. One that breaks before it is -- and it used
+    // to be swallowed, which left the log stuck on `running` for a job that was
+    // no longer being followed. The reconnect EventSource does by itself is not
+    // enough here, since the job may have finished while we were away.
+    source.onerror = () => {
+      source.close()
+      if (ended) return
+      this.pulse()
+      onEnd?.({ status: 'unknown', error: 'lost the connection to the log' })
+    }
+    return () => {
+      ended = true
+      source.close()
+    }
   }
 
   // -- the dot's two inputs --------------------------------------------------
@@ -141,12 +168,18 @@ export class ApiService {
     }, wait)
   }
 
+  #markOnline() {
+    const wasOffline = !this.online
+    this.online = true
+    if (wasOffline) this.onrecover?.()
+  }
+
   /** Ask whether the server is still there. A GET, so it never turns the dot
    * yellow, and the cheapest route in the backend so a timer can hold it. */
   async pulse() {
     try {
       await fetch('/api/health', { cache: 'no-store' })
-      this.online = true
+      this.#markOnline()
     } catch {
       this.online = false
     }

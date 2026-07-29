@@ -2,10 +2,12 @@
   // The same marks the documentation site uses in its own header, so the two
   // read as one project: Font Awesome Free's `book`, `github`, `docker` and
   // `eye` (CC BY 4.0, fontawesome.com) and Anaconda's own logo, which is what
-  // pydata-sphinx-theme puts on the conda link there.
+  // pydata-sphinx-theme puts on the conda link there. The page's own controls
+  // -- copy, check, sun, moon -- come from the same Font Awesome set, so
+  // nothing in the header is drawn in a second hand.
   //
   // Inlined rather than fetched: the page is served from a bundle with no
-  // network of its own, and four glyphs do not justify a dependency. Each keeps
+  // network of its own, and a handful of glyphs do not justify a dependency. Each keeps
   // its native viewBox and is letterboxed into a square, exactly as an icon
   // font would do.
   let { name, size = 16 } = $props()
@@ -37,6 +39,22 @@
     eye: {
       box: '0 0 576 512',
       d: 'M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM144 256a144 144 0 1 1 288 0 144 144 0 1 1 -288 0zm144-64c0 35.3-28.7 64-64 64c-7.1 0-13.9-1.2-20.2-3.3c-5.5-1.8-11.9 1.6-11.6 7.4c.3 5.4 1.1 10.9 2.4 16.3c13 54.9 68.9 88.9 123.8 75.9s88.9-68.9 75.9-123.8c-10.5-44.4-47.9-75.3-90.6-79.4c-5.8-.6-9.2 5.9-7.4 11.4c2.1 6.3 3.3 13 3.3 20.2z',
+    },
+    // the theme toggle's two faces, same source as the link glyphs. Each is a
+    // single path because this component draws exactly one
+    sun: {
+      box: '0 0 512 512',
+      d: 'M361.5 1.2c5 2.1 8.6 6.6 9.6 11.9L391 121l107.9 19.8c5.3 1 9.8 4.6 11.9 9.6s1.5 10.7-1.6 15.2L446.9 256l62.3 90.3c3.1 4.5 3.7 10.2 1.6 15.2s-6.6 8.6-11.9 9.6L391 391 371.1 498.9c-1 5.3-4.6 9.8-9.6 11.9s-10.7 1.5-15.2-1.6L256 446.9l-90.3 62.3c-4.5 3.1-10.2 3.7-15.2 1.6s-8.6-6.6-9.6-11.9L121 391 13.1 371.1c-5.3-1-9.8-4.6-11.9-9.6s-1.5-10.7 1.6-15.2L65.1 256 2.8 165.7c-3.1-4.5-3.7-10.2-1.6-15.2s6.6-8.6 11.9-9.6L121 121 140.9 13.1c1-5.3 4.6-9.8 9.6-11.9s10.7-1.5 15.2 1.6L256 65.1 346.3 2.8c4.5-3.1 10.2-3.7 15.2-1.6zM160 256a96 96 0 1 1 192 0 96 96 0 1 1 -192 0zm224 0a128 128 0 1 0 -256 0 128 128 0 1 0 256 0z',
+    },
+    moon: {
+      box: '0 0 384 512',
+      d: 'M223.5 32C100 32 0 132.3 0 256S100 480 223.5 480c60.6 0 115.5-24.2 155.8-63.4c5-4.9 6.3-12.5 3.1-18.7s-10.1-9.7-17-8.5c-9.8 1.7-19.8 2.6-30.1 2.6c-96.9 0-175.5-78.8-175.5-176c0-65.8 36-123.1 89.3-153.3c6.1-3.5 9.2-10.5 7.7-17.3s-7.3-11.9-14.3-12.5c-6.3-.5-12.6-.8-19-.8z',
+    },
+    // Font Awesome Free's `arrows-rotate`, the same set as the rest: the
+    // circular arrow that means "make me another one of these"
+    regenerate: {
+      box: '0 0 512 512',
+      d: 'M463.5 224H472c13.3 0 24-10.7 24-24V72c0-9.7-5.8-18.5-14.8-22.2s-19.3-1.7-26.2 5.2L413.4 96.6c-87.6-86.5-228.7-86.2-315.8 1c-87.5 87.5-87.5 229.3 0 316.8s229.3 87.5 316.8 0c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0c-62.5 62.5-163.8 62.5-226.3 0s-62.5-163.8 0-226.3c62.2-62.2 162.7-62.5 225.3-1L327 183c-6.9 6.9-8.9 17.2-5.2 26.2s12.5 14.8 22.2 14.8H463.5z',
     },
     container: {
       box: '0 0 640 512',

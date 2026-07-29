@@ -289,8 +289,8 @@ class Solution:
     _refiner_iterations: list[tuple[int, int]] # found at, total expanded
     _relavent_transforms: list[Transform]
 
-    def BuildDAG(self, *, font: str = 'Arial', keys: bool = True, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, colour: str = "module") -> DagRenderer:
-        r = DagRenderer(font=font, label_mode=label_mode, colour=colour)
+    def BuildDAG(self, *, font: str = 'Arial', keys: bool = True, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, colour: str = "module", theme: str = "light", background: bool = True) -> DagRenderer:
+        r = DagRenderer(font=font, label_mode=label_mode, colour=colour, theme=theme, background=background)
         for i, step in enumerate(self.dependency_plan):
             if keys:
                 shown   = f"{step.transform.key}"
@@ -314,8 +314,8 @@ class Solution:
                 r.add_edge(transform_name, name)
         return r
 
-    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', keys: bool = True, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, colour: str = "module"):
-        return self.BuildDAG(font=font, keys=keys, show_step_order=show_step_order, label_mode=label_mode, colour=colour).render(path_base, format)
+    def RenderDAG(self, path_base: Path|str, format: str ='svg', *, font: str = 'Arial', keys: bool = True, show_step_order: bool = False, label_mode: LabelMode = LabelMode.COLUMN, colour: str = "module", theme: str = "light", background: bool = True):
+        return self.BuildDAG(font=font, keys=keys, show_step_order=show_step_order, label_mode=label_mode, colour=colour, theme=theme, background=background).render(path_base, format)
     
 def solve_by_mcts(
     given: list[set[Endpoint]],

@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 from ..coms.terminals import LiveShell, IDLE_TIMEOUT, SSH_CONNECT_TIMEOUT
 from ..hashing import KeyGenerator
 from ..logging import Log
+from .paths import DeferredPathError, is_deferred
 
 # Entries a local directory transfer will copy in process before handing the
 # whole thing to rsync instead. Staging moves metadata trees -- a task bundle, a
@@ -301,6 +302,16 @@ class Logistics:
         return dominant
 
     def QueueTransfer(self, src: Source, dest: Source):
+        # A deferred path names no file, so a transfer involving one is a bug
+        # upstream -- the stage refusal should already have fired. Said here
+        # too because rsync's own failure for a missing source is a shell exit
+        # code buried in a batch, and nothing else in the transfer path would
+        # notice the shape.
+        for role, s in (("source", src), ("destination", dest)):
+            if is_deferred(s.GetPath()):
+                raise DeferredPathError(
+                    f"transfer {role} [{s.address}] is a deferred path; it names no file"
+                )
         self._check_pures(src, dest)
         self._queue.append((src, dest))
 

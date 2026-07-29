@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ...models.dag_colour import SCHEMES
+from ...models.dag_renderer import THEMES
 from ...ops import workflow as _ops
 
 
@@ -34,10 +35,12 @@ def register(subs):
                       help="show the step number above each transform name")
     _dag.add_argument("--colour", default="module", choices=list(SCHEMES),
                       help="colour scheme (default: module)")
+    _dag.add_argument("--theme", default="light", choices=list(THEMES),
+                      help="ground the drawing sits on (default: light)")
     _dag.set_defaults(func=lambda a: _ops.render_dag(
         a.task_key, a.format, a.blacklist_namespaces, a.workspace,
         label_mode=a.label_mode, show_step_order=a.step_order,
-        colour=a.colour,
+        colour=a.colour, theme=a.theme,
     ))
 
     _del = sp.add_parser("delete", help="remove a cached task")

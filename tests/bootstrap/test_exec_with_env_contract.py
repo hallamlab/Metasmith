@@ -30,7 +30,11 @@ from metasmith.models.libraries import (
     ExecutionContext,
 )
 from metasmith.models.solver import Dependency, Endpoint
-import metasmith.models.libraries as libraries_mod
+# The bounce id is patched on the module that *runs* the arm, not on the
+# package that re-exports it: `_ExecInEnv` resolves `GenerateId` through its
+# own module globals, so patching the package leaves the real one in place and
+# the exit-code file lands under an id nothing looks for.
+import metasmith.models.libraries.execution as libraries_mod
 
 
 FIXED_ID = "TESTID000000"

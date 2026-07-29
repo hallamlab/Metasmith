@@ -19,6 +19,7 @@ from .watcher import RunWatcher
 
 STATIC_DIRNAME = "static"
 INDEX_FILE = "index.html"
+MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 
 BUILD_INSTRUCTIONS = """\
 The GUI bundle has not been built.
@@ -103,12 +104,26 @@ def create_app(
     ssh_config_path: Path | str | None = None,
     watch: bool = True,
 ) -> "Flask":  # noqa: F821
-    from flask import Flask, Response, send_from_directory
+    from flask import Flask, Response, jsonify, send_from_directory
 
     app = Flask(__name__, static_folder=None)
+    # A sample sheet is the only thing anyone uploads here, and a sheet that
+    # does not fit in this is a mistake rather than a study. Set on the app
+    # rather than in `bind_project`, which the GUI's own tests re-run per case.
+    app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     bind_project(app, project_root, ssh_config_path=ssh_config_path, watch=watch)
 
     app.register_blueprint(api_bp)
+
+    @app.errorhandler(413)
+    def _too_large(_exc):
+        # werkzeug raises this while parsing the body, before any blueprint
+        # handler is reached, so it needs an answer at the app level or the
+        # page gets html where it expects `{error, kind}`
+        return jsonify({
+            "error": f"that file is larger than {MAX_UPLOAD_BYTES // (1 << 20)} MB",
+            "kind": "refused",
+        }), 413
 
     root = static_root()
 

@@ -14,7 +14,10 @@ One file per axis — no overlap with `tests/e2e/virtual/cache_*` (those are int
 | `test_cross_workflow.py` | Cross-workflow reuse via `data import-library` (origin="imported") and via shared `<agent_home>/task_cache/` (origin="lineage"). |
 | `test_kill_switch.py` | `cacheable=False` per-transform: no cache entry written. `METASMITH_CACHE=0` env: probe short-circuited even with hot cache. Both assert via trace.jsonl. |
 | `test_store_meta.py` | `CacheStore.entries` schema, manifest.cbor shape, shard layout `<2>/<rest>`. |
+| `test_codegen.py` | What the compiler writes into `workflow.nf`: no plugin block, no `process.cache`, and the coordinate system of a cache hit's synthetic channel (container-rooted) versus its `publishDir` (host-rooted). |
 
 Default marker: `fast` — all axes run against the virtual runtime, no Docker.
 
-Reuse: `src/metasmith/caching/{keys.py, store.py, promote.py, fs.py}`, the `RunSnapshot` harness, and the linear_3step / parallel_then_group / mixed_cacheability fixtures.
+Reuse: `src/metasmith/caching/{keys.py, store.py, promote.py, fs.py}`, `caching/layout.py` for anything that needs to name a shard, the `RunSnapshot` harness, and the linear_3step / parallel_then_group / mixed_cacheability fixtures.
+
+The virtual runtime reimplements the cache-hit path from the store and never reads the generated `workflow.nf`, so anything about the *emitted text* has to be pinned at codegen level — `test_codegen.py` — not through a virtual run.
