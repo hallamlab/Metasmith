@@ -23,6 +23,7 @@
   import Rail from './components/Rail.svelte'
   import DeleteControl from './components/DeleteControl.svelte'
   import Icon from './components/Icon.svelte'
+  import CopyButton from './components/CopyButton.svelte'
   import NewWorkflow from './components/NewWorkflow.svelte'
   import ShareIn from './components/ShareIn.svelte'
   import StatusDot from './components/StatusDot.svelte'
@@ -58,7 +59,6 @@
     { id: 'container', title: 'container image on quay.io' },
   ]
 
-  let copied = $state(false)
   let creating = $state(false)
   let forking = $state(null)
   // `+ workflow` asks what to start from now: blank, or one of the standard
@@ -86,26 +86,6 @@
     forking = name
     await forkWorkflow(name)
     forking = null
-  }
-
-  async function copyPath() {
-    const text = app.project?.root
-    if (!text) return
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      // clipboard permission can be refused even on localhost; the old path
-      // through a throwaway textarea still works when it is
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.cssText = 'position:fixed;opacity:0'
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      ta.remove()
-    }
-    copied = true
-    setTimeout(() => (copied = false), 1200)
   }
 
   $effect(() => {
@@ -293,14 +273,7 @@
           <span class="tag bad">standard library not cloned</span>
         {/if}
         <span class="path mono" title={app.project.root}>{LRM}{app.project.root}</span>
-        <button
-          class="copy"
-          onclick={copyPath}
-          title={copied ? 'copied' : 'copy the project path'}
-          aria-label="copy the project path"
-        >
-          <Icon name={copied ? 'check' : 'copy'} size={13} />
-        </button>
+        <CopyButton text={app.project.root} label="copy the project path" />
       {/if}
     </div>
 
@@ -581,15 +554,6 @@
     gap: 8px;
     color: var(--muted);
   }
-  .copy {
-    flex: 0 0 auto;
-    display: flex;
-    padding: 5px;
-    background: none;
-    border-color: transparent;
-    color: var(--muted);
-  }
-  .copy:hover { color: var(--text); background: var(--panel-2); }
   /* an action that lives on a rail row: the same weight as the × beside it, so
      neither reads as the row's purpose */
   .rowact {

@@ -3,7 +3,7 @@
   import { attempt, loadRuns, select } from '../lib/state.svelte.js'
   import { runSuffix } from '../lib/runname.js'
   import Ago from '../components/Ago.svelte'
-  import Icon from '../components/Icon.svelte'
+  import CopyButton from '../components/CopyButton.svelte'
   import JobLog from '../components/JobLog.svelte'
   import SidePanel from '../components/SidePanel.svelte'
   import FileTree from '../components/FileTree.svelte'
@@ -24,7 +24,6 @@
   let picked = $state(null)
   let jobId = $state(null)
   let busy = $state(false)
-  let copiedPath = $state(false)
 
   // Bumped every time the displayed run changes. Each loader below captures
   // the generation it was launched under and checks it again just before
@@ -106,26 +105,6 @@
     log = next
   }
 
-  async function copyStagedPath() {
-    const text = rec?.staged_path
-    if (!text) return
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      // clipboard permission can be refused even on localhost; the old path
-      // through a throwaway textarea still works when it is
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.cssText = 'position:fixed;opacity:0'
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      ta.remove()
-    }
-    copiedPath = true
-    setTimeout(() => (copiedPath = false), 1200)
-  }
-
   $effect(() => {
     const w = workflow, r = run
     const gen = ++loadGen
@@ -152,8 +131,9 @@
   // interval -- a run that has been executing for twenty minutes does not need
   // asking every 5 seconds, but the countdown next to the manual refresh
   // buttons still tells you exactly when the next ask lands. A manual refresh
-  // resets the backoff, so pressing the button does not leave a stale
-  // long-delay timer running behind it.
+  // advances the backoff exactly like the tick it pre-empted would have,
+  // rather than resetting it -- pressing the button is "ask now" for this one
+  // poll, not "go back to asking every 5 seconds."
   let pollDelay = $state(POLL_MIN_MS)
   let nextPollAt = $state(null)
   let nowTick = $state(Date.now())
@@ -202,14 +182,17 @@
     nextPollAt ? Math.max(0, Math.ceil((nextPollAt - nowTick) / 1000)) : null,
   )
 
-  // A manual refresh resets the backoff and reschedules from now, cancelling
-  // whatever tick was already pending -- otherwise that stale timer would
-  // still land on its old (possibly much longer) delay and clobber the
-  // countdown this just reset.
+  // A manual refresh acts as if the pending tick had fired early: it polls
+  // immediately, then advances the backoff and reschedules from now, the
+  // same as `scheduleNext`'s own timeout callback does. `scheduleNext`
+  // cancels whatever tick was already pending, so there is nothing stale left
+  // to clobber the countdown this reschedules.
   async function refreshNow() {
     await pollTick()
-    pollDelay = POLL_MIN_MS
-    if (rec?.live) scheduleNext()
+    if (rec?.live) {
+      pollDelay = Math.min(pollDelay * 2, POLL_MAX_MS)
+      scheduleNext()
+    }
   }
 
   // -- the progress bar ------------------------------------------------------
@@ -446,14 +429,7 @@
         <h3>staged directory</h3>
         <div class="row" style="gap:8px; align-items:center">
           <p class="small mono muted" style="margin:0">{rec.staged_path}</p>
-          <button
-            class="copy"
-            onclick={copyStagedPath}
-            title={copiedPath ? 'copied' : 'copy the staged directory path'}
-            aria-label="copy the staged directory path"
-          >
-            <Icon name={copiedPath ? 'check' : 'copy'} size={13} />
-          </button>
+          <CopyButton text={rec.staged_path} label="copy the staged directory path" />
         </div>
       </div>
     {/if}
@@ -560,7 +536,10 @@
           Results live on the agent until you collect them. Collecting copies the
           result library into this run's own outputs folder.
         </p>
-        <p class="small mono muted">{results?.path}</p>
+        <div class="row" style="gap:8px; align-items:center">
+          <p class="small mono muted" style="margin:0">{results?.path}</p>
+          <CopyButton text={results?.path} label="copy the results path" />
+        </div>
         <div>
           <button onclick={collect} disabled={rec.live}>collect results</button>
         </div>
@@ -598,7 +577,10 @@
           The files themselves are in the panel on the right — click one to look
           inside it.
         </p>
-        <p class="small muted mono">{results.path}</p>
+        <div class="row" style="gap:8px; align-items:center">
+          <p class="small muted mono" style="margin:0">{results.path}</p>
+          <CopyButton text={results.path} label="copy the results path" />
+        </div>
       {/if}
     </div>
   </div>
@@ -738,15 +720,4 @@
     text-align: left;
   }
   .link:hover { text-decoration: underline; border: none; }
-
-  /* the same icon-swap clipboard button used on the project path in App.svelte */
-  .copy {
-    flex: 0 0 auto;
-    display: flex;
-    padding: 5px;
-    background: none;
-    border-color: transparent;
-    color: var(--muted);
-  }
-  .copy:hover { color: var(--text); background: var(--panel-2); }
 </style>

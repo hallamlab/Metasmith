@@ -1,4 +1,5 @@
 <script>
+  import { flip } from 'svelte/animate'
   import DeleteControl from '../components/DeleteControl.svelte'
   import ParentPicker from '../components/ParentPicker.svelte'
   import TypeSelect from '../components/TypeSelect.svelte'
@@ -177,17 +178,38 @@
 
   // Listed in the order the data descends: parents above the things made from
   // them, so a pangenome leads the assemblies it was built from rather than
-  // turning up wherever its path happened to sort.
+  // turning up wherever its path happened to sort. Sorting by raw ancestor
+  // *count* used to stand in for this, but it isn't actually a topological
+  // order on arrival: a fresh row with no parents yet has a count of zero, so
+  // it would sort ahead of any older row that already has lineage, landing
+  // wherever the depths happened to fall rather than at the bottom it was
+  // added to.
   //
-  // The ancestor *count* is enough to order this. A row's ancestors always
-  // strictly contain each of its parents' ancestors plus that parent, so the
-  // count rises along every edge and sorting by it is a topological order --
-  // no traversal, and no answer at all to give for a cycle. The sort is stable,
-  // so rows at the same depth keep the position they arrived in and nothing
-  // reshuffles under a draft being filled in.
-  let orderedInputRows = $derived(
-    [...inputRows].sort((a, b) => (ancestors.get(a.key)?.size ?? 0) - (ancestors.get(b.key)?.size ?? 0)),
-  )
+  // Kahn's algorithm, seeded by insertion order instead, is the honest
+  // version: a row is eligible the moment every one of its parents has
+  // already been placed, and among eligible rows the one that arrived first
+  // goes next. A row with no parents is eligible immediately and -- having
+  // arrived after everything already eligible -- keeps the position it was
+  // added to. A row only moves when it is actually given a parent that sits
+  // later in the list, which is the real reorder `animate:flip` below is for.
+  let orderedInputRows = $derived.by(() => {
+    const remaining = new Map(inputRows.map((r) => [r.key, new Set(r.parents)]))
+    const out = []
+    while (remaining.size) {
+      const next = inputRows.find((r) => remaining.has(r.key) && remaining.get(r.key).size === 0)
+      // a cycle (only ever possible in data loaded off disk -- `inputOptions`
+      // refuses to offer one interactively) leaves nothing eligible; rather
+      // than drop rows or loop forever, flush what's left in arrival order
+      if (!next) {
+        for (const r of inputRows) if (remaining.has(r.key)) out.push(r)
+        break
+      }
+      out.push(next)
+      remaining.delete(next.key)
+      for (const parents of remaining.values()) parents.delete(next.key)
+    }
+    return out
+  })
 
   // What a row may be given as a parent. Three things are excluded, and the
   // third is the one worth saying out loud: a row cannot descend from something
@@ -419,7 +441,7 @@
     {#each orderedInputRows as row (row.key)}
       {@const info = row.type && counts ? counts(row.type) : null}
       {@const array = isArrayRow(row.row)}
-      <div class="entry" class:hl={hover === row.key}>
+      <div class="entry" class:hl={hover === row.key} animate:flip={{ duration: 150 }}>
         <!-- Two lines, not one: the path is the longest thing on an input row and
              was being squeezed into a sliver beside a combobox and a menu. What
              the row points at goes on the first line; what it *is* and what it
