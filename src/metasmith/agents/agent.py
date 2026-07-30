@@ -28,7 +28,7 @@ from ..coms.terminals import (
     IDLE_TIMEOUT, LiveShell, PROBE_TIMEOUT, RemoveLeadingIndent,
     SSH_CONNECT_TIMEOUT,
 )
-from ..env import ContainerDef, Environment, Runtime
+from ..env import ContainerDef, Environment, Rootfs, Runtime
 from ..hashing import KeyGenerator
 from ..logging import Log
 from ..models.libraries import DataTypeLibrary, TransformInstanceLibrary
@@ -54,6 +54,13 @@ class Agent(_WorkflowOps, _RunControl):
     globus_uuid: str|None = None
     runtime: Runtime=Runtime.APPTAINER
     native: bool = False
+    # This host's standing answer to "SIF or unpacked sandbox", applied to the
+    # agent's own image at deploy and to every tool image afterwards. `AUTO`
+    # means try the cheap artifact and fall back on failure, which is right
+    # everywhere until a host proves otherwise; the forced modes are for a
+    # person who knows something the fallback chain cannot observe. A workflow
+    # task may override it for its own steps (StageWorkflow).
+    rootfs: Rootfs = Rootfs.AUTO
     # Extra flags this host needs to expose its GPUs to a tool, appended after
     # the runtime's own switch. Empty on a normal Linux box; WSL2 needs
     # ["--bind", "/usr/lib/wsl:/usr/lib/wsl", "--env",
@@ -77,7 +84,10 @@ class Agent(_WorkflowOps, _RunControl):
 
     def _environment(self) -> Environment:
         # The agent's own Environment — how metasmith itself runs on the host.
-        return Environment(image=self.container, runtime=self.runtime, native=self.native)
+        return Environment(
+            image=self.container, runtime=self.runtime, native=self.native,
+            rootfs=self.rootfs,
+        )
 
     def _is_ssh(self):
         return self.home.type == SourceType.SSH
@@ -87,9 +97,13 @@ class Agent(_WorkflowOps, _RunControl):
             globus_uuid=self.globus_uuid,
             default_preset=self.default_preset,
             real_path=self.real_path,
+            # Omitted at AUTO, so an agent that never forced a mode keeps a file
+            # identical to the one it had before this field existed -- and stays
+            # loadable by a metasmith that predates it.
+            rootfs=None if self.rootfs == Rootfs.AUTO else self.rootfs.name,
         ).items() if v is not None}
         # Packed outside `optional`, which stringifies everything it writes --
-        # right for the three strings above, and silently fatal for a mapping,
+        # right for the strings above, and silently fatal for a mapping,
         # which would reload as a quoted Python literal and produce no params at
         # all. Omitted entirely when empty, so an agent that sets none keeps a
         # file identical to the one it had before this field existed.
@@ -121,6 +135,8 @@ class Agent(_WorkflowOps, _RunControl):
         # `RunWorkflow` falls back to `local` exactly as it always did
         data.setdefault("default_preset", None)
         data.setdefault("default_params", {})
+        # Written only when forced (see Pack), so its absence IS the default.
+        data["rootfs"] = Rootfs[data["rootfs"]] if data.get("rootfs") else Rootfs.AUTO
         k = "real_path"
         if k in data:
             data[k] = Path(data[k])
@@ -184,19 +200,26 @@ class Agent(_WorkflowOps, _RunControl):
     def _run_cleanup(self, shell: LiveShell):
         pass
 
-    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None):
+    def Deploy(self, assertive: bool=False, runtime: Runtime|None=None, image: str|None=None, native: bool|None=None, rootfs: Rootfs|str|None=None):
         # Deploy is the entry point where the runtime is chosen and then
         # persisted into agent.yml; everything downstream reads it back
         # transparently. Passing nothing keeps the agent's current runtime.
         # `native=True` selects the orthogonal "already inside, no wrapper"
         # mode (not a runtime — composes with one).
+        #
+        # `rootfs` is persisted the same way, which is what makes it a
+        # *tendency* rather than a one-shot: the execute side reloads agent.yml,
+        # so tool images inherit it with no further plumbing. StageWorkflow can
+        # override it for one workflow task.
         if runtime is not None:
             self.runtime = runtime
         if image is not None:
             self.container = image
         if native is not None:
             self.native = native
-        Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}] using runtime [{self.runtime.name}] (native={self.native})")
+        if rootfs is not None:
+            self.rootfs = Rootfs.Parse(rootfs)
+        Log.Info(f"deploying agent version [{VERSION}] to [{self.home.address}] using runtime [{self.runtime.name}] (native={self.native}, rootfs={self.rootfs.value})")
         with LiveShell() as shell, tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
             _quiet = False
@@ -262,15 +285,16 @@ class Agent(_WorkflowOps, _RunControl):
                 image=self.container,
                 runtime=self.runtime,
                 native=self.native,
+                rootfs=self.rootfs,
                 container=ContainerDef(binds=[
                     (dev_src, Path(dev_target)),
                 ]),
             )
-
             container = Environment(
                 image=self.container,
                 runtime=self.runtime,
                 native=self.native,
+                rootfs=self.rootfs,
                 container=ContainerDef(
                     cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
                     binds=[
@@ -327,6 +351,7 @@ class Agent(_WorkflowOps, _RunControl):
                 image=self.container,
                 runtime=self.runtime,
                 native=self.native,
+                rootfs=self.rootfs,
                 container=ContainerDef(
                     cache=Path("$AGENT_HOME")/AgentPaths.CONTAINER_CACHE,
                     workdir=Path("/ws"),

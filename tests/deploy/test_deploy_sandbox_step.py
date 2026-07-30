@@ -1,72 +1,94 @@
-"""Pin Agent.Deploy()'s SIF↔sandbox decision step.
+"""Pin Agent.Deploy()'s rootfs-delivery step.
 
-Deploy probes the host (setuid starter-suid + apptainer version) and
-emits exactly one of two outcomes:
- - "use-sif" verdict → ensure no `.sandbox` dir exists (remove stale)
- - "use-sandbox" verdict → build the sandbox if missing (idempotent)
+Deploy materialises exactly one artifact, trying the cheap form first and
+falling back only on real failure:
 
-This shape covers all three known mechanisms: kernel mount (setuid
-present — Sockeye), squashfuse_ll (no setuid + apptainer >=1.4 — WSL2
-hosts hit Bug E.2 wedge so we prefer sandbox), and fuse-overlayfs
-(no setuid + apptainer 1.3.x — fir hits Bug E.4 SIGBUS so we keep SIF).
+  pull sif -> build sif (-no-fragments) -> unpack sandbox
 
-These are source-pattern tests, matching ``test_deploy_skip_marker.py``.
+Nothing inspects the host first. A declared `rootfs` mode short-circuits the
+chain: `sif` drops the unpack rung, `sandbox` goes straight to the registry.
+
+These assert on the *emitted command* rather than on the source text: the
+decision moved between functions once already, and a source-pattern test
+pins the spelling instead of the behaviour.
 """
-from metasmith.constants import MODULE_PATH
+from pathlib import Path
+
+from metasmith.env.environment import Environment, ContainerDef, Rootfs
+from metasmith.models.libraries.execution import Runtime
+
+IMAGE = "docker://quay.io/example/tool:1.0"
+STORE = "${APPTAINER_CACHEDIR:-/cache}"
+SIF = f"{STORE}/docker..quay.io_example_tool..1.0.sif"
+SANDBOX = f"{STORE}/docker..quay.io_example_tool..1.0.sandbox"
 
 
-def _deploy_block() -> str:
-    # The SIF/sandbox decision moved out of Agent.Deploy into the sealed
-    # env module (Environment.ProvisionSteps), so Deploy never branches on
-    # a runtime. This pins the logic at its new home.
-    text = (MODULE_PATH / "env" / "environment.py").read_text()
-    start = text.index("def ProvisionSteps(")
-    end = text.index("\n    def ", start + 1)
-    return text[start:end]
+def _cmd(*, rootfs: Rootfs = Rootfs.AUTO, **kw) -> str:
+    env = Environment(image=IMAGE, runtime=Runtime.APPTAINER, rootfs=rootfs,
+                      container=ContainerDef(cache=Path("/cache")))
+    return env.ProvisionSteps(agent_home=Path("/agent"), **kw)[0][0]
 
 
-def test_deploy_calls_decision_probe_and_build_helpers():
-    block = _deploy_block()
-    # The probe and build commands must come from Container helpers so
-    # the shell logic lives in one place (containers.py). If a future
-    # edit inlines the probe text here, this test breaks deliberately.
-    assert "MakeSandboxDecisionProbe" in block
-    assert "MakeBuildSandboxCommand" in block
+def test_nothing_inspects_the_host():
+    """The version/setuid probe is gone, not merely unused.
 
-
-def test_deploy_branches_on_verdict():
-    block = _deploy_block()
-    # Probe output is captured in a shell variable; both verdict literals
-    # appear in the branching logic.
-    assert "VERDICT=$(" in block
-    assert '"use-sandbox"' in block
-    # Sandbox is built ONLY on the use-sandbox branch; the existence
-    # check makes the build idempotent across redeploys.
-    assert "[ -d " in block
-
-
-def test_deploy_clears_stale_sandbox_when_sif_verdict():
-    """If the verdict flips from use-sandbox to use-sif (apptainer
-    upgrade or setuid added), Deploy must remove the stale sandbox dir
-    so the run-time ternary in MakeRunCommand picks SIF, not the
-    out-of-date unpack."""
-    block = _deploy_block()
-    # The else arm must `rm -rf` the sandbox path.
-    assert "GetSandboxPath" in block
-    assert "rm -rf" in block
-    # And the else arm must be reachable (no unconditional "if" wrapping
-    # the whole thing).
-    assert "else " in block or "else\n" in block
-
-
-def test_assertive_clears_sandbox():
-    """``assertive=True`` must invalidate the sandbox so a forced
-    redeploy actually rebuilds it. Otherwise users have no way to
-    refresh a corrupted unpack short of `rm -rf` by hand.
+    It predicted wrong in both directions -- unpacking on hosts that run a
+    real workflow on SIFs alone, and unable to foresee the one failure that
+    actually matters (an mksquashfs that segfaults on large images).
     """
-    block = _deploy_block()
-    # The pattern is `rm -rf <sandbox>` inserted ahead of the conditional
-    # only when `assertive` is true. Looser substring match keeps this
-    # robust to f-string formatting choices.
-    assert "rm -rf" in block
-    assert "assertive" in block
+    cmd = _cmd()
+    for probe in ("apptainer --version", "starter-suid", "/proc/version", "VERDICT"):
+        assert probe not in cmd
+    assert cmd.index("mkdir -p") < cmd.index("apptainer pull")
+
+
+def test_sif_is_tried_first_then_the_mksquashfs_workaround_then_the_sandbox():
+    cmd = _cmd()
+    pull = cmd.index(f"apptainer pull {SIF} {IMAGE}")
+    workaround = cmd.index('--mksquashfs-args "-no-fragments"')
+    unpack = cmd.index(f"--sandbox {SANDBOX} {IMAGE}", workaround)
+    assert pull < workaround < unpack, "fallback chain is out of order"
+    # each arm clears its own partial output: a half-written SIF still
+    # satisfies the `[ -e ]` that the run command checks
+    assert cmd.count(f"rm -f {SIF}") == 2
+
+
+def test_auto_leaves_an_existing_sandbox_alone():
+    """A sandbox under `auto` is not a leftover to tidy away.
+
+    It is the record that a pull *and* a build already failed on this host,
+    so rebuilding would re-run an mksquashfs known to segfault here. Either
+    artifact therefore counts as materialised.
+    """
+    cmd = _cmd()
+    assert f"[ ! -e {SIF} ] && [ ! -d {SANDBOX} ]" in cmd
+    assert f"rm -rf {SANDBOX}" not in cmd
+
+
+def test_sandbox_mode_never_packs_a_squashfs():
+    """The point of the sandbox arm is that mksquashfs is never invoked --
+    that is what makes it usable on a host whose mksquashfs segfaults."""
+    cmd = _cmd(rootfs=Rootfs.SANDBOX)
+    assert f"[ -d {SANDBOX} ] || apptainer build --force --sandbox {SANDBOX} {IMAGE}" in cmd
+    assert "pull" not in cmd and "mksquashfs" not in cmd
+
+
+def test_sif_mode_refuses_to_unpack_and_drops_a_stale_sandbox():
+    """`rootfs=sif` rules the directory rootfs out, so failing to build the
+    SIF must fail rather than silently produce the artifact that was ruled
+    out -- and the 2.4 GB tree nothing will now read goes."""
+    cmd = _cmd(rootfs=Rootfs.SIF)
+    assert f"rm -rf {SANDBOX}" in cmd
+    assert cmd.index(f"rm -rf {SANDBOX}") < cmd.index("apptainer pull")
+    assert "--sandbox" not in cmd
+    assert '--mksquashfs-args "-no-fragments"' in cmd
+
+
+def test_assertive_clears_both_artifacts():
+    """`assertive=True` is the only way to refresh a corrupted artifact short
+    of rm -rf by hand, so it must invalidate the sandbox AND the sif."""
+    for mode in Rootfs:
+        cmd = _cmd(rootfs=mode, assertive=True)
+        assert f"rm -rf {SANDBOX} {SIF}" in cmd
+        assert cmd.index("rm -rf") < cmd.index("apptainer build")
+        assert f"rm -rf {SANDBOX} {SIF}" not in _cmd(rootfs=mode)

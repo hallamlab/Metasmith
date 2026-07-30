@@ -26,7 +26,7 @@ import pandas as pd
 
 from ..constants import AgentPaths, MODULE_PATH, VERSION
 from ..coms.terminals import LiveShell
-from ..env import Environment
+from ..env import Environment, Rootfs
 from ..logging import Log
 from ..models.libraries import DataInstanceLibrary
 from ..models.paths import PathMap
@@ -36,7 +36,7 @@ from ..serialization import StdTime
 from .agent import Agent
 from .collect import CollectResults
 
-def StageWorkflow(task_key: str, verify: bool, host: str):
+def StageWorkflow(task_key: str, verify: bool, host: str, rootfs: Rootfs|None = None):
     agent = Agent.Load(AgentPaths.HOME_ROOT/"lib/agent.yml")
     task_path = agent.home.GetPath()/AgentPaths.to_task(task_key)
     assert task_path.exists(), f"task dir not found [{task_path}]"
@@ -140,6 +140,7 @@ def StageWorkflow(task_key: str, verify: bool, host: str):
         external_home=agent.home.GetPath(),
         runtime=agent.runtime,
         resources_file=AgentPaths.NXF_RES,
+        rootfs=rootfs,
     ))
     nxflib_dir = work_dir/"lib"
     nxflib_dir.mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,7 @@ MAMBA) or constructs a relay shell. Callers hold an `Environment` and a
 wrapped, invoked, bridged, and handed the host's GPUs -- live here.
 """
 
-from .environment import ContainerDef, Environment, Runtime
+from .environment import ContainerDef, Environment, Rootfs, Runtime
 from ._shell import Shell
 from .dispatch_scan import EnvChain, EnvScan, ScanFile, ScanSource
 
@@ -16,6 +16,6 @@ from .dispatch_scan import EnvChain, EnvScan, ScanFile, ScanSource
 from ..coms.via_file_watcher import RemoteShell
 
 __all__ = [
-    "ContainerDef", "Environment", "Runtime", "Shell", "RemoteShell",
+    "ContainerDef", "Environment", "Rootfs", "Runtime", "Shell", "RemoteShell",
     "EnvChain", "EnvScan", "ScanFile", "ScanSource",
 ]

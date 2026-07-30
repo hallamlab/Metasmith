@@ -15,7 +15,7 @@ from .models.paths import PathMap
 from .models.solver import Dependency, Endpoint
 from .hashing import KeyGenerator
 from .models.workflow import WorkflowTask, METADATA_FILE, BIND_FILE
-from .env import Environment
+from .env import Environment, Rootfs
 from .models.lineage import ArityMismatchError, LinPayload, MissingInstanceError
 from .coms.via_file_watcher import RemoteShell
 
@@ -307,6 +307,12 @@ def ExecuteStep(
         _seen[chan] = _seen.get(chan, 0) + 1
     ambiguous_slots = {c for c, n in _seen.items() if n > 1}
 
+    # Lifted out of `params` before the context is built: `params` is the
+    # protocol-visible dict, and a protocol has no more business branching on
+    # the rootfs than on the runtime.
+    _rootfs = params.get("rootfs") or getattr(agent, "rootfs", Rootfs.AUTO)
+    params = {k: v for k, v in params.items() if k != "rootfs"}
+
     context = ExecutionContext(
         _inputs=inputs,
         _get_output_paths=_get_output_paths,
@@ -316,7 +322,13 @@ def ExecuteStep(
         # The TOOL environment, not the agent's own: never native (whether
         # metasmith itself is containerized says nothing about the tool's
         # image), but it does carry the host's GPU flag configuration.
-        _environment=Environment(image="", runtime=agent.runtime, gpu_args=list(agent.gpu_args)),
+        # Precedence for rootfs falls out of absence: the staged step meta
+        # names a mode only when this task overrode one, otherwise the agent's
+        # own tendency stands.
+        _environment=Environment(
+            image="", runtime=agent.runtime, gpu_args=list(agent.gpu_args),
+            rootfs=_rootfs,
+        ),
         params=params,
         _slot_keys=slot_keys,
         _ambiguous_slots=ambiguous_slots,
@@ -491,6 +503,15 @@ def StageAndRunTransform(workspace: Path, step_index: int, host: str, stage_root
                         params["gpus"] = json.loads(raw_meta["gpu"])
                     except json.JSONDecodeError as e:
                         Log.Warn(f"could not parse gpu metadata [{raw_meta['gpu']}]: {e}")
+                # Same channel, same reason: the per-task rootfs override is
+                # static per workspace, so it rides in with the staged step
+                # meta. Absent for every workspace staged without one, which is
+                # what leaves the agent's own tendency in charge.
+                if raw_meta.get("rootfs"):
+                    try:
+                        params["rootfs"] = Rootfs.Parse(raw_meta["rootfs"])
+                    except ValueError as e:
+                        Log.Warn(f"ignoring unusable rootfs metadata: {e}")
         except Exception as e:
             Log.Error(f"failed to read [{METADATA_FILE}]: {e}")
         # Parse the lin payload via LinPayload.from_json. The v3 envelope

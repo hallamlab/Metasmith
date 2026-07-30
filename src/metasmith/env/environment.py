@@ -25,6 +25,38 @@ class Runtime(Enum):
     MAMBA = "mamba"
 
 
+class Rootfs(Enum):
+    """How an apptainer image's rootfs is materialised on a host.
+
+    `AUTO` is the answer in every ordinary case: try the cheap artifact and
+    fall back only on a real failure (see MakeMaterialiseCommand). The two
+    forced modes exist for the operator who knows something the fallback
+    chain cannot observe — a host whose mksquashfs is broken in a way that
+    only shows up later, or one where the unpacked tree is a liability.
+
+    Member *names* are the serialized form in `agent.yml`; the values are
+    the user-facing spelling accepted by the `rootfs=` kwargs.
+    """
+    AUTO = "auto"
+    SIF = "sif"
+    SANDBOX = "sandbox"
+
+    @classmethod
+    def Parse(cls, value: "str|Rootfs|None") -> "Rootfs":
+        # One spelling for the CLI, the RPC body and python callers. An
+        # unknown value is a typo in a manual override, so it fails loudly
+        # rather than falling back to AUTO and looking like it worked.
+        if value is None: return cls.AUTO
+        if isinstance(value, cls): return value
+        try:
+            return cls(str(value).strip().lower())
+        except ValueError:
+            raise ValueError(
+                f"unknown rootfs mode [{value}]; expected one of "
+                f"{[m.value for m in cls]}"
+            )
+
+
 # Runtimes that launch a tool across a container boundary, and therefore need
 # the relay to bounce launches back to the host daemon. MAMBA does not — it
 # runs tools in-process on the host filesystem.
@@ -60,6 +92,12 @@ class Environment:
     # describe its tools as mamba/docker for portability metadata).
     native: bool = False
     container: ContainerDef = field(default_factory=ContainerDef)
+    # Which rootfs artifact this environment's image should end up as. It sits
+    # here rather than in ContainerDef because it describes how metasmith
+    # treats the *image*, not a property of one container invocation. Set from
+    # `Agent.Deploy(rootfs=…)` for a whole agent and from
+    # `Agent.StageWorkflow(task, rootfs=…)` for one workflow task's steps.
+    rootfs: Rootfs = Rootfs.AUTO
     # Site override for the GPU flags below. Some hosts need more than the
     # runtime's own switch to actually expose a device -- WSL2 is the live
     # example: apptainer's `--nv` library discovery misses the driver stack
@@ -101,42 +139,14 @@ class Environment:
                 return self._store_root()/f"{self._cached_name()}.sif"
 
     def GetSandboxPath(self):
-        # Sibling of GetLocalPath for the APPTAINER `build --sandbox` artifact
-        # used when starter-suid is unavailable (squashfuse_ll path is broken
-        # under msm_relay's fork chain on WSL2 — Bug E.2). The bare directory
-        # is what `apptainer exec` consumes; no extension.
+        # Sibling of GetLocalPath for the APPTAINER `build --sandbox` artifact:
+        # the image unpacked to a directory tree (2.4 GB and 68k inodes against
+        # 843 MB for the same image), reached when no SIF can be produced at all
+        # or when `rootfs=sandbox` forces it. The bare directory is what
+        # `apptainer exec` consumes; no extension.
         match self.runtime:
             case Runtime.APPTAINER:
                 return self._store_root()/f"{self._cached_name()}.sandbox"
-
-    def MakeSandboxDecisionProbe(self):
-        # Emits either "use-sif" or "use-sandbox" on stdout, encoding the
-        # host-local choice of rootfs delivery for APPTAINER. Two-axis static
-        # check; no `apptainer exec` involved.
-        #
-        # use-sif (default) — either:
-        #   (a) setuid starter-suid present → kernel squashfs mount, no FUSE
-        #       (HPC with privileged apptainer: Sockeye), or
-        #   (b) apptainer <1.4 without setuid → sandbox path falls back to
-        #       fuse-overlayfs (race-prone under sbatch arrays; SIGBUS on fir
-        #       1.3.5). SIF goes through squashfuse_ll which works fine on
-        #       HPC batch nodes without the relay fork chain.
-        #
-        # use-sandbox — apptainer >=1.4 without setuid: SIF would engage
-        # squashfuse_ll (wedges under msm_relay's fork chain on WSL2 — Bug
-        # E.2), but the sandbox path routes through unprivileged kernel
-        # overlayfs (no FUSE daemon in the chain).
-        if self.runtime != Runtime.APPTAINER:
-            return ""
-        return (
-            'APPTAINER_BIN=$(readlink -f "$(command -v apptainer)" 2>/dev/null); '
-            'SUID="$(dirname "$APPTAINER_BIN")/../libexec/apptainer/bin/starter-suid"; '
-            'if [ -u "$SUID" ]; then echo "use-sif"; '
-            'else V=$(apptainer --version 2>/dev/null | awk \'NR==1{print $NF}\'); '
-            'MAJ=${V%%.*}; REST=${V#*.}; MIN=${REST%%.*}; '
-            'if [ "${MAJ:-0}" -ge 2 ] || { [ "${MAJ:-0}" -eq 1 ] && [ "${MIN:-0}" -ge 4 ]; }; '
-            'then echo "use-sandbox"; else echo "use-sif"; fi; fi'
-        )
 
     def MakeBuildSandboxCommand(self, from_image: bool = False):
         # Build the unpacked sandbox dir. By default this unpacks a
@@ -144,8 +154,8 @@ class Environment:
         # straight from the OCI registry, which skips SIF creation — and so
         # skips mksquashfs, which aborts on large images on some hosts
         # ("malloc(): corrupted top size" on micb0, e.g. external_checkm2,
-        # gtdbtk). On a use-sandbox host the SIF is a throwaway intermediate,
-        # so never invoke mksquashfs when the sandbox is the artifact.
+        # gtdbtk). When the sandbox is the artifact the SIF is a throwaway
+        # intermediate, so never invoke mksquashfs to produce one.
         sandbox = self.GetSandboxPath()
         if sandbox is None: return ""
         if from_image:
@@ -153,6 +163,21 @@ class Environment:
         sif = self.GetLocalPath()
         if sif is None: return ""
         return f"apptainer build --force --sandbox {sandbox} {sif}"
+
+    def MakeBuildSifCommand(self, no_fragments: bool = False):
+        # `apptainer build` of the same SIF `pull` would produce. It exists for
+        # one reason: `pull` takes no mksquashfs arguments and `build` does, and
+        # some hosts ship an mksquashfs that segfaults without `-no-fragments`
+        # (micb0: apptainer's bundled 4.7.5 dies with exit 139 on the metasmith
+        # image, while `-no-fragments` builds it in 79s; the working 4.5 sitting
+        # at system level is unreachable because apptainer always prepends its
+        # own libexec to the binary search path). Costs ~2% in image size —
+        # 900,493,312 bytes against 919,404,544 for the same image — so it is
+        # only worth reaching for after a plain pull has actually failed.
+        sif = self.GetLocalPath()
+        if sif is None: return ""
+        args = ' --mksquashfs-args "-no-fragments"' if no_fragments else ""
+        return f"apptainer build --force{args} {sif} {self._get_image()}"
 
     def MakePullCommand(self):
         image = self._get_image()
@@ -239,13 +264,23 @@ class Environment:
                 if not isinstance(local, bool):
                     image = local
                 elif local:
-                    # Prefer the unpacked sandbox directory when deploy built
-                    # one (host lacks setuid starter-suid); fall back to SIF
-                    # otherwise. The conditional collapses cleanly in either
-                    # direction without per-call probing.
+                    # Which artifact to hand apptainer. Under AUTO nobody
+                    # declared one, so read what materialising actually left on
+                    # disk: a sandbox is only ever there because no SIF could be
+                    # built, so it wins. A forced mode names its artifact
+                    # outright -- otherwise the ternary would quietly resolve a
+                    # `rootfs=sif` run to a sandbox left over from some earlier
+                    # experiment in a shared image store, which is exactly the
+                    # way the old host-level override was inert.
                     sif = self.GetLocalPath()
                     sandbox = self.GetSandboxPath()
-                    image = f'"$(if [ -d "{sandbox}" ]; then echo "{sandbox}"; else echo "{sif}"; fi)"'
+                    match self.rootfs:
+                        case Rootfs.SIF:
+                            image = f'"{sif}"'
+                        case Rootfs.SANDBOX:
+                            image = f'"{sandbox}"'
+                        case _:
+                            image = f'"$(if [ -d "{sandbox}" ]; then echo "{sandbox}"; else echo "{sif}"; fi)"'
                 run = 'exec'
             case _: # default
                 raise TypeError(f'unsupported runtime [{self.runtime}]')
@@ -295,47 +330,70 @@ class Environment:
             return Runtime.APPTAINER
         return Runtime.DOCKER
 
-    def ProvisionSteps(self, *, agent_home: Path, assertive: bool=False) -> list[tuple[str, str|None]]:
-        # Deploy-time steps that make the image runnable on the host: probe
-        # the host, then materialise only the artifact the verdict names.
-        # Returns (cmd, display_cmd) pairs; empty for runtimes with nothing
-        # to pull (mamba/native). The probe is a static two-axis check (setuid
-        # starter-suid + apptainer major.minor); SIF is preferred when safe
-        # (no disk doubling). Sandbox is built only on apptainer >=1.4
-        # without setuid — the case where SIF engages squashfuse_ll (Bug
-        # E.2 wedge under msm_relay on WSL2) and the sandbox path goes
-        # through kernel overlayfs. On apptainer 1.3.x without setuid the
-        # sandbox path itself falls back to fuse-overlayfs (Bug E.4 SIGBUS
-        # on fir under SLURM array contention), so SIF is kept there too.
-        # Verdict is re-evaluated on every Deploy(); the unused artifact is
-        # removed when the verdict flips.
+    def MakeMaterialiseCommand(self, *, force: bool=False):
+        # The one place that decides what artifact a host ends up holding, so
+        # deploy (agent image) and execute (tool images) cannot disagree.
         #
-        # On a use-sandbox host the sandbox is built DIRECTLY from the
-        # registry rather than pull-SIF-then-unpack: `apptainer pull` runs
-        # mksquashfs, which aborts on large images on some hosts, and the SIF
-        # would only be a throwaway intermediate. So the pull is conditional
-        # on the verdict too -- one probe, one artifact.
+        # The ordering is try-then-fall-back, never guess: a plain pull, then a
+        # build with the mksquashfs workaround, then — only if no SIF can be
+        # produced at all — the unpacked sandbox. Nothing here inspects the host
+        # first. Guessing was the old shape and it was wrong in both directions:
+        # it unpacked on hosts that did not need it (chamois runs a real
+        # multi-container workflow on SIFs alone), and on micb0 nothing static
+        # can predict that mksquashfs will segfault. Each arm removes its own
+        # partial output first, because a half-written SIF still satisfies the
+        # `[ -e ]` the run command checks.
+        #
+        # `self.rootfs` short-circuits the chain when someone has declared the
+        # answer; see Rootfs.
+        sif, sandbox = self.GetLocalPath(), self.GetSandboxPath()
+        if sif is None or sandbox is None: return ""
+        prefix = f'mkdir -p "{sif.parent}"; ' + (f'rm -rf {sandbox} {sif}; ' if force else '')
+        match self.rootfs:
+            case Rootfs.SANDBOX:
+                # Straight from the registry: mksquashfs is never invoked, which
+                # is the whole point on a host whose copy is broken.
+                return prefix + f'[ -d {sandbox} ] || {self.MakeBuildSandboxCommand(from_image=True)}'
+            case Rootfs.SIF:
+                # No unpack rung — the mode says a directory rootfs is not
+                # acceptable, so failing to build the SIF must fail, not
+                # silently produce the artifact that was ruled out. A stale
+                # sandbox goes: it is 2.4 GB of tree that nothing will read.
+                return (
+                    prefix
+                    + f'rm -rf {sandbox}; '
+                    + f'if [ ! -e {sif} ]; then '
+                    f'{self.MakePullCommand()} '
+                    f'|| {{ rm -f {sif}; {self.MakeBuildSifCommand(no_fragments=True)}; }}; '
+                    f'fi'
+                )
+            case _:
+                # A sandbox present under AUTO is not a leftover to clean up: it
+                # is the record that a past pull *and* build genuinely failed on
+                # this host, and rebuilding would re-run an mksquashfs already
+                # known to segfault here. So either artifact counts as done.
+                return (
+                    prefix
+                    + f'if [ ! -e {sif} ] && [ ! -d {sandbox} ]; then '
+                    f'{self.MakePullCommand()} '
+                    f'|| {{ rm -f {sif}; {self.MakeBuildSifCommand(no_fragments=True)}; }} '
+                    f'|| {{ rm -f {sif}; {self.MakeBuildSandboxCommand(from_image=True)}; }}; '
+                    f'fi'
+                )
+
+    def ProvisionSteps(self, *, agent_home: Path, assertive: bool=False) -> list[tuple[str, str|None]]:
+        # Deploy-time steps that make the image runnable on the host. Returns
+        # (cmd, display_cmd) pairs; empty for runtimes with nothing to fetch
+        # (mamba/native). The fallback chain lives in MakeMaterialiseCommand,
+        # which execute-time provisioning calls too.
         steps: list[tuple[str, str|None]] = []
-        local_path = self.GetLocalPath()
-        if not local_path:
+        if not self.GetLocalPath():
             return steps
-        pull_cmd = self.MakePullCommand()
-        sandbox_path = self.GetSandboxPath()
-        probe = self.MakeSandboxDecisionProbe()
-        build_sandbox = self.MakeBuildSandboxCommand(from_image=True)
-        force = f'rm -rf {sandbox_path} && ' if assertive else ''
-        steps.append((
-            (
-                f'mkdir -p "{local_path.parent}" && '
-                f'{force}'
-                f'VERDICT=$({probe}); '
-                f'if [ "$VERDICT" = "use-sandbox" ]; then '
-                f'[ -d {sandbox_path} ] || {build_sandbox}; '
-                f'else [ -e {local_path} ] || {pull_cmd}; rm -rf {sandbox_path}; fi'
-            ),
-            "{probe host; use-sandbox: build sandbox from image (no mksquashfs); "
-            "use-sif: pull sif}",
-        ))
+        display = {
+            Rootfs.SIF: "{rootfs=sif: pull sif -> build sif (-no-fragments)}",
+            Rootfs.SANDBOX: "{rootfs=sandbox: unpack sandbox from registry}",
+        }.get(self.rootfs, "{pull sif -> build sif (-no-fragments) -> unpack sandbox}")
+        steps.append((self.MakeMaterialiseCommand(force=assertive), display))
         return steps
 
     def RenderMsmWrapper(self, *, agent_home: Path, run_command: str, main_binds: str, dev_binds: str, dev_src: str) -> str:

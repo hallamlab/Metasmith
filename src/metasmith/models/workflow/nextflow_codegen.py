@@ -57,7 +57,7 @@ import yaml
 from ...caching.keys import LIN_PAYLOAD_VERSION
 from ...caching.layout import default_cache_root, out_dir, staging_dir
 from ...constants import AgentPaths
-from ...env import ContainerDef, Environment, Runtime
+from ...env import ContainerDef, Environment, Rootfs, Runtime
 from ...logging import Log
 from ..libraries import DataInstance, GPU_LABEL
 from ..lineage import LinPayload
@@ -195,6 +195,10 @@ class NextflowGenContext:
     # (hardlink, local FS) or 'copy' (network FS). S6 picks this from
     # mountinfo; for now the default is 'link'.
     cache_hit_strategy: str = "link"
+    # Per-task override of how step images are materialised (see env.Rootfs).
+    # None means the staging caller declared nothing, so the agent's own
+    # tendency stands and nothing about the compiled workspace changes.
+    rootfs: "Rootfs|None" = None
 
 def _read_env_declarations(step) -> dict[str, list[str]]:
     """Which of `container:` / `conda:` each env resource this step names carries.
@@ -522,6 +526,12 @@ def prepare_nextflow(task, context: NextflowGenContext):
             if gpu_req is not None:
                 _gpu_meta = {k: gpu_req[k] for k in ("gpus", "gpu_memory_gb")}
                 f.write(f"gpu {json.dumps(_gpu_meta, separators=(',',':'))}\n")
+            # The per-task rootfs override, same shape and same reason as the
+            # GPU line above: written only when staging was told one, so an
+            # un-overridden workspace is byte-identical to before. Its absence
+            # is what lets the agent's own tendency stand at execute time.
+            if context.rootfs is not None:
+                f.write(f"rootfs {context.rootfs.value}\n")
             # S3 — cache_key + per-output instance_ids land in the
             # step meta so the post-exec promote step (S5) can locate
             # what to write, and `msm status <key>` (S8) can render

@@ -258,15 +258,15 @@ def test_assertive_redeploy_wipes_sandbox(
     metasmith_dev_image: str,
     ssh_agent_home: Source,
 ):
-    """`assertive=True` prepends `rm -rf <sandbox>` before re-probing.
+    """`assertive=True` prepends `rm -rf <sandbox> <sif>` before materialising.
 
-    Bug E.4 pin (per `tests/deploy/AGENTS.md`): an assertive redeploy
-    must unconditionally reset the sandbox so a flipped verdict
-    (apptainer upgrade / setuid added) takes effect on the next call.
+    It is the only way to refresh a corrupted artifact short of rm -rf by
+    hand, so it must reset the store rather than letting the chain's
+    `[ -e ]` / `[ -d ]` guards short-circuit.
 
-    We assert by capturing the sandbox dir's mtime before/after; under
-    the use-sandbox verdict it gets rebuilt (newer mtime), and under the
-    use-sif verdict it gets removed entirely (test -e returns false).
+    We assert by capturing the sandbox dir's mtime before/after: either it
+    is rebuilt (newer mtime) because no SIF could be produced, or it is
+    gone entirely because the pull succeeded this time.
     """
     container_uri = f"docker://{metasmith_dev_image}"
     agent = Agent(
@@ -309,8 +309,8 @@ def test_assertive_redeploy_wipes_sandbox(
     agent.Deploy(assertive=True)
 
     # Two valid outcomes:
-    #  (a) verdict use-sandbox: sandbox rebuilt → exists with newer mtime
-    #  (b) verdict use-sif: sandbox absent (rm -rf prevailed)
+    #  (a) no SIF could be built: sandbox rebuilt → exists with newer mtime
+    #  (b) the SIF was produced: sandbox absent (rm -rf prevailed)
     if sandbox_exists_before:
         # Check current state
         still_exists = _ssh_test_exists(ssh_localhost, sandbox_path)
@@ -329,13 +329,13 @@ def test_assertive_redeploy_wipes_sandbox(
             # before re-build started — both prove the assertive `rm -rf`
             # path fired. We can't distinguish a no-op redeploy here
             # without log scraping, so we tolerate equal mtimes only if
-            # we explicitly catch the use-sif arm above.
+            # we explicitly catch the sif-won arm above.
             assert mtime_before is None or mtime_after is None or mtime_after >= mtime_before, (
                 f"assertive redeploy did not refresh sandbox at {sandbox_path}: "
                 f"mtime {mtime_before} -> {mtime_after}"
             )
-        # else: removed, which is also valid (verdict flipped to use-sif)
-    # else: no sandbox before; verdict was use-sif and remains so. The
+        # else: removed, which is also valid (the SIF was produced this time)
+    # else: no sandbox before, and the SIF still builds. The
     # assertive `rm -rf` ran against a missing path (harmless `rm -rf`
     # of nothing) — nothing to assert beyond Deploy() returning cleanly.
 

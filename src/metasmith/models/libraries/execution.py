@@ -33,7 +33,7 @@ import yaml
 from ...coms.ipc import GenerateId
 from ...coms.terminals import RemoveLeadingIndent
 from ...constants import AgentPaths
-from ...env import Environment, Runtime, Shell
+from ...env import Environment, Rootfs, Runtime, Shell
 from ...hashing import KeyGenerator
 from ...logging import Log
 from ...serialization import IsText
@@ -135,6 +135,24 @@ def _validate_exports(exports: dict[str, "str|Path"]|None) -> dict[str, str]:
         )
         out[k] = str(v)
     return out
+
+
+def _materialised_test(env: Environment) -> str:
+    """Shell test for "this image is already on disk, in the form we asked for".
+
+    Only the artifact the mode names counts. Accepting either one is what made
+    the old host-level override inert: a `.sandbox` left in a shared image
+    store by some past run satisfied the test, materialising was skipped, and a
+    forced-SIF run was quietly a sandbox run.
+    """
+    sif, sandbox = env.GetLocalPath(), env.GetSandboxPath()
+    match env.rootfs:
+        case Rootfs.SIF:
+            return f'[ -e {sif} ]'
+        case Rootfs.SANDBOX:
+            return f'[ -d {sandbox} ]'
+        case _:
+            return f'( [ -e {sif} ] || [ -d {sandbox} ] )'
 
 
 class EnvDispatch:
@@ -564,9 +582,8 @@ class ExecutionContext:
         cached_path = env.GetLocalPath()
         if cached_path is not None:
             FLAG = "cached image exists"
-            sandbox_path = env.GetSandboxPath()
             res = self.external_shell.Exec(
-                f'( [ -e {cached_path} ] || [ -d {sandbox_path} ] ) && echo "{FLAG}"',
+                f'{_materialised_test(env)} && echo "{FLAG}"',
                 history=True,
             )
             if FLAG in res.out:
@@ -574,26 +591,26 @@ class ExecutionContext:
 
         if (not use_cache and cached_path is not None
                 and env.runtime == Runtime.APPTAINER):
-            # Not yet materialised. The default fallback is `apptainer exec
-            # docker://...`, which lazily converts the image to a SIF via
-            # mksquashfs -- and mksquashfs aborts on large images on some hosts
-            # (micb0: "malloc(): corrupted top size", e.g. external_checkm2,
-            # gtdbtk). On use-sandbox hosts (apptainer>=1.4 without setuid
-            # starter-suid) build the rootfs as a sandbox directory instead: it
-            # extracts the OCI layers directly, never invokes mksquashfs, and
-            # is cached for reuse. use-sif hosts are left alone -- a sandbox
-            # there hits the Bug E.4 fuse-overlayfs SIGBUS under SLURM. An
-            # flock guards parallel transforms sharing one image.
+            # Not yet materialised. Left alone, `MakeRunCommand(local=False)`
+            # would hand apptainer a `docker://` url and let it convert the image
+            # in passing -- which runs mksquashfs (fatal on hosts whose copy
+            # segfaults) and, worse, does it once per task: three parallel
+            # getNcbiAssembly steps were each observed converting the same image
+            # concurrently, because the old lock only covered the sandbox arm.
+            #
+            # So materialise deliberately, with the same fallback chain deploy
+            # uses, inside the flock -- one task does the work and the rest wait.
             sandbox_path = env.GetSandboxPath()
-            probe = env.MakeSandboxDecisionProbe()
-            build_sandbox = env.MakeBuildSandboxCommand(from_image=True)
-            FLAG = "transform-sandbox-ready"
+            FLAG = "transform-image-ready"
+            materialise = env.MakeMaterialiseCommand().replace("'", "'\\''")
+            # The lock is on the sandbox path whichever artifact is being
+            # built, so a SIF build and a sandbox build of the same image still
+            # exclude each other. The store root is the SIF's parent, which
+            # exists under every mode.
             res = self.external_shell.Exec(
-                f'V=$({probe}); '
-                f'if [ "$V" = "use-sandbox" ]; then '
-                f'mkdir -p "{sandbox_path.parent}"; '
-                f'flock "{sandbox_path}.lock" -c \'[ -d "{sandbox_path}" ] || {build_sandbox}\'; '
-                f'[ -d "{sandbox_path}" ] && echo "{FLAG}"; fi',
+                f'mkdir -p "{cached_path.parent}"; '
+                f'flock "{sandbox_path}.lock" -c \'{materialise}\'; '
+                f'{_materialised_test(env)} && echo "{FLAG}"',
                 history=True,
             )
             if FLAG in res.out:
