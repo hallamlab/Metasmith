@@ -1,5 +1,6 @@
 <script>
   import DeleteControl from '../components/DeleteControl.svelte'
+  import LineageRail from '../components/LineageRail.svelte'
   import ParentPicker from '../components/ParentPicker.svelte'
   import TypeSelect from '../components/TypeSelect.svelte'
 
@@ -151,6 +152,54 @@
 
   let inputByKey = $derived(new Map(inputRows.map((r) => [r.key, r])))
   let targetByKey = $derived(new Map(targetRows.map((r) => [r.key, r])))
+
+  // The lineage rail's Y positions, read off the real rows rather than a
+  // fixed pitch -- a value row wraps, an array row grows a count note, so
+  // nothing here is uniform the way a plan DAG's steps are. Each rows column
+  // is `position: relative`, so a child's own `offsetTop` is already relative
+  // to it; observing the *column* rather than each row catches a single row
+  // growing too, since that always changes the column's own height.
+  let inputBox = $state(null)
+  let outputBox = $state(null)
+  let inputY = $state(new Map())
+  let outputY = $state(new Map())
+  let inputBandHeight = $state(0)
+  let outputBandHeight = $state(0)
+
+  function measureBand(box) {
+    if (!box) return { y: new Map(), height: 0 }
+    const y = new Map()
+    for (const el of box.children) {
+      const key = el.dataset.rowKey
+      if (key) y.set(key, el.offsetTop + el.offsetHeight / 2)
+    }
+    return { y, height: box.offsetHeight }
+  }
+
+  $effect(() => {
+    if (!inputBox) return
+    const remeasure = () => ({ y: inputY, height: inputBandHeight } = measureBand(inputBox))
+    const ro = new ResizeObserver(remeasure)
+    ro.observe(inputBox)
+    remeasure()
+    return () => ro.disconnect()
+  })
+
+  $effect(() => {
+    if (!outputBox) return
+    const remeasure = () => ({ y: outputY, height: outputBandHeight } = measureBand(outputBox))
+    const ro = new ResizeObserver(remeasure)
+    ro.observe(outputBox)
+    remeasure()
+    return () => ro.disconnect()
+  })
+
+  let railInputRows = $derived(
+    orderedInputRows.map((r) => ({ key: r.key, parents: r.parents, y: inputY.get(r.key) })),
+  )
+  let railOutputRows = $derived(
+    targetRows.map((r) => ({ key: r.key, parents: r.parents, y: outputY.get(r.key) })),
+  )
 
   // Every key each row descends from, however far up. A row states one level,
   // so this is the fixpoint over them -- and it is what keeps a cycle out of
@@ -415,78 +464,84 @@
         Nothing here yet. Add the files and values you have — the planner works
         out the steps from their types alone.
       </p>
-    {/if}
-    {#each orderedInputRows as row (row.key)}
-      {@const info = row.type && counts ? counts(row.type) : null}
-      {@const array = isArrayRow(row.row)}
-      <div class="entry" class:hl={hover === row.key}>
-        <!-- Two lines, not one: the path is the longest thing on an input row and
-             was being squeezed into a sliver beside a combobox and a menu. What
-             the row points at goes on the first line; what it *is* and what it
-             came from go on the second -- and that second line is the whole of an
-             output row. -->
-        <div class="row-item">
-          {@render modeSwitch(row)}
-          {#if row.row.mode === 'value'}
-            <!-- One field, not two. The library names its own file, so there is
-                 nothing here to call it; a token in the value is what makes the
-                 row a sample array, which is why the placeholder advertises one
-                 as soon as a sheet is attached. -->
-            {@render sampleField(row, 'value', row.row.value, columns.length ? '{sample}' : 'GCF_000005845.2', false)}
-          {:else}
-            {@render sampleField(
-              row,
-              'path',
-              row.row.path,
-              columns.length ? '/data/{sample}_R1.fastq.gz' : '/data/sample_01.fastq.gz',
-              true,
-            )}
-          {/if}
+    {:else}
+      <div class="band">
+        <LineageRail rows={railInputRows} height={inputBandHeight} />
+        <div class="rowsCol" bind:this={inputBox}>
+          {#each orderedInputRows as row (row.key)}
+            {@const info = row.type && counts ? counts(row.type) : null}
+            {@const array = isArrayRow(row.row)}
+            <div class="entry" data-row-key={row.key} class:hl={hover === row.key}>
+              <!-- Two lines, not one: the path is the longest thing on an input row and
+                   was being squeezed into a sliver beside a combobox and a menu. What
+                   the row points at goes on the first line; what it *is* and what it
+                   came from go on the second -- and that second line is the whole of an
+                   output row. -->
+              <div class="row-item">
+                {@render modeSwitch(row)}
+                {#if row.row.mode === 'value'}
+                  <!-- One field, not two. The library names its own file, so there is
+                       nothing here to call it; a token in the value is what makes the
+                       row a sample array, which is why the placeholder advertises one
+                       as soon as a sheet is attached. -->
+                  {@render sampleField(row, 'value', row.row.value, columns.length ? '{sample}' : 'GCF_000005845.2', false)}
+                {:else}
+                  {@render sampleField(
+                    row,
+                    'path',
+                    row.row.path,
+                    columns.length ? '/data/{sample}_R1.fastq.gz' : '/data/sample_01.fastq.gz',
+                    true,
+                  )}
+                {/if}
 
-          <span class="trail">
-            <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
-          </span>
+                <span class="trail">
+                  <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
+                </span>
+              </div>
+
+              {@render detail(row)}
+
+              {#if array}
+                <!-- An array row is one declaration, not N rows: what it says about
+                     itself is a count of how many items it stands for. -->
+                <div class="notes row wrap small">
+                  {#if expansion?.counts?.[row.id]}
+                    <span class="tag">× {expansion.counts[row.id]} registered</span>
+                  {:else}
+                    <span class="tag">× {rowCount} once expanded</span>
+                  {/if}
+                </div>
+              {/if}
+
+              <!-- Keyed by the row, not by a path: a row may not have one yet, which
+                   is the normal state of a fresh recipe, and it is the row that is
+                   durable in any case. The generate turns it into a path between the
+                   sync that made it and the solve that reads it. -->
+              {#if columns.length && !array}
+                <div class="notes row wrap small">
+                  <button
+                    class="star"
+                    class:on={sharedPaths.includes(row.key)}
+                    aria-pressed={sharedPaths.includes(row.key)}
+                    title={sharedPaths.includes(row.key)
+                      ? 'every sample sees this'
+                      : 'let every sample see this — a reference beside the per-sample files is otherwise in no sample at all'}
+                    onclick={() => onshared?.(row.key, !sharedPaths.includes(row.key))}
+                  >shared by every sample</button>
+                </div>
+              {/if}
+
+              {#if row.type && !info?.known}
+                <div class="notes row wrap small">
+                  <span class="tag warn">not a type in this library</span>
+                </div>
+              {/if}
+            </div>
+          {/each}
         </div>
-
-        {@render detail(row)}
-
-        {#if array}
-          <!-- An array row is one declaration, not N rows: what it says about
-               itself is a count of how many items it stands for. -->
-          <div class="notes row wrap small">
-            {#if expansion?.counts?.[row.id]}
-              <span class="tag">× {expansion.counts[row.id]} registered</span>
-            {:else}
-              <span class="tag">× {rowCount} once expanded</span>
-            {/if}
-          </div>
-        {/if}
-
-        <!-- Keyed by the row, not by a path: a row may not have one yet, which
-             is the normal state of a fresh recipe, and it is the row that is
-             durable in any case. The generate turns it into a path between the
-             sync that made it and the solve that reads it. -->
-        {#if columns.length && !array}
-          <div class="notes row wrap small">
-            <button
-              class="star"
-              class:on={sharedPaths.includes(row.key)}
-              aria-pressed={sharedPaths.includes(row.key)}
-              title={sharedPaths.includes(row.key)
-                ? 'every sample sees this'
-                : 'let every sample see this — a reference beside the per-sample files is otherwise in no sample at all'}
-              onclick={() => onshared?.(row.key, !sharedPaths.includes(row.key))}
-            >shared by every sample</button>
-          </div>
-        {/if}
-
-        {#if row.type && !info?.known}
-          <div class="notes row wrap small">
-            <span class="tag warn">not a type in this library</span>
-          </div>
-        {/if}
       </div>
-    {/each}
+    {/if}
 
     <div class="entry addrow">
       <!-- One button, not a choice up front: a path and a value are the same
@@ -504,33 +559,39 @@
     </div>
     {#if targetRows.length === 0}
       <p class="small muted pad">Nothing wanted yet. Add at least one to solve.</p>
-    {/if}
-    {#each targetRows as row (row.key)}
-      {@const info = row.type && counts ? counts(row.type) : null}
-      {@const dup = targetRows.some(
-        (o) =>
-          o.id !== row.id &&
-          o.type === row.type &&
-          row.type &&
-          JSON.stringify([...o.parents].sort()) === JSON.stringify([...row.parents].sort()),
-      )}
-      <div class="entry" class:hl={hover === row.key}>
-        {@render detail(row)}
+    {:else}
+      <div class="band">
+        <LineageRail rows={railOutputRows} height={outputBandHeight} />
+        <div class="rowsCol" bind:this={outputBox}>
+          {#each targetRows as row (row.key)}
+            {@const info = row.type && counts ? counts(row.type) : null}
+            {@const dup = targetRows.some(
+              (o) =>
+                o.id !== row.id &&
+                o.type === row.type &&
+                row.type &&
+                JSON.stringify([...o.parents].sort()) === JSON.stringify([...row.parents].sort()),
+            )}
+            <div class="entry" data-row-key={row.key} class:hl={hover === row.key}>
+              {@render detail(row)}
 
-        {#if row.type || dup}
-          <div class="notes row wrap small">
-            {#if row.type && !info?.known}
-              <span class="tag warn">not a type in this library</span>
-            {:else if info?.known && info.produced === 0}
-              <span class="muted">nothing can make this — the plan will not solve</span>
-            {/if}
-            {#if dup}
-              <span class="tag warn">already wanted, with the same lineage</span>
-            {/if}
-          </div>
-        {/if}
+              {#if row.type || dup}
+                <div class="notes row wrap small">
+                  {#if row.type && !info?.known}
+                    <span class="tag warn">not a type in this library</span>
+                  {:else if info?.known && info.produced === 0}
+                    <span class="muted">nothing can make this — the plan will not solve</span>
+                  {/if}
+                  {#if dup}
+                    <span class="tag warn">already wanted, with the same lineage</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
       </div>
-    {/each}
+    {/if}
 
     <div class="entry addrow">
       <button class="small" onclick={() => onadd?.('output')}>+ an output</button>
@@ -565,10 +626,21 @@
      pinned to `.out` */
   .heading:not(:first-child) { border-top: 3px solid var(--line); }
   .heading .count { text-transform: none; letter-spacing: 0; }
+  /* the rail and its rows are true flex siblings sharing one coordinate
+     space -- nothing (padding, a border) may sit between them, or the rail's
+     measured `y` values drift from where the rows actually land. `.rowsCol`
+     is `position: relative` so a row's own `offsetTop` is already relative
+     to it, with nothing to subtract. */
+  .band { display: flex; align-items: flex-start; }
+  .rowsCol { flex: 1 1 auto; min-width: 0; position: relative; }
   /* the border is on the entry rather than the row, so a row and the line of
      tags under it read as one thing rather than two */
   .entry { border-bottom: 1px solid var(--line); }
-  .entry:last-child { border-bottom: none; }
+  /* a direct-child selector on purpose: an `.entry` nested in `.rowsCol` is
+     never the last thing in `.rows` any more, and losing its border just
+     because it is last inside its own rail's column would be a visual change
+     nothing about this feature asked for */
+  .rows > .entry:last-child { border-bottom: none; }
   /* the one mark left on a row, and it comes from a pointer sitting on a parent
      line somewhere else: "that link means *this* row". Clicking a type moves the
      panel and marks nothing -- it used to mark every row of that type, in both
