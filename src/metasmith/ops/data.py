@@ -181,6 +181,24 @@ def attach_type_library(
     return {"library": str(library_path), "type_namespaces": list(lib.types.keys())}
 
 
+def resync_type_libraries(library_path: str, type_library_paths: list[str]) -> dict:
+    """Bring an existing library's type namespaces up to date with the files on disk.
+
+    `create_library`/`materialize_template` add every namespace with
+    `on_exist="skip"`, which is right for a brand-new library -- nothing is
+    there yet to collide with. A library that has been living for a while has
+    the opposite problem: a namespace it already knows (say `ncbi`) may have
+    gained a new type in the standard library since, and `skip` would leave
+    it exactly as stale as it found it. This overwrites instead, one load and
+    one save for every namespace rather than one round trip per namespace.
+    """
+    lib = load_data_lib(library_path)
+    for tp in type_library_paths:
+        lib.AddTypeLibrary(Path(tp).resolve(), on_exist="overwrite")
+    lib.Save()
+    return {"library": str(library_path), "type_namespaces": list(lib.types.keys())}
+
+
 def _lib_for(library_path, lib: DataInstanceLibrary | None):
     """The library to work on: one handed in, or one loaded for this call.
 

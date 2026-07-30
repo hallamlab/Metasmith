@@ -1242,6 +1242,53 @@ class TestTemplates:
         assert client.get(f"/api/workflows/{name}/inputs").get_json()["items"] == []
 
 
+class TestTypeResync:
+    """A workflow's input library must not stay pinned to the stdlib as it
+    stood the day the workflow was created."""
+
+    def test_restart_picks_up_a_type_added_to_an_existing_namespace(
+        self, _app, project_root, tmp_path
+    ):
+        """`resync_workflow_types` runs at `bind_project` time, alongside the
+        other warm-up passes -- this is that thread's own version of
+        `test_a_fresh_start_warms_every_template_s_dag`.
+
+        The workflow is created *before* the type is added and the app is
+        rebound (simulating a restart) *after* -- that ordering is the whole
+        point: a live process never re-reads `mock.yml` on its own, only a
+        fresh `bind_project` does.
+        """
+        import time
+
+        mock_yml = project_root / "MetasmithLibraries" / "data_types" / "mock.yml"
+
+        for client in _client_on(_app, project_root, tmp_path / "ssh_config"):
+            name = _make_workflow(client)
+            lib_path = Path(
+                client.get(f"/api/workflows/{name}").get_json()["input_library"]["path"]
+            )
+
+        lib = DataInstanceLibrary.Load(lib_path)
+        with pytest.raises((AssertionError, ValueError, KeyError)):
+            lib.GetType("mock::genome_name")
+
+        types = DataTypeLibrary.Load(mock_yml)
+        types["genome_name"] = Endpoint(properties={"genome_name"})
+        types.Save(mock_yml)
+
+        for _client in _client_on(_app, project_root, tmp_path / "ssh_config"):
+            deadline = time.monotonic() + 10
+            ok = False
+            while time.monotonic() < deadline:
+                try:
+                    DataInstanceLibrary.Load(lib_path).GetType("mock::genome_name")
+                    ok = True
+                    break
+                except (AssertionError, ValueError, KeyError):
+                    time.sleep(0.1)
+            assert ok, "resync_workflow_types did not refresh the workflow's library in time"
+
+
 class TestDagLayoutRoute:
     """Geometry for the graph the info panel draws itself.
 

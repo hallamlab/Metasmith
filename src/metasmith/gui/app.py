@@ -14,6 +14,7 @@ from uuid import uuid4
 from .api import bp as api_bp
 from .jobs import JobRunner, install_log_capture
 from .sshconfig import SshConfig
+from .stdlib import resync_workflow_types
 from .store import Project
 from .watcher import RunWatcher
 
@@ -110,6 +111,7 @@ def bind_project(
     install_log_capture()
     threading.Thread(target=warm_type_index, args=(project.root,), daemon=True).start()
     threading.Thread(target=warm_template_dags, args=(project,), daemon=True).start()
+    threading.Thread(target=resync_workflow_types, args=(project,), daemon=True).start()
 
     # Who this run of the server is. Recorded on every run it launches, so a
     # later server can tell "a thread of mine owns this" from "the process that

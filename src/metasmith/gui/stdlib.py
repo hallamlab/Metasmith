@@ -131,6 +131,35 @@ def available_types(root: Path) -> list[dict]:
     return out
 
 
+def resync_workflow_types(p: "Project") -> None:  # noqa: F821
+    """Bring every workflow's input library's types up to date with the stdlib.
+
+    A workflow's input library is handed its type namespaces once, at
+    creation (see `create_workflow` in `gui/api.py`) -- nothing keeps that in
+    step with `MetasmithLibraries` afterwards. Run at startup rather than per
+    solve: a type added to an existing namespace after a workflow was made
+    would otherwise leave that workflow permanently unable to use it, with no
+    gesture short of hand-editing its library able to fix it. Best-effort and
+    non-fatal per workflow, same posture as `warm_type_index` /
+    `warm_template_dags` alongside which this runs.
+    """
+    from ..logging import Log
+    from ..ops import data as op_data
+
+    found = discover(p.root)
+    type_paths = found["data_types"]
+    if not type_paths:
+        return
+    for wf in p.list_workflows(include_archived=False):
+        lib_path = p.input_library_path(wf.name)
+        if not lib_path.is_dir():
+            continue
+        try:
+            op_data.resync_type_libraries(str(lib_path), type_paths)
+        except Exception as exc:
+            Log.Warn(f"could not resync types for workflow [{wf.name}]: {exc}")
+
+
 # -- the type index ----------------------------------------------------------
 #
 # Which transforms consume and produce each type. The page needs this to answer

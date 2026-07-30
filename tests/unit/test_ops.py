@@ -220,6 +220,29 @@ class TestDataOps:
         rec = op_data.add_item(str(lib_path), str(f), "mock_types::assembly")
         assert rec["dtype"] == "mock_types::assembly"
 
+    def test_resync_picks_up_a_type_added_to_an_existing_namespace(self, tmp_path, mock_types):
+        """A namespace the library already knows must still be refreshed.
+
+        `create_library` (and `attach_type_library`'s own default) skip a
+        namespace that already exists, which is exactly what leaves an older
+        workflow unable to see a type added later to a file it already read
+        once. `resync_type_libraries` exists to not do that.
+        """
+        lib_path = tmp_path / "new.xgdb"
+        op_data.create_library(str(lib_path), type_library_paths=[str(mock_types)])
+        lib = DataInstanceLibrary.Load(lib_path)
+        with pytest.raises((AssertionError, ValueError, KeyError)):
+            lib.GetType("mock_types::genome_name")
+
+        types = DataTypeLibrary.Load(mock_types)
+        types["genome_name"] = Endpoint(properties={"genome_name"})
+        types.Save(mock_types)
+
+        r = op_data.resync_type_libraries(str(lib_path), [str(mock_types)])
+        assert "mock_types" in r["type_namespaces"]
+        lib = DataInstanceLibrary.Load(lib_path)
+        lib.GetType("mock_types::genome_name")  # no longer raises
+
 
 # ---------------------------------------------------------------------------
 # Transform ops
