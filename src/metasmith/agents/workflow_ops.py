@@ -22,7 +22,7 @@ from typing import Iterable
 import yaml
 
 from ..constants import AgentPaths, MODULE_PATH
-from ..env import ContainerDef, Environment
+from ..env import ContainerDef, Environment, Rootfs
 from ..logging import Log
 from ..models.libraries import (
     DataInstanceLibrary, DataInstanceLibraryView, Gpu, Resources,
@@ -93,12 +93,19 @@ class _WorkflowOps:
     def StageWorkflow(
         self, task: WorkflowTask, on_exist: str = "update",
         verify_external_paths: bool=False, idle_timeout: float|None = IDLE_TIMEOUT,
+        rootfs: Rootfs|str|None = None,
     ):
         """`idle_timeout` bounds each agent-side step by how long it may say
         nothing; None restores the old unbounded wait. The file transfers inside
         SaveAs are bounded too, but by the module default rather than by this
-        argument -- override METASMITH_IDLE_TIMEOUT to move both together."""
+        argument -- override METASMITH_IDLE_TIMEOUT to move both together.
+
+        `rootfs` forces how this task's step images are materialised (`auto`,
+        `sif` or `sandbox`), overriding the agent's own tendency for these steps
+        only. It rides in the staged workspace, so it takes effect from staging
+        onwards -- a task already staged has to be re-staged to change it."""
         task.RefuseIfDeferred()
+        rootfs = Rootfs.Parse(rootfs) if rootfs is not None else None
         VALID_ON_EXIST = {"skip", "error", "clear", "update", "update_workflow", "update_data"}
         assert on_exist in VALID_ON_EXIST, f"on_exist option [{on_exist}] is not one of {VALID_ON_EXIST}"
         Log.Info(f"staging workflow [{task.GetKey()}]")
@@ -184,9 +191,12 @@ class _WorkflowOps:
                     )
                 Log.Info(f"external binds {_srcs}")
             binds = mock.MakeBindsParam()
+            # Only sent when overridden, so a default stage compiles a workspace
+            # byte-identical to the one it produced before this knob existed.
+            _rootfs_arg = f" rootfs={rootfs.value}" if rootfs is not None else ""
             sh_remote.Exec(f"""\
                 export BINDS="{binds}"
-                ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname)
+                ./msm api stage_workflow -a task_key={task._key} verify={verify_external_paths} host=$(hostname){_rootfs_arg}
             """, timeout=None, idle_timeout=idle_timeout, what="compiling the workflow on the agent")
             launcher_path = remote_work_path / AgentPaths.LAUNCHER_FILE
             res = sh_remote.Exec(

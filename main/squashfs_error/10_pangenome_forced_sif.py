@@ -8,20 +8,21 @@ what the code chose.
 Three things have to be arranged for that to mean anything, and only the first
 is the documented lever:
 
-1. `METASMITH_APPTAINER_ROOTFS=sif` short-circuits `MakeSandboxDecisionProbe`.
+1. The agent declares `rootfs="sif"`, which drops the unpack rung from the
+   fallback chain and names the `.sif` outright at every launch.
 2. `APPTAINER_CACHEDIR` is repointed into the fresh home. Without this the store
    root is the caller's shared `~/.apptainer/cache`, which already holds an
-   unpacked `.sandbox` for all three tool images -- and `_ExecInEnv` skips
-   materialising whenever `[ -d <sandbox> ]` passes, after which
-   `MakeRunCommand`'s ternary prefers the directory over any SIF. The override in
-   (1) is never consulted on that path. This is the whole reason a "forced sif"
-   run can quietly be a sandbox run.
+   unpacked `.sandbox` for all three tool images. That used to be enough on its
+   own to make a "forced sif" run quietly a sandbox run, back when the override
+   was a host env var the materialise check and the run command never consulted;
+   a declared mode now narrows both. Repointing the store is still what makes
+   the run start from nothing.
 3. The agent image is hardlinked in rather than pulled: its tag is a local build
    that was never published, so `apptainer pull` would 404. The `[ ! -e <sif> ]`
    gate in `MakeMaterialiseCommand` is what makes seeding work at all.
 
-Both exports go in `setup_commands`, which is the only place that reaches all
-three shells where the store path gets expanded: deploy (`Agent._run_setup`,
+The store export goes in `setup_commands`, which is the only place that reaches
+all three shells where the store path gets expanded: deploy (`Agent._run_setup`,
 ahead of `ProvisionSteps`), the run launcher (`agents/runner.py`), and every
 tool launch (`via_file_watcher.ExecAsync` writes them atop each compile script).
 
@@ -219,7 +220,6 @@ def seed_agent_image(store: Path, image: str, source_sif: Path | None) -> Path:
 def write_agent(agent_path: Path, home: Path, store: Path, image: str) -> list[str]:
     setup = [
         "#!/bin/bash",
-        "export METASMITH_APPTAINER_ROOTFS=sif",
         f"export APPTAINER_CACHEDIR={store}",
     ]
     info = ops_agent.save_agent(
@@ -228,23 +228,12 @@ def write_agent(agent_path: Path, home: Path, store: Path, image: str) -> list[s
         container=image,
         runtime="APPTAINER",
         setup_commands=setup,
+        rootfs="sif",
     )
-    log(f"agent [{info['name']}] home={info['home']} runtime={info['runtime']}")
+    log(f"agent [{info['name']}] home={info['home']} runtime={info['runtime']} rootfs=sif")
     for line in setup[1:]:
         log(f"  setup: {line}")
     return setup
-
-
-def probe_verdict(image: str, store: Path) -> str:
-    env = Environment(
-        image=image, runtime=Runtime.APPTAINER,
-        container=ContainerDef(cache=store),
-    )
-    probe = env.MakeSandboxDecisionProbe()
-    out = sh(f'export METASMITH_APPTAINER_ROOTFS=sif; {probe}').strip()
-    bare = sh(probe).strip()
-    log(f"rootfs verdict: forced=[{out}] unforced=[{bare}]")
-    return out
 
 
 # ----------------------------------------------------------------------------
@@ -335,7 +324,7 @@ def verify(
     run_root = home/AgentPaths.STAGED/run_key
     hits: list[str] = []
     if run_root.is_dir():
-        for pat in ("build --sandbox", "use-sandbox", "Converting SIF file to temporary sandbox"):
+        for pat in ("build --sandbox", "Converting SIF file to temporary sandbox"):
             out = sh(
                 f'grep -rIl -- {json_quote(pat)} "{run_root}" 2>/dev/null || true',
                 check=False,
@@ -410,7 +399,6 @@ def main():
     if results.exists() and not args.keep:
         shutil.rmtree(results)
 
-    probe_verdict(args.image, store)
     seed_agent_image(store, args.image, args.sif if args.sif and args.sif.is_file() else None)
     write_agent(agent_path, home, store, args.image)
 

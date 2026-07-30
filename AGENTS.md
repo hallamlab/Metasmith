@@ -531,34 +531,60 @@ and the typed form with `requested_gpus 0`, so leave `type` unset. **WSL2**: app
 reports "GPU access blocked by the operating system" until `gpu_args` binds it and sets
 `LD_LIBRARY_PATH`.
 
-### Apptainer: SIF vs sandbox
+### Apptainer: how a rootfs reaches the host
 
-`Agent.Deploy()` runs a two-axis static probe on the target host — is `starter-suid`
-present, and is apptainer ≥1.4 — and acts on the verdict, because both arms have a failure
-mode the other avoids:
+An unprivileged user cannot mount squashfs in the kernel — it has no `FS_USERNS_MOUNT` —
+so without the setuid `starter-suid`, a single-file image is served by a userspace FUSE
+reader that apptainer spawns for itself. That works, and metasmith no longer inspects the
+host to find out: the version-and-setuid probe that used to pick a delivery mechanism is
+gone. It predicted wrong in both directions, unpacking on hosts that run real workflows on
+SIFs alone while unable to foresee the one failure that matters. The unpacked directory is
+the genuinely FUSE-free option and by far the most expensive: 843 MB compressed against
+2.4 GB and 68k inodes for the same image.
 
-- **`use-sif`** when setuid exists (kernel squashfs mount; HPC), *or* when apptainer <1.4
-  lacks it — the sandbox path then falls back to fuse-overlayfs, which races SIGBUS under
-  SLURM array contention. Deploy removes any stale sandbox dir.
-- **`use-sandbox`** for apptainer ≥1.4 without setuid (WSL2): SIF would engage
-  `squashfuse_ll` and wedge under the relay daemon's fork chain. The sandbox rootfs is read
-  through unprivileged kernel overlayfs, never FUSE.
+**Materialising is try-then-fall-back.** `MakeMaterialiseCommand` — used by both
+`ProvisionSteps` (agent image) and `_ExecInEnv` (tool images), so the two cannot disagree —
+attempts `apptainer pull`, then `apptainer build --mksquashfs-args "-no-fragments"`, then
+the unpacked sandbox. micb0 is why the chain has a third rung: apptainer ships mksquashfs
+4.7.5 in its private libexec, which segfaults (exit 139) on a plain pull of the metasmith
+image, while the working 4.5 at system level is unreachable because apptainer always
+prepends its own libexec to the binary search path. `-no-fragments` builds the same image
+in 79s for about 2% more bytes, but only `build` accepts mksquashfs arguments, so the retry
+is a different command rather than the same one with a flag. Each arm clears its own
+partial output first: a half-written SIF still satisfies the `[ -e ]` the run command
+checks.
 
-**A use-sandbox host never runs `mksquashfs`, and that is the point, not an optimisation.**
-`MakeBuildSandboxCommand(from_image=True)` builds the sandbox straight from the registry,
-so no SIF is pulled and no squashfs is packed. Some hosts' `mksquashfs` aborts on large
-images (`malloc(): corrupted top size` on micb0, and the 4.7 series fails most builds of
-anything sizeable), and on those hosts the SIF was only ever a throwaway intermediate.
-Transform containers get the same treatment at execute time: `_ExecInEnv` builds a
-not-yet-cached image as a flock-guarded sandbox rather than falling back to
-`apptainer exec docker://…`, which would convert to SIF and crash on the big ones. So each
-host holds exactly one artifact — a SIF or a sandbox dir, not both.
+**`Rootfs` (`auto` | `sif` | `sandbox`) is the manual override**, declared in two places
+with one spelling: `Agent.Deploy(rootfs=…)` sets the host's standing tendency (persisted
+into `agent.yml`, so tool images inherit it), and `Agent.StageWorkflow(task, rootfs=…)`
+overrides it for one workflow task's steps, riding in the staged step meta. Precedence
+falls out of absence — meta line present wins, else the agent's field, else `auto` — which
+is also what keeps a default-staged workspace byte-identical. The stage-time override
+reaches *tool* images only: the agent's own image and the `msm_bootstrap` that launches it
+are per-agent artifacts settled at deploy, so moving those means redeploying.
 
-`MakeRunCommand` emits a run-time ternary picking whichever exists, so Deploy controls the
-choice by controlling the directory's presence; the verdict is re-evaluated every deploy,
-so an apptainer upgrade flips it. The store root is one point of control
-(`Environment._store_root()` → `${APPTAINER_CACHEDIR:-<home>/container_images}`), expanded
-on the *execution* host so the pull, the sandbox build, and the exec all agree.
+A forced mode has to be forced in three places or it is advisory: the fallback chain
+(`sif` drops the unpack rung; `sandbox` builds straight from the registry and never invokes
+mksquashfs), the already-materialised test in `_ExecInEnv`, and `MakeRunCommand`'s choice of
+artifact. Missing the last two is exactly how the old host-level env override managed to be
+inert — a `.sandbox` left in a shared image store satisfied an either-test, materialising
+was skipped, and the run-time ternary preferred the directory, so a "forced sif" run was
+quietly a sandbox run. Under `auto` a sandbox on disk is *not* a leftover to tidy: it is the
+record that a pull and a build both failed here, and rebuilding would re-run a segfaulting
+mksquashfs. It therefore sticks — a host that fell back once keeps falling back until
+`Deploy(assertive=True)` clears the store or `rootfs="sif"` says otherwise.
+
+The store root is one point of control (`Environment._store_root()` →
+`${APPTAINER_CACHEDIR:-<home>/container_images}`), expanded on the *execution* host so the
+fetch, the build, and the exec all agree — which also means a developer box's shared cache
+is the thing to repoint when a run must start from nothing.
+
+Bug E.2 (the nextflow JVM wedging behind apptainer's own `squashfuse_ll` under the relay's
+fork chain) was what bought the sandbox its old prominence. It does not reproduce on
+apptainer 1.4.2 or 1.4.5 with the FUSE reader demonstrably in the chain, and 1.4.5 gives the
+reader its own PGID upstream, which is the property the hand-rolled arms were buying. Only
+1.3.0 — the version in the original report — remains untested, and `rootfs="sandbox"` is the
+answer if it ever comes back.
 
 ### Nextflow
 

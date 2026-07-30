@@ -53,16 +53,11 @@ def main(argv=None):
         runtime=Runtime.APPTAINER,
         container=ContainerDef(cache=Path(args.home) / AgentPaths.CONTAINER_CACHE),
     )
-    print("\n== host rootfs verdict (before deploy) ==")
-    print(_ssh(args.host, env.MakeSandboxDecisionProbe()))
-
     print("\n== Deploy() ==", flush=True)
     smith.Deploy(assertive=args.assertive)
 
     print("\n== what landed ==")
     print(_ssh(args.host, f'ls -la "{args.home}" "{args.home}/relay" "{args.home}/{AgentPaths.CONTAINER_CACHE}"'))
-    print("\n== rootfs verdict (after deploy) ==")
-    print(_ssh(args.host, env.MakeSandboxDecisionProbe()))
     print("\n== run command the wrapper would use ==")
     print(env.MakeRunCommand(local=True))
     return 0

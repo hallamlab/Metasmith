@@ -1,24 +1,23 @@
-"""Tests for the SIF↔sandbox decision helpers on Environment.
+"""Tests for the SIF/sandbox helpers on Environment.
 
-The host's apptainer routes the rootfs through one of three mechanisms:
-1. Kernel squashfs mount (setuid starter-suid present — HPC like Sockeye)
-2. squashfuse_ll (apptainer without setuid for SIF — wedges under
-   msm_relay's fork chain on WSL2, Bug E.2)
-3. fuse-overlayfs (apptainer <1.4 without setuid for sandbox — races
-   SIGBUS under SLURM array contention on fir, Bug E.4)
+An unprivileged user cannot mount squashfs in the kernel (it has no
+FS_USERNS_MOUNT), so without the setuid starter apptainer serves a SIF's
+rootfs through a userspace FUSE reader it spawns itself. That works;
+metasmith no longer inspects the host to find out. The unpacked sandbox
+directory is reached only when no SIF can be produced at all -- some hosts
+ship an mksquashfs that segfaults on large images, which nothing static can
+predict -- or when `rootfs=sandbox` declares it.
 
-`MakeSandboxDecisionProbe` is a static two-axis check emitting either
-`use-sif` (kernel mount safe, or sandbox would be worse) or `use-sandbox`
-(apptainer >=1.4 with no setuid: SIF would FUSE-wedge, sandbox is
-kernel-overlayfs). Deploy consults the verdict at deploy time;
-`MakeRunCommand(local=True)` reads the sandbox dir's presence on disk at
-run time. These tests pin the emitted shell text's semantic properties
-and the run-time ternary — they don't spawn apptainer.
+`Rootfs` is that declaration: `auto` (try, then fall back), `sif` and
+`sandbox`. It decides both what `MakeMaterialiseCommand` builds and which
+artifact `MakeRunCommand(local=True)` hands apptainer, which is what makes a
+forced mode observable rather than advisory. These tests pin the emitted
+shell text's semantic properties -- they don't spawn apptainer.
 """
 
 from pathlib import Path
 
-from metasmith.env import ContainerDef, Environment, Runtime
+from metasmith.env import ContainerDef, Environment, Rootfs, Runtime
 
 
 def _env(image, runtime, *, container_cache=Path('./'), binds=None, **kw) -> Environment:
@@ -68,38 +67,6 @@ class TestCachePaths:
         assert _docker().GetSandboxPath() is None
 
 
-class TestSandboxDecisionProbe:
-    def test_probe_checks_starter_suid_setuid(self):
-        probe = _apptainer().MakeSandboxDecisionProbe()
-        # The setuid `starter-suid` check is the first axis: kernel-mount
-        # path is safe for both SIF and sandbox, so verdict is use-sif.
-        assert "starter-suid" in probe
-        assert "[ -u" in probe
-
-    def test_probe_checks_apptainer_version(self):
-        probe = _apptainer().MakeSandboxDecisionProbe()
-        # The second axis is apptainer major.minor — versions <1.4 route
-        # the sandbox through fuse-overlayfs (Bug E.4 SIGBUS on fir);
-        # >=1.4 uses kernel overlayfs.
-        assert "apptainer --version" in probe
-        # Numeric major/minor comparison must be present so the gate is
-        # accurate across point releases.
-        assert "-ge 2" in probe or "-ge 4" in probe
-        assert "-ge 4" in probe  # the load-bearing one
-
-    def test_probe_emits_only_two_verdicts(self):
-        probe = _apptainer().MakeSandboxDecisionProbe()
-        # Verdicts are the contract consumed by agents.py:Deploy.
-        # Both literals must appear (probe can take either branch).
-        assert '"use-sif"' in probe
-        assert '"use-sandbox"' in probe
-
-    def test_probe_empty_for_docker(self):
-        # Docker has no sandbox/SIF distinction; helper returns empty so
-        # callers can interpolate without branching.
-        assert _docker().MakeSandboxDecisionProbe() == ""
-
-
 class TestBuildCommand:
     def test_build_uses_force_sandbox_against_sif(self):
         c = _apptainer(container_cache=Path("/cache"))
@@ -115,12 +82,13 @@ class TestBuildCommand:
         assert str(sif) in cmd
 
     def test_build_from_image_never_names_a_sif(self):
-        """The use-sandbox arm goes registry -> sandbox, skipping mksquashfs.
+        """The sandbox arm goes registry -> sandbox, skipping mksquashfs.
 
         `apptainer build --sandbox <dir> <sif>` needs the SIF to exist, and
         producing it runs mksquashfs -- which aborts on large images on some
-        hosts. On a use-sandbox host the SIF is a throwaway intermediate, so
-        the build reads the OCI layers directly and the SIF is never made.
+        hosts. When the sandbox is the artifact the SIF is a throwaway
+        intermediate, so the build reads the OCI layers directly and the SIF
+        is never made.
         """
         c = _apptainer(container_cache=Path("/cache"))
         cmd = c.MakeBuildSandboxCommand(from_image=True)
@@ -137,20 +105,37 @@ class TestBuildCommand:
 
 
 class TestRunCommandSwitch:
-    def test_apptainer_local_emits_sandbox_or_sif_ternary(self):
+    def test_auto_emits_sandbox_or_sif_ternary(self):
         c = _apptainer(container_cache=Path("/cache"))
         cmd = c.MakeRunCommand(local=True)
         sif = c.GetLocalPath()
         sandbox = c.GetSandboxPath()
-        # Both paths must appear inside a shell conditional that picks
-        # sandbox-dir when present, else SIF. The directory's presence is
-        # the run-time signal; deploy controls the presence.
+        # Nobody declared an artifact, so read what materialising left on
+        # disk: sandbox-dir when present, else SIF. A sandbox is only ever
+        # there because no SIF could be built, so it wins.
         assert "[ -d" in cmd and str(sandbox) in cmd
         assert str(sif) in cmd
         assert "if" in cmd and "then" in cmd and "else" in cmd and "fi" in cmd
         # The whole expression must be a single shell token (wrapped in
         # double quotes) so it lands as one argument to apptainer.
         assert '"$(if' in cmd
+
+    def test_forced_modes_name_their_artifact_outright(self):
+        """No ternary, which is the point.
+
+        Left conditional, a `rootfs=sif` run in a shared image store would
+        quietly resolve to a `.sandbox` some earlier experiment left behind
+        -- exactly how the old host-level override managed to be inert.
+        """
+        sif_env = _apptainer(container_cache=Path("/cache"), rootfs=Rootfs.SIF)
+        cmd = sif_env.MakeRunCommand(local=True)
+        assert cmd.endswith(f'"{sif_env.GetLocalPath()}"')
+        assert ".sandbox" not in cmd and "if [ -d" not in cmd
+
+        box_env = _apptainer(container_cache=Path("/cache"), rootfs=Rootfs.SANDBOX)
+        cmd = box_env.MakeRunCommand(local=True)
+        assert cmd.endswith(f'"{box_env.GetSandboxPath()}"')
+        assert ".sif" not in cmd and "if [ -d" not in cmd
 
     def test_apptainer_local_false_uses_remote_image(self):
         # local=False keeps the OCI URL as the image arg (apptainer pulls

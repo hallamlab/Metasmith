@@ -105,8 +105,12 @@ types:
 
 
 
-def stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:
-    """Persist task to agent layout and compile Nextflow artifacts."""
+def stage_task(task: WorkflowTask, rootfs=None) -> tuple[str, Path, WorkflowTask]:
+    """Persist task to agent layout and compile Nextflow artifacts.
+
+    `rootfs` mirrors `Agent.StageWorkflow(task, rootfs=...)`: the per-task
+    override that rides in the compiled workspace. None means none was given.
+    """
     key = task.GetKey()
     task_path = AgentPaths.to_task(key)
     task_path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,6 +128,7 @@ def stage_task(task: WorkflowTask) -> tuple[str, Path, WorkflowTask]:
         external_home=AgentPaths.HOME_ROOT,
         runtime=Runtime.DOCKER,
         resources_file=AgentPaths.NXF_RES,
+        rootfs=rootfs,
     )
 
     staged.PrepareNextflow(context)

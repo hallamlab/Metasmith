@@ -1,7 +1,7 @@
 """t4 — adapt → new host (chamois): run = confirm.
 
 The pipeline already runs on the origin host; the agent adapts it to the new
-host (chamois: docker-denied → apptainer use-sandbox) and runs it there. A
+host (chamois: docker-denied → apptainer) and runs it there. A
 successful run to the final clusterProfiler artifact IS the oracle (no separate
 scored step), so the verifier is the standard final-artifact + trace check.
 

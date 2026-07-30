@@ -17,6 +17,7 @@ from .agent import load_agent
 def stage(
     agent_path: str, task_ref: str, on_exist: str = "skip",
     workspace: str | None = None, idle_timeout: float | None = None,
+    rootfs: str | None = None,
 ) -> dict:
     """Stage a task on an agent. `task_ref` is a task key or a task bundle directory.
 
@@ -26,6 +27,10 @@ def stage(
 
     `idle_timeout` is how long an agent-side step may say nothing before staging
     gives up; None takes the default (see coms.terminals.IDLE_TIMEOUT).
+
+    `rootfs` forces how this task's step images are materialised (`auto`, `sif`
+    or `sandbox`), overriding the agent's own tendency for these steps. It is
+    compiled into the workspace, so changing it means re-staging.
     """
     agent = load_agent(agent_path)
     task = _ws.load_task(workspace, task_ref)
@@ -36,6 +41,7 @@ def stage(
     agent.StageWorkflow(
         task, on_exist,
         idle_timeout=IDLE_TIMEOUT if idle_timeout is None else idle_timeout,
+        rootfs=rootfs,
     )
     return {"status": "staged", "task_key": task.GetKey(), "agent": Path(agent_path).stem}
 

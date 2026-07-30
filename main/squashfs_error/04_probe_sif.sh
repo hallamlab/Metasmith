@@ -31,9 +31,6 @@ SIF=${2:-}
 TMO=${TMO:-180}
 FANOUT=${FANOUT:-8}
 
-# Force the SIF arm everywhere metasmith would otherwise decide for itself.
-export METASMITH_APPTAINER_ROOTFS=sif
-
 HOST=$(hostname)
 LOGS="$AGENT_HOME/_probe_logs"
 mkdir -p "$LOGS"
@@ -137,7 +134,6 @@ if [ -e "$SANDBOX" ]; then
     rm -rf "$SANDBOX"
 fi
 echo "sandbox       : absent -> forced SIF"
-echo "METASMITH_APPTAINER_ROOTFS=$METASMITH_APPTAINER_ROOTFS"
 echo "fuse conns at start:"
 for d in /sys/fs/fuse/connections/*/; do [ -e "$d/waiting" ] && echo "  $(basename "$d") waiting=$(cat "$d/waiting")"; done
 

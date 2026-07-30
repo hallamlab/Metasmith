@@ -22,7 +22,6 @@ AGENT_HOME=${1:?usage: 05_validity_and_jvm.sh <AGENT_HOME> [SIF]}
 SIF=${2:-}
 TMO=${TMO:-240}
 FANOUT=${FANOUT:-8}
-export METASMITH_APPTAINER_ROOTFS=sif
 
 HOST=$(hostname)
 LOGS="$AGENT_HOME/_probe_logs"

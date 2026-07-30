@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..agents import Agent, GetNxfConfigPresets
-from ..env import Runtime
+from ..env import Rootfs, Runtime
 from ..models.remote import Source
 
 
@@ -105,6 +105,7 @@ def save_agent(
     default_params: dict | None = None,
     native: bool | None = None,
     gpu_args: list[str] | None = None,
+    rootfs: str | None = None,
 ) -> dict:
     """Write an agent YAML to disk.
 
@@ -113,7 +114,7 @@ def save_agent(
     `real_path`, resolved at deploy time: building a fresh Agent here silently
     reverted it on the next save.
 
-    `native` and `gpu_args` are host facts no editor draws. They are kept when
+    `native`, `gpu_args` and `rootfs` are host facts no editor draws. They are kept when
     not given, which is what an editor saving a form wants, and set when they
     are, which is what an importer wants: an agent arriving from a colleague has
     no file on this side to preserve them from.
@@ -151,6 +152,8 @@ def save_agent(
         agent.native = bool(native)
     if gpu_args is not None:
         agent.gpu_args = list(gpu_args)
+    if rootfs is not None:
+        agent.rootfs = Rootfs.Parse(rootfs)
     if container:
         agent.container = container
     agent.Save(p)
