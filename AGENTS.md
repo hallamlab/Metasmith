@@ -734,11 +734,17 @@ command tree is discoverable with `--help` and is not restated here. Two things 
 not discoverable: `--json` routes progress logs to stderr so the stream stays clean, and
 errors exit non-zero to stderr rather than being swallowed into `{"error": ...}`.
 
+To run the CLI against this checkout's own source rather than whatever `metasmith` an
+ambient `PYTHONPATH` resolves to, use `./dev.sh -r <args>` rather than a bare `msm`/`metasmith`.
+
 ## Web GUI
 
 `msm gui` serves a localhost page covering the same run path as the notebook — ssh host,
 agent, inputs, plan, run, results — without writing Python. Transform *authoring* is
 deliberately absent; it stays in the notebook and CLI.
+
+To run against this checkout's own source rather than whatever `metasmith` an ambient
+`PYTHONPATH` resolves to, launch with `./dev.sh --gui` rather than a bare `msm gui`.
 
 The wiring: `store.py` owns the project directory (`agents/`, `workflows/<name>/`,
 `runs/<name>/`); `stdlib.py` owns the standard-library clone and builds the whole-type-system
