@@ -91,8 +91,19 @@ def _dirs(path: Path) -> list[Path]:
 
 
 def discover(root: Path) -> dict:
-    """List the type, transform, and resource libraries in the clone."""
-    lib = Path(root) / STDLIB_NAME
+    """List the type, transform, and resource libraries in the clone.
+
+    Resolved: `MetasmithLibraries` is sometimes a symlink -- someone iterating
+    on a shared stdlib checkout across several projects, say -- and
+    `Template.Load`/`Spec.Unpack` already resolve a template's own root before
+    joining its relative library references onto it (`templates.py`,
+    `spec.py`). Leaving this one unresolved meant the two sides named the same
+    library by two different strings -- the symlink path here, its real
+    target there -- so a workflow created from a template could never match
+    its own libraries against this list, and every one of them read as
+    disabled with no error to say why.
+    """
+    lib = (Path(root) / STDLIB_NAME).resolve()
     types = []
     tdir = lib / DATA_TYPES_DIRNAME
     if tdir.is_dir():

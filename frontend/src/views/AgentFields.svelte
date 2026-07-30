@@ -4,6 +4,7 @@
   import Field from '../components/Field.svelte'
   import ConfigEditor from '../components/ConfigEditor.svelte'
   import ParamRows from '../components/ParamRows.svelte'
+  import CopyButton from '../components/CopyButton.svelte'
 
   // The one field set an agent has. `form` is bound by the parent; `runtimes`
   // comes from the server, which reads it off the Runtime enum, so a runtime
@@ -80,13 +81,19 @@
   <Field
     label="home directory"
     hint={realPath && realPath !== form.path
-      ? `resolves to ${realPath}`
+      ? null
       : form.kind === 'ssh'
         ? 'a path on that host — on a cluster, prefer scratch over a home quota'
         : 'a path on this machine'}
   >
     <input class="mono" bind:value={form.path} placeholder={defaultHome(form.id)} />
   </Field>
+  {#if realPath && realPath !== form.path}
+    <div class="row" style="gap:8px; align-items:center">
+      <span class="small muted">resolves to <span class="mono">{realPath}</span></span>
+      <CopyButton text={realPath} label="copy the resolved agent home path" />
+    </div>
+  {/if}
 
   <Field label="runtime" hint="how a tool is provided on that host">
     <select bind:value={form.runtime}>
