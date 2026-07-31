@@ -4,6 +4,7 @@
   import LineageRail from '../components/LineageRail.svelte'
   import ParentPicker from '../components/ParentPicker.svelte'
   import TypeSelect from '../components/TypeSelect.svelte'
+  import { POINTED, link, marks } from '../lib/highlight.js'
 
   // Inputs and outputs in one list, and the list *is* the form. They are two
   // headings over one run of rows, the way the ssh rail does managed and native
@@ -301,14 +302,15 @@
   // rail) answered a question nobody asked.
   let hover = $state(null) // {child, parent} | null
 
-  // ... as the two sets `DagRail` marks: the rows, and the one edge between
-  // them. Both halves are needed or the rail lights a node with no line to it.
-  const litOf = (link) =>
-    link
-      ? { nodes: new Set([link.child, link.parent]), edges: new Set([`${link.parent} ${link.child}`]) }
-      : null
-  let lit = $derived(litOf(hover))
-  const isHl = (key) => hover?.child === key || hover?.parent === key
+  // ... as the roles `DagRail` paints. `link` and nothing around it: this is the
+  // one frame with no `related` tier at all, because a parent's *other* children
+  // are not what the chip is pointing at.
+  let hlMarks = $derived(
+    hover ? marks({ role: POINTED, ...link(hover.parent, hover.child) }) : null,
+  )
+  // the row's own background reads the same map the rail does, so the two
+  // cannot disagree about which rows are marked
+  const isHl = (key) => !!hlMarks?.nodes.has(key)
 
   const setType = (row, v) =>
     row.kind === 'target' ? ontarget?.(row.id, { type: v }) : onrow?.(row.id, { dtype: v })
@@ -490,7 +492,7 @@
       </p>
     {:else}
       <div class="band">
-        <LineageRail rows={railInputRows} height={inputBandHeight} {lit} />
+        <LineageRail rows={railInputRows} height={inputBandHeight} marks={hlMarks} />
         <div class="rowsCol" bind:this={inputBox}>
           {#each orderedInputRows as row (row.key)}
             {@const info = row.type && counts ? counts(row.type) : null}
@@ -591,7 +593,7 @@
           rows={railOutputRows}
           height={outputBandHeight}
           kind="target"
-          {lit}
+          marks={hlMarks}
         />
         <div class="rowsCol" bind:this={outputBox}>
           {#each targetRows as row (row.key)}

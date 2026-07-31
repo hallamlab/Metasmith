@@ -515,20 +515,23 @@ for consumers running their own.
   unrelated merge steps hash alike and get hoisted 14 rows from their readers. An instance's
   block is its descendants minus everything its siblings also reach — *not* its dominator
   subtree, which loses any node with a second parent and leaves a stub the hoist acts on wrongly.
-- **Lane 0 is the one beside the labels, and how far a marker sits from it is part of the
-  objective.** Lanes run right to left, so a node pushed out to lane 3 is three lanes from its
-  own name. `measure` totals that as `marker_lanes` and it sits between width and crossings in
-  the selection keys; without it a dead-end output stranded beside an empty lane 0 cost nothing
-  to leave there. It is a *tie-break between packings of equal width*, not a mandate: pulling
-  every marker to lane 0 and letting the rails weave is 30% more crossings on the metagenomics
-  plan. A caller that supplies its own rows (`layout(order=…)`) does get the mandate, because
-  its drawing is an annotation beside rows that already carry their own labels. Ranking it
-  ahead of crossings costs ~11% more crossings across `compare_layouts.py --corpus 300` and
-  nothing at all on the metagenomics plan — random DAGs have far more simultaneously-live
-  rails than a real pipeline, and it is the real ones the ranking was chosen against.
+- **How far a marker sits from its label is measured and not ranked.** Lanes run right to left,
+  so lane 0 is the one beside the labels and a node pushed out to lane 3 is three lanes from its
+  own name. `measure` totals that as `marker_lanes`. It was a selection term for one commit and
+  was taken back out: it costs ~11% more crossings across `compare_layouts.py --corpus 300`,
+  buys nothing on the metagenomics plan, and the packings that chase it produce rails that leave
+  a lane and come straight back. Kept as a measurement so the case can be re-argued in numbers.
+- **A rail that leaves the corridor between its own two ends is a `detour`, and it is the last
+  tie-break and nothing more.** Crossings cannot see one — a rail sent out to a lane of its own
+  between two rows one apart comes straight back without crossing anything — which is how the
+  lane repack came to lose to the greedy pass on a graph it drew better. Most detours are
+  forced (seven children off one parent are seven parallel rails), so it sits last in
+  `_compose`'s key, behind everything anyone would trade for: across
+  `compare_layouts.py --corpus 300` it leaves rail, lanes and crossings byte-identical and
+  changes 2 drawings.
 - **Where a pass has two defensible answers, both are drawn and measured.** `measure` returns
-  congruence, rail rows, lanes, marker distance, crossings and module contiguity; `layout` picks
-  on `(congruence, rail, lanes, markers, crossings)` — symmetry ahead of length, which costs ~1% on graphs
+  congruence, rail rows, lanes, crossings, detours and module contiguity; `layout` picks
+  on `(congruence, rail, lanes, crossings)` — symmetry ahead of length, which costs ~1% on graphs
   that have none. Congruence is *modal*, the largest set of instances arranged alike: mean
   agreement is too coarse to separate row orders, and offsets are measured against the previous
   instance because instances fanning out of one node cannot share absolute lanes. Prefer adding

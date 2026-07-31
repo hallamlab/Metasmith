@@ -20,7 +20,7 @@
   // against the new positions meant a port of the bake living in this codebase
   // with nothing to hold it in step with the original. The rows go with the
   // question now, and the answer is the drawing.
-  let { rows = [], height = 0, kind = 'data', lit = null } = $props()
+  let { rows = [], height = 0, kind = 'data', marks = null } = $props()
 
   const cache = new Map()
   const CACHE_MAX = 64
@@ -91,5 +91,5 @@
 </script>
 
 {#if laid && !failed}
-  <DagRail geo={laid} {height} {lit} showLabels={false} ground="var(--panel)" />
+  <DagRail geo={laid} {height} {marks} showLabels={false} ground="var(--panel)" />
 {/if}

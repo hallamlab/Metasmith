@@ -21,10 +21,10 @@ identically across runs.
 `measure` scores a finished layout, and `layout` uses it on itself: where a pass
 has two defensible answers it draws both and keeps the cheaper one, rather than
 carrying a constant tuned against one plan. Cost is the total vertical distance
-the edges travel, then lanes, then how far the markers sit from their own
-labels, then crossings — the first of those is the one that decides whether the
-drawing reads as the modules the graph actually has, because a step drawn far
-from what feeds it takes a rail through everything in between.
+the edges travel, then lanes, then crossings — the first of those is the one
+that decides whether the drawing reads as the modules the graph actually has,
+because a step drawn far from what feeds it takes a rail through everything in
+between.
 """
 from __future__ import annotations
 
@@ -184,12 +184,8 @@ def layout(
     # rows saved by letting each of them find its own cheapest shape.
     given = _given_order(order, names, fwd_children)
     if given is not None:
-        # a caller that brought its own rows brought its own labels for them
-        # too, so the markers are what has to sit near the names; see
-        # `_recolour`'s `markers_first`
         return _compose(
             given, kinds, _edges, back, fwd_children, depth, weight, spine, motifs,
-            markers_first=True,
         )
 
     best_key = best_layout = None
@@ -202,7 +198,7 @@ def layout(
             rows, kinds, _edges, back, fwd_children, depth, weight, spine, motifs
         )
         m = measure(cand, motifs)
-        key = (-m.congruent, m.rail_rows, m.lanes, m.marker_lanes, m.crossings)
+        key = (-m.congruent, m.rail_rows, m.lanes, m.crossings)
         if best_key is None or key < best_key:
             best_key, best_layout = key, cand
     return best_layout  # type: ignore[return-value]
@@ -242,19 +238,21 @@ def _compose(
     weight: dict[str, int],
     spine: set[str],
     motifs: Sequence[Motif] = (),
-    markers_first: bool = False,
 ) -> Layout:
     """Lanes and routing for one candidate row order.
 
-    Several lane assignments are drawn and compared on congruence, then width,
-    then how far the markers sit from their labels, then crossings. Width was
-    the only test for a long time, and it left the greedy result in place
-    whenever the repack merely tied — which is most of the time, and is exactly
-    when the repack is worth having, because closing the gaps a lane left open
-    also stops the rails jogging past one another to reach them. Marker
-    distance was added for the same reason one step further in: two packings of
-    equal width are not equally readable if one of them leaves a dead-end
-    output three lanes from its own name.
+    Three lane assignments are drawn and compared on congruence, then width,
+    then crossings, then detours. Width was the only test for a long time, and
+    it left the greedy result in place whenever the repack merely tied — which
+    is most of the time, and is exactly when the repack is worth having,
+    because closing the gaps a lane left open also stops the rails jogging past
+    one another to reach them.
+
+    Crossings was the first answer to that, and it does not see the case it was
+    added for: a rail sent out to a lane of its own between two nodes one row
+    apart leaves its corridor and comes straight back without crossing
+    anything. `detours` counts exactly that, last, so it can only separate
+    candidates that are already equal on everything anyone would trade for.
 
     The last two are the congruence pass, and it takes both halves of the lane
     assignment to work. The rows already make the blocks congruent; without
@@ -279,16 +277,7 @@ def _compose(
                 if mate is not None:
                     shift[x] = (mate, head, m.heads[i - 1])
     greedy = _assign_lanes(order, fwd_children, weight, spine)
-    candidates = [
-        greedy,
-        _recolour(order, *greedy[:2]),
-        _recolour(order, *greedy[:2], split_gaps=True),
-    ]
-    if markers_first:
-        candidates.append(_recolour(order, *greedy[:2], markers_first=True))
-        candidates.append(
-            _recolour(order, *greedy[:2], split_gaps=True, markers_first=True)
-        )
+    candidates = [greedy, _recolour(order, *greedy[:2])]
     if shift:
         candidates.append(_recolour(order, *greedy[:2], shift=shift))
         even = _assign_lanes(
@@ -302,7 +291,7 @@ def _compose(
     for node_lane, edge_lane, width in candidates:
         cand = _build(order, kinds, _edges, back, depth, spine, node_lane, edge_lane, width)
         m = measure(cand, motifs)
-        key = (-m.congruent, width, m.marker_lanes, m.crossings)
+        key = (-m.congruent, width, m.crossings, m.detours)
         if best_key is None or key < best_key:
             best_key, best = key, cand
     return best  # type: ignore[return-value]
@@ -877,8 +866,6 @@ def _recolour(
     node_lane: dict[str, int],
     edge_lane: dict[tuple[str, str], int],
     shift: Mapping[str, tuple[str, str, str]] | None = None,
-    split_gaps: bool = False,
-    markers_first: bool = False,
 ) -> tuple[dict[str, int], dict[tuple[str, str], int], int]:
     """Repack the lanes once the rows are known.
 
@@ -905,26 +892,6 @@ def _recolour(
       lane of its own; it jogs across inside the half-row and is given its
       target's lane, which also keeps its polyline free of repeated points.
 
-    `markers_first` is for a drawing that is an *annotation beside somebody
-    else's rows* rather than an artifact of its own — a rail down the side of a
-    form, where every row already has its name written next to it. There a
-    marker sitting three lanes out from the name it belongs to reads as a bug,
-    and a rail weaving one lane further to make room costs nothing, because the
-    rows are the thing being read. A standalone diagram has the opposite
-    balance, which is why this is the caller's to say and not a rule: on the
-    73-node metagenomics plan it takes the marker cost from 168 to 43 and the
-    crossings from 123 to 190.
-
-    `split_gaps` questions the first of those. A strand's rows are only really
-    all occupied while the chain does not skip one: a parent and a child four
-    rows apart share a lane, but the three rows between them hold nothing, and
-    closing them pushes whatever *is* drawn there out to lanes of its own —
-    which is how a plan's three dead-end outputs end up one, two and three
-    lanes away from their own names. With it on, a gapped link is an ordinary
-    rail and the chain restarts below it. It is a candidate rather than a fix
-    because packing those rows also moves lanes that a repeated block wants
-    left where they are; the caller draws both and keeps the better one.
-
     `shift` is the congruence pass: an item with a counterpart in a repeat
     class's first instance asks for the lane that counterpart was given, offset
     by however far this instance's head sits from the first one's. Offset and
@@ -940,9 +907,7 @@ def _recolour(
     # stayed in that one lane; at most one parent per node can qualify, because
     # a lane is held by one rail at a time
     def _links(u: str, v: str, j: int) -> bool:
-        if j != node_lane[u] or j != node_lane[v]:
-            return False
-        return not split_gaps or rows[v] == rows[u] + 1
+        return j == node_lane[u] == node_lane[v]
 
     inbound: dict[str, str] = {}
     for (u, v), j in edge_lane.items():
@@ -1028,18 +993,7 @@ def _recolour(
         # and if they are not this candidate loses to the plain repack on width.
         if want is not None and want >= len(end_of_lane):
             end_of_lane += [-1] * (want + 1 - len(end_of_lane))
-        # `was` is a preference for rails only. A strand is markers, and a
-        # marker's lane is how far it sits from its own name -- keeping one
-        # where the greedy pass happened to put it is exactly how a row whose
-        # parent fanned out four ways ends up three lanes from its label with
-        # lane 0 standing empty beside it. A rail has the opposite interest:
-        # moved, it jogs.
-        # `markers_first` drops `was` for strands, and only for strands: a
-        # marker then takes the lane nearest its label whenever one is free,
-        # and a rail still stays where it was rather than jogging to save a
-        # lane. See the docstring for why that is a caller's choice.
-        prefer = (want,) if markers_first and kind == "strand" else (want, was)
-        for cand in prefer:
+        for cand in (want, was):
             if cand is not None and cand < len(end_of_lane) and end_of_lane[cand] < lo:
                 lane = cand
                 break
@@ -1112,10 +1066,19 @@ class Metrics:
     repeats: int = 0
     congruent: int = 0
     # sum of every node's lane index. Lane 0 is the one beside the labels, so
-    # this is how far the markers sit from their own names, and it is the only
-    # term that tells two drawings of equal width apart on that. Without it a
-    # dead-end output pushed three lanes out costs nothing to leave there.
+    # this is how far the markers sit from their own names. Measured but not
+    # ranked: it was in the selection key for one commit and taken back out,
+    # because buying it costs crossings (~11% across 300 random DAGs) and
+    # produces rails that leave a lane and come straight back to it. Kept so
+    # the next person to want it can argue with a number rather than an
+    # impression.
     marker_lanes: int = 0
+    # rails given a lane outside the span between their own two endpoints'
+    # lanes, so the rail leaves the corridor between the nodes it joins and
+    # comes back to it. Most of them are unavoidable -- a node with seven
+    # children needs seven parallel rails and only one of them can be inside --
+    # which is why this is a tie-break and never a term anything is traded for.
+    detours: int = 0
 
     @property
     def contiguity(self) -> float:
@@ -1131,6 +1094,7 @@ class Metrics:
         return (
             f"rail={self.rail_rows} lanes={self.lanes} longest={self.longest_rail}"
             f" markers={self.marker_lanes} crossings={self.crossings}"
+            f" detours={self.detours}"
             f" modules={self.contiguous}/{self.modules} ({self.contiguity:.0%})"
             f" spread={self.module_spread}"
             f" repeats={self.congruent}/{self.repeats} ({self.congruence:.0%})"
@@ -1208,6 +1172,16 @@ def measure(lay: Layout, motifs: Sequence[Motif] | None = None) -> Metrics:
         repeats=repeats,
         congruent=congruent,
         marker_lanes=sum(n.lane for n in lay.nodes),
+        detours=sum(
+            1
+            for e in lay.edges
+            if not e.back
+            and not (
+                min(lay[e.src].lane, lay[e.dst].lane)
+                <= e.lane
+                <= max(lay[e.src].lane, lay[e.dst].lane)
+            )
+        ),
     )
 
 

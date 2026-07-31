@@ -1,6 +1,7 @@
 <script>
   import { untrack } from 'svelte'
   import { api } from '../lib/api.svelte.js'
+  import { around, neighbours } from '../lib/highlight.js'
   import DagRail from './DagRail.svelte'
 
   // The info panel's frame: a viewport onto the page's one DAG drawing.
@@ -85,6 +86,21 @@
   )
   let edgeKind = $derived(
     new Map((graph?.edges ?? []).map((e) => [`${e.from} ${e.to}`, e.kind])),
+  )
+
+  // -- what is lit ---------------------------------------------------------
+  //
+  // The pointer is held here rather than inside the drawing, and what it means
+  // is worked out against the graph: a node and the one hop around it, in both
+  // directions, because the panel is for reading a type's place in the graph
+  // and both halves of that are the answer.
+  //
+  // `$derived` and not an `$effect`: the pointer comes up from `DagRail` and
+  // the marks go back down, and an effect in that loop re-runs on what it just
+  // wrote.
+  let pointed = $state(null)
+  let hlMarks = $derived(
+    around(graph, { selected: focus, pointed, relation: neighbours }),
   )
 
   // -- pan and zoom -------------------------------------------------------
@@ -177,9 +193,10 @@
 
   function onPointerDown(e) {
     if (e.button !== 0 || !laid || !live) return
-    // a node is a real button and wants its own click -- capturing the
-    // pointer here would retarget its pointerup onto the frame and swallow it
-    if (e.target.closest('button.node')) return
+    // no exception for a node here: with the gestures on, the rows are not
+    // buttons (`interactive={!live}` below), so a drag that begins over one is
+    // a drag like any other rather than a click waiting to be swallowed
+    //
     // a drag over text is a selection unless something says otherwise, and a
     // pan that highlighted half the panel on the way past is not a pan
     e.preventDefault()
@@ -237,7 +254,15 @@
       }}
     >{live ? 'panning' : 'pan + zoom'}</button>
     <div class="inner" style={`transform: translate(${tx}px, ${ty}px) scale(${scale})`}>
-      <DagRail geo={laid} {focus} meta={nodeMeta} edgeMeta={edgeKind} onpick={pick} />
+      <DagRail
+        geo={laid}
+        marks={hlMarks}
+        meta={nodeMeta}
+        edgeMeta={edgeKind}
+        interactive={!live}
+        onpick={pick}
+        onhover={(id) => (pointed = id)}
+      />
     </div>
   {/if}
 </div>

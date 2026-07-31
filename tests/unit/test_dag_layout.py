@@ -295,23 +295,59 @@ def test_wide_fan_out_stays_consistent(size):
     assert lay.width <= size + 1
 
 
-# --- markers near their labels ----------------------------------------------
+# --- rails that leave their corridor -----------------------------------------
 
 
-def test_a_chain_that_skips_rows_does_not_hold_the_label_lane():
-    """The shape a real plan turned up with: one step emits four products, one
-    of which continues the chain several rows further down. That continuation
-    shares a lane with its parent but not the rows between them, and holding
-    those closed pushed the three dead-end products out to lanes 1, 2 and 3 --
-    three markers as far from their own names as the drawing is wide, for rows
-    that hold nothing.
+def _detours(lay):
+    """Edges given a lane outside the span between their endpoints' lanes."""
+    return [
+        (e.src, e.dst)
+        for e in lay.edges
+        if not e.back
+        and not (
+            min(lay[e.src].lane, lay[e.dst].lane)
+            <= e.lane
+            <= max(lay[e.src].lane, lay[e.dst].lane)
+        )
+    ]
+
+
+def test_a_rail_between_neighbouring_rows_does_not_take_a_lane_of_its_own():
+    """The amplicon library, which is two tools sharing one input.
+
+    Its `asv_seqs -> classify` edge joins two rows one apart, in lanes 1 and 0 —
+    and was drawn out to lane 2 and straight back, which reads as the drawing
+    having lost the line. The repack already knew better (a rail spanning no row
+    takes its target's lane); it lost to the greedy pass, which tied it on
+    congruence, width *and* crossings, because a rail that leaves and returns
+    crosses nothing. `detours` is the tie-break that separates them.
     """
-    edges = [("step", f"out_{i}") for i in range(4)] + [("out_3", "next")]
+    edges = [
+        ("asv_seqs", "map_contigs"),
+        ("assembly", "map_contigs"),
+        ("identity_threshold", "map_contigs"),
+        ("map_contigs", "asv_contig_map"),
+        ("asv_seqs", "classify"),
+        ("silva_classifier", "classify"),
+        ("classify", "asv_taxonomy"),
+    ]
     lay = _lay(edges)
-    dead = [_lane(lay, f"out_{i}") for i in range(3)]
-    # at most one of the three can be pushed aside -- something has to carry
-    # the rail down to `next`
-    assert sum(1 for j in dead if j == 0) >= 2, dead
+    assert _detours(lay) == []
+
+
+def test_a_fan_out_is_allowed_every_lane_it_needs():
+    """The other side of it: seven children off one parent are seven parallel
+    rails, and six of them have to be outside the corridor by construction.
+    `detours` is a tie-break precisely so it never bids against that.
+    """
+    edges = [("root", f"leaf_{i}") for i in range(7)]
+    edges += [(f"leaf_{i}", "sink") for i in range(7)]
+    lay = _lay(edges)
+    assert measure(lay).lanes <= 8
+    assert measure(lay).detours == len(_detours(lay))
+
+
+# --- rows the caller brought -------------------------------------------------
 
 
 def test_a_caller_may_fix_the_rows():
@@ -332,19 +368,16 @@ def test_an_order_that_would_reverse_an_edge_is_declined():
     assert _rows(layout({}, edges, order=["a", "b", "c"])) == ["a", "b"]
 
 
-def test_given_rows_put_their_markers_beside_their_labels():
-    """A rail down the side of a form. Every row already has its name written
-    next to it, so a marker two lanes out from that name reads as a bug -- and
-    the lane beside it is free, held open by nothing.
-
-    The recipe this came from: one row four others descend from, two of them
-    reached across the rows in between.
+def test_given_rows_still_keep_the_rails_off_the_markers():
+    """Fixing the rows changes only which row a node is in. Every invariant the
+    backends are written against still has to hold, and the one that a caller's
+    order could plausibly break is the one that says a vertical rail never runs
+    through a node cell.
     """
     order = ["a", "b", "c", "d", "e"]
     edges = [("a", "b"), ("a", "c"), ("b", "c"), ("a", "d"), ("a", "e"), ("d", "e")]
     lay = layout({n: None for n in order}, edges, order)
-    assert [n.lane for n in lay.nodes] == [0] * 5
-    # ... and the rails still do not run through any of them
+    assert _rows(lay) == order
     occupied = {(n.row, n.lane) for n in lay.nodes}
     for e in lay.edges:
         for row in range(lay[e.src].row + 1, lay[e.dst].row):

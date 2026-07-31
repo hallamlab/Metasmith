@@ -17,6 +17,7 @@
   import TypeInspector from './TypeInspector.svelte'
   import ParamRows from '../components/ParamRows.svelte'
   import { isPlumbing, libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
+  import { around, children, parents } from '../lib/highlight.js'
   import { runSuffix } from '../lib/runname.js'
   import { paramRows, sameParams, toParams } from '../lib/params.js'
 
@@ -330,6 +331,21 @@
     if (n.kind !== 'transform') pickType(n.id)
     else if (n.transform_index != null) pickTransform(n.transform_index)
   }
+
+  // Which way the diagram reads around whatever is picked. Both directions at
+  // once is what a plan diagram is *already* showing -- every line is on the
+  // page -- so the useful question is one of "what does this need" and "what
+  // needs this", answered one at a time. One hop: two hops on a 73-node plan
+  // lights half the drawing, which is the same as lighting none of it.
+  let planUpstream = $state(true)
+  let planPointed = $state(null)
+  let planMarks = $derived(
+    around(planGraph, {
+      selected: planFocus,
+      pointed: planPointed,
+      relation: planUpstream ? parents : children,
+    }),
+  )
 
   let drawingLabel = $derived.by(() => {
     if (drawing?.kind === 'transform') return index?.transforms?.[drawing.i]?.name ?? 'transform'
@@ -953,16 +969,30 @@
             : HEAD_H / 2}
           <details class="dag-details" open>
             <summary class="small muted">diagram</summary>
+            {#if planGraph}
+              <!-- Outside `.dag-scroll` on purpose: a plan wider than the card
+                   scrolls sideways, and a control inside that scroller leaves
+                   the corner it is meant to sit in the moment you use it. -->
+              <button
+                class="dag-dir small"
+                aria-pressed={planUpstream}
+                title={planUpstream
+                  ? 'lighting what the selected step needs — click for what needs it'
+                  : 'lighting what needs the selected step — click for what it needs'}
+                onclick={() => (planUpstream = !planUpstream)}
+              >{planUpstream ? 'parents' : 'children'}</button>
+            {/if}
             <div class="dag-scroll">
               <div class="dag-box">
                 <div class="dag-body">
                   {#if planGraph}
                     <DagRail
                       geo={planGraph}
-                      focus={planFocus}
+                      marks={planMarks}
                       meta={planMeta}
-                      ground="var(--panel-2)"
+                      ground="var(--panel)"
                       onpick={pickPlanNode}
+                      onhover={(id) => (planPointed = id)}
                     />
                   {/if}
 
@@ -1216,6 +1246,21 @@
     user-select: none;
   }
   .dag-details summary:hover { color: var(--text); }
+  /* the corner the direction toggle sits in. Anchored to the fold and not to
+     the scroller inside it, so a wide plan scrolled sideways leaves it where
+     it was. Same gesture and same shape as the info panel's own grip. */
+  .dag-details { position: relative; }
+  .dag-dir {
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    right: 0;
+    background: var(--panel);
+    color: var(--muted);
+    padding: 1px 6px;
+    opacity: 0.75;
+  }
+  .dag-dir:hover { opacity: 1; }
   .link {
     background: none;
     border: none;
