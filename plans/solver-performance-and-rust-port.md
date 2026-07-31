@@ -1434,3 +1434,133 @@ at a 20s cap, not a disagreement.
 - T6 (incrementality) is now the only remaining performance work, and its case is
   weaker than it was: a swap-and-rebuild at 0.5s per solve leaves much less on the
   table than it did at 7.5s. It stays conditional on measurement.
+
+## T5d — the differential gate — DONE
+
+Acceptance criterion 9 asks for *topological equivalence on 100% of the
+generated corpus*. That is a claim about a population, and the thing that
+existed after T5c was a throwaway script that had run 4,000 problems at one seed
+each. T5d turns it into an artifact —
+`src/metasmith/testing/solver_differential.py` — with a gate in the fast axis, a
+wider one in `perf`, and a CLI for the runs that are too big for either.
+
+### One seed per problem was hiding an entire regime
+
+The stream does not merely choose between equally-sized plans. It chooses how
+big a plan the search settles for, and the refiner's cost climbs steeply with
+plan size. The same `sink` instance at problem seed 24:
+
+| solve seed | steps | engine | python |
+|---|---|---|---|
+| 42 | 7 | 0.15s | — |
+| 2³¹−1 | 57 | 55.4s | **807.8s** |
+
+A sweep with the seed pinned at 42 reports a corpus that is uniformly cheap and
+never once puts either implementation under load. Every problem now runs under
+four spread streams — `42`, `7`, `1234`, `2³¹−1`, the last because a port that
+truncates or sign-extends a seed agrees on small numbers and nothing else.
+
+### The cap fires on both sides, and it is not a verdict
+
+The scratch script capped only the reference, on the assumption that the engine
+is fifteen times faster and would therefore never be the slow one. That is true
+per case and false as a rule: an instance that blows up blows up for *both*
+sides, and at 16,000 comparisons the engine hit a 20s cap twice on its own.
+
+So both sides are capped, and a cap hit is recorded as **unadjudicated** —
+counted apart from "agreed" and from "disagreed", printed with the flags that
+rerun it uncapped, and excluded from the reported speedup so a capped side
+cannot floor the number. Folding those cases into either bucket would report a
+percentage over a corpus the sweep never finished reading.
+
+### The result
+
+| | |
+|---|---|
+| comparisons | **16,000** — 8 profiles × 500 problems × 4 streams |
+| identical plan, shape, order and checker verdict | **15,984** |
+| disagreements | **0** |
+| hit the cap | 16, all in `sink`; 14 python-side, 2 engine-side |
+| re-run uncapped | 15 of the 16 finished — **all 15 identical** |
+| the 16th | `sink-178/s7`, adjudicated at reduced refiner budget — see below |
+
+So **15,999 of 16,000 comparisons agree and none disagree**, on all four
+questions the sweep asks in order: completeness, `plan_fingerprint`,
+`plan_shape`, and step sequence. The last is stronger than the criterion — the
+port has been returning not merely an equivalent plan but the same one, in the
+same order — and it is compared separately so a regression from identity to mere
+equivalence is visible rather than silently accepted.
+
+Every capped case came from `sink`, the profile with every dial turned up
+(cycles, lineage, duplicate transforms, product groups, two given groups). That
+is the profile earning its place: the other seven never produce an instance
+either implementation finds hard. The uncapped reference runs ranged from 30s to
+849s, against 0.9s–64s for the engine — the ×13–15 ratio holding all the way out
+into the tail.
+
+### The one case neither implementation can finish
+
+`sink-178/s7` is a 15-transform problem on which **a single refiner iteration
+costs the engine 22 seconds**:
+
+| `max_refine` | engine | python | verdict |
+|---|---|---|---|
+| 0 | 0.48s | 17.3s | identical |
+| 1 | 22.7s | 399.7s | identical |
+| 4 | 48.6s | >600s, capped | engine only |
+| 256 (the default) | >600s, did not finish | not attempted | — |
+
+At the default budget it is not a slow case, it is an unfinishable one, and
+equally so on both sides — which is why capping the engine as well as the
+reference was the right call rather than a precaution. It is adjudicated at the
+budgets that terminate, and identical at both. Left as-is with a name rather
+than papered over: the honest statement is that one comparison in sixteen
+thousand was checked at a reduced refiner budget, not that all sixteen thousand
+were checked at the full one.
+
+This is also the sharpest evidence T6 has. The mcts phase solves this instance
+in half a second; everything after that is the refiner, and its cost is driven
+by the size of the plan it is handed, not by the size of the problem.
+
+The sweep's aggregate speedup is **×5.2**, not the ×14.8 the templates show.
+Generated problems are small, so a large share of the engine's time is process
+spawn rather than search — which is the honest number for this corpus and the
+reason the template benchmark exists alongside it.
+
+### Acceptance criterion 8, stated plainly
+
+Criterion 8 asks for `metagenomics_from_paired_reads` under 3s **via the Python
+path**. It is ~8.1s. The engine does it in 1.08s end to end. The criterion is met
+on the Rust path and unmet on the Python one, and the Python path is not a
+detail — it is the fallback every source checkout runs and the reference this
+whole gate is measured against.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `tests/solver` with the engine | **366 passed**, 9 xfailed |
+| `tests/solver` with `METASMITH_SOLVER_ENGINE=python` | **363 passed**, 3 skipped, 9 xfailed |
+| `tests/perf` | **12 passed** |
+| fast suite | **1,724 passed**, 7 skipped, 12 xfailed |
+| differential sweep, 16,000 comparisons | **0 disagreements**; 15,984 under the cap, 15 more adjudicated off the clock, 1 at reduced refiner budget |
+
+The three skips are the differential tests themselves: with no engine there is
+nothing to differ from, which is the fallback gate working rather than a hole.
+
+### Carried into T6
+
+- The refiner/`rectify` laundering is pinned, unfixed, and now in two
+  implementations. The gate has done its job — the port is faithful — so this is
+  the change to make next: adjudicate the refiner's winner *after* rectification,
+  fall back to the search's plan, land it on both sides, re-anchor the
+  `xfail(strict)` set in `test_known_unsound.py`. `_is_valid`'s incomplete
+  `# looped` branch belongs with it.
+- The 16 expensive instances are the only corpus evidence about the refiner
+  under load, and they say the cost is in plan *size*, not in problem size — a
+  15-transform problem that solves to 57 steps, and one where a single refiner
+  iteration costs 22 seconds in Rust. If T6's incrementality is worth anything it
+  is worth it there, not on the templates. `sink-178/s7` and `sink-24/s2³¹−1` are
+  the two cases to measure against, and the shipped `STRESS_CORPUS` does not
+  contain anything like them.
+- Criterion 8 on the Python path is the one acceptance criterion still open.

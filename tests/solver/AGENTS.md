@@ -101,11 +101,30 @@ the same `problem.solve()`, so once the engine advertises `solve` a differential
 test compares the engine against itself unless something stops it. Wrap the
 reference side in `UsePythonSolver()` and *assert* `Backend("solve") == "python"`
 inside it — the failure mode is a green run, and a green run is not something you
-go looking at. The same applies to any test whose subject is the Python
-implementation rather than the answer: `test_iteration_order.py` salts CPython's
-hash layout and `test_refiner_validity.py` counts how often a branch of the
-Python refiner fires, and neither means anything with the search running
+go looking at. `solver_differential._reference` is the only place the sweep
+solves, for exactly this reason. The same applies to any test whose subject is
+the Python implementation rather than the answer: `test_iteration_order.py` salts
+CPython's hash layout and `test_refiner_validity.py` counts how often a branch of
+the Python refiner fires, and neither means anything with the search running
 elsewhere. Both pin the whole file.
+
+**One seed per problem hides a whole regime.** The stream decides how big a plan
+the search settles on, and the refiner's cost climbs steeply with plan size:
+`sink` at problem seed 24 solves to 7 steps in 0.15s under seed 42 and to 57
+steps in 53s under 2³¹−1. A sweep that fixes the seed reports a corpus that is
+uniformly cheap and never visits the regime where either implementation is under
+load. `solver_differential` runs every problem under `SOLVE_SEEDS` for that
+reason.
+
+**A cap is not a verdict.** Because the expensive cases are expensive for *both*
+sides, a differential sweep needs a time limit, and the tempting shape — skip the
+case, count the rest — reports a percentage over a corpus it did not finish
+reading. Capped cases are classified `unadjudicated`, kept apart from both
+"agreed" and "disagreed", and printed with the flags that rerun them uncapped.
+Sixteen of 16,000 hit the cap; fifteen were settled that way and agreed. The
+sixteenth cannot be settled at the default `max_refine=256` by *either* side —
+one refiner iteration on it costs the engine 22 seconds — so it is adjudicated
+at the budgets that terminate and reported as exactly that.
 
 **`generate_child_nodes` is a generator, and that is load-bearing.** Its caller
 adds each child's signature to `frontier_signatures` as it consumes them, so a
