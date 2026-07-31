@@ -760,6 +760,12 @@ class DataInstanceLibraryView:
         return self._original.Get(path)
     
     def Iterate(self):
-        for p in self._mask:
+        # sorted, not set order: `Path.__hash__` is the string hash, which
+        # python randomizes per process, so an unsorted walk hands the solver
+        # its transforms and instances in a different order every run. Where
+        # two of them are interchangeable the solver then picks a different one
+        # each time -- the same template solved twice produced two different
+        # plans, and the whole verification harness rests on that not happening.
+        for p in sorted(self._mask):
             inst = self._original.Get(p)
             yield p, inst.dtype_name, inst.dtype

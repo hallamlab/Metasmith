@@ -8,6 +8,7 @@ Override by adding explicit `@pytest.mark.<name>` on a test — auto-markers
 are additive, not exclusive.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -28,6 +29,10 @@ _TESTS_ROOT = Path(__file__).resolve().parent
 _DIR_MARKERS: list[tuple[str, list[str]]] = [
     ("unit", ["fast"]),
     ("flow", ["fast"]),
+    # Solver correctness -- which transforms get chosen, and whether the plan
+    # that comes back is sound. Separate from `flow`, which asks what the
+    # runtime then does with a plan it is handed.
+    ("solver", ["fast"]),
     ("cache", ["fast"]),
     ("gui", ["fast", "gui"]),
     # bootstrap was `slow` because one 10k-scale class lived in its biggest
@@ -105,6 +110,38 @@ def virtual_runtime_bounce(tmp_path, monkeypatch):
     runtime.setup(monkeypatch)
     _configure_agent_paths(monkeypatch, runtime.home)
     return runtime
+
+
+@pytest.fixture(scope="session")
+def metasmith_libraries_root() -> Path:
+    """Resolve the sibling ``metasmith-libraries/main/`` project root.
+
+    Lives here rather than in one axis's conftest because three axes want the
+    real standard library: `flow` solves every shipped template, `solver`
+    fingerprints them, and `perf` benchmarks them.
+
+    Resolution order:
+    1. ``METASMITH_LIBRARIES_ROOT`` env var (if set and existing).
+    2. Sibling layout: ``<workspace>/projects/metasmith-libraries/main``.
+    3. Skip with an actionable reason.
+    """
+    env = os.environ.get("METASMITH_LIBRARIES_ROOT")
+    if env:
+        p = Path(env).expanduser().resolve()
+        if p.exists():
+            return p
+        pytest.skip(
+            f"METASMITH_LIBRARIES_ROOT={env!r} does not exist; "
+            "unset it or point at metasmith-libraries/main"
+        )
+    sibling = Path(__file__).resolve().parents[3] / "metasmith-libraries" / "main"
+    if sibling.exists():
+        return sibling
+    pytest.skip(
+        "metasmith-libraries/main not found alongside metasmith project; "
+        "set METASMITH_LIBRARIES_ROOT to override "
+        f"(expected at {sibling})"
+    )
 
 
 @pytest.fixture
