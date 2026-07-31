@@ -1816,3 +1816,124 @@ engine gives in 3.6s; that is why the test is engine-only.
   the work rather than the bookkeeping around it. Anything further there has to
   beat "exact by construction", which this task's changes were and the dropped
   ones were not.
+
+## T7 — the depth walk, after the allocation was gone
+
+T6 ended by saying the refiner's remaining cost was the depth walks, and that they
+were "now genuinely the work rather than the bookkeeping around it". That was half
+right. A fresh callgrind pass found `score` at **69%** of the engine (10.0G of
+14.5G instructions exclusive) but only 733M of that on `refine.rs` lines — the
+other ~7.5G was inlined std container plumbing, which is the shape of many small
+bounds-checked accesses rather than of graph work.
+
+Four exact changes came out of it, each A/B'd against the state before it and each
+required to leave the plan **byte-identical** on the two refiner-under-load cases.
+Together they take `sink-24 @ max_refine=16` from 14.546G instructions to
+**11.267G (−22.5%)**.
+
+| change | instructions | s24@16 | s24@32 | s178@1 |
+|---|---|---|---|---|
+| baseline (T6) | 14.546G | 1.22s | 2.40s | 3.41s |
+| 1. depth as `i32` | −1.9% | 1.24s | 2.33s | 3.36s |
+| 2. `SigMap` slot fusion | −5.3% | 1.21s | 2.28s | 3.28s |
+| 3. the walk reads `produced_from` | −5.7% | 0.91s | 1.74s | 2.41s |
+| 4. the walk stops at its destination | −11.5% | 0.83s | 1.60s | 2.20s |
+| | **−22.5%** | **−32%** | **−33%** | **−35%** |
+
+Each is exact by construction, which is what let them land without a soundness
+argument per change:
+
+1. **Depth is an `i32`.** It is bounded by the signature universe — 221 and 284 on
+   these two problems — so the walk's stack element halves from 16 bytes to 8 and
+   the value array from 8 to 4.
+2. **`SigMap` puts the stamp beside the value.** Two parallel arrays cost two
+   bounds checks and two cache lines for one logical access, and every `get` and
+   `insert` in the walk reads or writes both halves. The argument that made the
+   stamp tables safe in the first place still covers this: none of them is ever
+   iterated, so neither a map's layout nor an array's can reach a plan.
+3. **The walk's adjacency was already built.** It went through
+   `product2producer` to a step, into the arena, along that step's bindings, and
+   called `sig()` on each — reconstructing, per pop, exactly the list `validate`
+   had already flattened into `produced_from`. The two maps are filled by one loop
+   over `steps` with last-write-wins, so they name the same producer for every
+   signature. Reading `pf`/`pf_flat` directly deletes a whole scratch table and
+   the hop. It is worth **−25% of wall against −5.7% of instructions**: the win is
+   locality, not fewer operations, which is why the stopwatch and callgrind
+   disagree about it and both are right.
+4. **A walk stops at the destination it was built for.** `depths` is checked on
+   *pop*, so the first pop of a node is the depth recorded and the walk never
+   revisits it — the value the destination receives at the stop is the one
+   exhaustion would leave. What the shortened walk gives up is the ability to
+   answer a *second* destination, since a miss then means "not reachable" or "not
+   yet explored" indifferently; a partial map is marked and re-walked in full
+   before a miss may be read as an answer.
+
+### T6's reason for skipping the fourth was an estimate, and it was wrong
+
+T6 declined early termination on the arithmetic that sources are queried 1.02–1.11
+times each, so "stopping each walk when its one destination is popped would save
+27–37% of all pops", and put the exact version near 15% for a large increase in
+subtlety.
+
+Counting directly says **half of every pop lies past the destination that was asked
+for** — 49.4M of 95.9M on `sink-24`, 129.2M of 260.3M on `sink-178` — while only
+10.3% and 2.1% of queries respectively ever ask a second question of a source they
+have already walked. Queries-per-source bounds how often the cache is *reused*; it
+says nothing about how much of each walk ran past its answer, and those are
+different numbers. The instrumented count took one build.
+
+### Measured and dropped
+
+**Push-time dedup.** Filtering a child against `depths` before pushing it is exact
+— it removes only entries a pop would discard, and preserves first-pop-wins because
+nothing is marked at push time. It also catches just **10.5M of 92.3M** pushes on
+`sink-24` and **13.3M of 256.7M** on `sink-178`, while adding a lookup to every
+push. A net loss, and never written.
+
+**Everything else in `score` is small.** The redundant second `lineage_ok` when the
+prefilter passes is 0.24% (99.1% of states never get there); the `lin_usage` linear
+scan is 0.24%; hoisting the terminal check above the `produced_from` build is not
+available, because the walk needs that table even on the states `validate` rejects.
+
+### One behavioural difference, and it is the fourth change's alone
+
+A shortened walk may never pop the node that would have raised "endpoint is used but
+produced by no step". That error is already the engine's own — the Python reference
+raises `KeyError` in the same place — so it can only differ where the reference does
+not answer at all, and nothing in the corpus or the four templates reaches it. Noted
+in `depth_walk`'s docstring rather than left to be rediscovered.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `cargo test --release` | **17 passed** (3 new: the map's epoch wrap, and the shortened walk against the full one) |
+| `tests/solver` with the engine | **375 passed**, 1 xfailed |
+| `tests/solver` with `METASMITH_SOLVER_ENGINE=python` | **372 passed**, 3 skipped, 1 xfailed |
+| `tests/perf` | **13 passed** |
+| fast suite | **1,733 passed**, 7 skipped, 4 xfailed |
+| differential sweep, 16,000 comparisons | **0 disagreements**; 15,983 identical, 17 unadjudicated |
+| the three hard cases | byte-identical plans at every step |
+
+Every one of those is the number T6 recorded, unchanged. The eight corpus
+fingerprints, the four template fingerprints and the refiner-under-load fingerprint
+are all pinned by those suites and none moved.
+
+### Carried forward
+
+- The wall-time column above was measured with a stray process from the T6 session
+  holding a core on a four-core box. Both sides of every A/B ran under it and the
+  instruction counts are immune, so the comparisons stand — but the absolute
+  seconds are pessimistic and are worth retaking on a quiet machine before anyone
+  quotes them.
+- **The templates were not measured after this.** They are refiner-light —
+  `metagenomics` solves in 0.51s on the engine and its refiner never changes the
+  plan — so the gain here is a claim about the `sink`-shaped regime, not about
+  them. `tests/perf` passed against its pinned ceilings, which is a ceiling and not
+  a measurement.
+- Acceptance criterion 8 (metagenomics under 3s on the **Python** path) is
+  untouched at ~8.1s. Nothing in this task was Python-side.
+- What is left in `score` is the walk itself, now genuinely so: its stack traffic
+  is the largest single line item and there is no exact way found to shrink it
+  further. Anything beyond this has to beat "exact by construction", which all four
+  of these were and both of the dropped ones were not.

@@ -75,28 +75,30 @@ impl SigSet {
 /// A `Map<EpSig, V>` as a stamp array beside a value array. Same contract as
 /// `SigSet`, including that `clear` comes first.
 pub struct SigMap<V> {
-    stamp: Vec<u32>,
-    val: Vec<V>,
+    /// Stamp beside value in one slot rather than in two parallel arrays. Every
+    /// `get` and `insert` in the depth walk reads or writes both halves, so
+    /// splitting them costs two bounds checks and two cache lines for one
+    /// logical access.
+    slot: Vec<(u32, V)>,
     epoch: u32,
 }
 
 // Hand-written so that `V` need not be `Default` to construct an empty map.
 impl<V> Default for SigMap<V> {
     fn default() -> Self {
-        Self { stamp: Vec::new(), val: Vec::new(), epoch: 0 }
+        Self { slot: Vec::new(), epoch: 0 }
     }
 }
 
 impl<V: Copy + Default> SigMap<V> {
     pub fn clear(&mut self, n: usize) {
-        if self.stamp.len() < n {
-            self.stamp.resize(n, 0);
-            self.val.resize(n, V::default());
+        if self.slot.len() < n {
+            self.slot.resize(n, (0, V::default()));
         }
         match self.epoch.checked_add(1) {
             Some(g) => self.epoch = g,
             None => {
-                self.stamp.fill(0);
+                for s in &mut self.slot { s.0 = 0; }
                 self.epoch = 1;
             }
         }
@@ -104,12 +106,13 @@ impl<V: Copy + Default> SigMap<V> {
 
     #[inline]
     pub fn contains_key(&self, k: EpSig) -> bool {
-        self.stamp[k as usize] == self.epoch
+        self.slot[k as usize].0 == self.epoch
     }
 
     #[inline]
     pub fn get(&self, k: EpSig) -> Option<V> {
-        if self.stamp[k as usize] == self.epoch { Some(self.val[k as usize]) } else { None }
+        let s = &self.slot[k as usize];
+        if s.0 == self.epoch { Some(s.1) } else { None }
     }
 
     /// Last write wins, as `HashMap::insert` does -- which matters: two steps
@@ -117,8 +120,7 @@ impl<V: Copy + Default> SigMap<V> {
     /// `produced_from` ends up holding.
     #[inline]
     pub fn insert(&mut self, k: EpSig, v: V) {
-        self.stamp[k as usize] = self.epoch;
-        self.val[k as usize] = v;
+        self.slot[k as usize] = (self.epoch, v);
     }
 }
 
@@ -141,16 +143,16 @@ pub struct Scratch {
     pub anc_todo: Vec<EpSig>,
     /// `used_as_lineage`.
     pub lin_used: SigSet,
-    /// `product2producer`.
-    pub p2p: SigMap<ApplId>,
     /// `depth_maps` -- one depth table per distinct walk source, pooled by
     /// arrival order. Sources per state peak at 23 on `sink-24` and 46 on
     /// `sink-178`, so the pool stops growing within the first few states and
     /// costs a few hundred kilobytes at the signature counts these problems
     /// reach.
     pub depth_slot: SigMap<u32>,
-    pub depth_pool: Vec<SigMap<i64>>,
-    pub depth_todo: Vec<(EpSig, i64)>,
+    pub depth_pool: Vec<SigMap<i32>>,
+    /// Whether the pooled map beside it was walked to exhaustion.
+    pub depth_full: Vec<bool>,
+    pub depth_todo: Vec<(EpSig, i32)>,
     /// Kahn's layers, in `is_valid`.
     pub pending: Vec<ApplId>,
     pub ready: Vec<ApplId>,
@@ -168,7 +170,6 @@ impl Scratch {
     /// what they own, so they stay callable without a preceding `begin`.
     pub fn begin(&mut self, n: usize) {
         self.lin_used.clear(n);
-        self.p2p.clear(n);
         self.depth_slot.clear(n);
         self.lin_usage.clear();
         self.counts.clear();
@@ -218,6 +219,24 @@ mod tests {
         assert!(!s.contains(3));
         assert!(!s.contains(50));
         assert!(s.insert(50));
+    }
+
+    /// The same wrap, on the map. `SigMap` resets its stamps by walking the
+    /// slots rather than filling a separate array, so this is a different line
+    /// of code from the set's and fails independently.
+    #[test]
+    fn the_map_epoch_wrapping_does_not_make_empty_slots_look_full() {
+        let mut m: SigMap<u32> = SigMap::default();
+        m.clear(4);
+        m.insert(1, 7);
+        m.epoch = u32::MAX;
+        m.slot[2] = (u32::MAX, 99); // a slot written in the epoch about to be left
+        m.clear(4);
+        assert_eq!(m.get(0), None);
+        assert_eq!(m.get(1), None);
+        assert_eq!(m.get(2), None, "a stale slot survived the wrap");
+        m.insert(2, 5);
+        assert_eq!(m.get(2), Some(5));
     }
 
     /// The epoch is a `u32`, so a long enough run wraps. Wrapping *past zero*

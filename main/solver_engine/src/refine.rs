@@ -82,6 +82,49 @@ fn has_ancestor(
     Some(false)
 }
 
+/// One backward walk from `src`, filling `depths`.
+///
+/// `stop_at` is the destination this walk was built to answer. Stopping the
+/// moment it is popped is exact: `depths` is checked on *pop*, so the first pop
+/// of a node is the depth that gets recorded and the walk never revisits it --
+/// the value `stop_at` receives here is the one a walk to exhaustion would
+/// leave. What the shortened walk gives up is the ability to answer a *second*
+/// destination, because a miss can then mean "not reachable" or "not yet
+/// explored"; `Ok(false)` says the map is partial and the caller must re-walk
+/// with `stop_at: None` before it may read a miss as an answer.
+///
+/// Half of every pop the refiner performs lies past the destination that was
+/// asked for -- 49.4M of 95.9M on `sink-24`, 129.2M of 260.3M on `sink-178` --
+/// and only 10.3% and 2.1% of queries respectively ever ask a second question
+/// of a source they have already walked.
+///
+/// One difference this does make, on inputs nothing in the corpus or the
+/// templates reaches: a node with no producer raises here, and a walk that
+/// stops early may never pop the node that would have raised. That error is
+/// already the engine's own -- Python raises `KeyError` in the same place --
+/// so it can only differ where the reference does not answer at all.
+fn depth_walk(
+    depths: &mut SigMap<i32>, todo: &mut Vec<(EpSig, i32)>,
+    pf: &SigMap<(u32, u32)>, pf_flat: &[EpSig], n_sigs: usize,
+    src: EpSig, stop_at: Option<EpSig>,
+) -> Result<bool, String> {
+    depths.clear(n_sigs);
+    todo.clear();
+    todo.push((src, 0i32));
+    while let Some((n, dd)) = todo.pop() {
+        if depths.contains_key(n) { continue; }
+        depths.insert(n, dd);
+        if stop_at == Some(n) { return Ok(false); }
+        let (start, len) = pf.get(n).ok_or_else(|| {
+            format!("endpoint {n} is used but produced by no step")
+        })?;
+        for i in start..start + len {
+            todo.push((pf_flat[i as usize], dd + 1));
+        }
+    }
+    Ok(true)
+}
+
 pub struct Refiner<'a> {
     pub p: &'a Problem,
     pub given_appl: ApplId,
@@ -224,16 +267,13 @@ impl<'a> Refiner<'a> {
         sc.counts.extend(sc.lin_usage.iter().map(|(_, c)| *c));
         let e_score = entropy(&sc.counts);
 
-        for &s in steps {
-            for e in ar.appl(s).products() { sc.p2p.insert(ar.eps.sig(e), s); }
-        }
         // One walk per distinct *source*: the destination is a plain equality
         // test during traversal and `seen` guarantees one visit per node, so a
-        // depth map answers every destination asked of it. The two quirks are
-        // load-bearing and both feed the score -- a LIFO stack with an up-front
-        // `seen` check records depth at first pop rather than the true maximum,
-        // and the `> 0` test below makes a distance of zero indistinguishable
-        // from not-found.
+        // depth map answers every destination asked of it -- once it is
+        // complete. The two quirks are load-bearing and both feed the score --
+        // a LIFO stack with an up-front `seen` check records depth at first pop
+        // rather than the true maximum, and the `> 0` test below makes a
+        // distance of zero indistinguishable from not-found.
         //
         // The per-source depth tables come out of a pool indexed by arrival
         // order rather than being allocated per source, which is what makes
@@ -250,32 +290,38 @@ impl<'a> Refiner<'a> {
                         return Err(format!("requirement {d} or its constraint {lin} is unbound"));
                     };
                     let (es, pes) = (ar.eps.sig(e), ar.eps.sig(pe));
+                    // `produced_from`, which `validate` has already built, is
+                    // this walk's adjacency: for a produced signature it holds
+                    // the producing step's input signatures, contiguously.
+                    // Going through `product2producer` instead meant a second
+                    // lookup, an arena hop and a per-edge `sig()` to rebuild the
+                    // same list. The two maps are filled by one loop over
+                    // `steps` with last-write-wins, so they name the same
+                    // producer for every signature.
                     let slot = match sc.depth_slot.get(es) {
                         Some(i) => i as usize,
                         None => {
                             let i = n_sources;
                             n_sources += 1;
-                            if sc.depth_pool.len() <= i { sc.depth_pool.push(SigMap::default()); }
-                            let depths = &mut sc.depth_pool[i];
-                            let todo = &mut sc.depth_todo;
-                            let p2p = &sc.p2p;
-                            depths.clear(n_sigs);
-                            todo.clear();
-                            todo.push((es, 0i64));
-                            while let Some((n, dd)) = todo.pop() {
-                                if depths.contains_key(n) { continue; }
-                                depths.insert(n, dd);
-                                let prod = p2p.get(n).ok_or_else(|| {
-                                    format!("endpoint {n} is used but produced by no step")
-                                })?;
-                                for pe in ar.appl(prod).used.values() {
-                                    todo.push((ar.eps.sig(pe), dd + 1));
-                                }
+                            if sc.depth_pool.len() <= i {
+                                sc.depth_pool.push(SigMap::default());
+                                sc.depth_full.push(false);
                             }
+                            sc.depth_full[i] = depth_walk(
+                                &mut sc.depth_pool[i], &mut sc.depth_todo,
+                                &sc.pf, &sc.pf_flat, n_sigs, es, Some(pes))?;
                             sc.depth_slot.insert(es, i as u32);
                             i
                         }
                     };
+                    // A miss against a partial map is not an answer -- see
+                    // `depth_walk`. Completing it costs a whole walk and is what
+                    // the shortened ones are paying for; it is rare.
+                    if !sc.depth_full[slot] && !sc.depth_pool[slot].contains_key(pes) {
+                        sc.depth_full[slot] = depth_walk(
+                            &mut sc.depth_pool[slot], &mut sc.depth_todo,
+                            &sc.pf, &sc.pf_flat, n_sigs, es, None)?;
+                    }
                     let max_d = sc.depth_pool[slot].get(pes).unwrap_or(-1);
                     sc.lin_distances.push(if max_d > 0 { max_d as f64/n_steps } else { 1.0 });
                 }
@@ -392,4 +438,64 @@ pub fn refine(
     let win = valids[argmax_index(&scores)];
     let steps = rectify(p, ar, given_appl, &states[win].steps.clone(), true, true)?;
     Ok(RefinerResult { steps, iterations: i, found_on: states[win].iteration })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A three-node chain with a branch, as `produced_from`: signature 0 is
+    /// made from 1 and 2, 1 from 3, 2 from 3, 3 from nothing reachable.
+    fn fixture() -> (SigMap<(u32, u32)>, Vec<EpSig>) {
+        let mut pf: SigMap<(u32, u32)> = SigMap::default();
+        pf.clear(5);
+        let flat: Vec<EpSig> = vec![1, 2, /*0*/ 3, /*1*/ 3, /*2*/ 4 /*3*/];
+        pf.insert(0, (0, 2));
+        pf.insert(1, (2, 1));
+        pf.insert(2, (3, 1));
+        pf.insert(3, (4, 1));
+        pf.insert(4, (0, 0));
+        (pf, flat)
+    }
+
+    /// The whole claim the shortened walk rests on: stopping at the destination
+    /// leaves that destination -- and every node recorded before it -- holding
+    /// exactly the depth a walk to exhaustion would leave. If this ever stops
+    /// being true the refiner silently scores against a different graph.
+    #[test]
+    fn a_shortened_walk_agrees_with_the_full_one_wherever_it_answers() {
+        let (pf, flat) = fixture();
+        let mut todo = Vec::new();
+        let mut full: SigMap<i32> = SigMap::default();
+        let done = depth_walk(&mut full, &mut todo, &pf, &flat, 5, 0, None).unwrap();
+        assert!(done, "an exhaustive walk reports itself complete");
+
+        for dest in 0u32..5 {
+            let mut part: SigMap<i32> = SigMap::default();
+            let done = depth_walk(&mut part, &mut todo, &pf, &flat, 5, 0, Some(dest)).unwrap();
+            for k in 0u32..5 {
+                if let Some(v) = part.get(k) {
+                    assert_eq!(Some(v), full.get(k), "signature {k} differs from the full walk");
+                }
+            }
+            if !done {
+                assert_eq!(part.get(dest), full.get(dest), "the destination it stopped for");
+            } else {
+                // Ran to exhaustion, so it is the full map and a miss is an answer.
+                assert_eq!(part.get(dest), full.get(dest));
+            }
+        }
+    }
+
+    /// A destination that cannot be reached forces the walk to exhaustion, so
+    /// the map it leaves may be read for a miss.
+    #[test]
+    fn an_unreachable_destination_completes_the_map() {
+        let (pf, flat) = fixture();
+        let mut todo = Vec::new();
+        let mut m: SigMap<i32> = SigMap::default();
+        let done = depth_walk(&mut m, &mut todo, &pf, &flat, 5, 1, Some(0)).unwrap();
+        assert!(done, "0 is not reachable backwards from 1, so the walk exhausted");
+        assert_eq!(m.get(0), None);
+    }
 }
