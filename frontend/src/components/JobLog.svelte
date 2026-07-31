@@ -4,9 +4,13 @@
   // Follows a background job over server-sent events. The stream replays what
   // has already happened before following, so opening this late still shows the
   // whole job rather than only what comes next.
-  let { jobId = null, onend } = $props()
+  //
+  // `header` is off for a caller that draws its own heading around this --
+  // the workflow page's plan card puts it behind a `<details>` and reads
+  // `status` back (bindable) to paint its own summary's tag, rather than
+  // showing "log" twice.
+  let { jobId = null, onend, header = true, status = $bindable(null) } = $props()
   let lines = $state([])
-  let status = $state(null)
   let box = $state(null)
 
   $effect(() => {
@@ -31,12 +35,14 @@
 
 {#if jobId}
   <div class="col">
-    <div class="spread">
-      <h3>log</h3>
-      <span class="tag" class:ok={status === 'done'} class:bad={status === 'failed'}>
-        {status ?? ''}
-      </span>
-    </div>
+    {#if header}
+      <div class="spread">
+        <h3>log</h3>
+        <span class="tag" class:ok={status === 'done'} class:bad={status === 'failed'}>
+          {status ?? ''}
+        </span>
+      </div>
+    {/if}
     <pre class="log" bind:this={box}>{lines.join('\n') || 'waiting…'}</pre>
   </div>
 {/if}

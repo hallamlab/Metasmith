@@ -220,6 +220,15 @@
     if (n.kind === 'type') onpicktype?.(n.name)
     else if (n.kind === 'transform') onpicktransform?.(n.index)
   }
+
+  // both ways: turning it on starts from the whole drawing, and turning it
+  // off puts back the view you get without touching anything -- there is
+  // otherwise no way to undo a pan except to take hold of it again
+  function setLive(v) {
+    if (live === v) return
+    live = v
+    fit()
+  }
 </script>
 
 <div
@@ -238,21 +247,23 @@
   {#if !laid}
     <p class="small muted hint">{failed ? 'could not lay this graph out' : empty}</p>
   {:else}
-    <button
-      class="grip small"
-      class:on={live}
-      aria-pressed={live}
-      title={live
-        ? 'pan and zoom are on — scroll zooms, drag pans, double-click fits'
-        : 'take hold of this drawing: scroll to zoom, drag to pan'}
-      onclick={() => {
-        live = !live
-        // both ways: turning it on starts from the whole drawing, and turning
-        // it off puts back the view you get without touching anything -- there
-        // is otherwise no way to undo a pan except to take hold of it again
-        fit()
-      }}
-    >{live ? 'panning' : 'pan + zoom'}</button>
+    <!-- Two labelled halves, one of them lit: the same shape as the recipe's
+         file/value switch, so which mode the frame is in reads at a glance
+         rather than from a single button's own changing label. -->
+    <div class="grip" role="group" aria-label="interact with nodes, or pan and zoom the drawing">
+      <button
+        type="button"
+        class:on={!live}
+        title="take hold of nodes: click to pick, hover to see connections"
+        onclick={() => setLive(false)}
+      >interact</button>
+      <button
+        type="button"
+        class:on={live}
+        title="pan and zoom this drawing — scroll zooms, drag pans, double-click fits"
+        onclick={() => setLive(true)}
+      >pan + zoom</button>
+    </div>
     <div class="inner" style={`transform: translate(${tx}px, ${ty}px) scale(${scale})`}>
       <DagRail
         geo={laid}
@@ -288,13 +299,22 @@
     z-index: 5;
     top: 4px;
     right: 4px;
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
     background: var(--panel);
-    color: var(--muted);
-    padding: 1px 6px;
     opacity: 0.75;
   }
   .grip:hover { opacity: 1; }
-  .grip.on { color: var(--primary-text); background: var(--primary-bg); border-color: var(--primary-line); opacity: 1; }
+  .grip button {
+    border: none;
+    background: none;
+    color: var(--muted);
+    padding: 1px 8px;
+    font-size: 11px;
+  }
+  .grip button.on { background: var(--accent); color: var(--panel); }
   .hint { margin: 4px 2px; }
   /* the drawing's own top-left corner, placed in the frame's own pixels --
      see the pan/zoom comment above `scale` in the script */

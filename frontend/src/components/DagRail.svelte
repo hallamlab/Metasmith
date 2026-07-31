@@ -316,6 +316,15 @@
   .node.selected .text {
     background: var(--panel-2);
   }
+  /* the node under the pointer is already the whole point of looking there;
+     what a hover is *for* is everyone else it reaches, so those are the ones
+     that get an outline of their own rather than only the shared background --
+     a row can be related to more than one thing pointed at once, and the
+     outline is what still reads once the fill alone would not. */
+  .node.related .text {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
   .node.selected .label { text-decoration: underline; text-underline-offset: 2px; }
   .mark {
     flex: 0 0 auto;

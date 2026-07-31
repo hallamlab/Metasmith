@@ -30,6 +30,7 @@
   // the recipe's rows are the form
   let items = $state([])
   let jobId = $state(null)
+  let jobStatus = $state(null)
   let sharing = $state(false)
   let launching = $state(false)
   let agentChoice = $state('')
@@ -235,6 +236,7 @@
     wf = null
     table = null
     jobId = null
+    jobStatus = null
     focus = null
     drawing = null
     loadedFor = null
@@ -911,17 +913,33 @@
       </div>
 
       <div class="card col" style="gap:10px">
-        <!-- one log for both jobs this page starts: a solve and a bundle
-             expand are the same shape of thing to watch, and only one of them
-             runs at a time -->
-        <JobLog
-          {jobId}
-          onend={async () => {
-            // four independent reads, not a chain: solving is ~400ms of server
-            // and this used to add three sequential round trips to the end of it
-            await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
-          }}
-        />
+        {#if jobId}
+          <!-- one log for both jobs this page starts: a solve and a bundle
+               expand are the same shape of thing to watch, and only one of
+               them runs at a time. Closed by default -- watching it is what
+               you came for while a job is running, but once it is not, the
+               plan below it is, and this is the same amount of the card an
+               already-solved workflow used to lose to a wall of scrollback. -->
+          <details class="log-details">
+            <summary class="small muted">
+              log
+              <span class="tag" class:ok={jobStatus === 'done'} class:bad={jobStatus === 'failed'}>
+                {jobStatus ?? ''}
+              </span>
+            </summary>
+            <JobLog
+              {jobId}
+              header={false}
+              bind:status={jobStatus}
+              onend={async () => {
+                // four independent reads, not a chain: solving is ~400ms of
+                // server and this used to add three sequential round trips to
+                // the end of it
+                await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
+              }}
+            />
+          </details>
+        {/if}
 
         {#if !wf.planned}
           <h3>plan</h3>
@@ -972,15 +990,25 @@
             {#if planGraph}
               <!-- Outside `.dag-scroll` on purpose: a plan wider than the card
                    scrolls sideways, and a control inside that scroller leaves
-                   the corner it is meant to sit in the moment you use it. -->
-              <button
-                class="dag-dir small"
-                aria-pressed={planUpstream}
-                title={planUpstream
-                  ? 'lighting what the selected step needs — click for what needs it'
-                  : 'lighting what needs the selected step — click for what it needs'}
-                onclick={() => (planUpstream = !planUpstream)}
-              >{planUpstream ? 'parents' : 'children'}</button>
+                   the corner it is meant to sit in the moment you use it. Two
+                   labelled halves, one of them lit -- the same shape as the
+                   recipe's file/value switch, so a direction is a thing you
+                   pick rather than a single button whose own label is the only
+                   record of which way it is currently pointed. -->
+              <div class="dag-dir" role="group" aria-label="which way the diagram lights">
+                <button
+                  type="button"
+                  class:on={planUpstream}
+                  title="lighting what the selected step needs"
+                  onclick={() => (planUpstream = true)}
+                >parents</button>
+                <button
+                  type="button"
+                  class:on={!planUpstream}
+                  title="lighting what needs the selected step"
+                  onclick={() => (planUpstream = false)}
+                >children</button>
+              </div>
             {/if}
             <div class="dag-scroll">
               <div class="dag-box">
@@ -1246,21 +1274,47 @@
     user-select: none;
   }
   .dag-details summary:hover { color: var(--text); }
+  /* the same fold, for the same reason, around the job log: a summary its own
+     row with the status pill riding beside it, so a job's outcome reads
+     without opening the scrollback that produced it */
+  .log-details summary {
+    cursor: pointer;
+    width: fit-content;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .log-details summary:hover { color: var(--text); }
   /* the corner the direction toggle sits in. Anchored to the fold and not to
      the scroller inside it, so a wide plan scrolled sideways leaves it where
-     it was. Same gesture and same shape as the info panel's own grip. */
+     it was. Top left, not top right: the direction is read before the
+     diagram, not after it -- and top right is where the info panel's own
+     grip sits when this same diagram is reused there. */
   .dag-details { position: relative; }
   .dag-dir {
     position: absolute;
     z-index: 5;
-    top: 0;
-    right: 0;
+    /* below the summary's own row, not over it -- top:0 here is the same
+       corner the "diagram" disclosure text already occupies */
+    top: 18px;
+    left: 0;
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
     background: var(--panel);
-    color: var(--muted);
-    padding: 1px 6px;
     opacity: 0.75;
   }
   .dag-dir:hover { opacity: 1; }
+  .dag-dir button {
+    border: none;
+    background: none;
+    color: var(--muted);
+    padding: 1px 8px;
+    font-size: 11px;
+  }
+  .dag-dir button.on { background: var(--accent); color: var(--panel); }
   .link {
     background: none;
     border: none;
