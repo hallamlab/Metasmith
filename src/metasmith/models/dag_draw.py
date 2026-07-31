@@ -510,6 +510,14 @@ def _jog_roles(lay: Layout, edge) -> list[int]:
     the one gap there, and reading it positionally makes every one of them a
     departure — which is why a fan-in arriving from one lane over used to read
     as though it were leaving the node above it.
+
+    But row distance alone over-fires: a plain fan-out child that happens to
+    sit one row down is not a join, and flipping it anyway split it from its
+    own siblings — the same source's other children, one row further out,
+    still banded as departures. The row is only evidence of a join if the
+    *target* actually has more than one parent to converge; a source with
+    other children of its own settles it the other way, since matching those
+    siblings is what the drawing is actually being read against.
     """
     src, dst = lay[edge.src].row, lay[edge.dst].row
     has_dep = edge.lane != lay[edge.src].lane
@@ -517,9 +525,14 @@ def _jog_roles(lay: Layout, edge) -> list[int]:
     roles = [0] * len(edge.points)
     i = 1
     if has_dep:
+        is_join = sum(1 for e in lay.edges if e.dst == edge.dst) > 1
+        is_fanout = sum(1 for e in lay.edges if e.src == edge.src) > 1
         # with no arrival pair the rail *is* the target's lane, so on adjacent
-        # rows this single jog is the arrival and belongs under, not over
-        roles[1] = roles[2] = 1 if (not has_arr and dst - src == 1) else -1
+        # rows a lone jog into a real join is the arrival and belongs under,
+        # not over — unless it is also one of several children leaving this
+        # same source, in which case its siblings settle it as a departure
+        flip = not has_arr and dst - src == 1 and is_join and not is_fanout
+        roles[1] = roles[2] = 1 if flip else -1
         i = 3
     if has_arr:
         roles[i] = roles[i + 1] = 1
