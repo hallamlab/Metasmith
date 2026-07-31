@@ -875,7 +875,13 @@ stays its text; quoting is the escape hatch). Those three live in `ops/rows.py` 
 server, once, because the GUI's params boxes read it too. Read metadata is several facts, and the alternative — hand-typed
 JSON in one box — collides head-on with `{column}`: literal braces *are* the sample-array syntax,
 so `{"depth": 10}` in a plain value box is still read as a token naming a column. The keyed form
-is the way out; a one-field unkeyed row keeps the old trap.
+is the way out; a one-field unkeyed row keeps the old trap. So **adoption must never
+manufacture one**: a registered value file holding a JSON object is adopted as the keyed fields
+describing it, and only when `render_value` reproduces the file byte for byte — a leaf's identity
+is content addressed, so a file this did not write is one it must not rewrite. Adopted as a single
+unkeyed entry instead, its literal braces read as `{column}`, the row is dropped for want of a
+sheet, and the item goes with it: that is how two shipped templates solved from their own spec
+and dropped every target the moment the GUI owned them.
 
 **A sample table is a sheet plus one declared row per kind of input.** `ops.samples` parses a
 csv/tsv/excel upload (stored verbatim under a fixed stem, because the workflow directory *is*

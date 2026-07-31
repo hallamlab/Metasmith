@@ -113,6 +113,51 @@ def test_every_shipped_template_still_solves(metasmith_libraries_root: Path):
         assert template.description, f"[{template.name}] has no description to show"
 
 
+@pytest.mark.slow
+def test_every_shipped_template_still_solves_once_the_gui_owns_it(
+    metasmith_libraries_root: Path, tmp_path: Path,
+):
+    """The same templates, through the door a user actually walks through.
+
+    `spec.Solve()` above reads the template's own library. The GUI does not: it
+    materializes that library, adopts one editable row per item, and rebuilds
+    the library *from those rows* on every solve. Two of the four shipped
+    templates solved above and dropped every target here -- an adopted value
+    file holding a JSON object was read as a `{column}` sample array, dropped
+    for want of a sheet, and took the root of the library's lineage with it. So
+    the assertion worth holding is this one; the one above cannot see it.
+    """
+    from metasmith.ops import data as op_data
+    from metasmith.ops import inputs as op_inputs
+    from metasmith.ops import samples as op_samples
+
+    templates = Template.Discover(metasmith_libraries_root)
+    if not templates:
+        pytest.skip(f"no templates in {metasmith_libraries_root}")
+    types = sorted(str(p) for p in (metasmith_libraries_root / "data_types").glob("*.yml"))
+    for template in templates:
+        lib_path = str(tmp_path / template.name / "input.xgdb")
+        # POST /workflows
+        op_data.materialize_template(
+            template.spec.input_library, lib_path, type_library_paths=types,
+        )
+        adopted = op_inputs.adopt(lib_path, [])
+        op_samples.write_record(lib_path, adopted["record"])
+        # POST /workflows/<name>/generate -- no sheet, and the GUI always sends
+        # a null sample type, so the library is planned as it stands
+        op_inputs.sync(lib_path, adopted["rows"], None)
+        spec = Spec.Unpack(
+            template.spec.Pack(relative_to=metasmith_libraries_root),
+            root=metasmith_libraries_root, input_library=lib_path,
+        )
+        spec.sample_type = None
+        task = spec.Solve()
+        assert task.ok, (
+            f"[{template.name}] dropped {sorted(task.plan.dropped_targets)} "
+            f"from a recipe of {len(adopted['rows'])} rows"
+        )
+
+
 def test_the_same_template_reloads_to_the_same_task_key(tmp_path: Path):
     """A deferred path is minted once and persisted; identity follows it.
 
