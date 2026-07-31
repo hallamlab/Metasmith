@@ -367,3 +367,32 @@ def test_editing_the_text_around_a_token_keeps_the_items(tmp_path):
     assert _ids(lib_path) == before
     lib = DataInstanceLibrary.Load(lib_path)
     assert "pangenome: P1" in {(lib_path / p).read_text() for p in lib.manifest}
+
+
+# -- a value row's fields ----------------------------------------------------
+
+
+def test_any_field_of_a_value_row_can_make_it_an_array():
+    kv = lambda *p: [{"key": k, "value": v} for k, v in p]
+    plain = {"mode": "value", "values": kv(("a", "1"), ("b", "2"))}
+    assert not op_samples.is_array_row(plain)
+    assert op_samples.is_array_row({"mode": "value", "values": kv(("a", "1"), ("b", "{s}"))})
+    # ...and the legacy single string still reads as one unkeyed field
+    assert op_samples.is_array_row({"mode": "value", "value": "{s}"})
+
+
+def test_a_field_naming_a_missing_column_is_named_by_its_key(tmp_path):
+    lib = _library(tmp_path)
+    rows = [{
+        "id": "v", "mode": "value", "path": "", "name": "", "dtype": "mock::marker",
+        "values": [{"key": "of", "value": "{sample}"}, {"key": "depth", "value": "{nope}"}],
+        "parents": [],
+    }]
+    (problem,) = op_samples.validate(str(lib), _table(), rows)["problems"]
+    assert "[nope]" in problem["message"] and "in its [depth]" in problem["message"]
+
+
+def test_a_value_row_is_labelled_by_its_first_field():
+    kv = lambda *p: [{"key": k, "value": v} for k, v in p]
+    assert op_samples.row_label({"mode": "value", "values": kv(("", "GCF_1"))}) == "GCF_1"
+    assert op_samples.row_label({"mode": "value", "values": kv(("of", "P1"))}) == "of: P1"

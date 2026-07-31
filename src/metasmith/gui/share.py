@@ -252,7 +252,7 @@ def _rows_from(body: dict) -> tuple[list[dict], dict[str, str]]:
             "mode": "value" if value is not None else "file",
             "path": "" if value is not None else path,
             "name": path if value is not None else "",
-            "value": value if value is not None else "",
+            "values": [{"key": "", "value": value if value is not None else ""}],
             "dtype": r.get("type") or "",
             "parents": list(r.get("parents") or []),
         })

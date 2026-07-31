@@ -547,20 +547,12 @@ def _checked_preset(value: str | None) -> str | None:
 def _param_value(v):
     """Text typed into a box, given the type it looks like.
 
-    One rule, so it is the same everywhere: a value that reads as a JSON scalar
-    becomes that scalar, anything else stays the string it was. `50` reaches
-    nextflow as a number, `--partition=x` as a string, and `"50"` as a string on
-    purpose -- which is the escape hatch for the one case the rule gets wrong.
+    One rule, so it is the same everywhere -- `50` reaches nextflow as a number,
+    `--partition=x` as a string, `"50"` as a string on purpose. The rule itself
+    lives on the server side, in `ops.inputs`, because a keyed value row is
+    typed by exactly this and the CLI builds those too.
     """
-    if not isinstance(v, str): return v
-    s = v.strip()
-    if not s: return v
-    try:
-        parsed = json.loads(s)
-    except ValueError:
-        return v
-    if isinstance(parsed, (dict, list)): return v
-    return parsed
+    return op_inputs.scalar(v)
 
 
 def _checked_params(raw, what: str = "params") -> dict | None:
@@ -1368,6 +1360,12 @@ def generate_workflow(name):
                 for t in targets
             ]
             result["sample_type"] = sample_type
+            # What the recipe this bundle was solved from still had blanks in.
+            # Recorded rather than tested at launch on purpose: the gate is
+            # about the plan a run would stage, not about what the page says
+            # now, so filling a box in clears it on the next solve -- which is
+            # the same solve that would put the fix into the bundle.
+            result["recipe_problems"] = op_inputs.problems(rows)
             p.write_result(name, result)
             return result
 
@@ -1781,6 +1779,18 @@ def create_run():
     wf = p.read_workflow(workflow)
     if not wf.ok:
         raise ProjectError(f"workflow [{workflow}] has no successful plan to run")
+    # Incompleteness in a recipe is reported and never refused -- right up to
+    # here. A deferred input has no file to stage and a nameless pair has no key
+    # to be read under, so this is where "still being filled in" stops being a
+    # work in progress. Off the stored result, not the current rows: it is the
+    # bundle that would be staged, and a result from before this key existed has
+    # no blanks by definition.
+    recipe_problems = list(wf.result.get("recipe_problems") or [])
+    if recipe_problems:
+        raise ProjectError(
+            f"workflow [{workflow}] was planned from an unfinished recipe: "
+            f"{'; '.join(recipe_problems)} -- fill them in and solve again"
+        )
     if not p.agent_exists(agent_name):
         raise ProjectError(f"no agent named [{agent_name}]")
     # an agent is saveable while it is still being filled in; this is the point

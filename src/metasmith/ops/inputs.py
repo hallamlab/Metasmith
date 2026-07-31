@@ -30,6 +30,14 @@ rename re-points the item, which re-mints its identity and silently loses its
 cache. Minting is subject to the same rule as a deferred path, for the same
 reason: once, then recorded, never re-derived.
 
+What a value row *holds* is a list of entries, each a key and a value, and
+:func:`render_value` is the only place that list becomes a file. One unkeyed
+entry writes its text verbatim -- which is what a value row has always been, so
+nothing written before this moves -- and anything else writes the JSON object
+those pairs describe, with each value given the type it looks like. That is the
+point of the list: read metadata is several facts, and the alternative to boxes
+is typing JSON by hand into a field whose braces already mean `{column}`.
+
 For an **array** value row the mint is per (row x grouping key), where the key
 is the sheet cells that row's `value` field actually names -- NOT per sheet row.
 Two sheet rows naming one pangenome are two samples of *one* pangenome, and that
@@ -50,6 +58,9 @@ from ..models.paths import DEFERRED, is_deferred
 from . import data as op_data
 from . import samples as op_samples
 from ._common import load_data_lib
+# What a row holds, and what it renders to. In their own module because
+# `ops.samples` reads the same shape and this module already imports it.
+from .rows import entries, render_value, scalar  # noqa: F401  (re-exported)
 
 
 # A value row is something typed into a box -- a read-pair descriptor, a few
@@ -146,6 +157,49 @@ def registerable(row: dict) -> bool:
     return bool((row.get("dtype") or "").strip())
 
 
+def problems(rows: list[dict]) -> list[str]:
+    """The blanks left in this recipe, in words, or nothing.
+
+    Not a sync guard and deliberately not called by one: solving a half-filled
+    recipe is the normal way to work out what a plan needs, and every blank here
+    is something the library holds a perfectly good deferred or empty entry for.
+    It is the *run* that cannot mean anything -- a deferred input has no file to
+    stage and an unkeyed pair has no name to be read under -- so this is read at
+    launch, off the solve that produced the bundle.
+    """
+    out: list[str] = []
+    for r in rows:
+        if not isinstance(r, dict) or not registerable(r):
+            continue
+        label = op_samples.row_label(r)
+        if r.get("mode") != "value":
+            if not (r.get("path") or "").strip():
+                out.append(f"[{label}] has no path")
+            continue
+        ents = entries(r)
+        if not ents:
+            out.append(f"[{label}] has no values")
+            continue
+        seen: set[str] = set()
+        for i, e in enumerate(ents):
+            if not e["value"].strip():
+                if e["key"]:
+                    out.append(f"[{label}] has nothing under [{e['key']}]")
+                elif len(ents) == 1:
+                    out.append(f"[{label}] has nothing in it")
+                else:
+                    out.append(f"[{label}] has nothing in field {i + 1}")
+            if len(ents) == 1:
+                # one entry needs no key: unkeyed is what a plain typed value is
+                continue
+            if not e["key"]:
+                out.append(f"[{label}] has {len(ents)} fields, and field {i + 1} has no key")
+            elif e["key"] in seen:
+                out.append(f"[{label}] uses the key [{e['key']}] twice")
+            seen.add(e["key"])
+    return list(dict.fromkeys(out))
+
+
 def assert_acyclic(rows: list[dict]):
     by_id = {str(r["id"]): r for r in rows}
     done: set[str] = set()
@@ -191,7 +245,7 @@ def _desired(rows: list[dict]) -> dict[str, dict]:
                 # ...except for a row written when a value was named by hand,
                 # which still carries that name. Believed once, by `_claim`.
                 "legacy": (r.get("name") or "").strip() or None,
-                "value": r.get("value") or "",
+                "value": render_value(entries(r)),
             }
         else:
             p = (r.get("path") or "").strip()
@@ -241,7 +295,7 @@ def _claim(lib, want: dict[str, dict], prior: dict[str, str]) -> dict[str, Path]
 
 
 def _group_key(row: dict, record: dict) -> str:
-    """The sheet cells an array value row's `value` field reads.
+    """The sheet cells an array value row's values read.
 
     This is what its minted path is keyed on, and the choice is load-bearing.
     Keying per *sheet row* would give two rows naming one pangenome two separate
@@ -249,8 +303,14 @@ def _group_key(row: dict, record: dict) -> str:
     multiplicity is expressed here -- into a fan-out of one. Keying on the cells
     rather than on the substituted text means editing the template around a
     token (`{p}` -> `pangenome: {p}`) rewrites contents without moving the path.
+
+    Over the *union* of what every entry names, so that widening one field is
+    what says two sheet rows are no longer the same thing. The encoding is
+    unchanged and must stay so: this string is a key in the record's `minted`
+    map, and a row with one entry has to produce the byte-identical key it
+    always did or every existing project re-mints its array items.
     """
-    cols = sorted(op_samples.columns_in(row.get("value")))
+    cols = sorted({c for e in entries(row) for c in op_samples.columns_in(e["value"])})
     return json.dumps([[c, record.get(c)] for c in cols], separators=(",", ":"))
 
 
@@ -338,7 +398,10 @@ def _array_plan(
             entry = {
                 "rid": rid, "path": path, "dtype": (row.get("dtype") or "").strip(),
                 "mode": "value" if is_value else "file",
-                "value": op_samples.substitute(row.get("value"), record) if is_value else None,
+                "value": render_value([
+                    {"key": e["key"], "value": op_samples.substitute(e["value"], record)}
+                    for e in entries(row)
+                ]) if is_value else None,
                 "parents": list(parents),
             }
             seen[path] = entry
@@ -752,18 +815,23 @@ def adopt(library_path: str, rows: list[dict], record: dict | None = None) -> di
         rid = _adopted_id(s)
         value = read_value(lib.location, path)
         if is_deferred(path):
-            row = {"id": rid, "mode": "file", "path": "", "name": "", "value": "",
-                   "dtype": dtype, "parents": []}
+            row = {"id": rid, "mode": "file", "path": "", "name": "",
+                   "values": [{"key": "", "value": ""}], "dtype": dtype, "parents": []}
         elif value is not None:
             # No name: the row is bound to this item by the record written
             # below, not by restating the path on the row. So a value adopted
             # from a library that named its files keeps that filename forever,
             # invisibly, and nothing is re-minted.
-            row = {"id": rid, "mode": "value", "path": "", "name": "", "value": value,
-                   "dtype": dtype, "parents": []}
+            #
+            # One unkeyed entry, whatever the file holds: a library-owned file
+            # that happens to parse as an object is not necessarily one this
+            # wrote, and re-rendering it through `render_value` could change a
+            # byte of a file whose identity is already registered.
+            row = {"id": rid, "mode": "value", "path": "", "name": "",
+                   "values": [{"key": "", "value": value}], "dtype": dtype, "parents": []}
         else:
-            row = {"id": rid, "mode": "file", "path": s, "name": "", "value": "",
-                   "dtype": dtype, "parents": []}
+            row = {"id": rid, "mode": "file", "path": s, "name": "",
+                   "values": [{"key": "", "value": ""}], "dtype": dtype, "parents": []}
         made.append(row)
         made_ids.add(rid)
         prior[rid] = s
