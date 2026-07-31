@@ -82,17 +82,17 @@
     display: flex;
     gap: 8px;
     align-items: baseline;
-    padding: 8px 12px 6px;
+    padding: 0 0 6px;
   }
+  /* no cap and no scroller of its own. It had one while this sat in a fixed
+     section of the panel and the graph below it wanted the room; the panel is
+     one scrolling column now, so a second scroller inside it is a small window
+     you have to find and drive separately to read a list that would otherwise
+     just be there. */
   .chips {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
-    padding: 0 12px;
-    /* a ceiling rather than a share of the panel, same reasoning the old list
-       used: the graph below is what wants the room */
-    max-height: 96px;
-    overflow-y: auto;
   }
   .empty { margin: 0; padding: 2px 0; }
   .chip {
@@ -136,8 +136,5 @@
     font-size: 13px;
   }
   .chip .x:hover { color: var(--bad); }
-  .add {
-    margin: 6px 12px 0;
-    width: calc(100% - 24px);
-  }
+  .add { margin: 6px 0 0; }
 </style>

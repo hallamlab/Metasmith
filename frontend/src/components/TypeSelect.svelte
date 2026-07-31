@@ -5,8 +5,8 @@
   // you typed. The native `<input list>` + `<datalist>` this replaces was the
   // right behaviour behind the wrong shape: Chrome renders it as a pale bubble
   // in its own chrome, sized to the browser's taste rather than the field's, and
-  // its option labels are shown as a dim aside — so the produce/consume counts
-  // that are the whole reason to look at the list read as a tooltip.
+  // its option labels are shown as a dim aside — so anything worth reading in
+  // the list read as a tooltip.
   //
   // Also: a datalist is un-styleable and un-scriptable. There is no hook for
   // "row for a type nothing produces", no way to keep it open while the panel
@@ -16,8 +16,6 @@
     value = '',
     options = [],
     placeholder = '',
-    // (option) => { label?, note?, warn? } for the right-hand side of a row
-    describe = null,
     // a row shows its type as a word until it is clicked, and clicking it is
     // what mounts this -- so the click has to land in the field it just opened
     autofocus = false,
@@ -179,7 +177,7 @@
         </div>
       {:else}
         {#each shown.slice(0, 400) as opt, i (opt)}
-          {@const d = describe?.(opt) ?? {}}
+          {@const cut = opt.lastIndexOf('::')}
           <button
             type="button"
             class="opt"
@@ -191,10 +189,13 @@
             onmouseenter={() => (active = i)}
             onclick={() => set(opt, { close: true })}
           >
-            <span class="mono name truncate">{opt}</span>
-            {#if d.note}
-              <span class="small note" class:warn={d.warn}>{d.note}</span>
-            {/if}
+            <!-- the same two stacked lines the drawing gives a node: the
+                 namespace at half size above, the name at full size below. A
+                 list and a diagram naming the same type should say it the same
+                 way, and the counts that used to sit out to the right are on
+                 the row's own note line under the field. -->
+            {#if cut > 0}<span class="ns truncate">{opt.slice(0, cut)}</span>{/if}
+            <span class="mono name truncate">{cut > 0 ? opt.slice(cut + 2) : opt}</span>
           </button>
         {/each}
         {#if shown.length > 400}
@@ -257,25 +258,26 @@
     border-radius: 0 0 var(--radius) var(--radius);
     box-shadow: 0 10px 24px var(--shadow);
   }
+  /* a column, so `scrollIntoView({block:'nearest'})` still steps over whole
+     rows: the two lines are one option, not two */
   .opt {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
+    flex-direction: column;
+    align-items: stretch;
     width: 100%;
     background: none;
     border: none;
     border-radius: 0;
     border-bottom: 1px solid var(--line);
-    padding: 5px 9px;
+    padding: 4px 9px;
     text-align: left;
+    line-height: 1.2;
   }
   .opt:last-child { border-bottom: none; }
   .opt.active { background: var(--panel-2); }
   .opt.active:hover { border-color: transparent; }
   .opt.on .name { color: var(--accent); }
+  .ns { font-size: 0.5em; color: var(--muted); }
   .name { min-width: 0; }
-  .note { flex: 0 0 auto; color: var(--muted); }
-  .note.warn { color: var(--warn); }
   .empty { padding: 8px 9px; }
 </style>

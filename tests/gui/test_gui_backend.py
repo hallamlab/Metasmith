@@ -1948,9 +1948,11 @@ class TestStepSelectors:
         """
         result = client.get(f"/api/workflows/{runnable}").get_json()["result"]
         graph = result["plan_graph"]
-        for key in ("width", "height", "row_pitch", "lane_pitch", "margin", "lane_x"):
+        for key in ("v", "width", "height", "row_pitch", "lane_pitch", "anchor"):
             assert key in graph, key
-        assert all(isinstance(v, float) and v > 0 for v in graph["lane_x"])
+        # an edge is its baked path and nothing else -- the grid it came from
+        # used to travel with it, for a browser that re-baked it itself
+        assert all(e["back"] or e["d"] for e in graph["edges"])
         # every step is a node of it, and every node is inside the plate
         by_step = {n["step"]: n for n in graph["nodes"] if n.get("step") is not None}
         assert {s["order"] for s in result["step_display"]} == set(by_step)
@@ -1987,19 +1989,21 @@ class TestStepSelectors:
         """A result planned by the CLI, or stored against an older shape of the
         drawing, is revisited rather than left to draw nothing.
 
-        Tested by the newest key rather than by presence, which is why the
-        stored one is emptied rather than deleted: a result carrying an older
-        shape of the block would otherwise never be looked at again.
+        Tested by the payload's own version rather than by presence, which is
+        why the stored one is replaced rather than deleted: a result carrying an
+        older shape of the block would otherwise never be looked at again.
         """
         import yaml
 
+        from metasmith.ops.workflow import GEOMETRY_VERSION
+
         path = project_root / "workflows" / runnable / "result.yml"
         stored = yaml.safe_load(path.read_text())
-        assert "lane_x" in stored["plan_graph"]
-        stored["plan_graph"] = {"width": 1, "height": 1}
+        assert stored["plan_graph"]["v"] == GEOMETRY_VERSION
+        stored["plan_graph"] = {"v": GEOMETRY_VERSION - 1, "width": 1, "height": 1}
         path.write_text(yaml.dump(stored))
         again = client.get(f"/api/workflows/{runnable}").get_json()["result"]
-        assert "lane_x" in (again.get("plan_graph") or {})
+        assert (again.get("plan_graph") or {}).get("v") == GEOMETRY_VERSION
 
     def test_a_position_selector_matches_the_process_that_position_gets(self):
         """The two halves that have to agree, pinned against each other.

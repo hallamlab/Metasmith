@@ -11,21 +11,28 @@
   // page makes; everything about where it *sits* is here, because this is the
   // one surface whose rows are not a uniform height. A value row wraps, an array
   // row grows a count note, so `y` is measured off the real DOM by the caller
-  // and handed down; only the grid crosses the wire.
+  // and handed down.
   //
-  // This used to keep `lane` from that response and nothing else, drawing its
-  // own S-curves at its own pitch with lanes running left to right -- which is
-  // the mirror of every other drawing on the page, so the trunk that most rows
-  // sit in ended up furthest from the rows it names.
-  let { rows = [], height = 0, kind = 'data', hovered = null } = $props()
+  // Those measurements go *up* with the layout request rather than being
+  // applied to the answer. Two things were wrong with applying them: the engine
+  // is free to reorder rows, so a rail laid out in one order and drawn in
+  // another crosses the markers it was told to avoid; and re-baking the curves
+  // against the new positions meant a port of the bake living in this codebase
+  // with nothing to hold it in step with the original. The rows go with the
+  // question now, and the answer is the drawing.
+  let { rows = [], height = 0, kind = 'data', lit = null } = $props()
 
   const cache = new Map()
   const CACHE_MAX = 64
 
+  // the measured positions are part of the shape: the same rows at different
+  // heights are a different drawing. Rounded, so that a sub-pixel reflow -- a
+  // font settling, a scrollbar appearing -- is a cache hit rather than a
+  // request.
   const shape = (rs, k) =>
     JSON.stringify({
       k,
-      n: rs.map((r) => r.key),
+      n: rs.map((r) => [r.key, Math.round(r.y ?? -1)]),
       e: rs.flatMap((r) => r.parents.map((p) => [p, r.key])),
     })
 
@@ -35,9 +42,10 @@
   $effect(() => {
     const rs = rows
     const k = kind
-    if (rs.length === 0) {
-      laid = null
-      failed = false
+    // every row has to have been measured, or the rail would be drawn partly at
+    // the engine's nominal pitch and partly where the rows actually are
+    if (rs.length === 0 || rs.some((r) => r.y == null)) {
+      if (rs.length === 0) laid = null
       return
     }
     const key = shape(rs, k)
@@ -55,6 +63,13 @@
         const geo = await api.post('/dag/layout', {
           nodes: rs.map((r) => ({ id: r.key, kind: k })),
           edges: rs.flatMap((r) => r.parents.map((p) => ({ from: p, to: r.key }))),
+          // the rows are the recipe's, in the recipe's order, at the recipe's
+          // heights -- not something for the engine to decide
+          order: rs.map((r) => r.key),
+          row_y: Object.fromEntries(rs.map((r) => [r.key, r.y])),
+          // two lanes' worth of gutter always, so the rail does not slide
+          // sideways the first time a row is given a parent
+          min_lanes: 2,
         })
         if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value)
         cache.set(key, geo)
@@ -73,29 +88,8 @@
       live = false
     }
   })
-
-  // the measured y of each laid-out row, by row index -- the one thing the
-  // server's placement is deliberately not trusted for
-  let rowY = $derived.by(() => {
-    if (!laid) return null
-    const yOf = new Map(rows.map((r) => [r.key, r.y]))
-    const out = []
-    for (const n of laid.nodes) {
-      const y = yOf.get(n.id)
-      if (y != null) out[n.row] = y
-    }
-    return out.every((v) => v != null) && out.length === laid.nodes.length ? out : null
-  })
 </script>
 
-{#if laid && rowY && !failed}
-  <DagRail
-    geo={laid}
-    {rowY}
-    {height}
-    {hovered}
-    showLabels={false}
-    ground="var(--panel)"
-    minLanes={2}
-  />
+{#if laid && !failed}
+  <DagRail geo={laid} {height} {lit} showLabels={false} ground="var(--panel)" />
 {/if}

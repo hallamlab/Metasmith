@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from enum import Enum
 from math import atan2, cos, pi, sin
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from xml.sax.saxutils import escape
 
 from .dag_colour import Colouring
@@ -336,12 +336,34 @@ class _Grid:
     margin: float
     width: float
     height: float
+    # measured y per row, when the caller's rows are not this module's. A
+    # recipe's rows wrap, grow a note, and are laid out by the browser long
+    # before anything is drawn between them, so their positions are an input
+    # rather than an output. Empty means the nominal pitch.
+    rows_y: tuple[float, ...] = ()
 
     def x(self, lane: float) -> float:
         return self.lane_x[int(lane)]
 
     def y(self, row: float) -> float:
-        return self.margin + (row + 0.5) * self.row_pitch
+        if not self.rows_y:
+            return self.margin + (row + 0.5) * self.row_pitch
+        # a jog sits on a half row, which is between two measured ones
+        lo = int(row)
+        frac = row - lo
+        top = self.rows_y[min(lo, len(self.rows_y) - 1)]
+        return top + frac * (self.rows_y[min(lo + 1, len(self.rows_y) - 1)] - top)
+
+    def gap(self, row: float) -> float:
+        """The row pitch local to `row` — the band offsets are a fraction of
+        the gap they actually sit in, and with measured rows that is not one
+        number: a two-line row and a one-line row are different heights, and a
+        band sized off the nominal pitch overshoots the short one."""
+        if not self.rows_y:
+            return self.row_pitch
+        lo = int(row)
+        top = self.rows_y[min(lo, len(self.rows_y) - 1)]
+        return self.rows_y[min(lo + 1, len(self.rows_y) - 1)] - top or self.row_pitch
 
 
 @dataclass(frozen=True)
@@ -375,6 +397,8 @@ def _grid(
     labels: Mapping[str, Label] | None = None,
     mode: LabelMode = LabelMode.COLUMN,
     max_chars: int = DEFAULT_LABEL_CHARS,
+    min_lanes: int = 0,
+    rows_y: Sequence[float] = (),
 ) -> tuple[_Grid, dict[str, _Drawn]]:
     """Lane pitch and label placement.
 
@@ -391,8 +415,14 @@ def _grid(
     Text widths are a character-count estimate against a nominal advance, not
     font metrics — good enough to size a column, and the reason the raster
     backend's label x is approximate.
+
+    `min_lanes` widens the grid past what the layout needs. A caller drawing
+    the same rail before and after an edit — the recipe's, which redraws on
+    every keystroke — otherwise has its whole gutter jump sideways the moment
+    a second lane appears, because lane 0's x is measured from the left.
     """
     lab = _labels_for(lay, labels)
+    lanes = max(lay.width, min_lanes)
     char_w = font_size * 0.58  # Arial-ish advance; only needs to be close
     marker_d = 0.82 * font_size
     lane_pitch = 1.30 * font_size
@@ -423,14 +453,14 @@ def _grid(
         # each lane is its own column of [label][marker], laid out from the
         # highest lane on the left down to lane 0 on the right; the label sits
         # left of its marker and is right-aligned against it
-        col_w = [lane_pitch] * lay.width
+        col_w = [lane_pitch] * lanes
         for n in lay.nodes:
             need = marker_d + label_pad + drawn[n.name].width
             col_w[n.lane] = max(col_w[n.lane], need)
-        lane_x = [0.0] * lay.width
-        label_x = [0.0] * lay.width
+        lane_x = [0.0] * lanes
+        label_x = [0.0] * lanes
         cursor = margin
-        for lane in range(lay.width - 1, -1, -1):
+        for lane in range(lanes - 1, -1, -1):
             lane_x[lane] = cursor + col_w[lane] - marker_d / 2
             label_x[lane] = lane_x[lane] - marker_d / 2 - label_pad
             cursor += col_w[lane]
@@ -438,11 +468,11 @@ def _grid(
         width = cursor + margin
     else:
         lane_x = [
-            margin + marker_d / 2 + (lay.width - 1 - i) * lane_pitch
-            for i in range(lay.width)
+            margin + marker_d / 2 + (lanes - 1 - i) * lane_pitch
+            for i in range(lanes)
         ]
-        column = margin + marker_d + (lay.width - 1) * lane_pitch + label_pad
-        label_x = [column] * lay.width
+        column = margin + marker_d + (lanes - 1) * lane_pitch + label_pad
+        label_x = [column] * lanes
         anchor = "start"
         width = column + max((d.width for d in drawn.values()), default=0.0) + margin
 
@@ -457,7 +487,10 @@ def _grid(
             font_size=font_size,
             margin=margin,
             width=max(width, 2 * margin),
-            height=2 * margin + lay.height * row_pitch,
+            height=(
+                rows_y[-1] + margin if len(rows_y) else 2 * margin + lay.height * row_pitch
+            ),
+            rows_y=tuple(rows_y),
         ),
         drawn,
     )
@@ -516,10 +549,9 @@ def _pixel_path(
     trim leaves a gap under it and overshoots into a square.
     """
     style = style or {}
-    offset = BAND * g.row_pitch
     roles = _jog_roles(lay, edge)
     points = [
-        (g.x(lane), g.y(row) + roles[i] * offset)
+        (g.x(lane), g.y(row) + roles[i] * BAND * g.gap(row))
         for i, (row, lane) in enumerate(edge.points)
     ]
     top = style.get(lay[edge.src].kind, _DEFAULT_STYLE)
@@ -652,19 +684,17 @@ class NodeGeometry:
 class EdgeGeometry:
     """One edge as an SVG path, already routed, jogged and corner-rounded.
 
-    `lane` and `points` are the *grid* form `d` was baked from — the rail's
-    lane, and the routed polyline in (row, lane) coordinates with half-steps at
-    the jogs. A caller whose rows do not sit at this module's nominal pitch (a
-    recipe's rows wrap, and grow a count note) re-bakes those points at its own
-    measured y positions rather than inventing a second curve; `d` is the same
-    path baked here at the nominal pitch.
+    The path is the whole of it. The grid form it was baked from used to be
+    published too, so a caller whose rows sit at its own measured heights could
+    re-bake the curve itself — which meant a second implementation of the bake,
+    in another language, with nothing holding the two in step. Such a caller
+    now sends its measured rows in (`geometry(rows_y=…)`) and gets the path it
+    wanted back.
     """
     src: str
     dst: str
     back: bool
     d: str
-    lane: int = 0
-    points: tuple[tuple[float, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -685,12 +715,6 @@ class Geometry:
     anchor: str  # "start" or "end" — which end of the label `label_x` pins
     nodes: tuple[NodeGeometry, ...]
     edges: tuple[EdgeGeometry, ...]
-    # the two `_Grid` numbers a caller re-baking `EdgeGeometry.points` needs and
-    # cannot infer: where the leftmost lane starts, and each lane's own centre.
-    # Lanes run right to left (see `_grid`), so a caller deriving lane x from
-    # lane index alone draws the whole rail mirrored.
-    margin: float = 0.0
-    lane_x: tuple[float, ...] = ()
 
 
 def geometry(
@@ -701,11 +725,16 @@ def geometry(
     label_mode: LabelMode = LabelMode.COLUMN,
     max_label_chars: int = DEFAULT_LABEL_CHARS,
     font_size: float = 13.0,
+    min_lanes: int = 0,
+    rows_y: Sequence[float] = (),
 ) -> Geometry:
+    """`min_lanes` and `rows_y` are for a caller whose rows are already on a
+    page of its own; see `_grid` and `_Grid.y`."""
     style = style or {}
     g, drawn = _grid(
         lay, font_size=font_size, labels=labels,
         mode=label_mode, max_chars=max_label_chars,
+        min_lanes=min_lanes, rows_y=rows_y,
     )
     nodes = []
     for node in lay.nodes:
@@ -722,8 +751,6 @@ def geometry(
         EdgeGeometry(
             src=e.src, dst=e.dst, back=e.back,
             d="" if e.back else _svg_path(*_pixel_path(lay, e, g, style)),
-            lane=e.lane,
-            points=tuple((float(row), float(lane)) for row, lane in e.points),
         )
         for e in lay.edges
     ]
@@ -731,7 +758,6 @@ def geometry(
         width=g.width, height=g.height, font_size=g.font_size,
         marker_d=g.marker_d, row_pitch=g.row_pitch, lane_pitch=g.lane_pitch,
         anchor=g.anchor, nodes=tuple(nodes), edges=tuple(edges),
-        margin=g.margin, lane_x=g.lane_x,
     )
 
 

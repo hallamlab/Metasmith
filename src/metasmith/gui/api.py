@@ -1079,7 +1079,7 @@ def get_workflow(name):
     # stored against an older shape of it would otherwise never be revisited.
     if wf.ok and (
         not wf.result.get("step_display")
-        or "lane_x" not in (wf.result.get("plan_graph") or {})
+        or (wf.result.get("plan_graph") or {}).get("v") != op_workflow.GEOMETRY_VERSION
     ):
         display, plan_graph = _step_display(wf.path, p.root)
         if display:
@@ -1550,6 +1550,10 @@ def dag_layout():
     nodes = b.get("nodes") or []
     edges = b.get("edges") or []
     assert isinstance(nodes, list) and isinstance(edges, list), "nodes and edges must be lists"
+    order = b.get("order")
+    row_y = b.get("row_y")
+    assert order is None or isinstance(order, list), "order must be a list of node ids"
+    assert row_y is None or isinstance(row_y, dict), "row_y must be a node id -> y map"
     return jsonify(op_workflow.dag_geometry(
         nodes, edges,
         # COLUMN, so every label starts at one x, clear of the rails: the panel
@@ -1559,6 +1563,11 @@ def dag_layout():
         label_mode=b.get("label_mode", "column"),
         font_size=float(b.get("font_size", 13.0)),
         max_label_chars=int(b.get("max_label_chars", 22)),
+        # a caller drawing beside rows it already has on the page: the recipe's
+        # rails, whose rows are form rows and whose heights the browser owns
+        order=[str(x) for x in order] if order else None,
+        row_y={str(k): float(v) for k, v in row_y.items()} if row_y else None,
+        min_lanes=int(b.get("min_lanes", 0)),
     ))
 
 

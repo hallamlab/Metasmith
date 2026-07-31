@@ -15,10 +15,13 @@
 // for the whole page, and because a type node shared between two tools is the
 // difference between a chain and a pile of unconnected pairs.
 
-// Container images and bundled scripts are requirements, but never ones a person
-// registers -- the resource libraries supply them. Same namespaces the DAG
-// renderer blacklists and the inspector hides.
-const PLUMBING = new Set(['containers', 'lib'])
+// Container images, environments and bundled scripts are requirements, but never
+// ones a person registers -- the resource libraries supply them. Same namespaces
+// the DAG renderer blacklists and the inspector hides. `env` is the newer name
+// for what `containers` was, and was missing here while being blacklisted
+// everywhere else, so an environment showed up as an ordinary input of every
+// tool that declared one.
+const PLUMBING = new Set(['containers', 'env', 'lib'])
 
 export const isPlumbing = (type) => PLUMBING.has(String(type).split('::')[0])
 
@@ -52,13 +55,21 @@ function dedupe(list) {
   return list.filter((t) => t && !seen.has(t) && (seen.add(t), true))
 }
 
-/** One tool: the types it requires above it, the types it produces below. */
+/**
+ * One tool: the types it requires above it, the types it produces below.
+ *
+ * Plumbing is drawn here and nowhere else. A library graph is about what its
+ * tools make of each other, and a container node hanging off every one of forty
+ * transforms says nothing about that -- but *this* view is the one place the
+ * question "what does this tool actually need to run" is being asked, and the
+ * answer includes its environment. It used to be collapsed into a "+2 supplied"
+ * aside on the tool's own node, which named a count rather than the thing.
+ */
 export function transformGraph(index, i) {
   const tr = index?.transforms?.[i]
   if (!tr) return { nodes: [], edges: [] }
-  const inputs = dedupe(tr.inputs ?? []).filter((t) => !isPlumbing(t))
-  const outputs = dedupe(tr.outputs ?? []).filter((t) => !isPlumbing(t))
-  const supplied = (tr.inputs ?? []).filter(isPlumbing).length
+  const inputs = dedupe(tr.inputs ?? [])
+  const outputs = dedupe(tr.outputs ?? [])
 
   const nodes = []
   const seen = new Set()
@@ -76,7 +87,7 @@ export function transformGraph(index, i) {
       ...(t === tr.group_by ? { tag: 'per' } : {}),
     })
   }
-  add(transformNode(index, i, { sub: supplied ? `+${supplied} supplied` : null }))
+  add(transformNode(index, i))
   for (const t of outputs) add(typeNode(t))
 
   const lineage = requirementLineage(tr)

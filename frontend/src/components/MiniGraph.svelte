@@ -86,7 +86,6 @@
   let edgeKind = $derived(
     new Map((graph?.edges ?? []).map((e) => [`${e.from} ${e.to}`, e.kind])),
   )
-  let hovered = $state(null)
 
   // -- pan and zoom -------------------------------------------------------
   //
@@ -96,6 +95,13 @@
   // origin. A graph too big to read at a glance used to just clip or force a
   // scrollbar; now it is panned and zoomed by hand instead, which is also what
   // lets a graph too *small* to read comfortably be zoomed in on.
+  //
+  // Behind a toggle, and off by default. The panel this sits in scrolls as one
+  // column, and a frame that swallowed the wheel to zoom would be a hole in the
+  // middle of that column you could not scroll past; a frame that panned on
+  // drag would also be selecting the text under the pointer the whole way.
+  // With it on both are this frame's, and the page's own gestures stop here.
+  let live = $state(false)
   let scale = $state(1)
   let tx = $state(0)
   let ty = $state(0)
@@ -107,13 +113,20 @@
   // Fit to the frame and centre. Below a floor the text stops being readable,
   // so the fit never shrinks past it -- a graph that does not fit at that size
   // is panned to, not squeezed to fit.
+  //
+  // The fit is computed into a local and assigned once. Reading `scale` back
+  // after setting it, which is the obvious way to write the two lines below,
+  // put `scale` in the *dependencies* of the effect that calls this -- so
+  // every wheel tick re-ran the fit and put the drawing straight back where it
+  // was. That is the whole of "zoom does nothing but snap to a position".
   function fit() {
     if (!frame || !laid?.width) return
     const w = frame.clientWidth
     const h = frame.clientHeight
-    scale = Math.min(1, Math.max(0.6, (w - 16) / laid.width))
-    tx = (w - laid.width * scale) / 2
-    ty = Math.max(8, (h - laid.height * scale) / 2)
+    const s = Math.min(1, Math.max(0.6, (w - 16) / laid.width))
+    tx = (w - laid.width * s) / 2
+    ty = Math.max(8, (h - laid.height * s) / 2)
+    scale = s
   }
 
   // Only on a *new* drawing -- refitting on every resize would wipe out a pan
@@ -137,8 +150,19 @@
     ty = frame.clientHeight / 2 - target.cy * s
   })
 
+  // Attached by hand rather than as `onwheel={…}`. Svelte 5 registers a
+  // declarative wheel handler as a *passive* listener, so `preventDefault()` in
+  // it is a no-op and the browser scrolls anyway -- which is why zoom looked
+  // like it did nothing but snap to whatever the focus effect had just centred.
+  $effect(() => {
+    if (!frame) return
+    const el = frame
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  })
+
   function onWheel(e) {
-    if (!laid) return
+    if (!laid || !live) return
     e.preventDefault()
     const rect = frame.getBoundingClientRect()
     const cx = e.clientX - rect.left
@@ -152,10 +176,13 @@
   }
 
   function onPointerDown(e) {
-    if (e.button !== 0 || !laid) return
+    if (e.button !== 0 || !laid || !live) return
     // a node is a real button and wants its own click -- capturing the
     // pointer here would retarget its pointerup onto the frame and swallow it
     if (e.target.closest('button.node')) return
+    // a drag over text is a selection unless something says otherwise, and a
+    // pan that highlighted half the panel on the way past is not a pan
+    e.preventDefault()
     drag = { x: e.clientX - tx, y: e.clientY - ty, id: e.pointerId }
     frame.setPointerCapture(e.pointerId)
   }
@@ -181,44 +208,68 @@
 <div
   class="frame"
   class:panning={!!drag}
+  class:live
   role="application"
-  aria-label="type graph — scroll to zoom, drag to pan"
+  aria-label={live ? 'type graph — scroll to zoom, drag to pan' : 'type graph'}
   bind:this={frame}
-  onwheel={onWheel}
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={endDrag}
   onpointercancel={endDrag}
-  ondblclick={fit}
+  ondblclick={() => live && fit()}
 >
   {#if !laid}
     <p class="small muted hint">{failed ? 'could not lay this graph out' : empty}</p>
   {:else}
+    <button
+      class="grip small"
+      class:on={live}
+      aria-pressed={live}
+      title={live
+        ? 'pan and zoom are on — scroll zooms, drag pans, double-click fits'
+        : 'take hold of this drawing: scroll to zoom, drag to pan'}
+      onclick={() => {
+        live = !live
+        // both ways: turning it on starts from the whole drawing, and turning
+        // it off puts back the view you get without touching anything -- there
+        // is otherwise no way to undo a pan except to take hold of it again
+        fit()
+      }}
+    >{live ? 'panning' : 'pan + zoom'}</button>
     <div class="inner" style={`transform: translate(${tx}px, ${ty}px) scale(${scale})`}>
-      <DagRail
-        geo={laid}
-        {focus}
-        {hovered}
-        meta={nodeMeta}
-        edgeMeta={edgeKind}
-        onpick={pick}
-        onhover={(id) => (hovered = id)}
-      />
+      <DagRail geo={laid} {focus} meta={nodeMeta} edgeMeta={edgeKind} onpick={pick} />
     </div>
   {/if}
 </div>
 
 <style>
   .frame {
-    flex: 1;
-    min-height: 0;
+    flex: 1 0 auto;
+    /* a fixed height inside a scrolling column: the panel is one scroller now,
+       so this frame cannot be "whatever is left" -- and `fit()` reads
+       `clientHeight`, so it has to be a number before the first fit */
+    height: 340px;
     position: relative;
     overflow: hidden;
     padding: 2px;
-    touch-action: none;
-    cursor: grab;
+    margin: 8px 0;
   }
-  .frame.panning { cursor: grabbing; }
+  /* only while it is holding the gestures: off, the wheel belongs to the panel
+     and a drag belongs to the selection */
+  .frame.live { touch-action: none; cursor: grab; user-select: none; }
+  .frame.live.panning { cursor: grabbing; }
+  .grip {
+    position: absolute;
+    z-index: 5;
+    top: 4px;
+    right: 4px;
+    background: var(--panel);
+    color: var(--muted);
+    padding: 1px 6px;
+    opacity: 0.75;
+  }
+  .grip:hover { opacity: 1; }
+  .grip.on { color: var(--primary-text); background: var(--primary-bg); border-color: var(--primary-line); opacity: 1; }
   .hint { margin: 4px 2px; }
   /* the drawing's own top-left corner, placed in the frame's own pixels --
      see the pan/zoom comment above `scale` in the script */

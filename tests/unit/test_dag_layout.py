@@ -293,3 +293,59 @@ def test_wide_fan_out_stays_consistent(size):
     lay = _lay(edges)
     assert lay.height == size + 1
     assert lay.width <= size + 1
+
+
+# --- markers near their labels ----------------------------------------------
+
+
+def test_a_chain_that_skips_rows_does_not_hold_the_label_lane():
+    """The shape a real plan turned up with: one step emits four products, one
+    of which continues the chain several rows further down. That continuation
+    shares a lane with its parent but not the rows between them, and holding
+    those closed pushed the three dead-end products out to lanes 1, 2 and 3 --
+    three markers as far from their own names as the drawing is wide, for rows
+    that hold nothing.
+    """
+    edges = [("step", f"out_{i}") for i in range(4)] + [("out_3", "next")]
+    lay = _lay(edges)
+    dead = [_lane(lay, f"out_{i}") for i in range(3)]
+    # at most one of the three can be pushed aside -- something has to carry
+    # the rail down to `next`
+    assert sum(1 for j in dead if j == 0) >= 2, dead
+
+
+def test_a_caller_may_fix_the_rows():
+    """A form whose fields are the nodes lays them out itself; the engine
+    choosing its own order would draw rails across the markers."""
+    mine = ["c", "b", "a", "d"]
+    lay = layout({n: None for n in mine}, [("a", "d"), ("b", "d")], order=mine)
+    assert _rows(lay) == mine
+
+
+def test_an_order_that_would_reverse_an_edge_is_declined():
+    """Ignored rather than raised on -- the caller is a wire payload and may be
+    one edit stale -- but never honoured: every backend is written against
+    every edge pointing downward."""
+    edges = [("a", "b")]
+    assert _rows(layout({}, edges, order=["b", "a"])) == ["a", "b"]
+    assert _rows(layout({}, edges, order=["a"])) == ["a", "b"]
+    assert _rows(layout({}, edges, order=["a", "b", "c"])) == ["a", "b"]
+
+
+def test_given_rows_put_their_markers_beside_their_labels():
+    """A rail down the side of a form. Every row already has its name written
+    next to it, so a marker two lanes out from that name reads as a bug -- and
+    the lane beside it is free, held open by nothing.
+
+    The recipe this came from: one row four others descend from, two of them
+    reached across the rows in between.
+    """
+    order = ["a", "b", "c", "d", "e"]
+    edges = [("a", "b"), ("a", "c"), ("b", "c"), ("a", "d"), ("a", "e"), ("d", "e")]
+    lay = layout({n: None for n in order}, edges, order)
+    assert [n.lane for n in lay.nodes] == [0] * 5
+    # ... and the rails still do not run through any of them
+    occupied = {(n.row, n.lane) for n in lay.nodes}
+    for e in lay.edges:
+        for row in range(lay[e.src].row + 1, lay[e.dst].row):
+            assert (row, e.lane) not in occupied

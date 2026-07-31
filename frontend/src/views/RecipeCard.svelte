@@ -291,25 +291,27 @@
     return row.parents.map((k) => ({ key: k, sub: byKey.get(k)?.type ?? null }))
   }
 
-  // Which row a parent line is pointing at. The label is a path on an input and
-  // a type name on an output, and neither is unique enough to find the row by
-  // eye in a long list -- so hovering the line marks the row itself.
-  let hover = $state(null)
+  // Which *link* a parent line is. The label is a path on an input and a type
+  // name on an output, and neither is unique enough to find the row by eye in a
+  // long list -- so hovering the line marks the two rows it joins.
+  //
+  // The link and not just the parent: marking the parent alone left the reader
+  // to remember which row they were pointing from, and marking everything
+  // downstream of the parent (which is what a node-keyed highlight does to a
+  // rail) answered a question nobody asked.
+  let hover = $state(null) // {child, parent} | null
+
+  // ... as the two sets `DagRail` marks: the rows, and the one edge between
+  // them. Both halves are needed or the rail lights a node with no line to it.
+  const litOf = (link) =>
+    link
+      ? { nodes: new Set([link.child, link.parent]), edges: new Set([`${link.parent} ${link.child}`]) }
+      : null
+  let lit = $derived(litOf(hover))
+  const isHl = (key) => hover?.child === key || hover?.parent === key
 
   const setType = (row, v) =>
     row.kind === 'target' ? ontarget?.(row.id, { type: v }) : onrow?.(row.id, { dtype: v })
-
-  // An output nothing makes will not solve.
-  const describeType = (row) =>
-    counts
-      ? (t) => {
-          const c = counts(t)
-          return {
-            note: `${c.produced} produce · ${c.consumed} consume`,
-            warn: row.kind === 'target' ? c.produced === 0 : c.produced === 0 && c.consumed === 0,
-          }
-        }
-      : null
 
 </script>
 
@@ -335,7 +337,6 @@
       value={row.type ?? ''}
       options={typeOptions}
       placeholder="namespace::type"
-      describe={describeType(row)}
       onchange={(v) => setType(row, v)}
       oncommit={() => oncommit?.()}
     />
@@ -353,6 +354,7 @@
     <div class="typecell">{@render typeCell(row)}</div>
     <div class="parentcell">
       <ParentPicker
+        self={row.key}
         chosen={chosenFor(row, isTarget ? targetByKey : inputByKey)}
         options={isTarget ? targetOptions(row) : inputOptions(row)}
         note={isTarget
@@ -362,7 +364,7 @@
           : null}
         onadd={(k) => onparents?.(row, [...row.parents, k])}
         onremove={(k) => onparents?.(row, row.parents.filter((x) => x !== k))}
-        onhover={(k) => (hover = k)}
+        onhover={(link) => (hover = link)}
       />
     </div>
     <span class="trail">
@@ -488,12 +490,12 @@
       </p>
     {:else}
       <div class="band">
-        <LineageRail rows={railInputRows} height={inputBandHeight} hovered={hover} />
+        <LineageRail rows={railInputRows} height={inputBandHeight} {lit} />
         <div class="rowsCol" bind:this={inputBox}>
           {#each orderedInputRows as row (row.key)}
             {@const info = row.type && counts ? counts(row.type) : null}
             {@const array = isArrayRow(row.row)}
-            <div class="entry" data-row-key={row.key} class:hl={hover === row.key} animate:flip={{ duration: 150 }}>
+            <div class="entry" data-row-key={row.key} class:hl={isHl(row.key)} animate:flip={{ duration: 150 }}>
               <!-- Two lines, not one: the path is the longest thing on an input row and
                    was being squeezed into a sliver beside a combobox and a menu. What
                    the row points at goes on the first line; what it *is* and what it
@@ -589,7 +591,7 @@
           rows={railOutputRows}
           height={outputBandHeight}
           kind="target"
-          hovered={hover}
+          {lit}
         />
         <div class="rowsCol" bind:this={outputBox}>
           {#each targetRows as row (row.key)}
@@ -601,7 +603,7 @@
                 row.type &&
                 JSON.stringify([...o.parents].sort()) === JSON.stringify([...row.parents].sort()),
             )}
-            <div class="entry" data-row-key={row.key} class:hl={hover === row.key}>
+            <div class="entry" data-row-key={row.key} class:hl={isHl(row.key)}>
               {@render detail(row)}
 
               {#if row.type || dup}
@@ -682,6 +684,18 @@
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
+  }
+  /* file and value are the same row seen two ways, so the row may not change
+     height between them. A path is drawn in the mono face at 12.5px and a value
+     in the proportional one at the page size, and a field left to size itself
+     off its own font is a pixel or two taller in one mode than the other --
+     which twitches the row, which redraws the lineage rail measured against it.
+     Pinned here rather than globally: nothing else on the page swaps a field's
+     face under the cursor. */
+  .row-item input,
+  .row-item select {
+    height: 28px;
+    line-height: 1.35;
   }
   /* the second line of an input row, and the whole of an output row: same
      columns, no gap above it, so an input's two lines read as one row */

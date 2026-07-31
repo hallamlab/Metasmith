@@ -1148,22 +1148,28 @@
         {/if}
       {/snippet}
 
-      {#snippet top()}
-        <LibraryList
-          libraries={index?.libraries ?? []}
-          {enabled}
-          viewing={drawing?.kind === 'library' ? drawing.path : null}
-          ontoggle={toggleLibrary}
-          onview={pickLibrary}
-        />
-        <MiniGraph
-          {graph}
-          focus={graphFocus}
-          empty="Pick a type, a transform, or a library’s eye — this draws what it connects to."
-          onpicktype={pickType}
-          onpicktransform={pickTransform}
-        />
-      {/snippet}
+      <!-- One column, one scrollbar. These three used to be two sections with a
+           grip between them: the libraries and the drawing pinned at a
+           remembered height, the inspector scrolling in whatever was left. That
+           made reading the bottom of the inspector a matter of first resizing
+           the top, and the drawing was squeezed by whatever the last drag had
+           left it. Now the panel scrolls as a whole and the drawing is a fixed
+           frame within it. `SidePanel` still has the split -- the run page's
+           tree and preview want it. -->
+      <LibraryList
+        libraries={index?.libraries ?? []}
+        {enabled}
+        viewing={drawing?.kind === 'library' ? drawing.path : null}
+        ontoggle={toggleLibrary}
+        onview={pickLibrary}
+      />
+      <MiniGraph
+        {graph}
+        focus={graphFocus}
+        empty="Pick a type, a transform, or a library’s eye — this draws what it connects to."
+        onpicktype={pickType}
+        onpicktransform={pickTransform}
+      />
 
       <TypeInspector
         type={focus}

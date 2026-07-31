@@ -515,9 +515,20 @@ for consumers running their own.
   unrelated merge steps hash alike and get hoisted 14 rows from their readers. An instance's
   block is its descendants minus everything its siblings also reach — *not* its dominator
   subtree, which loses any node with a second parent and leaves a stub the hoist acts on wrongly.
+- **Lane 0 is the one beside the labels, and how far a marker sits from it is part of the
+  objective.** Lanes run right to left, so a node pushed out to lane 3 is three lanes from its
+  own name. `measure` totals that as `marker_lanes` and it sits between width and crossings in
+  the selection keys; without it a dead-end output stranded beside an empty lane 0 cost nothing
+  to leave there. It is a *tie-break between packings of equal width*, not a mandate: pulling
+  every marker to lane 0 and letting the rails weave is 30% more crossings on the metagenomics
+  plan. A caller that supplies its own rows (`layout(order=…)`) does get the mandate, because
+  its drawing is an annotation beside rows that already carry their own labels. Ranking it
+  ahead of crossings costs ~11% more crossings across `compare_layouts.py --corpus 300` and
+  nothing at all on the metagenomics plan — random DAGs have far more simultaneously-live
+  rails than a real pipeline, and it is the real ones the ranking was chosen against.
 - **Where a pass has two defensible answers, both are drawn and measured.** `measure` returns
-  congruence, rail rows, lanes, crossings and module contiguity; `layout` picks on
-  `(congruence, rail, lanes, crossings)` — symmetry ahead of length, which costs ~1% on graphs
+  congruence, rail rows, lanes, marker distance, crossings and module contiguity; `layout` picks
+  on `(congruence, rail, lanes, markers, crossings)` — symmetry ahead of length, which costs ~1% on graphs
   that have none. Congruence is *modal*, the largest set of instances arranged alike: mean
   agreement is too coarse to separate row orders, and offsets are measured against the previous
   instance because instances fanning out of one node cannot share absolute lanes. Prefer adding
@@ -938,14 +949,18 @@ constant on the page, and a column header nudged into place with `position: rela
 still sizes the box. Each row states the `dag_cy` it was placed at, so this is assertable
 from the page rather than by eye.
 
-**A lineage rail trusts the layout engine for `lane`, never for `y`.** `LineageRail.svelte`
-(the recipe's git-log-style lineage columns beside the input rows and, separately, the output
-rows) is `MiniGraph.svelte`'s trick again — `POST /api/dag/layout` for placement — but recipe
-rows are not the plan DAG's uniform-pitch steps: a value row wraps, an array row grows a count
-note. So only `node.lane` crosses into the drawing; `y` is measured off each row's own
-`offsetTop` in `RecipeCard.svelte` and applied after the fact. The response's edges carry no
-`lane` of their own — only nodes do — so an edge's x endpoints are always its two nodes' lanes,
-never a field on the edge.
+**A surface with rows of its own sends them up, rather than applying them to what comes
+back.** `LineageRail.svelte` (the recipe's git-log-style lineage columns beside the input
+rows and, separately, the output rows) is `MiniGraph.svelte`'s trick again — `POST
+/api/dag/layout` for placement — but recipe rows are not the plan DAG's uniform-pitch steps:
+a value row wraps, an array row grows a count note, and their order is the form's. So the
+request carries `order` (the rows, as the page lists them) and `row_y` (each row's measured
+`offsetTop`, from `RecipeCard.svelte`), and the response is the finished drawing. Both halves
+matter: the engine reorders rows freely when it is allowed to, so a rail laid out in one order
+and drawn in another runs through its own markers; and re-baking the curves in the browser
+means a second implementation of `dag_draw`'s pixel pass with nothing holding the two in step
+— which is what `frontend/src/lib/dagpaths.js` was. An edge crosses the wire as a `d` string
+and nothing else.
 
 ---
 

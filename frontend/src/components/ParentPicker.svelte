@@ -1,6 +1,7 @@
 <script>
-  // What a row of the recipe descends from: the parents stated one per line,
-  // each removable on its own, under a dropdown that adds one more.
+  // What a row of the recipe descends from: the parents stated as chips at the
+  // right of the row's detail line, each removable on its own, with a dropdown
+  // beside them that adds one more.
   //
   // It was a menu of checkboxes before -- every row it *could* descend from,
   // ticked or not. That put what a row does descend from behind a click, in a
@@ -9,10 +10,20 @@
   // while you are adding one. So the parents are the control and the menu is
   // the add button.
   //
+  // One line, never two. This was a column, so a row grew and shrank by a whole
+  // line as parents came and went -- and the trigger disappearing when there was
+  // nothing left to add did the same again. Everything here is laid out
+  // horizontally and the trigger's slot is always occupied, so nothing this
+  // control does changes the height of the row it sits on. That matters more
+  // than it sounds: the lineage rail beside these rows is drawn at their
+  // measured heights, so a row twitching redraws the rail.
+  //
   // What descends from this row is not here at all. It is stated on those rows,
   // which is where changing it belongs -- offering it twice gives one link two
   // places to be edited from and no way to tell which one you are looking at.
   let {
+    // this row's own key, so a hover can name the *link* rather than one end
+    self = null,
     chosen = [], // {key, sub?} -- in the order they were added. No label: which
     // row a chip names is the hover highlight's job, not this text's.
     options = [], // {key, label, sub?} -- legal to add: no self, no cycle, not already here
@@ -21,7 +32,8 @@
     note = null,
     onadd,
     onremove,
-    // (key|null) -- the row this line refers to, so the recipe can mark it
+    // ({child, parent}|null) -- the link this line is, so the recipe can mark
+    // both of its ends and the one edge between them
     onhover,
   } = $props()
 
@@ -43,35 +55,55 @@
   // between two lines that touch, so the enter on the next one has to be what
   // settles it -- and a handler on the wrapper would be a mouse role on a plain
   // div, which it does not have. A list of parents is a list.
+  const mark = (key) => onhover?.({ child: self, parent: key })
   const leave = () => onhover?.(null)
+
+  // A chip names what its parent *is*, and the namespace is shared by every
+  // type in a library -- so it is the half of the name that never tells two
+  // parents apart. A parent whose type has not been filled in yet says so:
+  // an em dash reads as "no parent", which is the opposite of the truth.
+  const chip = (sub) => {
+    const t = String(sub ?? '').trim()
+    if (!t) return '<empty>'
+    const cut = t.lastIndexOf('::')
+    return cut > 0 ? t.slice(cut + 2) : t
+  }
 </script>
 
 <div class="parents" bind:this={root}>
-  {#if chosen.length}
-    <ul class="stack">
-      {#each chosen as p (p.key)}
-        <!-- a stated parent, hoverable so the row it names can be found: which
-             row it is is what the hover highlight is for, so the chip states
-             only its type -->
-        <li class="parent" onmouseenter={() => onhover?.(p.key)} onmouseleave={leave}>
-          <span class="muted truncate grow small">{p.sub ?? '—'}</span>
-          {#if !disabled}
-            <!-- one click, not two: a lineage link is re-added from the menu
-                 right below it, so there is nothing here to protect against -->
-            <button class="x" title="no longer descends from this" onclick={() => onremove?.(p.key)}
-              >×</button>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {/if}
+  <!-- still a list, so a chip may carry a pointer role -- `display: contents`
+       puts the items themselves in the line above rather than a box of their own -->
+  <ul class="stack">
+    {#each chosen as p (p.key)}
+      <!-- a stated parent, hoverable so the row it names can be found: which
+           row it is is what the hover highlight is for, so the chip states
+           only its type -->
+      <li class="parent" onmouseenter={() => mark(p.key)} onmouseleave={leave}>
+        <span class="muted truncate small">{chip(p.sub)}</span>
+        {#if !disabled}
+          <!-- one click, not two: a lineage link is re-added from the menu
+               right below it, so there is nothing here to protect against -->
+          <button class="x" title="no longer descends from this" onclick={() => onremove?.(p.key)}
+            >×</button>
+        {/if}
+      </li>
+    {/each}
+  </ul>
 
-  {#if !disabled && options.length > 0}
+  {#if !disabled}
     <div class="add">
+      <!-- always here, even with nothing left to offer. A control that comes
+           and goes is a row that changes height, and this one sits beside a
+           rail drawn at the row's measured height. Disabled, it is also the
+           only place the "why is there nothing to descend from" sentence can
+           be said at all. -->
       <button
         class="trigger small"
         aria-expanded={open}
-        title="add something this descends from"
+        disabled={options.length === 0}
+        title={options.length
+          ? 'add something this descends from'
+          : (note ?? 'nothing to descend from')}
         onclick={() => (open = !open)}
         onkeydown={(e) => {
           if (e.key === 'Escape' && open) {
@@ -92,7 +124,7 @@
           {#each options as o (o.key)}
             <button
               class="opt small"
-              onmouseenter={() => onhover?.(o.key)}
+              onmouseenter={() => mark(o.key)}
               onmouseleave={leave}
               onclick={() => {
                 open = false
@@ -108,34 +140,29 @@
         </div>
       {/if}
     </div>
-  {:else if !chosen.length}
-    <!-- the column is still the column: an empty one that collapsed would move
-         the delete on the row above it.
-         This is also the only place the note can be said. It used to be drawn
-         only at the foot of the open menu -- which is exactly the thing an empty
-         candidate list has no trigger for -- so the sentence explaining why a row
-         has nothing to descend from was unreachable in every case it explains,
-         and the row said the bare "nothing to descend from" instead. -->
-    <span class="none small muted">{note ?? 'nothing to descend from'}</span>
   {/if}
 </div>
 
 <style>
-  .parents,
-  .stack {
+  /* one line, right-aligned: the chips read as a trailing annotation on the
+     row rather than as a second column of their own, and the row's height is
+     the same whatever is in here */
+  .parents {
     position: relative;
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 4px;
     min-width: 0;
+    overflow: hidden;
   }
-  .stack { list-style: none; margin: 0; padding: 0; width: 100%; }
+  .stack { display: contents; list-style: none; margin: 0; padding: 0; }
   .parent {
     display: flex;
     align-items: center;
-    gap: 6px;
-    max-width: 100%;
+    gap: 4px;
+    min-width: 0;
     padding: 1px 2px 1px 5px;
     border: 1px solid transparent;
     border-radius: var(--radius);
@@ -163,25 +190,25 @@
     display: flex;
     align-items: center;
     gap: 5px;
+    white-space: nowrap;
     background: none;
     border: 1px dashed var(--line);
     color: var(--muted);
     padding: 1px 5px;
     text-align: left;
   }
-  .trigger:hover { border-style: solid; background: var(--panel-2); }
+  .trigger:hover:not(:disabled) { border-style: solid; background: var(--panel-2); }
+  .trigger:disabled { opacity: 0.45; cursor: default; }
   .trigger svg.up { transform: rotate(180deg); }
-  .none { padding: 2px 5px; }
 
-  .add { position: relative; }
-  /* left-aligned under its trigger, unlike the type list: this control sits at
-     the right of the row already, and hanging the menu off the right edge would
-     put it under the panel */
+  .add { position: relative; flex: 0 0 auto; }
+  /* hung off the right edge, because that is the edge this control now sits
+     against; left-aligned it would run off the side of the card */
   .menu {
     position: absolute;
     z-index: 30;
     top: 100%;
-    left: 0;
+    right: 0;
     min-width: 240px;
     max-width: 380px;
     max-height: 300px;

@@ -1,5 +1,4 @@
 <script>
-  import { bakeEdges, gutter, makeGrid } from '../lib/dagpaths.js'
   import { dagInk } from '../lib/dagink.svelte.js'
   import { ui } from '../lib/state.svelte.js'
 
@@ -11,10 +10,14 @@
   // in the rails' case lanes running the wrong way -- so the same graph looked
   // like three different products depending on where you met it.
   //
-  // Placement arrives already decided (`geo`, from `POST /api/dag/layout` or
-  // stored beside a solved plan). Ink arrives from the server too (`lib/dagink`).
-  // What this component adds is the part an SVG file cannot have: a node is a
-  // button, so it gets focus, hover and a click that moves the panel.
+  // Placement arrives already decided, and so do the curves: `geo` is what
+  // `POST /api/dag/layout` (or a stored plan) baked, down to each edge's `d`.
+  // A frame whose rows are its own -- the recipe's, one per form row -- sends
+  // those rows' measured heights with the request rather than re-baking the
+  // paths here, which is the second implementation this component used to
+  // carry. Ink arrives from the server too (`lib/dagink`). What this adds is
+  // the part an SVG file cannot have: a node is a button, so it gets focus,
+  // hover and a click that moves the panel.
   //
   // It owns no viewport. No overflow, no transform, no fit -- the three frames
   // want three different things (the plan scrolls with the page, the panel pans
@@ -22,20 +25,16 @@
   // for two of them. Its output is a plain block of a known width and height.
   let {
     geo,
-    // measured y per row index, for a surface whose rows are not a uniform
-    // height. Null means the engine's own nominal pitch.
-    rowY = null,
-    // reserve a wider gutter than the current lane count needs, so that adding
-    // or removing the first branch does not shift every row sideways
-    minLanes = 1,
     // a rail beside rows that already name themselves draws markers only
     showLabels = true,
     width = null,
     height = null,
     focus = null,
-    // hover driven from outside (a recipe row pointed at from its own list);
-    // the component also sets its own on the nodes it draws
-    hovered = null,
+    // what a *pointer somewhere else* is marking: `{nodes, edges}`, both sets,
+    // edges keyed `${from} ${to}`. A pair rather than a single id because the
+    // thing being pointed at is usually a link -- a parent chip means "this row
+    // and that one, joined by this line" and nothing else on the drawing.
+    lit = null,
     // per-node extras the geometry knows nothing about: {kind, tag, sub,
     // disabled}. `kind` is a page word ('type', 'transform', 'more') used for
     // colour; the marker shape comes from the geometry's own kind.
@@ -52,11 +51,10 @@
   } = $props()
 
   let ink = $derived(dagInk(ui.theme))
-  let pad = $derived(gutter(geo, minLanes))
-  let grid = $derived(makeGrid(geo, { rowY, xOffset: pad.shift }))
-  let edges = $derived(bakeEdges(geo, grid))
 
-  let boxW = $derived(width ?? (showLabels ? geo.width + pad.shift : pad.width))
+  // where the label column starts, for a frame drawing markers only
+  let gutter = $derived(geo.nodes?.[0]?.label_x ?? geo.width)
+  let boxW = $derived(width ?? (showLabels ? geo.width : gutter))
   let boxH = $derived(height ?? geo.height)
 
   const styleOf = (kind) => ink.styles[kind] ?? ink.styles.data
@@ -74,37 +72,45 @@
     }
   }
 
-  const at = (n) => (rowY ? (rowY[n.row] ?? n.cy) : n.cy)
+  // the pointer inside this drawing, which is a different question from `lit`
+  let self = $state(null)
 
-  const isOn = (id) => id === focus || id === hovered
+  const isOn = (id) => id === focus || id === self || !!lit?.nodes?.has(id)
+  const edgeOn = (e) => !!lit?.edges?.has(`${e.from} ${e.to}`)
 
   function enter(id) {
+    self = id
     onhover?.(id)
   }
   function leave(id) {
-    if (hovered === id) onhover?.(null)
+    if (self !== id) return
+    self = null
+    onhover?.(null)
   }
 </script>
 
-<div class="rail" bind:this={inner} style="width: {boxW}px; height: {boxH}px;">
+<div class="rail" style="width: {boxW}px; height: {boxH}px;">
   <svg width={boxW} height={boxH} aria-hidden="true">
     <g fill="none" stroke={ink.plate.edge} stroke-linejoin="round" stroke-linecap="round">
-      {#each edges as e, i (i)}
-        {@const kind = edgeMeta?.get(`${e.from} ${e.to}`)}
-        <path
-          class="edge"
-          class:soft={kind === 'satisfies'}
-          class:lineage={kind === 'lineage'}
-          class:lit={isOn(e.from) || isOn(e.to)}
-          d={e.d}
-          stroke={e.hue || null}
-        />
+      {#each geo.edges as e, i (i)}
+        {#if !e.back}
+          {@const kind = edgeMeta?.get(`${e.from} ${e.to}`)}
+          <path
+            class="edge"
+            class:soft={kind === 'satisfies'}
+            class:lineage={kind === 'lineage'}
+            class:lit={edgeOn(e)}
+            class:near={!edgeOn(e) && (isOn(e.from) || isOn(e.to))}
+            d={e.d}
+            stroke={e.hue || null}
+          />
+        {/if}
       {/each}
     </g>
     {#each geo.nodes as n (n.id)}
       {@const m = marker(n)}
-      {@const cx = n.cx + pad.shift}
-      {@const cy = at(n)}
+      {@const cx = n.cx}
+      {@const cy = n.cy}
       {@const w = n.marker_w}
       {@const h = n.marker_h}
       <g class="mk" class:lit={isOn(n.id)}>
@@ -144,18 +150,17 @@
   {#if showLabels}
     {#each geo.nodes as n (n.id)}
       {@const x = meta?.get(n.id)}
-      {@const left = n.cx + pad.shift - n.marker_w / 2}
-      {@const cy = at(n)}
+      {@const left = n.cx - n.marker_w / 2}
       <button
         class="node {x?.kind ?? 'data'}"
         class:on={n.id === focus}
-        class:lit={n.id === hovered}
+        class:lit={isOn(n.id)}
         style="
           left: {left}px;
-          top: {cy - geo.row_pitch / 2}px;
+          top: {n.cy - geo.row_pitch / 2}px;
           width: {Math.max(0, boxW - left)}px;
           height: {geo.row_pitch}px;
-          --gap: {n.label_x + pad.shift - left}px;
+          --gap: {n.label_x - left}px;
           --fs: {geo.font_size}px;
           --ink: {styleOf(n.kind).text};
           --dim: {styleOf(n.kind).muted};
@@ -208,13 +213,21 @@
   /* one input having to descend from another: not data moving, so it is drawn in
      the accent rather than the grey every flow edge shares */
   .edge.lineage { stroke: var(--accent); stroke-opacity: 0.7; }
-  .edge.lit { stroke-opacity: 1; stroke-width: 1.8; }
+  /* the link being pointed at, as opposed to merely touching a lit node. It has
+     to be findable at a glance in a column of near-identical grey curves, so it
+     takes the accent and twice the weight rather than a shade more opacity. */
+  .edge.lit {
+    stroke: var(--accent);
+    stroke-opacity: 1;
+    stroke-width: 3;
+  }
+  .edge.near { stroke-opacity: 0.9; stroke-width: 1.8; }
 
   /* what a hover marks: the node itself, not a box drawn around its whole row.
      The rectangle this replaces was the one part of the panel that had no
      counterpart in the rendered drawing. */
   .mk { transition: opacity 80ms linear; }
-  .mk.lit { filter: drop-shadow(0 0 3px var(--accent)); }
+  .mk.lit { filter: drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 2px var(--accent)); }
 
   /* A node row runs from its marker to the right edge, so the whole line is
      clickable. Transparent by default because the rails of the lanes to its
@@ -228,16 +241,21 @@
     text-align: left;
     background: none;
     border: 0;
-    border-radius: var(--radius);
     overflow: hidden;
   }
   .node:disabled { cursor: default; }
+  /* the highlight is on the text, not on the button. The button starts at its
+     own marker's left edge, so a background there covers the marker it is
+     meant to be marking -- and every rail passing under that row with it. */
   .text {
     display: flex;
     flex-direction: column;
     justify-content: center;
     min-width: 0;
     margin-left: var(--gap);
+    padding: 0 4px;
+    align-self: stretch;
+    border-radius: var(--radius);
     /* the page's line-height is set for prose; at this size it is what pushes
        the second line past the bottom of the row */
     line-height: 1.15;
@@ -251,9 +269,9 @@
   .node.type .label { color: var(--accent); }
   .sub { font-size: calc(var(--fs) * 0.72); }
   .node.more { opacity: 0.7; }
-  .node.on,
-  .node.lit,
-  .node:hover:not(:disabled) {
+  .node.on .text,
+  .node.lit .text,
+  .node:hover:not(:disabled) .text {
     background: var(--panel-2);
   }
   .node.on .label { text-decoration: underline; text-underline-offset: 2px; }

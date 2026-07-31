@@ -117,14 +117,23 @@ def test_the_drawing_does_not_get_more_expensive(dag):
     with that but before it learned to draw a repeated block the same way each
     time, then now:
 
-        rail=545 lanes=14 longest=56 crossings=127 repeats=-
-        rail=527 lanes=13 longest=35 crossings=123 repeats=1/6
-        rail=536 lanes=13 longest=35 crossings=123 repeats=4/6
+        rail=545 lanes=14 longest=56 crossings=127 repeats=-    markers=-
+        rail=527 lanes=13 longest=35 crossings=123 repeats=1/6  markers=-
+        rail=536 lanes=13 longest=35 crossings=123 repeats=4/6  markers=168
 
     Rail is the one that got worse, by nine rows out of five hundred, and it
     bought the three binner blocks: contiguous, identically ordered, and the
     shared database drawn once above all three instead of inside the first.
     Lanes, crossings and the longest rail are unchanged.
+
+    `markers` -- the total distance from each marker to the label column --
+    joined the objective when a plan turned up with three dead-end outputs
+    stranded one, two and three lanes out. It is pinned at what this plan
+    already scores rather than at an improvement: the packing that repairs
+    those three does nothing here, and the aggressive reading of it (every
+    marker in lane 0, rails weaving around them) takes 168 to 131 and crossings
+    to 158 -- a third more crossings on the graph that has any, to fix a graph
+    that does not.
     """
     m = measure(dag.layout())
     assert m.rail_rows <= 536
@@ -135,6 +144,7 @@ def test_the_drawing_does_not_get_more_expensive(dag):
     assert m.longest_rail <= 35
     # ... and the one this is now optimised for first
     assert m.congruent >= 4
+    assert m.marker_lanes <= 168
 
 
 def test_a_shared_reference_database_is_drawn_beside_its_consumer(dag):
