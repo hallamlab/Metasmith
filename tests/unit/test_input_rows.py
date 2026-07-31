@@ -405,8 +405,9 @@ def test_the_sheets_items_are_stable_across_a_re_expansion(lib_path, tmp_path):
         f"sample,asm\ns1,{tmp_path}/s1.fa\ns2,{tmp_path}/s2.fa\n".encode(), filename="s.csv",
     )
     rows = [
-        row("i", mode="value", name="{sample}.id", value="{sample}", dtype="mock::reads"),
-        row("a", "{asm}", parents=["#i"]),
+        row("i", mode="value", values=[{"key": "", "value": "", "column": "sample"}],
+            dtype="mock::reads"),
+        row("a", column="asm", parents=["#i"]),
     ]
     op_inputs.sync(str(lib_path), rows, table)
     before = ids(lib_path)
@@ -508,7 +509,6 @@ def test_an_adopted_json_object_arrives_as_keyed_fields(lib_path):
         {"key": "parity", "value": "paired"},
         {"key": "length_class", "value": "short"},
     ]
-    assert not op_samples.is_array_row(adopted)
 
     # and the round trip moved nothing: a leaf's identity is content addressed
     op_samples.write_record(str(lib_path), out["record"])
@@ -523,7 +523,7 @@ def test_an_adopted_json_object_arrives_as_keyed_fields(lib_path):
     '{"n": "10"}',                  # a string that would come back a number
     '{"nested": {"a": 1}}',         # structure the keyed form cannot express
     '["a", "b"]',                   # an object is the only thing with keys
-    "{sample}",                     # an actual column token, left to fan out
+    "{sample}",                     # braces that are not JSON at all
 ])
 def test_a_value_that_would_not_round_trip_keeps_its_single_entry(lib_path, value):
     """A file this did not write is one it must not rewrite."""
@@ -623,15 +623,20 @@ def _sheet():
     )
 
 
-def test_fields_may_read_different_columns(lib_path):
+def bound(*pairs):
+    """Value entries under a sheet: a literal key, and the column it binds."""
+    return [{"key": k, "value": "", "column": c} for k, c in pairs]
+
+
+def test_fields_may_bind_different_columns(lib_path):
     """One row, two boxes, two columns -- and the grouping follows both.
 
-    The mint is keyed on the cells the row reads, so widening it to a second
-    column is exactly how you say two sheet rows are no longer the same thing.
+    The mint is keyed on the cells the row reads, so binding a second field is
+    exactly how you say two sheet rows are no longer the same thing.
     """
     rows = [row(
         "v", mode="value", dtype="mock::reads",
-        values=kv(("of", "{pangenome}"), ("id", "{sample}")),
+        values=bound(("of", "pangenome"), ("id", "sample")),
     )]
     out = op_inputs.sync(str(lib_path), rows, _sheet())
     made = out["generated"]["v"]
@@ -644,13 +649,21 @@ def test_fields_may_read_different_columns(lib_path):
     assert ids(lib_path) == before
 
 
-def test_a_constant_field_beside_a_column_one_is_repeated(lib_path):
-    """...and the row still groups by the one column it actually reads."""
+def test_a_constant_under_a_sheet_is_a_column_repeated_down_it(lib_path):
+    """There is no constant field while a sheet is attached -- every field binds
+    a column. Saying "the same for every sample" is saying it in the sheet, and
+    it costs a column there and nothing in the library: identical cells group
+    onto one instance the way any repeated cell does.
+    """
+    sheet = op_samples.parse_table(
+        b"sample,pangenome,kit\ns1,pA,illumina\ns2,pA,illumina\ns3,pB,illumina\n",
+        filename="s.csv",
+    )
     rows = [row(
         "v", mode="value", dtype="mock::reads",
-        values=kv(("of", "{pangenome}"), ("kit", "illumina")),
+        values=bound(("of", "pangenome"), ("kit", "kit")),
     )]
-    out = op_inputs.sync(str(lib_path), rows, _sheet())
+    out = op_inputs.sync(str(lib_path), rows, sheet)
     made = out["generated"]["v"]
     assert len(made) == 3 and len(set(made)) == 2, "s1 and s2 share one pangenome"
     assert (lib_path / made[0]).read_text() == '{"of": "pA", "kit": "illumina"}'
@@ -659,16 +672,60 @@ def test_a_constant_field_beside_a_column_one_is_repeated(lib_path):
 def test_the_grouping_key_of_a_one_field_row_is_what_it_always_was(lib_path):
     """The record's `minted` map is keyed by this string.
 
-    Widening the key to a union of every field's columns must leave a row with
-    one field producing the byte-identical key -- or every project that already
-    has array value items re-mints all of them on its next solve.
+    Reading the key off bindings rather than off tokens in the text must leave a
+    row with one field producing the byte-identical key -- or every project that
+    already has array value items re-mints all of them on its next solve.
     """
     record = {"sample": "s1", "pangenome": "pA"}
-    legacy = op_inputs._group_key({"mode": "value", "value": "{pangenome}"}, record)
-    listed = op_inputs._group_key(
-        {"mode": "value", "values": kv(("", "{pangenome}"))}, record,
-    )
-    assert legacy == listed == '[["pangenome","pA"]]'
+    assert op_inputs._group_key(
+        {"mode": "value", "values": bound(("", "pangenome"))}, record,
+    ) == '[["pangenome","pA"]]'
+
+
+def test_a_field_keeps_both_answers_across_attach_and_detach(lib_path):
+    """The state machine, as the row itself sees it.
+
+    Type `asdf` with no sheet, attach one and choose a column, detach and the
+    text is back, retype it, re-attach and the column is back. Nothing is saved
+    on a transition because there is nothing to save: the two answers are two
+    fields, and the sheet decides which is read.
+    """
+    def written(table=None):
+        out = op_inputs.sync(str(lib_path), [r], table)
+        return (lib_path / out["rows"]["v"]).read_text() if out["rows"] else None
+
+    r = row("v", mode="value", dtype="mock::reads",
+            values=[{"key": "", "value": "asdf", "column": ""}])
+    assert written() == "asdf"
+
+    # attached, nothing chosen yet: a blank in the recipe, and it registers
+    # nothing rather than falling back to the text
+    assert op_inputs.problems([r], _sheet()) == ["[asdf] has no column chosen for its value"]
+    assert written(_sheet()) is None
+
+    r["values"][0]["column"] = "pangenome"
+    out = op_inputs.sync(str(lib_path), [r], _sheet())
+    assert len(set(out["generated"]["v"])) == 2
+    assert r["values"][0]["value"] == "asdf", "the typed text is untouched by binding"
+
+    # detached: back to the text, and editing it does not touch the binding
+    assert written() == "asdf"
+    r["values"][0]["value"] = "123"
+    assert written() == "123"
+    assert r["values"][0]["column"] == "pangenome"
+    # ...and re-attaching returns to the column, which is still chosen
+    assert len(set(op_inputs.sync(str(lib_path), [r], _sheet())["generated"]["v"])) == 2
+
+
+def test_a_binding_outlives_a_sheet_that_has_no_such_column(lib_path):
+    """Blank on this sheet, still there for the one it came from."""
+    r = row("v", mode="value", dtype="mock::reads", values=bound(("", "pangenome")))
+    other = op_samples.parse_table(b"sample,depth\ns1,10\n", filename="s.csv")
+    (said,) = op_samples.validate(str(lib_path), other, [r])["problems"]
+    assert "[pangenome]" in said["message"] and "does not have" in said["message"]
+    assert r["values"][0]["column"] == "pangenome"
+    # ...and the sheet it was chosen from still expands it
+    assert len(op_inputs.sync(str(lib_path), [r], _sheet())["generated"]["v"]) == 3
 
 
 # -- what stops a launch -----------------------------------------------------

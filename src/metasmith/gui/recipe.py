@@ -18,9 +18,9 @@ from .store import Project
 def rows_of(p: Project, name: str) -> list[dict]:
     """The recipe's input rows, adopting anything registered without one.
 
-    One kind of row. A sample array is not a second list -- an array row *is* a
-    row whose path (or a value row's name or value) holds `{column}` tokens --
-    and neither is a registered library item: a workflow whose library predates
+    One kind of row. A sample array is not a second list -- with a sheet
+    attached every row is one, reading the columns its fields bind -- and
+    neither is a registered library item: a workflow whose library predates
     this (an old project, a copy of a template, an import) gets one row per item
     the first time anything asks, and the record says so from then on. Without
     that mark, deleting a row could not be expressed at all -- the item outlives

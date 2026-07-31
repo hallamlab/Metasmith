@@ -36,15 +36,17 @@ entry writes its text verbatim -- which is what a value row has always been, so
 nothing written before this moves -- and anything else writes the JSON object
 those pairs describe, with each value given the type it looks like. That is the
 point of the list: read metadata is several facts, and the alternative to boxes
-is typing JSON by hand into a field whose braces already mean `{column}`.
+is typing JSON by hand.
+
+Whether a row is registered as it stands or fanned out over a sheet is decided
+by one thing and it is not the row: a sample table attached makes every row an
+array row, and its fields read the columns they are bound to. See `ops.samples`.
 
 For an **array** value row the mint is per (row x grouping key), where the key
-is the sheet cells that row's `value` field actually names -- NOT per sheet row.
-Two sheet rows naming one pangenome are two samples of *one* pangenome, and that
-shared parent is how multiplicity is expressed here; a uuid per sheet row would
-quietly turn it into three pangenomes with one genome each. Keying on the cells
-rather than on the substituted text also means editing the template around a
-token rewrites contents without moving the path.
+is the sheet cells that row's entries bind -- NOT per sheet row. Two sheet rows
+naming one pangenome are two samples of *one* pangenome, and that shared parent
+is how multiplicity is expressed here; a uuid per sheet row would quietly turn
+it into three pangenomes with one genome each.
 """
 from __future__ import annotations
 
@@ -60,7 +62,7 @@ from . import samples as op_samples
 from ._common import load_data_lib
 # What a row holds, and what it renders to. In their own module because
 # `ops.samples` reads the same shape and this module already imports it.
-from .rows import entries, render_value, scalar  # noqa: F401  (re-exported)
+from .rows import column_of, entries, render_value, scalar  # noqa: F401  (re-exported)
 
 
 # A value row is something typed into a box -- a read-pair descriptor, a few
@@ -157,7 +159,7 @@ def registerable(row: dict) -> bool:
     return bool((row.get("dtype") or "").strip())
 
 
-def problems(rows: list[dict]) -> list[str]:
+def problems(rows: list[dict], table: dict | None = None) -> list[str]:
     """The blanks left in this recipe, in words, or nothing.
 
     Not a sync guard and deliberately not called by one: solving a half-filled
@@ -166,14 +168,21 @@ def problems(rows: list[dict]) -> list[str]:
     It is the *run* that cannot mean anything -- a deferred input has no file to
     stage and an unkeyed pair has no name to be read under -- so this is read at
     launch, off the solve that produced the bundle.
+
+    Takes the sheet because what counts as a blank depends on it: with one
+    attached the fields hold columns and an empty *box* is not a blank at all,
+    while an unbound field is. Keys are literal in both states, so what is
+    checked about them does not move.
     """
     out: list[str] = []
+    if table is not None:
+        out += [p["message"] for p in op_samples.unbound_problems(rows)]
     for r in rows:
         if not isinstance(r, dict) or not registerable(r):
             continue
         label = op_samples.row_label(r)
         if r.get("mode") != "value":
-            if not (r.get("path") or "").strip():
+            if table is None and not (r.get("path") or "").strip():
                 out.append(f"[{label}] has no path")
             continue
         ents = entries(r)
@@ -182,7 +191,7 @@ def problems(rows: list[dict]) -> list[str]:
             continue
         seen: set[str] = set()
         for i, e in enumerate(ents):
-            if not e["value"].strip():
+            if table is None and not e["value"].strip():
                 if e["key"]:
                     out.append(f"[{label}] has nothing under [{e['key']}]")
                 elif len(ents) == 1:
@@ -295,47 +304,25 @@ def _claim(lib, want: dict[str, dict], prior: dict[str, str]) -> dict[str, Path]
 
 
 def _group_key(row: dict, record: dict) -> str:
-    """The sheet cells an array value row's values read.
+    """The sheet cells an array value row's entries bind.
 
     This is what its minted path is keyed on, and the choice is load-bearing.
     Keying per *sheet row* would give two rows naming one pangenome two separate
     pangenome instances, turning a shared parent -- which is the entire way
-    multiplicity is expressed here -- into a fan-out of one. Keying on the cells
-    rather than on the substituted text means editing the template around a
-    token (`{p}` -> `pangenome: {p}`) rewrites contents without moving the path.
+    multiplicity is expressed here -- into a fan-out of one.
 
-    Over the *union* of what every entry names, so that widening one field is
-    what says two sheet rows are no longer the same thing. The encoding is
+    Over the *union* of what every entry binds, so that binding a second field
+    is what says two sheet rows are no longer the same thing. The encoding is
     unchanged and must stay so: this string is a key in the record's `minted`
     map, and a row with one entry has to produce the byte-identical key it
     always did or every existing project re-mints its array items.
     """
-    cols = sorted({c for e in entries(row) for c in op_samples.columns_in(e["value"])})
+    cols = sorted({e["column"] for e in entries(row) if e["column"]})
     return json.dumps([[c, record.get(c)] for c in cols], separators=(",", ":"))
 
 
-def _legacy_array_path(row, record, lib, prior_paths) -> str | None:
-    """Where the last expansion put a legacy array value row's item.
-
-    An array row is not in the record's `rows` map -- only its generation is
-    recorded, as a flat unkeyed list -- so a row written when a value was named
-    by hand has one place left to say where its items are: that name. Believed
-    only if the library still holds it and the last expansion put it there, and
-    recorded under the row's key from then on so this is never asked again.
-    """
-    legacy = (row.get("name") or "").strip()
-    if not legacy:
-        return None
-    try:
-        p = op_samples.substitute(legacy, record)
-    except KeyError:
-        return None
-    return p if p and p in prior_paths and Path(p) in lib.manifest else None
-
-
 def _array_plan(
-    table: dict, array_rows: list[dict], lib=None,
-    prior_minted: dict | None = None, prior_paths: set | None = None,
+    table: dict, array_rows: list[dict], prior_minted: dict | None = None,
 ) -> list[dict]:
     """One entry per (array row x sheet row), parents already resolved.
 
@@ -359,7 +346,6 @@ def _array_plan(
     # sheet rows sharing one instance are still two sheet rows
     generated: dict[str, list[str]] = {str(t["id"]): [] for t in array_rows}
     prior_minted = prior_minted or {}
-    prior_paths = prior_paths or set()
     # Rebuilt each call and carried forward only on a hit, so a key the sheet no
     # longer produces drops out rather than growing the record without bound --
     # and never resurrects a path whose file `Remove` left on disk.
@@ -373,13 +359,12 @@ def _array_plan(
                 gkey = _group_key(row, record)
                 path = minted[rid].get(gkey) or prior_minted.get(rid, {}).get(gkey)
                 if path is None:
-                    path = (
-                        _legacy_array_path(row, record, lib, prior_paths)
-                        or mint_value_path()
-                    )
+                    path = mint_value_path()
                 minted[rid][gkey] = path
             else:
-                path = op_samples.substitute(row.get("path"), record)
+                # the cell itself, not something built out of it -- the sheet
+                # holds finished values
+                path = (record.get(column_of(row)) or "").strip()
             parents = []
             for p in parent_ids(row):
                 if p in by_id:
@@ -399,7 +384,7 @@ def _array_plan(
                 "rid": rid, "path": path, "dtype": (row.get("dtype") or "").strip(),
                 "mode": "value" if is_value else "file",
                 "value": render_value([
-                    {"key": e["key"], "value": op_samples.substitute(e["value"], record)}
+                    {"key": e["key"], "value": (record.get(e["column"]) or "").strip()}
                     for e in entries(row)
                 ]) if is_value else None,
                 "parents": list(parents),
@@ -443,12 +428,16 @@ def sync(
     prior_array = {p for ps in prior_generated.values() for p in ps}
 
     rows = [dict(r) for r in rows if isinstance(r, dict) and r.get("id") is not None]
-    array_rows = [r for r in rows if op_samples.is_array_row(r)]
-    plain_rows = [r for r in rows if not op_samples.is_array_row(r)]
-    # a token with no sheet behind it stands for nothing; whatever the last
-    # expansion left is taken back rather than left to plan as itself
+    # The one switch. A sheet attached makes every row an array row -- its
+    # fields read the columns they bind -- and no sheet makes every row a plain
+    # one holding its own text. A row with a field bound to nothing registers
+    # nothing rather than falling back to its text: that fallback would be the
+    # constant-under-a-sheet escape hatch this deliberately does not have, and
+    # `problems` names the row instead of it going quiet.
     if table is None:
-        array_rows = []
+        array_rows, plain_rows = [], rows
+    else:
+        array_rows, plain_rows = op_samples.array_rows_of(rows), []
 
     want = _desired(plain_rows)
     held = _claim(lib, want, prior_rows)
@@ -457,8 +446,7 @@ def sync(
         for k, v in (record.get("minted") or {}).items()
     }
     plan, generated, minted = (
-        _array_plan(table, array_rows, lib, prior_minted, prior_array)
-        if array_rows else ([], {}, {})
+        _array_plan(table, array_rows, prior_minted) if array_rows else ([], {}, {})
     )
 
     keep = set(held.values())
@@ -783,18 +771,15 @@ def _adopted_entries(value: str) -> list[dict]:
     """What a registered value file reads as, as recipe entries.
 
     One unkeyed entry holding the file verbatim is what a value row has always
-    been and stays the fallback -- but an unkeyed entry is exactly where a
-    literal `{` still means `{column}`, so a file holding a JSON object adopted
-    that way is read as a sample array, dropped for want of a sheet, and takes
-    its item out of the library on the way. The keyed form is the way out of
-    that (see `ops.rows`), and adoption is the one place still able to
-    manufacture the trap rather than inherit it.
+    been and stays the fallback. An object splits into the keyed entries
+    describing it instead, because two labelled boxes are what a person can edit
+    and a line of JSON in one box is not -- read metadata is several facts.
 
-    An object therefore splits into the keyed entries describing it, and only
-    when `render_value` puts the file back byte for byte: a leaf's identity is
-    content addressed, so a file this did not write is one it must not rewrite.
-    A value that would change under the round trip -- a nested object, a string
-    that reads as a number -- keeps the single entry it always had.
+    Only when `render_value` puts the file back byte for byte, though: a leaf's
+    identity is content addressed, so a file this did not write is one it must
+    not rewrite. A value that would change under the round trip -- a nested
+    object, a string that reads as a number -- keeps the single entry it always
+    had.
     """
     try:
         parsed = json.loads(value)

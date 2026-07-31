@@ -2422,12 +2422,15 @@ class TestJobs:
 
 SHEET = b"sample,asm\nS1,/data/a.fa\nS2,/data/b.fa\n"
 
-# the recipe's input rows as the browser holds them: a sample-array value row
-# with nothing above it, and an array file row descending from it
+# the recipe's input rows as the browser holds them. With the sheet attached
+# every row is a sample array -- a value row with nothing above it, and a file
+# row descending from it -- and each field names the column it binds. The `path`
+# and `value` beside them are the other half of the state machine: what the
+# fields hold when no sheet is attached, kept rather than overwritten.
 ARRAY_ROWS = [
-    {"id": "idx", "mode": "value", "value": "{sample}",
+    {"id": "idx", "mode": "value", "values": [{"key": "", "value": "", "column": "sample"}],
      "dtype": "mock::reads", "parents": []},
-    {"id": "asm", "mode": "file", "path": "{asm}",
+    {"id": "asm", "mode": "file", "path": "", "column": "asm",
      "dtype": "mock::assembly", "parents": ["#idx"]},
 ]
 
@@ -2525,8 +2528,12 @@ class TestSampleTable:
         client.put(f"/api/workflows/{name}", json={"sample_type": None})
         _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
         items = client.get(f"/api/workflows/{name}/inputs").get_json()["items"]
-        assert len(items) == 1
-        assert not items[0].get("array_id")
+        # nothing the sheet minted survives the sheet. The three rows are back
+        # to what they hold with no sheet -- the two former array rows to their
+        # own (empty) text, the plain one to its file -- which is the other half
+        # of the switch and not a leftover.
+        assert not any(it.get("array_id") for it in items)
+        assert len(items) == 3
 
     def test_a_sample_table_solves_under_its_index_type(self, client):
         """The whole point: a sheet in, a sampled plan out.
@@ -2557,9 +2564,14 @@ class TestSharedInputs:
         project = client.application.config["MSM_PROJECT"]
         f = project.input_library_path(name) / "shared.fa"
         f.write_text(">contig\nACGT\n")
-        # every row registers as a side effect of the `generate` each test method
-        # below calls -- nothing here has to pre-register them
-        _attach(client, name, rows=self.ROWS + [_row("shared", f)])
+        # With a sheet attached every row binds a column, so "the same file for
+        # every sample" is a column repeating that path -- which costs a column
+        # there and nothing in the library, since identical cells group onto one
+        # instance. Every row registers as a side effect of the `generate` each
+        # test method below calls; nothing here pre-registers them.
+        sheet = f"sample,asm,ref\nS1,/data/a.fa,{f}\nS2,/data/b.fa,{f}\n".encode()
+        _attach(client, name, sheet=sheet,
+                rows=self.ROWS + [_row("shared", column="ref")])
         return name, "#shared"
 
     def test_an_unshared_neighbour_is_invisible_to_every_sample(self, client):
@@ -2871,20 +2883,23 @@ class TestShareWorkflows:
             items = other.get(f"/api/workflows/{got['name']}/inputs").get_json()["items"]
             assert items == []
 
-    def test_an_array_row_travels_but_a_typed_path_does_not(self, client, elsewhere):
-        """A `{column}` row is a rule, not a file: it is the substance of a
-        sample-array recipe and means the same thing anywhere."""
+    def test_a_binding_travels_but_a_typed_path_does_not(self, client, elsewhere):
+        """A binding is a rule about a sheet, not a file on this machine: it is
+        the substance of a sample-array recipe and means the same thing
+        anywhere. The path beside it is the row's other state, and that is
+        exactly what an unbound export is for withholding."""
         name = _make_workflow(client)
         client.put(f"/api/workflows/{name}", json={"input_drafts": [
-            {"id": "a", "mode": "file", "path": "/data/{sample}.fa", "dtype": "mock::assembly",
-             "parents": []},
-            {"id": "b", "mode": "file", "path": "/home/me/one_off.fa", "dtype": "mock::assembly",
-             "parents": []},
+            {"id": "a", "mode": "file", "path": "/data/mine.fa", "column": "asm",
+             "dtype": "mock::assembly", "parents": []},
+            {"id": "b", "mode": "file", "path": "/home/me/one_off.fa", "column": "",
+             "dtype": "mock::assembly", "parents": []},
         ]})
         body = _payload(client, "workflow", name)["body"]
-        assert [d["path"] for d in body["drafts"]] == ["/data/{sample}.fa", ""]
+        assert [d["path"] for d in body["drafts"]] == ["", ""]
+        assert [d["column"] for d in body["drafts"]] == ["asm", ""]
         bound = _payload(client, "workflow", name, bound=True)["body"]
-        assert [d["path"] for d in bound["drafts"]] == ["/data/{sample}.fa", "/home/me/one_off.fa"]
+        assert [d["path"] for d in bound["drafts"]] == ["/data/mine.fa", "/home/me/one_off.fa"]
 
     def test_a_typed_in_value_travels_whole(self, client, elsewhere):
         """A value row *is* its contents: a few lines someone typed.

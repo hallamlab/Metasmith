@@ -44,8 +44,9 @@
   {#if !attached}
     <div class="row wrap">
       <span class="small muted grow">
-        Have a sample sheet? Attach it and each row below can name a column
-        instead of a file — one run per row.
+        Have a sample sheet? Attach it and every row below picks a column of it
+        instead of holding its own value — one run per sheet row. The sheet has
+        to hold the finished values; nothing is built out of them.
       </span>
       <label class="filebtn small">
         upload
