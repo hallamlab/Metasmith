@@ -1,10 +1,11 @@
 <script>
   import { api } from '../lib/api.svelte.js'
-  import { app, attempt, loadRuns, loadWorkflows, notify, select, ui } from '../lib/state.svelte.js'
+  import { app, attempt, loadRuns, loadWorkflows, notify, select } from '../lib/state.svelte.js'
   import Ago from '../components/Ago.svelte'
   import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
   import JobLog from '../components/JobLog.svelte'
+  import DagRail from '../components/DagRail.svelte'
   import MiniGraph from '../components/MiniGraph.svelte'
   import SaveChip from '../components/SaveChip.svelte'
   import SampleTable from '../components/SampleTable.svelte'
@@ -285,6 +286,50 @@
   let graphFocus = $derived(
     drawing?.kind === 'transform' ? `x:${drawing.i}` : focus ? `t:${focus}` : null,
   )
+
+  // -- the plan's own drawing ----------------------------------------------
+  //
+  // Laid out by the server when the plan was solved and stored beside the
+  // result, so a page load costs no layout and the drawing cannot disagree with
+  // the step rows beside it. A data node's id *is* its type name, which is what
+  // the panel addresses a type by; a step node carries the index of the
+  // transform it runs, resolved server-side against the library index rather
+  // than string-matched here.
+  let planGraph = $derived(wf?.result?.plan_graph ?? null)
+
+  let planCy = $derived(
+    new Map(
+      (planGraph?.nodes ?? []).filter((n) => n.step != null).map((n) => [n.step, n.cy]),
+    ),
+  )
+
+  let planMeta = $derived(
+    new Map(
+      (planGraph?.nodes ?? []).map((n) => [
+        n.id,
+        {
+          kind: n.kind === 'transform' ? 'transform' : 'type',
+          // the synthetic `given` node, and any step whose library is not the
+          // indexed one, have nothing on the right to be shown
+          disabled: n.kind === 'transform' && n.transform_index == null,
+        },
+      ]),
+    ),
+  )
+
+  let planFocus = $derived.by(() => {
+    const nodes = planGraph?.nodes ?? []
+    if (drawing?.kind === 'transform')
+      return nodes.find((n) => n.transform_index === drawing.i)?.id ?? null
+    return focus && nodes.some((n) => n.id === focus) ? focus : null
+  })
+
+  function pickPlanNode(id) {
+    const n = (planGraph?.nodes ?? []).find((x) => x.id === id)
+    if (!n) return
+    if (n.kind !== 'transform') pickType(n.id)
+    else if (n.transform_index != null) pickTransform(n.transform_index)
+  }
 
   let drawingLabel = $derived.by(() => {
     if (drawing?.kind === 'transform') return index?.transforms?.[drawing.i]?.name ?? 'transform'
@@ -893,71 +938,59 @@
                also tall enough to push the run controls below it off screen,
                and closing it is the way back to them without scrolling past.
 
-               Everything about the alignment rests on one thing: the image and
-               the rows box are flex siblings with nothing between them, so
-               they share a top by construction rather than by arithmetic, and
-               a row's offset is just its node's `cy` less half a pitch. Both
-               the pitch and the height come from the geometry the server laid
-               the drawing out with, never from a constant here. -->
-          {@const geo = wf.result?.dag_geometry}
-          {@const pitch = geo?.row_pitch ?? ROW_H}
-          {@const dagHeight = geo?.height ?? (wf.result?.step_display?.length ?? 0) * pitch}
+               The drawing is `DagRail`, the same component the recipe's
+               lineage rails and the info panel use, over placement the server
+               stored when it solved. It used to be an `<img>` of a rendered
+               SVG, with each step's controls pinned to a `cy` measured off
+               that image; drawn here, a step's row is an ordinary sibling
+               placed at the same pitch, and the nodes themselves are clickable
+               into the panel on the right. No pan and no zoom -- the diagram
+               is its natural size and the card scrolls. -->
+          {@const pitch = planGraph?.row_pitch ?? ROW_H}
+          {@const dagHeight = planGraph?.height ?? (wf.result?.step_display?.length ?? 0) * pitch}
+          {@const topCy = planGraph?.nodes?.length
+            ? Math.min(...planGraph.nodes.map((n) => n.cy))
+            : HEAD_H / 2}
           <details class="dag-details" open>
             <summary class="small muted">diagram</summary>
             <div class="dag-scroll">
-              <div
-                class="dag-box"
-                data-dag-width={geo?.width ?? ''}
-                data-dag-height={geo?.height ?? ''}
-                data-row-pitch={pitch}
-                data-dag-top-cy={geo?.top_cy ?? ''}
-                data-head-h={HEAD_H}
-              >
+              <div class="dag-box">
                 <div class="dag-body">
-                  <!-- the theme and the solve time are both in the query
-                       string, not a header: the browser caches by url, so
-                       switching themes or solving again would otherwise show
-                       the rendering it already had for that url. `generated_at`
-                       is the newest thing that changes on every solve,
-                       including a re-solve onto the same plan. Unscaled --
-                       `dag_cy` values are in this image's own pixels and only
-                       line up when nothing resizes it, so it gets no width and
-                       no max-width. -->
-                  <img
-                    class="dag"
-                    src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}&v=${encodeURIComponent(wf.generated_at)}`}
-                    alt="workflow diagram"
-                  />
+                  {#if planGraph}
+                    <DagRail
+                      geo={planGraph}
+                      focus={planFocus}
+                      meta={planMeta}
+                      ground="var(--panel-2)"
+                      onpick={pickPlanNode}
+                    />
+                  {/if}
 
                   {#if wf.result?.step_display?.length}
                     <!-- Keyed by position, which is what makes a selector
                          address one step. Empty is "as the transform
                          declared", which is what the greyed number in each box
-                         is. A step with no `dag_cy` (geometry failed, or an
-                         old cached result) falls back to stacking at the
-                         diagram's own pitch rather than colliding at the top.
-                         The `data-` attributes are there so the alignment can
-                         be asserted from the page instead of eyeballed -- row
-                         centre less image top must be `dag_cy`, with no
-                         constant in between. -->
+                         is. The rows and the drawing are flex siblings sharing
+                         a top, so a row's offset is its node's `cy` less half a
+                         pitch -- and both numbers come from the placement the
+                         server stored, never from a constant here. -->
                     <div class="res-body" style={`height: ${dagHeight}px`}>
                       <!-- level with the diagram's first node, which is the
                            synthetic `given` and so never has a row of its own -->
                       <div
                         class="res-head"
-                        style={`height: ${HEAD_H}px; top: ${(geo?.top_cy ?? HEAD_H / 2) - HEAD_H / 2}px`}
+                        style={`height: ${HEAD_H}px; top: ${topCy - HEAD_H / 2}px`}
                       >
                         <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
                       </div>
                       {#each wf.result.step_display as step, i}
-                        {@const cy = step.dag_cy ?? (i + 0.5) * pitch}
+                        {@const cy = planCy.get(step.order) ?? (i + 0.5) * pitch}
                         <div
                           class="res-row"
                           style={`top: ${cy - pitch / 2}px; height: ${pitch}px`}
                           title={step.process ?? step.transform}
                           data-step={step.order}
                           data-transform={step.transform}
-                          data-dag-cy={step.dag_cy ?? ''}
                         >
                           {#each OVERRIDE_FIELDS as f}
                             {@const v = overrides[step.order]?.[f] ?? ''}
@@ -1156,23 +1189,18 @@
   .pane { display: flex; flex: 1; min-width: 0; height: 100%; align-items: stretch; }
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   .loading { padding: 18px; }
-  .scroll { overflow-x: auto; }
   /* The diagram sits on the card's own ground: it is drawn with no plate of its
-     own (`background=False` on the render route), and one painted here was
-     never any colour but this card's. The block it makes with the step rows is
+     own, and one painted under it was never any colour but this card's -- which
+     is also what a hollow marker is filled with, since hollow reads hollow only
+     where the fill and the ground agree. The block it makes with the step rows is
      narrower than the card, so it is centred as one thing -- and the scroller
      around it is what keeps a plan wider than the card from widening the card
      instead of scrolling. No fold and no height cap: this grows with the plan. */
   .dag-scroll { overflow-x: auto; margin-top: 8px; }
   .dag-box { width: max-content; margin-inline: auto; display: flex; flex-direction: column; gap: 4px; }
-  /* the image and the rows box, flex siblings with nothing between them: they
+  /* the drawing and the rows box, flex siblings with nothing between them: they
      share a top by construction, which is the whole of the alignment */
   .dag-body { display: flex; align-items: flex-start; gap: 10px; }
-  /* natural pixel size, deliberately unscaled: `dag_cy` is in the SVG's own
-     pixel space, and a `top:` offset built from it only lines up with the node
-     it names when nothing here resizes the image. Its `margin-top` is set
-     inline from the same constant the rows are offset by. */
-  .dag-body img.dag { display: block; }
   /* the fold around the diagram: a `summary` its own row, not indented under
      the drawing the way a browser default reads, since this one is a sibling
      of the run controls it is standing between the plan and */

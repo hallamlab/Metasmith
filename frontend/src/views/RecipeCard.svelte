@@ -488,7 +488,7 @@
       </p>
     {:else}
       <div class="band">
-        <LineageRail rows={railInputRows} height={inputBandHeight} />
+        <LineageRail rows={railInputRows} height={inputBandHeight} hovered={hover} />
         <div class="rowsCol" bind:this={inputBox}>
           {#each orderedInputRows as row (row.key)}
             {@const info = row.type && counts ? counts(row.type) : null}
@@ -583,7 +583,14 @@
       <p class="small muted pad">Nothing wanted yet. Add at least one to solve.</p>
     {:else}
       <div class="band">
-        <LineageRail rows={railOutputRows} height={outputBandHeight} />
+        <!-- a wanted output is a requested one: the engine's solid marker, the
+             same one the plan's diagram draws it with -->
+        <LineageRail
+          rows={railOutputRows}
+          height={outputBandHeight}
+          kind="target"
+          hovered={hover}
+        />
         <div class="rowsCol" bind:this={outputBox}>
           {#each targetRows as row (row.key)}
             {@const info = row.type && counts ? counts(row.type) : null}
@@ -667,7 +674,9 @@
      line somewhere else: "that link means *this* row". Clicking a type moves the
      panel and marks nothing -- it used to mark every row of that type, in both
      halves, so touching an input lit up an output that shared its name. */
-  .entry.hl { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+  /* no left bar: it was a second rail drawn beside the first, saying the same
+     thing one column over. The marker in the rail is what lights up now. */
+  .entry.hl { background: var(--panel-2); }
   .row-item {
     display: flex;
     align-items: center;

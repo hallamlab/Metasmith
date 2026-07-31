@@ -1,16 +1,15 @@
 <script>
   import { untrack } from 'svelte'
   import { api } from '../lib/api.svelte.js'
+  import DagRail from './DagRail.svelte'
 
-  // The same engine that draws the plan, drawn again with clickable parts.
+  // The info panel's frame: a viewport onto the page's one DAG drawing.
   //
-  // Placement -- rows, lanes, and the routed edge paths -- comes from the
-  // server: `POST /api/dag/layout` runs `metasmith.models.dag_layout` and hands
-  // back pixels. There was a second layout engine in the browser, and two
-  // engines meant the plan diagram and this panel disagreed about the shape of
-  // the same graph. What stays here is everything the SVG cannot do: a node is
-  // an ordinary button, so it gets focus, hover, truncation and the page's own
-  // styling, and clicking one moves the panel onto it.
+  // Placement -- rows, lanes, and the routed corridor -- comes from the server
+  // (`POST /api/dag/layout` runs `metasmith.models.dag_layout`), and the drawing
+  // itself is `DagRail`, which the plan and the recipe's lineage rails also use.
+  // What is left here is the part that is only true of *this* frame: which graph
+  // to ask for, the cache that keeps re-derivation off the wire, and pan/zoom.
   //
   // The graph itself is still built in the browser (`lib/graphs.js`): which
   // nodes exist, and which are plumbing, are content rules with a second
@@ -76,9 +75,18 @@
   // what the page knows about a node that the geometry does not: its kind, the
   // `per` tag, the library line, and which transform index it stands for
   let extra = $derived(new Map((graph?.nodes ?? []).map((n) => [n.id, n])))
+  let nodeMeta = $derived(
+    new Map(
+      (graph?.nodes ?? []).map((n) => [
+        n.id,
+        { kind: n.kind, tag: n.tag, sub: n.sub, disabled: n.kind === 'more' },
+      ]),
+    ),
+  )
   let edgeKind = $derived(
     new Map((graph?.edges ?? []).map((e) => [`${e.from} ${e.to}`, e.kind])),
   )
+  let hovered = $state(null)
 
   // -- pan and zoom -------------------------------------------------------
   //
@@ -162,8 +170,6 @@
     if (drag?.id === e.pointerId) drag = null
   }
 
-  const kindOf = (id) => extra.get(id)?.kind ?? 'type'
-
   function pick(id) {
     const n = extra.get(id)
     if (!n) return
@@ -189,52 +195,15 @@
     <p class="small muted hint">{failed ? 'could not lay this graph out' : empty}</p>
   {:else}
     <div class="inner" style={`transform: translate(${tx}px, ${ty}px) scale(${scale})`}>
-      <svg width={laid.width} height={laid.height} aria-hidden="true">
-        {#each laid.edges as e, i (i)}
-          {@const kind = edgeKind.get(`${e.from} ${e.to}`)}
-          <path
-            class="edge"
-            class:soft={kind === 'satisfies'}
-            class:lineage={kind === 'lineage'}
-            d={e.d}
-          />
-        {/each}
-      </svg>
-
-      {#each laid.nodes as n (n.id)}
-        {@const meta = extra.get(n.id)}
-        {@const kind = kindOf(n.id)}
-        {@const left = n.cx - n.marker_w / 2}
-        <button
-          class="node {kind}"
-          class:on={n.id === focus}
-          style="
-            left: {left}px;
-            top: {n.cy - laid.row_pitch / 2}px;
-            width: {Math.max(0, laid.width - left)}px;
-            height: {laid.row_pitch}px;
-            --marker-w: {n.marker_w}px;
-            --marker-h: {n.marker_h}px;
-            --gap: {n.label_x - left - n.marker_w}px;
-            --fs: {laid.font_size}px;
-          "
-          title={n.full}
-          disabled={kind === 'more'}
-          onclick={() => pick(n.id)}
-        >
-          <span class="marker"></span>
-          <span class="text">
-            {#if n.namespace}<span class="ns truncate">{n.namespace}</span>{/if}
-            <span class="line">
-              <span class="label mono truncate">{n.label}</span>
-              {#if meta?.tag}
-                <span class="mark" title="one run per group of this input">{meta.tag}</span>
-              {/if}
-              {#if meta?.sub}<span class="sub small muted truncate">{meta.sub}</span>{/if}
-            </span>
-          </span>
-        </button>
-      {/each}
+      <DagRail
+        geo={laid}
+        {focus}
+        {hovered}
+        meta={nodeMeta}
+        edgeMeta={edgeKind}
+        onpick={pick}
+        onhover={(id) => (hovered = id)}
+      />
     </div>
   {/if}
 </div>
@@ -254,76 +223,4 @@
   /* the drawing's own top-left corner, placed in the frame's own pixels --
      see the pan/zoom comment above `scale` in the script */
   .inner { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
-  svg { position: absolute; top: 0; left: 0; overflow: visible; }
-  .edge {
-    fill: none;
-    /* the line colour is right for a border and too quiet for a line that has to
-       be followed across a graph */
-    stroke: var(--muted);
-    stroke-opacity: 0.55;
-    stroke-width: 1.3;
-  }
-  /* a type standing in for a more general one: the same connection, made by the
-     type system rather than by a name lining up */
-  .edge.soft { stroke-dasharray: 3 3; }
-  /* one input having to descend from another: not data moving, so it is drawn in
-     the accent rather than in the grey every flow edge shares */
-  .edge.lineage { stroke: var(--accent); stroke-opacity: 0.7; }
-
-  /* A node row runs from its marker to the right edge of the drawing, so the
-     whole line is clickable. It is transparent by default because the rails of
-     the lanes to its right pass underneath it. */
-  .node {
-    position: absolute;
-    display: flex;
-    align-items: center;
-    gap: 0;
-    padding: 0;
-    text-align: left;
-    background: none;
-    border: 1px solid transparent;
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .marker {
-    flex: 0 0 auto;
-    width: var(--marker-w);
-    height: var(--marker-h);
-    background: var(--bg);
-    border: 1.5px solid var(--muted);
-    border-radius: 2px;
-  }
-  /* the same three shapes the SVG backend draws: a rounded marker for data, a
-     filled one for a step */
-  .node.type .marker { border-radius: 50%; border-color: var(--accent); }
-  .node.transform .marker { background: var(--muted); border-color: var(--muted); }
-  .node.more .marker { border-style: dashed; }
-  .text {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    min-width: 0;
-    margin-left: var(--gap);
-    /* the page's line-height is set for prose; at this size it is what pushes
-       the second line past the bottom of the row */
-    line-height: 1.15;
-  }
-  .ns { font-size: calc(var(--fs) / 2); color: var(--muted); }
-  .line { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
-  .label { font-size: var(--fs); }
-  .node.type .label { color: var(--accent); }
-  .sub { font-size: calc(var(--fs) * 0.72); }
-  .node.more { opacity: 0.7; }
-  .node.on { border-color: var(--accent); background: var(--panel-2); }
-  .node:hover:not(:disabled) { border-color: var(--accent); }
-  .mark {
-    flex: 0 0 auto;
-    font-size: calc(var(--fs) * 0.72);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--warn);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 0 4px;
-  }
 </style>

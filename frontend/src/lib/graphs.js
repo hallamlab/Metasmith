@@ -34,8 +34,11 @@ function transformNode(index, i, extra = {}) {
   return {
     id: transformId(i),
     kind: 'transform',
-    label: tr.name,
-    sub: tr.library_name,
+    // `namespace::name`, which is how the drawing is told to stack the library
+    // above the tool's own name -- the same half-size line a type's prefix gets.
+    // It used to travel as `sub` and land to the *right* of the name, which was
+    // the one place on the page where a namespace was not drawn as a namespace.
+    label: tr.library_name ? `${tr.library_name}::${tr.name}` : tr.name,
     index: i,
     ...extra,
   }
@@ -73,11 +76,7 @@ export function transformGraph(index, i) {
       ...(t === tr.group_by ? { tag: 'per' } : {}),
     })
   }
-  add(
-    transformNode(index, i, {
-      sub: supplied ? `${tr.library_name} · +${supplied} supplied` : tr.library_name,
-    }),
-  )
+  add(transformNode(index, i, { sub: supplied ? `+${supplied} supplied` : null }))
   for (const t of outputs) add(typeNode(t))
 
   const lineage = requirementLineage(tr)
@@ -211,8 +210,10 @@ export function typeGraph(index, type, enabled, cap = 8) {
       nodes.push(
         transformNode(index, e.i, {
           // the name the tool actually declared, when it is not the one asked
-          // about: without it the tool looks like it named this type and did not
-          sub: e.as && e.as !== type ? `${above ? 'makes' : 'takes'} ${e.as}` : tr.library_name,
+          // about: without it the tool looks like it named this type and did not.
+          // Its library is already the stacked line above, so this stays empty
+          // otherwise rather than repeating it.
+          sub: e.as && e.as !== type ? `${above ? 'makes' : 'takes'} ${e.as}` : null,
         }),
       )
       edges.push(

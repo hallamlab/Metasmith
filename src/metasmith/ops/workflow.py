@@ -1,7 +1,7 @@
 """Workflow planning + task introspection."""
 from __future__ import annotations
 
-from ..models.dag_draw import default_label
+from ..models.dag_draw import DEFAULT_LABEL_CHARS, default_label
 from ..models.dag_renderer import DagRenderer, LabelMode, NodeKind
 from ..agents import Spec
 from . import workspace as _ws
@@ -131,12 +131,20 @@ def render_dag(
     return {"task_key": task_key, "format": format, "path": str(rendered)}
 
 
+_WIRE_KINDS = {
+    "transform": NodeKind.TRANSFORM,
+    "target": NodeKind.TARGET,
+    "data": NodeKind.DATA,
+}
+
+
 def dag_geometry(
     nodes: list[dict],
     edges: list[dict],
     label_mode: str = "column",
     font_size: float = 13.0,
     max_label_chars: int = 22,
+    colour: str = "none",
 ) -> dict:
     """Place an arbitrary graph, in pixels, for a caller that draws it itself.
 
@@ -146,42 +154,81 @@ def dag_geometry(
     SVG, and laying the graph out a second way in the browser is how the two
     drawings came to disagree about what the same plan looks like.
 
-    `nodes` are `{"id", "kind", "label"?}`; `kind` is `transform` or anything
-    else, which decides only the marker the edge ends are trimmed for. `edges`
-    are `{"from", "to"}`. Ids are the caller's and are echoed back untouched.
+    Both forms of an edge go over the wire. `d` is the path baked at this
+    module's nominal row pitch, for a caller drawing at that pitch; `lane` and
+    `points` are the grid it was baked from, for a caller whose rows sit
+    wherever the DOM put them. The second is what stops a caller with uneven
+    rows from inventing its own curve -- which is how the recipe's rails came
+    to be drawn with lanes mirrored against every other drawing on the page.
+
+    `nodes` are `{"id", "kind", "label"?}`; `kind` is `transform`, `target` or
+    `data`, which decides the marker drawn and the trim taken off each edge end.
+    `edges` are `{"from", "to"}`. Ids are the caller's and are echoed untouched.
+
+    `colour` names a `dag_colour` scheme; the default says nothing and each
+    record's `hue` is absent. Only the plan asks for one -- skipping it is how
+    the panel and the recipe's rails stay monochrome.
     """
-    renderer = DagRenderer(label_mode=LabelMode(label_mode))
+    renderer = DagRenderer(label_mode=LabelMode(label_mode), colour=colour)
     ids = set()
     for n in nodes:
         nid = str(n["id"])
         ids.add(nid)
-        kind = NodeKind.TRANSFORM if n.get("kind") == "transform" else NodeKind.DATA
+        kind = _WIRE_KINDS.get(str(n.get("kind") or "data"), NodeKind.DATA)
         text = n.get("label")
         renderer.add_node(kind, nid, label=default_label(str(text)) if text else None)
     for e in edges:
         src, dst = str(e["from"]), str(e["to"])
         if src in ids and dst in ids:
             renderer.add_edge(src, dst)
-    geo = renderer.geometry(font_size=font_size, max_label_chars=max_label_chars)
+    return serialize_geometry(
+        renderer, font_size=font_size, max_label_chars=max_label_chars,
+    )
+
+
+def serialize_geometry(
+    renderer: DagRenderer,
+    *,
+    font_size: float = 13.0,
+    max_label_chars: int = DEFAULT_LABEL_CHARS,
+) -> dict:
+    """A built graph's placement as plain data, for a client that draws it.
+
+    Split out from `dag_geometry` so the plan -- whose graph is built from the
+    solved steps, not from a wire payload -- reaches the same serialization
+    rather than a second one that agrees only by coincidence.
+    """
+    # one layout, shared by the geometry and the colouring: `colouring()` runs
+    # its own when passed none, and that is the whole expensive half of this
+    lay = renderer.layout()
+    geo = renderer.geometry(lay, font_size=font_size, max_label_chars=max_label_chars)
+    hues = renderer.colouring(lay)
     return {
         "width": geo.width, "height": geo.height,
         "font_size": geo.font_size, "marker_d": geo.marker_d,
         "row_pitch": geo.row_pitch, "lane_pitch": geo.lane_pitch,
+        "margin": geo.margin, "lane_x": list(geo.lane_x),
         "anchor": geo.anchor,
         "nodes": [
             {
-                "id": n.name, "row": n.row, "lane": n.lane,
+                "id": n.name, "kind": n.kind.name.lower(), "row": n.row, "lane": n.lane,
                 "cx": n.cx, "cy": n.cy, "label_x": n.label_x,
                 "marker_w": n.marker_w, "marker_h": n.marker_h,
                 "namespace": n.namespace, "label": n.label,
                 "full": n.full, "truncated": n.truncated,
+                **({"hue": hues.nodes[n.name]} if n.name in hues.nodes else {}),
             }
             for n in geo.nodes
         ],
         # a back edge is reported so a caller can say the cycle exists; it has
         # no path because the rails engine does not route one
         "edges": [
-            {"from": e.src, "to": e.dst, "back": e.back, "d": e.d}
+            {
+                "from": e.src, "to": e.dst, "back": e.back, "d": e.d,
+                "lane": e.lane, "points": [list(p) for p in e.points],
+                **({"hue": hues.edges[(e.src, e.dst)]}
+                   if (e.src, e.dst) in hues.edges else {}),
+            }
             for e in geo.edges
         ],
     }
