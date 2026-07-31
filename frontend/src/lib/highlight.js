@@ -21,9 +21,8 @@
 // the node you are pointing at is a parent of nothing worth dimming it for.
 export const RELATED = 'related'
 export const POINTED = 'pointed'
-export const SELECTED = 'selected'
 
-const RANK = { [RELATED]: 1, [POINTED]: 2, [SELECTED]: 3 }
+const RANK = { [RELATED]: 1, [POINTED]: 2 }
 
 // The one place an edge's identity is spelled. `DagRail` keys its edges the
 // same way; a second spelling of this is a highlight that silently never fires.
@@ -105,22 +104,18 @@ export function marks(...groups) {
 }
 
 /**
- * The shape every frame here wants: one group at a time.
+ * The shape every frame here wants: a pointer, or nothing.
  *
- * The neighbourhood glow is the pointer's alone: it is what answers "what
- * does this reach", and an answer that is still on screen once the pointer
- * has left reads as the drawing having lost track of where the mouse went --
- * doubly so in a frame built as one type's own one-hop neighbourhood, where
- * "related to the selection" is nearly everything else drawn. A selection
- * with no pointer over anything still marks its own node (`only`, no
- * `relation`), which is what the node's `selected` styling reads off; it just
- * does not light a neighbourhood nobody is pointing at.
+ * Everything lit is the pointer's. Lighting answers "what does this reach",
+ * and an answer still on screen once the pointer has left reads as the drawing
+ * having lost track of where the mouse went. The frames used to keep marking
+ * whatever the info panel was showing, so a drawing at rest sat permanently
+ * half-lit -- one node glowing, its label filled, and nothing to say why. What
+ * the panel is showing is the panel's own heading to state, and its own pan to
+ * point at; the drawing says only what the pointer is on.
  */
-export function around(graph, { selected = null, pointed = null, relation = neighbours } = {}) {
-  if (pointed != null) {
-    const near = relation ? relation(graph, pointed) : EMPTY()
-    return marks({ role: RELATED, ...near }, { role: POINTED, ...only(pointed) })
-  }
-  if (selected != null) return marks({ role: SELECTED, ...only(selected) })
-  return marks()
+export function around(graph, { pointed = null, relation = neighbours } = {}) {
+  if (pointed == null) return marks()
+  const near = relation ? relation(graph, pointed) : EMPTY()
+  return marks({ role: RELATED, ...near }, { role: POINTED, ...only(pointed) })
 }

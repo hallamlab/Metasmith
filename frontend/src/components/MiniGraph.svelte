@@ -74,13 +74,13 @@
   })
 
   // what the page knows about a node that the geometry does not: its kind, the
-  // `per` tag, the library line, and which transform index it stands for
+  // library line, and which transform index it stands for
   let extra = $derived(new Map((graph?.nodes ?? []).map((n) => [n.id, n])))
   let nodeMeta = $derived(
     new Map(
       (graph?.nodes ?? []).map((n) => [
         n.id,
-        { kind: n.kind, tag: n.tag, sub: n.sub, disabled: n.kind === 'more' },
+        { kind: n.kind, sub: n.sub, disabled: n.kind === 'more' },
       ]),
     ),
   )
@@ -98,10 +98,13 @@
   // `$derived` and not an `$effect`: the pointer comes up from `DagRail` and
   // the marks go back down, and an effect in that loop re-runs on what it just
   // wrote.
+  //
+  // `focus` is deliberately not part of this. What the panel is showing is said
+  // by its heading and pointed at by the pan below; marking it here as well left
+  // one node lit for as long as the panel was open, in a frame where nearly
+  // everything drawn is that node's own neighbourhood.
   let pointed = $state(null)
-  let hlMarks = $derived(
-    around(graph, { selected: focus, pointed, relation: neighbours }),
-  )
+  let hlMarks = $derived(around(graph, { pointed, relation: neighbours }))
 
   // -- pan and zoom -------------------------------------------------------
   //
@@ -221,13 +224,12 @@
     else if (n.kind === 'transform') onpicktransform?.(n.index)
   }
 
-  // both ways: turning it on starts from the whole drawing, and turning it
-  // off puts back the view you get without touching anything -- there is
-  // otherwise no way to undo a pan except to take hold of it again
+  // the mode and nothing else. It used to refit on every change, in both
+  // directions, so zooming in to read something and then reaching for the node
+  // you zoomed in to click cost you the view you set up to click it from.
+  // Double-click, in pan mode, is the way back to the fit.
   function setLive(v) {
-    if (live === v) return
     live = v
-    fit()
   }
 </script>
 

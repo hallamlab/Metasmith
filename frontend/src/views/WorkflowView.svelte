@@ -18,6 +18,7 @@
   import ParamRows from '../components/ParamRows.svelte'
   import { isPlumbing, libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
   import { around, children, parents } from '../lib/highlight.js'
+  import { mintTargetId, refId, refKey, targetsFromWire, targetsToWire } from '../lib/lineage.js'
   import { runSuffix } from '../lib/runname.js'
   import { paramRows, sameParams, toParams } from '../lib/params.js'
 
@@ -100,16 +101,6 @@
   // the editable recipe, kept separate from the frozen result below it
   let recipe = $state({ targets: [], transform_libraries: [], rows: [] })
   let loadedFor = $state(null)
-
-  // Targets were a list of bare type names before they could carry lineage.
-  // Both spellings still arrive from disk, so both are read here.
-  function normalize(list) {
-    return (list ?? []).map((t) =>
-      typeof t === 'string'
-        ? { type: t, parents: [] }
-        : { type: t.type ?? '', parents: [...(t.parents ?? [])] },
-    )
-  }
 
   // The input rows. These are the recipe: the input library is built from them
   // when the workflow is solved, so a row is never anything else and never
@@ -214,7 +205,7 @@
     if (loadedFor !== name) {
       loadedFor = name
       recipe = {
-        targets: normalize(wf.request.target_types),
+        targets: targetsFromWire(wf.request.target_types),
         transform_libraries: wf.request.transform_libraries ?? [],
         rows: normalizeRows(wf.request.input_drafts),
       }
@@ -320,13 +311,6 @@
     ),
   )
 
-  let planFocus = $derived.by(() => {
-    const nodes = planGraph?.nodes ?? []
-    if (drawing?.kind === 'transform')
-      return nodes.find((n) => n.transform_index === drawing.i)?.id ?? null
-    return focus && nodes.some((n) => n.id === focus) ? focus : null
-  })
-
   function pickPlanNode(id) {
     const n = (planGraph?.nodes ?? []).find((x) => x.id === id)
     if (!n) return
@@ -334,16 +318,15 @@
     else if (n.transform_index != null) pickTransform(n.transform_index)
   }
 
-  // Which way the diagram reads around whatever is picked. Both directions at
-  // once is what a plan diagram is *already* showing -- every line is on the
-  // page -- so the useful question is one of "what does this need" and "what
-  // needs this", answered one at a time. One hop: two hops on a 73-node plan
-  // lights half the drawing, which is the same as lighting none of it.
+  // Which way the diagram reads around whatever the pointer is on. Both
+  // directions at once is what a plan diagram is *already* showing -- every
+  // line is on the page -- so the useful question is one of "what does this
+  // need" and "what needs this", answered one at a time. One hop: two hops on a
+  // 73-node plan lights half the drawing, which is the same as lighting none.
   let planUpstream = $state(true)
   let planPointed = $state(null)
   let planMarks = $derived(
     around(planGraph, {
-      selected: planFocus,
       pointed: planPointed,
       relation: planUpstream ? parents : children,
     }),
@@ -356,9 +339,14 @@
     return focus
   })
 
+  // Both sides through the serialiser, not just this one: the ids the page
+  // holds are minted per load and never match, and a recipe written by the CLI
+  // in an order that is legal but not the one this page would choose would
+  // otherwise read as permanently changed.
   let stale = $derived(
     wf?.planned &&
-      (JSON.stringify(recipe.targets) !== JSON.stringify(normalize(wf.request.target_types)) ||
+      (JSON.stringify(targetsToWire(recipe.targets)) !==
+        JSON.stringify(targetsToWire(targetsFromWire(wf.request.target_types))) ||
         JSON.stringify(recipe.transform_libraries) !==
           JSON.stringify(wf.request.transform_libraries ?? [])),
   )
@@ -414,10 +402,15 @@
   // keep whatever a previous version of this page (or the CLI) put there. The
   // table never derives one -- every table-driven solve is one unified view
   // over the whole DAG the sheet describes.
+  //
+  // `targetsToWire` is the one place the outputs are put in an order and the
+  // one place a parent becomes a position -- and this is its only caller, so a
+  // write path that skipped it would ship an id where the file wants an int and
+  // be refused by name rather than saved as a plausible wrong number.
   function requestBody() {
     return {
       sample_type: null,
-      target_types: recipe.targets,
+      target_types: targetsToWire(recipe.targets),
       transform_libraries: recipe.transform_libraries,
       input_drafts: recipe.rows,
     }
@@ -467,7 +460,7 @@
 
   function addRow(kind) {
     if (kind === 'output') {
-      recipe.targets = [...recipe.targets, { type: '', parents: [] }]
+      recipe.targets = [...recipe.targets, { id: mintTargetId(), type: '', parents: [] }]
       persist()
       return
     }
@@ -506,7 +499,7 @@
   // solve: the library is built from the rows, so a row that is not there
   // registers nothing.
   async function removeRow(id) {
-    const key = `#${id}`
+    const key = refKey(id)
     recipe.rows = recipe.rows
       .filter((d) => d.id !== id)
       .map((d) => ({ ...d, parents: d.parents.filter((p) => p !== key) }))
@@ -521,8 +514,10 @@
     await load()
   }
 
-  function patchTarget(i, patch) {
-    recipe.targets = recipe.targets.map((t, j) => (j === i ? { ...t, ...patch } : t))
+  // Spread, never rebuilt: the id is what the rows are keyed on, so losing it
+  // would restart the element a reorder is meant to animate.
+  function patchTarget(id, patch) {
+    recipe.targets = recipe.targets.map((t) => (t.id === id ? { ...t, ...patch } : t))
     touch()
   }
 
@@ -535,35 +530,33 @@
   // moving out of the whole control, not out of the box inside it.
   const commitRow = persist
 
-  // Lineage, whichever half of the recipe the row is in. Both are positions in
-  // the request now -- an input by its row id, an output by its index.
+  // Lineage, whichever half of the recipe the row is in. One line, no branch on
+  // the half: both store the keys of what they descend from, and only the
+  // serialiser knows an output's parents end up as numbers.
   async function setParents(row, keys) {
-    if (row.kind === 'target') {
-      patchTarget(row.id, {
-        parents: keys.map((k) => Number(k.slice(1))).sort((a, b) => a - b),
-      })
-    } else {
-      patchRow(row.id, { parents: keys })
-    }
+    // an input row already stores its parents as references, because they share
+    // a list with paths; an output's ids never leave the page, so they are kept
+    // bare and the reference is put back on when the rows are built
+    if (row.kind === 'target') patchTarget(row.id, { parents: keys.map(refId) })
+    else patchRow(row.id, { parents: keys })
     await persist()
   }
 
-  // Targets are addressed by position, so removing one has to renumber the
-  // links into it. A link *to* the removed target cannot be renumbered, so it
-  // is dropped -- and said out loud, because it silently changes the plan.
-  async function removeTarget(i) {
+  // The output goes, and so does every link into it. Nothing is renumbered --
+  // the links name ids, and the positions are worked out fresh on the way to
+  // disk -- but a link *to* the removed output is genuinely lost, and that is
+  // said out loud because it silently changes the plan.
+  async function removeTarget(id) {
     let dropped = false
     recipe.targets = recipe.targets
-      .filter((_, j) => j !== i)
+      .filter((t) => t.id !== id)
       .map((t) => ({
         ...t,
-        parents: (t.parents ?? [])
-          .filter((p) => {
-            if (p !== i) return true
-            dropped = true
-            return false
-          })
-          .map((p) => (p > i ? p - 1 : p)),
+        parents: (t.parents ?? []).filter((p) => {
+          if (p !== id) return true
+          dropped = true
+          return false
+        }),
       }))
     await persist()
     // after the write, not before: persist clears the notice on its way in
@@ -608,7 +601,7 @@
 
     function claim(slot) {
       for (const d of recipe.rows) {
-        const key = `#${d.id}`
+        const key = refKey(d.id)
         if (used.has(key) || !d.dtype || !fits(d.dtype, slot)) continue
         const id = identity(d)
         return { key, by: id || `a new ${d.dtype}`, blank: !id }
@@ -640,8 +633,8 @@
         dtype: slot.as,
         parents: (slot.parents ?? []).map((p) => stands.get(p)).filter(Boolean),
       }
-      stands.set(k, `#${d.id}`)
-      used.add(`#${d.id}`)
+      stands.set(k, refKey(d.id))
+      used.add(refKey(d.id))
       made.push(d)
     })
 
@@ -999,13 +992,13 @@
                 <button
                   type="button"
                   class:on={planUpstream}
-                  title="lighting what the selected step needs"
+                  title="hovering a step lights what it needs"
                   onclick={() => (planUpstream = true)}
                 >parents</button>
                 <button
                   type="button"
                   class:on={!planUpstream}
-                  title="lighting what needs the selected step"
+                  title="hovering a step lights what needs it"
                   onclick={() => (planUpstream = false)}
                 >children</button>
               </div>

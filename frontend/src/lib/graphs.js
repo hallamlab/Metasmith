@@ -10,7 +10,7 @@
 //   libraryGraph   -- a library: its tools and the types that join them
 //   typeGraph      -- a type: what produces it above, what consumes it below
 //
-// Nodes are `{id, kind, label, sub?, tag?}` where kind is 'type', 'transform' or
+// Nodes are `{id, kind, label, sub?}` where kind is 'type', 'transform' or
 // 'more'; an id appears once, because a duplicate key aborts the Svelte render
 // for the whole page, and because a type node shared between two tools is the
 // difference between a chain and a pile of unconnected pairs.
@@ -79,14 +79,9 @@ export function transformGraph(index, i) {
     nodes.push(node)
   }
 
-  for (const t of inputs) {
-    add({
-      ...typeNode(t),
-      // the lineage constraint: the transform runs once per group of this input,
-      // and everything it makes stays keyed to that group
-      ...(t === tr.group_by ? { tag: 'per' } : {}),
-    })
-  }
+  // the grouping input carries no mark of its own: `caption` below already says
+  // "one run per <type>" in words, at the top of the panel this is drawn in
+  for (const t of inputs) add(typeNode(t))
   add(transformNode(index, i))
   for (const t of outputs) add(typeNode(t))
 

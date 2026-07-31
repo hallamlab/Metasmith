@@ -1,6 +1,6 @@
 <script>
   import { dagInk } from '../lib/dagink.svelte.js'
-  import { POINTED, RELATED, SELECTED } from '../lib/highlight.js'
+  import { POINTED, RELATED } from '../lib/highlight.js'
   import { ui } from '../lib/state.svelte.js'
 
   // The one drawing the workflow page makes, in every frame that needs it.
@@ -41,9 +41,9 @@
     // merely disabled: a disabled button still swallows the event instead of
     // letting the drag through to the frame behind it.
     interactive = true,
-    // per-node extras the geometry knows nothing about: {kind, tag, sub,
-    // disabled}. `kind` is a page word ('type', 'transform', 'more') used for
-    // colour; the marker shape comes from the geometry's own kind.
+    // per-node extras the geometry knows nothing about: {kind, sub, disabled}.
+    // `kind` is a page word ('type', 'transform', 'more') used for colour; the
+    // marker shape comes from the geometry's own kind.
     meta = null,
     // per-edge page word, keyed `${from} ${to}`: 'satisfies' | 'lineage'
     edgeMeta = null,
@@ -119,7 +119,6 @@
             class:lineage={kind === 'lineage'}
             class:related={role === RELATED}
             class:pointed={role === POINTED}
-            class:selected={role === SELECTED}
             d={e.d}
             stroke={e.hue || null}
           />
@@ -137,7 +136,6 @@
         class="mk"
         class:related={role === RELATED}
         class:pointed={role === POINTED}
-        class:selected={role === SELECTED}
       >
         {#if m.st.shape === 'triangle_down'}
           <polygon
@@ -182,7 +180,6 @@
         class:inert={!interactive}
         class:related={role === RELATED}
         class:pointed={role === POINTED}
-        class:selected={role === SELECTED}
         style="
           left: {left}px;
           top: {n.cy - geo.row_pitch / 2}px;
@@ -211,9 +208,6 @@
           {#if n.namespace}<span class="ns truncate">{n.namespace}</span>{/if}
           <span class="line">
             <span class="label mono truncate">{n.label}</span>
-            {#if x?.tag}
-              <span class="mark" title="one run per group of this input">{x.tag}</span>
-            {/if}
             {#if x?.sub}<span class="sub small muted truncate">{x.sub}</span>{/if}
           </span>
         </span>
@@ -243,12 +237,11 @@
   /* one input having to descend from another: not data moving, so it is drawn in
      the accent rather than the grey every flow edge shares */
   .edge.lineage { stroke: var(--accent); stroke-opacity: 0.7; }
-  /* The three roles `lib/highlight` hands down. What is being pointed at has to
+  /* The two roles `lib/highlight` hands down. What is being pointed at has to
      be findable at a glance in a column of near-identical grey curves, so it
      takes the accent and twice the weight rather than a shade more opacity;
      what merely *leads* to it is the same grey, drawn firmly. */
-  .edge.pointed,
-  .edge.selected {
+  .edge.pointed {
     stroke: var(--accent);
     stroke-opacity: 1;
     stroke-width: 3;
@@ -259,8 +252,7 @@
      The rectangle this replaces was the one part of the panel that had no
      counterpart in the rendered drawing. */
   .mk { transition: opacity 80ms linear; }
-  .mk.pointed,
-  .mk.selected {
+  .mk.pointed {
     filter: drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 2px var(--accent));
   }
   .mk.related { filter: drop-shadow(0 0 3px var(--accent)); }
@@ -312,8 +304,7 @@
      role, so a row lights for exactly one reason -- a second, local rule is how
      a hover and a selection came to be lit at once and disagree. */
   .node.related .text,
-  .node.pointed .text,
-  .node.selected .text {
+  .node.pointed .text {
     background: var(--panel-2);
   }
   /* the node under the pointer is already the whole point of looking there;
@@ -324,16 +315,5 @@
   .node.related .text {
     outline: 1px solid var(--accent);
     outline-offset: -1px;
-  }
-  .node.selected .label { text-decoration: underline; text-underline-offset: 2px; }
-  .mark {
-    flex: 0 0 auto;
-    font-size: calc(var(--fs) * 0.72);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--warn);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 0 4px;
   }
 </style>

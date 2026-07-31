@@ -71,8 +71,7 @@
 </script>
 
 <div class="parents" bind:this={root}>
-  <!-- still a list, so a chip may carry a pointer role -- `display: contents`
-       puts the items themselves in the line above rather than a box of their own -->
+  <!-- still a list, so a chip may carry a pointer role -->
   <ul class="stack">
     {#each chosen as p (p.key)}
       <!-- a stated parent, hoverable so the row it names can be found: which
@@ -146,7 +145,12 @@
 <style>
   /* one line, right-aligned: the chips read as a trailing annotation on the
      row rather than as a second column of their own, and the row's height is
-     the same whatever is in here */
+     the same whatever is in here.
+     Not `overflow: hidden` here, however much this is the box whose width is
+     being defended: the menu below hangs off `.add`, which is a child of this,
+     at `top: 100%` -- so a clip here cuts away every pixel of it and pressing
+     "+ parent" opens onto nothing. The clip belongs on the chips, which are the
+     only thing that can grow; see `.stack`. */
   .parents {
     position: relative;
     display: flex;
@@ -155,9 +159,24 @@
     align-items: center;
     gap: 4px;
     min-width: 0;
-    overflow: hidden;
   }
-  .stack { display: contents; list-style: none; margin: 0; padding: 0; }
+  /* a real box rather than `display: contents`, so the chips have somewhere of
+     their own to be clipped without taking the menu with them. It shrinks
+     (`flex: 0 1 auto`) while the trigger does not, so a row runs out of width
+     by ellipsizing its chips, never by losing the control. */
+  .stack {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 4px;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
   .parent {
     display: flex;
     align-items: center;
