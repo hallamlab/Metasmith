@@ -5,7 +5,7 @@
   import TypeSelect from '../components/TypeSelect.svelte'
   import { POINTED, link, marks } from '../lib/highlight.js'
   import { ancestorsOf, byKey, candidates, refKey, topoOrder } from '../lib/lineage.js'
-  import { entries as rowEntries, isArrayRow, rowLabel, wholeToken } from '../lib/rows.js'
+  import { entries as rowEntries, isArrayRow, wholeToken } from '../lib/rows.js'
 
   // Inputs and outputs in one list, and the list *is* the form. They are two
   // headings over one run of rows, the way the ssh rail does managed and native
@@ -45,6 +45,10 @@
     // the index says about a type, for the line under a row being edited
     counts = null,
     onfocus,
+    // reading around a type list, and stopping: what the panel should show
+    // while a list is open, and the signal that it is no longer what was asked
+    onpreview,
+    onpreviewend,
     onremoveRow,
     onremoveTarget,
     onrow,
@@ -54,7 +58,7 @@
     onadd,
   } = $props()
 
-  // `isArrayRow`, `rowLabel`, `entries` and `wholeToken` are imported (see
+  // `isArrayRow`, `entries` and `wholeToken` are imported (see
   // `lib/rows.js`) rather than written here: the workflow view asks the same
   // questions, and a row that reads as an array in one place and not the other
   // is a disagreement nothing on the page can show. `wholeToken` is the
@@ -114,34 +118,27 @@
       key: refKey(d.id),
       id: d.id,
       type: d.dtype,
-      label: rowLabel(d),
       parents: d.parents ?? [],
       row: d,
     })),
   )
 
-  // An output is named by its *type*, not by its position. The number comes
-  // back only when two outputs share a type and the name alone would point at
-  // either -- and it counts down the order the rows are *drawn* in, which is
-  // also the order they are written in, so it agrees with the `target #N` the
-  // server names in a refusal.
-  let targetRows = $derived.by(() => {
-    const ordered = topoOrder(
+  // An output is named by its *type* and by nothing else. Two outputs of one
+  // type used to carry a `#N` here counting the order they are drawn in; what
+  // tells them apart now is the highlight that lights the row you are pointing
+  // at, which is the one thing an ordinal never did -- you still had to count
+  // rows to use it.
+  let targetRows = $derived.by(() =>
+    topoOrder(
       targets.map((t) => ({ key: refKey(t.id), parents: (t.parents ?? []).map(refKey), t })),
-    )
-    return ordered.map((r, i) => {
-      const name = r.t.type || '(no type yet)'
-      const shared = targets.filter((o) => (o.type || '') === (r.t.type || '')).length > 1
-      return {
-        kind: 'target',
-        key: r.key,
-        id: r.t.id,
-        type: r.t.type,
-        label: shared ? `${name} #${i + 1}` : name,
-        parents: r.parents,
-      }
-    })
-  })
+    ).map((r) => ({
+      kind: 'target',
+      key: r.key,
+      id: r.t.id,
+      type: r.t.type,
+      parents: r.parents,
+    })),
+  )
 
   let orderedInputRows = $derived(topoOrder(inputRows))
 
@@ -153,12 +150,14 @@
   let inputAncestors = $derived(ancestorsOf(inputRows))
   let targetAncestors = $derived(ancestorsOf(targetRows))
 
-  // What a row may be given as a parent, worded. The rule itself is shared
+  // What a row may be given as a parent. The rule itself is shared
   // (`lib/lineage`), because "can this be a parent" has one answer and the two
   // halves having had two is how the outputs came to refuse links that were
-  // perfectly legal.
+  // perfectly legal -- and now the *wording* is shared too, since there is
+  // nothing here to word: an option is a row's key and its type, whichever half
+  // is asking.
   const optionsFor = (rows, row, anc) =>
-    candidates(rows, row.key, anc).map((r) => ({ key: r.key, label: r.label, sub: r.type }))
+    candidates(rows, row.key, anc).map((r) => ({ key: r.key, type: r.type }))
 
   // Why the menu is empty, when it is. Two honest cases and they are not the
   // same: there is nothing else in this half yet, or everything else in it
@@ -174,14 +173,15 @@
   // sit in a lineage nothing on the page admits to. The path a parent chip used
   // to lead with is not unique enough to tell rows apart either -- the hover
   // highlight on the row itself already does that -- so the chip states only
-  // what the parent *is*.
+  // what the parent *is*, under the same field name an option carries.
   function chosenFor(row, index) {
-    return row.parents.map((k) => ({ key: k, sub: index.get(k)?.type ?? null }))
+    return row.parents.map((k) => ({ key: k, type: index.get(k)?.type ?? null }))
   }
 
-  // Which *link* a parent line is. The label is a path on an input and a type
-  // name on an output, and neither is unique enough to find the row by eye in a
-  // long list -- so hovering the line marks the two rows it joins.
+  // Which *link* a parent line is. A type name is what a chip and a menu entry
+  // both state, and it is shared by every row of that type -- so finding the
+  // row by eye is the highlight's job: hovering the line marks the two rows it
+  // joins.
   //
   // The link and not just the parent: marking the parent alone left the reader
   // to remember which row they were pointing from, and marking everything
@@ -213,7 +213,14 @@
      "left the field" is focus leaving the whole control rather than the input
      inside it -- tabbing from the box to the caret is not leaving. Without this
      a type typed and tabbed away from persisted nothing until some other field
-     happened to blur. -->
+     happened to blur.
+
+     Focusing the row and picking a type are two moves and both aim the panel:
+     the first says "this row", and no second `focusin` fires after a pick, so
+     without the second the panel would still be showing whatever the row held
+     before. A field blurred mid-type without a pick deliberately moves nothing
+     -- the persist below is all that happens -- so the panel never chases half
+     a name. -->
 {#snippet typeCell(row)}
   <div
     class="typefield"
@@ -227,7 +234,15 @@
       options={typeOptions}
       placeholder="namespace::type"
       onchange={(v) => setType(row, v)}
-      oncommit={() => oncommit?.()}
+      oncommit={(picked) => {
+        // `onfocus` aims the panel, `oncommit` writes the recipe to disk --
+        // two props one line apart, and only the name of the parameter says
+        // which value belongs to which
+        onfocus?.(picked)
+        oncommit?.()
+      }}
+      onpreview={(t) => onpreview?.(t)}
+      onclose={() => onpreviewend?.()}
     />
   </div>
 {/snippet}

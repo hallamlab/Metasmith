@@ -984,6 +984,18 @@ means a second implementation of `dag_draw`'s pixel pass with nothing holding th
 — which is what `frontend/src/lib/dagpaths.js` was. An edge crosses the wire as a `d` string
 and nothing else.
 
+**A type name is split in one place on the page, and it cuts where the engine cuts.**
+`frontend/src/lib/types.js` splits `namespace::name` at the *first* `::`, as
+`models/dag_draw.py:default_label` does; `TypeName.svelte` is the two stacked lines that
+follow from it (namespace at half size above, bare name below), and every list, menu and
+field on the page draws through those two. The half a page prints of a type is the *name* —
+a namespace is shared by every type in a library, so it never tells two rows apart; which
+row an entry means is the hover highlight's job. Two consequences that fail silently if
+forgotten: a caller cannot style the stack from outside (styles are scoped per component,
+so colour crosses as `--typename-ink`), and any control holding a type must be the same
+height settled as it is focused, since `LineageRail` is drawn against the row's measured
+`offsetTop`.
+
 ---
 
 ## Release versioning

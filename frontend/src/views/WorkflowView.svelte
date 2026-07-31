@@ -86,8 +86,33 @@
     drawing = null
   }
 
-  // a row of the recipe naming its own type: the same thing, from the other side
-  const showType = pickType
+  // a row of the recipe naming its own type: the same thing, from the other
+  // side. It settles the panel, so it is also what ends a preview -- the type
+  // it names *is* the answer now, and there is nothing left to put back.
+  const showType = (type) => {
+    previewFrom = null
+    pickType(type)
+  }
+
+  // Reading around an open type list moves the panel with you, which means
+  // `focus` stops describing what the row holds for as long as that list is
+  // open. What was there is snapshotted on the first preview and restored if
+  // the list closes without a pick -- `drawing` as well as `focus`, because
+  // `pickType` clears it, so a transform pinned in the panel would otherwise be
+  // torn down by a scroll through a list.
+  let previewFrom = $state(null)
+
+  const previewType = (type) => {
+    if (!previewFrom) previewFrom = { focus, drawing }
+    pickType(type)
+  }
+
+  const endPreview = () => {
+    if (!previewFrom) return
+    focus = previewFrom.focus
+    drawing = previewFrom.drawing
+    previewFrom = null
+  }
 
   function pickTransform(i) {
     drawing = { kind: 'transform', i }
@@ -873,6 +898,8 @@
           expansion={table?.expansion ?? null}
           onshared={setShared}
           onfocus={showType}
+          onpreview={previewType}
+          onpreviewend={endPreview}
           onremoveRow={removeRow}
           onremoveTarget={removeTarget}
           onrow={patchRow}

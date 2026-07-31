@@ -15,10 +15,13 @@
 </script>
 
 <div class="col" style="gap:12px">
-  <div class="spread">
+  <!-- `.row`, not `.spread`: with three children `space-between` pushes the two
+       chips apart and away from the heading, and these read as annotations on
+       it rather than as a right-hand column -->
+  <div class="row">
     <h3>why it did not solve</h3>
+    <span class="tag bad">experimental</span>
     <span class="tag bad">no plan</span>
-    <span class="tag">experimental</span>
   </div>
 
   <p class="small">{result.message}</p>

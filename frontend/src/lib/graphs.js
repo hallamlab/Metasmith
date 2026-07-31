@@ -15,6 +15,8 @@
 // for the whole page, and because a type node shared between two tools is the
 // difference between a chain and a pile of unconnected pairs.
 
+import { splitType } from './types.js'
+
 // Container images, environments and bundled scripts are requirements, but never
 // ones a person registers -- the resource libraries supply them. Same namespaces
 // the DAG renderer blacklists and the inspector hides. `env` is the newer name
@@ -23,7 +25,11 @@
 // tool that declared one.
 const PLUMBING = new Set(['containers', 'env', 'lib'])
 
-export const isPlumbing = (type) => PLUMBING.has(String(type).split('::')[0])
+// `splitType` rather than a split of its own -- a bare word with no `::` used to
+// read as its own namespace here, so `'containers'` alone was plumbing. Nothing
+// can reach that (every key the index mints is `namespace::name`), and a bare
+// word is not a type name.
+export const isPlumbing = (type) => PLUMBING.has(splitType(type).ns)
 
 const typeId = (name) => `t:${name}`
 const transformId = (i) => `x:${i}`
