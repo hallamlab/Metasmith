@@ -1342,7 +1342,7 @@
      grip sits when this same diagram is reused there. */
   .dag-details { position: relative; }
   .dag-dir {
-    position: absolute;
+    position: sticky;
     z-index: 5;
     /* below the summary's own row, not over it -- top:0 here is the same
        corner the "diagram" disclosure text already occupies */
