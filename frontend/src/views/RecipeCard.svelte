@@ -442,20 +442,21 @@
                  entry, and the row writes the JSON object those pairs
                  describe instead of the text: which is the point, since
                  hand-typed JSON in that box has braces in it and braces are
-                 what make a row a sample array. -->
+                 what make a row a sample array.
+
+                 The add sits hard left, against the switch, on the switch's
+                 own line: a second entry pushes the fields down under it
+                 rather than moving the button that made them, and it is
+                 nowhere near the deletes on the right. -->
             <div class="row-item">
               {@render modeSwitch(row)}
+              <button class="star" title="another field, under its own key" onclick={() => addEntry(row)}>+</button>
               {#if ents.length === 1}
                 {@render valueEntry(row, ents, 0)}
               {:else}
-                <span class="grow small muted">
-                  {ents.length} fields — written as one object
-                </span>
+                <span class="grow"></span>
               {/if}
               <span class="trail">
-                {#if ents.length === 1}
-                  <button class="star" title="another field, under its own key" onclick={() => addEntry(row)}>+</button>
-                {/if}
                 <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
               </span>
             </div>
@@ -463,10 +464,7 @@
               {#each ents as _e, i}
                 <div class="row-item entryline">
                   {@render valueEntry(row, ents, i)}
-                  <span class="trail">
-                    {#if i === ents.length - 1}
-                      <button class="star" title="another field, under its own key" onclick={() => addEntry(row)}>+</button>
-                    {/if}
+                  <span class="trail fieldtrail">
                     <DeleteControl title="discard this field" onconfirm={() => dropEntry(row, i)} />
                   </span>
                 </div>
@@ -661,8 +659,8 @@
   .typefield { min-width: 0; }
   .parentcell { flex: 1 1 auto; min-width: 0; padding-top: 1px; }
   /* 20px whether or not it holds a delete: it is what puts an output's × over
-     the × on an input's first line. It grows only for a value row's add button,
-     which has nothing above or below it to line up with. */
+     the × on an input's first line -- so nothing else may live in it. A value
+     row's add button sits on the left, against the mode switch. */
   .trail {
     flex: 0 0 auto;
     min-width: 20px;
@@ -675,6 +673,10 @@
      mode switch, so the block reads as belonging to the row rather than as
      three rows that happen to be adjacent */
   .row-item.entryline { padding-top: 0; padding-left: 28px; }
+  /* a field's × is inset from the row's ×, which stays hard right: two deletes
+     in one column would read as the same delete, and one of them discards the
+     whole row */
+  .trail.fieldtrail { padding-right: 16px; }
   /* narrow, like `.cols`: a key is one word and the value beside it is what
      wants the width */
   .keybox { flex: 0 1 8em; min-width: 4em; }
