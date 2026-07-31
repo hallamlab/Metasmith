@@ -122,10 +122,9 @@ def test_every_shipped_template_still_solves_once_the_gui_owns_it(
     `spec.Solve()` above reads the template's own library. The GUI does not: it
     materializes that library, adopts one editable row per item, and rebuilds
     the library *from those rows* on every solve. Two of the four shipped
-    templates solved above and dropped every target here -- an adopted value
-    file holding a JSON object was read as a `{column}` sample array, dropped
-    for want of a sheet, and took the root of the library's lineage with it. So
-    the assertion worth holding is this one; the one above cannot see it.
+    templates once solved above and dropped every target here, over a difference
+    in how adoption read a value file. Whatever the round trip does to a row is
+    only visible from this side, so the assertion worth holding is this one.
     """
     from metasmith.ops import data as op_data
     from metasmith.ops import inputs as op_inputs

@@ -4,7 +4,7 @@
   import LineageRail from '../components/LineageRail.svelte'
   import ParentPicker from '../components/ParentPicker.svelte'
   import TypeSelect from '../components/TypeSelect.svelte'
-  import { entries as rowEntries, isArrayRow, rowLabel, wholeToken } from '../lib/rows.js'
+  import { entries as rowEntries, isBound, rowLabel } from '../lib/rows.js'
 
   // Inputs and outputs in one list, and the list *is* the form. They are two
   // headings over one run of rows, the way the ssh rail does managed and native
@@ -59,37 +59,24 @@
   // rows and registered items were different things.
   const rowKey = (d) => `#${d.id}`
 
-  // `isArrayRow`, `rowLabel`, `entries` and `wholeToken` are imported (see
-  // `lib/rows.js`) rather than written here: the workflow view asks the same
-  // questions, and a row that reads as an array in one place and not the other
-  // is a disagreement nothing on the page can show. `wholeToken` is the
-  // whole-string form of the same `{col}` syntax `columnPicker` splices into
-  // the middle of one; the two agree because `ops.samples` on the server reads
-  // both the same way, as a token to substitute.
-
-  // A field a dropdown would otherwise own, held open as free text -- typing a
-  // pattern like `/data/{sample}_R1.fq.gz` around a token needs the field
-  // back. Keyed per row and field so switching one back does not touch
-  // another drawn from the same set of columns.
-  let freeform = $state(new Set())
-  const fieldKey = (row, field) => `${row.key}::${field}`
-  const isFreeform = (row, field) => freeform.has(fieldKey(row, field))
-  const setFreeform = (row, field, on) => {
-    const k = fieldKey(row, field)
-    const next = new Set(freeform)
-    if (on) next.add(k)
-    else next.delete(k)
-    freeform = next
-  }
+  // `rowLabel`, `entries` and `isBound` are imported (see `lib/rows.js`) rather
+  // than written here: the workflow view asks the same questions, and a row
+  // that reads one way in one place and another in the other is a disagreement
+  // nothing on the page can show.
+  //
+  // A sheet attached is the only switch. With one, every field on every row is
+  // a strict choice from that sheet's columns and there is no way to type into
+  // it; with none, every field is free text. Each keeps its own answer, so the
+  // two states are two fields on the row rather than one field being rewritten
+  // -- which is the whole of the switching behaviour, with nothing to save on a
+  // transition. A value entry's *key* is the exception and stays a text box in
+  // both states: it names the field in the object the row writes.
+  let hasTable = $derived(columns.length > 0)
 
   // What the sheet registered is not rows of this recipe. Those items are in the
   // library and in the plan, and two hundred of them here would be two hundred
   // rows with nothing on them to decide -- the array row carries the count.
   let expanded = $derived(items.filter((it) => it.array_id).length)
-
-  // a field's element, so the column picker can insert at the caret rather than
-  // at the end -- the usual gesture is `/data/` then a column then `_R1.fq.gz`
-  const fieldId = (row, field) => `msm-f-${row.key}-${field}`
 
   // The entries of a value row, and the one place they are written back. A row
   // holds a list of them, so every edit to one is an edit to the whole list --
@@ -100,7 +87,7 @@
     onrow?.(row.id, { values: next })
   }
   const addEntry = (row) => {
-    onrow?.(row.id, { values: [...rowEntries(row.row), { key: '', value: '' }] })
+    onrow?.(row.id, { values: [...rowEntries(row.row), { key: '', value: '', column: '' }] })
     oncommit?.()
   }
   const dropEntry = (row, i) => {
@@ -365,84 +352,56 @@
   </div>
 {/snippet}
 
-<!-- The columns of the attached sheet, as something to put in a field rather
-     than something to type from memory. It inserts at the caret and hands focus
-     back, because the usual gesture is `/data/` then a column then `_R1.fq.gz`. -->
-{#snippet columnPicker(row, field, apply)}
-  {#if columns.length}
-    <select
-      class="cols small"
-      aria-label="insert a column"
-      value=""
-      onchange={(e) => {
-        const col = e.currentTarget.value
-        e.currentTarget.value = ''
-        if (!col) return
-        const box = document.getElementById(fieldId(row, field))
-        if (!box) return
-        const at = box.selectionStart ?? box.value.length
-        const next = `${box.value.slice(0, at)}{${col}}${box.value.slice(box.selectionEnd ?? at)}`
-        apply(next)
-        box.focus()
-        const caret = at + col.length + 2
-        requestAnimationFrame(() => box.setSelectionRange(caret, caret))
-      }}
-    >
-      <option value="">{'{ }'}</option>
-      {#each columns as c}<option value={c}>{c}</option>{/each}
-    </select>
-  {/if}
-{/snippet}
+<!-- One field, two states, and the sheet decides which. With columns it is a
+     strict choice from them -- there is nothing to type, because the sheet
+     carries the finished value and metasmith never builds a string out of one.
+     Without, it is the free text it always was.
 
-<!-- A field that names one column and nothing else: a choice from the sheet's
-     own columns, not a string to type -- which is what a sample table attached
-     is *for*. A field around a token in a longer pattern (a path with a column
-     in the middle of it) is still free text with `columnPicker` to insert into,
-     since a dropdown cannot represent that shape at all.
+     The two are two separate stores on the row, so neither write touches the
+     other: switching a sheet on and off moves between the last answer given to
+     each. A binding naming a column *this* sheet lacks draws blank and is left
+     alone, so re-attaching the sheet it came from restores it.
 
-     `field` is only a name -- for the element id and the freeform set, so two
-     fields of one row are told apart. What a write *means* is `apply`'s
-     business: a path sets one key on the row, a value entry rewrites the whole
-     list it is a member of. -->
-{#snippet sampleField(row, field, value, placeholder, mono, apply)}
-  {@const col = wholeToken(value)}
-  {#if columns.length && col !== null && !isFreeform(row, field)}
+     `field` is only a name, for the label an assistive reader gets. What a
+     write means is the caller's business: a path sets one key on the row, a
+     value entry rewrites the whole list it is a member of. -->
+{#snippet sampleField(row, field, value, column, placeholder, mono, apply, bind)}
+  {#if hasTable}
     <select
       class="grow{mono ? ' mono' : ''}"
+      class:unset={!column}
       aria-label={`${field}, a column of the attached sheet`}
-      value={col}
-      onchange={(e) => apply(`{${e.currentTarget.value}}`)}
+      value={columns.includes(column) ? column : ''}
+      onchange={(e) => {
+        bind(e.currentTarget.value)
+        // a select has no blur-after-typing to save on, so the change *is* the
+        // commit -- without this every choice would sit unpersisted until some
+        // other field happened to blur
+        oncommit?.()
+      }}
     >
+      <option value="">choose a column…</option>
       {#each columns as c}<option value={c}>{c}</option>{/each}
     </select>
-    <button
-      class="star"
-      title="type a pattern around a column instead of naming one plainly"
-      onclick={() => setFreeform(row, field, true)}
-    >pattern</button>
   {:else}
     <input
       class="grow{mono ? ' mono' : ''}"
-      id={fieldId(row, field)}
       {value}
       {placeholder}
       spellcheck="false"
       oninput={(e) => apply(e.currentTarget.value)}
-      onblur={() => {
-        oncommit?.()
-        setFreeform(row, field, false)
-      }}
+      onblur={() => oncommit?.()}
     />
-    {@render columnPicker(row, field, apply)}
   {/if}
 {/snippet}
 
-<!-- One field of a value row: its key, its value, and the sheet's columns for
-     the value. The key is literal -- only values take `{column}` tokens, so the
-     grouping key, the array test and the validation messages all read one set
-     of fields. With one entry the key is optional and says so; with two or more
-     it is what the field is called in the object the row writes, and the server
-     refuses a launch off a recipe where one is blank. -->
+<!-- One field of a value row: its key, and what it holds. The key is literal in
+     both states and never a column -- so the grouping key, what fans out and
+     the validation messages all read one set of fields, and a key that happens
+     to match a column name means nothing. With one entry the key is optional
+     and says so; with two or more it is what the field is called in the object
+     the row writes, and the server refuses a launch off a recipe where one is
+     blank. -->
 {#snippet valueEntry(row, ents, i)}
   {@const e = ents[i]}
   {@const only = ents.length === 1}
@@ -459,9 +418,11 @@
     row,
     `values.${i}`,
     e.value,
-    columns.length ? '{sample}' : 'GCF_000005845.2',
+    e.column,
+    'GCF_000005845.2',
     false,
     (text) => patchEntry(row, i, { value: text }),
+    (col) => patchEntry(row, i, { column: col }),
   )}
 {/snippet}
 
@@ -517,7 +478,7 @@
         <div class="rowsCol" bind:this={inputBox}>
           {#each orderedInputRows as row (row.key)}
             {@const info = row.type && counts ? counts(row.type) : null}
-            {@const array = isArrayRow(row.row)}
+            {@const bound = isBound(row.row)}
             <div class="entry" data-row-key={row.key} class:hl={hover === row.key} animate:flip={{ duration: 150 }}>
               <!-- Two lines, not one: the path is the longest thing on an input row and
                    was being squeezed into a sliver beside a combobox and a menu. What
@@ -531,9 +492,9 @@
                      key beside it -- and it stays on the switch's own line so
                      the common row does not grow. Give it a key, or a second
                      entry, and the row writes the JSON object those pairs
-                     describe instead of the text: which is the point, since
-                     hand-typed JSON in that box has braces in it and braces are
-                     what make a row a sample array. -->
+                     describe instead of the text -- which is the point: read
+                     metadata is several facts, and hand-typed JSON in one box
+                     is not something a person can edit. -->
                 <div class="row-item">
                   {@render modeSwitch(row)}
                   {#if ents.length === 1}
@@ -570,9 +531,11 @@
                     row,
                     'path',
                     row.row.path,
-                    columns.length ? '/data/{sample}_R1.fastq.gz' : '/data/sample_01.fastq.gz',
+                    row.row.column,
+                    '/data/sample_01.fastq.gz',
                     true,
                     (text) => onrow?.(row.id, { path: text }),
+                    (col) => onrow?.(row.id, { column: col }),
                   )}
                   <span class="trail">
                     <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
@@ -582,24 +545,31 @@
 
               {@render detail(row)}
 
-              {#if array}
-                <!-- An array row is one declaration, not N rows: what it says about
-                     itself is a count of how many items it stands for. -->
+              {#if hasTable}
+                <!-- With a sheet attached this row is one declaration, not N
+                     rows: what it says about itself is a count of how many
+                     items it stands for. A field bound to nothing makes that
+                     count zero, and saying so here is what keeps the row from
+                     going quiet -- it registers nothing until it is bound. -->
                 <div class="notes row wrap small">
-                  {#if expansion?.counts?.[row.id]}
+                  {#if !bound}
+                    <span class="tag warn">pick a column for every field — this registers nothing</span>
+                  {:else if expansion?.counts?.[row.id]}
                     <span class="tag">× {expansion.counts[row.id]} registered</span>
                   {:else}
                     <span class="tag">× {rowCount} once expanded</span>
                   {/if}
-                </div>
-              {/if}
+                  <!-- A sample's mask is one index item's lineage, so a
+                       reference sitting beside the per-sample files is in no
+                       sample at all. Marking it shared is the third way in, and
+                       it applies to any row under a sheet: the usual shape is a
+                       column repeating one path down every row, which groups
+                       onto the single instance this then shares.
 
-              <!-- Keyed by the row, not by a path: a row may not have one yet, which
-                   is the normal state of a fresh recipe, and it is the row that is
-                   durable in any case. The generate turns it into a path between the
-                   sync that made it and the solve that reads it. -->
-              {#if columns.length && !array}
-                <div class="notes row wrap small">
+                       Keyed by the row, not by a path: a row may not have one
+                       yet, and the generate turns the reference into every path
+                       that row registered, between the sync that made them and
+                       the solve that reads them. -->
                   <button
                     class="star"
                     class:on={sharedPaths.includes(row.key)}
@@ -771,12 +741,12 @@
      mode switch, so the block reads as belonging to the row rather than as
      three rows that happen to be adjacent */
   .row-item.entryline { padding-top: 0; padding-left: 28px; }
-  /* narrow, like `.cols`: a key is one word and the value beside it is what
-     wants the width */
+  /* narrow: a key is one word and the field beside it is what wants the width */
   .keybox { flex: 0 1 8em; min-width: 4em; }
-  /* narrow on purpose: it sits beside a field that wants the width, and what it
-     holds is one short word at a time */
-  .cols { flex: 0 0 auto; width: 4.5em; padding: 2px 2px; }
+  /* a field under a sheet that has chosen no column yet. It is a blank in the
+     recipe, not a constant, and the row's own note says so -- this is only what
+     makes the blank findable in a long list. */
+  .unset { border-color: var(--warn, var(--line)); }
 
   /* two labelled halves, one lit -- a slider read as one control to flip
      rather than two buttons doing different things */

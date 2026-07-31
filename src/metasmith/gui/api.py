@@ -1296,13 +1296,22 @@ def generate_workflow(name):
             # A row with no path yet cannot be named by one, which is the
             # normal state of a fresh recipe -- so the request says which *row*
             # every sample should see, and it becomes a path here, between the
-            # sync that made it and the solve that reads it.
+            # sync that made it and the solve that reads it. With a sheet
+            # attached that row is a sample array and registered one path per
+            # distinct set of cells: marking it shared means all of them, which
+            # for the usual case -- a column repeating one reference down the
+            # sheet -- is the single instance those cells grouped onto.
             registered = synced["rows"]
-            shared = [
-                registered[s[1:]] if s.startswith("#") else s
-                for s in shared_refs
-                if not s.startswith("#") or s[1:] in registered
-            ] or None
+            generated = synced["generated"]
+            shared: list[str] = []
+            for s in shared_refs:
+                if not s.startswith("#"):
+                    shared.append(s)
+                elif s[1:] in registered:
+                    shared.append(registered[s[1:]])
+                else:
+                    shared += list(dict.fromkeys(generated.get(s[1:], [])))
+            shared = shared or None
 
             # a stale bundle from a previous generate must not outlive it: the
             # result the user sees and the bundle the CLI stages have to agree.
@@ -1366,7 +1375,7 @@ def generate_workflow(name):
             # about the plan a run would stage, not about what the page says
             # now, so filling a box in clears it on the next solve -- which is
             # the same solve that would put the fix into the bundle.
-            result["recipe_problems"] = op_inputs.problems(rows)
+            result["recipe_problems"] = op_inputs.problems(rows, table)
             p.write_result(name, result)
             return result
 

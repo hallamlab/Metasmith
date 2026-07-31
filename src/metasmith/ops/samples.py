@@ -6,25 +6,36 @@ as the sample type. What it has never had is a way to *say* that other than one
 `AddItem` call per sample per file. This module is that way: a table you already
 have, plus one declared input row per column, expanded into the library.
 
-A **sample array** is an ordinary input row whose path -- or, for a value row,
-whose *value* -- holds `{column}` tokens: one declaration standing for N items,
-indexed by the sheet. It is never registered as it stands. Array rows wire into
-an arbitrary parent DAG the same way any other input row does -- a column with
-no parents, a column parented to another -- and every table row instances that
-whole DAG once. There is no privileged "index" column and no per-sample masking
-here: multiplicity (how many distinct pangenomes, how many distinct samples)
-falls out of ordinary lineage, the same way `group_by` resolves it at the
-transform level. Two rows that substitute to the same thing share one instance
--- a deliberate grouping, not a collision, and the only way to say "these
-samples share one of these".
+**A sheet attached is the whole switch.** With one, every input row of the
+recipe is a sample array: one declaration standing for N items, each of its
+fields bound to a column and holding whatever that column's cell holds. With no
+sheet, every field is the text typed into it. Nothing about the text decides
+this -- there is no syntax that flags a field as naming a column, and braces in
+a value are ordinary characters. The sheet carries finished values; nothing here
+builds a string out of one.
 
-A value row has no path to substitute into: the library mints one, keyed on the
-columns that row's `value` reads. So the sharing above is decided by those
-columns, and a value row can no longer disagree with itself about what a shared
-entry holds -- one key implies one substituted value by construction, since
-`substitute` reads exactly the columns the key is built from. Widening the value
-to read a second column is how you say two sheet rows are no longer the same
-thing, and the grouping follows.
+An array row is never registered as it stands. Array rows wire into an arbitrary
+parent DAG the same way any other input row does -- a column with no parents, a
+column parented to another -- and every table row instances that whole DAG once.
+There is no privileged "index" column and no per-sample masking here:
+multiplicity (how many distinct pangenomes, how many distinct samples) falls out
+of ordinary lineage, the same way `group_by` resolves it at the transform level.
+Two rows that land on the same cells share one instance -- a deliberate
+grouping, not a collision, and the only way to say "these samples share one of
+these".
+
+A value row has no path to bind: the library mints one, keyed on the columns
+that row's entries bind. So the sharing above is decided by those columns, and a
+value row cannot disagree with itself about what a shared entry holds -- one key
+implies one set of cells by construction. Binding a second field to a second
+column is how you say two sheet rows are no longer the same thing, and the
+grouping follows.
+
+A row with a field left unbound while a sheet is attached is an unfinished
+recipe, not a constant: it registers nothing, and :func:`unbound_problems` names
+it rather than letting it disappear. A value that really is the same for every
+sample is a column repeated down the sheet -- which costs a column and nothing
+in the library, since identical cells group onto one instance anyway.
 
 (`AsSamples`, elsewhere in metasmith, masks a library by an index item's
 ancestors/descendants; it is a valid, separate, lower-level primitive that this
@@ -46,16 +57,11 @@ browser rewrites wholesale.
 from __future__ import annotations
 
 import io
-import re
 from pathlib import Path
 
 from ._common import load_data_lib
+from .rows import column_of
 from .rows import entries as row_entries
-
-# `{column}` -- one level, no nesting, no braces inside. A path is not a
-# templating language and the moment it starts to look like one, a person has to
-# know which of two things `{a{b}}` means.
-TOKEN = re.compile(r"\{([^{}]*)\}")
 
 DELIMITED_SUFFIXES = {".csv": ",", ".tsv": "\t", ".tab": "\t", ".txt": None}
 EXCEL_SUFFIXES = {".xlsx", ".xlsm"}
@@ -75,7 +81,7 @@ def _columns_of(header: list) -> list[str]:
     dupes = sorted({c for c in cols if cols.count(c) > 1})
     assert not dupes, (
         f"the table names the same column more than once: {', '.join(dupes)} -- "
-        f"a token could mean either"
+        f"a field bound to one could mean either"
     )
     return cols
 
@@ -210,32 +216,57 @@ def detach_table(where: str | Path) -> dict:
 # -- sample arrays -----------------------------------------------------------
 
 
-def columns_in(text: str | None) -> list[str]:
-    """The column names a field names, in order, without duplicates."""
-    out: list[str] = []
-    for m in TOKEN.finditer(text or ""):
-        name = m.group(1).strip()
-        if name and name not in out:
-            out.append(name)
-    return out
+def bound_fields(row: dict) -> list[tuple[str, str]]:
+    """(label, bound column) for every field of a row, in order.
 
+    Mode-aware: a value row states no path and a file row has no values, so
+    reading both regardless would let a field the row does not use decide what
+    it fans out over. A value row's `name` is not a field -- it is the filename
+    a library used to make the user type, and it never binds anything.
 
-def is_array_row(row: dict) -> bool:
-    # Mode-aware: a value row states no path and a file row has no value, so
-    # reading all three regardless would let a field the row does not use decide
-    # whether it fans out. `name` stays in the value arm only for a row written
-    # before the library minted its own path -- dropping it early would take
-    # back every item such a row already has.
+    Labelled the way the page labels the box each one came from, so "names a
+    column this table does not have" points at a box the reader can find rather
+    than at the row as a whole.
+    """
     if row.get("mode") == "value":
-        return bool(
-            any(columns_in(e["value"]) for e in row_entries(row))
-            or columns_in(row.get("name"))
-        )
-    return bool(columns_in(row.get("path")))
+        ents = row_entries(row)
+        return [
+            (
+                f"[{e['key']}]" if e["key"]
+                else ("value" if len(ents) == 1 else f"field {i + 1}"),
+                e["column"],
+            )
+            for i, e in enumerate(ents)
+        ]
+    return [("path", column_of(row))]
 
 
-def substitute(text: str | None, record: dict[str, str]) -> str:
-    return TOKEN.sub(lambda m: record[m.group(1).strip()], text or "")
+def is_bound(row: dict) -> bool:
+    """Whether every field of this row names a column. See the module docstring
+    for why a partly-bound row is a blank rather than a mix of the two states."""
+    fields = bound_fields(row)
+    return bool(fields) and all(col for _label, col in fields)
+
+
+def unbound_problems(rows: list[dict]) -> list[dict]:
+    """Rows that would register nothing because a field names no column.
+
+    Deliberately not part of :func:`validate`, whose problems are refusals: a
+    half-filled recipe is the normal way to work out what a plan needs, and this
+    is a blank in it rather than something that would fail. It is read at launch
+    and drawn beside the row, so nothing disappears quietly.
+    """
+    out: list[dict] = []
+    for row in rows:
+        if not isinstance(row, dict) or not (row.get("dtype") or "").strip():
+            continue
+        label = row_label(row)
+        for field, col in bound_fields(row):
+            if not col:
+                out.append(_problem(str(row.get("id")), (
+                    f"[{label}] has no column chosen for its {field}"
+                )))
+    return out
 
 
 def row_label(row: dict) -> str:
@@ -245,38 +276,23 @@ def row_label(row: dict) -> str:
     name is a uuid nobody typed. What it *holds* is the only thing a person
     would recognise it by, so a clamped first line of its first entry is the
     label, carrying that entry's key when it has one.
+
+    A row built entirely under a sheet has no text in it at all; its column is
+    then the only recognisable thing about it, and that is a fallback for the
+    label rather than a rule about what the field means.
     """
     if row.get("mode") == "value":
         ents = row_entries(row)
-        first = ents[0] if ents else {"key": "", "value": ""}
+        first = ents[0] if ents else {"key": "", "value": "", "column": ""}
         head = (first["value"] or "").strip().splitlines()
-        text = head[0] if head else ""
+        text = head[0] if head else first["column"]
         if first["key"]:
             text = f"{first['key']}: {text}" if text else first["key"]
         if len(text) > 40:
             text = text[:40] + "\u2026"
     else:
-        text = (row.get("path") or "").strip()
+        text = (row.get("path") or "").strip() or column_of(row)
     return text or str(row.get("id"))
-
-
-def _fields_of(row: dict) -> list[tuple[str, str]]:
-    """(label, text) for every field of an array row that may hold a token.
-
-    One per entry for a value row, labelled the way the page labels the box it
-    came from, so "names a column this table does not have" points at a box the
-    reader can find rather than at the row as a whole.
-    """
-    if row.get("mode") == "value":
-        ents = row_entries(row)
-        out = [("name", row.get("name") or "")]
-        for i, e in enumerate(ents):
-            label = f"[{e['key']}]" if e["key"] else (
-                "value" if len(ents) == 1 else f"field {i + 1}"
-            )
-            out.append((label, e["value"]))
-        return out
-    return [("path", row.get("path") or "")]
 
 
 def _array_parents(row: dict) -> list[str]:
@@ -314,14 +330,31 @@ def _problem(where: str, message: str) -> dict:
     return {"where": where, "message": message}
 
 
-def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
-    """Everything wrong with this expansion, without touching the library.
+def array_rows_of(rows: list[dict]) -> list[dict]:
+    """The rows a sheet expands: every one with a type and no blank binding.
 
-    `rows` is the whole input side of the recipe -- array rows and plain drafts
-    together -- because half of what can be wrong is about how the two relate.
-    Returns `{problems, array_rows}`; `problems` empty means expandable.
+    Not a question about any row's text. This is the whole of "what fans out"
+    now, and it is only ever asked where a table is already in hand.
     """
-    array_rows = [r for r in rows if is_array_row(r)]
+    return [
+        r for r in rows
+        if isinstance(r, dict) and r.get("id") is not None
+        and (r.get("dtype") or "").strip() and is_bound(r)
+    ]
+
+
+def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
+    """Everything this expansion would fail on, without touching the library.
+
+    Refusals only. A row still missing a binding is a blank rather than a
+    failure and is reported by :func:`unbound_problems`; refusing it here would
+    stop a half-filled recipe solving, which is how a plan gets worked out.
+
+    `rows` is the whole input side of the recipe, because half of what can be
+    wrong is about how one row relates to another. Returns
+    `{problems, array_rows}`; `problems` empty means expandable.
+    """
+    array_rows = array_rows_of(rows)
     problems: list[dict] = []
     if not array_rows:
         return {"problems": problems, "array_rows": []}
@@ -333,20 +366,15 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
     for t in array_rows:
         tid = str(t["id"])
         label = row_label(t)
-        if not t.get("dtype"):
-            problems.append(_problem(tid, f"[{label}] has no type"))
-        for field, text in _fields_of(t):
-            for col in columns_in(text):
-                if col not in columns:
-                    problems.append(_problem(tid, (
-                        f"[{label}] names a column [{col}] in its {field}, which "
-                        f"this table does not have"
-                    )))
-        if t.get("mode") == "value" and "/" in (t.get("name") or ""):
-            problems.append(_problem(tid, (
-                f"[{label}] is a value row, and a value's name is a filename in "
-                f"the library -- it cannot hold a slash"
-            )))
+        for field, col in bound_fields(t):
+            # The page offers a select, so this is not a state a user can type
+            # themselves into -- but a stored binding outlives the sheet it was
+            # chosen from, and a re-upload with a renamed column lands here.
+            if col not in columns:
+                problems.append(_problem(tid, (
+                    f"[{label}] names a column [{col}] in its {field}, which "
+                    f"this table does not have"
+                )))
         for p in _array_parents(t):
             # ...against every row, not just the array ones: an array row
             # descending from a plain row is one declared DAG hung off a single
@@ -364,47 +392,29 @@ def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
     return {"problems": problems, "array_rows": array_rows}
 
 
-def _plain_paths(rows: list[dict]) -> set[str]:
-    """What the recipe's non-array rows will occupy once they are registered.
-
-    Read off the rows rather than off the manifest: a plain row is registered
-    from the row on every solve, so what the library holds right now is the
-    *previous* answer -- it still lists a row that has since been deleted, and
-    does not list one that has since been typed in.
-    """
-    out: set[str] = set()
-    for r in rows:
-        if is_array_row(r) or not (r.get("dtype") or "").strip():
-            continue
-        # A plain value row contributes nothing here: its path is minted, so it
-        # is not in the namespace a sheet row could collide with. Only a legacy
-        # row still names one, and that name is a real manifest entry.
-        name = (r.get("name") if r.get("mode") == "value" else r.get("path")) or ""
-        if name.strip():
-            out.add(name.strip())
-    return out
-
-
 def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
-    """What the substituted paths themselves are wrong about.
+    """What the paths the sheet holds are wrong about.
 
     Checked before anything is registered, because `AddItem` asserts mid-loop on
     a path already in the manifest and `Save` is at the end -- a collision found
     the hard way leaves a half-expanded library on disk.
+
+    With a sheet attached there are no non-array rows, so the namespace a cell
+    could collide with is the manifest alone, less what the last expansion put
+    there itself.
     """
     lib = load_data_lib(library_path)
-    record = read_record(library_path)
-    previous = set(record.get("paths", []))
-    owned = {str(v) for v in (record.get("rows") or {}).values()}
-    existing = _plain_paths(rows) | ({str(p) for p in lib.manifest} - previous - owned)
+    stored = read_record(library_path)
+    previous = set(stored.get("paths", []))
+    owned = {str(v) for v in (stored.get("rows") or {}).values()}
+    existing = {str(p) for p in lib.manifest} - previous - owned
     problems: list[dict] = []
     minted: dict[str, tuple[str, str, int, str | None]] = {}
     columns = set(table.get("columns") or [])
-    # an array row naming a column that is not there is already reported, and
-    # substituting it here would raise instead of adding to the list
+    # a row bound to a column that is not there is already reported, and reading
+    # its cell here would report the same thing twice in another spelling
     array_rows = [
-        t for t in array_rows
-        if all(c in columns for _f, text in _fields_of(t) for c in columns_in(text))
+        t for t in array_rows if all(c in columns for _f, c in bound_fields(t))
     ]
 
     for i, record in enumerate(table.get("rows") or []):
@@ -413,10 +423,9 @@ def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
             label = row_label(t)
             # the list, not a dict of it: two entries can share a label (an
             # empty key twice), and collapsing them would drop a column check
-            fields = _fields_of(t)
+            fields = bound_fields(t)
             missing = [
-                c for _label, text in fields for c in columns_in(text)
-                if c in columns and not (record.get(c) or "").strip()
+                c for _label, c in fields if not (record.get(c) or "").strip()
             ]
             if missing:
                 problems.append(_problem(tid, (
@@ -426,13 +435,13 @@ def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
                 continue
             if t.get("mode") == "value":
                 # A value row states no path -- the library mints one, keyed on
-                # the cells this row's value reads. It cannot collide with a
+                # the cells this row's entries bind. It cannot collide with a
                 # file row's path, with another value row's, or with anything
                 # already registered, so the whole path-collision story below
                 # simply does not apply to it. The empty-cell check above is
                 # what is left, and it is the useful one.
                 continue
-            path = substitute(dict(fields).get("path"), record)
+            path = (record.get(dict(fields)["path"]) or "").strip()
             value = None
             if not path:
                 problems.append(_problem(tid, f"[{label}] comes out empty on row {i + 1}"))
@@ -462,8 +471,8 @@ def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
 
     # A literal path in a lineage is a leftover from when a registered row was
     # named by its path; a row is named by its id now. It still has to point at
-    # something -- either an entry that is there, or a row that will put one there.
-    reachable = _plain_paths(rows) | {str(p) for p in lib.manifest}
+    # something the library holds.
+    reachable = {str(p) for p in lib.manifest}
     for t in array_rows:
         for p in _plain_parents(t):
             if p not in reachable:

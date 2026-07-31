@@ -318,9 +318,9 @@ opened. And it is a value, not a flag: nothing downstream tests for `None` or a 
 **A sample type is a way of branching a plan, not a precondition for one.**
 `plan_workflow(sample_type=None)` plans the library as it stands — one sample holding
 everything in it — and naming a type splits it into one run per item of that type
-(`AsSamples`). The GUI passes `None` unless a sample table is attached, in which case it
-passes the type of the sample-array row marked as the index; the CLI's `--sample-type` is
-optional for the same reason.
+(`AsSamples`). The GUI always passes `None`, sheet or no sheet — a sampled recipe plans as one
+unified view and the runtime fans it back out — so a non-null value only ever comes from a
+request written directly; the CLI's `--sample-type` is optional for the same reason.
 
 **A sample's mask is one index item's lineage, so both directions of the shape matter.** An
 index item with a *parent* puts that parent's whole subtree in every mask and collapses all
@@ -328,7 +328,10 @@ samples into one view; an item beside the index that nothing links to it lands i
 all and the planner never sees it, though it is still staged. `ops.samples.validate` refuses
 the first and `plan_workflow(shared_input_paths=…)` is the way out of the second — it appends
 one masked view of the input library alongside the resource libraries, which is where a thing
-every sample sees belongs.
+every sample sees belongs. The GUI states it as a **row** reference (`#id`), never a path: under
+a sheet that row registered one path per distinct set of cells and none of them exists until the
+solve, so `generate_workflow` resolves the reference to every path the row made, between the sync
+that made them and the solve that reads them.
 
 **Planning is not reentrant, and the lock for it lives at the mutation.** `TransformInstance.Load`
 imports each transform by bare module name, mutates `sys.path`, calls `importlib.reload`, and
@@ -858,36 +861,45 @@ nothing — and anything else writes the JSON object those pairs describe, each 
 stays its text; quoting is the escape hatch). Those three live in `ops/rows.py` rather than in
 `ops/inputs.py`, because `ops.samples` needs the same shape and `inputs` already imports it —
 `frontend/src/lib/rows.js` is the page's copy, for the same reason. The scalar rule is on the
-server, once, because the GUI's params boxes read it too. Read metadata is several facts, and the alternative — hand-typed
-JSON in one box — collides head-on with `{column}`: literal braces *are* the sample-array syntax,
-so `{"depth": 10}` in a plain value box is still read as a token naming a column. The keyed form
-is the way out; a one-field unkeyed row keeps the old trap. So **adoption must never
-manufacture one**: a registered value file holding a JSON object is adopted as the keyed fields
-describing it, and only when `render_value` reproduces the file byte for byte — a leaf's identity
-is content addressed, so a file this did not write is one it must not rewrite. Adopted as a single
-unkeyed entry instead, its literal braces read as `{column}`, the row is dropped for want of a
-sheet, and the item goes with it: that is how two shipped templates solved from their own spec
-and dropped every target the moment the GUI owned them.
+server, once, because the GUI's params boxes read it too. Read metadata is several facts, and a
+line of hand-typed JSON in one box is not something a person can edit — which is what the keyed
+form is for, and why **adoption splits a registered JSON object into keyed fields**, but only
+when `render_value` reproduces the file byte for byte: a leaf's identity is content addressed, so
+a file this did not write is one it must not rewrite.
 
-**A sample table is a sheet plus one declared row per kind of input.** `ops.samples` parses a
-csv/tsv/excel upload (stored verbatim under a fixed stem, because the workflow directory *is*
-the task bundle root) and says what is wrong with it. A row carrying a `{column}` token — in its
-path, or in a value row's *value* — is a **sample array**: one declaration standing for N items
-indexed by the sheet, not a second kind of row. The recipe shows an array row's count and never
-the items it made. It is deliberately *not* called a template: that word now means a stored
-workflow you start from, and the two were being confused in the same page.
+**The presence of a sample table is the only thing that decides how a field behaves.** With no
+sheet, every path and every value is the free text typed into it. With one, every row of the
+recipe is a **sample array** — one declaration standing for N items indexed by the sheet — and
+every field is a strict choice from that sheet's columns, holding whatever the chosen cell holds.
+There is no syntax that flags a field as naming a column: braces are ordinary characters, and the
+spreadsheet must carry finished values because nothing builds a string out of one. A value
+entry's **key** is the exception and is literal in both states; it names the field in the object
+the row writes and is never read as a column.
+
+**Each field stores both answers, so the switch is not destructive.** A file row carries `path`
+*and* `column`; a value entry carries `value` *and* `column`. Neither is derived from the other,
+so attaching a sheet, binding a column, detaching it and editing the text moves between two
+remembered states rather than overwriting one — and a binding naming a column the current sheet
+lacks draws blank while staying on the row, so re-attaching the sheet it came from restores it.
+There is deliberately **no constant under a sheet**: a field bound to nothing is a blank in the
+recipe (reported by `unbound_problems`, drawn on the row, and it registers nothing), not a value
+that stands as it is. Saying "the same for every sample" means a column repeated down the sheet,
+which costs a column there and nothing in the library.
+
+`ops.samples` parses a csv/tsv/excel upload (stored verbatim under a fixed stem, because the
+workflow directory *is* the task bundle root) and says what is wrong with it. The recipe shows an
+array row's count and never the items it made. It is deliberately *not* called a template: that
+word now means a stored workflow you start from, and the two were being confused in the same page.
 
 **What an array row expands into is keyed on identity, not on sheet position.** A file row
-substitutes its path per sheet row; a value row has no path to substitute, so its mint is keyed
-on the union of the sheet cells its fields read — each field is independently assignable to a
-column, or to none. That distinction is the whole of how multiplicity is
-expressed here: two sheet rows naming one pangenome are two samples of *one* pangenome, and a
+registers its bound cell as the path; a value row has no path to bind, so its mint is keyed on
+the union of the sheet cells its fields bind. That distinction is the whole of how multiplicity
+is expressed here: two sheet rows naming one pangenome are two samples of *one* pangenome, and a
 per-sheet-row key would turn that shared parent into three pangenomes holding one genome each —
-which plans fine, and is wrong. Keying on the cells rather than the text they produce also means
-rewording a template around a token rewrites contents without re-registering anything. Two
-entries landing on one path is therefore a deliberate grouping, and a value row can no longer
-disagree with itself about what a shared entry holds: one key implies one substituted value by
-construction, since `substitute` reads exactly the columns the key is built from.
+which plans fine, and is wrong. Keying on the columns rather than on what the row renders to also
+means relabelling a field rewrites contents without re-registering anything. Two entries landing
+on one path is therefore a deliberate grouping, and a value row cannot disagree with itself about
+what a shared entry holds: one key implies one set of cells by construction.
 
 **A template is a starting point, and `+ workflow` is where you pick one.** Templates live at
 `<stdlib>/templates/<name>/` — a `spec.yml` plus the deferred input rows it names — and are

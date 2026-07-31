@@ -18,7 +18,7 @@
   import { isPlumbing, libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
   import { runSuffix } from '../lib/runname.js'
   import { paramRows, sameParams, toParams } from '../lib/params.js'
-  import { entries as rowEntries, isArrayRow } from '../lib/rows.js'
+  import { entries as rowEntries } from '../lib/rows.js'
 
   let { name } = $props()
 
@@ -141,17 +141,14 @@
 
   // -- the sample table --------------------------------------------------------
   //
-  // A row of the recipe whose path (or a value row's name or value) names a
-  // column of the attached sheet is a *sample array*: it never registers as it
-  // stands. What puts one library item per sheet row down is solving, not a
-  // separate step here to remember -- `generate_workflow` re-syncs the
-  // registered items against the current table and rows on every solve, so
-  // there is no "expanded" state on this side of the wire to go stale, and
-  // nothing here unregisters anything by hand either. Which makes a row an
-  // array is the token, not a flag -- there is one list of input rows, and a
-  // row stops being an array the moment its last token goes. `isArrayRow` is
-  // imported rather than written twice: this view and the recipe card both ask,
-  // and a row that draws as an array in one and not the other is invisible.
+  // A sheet attached makes every row of the recipe a *sample array*: it never
+  // registers as it stands, and each of its fields reads the column it binds.
+  // What puts one library item per sheet row down is solving, not a separate
+  // step here to remember -- `generate_workflow` re-syncs the registered items
+  // against the current table and rows on every solve, so there is no
+  // "expanded" state on this side of the wire to go stale, and nothing here
+  // unregisters anything by hand either. Detaching is therefore all it takes to
+  // put every row back to the text it was holding before.
 
   let table = $state(null)
 
@@ -179,10 +176,11 @@
   }
 
   // Which rows every sample should see. Held as row references (`#id`), not as
-  // paths: a row may not have a path yet, which is the normal state of a fresh
-  // recipe, and the generate turns each one into a path between building the
-  // library and solving from it. The key name is the spec's own, because both
-  // the create and generate routes filter incoming bodies against that list.
+  // paths: a row under a sheet registers one path per distinct set of cells and
+  // none of them exists until the solve, so the request says which *row* and the
+  // generate turns it into every path that row made. The key name is the spec's
+  // own, because both the create and generate routes filter incoming bodies
+  // against that list.
   let sharedPaths = $derived(wf?.request?.shared_input_paths ?? [])
 
   async function setShared(key, on) {
@@ -199,10 +197,11 @@
   // What stops a solve. Solving is what registers a sample row now, and it
   // refuses the same way the old manual expand did -- surfaced here too, so
   // the button says why rather than a solve starting and failing on the same
-  // thing a moment later.
-  let arrayCount = $derived(recipe.rows.filter(isArrayRow).length)
+  // thing a moment later. A row that has chosen no column yet is *not* here: it
+  // is a blank in the recipe, drawn on the row itself, and a half-filled recipe
+  // is how a plan gets worked out.
   let tableProblem = $derived.by(() => {
-    if (!table?.attached || !arrayCount) return null
+    if (!table?.attached) return null
     if (table.problems?.length) return table.problems[0].message
     return null
   })
@@ -428,9 +427,12 @@
     const d = {
       id: nextRowId(),
       mode,
+      // two answers per field, one live at a time -- the text, and the sheet
+      // column. Which is live is the sheet's presence and nothing else.
       path: '',
+      column: '',
       name: '',
-      values: [{ key: '', value: '' }],
+      values: [{ key: '', value: '', column: '' }],
       dtype: '',
       parents: [],
       ...extra,
@@ -845,10 +847,10 @@
           <span class="small muted">two outputs are the same type with the same lineage</span>
         {:else if tableProblem}
           <span class="small muted">{tableProblem}</span>
-        {:else if arrayCount}
+        {:else if table?.attached}
           <span class="small muted">
-            one unified solve over the sheet's {arrayCount}
-            {arrayCount === 1 ? 'column' : 'columns'}
+            one unified solve over the sheet's {table.row_count}
+            {table.row_count === 1 ? 'row' : 'rows'}
           </span>
         {:else if stale}
           <span class="tag warn">recipe changed — the result below is from the old one</span>
