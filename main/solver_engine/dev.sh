@@ -78,6 +78,11 @@ case $1 in
         # The binary is dynamically linked against this machine's libc, which is
         # exactly what `cross` output is not, hence the marker.
         cargo build --release || exit 1
+        # Clear the stage first. A host build refreshes exactly one slot, and
+        # leaving the other three behind from an earlier `-be` is how a stale
+        # binary survives a rebuild that looked like it succeeded -- which is the
+        # 0.18.4 stub-relay bug wearing different clothes.
+        rm -rf "$STAGE"
         mkdir -p "$STAGE"
         cp "$HERE/target/release/msm_solver" "$STAGE/msm_solver.$(uname -m | sed 's/aarch64/arm64/')-$(uname -s | tr 'A-Z' 'a-z')"
         echo "local" > "$STAGE/BUILD_KIND"

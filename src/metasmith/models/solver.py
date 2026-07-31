@@ -1,7 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Generator, Any, TypeVar, Generic
-import numpy as np
 import json
 import re
 from pathlib import Path
@@ -10,6 +9,7 @@ from collections import deque
 from ..hashing import KeyGenerator
 from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 from .solver_rng import DecisionStream, argmax_index, argmin_index
+from .solver_math import entropy
 
 # Both search phases weight the same three moves: two exploit arms and one
 # explore arm. Named here because the refiner and the mcts phase must not
@@ -514,6 +514,10 @@ def solve_by_mcts(
                 "demand2producer": demand2producer,
                 "demand2product": demand2product,
                 "product2consumer": product2consumer,
+                # object-keyed, unlike the D2T telemetry below, which is keyed by
+                # a transform's printed key and so collapses duplicates
+                "distance_scores": distance_scores,
+                "opportunity_scores": opportunity_scores,
                 "no_path_possible": True,
             },
             _iterations=0,
@@ -943,12 +947,11 @@ def solve_by_mcts(
                 for p, e in step.used.items():
                     if not e in used_as_lineage: continue
                     lineage_usage[e] = lineage_usage.get(e, 0)+1
-            def _entropy(a) -> float:
-                a = np.array(a)
-                p = a/a.sum()
-                p = p[p>0]
-                return float((p*np.log2(p)).sum())
-            e_score = _entropy(list(lineage_usage.values()))
+            # `solver_math.entropy`, not the numpy expression this used to be:
+            # `ndarray.sum` is pairwise and `np.log2` is not libm's, so the score
+            # differed in its last bit from anything that isn't numpy. See that
+            # module for the measurements.
+            e_score = entropy(list(lineage_usage.values()))
 
             _product2producer: dict[Endpoint, Application] = {}
             for step in _steps:
@@ -1473,6 +1476,8 @@ def solve_by_mcts(
             "demand2producer": demand2producer,
             "demand2product": demand2product,
             "product2consumer": product2consumer,
+            "distance_scores": distance_scores,
+            "opportunity_scores": opportunity_scores,
         },
         _iterations=solution._iterations,
         _refiner_iterations=solution._refiner_iterations,

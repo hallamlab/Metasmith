@@ -13,7 +13,11 @@
 //! delivery path -- four targets, packaging, resolution, fallback -- is proven
 //! before the search depends on it.
 
+mod det;
+mod model;
+mod problem;
 mod rng;
+mod smath;
 mod wire;
 
 use clap::{Parser, Subcommand};
@@ -22,7 +26,7 @@ use std::io::{self, Read, Write};
 use crate::rng::{DecisionStream, argmax_index, argmin_index, top_k_indices};
 use crate::wire::{
     CAPABILITIES, ENGINE_NAME, ENGINE_VERSION, Op, OpResult, TraceReply, TraceRequest,
-    VersionReply, WIRE_VERSION, decode_scalars,
+    VersionReply, WIRE_VERSION, decode_scalars, encode_scalar,
 };
 
 #[derive(Parser, Debug)]
@@ -39,6 +43,9 @@ enum Commands {
     /// Replay a script of decisions and report each answer. The differential
     /// harness; not used at plan time.
     RngTrace,
+    /// Read a problem and report what was derived from it, without searching.
+    /// Also the differential harness -- see `wire::DescribeReply`.
+    Describe,
 }
 
 fn main() {
@@ -46,6 +53,7 @@ fn main() {
     let result = match cli.command {
         Commands::Version => cmd_version(),
         Commands::RngTrace => cmd_rng_trace(),
+        Commands::Describe => cmd_describe(),
     };
     if let Err(e) = result {
         eprintln!("msm_solver: {e}");
@@ -100,6 +108,10 @@ fn cmd_rng_trace() -> Result<(), String> {
             }
             Op::Argmax { scores } => serde_json::json!(argmax_index(&decode_scalars(scores)?)),
             Op::Argmin { values } => serde_json::json!(argmin_index(&decode_scalars(values)?)),
+            Op::Entropy { counts } => encode_scalar(smath::entropy(counts)),
+            Op::Log2 { values } => serde_json::Value::Array(
+                decode_scalars(values)?.into_iter().map(|v| encode_scalar(v.log2())).collect(),
+            ),
         };
         results.push(OpResult { value, draws: stream.draws });
     }
@@ -109,5 +121,51 @@ fn cmd_rng_trace() -> Result<(), String> {
         rng_version: rng::SOLVER_RNG_VERSION,
         draws: stream.draws,
         results,
+    })
+}
+
+/// Read a problem from stdin and report the derived maps, without searching.
+fn cmd_describe() -> Result<(), String> {
+    let mut raw = String::new();
+    io::stdin().read_to_string(&mut raw).map_err(|e| e.to_string())?;
+    let enc: problem::EncodedProblem = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if enc.wire_version != WIRE_VERSION {
+        return Err(format!(
+            "wire version mismatch: request {} vs engine {WIRE_VERSION}",
+            enc.wire_version
+        ));
+    }
+    let p = problem::Problem::load(&enc)?;
+
+    // Sorted on the way out, every one of them. The maps are `det::Map`s, whose
+    // iteration order is at least reproducible, but "reproducible" is not
+    // "meaningful": a comparison against Python has to be against a stated
+    // order or it is comparing two hash tables.
+    fn pairs<V: Clone>(m: &crate::det::Map<u32, V>) -> Vec<(u32, V)> {
+        let mut v: Vec<(u32, V)> = m.iter().map(|(&k, val)| (k, val.clone())).collect();
+        v.sort_unstable_by_key(|(k, _)| *k);
+        v
+    }
+    let mut inherent: Vec<u32> = p.inherent_parents.iter().copied().collect();
+    inherent.sort_unstable();
+    let _ = &p.endpoints;
+
+    emit(&wire::DescribeReply {
+        wire_version: WIRE_VERSION,
+        no_path_possible: p.no_path_possible,
+        max_distance: p.max_distance,
+        relevant_transforms: p.relevant_transforms.clone(),
+        free_transforms: p.free_transforms.clone(),
+        dep_rank: {
+            let mut v = pairs(&p.dep_rank);
+            v.sort_unstable_by_key(|(_, r)| *r);
+            v
+        },
+        distance: pairs(&p.distance),
+        opportunity: pairs(&p.opportunity),
+        demand2product: pairs(&p.demand2product),
+        demand2producer: pairs(&p.demand2producer),
+        product2consumer: pairs(&p.product2consumer),
+        inherent_parents: inherent,
     })
 }

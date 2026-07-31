@@ -43,7 +43,7 @@ from .solver_rng import SOLVER_RNG_VERSION
 # deliberately *not* the same constant as SOLVER_RNG_VERSION, which covers the
 # decision contract -- the two move for different reasons, and a single constant
 # covering two independently-moving things is how the last desync went unseen.
-SOLVER_WIRE_VERSION = 1
+SOLVER_WIRE_VERSION = 2
 
 ENGINE_NAME = "msm_solver"
 #: Where `main/solver_engine/dev.sh --stage` puts the binaries, and what

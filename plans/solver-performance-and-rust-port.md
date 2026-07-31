@@ -1192,3 +1192,121 @@ these a contract rather than a preference:
   they land.
 - Acceptance criterion 8 (<3s Python path) is unmet at ~8.1s and is what T5c/T6
   exist to close.
+
+## T5c — the Rust search core — IN PROGRESS
+
+Landing in verifiable pieces rather than as one commit, for the reason T5b
+established: a divergence found against a hundred lines is an afternoon, and the
+same divergence found against the whole search is a haystack. The pieces are the
+score's float rules, then the problem encoding, then the search, then the
+refiner.
+
+### The two decisions T5b left open, settled
+
+**`_entropy`'s summation order** was the last unstated determinism surface, and
+it turned out to be *two* surfaces rather than one. `ndarray.sum` is pairwise,
+not sequential -- it agrees with a left-to-right sum for n < 9 and stops
+agreeing at n = 9. And `np.log2` is not the platform's `log2`: over 20,000
+random values in (0, 1) numpy disagreed with libm in the last bit **52** times.
+Anything calling the C library -- CPython's `math.log2`, Rust's `f64::log2` --
+would have disagreed with the solver that often, per value, forever.
+
+Both are gone. `models/solver_math.py` states the order (left to right, the
+caller's) and uses the platform's logarithm, `smath.rs` is the same function,
+and the wire carries an `entropy` op so the two are compared rather than
+believed. **numpy is no longer imported by `solver.py` at all** -- the entropy
+was its last call site.
+
+The change moved nothing. All twelve benchmark fingerprints are unchanged, and a
+10,000-problem sweep is identical to T5a's on every number: 9,926 sound, 7
+unsound (the same seven, `sink-9391` among them), 52 unsolved, 15 over the
+timeout, mean 6.173 steps. Which is the expected result rather than a lucky one:
+`lineage_usage` rarely reaches nine entries, and below nine numpy's sum *is* the
+left-to-right sum.
+
+**The refiner/`rectify` laundering is carried into the port, not fixed first.**
+Fixing it is a semantic change: it would move plans, and moving plans is exactly
+what makes a differential gate unreadable. A port that changes behaviour cannot
+be checked against the thing it is porting. The defect stays pinned by its
+`xfail(strict)` anchors, `_is_valid`'s reachable-but-incomplete `# looped` branch
+is reproduced faithfully, and the fix -- adjudicating the refiner's winner after
+rectification -- is a change to make once T5d can prove it is the only one.
+
+### The wire was quietly changing the numbers it carried
+
+`serde_json` parses floats *best effort* by default. It is a documented feature
+flag, roughly twice as fast, and it does not always land on the double the
+writer wrote: it read `0.9999999999999999` as exactly **1.0**, and read other
+ordinary values a few ulps off.
+
+This was found by the `log2` op, which exists to compare the two libms and
+instead caught the transport underneath them -- the two libms agree exactly.
+That is worth noting on its own: the probe that finds a bug is often not the
+probe aimed at it, which is an argument for probing the layer *below* the one
+you suspect.
+
+Left alone it would have been invisible and permanent. Nothing errors; the
+engine answers confidently, with a number derived from an input it was never
+sent. `float_roundtrip` is now on, `wire::tests` pins it against
+`f64::from_str` -- correctly rounded, and what CPython's `float()` also does --
+and `test_a_float_survives_the_crossing` pins it from the Python side.
+
+`SOLVER_WIRE_VERSION` is **2** on both sides. A new op variant is an envelope
+change like any other.
+
+### The port's identity model, which the fingerprint decided
+
+The plan called for `ApplicationId` and `ApplicationSig` to be separate types.
+Reading the fingerprint showed the same split is needed one level down, and for
+a sharper reason: `_fingerprint_detail` keys endpoints by `id(e)`. Two endpoints
+with the same properties *and* the same lineage are `==` in Python -- every dict
+and set keyed by an endpoint collapses them -- but they are two nodes in the
+graph the fingerprint hashes.
+
+So interning endpoints, which is the obvious thing to do to a value type, would
+turn two endpoints with one producer each into one endpoint with two producers.
+That is a different plan, introduced by the port rather than found by it. In
+`model.rs` an endpoint therefore has an arena index for identity and an interned
+`EpSig` for equality, and every Python `dict`/`set` keyed by an endpoint is keyed
+by the signature. Dependencies get no such split, and that is a claim rather than
+an oversight: nothing in the solver distinguishes two structurally identical
+dependencies.
+
+Endpoints are also *mutable*, which is not a style choice: `rectify` does
+`new_e.parents |= ...; new_e.RefreshHash()`, so an endpoint's structure really
+does change mid-solve and everything already pointing at it sees the change.
+
+### The problem is read the same way, checked before anything is searched
+
+`describe` is a subcommand and deliberately **not** a capability -- nothing at
+plan time asks for it. It reports what the engine derived before its first
+decision, and `tests/solver/test_engine_problem.py` compares that to
+`Solution._heuristics` over 93 generated problems spanning cycles, duplicate
+transforms, lineage, product groups and multi-given, plus the four shipped
+templates.
+
+Two comparisons in there are doing real work. The demand maps are compared **as
+sequences**, because Python freezes them into rank order and `_find_endpoints`
+appends candidates in the order it walks them -- right members in the wrong
+order is a different plan, and a set comparison would pass. And the templates are
+included because generated problems have a handful of properties, so their type
+bitsets are one word and the striding is never exercised; a template carries
+hundreds.
+
+`solve_by_mcts` now also reports `distance_scores` and `opportunity_scores` on
+`_heuristics`, object-keyed. The existing distance telemetry is keyed by a
+transform's printed key, which collapses duplicates and so cannot adjudicate a
+port.
+
+### Gates so far
+
+| gate | result |
+|---|---|
+| `cargo test --release` | **11 passed** (5 rng, 3 entropy, 3 wire float transport) |
+| `tests/solver/test_solver_engine.py` | **25 passed** |
+| `tests/solver/test_engine_problem.py` | **94 passed** (93 generated + 4 templates in one case) |
+| `tests/solver` with the engine staged | **252 passed**, 9 xfailed |
+| `tests/solver` with `METASMITH_SOLVER_ENGINE=python` | **252 passed**, 9 xfailed |
+| `tests/perf/test_solver_benchmark.py` | **3 passed**, fingerprints unmoved |
+| 10,000-problem sweep | identical to T5a on every statistic |
+| fast suite | **1610 passed**, 7 skipped, 12 xfailed |

@@ -294,3 +294,48 @@ def test_the_hard_cases_agree(rust_engine):
         {"op": "bounded_int", "n": 3},
     ]
     assert execute_ops_via_engine(rust_engine, 12345, ops) == execute_ops(12345, ops)
+
+
+def test_a_float_survives_the_crossing(rust_engine):
+    """The wire itself, before anything computes with what it carried.
+
+    This is the one that caught `serde_json`'s default float parsing, which is
+    documented as best-effort and read `1 - 2**-53` as exactly `1.0`. Nothing
+    about that is visible at the call site: the engine answers confidently, with
+    a number derived from an input it was never sent. `log2` is the readout
+    rather than the subject -- it turns a one-ulp difference in the argument into
+    a difference the eye can see, and near 1.0 it turns it into a chasm.
+    """
+    values = [
+        1 - 2**-53,            # the double just below 1.0
+        1.0, 0.5, 0.1, 2/3,
+        5e-324,                # the smallest denormal
+        1e-300, 1e300,
+        0.10669708251953125,   # and two the best-effort parser got wrong by
+        0.9640369415283203,    # a handful of ulps rather than by everything
+    ]
+    ops = [
+        {"op": "log2", "values": values},
+        # a ranking of values that differ only in the last bit: if one side
+        # parsed them differently, the two are no longer even tied
+        {"op": "top_k", "scores": [1.0, 1 - 2**-53, 1.0, 1 - 2**-52], "k": 4},
+    ]
+    assert execute_ops_via_engine(rust_engine, 3, ops) == execute_ops(3, ops)
+
+
+def test_the_entropy_agrees_where_numpy_would_not(rust_engine):
+    """`solver_math.entropy`, at the sizes where a "better" sum diverges.
+
+    Nine terms is where numpy's pairwise summation stops agreeing with a
+    left-to-right one, so the counts run well past nine. The empty and singleton
+    cases are here because they are the common ones -- most plans carry no
+    lineage constraints at all.
+    """
+    ops = [{"op": "entropy", "counts": c} for c in [
+        [], [1], [0, 0], [1, 1, 1, 1], [3, 3],
+        list(range(1, 10)),            # exactly nine
+        list(range(1, 40)),            # past numpy's 8-way unrolled block
+        [1]*200,                       # past its 128-element recursion threshold
+        [7, 1, 1, 1, 1, 1, 1, 1, 1000000],
+    ]]
+    assert execute_ops_via_engine(rust_engine, 5, ops) == execute_ops(5, ops)
