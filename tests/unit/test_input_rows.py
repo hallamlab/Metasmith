@@ -439,7 +439,9 @@ def test_adoption_makes_one_row_per_item(lib_path, tmp_path):
     # an adopted value keeps whatever filename it arrived with, invisibly
     assert by_type["mock::reads"]["name"] == ""
     assert out["record"]["rows"][by_type["mock::reads"]["id"]] == "K12"
-    assert by_type["mock::reads"]["value"] == "GCF_000005845.2"
+    # ...as one unkeyed entry: what the file holds is what it holds, and
+    # re-rendering it through the keyed form could move a registered byte
+    assert by_type["mock::reads"]["values"] == [{"key": "", "value": "GCF_000005845.2"}]
     # a minted path is remembered rather than shown, so identity does not move
     assert by_type["mock::bam"]["path"] == ""
     assert out["record"]["rows"][by_type["mock::bam"]["id"]].startswith("/msm_deferred/")
@@ -502,3 +504,161 @@ def test_a_library_owned_file_too_big_to_be_a_value_is_adopted_as_it_is(lib_path
     assert adopted["mode"] == "file" and adopted["path"] == "big.txt"
     op_samples.write_record(str(lib_path), out["record"])
     assert op_inputs.sync(str(lib_path), out["rows"])["changed"] is False
+
+
+# -- a value row's fields ----------------------------------------------------
+
+
+def kv(*pairs):
+    return [{"key": k, "value": v} for k, v in pairs]
+
+
+def test_one_unkeyed_field_writes_exactly_what_was_typed(lib_path):
+    """The whole reason the old spelling is safe.
+
+    A row that holds one nameless thing has always written that text verbatim,
+    and still does -- so no library written before the list existed moves a
+    byte when its recipe migrates to it.
+    """
+    legacy = op_inputs.sync(str(lib_path), [row("v", mode="value", value="300\n")])
+    path = legacy["rows"]["v"]
+    before = ids(lib_path)
+
+    listed = [row("v", mode="value", values=kv(("", "300\n")))]
+    out = op_inputs.sync(str(lib_path), listed)
+    assert out["changed"] is False
+    assert out["rows"]["v"] == path
+    # not `300`, and not stripped: an unkeyed field is text, not a value
+    assert (lib_path / path).read_text() == "300\n"
+    assert ids(lib_path) == before
+
+
+def test_keyed_fields_are_written_as_one_object(lib_path):
+    rows = [row("v", mode="value", values=kv(("insert", "300"), ("paired", "true")))]
+    out = op_inputs.sync(str(lib_path), rows)
+    text = (lib_path / out["rows"]["v"]).read_text()
+    assert text == '{"insert": 300, "paired": true}'
+
+
+@pytest.mark.parametrize(
+    "typed,written",
+    [
+        ("300", 300),
+        ("1.5", 1.5),
+        ("true", True),
+        ("null", None),
+        ('"300"', "300"),        # the escape hatch: quoted stays a string
+        ("illumina", "illumina"),
+        ("[1, 2]", "[1, 2]"),    # structure is what the keys are for
+        ('{"a": 1}', '{"a": 1}'),
+    ],
+)
+def test_a_field_is_given_the_type_it_looks_like(typed, written):
+    import json
+
+    rendered = op_inputs.render_value(kv(("k", typed)))
+    assert json.loads(rendered) == {"k": written}
+
+
+def test_one_field_with_a_key_is_still_an_object(lib_path):
+    """A key is what says "this is a field of something", however many there are."""
+    rows = [row("v", mode="value", values=kv(("depth", "10")))]
+    out = op_inputs.sync(str(lib_path), rows)
+    assert (lib_path / out["rows"]["v"]).read_text() == '{"depth": 10}'
+
+
+def _sheet():
+    return op_samples.parse_table(
+        b"sample,pangenome\ns1,pA\ns2,pA\ns3,pB\n", filename="s.csv",
+    )
+
+
+def test_fields_may_read_different_columns(lib_path):
+    """One row, two boxes, two columns -- and the grouping follows both.
+
+    The mint is keyed on the cells the row reads, so widening it to a second
+    column is exactly how you say two sheet rows are no longer the same thing.
+    """
+    rows = [row(
+        "v", mode="value", dtype="mock::reads",
+        values=kv(("of", "{pangenome}"), ("id", "{sample}")),
+    )]
+    out = op_inputs.sync(str(lib_path), rows, _sheet())
+    made = out["generated"]["v"]
+    assert len(made) == 3 and len(set(made)) == 3, "one per (pangenome, sample) pair"
+    assert (lib_path / made[0]).read_text() == '{"of": "pA", "id": "s1"}'
+
+    before = ids(lib_path)
+    again = op_inputs.sync(str(lib_path), rows, _sheet())
+    assert again["changed"] is False and again["generated"]["v"] == made
+    assert ids(lib_path) == before
+
+
+def test_a_constant_field_beside_a_column_one_is_repeated(lib_path):
+    """...and the row still groups by the one column it actually reads."""
+    rows = [row(
+        "v", mode="value", dtype="mock::reads",
+        values=kv(("of", "{pangenome}"), ("kit", "illumina")),
+    )]
+    out = op_inputs.sync(str(lib_path), rows, _sheet())
+    made = out["generated"]["v"]
+    assert len(made) == 3 and len(set(made)) == 2, "s1 and s2 share one pangenome"
+    assert (lib_path / made[0]).read_text() == '{"of": "pA", "kit": "illumina"}'
+
+
+def test_the_grouping_key_of_a_one_field_row_is_what_it_always_was(lib_path):
+    """The record's `minted` map is keyed by this string.
+
+    Widening the key to a union of every field's columns must leave a row with
+    one field producing the byte-identical key -- or every project that already
+    has array value items re-mints all of them on its next solve.
+    """
+    record = {"sample": "s1", "pangenome": "pA"}
+    legacy = op_inputs._group_key({"mode": "value", "value": "{pangenome}"}, record)
+    listed = op_inputs._group_key(
+        {"mode": "value", "values": kv(("", "{pangenome}"))}, record,
+    )
+    assert legacy == listed == '[["pangenome","pA"]]'
+
+
+# -- what stops a launch -----------------------------------------------------
+
+
+def test_a_finished_recipe_has_no_problems(lib_path, tmp_path):
+    rows = [
+        row("a", _file(tmp_path / "a.fa")),
+        row("v", mode="value", values=kv(("", "GCF_000005845.2")), dtype="mock::reads"),
+        row("m", mode="value", dtype="mock::reads",
+            values=kv(("insert", "300"), ("paired", "true"))),
+        # no type yet: not a row of the recipe at all, so not a blank in it
+        row("x", dtype=""),
+    ]
+    assert op_inputs.problems(rows) == []
+
+
+def test_the_blanks_in_a_recipe_are_named(lib_path):
+    said = op_inputs.problems([
+        row("a", "", dtype="mock::assembly"),
+        row("v", mode="value", values=kv(("", "")), dtype="mock::reads"),
+        row("m", mode="value", dtype="mock::reads",
+            values=kv(("insert", "300"), ("", "true"))),
+        row("d", mode="value", dtype="mock::reads",
+            values=kv(("k", "1"), ("k", "2"))),
+    ])
+    assert len(said) == 4
+    assert any("has no path" in s for s in said)
+    assert any("has nothing in it" in s for s in said)
+    assert any("field 2 has no key" in s for s in said)
+    assert any("[k] twice" in s for s in said)
+
+
+def test_a_recipe_with_blanks_still_syncs(lib_path):
+    """Solving is permissive and stays so: a plan off a half-typed recipe is
+    the normal way to find out what it needs."""
+    rows = [
+        row("a", "", dtype="mock::assembly"),
+        row("m", mode="value", dtype="mock::reads", values=kv(("", "300"), ("", ""))),
+    ]
+    out = op_inputs.sync(str(lib_path), rows)
+    assert op_inputs.problems(rows)
+    assert (lib_path / out["rows"]["m"]).read_text() == '{"": ""}'

@@ -18,6 +18,7 @@
   import { isPlumbing, libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
   import { runSuffix } from '../lib/runname.js'
   import { paramRows, sameParams, toParams } from '../lib/params.js'
+  import { entries as rowEntries, isArrayRow } from '../lib/rows.js'
 
   let { name } = $props()
 
@@ -127,7 +128,12 @@
         // before a sync has run would re-mint every one of them. Delete it a
         // release after `minted` is populated everywhere.
         name: d.name ?? '',
-        value: d.value ?? '',
+        // What a value row holds is a list of keyed entries. A row written when
+        // it was one string reads as one unkeyed entry here and is written back
+        // in the list form, so a recipe migrates on its first save -- and, since
+        // one unkeyed entry renders to exactly the text it always did, nothing
+        // in the library moves when it does.
+        values: rowEntries(d),
         dtype: d.dtype ?? '',
         parents: [...(d.parents ?? [])],
       }))
@@ -143,11 +149,9 @@
   // there is no "expanded" state on this side of the wire to go stale, and
   // nothing here unregisters anything by hand either. Which makes a row an
   // array is the token, not a flag -- there is one list of input rows, and a
-  // row stops being an array the moment its last token goes.
-  const TOKEN = /\{[^{}]*\}/
-  const isArrayRow = (d) =>
-    d.mode === 'value' ? TOKEN.test(d.value ?? '')
-                       : TOKEN.test(d.path ?? '')
+  // row stops being an array the moment its last token goes. `isArrayRow` is
+  // imported rather than written twice: this view and the recipe card both ask,
+  // and a row that draws as an array in one and not the other is invisible.
 
   let table = $state(null)
 
@@ -202,6 +206,12 @@
     if (table.problems?.length) return table.problems[0].message
     return null
   })
+
+  // ...and what stops a *launch*, which is a different question with a
+  // different answer: the blanks in the recipe the stored plan was solved from,
+  // recorded at solve time and read back here. Absent on a result from before
+  // this existed, which means none.
+  let recipeProblems = $derived(wf?.result?.recipe_problems ?? [])
 
   let rowSeq = 0
   const nextRowId = () => `d${(rowSeq++).toString(36)}${Math.random().toString(36).slice(2, 7)}`
@@ -420,7 +430,7 @@
       mode,
       path: '',
       name: '',
-      value: '',
+      values: [{ key: '', value: '' }],
       dtype: '',
       parents: [],
       ...extra,
@@ -534,7 +544,8 @@
     // to the next, or one file would satisfy three slots. A row with nothing in
     // it still occupies the requirement, so pressing apply again does not stamp
     // a second copy; it is reported as blank rather than counted as present.
-    const identity = (d) => (d.mode === 'value' ? d.value : d.path).trim()
+    const identity = (d) =>
+      String(d.mode === 'value' ? rowEntries(d)[0]?.value : d.path).trim()
     const used = new Set()
 
     function fits(dtype, slot) {
@@ -573,7 +584,7 @@
         mode: 'file',
         path: '',
         name: '',
-        value: '',
+        values: [{ key: '', value: '' }],
         dtype: slot.as,
         parents: (slot.parents ?? []).map((p) => stands.get(p)).filter(Boolean),
       }
@@ -1058,10 +1069,26 @@
           {/if}
 
           <div>
-            <button class="primary" onclick={launch} disabled={!agentChoice || launching}>
+            <button
+              class="primary"
+              onclick={launch}
+              disabled={!agentChoice || launching || recipeProblems.length > 0}
+            >
               {launching ? 'launching…' : 'stage and run'}
             </button>
           </div>
+          {#if recipeProblems.length}
+            <!-- A blank in the recipe is reported and never refused, right up to
+                 here: a deferred input has no file to stage and a nameless pair
+                 has no key to be read under. Off the solve that made this plan,
+                 not off what the boxes say now -- so the way out is to fill it
+                 in and solve again, which is also what puts the fix in the
+                 bundle. The route refuses the same thing; this is a signpost. -->
+            <p class="small bad">
+              This plan was solved from an unfinished recipe: {recipeProblems.join('; ')}.
+              Fill them in and solve again.
+            </p>
+          {/if}
           <p class="small muted">
             The same workflow can run on any agent — staging copies it there
             first, then launches and detaches.
@@ -1204,6 +1231,8 @@
      than a single control and so cannot be a <label> */
   .field { display: flex; flex-direction: column; gap: 3px; }
   .hint { line-height: 1.3; }
+  /* why the launch button is off, in the colour the rest of the page refuses in */
+  p.bad { color: var(--bad); line-height: 1.3; }
   /* the steps beside the diagram: rows can't be independently positioned
      inside an actual <table>, so each one is an absolutely placed grid row
      instead, `top:` pinned to its transform's `dag_cy`. The header is the only

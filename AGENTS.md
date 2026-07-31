@@ -811,7 +811,12 @@ rename applied as part of the save — what that costs differs by collection, si
 workflow's directory becomes the task bundle a run stages from while an agent is one yaml
 nothing points into. And **incompleteness is reported, never refused, until launch**: you
 make an agent days before its cluster exists in your ssh config, so `problems`/`valid` ride
-on the payload and only the launch route enforces them.
+on the payload and only the launch route enforces them. The recipe answers to the same rule
+from the other side — a half-filled one still solves, because that is how you find out what a
+plan needs — so `ops.inputs.problems` is recorded into `result.yml` *at solve time* and
+`POST /runs` refuses on it. The verdict has to belong to the solve that produced the bundle a
+run would stage, not to what the page says at click time; the way to clear it is to fill the
+box in and solve again, which is the same solve that puts the fix into the bundle.
 
 **The recipe's input rows are the durable thing; the input library is built from them.** A row
 lives in `request.yml`, is saved when a field is left, and never becomes anything else — there
@@ -845,6 +850,19 @@ exactly once, then mints. Because an array row lives in the record's *generation
 than its row map, its legacy binding is a separate fallback — and the browser carries `name` as
 an inert passthrough for one release so that binding survives the first sync.
 
+**What a value row holds is a list of keyed fields, and `render_value` is the only thing that
+turns it into a file.** One field with no key writes its text verbatim — which is what a value
+row has always written, so a recipe migrating to the list form moves no byte and re-mints
+nothing — and anything else writes the JSON object those pairs describe, each value typed by
+`scalar` (a JSON scalar becomes that scalar; a list, an object or anything unparseable
+stays its text; quoting is the escape hatch). Those three live in `ops/rows.py` rather than in
+`ops/inputs.py`, because `ops.samples` needs the same shape and `inputs` already imports it —
+`frontend/src/lib/rows.js` is the page's copy, for the same reason. The scalar rule is on the
+server, once, because the GUI's params boxes read it too. Read metadata is several facts, and the alternative — hand-typed
+JSON in one box — collides head-on with `{column}`: literal braces *are* the sample-array syntax,
+so `{"depth": 10}` in a plain value box is still read as a token naming a column. The keyed form
+is the way out; a one-field unkeyed row keeps the old trap.
+
 **A sample table is a sheet plus one declared row per kind of input.** `ops.samples` parses a
 csv/tsv/excel upload (stored verbatim under a fixed stem, because the workflow directory *is*
 the task bundle root) and says what is wrong with it. A row carrying a `{column}` token — in its
@@ -855,7 +873,8 @@ workflow you start from, and the two were being confused in the same page.
 
 **What an array row expands into is keyed on identity, not on sheet position.** A file row
 substitutes its path per sheet row; a value row has no path to substitute, so its mint is keyed
-on the sheet cells its `value` reads. That distinction is the whole of how multiplicity is
+on the union of the sheet cells its fields read — each field is independently assignable to a
+column, or to none. That distinction is the whole of how multiplicity is
 expressed here: two sheet rows naming one pangenome are two samples of *one* pangenome, and a
 per-sheet-row key would turn that shared parent into three pangenomes holding one genome each —
 which plans fine, and is wrong. Keying on the cells rather than the text they produce also means

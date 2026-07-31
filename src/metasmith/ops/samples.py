@@ -50,6 +50,7 @@ import re
 from pathlib import Path
 
 from ._common import load_data_lib
+from .rows import entries as row_entries
 
 # `{column}` -- one level, no nesting, no braces inside. A path is not a
 # templating language and the moment it starts to look like one, a person has to
@@ -226,7 +227,10 @@ def is_array_row(row: dict) -> bool:
     # before the library minted its own path -- dropping it early would take
     # back every item such a row already has.
     if row.get("mode") == "value":
-        return bool(columns_in(row.get("value")) or columns_in(row.get("name")))
+        return bool(
+            any(columns_in(e["value"]) for e in row_entries(row))
+            or columns_in(row.get("name"))
+        )
     return bool(columns_in(row.get("path")))
 
 
@@ -239,11 +243,16 @@ def row_label(row: dict) -> str:
 
     A value row is not called anything -- the library names its file and that
     name is a uuid nobody typed. What it *holds* is the only thing a person
-    would recognise it by, so a clamped first line of that is the label.
+    would recognise it by, so a clamped first line of its first entry is the
+    label, carrying that entry's key when it has one.
     """
     if row.get("mode") == "value":
-        head = (row.get("value") or "").strip().splitlines()
+        ents = row_entries(row)
+        first = ents[0] if ents else {"key": "", "value": ""}
+        head = (first["value"] or "").strip().splitlines()
         text = head[0] if head else ""
+        if first["key"]:
+            text = f"{first['key']}: {text}" if text else first["key"]
         if len(text) > 40:
             text = text[:40] + "\u2026"
     else:
@@ -252,9 +261,21 @@ def row_label(row: dict) -> str:
 
 
 def _fields_of(row: dict) -> list[tuple[str, str]]:
-    """(label, text) for every field of an array row that may hold a token."""
+    """(label, text) for every field of an array row that may hold a token.
+
+    One per entry for a value row, labelled the way the page labels the box it
+    came from, so "names a column this table does not have" points at a box the
+    reader can find rather than at the row as a whole.
+    """
     if row.get("mode") == "value":
-        return [("name", row.get("name") or ""), ("value", row.get("value") or "")]
+        ents = row_entries(row)
+        out = [("name", row.get("name") or "")]
+        for i, e in enumerate(ents):
+            label = f"[{e['key']}]" if e["key"] else (
+                "value" if len(ents) == 1 else f"field {i + 1}"
+            )
+            out.append((label, e["value"]))
+        return out
     return [("path", row.get("path") or "")]
 
 
@@ -390,9 +411,11 @@ def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
         for t in array_rows:
             tid = str(t["id"])
             label = row_label(t)
-            fields = dict(_fields_of(t))
+            # the list, not a dict of it: two entries can share a label (an
+            # empty key twice), and collapsing them would drop a column check
+            fields = _fields_of(t)
             missing = [
-                c for text in fields.values() for c in columns_in(text)
+                c for _label, text in fields for c in columns_in(text)
                 if c in columns and not (record.get(c) or "").strip()
             ]
             if missing:
@@ -409,7 +432,7 @@ def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
                 # simply does not apply to it. The empty-cell check above is
                 # what is left, and it is the useful one.
                 continue
-            path = substitute(fields.get("path"), record)
+            path = substitute(dict(fields).get("path"), record)
             value = None
             if not path:
                 problems.append(_problem(tid, f"[{label}] comes out empty on row {i + 1}"))

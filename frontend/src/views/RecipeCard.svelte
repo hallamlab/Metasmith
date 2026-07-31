@@ -4,6 +4,7 @@
   import LineageRail from '../components/LineageRail.svelte'
   import ParentPicker from '../components/ParentPicker.svelte'
   import TypeSelect from '../components/TypeSelect.svelte'
+  import { entries as rowEntries, isArrayRow, rowLabel, wholeToken } from '../lib/rows.js'
 
   // Inputs and outputs in one list, and the list *is* the form. They are two
   // headings over one run of rows, the way the ssh rail does managed and native
@@ -58,24 +59,13 @@
   // rows and registered items were different things.
   const rowKey = (d) => `#${d.id}`
 
-  // What a sample-array row's fields may hold, and how to tell one from a plain
-  // row. An array row is not a fourth kind of thing: it is an ordinary row whose
-  // path (or a value row's name and value) names a column, so nothing has to be
-  // kept in step with anything.
-  // not a global regex: `test` on one carries `lastIndex` between calls, so the
-  // same row would answer differently depending on what was asked before it
-  const TOKEN = /\{[^{}]*\}/
-  const hasToken = (s) => TOKEN.test(String(s ?? ''))
-  const isArrayRow = (d) =>
-    d.mode === 'value' ? hasToken(d.value) : hasToken(d.path)
-
-  // A field that names exactly one column and nothing else -- no surrounding
-  // path, no second token -- is not a pattern to type, it is a choice from a
-  // list. `wholeToken` is the whole-string form of the same `{col}` syntax
-  // `columnPicker` splices into the middle of one; the two agree because
-  // `ops.samples` on the server reads both the same way, as a token to substitute.
-  const WHOLE_TOKEN = /^\{([^{}]*)\}$/
-  const wholeToken = (s) => WHOLE_TOKEN.exec(String(s ?? '').trim())?.[1] ?? null
+  // `isArrayRow`, `rowLabel`, `entries` and `wholeToken` are imported (see
+  // `lib/rows.js`) rather than written here: the workflow view asks the same
+  // questions, and a row that reads as an array in one place and not the other
+  // is a disagreement nothing on the page can show. `wholeToken` is the
+  // whole-string form of the same `{col}` syntax `columnPicker` splices into
+  // the middle of one; the two agree because `ops.samples` on the server reads
+  // both the same way, as a token to substitute.
 
   // A field a dropdown would otherwise own, held open as free text -- typing a
   // pattern like `/data/{sample}_R1.fq.gz` around a token needs the field
@@ -101,20 +91,22 @@
   // at the end -- the usual gesture is `/data/` then a column then `_R1.fq.gz`
   const fieldId = (row, field) => `msm-f-${row.key}-${field}`
 
-  // A row has nothing to be called until it is filled in, and an empty string
-  // in another row's lineage reads as a bug. Its type is the next best name.
-  // A value row has nothing it is *called*: the library names its file and that
-  // name is a uuid nobody types. What it is, is what was typed into it -- so a
-  // lineage line points at that, clamped, because a value is not a label and a
-  // read-pair descriptor is three lines long.
-  const firstLine = (s) => {
-    const t = String(s ?? '').trim()
-    const head = t.split('\n')[0]
-    return head.length > 40 ? `${head.slice(0, 40)}\u2026` : head
+  // The entries of a value row, and the one place they are written back. A row
+  // holds a list of them, so every edit to one is an edit to the whole list --
+  // which is what `apply` below hands `sampleField`, in place of the single
+  // field name it used to close over.
+  const patchEntry = (row, i, patch) => {
+    const next = rowEntries(row.row).map((e, k) => (k === i ? { ...e, ...patch } : e))
+    onrow?.(row.id, { values: next })
   }
-  const rowLabel = (d) =>
-    (d.mode === 'value' ? firstLine(d.value) : d.path) ||
-    (d.dtype ? `a new ${d.dtype}` : 'a new row')
+  const addEntry = (row) => {
+    onrow?.(row.id, { values: [...rowEntries(row.row), { key: '', value: '' }] })
+    oncommit?.()
+  }
+  const dropEntry = (row, i) => {
+    onrow?.(row.id, { values: rowEntries(row.row).filter((_e, k) => k !== i) })
+    oncommit?.()
+  }
 
   let inputRows = $derived(
     rows.map((d) => ({
@@ -376,7 +368,7 @@
 <!-- The columns of the attached sheet, as something to put in a field rather
      than something to type from memory. It inserts at the caret and hands focus
      back, because the usual gesture is `/data/` then a column then `_R1.fq.gz`. -->
-{#snippet columnPicker(row, field)}
+{#snippet columnPicker(row, field, apply)}
   {#if columns.length}
     <select
       class="cols small"
@@ -390,7 +382,7 @@
         if (!box) return
         const at = box.selectionStart ?? box.value.length
         const next = `${box.value.slice(0, at)}{${col}}${box.value.slice(box.selectionEnd ?? at)}`
-        onrow?.(row.id, { [field]: next })
+        apply(next)
         box.focus()
         const caret = at + col.length + 2
         requestAnimationFrame(() => box.setSelectionRange(caret, caret))
@@ -406,15 +398,20 @@
      own columns, not a string to type -- which is what a sample table attached
      is *for*. A field around a token in a longer pattern (a path with a column
      in the middle of it) is still free text with `columnPicker` to insert into,
-     since a dropdown cannot represent that shape at all. -->
-{#snippet sampleField(row, field, value, placeholder, mono)}
+     since a dropdown cannot represent that shape at all.
+
+     `field` is only a name -- for the element id and the freeform set, so two
+     fields of one row are told apart. What a write *means* is `apply`'s
+     business: a path sets one key on the row, a value entry rewrites the whole
+     list it is a member of. -->
+{#snippet sampleField(row, field, value, placeholder, mono, apply)}
   {@const col = wholeToken(value)}
   {#if columns.length && col !== null && !isFreeform(row, field)}
     <select
       class="grow{mono ? ' mono' : ''}"
       aria-label={`${field}, a column of the attached sheet`}
       value={col}
-      onchange={(e) => onrow?.(row.id, { [field]: `{${e.currentTarget.value}}` })}
+      onchange={(e) => apply(`{${e.currentTarget.value}}`)}
     >
       {#each columns as c}<option value={c}>{c}</option>{/each}
     </select>
@@ -430,14 +427,42 @@
       {value}
       {placeholder}
       spellcheck="false"
-      oninput={(e) => onrow?.(row.id, { [field]: e.currentTarget.value })}
+      oninput={(e) => apply(e.currentTarget.value)}
       onblur={() => {
         oncommit?.()
         setFreeform(row, field, false)
       }}
     />
-    {@render columnPicker(row, field)}
+    {@render columnPicker(row, field, apply)}
   {/if}
+{/snippet}
+
+<!-- One field of a value row: its key, its value, and the sheet's columns for
+     the value. The key is literal -- only values take `{column}` tokens, so the
+     grouping key, the array test and the validation messages all read one set
+     of fields. With one entry the key is optional and says so; with two or more
+     it is what the field is called in the object the row writes, and the server
+     refuses a launch off a recipe where one is blank. -->
+{#snippet valueEntry(row, ents, i)}
+  {@const e = ents[i]}
+  {@const only = ents.length === 1}
+  <input
+    class="keybox"
+    value={e.key}
+    placeholder={only ? 'key (optional)' : 'key'}
+    aria-label="the key this field is written under"
+    spellcheck="false"
+    oninput={(ev) => patchEntry(row, i, { key: ev.currentTarget.value })}
+    onblur={() => oncommit?.()}
+  />
+  {@render sampleField(
+    row,
+    `values.${i}`,
+    e.value,
+    columns.length ? '{sample}' : 'GCF_000005845.2',
+    false,
+    (text) => patchEntry(row, i, { value: text }),
+  )}
 {/snippet}
 
 <!-- What an input row holds -- a path or a literal value -- is a switch on the
@@ -499,28 +524,61 @@
                    the row points at goes on the first line; what it *is* and what it
                    came from go on the second -- and that second line is the whole of an
                    output row. -->
-              <div class="row-item">
-                {@render modeSwitch(row)}
-                {#if row.row.mode === 'value'}
-                  <!-- One field, not two. The library names its own file, so there is
-                       nothing here to call it; a token in the value is what makes the
-                       row a sample array, which is why the placeholder advertises one
-                       as soon as a sheet is attached. -->
-                  {@render sampleField(row, 'value', row.row.value, columns.length ? '{sample}' : 'GCF_000005845.2', false)}
-                {:else}
+              {#if row.row.mode === 'value'}
+                {@const ents = rowEntries(row.row)}
+                <!-- A value row holds a list, one line per entry. One entry is
+                     what a value row has always been -- a box, with an optional
+                     key beside it -- and it stays on the switch's own line so
+                     the common row does not grow. Give it a key, or a second
+                     entry, and the row writes the JSON object those pairs
+                     describe instead of the text: which is the point, since
+                     hand-typed JSON in that box has braces in it and braces are
+                     what make a row a sample array. -->
+                <div class="row-item">
+                  {@render modeSwitch(row)}
+                  {#if ents.length === 1}
+                    {@render valueEntry(row, ents, 0)}
+                  {:else}
+                    <span class="grow small muted">
+                      {ents.length} fields — written as one object
+                    </span>
+                  {/if}
+                  <span class="trail">
+                    {#if ents.length === 1}
+                      <button class="star" title="another field, under its own key" onclick={() => addEntry(row)}>+</button>
+                    {/if}
+                    <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
+                  </span>
+                </div>
+                {#if ents.length > 1}
+                  {#each ents as _e, i}
+                    <div class="row-item entryline">
+                      {@render valueEntry(row, ents, i)}
+                      <span class="trail">
+                        {#if i === ents.length - 1}
+                          <button class="star" title="another field, under its own key" onclick={() => addEntry(row)}>+</button>
+                        {/if}
+                        <DeleteControl title="discard this field" onconfirm={() => dropEntry(row, i)} />
+                      </span>
+                    </div>
+                  {/each}
+                {/if}
+              {:else}
+                <div class="row-item">
+                  {@render modeSwitch(row)}
                   {@render sampleField(
                     row,
                     'path',
                     row.row.path,
                     columns.length ? '/data/{sample}_R1.fastq.gz' : '/data/sample_01.fastq.gz',
                     true,
+                    (text) => onrow?.(row.id, { path: text }),
                   )}
-                {/if}
-
-                <span class="trail">
-                  <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
-                </span>
-              </div>
+                  <span class="trail">
+                    <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
+                  </span>
+                </div>
+              {/if}
 
               {@render detail(row)}
 
@@ -698,9 +756,24 @@
   .typecell { flex: 1 1 240px; min-width: 140px; max-width: 360px; }
   .typefield { min-width: 0; }
   .parentcell { flex: 1 1 auto; min-width: 0; padding-top: 1px; }
-  /* fixed whether or not it holds a delete: it is what puts an output's × over
-     the × on an input's first line */
-  .trail { flex: 0 0 20px; display: flex; justify-content: flex-end; align-items: center; }
+  /* 20px whether or not it holds a delete: it is what puts an output's × over
+     the × on an input's first line. It grows only for a value row's add button,
+     which has nothing above or below it to line up with. */
+  .trail {
+    flex: 0 0 auto;
+    min-width: 20px;
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    align-items: center;
+  }
+  /* one field of a multi-field value row: indented under the line carrying the
+     mode switch, so the block reads as belonging to the row rather than as
+     three rows that happen to be adjacent */
+  .row-item.entryline { padding-top: 0; padding-left: 28px; }
+  /* narrow, like `.cols`: a key is one word and the value beside it is what
+     wants the width */
+  .keybox { flex: 0 1 8em; min-width: 4em; }
   /* narrow on purpose: it sits beside a field that wants the width, and what it
      holds is one short word at a time */
   .cols { flex: 0 0 auto; width: 4.5em; padding: 2px 2px; }
