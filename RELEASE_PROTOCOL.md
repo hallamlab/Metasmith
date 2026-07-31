@@ -143,7 +143,7 @@ mamba run -n msm_node ./dev.sh --build-gui
 ## 4. Publish
 
 The account has no write access to the upstream (`hallamlab`) repo, so releases
-go out through the fork and a standing pull request.
+go out through the fork and a pull request per release.
 
 ```
 ./dev.sh -ud    # push the docker image to quay.io/hallamlab/metasmith
@@ -161,11 +161,14 @@ Then:
 
 1. Push `release` (and `dev`) and the annotated version tag to **origin** (the
    fork): `git push origin release dev && git push origin vX.Y.Z`.
-2. Update the **standing release PR** to upstream — it auto-updates when the
-   fork's `release` branch is pushed; retitle it to the new version. A
-   maintainer with upstream write access merges it.
-3. Update the quay **`latest`** tag to point at the new image (manual, via the
-   quay web UI — there is no dev.sh step for it).
+2. Open a **new PR** from the fork's `release` into `hallamlab:release`, titled
+   for the version. A maintainer with upstream write access merges it. There is
+   no standing PR to reuse: each one closes on merge (#63 → 0.17.1, #64 →
+   0.18.3, #65 → 0.18.8), and treating the last one as still open is how 0.20.0
+   and 0.20.1 shipped to quay and anaconda without ever reaching upstream.
+3. Retag quay **`latest`** (and the bare `X.Y.Z`) onto the new image. There is no
+   dev.sh step, but it needs no web UI either — `docker tag <image>:<version>-<hash>
+   <image>:latest && docker push <image>:latest`, same for the bare version.
 
 ---
 
