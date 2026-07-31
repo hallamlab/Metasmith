@@ -22,14 +22,23 @@ ok(){ echo "  PASS: $1"; PASS=$((PASS+1)); }
 no(){ echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 
 # --- build a fake overlay source + its tarball (the "Lustre" copy) ------------
+# Mirror the REAL package layout. `models/workflow` is a package, not a module:
+# the 0.20.x god-file split turned workflow.py into models/workflow/*.py, and
+# this fixture used to fabricate a workflow.py that the source has not had
+# since. That made the sentinel below untestable in the only way that mattered
+# -- it passed here against a file this script created, while on real 0.20.1
+# source `[ -e .../models/workflow.py ]` was always false, so every node failed
+# verification three times and fell back to the shared Lustre read the tarball
+# staging exists to avoid. Keep this shaped like the package.
 SRC="$TMP/src/metasmith"
-mkdir -p "$SRC/models" "$SRC/coms"
+mkdir -p "$SRC/models/workflow" "$SRC/coms"
 : > "$SRC/__init__.py"
 : > "$SRC/models/__init__.py"
-: > "$SRC/models/workflow.py"          # the key module that must be present
+: > "$SRC/models/workflow/__init__.py"
+: > "$SRC/models/workflow/plan.py"     # the key module that must be present
 : > "$SRC/coms/__init__.py"
 for i in $(seq 1 60); do : > "$SRC/coms/mod$i.py"; done   # >=50 files total
-KEYREL="models/workflow.py"
+KEYREL="models/workflow"
 # archive carries a `metasmith/` prefix -> a node extracts to <stage>/metasmith
 GOOD="$TMP/metasmith.tar"
 tar -c -C "$TMP/src" -f "$GOOD" metasmith

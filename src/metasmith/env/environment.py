@@ -574,7 +574,7 @@ class Environment:
                                             if cp -f "$DEV_TARBALL" "$_lt" 2>"$STAGE_DIR/.stage.err" \
                                                 && tar -xf "$_lt" -C "$STAGE_DIR" 2>>"$STAGE_DIR/.stage.err"; then
                                                 _n=$(find "$NODE_DEV" -type f 2>/dev/null | wc -l)
-                                                if [ -e "$NODE_DEV/models/workflow.py" ] && [ -e "$NODE_DEV/coms" ] && [ "$_n" -ge 50 ]; then
+                                                if [ -e "$NODE_DEV/models/workflow" ] && [ -e "$NODE_DEV/coms" ] && [ "$_n" -ge 50 ]; then
                                                     rm -f "$_lt" 2>/dev/null || true
                                                     : > "$STAMP"; break
                                                 fi
