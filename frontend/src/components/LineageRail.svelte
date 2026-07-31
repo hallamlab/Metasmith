@@ -1,85 +1,85 @@
 <script>
   import { api } from '../lib/api.svelte.js'
+  import DagRail from './DagRail.svelte'
 
-  // A git-log style rail: one dot per row, a line wherever a row names another
-  // as its parent. Its only job is to make lineage visible at a glance -- the
-  // rows themselves already carry every field a parent link can be edited
-  // through, so a dot never gets a label of its own.
+  // A git-log style rail beside a recipe's rows: one marker per row, a line
+  // wherever a row names another as its parent. Its only job is to make lineage
+  // visible at a glance -- the rows themselves already carry every field a
+  // parent link can be edited through, so a marker never gets a label of its own.
   //
-  // Lane placement -- which column a dot sits in, which lane a line travels
-  // through to avoid another -- comes from the same engine that lays out the
-  // plan DAG (`POST /api/dag/layout`, `MiniGraph.svelte`'s trick exactly),
-  // so branching lineage here is arranged by the one rails algorithm the app
-  // has rather than a second one invented for a narrower column.
+  // Everything about how it looks is `DagRail`, the one drawing the workflow
+  // page makes; everything about where it *sits* is here, because this is the
+  // one surface whose rows are not a uniform height. A value row wraps, an array
+  // row grows a count note, so `y` is measured off the real DOM by the caller
+  // and handed down.
   //
-  // What that response is *not* trusted for is `y`: the server's `cx`/`cy`
-  // assume a uniform row pitch, and these rows are not uniform -- a value row
-  // wraps, an array row grows a count note. `y` is measured off the real DOM
-  // by the caller and applied after the fact; only `lane` crosses the wire.
-  let { rows = [], height = 0 } = $props()
-
-  const LANE_PITCH = 14
-  const DOT_R = 3.5
+  // Those measurements go *up* with the layout request rather than being
+  // applied to the answer. Two things were wrong with applying them: the engine
+  // is free to reorder rows, so a rail laid out in one order and drawn in
+  // another crosses the markers it was told to avoid; and re-baking the curves
+  // against the new positions meant a port of the bake living in this codebase
+  // with nothing to hold it in step with the original. The rows go with the
+  // question now, and the answer is the drawing.
+  let { rows = [], height = 0, kind = 'data', marks = null } = $props()
 
   const cache = new Map()
   const CACHE_MAX = 64
 
-  const shape = (rs) =>
+  // the measured positions are part of the shape: the same rows at different
+  // heights are a different drawing. Rounded, so that a sub-pixel reflow -- a
+  // font settling, a scrollbar appearing -- is a cache hit rather than a
+  // request.
+  const shape = (rs, k) =>
     JSON.stringify({
-      n: rs.map((r) => r.key),
+      k,
+      n: rs.map((r) => [r.key, Math.round(r.y ?? -1)]),
       e: rs.flatMap((r) => r.parents.map((p) => [p, r.key])),
     })
 
-  let lanes = $state(null) // Map<key, {lane}> | null
-  let edgeLanes = $state([]) // [{from, to, lane}]
+  let laid = $state(null)
   let failed = $state(false)
 
   $effect(() => {
     const rs = rows
-    if (rs.length === 0) {
-      lanes = null
-      edgeLanes = []
+    const k = kind
+    // every row has to have been measured, or the rail would be drawn partly at
+    // the engine's nominal pitch and partly where the rows actually are
+    if (rs.length === 0 || rs.some((r) => r.y == null)) {
+      if (rs.length === 0) laid = null
       return
     }
-    const edges = rs.flatMap((r) => r.parents.map((p) => ({ from: p, to: r.key })))
-    // nothing to branch: every dot sits in lane 0 and no round trip is worth
-    // making for a fresh recipe or a straight, unforked chain of one lane
-    if (edges.length === 0) {
-      lanes = new Map(rs.map((r) => [r.key, { lane: 0 }]))
-      edgeLanes = []
-      failed = false
-      return
-    }
-    const key = shape(rs)
+    const key = shape(rs, k)
     if (cache.has(key)) {
-      const cached = cache.get(key)
-      lanes = cached.lanes
-      edgeLanes = cached.edgeLanes
+      laid = cache.get(key)
       failed = false
       return
     }
     let live = true
     ;(async () => {
       try {
+        // no short circuit for the un-branched case: a lone column of markers
+        // still has to sit at the gutter the engine specifies, and guessing it
+        // here is exactly the second implementation this component is losing
         const geo = await api.post('/dag/layout', {
-          nodes: rs.map((r) => ({ id: r.key, kind: 'data' })),
-          edges,
+          nodes: rs.map((r) => ({ id: r.key, kind: k })),
+          edges: rs.flatMap((r) => r.parents.map((p) => ({ from: p, to: r.key }))),
+          // the rows are the recipe's, in the recipe's order, at the recipe's
+          // heights -- not something for the engine to decide
+          order: rs.map((r) => r.key),
+          row_y: Object.fromEntries(rs.map((r) => [r.key, r.y])),
+          // two lanes' worth of gutter always, so the rail does not slide
+          // sideways the first time a row is given a parent
+          min_lanes: 2,
         })
-        const laneMap = new Map(geo.nodes.map((n) => [n.id, { lane: n.lane }]))
-        // the response's own edges carry no `lane` -- only nodes do, and an
-        // edge's x-position here is always its two endpoints' node lanes
-        // (see `pathFor`), never a lane of its own
-        const eLanes = geo.edges.map((e) => ({ from: e.from, to: e.to }))
         if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value)
-        cache.set(key, { lanes: laneMap, edgeLanes: eLanes })
+        cache.set(key, geo)
         if (!live) return
-        lanes = laneMap
-        edgeLanes = eLanes
+        laid = geo
         failed = false
       } catch {
         // a rail that cannot lay out says nothing rather than something wrong
         if (live) {
-          lanes = null
+          laid = null
           failed = true
         }
       }
@@ -88,67 +88,8 @@
       live = false
     }
   })
-
-  let yOf = $derived(new Map(rows.map((r) => [r.key, r.y])))
-  let maxLane = $derived(
-    lanes ? Math.max(0, ...[...lanes.values()].map((l) => l.lane)) : 0,
-  )
-  let width = $derived((maxLane + 1) * LANE_PITCH + DOT_R * 2)
-  const laneX = (lane) => DOT_R + lane * LANE_PITCH
-
-  // a lane change is drawn as a single cubic S-curve rather than the plan
-  // DAG's jogged, corner-rounded polyline -- there is no grid to stay
-  // axis-aligned on here, only two points and an even number of rows between
-  // them, so one smooth curve reads as clearly and costs nothing to compute
-  function pathFor(e) {
-    const from = lanes?.get(e.from)
-    const to = lanes?.get(e.to)
-    const y1 = yOf.get(e.from)
-    const y2 = yOf.get(e.to)
-    if (!from || !to || y1 == null || y2 == null) return null
-    const x1 = laneX(from.lane)
-    const x2 = laneX(to.lane)
-    if (x1 === x2) return `M${x1},${y1} L${x2},${y2}`
-    const midY = (y1 + y2) / 2
-    return `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`
-  }
 </script>
 
-{#if lanes && !failed}
-  <svg class="rail" width={Math.max(width, DOT_R * 2)} {height} aria-hidden="true">
-    {#each edgeLanes as e, i (i)}
-      {@const d = pathFor(e)}
-      {#if d}<path class="line" {d} />{/if}
-    {/each}
-    {#each rows as r (r.key)}
-      {@const lane = lanes.get(r.key)?.lane ?? 0}
-      {@const y = yOf.get(r.key)}
-      {#if y != null}
-        <circle class="dot" cx={laneX(lane)} cy={y} r={DOT_R} />
-      {/if}
-    {/each}
-  </svg>
+{#if laid && !failed}
+  <DagRail geo={laid} {height} {marks} showLabels={false} ground="var(--panel)" />
 {/if}
-
-<style>
-  .rail {
-    flex: 0 0 auto;
-    /* height is an explicit attribute, set from the rows column's own
-       measured height -- a flex-stretched height on a replaced element like
-       an <svg> is inconsistent across engines, and the caller already knows
-       this number from measuring the rows it is drawing beside */
-    display: block;
-    overflow: visible;
-  }
-  .line {
-    fill: none;
-    stroke: var(--accent);
-    stroke-opacity: 0.7;
-    stroke-width: 1.3;
-  }
-  .dot {
-    fill: var(--bg);
-    stroke: var(--accent);
-    stroke-width: 1.5;
-  }
-</style>

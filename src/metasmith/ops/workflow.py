@@ -1,7 +1,7 @@
 """Workflow planning + task introspection."""
 from __future__ import annotations
 
-from ..models.dag_draw import default_label
+from ..models.dag_draw import DEFAULT_LABEL_CHARS, default_label
 from ..models.dag_renderer import DagRenderer, LabelMode, NodeKind
 from ..agents import Spec
 from . import workspace as _ws
@@ -131,12 +131,29 @@ def render_dag(
     return {"task_key": task_key, "format": format, "path": str(rendered)}
 
 
+# bumped whenever `serialize_geometry`'s payload changes shape. A stored plan
+# graph is a drawing frozen at write time, and the only way a reader can tell a
+# stale one from a current one is to be told: testing for a key that happens to
+# be new works exactly once, and then the next change has to find another key.
+GEOMETRY_VERSION = 2
+
+_WIRE_KINDS = {
+    "transform": NodeKind.TRANSFORM,
+    "target": NodeKind.TARGET,
+    "data": NodeKind.DATA,
+}
+
+
 def dag_geometry(
     nodes: list[dict],
     edges: list[dict],
     label_mode: str = "column",
     font_size: float = 13.0,
     max_label_chars: int = 22,
+    colour: str = "none",
+    order: list[str] | None = None,
+    row_y: dict[str, float] | None = None,
+    min_lanes: int = 0,
 ) -> dict:
     """Place an arbitrary graph, in pixels, for a caller that draws it itself.
 
@@ -146,42 +163,100 @@ def dag_geometry(
     SVG, and laying the graph out a second way in the browser is how the two
     drawings came to disagree about what the same plan looks like.
 
-    `nodes` are `{"id", "kind", "label"?}`; `kind` is `transform` or anything
-    else, which decides only the marker the edge ends are trimmed for. `edges`
-    are `{"from", "to"}`. Ids are the caller's and are echoed back untouched.
+    An edge crosses the wire as a path and nothing else. A caller whose rows
+    are already on a page of its own -- the recipe's, one per form row, at
+    whatever heights the browser gave them -- says so with `order` and `row_y`
+    and gets paths baked against those, rather than re-baking a published grid
+    itself in a second implementation nothing holds honest.
+
+    `nodes` are `{"id", "kind", "label"?}`; `kind` is `transform`, `target` or
+    `data`, which decides the marker drawn and the trim taken off each edge end.
+    `edges` are `{"from", "to"}`. Ids are the caller's and are echoed untouched.
+
+    `order` is a node id per row, top to bottom; it is honoured only when it is
+    a topological permutation of the nodes (see `dag_layout.layout`). `row_y` is
+    a node id -> pixel y map, resolved against whatever rows the layout came
+    back with, so the caller never has to know what row a node landed in; it is
+    ignored unless every node has one. `min_lanes` is a floor on the grid width,
+    so a rail's gutter does not move sideways when its first branch appears.
+
+    `colour` names a `dag_colour` scheme; the default says nothing and each
+    record's `hue` is absent. Only the plan asks for one -- skipping it is how
+    the panel and the recipe's rails stay monochrome.
     """
-    renderer = DagRenderer(label_mode=LabelMode(label_mode))
+    renderer = DagRenderer(label_mode=LabelMode(label_mode), colour=colour)
     ids = set()
     for n in nodes:
         nid = str(n["id"])
         ids.add(nid)
-        kind = NodeKind.TRANSFORM if n.get("kind") == "transform" else NodeKind.DATA
+        kind = _WIRE_KINDS.get(str(n.get("kind") or "data"), NodeKind.DATA)
         text = n.get("label")
         renderer.add_node(kind, nid, label=default_label(str(text)) if text else None)
     for e in edges:
         src, dst = str(e["from"]), str(e["to"])
         if src in ids and dst in ids:
             renderer.add_edge(src, dst)
-    geo = renderer.geometry(font_size=font_size, max_label_chars=max_label_chars)
+    return serialize_geometry(
+        renderer, font_size=font_size, max_label_chars=max_label_chars,
+        order=order, row_y=row_y, min_lanes=min_lanes,
+    )
+
+
+def serialize_geometry(
+    renderer: DagRenderer,
+    *,
+    font_size: float = 13.0,
+    max_label_chars: int = DEFAULT_LABEL_CHARS,
+    order: list[str] | None = None,
+    row_y: dict[str, float] | None = None,
+    min_lanes: int = 0,
+) -> dict:
+    """A built graph's placement as plain data, for a client that draws it.
+
+    Split out from `dag_geometry` so the plan -- whose graph is built from the
+    solved steps, not from a wire payload -- reaches the same serialization
+    rather than a second one that agrees only by coincidence.
+    """
+    # one layout, shared by the geometry and the colouring: `colouring()` runs
+    # its own when passed none, and that is the whole expensive half of this
+    lay = renderer.layout(order)
+    rows_y: list[float] = []
+    if row_y:
+        ys = [row_y.get(n.name) for n in lay.nodes]
+        # all or nothing: one missing row would silently draw the whole rail at
+        # the nominal pitch from that row down
+        if all(y is not None for y in ys):
+            rows_y = [float(y) for y in ys]  # type: ignore[arg-type]
+    geo = renderer.geometry(
+        lay, font_size=font_size, max_label_chars=max_label_chars,
+        min_lanes=min_lanes, rows_y=rows_y,
+    )
+    hues = renderer.colouring(lay)
     return {
+        "v": GEOMETRY_VERSION,
         "width": geo.width, "height": geo.height,
         "font_size": geo.font_size, "marker_d": geo.marker_d,
         "row_pitch": geo.row_pitch, "lane_pitch": geo.lane_pitch,
         "anchor": geo.anchor,
         "nodes": [
             {
-                "id": n.name, "row": n.row, "lane": n.lane,
+                "id": n.name, "kind": n.kind.name.lower(), "row": n.row, "lane": n.lane,
                 "cx": n.cx, "cy": n.cy, "label_x": n.label_x,
                 "marker_w": n.marker_w, "marker_h": n.marker_h,
                 "namespace": n.namespace, "label": n.label,
                 "full": n.full, "truncated": n.truncated,
+                **({"hue": hues.nodes[n.name]} if n.name in hues.nodes else {}),
             }
             for n in geo.nodes
         ],
         # a back edge is reported so a caller can say the cycle exists; it has
         # no path because the rails engine does not route one
         "edges": [
-            {"from": e.src, "to": e.dst, "back": e.back, "d": e.d}
+            {
+                "from": e.src, "to": e.dst, "back": e.back, "d": e.d,
+                **({"hue": hues.edges[(e.src, e.dst)]}
+                   if (e.src, e.dst) in hues.edges else {}),
+            }
             for e in geo.edges
         ],
     }

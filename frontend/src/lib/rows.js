@@ -1,7 +1,7 @@
 // What an input row of the recipe is, on this side of the wire.
 //
 // The server's `ops.rows` and `ops.samples` own the real answers -- what a row
-// writes into the library, what it binds, what to call it. These are the page's
+// writes into the library, and what it binds. These are the page's
 // copies of the ones that decide *layout*, and they live here rather than in a
 // view because both the recipe card and the workflow view ask them, and a row
 // that draws one way in one place and another in the other is a bug nobody can
@@ -40,27 +40,3 @@ export const boundColumns = (d) =>
 // Whether this row would register anything under a sheet. A field bound to
 // nothing is a blank in the recipe, not a constant -- see `ops.samples`.
 export const isBound = (d) => boundColumns(d).every((c) => c.trim() !== '')
-
-// A row has nothing to be called until it is filled in, and an empty string in
-// another row's lineage reads as a bug. A value row has nothing it is *called*
-// at all -- the library names its file and that name is a uuid nobody types --
-// so what was typed into its first box is the label, clamped, because a value is
-// not a name and a read-pair descriptor is three lines long. A row built
-// entirely under a sheet has no text in it, and its column is then the only
-// recognisable thing about it.
-const clamp = (s) => (s.length > 40 ? `${s.slice(0, 40)}…` : s)
-
-export function rowLabel(d) {
-  let text = ''
-  if (d?.mode === 'value') {
-    const [first] = entries(d)
-    // clamped after the key is folded in, as `ops.samples.row_label` does it,
-    // so the two never disagree about where a long line is cut
-    text = String(first?.value ?? '').trim().split('\n')[0] || String(first?.column ?? '')
-    if (first?.key) text = text ? `${first.key}: ${text}` : first.key
-    text = clamp(text)
-  } else {
-    text = d?.path || d?.column || ''
-  }
-  return text || (d?.dtype ? `a new ${d.dtype}` : 'a new row')
-}

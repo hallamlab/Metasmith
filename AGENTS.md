@@ -518,9 +518,23 @@ for consumers running their own.
   unrelated merge steps hash alike and get hoisted 14 rows from their readers. An instance's
   block is its descendants minus everything its siblings also reach — *not* its dominator
   subtree, which loses any node with a second parent and leaves a stub the hoist acts on wrongly.
+- **How far a marker sits from its label is measured and not ranked.** Lanes run right to left,
+  so lane 0 is the one beside the labels and a node pushed out to lane 3 is three lanes from its
+  own name. `measure` totals that as `marker_lanes`. It was a selection term for one commit and
+  was taken back out: it costs ~11% more crossings across `compare_layouts.py --corpus 300`,
+  buys nothing on the metagenomics plan, and the packings that chase it produce rails that leave
+  a lane and come straight back. Kept as a measurement so the case can be re-argued in numbers.
+- **A rail that leaves the corridor between its own two ends is a `detour`, and it is the last
+  tie-break and nothing more.** Crossings cannot see one — a rail sent out to a lane of its own
+  between two rows one apart comes straight back without crossing anything — which is how the
+  lane repack came to lose to the greedy pass on a graph it drew better. Most detours are
+  forced (seven children off one parent are seven parallel rails), so it sits last in
+  `_compose`'s key, behind everything anyone would trade for: across
+  `compare_layouts.py --corpus 300` it leaves rail, lanes and crossings byte-identical and
+  changes 2 drawings.
 - **Where a pass has two defensible answers, both are drawn and measured.** `measure` returns
-  congruence, rail rows, lanes, crossings and module contiguity; `layout` picks on
-  `(congruence, rail, lanes, crossings)` — symmetry ahead of length, which costs ~1% on graphs
+  congruence, rail rows, lanes, crossings, detours and module contiguity; `layout` picks
+  on `(congruence, rail, lanes, crossings)` — symmetry ahead of length, which costs ~1% on graphs
   that have none. Congruence is *modal*, the largest set of instances arranged alike: mean
   agreement is too coarse to separate row orders, and offsets are measured against the previous
   instance because instances fanning out of one node cannot share absolute lanes. Prefer adding
@@ -975,14 +989,30 @@ constant on the page, and a column header nudged into place with `position: rela
 still sizes the box. Each row states the `dag_cy` it was placed at, so this is assertable
 from the page rather than by eye.
 
-**A lineage rail trusts the layout engine for `lane`, never for `y`.** `LineageRail.svelte`
-(the recipe's git-log-style lineage columns beside the input rows and, separately, the output
-rows) is `MiniGraph.svelte`'s trick again — `POST /api/dag/layout` for placement — but recipe
-rows are not the plan DAG's uniform-pitch steps: a value row wraps, an array row grows a count
-note. So only `node.lane` crosses into the drawing; `y` is measured off each row's own
-`offsetTop` in `RecipeCard.svelte` and applied after the fact. The response's edges carry no
-`lane` of their own — only nodes do — so an edge's x endpoints are always its two nodes' lanes,
-never a field on the edge.
+**A surface with rows of its own sends them up, rather than applying them to what comes
+back.** `LineageRail.svelte` (the recipe's git-log-style lineage columns beside the input
+rows and, separately, the output rows) is `MiniGraph.svelte`'s trick again — `POST
+/api/dag/layout` for placement — but recipe rows are not the plan DAG's uniform-pitch steps:
+a value row wraps, an array row grows a count note, and their order is the form's. So the
+request carries `order` (the rows, as the page lists them) and `row_y` (each row's measured
+`offsetTop`, from `RecipeCard.svelte`), and the response is the finished drawing. Both halves
+matter: the engine reorders rows freely when it is allowed to, so a rail laid out in one order
+and drawn in another runs through its own markers; and re-baking the curves in the browser
+means a second implementation of `dag_draw`'s pixel pass with nothing holding the two in step
+— which is what `frontend/src/lib/dagpaths.js` was. An edge crosses the wire as a `d` string
+and nothing else.
+
+**A type name is split in one place on the page, and it cuts where the engine cuts.**
+`frontend/src/lib/types.js` splits `namespace::name` at the *first* `::`, as
+`models/dag_draw.py:default_label` does; `TypeName.svelte` is the two stacked lines that
+follow from it (namespace at half size above, bare name below), and every list, menu and
+field on the page draws through those two. The half a page prints of a type is the *name* —
+a namespace is shared by every type in a library, so it never tells two rows apart; which
+row an entry means is the hover highlight's job. Two consequences that fail silently if
+forgotten: a caller cannot style the stack from outside (styles are scoped per component,
+so colour crosses as `--typename-ink`), and any control holding a type must be the same
+height settled as it is focused, since `LineageRail` is drawn against the row's measured
+`offsetTop`.
 
 ---
 

@@ -7,9 +7,14 @@
 // matching on its own is far too generous -- `gbk` is a subsequence of half the
 // library, and the one name that actually spells it has to come first.
 //
+// Below all of that is one looser tier for a name the characters do not match
+// in order at all -- a typo, which is the case in-order matching is blindest to.
+//
 // Ranking is a display concern only. Whether a type exists is still an exact
 // membership test everywhere it matters (`known` in the builder); a name that
 // merely ranked well is not a name you can register.
+
+import { typeName } from './types.js'
 
 const WORD = /[a-z0-9]/i
 
@@ -37,6 +42,12 @@ const WHOLE_WORD = 3 // a literal run that is exactly one word of the name
 const WORD_START = 4 // a literal run, beginning at the start of a word
 const SUBSTRING = 5 // a literal run, beginning mid-word
 const SCATTERED = 6 // the characters in order, with other characters between
+const APPROX = 7 // not even in order: a window of the name it is a mistyping of
+
+// How far a query may be off and still be offered. Deliberately zero below four
+// characters: at one error a three-character window matches most of the
+// library, and the tiers above already answer a short query well.
+const budget = (q) => Math.floor(q.length / 4)
 
 // Whitespace is dropped rather than matched: "flye asm" is someone typing two
 // halves of a name they half remember, not a name with a space in it.
@@ -65,7 +76,7 @@ export function score(name, query) {
     // the type's name and only the namespace was left off. `assembly_accession`
     // merely contains it as a word, which in turn beats a run starting mid-word.
     const end = at + q.length
-    const bare = end === name.length && lower.slice(at - 2, at) === '::'
+    const bare = end === name.length && typeName(lower) === q
     const whole = bounds[at] && (end === name.length || bounds[end] || !WORD.test(name[end]))
     const tier = bare
       ? BARE_NAME
@@ -80,7 +91,16 @@ export function score(name, query) {
   }
 
   const hits = subsequence(lower, q)
-  if (!hits) return null
+  if (!hits) {
+    // Nothing in order, which is exactly what a transposed character does:
+    // `paried` has no `i` after its `r`, so every `paired…` name fails outright
+    // rather than merely ranking badly. One looser question before it is
+    // dropped -- and only here, since a name that matched in order has already
+    // been answered better than this could.
+    const max = budget(q)
+    const off = max ? nearestWindow(lower, q, max) : null
+    return off === null ? null : { tier: APPROX, spread: off, first: 0, length: name.length }
+  }
   // characters that had to be skipped over inside the match, less a discount for
   // every one that landed on the start of a word -- `sfa` picking out
   // s(equences)::f(lye)_a(ssembly) is a better answer than three letters that
@@ -108,6 +128,50 @@ function subsequence(lower, q) {
     end -= 1
   }
   return hits
+}
+
+/**
+ * How far `q` is from the closest window of `name` -- or null past `max`.
+ *
+ * Approximate *substring*, not edit distance against the whole name: a query is
+ * a fragment, so `paried` against `std::paired_reads_forward` is six characters
+ * against twenty and any whole-string distance is about fourteen however good
+ * the match is. Zeroing the first row of the matrix is what lets the pattern
+ * begin anywhere in the name and so measures the window instead.
+ *
+ * With a transposition rule, because two adjacent characters swapped is one
+ * slip of the fingers and costs two under plain edit distance -- and that is
+ * the whole of the `paried` case.
+ *
+ * The name is the full `namespace::type`, so a window may straddle the `::`
+ * rather than the separator being what pushes it over budget.
+ */
+function nearestWindow(lower, q, max) {
+  const n = lower.length
+  let prev2 = null
+  let prev = new Array(n + 1).fill(0) // the pattern may begin anywhere
+  for (let i = 1; i <= q.length; i++) {
+    const row = new Array(n + 1)
+    row[0] = i
+    let best = i
+    for (let j = 1; j <= n; j++) {
+      const cost = q[i - 1] === lower[j - 1] ? 0 : 1
+      let v = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost)
+      if (i > 1 && j > 1 && q[i - 1] === lower[j - 2] && q[i - 2] === lower[j - 1]) {
+        v = Math.min(v, prev2[j - 2] + 1)
+      }
+      row[j] = v
+      if (v < best) best = v
+    }
+    // A row's best never beats the one above it, so a row already over budget
+    // settles the name. This is the whole of the cost control: the fallback runs
+    // only where the subsequence match failed, which on a garbage query is every
+    // name in the library.
+    if (best > max) return null
+    prev2 = prev
+    prev = row
+  }
+  return Math.min(...prev)
 }
 
 function compare(a, b) {

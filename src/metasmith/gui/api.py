@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import shutil
 import threading
 from fnmatch import fnmatch
@@ -21,7 +20,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..agents import Spec, Template
 from ..hashing import KeyGenerator
-from ..models.dag_renderer import THEMES, NodeKind
+from ..models.dag_renderer import THEMES
 from ..models.paths import is_deferred
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
@@ -1067,17 +1066,17 @@ def get_workflow(name):
     out = _workflow_summary(wf)
     out["request"] = wf.request
     # backfill for results written before the summary existed, and for anything
-    # planned by the CLI directly into a workflow directory. The geometry is
+    # planned by the CLI directly into a workflow directory. The drawing is
     # tested by its newest key rather than by its presence, since a result
     # stored against an older shape of it would otherwise never be revisited.
     if wf.ok and (
         not wf.result.get("step_display")
-        or "top_cy" not in (wf.result.get("dag_geometry") or {})
+        or (wf.result.get("plan_graph") or {}).get("v") != op_workflow.GEOMETRY_VERSION
     ):
-        display, dag_geometry = _step_display(wf.path)
+        display, plan_graph = _step_display(wf.path, p.root)
         if display:
             wf = p.write_result(name, wf.result | {
-                "step_display": display, "dag_geometry": dag_geometry,
+                "step_display": display, "plan_graph": plan_graph,
             })
     out["result"] = wf.result
     out["runs"] = [_run_summary(r) for r in p.list_runs(workflow=name, include_archived=True)]
@@ -1351,7 +1350,7 @@ def generate_workflow(name):
                 assert staged.is_dir(), f"planner wrote no bundle at [{staged}]"
                 for item in staged.iterdir():
                     shutil.move(str(item), str(wf.path / item.name))
-                result["step_display"], result["dag_geometry"] = _step_display(wf.path)
+                result["step_display"], result["plan_graph"] = _step_display(wf.path, p.root)
             if staging.exists():
                 shutil.rmtree(staging)
             result["stdlib_commit"] = commit
@@ -1410,22 +1409,54 @@ def _load_task(bundle: Path):
         return op_workspace.load_task(None, str(bundle))
 
 
-def _step_display(bundle: Path) -> tuple[list[dict], dict | None]:
-    """A readable summary of the plan's steps, plus where each one sits in the
-    diagram the GUI draws beside it.
+def _stdlib_transforms(root: Path) -> tuple[list[dict], dict[tuple[str, str], int]]:
+    """The panel's transform list, and how to find a plan step in it.
+
+    What a click on a plan node has to end up as. The panel addresses transforms
+    by position in `stdlib.type_index`, and a plan step knows only its own
+    definition file and its library's content hash -- the library the plan was
+    solved against is a staged clone, so its absolute paths are not the indexed
+    clone's and cannot be the join. A name and a file name together are, in
+    practice, unique; a pair that is not is dropped rather than guessed at, and
+    that node is simply left unclickable.
+
+    `root` is passed rather than read off the app: at generate time this runs on
+    a job thread, where there is no request context to read it from.
+    """
+    try:
+        transforms = stdlib.type_index(root).get("transforms") or []
+    except Exception:
+        return [], {}
+    seen: dict[tuple[str, str], int | None] = {}
+    for i, tr in enumerate(transforms):
+        key = (Path(str(tr.get("path") or "")).name, str(tr.get("name") or ""))
+        seen[key] = None if key in seen else i
+    return transforms, {k: v for k, v in seen.items() if v is not None}
+
+
+def _step_display(bundle: Path, root: Path) -> tuple[list[dict], dict | None]:
+    """A readable summary of the plan's steps, and the plan's whole drawing.
 
     The packed form of a step is a wire format -- instance ids and a dependency
     map -- with nothing a person would want to read. The step objects themselves
     carry `uses` and `produces`, so the summary is built once at generate time
-    and stored beside the result. The vertical position comes from the same
-    `DagRenderer` that draws the plan's SVG -- `BuildDAG()` is constructed once
-    and its `.geometry()` is the one place a layout becomes pixels, so the row a
-    step's controls sit at is guaranteed to agree with the marker in the image.
+    and stored beside the result.
+
+    The drawing is stored with it, and for the same reason. The page draws the
+    plan itself now rather than showing a rendered image, so it needs the
+    placement; laying it out per request would repeat the most expensive thing
+    metasmith does with a plan on every page load, and it cannot change without
+    a re-solve. Storing it also collapses a duplication: this used to run
+    `BuildDAG().geometry()` as a *second, independent* layout from the one the
+    `/dag` route rendered, the two agreeing only because both took the same
+    defaults.
     """
     try:
         task = _load_task(bundle)
     except Exception:
         return [], None
+    catalogue, by_index = _stdlib_transforms(root)
+    node_extra: dict[str, dict] = {}
     out = []
     for step in task.plan.steps:
         # What the transform asks for, so an empty override box reads as "as
@@ -1438,9 +1469,10 @@ def _step_display(bundle: Path) -> tuple[list[dict], dict | None]:
             if res.memory is not None: declared["memory_gb"] = round(res.memory.value_gb, 3)
             if res.duration is not None:
                 declared["duration_h"] = round(res.duration._delta.total_seconds() / 3600, 3)
+        file_name = Path(str(step.transform._path)).name
         out.append({
             "order": step.order,
-            "transform": Path(str(step.transform._path)).name,
+            "transform": file_name,
             "declared_resources": declared,
             # The file name above is what a person recognises; this is what
             # nextflow calls the step, and the two need not be the same string.
@@ -1451,32 +1483,39 @@ def _step_display(bundle: Path) -> tuple[list[dict], dict | None]:
             "produces": sorted({
                 inst.dtype_name for group in step.produces for inst in group
             }),
-            "dag_cy": None,
         })
+        # the node id `BuildDAG` gives this step -- transform names are the
+        # definition file's stem, so three checkm steps are all "checkm" and
+        # only the number tells them apart
+        node_extra[f"{step.order} {step.transform.name}"] = {
+            "step": step.order,
+            "transform_index": by_index.get((file_name, step.transform.name)),
+        }
     out.sort(key=lambda s: s["order"])
 
-    dag_geometry = None
+    plan_graph = None
     try:
-        geo = task.plan.BuildDAG().geometry()
-        by_order = {
-            int(m.group(1)): n.cy
-            for n in geo.nodes
-            if n.kind == NodeKind.TRANSFORM and (m := re.match(r"^(\d+) ", n.name))
-        }
-        for step in out:
-            step["dag_cy"] = by_order.get(step["order"])
-        dag_geometry = {
-            "width": geo.width, "height": geo.height, "row_pitch": geo.row_pitch,
-            # the first drawn row, so a caller putting a header beside the
-            # diagram can sit it level with the top node rather than above the
-            # whole thing. The plate's top margin is not otherwise derivable
-            # from `height` without also knowing how many rows there are.
-            "top_cy": min((n.cy for n in geo.nodes), default=None),
-        }
+        plan_graph = op_workflow.serialize_geometry(task.plan.BuildDAG())
+        for n in plan_graph["nodes"]:
+            x = node_extra.get(n["id"])
+            if x is None:
+                # a data node stands for a type, and its id is the type's name --
+                # which is exactly what the panel's type view is addressed by
+                if n["kind"] != "transform":
+                    n["type"] = n["id"]
+                continue
+            n.update(x)
+            i = x["transform_index"]
+            tr = catalogue[i] if i is not None and i < len(catalogue) else None
+            # the library, stacked above the step's name. `BuildDAG` cannot put
+            # it there: a plan step knows its library only as a content hash,
+            # and the readable name is the index's.
+            if tr and tr.get("library_name"):
+                n["namespace"] = tr["library_name"]
     except Exception:
-        _LOG.warning("no dag geometry for [%s]; step rows will not line up", bundle, exc_info=True)
+        _LOG.warning("no dag geometry for [%s]; the diagram will not draw", bundle, exc_info=True)
 
-    return out, dag_geometry
+    return out, plan_graph
 
 
 @bp.get("/workflows/<name>/dag")
@@ -1518,6 +1557,10 @@ def dag_layout():
     nodes = b.get("nodes") or []
     edges = b.get("edges") or []
     assert isinstance(nodes, list) and isinstance(edges, list), "nodes and edges must be lists"
+    order = b.get("order")
+    row_y = b.get("row_y")
+    assert order is None or isinstance(order, list), "order must be a list of node ids"
+    assert row_y is None or isinstance(row_y, dict), "row_y must be a node id -> y map"
     return jsonify(op_workflow.dag_geometry(
         nodes, edges,
         # COLUMN, so every label starts at one x, clear of the rails: the panel
@@ -1527,7 +1570,44 @@ def dag_layout():
         label_mode=b.get("label_mode", "column"),
         font_size=float(b.get("font_size", 13.0)),
         max_label_chars=int(b.get("max_label_chars", 22)),
+        # a caller drawing beside rows it already has on the page: the recipe's
+        # rails, whose rows are form rows and whose heights the browser owns
+        order=[str(x) for x in order] if order else None,
+        row_y={str(k): float(v) for k, v in row_y.items()} if row_y else None,
+        min_lanes=int(b.get("min_lanes", 0)),
     ))
+
+
+@bp.get("/dag/theme")
+def dag_theme():
+    """Both themes' ink, so a drawing made in the browser and one rendered to a
+    file are the same drawing in the same two inks.
+
+    Restating the palette in CSS is how they would drift: `DARK` is defined as
+    `LIGHT` with only its colours replaced, precisely so a marker's shape, its
+    scale and its stroke weight cannot differ between them, and a stylesheet
+    holding a second copy of any of it gives that guarantee away. Both are
+    served at once because the page toggles theme without a network round trip.
+    """
+    return jsonify({
+        name: {
+            "plate": {
+                "background": theme.plate.background,
+                "edge": theme.plate.edge,
+            },
+            "styles": {
+                kind.name.lower(): {
+                    "fill": st.fill, "stroke": st.stroke,
+                    "text": st.text, "muted": st.muted,
+                    "shape": st.svg_shape, "marker_scale": st.marker_scale,
+                    "stroke_width": st.stroke_width, "rx": st.rx,
+                    "solid": st.solid,
+                }
+                for kind, st in theme.styles.items()
+            },
+        }
+        for name, theme in THEMES.items()
+    })
 
 
 # -- the input library -------------------------------------------------------

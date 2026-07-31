@@ -125,6 +125,19 @@ def test_the_drawing_does_not_get_more_expensive(dag):
     bought the three binner blocks: contiguous, identically ordered, and the
     shared database drawn once above all three instead of inside the first.
     Lanes, crossings and the longest rail are unchanged.
+
+    `Metrics.marker_lanes` -- the total distance from each marker to the label
+    column -- was in this key for one commit and is not any more. This plan
+    scores 168 either way: the packings that pull a stranded output home do
+    nothing here, and the aggressive reading of it (every marker in lane 0,
+    rails weaving around them) takes 168 to 131 at the price of 158 crossings.
+    It is still measured, so a future argument for it can be made in numbers.
+
+    `detours` -- rails routed outside the corridor between their own endpoints
+    -- is measured and tie-breaks the lane assignment. This plan scores 21, of
+    which 14 are the six-way and three-way fan-outs that cannot avoid one. The
+    other seven are not forced; no candidate this plan generates is without
+    them, and a tie-break cannot ask for a candidate that was never drawn.
     """
     m = measure(dag.layout())
     assert m.rail_rows <= 536

@@ -1,10 +1,11 @@
 <script>
-  import { flip } from 'svelte/animate'
   import DeleteControl from '../components/DeleteControl.svelte'
-  import LineageRail from '../components/LineageRail.svelte'
+  import LineageBand from '../components/LineageBand.svelte'
   import ParentPicker from '../components/ParentPicker.svelte'
   import TypeSelect from '../components/TypeSelect.svelte'
-  import { entries as rowEntries, isBound, rowLabel } from '../lib/rows.js'
+  import { POINTED, link, marks } from '../lib/highlight.js'
+  import { ancestorsOf, byKey, candidates, refKey, topoOrder } from '../lib/lineage.js'
+  import { entries as rowEntries, isBound } from '../lib/rows.js'
 
   // Inputs and outputs in one list, and the list *is* the form. They are two
   // headings over one run of rows, the way the ssh rail does managed and native
@@ -44,6 +45,10 @@
     // the index says about a type, for the line under a row being edited
     counts = null,
     onfocus,
+    // reading around a type list, and stopping: what the panel should show
+    // while a list is open, and the signal that it is no longer what was asked
+    onpreview,
+    onpreviewend,
     onremoveRow,
     onremoveTarget,
     onrow,
@@ -53,15 +58,9 @@
     onadd,
   } = $props()
 
-  // An input row is addressed by its own id, an output by its position -- so
-  // lineage needs one key space per half. `#` is safe as the marker: a library
-  // path never starts with one, which is what let the two live together while
-  // rows and registered items were different things.
-  const rowKey = (d) => `#${d.id}`
-
-  // `rowLabel`, `entries` and `isBound` are imported (see `lib/rows.js`) rather
-  // than written here: the workflow view asks the same questions, and a row
-  // that reads one way in one place and another in the other is a disagreement
+  // `entries` and `isBound` are imported (see `lib/rows.js`) rather than
+  // written here: the workflow view asks the same questions, and a row that
+  // reads one way in one place and another in the other is a disagreement
   // nothing on the page can show.
   //
   // A sheet attached is the only switch. With one, every field on every row is
@@ -95,200 +94,100 @@
     oncommit?.()
   }
 
+  // Both halves are the same shape -- `{key, parents: [key]}` over a minted id --
+  // so `lib/lineage` answers both from one implementation. An output used to be
+  // addressed by its *position*, which is also the thing that changes when the
+  // list is re-sorted; it carries an id of its own now, and the positions are
+  // put back on the way to disk.
   let inputRows = $derived(
     rows.map((d) => ({
       kind: 'input',
-      key: rowKey(d),
+      key: refKey(d.id),
       id: d.id,
       type: d.dtype,
-      label: rowLabel(d),
       parents: d.parents ?? [],
       row: d,
     })),
   )
 
-  // An output is named by its *type*, not by its position. The position is what
-  // the request stores and is still the key -- but "#2" is a fact about the file
-  // on disk, and a person reading a lineage wants to know what the thing is. The
-  // number comes back only when two outputs share a type and the name alone
-  // would point at either.
-  let targetRows = $derived(
-    targets.map((t, i) => {
-      const name = t.type || '(no type yet)'
-      const shared = targets.filter((o) => (o.type || '') === (t.type || '')).length > 1
-      return {
-        kind: 'target',
-        key: `#${i}`,
-        id: i,
-        type: t.type,
-        label: shared ? `${name} #${i + 1}` : name,
-        // Stored as numbers, keyed as strings, everywhere else on this page.
-        // Left unconverted the two never met: a tick never showed, and the
-        // summary fell through to printing the raw 0-based position.
-        parents: (t.parents ?? []).map((p) => `#${p}`),
-      }
-    }),
+  // An output is named by its *type* and by nothing else. Two outputs of one
+  // type used to carry a `#N` here counting the order they are drawn in; what
+  // tells them apart now is the highlight that lights the row you are pointing
+  // at, which is the one thing an ordinal never did -- you still had to count
+  // rows to use it.
+  let targetRows = $derived.by(() =>
+    topoOrder(
+      targets.map((t) => ({ key: refKey(t.id), parents: (t.parents ?? []).map(refKey), t })),
+    ).map((r) => ({
+      kind: 'target',
+      key: r.key,
+      id: r.t.id,
+      type: r.t.type,
+      parents: r.parents,
+    })),
   )
 
-  let inputByKey = $derived(new Map(inputRows.map((r) => [r.key, r])))
-  let targetByKey = $derived(new Map(targetRows.map((r) => [r.key, r])))
+  let orderedInputRows = $derived(topoOrder(inputRows))
 
-  // The lineage rail's Y positions, read off the real rows rather than a
-  // fixed pitch -- a value row wraps, an array row grows a count note, so
-  // nothing here is uniform the way a plan DAG's steps are. Each rows column
-  // is `position: relative`, so a child's own `offsetTop` is already relative
-  // to it; observing the *column* rather than each row catches a single row
-  // growing too, since that always changes the column's own height.
-  let inputBox = $state(null)
-  let outputBox = $state(null)
-  let inputY = $state(new Map())
-  let outputY = $state(new Map())
-  let inputBandHeight = $state(0)
-  let outputBandHeight = $state(0)
+  let inputByKey = $derived(byKey(inputRows))
+  let targetByKey = $derived(byKey(targetRows))
 
-  function measureBand(box) {
-    if (!box) return { y: new Map(), height: 0 }
-    const y = new Map()
-    for (const el of box.children) {
-      const key = el.dataset.rowKey
-      if (key) y.set(key, el.offsetTop + el.offsetHeight / 2)
-    }
-    return { y, height: box.offsetHeight }
-  }
+  // computed once per half rather than once per open menu: `candidates` would
+  // otherwise rebuild the fixpoint for every row on every render
+  let inputAncestors = $derived(ancestorsOf(inputRows))
+  let targetAncestors = $derived(ancestorsOf(targetRows))
 
-  $effect(() => {
-    if (!inputBox) return
-    const remeasure = () => ({ y: inputY, height: inputBandHeight } = measureBand(inputBox))
-    const ro = new ResizeObserver(remeasure)
-    ro.observe(inputBox)
-    remeasure()
-    return () => ro.disconnect()
-  })
+  // What a row may be given as a parent. The rule itself is shared
+  // (`lib/lineage`), because "can this be a parent" has one answer and the two
+  // halves having had two is how the outputs came to refuse links that were
+  // perfectly legal -- and now the *wording* is shared too, since there is
+  // nothing here to word: an option is a row's key and its type, whichever half
+  // is asking.
+  const optionsFor = (rows, row, anc) =>
+    candidates(rows, row.key, anc).map((r) => ({ key: r.key, type: r.type }))
 
-  $effect(() => {
-    if (!outputBox) return
-    const remeasure = () => ({ y: outputY, height: outputBandHeight } = measureBand(outputBox))
-    const ro = new ResizeObserver(remeasure)
-    ro.observe(outputBox)
-    remeasure()
-    return () => ro.disconnect()
-  })
-
-  let railInputRows = $derived(
-    orderedInputRows.map((r) => ({ key: r.key, parents: r.parents, y: inputY.get(r.key) })),
-  )
-  let railOutputRows = $derived(
-    targetRows.map((r) => ({ key: r.key, parents: r.parents, y: outputY.get(r.key) })),
-  )
-
-  // Every key each row descends from, however far up. A row states one level,
-  // so this is the fixpoint over them -- and it is what keeps a cycle out of
-  // the menu below.
-  let ancestors = $derived.by(() => {
-    const out = new Map(inputRows.map((r) => [r.key, new Set(r.parents)]))
-    // a set only ever gains members and there are finitely many, so a loop
-    // already on disk cannot spin this
-    for (;;) {
-      let grew = false
-      for (const set of out.values()) {
-        for (const p of [...set]) {
-          for (const up of out.get(p) ?? []) {
-            if (set.has(up)) continue
-            set.add(up)
-            grew = true
-          }
-        }
-      }
-      if (!grew) break
-    }
-    return out
-  })
-
-  // Listed in the order the data descends: parents above the things made from
-  // them, so a pangenome leads the assemblies it was built from rather than
-  // turning up wherever its path happened to sort. Sorting by raw ancestor
-  // *count* used to stand in for this, but it isn't actually a topological
-  // order on arrival: a fresh row with no parents yet has a count of zero, so
-  // it would sort ahead of any older row that already has lineage, landing
-  // wherever the depths happened to fall rather than at the bottom it was
-  // added to.
-  //
-  // Kahn's algorithm, seeded by insertion order instead, is the honest
-  // version: a row is eligible the moment every one of its parents has
-  // already been placed, and among eligible rows the one that arrived first
-  // goes next. A row with no parents is eligible immediately and -- having
-  // arrived after everything already eligible -- keeps the position it was
-  // added to. A row only moves when it is actually given a parent that sits
-  // later in the list, which is the real reorder `animate:flip` below is for.
-  let orderedInputRows = $derived.by(() => {
-    const remaining = new Map(inputRows.map((r) => [r.key, new Set(r.parents)]))
-    const out = []
-    while (remaining.size) {
-      const next = inputRows.find((r) => remaining.has(r.key) && remaining.get(r.key).size === 0)
-      // a cycle (only ever possible in data loaded off disk -- `inputOptions`
-      // refuses to offer one interactively) leaves nothing eligible; rather
-      // than drop rows or loop forever, flush what's left in arrival order
-      if (!next) {
-        for (const r of inputRows) if (remaining.has(r.key)) out.push(r)
-        break
-      }
-      out.push(next)
-      remaining.delete(next.key)
-      for (const parents of remaining.values()) parents.delete(next.key)
-    }
-    return out
-  })
-
-  // What a row may be given as a parent. Three things are excluded, and the
-  // third is the one worth saying out loud: a row cannot descend from something
-  // that descends from *it*. Nothing downstream defines a cycle -- `AsSamples`
-  // walks up and then back down, so a loop makes every branch the whole library.
-  function inputOptions(row) {
-    const have = new Set(row.parents)
-    return inputRows
-      .filter((r) => r.key !== row.key && !have.has(r.key) && !ancestors.get(r.key)?.has(row.key))
-      .map((r) => ({ key: r.key, label: r.label, sub: r.type }))
-  }
-
-  // Outputs are positions, and a target may only name one declared *before* it
-  // -- `ops.workflow._add_targets` refuses a forward reference, so offering one
-  // here would be offering a link the generate then throws out. Ordering does
-  // the cycle check for free.
-  function targetOptions(row) {
-    const have = new Set(row.parents)
-    return targetRows
-      .filter((r) => r.id < row.id && !have.has(r.key))
-      .map((r) => ({ key: r.key, label: r.label }))
-  }
+  // Why the menu is empty, when it is. Two honest cases and they are not the
+  // same: there is nothing else in this half yet, or everything else in it
+  // already descends from this row.
+  const parentNote = (rows, options) =>
+    options.length
+      ? null
+      : rows.length < 2
+        ? 'nothing else here to descend from yet'
+        : 'everything else here already descends from this'
 
   // A parent whose row has since gone still has to be shown, or an entry would
   // sit in a lineage nothing on the page admits to. The path a parent chip used
   // to lead with is not unique enough to tell rows apart either -- the hover
   // highlight on the row itself already does that -- so the chip states only
-  // what the parent *is*.
-  function chosenFor(row, byKey) {
-    return row.parents.map((k) => ({ key: k, sub: byKey.get(k)?.type ?? null }))
+  // what the parent *is*, under the same field name an option carries.
+  function chosenFor(row, index) {
+    return row.parents.map((k) => ({ key: k, type: index.get(k)?.type ?? null }))
   }
 
-  // Which row a parent line is pointing at. The label is a path on an input and
-  // a type name on an output, and neither is unique enough to find the row by
-  // eye in a long list -- so hovering the line marks the row itself.
-  let hover = $state(null)
+  // Which *link* a parent line is. A type name is what a chip and a menu entry
+  // both state, and it is shared by every row of that type -- so finding the
+  // row by eye is the highlight's job: hovering the line marks the two rows it
+  // joins.
+  //
+  // The link and not just the parent: marking the parent alone left the reader
+  // to remember which row they were pointing from, and marking everything
+  // downstream of the parent (which is what a node-keyed highlight does to a
+  // rail) answered a question nobody asked.
+  let hover = $state(null) // {child, parent} | null
+
+  // ... as the roles `DagRail` paints. `link` and nothing around it: this is the
+  // one frame with no `related` tier at all, because a parent's *other* children
+  // are not what the chip is pointing at. Both bands are handed the one map, and
+  // each paints its rail and its rows' backgrounds off it, so the two cannot
+  // disagree about what is marked -- which is also why the halves' two id spaces
+  // have to stay disjoint.
+  let hlMarks = $derived(
+    hover ? marks({ role: POINTED, ...link(hover.parent, hover.child) }) : null,
+  )
 
   const setType = (row, v) =>
     row.kind === 'target' ? ontarget?.(row.id, { type: v }) : onrow?.(row.id, { dtype: v })
-
-  // An output nothing makes will not solve.
-  const describeType = (row) =>
-    counts
-      ? (t) => {
-          const c = counts(t)
-          return {
-            note: `${c.produced} produce · ${c.consumed} consume`,
-            warn: row.kind === 'target' ? c.produced === 0 : c.produced === 0 && c.consumed === 0,
-          }
-        }
-      : null
 
 </script>
 
@@ -301,7 +200,14 @@
      "left the field" is focus leaving the whole control rather than the input
      inside it -- tabbing from the box to the caret is not leaving. Without this
      a type typed and tabbed away from persisted nothing until some other field
-     happened to blur. -->
+     happened to blur.
+
+     Focusing the row and picking a type are two moves and both aim the panel:
+     the first says "this row", and no second `focusin` fires after a pick, so
+     without the second the panel would still be showing whatever the row held
+     before. A field blurred mid-type without a pick deliberately moves nothing
+     -- the persist below is all that happens -- so the panel never chases half
+     a name. -->
 {#snippet typeCell(row)}
   <div
     class="typefield"
@@ -314,9 +220,16 @@
       value={row.type ?? ''}
       options={typeOptions}
       placeholder="namespace::type"
-      describe={describeType(row)}
       onchange={(v) => setType(row, v)}
-      oncommit={() => oncommit?.()}
+      oncommit={(picked) => {
+        // `onfocus` aims the panel, `oncommit` writes the recipe to disk --
+        // two props one line apart, and only the name of the parameter says
+        // which value belongs to which
+        onfocus?.(picked)
+        oncommit?.()
+      }}
+      onpreview={(t) => onpreview?.(t)}
+      onclose={() => onpreviewend?.()}
     />
   </div>
 {/snippet}
@@ -328,20 +241,19 @@
      delete on an output. -->
 {#snippet detail(row)}
   {@const isTarget = row.kind === 'target'}
+  {@const peers = isTarget ? targetRows : inputRows}
+  {@const options = optionsFor(peers, row, isTarget ? targetAncestors : inputAncestors)}
   <div class="row-item detail">
     <div class="typecell">{@render typeCell(row)}</div>
     <div class="parentcell">
       <ParentPicker
+        self={row.key}
         chosen={chosenFor(row, isTarget ? targetByKey : inputByKey)}
-        options={isTarget ? targetOptions(row) : inputOptions(row)}
-        note={isTarget
-          ? row.id === 0
-            ? null
-            : 'an output can only come off one declared before it'
-          : null}
+        {options}
+        note={parentNote(peers, options)}
         onadd={(k) => onparents?.(row, [...row.parents, k])}
         onremove={(k) => onparents?.(row, row.parents.filter((x) => x !== k))}
-        onhover={(k) => (hover = k)}
+        onhover={(link) => (hover = link)}
       />
     </div>
     <span class="trail">
@@ -473,127 +385,122 @@
         out the steps from their types alone.
       </p>
     {:else}
-      <div class="band">
-        <LineageRail rows={railInputRows} height={inputBandHeight} />
-        <div class="rowsCol" bind:this={inputBox}>
-          {#each orderedInputRows as row (row.key)}
-            {@const info = row.type && counts ? counts(row.type) : null}
-            {@const bound = isBound(row.row)}
-            <div class="entry" data-row-key={row.key} class:hl={hover === row.key} animate:flip={{ duration: 150 }}>
-              <!-- Two lines, not one: the path is the longest thing on an input row and
-                   was being squeezed into a sliver beside a combobox and a menu. What
-                   the row points at goes on the first line; what it *is* and what it
-                   came from go on the second -- and that second line is the whole of an
-                   output row. -->
-              {#if row.row.mode === 'value'}
-                {@const ents = rowEntries(row.row)}
-                <!-- A value row holds a list, one line per entry. One entry is
-                     what a value row has always been -- a box, with an optional
-                     key beside it -- and it stays on the switch's own line so
-                     the common row does not grow. Give it a key, or a second
-                     entry, and the row writes the JSON object those pairs
-                     describe instead of the text -- which is the point: read
-                     metadata is several facts, and hand-typed JSON in one box
-                     is not something a person can edit. -->
-                <div class="row-item">
-                  {@render modeSwitch(row)}
-                  {#if ents.length === 1}
-                    {@render valueEntry(row, ents, 0)}
-                  {:else}
-                    <span class="grow small muted">
-                      {ents.length} fields — written as one object
-                    </span>
-                  {/if}
+      <LineageBand rows={orderedInputRows} marks={hlMarks}>
+        {#snippet body(row)}
+          {@const info = row.type && counts ? counts(row.type) : null}
+          {@const bound = isBound(row.row)}
+          <!-- Two lines, not one: the path is the longest thing on an input row and
+               was being squeezed into a sliver beside a combobox and a menu. What
+               the row points at goes on the first line; what it *is* and what it
+               came from go on the second -- and that second line is the whole of an
+               output row. -->
+          {#if row.row.mode === 'value'}
+            {@const ents = rowEntries(row.row)}
+            <!-- A value row holds a list, one line per entry. One entry is
+                 what a value row has always been -- a box, with an optional
+                 key beside it -- and it stays on the switch's own line so
+                 the common row does not grow. Give it a key, or a second
+                 entry, and the row writes the JSON object those pairs
+                 describe instead of the text -- which is the point: read
+                 metadata is several facts, and hand-typed JSON in one box
+                 is not something a person can edit. -->
+            <div class="row-item">
+              {@render modeSwitch(row)}
+              {#if ents.length === 1}
+                {@render valueEntry(row, ents, 0)}
+              {:else}
+                <span class="grow small muted">
+                  {ents.length} fields — written as one object
+                </span>
+              {/if}
+              <span class="trail">
+                {#if ents.length === 1}
+                  <button class="star" title="another field, under its own key" onclick={() => addEntry(row)}>+</button>
+                {/if}
+                <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
+              </span>
+            </div>
+            {#if ents.length > 1}
+              {#each ents as _e, i}
+                <div class="row-item entryline">
+                  {@render valueEntry(row, ents, i)}
                   <span class="trail">
-                    {#if ents.length === 1}
+                    {#if i === ents.length - 1}
                       <button class="star" title="another field, under its own key" onclick={() => addEntry(row)}>+</button>
                     {/if}
-                    <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
+                    <DeleteControl title="discard this field" onconfirm={() => dropEntry(row, i)} />
                   </span>
                 </div>
-                {#if ents.length > 1}
-                  {#each ents as _e, i}
-                    <div class="row-item entryline">
-                      {@render valueEntry(row, ents, i)}
-                      <span class="trail">
-                        {#if i === ents.length - 1}
-                          <button class="star" title="another field, under its own key" onclick={() => addEntry(row)}>+</button>
-                        {/if}
-                        <DeleteControl title="discard this field" onconfirm={() => dropEntry(row, i)} />
-                      </span>
-                    </div>
-                  {/each}
-                {/if}
-              {:else}
-                <div class="row-item">
-                  {@render modeSwitch(row)}
-                  {@render sampleField(
-                    row,
-                    'path',
-                    row.row.path,
-                    row.row.column,
-                    '/data/sample_01.fastq.gz',
-                    true,
-                    (text) => onrow?.(row.id, { path: text }),
-                    (col) => onrow?.(row.id, { column: col }),
-                  )}
-                  <span class="trail">
-                    <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
-                  </span>
-                </div>
-              {/if}
-
-              {@render detail(row)}
-
-              {#if hasTable}
-                <!-- With a sheet attached this row is one declaration, not N
-                     rows: what it says about itself is a count of how many
-                     items it stands for. A field bound to nothing makes that
-                     count zero, and saying so here is what keeps the row from
-                     going quiet -- it registers nothing until it is bound. -->
-                <div class="notes row wrap small">
-                  {#if !bound}
-                    <span class="tag warn">pick a column for every field — this registers nothing</span>
-                  {:else if expansion?.counts?.[row.id]}
-                    <span class="tag">× {expansion.counts[row.id]} registered</span>
-                  {:else}
-                    <span class="tag">× {rowCount} once expanded</span>
-                  {/if}
-                  <!-- A sample's mask is one index item's lineage, so a
-                       reference sitting beside the per-sample files is in no
-                       sample at all. Marking it shared is the third way in, and
-                       it applies to any row under a sheet: the usual shape is a
-                       column repeating one path down every row, which groups
-                       onto the single instance this then shares.
-
-                       Keyed by the row, not by a path: a row may not have one
-                       yet, and the generate turns the reference into every path
-                       that row registered, between the sync that made them and
-                       the solve that reads them. -->
-                  <button
-                    class="star"
-                    class:on={sharedPaths.includes(row.key)}
-                    aria-pressed={sharedPaths.includes(row.key)}
-                    title={sharedPaths.includes(row.key)
-                      ? 'every sample sees this'
-                      : 'let every sample see this — a reference beside the per-sample files is otherwise in no sample at all'}
-                    onclick={() => onshared?.(row.key, !sharedPaths.includes(row.key))}
-                  >shared by every sample</button>
-                </div>
-              {/if}
-
-              {#if row.type && !info?.known}
-                <div class="notes row wrap small">
-                  <span class="tag warn">not a type in this library</span>
-                </div>
-              {/if}
+              {/each}
+            {/if}
+          {:else}
+            <div class="row-item">
+              {@render modeSwitch(row)}
+              {@render sampleField(
+                row,
+                'path',
+                row.row.path,
+                row.row.column,
+                '/data/sample_01.fastq.gz',
+                true,
+                (text) => onrow?.(row.id, { path: text }),
+                (col) => onrow?.(row.id, { column: col }),
+              )}
+              <span class="trail">
+                <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
+              </span>
             </div>
-          {/each}
-        </div>
-      </div>
+          {/if}
+
+          {@render detail(row)}
+
+          {#if hasTable}
+            <!-- With a sheet attached this row is one declaration, not N rows:
+                 what it says about itself is a count of how many items it
+                 stands for. A field bound to nothing makes that count zero, and
+                 saying so here is what keeps the row from going quiet -- it
+                 registers nothing until it is bound. -->
+            <div class="notes row wrap small">
+              {#if !bound}
+                <span class="tag warn">pick a column for every field — this registers nothing</span>
+              {:else if expansion?.counts?.[row.id]}
+                <span class="tag">× {expansion.counts[row.id]} registered</span>
+              {:else}
+                <span class="tag">× {rowCount} once expanded</span>
+              {/if}
+              <!-- A sample's mask is one index item's lineage, so a reference
+                   sitting beside the per-sample files is in no sample at all.
+                   Marking it shared is the third way in, and it applies to any
+                   row under a sheet: the usual shape is a column repeating one
+                   path down every row, which groups onto the single instance
+                   this then shares.
+
+                   Keyed by the row, not by a path: a row may not have one yet,
+                   and the generate turns the reference into every path that row
+                   registered, between the sync that made them and the solve
+                   that reads them. -->
+              <button
+                class="star"
+                class:on={sharedPaths.includes(row.key)}
+                aria-pressed={sharedPaths.includes(row.key)}
+                title={sharedPaths.includes(row.key)
+                  ? 'every sample sees this'
+                  : 'let every sample see this — a reference beside the per-sample files is otherwise in no sample at all'}
+                onclick={() => onshared?.(row.key, !sharedPaths.includes(row.key))}
+              >shared by every sample</button>
+            </div>
+          {/if}
+
+          {#if row.type && !info?.known}
+            <div class="notes row wrap small">
+              <span class="tag warn">not a type in this library</span>
+            </div>
+          {/if}
+        {/snippet}
+      </LineageBand>
     {/if}
 
-    <div class="entry addrow">
+    <div class="addrow">
       <!-- One button, not a choice up front: a path and a value are the same
            kind of thing to add, a row, and what it holds is a switch on the row
            itself rather than a different action to take here. -->
@@ -610,40 +517,37 @@
     {#if targetRows.length === 0}
       <p class="small muted pad">Nothing wanted yet. Add at least one to solve.</p>
     {:else}
-      <div class="band">
-        <LineageRail rows={railOutputRows} height={outputBandHeight} />
-        <div class="rowsCol" bind:this={outputBox}>
-          {#each targetRows as row (row.key)}
-            {@const info = row.type && counts ? counts(row.type) : null}
-            {@const dup = targetRows.some(
-              (o) =>
-                o.id !== row.id &&
-                o.type === row.type &&
-                row.type &&
-                JSON.stringify([...o.parents].sort()) === JSON.stringify([...row.parents].sort()),
-            )}
-            <div class="entry" data-row-key={row.key} class:hl={hover === row.key}>
-              {@render detail(row)}
+      <!-- a wanted output is a requested one: the engine's solid marker, the
+           same one the plan's diagram draws it with -->
+      <LineageBand rows={targetRows} kind="target" marks={hlMarks}>
+        {#snippet body(row)}
+          {@const info = row.type && counts ? counts(row.type) : null}
+          {@const dup = targetRows.some(
+            (o) =>
+              o.id !== row.id &&
+              o.type === row.type &&
+              row.type &&
+              JSON.stringify([...o.parents].sort()) === JSON.stringify([...row.parents].sort()),
+          )}
+          {@render detail(row)}
 
-              {#if row.type || dup}
-                <div class="notes row wrap small">
-                  {#if row.type && !info?.known}
-                    <span class="tag warn">not a type in this library</span>
-                  {:else if info?.known && info.produced === 0}
-                    <span class="muted">nothing can make this — the plan will not solve</span>
-                  {/if}
-                  {#if dup}
-                    <span class="tag warn">already wanted, with the same lineage</span>
-                  {/if}
-                </div>
+          {#if row.type || dup}
+            <div class="notes row wrap small">
+              {#if row.type && !info?.known}
+                <span class="tag warn">not a type in this library</span>
+              {:else if info?.known && info.produced === 0}
+                <span class="muted">nothing can make this — the plan will not solve</span>
+              {/if}
+              {#if dup}
+                <span class="tag warn">already wanted, with the same lineage</span>
               {/if}
             </div>
-          {/each}
-        </div>
-      </div>
+          {/if}
+        {/snippet}
+      </LineageBand>
     {/if}
 
-    <div class="entry addrow">
+    <div class="addrow">
       <button class="small" onclick={() => onadd?.('output')}>+ an output</button>
       <span class="small muted">a type you want out of this — the planner finds the way to it</span>
     </div>
@@ -676,31 +580,31 @@
      pinned to `.out` */
   .heading:not(:first-child) { border-top: 3px solid var(--line); }
   .heading .count { text-transform: none; letter-spacing: 0; }
-  /* the rail and its rows are true flex siblings sharing one coordinate
-     space -- nothing (padding, a border) may sit between them, or the rail's
-     measured `y` values drift from where the rows actually land. `.rowsCol`
-     is `position: relative` so a row's own `offsetTop` is already relative
-     to it, with nothing to subtract. */
-  .band { display: flex; align-items: flex-start; }
-  .rowsCol { flex: 1 1 auto; min-width: 0; position: relative; }
-  /* the border is on the entry rather than the row, so a row and the line of
-     tags under it read as one thing rather than two */
-  .entry { border-bottom: 1px solid var(--line); }
-  /* a direct-child selector on purpose: an `.entry` nested in `.rowsCol` is
-     never the last thing in `.rows` any more, and losing its border just
-     because it is last inside its own rail's column would be a visual change
-     nothing about this feature asked for */
-  .rows > .entry:last-child { border-bottom: none; }
-  /* the one mark left on a row, and it comes from a pointer sitting on a parent
-     line somewhere else: "that link means *this* row". Clicking a type moves the
-     panel and marks nothing -- it used to mark every row of that type, in both
-     halves, so touching an input lit up an output that shared its name. */
-  .entry.hl { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+  /* A row and everything about how it sits beside a rail is `LineageBand`'s,
+     including the border under it -- Svelte scopes styles per component, so a
+     rule here could not reach those rows anyway. What is left in this box is
+     the two add-rows, which are this card's own elements and carry the same
+     border so the run of rows reads as one list. The last of them closes the
+     box, so it drops it. */
+  .addrow { border-bottom: 1px solid var(--line); }
+  .rows > .addrow:last-child { border-bottom: none; }
   .row-item {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
+  }
+  /* file and value are the same row seen two ways, so the row may not change
+     height between them. A path is drawn in the mono face at 12.5px and a value
+     in the proportional one at the page size, and a field left to size itself
+     off its own font is a pixel or two taller in one mode than the other --
+     which twitches the row, which redraws the lineage rail measured against it.
+     Pinned here rather than globally: nothing else on the page swaps a field's
+     face under the cursor. */
+  .row-item input,
+  .row-item select {
+    height: 28px;
+    line-height: 1.35;
   }
   /* the second line of an input row, and the whole of an output row: same
      columns, no gap above it, so an input's two lines read as one row */
