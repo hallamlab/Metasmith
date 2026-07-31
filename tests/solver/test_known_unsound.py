@@ -1,22 +1,30 @@
 """Plans the solver returns that cannot run. Pinned, not fixed.
 
-Found by sweeping 10,000 generated problems through `check_plan`: 59 of them
-came back as a plan containing at least one step whose input **no step in the
-plan produces**. `Solution.complete` says `True` for every one of them.
+Found by sweeping 10,000 generated problems through `check_plan`: some come back
+as a plan containing at least one step whose input **no step in the plan
+produces**. `Solution.complete` says `True` for every one of them.
 
-The concentration is entirely in problems whose transform graph carries a
-cycle — a transform that consumes a type and also produces it, directly or
-through a second product group. That is the same shape the solver's
-path-dependent loop rejection exists to catch. It does catch some of them, and
+They concentrate in problems whose transform graph carries a cycle — a
+transform that consumes a type and also produces it, directly or through a
+second product group. That is the same shape the solver's path-dependent loop
+rejection exists to catch. It does catch some of them, and
 `test_refiner_validity.py` traces what happens to the rest: the refiner accepts
 a state whose production graph is cyclic, and `rectify` then rewrites endpoints
 in an order that cannot be topological, converting the cycle into an input no
 step produces. Those are the mechanism; these are the outcome.
 
-These are `xfail(strict=True)` on purpose. When the solver stops returning
-unrunnable plans here, the suite fails loudly and these get promoted to
-ordinary assertions rather than quietly continuing to pass for the wrong
-reason.
+**Which problems land here is a property of the random stream, not only of the
+solver.** Swapping numpy's stream for the ChaCha8 contract in T4 changed the
+count from 59 to 5 and changed the membership completely: all 59 of the old set
+come back sound under the new stream, and all 5 of the new set were sound under
+the old one. Nothing about the defect was touched. So an XPASS here has two
+possible causes and they must be told apart — either the laundering was fixed,
+or the anchors went stale because the stream moved. Check
+`test_refiner_validity.py` first; if the mechanism is still live, re-anchor
+these from a fresh sweep rather than promoting them.
+
+These are `xfail(strict=True)` on purpose: a silent pass is exactly the failure
+mode that would let a fix-by-accident be mistaken for a fix.
 """
 
 from __future__ import annotations
@@ -29,15 +37,18 @@ from metasmith.testing.solver_verification import (
     generate_problem,
 )
 
-#: (name, seed, dials) — verified by hand for `cyclic-217`: its step 4 reads a
-#: `t3` and its step 7 reads a `t2` and a `t3` that nothing writes, and the
-#: target's own path runs through both.
-KNOWN_UNSOUND = [
-    ("cyclic-217", 217, GeneratorDials(n_types=7, n_extra_transforms=5, cycle_density=0.8)),
-    ("cyclic-449", 449, GeneratorDials(n_types=7, n_extra_transforms=5, cycle_density=0.8)),
-    ("pgroups-556", 556, GeneratorDials(n_types=7, n_extra_transforms=4, product_group_density=0.9)),
-    ("pgroups-716", 716, GeneratorDials(n_types=7, n_extra_transforms=4, product_group_density=0.9)),
-]
+#: The `sink` profile: two given groups, a cycle dial, dense lineage, duplicate
+#: transforms and product groups all at once. Under the current stream it is the
+#: only profile that still produces unrunnable plans — `cyclic` and `pgroups`,
+#: which supplied 39 of the previous 59, are now clean.
+_SINK = GeneratorDials(
+    n_types=9, n_given=2, n_given_groups=2, n_extra_transforms=6,
+    cycle_density=0.4, lineage_density=0.7, n_duplicate_transforms=2,
+    product_group_density=0.5, target_lineage=1.0, max_requirements=3,
+)
+
+#: (name, seed, dials) — every unsound case in a 10,000-problem sweep.
+KNOWN_UNSOUND = [(f"sink-{s}", s, _SINK) for s in (4047, 6623, 8335, 8983, 9391)]
 
 
 @pytest.mark.xfail(

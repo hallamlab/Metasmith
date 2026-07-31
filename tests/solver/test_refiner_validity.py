@@ -1,9 +1,9 @@
 """How the refiner decides a state is valid, and where that goes wrong.
 
 `refine_mcts` is handed a sound plan and may return an unsound one. This file
-pins the mechanism, one link at a time, because the four `xfail`s in
+pins the mechanism, one link at a time, because the `xfail`s in
 `test_known_unsound.py` only pin the *outcome* and an outcome can be fixed by
-accident. The chain, measured:
+accident -- or, as T4 showed, by a change of random stream. The chain, measured:
 
 1. the search hands `refine_mcts` a plan that is acyclic and fully produced;
 2. the refiner rebinds an input to an endpoint produced by a later step,
@@ -19,6 +19,13 @@ tell it was ever a cycle.
 The tracing here hooks *function names*, never line numbers, except in
 `test_the_loop_rejection_branch_is_reachable`, which finds its line by the
 marker comment in the source.
+
+The anchor problem is chosen, not arbitrary: it has to exhibit all four links at
+once, and **which problems do is a property of the random stream**. `cyclic-217`
+was the anchor until T4 replaced numpy's stream with the ChaCha8 contract, after
+which it solves cleanly and drives the loop branch zero times. Re-anchoring is
+the expected maintenance when the contract changes; the mechanism below has not
+moved with it.
 """
 
 from __future__ import annotations
@@ -36,8 +43,18 @@ from metasmith.testing.solver_verification import (
     generate_problem,
 )
 
-#: The one case verified by hand, and the profile it came from.
-CYCLIC_217 = (217, GeneratorDials(n_types=7, n_extra_transforms=5, cycle_density=0.8))
+#: The anchor: the search hands the refiner a sound plan, a cyclic state reaches
+#: `rectify`, the returned plan is unrunnable, and the loop-rejection branch
+#: fires 177 times in the one solve. All four links, one problem.
+ANCHOR = "sink-6623"
+ANCHOR_CASE = (
+    6623,
+    GeneratorDials(
+        n_types=9, n_given=2, n_given_groups=2, n_extra_transforms=6,
+        cycle_density=0.4, lineage_density=0.7, n_duplicate_transforms=2,
+        product_group_density=0.5, target_lineage=1.0, max_requirements=3,
+    ),
+)
 
 
 def _production_cycle(steps) -> bool:
@@ -91,8 +108,8 @@ def _trace_stages(problem: SolverProblem) -> dict[str, list]:
 
 def test_the_search_hands_the_refiner_a_sound_plan():
     """The unsoundness is not the search's. Establishes where to look."""
-    seed, dials = CYCLIC_217
-    stages = _trace_stages(generate_problem(seed, dials, name="cyclic-217"))
+    seed, dials = ANCHOR_CASE
+    stages = _trace_stages(generate_problem(seed, dials, name=ANCHOR))
     assert stages["refine_in"], "refine_mcts never ran"
     for steps in stages["refine_in"]:
         produced = {id(e) for a in steps for g in a.produced for e in g.values()}
@@ -120,8 +137,8 @@ def test_refinement_does_not_introduce_a_cycle():
     `mock_produced=step.produced`, "rectify later"), so identity has not yet
     settled into the shape the cycle would be visible in.
     """
-    seed, dials = CYCLIC_217
-    stages = _trace_stages(generate_problem(seed, dials, name="cyclic-217"))
+    seed, dials = ANCHOR_CASE
+    stages = _trace_stages(generate_problem(seed, dials, name=ANCHOR))
     assert stages["rectify_in"], "rectify never ran"
     assert not any(_production_cycle(steps) for steps in stages["rectify_in"])
 
@@ -135,8 +152,8 @@ def test_rectify_launders_a_cycle_into_missing_inputs():
     an unproduced input appears in its place -- a plan that looks well-formed
     and cannot run.
     """
-    seed, dials = CYCLIC_217
-    problem = generate_problem(seed, dials, name="cyclic-217")
+    seed, dials = ANCHOR_CASE
+    problem = generate_problem(seed, dials, name=ANCHOR)
     stages = _trace_stages(problem)
     assert any(_production_cycle(steps) for steps in stages["rectify_in"]), (
         "no cyclic state reached rectify -- if the refiner was fixed, this test "
@@ -153,7 +170,7 @@ def test_the_loop_rejection_branch_is_reachable():
 
     Measurement across the four shipped templates, the tests in this axis and
     the original scratch scenarios found zero hits, which left it open whether
-    the branch was dead code. It is not: this problem drives it eight times in
+    the branch was dead code. It is not: this problem drives it 177 times in
     one solve. What it is, is *incomplete* -- see the xfail above, where states
     it should have caught get through anyway. Both facts have to be carried
     into the Rust port; a port that drops the branch as unreachable would be
@@ -190,8 +207,8 @@ def test_the_loop_rejection_branch_is_reachable():
             return local
         return None
 
-    seed, dials = CYCLIC_217
-    problem = generate_problem(seed, dials, name="cyclic-217")
+    seed, dials = ANCHOR_CASE
+    problem = generate_problem(seed, dials, name=ANCHOR)
     old = sys.gettrace()
     sys.settrace(tracer)
     try:

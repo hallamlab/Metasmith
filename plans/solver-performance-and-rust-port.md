@@ -772,3 +772,114 @@ The fast suite itself dropped from 351.7s to 302.7s as a side effect.
   T3 was a performance task and deliberately touched none of them.
 - The three `np.random` call sites and four `np.argpartition` tie-breaks are
   untouched and are T4's actual subject.
+
+## T4 — RNG contract — DONE
+
+`solve_by_mcts` no longer touches numpy's global stream. Every random decision
+now goes through `src/metasmith/models/solver_rng.py`, which fixes both halves
+of a decision — the bit stream *and* the rule that turns bits into an index —
+because either half left implicit is a place the Rust port can silently
+disagree.
+
+- **Stream:** ChaCha8 in reference form (key = seed as eight little-endian bytes
+  then 24 zeros, zero nonce, counter from 0, sixteen words per block consumed in
+  order). Anchored to the RFC 8439 ChaCha20 block vector, so the permutation is
+  provably the reference one and not merely self-consistent.
+- **Rust parity is measured, not assumed.** `rand_chacha` 0.10.0 with
+  `ChaCha8Rng::from_seed(seed_to_key(42))` emits `0x198fa887 0x59273471
+  0x169df72b 0x49238aa4 …` — byte-identical to this module's first eight words.
+  `seed_from_u64` runs the seed through PCG first and must never be used.
+- **Decisions, not bits:** `weighted_index` (integer weights — the call sites
+  held literal integers and the normalisation into floats was pure loss),
+  `bounded_int` (rejection, and *no draw at all* for n≤1, which is contract
+  rather than optimisation: a stream that drifts by one word diverges from
+  there on), and `pick_top_k`. The two orderings `np.argpartition` used to
+  decide arbitrarily are now stated rules: `argmax_index`/`argmin_index` take
+  the **first** extremum, `top_k_indices` is best-first with ties to the lower
+  index, and NaN ranks worst in whichever direction "best" points.
+
+### The stream is worth about half a percent of the solver's verdicts
+
+Fingerprint parity is not available here by construction — a different stream
+finds a different, equally valid plan — so the claim is distributional, over
+10,000 generated problems and separately over 200 problems × 8 seeds.
+
+| | old (numpy) | new (ChaCha8) |
+|---|---|---|
+| sound plans | 9,883 | 9,940 |
+| **unsound plans** | **59** | **5** |
+| unsolved | 31 | 44 |
+| exceeded 10s | 27 | 11 |
+| mean steps | 6.198 | 6.152 |
+| sweep wall time | 415.5s | 308.2s |
+
+The 1,600-solve multi-seed sweep agrees in every direction: unsound 13 → 1,
+timeout 2 → 0, unsolved 3 → 1, mean steps 5.888 → 5.787.
+
+**None of that is a fix, and the cross-check is what proves it.** Running each
+stream's failures under the other stream: all 59 of the old unsound cases come
+back *sound* under ChaCha8, and all 5 of the new ones were *sound* under numpy.
+The laundering in `rectify` was not touched by this task; which problems fall
+into it is a lottery. The same is true of the unsolved set in both directions —
+the new stream solves 13 problems the old could not and fails 21 it could.
+
+So the honest reading is a measurement of how much of this solver's behaviour
+is stream-luck: **about 0.6% of generated problems change verdict on a change
+of PRNG alone.** That is the strongest argument yet for the contract existing
+at all, because it means a Rust port validated against "both find *a* plan"
+would be validated against nothing.
+
+### The templates did not move
+
+All four shipped templates keep their exact T1 fingerprints — `annotation_palette
+032997be12c82041f4556510`, `isolate 5de487d62f5a3cd8fa15c59e`, `metagenomics
+ef298da676acd6803b094a48`, `pangenome 3b4e9735bda5714c262ac7e7` — and the whole
+flow suite is green. Three of eight generated corpus cases moved (`chain-10`,
+`kitchen-sink`, `product-groups`; `kitchen-sink` went from 7 steps to 11, both
+sound) plus one of three stress cases, and `tests/solver/fingerprints.json` was
+regenerated deliberately.
+
+### One regression, found by the corpus split and reverted
+
+The first cut of `pick_top_k` sorted the whole frontier. That is the right rule
+and the wrong implementation: the refiner re-ranks a frontier of ~19,000 states
+on every one of its 256 iterations, so an `n log n` sort with a Python key
+replaced numpy's C-level `argpartition` and cost **+12.3%** on metagenomics
+(7.614s → 8.553s) while the mcts-bound stress corpus, whose frontiers are small,
+got *faster*. Exactly the split T1 predicted, doing its job. Since both call
+sites ask for `k=1`, `top_k_indices` now takes an `argmax` fast path — the same
+rule, one pass — and metagenomics is back to 7.606 / 7.560 / 7.740s across three
+runs against T3's 7.614s. Stress total −1.8%.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `tests/solver` | **124 passed**, 7 xfailed in 9.55s |
+| `tests/perf/test_solver_benchmark.py` | **3 passed** in 11.75s |
+| fast suite | **1482 passed**, 7 skipped, 331 deselected, 10 xfailed in 313.89s |
+| templates | 4/4 sound, all four fingerprints unchanged from T1 |
+| RNG contract | 26 tests, incl. the RFC 8439 vector and the pinned stream |
+
+The `xfail(strict=True)` anchors had to be **re-anchored, not promoted**. All
+four old ones XPASSed, which under this task's finding means "the stream moved",
+not "the bug is gone" — `test_known_unsound.py` now pins the five `sink` cases
+the new stream produces and says so in its docstring, and
+`test_refiner_validity.py` moves from `cyclic-217` to `sink-6623`, which
+exhibits all four links of the chain in one solve and drives the loop-rejection
+branch 177 times.
+
+### Carried into T5
+
+- The port must implement the contract, not `rand::StdRng`, and should assert
+  `SOLVER_RNG_VERSION` on the wire alongside the problem format.
+- `_entropy` (`solver.py:896`) still runs through numpy — `a/a.sum()` and
+  `(p*log2(p)).sum()`. numpy sums pairwise, a naive Rust loop does not, and the
+  result feeds `score_node` directly. This is a float-reproducibility surface
+  T4 deliberately left alone; it needs an explicit summation order on both
+  sides.
+- Everything carried into T3 and T4 is still open: the refiner/`rectify` cycle
+  laundering (now anchored on `sink-6623`), the cyclic-search completeness
+  failure, and the slow tail (11 of 10,000 instances over 10s, down from 27).
+- Acceptance criterion 8 (<3s Python path) remains unmet at ~7.6s and is now
+  entirely T5/T6's to close.

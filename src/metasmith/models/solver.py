@@ -9,6 +9,13 @@ from collections import deque
 
 from ..hashing import KeyGenerator
 from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
+from .solver_rng import DecisionStream, argmax_index, argmin_index
+
+# Both search phases weight the same three moves: two exploit arms and one
+# explore arm. Named here because the refiner and the mcts phase must not
+# drift apart, and because the Rust port reads them as constants.
+_SELECTION_WEIGHTS = (75, 20, 5)
+_SELECTION_TOP_K = 1
 
 class Node:
     PROPERTY_FIELD = "properties"
@@ -325,7 +332,11 @@ def solve_by_mcts(
     max_iter: int=256,
     max_refine: int=256,
 ) -> Solution:
-    np.random.seed(seed)
+    # One stream for the whole solve, owned by this call. The old
+    # `np.random.seed(seed)` mutated process-global state: two solves in one
+    # process could not be independent, and any other numpy consumer silently
+    # shared the solver's stream.
+    rng = DecisionStream(seed)
     # ---
     # monte carlo tree search
 
@@ -750,7 +761,7 @@ def solve_by_mcts(
         todo: list[Application] = steps.copy()
         order = [node_order[s.Signature()] for s in todo]
         while len(todo)>0:
-            si: int = np.argpartition(order, 0)[0] # this saves a sort, I guess...
+            si: int = argmin_index(order) # first minimum; introselect's was arbitrary
             todo[si], todo[-1] = todo[-1], todo[si]
             order[si], order[-1] = order[-1], order[si]
             order.pop()
@@ -941,19 +952,12 @@ def solve_by_mcts(
             state.scores = [score, vscore]
         
         def select_node(frontier: list[RefinerState]) -> int:
-            probs = [75, 20, 5] # score, score * valid
-            total_prob = sum(probs)
-            probs = [x/total_prob for x in probs]
-            p_i = np.random.choice(list(range(len(probs))), 1, p=probs)[0]
-            if p_i<len(probs)-1: # exploit
-                scores = np.array([s.scores[p_i] for s in frontier])
-                K = 1
-                k = min(K, scores.shape[0])
-                candidate_indexes = np.argpartition(scores, -k)[-k:]
-                i: int = np.random.choice(candidate_indexes)
+            # weights are [score, score * valid, explore]
+            p_i = rng.weighted_index(_SELECTION_WEIGHTS)
+            if p_i<len(_SELECTION_WEIGHTS)-1: # exploit
+                return rng.pick_top_k([s.scores[p_i] for s in frontier], _SELECTION_TOP_K)
             else: # explore
-                i = np.random.randint(0, len(frontier))
-            return i
+                return rng.bounded_int(len(frontier))
         
         def remove_node(frontier: list[RefinerState], index: int):
             frontier[index], frontier[-1] = frontier[-1], frontier[index]
@@ -1017,9 +1021,9 @@ def solve_by_mcts(
                 child = RefinerState(steps=base+[appl], _sig=sig)
                 score_node(child)
                 frontier.append(child)
-        scores = np.array([s.scores[1] for s in valids]) # take the valid score
-        k = 1
-        si: int = np.argpartition(scores, -k)[-k:][0]
+        # take the valid score; first maximum wins, where introselect picked
+        # whichever index its partition happened to leave in that slot
+        si: int = argmax_index([s.scores[1] for s in valids])
         refined = valids[si]
         return RefinerResult(
             steps=rectify(refined.steps),
@@ -1053,19 +1057,12 @@ def solve_by_mcts(
             return appl
 
         def select_node(frontier: list[Application]):
-            probs = [75, 20, 5] # dist, opportunity, explore
-            total_prob = sum(probs)
-            probs = [x/total_prob for x in probs]
-            p_i = np.random.choice(list(range(len(probs))), 1, p=probs)[0]
-            if p_i<len(probs)-1: # exploit
-                scores = np.array([s.score[p_i] for s in frontier])
-                K = 1
-                k = min(K, scores.shape[0])
-                candidate_indexes = np.argpartition(scores, -k)[-k:]
-                i: int = np.random.choice(candidate_indexes)
+            # weights are [dist, opportunity, explore]
+            p_i = rng.weighted_index(_SELECTION_WEIGHTS)
+            if p_i<len(_SELECTION_WEIGHTS)-1: # exploit
+                return rng.pick_top_k([s.score[p_i] for s in frontier], _SELECTION_TOP_K)
             else: # explore
-                i = np.random.randint(0, len(frontier))
-            return i
+                return rng.bounded_int(len(frontier))
 
         def remove_node(frontier: list[Application], index: int):
             frontier[index], frontier[-1] = frontier[-1], frontier[index]
