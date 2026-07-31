@@ -151,6 +151,9 @@ pub struct Endpoints {
 
 impl Endpoints {
     pub fn len(&self) -> usize { self.types.len() }
+    /// How many distinct endpoint structures have been interned. `EpSig` values
+    /// are handed out densely from zero, so this is also their upper bound.
+    pub fn n_sigs(&self) -> usize { self.intern.len() }
     #[inline]
     pub fn ty(&self, e: EpId) -> TypeId { self.types[e as usize] }
     #[inline]

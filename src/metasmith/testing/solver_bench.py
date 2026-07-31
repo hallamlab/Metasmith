@@ -91,6 +91,13 @@ CORPUS: list[tuple[str, int, GeneratorDials]] = [
 #: refiner. The shipped templates are the opposite (metagenomics spends >99% of
 #: its solve inside `refine_mcts`), which is why the perf corpus needs both:
 #: a change that only helps one phase looks free on the other's cases.
+#:
+#: The genuinely refiner-bound instances are deliberately *not* here. They are
+#: `sink-178` under solve seed 7 and `sink-24` under 2³¹−1, and both need a
+#: pinned `max_refine` to terminate at all — a corpus entry that only carries a
+#: problem seed cannot express them, and one of them does not finish at the
+#: default budget in either implementation. They live in
+#: `tests/perf/test_solver_differential.py`, which can say what budget it means.
 STRESS_CORPUS: list[tuple[str, int, GeneratorDials]] = [
     (
         "wide-search",

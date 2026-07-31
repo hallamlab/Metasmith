@@ -137,6 +137,19 @@ sixteenth cannot be settled at the default `max_refine=256` by *either* side —
 one refiner iteration on it costs the engine 22 seconds — so it is adjudicated
 at the budgets that terminate and reported as exactly that.
 
+**The engine's scratch arrays are safe only because nothing iterates them.**
+`Refiner::score` keys every table it builds by `EpSig`, and `scratch.rs`
+replaces those hash maps with flat arrays plus a generation stamp — worth ×3.4
+on the refiner, because roughly 60% of the engine's instructions were in
+`malloc` and `hashbrown` rather than in the graph work. The justification is not
+that arrays are faster; it is that `produced_from`, `have`, `used_as_lineage`,
+`product2producer` and the depth maps are *insert-and-look-up only*. A table that
+is never iterated has no order to leak, so neither the map nor the array can
+reach the plan. Anything that starts iterating one of them — a debug dump, a
+"while we're here" summary — puts a container layout back on the path to the
+plan, and `test_iteration_order.py` will not see it, because that test salts
+*CPython's* hashing and this is the other implementation.
+
 **`generate_child_nodes` is a generator, and that is load-bearing.** Its caller
 adds each child's signature to `frontier_signatures` as it consumes them, so a
 transform reached later in the same expansion sees the earlier ones' children

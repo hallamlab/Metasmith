@@ -7,29 +7,32 @@
 //! single-edge swap breaks a lineage constraint, so single-swap refinement
 //! structurally cannot improve them.
 //!
-//! Two defects are reproduced here rather than fixed, and knowingly:
+//! **The AND in `validate` is ordered, and the order is the optimisation.** Its
+//! terms are independent and side-effect-free, and the lineage term is both the
+//! cheapest and the one that rejects nearly everything: on the metagenomics
+//! template *all* 19,683 validations fail on lineage, and on `sink-24` only
+//! 1,578 states in 174,804 survive it to reach the schedulability check. So
+//! lineage runs first. A `KeyError` from the prefilter means "cannot answer
+//! here", not "invalid", and falls through to the full check.
 //!
-//! - **`_is_valid`'s loop branch is reachable but incomplete.** It asks whether
-//!   any walk from the given application repeats an application *signature*,
-//!   which equals cycle detection only if signature and object are in bijection
-//!   -- and they are not. Property testing over 40,000 random graphs found 122
-//!   disagreements in 30,000 once signatures could collide, every one of them a
-//!   cycle the signature test *missed*. It fires 2,259 times in one solve of
-//!   `sink-9391`, so it is emphatically live code. Porting it faithfully
-//!   inherits the hole; dropping it as unreachable would be simply wrong.
-//! - **The AND is ordered, and the order is the optimisation.** The three terms
-//!   are independent and side-effect-free, and the loop walk dominates the solve
-//!   while the lineage term is nearly free -- on the metagenomics template *all*
-//!   19,683 validations fail on lineage, after paying for the walk. So lineage
-//!   runs first. A `KeyError` from the prefilter means "cannot answer here", not
-//!   "invalid", and falls through to the full check.
+//! **One defect is reproduced here rather than fixed, knowingly.** `expand_node`
+//! removes the step it is swapping by *signature*, which drops both members of a
+//! colliding pair. This is a port, and a port that fixes things cannot be checked
+//! against what it replaced.
+//!
+//! `score` runs once per expanded state and is very nearly the whole cost of a
+//! solve, so every table it needs comes out of `scratch.rs` rather than being
+//! allocated and hashed per state -- a factor of three on the cases where the
+//! refiner is under load. That module carries the argument for why swapping a
+//! hash map for a flat array cannot move a plan.
 
 use crate::det::{self, Map, Set};
 use crate::model::EpSig;
 use crate::problem::Problem;
 use crate::rectify::rectify;
 use crate::rng::{DecisionStream, argmax_index};
-use crate::search::{ApplId, ApplSig, Arena, Bindings, StateSig, generate_applications};
+use crate::scratch::{Scratch, SigMap, SigSet};
+use crate::search::{ApplId, ApplSig, Arena, StateSig, generate_applications};
 use crate::smath::entropy;
 
 /// Both phases weight the same three moves: two exploit arms and one explore
@@ -54,16 +57,25 @@ pub struct RefinerResult {
 ///
 /// `None` is Python's `KeyError`: `produced_from` is indexed unguarded, and a
 /// state the loop walk would have rejected first can reach here without one.
+///
+/// The tables come in as separate borrows rather than as a `&mut Scratch`
+/// because this reads `produced_from` while writing its own `seen` -- two
+/// disjoint fields of the same scratch, which the borrow checker will allow
+/// only if it can see them apart.
 fn has_ancestor(
-    ar: &Arena, produced_from: &Map<EpSig, Vec<EpSig>>, e: EpSig, a: EpSig,
+    pf: &SigMap<(u32, u32)>, pf_flat: &[EpSig],
+    seen: &mut SigSet, todo: &mut Vec<EpSig>, n_sigs: usize,
+    e: EpSig, a: EpSig,
 ) -> Option<bool> {
-    let _ = ar;
-    let mut todo = vec![e];
-    let mut seen: Set<EpSig> = det::set();
+    todo.clear();
+    todo.push(e);
+    seen.clear(n_sigs);
     seen.insert(e);
     while let Some(x) = todo.pop() {
         if x == a { return Some(true); }
-        for &parent in produced_from.get(&x)? {
+        let (start, len) = pf.get(x)?;
+        for i in start..start + len {
+            let parent = pf_flat[i as usize];
             if seen.insert(parent) { todo.push(parent); }
         }
     }
@@ -79,15 +91,16 @@ impl<'a> Refiner<'a> {
     /// The lineage term on its own: every binding descends from whatever its
     /// dependency's lineage constraint was bound to.
     fn lineage_ok(
-        &self, ar: &Arena, steps: &[ApplId], produced_from: &Map<EpSig, Vec<EpSig>>,
+        &self, ar: &Arena, steps: &[ApplId], sc: &mut Scratch, n_sigs: usize,
     ) -> Option<bool> {
         for &s in std::iter::once(&self.given_appl).chain(steps.iter()) {
-            let used = ar.appl(s).used.clone();
+            let used = &ar.appl(s).used;
             for &(d, e) in &used.0 {
                 for &parent in &self.p.dep_parents_ranked[d as usize] {
                     let constraint = used.get(parent)?;
                     let ok = has_ancestor(
-                        ar, produced_from, ar.eps.sig(e), ar.eps.sig(constraint))?;
+                        &sc.pf, &sc.pf_flat, &mut sc.anc_seen, &mut sc.anc_todo, n_sigs,
+                        ar.eps.sig(e), ar.eps.sig(constraint))?;
                     if !ok { return Some(false); }
                 }
             }
@@ -118,58 +131,74 @@ impl<'a> Refiner<'a> {
     /// within a layer, so this adds no new site to the iteration-order
     /// contract.
     fn is_valid(
-        &self, ar: &Arena, steps: &[ApplId],
-        produced_from: &Map<EpSig, Vec<EpSig>>,
+        &self, ar: &Arena, steps: &[ApplId], sc: &mut Scratch, n_sigs: usize,
     ) -> Option<bool> {
-        let mut have: Set<EpSig> = det::set();
-        for e in ar.appl(self.given_appl).products() { have.insert(ar.eps.sig(e)); }
-        let mut pending: Vec<ApplId> = steps.to_vec();
-        while !pending.is_empty() {
-            let mut ready: Vec<ApplId> = Vec::new();
-            let mut rest: Vec<ApplId> = Vec::new();
-            for &s in &pending {
-                if ar.appl(s).used.values().all(|e| have.contains(&ar.eps.sig(e))) {
-                    ready.push(s);
+        sc.have.clear(n_sigs);
+        for e in ar.appl(self.given_appl).products() { sc.have.insert(ar.eps.sig(e)); }
+        sc.pending.clear();
+        sc.pending.extend_from_slice(steps);
+        while !sc.pending.is_empty() {
+            sc.ready.clear();
+            sc.rest.clear();
+            for i in 0..sc.pending.len() {
+                let s = sc.pending[i];
+                if ar.appl(s).used.values().all(|e| sc.have.contains(ar.eps.sig(e))) {
+                    sc.ready.push(s);
                 } else {
-                    rest.push(s);
+                    sc.rest.push(s);
                 }
             }
-            if ready.is_empty() { return Some(false); } // looped, or an input nothing makes
-            for &s in &ready {
-                for e in ar.appl(s).products() { have.insert(ar.eps.sig(e)); }
+            if sc.ready.is_empty() { return Some(false); } // looped, or an input nothing makes
+            for i in 0..sc.ready.len() {
+                let s = sc.ready[i];
+                for e in ar.appl(s).products() { sc.have.insert(ar.eps.sig(e)); }
             }
-            pending = rest;
+            std::mem::swap(&mut sc.pending, &mut sc.rest);
         }
-        self.lineage_ok(ar, steps, produced_from)
+        self.lineage_ok(ar, steps, sc, n_sigs)
     }
 
-    fn validate(&self, ar: &Arena, steps: &[ApplId]) -> Option<bool> {
-        let mut produced_from: Map<EpSig, Vec<EpSig>> = det::map();
+    fn validate(
+        &self, ar: &Arena, steps: &[ApplId], sc: &mut Scratch, n_sigs: usize,
+    ) -> Option<bool> {
+        // `produced_from`, as one flat buffer of every step's inputs plus a
+        // range per product. The map this replaces cloned the producing step's
+        // whole input list once for each thing it produced.
+        sc.pf.clear(n_sigs);
+        sc.pf_flat.clear();
         for &s in steps {
-            let from: Vec<EpSig> =
-                ar.appl(s).used.values().map(|e| ar.eps.sig(e)).collect();
-            for e in ar.appl(s).products() { produced_from.insert(ar.eps.sig(e), from.clone()); }
+            let start = sc.pf_flat.len() as u32;
+            for e in ar.appl(s).used.values() { sc.pf_flat.push(ar.eps.sig(e)); }
+            let len = sc.pf_flat.len() as u32 - start;
+            for e in ar.appl(s).products() { sc.pf.insert(ar.eps.sig(e), (start, len)); }
         }
         if !steps.iter().any(|&s| ar.appl(s).is_terminal()) {
             return Some(false);
         }
         // Cheap term first; a `KeyError` here answers nothing, so fall through.
-        let rejected = matches!(self.lineage_ok(ar, steps, &produced_from), Some(false));
+        let rejected = matches!(self.lineage_ok(ar, steps, sc, n_sigs), Some(false));
         if rejected { return Some(false); }
-        self.is_valid(ar, steps, &produced_from)
+        self.is_valid(ar, steps, sc, n_sigs)
     }
 
-    pub fn score(&self, ar: &Arena, state: &mut RefinerState) -> Result<(), String> {
+    pub fn score(
+        &self, ar: &Arena, state: &mut RefinerState, sc: &mut Scratch,
+    ) -> Result<(), String> {
+        // The signature universe grows as the search interns endpoints, but not
+        // during a scoring: `ar` is shared, so every table below is sized once
+        // here and the sizes hold for the whole call.
+        let n_sigs = ar.eps.n_sigs();
+        sc.begin(n_sigs);
+
         // One deliberate difference from Python, and it is a difference in
         // *failure*, not in answer. The prefilter's `KeyError` is caught there
         // and falls through, but the same lookup inside `_is_valid` is not, so a
         // state using an endpoint no step produces crashes the Python solve.
         // Here it is simply invalid. Reproducing a crash has no value, and no
         // state in the corpus or the four templates reaches it.
-        state.valid = self.validate(ar, &state.steps).unwrap_or(false);
+        state.valid = self.validate(ar, &state.steps, sc, n_sigs).unwrap_or(false);
         let steps = &state.steps;
 
-        let mut used_as_lineage: Set<EpSig> = det::set();
         for &s in steps {
             let used = &ar.appl(s).used;
             for &(d, _) in &used.0 {
@@ -177,28 +206,26 @@ impl<'a> Refiner<'a> {
                     let c = used.get(parent).ok_or_else(|| {
                         format!("lineage constraint {parent} of requirement {d} is unbound")
                     })?;
-                    used_as_lineage.insert(ar.eps.sig(c));
+                    sc.lin_used.insert(ar.eps.sig(c));
                 }
             }
         }
         // An ordered count, because `entropy` sums in the caller's order.
-        let mut lineage_usage: Vec<(EpSig, i64)> = Vec::new();
         for &s in steps {
             for e in ar.appl(s).used.values() {
                 let es = ar.eps.sig(e);
-                if !used_as_lineage.contains(&es) { continue; }
-                match lineage_usage.iter_mut().find(|(k, _)| *k == es) {
+                if !sc.lin_used.contains(es) { continue; }
+                match sc.lin_usage.iter_mut().find(|(k, _)| *k == es) {
                     Some(slot) => slot.1 += 1,
-                    None => lineage_usage.push((es, 1)),
+                    None => sc.lin_usage.push((es, 1)),
                 }
             }
         }
-        let counts: Vec<i64> = lineage_usage.iter().map(|(_, c)| *c).collect();
-        let e_score = entropy(&counts);
+        sc.counts.extend(sc.lin_usage.iter().map(|(_, c)| *c));
+        let e_score = entropy(&sc.counts);
 
-        let mut product2producer: Map<EpSig, ApplId> = det::map();
         for &s in steps {
-            for e in ar.appl(s).products() { product2producer.insert(ar.eps.sig(e), s); }
+            for e in ar.appl(s).products() { sc.p2p.insert(ar.eps.sig(e), s); }
         }
         // One walk per distinct *source*: the destination is a plain equality
         // test during traversal and `seen` guarantees one visit per node, so a
@@ -207,44 +234,59 @@ impl<'a> Refiner<'a> {
         // `seen` check records depth at first pop rather than the true maximum,
         // and the `> 0` test below makes a distance of zero indistinguishable
         // from not-found.
-        let mut depth_maps: Map<EpSig, Map<EpSig, i64>> = det::map();
+        //
+        // The per-source depth tables come out of a pool indexed by arrival
+        // order rather than being allocated per source, which is what makes
+        // caching them across the loop cheap enough to be worth doing: a state
+        // reaches 46 distinct sources at the corpus's worst, so the pool stops
+        // growing almost immediately and every later state reuses it.
         let n_steps = steps.len() as f64;
-        let mut lin_distances: Vec<f64> = Vec::new();
+        let mut n_sources = 0usize;
         for &s in steps {
-            let requires = self.p.transforms[ar.appl(s).transform as usize].requires.clone();
-            for d in requires {
+            for &d in &self.p.transforms[ar.appl(s).transform as usize].requires {
                 for &lin in &self.p.dep_parents_ranked[d as usize] {
                     let used = &ar.appl(s).used;
                     let (Some(e), Some(pe)) = (used.get(d), used.get(lin)) else {
                         return Err(format!("requirement {d} or its constraint {lin} is unbound"));
                     };
                     let (es, pes) = (ar.eps.sig(e), ar.eps.sig(pe));
-                    if !depth_maps.contains_key(&es) {
-                        let mut depths: Map<EpSig, i64> = det::map();
-                        let mut todo = vec![(es, 0i64)];
-                        while let Some((n, dd)) = todo.pop() {
-                            if depths.contains_key(&n) { continue; }
-                            depths.insert(n, dd);
-                            let prod = *product2producer.get(&n).ok_or_else(|| {
-                                format!("endpoint {n} is used but produced by no step")
-                            })?;
-                            for pe in ar.appl(prod).used.values() {
-                                todo.push((ar.eps.sig(pe), dd + 1));
+                    let slot = match sc.depth_slot.get(es) {
+                        Some(i) => i as usize,
+                        None => {
+                            let i = n_sources;
+                            n_sources += 1;
+                            if sc.depth_pool.len() <= i { sc.depth_pool.push(SigMap::default()); }
+                            let depths = &mut sc.depth_pool[i];
+                            let todo = &mut sc.depth_todo;
+                            let p2p = &sc.p2p;
+                            depths.clear(n_sigs);
+                            todo.clear();
+                            todo.push((es, 0i64));
+                            while let Some((n, dd)) = todo.pop() {
+                                if depths.contains_key(n) { continue; }
+                                depths.insert(n, dd);
+                                let prod = p2p.get(n).ok_or_else(|| {
+                                    format!("endpoint {n} is used but produced by no step")
+                                })?;
+                                for pe in ar.appl(prod).used.values() {
+                                    todo.push((ar.eps.sig(pe), dd + 1));
+                                }
                             }
+                            sc.depth_slot.insert(es, i as u32);
+                            i
                         }
-                        depth_maps.insert(es, depths);
-                    }
-                    let max_d = depth_maps[&es].get(&pes).copied().unwrap_or(-1);
-                    lin_distances.push(if max_d > 0 { max_d as f64/n_steps } else { 1.0 });
+                    };
+                    let max_d = sc.depth_pool[slot].get(pes).unwrap_or(-1);
+                    sc.lin_distances.push(if max_d > 0 { max_d as f64/n_steps } else { 1.0 });
                 }
             }
         }
-        let lin_score = if lin_distances.is_empty() {
+        let lin_score = if sc.lin_distances.is_empty() {
             0.0
         } else {
             let mut acc = 0.0f64;
-            for d in &lin_distances { acc += d; }
-            -acc/lin_distances.len() as f64
+            for d in &sc.lin_distances { acc += d; }
+            -acc/sc.lin_distances.len() as f64
         };
         let score = e_score*1000.0 + lin_score;
         state.scores = [score, score*(state.valid as i64 as f64)];
@@ -267,7 +309,8 @@ pub fn refine(
     let mut states: Vec<RefinerState> = vec![RefinerState {
         steps: initial.to_vec(), scores: [0.0, 0.0], valid: true, iteration: -1,
     }];
-    r.score(ar, &mut states[0])?;
+    let mut sc = Scratch::default();
+    r.score(ar, &mut states[0], &mut sc)?;
 
     let sig0 = {
         let sigs: Vec<ApplSig> = states[0].steps.iter().map(|&s| ar.appl(s).sig).collect();
@@ -335,7 +378,7 @@ pub fn refine(
                 let mut child = RefinerState {
                     steps: child_steps, scores: [0.0, 0.0], valid: false, iteration: -1,
                 };
-                r.score(ar, &mut child)?;
+                r.score(ar, &mut child, &mut sc)?;
                 let ck = states.len();
                 states.push(child);
                 frontier.push(ck);

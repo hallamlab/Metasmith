@@ -78,3 +78,48 @@ def test_the_one_instance_neither_implementation_can_finish(engine):
         f"the mcts phase alone took {engine_s:.1f}s -- this case is meant to be"
         " cheap without the refiner and expensive with it"
     )
+
+
+#: `sink-178/s7` at one refiner iteration, as the engine answers it. Checked
+#: against the Python solver, which needs about six minutes for the same answer
+#: -- which is why this test is engine-only and the parity claim is pinned here
+#: rather than re-derived on every run.
+SINK_178_S7_R1_FINGERPRINT = "3b0380e86791f369941d1cc8"
+
+
+def test_the_refiner_under_load_stays_within_its_measured_cost(engine):
+    """The one place in the repo where the refiner is actually put under load.
+
+    Everything else is either a template, where the refiner never changes the
+    plan and 93-step states never arise, or a generated instance small enough
+    that process spawn dominates. This instance scores 81,486 states in a
+    *single* refiner iteration, so it is the case where the cost of scoring one
+    state is visible at all -- and T6 cut it from 11.4s to 3.5s by taking the
+    per-state hash maps out of `Refiner::score`.
+
+    The bound is loose on purpose. It is not a stopwatch on this machine; it is
+    a tripwire for a change that puts the allocation back, which was a factor of
+    three and would not fit under it.
+    """
+    import time
+
+    from metasmith.testing.solver_verification import (
+        check_plan,
+        generate_problem,
+        plan_fingerprint,
+    )
+
+    dials = dict(SWEEP_PROFILES)["sink"]
+    problem = generate_problem(178, dials, name="sink")
+    t0 = time.perf_counter()
+    solution = problem.solve(seed=7, max_refine=1)
+    elapsed = time.perf_counter() - t0
+
+    verdict = check_plan(problem, solution)
+    assert verdict.ok, verdict.violations
+    assert plan_fingerprint(solution) == SINK_178_S7_R1_FINGERPRINT
+    assert elapsed < 8.0, (
+        f"one refiner iteration on sink-178/s7 took {elapsed:.1f}s against a"
+        " measured 3.5s -- the per-state scratch in `scratch.rs` is the thing"
+        " that makes this cheap, and something has undone it"
+    )

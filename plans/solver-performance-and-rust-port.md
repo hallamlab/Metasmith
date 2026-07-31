@@ -1671,3 +1671,148 @@ instances anyone has found and a regression surfaces there first.
 - Acceptance criterion 8 is unchanged and still open on the Python path: ~8.1s
   against a 3s target. This fix was never going to move it — on the templates the
   refiner never reached the branch it repaired.
+
+## T6 — Rust incrementality — measured; one win landed, the rest dropped
+
+T6 was written as *make the child state a delta of its parent*. The
+instruction attached to it was to measure before building, and the measurement
+said the plan's premise was wrong: the engine's time was not going into
+recomputing graph structure between states. It was going into **allocating and
+hashing the scratch tables used to compute it inside a single state**. Roughly
+60% of every instruction the engine executed on the two hard cases was in
+`malloc`/`free` and `hashbrown`, and almost none of it in the graph work those
+tables exist to do.
+
+So the change that landed is not a delta. It is the removal of the allocation,
+and it is worth ×3.3–3.5 on exactly the cases T5d named. Every incremental
+structure the task actually proposed was measured and dropped.
+
+### Profiling the two cases that matter, not the templates
+
+`metagenomics` solves in 0.51s on the engine and is not evidence about anything
+here. The refiner under load is `sink-178/s7` and `sink-24/s2³¹−1`, both in
+`solver_differential.SWEEP_PROFILES`.
+
+The engine reads a problem on stdin and writes a plan on stdout, which makes it
+a standalone profiling target: dump the two encoded problems to files once and
+Python is out of the loop entirely. Wall time on `sink-24` is linear in the
+refiner budget — 4.47s / 8.75s / 15.81s at `max_refine` 16 / 32 / 64 — so a
+reduced budget profiles the same thing the full one does, and `--tool=callgrind`
+becomes affordable.
+
+| | `Refiner::score` | its call count | `lineage_ok` | allocator | hashbrown |
+|---|---|---|---|---|---|
+| `sink-24` @ `max_refine=16` | 93.4% | 174,804 | 10.9% | 29.2% | 33.0% |
+| `sink-178` @ `max_refine=1` | 91.7% | 81,486 | 27.7% | 19.1% | 38.2% |
+
+Three structural facts came out of the same pass and are what made the fix both
+obvious and safe:
+
+- **`EpSig` is a dense index.** It is handed out as `intern.len()`, so the whole
+  universe of signatures is `0..n`, and `n` is **221** on `sink-24` and **284**
+  on `sink-178`. An array indexed by signature is smaller than the hash map that
+  was being rebuilt to hold the same thing.
+- **Not one of `score`'s tables is ever iterated.** `produced_from`, `have`,
+  `used_as_lineage`, `product2producer` and the depth maps are insert-and-look-up
+  only. That is what makes replacing them free of consequence: a hash map that is
+  never iterated cannot leak its layout into a plan, and neither can the array
+  that replaces it. This change is invisible to the iteration-order contract.
+- **99.1% of states never reach the schedulability check.** Only 1,578 of
+  174,804 survive the lineage prefilter, so Kahn's layering is not the cost and
+  never was — T5e's rewrite is not what needs speeding up.
+
+### The change: one scratch, allocated once, cleared in O(1)
+
+`scratch.rs` holds every table `score` builds, as generation-stamped dense
+arrays: a slot holds a value only while its stamp matches the current epoch, so
+emptying a table sized to the whole signature universe is an increment rather
+than a pass. The per-source depth tables come out of a pool indexed by arrival
+order, which stops growing after the first few states.
+
+Three smaller things came with it, each a straight deletion: `lineage_ok` cloned
+each application's whole binding list per step, `score` cloned each transform's
+requirement list per step, and `produced_from` stored a *clone* of the producing
+step's inputs once per product — now one flat buffer and a range.
+
+| case | before | after | |
+|---|---|---|---|
+| `sink-24` @ `max_refine=16` | 4.53s | **1.33s** | ×3.4 |
+| `sink-24` @ `max_refine=32` | 8.72s | **2.52s** | ×3.5 |
+| `sink-178` @ `max_refine=1` | 11.43s | **3.51s** | ×3.3 |
+
+Instructions on `sink-24` went 52.0G → 15.3G, with the allocator falling 29.2% →
+5.1% and `hashbrown` 33.0% → 4.5%. **The engine's reply is byte-identical on all
+three cases** — the parity check here is a hash of the plan JSON, not a
+fingerprint, because nothing about this change is allowed to move anything.
+
+Moving `counts` into the scratch went in afterwards and was kept on instruction
+count rather than wall time: 15.29G → 14.54G, −4.9%. At that size the machine's
+noise is larger than the effect, and callgrind is exact where a stopwatch is not
+— which is the general rule for anything under about 5% here.
+
+### What was measured and dropped
+
+**Depth-map deltas — dropped.** This is T6 as written: a swap changes the
+producer of some endpoints, so invalidate the forward cone and keep the rest. The
+cones were measured. The union of a state's backward walk cones covers **88%** of
+the plan on `sink-24` and **97%** on `sink-178`, and a single swapped step falls
+inside **34%** and **52%** of the individual cones respectively. So a delta
+throws away a third to a half of the cache on every child, and pays for the
+remainder with the persistent or copy-on-write structures the out-of-order
+frontier forces — which is precisely the per-state allocation this task just
+finished removing.
+
+**Early-terminating the depth walk — dropped, and it was the tempting one.**
+Sources are queried **1.02–1.11 times each**, so stopping each walk when its one
+destination is popped would save 27–37% of all pops. It is not exact: the
+per-source table would then be *partial*, and the second query against the same
+source could not tell "not reachable" from "not yet explored" — it would read a
+miss as distance 1.0 and change the score. Making it exact costs either a
+re-walk or a resumable stack per source, and the arithmetic lands around 15% for
+a large increase in subtlety in the hottest loop in the engine.
+
+**An incremental state signature — dropped.** `Arena::state_sig` is 1.3% of the
+profile. The plan's warning about using wrapping 128-bit addition rather than XOR
+stands and is still the right advice; there is simply nothing here to spend it on.
+
+**`Endpoints::is_ancestor`'s per-call `seen` set — not taken.** 9.4% of the
+program with 32% of that in hashing and allocation, so a ceiling near 3%, and it
+sits in the mcts phase rather than the refiner. Threading a scratch through
+`generate_applications`, which both phases call, is not worth 3%.
+
+### Acceptance criterion 8, unchanged
+
+Criterion 8 asks for `metagenomics_from_paired_reads` under 3s **via the Python
+path**. It is still ~8.1s. T6 was the last thing that could have moved it and it
+did not: this is a Rust-side change, and the templates were never where its cost
+was. The criterion stays met on the Rust path and open on the Python one.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `cargo test --release` | **14 passed** (3 new, on the stamp tables) |
+| `tests/solver` with the engine | **375 passed**, 1 xfailed |
+| `tests/solver` with `METASMITH_SOLVER_ENGINE=python` | **372 passed**, 3 skipped, 1 xfailed |
+| `tests/perf` | **13 passed** (1 new, the refiner under load) |
+| fast suite | **1,733 passed**, 7 skipped, 4 xfailed |
+| differential sweep, 16,000 comparisons | **0 disagreements**; 15,983 identical, 17 unadjudicated — the same tally as T5e |
+| the two hard cases | byte-identical plans, ×3.3–3.5 |
+
+`tests/perf` gains `test_the_refiner_under_load_stays_within_its_measured_cost`,
+which is the only place in the repo where the refiner is put under real load —
+everything else is a template, where it never changes the plan, or a generated
+instance small enough that process spawn dominates. Its pinned fingerprint was
+checked once against the Python solver, which needs **289.6s** for the answer the
+engine gives in 3.6s; that is why the test is engine-only.
+
+### Carried forward
+
+- Acceptance criterion 8 (metagenomics under 3s on the **Python** path, ~8.1s) is
+  the one criterion still open, and T6 was the last item that could have moved
+  it. Closing it means either speeding up the Python refiner directly or deciding
+  the Rust path is the answer and amending the criterion.
+- The refiner's remaining cost is the depth walks, and they are now genuinely
+  the work rather than the bookkeeping around it. Anything further there has to
+  beat "exact by construction", which this task's changes were and the dropped
+  ones were not.

@@ -20,6 +20,7 @@ mod problem;
 mod rectify;
 mod refine;
 mod reply;
+mod scratch;
 mod search;
 mod rng;
 mod smath;
