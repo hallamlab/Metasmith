@@ -1042,6 +1042,14 @@ skipping them ships something empty that nobody notices for a while:
   Treat a non-zero `-br` as fatal rather than continuing. The cross-compile image is upstream
   and `-brc` pulls it — it must never `docker build` over that tag, because the replacement
   has no osxcross and silently reduces `-br` to linux-only.
+- `-be` — the solver engine (`main/solver_engine/`, same four targets, same upstream image via
+  `-bec`). Unlike the relay it is **not** in the docker image: the solver runs locally at plan
+  time, so `-be` stages the binaries into `src/metasmith/engine/` and they ship as package data
+  in the wheel and sdist. Absence is a supported state — metasmith falls back to the Python
+  solver — which is precisely why it needs a guard: a wheel with no engine plans correctly and
+  slowly, so nothing fails. `-bp`/`-bc` run `_assert_solver_engine`; override
+  `MSM_SKIP_SOLVER_CHECK=1`. It also refuses a `-bel` host build via the `BUILD_KIND` marker,
+  since nothing about a Linux ELF says musl versus the build machine's glibc.
 
 ## `examples/` — minimal regression library
 

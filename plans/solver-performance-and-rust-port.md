@@ -1046,3 +1046,149 @@ sweep — where one pathological instance cannot dominate — moves only 11 → 
   laundering (now anchored on `sink-9391`), the cyclic-search completeness
   failure, and the slow tail.
 - Acceptance criterion 8 (<3s Python path) is unmet at ~8.1s.
+
+## T5b — the shipping skeleton — DONE
+
+The port's delivery path, built and proven before the search depends on it.
+`main/solver_engine/` is a Cargo project (`msm_solver`, edition 2024) modelled
+on `main/relay_agent/`, cross-compiled to the same four targets by the same
+upstream container, and it implements exactly one thing: `solver_rng.py`.
+
+Shipping it first is the point. A search that works but cannot be delivered is
+worth nothing, and every part of the delivery — four toolchains, packaging,
+resolution, version checking, fallback — has a way of failing that only shows up
+at release. Landing them against a hundred lines of RNG rather than against the
+search means a failure here is unambiguous.
+
+### The one way it is not the relay
+
+`msm_relay` runs on the *agent host*. It is baked into the docker image and
+`bootstrap.py` copies the right slot out at deploy time. `msm_solver` runs
+*locally, at plan time*, in whatever process is planning — the CLI, the GUI, a
+notebook — and that process may never have deployed an agent. So the binaries
+ship as **package data inside the pip wheel and the conda package**, and
+`models/solver_engine.py` picks one at import by `platform.machine()` /
+`platform.system()`, reusing `bootstrap.py`'s `{architecture}-{system}` naming so
+there is one convention in the repo rather than two.
+
+Proven end to end rather than argued:
+
+| step | evidence |
+|---|---|
+| four targets | 2 static musl ELFs (x86_64, aarch64) + 2 Mach-O (x86_64, arm64), `file`-verified |
+| staged | `src/metasmith/engine/msm_solver.{slot}`, gitignored, `BUILD_KIND=cross` |
+| wheel | all four inside `metasmith-*.whl` at mode 0755 |
+| sdist | same four (so the conda package, built from the sdist, carries them) |
+| installed | pip-installed into a clean venv, resolved, probed, `Backend("rng") == "rust"` |
+
+### Presence means use it — and three ways that goes wrong quietly
+
+`GetEngine()` returns a binary only when it exists for this platform, answers
+`version` with versions this build agrees with, and advertises the capability
+being asked for. Each of those has a silent failure mode, so each is a refusal
+with a reason rather than a shrug:
+
+- **Absence is normal**, not an error. A source checkout has no binaries and
+  everything works; the Python solver runs. This is the case in CI today.
+- **A version mismatch is refused loudly.** The scar tissue is
+  `LIN_PAYLOAD_VERSION`, which drifted from its Groovy emitter and failed every
+  containerized task while the fast suite stayed green. Two constants, not one:
+  `SOLVER_RNG_VERSION` (the decision contract) and `SOLVER_WIRE_VERSION` (the
+  envelope) move for different reasons, and one constant covering two
+  independently-moving things is how that desync stayed invisible.
+- **A capability it does not advertise falls back.** This build says
+  `["rng"]`, so `Backend("solve")` is `"python"` and will stay that way until
+  T5c. The port lands a piece at a time and says which piece.
+
+`METASMITH_SOLVER_ENGINE` overrides the search — a path, or `python`/`off` to
+force the fallback. That last value is what makes the fallback a path something
+*runs* rather than a path that exists: `tests/solver` passes identically with
+the engine staged and with it forced off (156 passed / 9 xfailed, both).
+
+The packaging guard, `_assert_solver_engine`, is shaped like `_assert_gui_bundle`
+and matters more than the relay's. A wheel with no engine still plans — on the
+Python solver, correctly, just slower — so nothing fails and nobody finds out.
+It also refuses a `-bel` host build, because nothing about a Linux ELF says
+whether it was linked against musl or against the build machine's glibc; the
+staging step writes a `BUILD_KIND` marker instead of the guard trying to infer it.
+
+### The differential gate, at the level the port can currently be tested
+
+A trace is a *script of decisions* replayed by both sides against one stream,
+and every result carries the running draw count. Comparing raw words would not
+show a disagreement about how a weight becomes an index; comparing values alone
+would not show one side consuming a word the other did not — a rule that returns
+the right answer off the wrong number of words is correct exactly once and wrong
+forever after. Scripts are generated (2,000 ops × 5 seeds) and weighted toward
+the three places a reasonable implementation diverges: ties, NaN, and degenerate
+choices that must consume nothing.
+
+`rand_chacha` 0.10.0 `from_seed` reproduces the Python pin word for word, pinned
+now on both sides — in the crate's own unit tests and in `test_rng_contract.py`.
+`seed_from_u64` runs the seed through PCG and appears nowhere.
+
+**It found one, on a hundred lines of code.** The first Rust `top_k_indices`
+sorted with `total_cmp`, which is the obvious choice — it is the total order on
+`f64` and it makes the NaN reasoning airtight. It also orders `-0.0` *before*
+`0.0`, while Python's sort on the `(-rank, i)` tuple calls them equal and falls
+through to the index. A scores list holding both spellings of zero was all it
+would have taken to hand the two implementations different plans, on a
+difference no amount of reading either file would surface. `partial_cmp` is
+correct here for the same reason it looks unsafe — `rank_high` has already
+removed every NaN, so the unwrap cannot fire, and the remaining order is
+Python's. All five generated seeds and the hand-written cases failed against the
+pre-fix binary, which is the evidence that the harness has teeth rather than the
+hope that it does.
+
+That is the argument for shipping the skeleton before the search, made concrete:
+a divergence this small, found here, costs an afternoon. Found in T5c it would
+have been one wrong plan in a differential sweep of thousands, with the whole
+search to search through for it.
+
+### Data design established for T5c
+
+Fixed now because the search will be built on it, and because T5a made one of
+these a contract rather than a preference:
+
+- **Arena indices are the ranks.** T5a's iteration-order contract says transform
+  rank is position in the caller's own sequence and dependency rank is first
+  appearance walking it. Building the arenas in caller declaration order makes
+  the rank *be* the index, so the five ordered sites cost nothing to reproduce.
+- **`ApplicationId` and `ApplicationSig` are separate types**, not one string.
+  Python conflates them, which is what makes `expand_node` drop both members of
+  a colliding pair. Collisions are semantics and must survive the port; the
+  compiler is what stops the confusion.
+- Property strings intern to `u32`, a type is a fixed-size bitset, and `IsA` is
+  a couple of ANDs.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `cargo test --release` | **5 passed** (stream pin, degenerate draws, NaN both directions, ±0.0) |
+| `tests/solver/test_solver_engine.py` | **23 passed** — 15 resolution/fallback, 8 differential |
+| `tests/solver` with the engine staged | **156 passed**, 9 xfailed |
+| `tests/solver` with `METASMITH_SOLVER_ENGINE=python` | **156 passed**, 9 xfailed |
+| `tests/perf/test_solver_benchmark.py` | **3 passed** |
+| fast suite | **1514 passed**, 7 skipped, 12 xfailed |
+| four targets | built, `file`-verified, in the wheel and the sdist |
+| clean-venv install | resolves and probes the packaged binary |
+
+### Carried into T5c
+
+- The search is the whole of T5c; `capabilities` is how it announces itself, and
+  `test_the_search_is_still_python_today` is the test that fails the day it does.
+- Two defects to carry *knowingly*, not silently: `_is_valid`'s `# looped` branch
+  is reachable but incomplete (anchored on `sink-9391`, 2259 hits), and the
+  refiner/`rectify` cycle laundering is pinned and unfixed. Settle whether to fix
+  the laundering **before** porting `_is_valid` — the cheapest sound fix is to
+  adjudicate the refiner's winner *after* rectification and fall back to the
+  search's plan.
+- `_entropy` (`solver.py:896`) still sums through numpy pairwise and feeds
+  `score_node`. It is the last unstated determinism surface and needs an explicit
+  summation order chosen for both sides before the score is ported.
+- The wire format currently carries one request shape (`rng-trace`). The problem
+  and plan encodings are new surface, and `SOLVER_WIRE_VERSION` goes to 2 when
+  they land.
+- Acceptance criterion 8 (<3s Python path) is unmet at ~8.1s and is what T5c/T6
+  exist to close.

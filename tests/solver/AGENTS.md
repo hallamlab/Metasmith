@@ -78,3 +78,20 @@ completion with `complete`; they are different questions.
 occur solving the metagenomics template. Anything that treats a signature as an
 identity (dedup, removal, memoization) is a correctness risk, not an
 optimization.
+
+**A green run does not tell you which solver ran it.** `msm_solver` is used when
+it is present and can do the job, and absent it the Python solver runs — so this
+axis passes either way and would go on passing if the Rust side quietly stopped
+being reached. `test_solver_engine.py` is where that is made visible:
+`Backend(capability)` says which one, the resolution branches are driven with
+fake binaries so the refusals fire on every machine, and
+`METASMITH_SOLVER_ENGINE=python` forces the fallback so it is a path something
+runs rather than a path that merely exists. Run the axis both ways when touching
+either implementation.
+
+**Two version constants, and they are not interchangeable.**
+`SOLVER_RNG_VERSION` covers the decision contract, `SOLVER_WIRE_VERSION` the
+envelope. They move for different reasons, and folding them into one is how the
+last cross-language desync in this repo went unnoticed while the fast suite
+stayed green. A binary whose either version disagrees is refused, loudly, and
+metasmith falls back rather than solving with rules it does not share.

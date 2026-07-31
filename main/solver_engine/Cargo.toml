@@ -1,0 +1,20 @@
+[package]
+name = "msm_solver"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# The stream contract. `from_seed` on this crate is byte-identical to
+# `metasmith.models.solver_rng` (checked, not assumed -- see rng.rs). Its value
+# stability is a documented guarantee of the crate, which is precisely why it is
+# here and `rand::StdRng` is not.
+rand_chacha = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

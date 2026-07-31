@@ -110,6 +110,53 @@ _assert_gui_bundle() {
     return 0
 }
 
+# Refuse to package a wheel whose solver binaries are missing, stubbed, or
+# host-linked. Same failure shape as the stub relays and the unbuilt GUI bundle,
+# and it is *quieter* than either: metasmith without a solver engine plans on
+# the python fallback and works, just slowly, so nothing fails and no one finds
+# out. The build-kind marker is written by the staging step because nothing
+# about a linux ELF says whether it was linked against musl or against this
+# machine's glibc, and only one of those runs on someone else's machine.
+# Set MSM_SKIP_SOLVER_CHECK=1 to override.
+_engine_stage="$HERE/src/$NAME/engine"
+_assert_solver_engine() {
+    [ -n "$MSM_SKIP_SOLVER_CHECK" ] && {
+        echo "MSM_SKIP_SOLVER_CHECK set — skipping solver engine check"
+        return 0
+    }
+    local bad="" kind="(none)"
+    [ -f "$_engine_stage/BUILD_KIND" ] && kind="$(cat "$_engine_stage/BUILD_KIND")"
+    for slot in x86_64-linux:7f454c46 arm64-linux:7f454c46 \
+                x86_64-darwin:cffaedfe arm64-darwin:cffaedfe; do
+        local tgt=${slot%:*} want=${slot##*:}
+        local f="$_engine_stage/msm_solver.$tgt"
+        local sz magic ok=yes
+        sz=$(stat -c %s "$f" 2>/dev/null || echo 0)
+        magic=$(head -c 4 "$f" 2>/dev/null | od -An -tx1 | tr -d " ")
+        [ "$magic" = "$want" ] || ok=no
+        [ "$sz" -gt 100000 ] || ok=no
+        printf "  %-14s size=%-8s magic=%-8s %s\n" "$tgt" "$sz" "${magic:-none}" "$ok"
+        [ "$ok" = "yes" ] || bad="$bad $tgt"
+    done
+    if [ -n "$bad" ] || [ "$kind" != "cross" ]; then
+        echo ""
+        echo "ERROR: the solver engine binaries in $_engine_stage are not shippable"
+        [ -n "$bad" ] && echo "  bad or missing slots:$bad"
+        [ "$kind" != "cross" ] && echo "  build kind is [$kind], expected [cross] (a -bl build only runs on this host)"
+        echo ""
+        echo "  Build them first:"
+        echo "    $HERE/dev.sh -bec   # one time: pull the rust cross-compile container"
+        echo "    $HERE/dev.sh -be    # build all 4 targets and stage them"
+        echo ""
+        echo "  Without them metasmith still plans, on the python solver — which is"
+        echo "  why this is a guard rather than a build failure you'd notice."
+        echo "  Override (NOT recommended) by setting MSM_SKIP_SOLVER_CHECK=1."
+        return 1
+    fi
+    echo "solver engine: 4/4 cross-built binaries in $_engine_stage"
+    return 0
+}
+
 _assert_dist_matches_source() {
     [ -n "$MSM_SKIP_DIST_CHECK" ] && {
         echo "MSM_SKIP_DIST_CHECK set — skipping dist/source hash check"
@@ -219,6 +266,7 @@ case $1 in
     -bp) # pip
         # build pip package
         _assert_gui_bundle || exit 1
+        _assert_solver_engine || exit 1
         [ -d ./build ] && rm -r build
         [ -d ./dist ] && rm -r dist
         # Stamp build_hash.txt before sdist/wheel so FULL_VERSION is baked in.
@@ -237,6 +285,7 @@ case $1 in
     ;;
     -bc) # conda
         # requires built pip package
+        _assert_solver_engine || exit 1
         _assert_dist_matches_source || exit 1
         rm -r $HERE/conda_build
         python ./conda_recipe/compile_recipe.py
@@ -249,6 +298,20 @@ case $1 in
     -br) # build the relay
         cd $HERE/main/relay_agent
         ./dev.sh -b
+    ;;
+    -bec) # build the container for building the solver engine
+        # The same upstream image the relay uses, so -brc and this are
+        # interchangeable; both exist so neither build has to know about the other.
+        cd $HERE/main/solver_engine
+        ./dev.sh -bb
+    ;;
+    -be) # build the solver engine (4 targets) and stage it into the package
+        cd $HERE/main/solver_engine
+        ./dev.sh -b
+    ;;
+    -bel) # solver engine, host toolchain, host target only — dev loop, not shippable
+        cd $HERE/main/solver_engine
+        ./dev.sh -bl
     ;;
     -bd) # docker
         _assert_gui_bundle || exit 1
