@@ -1564,3 +1564,110 @@ nothing to differ from, which is the fallback gate working rather than a hole.
   the two cases to measure against, and the shipped `STRESS_CORPUS` does not
   contain anything like them.
 - Criterion 8 on the Python path is the one acceptance criterion still open.
+
+## T5e — the laundering fix — DONE
+
+The one change the differential gate was holding back. It was carried unfixed
+through T5a–T5d on purpose: fixing it moves plans, and a port cannot be checked
+against a thing that is moving. With T5d clean at 16,000 comparisons, the port is
+known faithful, and the defect can be repaired on both sides at once.
+
+### It was link 2, and only link 2
+
+The chain, as `tests/solver/test_refiner_validity.py` had pinned it: the search
+hands the refiner a sound plan; the refiner rebinds an input to an endpoint
+produced by a later step and `validate_node` calls that cyclic state valid;
+`rectify` then rewrites endpoints in `get_order` order, keeps a consumer's stale
+endpoint object, and the cycle comes out as an input no step produces.
+
+Link 3 is not a defect and was not touched. `get_order` is a BFS by depth from
+the givens and it is correct — asked to order a cycle it flattens the members
+onto one depth because there is no answer to give, and `rectify`'s selection then
+walks that tied group in an order that puts some consumer before its producer.
+Making it "smarter" is meaningless; the guarantee belongs upstream.
+
+### The old check reached a step on one input
+
+`_is_valid` walked *forward* from `given_appl`, following the consumers of each
+produced endpoint, and rejected a repeated `Application` signature along a path.
+Two things followed. A step was reached as soon as **one** of its inputs was
+available, and its other inputs were never tested for being produced at all —
+only the target's direct inputs got that test — so a cycle hanging off the side
+of the walk was invisible. And the walk was exponential in the number of paths.
+
+Replaced with **schedulability**: every step must become runnable with *all* of
+its inputs available, starting from the givens. That fails on exactly two things,
+and both are what "invalid" has to mean — a cycle, whose members are each waiting
+on another, and a step with an input nothing produces. It also subsumes the
+separate `missing` test, since the target is one of the steps.
+
+Endpoints are held by structure (`set[Endpoint]` / `EpSig`, the same notion
+`get_order` uses, so a `True` is precisely the promise that ordering finds a
+total order) and steps by identity (`id()` / `ApplId`, because two distinct
+applications may legitimately share a signature and both have to be runnable).
+The verdict does not depend on the order within a layer, so this adds no site to
+the T5a iteration-order contract.
+
+### Measured on the anchor, before and after
+
+`sink-9391`, every state `validate_node` judged, tallied as
+(verdict, has cycle, schedulable):
+
+| | before | after |
+|---|---|---|
+| rejected, cyclic | 3,720 | **4,038** |
+| **accepted, cyclic** | **318** | **0** |
+| accepted, acyclic | 62 | 62 |
+| rejected, acyclic | 47 | 47 |
+
+The 318 are the laundering. Nothing else moved.
+
+### What it cost, and what it did not move
+
+A 10,000-problem sweep went from **7 unrunnable plans to 0**; `ok` rose 9,926 →
+9,933, exactly the seven, with `unsolved` (52) and `timeout` (15) unchanged.
+
+**Not one fingerprint moved** — all eight corpus cases and all four templates, on
+both implementations. That is the result worth pausing on: the fix only ever
+rejects states that were being converted into broken plans, so on every instance
+that already had a sound answer, the answer is the same one.
+
+`metagenomics_from_paired_reads` on the Python path, four runs each: 8.74 / 7.99
+/ 8.33 / 8.08 before, 8.73 / 8.13 / 7.98 / 8.11 after. Indistinguishable. (An
+earlier single-run comparison showed +11.9% and was noise; the A/B is the number.)
+Across the generated corpus the cheaper check does show: the differential sweep's
+engine time fell 133.9s → 30.9s and its reference time 692.6s → 409.6s for the
+same 16,000 comparisons.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `cargo test --release` | **11 passed** |
+| `tests/solver` with the engine | **375 passed**, 1 xfailed |
+| `tests/solver` with `METASMITH_SOLVER_ENGINE=python` | **372 passed**, 3 skipped, 1 xfailed |
+| `tests/perf` | **12 passed** |
+| fast suite | **1,733 passed**, 7 skipped, 4 xfailed |
+| differential sweep, 16,000 comparisons | **0 disagreements**; 15,983 under the cap, 16 of the 17 capped settled uncapped and all identical |
+| 10,000-problem soundness sweep | **0 unrunnable plans** (was 7) |
+
+The one case still not settled at full budget is `sink-178/s7`, unchanged from
+T5d and for the same reason — neither implementation finishes it at
+`max_refine=256`. It is pinned at a budget that terminates in `tests/perf`.
+
+The `xfail(strict)` count went 9 → 1: seven were the unsound anchors in
+`test_known_unsound.py` and one was `test_refinement_does_not_introduce_a_cycle`.
+All eight now pass and are kept as assertions — the seven are the hardest
+instances anyone has found and a regression surfaces there first.
+
+### Carried into T6
+
+- `_is_valid`'s `# looped` branch is now both reachable and complete, so the
+  standing warning against memoizing the loop walk is retired with the walk. The
+  new check has no path-dependence to preserve.
+- The refiner is still the whole cost. `sink-178/s7` remains the case where one
+  refiner iteration costs the engine ~22s, and it is still the only comparison in
+  16,000 that neither implementation finishes at `max_refine=256`.
+- Acceptance criterion 8 is unchanged and still open on the Python path: ~8.1s
+  against a 3s target. This fix was never going to move it — on the templates the
+  refiner never reached the branch it repaired.

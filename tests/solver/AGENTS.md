@@ -58,14 +58,25 @@ goes through an explicit rank; `test_iteration_order.py` salts `Node.__hash__`
 move. Any new set iteration in the search needs a stated order or that test
 will find it.
 
-**Asserting "the solver handled cycles" proves almost nothing.** The
-path-dependent loop rejection in `refine_mcts._is_valid` fires on none of the
-shipped templates and none of the pre-existing tests; it takes a generated
-cyclic instance to reach it, and it is incomplete when it does — the refiner
-still accepts cyclic states, and `rectify` launders them into inputs no step
-produces. A cycle test that does not assert *which* rejection fired is the test
-that was already here and already protected nothing. `test_refiner_validity.py`
-pins each link.
+**Asserting "the solver handled cycles" proves almost nothing.** The rejection
+in `refine_mcts._is_valid` fires on none of the shipped templates and none of
+the pre-existing tests; it takes a generated cyclic instance to reach it at all.
+A cycle test that does not assert *which* rejection fired is the test that was
+already here and already protected nothing. `test_refiner_validity.py` pins each
+link, including that the anchor still *produces* cyclic candidates — otherwise
+"none reached `rectify`" would pass for the wrong reason.
+
+**Validity means schedulable, and the near-miss is instructive.** `_is_valid`
+asks whether every step becomes runnable with *all* of its inputs available,
+starting from the givens; that fails on a cycle and on an input nothing
+produces, and on nothing else. It used to walk forward over *consumers* and
+reject a repeated application signature along a path — which reached a step as
+soon as **one** input was available and never asked about the others, so a cycle
+off the side of the walk was invisible. `rectify` then flattened those cycles
+onto one depth in `get_order` and rewrote a consumer before its producer,
+converting the cycle into an unproduced input with nothing left to show where it
+came from. Anything that weakens this check back toward "reachable" rather than
+"schedulable" reintroduces that, and the symptom will not look like a cycle.
 
 **A plan that reaches the target is not the same as a search that finished.**
 `Solution.complete` answers "did the search merge in a solved timeline", which

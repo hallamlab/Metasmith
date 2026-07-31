@@ -1,9 +1,10 @@
-"""How the refiner decides a state is valid, and where that goes wrong.
+"""How the refiner decides a state is valid, and the chain that used to break.
 
-`refine_mcts` is handed a sound plan and may return an unsound one. This file
-pins the mechanism, one link at a time, because the `xfail`s in
-`test_known_unsound.py` only pin the *outcome* and an outcome can be fixed by
-accident -- or, as T4 showed, by a change of random stream. The chain, measured:
+`refine_mcts` is handed a sound plan and, for most of this project's history,
+could return an unsound one. This file pins the mechanism link by link, because
+`test_known_unsound.py` pins only the *outcome*, and an outcome can move for
+reasons that have nothing to do with the defect — T4 showed exactly that. The
+chain, as it was:
 
 1. the search hands `refine_mcts` a plan that is acyclic and fully produced;
 2. the refiner rebinds an input to an endpoint produced by a later step,
@@ -12,26 +13,32 @@ accident -- or, as T4 showed, by a change of random stream. The chain, measured:
    topological on a cyclic graph, so a consumer is rewritten before its
    producer and keeps an endpoint object the producer no longer emits.
 
-Step 3 is what converts a cycle into the violation the checker reports: an
-input no step produces. The plan comes out acyclic, so nothing downstream can
-tell it was ever a cycle.
+Step 3 converted a cycle into the violation the checker reported — an input no
+step produces — and the plan came out acyclic, so nothing downstream could tell
+a cycle had been involved.
 
-The tracing here hooks *function names*, never line numbers, except in
-`test_the_loop_rejection_branch_is_reachable`, which finds its line by the
-marker comment in the source.
+**Link 2 is fixed**, which is the only repairable point in the chain. Link 3 is
+not a defect: `get_order` is a BFS by depth from the givens and it is correct;
+asked to order a cycle it flattens the members onto one depth because there is
+no answer to give. The fix is that a cyclic state no longer reaches it.
+`_is_valid` asks for schedulability — every step runnable with *all* of its
+inputs available — which is exactly the promise that `get_order` finds a total
+order. The old check walked forward over *consumers* and reached a step as soon
+as **one** input was available, so a cycle off the side of the walk was
+invisible.
 
-The anchor problem is chosen, not arbitrary: it has to exhibit all four links at
-once, and **which problems do is a property of how the solver breaks ties**, not
-of the defect. `cyclic-217` was the anchor until T4 swapped numpy's stream for
-the ChaCha8 contract; `sink-6623` until T5a stated the iteration order the
-solver had been taking from CPython's hash tables. Each change left the
-mechanism below untouched and moved which problems fall into it.
+The tests below assert the chain is broken and keep tracing the same links, so a
+regression says which one came back.
 
-`sink-9391` is the current anchor because it is the one case that has survived
-both, and it exercises the chain hardest — the loop-rejection branch fires 2259
-times in the one solve. Re-anchoring is expected maintenance whenever a decision
-rule changes; re-deriving it from a fresh `check_plan` sweep is the way, and an
-anchor that stops exhibiting the chain is not evidence of a fix.
+The anchor problem is chosen, not arbitrary: it has to exercise the whole chain
+at once, and **which problems do is a property of how the solver breaks ties**,
+not of the defect. `cyclic-217` was the anchor until T4 swapped numpy's stream
+for the ChaCha8 contract; `sink-6623` until T5a stated the iteration order the
+solver had been taking from CPython's hash tables. Each change left the mechanism
+untouched and moved which problems fell into it. `sink-9391` is the current
+anchor because it survived both and puts the refiner under the most pressure:
+4,038 of the states it validates are cyclic, and 318 of those used to be
+accepted.
 """
 
 from __future__ import annotations
@@ -123,6 +130,40 @@ def _trace_stages(problem: SolverProblem) -> dict[str, list]:
     return seen
 
 
+def _trace_validations(problem: SolverProblem) -> list[tuple[bool, bool]]:
+    """`(state.valid, production graph is cyclic)` for every validated state.
+
+    `validate_node` is a closure inside `refine_mcts`, so there is nothing to
+    monkeypatch; the verdict is read off the frame as it returns. Hooks the
+    function name, never a line number.
+    """
+    out: list[tuple[bool, bool]] = []
+
+    def local(frame, event, arg):
+        if event == "return":
+            state = frame.f_locals.get("state")
+            if state is not None:
+                out.append((bool(state.valid), _production_cycle(list(state.steps))))
+        return local
+
+    def tracer(frame, event, arg):
+        if (
+            event == "call"
+            and frame.f_code.co_name == "validate_node"
+            and frame.f_code.co_filename.endswith("solver.py")
+        ):
+            return local
+        return None
+
+    old = sys.gettrace()
+    sys.settrace(tracer)
+    try:
+        problem.solve()
+    finally:
+        sys.settrace(old)
+    return out
+
+
 def test_the_search_hands_the_refiner_a_sound_plan():
     """The unsoundness is not the search's. Establishes where to look."""
     seed, dials = ANCHOR_CASE
@@ -138,21 +179,16 @@ def test_the_search_hands_the_refiner_a_sound_plan():
         assert not _production_cycle(steps)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the refiner accepts a state whose production graph is cyclic",
-)
 def test_refinement_does_not_introduce_a_cycle():
-    """The link that actually breaks.
+    """The link that used to break, and the one the fix is in.
 
-    `validate_node`'s forward walk starts at the given application and follows
-    *consumers* of each produced endpoint, so an application is reached as soon
-    as **one** of its inputs is available -- its other inputs are never checked
-    for being produced at all. Only the target's direct inputs get that test.
-    A cycle sitting off that walk is therefore invisible, and the endpoints
-    involved are still provisional at this point (`expand_node` passes
-    `mock_produced=step.produced`, "rectify later"), so identity has not yet
-    settled into the shape the cycle would be visible in.
+    The old `validate_node` walked forward from the given application following
+    *consumers* of each produced endpoint, so a step was reached as soon as
+    **one** of its inputs was available and its other inputs were never checked
+    for being produced at all -- only the target's direct inputs got that test.
+    A cycle sitting off that walk was invisible. Schedulability cannot miss it:
+    a step is only ever reached once every one of its inputs is available, and
+    the members of a cycle are each waiting on another, so none is.
     """
     seed, dials = ANCHOR_CASE
     stages = _trace_stages(generate_problem(seed, dials, name=ANCHOR))
@@ -160,38 +196,71 @@ def test_refinement_does_not_introduce_a_cycle():
     assert not any(_production_cycle(steps) for steps in stages["rectify_in"])
 
 
-def test_rectify_launders_a_cycle_into_missing_inputs():
-    """The consequence, pinned so a fix upstream cannot hide here.
+def test_the_anchor_still_puts_cyclic_states_in_front_of_the_refiner():
+    """The test above is only meaningful if there is something to reject.
 
-    `rectify` unifies endpoint objects in `get_order` order. On a cyclic graph
-    no order is topological, so some consumer is rewritten before its producer
-    and keeps an endpoint the producer then replaces. The cycle disappears and
-    an unproduced input appears in its place -- a plan that looks well-formed
-    and cannot run.
+    If the refiner stopped *generating* cyclic states -- a change in tie-breaking
+    would do it -- then "no cyclic state reached rectify" would pass for the
+    wrong reason and the fix would be untested. So this asserts the pressure is
+    still there: the anchor's refiner produces cyclic candidates, and they are
+    rejected rather than absent.
+    """
+    seed, dials = ANCHOR_CASE
+    verdicts = _trace_validations(generate_problem(seed, dials, name=ANCHOR))
+    assert verdicts, "validate_node never ran"
+    cyclic = [valid for valid, has_cycle in verdicts if has_cycle]
+    assert cyclic, (
+        f"{ANCHOR} no longer produces a single cyclic candidate, so nothing here "
+        "exercises the rejection -- re-anchor from a fresh sweep"
+    )
+    assert not any(cyclic), (
+        f"{sum(cyclic)} of {len(cyclic)} cyclic states were accepted as valid"
+    )
+    assert any(valid for valid, _ in verdicts), (
+        "every state was rejected, so the refiner has nothing to choose between "
+        "and the rejection above proves less than it looks like it does"
+    )
+
+
+def test_rectify_is_never_asked_to_order_a_cycle():
+    """The consequence, inverted.
+
+    `rectify` unifies endpoint objects in `get_order` order, and `get_order` is
+    a BFS by depth from the givens. On a cyclic graph the members of the cycle
+    are never reached, so they all land on one flat depth and some consumer is
+    processed before its producer, keeping an endpoint the producer then
+    replaces -- a cycle laundered into an unproduced input, in a plan that looks
+    well-formed and cannot run.
+
+    That is not a defect in `get_order`; there is no order for it to find. The
+    guarantee is upstream, and this is where its absence would surface.
     """
     seed, dials = ANCHOR_CASE
     problem = generate_problem(seed, dials, name=ANCHOR)
     stages = _trace_stages(problem)
-    assert any(_production_cycle(steps) for steps in stages["rectify_in"]), (
-        "no cyclic state reached rectify -- if the refiner was fixed, this test "
-        "and the xfail above should both go"
+    assert not any(_production_cycle(steps) for steps in stages["rectify_in"]), (
+        "a cyclic state reached rectify -- link 2 has regressed"
     )
     solution = problem.solve()
-    assert not _production_cycle(solution.dependency_plan), "cycle survived rectify"
-    violations = check_plan(problem, solution).violations
-    assert any("no step produces" in v for v in violations), violations
+    assert not _production_cycle(solution.dependency_plan)
+    verdict = check_plan(problem, solution)
+    assert verdict.ok, verdict.violations
 
 
 def test_the_loop_rejection_branch_is_reachable():
-    """`_is_valid`'s `return False # looped` does fire -- just never in anger.
+    """`_is_valid`'s `return False # looped` fires, and now fires in anger.
 
-    Measurement across the four shipped templates, the tests in this axis and
-    the original scratch scenarios found zero hits, which left it open whether
-    the branch was dead code. It is not: this problem drives it 177 times in
-    one solve. What it is, is *incomplete* -- see the xfail above, where states
-    it should have caught get through anyway. Both facts have to be carried
-    into the Rust port; a port that drops the branch as unreachable would be
-    wrong, and one that reimplements it faithfully inherits the hole.
+    When the rejection was a signature-repeat test along a forward walk, this
+    test existed to settle whether the branch was dead code at all: it fires
+    nowhere in the four shipped templates, nowhere in the pre-existing tests,
+    and nowhere in the original scratch scenarios. It took a generated cyclic
+    instance to reach it, and it was incomplete when it did.
+
+    The branch is now the schedulability rejection -- no step became runnable,
+    so the state has a cycle or an input nothing produces -- and it is both
+    reachable *and* complete. Keeping the test costs nothing and would catch a
+    rewrite that made it unreachable, which is how a validity check silently
+    stops checking.
     """
     marker = [
         i + 1

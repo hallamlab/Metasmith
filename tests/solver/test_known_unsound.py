@@ -1,37 +1,33 @@
-"""Plans the solver returns that cannot run. Pinned, not fixed.
+"""The plans that used to come back unrunnable. Fixed, and kept as the pin.
 
-Found by sweeping 10,000 generated problems through `check_plan`: some come back
-as a plan containing at least one step whose input **no step in the plan
-produces**. `Solution.complete` says `True` for every one of them.
+For most of this project's history these seven were `xfail(strict=True)`: the
+solver returned a plan containing a step whose input **no step in the plan
+produces**, with `Solution.complete` saying `True` for every one. They
+concentrate in problems whose transform graph carries a cycle, and
+`test_refiner_validity.py` traced why — the refiner accepted a state whose
+production graph was cyclic, and `rectify` then rewrote endpoints in an order
+that cannot be topological, converting the cycle into an unproduced input and
+erasing every trace that a cycle had been involved.
 
-They concentrate in problems whose transform graph carries a cycle — a
-transform that consumes a type and also produces it, directly or through a
-second product group. That is the same shape the solver's path-dependent loop
-rejection exists to catch. It does catch some of them, and
-`test_refiner_validity.py` traces what happens to the rest: the refiner accepts
-a state whose production graph is cyclic, and `rectify` then rewrites endpoints
-in an order that cannot be topological, converting the cycle into an input no
-step produces. Those are the mechanism; these are the outcome.
+That is fixed. `_is_valid` now asks for *schedulability* — every step runnable
+with all of its inputs available, starting from the givens — which fails on a
+cycle and on an unproduced input and on nothing else. The seven flipped to sound
+together, a 10,000-problem sweep went from 7 unrunnable plans to 0, and no
+fingerprint anywhere moved.
 
-**Which problems land here is a property of how the solver decides, not only of
-what it decides.** Swapping numpy's stream for the ChaCha8 contract (T4) took
-the count from 59 to 5 and replaced the membership outright; stating the
-iteration order the solver used to take from CPython's hash tables (T5a) took
-it from 5 to 7 and replaced it again. Both times the cross-check said the same
-thing: of the new set, five had been *sound* under the old decision rules, and
-four of the old set are *sound* under the new ones. Nothing about the defect
-was touched either time.
+They stay here, as assertions rather than expectations, because they are the
+hardest instances anyone has found: the `sink` profile with every dial up, and
+these seven the residue of sweeping ten thousand problems for the shape. A
+regression in the refiner's validity check shows up here first.
 
-So an XPASS here has two possible causes and they must be told apart — either
-the laundering was fixed, or the anchors went stale because the tie-breaking
-moved. Check `test_refiner_validity.py` first; if the mechanism is still live,
-re-anchor from a fresh sweep rather than promoting them.
-
-`sink-9391` is the one case that has survived every such change so far, which
-makes it the anchor `test_refiner_validity.py` uses.
-
-These are `xfail(strict=True)` on purpose: a silent pass is exactly the failure
-mode that would let a fix-by-accident be mistaken for a fix.
+**Which problems land in a set like this is a property of how the solver
+decides, not only of what it decides**, and that is worth remembering if these
+ever need re-deriving. Swapping numpy's stream for ChaCha8 (T4) took the count
+from 59 to 5 and replaced the membership outright; stating the iteration order
+the solver used to take from CPython's hash tables (T5a) took it from 5 to 7 and
+replaced it again. Neither touched the defect. So a *failure* here is a real
+regression, but a failure after a change to a decision rule should be checked
+against a fresh sweep before it is believed to be one.
 """
 
 from __future__ import annotations
@@ -45,30 +41,27 @@ from metasmith.testing.solver_verification import (
 )
 
 #: The `sink` profile: two given groups, a cycle dial, dense lineage, duplicate
-#: transforms and product groups all at once. It is now the only profile that
-#: still produces unrunnable plans — `cyclic` and `pgroups`, which supplied 39
-#: of the 59 found in T1, have been clean since T4.
+#: transforms and product groups all at once. It was the last profile still
+#: producing unrunnable plans — `cyclic` and `pgroups`, which supplied 39 of the
+#: 59 found in T1, had been clean since T4.
 _SINK = GeneratorDials(
     n_types=9, n_given=2, n_given_groups=2, n_extra_transforms=6,
     cycle_density=0.4, lineage_density=0.7, n_duplicate_transforms=2,
     product_group_density=0.5, target_lineage=1.0, max_requirements=3,
 )
 
-#: (name, seed, dials) — every unsound case in a 10,000-problem sweep.
-KNOWN_UNSOUND = [
+#: (name, seed, dials) — every unsound case in the last 10,000-problem sweep
+#: that had any. `sink-9391` is the one that survived both re-anchorings, and is
+#: the anchor `test_refiner_validity.py` traces the mechanism on.
+FORMERLY_UNSOUND = [
     (f"sink-{s}", s, _SINK) for s in (6503, 6807, 8575, 9087, 9375, 9391, 9927)
 ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="solver returns a plan with inputs no step produces when the "
-    "transform graph carries a cycle",
-)
 @pytest.mark.parametrize(
-    "name,seed,dials", KNOWN_UNSOUND, ids=[c[0] for c in KNOWN_UNSOUND]
+    "name,seed,dials", FORMERLY_UNSOUND, ids=[c[0] for c in FORMERLY_UNSOUND]
 )
-def test_a_cyclic_transform_graph_still_yields_a_runnable_plan(name, seed, dials):
+def test_a_cyclic_transform_graph_yields_a_runnable_plan(name, seed, dials):
     problem = generate_problem(seed, dials, name=name)
     verdict = check_plan(problem, problem.solve())
     assert verdict.ok, verdict.violations

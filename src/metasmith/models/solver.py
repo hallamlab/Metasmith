@@ -880,36 +880,47 @@ def solve_by_mcts(
 
             # checks lineage constaint and no loops
             def _is_valid(target_appl: Application):
-                # print(">>>")
-                e2appl: dict[Endpoint, list[Application]] = {}
-                for appl in _iter_steps():
-                    for e in appl.used.values():
-                        e2appl[e] = e2appl.get(e, [])+[appl]
-                todo = [(given_appl, set())]
-                produced: set[Endpoint] = set()
-                while len(todo)>0:
-                    current, history = todo.pop()
+                # Schedulability, which is the property the plan actually has to
+                # have: every step becomes runnable with *all* of its inputs
+                # available, starting from the givens. It fails on exactly two
+                # things, and both are what "invalid" means here -- a cycle,
+                # whose members can never all be waited for, and a step with an
+                # input nothing produces.
+                #
+                # This replaced a forward walk that followed the *consumers* of
+                # each produced endpoint and rejected a repeated Application
+                # signature along a path. That walk reached a step as soon as
+                # **one** of its inputs was available and never asked about the
+                # others, so a cycle hanging off the side of the walk was
+                # invisible: on `sink-9391` it passed 318 cyclic states, which
+                # `rectify` then rewrote into plans with unproduced inputs and no
+                # trace of a cycle. It was also exponential in the number of
+                # paths, where this is a layered sweep.
+                #
+                # Endpoint membership uses the same `set[Endpoint]` semantics
+                # `get_order` uses, so a True here is precisely the promise that
+                # rectify's ordering pass finds a total order rather than
+                # flattening a cycle onto one depth. Steps are held by identity,
+                # not signature: two distinct applications may legitimately
+                # share a signature, and both have to be runnable.
+                have: set[Endpoint] = {
+                    e for pgroup in given_appl.produced for e in pgroup.values()
+                }
+                pending: list[Application] = list(state.steps)
+                while len(pending) > 0:
+                    ready = [
+                        s for s in pending
+                        if all(e in have for e in s.used.values())
+                    ]
+                    # nothing became runnable: a cycle, or an input nothing makes
+                    if len(ready) == 0: return False # looped
+                    for s in ready:
+                        have |= {e for pgroup in s.produced for e in pgroup.values()}
+                    scheduled = {id(s) for s in ready}
+                    pending = [s for s in pending if id(s) not in scheduled]
 
-                    # print("  .")
-                    # print(f"  {current.transform}")
-                    # for d, e in current.used.items():
-                    #     print(f"    {d} {e}")
-                    # # print(f"        ---")
-                    # for pgroup in current.produced:
-                    #     print(f"    .")
-                    #     for d, e in pgroup.items():
-                    #         print(f"    {d} {e}")
-                    if current.Signature() in history: return False # looped
-                    history = history|{current.Signature()}
-                    for pgroup in current.produced:
-                        produced.update(pgroup.values())
-                        for e in pgroup.values():
-                            for appl in e2appl.get(e, []):
-                                todo.append((appl, history))
-
-                # no loops from the start, but do we actually get to the end?
-                missing = set(target_appl.used.values()) - produced
-                if len(missing)>0: return False
+                # the target is one of `state.steps`, so reaching here already
+                # says its inputs are all produced
 
                 # if here, then no loops
                 # now check lineage

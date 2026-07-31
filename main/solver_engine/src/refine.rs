@@ -95,35 +95,50 @@ impl<'a> Refiner<'a> {
         Some(true)
     }
 
-    /// The full check: no walk from the given application repeats a signature,
-    /// every input of the target is actually produced, and lineage holds.
+    /// The full check: every step is schedulable from the givens, and lineage
+    /// holds.
+    ///
+    /// Schedulability fails on exactly the two things "invalid" has to mean --
+    /// a cycle, whose members can never all be waited for, and a step with an
+    /// input nothing produces -- and it subsumes the old separate test that the
+    /// target's inputs were produced, since the target is one of `steps`.
+    ///
+    /// This replaced a forward walk over *consumers* that rejected a repeated
+    /// `ApplSig` along a path. That walk reached a step as soon as **one** of
+    /// its inputs was available and never asked about the others, so a cycle
+    /// hanging off the side of it was invisible; `rectify` then rewrote those
+    /// states into plans with unproduced inputs and no trace of a cycle. Both
+    /// implementations carried it, and both are fixed together.
+    ///
+    /// Endpoints are held by `EpSig` (structure, matching Python's
+    /// `set[Endpoint]` and what `get_order` uses, so a `true` here is the
+    /// promise that ordering finds a total order) and steps by `ApplId`
+    /// (identity, because two distinct applications may share a signature and
+    /// both have to be runnable). The verdict does not depend on the order
+    /// within a layer, so this adds no new site to the iteration-order
+    /// contract.
     fn is_valid(
-        &self, ar: &Arena, steps: &[ApplId], target: ApplId,
+        &self, ar: &Arena, steps: &[ApplId],
         produced_from: &Map<EpSig, Vec<EpSig>>,
     ) -> Option<bool> {
-        let mut e2appl: Map<EpSig, Vec<ApplId>> = det::map();
-        for &s in std::iter::once(&self.given_appl).chain(steps.iter()) {
-            for e in ar.appl(s).used.values() {
-                e2appl.entry(ar.eps.sig(e)).or_default().push(s);
-            }
-        }
-        let mut todo: Vec<(ApplId, Vec<ApplSig>)> = vec![(self.given_appl, Vec::new())];
-        let mut produced: Set<EpSig> = det::set();
-        while let Some((current, history)) = todo.pop() {
-            let sig = ar.appl(current).sig;
-            if history.contains(&sig) { return Some(false); } // looped
-            let mut history = history;
-            history.push(sig);
-            for e in ar.appl(current).products() {
-                let es = ar.eps.sig(e);
-                produced.insert(es);
-                if let Some(consumers) = e2appl.get(&es) {
-                    for &a in consumers { todo.push((a, history.clone())); }
+        let mut have: Set<EpSig> = det::set();
+        for e in ar.appl(self.given_appl).products() { have.insert(ar.eps.sig(e)); }
+        let mut pending: Vec<ApplId> = steps.to_vec();
+        while !pending.is_empty() {
+            let mut ready: Vec<ApplId> = Vec::new();
+            let mut rest: Vec<ApplId> = Vec::new();
+            for &s in &pending {
+                if ar.appl(s).used.values().all(|e| have.contains(&ar.eps.sig(e))) {
+                    ready.push(s);
+                } else {
+                    rest.push(s);
                 }
             }
-        }
-        for e in ar.appl(target).used.values() {
-            if !produced.contains(&ar.eps.sig(e)) { return Some(false); }
+            if ready.is_empty() { return Some(false); } // looped, or an input nothing makes
+            for &s in &ready {
+                for e in ar.appl(s).products() { have.insert(ar.eps.sig(e)); }
+            }
+            pending = rest;
         }
         self.lineage_ok(ar, steps, produced_from)
     }
@@ -135,13 +150,13 @@ impl<'a> Refiner<'a> {
                 ar.appl(s).used.values().map(|e| ar.eps.sig(e)).collect();
             for e in ar.appl(s).products() { produced_from.insert(ar.eps.sig(e), from.clone()); }
         }
-        let Some(&target) = steps.iter().find(|&&s| ar.appl(s).is_terminal()) else {
+        if !steps.iter().any(|&s| ar.appl(s).is_terminal()) {
             return Some(false);
-        };
+        }
         // Cheap term first; a `KeyError` here answers nothing, so fall through.
         let rejected = matches!(self.lineage_ok(ar, steps, &produced_from), Some(false));
         if rejected { return Some(false); }
-        self.is_valid(ar, steps, target, &produced_from)
+        self.is_valid(ar, steps, &produced_from)
     }
 
     pub fn score(&self, ar: &Arena, state: &mut RefinerState) -> Result<(), String> {
