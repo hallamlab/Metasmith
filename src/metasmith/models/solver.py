@@ -1333,7 +1333,16 @@ def solve_by_mcts(
             current_timelines = carry_over+remain
             
         return MctsResult(
-            complete=False,
+            # Falling out of the loop is not the same as failing. The early
+            # return above fires only when every timeline resolves on the same
+            # pass; a search that instead runs its frontier down still holds a
+            # merged solution for the timelines that did solve, and on
+            # multi-sample problems that is the normal exit -- 1250 of 1250
+            # generated multi-given instances leave by this path with a plan
+            # the checker passes. What actually distinguishes "no answer" is
+            # `solved_state is None`, in which case `state` below is an
+            # arbitrary unfinished timeline.
+            complete=solved_state is not None,
             state=solved_state if solved_state is not None else current_timelines[0],
             merged_endpoints=merged_endpoints,
             _frontier=frontier,
@@ -1347,7 +1356,12 @@ def solve_by_mcts(
     solution = mcts(max_iter=max_iter)
 
     return Solution(
-        complete=True,
+        # Carry the search's own verdict. This was hardcoded `True`, which made
+        # `WorkflowPlan.Generate`'s `not result.complete` guard dead and let an
+        # exhausted search return whatever timeline it happened to be holding
+        # -- a plan of exactly `max_iter` steps that never reaches the target,
+        # reported as a solution. `tests/solver/test_incomplete_search.py`.
+        complete=solution.complete,
         dependency_plan=solution.state.steps,
         merged_endpoints=solution.merged_endpoints,
         _frontier=solution._frontier,

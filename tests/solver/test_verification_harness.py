@@ -26,6 +26,7 @@ from metasmith.testing.solver_verification import (
     forward_closure_solvable,
     generate_problem,
     plan_fingerprint,
+    problem_of_plan,
 )
 
 
@@ -228,6 +229,48 @@ class TestChecker:
     def test_refuses_an_empty_plan(self):
         problem, _ = _micro_plan(anchor_props={"root"})
         assert not check_plan(problem, _FakeSolution([])).ok
+
+
+# ---------------------------------------------------------------------------
+# adjudicating a plan the solver was not asked for directly
+# ---------------------------------------------------------------------------
+
+
+class TestProblemOfPlan:
+    """`WorkflowPlan` stashes the triple it handed the solver; this reads it.
+
+    Grading a shipped template means grading it against the *same* problem the
+    solver saw. Re-deriving that from the libraries would drift -- the masking
+    and dedup rules in `CollectSolverInputs` are exactly where -- so the plan
+    carries it instead.
+    """
+
+    def test_a_plan_without_its_problem_declines_rather_than_guesses(self):
+        class _Bare:
+            pass
+
+        assert problem_of_plan(_Bare()) is None
+
+    def test_the_reconstructed_problem_is_the_one_that_was_solved(self):
+        source = generate_problem(3, GeneratorDials(n_types=6))
+
+        class _Plan:
+            _solver_inputs = (source.given, source.transforms, source.target)
+
+        rebuilt = problem_of_plan(_Plan(), name="t")
+        assert rebuilt is not None
+        assert rebuilt.target is source.target
+        assert [set(g) for g in rebuilt.given] == [set(g) for g in source.given]
+        assert list(rebuilt.transforms) == list(source.transforms)
+        assert check_plan(rebuilt, rebuilt.solve()).ok
+
+    def test_generate_attaches_the_triple(self):
+        """A rename that broke this would make the template gate silently pass."""
+        from dataclasses import fields
+
+        from metasmith.models.workflow.plan import WorkflowPlan
+
+        assert "_solver_inputs" in {f.name for f in fields(WorkflowPlan)}
 
 
 # ---------------------------------------------------------------------------

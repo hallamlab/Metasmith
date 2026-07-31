@@ -31,6 +31,7 @@ from .solver_verification import (
     check_plan,
     generate_problem,
     plan_fingerprint,
+    problem_of_plan,
 )
 
 __all__ = ["CORPUS", "run_generated", "run_templates", "run_all", "diff"]
@@ -173,12 +174,22 @@ def run_templates(root: Path | None = None) -> dict[str, Any]:
         task = template.spec.Solve()
         elapsed = time.perf_counter() - t0
         result = getattr(task.plan, "_solver_result", None)
+        problem = problem_of_plan(task.plan, name=template.name)
+        if problem is None or result is None:
+            # Not "nothing to check" -- an unadjudicable template is a hole in
+            # the gate, and a silent skip here is how it would stay one.
+            verdict_ok, violations = False, [
+                "plan carries no solver inputs, so the checker cannot see it"
+            ]
+        else:
+            verdict = check_plan(problem, result)
+            verdict_ok, violations = verdict.ok, verdict.violations
         out[f"template/{template.name}"] = {
             "seconds": round(elapsed, 4),
             "fingerprint": plan_fingerprint(result) if result is not None else None,
             "steps": len(task.plan.steps),
-            "ok": bool(task.ok),
-            "violations": [],
+            "ok": bool(task.ok) and verdict_ok,
+            "violations": violations,
             "iterations": getattr(result, "_iterations", None),
             "refiner_iterations": (
                 sum(t for _, t in result._refiner_iterations)

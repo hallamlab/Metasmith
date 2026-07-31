@@ -81,6 +81,27 @@ def test_one_template_solves_to_one_plan_whatever_the_hash_seed(
     )
 
 
+def test_every_shipped_template_solves_to_a_runnable_plan(
+    metasmith_libraries_root: Path,
+):
+    """The checker, pointed at the plans people actually run.
+
+    The generated corpus is where `check_plan` earns its keep, but a harness
+    that has never judged a shipped template is a harness with an untested
+    claim at its centre. This is also the containment check on the cyclic-graph
+    unsoundness in `tests/solver/test_known_unsound.py`: those transform graphs
+    are generated, and this is what says the shipped ones are not that shape.
+
+    Slow on purpose -- `metagenomics_from_paired_reads` is ~35s of real search.
+    """
+    from metasmith.testing.solver_bench import run_templates
+
+    cases = run_templates(metasmith_libraries_root)
+    assert cases, f"no templates discovered under {metasmith_libraries_root}"
+    unsound = {k: v["violations"] for k, v in cases.items() if not v["ok"]}
+    assert not unsound, unsound
+
+
 def test_the_benchmark_runner_reports_every_case_it_ran():
     """Cheap guard on the reporting, not on the solver."""
     from metasmith.testing.solver_bench import CORPUS, diff, run_generated

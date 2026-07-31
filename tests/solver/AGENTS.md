@@ -46,10 +46,19 @@ differs between two runs of unchanged code — it has already produced one false
 a later test sees. Any test that cares about the stream must set its own seed.
 
 **Asserting "the solver handled cycles" proves almost nothing.** The
-path-dependent loop rejection in `refine_mcts._is_valid` fires on *no* known
-input — not on the shipped templates, not on the pre-existing loop test. A
-cycle test that does not assert *which* rejection fired is the test that was
-already here and already protected nothing.
+path-dependent loop rejection in `refine_mcts._is_valid` fires on none of the
+shipped templates and none of the pre-existing tests; it takes a generated
+cyclic instance to reach it, and it is incomplete when it does — the refiner
+still accepts cyclic states, and `rectify` launders them into inputs no step
+produces. A cycle test that does not assert *which* rejection fired is the test
+that was already here and already protected nothing. `test_refiner_validity.py`
+pins each link.
+
+**A plan that reaches the target is not the same as a search that finished.**
+`Solution.complete` answers "did the search merge in a solved timeline", which
+is why it can be True for a plan the checker refuses and was, for a while,
+False for every sound multi-sample plan. Assert soundness with `check_plan` and
+completion with `complete`; they are different questions.
 
 **Signature collisions are semantics, not accidents.** Two distinct
 `Application` objects can legitimately share a `Signature()` — six such states

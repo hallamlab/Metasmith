@@ -7,9 +7,11 @@ plan produces**. `Solution.complete` says `True` for every one of them.
 The concentration is entirely in problems whose transform graph carries a
 cycle — a transform that consumes a type and also produces it, directly or
 through a second product group. That is the same shape the solver's
-path-dependent loop rejection exists to catch, and which measurement showed
-never fires: zero hits across the four shipped templates, the pre-existing
-solver tests, and the original scratch scenarios.
+path-dependent loop rejection exists to catch. It does catch some of them, and
+`test_refiner_validity.py` traces what happens to the rest: the refiner accepts
+a state whose production graph is cyclic, and `rectify` then rewrites endpoints
+in an order that cannot be topological, converting the cycle into an input no
+step produces. Those are the mechanism; these are the outcome.
 
 These are `xfail(strict=True)` on purpose. When the solver stops returning
 unrunnable plans here, the suite fails loudly and these get promoted to
@@ -52,18 +54,15 @@ def test_a_cyclic_transform_graph_still_yields_a_runnable_plan(name, seed, dials
     assert verdict.ok, verdict.violations
 
 
-def test_the_solver_reports_complete_even_when_it_did_not_complete():
-    """`Solution.complete` is not a completeness signal.
+def test_an_unsatisfiable_target_is_reported_as_unsolved():
+    """`Solution.complete` now carries the search's own verdict.
 
-    `solve_by_mcts` hardcodes `complete=True` on its success return and
-    discards `MctsResult.complete`. `WorkflowPlan.Generate` guards on
-    `not result.complete or not result.dependency_plan`, so the first half of
-    that guard never fires and the whole check rests on the plan being *empty*
-    — a partial, non-empty plan walks straight through it.
-
-    Pinned as the current behaviour, not endorsed. The target here is
-    genuinely unsatisfiable: `w1` and `w0` are siblings off one root, so `w1`
-    cannot be descended from `w0`.
+    It used to be hardcoded `True`, which made the first half of
+    `WorkflowPlan.Generate`'s `not result.complete or not
+    result.dependency_plan` guard dead: a partial, non-empty plan walked
+    straight through it and became a workflow. The target here is genuinely
+    unsatisfiable -- `w1` and `w0` are siblings off one root, so `w1` cannot be
+    descended from `w0` -- and the honest answer is the one asserted.
     """
     from metasmith.models.solver import Endpoint, Transform
     from metasmith.testing.solver_verification import SolverProblem
@@ -82,11 +81,8 @@ def test_the_solver_reports_complete_even_when_it_did_not_complete():
     )
 
     solution = problem.solve()
-    assert solution.complete, "if this flipped to False, delete this test"
-    assert solution.dependency_plan, "non-empty, so Generate's guard does not fire"
-    assert not any(s.transform is target for s in solution.dependency_plan), (
-        "the plan claims completion without applying the target"
-    )
+    assert not solution.complete
+    assert not any(s.transform is target for s in solution.dependency_plan)
     verdict = check_plan(problem, solution)
     assert not verdict.ok
     assert any("target transform" in v for v in verdict.violations), verdict.violations

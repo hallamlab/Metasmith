@@ -550,3 +550,126 @@ evidence rather than from construction.
 - The `Solution.complete` hardcode and `WorkflowPlan.Generate`'s dead guard.
 - `expand_node`'s signature-based step removal dropping both steps on a
   collision (from the plan body above; still unexercised).
+
+## T2 — test coverage — DONE
+
+The gaps T1 named are closed, and closing them turned up three defects the
+suite could not previously see. One is fixed; two are pinned with their
+mechanism, because both live in code T5 has to port and a port that inherits
+them silently is worse than one that inherits them knowingly.
+
+### The existing solver suite asserted a constant
+
+18 of the 19 tests in `tests/solver/test_solver.py` ended on `assert
+sol.complete`, and `solve_by_mcts` hardcoded `complete=True`. Every solve in
+that file now goes through `_solve`, which adjudicates with `check_plan` before
+returning. Two tests failed immediately:
+
+- **`test_loop_handling`** — the canonical "solver handles circular
+  dependencies without infinite loops" test documented the opposite of its
+  name. The search walks the cycle until the iteration budget runs out and
+  returns the timeline it happens to be holding: `max_iter=256` gives a 256-step
+  plan, `max_iter=4096` gives 4096, and none of them ever apply the target. The
+  problem is solvable — `exhaustive_solvable` finds a five-application plan at
+  every cap from 5 up — so this is a completeness failure in the search, now
+  three tests: the budget bound, the honest verdict, and an `xfail(strict)` on
+  the plan the oracle proves exists.
+- **`test_mixed_samples_all_have_stats_with_lineage`** — a checker false
+  positive, and the only one found. Multi-sample plans merge one timeline's
+  endpoints into another's and the representative keeps *one* sample's
+  properties, so the synthetic given step legitimately emits a
+  `read_length:long` endpoint from the slot that stood for the short-read
+  sample. `check_plan` now requires that step to emit something the problem
+  actually gave, and notes the merge rather than failing it.
+
+### Fixed: `Solution.complete` said nothing, then said the wrong thing
+
+Hardcoded `True` made `WorkflowPlan.Generate`'s `not result.complete` guard dead
+code — the whole check rested on the plan being *empty*, so a partial non-empty
+plan became a workflow.
+
+Propagating `MctsResult.complete` instead was wrong in the other direction, and
+the flow suite caught it: six `test_binning_dag` tests went red, and the plans
+behind them were **sound** — target applied, `check_plan` green. That flag is
+set only when every timeline resolves on one pass; a multi-sample search
+normally exits by running its frontier down while holding a good merged plan.
+The sweep put a number on it: **1250 of 1250** generated multi-given instances
+and 1181 of 1182 `sink` instances exit that way.
+
+The discriminator that is actually right is `solved_state is not None` — did the
+search ever merge a solved timeline in. Landed there. Re-sweeping 10,000
+instances gives a tally identical to T1's except that the 31 unsolved cases now
+*report* being unsolved, where they previously claimed completion.
+
+### Pinned: where the 59 unsound plans come from
+
+Traced end to end on `cyclic-217`, and the chain is the same on all four
+hand-checked cases:
+
+1. the search hands `refine_mcts` a plan that is **acyclic and fully produced**;
+2. the refiner rebinds an input to an endpoint produced by a later step,
+   creating a **cycle**, and `validate_node` calls that state **valid**;
+3. `rectify` unifies endpoint objects in `get_order` order, which cannot be
+   topological on a cyclic graph, so a consumer is rewritten before its producer
+   and keeps an endpoint the producer then replaces.
+
+Step 3 is the laundering: the cycle disappears and an unproduced input appears
+in its place, so the returned plan is acyclic, looks well-formed, and cannot
+run. Nothing downstream can tell it was ever a cycle.
+
+Why step 2 gets through: `_is_valid`'s forward walk starts at the given
+application and follows *consumers* of each produced endpoint, so an application
+counts as reached the moment **one** of its inputs is available — its other
+inputs are never tested for being produced. Only the target's direct inputs get
+that test, via `missing`. A cycle off that walk is invisible.
+
+`tests/solver/test_refiner_validity.py` pins each link separately, so a fix at
+any one of them announces itself.
+
+### The loop branch is reachable after all
+
+T1 recorded zero hits on `_is_valid`'s `return False # looped` across the four
+templates, the whole solver axis, and the original scratch scenarios, leaving it
+open whether the branch was dead. It is not: `cyclic-217` drives it **eight
+times** in one solve. It is *incomplete*, not dead — which is the more awkward
+result, and the one T5 has to carry. The test finds the line by its marker
+comment rather than by number.
+
+### Also landed
+
+- **The shipped templates are adjudicated for the first time.** All four are
+  sound, and their fingerprints are byte-identical to T1's baseline after every
+  change in this task. `WorkflowPlan` now carries `_solver_inputs`, the exact
+  triple handed to `solve_by_mcts`, so the checker grades the problem that was
+  solved rather than a re-derivation of it; `CollectSolverInputs` is that
+  triple's one construction site. An unadjudicable template is reported as a
+  failure, not skipped.
+- **The two scenarios that only ever lived in the notebook** are ported
+  (`test_scratch_scenarios.py`). Together they place the boundary of the cyclic
+  failure: the dense reciprocal web — four bidirectional pairs, no target
+  lineage — solves to the six-step direct route and is stable across seeds, and
+  the M×N join scales search breadth without lengthening the plan. Cycles alone
+  are fine and a lineage constraint alone is fine; it is a lineage constraint
+  whose satisfaction *requires walking a cycle* that defeats the search.
+- **Signature collisions** are pinned as semantics rather than accident, next to
+  the `expand_node` expression that drops both members of a colliding pair.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `tests/solver` | 106 passed, 6 xfailed |
+| fast suite | **1456 passed**, 7 skipped, 331 deselected, 9 xfailed |
+| templates | 4/4 sound, fingerprints unchanged from T1 |
+| 10k sweep | 59 unsound (unchanged), 0 oracle disagreements |
+
+### Carried into T3
+
+- The refiner/`rectify` cycle laundering is **not fixed**, only pinned. It has
+  to be settled before T5 ports `_is_valid`, and the cheapest sound fix is
+  probably to adjudicate the refiner's winner *after* rectification and fall
+  back to the search's plan, which is sound in all 10,000 sweep cases.
+- The cyclic-search completeness failure (`test_solver.py`'s `xfail`) is
+  untouched and is a search defect, not a refiner one.
+- 27 of 10,000 small instances still take over 10 seconds. Search cost is not
+  only a big-library problem, and T3's corpus should keep a case like it.

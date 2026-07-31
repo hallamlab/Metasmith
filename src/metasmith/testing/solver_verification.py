@@ -56,6 +56,7 @@ __all__ = [
     "plan_shape",
     "check_plan",
     "generate_problem",
+    "problem_of_plan",
     "forward_closure_solvable",
     "exhaustive_solvable",
 ]
@@ -305,13 +306,33 @@ def check_plan(problem: SolverProblem, solution: Solution) -> PlanCheck:
                     f"step {i} ({s.transform.key}) binds {sorted(e.properties)} to a "
                     f"slot requiring {sorted(d.properties)}"
                 )
+        is_given_step = id(s.transform) not in known
         for gi, group in enumerate(s.produced):
             for d, e in group.items():
-                if not _conforms(d, e):
+                if _conforms(d, e):
+                    continue
+                if is_given_step:
+                    # Multi-sample plans merge one timeline's endpoints into
+                    # another's, and the representative keeps *one* sample's
+                    # properties -- so the given step legitimately emits a
+                    # `read_length:long` endpoint from the slot that stood for
+                    # the short-read sample. What must hold is that it emits
+                    # something the problem actually gave.
+                    if any(e.properties == g.properties for grp in problem.given for g in grp):
+                        res.notes.append(
+                            f"step {i} emits {sorted(e.properties)} from a slot "
+                            f"declaring {sorted(d.properties)} -- merged timelines"
+                        )
+                        continue
                     res.violations.append(
-                        f"step {i} ({s.transform.key}) emits {sorted(e.properties)} "
-                        f"from a product slot declaring {sorted(d.properties)}"
+                        f"step {i} presents {sorted(e.properties)} as given, but "
+                        "no given endpoint has those properties"
                     )
+                    continue
+                res.violations.append(
+                    f"step {i} ({s.transform.key}) emits {sorted(e.properties)} "
+                    f"from a product slot declaring {sorted(d.properties)}"
+                )
 
     # -- acyclicity and topological order ---------------------------------
     step_index = {id(s): i for i, s in enumerate(steps)}
@@ -439,6 +460,26 @@ class SolverProblem:
             target=self.target,
             **kwargs,
         )
+
+
+def problem_of_plan(plan, *, name: str = "template") -> SolverProblem | None:
+    """The problem a `WorkflowPlan` was solved from, ready to adjudicate.
+
+    `WorkflowPlan.Generate` stashes the triple it handed `solve_by_mcts` on the
+    plan; this just re-labels it. Returns `None` for a plan that predates the
+    stash or came off the wire, since a plan without its problem cannot be
+    graded and silently grading it against a guess is worse than declining.
+    """
+    inputs = getattr(plan, "_solver_inputs", None)
+    if inputs is None:
+        return None
+    given, transforms, target = inputs
+    return SolverProblem(
+        given=[set(g) for g in given],
+        transforms=list(transforms),
+        target=target,
+        name=name,
+    )
 
 
 def _type_props(i: int) -> set[str]:

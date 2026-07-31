@@ -1,10 +1,27 @@
 """Tests for the MCTS workflow solver.
 
 Converted from main/workflow_solver/branching_test.py
+
+Every solve here goes through `_solve`, which adjudicates the returned plan
+before handing it back. Without that these tests assert almost nothing:
+`Solution.complete` is hardcoded `True` in `solve_by_mcts`, and it was the only
+assertion in 18 of the 19 tests below.
 """
 
 import pytest
 from metasmith.models.solver import solve_by_mcts, Transform, Endpoint, Application
+from metasmith.testing.solver_verification import (
+    SolverProblem, check_plan, exhaustive_solvable,
+)
+
+
+def _solve(given, target, transforms, **kwargs):
+    """Solve and refuse to return an unrunnable plan."""
+    problem = SolverProblem(given=given, transforms=transforms, target=target)
+    sol = problem.solve(**kwargs)
+    verdict = check_plan(problem, sol)
+    assert verdict.ok, f"solver returned an unrunnable plan: {verdict.violations}"
+    return sol
 
 
 class TestBasicSolver:
@@ -29,7 +46,7 @@ class TestBasicSolver:
 
         target = Transform()
         target.AddRequirement(properties={"given"})
-        sol = solve_by_mcts(given=[have], target=target, transforms=transforms)
+        sol = _solve(given=[have], target=target, transforms=transforms)
         assert sol.complete
 
     def test_simple_chain(self):
@@ -52,7 +69,7 @@ class TestBasicSolver:
         target = Transform()
         a = target.AddRequirement(properties={"bins"})
         target.AddRequirement(properties={"tax"}, parents={a})
-        sol = solve_by_mcts(given=[have], target=target, transforms=transforms)
+        sol = _solve(given=[have], target=target, transforms=transforms)
         assert sol.complete
 
     def test_multiple_given_groups(self):
@@ -70,7 +87,7 @@ class TestBasicSolver:
 
         target = Transform()
         target.AddRequirement(properties={"x"})
-        sol = solve_by_mcts(given=[
+        sol = _solve(given=[
             {
                 Endpoint(properties={"a"}),
             },
@@ -104,51 +121,70 @@ class TestBasicSolver:
         assert app1.Signature() != app2.Signature()
 
 
+def _loop_problem() -> SolverProblem:
+    """`start→a→b→a`, `b→c→b`, `c→target`, given `c`, target `a` then `target`.
+
+    Two reciprocal cycles with the target on the far side of both. Verbatim
+    `loop_1` from the original scratch scenarios.
+    """
+    transforms = []
+    for req, prod in [
+        ("start", "a"), ("a", "b"), ("b", "a"),
+        ("b", "c"), ("c", "b"), ("c", "target"),
+    ]:
+        t = Transform()
+        t.AddRequirement(properties={req})
+        t.AddProduct(properties={prod})
+        transforms.append(t)
+    target = Transform()
+    a = target.AddRequirement(properties={"a"})
+    target.AddRequirement(properties={"target"}, parents={a})
+    return SolverProblem(
+        given=[{Endpoint(properties={"c"})}], transforms=transforms, target=target,
+    )
+
+
 class TestCircularDependencies:
-    """Tests for handling circular dependencies in transforms."""
+    """Tests for handling circular dependencies in transforms.
 
-    def test_loop_handling(self):
-        """Solver handles circular dependencies without infinite loops."""
-        transforms = []
-        t = Transform()
-        t.AddRequirement(properties={"start"})
-        t.AddProduct(properties={"a"})
-        transforms.append(t)
+    This class used to consist of one test asserting `sol.complete`, which was
+    hardcoded `True`. What it actually documented was the opposite of its name:
+    the search walks the cycle until its iteration budget runs out and returns
+    the timeline it was holding -- a plan of exactly `max_iter` steps that never
+    applies the target. Both facts are now asserted rather than assumed.
+    """
 
-        t = Transform()
-        t.AddRequirement(properties={"a"})
-        t.AddProduct(properties={"b"})
-        transforms.append(t)
+    def test_a_cyclic_search_terminates_and_says_so(self):
+        problem = _loop_problem()
+        sol = problem.solve()
+        assert not sol.complete, (
+            "the search exhausted its budget; saying otherwise is what let a "
+            "256-step non-plan reach WorkflowPlan.Generate"
+        )
+        assert not any(s.transform is problem.target for s in sol.dependency_plan)
 
-        t = Transform()
-        t.AddRequirement(properties={"b"})
-        t.AddProduct(properties={"a"})
-        transforms.append(t)
+    def test_the_search_budget_is_what_bounds_a_cyclic_walk(self):
+        """Nothing else stops it: the plan is exactly as long as the budget."""
+        for budget in (32, 64):
+            sol = _loop_problem().solve(max_iter=budget)
+            assert len(sol.dependency_plan) == budget
 
-        t = Transform()
-        t.AddRequirement(properties={"b"})
-        t.AddProduct(properties={"c"})
-        transforms.append(t)
+    @pytest.mark.xfail(
+        strict=True,
+        reason="the search cannot solve a solvable 6-transform cyclic problem",
+    )
+    def test_a_cyclic_graph_still_gets_the_plan_the_oracle_proves_exists(self):
+        """`c → b → a`, then `a → b → c → target`: five applications.
 
-        t = Transform()
-        t.AddRequirement(properties={"c"})
-        t.AddProduct(properties={"b"})
-        transforms.append(t)
-
-        t = Transform()
-        t.AddRequirement(properties={"c"})
-        t.AddProduct(properties={"target"})
-        transforms.append(t)
-
-        target = Transform()
-        a = target.AddRequirement(properties={"a"})
-        target.AddRequirement(properties={"target"}, parents={a})
-        sol = solve_by_mcts(given=[
-            {
-                Endpoint(properties={"c"}),
-            },
-        ], target=target, transforms=transforms)
-        assert sol.complete
+        `exhaustive_solvable` finds it at every cap from 5 upward, so this is a
+        completeness failure in the search and not an unsatisfiable problem.
+        Raising `max_iter` to 4096 does not help -- the walk is not
+        budget-starved, it is lost.
+        """
+        problem = _loop_problem()
+        assert exhaustive_solvable(problem, max_applications=5) is True
+        sol = problem.solve()
+        assert check_plan(problem, sol).ok
 
 
 class TestBranching:
@@ -198,7 +234,7 @@ class TestBranching:
         given = {Endpoint(properties={"start"})}
         target = Transform()
         target.AddRequirement(properties={"target"})
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[given],
             target=target,
             transforms=transforms,
@@ -266,7 +302,7 @@ class TestBranching:
         given = {Endpoint(properties={"start"})}
         target = Transform()
         target.AddRequirement(properties={"target"})
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[given],
             target=target,
             transforms=transforms,
@@ -336,7 +372,7 @@ class TestBranching:
         given = {Endpoint(properties={"start"})}
         target = Transform()
         target.AddRequirement(properties={"target"})
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[given],
             target=target,
             transforms=transforms,
@@ -366,7 +402,7 @@ class TestBranching:
 
         target = Transform()
         target.AddRequirement(properties={"b"})
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[
                 {Endpoint(properties={"a"})},
                 {Endpoint(properties={"b"})},
@@ -402,7 +438,7 @@ class TestBranching:
 
         target = Transform()
         target.AddRequirement(properties={"target"})
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[
                 {Endpoint(properties={"start"})},
             ],
@@ -486,7 +522,7 @@ class TestBranching:
 
         target = Transform()
         target.AddRequirement(properties={"assembly_stats"})
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[
                 {Endpoint(properties={"start"})},
             ],
@@ -526,7 +562,7 @@ class TestGivenLineage:
 
         target = Transform()
         target.AddRequirement(properties={"output"})
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[{parent_ep, child_ep}],
             target=target,
             transforms=transforms
@@ -556,7 +592,7 @@ class TestGivenLineage:
 
         target = Transform()
         target.AddRequirement(properties={"output"})
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[{gp_ep, p_ep, child_ep}],
             target=target,
             transforms=transforms
@@ -601,7 +637,7 @@ class TestGivenLineage:
         target = Transform()
         target.AddRequirement(properties={"bam"})
 
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[{meta_ep, pair_ep, r1_ep, r2_ep}],
             target=target,
             transforms=[interleave, consumer],
@@ -660,7 +696,7 @@ class TestGivenLineage:
         target.AddRequirement(properties={"bins", "method:maxbin2"})
         target.AddRequirement(properties={"bins", "method:concoct"})
 
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[{meta_ep, reads_ep, asm_ep}],
             target=target,
             transforms=transforms
@@ -709,7 +745,7 @@ class TestGivenLineage:
         target = Transform()
         target.AddRequirement(properties={"bam"})
 
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[{meta_ep, pair_ep, r1_ep, asm_ep}],
             target=target,
             transforms=transforms,
@@ -746,7 +782,7 @@ class TestMultiSampleBinningWorkflow:
         target = Transform()
         target.AddRequirement(properties={"bam"})
 
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[{meta_ep, reads_ep, stats_ep, asm_ep}],
             target=target,
             transforms=[seqkit, asm_stats]
@@ -786,7 +822,7 @@ class TestMultiSampleBinningWorkflow:
         target = Transform()
         target.AddRequirement(properties={"bam"})
 
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[
                 {meta_a, reads_a, stats_a, asm_a},
                 {meta_b, reads_b, stats_b, asm_b},
@@ -823,7 +859,7 @@ class TestMultiSampleBinningWorkflow:
         target = Transform()
         target.AddRequirement(properties={"bam"})
 
-        sol = solve_by_mcts(
+        sol = _solve(
             given=[{meta_ep, reads_ep, stats_ep, asm_ep}],
             target=target,
             transforms=[seqkit, asm_stats]
