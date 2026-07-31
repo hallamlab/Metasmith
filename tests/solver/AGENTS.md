@@ -42,8 +42,21 @@ a random per-call value for absent or deferred inputs, so such a fingerprint
 differs between two runs of unchanged code — it has already produced one false
 "the plans changed" verdict during this work.
 
-**`solve_by_mcts` seeds numpy globally.** Test order can therefore change what
-a later test sees. Any test that cares about the stream must set its own seed.
+**The random stream decides more than it looks like it should.** About 0.6% of
+generated problems change `check_plan` verdict on a change of PRNG alone, so an
+`xfail(strict)` anchor here can XPASS because the stream moved rather than
+because anything was fixed — re-anchor from a fresh sweep instead of promoting
+it. `solver_rng.py` owns both halves of every decision (the ChaCha8 stream and
+the rule that turns bits into an index) because either half left implicit is
+somewhere the Rust port silently disagrees.
+
+**Container layout is not allowed to reach the plan.** The solver iterates sets
+in places where order decides which application lands on the frontier first,
+and CPython's hash-table order is portable to nothing. Every such iteration now
+goes through an explicit rank; `test_iteration_order.py` salts `Node.__hash__`
+— leaving signatures, keys and equality untouched — and demands the plan not
+move. Any new set iteration in the search needs a stated order or that test
+will find it.
 
 **Asserting "the solver handled cycles" proves almost nothing.** The
 path-dependent loop rejection in `refine_mcts._is_valid` fires on none of the

@@ -883,3 +883,166 @@ branch 177 times.
   failure, and the slow tail (11 of 10,000 instances over 10s, down from 27).
 - Acceptance criterion 8 (<3s Python path) remains unmet at ~7.6s and is now
   entirely T5/T6's to close.
+
+## T5 splits into four, because the port has a prerequisite
+
+T5 was written as one block: build `main/solver_engine/`, port the search,
+ship four binaries. The first measurement taken against that plan found a
+blocker underneath it, so T5 is now four blocks and this is the first.
+
+- **T5a — the iteration-order contract.** Make every order-bearing iteration in
+  the solver a *stated* order rather than CPython's. Prerequisite for
+  everything below; done, below.
+- **T5b — the shipping skeleton.** `main/solver_engine/` (`msm_solver`), the
+  four cross-compile targets, `dev.sh -brs`/`-bs`, package data in the wheel and
+  conda package, binary resolution with a Python fallback, and the wire-format
+  version constant. The Rust side implements `solver_rng.py` and nothing else
+  yet, with a differential test that the two streams agree draw for draw. The
+  point is to prove the *delivery path* — four targets, packaging, fallback —
+  before the hard part depends on it.
+- **T5c — the Rust search core.**
+- **T5d — the differential gate**: Rust and Python, same seed, topologically
+  equivalent on 100% of the generated corpus.
+
+## T5a — the iteration-order contract — DONE
+
+**The solver's answer depended on CPython's hash-table layout.** Several
+searches iterate a `set`, and that order reaches the plan: it decides which
+application is appended to the frontier first, and the selection rules break
+ties by index. Nothing about this is visible in the source, and two runs of one
+interpreter agree perfectly, so nothing had caught it.
+
+The probe is what makes this a measurement rather than a worry. `Node.__hash__`
+returns `self.hash` and `Node.__eq__` compares `self.hash`, so XORing a salt
+into `__hash__` — and only `__hash__` — leaves every signature, key and equality
+relation exactly as it was while completely rearranging every set and dict the
+solver builds. Nothing about the problem changes; only the container layout
+does. Under that salt, **four of the eight corpus fingerprints moved**, and
+`kitchen-sink` went from 11 steps to 8. A source-level cross-check agreed:
+reversing five set iterations by hand moved five of the eight.
+
+That is fatal to the port on its own terms. Rust has no CPython set to imitate,
+and the alternative to stating the order is reimplementing CPython's probing
+sequence and pinning the solver to an interpreter version.
+
+### The contract
+
+Ranks are assigned once per solve and every order-bearing iteration reads them:
+
+- **Transforms** rank by position in the caller's own sequence (`given_tr`,
+  then `transforms` as passed, then `target`), keyed by identity — so two
+  duplicate transforms stay distinguishable, which a signature-keyed rank could
+  not do.
+- **Dependencies** rank by first appearance walking that same sequence. Equal
+  dependencies collapse, exactly as they already do in `demand2product`.
+- **Endpoints and applications** rank by signature, which is unique within any
+  one set because that is precisely what their `__eq__` compares.
+
+Five sites: the given groups, the producer walk that estimates distance to
+target, `_find_endpoints`, `get_order`'s reachable layer, and the candidate
+transforms the search draws children from. `demand2product` and
+`demand2producer` are frozen into rank order once at construction and read as
+ordered sequences from then on; `get_order`'s `reachable` becomes a list in
+`steps` order, since `seen` already made the signatures within a layer unique
+and the `set` was only collapsing on what `seen` had collapsed on.
+
+`tests/solver/test_iteration_order.py` keeps it, and keeps itself honest: it
+asserts the plan is identical under four salts, and separately that the salts
+still rearrange a set at all, so an inert probe cannot pass silently.
+
+### One regression, found and paid down
+
+The first cut sorted at the point of use. That put a `sorted()` inside the
+distance walk, which is the hottest loop in the search-bound cases — profiling
+`wide-search` showed **4.9 million** calls to it — and cost **+35%** on the
+stress corpus for plans that were byte-identical to T4's. Hoisting both maps
+into rank order once at construction turned that into **−4.7%**: iterating a
+list beats iterating a set often enough to pay for the ordering outright.
+
+### What moved, and what that costs
+
+| | T4 | T5a |
+|---|---|---|
+| stress corpus (search-bound) | 17.60s | **16.77s** (−4.7%) |
+| templates (refiner-bound) | 9.49s | 9.92s (+4.5%) |
+| `metagenomics_from_paired_reads` | 7.64s | 8.13s (+6.5%) |
+
+All four shipped templates changed fingerprint — `annotation_palette
+904b73155dad0a913c57db44`, `isolate 537402bc8fa9491c8c4929af`, `metagenomics
+f14b0f5c7f0caa2303e9f1fe`, `pangenome dd319cd7c2d72f61d7871637` — with step
+counts unchanged (15 / 9 / 29 / 3) and all four sound. They held through T4 and
+they do not hold through this, which is the honest consequence of the previous
+plans having been chosen by a hash table. Three of eight corpus fingerprints
+moved and the stress corpus did not move at all.
+
+The template slowdown is plan-dependent, not overhead: the step counts are
+identical and the search simply lands in a slightly costlier neighbourhood.
+Caller-declaration order was chosen because it is the most explicable stated
+order available, not because it was tuned — ranking transforms by distance to
+target instead is a live knob, and a search-quality question rather than a
+determinism one.
+
+### The distributions hold; the membership moves again
+
+Fingerprint parity is not available here, for the same reason it was not
+available in T4 — a different tie-break finds a different, equally valid plan —
+so the claim is distributional, over 10,000 generated problems and separately
+over 200 problems × 8 seeds.
+
+| | T4 | T5a |
+|---|---|---|
+| sound plans | 9,940 | 9,926 |
+| unsound plans | 5 | 7 |
+| unsolved | 44 | 52 |
+| exceeded 10s | 11 | 15 |
+| mean steps | 6.152 | 6.173 |
+| sweep wall time | 308.2s | 330.3s |
+
+Every shift is within noise at this sample size, and the multi-seed sweep says
+the same: 1,598 → 1,589 sound, unsound 1 → 1, unsolved 1 → 1, mean steps 5.787
+→ 5.788.
+
+**And, as in T4, the cross-check proves nothing was fixed or broken.** Of T5a's
+seven unsound cases, five are *sound* under T4's ordering and one was unsolved;
+of T4's five, four are *sound* under T5a's. The `rectify` laundering is
+untouched. `sink-9391` is the single case unsound under both, which makes it
+the first anchor here that has survived a change of decision rule — the
+`xfail(strict)` set is re-anchored on the new seven and
+`test_refiner_validity.py` moves to `sink-9391`, which drives the
+loop-rejection branch 2259 times in one solve.
+
+The one number that looks alarming is the multi-seed sweep's wall time, 9.9s →
+101.5s, from timeouts going 0 → 9. It is two problems, not a trend:
+`sink-199` times out on seven of its eight seeds and `sink-71` on two. That is
+the known slow tail landing on different instances, which is why the 10,000
+sweep — where one pathological instance cannot dominate — moves only 11 → 15.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `tests/solver` | **133 passed**, 9 xfailed in 16.49s |
+| `tests/perf/test_solver_benchmark.py` | **3 passed** in 11.80s |
+| templates | 4/4 sound, all four fingerprints moved deliberately |
+| corpus pin | regenerated: `chain-10`, `kitchen-sink` (11→9 steps), `multi-given` |
+| salt invariance | identical plans at 4 salts, corpus **and** stress corpus |
+
+### Carried into T5b
+
+- The port's data design already has its first constraint from this task:
+  **iteration order is part of the contract**, not an implementation detail.
+  The Rust side must reproduce these five orders, which is exactly what arena
+  indices give for free — transform rank *is* the arena index of the transform,
+  and dependency rank the arena index of the dependency. That is a reason to
+  build the arenas in the caller's declaration order rather than any order
+  convenient to the loader.
+- Ranking transforms by distance-to-target instead of declaration order is an
+  untried knob that would change plan quality without changing determinism.
+  Worth an experiment, but it is a search-quality question and must not be
+  smuggled into a portability change.
+- `_entropy` (`solver.py:896`) still sums through numpy, and its summation
+  order is the last unstated determinism surface in the solver.
+- Everything carried into T3/T4 is still open: the refiner/`rectify` cycle
+  laundering (now anchored on `sink-9391`), the cyclic-search completeness
+  failure, and the slow tail.
+- Acceptance criterion 8 (<3s Python path) is unmet at ~8.1s.

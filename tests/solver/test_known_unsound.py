@@ -13,15 +13,22 @@ a state whose production graph is cyclic, and `rectify` then rewrites endpoints
 in an order that cannot be topological, converting the cycle into an input no
 step produces. Those are the mechanism; these are the outcome.
 
-**Which problems land here is a property of the random stream, not only of the
-solver.** Swapping numpy's stream for the ChaCha8 contract in T4 changed the
-count from 59 to 5 and changed the membership completely: all 59 of the old set
-come back sound under the new stream, and all 5 of the new set were sound under
-the old one. Nothing about the defect was touched. So an XPASS here has two
-possible causes and they must be told apart — either the laundering was fixed,
-or the anchors went stale because the stream moved. Check
-`test_refiner_validity.py` first; if the mechanism is still live, re-anchor
-these from a fresh sweep rather than promoting them.
+**Which problems land here is a property of how the solver decides, not only of
+what it decides.** Swapping numpy's stream for the ChaCha8 contract (T4) took
+the count from 59 to 5 and replaced the membership outright; stating the
+iteration order the solver used to take from CPython's hash tables (T5a) took
+it from 5 to 7 and replaced it again. Both times the cross-check said the same
+thing: of the new set, five had been *sound* under the old decision rules, and
+four of the old set are *sound* under the new ones. Nothing about the defect
+was touched either time.
+
+So an XPASS here has two possible causes and they must be told apart — either
+the laundering was fixed, or the anchors went stale because the tie-breaking
+moved. Check `test_refiner_validity.py` first; if the mechanism is still live,
+re-anchor from a fresh sweep rather than promoting them.
+
+`sink-9391` is the one case that has survived every such change so far, which
+makes it the anchor `test_refiner_validity.py` uses.
 
 These are `xfail(strict=True)` on purpose: a silent pass is exactly the failure
 mode that would let a fix-by-accident be mistaken for a fix.
@@ -38,9 +45,9 @@ from metasmith.testing.solver_verification import (
 )
 
 #: The `sink` profile: two given groups, a cycle dial, dense lineage, duplicate
-#: transforms and product groups all at once. Under the current stream it is the
-#: only profile that still produces unrunnable plans — `cyclic` and `pgroups`,
-#: which supplied 39 of the previous 59, are now clean.
+#: transforms and product groups all at once. It is now the only profile that
+#: still produces unrunnable plans — `cyclic` and `pgroups`, which supplied 39
+#: of the 59 found in T1, have been clean since T4.
 _SINK = GeneratorDials(
     n_types=9, n_given=2, n_given_groups=2, n_extra_transforms=6,
     cycle_density=0.4, lineage_density=0.7, n_duplicate_transforms=2,
@@ -48,7 +55,9 @@ _SINK = GeneratorDials(
 )
 
 #: (name, seed, dials) — every unsound case in a 10,000-problem sweep.
-KNOWN_UNSOUND = [(f"sink-{s}", s, _SINK) for s in (4047, 6623, 8335, 8983, 9391)]
+KNOWN_UNSOUND = [
+    (f"sink-{s}", s, _SINK) for s in (6503, 6807, 8575, 9087, 9375, 9391, 9927)
+]
 
 
 @pytest.mark.xfail(

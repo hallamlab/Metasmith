@@ -360,7 +360,8 @@ def solve_by_mcts(
         assert len(group)>0, f"input group [{i}] was empty"
         if i>0: given_tr.NewProductGroup()
         pgroup = {}
-        for e in group:
+        # the caller hands us a `set`, so the product order is ours to state
+        for e in sorted(group, key=lambda x: x.Signature()):
             d = given_tr.AddProduct(e)
             pgroup[d] = e
         given_appl.produced.append(pgroup)
@@ -407,6 +408,42 @@ def solve_by_mcts(
         yield given_tr
         for tr in transforms: yield tr
         yield target
+
+    # The iteration-order contract.
+    #
+    # Several of the searches below iterate a `set`, and the order they get is
+    # CPython's hash-table layout -- which reaches the plan, because it decides
+    # which application is appended to the frontier first and the selection
+    # rules break ties by index. Salting `Node.__hash__` (leaving every
+    # signature, key and equality untouched) moves 4 of the 8 corpus
+    # fingerprints, so this is not theoretical. Two runs of one interpreter
+    # agree; nothing else does, and the Rust port least of all.
+    #
+    # So every order-bearing iteration goes through an explicit rank assigned
+    # once, here. Transforms rank by position in the caller's own sequence --
+    # identity-keyed, so two duplicate transforms stay distinguishable, which a
+    # signature-keyed rank could not do. Dependencies rank by first appearance
+    # walking that same sequence; equal dependencies collapse, exactly as they
+    # already do in `demand2product`. Endpoints and applications rank by
+    # signature, which is unique within any one set because that is what their
+    # `__eq__` compares.
+    _transform_rank: dict[Transform, int] = {}
+    for _tr in _iter_transforms():
+        _transform_rank.setdefault(_tr, len(_transform_rank))
+    _dep_rank: dict[Dependency, int] = {}
+    for _tr in _iter_transforms():
+        for _d in _tr.requires:
+            _dep_rank.setdefault(_d, len(_dep_rank))
+        for _pgroup in _tr.produces:
+            for _d in _pgroup:
+                _dep_rank.setdefault(_d, len(_dep_rank))
+    _rank_of_transform = _transform_rank.__getitem__ # C-level, and these are hot
+    _rank_of_dependency = _dep_rank.__getitem__
+    def _by_transform(trs) -> list[Transform]:
+        return sorted(trs, key=_rank_of_transform)
+    def _by_dependency(deps) -> list[Dependency]:
+        return sorted(deps, key=_rank_of_dependency)
+
     # produced dependency to consuming transform
     product2consumer: dict[Dependency, set[Transform]] = {}
     for parent in _iter_transforms():
@@ -432,6 +469,12 @@ def solve_by_mcts(
                         found = True
                 if found:
                     demand2producer[c] = demand2producer.get(c, set())|{parent}
+    # Frozen into rank order once, here, and read as ordered sequences from now
+    # on. Sorting at the point of use instead cost ~30% on the search-bound
+    # corpus: the distance walk below reaches `demand2producer` 4.9 million
+    # times on `wide-search` alone.
+    demand2product = {c: _by_dependency(v) for c, v in demand2product.items()}
+    demand2producer = {c: _by_transform(v) for c, v in demand2producer.items()}
 
     @dataclass
     class DistNode:
@@ -454,7 +497,7 @@ def solve_by_mcts(
             distance_scores[node] = dist
         opportunity_scores[node] = opportunity_scores.get(node, 1)+dist
         for p in node.requires:
-            for producer in demand2producer.get(p, []): # when tr requires a terminal endpoint that is not given
+            for producer in demand2producer.get(p, ()): # when tr requires a terminal endpoint that is not given
                 todo.append(DistNode(producer, dist, path))
     relavent_transforms = [tr for tr in transforms if tr in distance_scores]
     if given_appl.transform not in distance_scores:
@@ -484,8 +527,11 @@ def solve_by_mcts(
     d2t_report = {k.key:float(v) for k, v in distance_scores.items()}
 
     def _prune_irrelavent_values(d: dict, value_whitelist: set):
+        # order-preserving for the two maps already frozen into rank order;
+        # `intersection` would hand them back as a set and lose it again
         for k, v in d.items():
-            d[k] = value_whitelist.intersection(v)
+            d[k] = [x for x in v if x in value_whitelist] if isinstance(v, list) \
+                else value_whitelist.intersection(v)
         # for k in list(d):
         #     if len(d[k])==0: del d[k]
     rts = set(relavent_transforms)|{given_tr, target}
@@ -545,7 +591,7 @@ def solve_by_mcts(
         def _find_endpoints(p: Dependency, include_produced: bool):
             given_candidates: list[Endpoint] = []
             produced_candidates: list[Endpoint] = []
-            for product in demand2product.get(p, []):
+            for product in demand2product.get(p, ()): # already in rank order
                 if product not in production: continue
                 for e in production[product]:
                     assert e.IsA(p)
@@ -666,13 +712,17 @@ def solve_by_mcts(
         _have: set[Endpoint] = set()
         order: dict[str, int] = {e.key:0 for e in _have}
         while len(seen)<len(steps):
-            reachable: set[Application] = set()
-            # find and process separately to ensure 1 layer at a time 
+            # A list, not a set: `seen` already makes the signatures within one
+            # layer unique -- which is exactly what a `set[Application]` was
+            # collapsing on -- so taking them in `steps` order costs nothing and
+            # states the order instead of inheriting the hash table's.
+            reachable: list[Application] = []
+            # find and process separately to ensure 1 layer at a time
             for step in steps:
                 if step.Signature() in seen: continue
                 if any(e not in _have for e in step.used.values()): continue
                 seen.add(step.Signature())
-                reachable.add(step)
+                reachable.append(step)
             if len(reachable)==0: break # shouldn't happen/needed, but here to prevent endless loop
             for step in reachable:
                 if len(step.used)>0:
@@ -1128,7 +1178,7 @@ def solve_by_mcts(
         free_transforms = [t for t in relavent_transforms if len(t.requires)==0]
         def generate_child_nodes(state: SolverState, frontier_signatures: set[str]):
             def _iter_transforms():
-                for tr in state.candidate_transforms:
+                for tr in _by_transform(state.candidate_transforms):
                     yield tr
                 for tr in free_transforms:
                     yield tr

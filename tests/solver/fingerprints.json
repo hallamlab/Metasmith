@@ -1,7 +1,7 @@
 {
   "cases": {
     "gen/chain-10": {
-      "fingerprint": "83b5f19eb1943f7eb93527df",
+      "fingerprint": "bd0e03c1b2a4e08fc5717d96",
       "ok": true,
       "steps": 7
     },
@@ -21,9 +21,9 @@
       "steps": 6
     },
     "gen/kitchen-sink": {
-      "fingerprint": "96c9da9800d47862219b48fb",
+      "fingerprint": "6479566de2393fc4ab1568d8",
       "ok": true,
-      "steps": 11
+      "steps": 9
     },
     "gen/lineage": {
       "fingerprint": "fab360fe0ec936eaef8b1aaa",
@@ -31,7 +31,7 @@
       "steps": 9
     },
     "gen/multi-given": {
-      "fingerprint": "3001ca5a83be0cc577ca3ebd",
+      "fingerprint": "eefe316bf446c8fbd2ff64c6",
       "ok": true,
       "steps": 4
     },

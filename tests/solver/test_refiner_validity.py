@@ -21,11 +21,17 @@ The tracing here hooks *function names*, never line numbers, except in
 marker comment in the source.
 
 The anchor problem is chosen, not arbitrary: it has to exhibit all four links at
-once, and **which problems do is a property of the random stream**. `cyclic-217`
-was the anchor until T4 replaced numpy's stream with the ChaCha8 contract, after
-which it solves cleanly and drives the loop branch zero times. Re-anchoring is
-the expected maintenance when the contract changes; the mechanism below has not
-moved with it.
+once, and **which problems do is a property of how the solver breaks ties**, not
+of the defect. `cyclic-217` was the anchor until T4 swapped numpy's stream for
+the ChaCha8 contract; `sink-6623` until T5a stated the iteration order the
+solver had been taking from CPython's hash tables. Each change left the
+mechanism below untouched and moved which problems fall into it.
+
+`sink-9391` is the current anchor because it is the one case that has survived
+both, and it exercises the chain hardest — the loop-rejection branch fires 2259
+times in the one solve. Re-anchoring is expected maintenance whenever a decision
+rule changes; re-deriving it from a fresh `check_plan` sweep is the way, and an
+anchor that stops exhibiting the chain is not evidence of a fix.
 """
 
 from __future__ import annotations
@@ -45,10 +51,10 @@ from metasmith.testing.solver_verification import (
 
 #: The anchor: the search hands the refiner a sound plan, a cyclic state reaches
 #: `rectify`, the returned plan is unrunnable, and the loop-rejection branch
-#: fires 177 times in the one solve. All four links, one problem.
-ANCHOR = "sink-6623"
+#: fires 2259 times in the one solve. All four links, one problem.
+ANCHOR = "sink-9391"
 ANCHOR_CASE = (
-    6623,
+    9391,
     GeneratorDials(
         n_types=9, n_given=2, n_given_groups=2, n_extra_transforms=6,
         cycle_density=0.4, lineage_density=0.7, n_duplicate_transforms=2,
