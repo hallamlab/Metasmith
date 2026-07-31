@@ -332,6 +332,22 @@ def solve_by_mcts(
     max_iter: int=256,
     max_refine: int=256,
 ) -> Solution:
+    # The Rust engine, when this build has one that advertises `solve`. Absence
+    # is normal and silent -- a source checkout ships no binaries -- and
+    # `METASMITH_SOLVER_ENGINE=python` forces this path so the fallback is a
+    # thing CI runs rather than a thing CI contains. Past the handshake an error
+    # is not caught: the engine has already claimed the right wire version and
+    # the right capability, so falling back would turn a real defect into a
+    # mysterious slowdown.
+    from .solver_engine import EngineFor
+    _engine = EngineFor("solve")
+    if _engine is not None:
+        from .solver_wire import solve_via_engine
+        return solve_via_engine(
+            _engine, given, transforms, target,
+            seed=seed, max_iter=max_iter, max_refine=max_refine,
+        )
+
     # One stream for the whole solve, owned by this call. The old
     # `np.random.seed(seed)` mutated process-global state: two solves in one
     # process could not be independent, and any other numpy consumer silently
@@ -991,7 +1007,21 @@ def solve_by_mcts(
             lin_distances: list[float] = []
             for step in _steps:
                 for p in step.transform.requires:
-                    for lin_p in p.parents:
+                    # A sixth ordered site, and T5a missed it because it is a
+                    # *summation* order rather than a selection order: these
+                    # distances are summed below, and floating-point addition is
+                    # not associative. `p.parents` is a `set`, so on a
+                    # requirement with two lineage constraints the score would
+                    # depend on the hash table.
+                    #
+                    # It is unobservable on everything currently measured -- no
+                    # dependency in the four templates or in a thousand generated
+                    # problems carries more than one lineage parent, and a
+                    # one-element sum has no order -- which is exactly why it is
+                    # worth stating now rather than after a transform that does.
+                    # The other two reads of `p.parents` need no ordering: one is
+                    # an AND and the other builds a set.
+                    for lin_p in _by_dependency(p.parents):
                         e = step.used[p]
                         pe= step.used[lin_p] # type: ignore
                         lin_distances.append(_max_distance_to(e, pe))

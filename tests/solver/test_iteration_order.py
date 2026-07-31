@@ -25,6 +25,16 @@ from __future__ import annotations
 
 import pytest
 
+@pytest.fixture(autouse=True)
+def _python_solver():
+    """Pin the search to the python implementation for this whole file --
+    CPython's set layout is this file's whole subject; there is none to salt in
+    the engine, and a green run there would mean nothing at all.
+    """
+    from metasmith.models.solver_engine import UsePythonSolver
+    with UsePythonSolver():
+        yield
+
 from metasmith.models import solver as solver_module
 from metasmith.testing.solver_bench import CORPUS
 from metasmith.testing.solver_verification import (

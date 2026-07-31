@@ -135,7 +135,8 @@ relay, the solver runs **locally at plan time** in whatever process is planning,
 so the agent-deploy path never sees it. `-bp` and `-bc` refuse to run without
 all four. The refusal matters more here than for the relay: a wheel with no
 engine still plans, on the Python solver, just slower — so the failure is
-invisible unless something checks. `-bel` is the dev-loop build (host toolchain,
+invisible unless something checks. "Just slower" is now literal and large:
+7.5s versus 1.1s on `metagenomics_from_paired_reads`, for the same plan. `-bel` is the dev-loop build (host toolchain,
 host target only); it writes a `BUILD_KIND` marker the guard reads, because
 nothing about a Linux ELF says whether it was linked against musl or against the
 build machine's glibc.

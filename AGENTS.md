@@ -1050,6 +1050,11 @@ skipping them ships something empty that nobody notices for a while:
   slowly, so nothing fails. `-bp`/`-bc` run `_assert_solver_engine`; override
   `MSM_SKIP_SOLVER_CHECK=1`. It also refuses a `-bel` host build via the `BUILD_KIND` marker,
   since nothing about a Linux ELF says musl versus the build machine's glibc.
+  The engine now carries the whole search, so "plans correctly and slowly" is
+  literal: 7.5s versus 1.1s on `metagenomics_from_paired_reads`, same plan.
+  `METASMITH_SOLVER_ENGINE=python` forces the fallback, and
+  `MSM_SOLVER_TRACE=1` makes the engine narrate its decisions and its frontier
+  on stderr, which is how a differential failure gets localised to a draw.
 
 ## `examples/` — minimal regression library
 

@@ -14,8 +14,13 @@
 //! before the search depends on it.
 
 mod det;
+mod mcts;
 mod model;
 mod problem;
+mod rectify;
+mod refine;
+mod reply;
+mod search;
 mod rng;
 mod smath;
 mod wire;
@@ -46,6 +51,8 @@ enum Commands {
     /// Read a problem and report what was derived from it, without searching.
     /// Also the differential harness -- see `wire::DescribeReply`.
     Describe,
+    /// Solve a problem and return the plan. The capability that matters.
+    Solve,
 }
 
 fn main() {
@@ -54,6 +61,7 @@ fn main() {
         Commands::Version => cmd_version(),
         Commands::RngTrace => cmd_rng_trace(),
         Commands::Describe => cmd_describe(),
+        Commands::Solve => cmd_solve(),
     };
     if let Err(e) = result {
         eprintln!("msm_solver: {e}");
@@ -135,7 +143,7 @@ fn cmd_describe() -> Result<(), String> {
             enc.wire_version
         ));
     }
-    let p = problem::Problem::load(&enc)?;
+    let (p, _endpoints) = problem::Problem::load(&enc)?;
 
     // Sorted on the way out, every one of them. The maps are `det::Map`s, whose
     // iteration order is at least reproducible, but "reproducible" is not
@@ -148,7 +156,6 @@ fn cmd_describe() -> Result<(), String> {
     }
     let mut inherent: Vec<u32> = p.inherent_parents.iter().copied().collect();
     inherent.sort_unstable();
-    let _ = &p.endpoints;
 
     emit(&wire::DescribeReply {
         wire_version: WIRE_VERSION,
@@ -168,4 +175,47 @@ fn cmd_describe() -> Result<(), String> {
         product2consumer: pairs(&p.product2consumer),
         inherent_parents: inherent,
     })
+}
+
+/// Read a problem from stdin, search, and hand back the plan.
+fn cmd_solve() -> Result<(), String> {
+    let mut raw = String::new();
+    io::stdin().read_to_string(&mut raw).map_err(|e| e.to_string())?;
+    let enc: problem::EncodedProblem = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    if enc.wire_version != WIRE_VERSION {
+        return Err(format!(
+            "wire version mismatch: request {} vs engine {WIRE_VERSION}",
+            enc.wire_version
+        ));
+    }
+    let (p, eps) = problem::Problem::load(&enc)?;
+    // Which endpoints are the caller's own objects, so the reply can name them
+    // rather than describe them. The payload's node table is exactly that set,
+    // and `Problem::load` mints one endpoint per row in order.
+    let mut node_of: crate::det::Map<crate::model::EpId, u32> = crate::det::map();
+    for i in 0..enc.nodes.len() { node_of.insert(i as u32, i as u32); }
+
+    let mut ar = search::Arena::new(eps);
+    if p.no_path_possible {
+        // The search never starts, and Python's own bail returns an empty plan
+        // with the maps attached. Same here.
+        return emit(&reply::SolveReply {
+            wire_version: WIRE_VERSION,
+            complete: false,
+            no_path_possible: true,
+            endpoints: Vec::new(),
+            steps: Vec::new(),
+            merged: Vec::new(),
+            relevant_transforms: p.relevant_transforms.clone(),
+            iterations: 0,
+            refiner_iterations: Vec::new(),
+        });
+    }
+    let given_appl = mcts::build_given_appl(&p, &mut ar)?;
+    let mut stream = DecisionStream::new(p.seed);
+    let result = mcts::mcts(&p, &mut ar, &mut stream, given_appl)?;
+    emit(&reply::encode_plan(
+        &p, &ar, &result.steps, &result.merged, &node_of, result.complete,
+        result.iterations, result.refiner_iterations, WIRE_VERSION,
+    ))
 }

@@ -1193,7 +1193,7 @@ these a contract rather than a preference:
 - Acceptance criterion 8 (<3s Python path) is unmet at ~8.1s and is what T5c/T6
   exist to close.
 
-## T5c — the Rust search core — IN PROGRESS
+## T5c — the Rust search core — DONE
 
 Landing in verifiable pieces rather than as one commit, for the reason T5b
 established: a divergence found against a hundred lines is an afternoon, and the
@@ -1310,3 +1310,127 @@ port.
 | `tests/perf/test_solver_benchmark.py` | **3 passed**, fingerprints unmoved |
 | 10,000-problem sweep | identical to T5a on every statistic |
 | fast suite | **1610 passed**, 7 skipped, 12 xfailed |
+
+### The search, ported
+
+`main/solver_engine/` now carries the whole of `solve_by_mcts`: the application
+model, `generate_applications_of_transform`, both selection phases, the refiner,
+`prune_steps`/`get_order`/`rectify`, and `merge_states`. `capabilities` is
+`["rng", "solve"]`, `solve_by_mcts` routes to it when one is present, and
+`METASMITH_SOLVER_ENGINE=python` forces the old path.
+
+The identity split runs all the way down. `EpId` is an endpoint's identity and
+`EpSig` its structure; every Python `dict`/`set` keyed by an endpoint is keyed by
+the signature, and every place the plan's *shape* depends on which object it is
+uses the id. `ApplId`/`ApplSig` likewise. Dependencies get no split, and that is
+a claim rather than an oversight: nothing in the solver distinguishes two
+structurally identical dependencies, so they intern.
+
+Four Python behaviours are reproduced that a reasonable reimplementation would
+have quietly repaired:
+
+- **`get_order` never keeps the first depth it assigns an endpoint.** Its guard
+  is `if e in order: continue`, where `e` is an `Endpoint` and `order` is keyed
+  by strings, so the test is always false and the *last* producer of an equal
+  endpoint wins. Writing what the line plainly intends changes plan ordering.
+- **`expand_node` drops both members of a colliding pair** when it removes the
+  step it is swapping. Collisions are semantics -- duplicate transforms really do
+  share a structural key -- so the defect travels with them.
+- **Endpoints are mutated in place.** `rectify` widens a produced endpoint's
+  lineage and re-signs it, and everything already pointing at it is meant to see
+  the change. This is the reason endpoints are an arena rather than interned
+  values.
+- **`rev_emap` is written and never read**, and `SolverState.have` is built,
+  copied on every expansion, and never read. Both are simply absent here; that
+  they are dead was checked, not assumed.
+
+### The bug the differential harness found this time
+
+The first run diverged on `chain-6`, the smallest case in the corpus, at
+iteration five. The decision trace put it exactly: the two streams agreed on 22
+decisions and then the explore arm drew `bounded_int(3)` on one side and
+`bounded_int(4)` on the other. Same draw count, same words -- different frontier.
+
+`generate_child_nodes` is a **generator**, and its caller adds each child's
+signature to `frontier_signatures` as it consumes them. So a transform reached
+later in the same expansion sees the earlier transforms' children already
+blacklisted. Collecting every transform's children against one frozen blacklist
+-- which is what "return a `Vec` of children" naturally does -- left one extra
+application on the frontier, which changed what the explore arm drew, which
+changed the plan.
+
+Nothing about that is visible in the source. It is a consequence of Python's
+`yield` interleaving with a mutation in the consumer, and the only reason it took
+minutes rather than days is that the trace named the draw.
+
+### The other failure this could have had: a green run
+
+Both implementations are reached through the same `problem.solve()`. The moment
+the engine advertised `solve`, the differential tests started comparing the
+engine against *itself* -- and would have passed. The same applies to
+`test_iteration_order.py`, whose subject is CPython's hash layout, and
+`test_refiner_validity.py`, which counts how often a branch of the Python refiner
+fires: both would have gone quietly vacuous.
+
+`UsePythonSolver()` pins the reference, and the differential tests assert
+`Backend("solve") == "python"` inside it rather than trusting the context
+manager. Worth the two lines: the failure mode is a passing test, and nobody
+investigates one.
+
+### What it bought
+
+| | python | engine | |
+|---|---|---|---|
+| `metagenomics_from_paired_reads` (solve only) | 7.49s | **0.51s** | ×14.8 |
+| `annotation_palette_from_assembly` | 0.020s | 0.002s | ×8.3 |
+| `isolate_assembly_from_long_reads` | 0.025s | 0.002s | ×10.4 |
+| `pangenome_heatmap_from_assembly` | 0.008s | 0.002s | ×4.5 |
+| benchmark corpus, end to end | 9.28s | **2.91s** | −68.6% |
+
+Every one of the twelve benchmark fingerprints is unchanged. The end-to-end
+template numbers move less than the solve numbers because most of what they
+measure is library resolution, not search.
+
+**Acceptance criterion 8 is met on the Rust path and still unmet on the Python
+one.** It asks for `metagenomics_from_paired_reads` under 3s *via the Python
+path*, and that is ~8.1s. The engine does it in 1.08s end to end. Worth stating
+plainly rather than quietly counting the Rust number: the Python solver is the
+fallback and the reference, and it did not get faster here.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `cargo test --release` | **11 passed** |
+| `tests/solver/test_engine_problem.py` | **94 passed** — derived maps, 93 generated + 4 templates |
+| `tests/solver/test_engine_solve.py` | **110 passed** — same plan, same order, 4 templates |
+| `tests/solver` with the engine | **362 passed**, 9 xfailed |
+| `tests/solver` with `METASMITH_SOLVER_ENGINE=python` | **362 passed**, 9 xfailed |
+| `tests/perf/test_solver_benchmark.py` | **3 passed**, all fingerprints unmoved |
+| differential sweep, 4,000 generated problems | **3,998 identical**, 0 mismatches, 2 timeouts |
+| fast suite | **1,720 passed**, 7 skipped, 12 xfailed |
+
+The two timeouts are the known slow tail on the *Python* side of the comparison
+at a 20s cap, not a disagreement.
+
+### Carried into T5d
+
+- The differential sweep above is T5d's gate at 4,000 problems and needs to run
+  at the full corpus size, and on more than one seed per problem. The two
+  timeouts should be identified rather than tolerated — under the engine they
+  are no longer slow, so the cap only ever hits the reference.
+- The refiner/`rectify` laundering is still pinned and unfixed, now in two
+  implementations. It is the one change worth making *after* the gate proves the
+  port is faithful: adjudicate the refiner's winner after rectification and fall
+  back to the search's plan, land it on both sides, and re-anchor the
+  `xfail(strict)` set.
+- `_is_valid`'s `# looped` branch is reproduced with its hole. Fixing it means
+  walking objects rather than signatures, which is a semantic change and belongs
+  with the laundering fix.
+- The engine's failure mode on a malformed problem is an error, where Python's
+  is a `KeyError`. Three places are named in the source (`satisfies_lineage`, the
+  final lineage check in `is_valid`, the missing producer in the depth walk).
+  None is reachable from the corpus or the templates.
+- T6 (incrementality) is now the only remaining performance work, and its case is
+  weaker than it was: a swap-and-rebuild at 0.5s per solve leaves much less on the
+  table than it did at 7.5s. It stays conditional on measurement.

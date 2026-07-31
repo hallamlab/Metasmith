@@ -22,7 +22,9 @@ import pytest
 
 from metasmith.models.solver_engine import (
     SOLVER_WIRE_VERSION,
+    Backend,
     CallEngine,
+    UsePythonSolver,
     packaged_engine_path,
     probe_engine,
 )
@@ -71,8 +73,16 @@ def _cases():
 
 
 def _describe_python(problem, encoded):
-    """Python's derived maps, re-keyed to the indices the payload used."""
-    solution = problem.solve()
+    """Python's derived maps, re-keyed to the indices the payload used.
+
+    Forced onto the python path, and not as a formality: once the engine
+    advertises `solve`, `problem.solve()` *is* the engine, and this file would
+    quietly start comparing the engine against itself. A green run that proves
+    nothing is the worst outcome available here.
+    """
+    with UsePythonSolver():
+        assert Backend("solve") == "python", "the reference side must be python"
+        solution = problem.solve()
     h = solution._heuristics
 
     node_index = {n: i for i, n in enumerate(encoded.nodes)}

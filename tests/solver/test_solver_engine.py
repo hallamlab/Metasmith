@@ -191,9 +191,15 @@ def test_a_believed_engine_round_trips_a_payload(tmp_path, monkeypatch):
 # the fallback, as a gate rather than an assumption
 
 
-def test_the_search_is_still_python_today():
-    """T5b ships the delivery path, not the search. When this fails, T5c landed."""
-    assert Backend("solve") == "python"
+def test_the_search_runs_on_the_engine_when_there_is_one():
+    """T5c landed: a staged engine advertises `solve` and the search uses it.
+
+    Skipped rather than failed with no binary, because that is a supported state
+    and the rest of the suite is what proves it works.
+    """
+    if packaged_engine_path() is None:
+        pytest.skip("no msm_solver staged for this platform")
+    assert Backend("solve") == "rust"
 
 
 def test_a_solve_is_identical_with_the_engine_forced_off(monkeypatch):

@@ -62,10 +62,14 @@ pub struct EncodedProblem {
     pub given: Vec<Vec<u32>>,
 }
 
+/// Everything derived from the payload, and immutable from then on.
+///
+/// The endpoint arena is deliberately *not* in here: it grows throughout a
+/// solve, and keeping it separate is what lets the search borrow the problem and
+/// mint endpoints at the same time.
 pub struct Problem {
     pub types: Types,
     pub deps: Deps,
-    pub endpoints: Endpoints,
     pub transforms: Vec<Transform>,
     pub given_index: TransformId,
     pub target_index: TransformId,
@@ -80,6 +84,13 @@ pub struct Problem {
     pub iter_order: Vec<TransformId>,
     /// First appearance walking `iter_order`, requires before produces.
     pub dep_rank: Map<DepId, u32>,
+    /// Each dependency's lineage parents in *rank* order, not intern order.
+    ///
+    /// Only one read of them needs an order, and it is easy to miss: the
+    /// refiner sums a distance per lineage constraint, and floating-point
+    /// addition is not associative. The other two reads are an AND and a set
+    /// union, which do not care. See `score_node` in `solver.py`.
+    pub dep_parents_ranked: Vec<Vec<DepId>>,
     /// Ancestors of every given endpoint, transitively. Compared by equality
     /// because Python's `e.parents & inherent_parents` is a set intersection.
     pub inherent_parents: Set<EpSig>,
@@ -98,7 +109,7 @@ pub struct Problem {
 }
 
 impl Problem {
-    pub fn load(enc: &EncodedProblem) -> Result<Self, String> {
+    pub fn load(enc: &EncodedProblem) -> Result<(Self, Endpoints), String> {
         let mut types = Types::new(enc.n_properties);
         let mut deps = Deps::default();
         let mut endpoints = Endpoints::default();
@@ -133,7 +144,7 @@ impl Problem {
         for t in &enc.transforms {
             let mut key: Vec<u32> = Vec::new();
             {
-                let mut push = |key: &mut Vec<u32>, d: u32| {
+                let push = |key: &mut Vec<u32>, d: u32| {
                     key.extend_from_slice(&types.props(deps.ty(d)));
                     key.push(u32::MAX);
                 };
@@ -173,6 +184,15 @@ impl Problem {
             }
         }
 
+        let mut dep_parents_ranked: Vec<Vec<DepId>> = Vec::with_capacity(deps.len());
+        for d in 0..deps.len() {
+            let mut ps = deps.parents(d as DepId).to_vec();
+            // A parent with no rank never appeared in any transform, so it can
+            // never be looked up in `used` either; it sorts last and stays put.
+            ps.sort_by_key(|x| dep_rank.get(x).copied().unwrap_or(u32::MAX));
+            dep_parents_ranked.push(ps);
+        }
+
         let given: Vec<Vec<EpId>> = enc
             .given
             .iter()
@@ -197,7 +217,6 @@ impl Problem {
         let mut p = Problem {
             types,
             deps,
-            endpoints,
             transforms,
             given_index: enc.given_index,
             target_index: enc.target_index,
@@ -208,6 +227,7 @@ impl Problem {
             max_refine: enc.max_refine,
             iter_order,
             dep_rank,
+            dep_parents_ranked,
             inherent_parents,
             given_endpoints,
             product2consumer: det::map(),
@@ -221,7 +241,7 @@ impl Problem {
             no_path_possible: false,
         };
         p.derive();
-        Ok(p)
+        Ok((p, endpoints))
     }
 
     #[inline]
@@ -229,9 +249,11 @@ impl Problem {
         self.types.is_a(self.deps.ty(x), self.deps.ty(y))
     }
 
+    /// `e.IsA(d)` for an endpoint against a dependency. The arena is passed in
+    /// because it lives outside the problem and keeps growing.
     #[inline]
-    pub fn ep_is_a(&self, e: EpId, d: DepId) -> bool {
-        self.types.is_a(self.endpoints.ty(e), self.deps.ty(d))
+    pub fn ep_is_a(&self, eps: &Endpoints, e: EpId, d: DepId) -> bool {
+        self.types.is_a(eps.ty(e), self.deps.ty(d))
     }
 
     fn derive(&mut self) {

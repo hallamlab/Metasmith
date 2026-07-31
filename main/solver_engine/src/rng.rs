@@ -26,6 +26,14 @@ pub const SOLVER_RNG_VERSION: u32 = 1;
 
 const TWO_32: u64 = 1 << 32;
 
+// A decision trace, for localising a differential failure to the draw it
+// happened on. Off unless `MSM_SOLVER_TRACE` is set, and it writes to stderr so
+// it can never be mistaken for the reply.
+thread_local! {
+    static TRACE: std::cell::Cell<bool> =
+        std::cell::Cell::new(std::env::var_os("MSM_SOLVER_TRACE").is_some());
+}
+
 /// The seed-to-key rule. Both implementations must use this one.
 pub fn seed_to_key(seed: u64) -> [u8; 32] {
     let mut key = [0u8; 32];
@@ -127,6 +135,14 @@ impl DecisionStream {
     /// choice consumes, and a stream that drifts by one word diverges completely
     /// from there on.
     pub fn bounded_int(&mut self, n: u64) -> u64 {
+        let out = self.bounded_int_inner(n);
+        if TRACE.with(|t| t.get()) {
+            eprintln!("bounded_int n={n} -> {out} draws={}", self.draws);
+        }
+        out
+    }
+
+    fn bounded_int_inner(&mut self, n: u64) -> u64 {
         if n <= 1 { return 0; }
         // Python computes `2**32 - (2**32 % n)` in unbounded integers. For
         // n > 2**32 that is 0 and the loop never terminates on either side, so
@@ -143,6 +159,14 @@ impl DecisionStream {
 
     /// Pick an index in proportion to *integer* weights.
     pub fn weighted_index(&mut self, weights: &[i64]) -> usize {
+        let out = self.weighted_index_inner(weights);
+        if TRACE.with(|t| t.get()) {
+            eprintln!("weighted_index -> {out} draws={}", self.draws);
+        }
+        out
+    }
+
+    fn weighted_index_inner(&mut self, weights: &[i64]) -> usize {
         assert!(!weights.is_empty(), "cannot choose from no options");
         if weights.len() == 1 { return 0; } // degenerate choices consume nothing
         let total: i64 = weights.iter().sum();
@@ -161,6 +185,14 @@ impl DecisionStream {
     /// One decision, not two, so that "which are the best k" and "which of them"
     /// cannot be answered by different rules on the two sides.
     pub fn pick_top_k(&mut self, scores: &[f64], k: usize) -> usize {
+        let out = self.pick_top_k_inner(scores, k);
+        if TRACE.with(|t| t.get()) {
+            eprintln!("pick_top_k n={} -> {out} draws={}", scores.len(), self.draws);
+        }
+        out
+    }
+
+    fn pick_top_k_inner(&mut self, scores: &[f64], k: usize) -> usize {
         let candidates = top_k_indices(scores, k);
         assert!(!candidates.is_empty(), "cannot pick from an empty frontier");
         let i = self.bounded_int(candidates.len() as u64) as usize;

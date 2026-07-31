@@ -36,7 +36,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from .solver import Application, Dependency, Endpoint, Node, Transform
+from .solver import Application, Dependency, Endpoint, Node, Solution, Transform
 
 @dataclass
 class EncodedProblem:
@@ -47,6 +47,16 @@ class EncodedProblem:
     nodes: list[Node]
     #: transform index -> the Python transform. Index 0 is the synthesized one.
     transforms: list[Transform]
+    #: property index -> the string it stands for.
+    properties: list[str]
+    #: node index -> the `Dependency` that defined it, where one did.
+    #:
+    #: Not the same as `nodes`. Given endpoints intern first, so a dependency
+    #: structurally equal to one lands on an `Endpoint` -- and handing that back
+    #: as a plan's slot key would be wrong in a way `Node.__eq__` hides: an
+    #: endpoint's parents are endpoints, a dependency's are dependencies, and the
+    #: lineage checks read them.
+    dep_nodes: dict[int, Dependency]
     given_transform: Transform
     given_application: Application
 
@@ -147,10 +157,15 @@ def encode_problem(
     # Given endpoints first: they are the roots of every lineage in the problem,
     # and interning them first means their ancestors get the low indices.
     given_ids = [[it.node(e) for e in g] for g in groups]
+    dep_nodes: dict[int, Dependency] = {}
+    def _dep(d: Dependency) -> int:
+        i = it.node(d)
+        dep_nodes.setdefault(i, d)
+        return i
     encoded_transforms = [
         {
-            "requires": [it.node(d) for d in tr.requires],
-            "produces": [[it.node(d) for d in pgroup] for pgroup in tr.produces],
+            "requires": [_dep(d) for d in tr.requires],
+            "produces": [[_dep(d) for d in pgroup] for pgroup in tr.produces],
         }
         for tr in ordered_transforms
     ]
@@ -171,6 +186,90 @@ def encode_problem(
         },
         nodes=it.nodes,
         transforms=ordered_transforms,
+        properties=it.properties,
+        dep_nodes=dep_nodes,
         given_transform=given_tr,
         given_application=given_appl,
     )
+
+def decode_plan(encoded: EncodedProblem, reply: dict) -> Solution:
+    """Rebuild a `Solution` from the engine's indices.
+
+    Endpoints come back parents-first, so one forward pass builds them. A row
+    naming a `source_node` is one of the caller's own objects -- an ancestor that
+    `rectify` carried through untouched -- and is handed back as itself rather
+    than as an equal copy, which is what `plan.py` expects when it looks a
+    lineage up against the endpoints it supplied.
+
+    The diagnostic fields (`_frontier`, `_history`, `_refiner_histories`, and the
+    heuristic maps) come back empty. They are not consumed anywhere in the
+    codebase, and shipping the frontier of a 256-iteration search across a pipe
+    to fill fields nobody reads would be a real cost for no reader. Said here
+    rather than discovered later.
+    """
+    props = encoded.properties
+    eps: list[Node] = []
+    for row in reply["endpoints"]:
+        src = row["source_node"]
+        original = encoded.nodes[src] if src is not None else None
+        if isinstance(original, Endpoint):
+            eps.append(original)
+            continue
+        eps.append(Endpoint(
+            {props[i] for i in row["props"]},
+            parents={eps[j] for j in row["parents"]},
+        ))
+
+    def _slot(i: int) -> Dependency:
+        d = encoded.dep_nodes.get(i)
+        assert d is not None, f"node {i} is a plan slot but was never a dependency"
+        return d
+
+    steps = [
+        Application(
+            initial_timeline=st["timeline"],
+            transform=encoded.transforms[st["transform"]],
+            used={_slot(d): eps[e] for d, e in st["used"]},
+            produced=[{_slot(d): eps[e] for d, e in g} for g in st["produced"]],
+        )
+        for st in reply["steps"]
+    ]
+
+    return Solution(
+        complete=reply["complete"],
+        dependency_plan=steps,
+        merged_endpoints={eps[k]: {eps[x] for x in v} for k, v in reply["merged"]},
+        _frontier=[],
+        _history=[],
+        _refiner_histories=[],
+        _heuristics={"engine": ENGINE_HEURISTICS_NOTE},
+        _iterations=reply["iterations"],
+        _refiner_iterations=[(a, b) for a, b in reply["refiner_iterations"]],
+        _relavent_transforms=[encoded.transforms[i] for i in reply["relevant_transforms"]],
+    )
+
+ENGINE_HEURISTICS_NOTE = (
+    "solved by msm_solver; the python solver's telemetry maps are not carried"
+    " across the wire because nothing reads them"
+)
+
+def solve_via_engine(
+    info,
+    given: Sequence[set[Endpoint]],
+    transforms: Iterable[Transform],
+    target: Transform,
+    *,
+    seed: int,
+    max_iter: int,
+    max_refine: int,
+) -> Solution:
+    """Encode, call, decode. Errors propagate: past the handshake, a failure is
+    a bug in one of the two implementations, and falling back would hide it."""
+    from .solver_engine import SOLVER_WIRE_VERSION, CallEngine
+
+    encoded = encode_problem(
+        given, transforms, target,
+        seed=seed, max_iter=max_iter, max_refine=max_refine,
+        wire_version=SOLVER_WIRE_VERSION,
+    )
+    return decode_plan(encoded, CallEngine(info, "solve", encoded.payload))

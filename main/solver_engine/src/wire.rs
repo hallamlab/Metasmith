@@ -41,7 +41,7 @@ pub const WIRE_VERSION: u32 = 2;
 /// What this binary can actually be asked to do. The Python side falls back to
 /// its own implementation for anything not advertised here, which is how the
 /// port ships one capability at a time instead of all at once.
-pub const CAPABILITIES: &[&str] = &["rng"];
+pub const CAPABILITIES: &[&str] = &["rng", "solve"];
 
 pub const ENGINE_NAME: &str = "msm_solver";
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");

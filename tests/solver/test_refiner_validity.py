@@ -40,6 +40,17 @@ import sys
 
 import pytest
 
+@pytest.fixture(autouse=True)
+def _python_solver():
+    """Pin the search to the python implementation for this whole file --
+    this file counts how often particular branches of the *python* refiner fire,
+    by patching them; with the search running elsewhere it would count zero and
+    assert nothing.
+    """
+    from metasmith.models.solver_engine import UsePythonSolver
+    with UsePythonSolver():
+        yield
+
 from metasmith.models import solver as solver_module
 from metasmith.models.solver import Application, Endpoint, Transform
 from metasmith.testing.solver_verification import (

@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+from contextlib import contextmanager
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -175,6 +176,28 @@ def EngineFor(capability: str) -> EngineInfo|None:
     """The engine, but only if it can do the thing being asked of it."""
     info = GetEngine()
     return info if info is not None and info.Supports(capability) else None
+
+@contextmanager
+def UsePythonSolver():
+    """Force the python solver for the duration of the block.
+
+    Two callers need this and they need it for opposite reasons. A differential
+    test needs a *reference* -- comparing the engine against itself is a green
+    run that proves nothing, and that is the easiest mistake to make here because
+    both sides go through the same `solve()`. And a test whose subject is the
+    python implementation -- CPython's set layout, say, or how many times a
+    particular branch fires -- stops testing anything at all the moment the
+    search runs somewhere else.
+    """
+    previous = os.environ.get(ENV_OVERRIDE)
+    os.environ[ENV_OVERRIDE] = "python"
+    ResetEngineCache()
+    try:
+        yield
+    finally:
+        if previous is None: os.environ.pop(ENV_OVERRIDE, None)
+        else: os.environ[ENV_OVERRIDE] = previous
+        ResetEngineCache()
 
 def Backend(capability: str) -> str:
     """`"rust"` or `"python"` -- what will actually run. For tests and reporting."""

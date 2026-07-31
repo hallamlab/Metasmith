@@ -95,3 +95,22 @@ envelope. They move for different reasons, and folding them into one is how the
 last cross-language desync in this repo went unnoticed while the fast suite
 stayed green. A binary whose either version disagrees is refused, loudly, and
 metasmith falls back rather than solving with rules it does not share.
+
+**A reference that isn't a reference.** Both implementations are reached through
+the same `problem.solve()`, so once the engine advertises `solve` a differential
+test compares the engine against itself unless something stops it. Wrap the
+reference side in `UsePythonSolver()` and *assert* `Backend("solve") == "python"`
+inside it — the failure mode is a green run, and a green run is not something you
+go looking at. The same applies to any test whose subject is the Python
+implementation rather than the answer: `test_iteration_order.py` salts CPython's
+hash layout and `test_refiner_validity.py` counts how often a branch of the
+Python refiner fires, and neither means anything with the search running
+elsewhere. Both pin the whole file.
+
+**`generate_child_nodes` is a generator, and that is load-bearing.** Its caller
+adds each child's signature to `frontier_signatures` as it consumes them, so a
+transform reached later in the same expansion sees the earlier ones' children
+already blacklisted. Collecting every transform's children against one frozen
+blacklist looks equivalent and is not: it leaves one extra application on the
+frontier, which changes what the explore arm draws, which changes the plan. Cost
+to find: one decision trace plus one frontier trace (`MSM_SOLVER_TRACE=1`).
