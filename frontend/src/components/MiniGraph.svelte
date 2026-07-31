@@ -249,8 +249,20 @@
   {:else}
     <!-- Two labelled halves, one of them lit: the same shape as the recipe's
          file/value switch, so which mode the frame is in reads at a glance
-         rather than from a single button's own changing label. -->
-    <div class="grip" role="group" aria-label="interact with nodes, or pan and zoom the drawing">
+         rather than from a single button's own changing label.
+
+         `pointerdown` is stopped here, not left to reach `onPointerDown`:
+         while live, that handler starts a drag and captures the pointer on
+         `frame` itself the moment anything inside it goes down, which steals
+         the matching pointerup a click needs -- so the "interact" button
+         could not be clicked to turn panning back off. It never got as far
+         as the click handler; the drag took the gesture first. -->
+    <div
+      class="grip"
+      role="group"
+      aria-label="interact with nodes, or pan and zoom the drawing"
+      onpointerdown={(e) => e.stopPropagation()}
+    >
       <button
         type="button"
         class:on={!live}
