@@ -311,23 +311,31 @@ impl Problem {
         for v in self.demand2producer.values_mut() { v.sort_unstable(); }
         for v in self.product2consumer.values_mut() { v.sort_unstable(); }
 
-        // Distance to target, by a LIFO walk backwards through producers.
-        struct DistNode { step: TransformId, dist: i64, path: Vec<u32> }
-        let mut todo = vec![DistNode { step: self.target_index, dist: -1, path: Vec::new() }];
-        while let Some(curr) = todo.pop() {
-            let sig = self.transforms[curr.step as usize].sig;
-            if curr.path.contains(&sig) { continue; }
-            let mut path = curr.path.clone();
-            path.push(sig);
-            let dist = curr.dist + 1;
-            let other = self.distance.get(&curr.step).copied().unwrap_or(-1);
-            if dist > other { self.distance.insert(curr.step, dist); }
-            *self.opportunity.entry(curr.step).or_insert(1) += dist;
-            for pi in 0..self.transforms[curr.step as usize].requires.len() {
-                let req = self.transforms[curr.step as usize].requires[pi];
+        // Distance to target, by a single-pass backward BFS, globally
+        // memoized (`seen`) rather than per-path: a node expands once, on
+        // first reach, so total work is O(V+E) regardless of how many
+        // distinct paths reach it. `distance` becomes true shortest-path
+        // distance (first visit wins, BFS is by levels); `opportunity` still
+        // accumulates once per incoming edge (more ways in = higher score)
+        // but no longer re-expands past an already-seen node, so it can't
+        // blow up the way the old "count every simple path" walk did on a
+        // transform universe with many overlapping cycles -- e.g. a
+        // pre-expanded STRIPS state graph, where every reversible action is
+        // its own inverse edge.
+        let mut todo: std::collections::VecDeque<(TransformId, i64)> =
+            std::collections::VecDeque::from([(self.target_index, -1)]);
+        let mut seen: Set<u32> = Set::default();
+        while let Some((step, consumer_dist)) = todo.pop_front() {
+            let dist = consumer_dist + 1;
+            *self.opportunity.entry(step).or_insert(1) += dist;
+            let sig = self.transforms[step as usize].sig;
+            if !seen.insert(sig) { continue; }
+            self.distance.insert(step, dist);
+            for pi in 0..self.transforms[step as usize].requires.len() {
+                let req = self.transforms[step as usize].requires[pi];
                 if let Some(producers) = self.demand2producer.get(&req) {
                     for &producer in producers {
-                        todo.push(DistNode { step: producer, dist, path: path.clone() });
+                        todo.push_back((producer, dist));
                     }
                 }
             }
