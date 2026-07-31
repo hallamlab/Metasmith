@@ -439,8 +439,8 @@ def test_adoption_makes_one_row_per_item(lib_path, tmp_path):
     # an adopted value keeps whatever filename it arrived with, invisibly
     assert by_type["mock::reads"]["name"] == ""
     assert out["record"]["rows"][by_type["mock::reads"]["id"]] == "K12"
-    # ...as one unkeyed entry: what the file holds is what it holds, and
-    # re-rendering it through the keyed form could move a registered byte
+    # ...as one unkeyed entry: text that is not an object has no keys to split
+    # into, and what the file holds is what it holds
     assert by_type["mock::reads"]["values"] == [{"key": "", "value": "GCF_000005845.2"}]
     # a minted path is remembered rather than shown, so identity does not move
     assert by_type["mock::bam"]["path"] == ""
@@ -483,6 +483,56 @@ def test_an_adopted_template_keeps_its_key(lib_path, tmp_path):
     op_samples.write_record(str(lib_path), out["record"])
     op_inputs.sync(str(lib_path), out["rows"])
     assert ids(lib_path) == before
+
+
+def test_an_adopted_json_object_arrives_as_keyed_fields(lib_path):
+    """...because one unkeyed box holding `{...}` is still a sample array.
+
+    This is how two of the shipped templates stopped solving the moment the GUI
+    owned them: the metadata file adopted as a single unkeyed entry, its literal
+    braces read as `{column}`, the row dropped for want of a sheet, and its item
+    -- the root of the library's lineage -- taken out with it.
+    """
+    from metasmith.ops import samples as op_samples
+
+    lib = loaded(lib_path)
+    lib.AddValue(
+        "meta.json", '{"parity": "paired", "length_class": "short"}', "mock::reads",
+    )
+    lib.Save()
+    before = ids(lib_path)
+
+    out = op_inputs.adopt(str(lib_path), [])
+    (adopted,) = out["rows"]
+    assert adopted["values"] == [
+        {"key": "parity", "value": "paired"},
+        {"key": "length_class", "value": "short"},
+    ]
+    assert not op_samples.is_array_row(adopted)
+
+    # and the round trip moved nothing: a leaf's identity is content addressed
+    op_samples.write_record(str(lib_path), out["record"])
+    assert op_inputs.sync(str(lib_path), out["rows"])["changed"] is False
+    assert ids(lib_path) == before
+    assert (lib_path / "meta.json").read_text() == (
+        '{"parity": "paired", "length_class": "short"}'
+    )
+
+
+@pytest.mark.parametrize("value", [
+    '{"n": "10"}',                  # a string that would come back a number
+    '{"nested": {"a": 1}}',         # structure the keyed form cannot express
+    '["a", "b"]',                   # an object is the only thing with keys
+    "{sample}",                     # an actual column token, left to fan out
+])
+def test_a_value_that_would_not_round_trip_keeps_its_single_entry(lib_path, value):
+    """A file this did not write is one it must not rewrite."""
+    lib = loaded(lib_path)
+    lib.AddValue("v.txt", value, "mock::reads")
+    lib.Save()
+
+    (adopted,) = op_inputs.adopt(str(lib_path), [])["rows"]
+    assert adopted["values"] == [{"key": "", "value": value}]
 
 
 def test_a_library_owned_file_too_big_to_be_a_value_is_adopted_as_it_is(lib_path):

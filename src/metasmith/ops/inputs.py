@@ -779,6 +779,36 @@ def _adopted_id(path: str) -> str:
     return "i" + hashlib.md5(path.encode("utf-8")).hexdigest()[:10]
 
 
+def _adopted_entries(value: str) -> list[dict]:
+    """What a registered value file reads as, as recipe entries.
+
+    One unkeyed entry holding the file verbatim is what a value row has always
+    been and stays the fallback -- but an unkeyed entry is exactly where a
+    literal `{` still means `{column}`, so a file holding a JSON object adopted
+    that way is read as a sample array, dropped for want of a sheet, and takes
+    its item out of the library on the way. The keyed form is the way out of
+    that (see `ops.rows`), and adoption is the one place still able to
+    manufacture the trap rather than inherit it.
+
+    An object therefore splits into the keyed entries describing it, and only
+    when `render_value` puts the file back byte for byte: a leaf's identity is
+    content addressed, so a file this did not write is one it must not rewrite.
+    A value that would change under the round trip -- a nested object, a string
+    that reads as a number -- keeps the single entry it always had.
+    """
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return [{"key": "", "value": value}]
+    if not isinstance(parsed, dict) or not parsed:
+        return [{"key": "", "value": value}]
+    ents = [
+        {"key": str(k), "value": v if isinstance(v, str) else json.dumps(v)}
+        for k, v in parsed.items()
+    ]
+    return ents if render_value(ents) == value else [{"key": "", "value": value}]
+
+
 def adopt(library_path: str, rows: list[dict], record: dict | None = None) -> dict | None:
     """One editable row per registered item that no row speaks for.
 
@@ -823,12 +853,8 @@ def adopt(library_path: str, rows: list[dict], record: dict | None = None) -> di
             # from a library that named its files keeps that filename forever,
             # invisibly, and nothing is re-minted.
             #
-            # One unkeyed entry, whatever the file holds: a library-owned file
-            # that happens to parse as an object is not necessarily one this
-            # wrote, and re-rendering it through `render_value` could change a
-            # byte of a file whose identity is already registered.
             row = {"id": rid, "mode": "value", "path": "", "name": "",
-                   "values": [{"key": "", "value": value}], "dtype": dtype, "parents": []}
+                   "values": _adopted_entries(value), "dtype": dtype, "parents": []}
         else:
             row = {"id": rid, "mode": "file", "path": s, "name": "",
                    "values": [{"key": "", "value": ""}], "dtype": dtype, "parents": []}
