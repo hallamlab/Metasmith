@@ -107,16 +107,20 @@ export function marks(...groups) {
 /**
  * The shape every frame here wants: one group at a time.
  *
- * Whichever of the pointer and the selection is live -- the pointer if there is
- * one -- names a node, that node is marked, and `relation` decides what else
- * lights up around it. Two groups on screen at once was the "2 separate
- * highlights, the dimmer one is wrong" complaint: a stale selection glowing
- * beside whatever the pointer is on reads as the drawing having lost track.
+ * The neighbourhood glow is the pointer's alone: it is what answers "what
+ * does this reach", and an answer that is still on screen once the pointer
+ * has left reads as the drawing having lost track of where the mouse went --
+ * doubly so in a frame built as one type's own one-hop neighbourhood, where
+ * "related to the selection" is nearly everything else drawn. A selection
+ * with no pointer over anything still marks its own node (`only`, no
+ * `relation`), which is what the node's `selected` styling reads off; it just
+ * does not light a neighbourhood nobody is pointing at.
  */
 export function around(graph, { selected = null, pointed = null, relation = neighbours } = {}) {
-  const id = pointed ?? selected
-  if (id == null) return marks()
-  const role = pointed != null ? POINTED : SELECTED
-  const near = relation ? relation(graph, id) : EMPTY()
-  return marks({ role: RELATED, ...near }, { role, ...only(id) })
+  if (pointed != null) {
+    const near = relation ? relation(graph, pointed) : EMPTY()
+    return marks({ role: RELATED, ...near }, { role: POINTED, ...only(pointed) })
+  }
+  if (selected != null) return marks({ role: SELECTED, ...only(selected) })
+  return marks()
 }
