@@ -658,7 +658,7 @@ comment rather than by number.
 
 | gate | result |
 |---|---|
-| `tests/solver` | 106 passed, 6 xfailed |
+| `tests/solver` | 98 passed, 6 xfailed |
 | fast suite | **1456 passed**, 7 skipped, 331 deselected, 9 xfailed |
 | templates | 4/4 sound, fingerprints unchanged from T1 |
 | 10k sweep | 59 unsound (unchanged), 0 oracle disagreements |
@@ -673,3 +673,102 @@ comment rather than by number.
   untouched and is a search defect, not a refiner one.
 - 27 of 10,000 small instances still take over 10 seconds. Search cost is not
   only a big-library problem, and T3's corpus should keep a case like it.
+
+## T3 — Python exact wins — DONE
+
+All three planned changes landed, each benchmarked against the state before it
+rather than against the original, so every number below is that change's own
+contribution. None of them altered a fingerprint on any of the twelve corpus
+cases, and none of them was reverted. Together they take
+`metagenomics_from_paired_reads` from **34.84s to 7.61s (−78%)**.
+
+| change | metagenomics | corpus total | fingerprints |
+|---|---|---|---|
+| baseline | 34.840s | 36.624s | — |
+| 1. lineage prefilter | 10.678s (−69.3%) | 12.493s | unchanged |
+| 2. `_max_distance_to` regroup | 9.142s (−14.4%) | 11.028s | unchanged |
+| 3. dedup before construction | 7.614s (−16.7%) | 9.419s | unchanged |
+
+Each is exact by construction, which is what let them go in without a
+soundness argument per change:
+
+1. **Lineage prefilter.** `_is_valid` is an AND of three side-effect-free terms
+   run most-expensive-first. Reordering an AND cannot change its value. The
+   `try/except KeyError` is not defensive padding — `_has_ancestor` indexes
+   `produced_from` unguarded, and reaching it earlier than the original order
+   can hit a state the loop walk would have rejected first, so a `KeyError`
+   means *the prefilter cannot answer* and must fall through to the full check.
+2. **`_max_distance_to` regroup.** The walk depends only on its *source*; the
+   destination is a plain equality test during traversal and `seen` guarantees
+   one visit per node, so one walk per distinct source answers every
+   destination. The depth map reproduces both of the original's quirks — depth
+   at first pop rather than true maximum, and `max_d > 0` making zero
+   indistinguishable from not-found — because both feed the score.
+3. **Dedup before construction.** A state's signature is the sorted join of its
+   steps' signatures, so it can be computed without the state. `expand_node`
+   now yields `(signature, base, application)` and the caller builds a
+   `RefinerState` only on a cache miss: 193,280 constructions become 19,683.
+   The per-step base list and its sorted signatures are hoisted out of the
+   candidate loop, which is where most of this change's time actually comes
+   from. The signature comparison that drops **both** members of a colliding
+   pair is preserved verbatim — it is a latent bug, and this was a performance
+   change.
+
+### The two bottlenecks are still two bottlenecks
+
+The `STRESS_CORPUS` total moved **+0.3%** — noise. All three wins are
+refiner-side, and those instances are mcts-bound. This is the result T1
+predicted and the reason both corpora exist: T3 has done nothing whatsoever for
+the search phase, and no amount of further refiner work will.
+
+### Where the remaining 7.6s goes
+
+Profiled after all three changes (cProfile inflates the wall to 21.4s; read the
+proportions, not the seconds):
+
+| | tottime | cumtime | calls |
+|---|---|---|---|
+| `_depths_from` | 5.83 | 8.58 | 511,758 |
+| `score_node` | 2.05 | 13.58 | 19,683 |
+| `Node.__hash__` | 1.83 | 1.83 | **39,310,301** |
+| `Application.Signature` | 1.82 | 2.62 | 1,136,388 |
+| `refine_mcts` | 0.20 | 18.56 | 1 |
+
+`score_node` is 73% of the refiner and the backward distance walk is 63% of
+`score_node`. The memo added in change 2 is per-`score_node`, and it cannot be
+otherwise: `_product2producer` is rebuilt for every state, so a depth map from
+one state says nothing about the next. Making that memo survive across states
+*is* T6, and this profile is the argument for it.
+
+`Application.Signature` fell from **18.1M** calls to 1.14M. What replaced it at
+the top is `Node.__hash__` at 39.3M calls — a bare attribute read whose entire
+cost is Python call overhead, driven by endpoint set and dict membership in the
+distance walk. That is not fixable in Python and it is exactly what T5's
+interned-`u32`-and-bitset design removes.
+
+**Acceptance criterion 8 (<3s on the Python path) is not met by T3** — 7.61s is
+where exact, local Python changes end. Getting under 3s needs either T6's
+cross-state incrementality or the port.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `tests/solver` | **98 passed**, 6 xfailed in 7.98s |
+| fast suite | **1456 passed**, 7 skipped, 331 deselected, 9 xfailed in 302.66s |
+| templates | 4/4 sound, all four fingerprints unchanged from T1 |
+| `STRESS_CORPUS` | 3/3 sound, fingerprints unchanged, +0.3% |
+
+The six `xfail(strict=True)` cases still fail, which is the point: T3 was
+required to change nothing about what the solver decides, and the pinned
+defects are the sharpest available evidence that it didn't.
+
+The fast suite itself dropped from 351.7s to 302.7s as a side effect.
+
+### Carried into T4
+
+- Everything carried into T3 is still open: the refiner/`rectify` cycle
+  laundering, the cyclic-search completeness failure, and the 27 slow instances.
+  T3 was a performance task and deliberately touched none of them.
+- The three `np.random` call sites and four `np.argpartition` tie-breaks are
+  untouched and are T4's actual subject.

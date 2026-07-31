@@ -838,11 +838,35 @@ def solve_by_mcts(
                             lineage_constraint_e = step.used[pproto] # type: ignore
                             if not _has_ancestor(e, lineage_constraint_e): return False
                 return True
+            # `_is_valid` is an AND of three independent, side-effect-free terms
+            # and it runs them most-expensive-first: the path-dependent loop walk
+            # dominates the whole solve while the lineage term is nearly free.
+            # On `metagenomics_from_paired_reads` *every one* of the 19,683
+            # refiner validations fails on lineage, after paying for the walk.
+            # Reordering an AND is exact by construction, so run the cheap term
+            # first and only fall through to the full check when it passes.
+            def _lineage_ok():
+                for step in _iter_steps():
+                    for p, e in step.used.items():
+                        for pproto in p.parents:
+                            lineage_constraint_e = step.used[pproto] # type: ignore
+                            if not _has_ancestor(e, lineage_constraint_e): return False
+                return True
+
             target_appl = _get_target()
             if target_appl is None:
                 state.valid = False
             else:
-                state.valid = _is_valid(target_appl)
+                try:
+                    # `_has_ancestor` indexes `produced_from` unguarded, and
+                    # reaching it earlier than the original order can hit a state
+                    # the loop walk would have rejected first. A KeyError here is
+                    # therefore "the prefilter cannot answer", not "invalid" --
+                    # fall through to the unchanged check below.
+                    rejected = not _lineage_ok()
+                except KeyError:
+                    rejected = False
+                state.valid = False if rejected else _is_valid(target_appl)
             # print(f"<<< {state.valid}")
 
                 
@@ -870,19 +894,35 @@ def solve_by_mcts(
                 for pgroup in step.produced:
                     for e in pgroup.values():
                         _product2producer[e] = step
-            def _max_distance_to(e: Endpoint, a: Endpoint):
+            # The walk below depends only on where it *starts*: the destination
+            # is a plain equality test during traversal, and `seen` guarantees
+            # one visit per node. So one walk per distinct source answers every
+            # destination asked of it -- and the refiner asks about far fewer
+            # sources than pairs (17.8 vs 22.0 per `score_node` on the
+            # metagenomics template).
+            #
+            # The depth map reproduces the original's two quirks exactly, and
+            # both feed the score: a LIFO stack with an up-front `seen` check
+            # records depth at *first pop*, not the true maximum, and the
+            # `max_d > 0` test below makes a distance of zero indistinguishable
+            # from not-found.
+            _depth_maps: dict[Endpoint, dict[Endpoint, int]] = {}
+            def _depths_from(e: Endpoint) -> dict[Endpoint, int]:
+                depths = _depth_maps.get(e)
+                if depths is not None: return depths
+                depths = {}
                 todo = [(e, 0)]
-                seen = set()
-                max_d = -1
                 while len(todo)>0:
                     n, d = todo.pop()
-                    if n in seen: continue
-                    seen.add(n)
-                    if n == a:
-                        max_d = max(max_d, d)
+                    if n in depths: continue
+                    depths[n] = d
                     prod = _product2producer[n]
                     for pe in prod.used.values():
                         todo.append((pe, d+1))
+                _depth_maps[e] = depths
+                return depths
+            def _max_distance_to(e: Endpoint, a: Endpoint):
+                max_d = _depths_from(e).get(a, -1)
                 return max_d/len(_steps) if max_d>0 else 1.0
             lin_distances: list[float] = []
             for step in _steps:
@@ -927,6 +967,15 @@ def solve_by_mcts(
                     for p, e in pgroup.items():
                         production[p] = production.get(p, [])+[e]
             for step in state.steps:
+                # Neither of these depends on the candidate application, and
+                # ~90% of candidates are about to be discarded as duplicates --
+                # so they are hoisted out of the loop that builds them.
+                # NOTE: the signature comparison drops *both* members of a
+                # colliding pair. That is a latent bug (see
+                # `tests/solver/test_refiner_validity.py`), preserved verbatim
+                # here because this change is a performance change.
+                base = [s for s in state.steps if s.Signature() != step.Signature()]
+                base_sigs = sorted(s.Signature() for s in base)
                 # reuse the current endpoints and simply look for alternate edge comparisons
                 # lineage constraint checked separately
                 for appl in generate_applications_of_transform(
@@ -937,9 +986,12 @@ def solve_by_mcts(
                     mock_produced=step.produced, # rectify later
                 ):
                     appl._iteration = step._iteration
-                    alt_sol = [s for s in state.steps if s.Signature() != step.Signature()]+[appl]
-                    alt_state = RefinerState(steps=alt_sol)
-                    yield alt_state
+                    # The state's signature is the sorted join of its steps'
+                    # signatures, so it can be had without the state. Yielding
+                    # it lets the caller reject a duplicate before anything is
+                    # constructed -- 193,280 `RefinerState` builds become
+                    # 19,683 on the metagenomics template.
+                    yield "".join(sorted(base_sigs+[appl.Signature()])), base, appl
 
         initial_state = RefinerState(
             steps=initial_solution,
@@ -959,9 +1011,10 @@ def solve_by_mcts(
             history.append(state)
             if state.valid:
                 valids.append(state)
-            for child in expand_node(state):
-                if child.Signature() in seen: continue
-                seen.add(child.Signature())
+            for sig, base, appl in expand_node(state):
+                if sig in seen: continue
+                seen.add(sig)
+                child = RefinerState(steps=base+[appl], _sig=sig)
                 score_node(child)
                 frontier.append(child)
         scores = np.array([s.scores[1] for s in valids]) # take the valid score
