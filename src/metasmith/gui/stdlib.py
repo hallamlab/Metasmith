@@ -87,7 +87,10 @@ def bootstrap_project(root: Path, with_examples: bool = True, url: str = STDLIB_
 def _dirs(path: Path) -> list[Path]:
     if not path.is_dir():
         return []
-    return sorted(p for p in path.iterdir() if p.is_dir())
+    return sorted(
+        p for p in path.iterdir()
+        if p.is_dir() and not p.name.startswith((".", "__"))
+    )
 
 
 def discover(root: Path) -> dict:

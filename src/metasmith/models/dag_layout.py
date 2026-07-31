@@ -121,7 +121,22 @@ class Layout:
 def layout(
     nodes: Mapping[str, Any] | Sequence[tuple[str, Any]],
     edges: Iterable[tuple[str, str]],
+    order: Sequence[str] | None = None,
 ) -> Layout:
+    """Place a graph. `order` fixes the rows and only the lanes are chosen.
+
+    A caller whose rows already exist — a form whose fields are the nodes, and
+    which lays them out in the order the person typed them — cannot use the row
+    order this module would pick, because the two would disagree about which
+    row a node is in and the rails would be drawn across the markers. Passing
+    the rows in is the whole of the fix; everything after `_row_order` is
+    unchanged, so such a drawing is the same drawing, just not re-sorted.
+
+    It must be a permutation of the node set (every node exactly once, and no
+    name the graph does not have), and it must be topological — an edge running
+    upward would break the one property every backend is written against — or
+    it is ignored and the module picks the rows itself.
+    """
     kinds = dict(nodes)
     _edges: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -167,20 +182,50 @@ def layout(
     # Congruence leads the key, and it is the one place symmetry is allowed to
     # cost rail: three blocks that read as three copies are worth more than the
     # rows saved by letting each of them find its own cheapest shape.
+    given = _given_order(order, names, fwd_children)
+    if given is not None:
+        return _compose(
+            given, kinds, _edges, back, fwd_children, depth, weight, spine, motifs,
+        )
+
     best_key = best_layout = None
     for jump in _SIDE_BRANCH:
-        order = _row_order(
+        rows = _row_order(
             names, parents, fwd_children, topo, spine, lane_width, owned_size,
             jump, motifs, sig,
         )
         cand = _compose(
-            order, kinds, _edges, back, fwd_children, depth, weight, spine, motifs
+            rows, kinds, _edges, back, fwd_children, depth, weight, spine, motifs
         )
         m = measure(cand, motifs)
         key = (-m.congruent, m.rail_rows, m.lanes, m.crossings)
         if best_key is None or key < best_key:
             best_key, best_layout = key, cand
     return best_layout  # type: ignore[return-value]
+
+
+def _given_order(
+    order: Sequence[str] | None,
+    names: list[str],
+    fwd_children: dict[str, list[str]],
+) -> list[str] | None:
+    """A caller's row order, or None if it cannot be honoured.
+
+    Silently ignored rather than raised on: the caller is a wire payload, and a
+    stale one — a row deleted between the request being built and it arriving —
+    should still draw the graph rather than 500. What it must not do is draw it
+    with an order the rest of this module's invariants do not hold for.
+    """
+    if order is None:
+        return None
+    rows = list(order)
+    if len(rows) != len(names) or set(rows) != set(names):
+        return None
+    at = {n: i for i, n in enumerate(rows)}
+    for n in rows:
+        if any(at[c] <= at[n] for c in fwd_children[n]):
+            return None
+    return rows
 
 
 def _compose(
@@ -197,11 +242,17 @@ def _compose(
     """Lanes and routing for one candidate row order.
 
     Three lane assignments are drawn and compared on congruence, then width,
-    then crossings. Width was the only test for a long time, and it left the
-    greedy result in place whenever the repack merely tied — which is most of
-    the time, and is exactly when the repack is worth having, because closing
-    the gaps a lane left open also stops the rails jogging past one another to
-    reach them.
+    then crossings, then detours. Width was the only test for a long time, and
+    it left the greedy result in place whenever the repack merely tied — which
+    is most of the time, and is exactly when the repack is worth having,
+    because closing the gaps a lane left open also stops the rails jogging past
+    one another to reach them.
+
+    Crossings was the first answer to that, and it does not see the case it was
+    added for: a rail sent out to a lane of its own between two nodes one row
+    apart leaves its corridor and comes straight back without crossing
+    anything. `detours` counts exactly that, last, so it can only separate
+    candidates that are already equal on everything anyone would trade for.
 
     The last two are the congruence pass, and it takes both halves of the lane
     assignment to work. The rows already make the blocks congruent; without
@@ -240,7 +291,7 @@ def _compose(
     for node_lane, edge_lane, width in candidates:
         cand = _build(order, kinds, _edges, back, depth, spine, node_lane, edge_lane, width)
         m = measure(cand, motifs)
-        key = (-m.congruent, width, m.crossings)
+        key = (-m.congruent, width, m.crossings, m.detours)
         if best_key is None or key < best_key:
             best_key, best = key, cand
     return best  # type: ignore[return-value]
@@ -1014,6 +1065,20 @@ class Metrics:
     module_spread: int
     repeats: int = 0
     congruent: int = 0
+    # sum of every node's lane index. Lane 0 is the one beside the labels, so
+    # this is how far the markers sit from their own names. Measured but not
+    # ranked: it was in the selection key for one commit and taken back out,
+    # because buying it costs crossings (~11% across 300 random DAGs) and
+    # produces rails that leave a lane and come straight back to it. Kept so
+    # the next person to want it can argue with a number rather than an
+    # impression.
+    marker_lanes: int = 0
+    # rails given a lane outside the span between their own two endpoints'
+    # lanes, so the rail leaves the corridor between the nodes it joins and
+    # comes back to it. Most of them are unavoidable -- a node with seven
+    # children needs seven parallel rails and only one of them can be inside --
+    # which is why this is a tie-break and never a term anything is traded for.
+    detours: int = 0
 
     @property
     def contiguity(self) -> float:
@@ -1028,7 +1093,8 @@ class Metrics:
     def __str__(self) -> str:
         return (
             f"rail={self.rail_rows} lanes={self.lanes} longest={self.longest_rail}"
-            f" crossings={self.crossings}"
+            f" markers={self.marker_lanes} crossings={self.crossings}"
+            f" detours={self.detours}"
             f" modules={self.contiguous}/{self.modules} ({self.contiguity:.0%})"
             f" spread={self.module_spread}"
             f" repeats={self.congruent}/{self.repeats} ({self.congruence:.0%})"
@@ -1105,6 +1171,17 @@ def measure(lay: Layout, motifs: Sequence[Motif] | None = None) -> Metrics:
         module_spread=spread,
         repeats=repeats,
         congruent=congruent,
+        marker_lanes=sum(n.lane for n in lay.nodes),
+        detours=sum(
+            1
+            for e in lay.edges
+            if not e.back
+            and not (
+                min(lay[e.src].lane, lay[e.dst].lane)
+                <= e.lane
+                <= max(lay[e.src].lane, lay[e.dst].lane)
+            )
+        ),
     )
 
 

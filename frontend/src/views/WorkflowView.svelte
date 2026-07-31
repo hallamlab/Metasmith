@@ -17,8 +17,11 @@
   import TypeInspector from './TypeInspector.svelte'
   import ParamRows from '../components/ParamRows.svelte'
   import { isPlumbing, libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
+  import { around, children, parents } from '../lib/highlight.js'
+  import { mintTargetId, refId, refKey, targetsFromWire, targetsToWire } from '../lib/lineage.js'
   import { runSuffix } from '../lib/runname.js'
   import { paramRows, sameParams, toParams } from '../lib/params.js'
+  import { entries as rowEntries, isArrayRow } from '../lib/rows.js'
 
   let { name } = $props()
 
@@ -29,6 +32,7 @@
   // the recipe's rows are the form
   let items = $state([])
   let jobId = $state(null)
+  let jobStatus = $state(null)
   let sharing = $state(false)
   let launching = $state(false)
   let agentChoice = $state('')
@@ -82,8 +86,33 @@
     drawing = null
   }
 
-  // a row of the recipe naming its own type: the same thing, from the other side
-  const showType = pickType
+  // a row of the recipe naming its own type: the same thing, from the other
+  // side. It settles the panel, so it is also what ends a preview -- the type
+  // it names *is* the answer now, and there is nothing left to put back.
+  const showType = (type) => {
+    previewFrom = null
+    pickType(type)
+  }
+
+  // Reading around an open type list moves the panel with you, which means
+  // `focus` stops describing what the row holds for as long as that list is
+  // open. What was there is snapshotted on the first preview and restored if
+  // the list closes without a pick -- `drawing` as well as `focus`, because
+  // `pickType` clears it, so a transform pinned in the panel would otherwise be
+  // torn down by a scroll through a list.
+  let previewFrom = $state(null)
+
+  const previewType = (type) => {
+    if (!previewFrom) previewFrom = { focus, drawing }
+    pickType(type)
+  }
+
+  const endPreview = () => {
+    if (!previewFrom) return
+    focus = previewFrom.focus
+    drawing = previewFrom.drawing
+    previewFrom = null
+  }
 
   function pickTransform(i) {
     drawing = { kind: 'transform', i }
@@ -98,16 +127,6 @@
   // the editable recipe, kept separate from the frozen result below it
   let recipe = $state({ targets: [], transform_libraries: [], rows: [] })
   let loadedFor = $state(null)
-
-  // Targets were a list of bare type names before they could carry lineage.
-  // Both spellings still arrive from disk, so both are read here.
-  function normalize(list) {
-    return (list ?? []).map((t) =>
-      typeof t === 'string'
-        ? { type: t, parents: [] }
-        : { type: t.type ?? '', parents: [...(t.parents ?? [])] },
-    )
-  }
 
   // The input rows. These are the recipe: the input library is built from them
   // when the workflow is solved, so a row is never anything else and never
@@ -128,7 +147,12 @@
         // before a sync has run would re-mint every one of them. Delete it a
         // release after `minted` is populated everywhere.
         name: d.name ?? '',
-        value: d.value ?? '',
+        // What a value row holds is a list of keyed entries. A row written when
+        // it was one string reads as one unkeyed entry here and is written back
+        // in the list form, so a recipe migrates on its first save -- and, since
+        // one unkeyed entry renders to exactly the text it always did, nothing
+        // in the library moves when it does.
+        values: rowEntries(d),
         dtype: d.dtype ?? '',
         parents: [...(d.parents ?? [])],
       }))
@@ -144,11 +168,9 @@
   // there is no "expanded" state on this side of the wire to go stale, and
   // nothing here unregisters anything by hand either. Which makes a row an
   // array is the token, not a flag -- there is one list of input rows, and a
-  // row stops being an array the moment its last token goes.
-  const TOKEN = /\{[^{}]*\}/
-  const isArrayRow = (d) =>
-    d.mode === 'value' ? TOKEN.test(d.value ?? '')
-                       : TOKEN.test(d.path ?? '')
+  // row stops being an array the moment its last token goes. `isArrayRow` is
+  // imported rather than written twice: this view and the recipe card both ask,
+  // and a row that draws as an array in one and not the other is invisible.
 
   let table = $state(null)
 
@@ -204,6 +226,12 @@
     return null
   })
 
+  // ...and what stops a *launch*, which is a different question with a
+  // different answer: the blanks in the recipe the stored plan was solved from,
+  // recorded at solve time and read back here. Absent on a result from before
+  // this existed, which means none.
+  let recipeProblems = $derived(wf?.result?.recipe_problems ?? [])
+
   let rowSeq = 0
   const nextRowId = () => `d${(rowSeq++).toString(36)}${Math.random().toString(36).slice(2, 7)}`
 
@@ -212,7 +240,7 @@
     if (loadedFor !== name) {
       loadedFor = name
       recipe = {
-        targets: normalize(wf.request.target_types),
+        targets: targetsFromWire(wf.request.target_types),
         transform_libraries: wf.request.transform_libraries ?? [],
         rows: normalizeRows(wf.request.input_drafts),
       }
@@ -234,6 +262,7 @@
     wf = null
     table = null
     jobId = null
+    jobStatus = null
     focus = null
     drawing = null
     loadedFor = null
@@ -317,19 +346,26 @@
     ),
   )
 
-  let planFocus = $derived.by(() => {
-    const nodes = planGraph?.nodes ?? []
-    if (drawing?.kind === 'transform')
-      return nodes.find((n) => n.transform_index === drawing.i)?.id ?? null
-    return focus && nodes.some((n) => n.id === focus) ? focus : null
-  })
-
   function pickPlanNode(id) {
     const n = (planGraph?.nodes ?? []).find((x) => x.id === id)
     if (!n) return
     if (n.kind !== 'transform') pickType(n.id)
     else if (n.transform_index != null) pickTransform(n.transform_index)
   }
+
+  // Which way the diagram reads around whatever the pointer is on. Both
+  // directions at once is what a plan diagram is *already* showing -- every
+  // line is on the page -- so the useful question is one of "what does this
+  // need" and "what needs this", answered one at a time. One hop: two hops on a
+  // 73-node plan lights half the drawing, which is the same as lighting none.
+  let planUpstream = $state(true)
+  let planPointed = $state(null)
+  let planMarks = $derived(
+    around(planGraph, {
+      pointed: planPointed,
+      relation: planUpstream ? parents : children,
+    }),
+  )
 
   let drawingLabel = $derived.by(() => {
     if (drawing?.kind === 'transform') return index?.transforms?.[drawing.i]?.name ?? 'transform'
@@ -338,9 +374,14 @@
     return focus
   })
 
+  // Both sides through the serialiser, not just this one: the ids the page
+  // holds are minted per load and never match, and a recipe written by the CLI
+  // in an order that is legal but not the one this page would choose would
+  // otherwise read as permanently changed.
   let stale = $derived(
     wf?.planned &&
-      (JSON.stringify(recipe.targets) !== JSON.stringify(normalize(wf.request.target_types)) ||
+      (JSON.stringify(targetsToWire(recipe.targets)) !==
+        JSON.stringify(targetsToWire(targetsFromWire(wf.request.target_types))) ||
         JSON.stringify(recipe.transform_libraries) !==
           JSON.stringify(wf.request.transform_libraries ?? [])),
   )
@@ -396,10 +437,15 @@
   // keep whatever a previous version of this page (or the CLI) put there. The
   // table never derives one -- every table-driven solve is one unified view
   // over the whole DAG the sheet describes.
+  //
+  // `targetsToWire` is the one place the outputs are put in an order and the
+  // one place a parent becomes a position -- and this is its only caller, so a
+  // write path that skipped it would ship an id where the file wants an int and
+  // be refused by name rather than saved as a plausible wrong number.
   function requestBody() {
     return {
       sample_type: null,
-      target_types: recipe.targets,
+      target_types: targetsToWire(recipe.targets),
       transform_libraries: recipe.transform_libraries,
       input_drafts: recipe.rows,
     }
@@ -449,7 +495,7 @@
 
   function addRow(kind) {
     if (kind === 'output') {
-      recipe.targets = [...recipe.targets, { type: '', parents: [] }]
+      recipe.targets = [...recipe.targets, { id: mintTargetId(), type: '', parents: [] }]
       persist()
       return
     }
@@ -465,7 +511,7 @@
       mode,
       path: '',
       name: '',
-      value: '',
+      values: [{ key: '', value: '' }],
       dtype: '',
       parents: [],
       ...extra,
@@ -488,7 +534,7 @@
   // solve: the library is built from the rows, so a row that is not there
   // registers nothing.
   async function removeRow(id) {
-    const key = `#${id}`
+    const key = refKey(id)
     recipe.rows = recipe.rows
       .filter((d) => d.id !== id)
       .map((d) => ({ ...d, parents: d.parents.filter((p) => p !== key) }))
@@ -503,8 +549,10 @@
     await load()
   }
 
-  function patchTarget(i, patch) {
-    recipe.targets = recipe.targets.map((t, j) => (j === i ? { ...t, ...patch } : t))
+  // Spread, never rebuilt: the id is what the rows are keyed on, so losing it
+  // would restart the element a reorder is meant to animate.
+  function patchTarget(id, patch) {
+    recipe.targets = recipe.targets.map((t) => (t.id === id ? { ...t, ...patch } : t))
     touch()
   }
 
@@ -517,35 +565,33 @@
   // moving out of the whole control, not out of the box inside it.
   const commitRow = persist
 
-  // Lineage, whichever half of the recipe the row is in. Both are positions in
-  // the request now -- an input by its row id, an output by its index.
+  // Lineage, whichever half of the recipe the row is in. One line, no branch on
+  // the half: both store the keys of what they descend from, and only the
+  // serialiser knows an output's parents end up as numbers.
   async function setParents(row, keys) {
-    if (row.kind === 'target') {
-      patchTarget(row.id, {
-        parents: keys.map((k) => Number(k.slice(1))).sort((a, b) => a - b),
-      })
-    } else {
-      patchRow(row.id, { parents: keys })
-    }
+    // an input row already stores its parents as references, because they share
+    // a list with paths; an output's ids never leave the page, so they are kept
+    // bare and the reference is put back on when the rows are built
+    if (row.kind === 'target') patchTarget(row.id, { parents: keys.map(refId) })
+    else patchRow(row.id, { parents: keys })
     await persist()
   }
 
-  // Targets are addressed by position, so removing one has to renumber the
-  // links into it. A link *to* the removed target cannot be renumbered, so it
-  // is dropped -- and said out loud, because it silently changes the plan.
-  async function removeTarget(i) {
+  // The output goes, and so does every link into it. Nothing is renumbered --
+  // the links name ids, and the positions are worked out fresh on the way to
+  // disk -- but a link *to* the removed output is genuinely lost, and that is
+  // said out loud because it silently changes the plan.
+  async function removeTarget(id) {
     let dropped = false
     recipe.targets = recipe.targets
-      .filter((_, j) => j !== i)
+      .filter((t) => t.id !== id)
       .map((t) => ({
         ...t,
-        parents: (t.parents ?? [])
-          .filter((p) => {
-            if (p !== i) return true
-            dropped = true
-            return false
-          })
-          .map((p) => (p > i ? p - 1 : p)),
+        parents: (t.parents ?? []).filter((p) => {
+          if (p !== id) return true
+          dropped = true
+          return false
+        }),
       }))
     await persist()
     // after the write, not before: persist clears the notice on its way in
@@ -579,7 +625,8 @@
     // to the next, or one file would satisfy three slots. A row with nothing in
     // it still occupies the requirement, so pressing apply again does not stamp
     // a second copy; it is reported as blank rather than counted as present.
-    const identity = (d) => (d.mode === 'value' ? d.value : d.path).trim()
+    const identity = (d) =>
+      String(d.mode === 'value' ? rowEntries(d)[0]?.value : d.path).trim()
     const used = new Set()
 
     function fits(dtype, slot) {
@@ -590,7 +637,7 @@
 
     function claim(slot) {
       for (const d of recipe.rows) {
-        const key = `#${d.id}`
+        const key = refKey(d.id)
         if (used.has(key) || !d.dtype || !fits(d.dtype, slot)) continue
         const id = identity(d)
         return { key, by: id || `a new ${d.dtype}`, blank: !id }
@@ -618,12 +665,12 @@
         mode: 'file',
         path: '',
         name: '',
-        value: '',
+        values: [{ key: '', value: '' }],
         dtype: slot.as,
         parents: (slot.parents ?? []).map((p) => stands.get(p)).filter(Boolean),
       }
-      stands.set(k, `#${d.id}`)
-      used.add(`#${d.id}`)
+      stands.set(k, refKey(d.id))
+      used.add(refKey(d.id))
       made.push(d)
     })
 
@@ -851,6 +898,8 @@
           expansion={table?.expansion ?? null}
           onshared={setShared}
           onfocus={showType}
+          onpreview={previewType}
+          onpreviewend={endPreview}
           onremoveRow={removeRow}
           onremoveTarget={removeTarget}
           onrow={patchRow}
@@ -895,17 +944,33 @@
       </div>
 
       <div class="card col" style="gap:10px">
-        <!-- one log for both jobs this page starts: a solve and a bundle
-             expand are the same shape of thing to watch, and only one of them
-             runs at a time -->
-        <JobLog
-          {jobId}
-          onend={async () => {
-            // four independent reads, not a chain: solving is ~400ms of server
-            // and this used to add three sequential round trips to the end of it
-            await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
-          }}
-        />
+        {#if jobId}
+          <!-- one log for both jobs this page starts: a solve and a bundle
+               expand are the same shape of thing to watch, and only one of
+               them runs at a time. Closed by default -- watching it is what
+               you came for while a job is running, but once it is not, the
+               plan below it is, and this is the same amount of the card an
+               already-solved workflow used to lose to a wall of scrollback. -->
+          <details class="log-details">
+            <summary class="small muted">
+              log
+              <span class="tag" class:ok={jobStatus === 'done'} class:bad={jobStatus === 'failed'}>
+                {jobStatus ?? ''}
+              </span>
+            </summary>
+            <JobLog
+              {jobId}
+              header={false}
+              bind:status={jobStatus}
+              onend={async () => {
+                // four independent reads, not a chain: solving is ~400ms of
+                // server and this used to add three sequential round trips to
+                // the end of it
+                await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
+              }}
+            />
+          </details>
+        {/if}
 
         {#if !wf.planned}
           <h3>plan</h3>
@@ -953,16 +1018,40 @@
             : HEAD_H / 2}
           <details class="dag-details" open>
             <summary class="small muted">diagram</summary>
+            {#if planGraph}
+              <!-- Outside `.dag-scroll` on purpose: a plan wider than the card
+                   scrolls sideways, and a control inside that scroller leaves
+                   the corner it is meant to sit in the moment you use it. Two
+                   labelled halves, one of them lit -- the same shape as the
+                   recipe's file/value switch, so a direction is a thing you
+                   pick rather than a single button whose own label is the only
+                   record of which way it is currently pointed. -->
+              <div class="dag-dir" role="group" aria-label="which way the diagram lights">
+                <button
+                  type="button"
+                  class:on={planUpstream}
+                  title="hovering a step lights what it needs"
+                  onclick={() => (planUpstream = true)}
+                >parents</button>
+                <button
+                  type="button"
+                  class:on={!planUpstream}
+                  title="hovering a step lights what needs it"
+                  onclick={() => (planUpstream = false)}
+                >children</button>
+              </div>
+            {/if}
             <div class="dag-scroll">
               <div class="dag-box">
                 <div class="dag-body">
                   {#if planGraph}
                     <DagRail
                       geo={planGraph}
-                      focus={planFocus}
+                      marks={planMarks}
                       meta={planMeta}
-                      ground="var(--panel-2)"
+                      ground="var(--panel)"
                       onpick={pickPlanNode}
+                      onhover={(id) => (planPointed = id)}
                     />
                   {/if}
 
@@ -1091,10 +1180,26 @@
           {/if}
 
           <div>
-            <button class="primary" onclick={launch} disabled={!agentChoice || launching}>
+            <button
+              class="primary"
+              onclick={launch}
+              disabled={!agentChoice || launching || recipeProblems.length > 0}
+            >
               {launching ? 'launching…' : 'stage and run'}
             </button>
           </div>
+          {#if recipeProblems.length}
+            <!-- A blank in the recipe is reported and never refused, right up to
+                 here: a deferred input has no file to stage and a nameless pair
+                 has no key to be read under. Off the solve that made this plan,
+                 not off what the boxes say now -- so the way out is to fill it
+                 in and solve again, which is also what puts the fix in the
+                 bundle. The route refuses the same thing; this is a signpost. -->
+            <p class="small bad">
+              This plan was solved from an unfinished recipe: {recipeProblems.join('; ')}.
+              Fill them in and solve again.
+            </p>
+          {/if}
           <p class="small muted">
             The same workflow can run on any agent — staging copies it there
             first, then launches and detaches.
@@ -1148,22 +1253,28 @@
         {/if}
       {/snippet}
 
-      {#snippet top()}
-        <LibraryList
-          libraries={index?.libraries ?? []}
-          {enabled}
-          viewing={drawing?.kind === 'library' ? drawing.path : null}
-          ontoggle={toggleLibrary}
-          onview={pickLibrary}
-        />
-        <MiniGraph
-          {graph}
-          focus={graphFocus}
-          empty="Pick a type, a transform, or a library’s eye — this draws what it connects to."
-          onpicktype={pickType}
-          onpicktransform={pickTransform}
-        />
-      {/snippet}
+      <!-- One column, one scrollbar. These three used to be two sections with a
+           grip between them: the libraries and the drawing pinned at a
+           remembered height, the inspector scrolling in whatever was left. That
+           made reading the bottom of the inspector a matter of first resizing
+           the top, and the drawing was squeezed by whatever the last drag had
+           left it. Now the panel scrolls as a whole and the drawing is a fixed
+           frame within it. `SidePanel` still has the split -- the run page's
+           tree and preview want it. -->
+      <LibraryList
+        libraries={index?.libraries ?? []}
+        {enabled}
+        viewing={drawing?.kind === 'library' ? drawing.path : null}
+        ontoggle={toggleLibrary}
+        onview={pickLibrary}
+      />
+      <MiniGraph
+        {graph}
+        focus={graphFocus}
+        empty="Pick a type, a transform, or a library’s eye — this draws what it connects to."
+        onpicktype={pickType}
+        onpicktransform={pickTransform}
+      />
 
       <TypeInspector
         type={focus}
@@ -1210,6 +1321,47 @@
     user-select: none;
   }
   .dag-details summary:hover { color: var(--text); }
+  /* the same fold, for the same reason, around the job log: a summary its own
+     row with the status pill riding beside it, so a job's outcome reads
+     without opening the scrollback that produced it */
+  .log-details summary {
+    cursor: pointer;
+    width: fit-content;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .log-details summary:hover { color: var(--text); }
+  /* the corner the direction toggle sits in. Anchored to the fold and not to
+     the scroller inside it, so a wide plan scrolled sideways leaves it where
+     it was. Top left, not top right: the direction is read before the
+     diagram, not after it -- and top right is where the info panel's own
+     grip sits when this same diagram is reused there. */
+  .dag-details { position: relative; }
+  .dag-dir {
+    position: absolute;
+    z-index: 5;
+    /* below the summary's own row, not over it -- top:0 here is the same
+       corner the "diagram" disclosure text already occupies */
+    top: 18px;
+    left: 0;
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--panel);
+    opacity: 0.75;
+  }
+  .dag-dir:hover { opacity: 1; }
+  .dag-dir button {
+    border: none;
+    background: none;
+    color: var(--muted);
+    padding: 1px 8px;
+    font-size: 11px;
+  }
+  .dag-dir button.on { background: var(--accent); color: var(--panel); }
   .link {
     background: none;
     border: none;
@@ -1232,6 +1384,8 @@
      than a single control and so cannot be a <label> */
   .field { display: flex; flex-direction: column; gap: 3px; }
   .hint { line-height: 1.3; }
+  /* why the launch button is off, in the colour the rest of the page refuses in */
+  p.bad { color: var(--bad); line-height: 1.3; }
   /* the steps beside the diagram: rows can't be independently positioned
      inside an actual <table>, so each one is an absolutely placed grid row
      instead, `top:` pinned to its transform's `dag_cy`. The header is the only

@@ -1,6 +1,6 @@
 <script>
-  import { bakeEdges, gutter, makeGrid } from '../lib/dagpaths.js'
   import { dagInk } from '../lib/dagink.svelte.js'
+  import { POINTED, RELATED } from '../lib/highlight.js'
   import { ui } from '../lib/state.svelte.js'
 
   // The one drawing the workflow page makes, in every frame that needs it.
@@ -11,10 +11,14 @@
   // in the rails' case lanes running the wrong way -- so the same graph looked
   // like three different products depending on where you met it.
   //
-  // Placement arrives already decided (`geo`, from `POST /api/dag/layout` or
-  // stored beside a solved plan). Ink arrives from the server too (`lib/dagink`).
-  // What this component adds is the part an SVG file cannot have: a node is a
-  // button, so it gets focus, hover and a click that moves the panel.
+  // Placement arrives already decided, and so do the curves: `geo` is what
+  // `POST /api/dag/layout` (or a stored plan) baked, down to each edge's `d`.
+  // A frame whose rows are its own -- the recipe's, one per form row -- sends
+  // those rows' measured heights with the request rather than re-baking the
+  // paths here, which is the second implementation this component used to
+  // carry. Ink arrives from the server too (`lib/dagink`). What this adds is
+  // the part an SVG file cannot have: a node is a button, so it gets focus,
+  // hover and a click that moves the panel.
   //
   // It owns no viewport. No overflow, no transform, no fit -- the three frames
   // want three different things (the plan scrolls with the page, the panel pans
@@ -22,23 +26,24 @@
   // for two of them. Its output is a plain block of a known width and height.
   let {
     geo,
-    // measured y per row index, for a surface whose rows are not a uniform
-    // height. Null means the engine's own nominal pitch.
-    rowY = null,
-    // reserve a wider gutter than the current lane count needs, so that adding
-    // or removing the first branch does not shift every row sideways
-    minLanes = 1,
     // a rail beside rows that already name themselves draws markers only
     showLabels = true,
     width = null,
     height = null,
-    focus = null,
-    // hover driven from outside (a recipe row pointed at from its own list);
-    // the component also sets its own on the nodes it draws
-    hovered = null,
-    // per-node extras the geometry knows nothing about: {kind, tag, sub,
-    // disabled}. `kind` is a page word ('type', 'transform', 'more') used for
-    // colour; the marker shape comes from the geometry's own kind.
+    // what to paint and how strongly: `{nodes: Map<id, role>, edges: Map<key,
+    // role>}` from `lib/highlight`, edges keyed `${from} ${to}`. Handed down
+    // finished. This component used to be given a focus, a marked set, and its
+    // own pointer, and to work out from those which *edges* counted -- which is
+    // a question about the graph, which it does not have. See `lib/highlight`.
+    marks = null,
+    // false while the frame is doing something else with the pointer (the info
+    // panel's pan and zoom). The rows stop being buttons entirely rather than
+    // merely disabled: a disabled button still swallows the event instead of
+    // letting the drag through to the frame behind it.
+    interactive = true,
+    // per-node extras the geometry knows nothing about: {kind, sub, disabled}.
+    // `kind` is a page word ('type', 'transform', 'more') used for colour; the
+    // marker shape comes from the geometry's own kind.
     meta = null,
     // per-edge page word, keyed `${from} ${to}`: 'satisfies' | 'lineage'
     edgeMeta = null,
@@ -52,11 +57,10 @@
   } = $props()
 
   let ink = $derived(dagInk(ui.theme))
-  let pad = $derived(gutter(geo, minLanes))
-  let grid = $derived(makeGrid(geo, { rowY, xOffset: pad.shift }))
-  let edges = $derived(bakeEdges(geo, grid))
 
-  let boxW = $derived(width ?? (showLabels ? geo.width + pad.shift : pad.width))
+  // where the label column starts, for a frame drawing markers only
+  let gutter = $derived(geo.nodes?.[0]?.label_x ?? geo.width)
+  let boxW = $derived(width ?? (showLabels ? geo.width : gutter))
   let boxH = $derived(height ?? geo.height)
 
   const styleOf = (kind) => ink.styles[kind] ?? ink.styles.data
@@ -74,40 +78,65 @@
     }
   }
 
-  const at = (n) => (rowY ? (rowY[n.row] ?? n.cy) : n.cy)
+  const roleOf = (id) => marks?.nodes?.get(id) ?? null
+  const edgeRole = (e) => marks?.edges?.get(`${e.from} ${e.to}`) ?? null
 
-  const isOn = (id) => id === focus || id === hovered
-
+  // the pointer is *reported*, never styled from. Where it goes next -- which
+  // node it means, what else that lights -- is the frame's question, and the
+  // answer comes back down as `marks`. Deciding it here as well is how a hover
+  // and a selection came to disagree about what is lit.
+  let hovered = null
   function enter(id) {
+    hovered = id
     onhover?.(id)
   }
   function leave(id) {
-    if (hovered === id) onhover?.(null)
+    if (hovered !== id) return
+    hovered = null
+    onhover?.(null)
   }
+  // a frame turning interaction off mid-hover leaves the last node reported and
+  // therefore lit forever; the pointer never leaves a button that stopped
+  // accepting the pointer
+  $effect(() => {
+    if (!interactive && hovered !== null) {
+      hovered = null
+      onhover?.(null)
+    }
+  })
 </script>
 
-<div class="rail" bind:this={inner} style="width: {boxW}px; height: {boxH}px;">
+<div class="rail" style="width: {boxW}px; height: {boxH}px;">
   <svg width={boxW} height={boxH} aria-hidden="true">
     <g fill="none" stroke={ink.plate.edge} stroke-linejoin="round" stroke-linecap="round">
-      {#each edges as e, i (i)}
-        {@const kind = edgeMeta?.get(`${e.from} ${e.to}`)}
-        <path
-          class="edge"
-          class:soft={kind === 'satisfies'}
-          class:lineage={kind === 'lineage'}
-          class:lit={isOn(e.from) || isOn(e.to)}
-          d={e.d}
-          stroke={e.hue || null}
-        />
+      {#each geo.edges as e, i (i)}
+        {#if !e.back}
+          {@const kind = edgeMeta?.get(`${e.from} ${e.to}`)}
+          {@const role = edgeRole(e)}
+          <path
+            class="edge"
+            class:soft={kind === 'satisfies'}
+            class:lineage={kind === 'lineage'}
+            class:related={role === RELATED}
+            class:pointed={role === POINTED}
+            d={e.d}
+            stroke={e.hue || null}
+          />
+        {/if}
       {/each}
     </g>
     {#each geo.nodes as n (n.id)}
       {@const m = marker(n)}
-      {@const cx = n.cx + pad.shift}
-      {@const cy = at(n)}
+      {@const cx = n.cx}
+      {@const cy = n.cy}
       {@const w = n.marker_w}
       {@const h = n.marker_h}
-      <g class="mk" class:lit={isOn(n.id)}>
+      {@const role = roleOf(n.id)}
+      <g
+        class="mk"
+        class:related={role === RELATED}
+        class:pointed={role === POINTED}
+      >
         {#if m.st.shape === 'triangle_down'}
           <polygon
             points="{cx - w / 2},{cy - h / 2} {cx + w / 2},{cy - h / 2} {cx},{cy + h / 2}"
@@ -144,28 +173,31 @@
   {#if showLabels}
     {#each geo.nodes as n (n.id)}
       {@const x = meta?.get(n.id)}
-      {@const left = n.cx + pad.shift - n.marker_w / 2}
-      {@const cy = at(n)}
+      {@const left = n.cx - n.marker_w / 2}
+      {@const role = roleOf(n.id)}
       <button
         class="node {x?.kind ?? 'data'}"
-        class:on={n.id === focus}
-        class:lit={n.id === hovered}
+        class:inert={!interactive}
+        class:related={role === RELATED}
+        class:pointed={role === POINTED}
         style="
           left: {left}px;
-          top: {cy - geo.row_pitch / 2}px;
+          top: {n.cy - geo.row_pitch / 2}px;
           width: {Math.max(0, boxW - left)}px;
           height: {geo.row_pitch}px;
-          --gap: {n.label_x + pad.shift - left}px;
+          --gap: {n.label_x - left}px;
           --fs: {geo.font_size}px;
           --ink: {styleOf(n.kind).text};
           --dim: {styleOf(n.kind).muted};
         "
         title={n.full}
-        disabled={!onpick || !!x?.disabled}
+        disabled={!interactive || !onpick || !!x?.disabled}
+        tabindex={interactive ? 0 : -1}
+        aria-hidden={interactive ? null : 'true'}
         onclick={() => onpick?.(n.id)}
-        onpointerenter={() => enter(n.id)}
+        onpointerenter={() => interactive && enter(n.id)}
         onpointerleave={() => leave(n.id)}
-        onfocus={() => enter(n.id)}
+        onfocus={() => interactive && enter(n.id)}
         onblur={() => leave(n.id)}
       >
         <span class="text">
@@ -176,9 +208,6 @@
           {#if n.namespace}<span class="ns truncate">{n.namespace}</span>{/if}
           <span class="line">
             <span class="label mono truncate">{n.label}</span>
-            {#if x?.tag}
-              <span class="mark" title="one run per group of this input">{x.tag}</span>
-            {/if}
             {#if x?.sub}<span class="sub small muted truncate">{x.sub}</span>{/if}
           </span>
         </span>
@@ -208,13 +237,25 @@
   /* one input having to descend from another: not data moving, so it is drawn in
      the accent rather than the grey every flow edge shares */
   .edge.lineage { stroke: var(--accent); stroke-opacity: 0.7; }
-  .edge.lit { stroke-opacity: 1; stroke-width: 1.8; }
+  /* The two roles `lib/highlight` hands down. What is being pointed at has to
+     be findable at a glance in a column of near-identical grey curves, so it
+     takes the accent and twice the weight rather than a shade more opacity;
+     what merely *leads* to it is the same grey, drawn firmly. */
+  .edge.pointed {
+    stroke: var(--accent);
+    stroke-opacity: 1;
+    stroke-width: 3;
+  }
+  .edge.related { stroke-opacity: 0.95; stroke-width: 2; }
 
   /* what a hover marks: the node itself, not a box drawn around its whole row.
      The rectangle this replaces was the one part of the panel that had no
      counterpart in the rendered drawing. */
   .mk { transition: opacity 80ms linear; }
-  .mk.lit { filter: drop-shadow(0 0 3px var(--accent)); }
+  .mk.pointed {
+    filter: drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 2px var(--accent));
+  }
+  .mk.related { filter: drop-shadow(0 0 3px var(--accent)); }
 
   /* A node row runs from its marker to the right edge, so the whole line is
      clickable. Transparent by default because the rails of the lanes to its
@@ -228,16 +269,24 @@
     text-align: left;
     background: none;
     border: 0;
-    border-radius: var(--radius);
     overflow: hidden;
   }
   .node:disabled { cursor: default; }
+  /* not merely disabled: the frame behind wants the drag, and a disabled button
+     still eats the pointer rather than passing it on */
+  .node.inert { pointer-events: none; }
+  /* the highlight is on the text, not on the button. The button starts at its
+     own marker's left edge, so a background there covers the marker it is
+     meant to be marking -- and every rail passing under that row with it. */
   .text {
     display: flex;
     flex-direction: column;
     justify-content: center;
     min-width: 0;
     margin-left: var(--gap);
+    padding: 0 4px;
+    align-self: stretch;
+    border-radius: var(--radius);
     /* the page's line-height is set for prose; at this size it is what pushes
        the second line past the bottom of the row */
     line-height: 1.15;
@@ -251,20 +300,20 @@
   .node.type .label { color: var(--accent); }
   .sub { font-size: calc(var(--fs) * 0.72); }
   .node.more { opacity: 0.7; }
-  .node.on,
-  .node.lit,
-  .node:hover:not(:disabled) {
+  /* no `:hover` rule here. The pointer is reported upward and comes back as a
+     role, so a row lights for exactly one reason -- a second, local rule is how
+     a hover and a selection came to be lit at once and disagree. */
+  .node.related .text,
+  .node.pointed .text {
     background: var(--panel-2);
   }
-  .node.on .label { text-decoration: underline; text-underline-offset: 2px; }
-  .mark {
-    flex: 0 0 auto;
-    font-size: calc(var(--fs) * 0.72);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--warn);
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 0 4px;
+  /* the node under the pointer is already the whole point of looking there;
+     what a hover is *for* is everyone else it reaches, so those are the ones
+     that get an outline of their own rather than only the shared background --
+     a row can be related to more than one thing pointed at once, and the
+     outline is what still reads once the fill alone would not. */
+  .node.related .text {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
   }
 </style>

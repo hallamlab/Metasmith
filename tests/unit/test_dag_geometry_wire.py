@@ -1,26 +1,22 @@
 """What `ops.workflow.dag_geometry` puts on the wire, and whether it is enough.
 
 The GUI draws the same graph three times -- the plan, the info panel, and the
-recipe's lineage rails -- and only the first of those can use a baked path: the
-rails' rows are not a uniform height, so their y positions are measured off the
-DOM and the edges have to be re-baked against them. That re-bake is a port of
-`dag_draw`'s last three functions, living in `frontend/src/lib/dagpaths.js`,
-where there is no test runner to hold it honest.
+recipe's lineage rails -- and only the first two of those sit on a uniform row
+pitch. The rails' rows are form rows: a value row wraps, an array row grows a
+count note, so their y positions are measured off the DOM.
 
-So it is held honest here. `_rebake` below is a second, independent
-implementation of the port, written against *only* the fields that cross the
-wire, and pinned to the path `render_svg` actually emits. It fails if the wire
-payload loses a field the port needs, if the port's maths is wrong, and if the
-drawing's own maths moves without the wire following.
+That used to be answered by publishing the routed grid alongside each baked
+path, so the browser could re-bake it -- a port of three `dag_draw` functions
+living in JS with no test runner to hold it honest. It is answered here instead:
+the caller sends its rows up (`order`, `row_y`) and the engine bakes against
+them. So these tests are about that request, and about the path being the whole
+of what comes back.
 """
 from __future__ import annotations
 
-import math
-
 import pytest
 
-from metasmith.models.dag_draw import BAND
-from metasmith.ops.workflow import dag_geometry
+from metasmith.ops.workflow import GEOMETRY_VERSION, dag_geometry
 
 # a fan-out into a side lane, a fan-in back out of it, and an adjacent-row pair
 # -- the three shapes `_jog_roles` distinguishes
@@ -47,141 +43,92 @@ def geo() -> dict:
     return dag_geometry(NODES, EDGES)
 
 
-# -- the port, rewritten from the wire payload alone -------------------------
+def _rows(geo: dict) -> list[str]:
+    return [n["id"] for n in sorted(geo["nodes"], key=lambda n: n["row"])]
 
 
-def _roles(edge, src, dst):
-    has_dep = edge["lane"] != src["lane"]
-    has_arr = edge["lane"] != dst["lane"]
-    roles = [0] * len(edge["points"])
-    i = 1
-    if has_dep:
-        roles[1] = roles[2] = 1 if (not has_arr and dst["row"] - src["row"] == 1) else -1
-        i = 3
-    if has_arr:
-        roles[i] = roles[i + 1] = 1
-    return roles
+def _nominal(geo: dict, margin: float = 1.5 * 13.0) -> dict[str, float]:
+    return {
+        n["id"]: margin + (n["row"] + 0.5) * geo["row_pitch"] for n in geo["nodes"]
+    }
 
 
-def _round(points, bevel):
-    pts = []
-    for p in points:
-        if not pts or p != pts[-1]:
-            pts.append(p)
-    if len(pts) < 3:
-        return pts, {}
-    legs = [math.dist(a, b) for a, b in zip(pts, pts[1:])]
-    cut = [0.0] + [bevel] * (len(pts) - 2) + [0.0]
-    for i, leg in enumerate(legs):
-        want = cut[i] + cut[i + 1]
-        if want > leg:
-            cut[i] *= leg / want
-            cut[i + 1] *= leg / want
-    out = [pts[0]]
-    arcs = {}
-    for i in range(1, len(pts) - 1):
-        (ax, ay), (bx, by), (cx, cy) = pts[i - 1], pts[i], pts[i + 1]
-        d, la, lc = cut[i], legs[i - 1], legs[i]
-        start = (bx + (ax - bx) * d / la, by + (ay - by) * d / la)
-        end = (bx + (cx - bx) * d / lc, by + (cy - by) * d / lc)
-        if start != out[-1]:
-            out.append(start)
-        if end == out[-1]:
-            continue
-        turn = (bx - ax) * (cy - by) - (by - ay) * (cx - bx)
-        arcs[len(out) - 1] = (d, 1 if turn > 0 else 0)
-        out.append(end)
-    out.append(pts[-1])
-    return out, arcs
-
-
-def _emit(points, arcs) -> str:
-    d = [f"M {points[0][0]:.1f},{points[0][1]:.1f}"]
-    for i, (x, y) in enumerate(points[1:]):
-        arc = arcs.get(i)
-        if arc is None:
-            d.append(f"L {x:.1f},{y:.1f}")
-        else:
-            d.append(f"A {arc[0]:.1f},{arc[0]:.1f} 0 0 {arc[1]} {x:.1f},{y:.1f}")
-    return " ".join(d)
-
-
-def _rebake(geo: dict, edge: dict, *, row_y=None) -> str:
-    """The browser's job, from the wire payload and nothing else."""
-    by_id = {n["id"]: n for n in geo["nodes"]}
-    src, dst = by_id[edge["from"]], by_id[edge["to"]]
-
-    def y(row: float) -> float:
-        if row_y is None:
-            return geo["margin"] + (row + 0.5) * geo["row_pitch"]
-        lo = math.floor(row)
-        frac = row - lo
-        return row_y[lo] + frac * (row_y[min(lo + 1, len(row_y) - 1)] - row_y[lo])
-
-    def gap(row: float) -> float:
-        if row_y is None:
-            return geo["row_pitch"]
-        lo = math.floor(row)
-        return row_y[min(lo + 1, len(row_y) - 1)] - row_y[lo]
-
-    roles = _roles(edge, src, dst)
-    pts = [
-        (geo["lane_x"][int(lane)], y(row) + roles[i] * BAND * gap(row))
-        for i, (row, lane) in enumerate(edge["points"])
-    ]
-    pts[0] = (pts[0][0], pts[0][1] + src["marker_h"] / 2)
-    pts[-1] = (pts[-1][0], pts[-1][1] - dst["marker_h"] / 2)
-    return _emit(*_round(pts, geo["lane_pitch"] / 2))
-
-
-# -- the assertions ----------------------------------------------------------
-
-
-def test_the_wire_carries_the_grid_the_pixels_were_baked_on(geo):
-    assert geo["lane_x"] and geo["margin"] > 0
-    assert len(geo["lane_x"]) >= 1
+def test_an_edge_is_a_path_and_nothing_else(geo):
+    """The grid it was baked from used to travel too, for a client that wanted
+    to re-bake it. Nothing does any more, and publishing it invites a second
+    implementation of the bake."""
+    assert "lane_x" not in geo and "margin" not in geo
     for e in geo["edges"]:
-        if e["back"]:
-            continue
-        assert e["points"], (e["from"], e["to"])
-        assert isinstance(e["lane"], int)
-        # grid coordinates, with half-steps at the jogs -- not pixels
-        for row, lane in e["points"]:
-            assert 0 <= lane < len(geo["lane_x"])
-            assert row * 2 == int(row * 2)
+        assert set(e) <= {"from", "to", "back", "d", "hue"}
+        assert e["back"] or e["d"]
 
 
-def test_every_edge_rebakes_to_the_path_the_drawing_emits(geo):
-    """The one guard the browser port has. If this drifts, the rails and the
-    plan stop being the same drawing and nothing else says so."""
-    drawn = [e for e in geo["edges"] if not e["back"]]
-    assert drawn
-    for e in drawn:
-        assert _rebake(geo, e) == e["d"], (e["from"], e["to"])
+def test_the_payload_says_which_shape_it_is(geo):
+    """A plan graph is stored beside its workflow, so a reader meeting one has
+    to be able to tell a current drawing from a drawing made two shapes ago --
+    testing for whichever key happens to be new works exactly once."""
+    assert geo["v"] == GEOMETRY_VERSION
 
 
-def test_a_row_override_moves_the_path_without_changing_its_shape(geo):
-    """What the recipe's rails do: the same routing at measured y positions.
+# three roots and one join: a shape with several topological orders, so "the
+# caller's order was honoured" is a claim that can fail
+FORK = [{"id": f"#{i}", "kind": "data"} for i in "abcd"]
+FORK_EDGES = [{"from": "#a", "to": "#d"}, {"from": "#b", "to": "#d"}]
 
-    The engine's own row positions must round-trip exactly -- otherwise the
-    override is not an override but a second placement -- and a stretched set
-    must move every point and still land on the markers.
-    """
-    nominal = [geo["margin"] + (r + 0.5) * geo["row_pitch"] for r in range(len(geo["nodes"]))]
-    e = next(e for e in geo["edges"] if not e["back"] and len(e["points"]) > 2)
-    assert _rebake(geo, e, row_y=nominal) == e["d"]
 
-    stretched = [y * 2 for y in nominal]
-    moved = _rebake(geo, e, row_y=stretched)
-    assert moved != e["d"]
-    # it still starts on its source marker's edge and ends on its target's
-    by_id = {n["id"]: n for n in geo["nodes"]}
-    head = moved.split()[1]
-    x, y = (float(v) for v in head.split(","))
-    src = by_id[e["from"]]
-    # the emitter writes one decimal, so that is the tolerance on reading it back
-    assert x == pytest.approx(geo["lane_x"][src["lane"]], abs=0.05)
-    assert y == pytest.approx(stretched[src["row"]] + src["marker_h"] / 2, abs=0.05)
+def test_a_caller_can_fix_the_rows_it_already_has():
+    """The recipe's rails: the rows are form rows, in the order the form lists
+    them, and the engine is not free to reorder them out from under the DOM."""
+    own = _rows(dag_geometry(FORK, FORK_EDGES))
+    mine = ["#c", "#b", "#a", "#d"]
+    assert mine != own  # otherwise the assertion below proves nothing
+    assert _rows(dag_geometry(FORK, FORK_EDGES, order=mine)) == mine
+
+    # ... and an order it cannot honour is ignored rather than raised on: the
+    # caller is a wire payload and may be one edit stale
+    for bad in (["#d", "#a", "#b", "#c"], mine[:-1], mine + ["#e"]):
+        assert _rows(dag_geometry(FORK, FORK_EDGES, order=bad)) == own
+
+
+def test_measured_rows_are_where_the_drawing_lands(geo):
+    """`row_y` is a node id -> pixel map, so a caller never has to know which
+    row a node was put in. Its own nominal positions have to round-trip, or the
+    override is not an override but a second placement."""
+    order = _rows(geo)
+    same = dag_geometry(NODES, EDGES, order=order, row_y=_nominal(geo))
+    for a, b in zip(geo["nodes"], same["nodes"]):
+        assert a["cy"] == pytest.approx(b["cy"])
+    assert [e["d"] for e in same["edges"]] == [e["d"] for e in geo["edges"]]
+
+    stretched = {k: v * 2 for k, v in _nominal(geo).items()}
+    moved = dag_geometry(NODES, EDGES, order=order, row_y=stretched)
+    by_id = {n["id"]: n for n in moved["nodes"]}
+    for nid, y in stretched.items():
+        assert by_id[nid]["cy"] == pytest.approx(y)
+    assert [e["d"] for e in moved["edges"]] != [e["d"] for e in geo["edges"]]
+    # the drawing is as tall as the rows it was given
+    assert moved["height"] > geo["height"]
+
+
+def test_an_incomplete_row_map_is_not_half_applied(geo):
+    """One missing row would draw everything below it at the nominal pitch,
+    which is worse than not honouring the request at all."""
+    partial = _nominal(geo)
+    partial.pop(next(iter(partial)))
+    fell_back = dag_geometry(NODES, EDGES, order=_rows(geo), row_y=partial)
+    assert [n["cy"] for n in fell_back["nodes"]] == [n["cy"] for n in geo["nodes"]]
+
+
+def test_a_lane_floor_moves_the_gutter_and_not_the_shape(geo):
+    """A rail redrawn on every keystroke cannot have its whole gutter jump
+    sideways the moment a second lane appears."""
+    wide = dag_geometry(NODES, EDGES, min_lanes=6)
+    assert wide["width"] > geo["width"]
+    shift = wide["nodes"][0]["cx"] - geo["nodes"][0]["cx"]
+    assert shift > 0
+    for a, b in zip(geo["nodes"], wide["nodes"]):
+        assert a["lane"] == b["lane"] and a["row"] == b["row"]
+        assert b["cx"] - a["cx"] == pytest.approx(shift)
 
 
 def test_a_marker_shape_reaches_the_wire(geo):

@@ -10,17 +10,26 @@
 //   libraryGraph   -- a library: its tools and the types that join them
 //   typeGraph      -- a type: what produces it above, what consumes it below
 //
-// Nodes are `{id, kind, label, sub?, tag?}` where kind is 'type', 'transform' or
+// Nodes are `{id, kind, label, sub?}` where kind is 'type', 'transform' or
 // 'more'; an id appears once, because a duplicate key aborts the Svelte render
 // for the whole page, and because a type node shared between two tools is the
 // difference between a chain and a pile of unconnected pairs.
 
-// Container images and bundled scripts are requirements, but never ones a person
-// registers -- the resource libraries supply them. Same namespaces the DAG
-// renderer blacklists and the inspector hides.
-const PLUMBING = new Set(['containers', 'lib'])
+import { splitType } from './types.js'
 
-export const isPlumbing = (type) => PLUMBING.has(String(type).split('::')[0])
+// Container images, environments and bundled scripts are requirements, but never
+// ones a person registers -- the resource libraries supply them. Same namespaces
+// the DAG renderer blacklists and the inspector hides. `env` is the newer name
+// for what `containers` was, and was missing here while being blacklisted
+// everywhere else, so an environment showed up as an ordinary input of every
+// tool that declared one.
+const PLUMBING = new Set(['containers', 'env', 'lib'])
+
+// `splitType` rather than a split of its own -- a bare word with no `::` used to
+// read as its own namespace here, so `'containers'` alone was plumbing. Nothing
+// can reach that (every key the index mints is `namespace::name`), and a bare
+// word is not a type name.
+export const isPlumbing = (type) => PLUMBING.has(splitType(type).ns)
 
 const typeId = (name) => `t:${name}`
 const transformId = (i) => `x:${i}`
@@ -52,13 +61,21 @@ function dedupe(list) {
   return list.filter((t) => t && !seen.has(t) && (seen.add(t), true))
 }
 
-/** One tool: the types it requires above it, the types it produces below. */
+/**
+ * One tool: the types it requires above it, the types it produces below.
+ *
+ * Plumbing is drawn here and nowhere else. A library graph is about what its
+ * tools make of each other, and a container node hanging off every one of forty
+ * transforms says nothing about that -- but *this* view is the one place the
+ * question "what does this tool actually need to run" is being asked, and the
+ * answer includes its environment. It used to be collapsed into a "+2 supplied"
+ * aside on the tool's own node, which named a count rather than the thing.
+ */
 export function transformGraph(index, i) {
   const tr = index?.transforms?.[i]
   if (!tr) return { nodes: [], edges: [] }
-  const inputs = dedupe(tr.inputs ?? []).filter((t) => !isPlumbing(t))
-  const outputs = dedupe(tr.outputs ?? []).filter((t) => !isPlumbing(t))
-  const supplied = (tr.inputs ?? []).filter(isPlumbing).length
+  const inputs = dedupe(tr.inputs ?? [])
+  const outputs = dedupe(tr.outputs ?? [])
 
   const nodes = []
   const seen = new Set()
@@ -68,15 +85,10 @@ export function transformGraph(index, i) {
     nodes.push(node)
   }
 
-  for (const t of inputs) {
-    add({
-      ...typeNode(t),
-      // the lineage constraint: the transform runs once per group of this input,
-      // and everything it makes stays keyed to that group
-      ...(t === tr.group_by ? { tag: 'per' } : {}),
-    })
-  }
-  add(transformNode(index, i, { sub: supplied ? `+${supplied} supplied` : null }))
+  // the grouping input carries no mark of its own: `caption` below already says
+  // "one run per <type>" in words, at the top of the panel this is drawn in
+  for (const t of inputs) add(typeNode(t))
+  add(transformNode(index, i))
   for (const t of outputs) add(typeNode(t))
 
   const lineage = requirementLineage(tr)

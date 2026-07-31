@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from pathlib import Path
+from typing import Sequence
 
 from .dag_colour import SCHEMES, Colouring, colour_layout
 from .dag_draw import (
@@ -198,8 +199,9 @@ class DagRenderer:
         self._nodes.setdefault(src, NodeKind.DATA)
         self._nodes.setdefault(dst, NodeKind.DATA)
 
-    def layout(self) -> Layout:
-        return layout(self._nodes, self._edges)
+    def layout(self, order: Sequence[str] | None = None) -> Layout:
+        """`order` fixes the rows; see `dag_layout.layout`."""
+        return layout(self._nodes, self._edges, order)
 
     @property
     def labels(self) -> dict[str, Label]:
@@ -243,15 +245,21 @@ class DagRenderer:
         *,
         font_size: float = 13.0,
         max_label_chars: int = DEFAULT_LABEL_CHARS,
+        min_lanes: int = 0,
+        rows_y: Sequence[float] = (),
     ) -> Geometry:
         """The placement `to_svg`/`to_raster_dot` draw from, in pixels — so a
         caller that wants positions without ink (the panel, a step's row) reads
         off the same construction rather than reassembling style/label inputs
-        itself."""
+        itself.
+
+        `min_lanes` and `rows_y` are for a caller whose rows are its own page's;
+        see `dag_draw._grid`."""
         lay = lay or self.layout()
         return _geometry(
             lay, self._theme.styles, labels=self.labels, label_mode=self._label_mode,
             font_size=font_size, max_label_chars=max_label_chars,
+            min_lanes=min_lanes, rows_y=rows_y,
         )
 
     def to_svg(self) -> str:

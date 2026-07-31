@@ -54,6 +54,10 @@ std_assembly_data
 /src/metasmith/gui/static/
 /frontend/node_modules/
 
+# the msm_solver binaries, staged here by ./dev.sh -be so the wheel can ship
+# them. Same deal as gui/static/: generated, platform-specific, never committed.
+/src/metasmith/engine/
+
 # GUI: `msm gui` writes its project directory into the cwd -- agents/,
 # workflows/<name>/, runs/<name>/ (store.py), plus the served config and
 # whatever library it pulled in. `./dev.sh --gui` puts that under

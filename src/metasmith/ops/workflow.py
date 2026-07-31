@@ -131,6 +131,12 @@ def render_dag(
     return {"task_key": task_key, "format": format, "path": str(rendered)}
 
 
+# bumped whenever `serialize_geometry`'s payload changes shape. A stored plan
+# graph is a drawing frozen at write time, and the only way a reader can tell a
+# stale one from a current one is to be told: testing for a key that happens to
+# be new works exactly once, and then the next change has to find another key.
+GEOMETRY_VERSION = 2
+
 _WIRE_KINDS = {
     "transform": NodeKind.TRANSFORM,
     "target": NodeKind.TARGET,
@@ -145,6 +151,9 @@ def dag_geometry(
     font_size: float = 13.0,
     max_label_chars: int = 22,
     colour: str = "none",
+    order: list[str] | None = None,
+    row_y: dict[str, float] | None = None,
+    min_lanes: int = 0,
 ) -> dict:
     """Place an arbitrary graph, in pixels, for a caller that draws it itself.
 
@@ -154,16 +163,22 @@ def dag_geometry(
     SVG, and laying the graph out a second way in the browser is how the two
     drawings came to disagree about what the same plan looks like.
 
-    Both forms of an edge go over the wire. `d` is the path baked at this
-    module's nominal row pitch, for a caller drawing at that pitch; `lane` and
-    `points` are the grid it was baked from, for a caller whose rows sit
-    wherever the DOM put them. The second is what stops a caller with uneven
-    rows from inventing its own curve -- which is how the recipe's rails came
-    to be drawn with lanes mirrored against every other drawing on the page.
+    An edge crosses the wire as a path and nothing else. A caller whose rows
+    are already on a page of its own -- the recipe's, one per form row, at
+    whatever heights the browser gave them -- says so with `order` and `row_y`
+    and gets paths baked against those, rather than re-baking a published grid
+    itself in a second implementation nothing holds honest.
 
     `nodes` are `{"id", "kind", "label"?}`; `kind` is `transform`, `target` or
     `data`, which decides the marker drawn and the trim taken off each edge end.
     `edges` are `{"from", "to"}`. Ids are the caller's and are echoed untouched.
+
+    `order` is a node id per row, top to bottom; it is honoured only when it is
+    a topological permutation of the nodes (see `dag_layout.layout`). `row_y` is
+    a node id -> pixel y map, resolved against whatever rows the layout came
+    back with, so the caller never has to know what row a node landed in; it is
+    ignored unless every node has one. `min_lanes` is a floor on the grid width,
+    so a rail's gutter does not move sideways when its first branch appears.
 
     `colour` names a `dag_colour` scheme; the default says nothing and each
     record's `hue` is absent. Only the plan asks for one -- skipping it is how
@@ -183,6 +198,7 @@ def dag_geometry(
             renderer.add_edge(src, dst)
     return serialize_geometry(
         renderer, font_size=font_size, max_label_chars=max_label_chars,
+        order=order, row_y=row_y, min_lanes=min_lanes,
     )
 
 
@@ -191,6 +207,9 @@ def serialize_geometry(
     *,
     font_size: float = 13.0,
     max_label_chars: int = DEFAULT_LABEL_CHARS,
+    order: list[str] | None = None,
+    row_y: dict[str, float] | None = None,
+    min_lanes: int = 0,
 ) -> dict:
     """A built graph's placement as plain data, for a client that draws it.
 
@@ -200,14 +219,24 @@ def serialize_geometry(
     """
     # one layout, shared by the geometry and the colouring: `colouring()` runs
     # its own when passed none, and that is the whole expensive half of this
-    lay = renderer.layout()
-    geo = renderer.geometry(lay, font_size=font_size, max_label_chars=max_label_chars)
+    lay = renderer.layout(order)
+    rows_y: list[float] = []
+    if row_y:
+        ys = [row_y.get(n.name) for n in lay.nodes]
+        # all or nothing: one missing row would silently draw the whole rail at
+        # the nominal pitch from that row down
+        if all(y is not None for y in ys):
+            rows_y = [float(y) for y in ys]  # type: ignore[arg-type]
+    geo = renderer.geometry(
+        lay, font_size=font_size, max_label_chars=max_label_chars,
+        min_lanes=min_lanes, rows_y=rows_y,
+    )
     hues = renderer.colouring(lay)
     return {
+        "v": GEOMETRY_VERSION,
         "width": geo.width, "height": geo.height,
         "font_size": geo.font_size, "marker_d": geo.marker_d,
         "row_pitch": geo.row_pitch, "lane_pitch": geo.lane_pitch,
-        "margin": geo.margin, "lane_x": list(geo.lane_x),
         "anchor": geo.anchor,
         "nodes": [
             {
@@ -225,7 +254,6 @@ def serialize_geometry(
         "edges": [
             {
                 "from": e.src, "to": e.dst, "back": e.back, "d": e.d,
-                "lane": e.lane, "points": [list(p) for p in e.points],
                 **({"hue": hues.edges[(e.src, e.dst)]}
                    if (e.src, e.dst) in hues.edges else {}),
             }

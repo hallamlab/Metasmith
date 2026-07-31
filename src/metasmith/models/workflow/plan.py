@@ -39,6 +39,74 @@ from ..solver import (
 )
 from .diagnostics import PlanHint, _diagnose_plan_failure
 from .steps import WorkflowStep, WorkflowTarget
+
+
+def CollectSolverInputs(
+    given: list[list[DataInstanceLibraryView]],
+    transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
+) -> tuple[
+    dict[Endpoint, list[DataInstance]],
+    list[set[Endpoint]],
+    dict[Transform, TransformInstance],
+    dict[TransformInstance, TransformInstanceLibrary],
+]:
+    """Turn libraries into the three things the solver actually takes.
+
+    Split out of `WorkflowPlan.Generate` so a verifier can adjudicate the same
+    triple the solver was handed rather than a re-derivation of it -- a
+    re-derivation that drifted would quietly grade the wrong problem, and the
+    masking and dedup rules below are exactly where it would drift.
+    """
+    given_map: dict[Endpoint, list[DataInstance]] = {}
+    _seen_instances: set[tuple] = set()  # (path, ep) dedup key
+    _view_eps_cache: dict[int, set[Endpoint]] = {}  # id(view) -> cached endpoints
+    given_endpoints: list[set[Endpoint]] = []
+    _seen_group_keys: set[tuple] = set()
+    for group in given:
+        # Skip groups whose views are identical to already-processed groups
+        group_key = tuple((id(lib._original), lib._mask_key) for lib in group)
+        if group_key in _seen_group_keys:
+            continue
+        _seen_group_keys.add(group_key)
+
+        eps = set()
+        for lib in group:
+            view_id = id(lib)
+            if view_id in _view_eps_cache:
+                # Same view object reused across groups (e.g. shared resources)
+                eps.update(_view_eps_cache[view_id])
+                continue
+            lib_eps = set()
+            for path, ep_name, ep in lib.Iterate():
+                dedup_key = (path, ep)
+                if dedup_key not in _seen_instances:
+                    _seen_instances.add(dedup_key)
+                    given_map.setdefault(ep, []).append(DataInstance(
+                        path=path,
+                        dtype=ep,
+                        dtype_name=ep_name,
+                        parent_lib=lib._original,
+                    ))
+                lib_eps.add(ep)
+            _view_eps_cache[view_id] = lib_eps
+            eps.update(lib_eps)
+        if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
+        given_endpoints.append(eps)
+
+    transform2inst: dict[Transform, TransformInstance] = {}
+    inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}
+    for trlib in transforms:
+        base = trlib._original if isinstance(trlib, TransformInstanceLibraryView) else trlib
+        for path, tr in trlib.IterateTransforms():
+            model = tr.model
+            if model in transform2inst:
+                Log.Warn(f"transform [{model}] of [{trlib}] is masked")
+                continue
+            transform2inst[model] = tr
+            inst2trlib[tr] = base
+    return given_map, given_endpoints, transform2inst, inst2trlib
+
+
 @dataclass
 class WorkflowPlan:
     given: list[DataInstance]
@@ -49,6 +117,11 @@ class WorkflowPlan:
     dropped_targets: list[str] = field(default_factory=list)
     hints: list[PlanHint] = field(default_factory=list)
     publish_intermediates: bool = True
+    #: `(given, transforms, target)` exactly as handed to `solve_by_mcts` --
+    #: references to objects already alive in `_solver_result`, so this costs
+    #: nothing, and it is the only way a verifier can grade the plan against
+    #: the problem that produced it rather than against a re-derivation.
+    _solver_inputs: tuple|None = None
 
     def __post_init__(self):
         self._update_hash()
@@ -187,53 +260,9 @@ class WorkflowPlan:
         target_model: Transform,
         max_iter: int=256, max_refine: int=256, seed: int=42,
     ):
-        given_map: dict[Endpoint, list[DataInstance]] = {}
-        _seen_instances: set[tuple] = set()  # (path, ep) dedup key
-        _view_eps_cache: dict[int, set[Endpoint]] = {}  # id(view) -> cached endpoints
-        given_endpoints: list[set[Endpoint]] = []
-        _seen_group_keys: set[tuple] = set()
-        for group in given:
-            # Skip groups whose views are identical to already-processed groups
-            group_key = tuple((id(lib._original), lib._mask_key) for lib in group)
-            if group_key in _seen_group_keys:
-                continue
-            _seen_group_keys.add(group_key)
-
-            eps = set()
-            for lib in group:
-                view_id = id(lib)
-                if view_id in _view_eps_cache:
-                    # Same view object reused across groups (e.g. shared resources)
-                    eps.update(_view_eps_cache[view_id])
-                    continue
-                lib_eps = set()
-                for path, ep_name, ep in lib.Iterate():
-                    dedup_key = (path, ep)
-                    if dedup_key not in _seen_instances:
-                        _seen_instances.add(dedup_key)
-                        given_map.setdefault(ep, []).append(DataInstance(
-                            path=path,
-                            dtype=ep,
-                            dtype_name=ep_name,
-                            parent_lib=lib._original,
-                        ))
-                    lib_eps.add(ep)
-                _view_eps_cache[view_id] = lib_eps
-                eps.update(lib_eps)
-            if len(given_endpoints)>0 and any(g==eps for g in given_endpoints): continue
-            given_endpoints.append(eps)
-
-        transform2inst: dict[Transform, TransformInstance] = {}
-        inst2trlib: dict[TransformInstance, TransformInstanceLibrary] = {}
-        for trlib in transforms:
-            base = trlib._original if isinstance(trlib, TransformInstanceLibraryView) else trlib
-            for path, tr in trlib.IterateTransforms():
-                model = tr.model
-                if model in transform2inst:
-                    Log.Warn(f"transform [{model}] of [{trlib}] is masked")
-                    continue
-                transform2inst[model] = tr
-                inst2trlib[tr] = base
+        given_map, given_endpoints, transform2inst, inst2trlib = CollectSolverInputs(
+            given, transforms,
+        )
 
         _pl1 = "" if len(given)==1 else "s"
         _pl2 = "" if len(given_endpoints)==1 else "s"
@@ -248,7 +277,29 @@ class WorkflowPlan:
             seed=seed,
         )
         # result.RenderDAG("./dag")
+        return cls._Assemble(
+            result=result,
+            solver_inputs=(given_endpoints, list(transform2inst.keys()), target_model),
+            given_map=given_map,
+            transform2inst=transform2inst,
+            inst2trlib=inst2trlib,
+            transforms=transforms,
+            target_names=target_names,
+            target_model=target_model,
+        )
 
+    @classmethod
+    def _Assemble(
+        cls,
+        result,
+        solver_inputs: tuple,
+        given_map: dict[Endpoint, list[DataInstance]],
+        transform2inst: dict[Transform, TransformInstance],
+        inst2trlib: dict[TransformInstance, TransformInstanceLibrary],
+        transforms: list[TransformInstanceLibrary|TransformInstanceLibraryView],
+        target_names: list[str],
+        target_model: Transform,
+    ):
         def _dedupe_instances(instances: list[DataInstance]):
             out = []
             seen: dict[str, DataInstance] = {}
@@ -286,6 +337,7 @@ class WorkflowPlan:
                 targets=[],
                 steps=[],
                 _solver_result=result,
+                _solver_inputs=solver_inputs,
                 dropped_targets=list(target_names),
                 hints=failure_hints,
             )
@@ -521,6 +573,7 @@ class WorkflowPlan:
             targets=[x for g in target_meta.values() for x in g],
             steps=built_steps,
             _solver_result=result,
+            _solver_inputs=solver_inputs,
             dropped_targets=dropped_targets,
             hints=plan_hints,
         )

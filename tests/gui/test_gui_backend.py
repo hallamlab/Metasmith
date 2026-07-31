@@ -1948,9 +1948,11 @@ class TestStepSelectors:
         """
         result = client.get(f"/api/workflows/{runnable}").get_json()["result"]
         graph = result["plan_graph"]
-        for key in ("width", "height", "row_pitch", "lane_pitch", "margin", "lane_x"):
+        for key in ("v", "width", "height", "row_pitch", "lane_pitch", "anchor"):
             assert key in graph, key
-        assert all(isinstance(v, float) and v > 0 for v in graph["lane_x"])
+        # an edge is its baked path and nothing else -- the grid it came from
+        # used to travel with it, for a browser that re-baked it itself
+        assert all(e["back"] or e["d"] for e in graph["edges"])
         # every step is a node of it, and every node is inside the plate
         by_step = {n["step"]: n for n in graph["nodes"] if n.get("step") is not None}
         assert {s["order"] for s in result["step_display"]} == set(by_step)
@@ -1987,19 +1989,21 @@ class TestStepSelectors:
         """A result planned by the CLI, or stored against an older shape of the
         drawing, is revisited rather than left to draw nothing.
 
-        Tested by the newest key rather than by presence, which is why the
-        stored one is emptied rather than deleted: a result carrying an older
-        shape of the block would otherwise never be looked at again.
+        Tested by the payload's own version rather than by presence, which is
+        why the stored one is replaced rather than deleted: a result carrying an
+        older shape of the block would otherwise never be looked at again.
         """
         import yaml
 
+        from metasmith.ops.workflow import GEOMETRY_VERSION
+
         path = project_root / "workflows" / runnable / "result.yml"
         stored = yaml.safe_load(path.read_text())
-        assert "lane_x" in stored["plan_graph"]
-        stored["plan_graph"] = {"width": 1, "height": 1}
+        assert stored["plan_graph"]["v"] == GEOMETRY_VERSION
+        stored["plan_graph"] = {"v": GEOMETRY_VERSION - 1, "width": 1, "height": 1}
         path.write_text(yaml.dump(stored))
         again = client.get(f"/api/workflows/{runnable}").get_json()["result"]
-        assert "lane_x" in (again.get("plan_graph") or {})
+        assert (again.get("plan_graph") or {}).get("v") == GEOMETRY_VERSION
 
     def test_a_position_selector_matches_the_process_that_position_gets(self):
         """The two halves that have to agree, pinned against each other.
@@ -2922,3 +2926,89 @@ class TestShareWorkflows:
             assert len(rows) == 3 and len({r["id"] for r in rows}) == 3
             by_type = {r["dtype"]: r for r in rows}
             assert by_type["mock::bam"]["parents"] == [f"#{by_type['mock::assembly']['id']}"]
+
+
+class TestValueRowFields:
+    """A value row holds a list of keyed fields, and a run refuses the blanks."""
+
+    def _kv(self, *pairs):
+        return [{"key": k, "value": v} for k, v in pairs]
+
+    def test_fields_round_trip_through_the_request(self, client):
+        name = _make_workflow(client)
+        rows = [_row("v", mode="value", dtype="mock::reads",
+                     values=self._kv(("insert", "300"), ("paired", "true")))]
+        _put_rows(client, name, rows)
+        (back,) = _rows_of(client, name)
+        assert back["values"] == self._kv(("insert", "300"), ("paired", "true"))
+
+        project = client.application.config["MSM_PROJECT"]
+        lib = project.input_library_path(name)
+        (written,) = [p for p in lib.iterdir() if len(p.name) == 32]
+        assert written.read_text() == '{"insert": 300, "paired": true}'
+
+    def test_a_run_refuses_a_recipe_with_a_blank_key(self, client, tmp_path):
+        """Solving stays permissive; launching does not.
+
+        The verdict belongs to the solve that produced the bundle, so a fix has
+        to be re-solved before it counts -- which is the same solve that would
+        put it into the bundle a run stages.
+        """
+        client.post("/api/agents", json={
+            "name": "smith", "home": str(tmp_path / "home"), "runtime": "DOCKER",
+        })
+        _deployed(client, "smith")
+        name = _make_workflow(client)
+        rows = _seed_inputs(client, name)
+        rows = rows + [_row("v", mode="value", dtype="mock::reads",
+                            values=self._kv(("insert", "300"), ("", "true")))]
+        _put_rows(client, name, rows)
+
+        result = _finish(client, client.post(
+            f"/api/workflows/{name}/generate", json={}).get_json())
+        assert result["success"] is True, "an unfinished recipe still solves"
+        assert result["recipe_problems"]
+
+        r = client.post("/api/runs", json={"workflow": name, "agent": "smith"})
+        assert r.status_code == 409
+        assert "unfinished recipe" in r.get_json()["error"]
+
+        rows[-1]["values"] = self._kv(("insert", "300"), ("paired", "true"))
+        _put_rows(client, name, rows)
+        # still refused until it is solved again: the bundle a run would stage
+        # is the one with the blank in it
+        assert client.post(
+            "/api/runs", json={"workflow": name, "agent": "smith"}).status_code == 409
+        result = _finish(client, client.post(
+            f"/api/workflows/{name}/generate", json={}).get_json())
+        assert result["recipe_problems"] == []
+
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            mload.return_value = mock.MagicMock()
+            mload.return_value.StageWorkflow.return_value = None
+            mload.return_value.ListWorkflowRuns.return_value = []
+            r = client.post("/api/runs", json={"workflow": name, "agent": "smith"})
+        assert r.status_code == 202, r.get_json()
+
+    def test_a_result_from_before_this_existed_is_launchable(self, client, tmp_path):
+        """Absent means no problems -- or every workflow planned before this
+        change becomes permanently unlaunchable."""
+        client.post("/api/agents", json={
+            "name": "smith", "home": str(tmp_path / "home"), "runtime": "DOCKER",
+        })
+        _deployed(client, "smith")
+        name = _make_workflow(client)
+        _seed_inputs(client, name)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+
+        project = client.application.config["MSM_PROJECT"]
+        wf = project.read_workflow(name)
+        project.write_result(name, {
+            k: v for k, v in wf.result.items() if k != "recipe_problems"
+        })
+        with mock.patch("metasmith.ops.runtime.load_agent") as mload:
+            mload.return_value = mock.MagicMock()
+            mload.return_value.StageWorkflow.return_value = None
+            mload.return_value.ListWorkflowRuns.return_value = []
+            r = client.post("/api/runs", json={"workflow": name, "agent": "smith"})
+        assert r.status_code == 202, r.get_json()

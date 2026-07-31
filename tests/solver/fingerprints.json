@@ -1,0 +1,44 @@
+{
+  "cases": {
+    "gen/chain-10": {
+      "fingerprint": "bd0e03c1b2a4e08fc5717d96",
+      "ok": true,
+      "steps": 7
+    },
+    "gen/chain-6": {
+      "fingerprint": "c52b9286a7431b2db45fd668",
+      "ok": true,
+      "steps": 7
+    },
+    "gen/cyclic": {
+      "fingerprint": "551103036fcbdefe3478220f",
+      "ok": true,
+      "steps": 7
+    },
+    "gen/duplicates": {
+      "fingerprint": "71e7dd7598ddd97eb9f55825",
+      "ok": true,
+      "steps": 6
+    },
+    "gen/kitchen-sink": {
+      "fingerprint": "6479566de2393fc4ab1568d8",
+      "ok": true,
+      "steps": 9
+    },
+    "gen/lineage": {
+      "fingerprint": "fab360fe0ec936eaef8b1aaa",
+      "ok": true,
+      "steps": 9
+    },
+    "gen/multi-given": {
+      "fingerprint": "eefe316bf446c8fbd2ff64c6",
+      "ok": true,
+      "steps": 4
+    },
+    "gen/product-groups": {
+      "fingerprint": "33014f15a1e6e09e2c06ea54",
+      "ok": true,
+      "steps": 7
+    }
+  }
+}

@@ -1,7 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Generator, Any, TypeVar, Generic
-import numpy as np
 import json
 import re
 from pathlib import Path
@@ -9,6 +8,14 @@ from collections import deque
 
 from ..hashing import KeyGenerator
 from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
+from .solver_rng import DecisionStream, argmax_index, argmin_index
+from .solver_math import entropy
+
+# Both search phases weight the same three moves: two exploit arms and one
+# explore arm. Named here because the refiner and the mcts phase must not
+# drift apart, and because the Rust port reads them as constants.
+_SELECTION_WEIGHTS = (75, 20, 5)
+_SELECTION_TOP_K = 1
 
 class Node:
     PROPERTY_FIELD = "properties"
@@ -325,7 +332,27 @@ def solve_by_mcts(
     max_iter: int=256,
     max_refine: int=256,
 ) -> Solution:
-    np.random.seed(seed)
+    # The Rust engine, when this build has one that advertises `solve`. Absence
+    # is normal and silent -- a source checkout ships no binaries -- and
+    # `METASMITH_SOLVER_ENGINE=python` forces this path so the fallback is a
+    # thing CI runs rather than a thing CI contains. Past the handshake an error
+    # is not caught: the engine has already claimed the right wire version and
+    # the right capability, so falling back would turn a real defect into a
+    # mysterious slowdown.
+    from .solver_engine import EngineFor
+    _engine = EngineFor("solve")
+    if _engine is not None:
+        from .solver_wire import solve_via_engine
+        return solve_via_engine(
+            _engine, given, transforms, target,
+            seed=seed, max_iter=max_iter, max_refine=max_refine,
+        )
+
+    # One stream for the whole solve, owned by this call. The old
+    # `np.random.seed(seed)` mutated process-global state: two solves in one
+    # process could not be independent, and any other numpy consumer silently
+    # shared the solver's stream.
+    rng = DecisionStream(seed)
     # ---
     # monte carlo tree search
 
@@ -349,7 +376,8 @@ def solve_by_mcts(
         assert len(group)>0, f"input group [{i}] was empty"
         if i>0: given_tr.NewProductGroup()
         pgroup = {}
-        for e in group:
+        # the caller hands us a `set`, so the product order is ours to state
+        for e in sorted(group, key=lambda x: x.Signature()):
             d = given_tr.AddProduct(e)
             pgroup[d] = e
         given_appl.produced.append(pgroup)
@@ -396,6 +424,42 @@ def solve_by_mcts(
         yield given_tr
         for tr in transforms: yield tr
         yield target
+
+    # The iteration-order contract.
+    #
+    # Several of the searches below iterate a `set`, and the order they get is
+    # CPython's hash-table layout -- which reaches the plan, because it decides
+    # which application is appended to the frontier first and the selection
+    # rules break ties by index. Salting `Node.__hash__` (leaving every
+    # signature, key and equality untouched) moves 4 of the 8 corpus
+    # fingerprints, so this is not theoretical. Two runs of one interpreter
+    # agree; nothing else does, and the Rust port least of all.
+    #
+    # So every order-bearing iteration goes through an explicit rank assigned
+    # once, here. Transforms rank by position in the caller's own sequence --
+    # identity-keyed, so two duplicate transforms stay distinguishable, which a
+    # signature-keyed rank could not do. Dependencies rank by first appearance
+    # walking that same sequence; equal dependencies collapse, exactly as they
+    # already do in `demand2product`. Endpoints and applications rank by
+    # signature, which is unique within any one set because that is what their
+    # `__eq__` compares.
+    _transform_rank: dict[Transform, int] = {}
+    for _tr in _iter_transforms():
+        _transform_rank.setdefault(_tr, len(_transform_rank))
+    _dep_rank: dict[Dependency, int] = {}
+    for _tr in _iter_transforms():
+        for _d in _tr.requires:
+            _dep_rank.setdefault(_d, len(_dep_rank))
+        for _pgroup in _tr.produces:
+            for _d in _pgroup:
+                _dep_rank.setdefault(_d, len(_dep_rank))
+    _rank_of_transform = _transform_rank.__getitem__ # C-level, and these are hot
+    _rank_of_dependency = _dep_rank.__getitem__
+    def _by_transform(trs) -> list[Transform]:
+        return sorted(trs, key=_rank_of_transform)
+    def _by_dependency(deps) -> list[Dependency]:
+        return sorted(deps, key=_rank_of_dependency)
+
     # produced dependency to consuming transform
     product2consumer: dict[Dependency, set[Transform]] = {}
     for parent in _iter_transforms():
@@ -421,6 +485,12 @@ def solve_by_mcts(
                         found = True
                 if found:
                     demand2producer[c] = demand2producer.get(c, set())|{parent}
+    # Frozen into rank order once, here, and read as ordered sequences from now
+    # on. Sorting at the point of use instead cost ~30% on the search-bound
+    # corpus: the distance walk below reaches `demand2producer` 4.9 million
+    # times on `wide-search` alone.
+    demand2product = {c: _by_dependency(v) for c, v in demand2product.items()}
+    demand2producer = {c: _by_transform(v) for c, v in demand2producer.items()}
 
     @dataclass
     class DistNode:
@@ -443,7 +513,7 @@ def solve_by_mcts(
             distance_scores[node] = dist
         opportunity_scores[node] = opportunity_scores.get(node, 1)+dist
         for p in node.requires:
-            for producer in demand2producer.get(p, []): # when tr requires a terminal endpoint that is not given
+            for producer in demand2producer.get(p, ()): # when tr requires a terminal endpoint that is not given
                 todo.append(DistNode(producer, dist, path))
     relavent_transforms = [tr for tr in transforms if tr in distance_scores]
     if given_appl.transform not in distance_scores:
@@ -460,6 +530,10 @@ def solve_by_mcts(
                 "demand2producer": demand2producer,
                 "demand2product": demand2product,
                 "product2consumer": product2consumer,
+                # object-keyed, unlike the D2T telemetry below, which is keyed by
+                # a transform's printed key and so collapses duplicates
+                "distance_scores": distance_scores,
+                "opportunity_scores": opportunity_scores,
                 "no_path_possible": True,
             },
             _iterations=0,
@@ -473,8 +547,11 @@ def solve_by_mcts(
     d2t_report = {k.key:float(v) for k, v in distance_scores.items()}
 
     def _prune_irrelavent_values(d: dict, value_whitelist: set):
+        # order-preserving for the two maps already frozen into rank order;
+        # `intersection` would hand them back as a set and lose it again
         for k, v in d.items():
-            d[k] = value_whitelist.intersection(v)
+            d[k] = [x for x in v if x in value_whitelist] if isinstance(v, list) \
+                else value_whitelist.intersection(v)
         # for k in list(d):
         #     if len(d[k])==0: del d[k]
     rts = set(relavent_transforms)|{given_tr, target}
@@ -534,7 +611,7 @@ def solve_by_mcts(
         def _find_endpoints(p: Dependency, include_produced: bool):
             given_candidates: list[Endpoint] = []
             produced_candidates: list[Endpoint] = []
-            for product in demand2product.get(p, []):
+            for product in demand2product.get(p, ()): # already in rank order
                 if product not in production: continue
                 for e in production[product]:
                     assert e.IsA(p)
@@ -655,13 +732,17 @@ def solve_by_mcts(
         _have: set[Endpoint] = set()
         order: dict[str, int] = {e.key:0 for e in _have}
         while len(seen)<len(steps):
-            reachable: set[Application] = set()
-            # find and process separately to ensure 1 layer at a time 
+            # A list, not a set: `seen` already makes the signatures within one
+            # layer unique -- which is exactly what a `set[Application]` was
+            # collapsing on -- so taking them in `steps` order costs nothing and
+            # states the order instead of inheriting the hash table's.
+            reachable: list[Application] = []
+            # find and process separately to ensure 1 layer at a time
             for step in steps:
                 if step.Signature() in seen: continue
                 if any(e not in _have for e in step.used.values()): continue
                 seen.add(step.Signature())
-                reachable.add(step)
+                reachable.append(step)
             if len(reachable)==0: break # shouldn't happen/needed, but here to prevent endless loop
             for step in reachable:
                 if len(step.used)>0:
@@ -750,7 +831,7 @@ def solve_by_mcts(
         todo: list[Application] = steps.copy()
         order = [node_order[s.Signature()] for s in todo]
         while len(todo)>0:
-            si: int = np.argpartition(order, 0)[0] # this saves a sort, I guess...
+            si: int = argmin_index(order) # first minimum; introselect's was arbitrary
             todo[si], todo[-1] = todo[-1], todo[si]
             order[si], order[-1] = order[-1], order[si]
             order.pop()
@@ -799,36 +880,47 @@ def solve_by_mcts(
 
             # checks lineage constaint and no loops
             def _is_valid(target_appl: Application):
-                # print(">>>")
-                e2appl: dict[Endpoint, list[Application]] = {}
-                for appl in _iter_steps():
-                    for e in appl.used.values():
-                        e2appl[e] = e2appl.get(e, [])+[appl]
-                todo = [(given_appl, set())]
-                produced: set[Endpoint] = set()
-                while len(todo)>0:
-                    current, history = todo.pop()
+                # Schedulability, which is the property the plan actually has to
+                # have: every step becomes runnable with *all* of its inputs
+                # available, starting from the givens. It fails on exactly two
+                # things, and both are what "invalid" means here -- a cycle,
+                # whose members can never all be waited for, and a step with an
+                # input nothing produces.
+                #
+                # This replaced a forward walk that followed the *consumers* of
+                # each produced endpoint and rejected a repeated Application
+                # signature along a path. That walk reached a step as soon as
+                # **one** of its inputs was available and never asked about the
+                # others, so a cycle hanging off the side of the walk was
+                # invisible: on `sink-9391` it passed 318 cyclic states, which
+                # `rectify` then rewrote into plans with unproduced inputs and no
+                # trace of a cycle. It was also exponential in the number of
+                # paths, where this is a layered sweep.
+                #
+                # Endpoint membership uses the same `set[Endpoint]` semantics
+                # `get_order` uses, so a True here is precisely the promise that
+                # rectify's ordering pass finds a total order rather than
+                # flattening a cycle onto one depth. Steps are held by identity,
+                # not signature: two distinct applications may legitimately
+                # share a signature, and both have to be runnable.
+                have: set[Endpoint] = {
+                    e for pgroup in given_appl.produced for e in pgroup.values()
+                }
+                pending: list[Application] = list(state.steps)
+                while len(pending) > 0:
+                    ready = [
+                        s for s in pending
+                        if all(e in have for e in s.used.values())
+                    ]
+                    # nothing became runnable: a cycle, or an input nothing makes
+                    if len(ready) == 0: return False # looped
+                    for s in ready:
+                        have |= {e for pgroup in s.produced for e in pgroup.values()}
+                    scheduled = {id(s) for s in ready}
+                    pending = [s for s in pending if id(s) not in scheduled]
 
-                    # print("  .")
-                    # print(f"  {current.transform}")
-                    # for d, e in current.used.items():
-                    #     print(f"    {d} {e}")
-                    # # print(f"        ---")
-                    # for pgroup in current.produced:
-                    #     print(f"    .")
-                    #     for d, e in pgroup.items():
-                    #         print(f"    {d} {e}")
-                    if current.Signature() in history: return False # looped
-                    history = history|{current.Signature()}
-                    for pgroup in current.produced:
-                        produced.update(pgroup.values())
-                        for e in pgroup.values():
-                            for appl in e2appl.get(e, []):
-                                todo.append((appl, history))
-
-                # no loops from the start, but do we actually get to the end?
-                missing = set(target_appl.used.values()) - produced
-                if len(missing)>0: return False
+                # the target is one of `state.steps`, so reaching here already
+                # says its inputs are all produced
 
                 # if here, then no loops
                 # now check lineage
@@ -838,11 +930,35 @@ def solve_by_mcts(
                             lineage_constraint_e = step.used[pproto] # type: ignore
                             if not _has_ancestor(e, lineage_constraint_e): return False
                 return True
+            # `_is_valid` is an AND of three independent, side-effect-free terms
+            # and it runs them most-expensive-first: the path-dependent loop walk
+            # dominates the whole solve while the lineage term is nearly free.
+            # On `metagenomics_from_paired_reads` *every one* of the 19,683
+            # refiner validations fails on lineage, after paying for the walk.
+            # Reordering an AND is exact by construction, so run the cheap term
+            # first and only fall through to the full check when it passes.
+            def _lineage_ok():
+                for step in _iter_steps():
+                    for p, e in step.used.items():
+                        for pproto in p.parents:
+                            lineage_constraint_e = step.used[pproto] # type: ignore
+                            if not _has_ancestor(e, lineage_constraint_e): return False
+                return True
+
             target_appl = _get_target()
             if target_appl is None:
                 state.valid = False
             else:
-                state.valid = _is_valid(target_appl)
+                try:
+                    # `_has_ancestor` indexes `produced_from` unguarded, and
+                    # reaching it earlier than the original order can hit a state
+                    # the loop walk would have rejected first. A KeyError here is
+                    # therefore "the prefilter cannot answer", not "invalid" --
+                    # fall through to the unchanged check below.
+                    rejected = not _lineage_ok()
+                except KeyError:
+                    rejected = False
+                state.valid = False if rejected else _is_valid(target_appl)
             # print(f"<<< {state.valid}")
 
                 
@@ -858,36 +974,65 @@ def solve_by_mcts(
                 for p, e in step.used.items():
                     if not e in used_as_lineage: continue
                     lineage_usage[e] = lineage_usage.get(e, 0)+1
-            def _entropy(a) -> float:
-                a = np.array(a)
-                p = a/a.sum()
-                p = p[p>0]
-                return float((p*np.log2(p)).sum())
-            e_score = _entropy(list(lineage_usage.values()))
+            # `solver_math.entropy`, not the numpy expression this used to be:
+            # `ndarray.sum` is pairwise and `np.log2` is not libm's, so the score
+            # differed in its last bit from anything that isn't numpy. See that
+            # module for the measurements.
+            e_score = entropy(list(lineage_usage.values()))
 
             _product2producer: dict[Endpoint, Application] = {}
             for step in _steps:
                 for pgroup in step.produced:
                     for e in pgroup.values():
                         _product2producer[e] = step
-            def _max_distance_to(e: Endpoint, a: Endpoint):
+            # The walk below depends only on where it *starts*: the destination
+            # is a plain equality test during traversal, and `seen` guarantees
+            # one visit per node. So one walk per distinct source answers every
+            # destination asked of it -- and the refiner asks about far fewer
+            # sources than pairs (17.8 vs 22.0 per `score_node` on the
+            # metagenomics template).
+            #
+            # The depth map reproduces the original's two quirks exactly, and
+            # both feed the score: a LIFO stack with an up-front `seen` check
+            # records depth at *first pop*, not the true maximum, and the
+            # `max_d > 0` test below makes a distance of zero indistinguishable
+            # from not-found.
+            _depth_maps: dict[Endpoint, dict[Endpoint, int]] = {}
+            def _depths_from(e: Endpoint) -> dict[Endpoint, int]:
+                depths = _depth_maps.get(e)
+                if depths is not None: return depths
+                depths = {}
                 todo = [(e, 0)]
-                seen = set()
-                max_d = -1
                 while len(todo)>0:
                     n, d = todo.pop()
-                    if n in seen: continue
-                    seen.add(n)
-                    if n == a:
-                        max_d = max(max_d, d)
+                    if n in depths: continue
+                    depths[n] = d
                     prod = _product2producer[n]
                     for pe in prod.used.values():
                         todo.append((pe, d+1))
+                _depth_maps[e] = depths
+                return depths
+            def _max_distance_to(e: Endpoint, a: Endpoint):
+                max_d = _depths_from(e).get(a, -1)
                 return max_d/len(_steps) if max_d>0 else 1.0
             lin_distances: list[float] = []
             for step in _steps:
                 for p in step.transform.requires:
-                    for lin_p in p.parents:
+                    # A sixth ordered site, and T5a missed it because it is a
+                    # *summation* order rather than a selection order: these
+                    # distances are summed below, and floating-point addition is
+                    # not associative. `p.parents` is a `set`, so on a
+                    # requirement with two lineage constraints the score would
+                    # depend on the hash table.
+                    #
+                    # It is unobservable on everything currently measured -- no
+                    # dependency in the four templates or in a thousand generated
+                    # problems carries more than one lineage parent, and a
+                    # one-element sum has no order -- which is exactly why it is
+                    # worth stating now rather than after a transform that does.
+                    # The other two reads of `p.parents` need no ordering: one is
+                    # an AND and the other builds a set.
+                    for lin_p in _by_dependency(p.parents):
                         e = step.used[p]
                         pe= step.used[lin_p] # type: ignore
                         lin_distances.append(_max_distance_to(e, pe))
@@ -901,19 +1046,12 @@ def solve_by_mcts(
             state.scores = [score, vscore]
         
         def select_node(frontier: list[RefinerState]) -> int:
-            probs = [75, 20, 5] # score, score * valid
-            total_prob = sum(probs)
-            probs = [x/total_prob for x in probs]
-            p_i = np.random.choice(list(range(len(probs))), 1, p=probs)[0]
-            if p_i<len(probs)-1: # exploit
-                scores = np.array([s.scores[p_i] for s in frontier])
-                K = 1
-                k = min(K, scores.shape[0])
-                candidate_indexes = np.argpartition(scores, -k)[-k:]
-                i: int = np.random.choice(candidate_indexes)
+            # weights are [score, score * valid, explore]
+            p_i = rng.weighted_index(_SELECTION_WEIGHTS)
+            if p_i<len(_SELECTION_WEIGHTS)-1: # exploit
+                return rng.pick_top_k([s.scores[p_i] for s in frontier], _SELECTION_TOP_K)
             else: # explore
-                i = np.random.randint(0, len(frontier))
-            return i
+                return rng.bounded_int(len(frontier))
         
         def remove_node(frontier: list[RefinerState], index: int):
             frontier[index], frontier[-1] = frontier[-1], frontier[index]
@@ -927,6 +1065,15 @@ def solve_by_mcts(
                     for p, e in pgroup.items():
                         production[p] = production.get(p, [])+[e]
             for step in state.steps:
+                # Neither of these depends on the candidate application, and
+                # ~90% of candidates are about to be discarded as duplicates --
+                # so they are hoisted out of the loop that builds them.
+                # NOTE: the signature comparison drops *both* members of a
+                # colliding pair. That is a latent bug (see
+                # `tests/solver/test_refiner_validity.py`), preserved verbatim
+                # here because this change is a performance change.
+                base = [s for s in state.steps if s.Signature() != step.Signature()]
+                base_sigs = sorted(s.Signature() for s in base)
                 # reuse the current endpoints and simply look for alternate edge comparisons
                 # lineage constraint checked separately
                 for appl in generate_applications_of_transform(
@@ -937,9 +1084,12 @@ def solve_by_mcts(
                     mock_produced=step.produced, # rectify later
                 ):
                     appl._iteration = step._iteration
-                    alt_sol = [s for s in state.steps if s.Signature() != step.Signature()]+[appl]
-                    alt_state = RefinerState(steps=alt_sol)
-                    yield alt_state
+                    # The state's signature is the sorted join of its steps'
+                    # signatures, so it can be had without the state. Yielding
+                    # it lets the caller reject a duplicate before anything is
+                    # constructed -- 193,280 `RefinerState` builds become
+                    # 19,683 on the metagenomics template.
+                    yield "".join(sorted(base_sigs+[appl.Signature()])), base, appl
 
         initial_state = RefinerState(
             steps=initial_solution,
@@ -959,14 +1109,15 @@ def solve_by_mcts(
             history.append(state)
             if state.valid:
                 valids.append(state)
-            for child in expand_node(state):
-                if child.Signature() in seen: continue
-                seen.add(child.Signature())
+            for sig, base, appl in expand_node(state):
+                if sig in seen: continue
+                seen.add(sig)
+                child = RefinerState(steps=base+[appl], _sig=sig)
                 score_node(child)
                 frontier.append(child)
-        scores = np.array([s.scores[1] for s in valids]) # take the valid score
-        k = 1
-        si: int = np.argpartition(scores, -k)[-k:][0]
+        # take the valid score; first maximum wins, where introselect picked
+        # whichever index its partition happened to leave in that slot
+        si: int = argmax_index([s.scores[1] for s in valids])
         refined = valids[si]
         return RefinerResult(
             steps=rectify(refined.steps),
@@ -1000,19 +1151,12 @@ def solve_by_mcts(
             return appl
 
         def select_node(frontier: list[Application]):
-            probs = [75, 20, 5] # dist, opportunity, explore
-            total_prob = sum(probs)
-            probs = [x/total_prob for x in probs]
-            p_i = np.random.choice(list(range(len(probs))), 1, p=probs)[0]
-            if p_i<len(probs)-1: # exploit
-                scores = np.array([s.score[p_i] for s in frontier])
-                K = 1
-                k = min(K, scores.shape[0])
-                candidate_indexes = np.argpartition(scores, -k)[-k:]
-                i: int = np.random.choice(candidate_indexes)
+            # weights are [dist, opportunity, explore]
+            p_i = rng.weighted_index(_SELECTION_WEIGHTS)
+            if p_i<len(_SELECTION_WEIGHTS)-1: # exploit
+                return rng.pick_top_k([s.score[p_i] for s in frontier], _SELECTION_TOP_K)
             else: # explore
-                i = np.random.randint(0, len(frontier))
-            return i
+                return rng.bounded_int(len(frontier))
 
         def remove_node(frontier: list[Application], index: int):
             frontier[index], frontier[-1] = frontier[-1], frontier[index]
@@ -1078,7 +1222,7 @@ def solve_by_mcts(
         free_transforms = [t for t in relavent_transforms if len(t.requires)==0]
         def generate_child_nodes(state: SolverState, frontier_signatures: set[str]):
             def _iter_transforms():
-                for tr in state.candidate_transforms:
+                for tr in _by_transform(state.candidate_transforms):
                     yield tr
                 for tr in free_transforms:
                     yield tr
@@ -1333,7 +1477,16 @@ def solve_by_mcts(
             current_timelines = carry_over+remain
             
         return MctsResult(
-            complete=False,
+            # Falling out of the loop is not the same as failing. The early
+            # return above fires only when every timeline resolves on the same
+            # pass; a search that instead runs its frontier down still holds a
+            # merged solution for the timelines that did solve, and on
+            # multi-sample problems that is the normal exit -- 1250 of 1250
+            # generated multi-given instances leave by this path with a plan
+            # the checker passes. What actually distinguishes "no answer" is
+            # `solved_state is None`, in which case `state` below is an
+            # arbitrary unfinished timeline.
+            complete=solved_state is not None,
             state=solved_state if solved_state is not None else current_timelines[0],
             merged_endpoints=merged_endpoints,
             _frontier=frontier,
@@ -1347,7 +1500,12 @@ def solve_by_mcts(
     solution = mcts(max_iter=max_iter)
 
     return Solution(
-        complete=True,
+        # Carry the search's own verdict. This was hardcoded `True`, which made
+        # `WorkflowPlan.Generate`'s `not result.complete` guard dead and let an
+        # exhausted search return whatever timeline it happened to be holding
+        # -- a plan of exactly `max_iter` steps that never reaches the target,
+        # reported as a solution. `tests/solver/test_incomplete_search.py`.
+        complete=solution.complete,
         dependency_plan=solution.state.steps,
         merged_endpoints=solution.merged_endpoints,
         _frontier=solution._frontier,
@@ -1359,6 +1517,8 @@ def solve_by_mcts(
             "demand2producer": demand2producer,
             "demand2product": demand2product,
             "product2consumer": product2consumer,
+            "distance_scores": distance_scores,
+            "opportunity_scores": opportunity_scores,
         },
         _iterations=solution._iterations,
         _refiner_iterations=solution._refiner_iterations,
