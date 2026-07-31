@@ -938,6 +938,15 @@ constant on the page, and a column header nudged into place with `position: rela
 still sizes the box. Each row states the `dag_cy` it was placed at, so this is assertable
 from the page rather than by eye.
 
+**A lineage rail trusts the layout engine for `lane`, never for `y`.** `LineageRail.svelte`
+(the recipe's git-log-style lineage columns beside the input rows and, separately, the output
+rows) is `MiniGraph.svelte`'s trick again — `POST /api/dag/layout` for placement — but recipe
+rows are not the plan DAG's uniform-pitch steps: a value row wraps, an array row grows a count
+note. So only `node.lane` crosses into the drawing; `y` is measured off each row's own
+`offsetTop` in `RecipeCard.svelte` and applied after the fact. The response's edges carry no
+`lane` of their own — only nodes do — so an edge's x endpoints are always its two nodes' lanes,
+never a field on the edge.
+
 ---
 
 ## Release versioning

@@ -650,11 +650,21 @@ class NodeGeometry:
 
 @dataclass(frozen=True)
 class EdgeGeometry:
-    """One edge as an SVG path, already routed, jogged and corner-rounded."""
+    """One edge as an SVG path, already routed, jogged and corner-rounded.
+
+    `lane` and `points` are the *grid* form `d` was baked from — the rail's
+    lane, and the routed polyline in (row, lane) coordinates with half-steps at
+    the jogs. A caller whose rows do not sit at this module's nominal pitch (a
+    recipe's rows wrap, and grow a count note) re-bakes those points at its own
+    measured y positions rather than inventing a second curve; `d` is the same
+    path baked here at the nominal pitch.
+    """
     src: str
     dst: str
     back: bool
     d: str
+    lane: int = 0
+    points: tuple[tuple[float, float], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -675,6 +685,12 @@ class Geometry:
     anchor: str  # "start" or "end" — which end of the label `label_x` pins
     nodes: tuple[NodeGeometry, ...]
     edges: tuple[EdgeGeometry, ...]
+    # the two `_Grid` numbers a caller re-baking `EdgeGeometry.points` needs and
+    # cannot infer: where the leftmost lane starts, and each lane's own centre.
+    # Lanes run right to left (see `_grid`), so a caller deriving lane x from
+    # lane index alone draws the whole rail mirrored.
+    margin: float = 0.0
+    lane_x: tuple[float, ...] = ()
 
 
 def geometry(
@@ -706,6 +722,8 @@ def geometry(
         EdgeGeometry(
             src=e.src, dst=e.dst, back=e.back,
             d="" if e.back else _svg_path(*_pixel_path(lay, e, g, style)),
+            lane=e.lane,
+            points=tuple((float(row), float(lane)) for row, lane in e.points),
         )
         for e in lay.edges
     ]
@@ -713,6 +731,7 @@ def geometry(
         width=g.width, height=g.height, font_size=g.font_size,
         marker_d=g.marker_d, row_pitch=g.row_pitch, lane_pitch=g.lane_pitch,
         anchor=g.anchor, nodes=tuple(nodes), edges=tuple(edges),
+        margin=g.margin, lane_x=g.lane_x,
     )
 
 

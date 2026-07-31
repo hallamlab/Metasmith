@@ -1366,6 +1366,39 @@ class TestDagLayoutRoute:
         assert r.status_code == 400
 
 
+class TestDagTheme:
+    """The ink the page draws in, served rather than restated in a stylesheet.
+
+    `dag_renderer.DARK` is `LIGHT` with only its colours replaced, so a marker's
+    shape, its scale and its stroke weight cannot drift between them. A CSS copy
+    of any of that gives the guarantee away, and a locally-drawn plan would stop
+    being the same drawing as the exported one.
+    """
+
+    def test_both_themes_arrive_at_once(self, client):
+        # the toggle must not cost a round trip
+        ink = client.get("/api/dag/theme").get_json()
+        assert set(ink) == {"light", "dark"}
+        for theme in ink.values():
+            assert set(theme["styles"]) == {"transform", "data", "target"}
+            assert theme["plate"]["background"] and theme["plate"]["edge"]
+
+    def test_a_style_carries_what_a_browser_has_to_draw_with(self, client):
+        ink = client.get("/api/dag/theme").get_json()
+        st = ink["light"]["styles"]
+        assert st["transform"]["shape"] == "triangle_down"
+        assert st["data"]["shape"] == "circle" and not st["data"]["solid"]
+        # the requested output is the same circle drawn solid, heavier
+        assert st["target"]["solid"] and st["target"]["stroke_width"] > st["data"]["stroke_width"]
+
+    def test_only_the_colours_differ_between_the_two(self, client):
+        ink = client.get("/api/dag/theme").get_json()
+        for kind in ink["light"]["styles"]:
+            light, dark = ink["light"]["styles"][kind], ink["dark"]["styles"][kind]
+            for field in ("shape", "marker_scale", "stroke_width", "rx", "solid"):
+                assert light[field] == dark[field], (kind, field)
+
+
 class TestWorkflowGenerateMore:
     def test_regenerating_replaces_the_bundle(self, client):
         name = _make_workflow(client)
@@ -1904,26 +1937,69 @@ class TestStepSelectors:
             assert s["process"].startswith(f"p{s['order']:02}__")
             assert "declared_resources" in s
 
-    def test_the_summary_places_every_step_in_the_drawing(self, client, runnable):
-        """The page lays its step rows out from these, in the SVG's own pixels.
+    def test_the_result_carries_the_whole_drawing(self, client, runnable):
+        """The page draws the plan itself, from this, and lays its step rows
+        out against the same numbers.
 
-        A row sits level with the node it describes, so `dag_cy` is the whole
-        of that alignment and `row_pitch`/`top_cy` are the only spacings the
-        page is allowed to know -- guessing at either is how the two drifted
-        apart. Nothing here may fall back to `None`: the geometry block is
-        caught broadly, and a silent failure draws every row in the wrong place
-        rather than not at all.
+        Stored rather than computed per request: laying a plan out is the most
+        expensive thing metasmith does with one, and it cannot change without a
+        re-solve. Nothing here may be missing -- the block that builds it is
+        caught broadly, and a silent failure leaves the diagram blank.
         """
         result = client.get(f"/api/workflows/{runnable}").get_json()["result"]
-        geo = result["dag_geometry"]
-        assert set(geo) == {"width", "height", "row_pitch", "top_cy"}
-        assert all(isinstance(v, float) and v > 0 for v in geo.values())
-        # the first drawn row is inside the plate, and a row is not taller
-        # than the plate it is placed on
-        assert geo["top_cy"] < geo["height"]
-        for s in result["step_display"]:
-            assert isinstance(s["dag_cy"], float), s["transform"]
-            assert geo["top_cy"] <= s["dag_cy"] <= geo["height"]
+        graph = result["plan_graph"]
+        for key in ("width", "height", "row_pitch", "lane_pitch", "margin", "lane_x"):
+            assert key in graph, key
+        assert all(isinstance(v, float) and v > 0 for v in graph["lane_x"])
+        # every step is a node of it, and every node is inside the plate
+        by_step = {n["step"]: n for n in graph["nodes"] if n.get("step") is not None}
+        assert {s["order"] for s in result["step_display"]} == set(by_step)
+        for n in graph["nodes"]:
+            assert 0 < n["cy"] < graph["height"]
+
+    def test_a_step_node_points_at_the_transform_it_runs(self, client, runnable):
+        """What a click on a plan node has to end up as.
+
+        Resolved server-side, against the same index the panel is addressed by:
+        the plan was solved against a staged clone of the library, so its own
+        paths are not the indexed clone's and the browser has nothing to match
+        on. A step whose library is not the indexed one stays unclickable, so
+        the assertion is on the shape rather than on every step resolving.
+        """
+        result = client.get(f"/api/workflows/{runnable}").get_json()["result"]
+        graph = result["plan_graph"]
+        index = client.get("/api/project/type-index").get_json()["transforms"]
+        steps = [n for n in graph["nodes"] if n.get("step") is not None]
+        assert steps
+        for n in steps:
+            i = n["transform_index"]
+            if i is None:
+                continue
+            assert 0 <= i < len(index)
+        # a data node is addressed by the type it stands for, which is its id
+        for n in graph["nodes"]:
+            if n["kind"] != "transform":
+                assert n["type"] == n["id"]
+
+    def test_the_drawing_is_backfilled_onto_a_result_without_one(
+        self, client, runnable, project_root,
+    ):
+        """A result planned by the CLI, or stored against an older shape of the
+        drawing, is revisited rather than left to draw nothing.
+
+        Tested by the newest key rather than by presence, which is why the
+        stored one is emptied rather than deleted: a result carrying an older
+        shape of the block would otherwise never be looked at again.
+        """
+        import yaml
+
+        path = project_root / "workflows" / runnable / "result.yml"
+        stored = yaml.safe_load(path.read_text())
+        assert "lane_x" in stored["plan_graph"]
+        stored["plan_graph"] = {"width": 1, "height": 1}
+        path.write_text(yaml.dump(stored))
+        again = client.get(f"/api/workflows/{runnable}").get_json()["result"]
+        assert "lane_x" in (again.get("plan_graph") or {})
 
     def test_a_position_selector_matches_the_process_that_position_gets(self):
         """The two halves that have to agree, pinned against each other.
