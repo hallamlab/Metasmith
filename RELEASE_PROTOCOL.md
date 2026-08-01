@@ -184,6 +184,27 @@ Then:
 3. Retag quay **`latest`** (and the bare `X.Y.Z`) onto the new image. There is no
    dev.sh step, but it needs no web UI either — `docker tag <image>:<version>-<hash>
    <image>:latest && docker push <image>:latest`, same for the bare version.
+4. Install the published conda package into a throwaway env and confirm the
+   solver engine actually runs there (see below).
+
+### Verify the package a user would get
+
+The build-time guards check the *staging directory*, so they cannot see what
+packaging does to a file afterwards. `binary_relocation`/`detect_binary_files_with_prefix`
+are off in the recipe for exactly this reason — with them on, conda-build treats
+the cross-built `msm_solver` ELFs as libraries of the build host, patchelfs them,
+and the x86_64-linux binary segfaults on exec. Nothing fails at build, install,
+or import; the planner just quietly falls back to the 15x slower python search.
+So the only honest check is a clean-room install:
+
+```
+env -u PYTHONPATH mamba create -n vXYZ -c hallamlab -c bioconda -c conda-forge metasmith=X.Y.Z
+env -u PYTHONPATH mamba run -n vXYZ python -c \
+  "from metasmith.models.solver_backend import Backend; print(Backend('solve'))"
+```
+
+`rust`, not `python`. Clearing `PYTHONPATH` is load-bearing — the workspace
+checkout otherwise shadows the install and the test proves nothing.
 
 ---
 
