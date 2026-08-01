@@ -183,7 +183,7 @@ def problems(rows: list[dict], table: dict | None = None) -> list[str]:
         label = op_samples.row_label(r)
         if r.get("mode") != "value":
             if table is None and not (r.get("path") or "").strip():
-                out.append(f"[{label}] has no path")
+                out.append(f"[{(r.get('dtype') or '').strip()}] has no path")
             continue
         ents = entries(r)
         if not ents:

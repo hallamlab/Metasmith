@@ -19,6 +19,8 @@ The test tree is keyed by **axis of concern** — each top-level dir owns one ki
 
 Markers are applied by directory in `tests/conftest.py:pytest_collection_modifyitems`, and a file matching no row **fails collection** rather than quietly running in no gate — that is what makes directory-as-declaration a contract instead of a convention. Explicit `@pytest.mark.X` decorators are additive. Capability gates (`requires_ssh_localhost`, `requires_docker`, `requires_apptainer`, `requires_docker_dev_image`) skip cleanly when the capability is absent.
 
+`python_solver` is the one marker that *removes* tests from every routine run, release included: the rust engine is the shipped solver and the python implementation is being retired, so tests that need it — the parity sweeps that use it as the engine's reference, and the few that trace its internals — skip unless `--python-solver` is passed. Reach for it when there is reason to suspect the engine, which is the only question the comparison still answers. What holds the engine to account without it is `check_plan`, which shares no code with either implementation. The `--solver=` session flag is unrelated and still selects which implementation everything else runs on.
+
 ## How to add a test
 
 1. **Pick the axis.** What is this test actually pinning?

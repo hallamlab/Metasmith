@@ -2,7 +2,7 @@
 
 Flow correctness — given a finalized `WorkflowPlan`, does the orchestrator/runtime correctly emit, fork, batch, group, and join data along declared lineage?
 
-**This is NOT solver correctness.** Solver tests live separately (currently `tests/models/test_solver*.py`, slated for `tests/flow/test_solver_*.py` only because they probe planning — but they verify the *choice* of transforms, not the data motion).
+**This is NOT solver correctness.** Solver tests live in `tests/solver/` — they verify the *choice* of transforms and the soundness of the resulting plan, not the data motion.
 
 ## How to use this catalog
 

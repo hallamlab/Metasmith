@@ -14,7 +14,7 @@ n; the pre-fix code hung at n=21081 which was the production case.
 
 Pulls its type and transform libraries from the sibling
 ``metasmith-libraries/main/`` project via the
-``metasmith_libraries_root`` fixture in ``flow/conftest.py``. The
+``metasmith_libraries_root`` fixture in ``tests/conftest.py``. The
 original test wired against the now-deleted cyanoverse ``skani_triangle``
 transform; we switched to the equivalent production-graph topology under
 ``fastani`` / ``sequences::putative_genome`` because cyanoverse's
