@@ -202,6 +202,8 @@ Then:
 | Conda | `./dev.sh -bc` | conda package |
 | Publish image | `./dev.sh -ud` | image on quay.io |
 | Publish conda | `./dev.sh -uc` | package on anaconda.org |
-| Tags/branches | `git push origin …` + standing PR | release on the fork → upstream |
+| Retag quay | `docker tag`/`docker push` for `latest` + bare `X.Y.Z` | movable tags on quay.io |
+| Tags/branches | `git push origin release dev vX.Y.Z` | release on the fork |
+| Upstream | a **new** PR `release` → `hallamlab:release` | release upstream |
 
 > The env is `msm`. Run `dev.sh` and tests through `mamba run -n msm`.
