@@ -36,6 +36,10 @@ MANUAL_ONLY = {
     # legacy selectors kept for `-m "not docker"` style invocations
     "docker",
     "nextflow",
+    # opt-in: names the tests that need the python solver specifically, so the
+    # axis cannot grant it -- `tests/solver` runs against whichever
+    # implementation `--solver` selected, and only a few files pin the old one
+    "python_solver",
 }
 
 # Directories under tests/ that hold no tests and so need no axis row.

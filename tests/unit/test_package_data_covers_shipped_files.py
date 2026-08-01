@@ -28,6 +28,13 @@ EXEMPT_DIRS = {
     "example_resources/tutorials/.ipynb_checkpoints",
 }
 EXEMPT_SUFFIXES = {".pyc", ".pyi"}
+# Repo bookkeeping that happens to live inside the package directory. Both
+# describe how `engine/` is produced and stored, not anything a user needs:
+# the binaries themselves ship via the `engine/**` glob.
+EXEMPT_FILES = {
+    ".gitignore",     # ignores the built engine/ so the binaries stay untracked
+    "engine.dvc",     # DVC pointer to those binaries in the shared cache
+}
 
 
 def _tracked_data_files() -> list[Path]:
@@ -43,6 +50,8 @@ def _tracked_data_files() -> list[Path]:
         if rel.suffix == ".py" or rel.suffix in EXEMPT_SUFFIXES:
             continue
         if any(str(rel).startswith(d) for d in EXEMPT_DIRS):
+            continue
+        if rel.as_posix() in EXEMPT_FILES:
             continue
         files.append(rel)
     return files
