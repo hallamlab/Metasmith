@@ -18,7 +18,6 @@ collect cleanly.
 
 from __future__ import annotations
 
-import os
 import shutil
 import textwrap
 from dataclasses import dataclass
@@ -57,37 +56,8 @@ from metasmith.testing.virtual_runtime import VirtualE2ERuntime
 # and is therefore visible here without re-declaration.
 
 
-@pytest.fixture(scope="session")
-def metasmith_libraries_root() -> Path:
-    """Resolve the sibling ``metasmith-libraries/main/`` project root.
-
-    Resolution order:
-    1. ``METASMITH_LIBRARIES_ROOT`` env var (if set and existing).
-    2. Sibling layout: ``<workspace>/projects/metasmith-libraries/main``,
-       computed from this file's location.
-    3. Skip with an actionable reason.
-    """
-    env = os.environ.get("METASMITH_LIBRARIES_ROOT")
-    if env:
-        p = Path(env).expanduser().resolve()
-        if p.exists():
-            return p
-        pytest.skip(
-            f"METASMITH_LIBRARIES_ROOT={env!r} does not exist; "
-            "unset it or point at metasmith-libraries/main"
-        )
-    sibling = (
-        Path(__file__).resolve().parents[4]
-        / "metasmith-libraries"
-        / "main"
-    )
-    if sibling.exists():
-        return sibling
-    pytest.skip(
-        "metasmith-libraries/main not found alongside metasmith project; "
-        "set METASMITH_LIBRARIES_ROOT to override "
-        f"(expected at {sibling})"
-    )
+# `metasmith_libraries_root` is defined in tests/conftest.py -- three axes want
+# the real standard library, so it lives above all of them.
 
 
 @pytest.fixture
@@ -206,9 +176,15 @@ def _build_transform_lib(
     transforms: dict[str, str],
     *,
     namespace: str = "mock",
+    library_name: str = "transforms.xgdb",
 ) -> TransformInstanceLibrary:
-    """Build a transforms.xgdb that uses the given types_path under `namespace`."""
-    tr_path = base_dir / "transforms.xgdb"
+    """Build a transforms.xgdb that uses the given types_path under `namespace`.
+
+    `library_name` is the directory the library *is* -- a library repository
+    lays these out as `transforms/<name>` with nothing between, which is what
+    a template's stored library name is matched against (`library_index`).
+    """
+    tr_path = base_dir / library_name
     tr_path.mkdir(parents=True, exist_ok=True)
     meta = tr_path / "_metadata"
     types_dir = meta / "types"

@@ -1,23 +1,30 @@
 <script>
   import { api } from '../lib/api.svelte.js'
-  import { app, attempt, loadRuns, loadWorkflows, notify, select, ui } from '../lib/state.svelte.js'
+  import { app, attempt, loadRuns, loadWorkflows, notify, select } from '../lib/state.svelte.js'
   import Ago from '../components/Ago.svelte'
   import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
   import JobLog from '../components/JobLog.svelte'
+  import DagRail from '../components/DagRail.svelte'
   import MiniGraph from '../components/MiniGraph.svelte'
+  import SaveAsTemplate from '../components/SaveAsTemplate.svelte'
   import SaveChip from '../components/SaveChip.svelte'
   import SampleTable from '../components/SampleTable.svelte'
   import ShareOut from '../components/ShareOut.svelte'
   import SidePanel from '../components/SidePanel.svelte'
+  import Spinner from '../components/Spinner.svelte'
+  import StageProgress from '../components/StageProgress.svelte'
   import HintsPanel from './HintsPanel.svelte'
   import LibraryList from './LibraryList.svelte'
   import RecipeCard from './RecipeCard.svelte'
   import TypeInspector from './TypeInspector.svelte'
   import ParamRows from '../components/ParamRows.svelte'
   import { isPlumbing, libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
+  import { around, children, parents } from '../lib/highlight.js'
+  import { mintTargetId, refId, refKey, targetsFromWire, targetsToWire } from '../lib/lineage.js'
   import { runSuffix } from '../lib/runname.js'
   import { paramRows, sameParams, toParams } from '../lib/params.js'
+  import { entries as rowEntries } from '../lib/rows.js'
 
   let { name } = $props()
 
@@ -28,7 +35,34 @@
   // the recipe's rows are the form
   let items = $state([])
   let jobId = $state(null)
+  let jobStatus = $state(null)
+  let jobPhase = $state(null)
+
+  // The solve button's own busy state, and the bar beside it. There's no
+  // percentage worth showing -- the solver itself is one call we can't see
+  // inside -- but the job genuinely does move through these three steps in
+  // order (see the `PHASE:` markers `_work` emits in gui/api.py), so the bar
+  // says which one it's on rather than faking a fill. It stays visible
+  // through a failure (the failed segment is the point), but drops away on
+  // success, once `jobStatus` reaches `'done'`.
+  const SOLVE_STAGES = ['syncing', 'solving', 'finishing']
+  // Covers the gap between the click and the POST resolving with a job id --
+  // otherwise the button would sit un-busy for the first leg of the round
+  // trip, which is exactly the moment a second click is most tempting.
+  let requestingSolve = $state(false)
+  let solving = $derived(
+    requestingSolve || (!!jobId && jobStatus !== 'done' && jobStatus !== 'failed'),
+  )
+  let showSolveBar = $derived(solving || jobStatus === 'failed')
+  let solveStage = $derived(Math.max(0, SOLVE_STAGES.indexOf(jobPhase)))
+  let solveStageStates = $derived.by(() => {
+    if (!showSolveBar) return SOLVE_STAGES.map(() => 'idle')
+    return SOLVE_STAGES.map((_, i) =>
+      i < solveStage ? 'done' : i > solveStage ? 'idle' : jobStatus === 'failed' ? 'failed' : 'running',
+    )
+  })
   let sharing = $state(false)
+  let savingTemplate = $state(false)
   let launching = $state(false)
   let agentChoice = $state('')
   let presetChoice = $state('')
@@ -81,8 +115,33 @@
     drawing = null
   }
 
-  // a row of the recipe naming its own type: the same thing, from the other side
-  const showType = pickType
+  // a row of the recipe naming its own type: the same thing, from the other
+  // side. It settles the panel, so it is also what ends a preview -- the type
+  // it names *is* the answer now, and there is nothing left to put back.
+  const showType = (type) => {
+    previewFrom = null
+    pickType(type)
+  }
+
+  // Reading around an open type list moves the panel with you, which means
+  // `focus` stops describing what the row holds for as long as that list is
+  // open. What was there is snapshotted on the first preview and restored if
+  // the list closes without a pick -- `drawing` as well as `focus`, because
+  // `pickType` clears it, so a transform pinned in the panel would otherwise be
+  // torn down by a scroll through a list.
+  let previewFrom = $state(null)
+
+  const previewType = (type) => {
+    if (!previewFrom) previewFrom = { focus, drawing }
+    pickType(type)
+  }
+
+  const endPreview = () => {
+    if (!previewFrom) return
+    focus = previewFrom.focus
+    drawing = previewFrom.drawing
+    previewFrom = null
+  }
 
   function pickTransform(i) {
     drawing = { kind: 'transform', i }
@@ -97,16 +156,6 @@
   // the editable recipe, kept separate from the frozen result below it
   let recipe = $state({ targets: [], transform_libraries: [], rows: [] })
   let loadedFor = $state(null)
-
-  // Targets were a list of bare type names before they could carry lineage.
-  // Both spellings still arrive from disk, so both are read here.
-  function normalize(list) {
-    return (list ?? []).map((t) =>
-      typeof t === 'string'
-        ? { type: t, parents: [] }
-        : { type: t.type ?? '', parents: [...(t.parents ?? [])] },
-    )
-  }
 
   // The input rows. These are the recipe: the input library is built from them
   // when the workflow is solved, so a row is never anything else and never
@@ -127,7 +176,12 @@
         // before a sync has run would re-mint every one of them. Delete it a
         // release after `minted` is populated everywhere.
         name: d.name ?? '',
-        value: d.value ?? '',
+        // What a value row holds is a list of keyed entries. A row written when
+        // it was one string reads as one unkeyed entry here and is written back
+        // in the list form, so a recipe migrates on its first save -- and, since
+        // one unkeyed entry renders to exactly the text it always did, nothing
+        // in the library moves when it does.
+        values: rowEntries(d),
         dtype: d.dtype ?? '',
         parents: [...(d.parents ?? [])],
       }))
@@ -135,19 +189,14 @@
 
   // -- the sample table --------------------------------------------------------
   //
-  // A row of the recipe whose path (or a value row's name or value) names a
-  // column of the attached sheet is a *sample array*: it never registers as it
-  // stands. What puts one library item per sheet row down is solving, not a
-  // separate step here to remember -- `generate_workflow` re-syncs the
-  // registered items against the current table and rows on every solve, so
-  // there is no "expanded" state on this side of the wire to go stale, and
-  // nothing here unregisters anything by hand either. Which makes a row an
-  // array is the token, not a flag -- there is one list of input rows, and a
-  // row stops being an array the moment its last token goes.
-  const TOKEN = /\{[^{}]*\}/
-  const isArrayRow = (d) =>
-    d.mode === 'value' ? TOKEN.test(d.value ?? '')
-                       : TOKEN.test(d.path ?? '')
+  // A sheet attached makes every row of the recipe a *sample array*: it never
+  // registers as it stands, and each of its fields reads the column it binds.
+  // What puts one library item per sheet row down is solving, not a separate
+  // step here to remember -- `generate_workflow` re-syncs the registered items
+  // against the current table and rows on every solve, so there is no
+  // "expanded" state on this side of the wire to go stale, and nothing here
+  // unregisters anything by hand either. Detaching is therefore all it takes to
+  // put every row back to the text it was holding before.
 
   let table = $state(null)
 
@@ -175,10 +224,11 @@
   }
 
   // Which rows every sample should see. Held as row references (`#id`), not as
-  // paths: a row may not have a path yet, which is the normal state of a fresh
-  // recipe, and the generate turns each one into a path between building the
-  // library and solving from it. The key name is the spec's own, because both
-  // the create and generate routes filter incoming bodies against that list.
+  // paths: a row under a sheet registers one path per distinct set of cells and
+  // none of them exists until the solve, so the request says which *row* and the
+  // generate turns it into every path that row made. The key name is the spec's
+  // own, because both the create and generate routes filter incoming bodies
+  // against that list.
   let sharedPaths = $derived(wf?.request?.shared_input_paths ?? [])
 
   async function setShared(key, on) {
@@ -195,13 +245,20 @@
   // What stops a solve. Solving is what registers a sample row now, and it
   // refuses the same way the old manual expand did -- surfaced here too, so
   // the button says why rather than a solve starting and failing on the same
-  // thing a moment later.
-  let arrayCount = $derived(recipe.rows.filter(isArrayRow).length)
+  // thing a moment later. A row that has chosen no column yet is *not* here: it
+  // is a blank in the recipe, drawn on the row itself, and a half-filled recipe
+  // is how a plan gets worked out.
   let tableProblem = $derived.by(() => {
-    if (!table?.attached || !arrayCount) return null
+    if (!table?.attached) return null
     if (table.problems?.length) return table.problems[0].message
     return null
   })
+
+  // ...and what stops a *launch*, which is a different question with a
+  // different answer: the blanks in the recipe the stored plan was solved from,
+  // recorded at solve time and read back here. Absent on a result from before
+  // this existed, which means none.
+  let recipeProblems = $derived(wf?.result?.recipe_problems ?? [])
 
   let rowSeq = 0
   const nextRowId = () => `d${(rowSeq++).toString(36)}${Math.random().toString(36).slice(2, 7)}`
@@ -211,7 +268,7 @@
     if (loadedFor !== name) {
       loadedFor = name
       recipe = {
-        targets: normalize(wf.request.target_types),
+        targets: targetsFromWire(wf.request.target_types),
         transform_libraries: wf.request.transform_libraries ?? [],
         rows: normalizeRows(wf.request.input_drafts),
       }
@@ -233,6 +290,7 @@
     wf = null
     table = null
     jobId = null
+    jobStatus = null
     focus = null
     drawing = null
     loadedFor = null
@@ -286,6 +344,57 @@
     drawing?.kind === 'transform' ? `x:${drawing.i}` : focus ? `t:${focus}` : null,
   )
 
+  // -- the plan's own drawing ----------------------------------------------
+  //
+  // Laid out by the server when the plan was solved and stored beside the
+  // result, so a page load costs no layout and the drawing cannot disagree with
+  // the step rows beside it. A data node's id *is* its type name, which is what
+  // the panel addresses a type by; a step node carries the index of the
+  // transform it runs, resolved server-side against the library index rather
+  // than string-matched here.
+  let planGraph = $derived(wf?.result?.plan_graph ?? null)
+
+  let planCy = $derived(
+    new Map(
+      (planGraph?.nodes ?? []).filter((n) => n.step != null).map((n) => [n.step, n.cy]),
+    ),
+  )
+
+  let planMeta = $derived(
+    new Map(
+      (planGraph?.nodes ?? []).map((n) => [
+        n.id,
+        {
+          kind: n.kind === 'transform' ? 'transform' : 'type',
+          // the synthetic `given` node, and any step whose library is not the
+          // indexed one, have nothing on the right to be shown
+          disabled: n.kind === 'transform' && n.transform_index == null,
+        },
+      ]),
+    ),
+  )
+
+  function pickPlanNode(id) {
+    const n = (planGraph?.nodes ?? []).find((x) => x.id === id)
+    if (!n) return
+    if (n.kind !== 'transform') pickType(n.id)
+    else if (n.transform_index != null) pickTransform(n.transform_index)
+  }
+
+  // Which way the diagram reads around whatever the pointer is on. Both
+  // directions at once is what a plan diagram is *already* showing -- every
+  // line is on the page -- so the useful question is one of "what does this
+  // need" and "what needs this", answered one at a time. One hop: two hops on a
+  // 73-node plan lights half the drawing, which is the same as lighting none.
+  let planUpstream = $state(true)
+  let planPointed = $state(null)
+  let planMarks = $derived(
+    around(planGraph, {
+      pointed: planPointed,
+      relation: planUpstream ? parents : children,
+    }),
+  )
+
   let drawingLabel = $derived.by(() => {
     if (drawing?.kind === 'transform') return index?.transforms?.[drawing.i]?.name ?? 'transform'
     if (drawing?.kind === 'library')
@@ -293,9 +402,14 @@
     return focus
   })
 
+  // Both sides through the serialiser, not just this one: the ids the page
+  // holds are minted per load and never match, and a recipe written by the CLI
+  // in an order that is legal but not the one this page would choose would
+  // otherwise read as permanently changed.
   let stale = $derived(
     wf?.planned &&
-      (JSON.stringify(recipe.targets) !== JSON.stringify(normalize(wf.request.target_types)) ||
+      (JSON.stringify(targetsToWire(recipe.targets)) !==
+        JSON.stringify(targetsToWire(targetsFromWire(wf.request.target_types))) ||
         JSON.stringify(recipe.transform_libraries) !==
           JSON.stringify(wf.request.transform_libraries ?? [])),
   )
@@ -351,10 +465,15 @@
   // keep whatever a previous version of this page (or the CLI) put there. The
   // table never derives one -- every table-driven solve is one unified view
   // over the whole DAG the sheet describes.
+  //
+  // `targetsToWire` is the one place the outputs are put in an order and the
+  // one place a parent becomes a position -- and this is its only caller, so a
+  // write path that skipped it would ship an id where the file wants an int and
+  // be refused by name rather than saved as a plausible wrong number.
   function requestBody() {
     return {
       sample_type: null,
-      target_types: recipe.targets,
+      target_types: targetsToWire(recipe.targets),
       transform_libraries: recipe.transform_libraries,
       input_drafts: recipe.rows,
     }
@@ -404,7 +523,7 @@
 
   function addRow(kind) {
     if (kind === 'output') {
-      recipe.targets = [...recipe.targets, { type: '', parents: [] }]
+      recipe.targets = [...recipe.targets, { id: mintTargetId(), type: '', parents: [] }]
       persist()
       return
     }
@@ -418,9 +537,12 @@
     const d = {
       id: nextRowId(),
       mode,
+      // two answers per field, one live at a time -- the text, and the sheet
+      // column. Which is live is the sheet's presence and nothing else.
       path: '',
+      column: '',
       name: '',
-      value: '',
+      values: [{ key: '', value: '', column: '' }],
       dtype: '',
       parents: [],
       ...extra,
@@ -443,7 +565,7 @@
   // solve: the library is built from the rows, so a row that is not there
   // registers nothing.
   async function removeRow(id) {
-    const key = `#${id}`
+    const key = refKey(id)
     recipe.rows = recipe.rows
       .filter((d) => d.id !== id)
       .map((d) => ({ ...d, parents: d.parents.filter((p) => p !== key) }))
@@ -458,8 +580,10 @@
     await load()
   }
 
-  function patchTarget(i, patch) {
-    recipe.targets = recipe.targets.map((t, j) => (j === i ? { ...t, ...patch } : t))
+  // Spread, never rebuilt: the id is what the rows are keyed on, so losing it
+  // would restart the element a reorder is meant to animate.
+  function patchTarget(id, patch) {
+    recipe.targets = recipe.targets.map((t) => (t.id === id ? { ...t, ...patch } : t))
     touch()
   }
 
@@ -472,35 +596,33 @@
   // moving out of the whole control, not out of the box inside it.
   const commitRow = persist
 
-  // Lineage, whichever half of the recipe the row is in. Both are positions in
-  // the request now -- an input by its row id, an output by its index.
+  // Lineage, whichever half of the recipe the row is in. One line, no branch on
+  // the half: both store the keys of what they descend from, and only the
+  // serialiser knows an output's parents end up as numbers.
   async function setParents(row, keys) {
-    if (row.kind === 'target') {
-      patchTarget(row.id, {
-        parents: keys.map((k) => Number(k.slice(1))).sort((a, b) => a - b),
-      })
-    } else {
-      patchRow(row.id, { parents: keys })
-    }
+    // an input row already stores its parents as references, because they share
+    // a list with paths; an output's ids never leave the page, so they are kept
+    // bare and the reference is put back on when the rows are built
+    if (row.kind === 'target') patchTarget(row.id, { parents: keys.map(refId) })
+    else patchRow(row.id, { parents: keys })
     await persist()
   }
 
-  // Targets are addressed by position, so removing one has to renumber the
-  // links into it. A link *to* the removed target cannot be renumbered, so it
-  // is dropped -- and said out loud, because it silently changes the plan.
-  async function removeTarget(i) {
+  // The output goes, and so does every link into it. Nothing is renumbered --
+  // the links name ids, and the positions are worked out fresh on the way to
+  // disk -- but a link *to* the removed output is genuinely lost, and that is
+  // said out loud because it silently changes the plan.
+  async function removeTarget(id) {
     let dropped = false
     recipe.targets = recipe.targets
-      .filter((_, j) => j !== i)
+      .filter((t) => t.id !== id)
       .map((t) => ({
         ...t,
-        parents: (t.parents ?? [])
-          .filter((p) => {
-            if (p !== i) return true
-            dropped = true
-            return false
-          })
-          .map((p) => (p > i ? p - 1 : p)),
+        parents: (t.parents ?? []).filter((p) => {
+          if (p !== id) return true
+          dropped = true
+          return false
+        }),
       }))
     await persist()
     // after the write, not before: persist clears the notice on its way in
@@ -534,7 +656,8 @@
     // to the next, or one file would satisfy three slots. A row with nothing in
     // it still occupies the requirement, so pressing apply again does not stamp
     // a second copy; it is reported as blank rather than counted as present.
-    const identity = (d) => (d.mode === 'value' ? d.value : d.path).trim()
+    const identity = (d) =>
+      String(d.mode === 'value' ? rowEntries(d)[0]?.value : d.path).trim()
     const used = new Set()
 
     function fits(dtype, slot) {
@@ -545,7 +668,7 @@
 
     function claim(slot) {
       for (const d of recipe.rows) {
-        const key = `#${d.id}`
+        const key = refKey(d.id)
         if (used.has(key) || !d.dtype || !fits(d.dtype, slot)) continue
         const id = identity(d)
         return { key, by: id || `a new ${d.dtype}`, blank: !id }
@@ -573,12 +696,12 @@
         mode: 'file',
         path: '',
         name: '',
-        value: '',
+        values: [{ key: '', value: '' }],
         dtype: slot.as,
         parents: (slot.parents ?? []).map((p) => stands.get(p)).filter(Boolean),
       }
-      stands.set(k, `#${d.id}`)
-      used.add(`#${d.id}`)
+      stands.set(k, refKey(d.id))
+      used.add(refKey(d.id))
       made.push(d)
     })
 
@@ -635,7 +758,17 @@
   }
 
   async function solve() {
+    requestingSolve = true
+    // Cleared here, not left to `JobLog`'s own reset -- that only fires once
+    // `jobId` changes below, and the request round trip happens before that.
+    // Without this, solving again after a failed (or even a successful) solve
+    // would draw the bar from the *previous* job's last phase/status for that
+    // whole gap -- a bar that looks finished, or failed, before the new job
+    // has said anything at all.
+    jobStatus = null
+    jobPhase = null
     const job = await attempt(() => api.post(`/workflows/${name}/generate`, requestBody()))
+    requestingSolve = false
     if (job) jobId = job.id
   }
 
@@ -789,6 +922,7 @@
              this workflow and what is in it -- so it is here. -->
         <div class="row">
           {#if wf.archived_at}<button onclick={unarchive}>restore</button>{/if}
+          <button class="small" onclick={() => (savingTemplate = true)}>save as template</button>
           <button class="small" onclick={() => (sharing = true)}>share</button>
         </div>
       </div>
@@ -806,6 +940,8 @@
           expansion={table?.expansion ?? null}
           onshared={setShared}
           onfocus={showType}
+          onpreview={previewType}
+          onpreviewend={endPreview}
           onremoveRow={removeRow}
           onremoveTarget={removeTarget}
           onrow={patchRow}
@@ -824,8 +960,11 @@
         <button
           class="primary"
           onclick={solve}
-          disabled={recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
-        >{wf.planned ? 'solve again' : 'solve'}</button>
+          disabled={solving || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
+        >
+          {#if solving}<Spinner />{/if}
+          {solving ? 'solving…' : wf.planned ? 'solve again' : 'solve'}
+        </button>
         {#if recipe.targets.length === 0}
           <span class="small muted">add at least one output</span>
         {:else if blankTarget}
@@ -834,10 +973,10 @@
           <span class="small muted">two outputs are the same type with the same lineage</span>
         {:else if tableProblem}
           <span class="small muted">{tableProblem}</span>
-        {:else if arrayCount}
+        {:else if table?.attached}
           <span class="small muted">
-            one unified solve over the sheet's {arrayCount}
-            {arrayCount === 1 ? 'column' : 'columns'}
+            one unified solve over the sheet's {table.row_count}
+            {table.row_count === 1 ? 'row' : 'rows'}
           </span>
         {:else if stale}
           <span class="tag warn">recipe changed — the result below is from the old one</span>
@@ -849,18 +988,37 @@
         {/if}
       </div>
 
+      {#if showSolveBar}
+        <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} />
+      {/if}
+
       <div class="card col" style="gap:10px">
-        <!-- one log for both jobs this page starts: a solve and a bundle
-             expand are the same shape of thing to watch, and only one of them
-             runs at a time -->
-        <JobLog
-          {jobId}
-          onend={async () => {
-            // four independent reads, not a chain: solving is ~400ms of server
-            // and this used to add three sequential round trips to the end of it
-            await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
-          }}
-        />
+        {#if jobId}
+          <!-- one log for both jobs this page starts: a solve and a bundle
+               expand are the same shape of thing to watch, and only one of
+               them runs at a time. Closed by default -- watching it is what
+               you came for while a job is running, but once it is not, the
+               plan below it is, and this is the same amount of the card an
+               already-solved workflow used to lose to a wall of scrollback. -->
+          <details class="log-details">
+            <summary class="small muted">log</summary>
+            <JobLog
+              {jobId}
+              header={false}
+              bind:status={jobStatus}
+              bind:phase={jobPhase}
+              onend={async (summary) => {
+                // four independent reads, not a chain: solving is ~400ms of
+                // server and this used to add three sequential round trips to
+                // the end of it
+                await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
+                if (summary?.status === 'failed') {
+                  notify(summary?.error ?? 'solve failed', 'refused')
+                }
+              }}
+            />
+          </details>
+        {/if}
 
         {#if !wf.planned}
           <h3>plan</h3>
@@ -870,7 +1028,10 @@
           </p>
         {:else if wf.success}
           <div class="spread">
-            <h3>plan</h3>
+            <div class="row">
+              <h3>plan</h3>
+              <span class="tag ok">success</span>
+            </div>
             <div class="row">
               <span class="tag ok">{wf.step_count} step(s)</span>
               <button
@@ -893,71 +1054,83 @@
                also tall enough to push the run controls below it off screen,
                and closing it is the way back to them without scrolling past.
 
-               Everything about the alignment rests on one thing: the image and
-               the rows box are flex siblings with nothing between them, so
-               they share a top by construction rather than by arithmetic, and
-               a row's offset is just its node's `cy` less half a pitch. Both
-               the pitch and the height come from the geometry the server laid
-               the drawing out with, never from a constant here. -->
-          {@const geo = wf.result?.dag_geometry}
-          {@const pitch = geo?.row_pitch ?? ROW_H}
-          {@const dagHeight = geo?.height ?? (wf.result?.step_display?.length ?? 0) * pitch}
+               The drawing is `DagRail`, the same component the recipe's
+               lineage rails and the info panel use, over placement the server
+               stored when it solved. It used to be an `<img>` of a rendered
+               SVG, with each step's controls pinned to a `cy` measured off
+               that image; drawn here, a step's row is an ordinary sibling
+               placed at the same pitch, and the nodes themselves are clickable
+               into the panel on the right. No pan and no zoom -- the diagram
+               is its natural size and the card scrolls. -->
+          {@const pitch = planGraph?.row_pitch ?? ROW_H}
+          {@const dagHeight = planGraph?.height ?? (wf.result?.step_display?.length ?? 0) * pitch}
+          {@const topCy = planGraph?.nodes?.length
+            ? Math.min(...planGraph.nodes.map((n) => n.cy))
+            : HEAD_H / 2}
           <details class="dag-details" open>
             <summary class="small muted">diagram</summary>
+            {#if planGraph}
+              <!-- Outside `.dag-scroll` on purpose: a plan wider than the card
+                   scrolls sideways, and a control inside that scroller leaves
+                   the corner it is meant to sit in the moment you use it. Two
+                   labelled halves, one of them lit -- the same shape as the
+                   recipe's file/value switch, so a direction is a thing you
+                   pick rather than a single button whose own label is the only
+                   record of which way it is currently pointed. -->
+              <div class="dag-dir" role="group" aria-label="which way the diagram lights">
+                <button
+                  type="button"
+                  class:on={planUpstream}
+                  title="hovering a step lights what it needs"
+                  onclick={() => (planUpstream = true)}
+                >parents</button>
+                <button
+                  type="button"
+                  class:on={!planUpstream}
+                  title="hovering a step lights what needs it"
+                  onclick={() => (planUpstream = false)}
+                >children</button>
+              </div>
+            {/if}
             <div class="dag-scroll">
-              <div
-                class="dag-box"
-                data-dag-width={geo?.width ?? ''}
-                data-dag-height={geo?.height ?? ''}
-                data-row-pitch={pitch}
-                data-dag-top-cy={geo?.top_cy ?? ''}
-                data-head-h={HEAD_H}
-              >
+              <div class="dag-box">
                 <div class="dag-body">
-                  <!-- the theme and the solve time are both in the query
-                       string, not a header: the browser caches by url, so
-                       switching themes or solving again would otherwise show
-                       the rendering it already had for that url. `generated_at`
-                       is the newest thing that changes on every solve,
-                       including a re-solve onto the same plan. Unscaled --
-                       `dag_cy` values are in this image's own pixels and only
-                       line up when nothing resizes it, so it gets no width and
-                       no max-width. -->
-                  <img
-                    class="dag"
-                    src={`/api/workflows/${wf.name}/dag?theme=${ui.theme}&v=${encodeURIComponent(wf.generated_at)}`}
-                    alt="workflow diagram"
-                  />
+                  {#if planGraph}
+                    <DagRail
+                      geo={planGraph}
+                      marks={planMarks}
+                      meta={planMeta}
+                      ground="var(--panel)"
+                      onpick={pickPlanNode}
+                      onhover={(id) => (planPointed = id)}
+                    />
+                  {/if}
 
                   {#if wf.result?.step_display?.length}
                     <!-- Keyed by position, which is what makes a selector
                          address one step. Empty is "as the transform
                          declared", which is what the greyed number in each box
-                         is. A step with no `dag_cy` (geometry failed, or an
-                         old cached result) falls back to stacking at the
-                         diagram's own pitch rather than colliding at the top.
-                         The `data-` attributes are there so the alignment can
-                         be asserted from the page instead of eyeballed -- row
-                         centre less image top must be `dag_cy`, with no
-                         constant in between. -->
+                         is. The rows and the drawing are flex siblings sharing
+                         a top, so a row's offset is its node's `cy` less half a
+                         pitch -- and both numbers come from the placement the
+                         server stored, never from a constant here. -->
                     <div class="res-body" style={`height: ${dagHeight}px`}>
                       <!-- level with the diagram's first node, which is the
                            synthetic `given` and so never has a row of its own -->
                       <div
                         class="res-head"
-                        style={`height: ${HEAD_H}px; top: ${(geo?.top_cy ?? HEAD_H / 2) - HEAD_H / 2}px`}
+                        style={`height: ${HEAD_H}px; top: ${topCy - HEAD_H / 2}px`}
                       >
                         <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
                       </div>
                       {#each wf.result.step_display as step, i}
-                        {@const cy = step.dag_cy ?? (i + 0.5) * pitch}
+                        {@const cy = planCy.get(step.order) ?? (i + 0.5) * pitch}
                         <div
                           class="res-row"
                           style={`top: ${cy - pitch / 2}px; height: ${pitch}px`}
                           title={step.process ?? step.transform}
                           data-step={step.order}
                           data-transform={step.transform}
-                          data-dag-cy={step.dag_cy ?? ''}
                         >
                           {#each OVERRIDE_FIELDS as f}
                             {@const v = overrides[step.order]?.[f] ?? ''}
@@ -1058,10 +1231,26 @@
           {/if}
 
           <div>
-            <button class="primary" onclick={launch} disabled={!agentChoice || launching}>
+            <button
+              class="primary"
+              onclick={launch}
+              disabled={!agentChoice || launching || recipeProblems.length > 0}
+            >
               {launching ? 'launching…' : 'stage and run'}
             </button>
           </div>
+          {#if recipeProblems.length}
+            <!-- A blank in the recipe is reported and never refused, right up to
+                 here: a deferred input has no file to stage and a nameless pair
+                 has no key to be read under. Off the solve that made this plan,
+                 not off what the boxes say now -- so the way out is to fill it
+                 in and solve again, which is also what puts the fix in the
+                 bundle. The route refuses the same thing; this is a signpost. -->
+            <p class="small bad">
+              This plan was solved from an unfinished recipe: {recipeProblems.join('; ')}.
+              Fill them in and solve again.
+            </p>
+          {/if}
           <p class="small muted">
             The same workflow can run on any agent — staging copies it there
             first, then launches and detaches.
@@ -1115,22 +1304,28 @@
         {/if}
       {/snippet}
 
-      {#snippet top()}
-        <LibraryList
-          libraries={index?.libraries ?? []}
-          {enabled}
-          viewing={drawing?.kind === 'library' ? drawing.path : null}
-          ontoggle={toggleLibrary}
-          onview={pickLibrary}
-        />
-        <MiniGraph
-          {graph}
-          focus={graphFocus}
-          empty="Pick a type, a transform, or a library’s eye — this draws what it connects to."
-          onpicktype={pickType}
-          onpicktransform={pickTransform}
-        />
-      {/snippet}
+      <!-- One column, one scrollbar. These three used to be two sections with a
+           grip between them: the libraries and the drawing pinned at a
+           remembered height, the inspector scrolling in whatever was left. That
+           made reading the bottom of the inspector a matter of first resizing
+           the top, and the drawing was squeezed by whatever the last drag had
+           left it. Now the panel scrolls as a whole and the drawing is a fixed
+           frame within it. `SidePanel` still has the split -- the run page's
+           tree and preview want it. -->
+      <LibraryList
+        libraries={index?.libraries ?? []}
+        {enabled}
+        viewing={drawing?.kind === 'library' ? drawing.path : null}
+        ontoggle={toggleLibrary}
+        onview={pickLibrary}
+      />
+      <MiniGraph
+        {graph}
+        focus={graphFocus}
+        empty="Pick a type, a transform, or a library’s eye — this draws what it connects to."
+        onpicktype={pickType}
+        onpicktransform={pickTransform}
+      />
 
       <TypeInspector
         type={focus}
@@ -1147,6 +1342,14 @@
   {#if sharing}
     <ShareOut kind="workflow" name={wf.name} onclose={() => (sharing = false)} />
   {/if}
+
+  {#if savingTemplate}
+    <SaveAsTemplate
+      workflowName={wf.name}
+      suggestedName={displayName}
+      onclose={() => (savingTemplate = false)}
+    />
+  {/if}
 {/if}
 
 <style>
@@ -1156,23 +1359,18 @@
   .pane { display: flex; flex: 1; min-width: 0; height: 100%; align-items: stretch; }
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
   .loading { padding: 18px; }
-  .scroll { overflow-x: auto; }
   /* The diagram sits on the card's own ground: it is drawn with no plate of its
-     own (`background=False` on the render route), and one painted here was
-     never any colour but this card's. The block it makes with the step rows is
+     own, and one painted under it was never any colour but this card's -- which
+     is also what a hollow marker is filled with, since hollow reads hollow only
+     where the fill and the ground agree. The block it makes with the step rows is
      narrower than the card, so it is centred as one thing -- and the scroller
      around it is what keeps a plan wider than the card from widening the card
      instead of scrolling. No fold and no height cap: this grows with the plan. */
   .dag-scroll { overflow-x: auto; margin-top: 8px; }
   .dag-box { width: max-content; margin-inline: auto; display: flex; flex-direction: column; gap: 4px; }
-  /* the image and the rows box, flex siblings with nothing between them: they
+  /* the drawing and the rows box, flex siblings with nothing between them: they
      share a top by construction, which is the whole of the alignment */
   .dag-body { display: flex; align-items: flex-start; gap: 10px; }
-  /* natural pixel size, deliberately unscaled: `dag_cy` is in the SVG's own
-     pixel space, and a `top:` offset built from it only lines up with the node
-     it names when nothing here resizes the image. Its `margin-top` is set
-     inline from the same constant the rows are offset by. */
-  .dag-body img.dag { display: block; }
   /* the fold around the diagram: a `summary` its own row, not indented under
      the drawing the way a browser default reads, since this one is a sibling
      of the run controls it is standing between the plan and */
@@ -1182,6 +1380,47 @@
     user-select: none;
   }
   .dag-details summary:hover { color: var(--text); }
+  /* the same fold, for the same reason, around the job log: a summary its own
+     row with the status pill riding beside it, so a job's outcome reads
+     without opening the scrollback that produced it */
+  .log-details summary {
+    cursor: pointer;
+    width: fit-content;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .log-details summary:hover { color: var(--text); }
+  /* the corner the direction toggle sits in. Anchored to the fold and not to
+     the scroller inside it, so a wide plan scrolled sideways leaves it where
+     it was. Top left, not top right: the direction is read before the
+     diagram, not after it -- and top right is where the info panel's own
+     grip sits when this same diagram is reused there. */
+  .dag-details { position: relative; }
+  .dag-dir {
+    position: sticky;
+    z-index: 5;
+    /* below the summary's own row, not over it -- top:0 here is the same
+       corner the "diagram" disclosure text already occupies */
+    top: 18px;
+    left: 0;
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--panel);
+    opacity: 0.75;
+  }
+  .dag-dir:hover { opacity: 1; }
+  .dag-dir button {
+    border: none;
+    background: none;
+    color: var(--muted);
+    padding: 1px 8px;
+    font-size: 11px;
+  }
+  .dag-dir button.on { background: var(--accent); color: var(--panel); }
   .link {
     background: none;
     border: none;
@@ -1204,6 +1443,8 @@
      than a single control and so cannot be a <label> */
   .field { display: flex; flex-direction: column; gap: 3px; }
   .hint { line-height: 1.3; }
+  /* why the launch button is off, in the colour the rest of the page refuses in */
+  p.bad { color: var(--bad); line-height: 1.3; }
   /* the steps beside the diagram: rows can't be independently positioned
      inside an actual <table>, so each one is an absolutely placed grid row
      instead, `top:` pinned to its transform's `dag_cy`. The header is the only

@@ -14,12 +14,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from ..agents.templates import library_index
 from ..constants import MODULE_PATH, STDLIB_NAME, STDLIB_URL
 from ..logging import Log
-
-DATA_TYPES_DIRNAME = "data_types"
-TRANSFORMS_DIRNAME = "transforms"
-RESOURCES_DIRNAME = "resources"
 
 
 def clone_stdlib(root: Path, url: str = STDLIB_URL) -> dict:
@@ -80,18 +77,15 @@ def bootstrap_project(root: Path, with_examples: bool = True, url: str = STDLIB_
 
 
 # -- discovery ---------------------------------------------------------------
-#
-# The repository is a plain directory tree; these are the three shapes in it.
-
-
-def _dirs(path: Path) -> list[Path]:
-    if not path.is_dir():
-        return []
-    return sorted(p for p in path.iterdir() if p.is_dir())
 
 
 def discover(root: Path) -> dict:
-    """List the type, transform, and resource libraries in the clone.
+    """What the clone holds: `library_index` plus what a clone knows about itself.
+
+    The three library lists are the repository convention, which
+    `agents/templates.py` owns because a template is read against it -- both
+    a library-shipped one, resolved against the repository it ships in, and a
+    user's, resolved against this list.
 
     Resolved: `MetasmithLibraries` is sometimes a symlink -- someone iterating
     on a shared stdlib checkout across several projects, say -- and
@@ -104,18 +98,11 @@ def discover(root: Path) -> dict:
     disabled with no error to say why.
     """
     lib = (Path(root) / STDLIB_NAME).resolve()
-    types = []
-    tdir = lib / DATA_TYPES_DIRNAME
-    if tdir.is_dir():
-        types = sorted(str(p) for p in tdir.glob("*.yml"))
     return {
         "path": str(lib),
         "present": lib.is_dir(),
         "commit": stdlib_commit(root),
-        "data_types": types,
-        "transform_libraries": [str(p) for p in _dirs(lib / TRANSFORMS_DIRNAME)],
-        "resource_libraries": [str(p) for p in _dirs(lib / RESOURCES_DIRNAME)],
-    }
+    } | library_index(lib)
 
 
 def available_types(root: Path) -> list[dict]:

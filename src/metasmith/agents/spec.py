@@ -106,8 +106,8 @@ class Spec:
         which is what makes a spec portable: an absolute reference is one
         machine's `/home/someone/...` and arrives at a colleague naming nothing.
         A reference that does not live under the root is left absolute rather
-        than silently rewritten -- see `Template.Save`, which refuses to ship
-        one instead of pretending it travelled.
+        than silently rewritten -- what a store does about one is the store's
+        own business (`Template.Save` reduces every reference to a name).
         """
         root = Path(relative_to).resolve() if relative_to is not None else None
 
@@ -132,7 +132,12 @@ class Spec:
             if isinstance(ref, DataInstanceLibrary) and root is not None:
                 return ref.PackInline(root)
             if isinstance(ref, dict):
-                return ref | {"types": {ns: loc(p) for ns, p in ref.get("types", {}).items()}}
+                # a template stores no type map at all (`Template.Save`); an
+                # empty one written back would be a key that says nothing
+                types = {ns: loc(p) for ns, p in ref.get("types", {}).items()}
+                return ref | {"types": types} if types else {
+                    k: v for k, v in ref.items() if k != "types"
+                }
             return loc(ref)
 
         return {

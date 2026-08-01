@@ -333,7 +333,10 @@ class TransformInstanceLibraryView(DataInstanceLibraryView):
     _original: "TransformInstanceLibrary"
 
     def IterateTransforms(self):
-        for p in self._mask:
+        # sorted for the same reason as `DataInstanceLibraryView.Iterate`: set
+        # order over `Path` is process-random, and this is the walk that decides
+        # which of several interchangeable transforms the solver sees first.
+        for p in sorted(self._mask):
             tr = self._original.GetTransform(p)
             assert tr is not None, p
             yield p, tr

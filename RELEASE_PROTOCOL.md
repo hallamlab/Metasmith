@@ -107,6 +107,7 @@ unset PYTHONPATH
 
 ./dev.sh -brc        # one-time: fetch the rust cross-compile container
 ./dev.sh -br         # build the relay binaries (all four arch/os targets)
+./dev.sh -be         # build the solver engine (same four targets) + stage it
 ./dev.sh --build-gui # build the frontend bundle (needs node; see below)
 ./dev.sh -bp         # build the pip wheel + sdist  (stamps build_hash.txt)
 ./dev.sh -bd         # build the docker image, tagged <version>-<hash>
@@ -125,6 +126,20 @@ osxcross toolchain with a plain rust image; `-br` then failed both
 `*-apple-darwin` targets and left 28-byte stubs in `target/` for `-bd` to bake.
 `_assert_real_relays` catches that at `-bs`/`-ud`, not at `-bd` — so if `-br`
 reports a compile error, stop and fix it rather than continuing to `-bd`.
+
+`-be` cross-compiles `main/solver_engine/` to the same four targets, using the
+same upstream container (`-bec` pulls it, and is interchangeable with `-brc`),
+and stages the binaries into `src/metasmith/engine/`. That directory is
+generated, never committed, and shipped as package data — because unlike the
+relay, the solver runs **locally at plan time** in whatever process is planning,
+so the agent-deploy path never sees it. `-bp` and `-bc` refuse to run without
+all four. The refusal matters more here than for the relay: a wheel with no
+engine still plans, on the Python solver, just slower — so the failure is
+invisible unless something checks. "Just slower" is now literal and large:
+7.5s versus 1.1s on `metagenomics_from_paired_reads`, for the same plan. `-bel` is the dev-loop build (host toolchain,
+host target only); it writes a `BUILD_KIND` marker the guard reads, because
+nothing about a Linux ELF says whether it was linked against musl or against the
+build machine's glibc.
 
 `--build-gui` compiles the web GUI into `src/metasmith/gui/static/`. That
 directory is generated and never committed, so a fresh checkout has none, and
@@ -179,6 +194,7 @@ Then:
 | Test | `pytest -m "not docker and not e2e_docker and not e2e_agentic and not nextflow and not network and not requires_*"` | green gate |
 | Bump | edit `src/metasmith/version.txt` + commit | new version |
 | Relay | `./dev.sh -brc` (pull) then `./dev.sh -br` | relay binaries — 4 targets, none stubs |
+| Solver | `./dev.sh -bec` (pull) then `./dev.sh -be` | `src/metasmith/engine/` — 4 targets, shipped in the wheel |
 | GUI | `./dev.sh --build-gui` (needs node) | `src/metasmith/gui/static/` |
 | Wheel | `./dev.sh -bp` | pip wheel + sdist, build hash |
 | Docker | `./dev.sh -bd` | local image `<version>-<hash>` |

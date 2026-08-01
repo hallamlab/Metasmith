@@ -1,6 +1,7 @@
 <script>
   import { api } from '../lib/api.svelte.js'
   import { attempt, createWorkflow, ui } from '../lib/state.svelte.js'
+  import DeleteControl from './DeleteControl.svelte'
   import JobLog from './JobLog.svelte'
   import Modal from './Modal.svelte'
 
@@ -50,9 +51,26 @@
     ty = (stageEl.clientHeight - imgEl.naturalHeight) / 2
   }
 
+  // Attached by hand rather than as `onwheel={…}`. Svelte 5 registers a
+  // declarative wheel handler as a *passive* listener, so `preventDefault()` in
+  // it is a no-op and the browser scrolls the page instead of just zooming.
+  $effect(() => {
+    if (!stageEl) return
+    const el = stageEl
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  })
+
   function onWheel(e) {
     if (!imgEl) return
     e.preventDefault()
+    // shift turns the wheel into a scrollbar: some browsers already swap
+    // deltaX/deltaY for us when shift is held, so take whichever axis carries
+    // the motion rather than assuming deltaY
+    if (e.shiftKey) {
+      ty -= e.deltaY || e.deltaX
+      return
+    }
     const rect = stageEl.getBoundingClientRect()
     const cx = e.clientX - rect.left
     const cy = e.clientY - rect.top
@@ -139,6 +157,15 @@
     creating = false
     if (out) onclose?.()
   }
+
+  async function deleteTemplate() {
+    const gone = picked
+    const out = await attempt(() => api.del(`/templates/${gone}`))
+    if (out) {
+      templates = templates.filter((t) => t.name !== gone)
+      if (picked === gone) picked = ''
+    }
+  }
 </script>
 
 <Modal title="new workflow" subtitle="start from a template, or from nothing" {onclose}>
@@ -148,7 +175,6 @@
     role="application"
     aria-label="template diagram — scroll to zoom, drag to pan"
     bind:this={stageEl}
-    onwheel={onWheel}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={endDrag}
@@ -181,12 +207,17 @@
 
   <label class="col small">
     <span class="muted">template</span>
-    <select bind:value={picked}>
-      <option value="">blank</option>
-      {#each templates as t (t.name)}
-        <option value={t.name}>{t.name}</option>
-      {/each}
-    </select>
+    <div class="row">
+      <select bind:value={picked}>
+        <option value="">blank</option>
+        {#each templates as t (t.name)}
+          <option value={t.name}>{t.name}</option>
+        {/each}
+      </select>
+      {#if chosen?.source === 'user'}
+        <DeleteControl title="delete template" archived onconfirm={deleteTemplate} />
+      {/if}
+    </div>
   </label>
   <p class="small muted desc">
     {chosen?.description || (picked ? '' : 'nothing is planned until you generate')}

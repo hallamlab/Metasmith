@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 from ..hashing import KeyGenerator
@@ -167,6 +168,59 @@ def materialize_template(
         "type_namespaces": list(lib.types.keys()),
         "key": lib.GetKey(),
     }
+
+
+def derive_template_library(
+    library_path: str,
+    type_library_paths: list[str] | None = None,
+) -> DataInstanceLibrary:
+    """A deferred copy of a live library: same types and item graph, no paths.
+
+    The counterpart to `materialize_template`, which turns a template's
+    deferred library into a real one. This turns a real one back into a
+    deferred one -- what "save as template" strips is exactly the paths and
+    file content, not the shape: each item keeps its type and its parents, and
+    each parent link is re-pointed at that parent's own freshly minted
+    deferred path, so the derived library solves to the same DAG the source
+    workflow's recipe did.
+
+    A parent recorded against a *different* library than `library_path` itself
+    (rare -- e.g. a resource library entry) is dropped rather than chased: it
+    is out of scope for a first cut of this and a template missing one such
+    edge still solves, just without that one piece of shared lineage. Found by
+    whether the parent's own path is one of this library's items -- not by
+    comparing library keys, which are content-addressed and so are not stable
+    across a save/load round trip the way a path is.
+    """
+    src = load_data_lib(library_path)
+    dest = Path(tempfile.mkdtemp(prefix="msm-save-template-"))
+    lib = DataInstanceLibrary(dest)
+    for ns, source_path in src._type_sources.items():
+        lib.AddTypeLibrary(source_path, namespace=ns, on_exist="skip")
+    for tp in type_library_paths or []:
+        lib.AddTypeLibrary(Path(tp).resolve(), on_exist="skip")
+
+    mapping: dict[Path, Path] = {}
+    remaining = dict(src.manifest)
+    while remaining:
+        progressed = False
+        for path, dtype in list(remaining.items()):
+            parent_paths = [
+                pm.path for pm in src.parents.get(path, [])
+                if pm.path in src.manifest
+            ]
+            if not all(pp in mapping for pp in parent_paths):
+                continue
+            new_path = lib.AddItem(DEFERRED, dtype, parents=[mapping[pp] for pp in parent_paths])
+            mapping[path] = new_path
+            del remaining[path]
+            progressed = True
+        assert progressed, (
+            f"could not derive a template from [{library_path}]: a cyclic or "
+            f"cross-library parent reference left {len(remaining)} item(s) unplaced"
+        )
+    lib.Save()
+    return lib
 
 
 def attach_type_library(

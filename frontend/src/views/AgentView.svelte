@@ -8,6 +8,7 @@
   import JobLog from '../components/JobLog.svelte'
   import SaveChip from '../components/SaveChip.svelte'
   import ShareOut from '../components/ShareOut.svelte'
+  import Spinner from '../components/Spinner.svelte'
 
   let { name } = $props()
 
@@ -210,7 +211,7 @@
           title={pinging ? 'pinging…' : ping ? (ping.ok ? 'reachable' : 'no answer — click to retry') : 'ping this agent'}
         >
           {#if pinging}
-            <span class="spinner" aria-hidden="true"></span>
+            <Spinner />
           {:else if ping?.ok}
             <Icon name="check" size={11} />
           {:else if ping}
@@ -374,19 +375,6 @@
     background: currentColor;
     opacity: 0.5;
   }
-  .spinner {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: 1.5px solid currentColor;
-    border-top-color: transparent;
-    opacity: 0.7;
-    animation: spin 0.7s linear infinite;
-  }
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
   /* deploy, and beside it the one thing worth a second click: skipping past
      "already looks deployed" when that judgement is wrong */
   .split {

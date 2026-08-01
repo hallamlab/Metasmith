@@ -191,9 +191,9 @@ def export_workflow(p: Project, name: str, bound: bool = False) -> dict:
     *points* at a file arrives blank, which is precisely what a template is, and
     the recipient fills them in. A row that *holds* its value travels whole
     either way -- deferring one would throw the recipe away and leave a nameless
-    blank where a read-pair descriptor was. So does a row holding a `{column}`
-    token, which is a rule rather than a path and is the entire substance of a
-    sample-array recipe.
+    blank where a read-pair descriptor was. So does every field's *column*: a
+    binding is a rule about a sheet rather than a path on this machine, and it
+    is the entire substance of a sample-array recipe.
     """
     wf = p.read_workflow(name)
     root = _stdlib_root(p)
@@ -202,7 +202,7 @@ def export_workflow(p: Project, name: str, bound: bool = False) -> dict:
     rows = []
     for d in rows_of(p, name):
         d = dict(d)
-        if not bound and d.get("mode") != "value" and "{" not in str(d.get("path") or ""):
+        if not bound and d.get("mode") != "value":
             d["path"] = ""
         rows.append(d)
 
@@ -252,7 +252,7 @@ def _rows_from(body: dict) -> tuple[list[dict], dict[str, str]]:
             "mode": "value" if value is not None else "file",
             "path": "" if value is not None else path,
             "name": path if value is not None else "",
-            "value": value if value is not None else "",
+            "values": [{"key": "", "value": value if value is not None else ""}],
             "dtype": r.get("type") or "",
             "parents": list(r.get("parents") or []),
         })

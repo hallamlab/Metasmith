@@ -1,8 +1,12 @@
-"""Parsing, substitution and expansion of a sample table.
+"""Parsing, binding and expansion of a sample table.
 
 The library-touching half is here rather than in `tests/gui/` because none of it
 is about a route: `ops.samples` reads the sheet, `ops.inputs.sync` writes the
 library, and the GUI is a veneer over both.
+
+The sheet's presence is the only switch: attached, every row binds columns and
+holds their cells verbatim; detached, every row holds its own text. Nothing is
+parsed out of a field, so nothing here is about syntax.
 """
 from __future__ import annotations
 
@@ -15,7 +19,12 @@ from metasmith.models.solver import Endpoint
 from metasmith.ops import inputs as op_inputs
 from metasmith.ops import samples as op_samples
 
-CSV = b"sample,fwd,rev\nS1,a_R1.fq,a_R2.fq\nS2,b_R1.fq,b_R2.fq\n"
+# the sheet holds finished values -- a path column holds the path, whole
+CSV = (
+    b"sample,fwd,rev\n"
+    b"S1,/data/a_R1.fq,/data/a_R2.fq\n"
+    b"S2,/data/b_R1.fq,/data/b_R2.fq\n"
+)
 
 
 def _library(tmp_path: Path) -> Path:
@@ -42,13 +51,18 @@ def _ids(lib_path) -> dict[str, str]:
     }
 
 
+def _val(*cols) -> list[dict]:
+    """A value row's entries, each bound to a column and holding no text."""
+    return [{"key": k, "value": "", "column": c} for k, c in cols]
+
+
 def _rows(**over) -> list[dict]:
     rows = [
-        {"id": "a", "mode": "value", "value": "{sample}",
+        {"id": "a", "mode": "value", "values": _val(("", "sample")),
          "dtype": "mock::marker", "parents": []},
-        {"id": "b", "mode": "file", "path": "/data/{fwd}",
+        {"id": "b", "mode": "file", "path": "", "column": "fwd",
          "dtype": "mock::fwd", "parents": ["#a"]},
-        {"id": "c", "mode": "file", "path": "/data/{rev}",
+        {"id": "c", "mode": "file", "path": "", "column": "rev",
          "dtype": "mock::rev", "parents": ["#a"]},
     ]
     for r in rows:
@@ -90,11 +104,18 @@ def test_attach_stores_the_upload_verbatim(tmp_path):
 # -- sample arrays -----------------------------------------------------------
 
 
-def test_tokens_and_substitution():
-    assert op_samples.columns_in("/d/{a}_{b}.fq") == ["a", "b"]
-    assert op_samples.substitute("/d/{a}_{b}.fq", {"a": "x", "b": "y"}) == "/d/x_y.fq"
-    assert not op_samples.is_array_row({"path": "/d/plain.fq"})
-    assert op_samples.is_array_row({"mode": "value", "name": "{s}.id", "value": "x"})
+def test_a_rows_fields_are_the_columns_it_binds():
+    """And nothing about the text decides it -- there is no syntax left."""
+    assert op_samples.bound_fields({"mode": "file", "column": "fwd"}) == [("path", "fwd")]
+    # braces are ordinary characters now, in a path as much as in a value
+    assert not op_samples.is_bound({"mode": "file", "path": "/d/{fwd}"})
+    assert op_samples.is_bound({"mode": "file", "column": "fwd"})
+
+    # a value entry's key is literal and is never offered as a binding, even
+    # when it happens to be spelled like a column of the sheet
+    keyed = {"mode": "value", "values": _val(("sample", "fwd"))}
+    assert op_samples.bound_fields(keyed) == [("[sample]", "fwd")]
+    assert op_samples.is_bound(keyed)
 
 
 def test_array_rows_order_parents_first():
@@ -124,35 +145,51 @@ def test_validate_accepts_ordinary_dag_rows_with_no_index_field(tmp_path):
     assert op_samples.validate(str(lib), _table(), rows)["problems"] == []
 
 
-def test_validate_refuses_an_unknown_column(tmp_path):
+def test_validate_refuses_a_binding_the_sheet_cannot_honour(tmp_path):
+    """Not a state the page can produce -- it offers a select -- but a stored
+    binding outlives the sheet it was chosen from, and a re-upload lands here."""
     lib = _library(tmp_path)
-    problems = op_samples.validate(str(lib), _table(), _rows(b={"path": "/d/{nope}"}))["problems"]
+    problems = op_samples.validate(str(lib), _table(), _rows(b={"column": "nope"}))["problems"]
     assert any("does not have" in p["message"] for p in problems)
 
 
-def test_validate_accepts_a_path_that_does_not_vary(tmp_path):
-    """A token that happens to hold the same value on every row is a deliberate
-    grouping now -- the same declared column landing on the same path again
-    collapses onto one shared instance, not an error."""
+def test_a_row_that_binds_nothing_is_reported_rather_than_refused(tmp_path):
+    """A blank is not a failure: a half-filled recipe is how a plan gets worked
+    out, so the solve goes ahead and that row alone registers nothing."""
+    lib = _library(tmp_path)
+    rows = _rows(b={"column": ""})
+    assert op_samples.validate(str(lib), _table(), rows)["problems"] == []
+    (said,) = op_samples.unbound_problems(rows)
+    assert "no column chosen for its path" in said["message"]
+    assert op_inputs.problems(rows, _table()) == [said["message"]]
+
+    out = op_inputs.sync(str(lib), rows, _table())
+    assert out["counts"] == {"a": 2, "c": 2}, "the other rows are unaffected"
+
+
+def test_validate_accepts_a_column_that_does_not_vary(tmp_path):
+    """A column holding one cell on every row is a deliberate grouping -- the
+    same declared row landing on the same path again collapses onto one shared
+    instance, not an error. It is also how a constant is said now."""
     lib = _library(tmp_path)
     table = op_samples.parse_table(
-        b"sample,fwd,rev,batch\nS1,a_R1.fq,a_R2.fq,B\nS2,b_R1.fq,b_R2.fq,B\n",
+        b"sample,fwd,rev,batch\nS1,/d/a.fq,/d/a2.fq,/d/B.fq\nS2,/d/b.fq,/d/b2.fq,/d/B.fq\n",
         filename="s.csv",
     )
-    problems = op_samples.validate(str(lib), table, _rows(b={"path": "/d/{batch}.fq"}))["problems"]
+    problems = op_samples.validate(str(lib), table, _rows(b={"column": "batch"}))["problems"]
     assert problems == []
 
 
 def test_validate_refuses_two_rows_landing_on_one_path(tmp_path):
     lib = _library(tmp_path)
-    rows = _rows(b={"path": "/d/{sample}.fq"}, c={"path": "/d/{sample}.fq"})
+    rows = _rows(b={"column": "fwd"}, c={"column": "fwd"})
     problems = op_samples.validate(str(lib), _table(), rows)["problems"]
     assert any("also what" in p["message"] for p in problems)
 
 
 def test_validate_refuses_an_empty_cell(tmp_path):
     lib = _library(tmp_path)
-    table = op_samples.parse_table(b"sample,fwd,rev\nS1,,a_R2.fq\n", filename="s.csv")
+    table = op_samples.parse_table(b"sample,fwd,rev\nS1,,/data/a_R2.fq\n", filename="s.csv")
     problems = op_samples.validate(str(lib), table, _rows())["problems"]
     assert any("nothing under" in p["message"] for p in problems)
 
@@ -192,9 +229,9 @@ def _grouped_table():
 
 def _grouped_rows(**over) -> list[dict]:
     rows = [
-        {"id": "pan", "mode": "value", "value": "{pangenome}",
+        {"id": "pan", "mode": "value", "values": _val(("", "pangenome")),
          "dtype": "mock::marker", "parents": []},
-        {"id": "acc", "mode": "value", "value": "{accession}",
+        {"id": "acc", "mode": "value", "values": _val(("", "accession")),
          "dtype": "mock::fwd", "parents": ["#pan"]},
     ]
     for r in rows:
@@ -225,18 +262,17 @@ def test_expand_groups_rows_that_share_a_column_value(tmp_path):
     assert parents[by_value["GCF_3"]] == [by_value["P2"]]
 
 
-def test_a_rows_grouping_follows_the_columns_its_value_reads(tmp_path):
+def test_a_rows_grouping_follows_the_columns_it_binds(tmp_path):
     """The refusal this replaces cannot happen any more, and here is why.
 
     It used to be possible for two sheet rows to agree on a value row's *name*
     and disagree on its contents -- name and value were two independent
     templates. There is no name now: the path is keyed on exactly the columns
-    the value reads, and `substitute` reads exactly those, so one key implies
-    one value by construction.
+    the row binds, and its contents are exactly those columns' cells, so one key
+    implies one set of contents by construction.
 
-    What is left is the useful half of that, which nothing asserted before:
-    widening the value to read a second column *is* how you say these are no
-    longer the same thing, and the grouping follows.
+    What is left is the useful half of that: binding a second field *is* how you
+    say these are no longer the same thing, and the grouping follows.
     """
     lib_path = _library(tmp_path)
     table = op_samples.parse_table(
@@ -248,18 +284,20 @@ def test_a_rows_grouping_follows_the_columns_its_value_reads(tmp_path):
     assert len(lib.manifest) == 3
     assert {(lib_path / p).read_text() for p in lib.manifest} == {"P1", "GCF_1", "GCF_2"}
 
-    # now the pangenome row reads the accession too, so the two sheet rows no
+    # now the pangenome row binds the accession too, so the two sheet rows no
     # longer name one pangenome -- two instances, and no problem reported
     second = tmp_path / "second"
     second.mkdir()
     lib_path = _library(second)
-    rows = _grouped_rows(pan={"value": "{pangenome}-{accession}"})
+    rows = _grouped_rows(
+        pan={"values": _val(("p", "pangenome"), ("a", "accession"))},
+    )
     assert op_samples.validate(str(lib_path), table, rows)["problems"] == []
     op_inputs.sync(str(lib_path), rows, table)
     lib = DataInstanceLibrary.Load(lib_path)
     assert len(lib.manifest) == 4
     assert {(lib_path / p).read_text() for p in lib.manifest} == {
-        "P1-GCF_1", "P1-GCF_2", "GCF_1", "GCF_2",
+        '{"p": "P1", "a": "GCF_1"}', '{"p": "P1", "a": "GCF_2"}', "GCF_1", "GCF_2",
     }
 
 
@@ -287,7 +325,9 @@ def test_re_expanding_takes_back_exactly_what_it_put_down(tmp_path):
     lib.AddItem(Path("/data/ref.db"), "mock::fwd")
     lib.Save()
 
-    smaller = op_samples.parse_table(b"sample,fwd,rev\nS9,z_R1.fq,z_R2.fq\n", filename="s.csv")
+    smaller = op_samples.parse_table(
+        b"sample,fwd,rev\nS9,/data/z_R1.fq,/data/z_R2.fq\n", filename="s.csv",
+    )
     out = op_inputs.sync(str(lib_path), _rows(), smaller)
     assert out["row_count"] == 1
 
@@ -352,18 +392,57 @@ def test_adding_a_sheet_row_mints_only_that_one(tmp_path):
         assert after[path] == iid
 
 
-def test_editing_the_text_around_a_token_keeps_the_items(tmp_path):
+def test_giving_a_field_a_key_keeps_the_items(tmp_path):
     """Contents change, paths and identities do not.
 
-    The payoff for keying on the columns a value reads rather than on the text
-    it produces: rewording a template is not a re-registration.
+    The payoff for keying the mint on the columns a row binds rather than on
+    what it renders to: relabelling a field is not a re-registration.
     """
     lib_path = _library(tmp_path)
     op_inputs.sync(str(lib_path), _grouped_rows(), _grouped_table())
     before = _ids(lib_path)
 
-    rows = _grouped_rows(pan={"value": "pangenome: {pangenome}"})
+    rows = _grouped_rows(pan={"values": _val(("of", "pangenome"))})
     op_inputs.sync(str(lib_path), rows, _grouped_table())
     assert _ids(lib_path) == before
     lib = DataInstanceLibrary.Load(lib_path)
-    assert "pangenome: P1" in {(lib_path / p).read_text() for p in lib.manifest}
+    assert '{"of": "P1"}' in {(lib_path / p).read_text() for p in lib.manifest}
+
+
+# -- a value row's fields ----------------------------------------------------
+
+
+def test_every_field_of_a_value_row_has_to_bind_one():
+    """A partly-bound row is a blank, not a mix of the two states -- there is no
+    way to say "this field is a constant while a sheet is attached"."""
+    half = {"mode": "value", "values": [
+        {"key": "a", "value": "1", "column": ""},
+        {"key": "b", "value": "", "column": "sample"},
+    ]}
+    assert not op_samples.is_bound(half)
+    assert [f for f, c in op_samples.bound_fields(half) if not c] == ["[a]"]
+    both = {"mode": "value", "values": _val(("a", "fwd"), ("b", "sample"))}
+    assert op_samples.is_bound(both)
+    # ...and the legacy single string still reads as one unkeyed, unbound field
+    assert not op_samples.is_bound({"mode": "value", "value": "x"})
+
+
+def test_a_field_binding_a_missing_column_is_named_by_its_key(tmp_path):
+    lib = _library(tmp_path)
+    rows = [{
+        "id": "v", "mode": "value", "path": "", "name": "", "dtype": "mock::marker",
+        "values": _val(("of", "sample"), ("depth", "nope")),
+        "parents": [],
+    }]
+    (problem,) = op_samples.validate(str(lib), _table(), rows)["problems"]
+    assert "[nope]" in problem["message"] and "in its [depth]" in problem["message"]
+
+
+def test_a_value_row_is_labelled_by_its_first_field():
+    kv = lambda *p: [{"key": k, "value": v} for k, v in p]
+    assert op_samples.row_label({"mode": "value", "values": kv(("", "GCF_1"))}) == "GCF_1"
+    assert op_samples.row_label({"mode": "value", "values": kv(("of", "P1"))}) == "of: P1"
+    # a row built entirely under a sheet has no text in it at all; its column is
+    # then the only thing about it a person would recognise
+    assert op_samples.row_label({"mode": "value", "values": _val(("", "pangenome"))}) == "pangenome"
+    assert op_samples.row_label({"mode": "file", "path": "", "column": "fwd"}) == "fwd"

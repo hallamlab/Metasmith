@@ -1,8 +1,11 @@
 <script>
-  import { flip } from 'svelte/animate'
   import DeleteControl from '../components/DeleteControl.svelte'
+  import LineageBand from '../components/LineageBand.svelte'
   import ParentPicker from '../components/ParentPicker.svelte'
   import TypeSelect from '../components/TypeSelect.svelte'
+  import { POINTED, link, marks } from '../lib/highlight.js'
+  import { ancestorsOf, byKey, candidates, refKey, topoOrder } from '../lib/lineage.js'
+  import { entries as rowEntries, isBound } from '../lib/rows.js'
 
   // Inputs and outputs in one list, and the list *is* the form. They are two
   // headings over one run of rows, the way the ssh rail does managed and native
@@ -42,6 +45,10 @@
     // the index says about a type, for the line under a row being edited
     counts = null,
     onfocus,
+    // reading around a type list, and stopping: what the panel should show
+    // while a list is open, and the signal that it is no longer what was asked
+    onpreview,
+    onpreviewend,
     onremoveRow,
     onremoveTarget,
     onrow,
@@ -51,216 +58,136 @@
     onadd,
   } = $props()
 
-  // An input row is addressed by its own id, an output by its position -- so
-  // lineage needs one key space per half. `#` is safe as the marker: a library
-  // path never starts with one, which is what let the two live together while
-  // rows and registered items were different things.
-  const rowKey = (d) => `#${d.id}`
-
-  // What a sample-array row's fields may hold, and how to tell one from a plain
-  // row. An array row is not a fourth kind of thing: it is an ordinary row whose
-  // path (or a value row's name and value) names a column, so nothing has to be
-  // kept in step with anything.
-  // not a global regex: `test` on one carries `lastIndex` between calls, so the
-  // same row would answer differently depending on what was asked before it
-  const TOKEN = /\{[^{}]*\}/
-  const hasToken = (s) => TOKEN.test(String(s ?? ''))
-  const isArrayRow = (d) =>
-    d.mode === 'value' ? hasToken(d.value) : hasToken(d.path)
-
-  // A field that names exactly one column and nothing else -- no surrounding
-  // path, no second token -- is not a pattern to type, it is a choice from a
-  // list. `wholeToken` is the whole-string form of the same `{col}` syntax
-  // `columnPicker` splices into the middle of one; the two agree because
-  // `ops.samples` on the server reads both the same way, as a token to substitute.
-  const WHOLE_TOKEN = /^\{([^{}]*)\}$/
-  const wholeToken = (s) => WHOLE_TOKEN.exec(String(s ?? '').trim())?.[1] ?? null
-
-  // A field a dropdown would otherwise own, held open as free text -- typing a
-  // pattern like `/data/{sample}_R1.fq.gz` around a token needs the field
-  // back. Keyed per row and field so switching one back does not touch
-  // another drawn from the same set of columns.
-  let freeform = $state(new Set())
-  const fieldKey = (row, field) => `${row.key}::${field}`
-  const isFreeform = (row, field) => freeform.has(fieldKey(row, field))
-  const setFreeform = (row, field, on) => {
-    const k = fieldKey(row, field)
-    const next = new Set(freeform)
-    if (on) next.add(k)
-    else next.delete(k)
-    freeform = next
-  }
+  // `entries` and `isBound` are imported (see `lib/rows.js`) rather than
+  // written here: the workflow view asks the same questions, and a row that
+  // reads one way in one place and another in the other is a disagreement
+  // nothing on the page can show.
+  //
+  // A sheet attached is the only switch. With one, every field on every row is
+  // a strict choice from that sheet's columns and there is no way to type into
+  // it; with none, every field is free text. Each keeps its own answer, so the
+  // two states are two fields on the row rather than one field being rewritten
+  // -- which is the whole of the switching behaviour, with nothing to save on a
+  // transition. A value entry's *key* is the exception and stays a text box in
+  // both states: it names the field in the object the row writes.
+  let hasTable = $derived(columns.length > 0)
 
   // What the sheet registered is not rows of this recipe. Those items are in the
   // library and in the plan, and two hundred of them here would be two hundred
   // rows with nothing on them to decide -- the array row carries the count.
   let expanded = $derived(items.filter((it) => it.array_id).length)
 
-  // a field's element, so the column picker can insert at the caret rather than
-  // at the end -- the usual gesture is `/data/` then a column then `_R1.fq.gz`
-  const fieldId = (row, field) => `msm-f-${row.key}-${field}`
-
-  // A row has nothing to be called until it is filled in, and an empty string
-  // in another row's lineage reads as a bug. Its type is the next best name.
-  // A value row has nothing it is *called*: the library names its file and that
-  // name is a uuid nobody types. What it is, is what was typed into it -- so a
-  // lineage line points at that, clamped, because a value is not a label and a
-  // read-pair descriptor is three lines long.
-  const firstLine = (s) => {
-    const t = String(s ?? '').trim()
-    const head = t.split('\n')[0]
-    return head.length > 40 ? `${head.slice(0, 40)}\u2026` : head
+  // The entries of a value row, and the one place they are written back. A row
+  // holds a list of them, so every edit to one is an edit to the whole list --
+  // which is what `apply` below hands `sampleField`, in place of the single
+  // field name it used to close over.
+  const patchEntry = (row, i, patch) => {
+    const next = rowEntries(row.row).map((e, k) => (k === i ? { ...e, ...patch } : e))
+    onrow?.(row.id, { values: next })
   }
-  const rowLabel = (d) =>
-    (d.mode === 'value' ? firstLine(d.value) : d.path) ||
-    (d.dtype ? `a new ${d.dtype}` : 'a new row')
+  const addEntry = (row) => {
+    onrow?.(row.id, { values: [...rowEntries(row.row), { key: '', value: '', column: '' }] })
+    oncommit?.()
+  }
+  const dropEntry = (row, i) => {
+    onrow?.(row.id, { values: rowEntries(row.row).filter((_e, k) => k !== i) })
+    oncommit?.()
+  }
 
+  // Both halves are the same shape -- `{key, parents: [key]}` over a minted id --
+  // so `lib/lineage` answers both from one implementation. An output used to be
+  // addressed by its *position*, which is also the thing that changes when the
+  // list is re-sorted; it carries an id of its own now, and the positions are
+  // put back on the way to disk.
   let inputRows = $derived(
     rows.map((d) => ({
       kind: 'input',
-      key: rowKey(d),
+      key: refKey(d.id),
       id: d.id,
       type: d.dtype,
-      label: rowLabel(d),
       parents: d.parents ?? [],
       row: d,
     })),
   )
 
-  // An output is named by its *type*, not by its position. The position is what
-  // the request stores and is still the key -- but "#2" is a fact about the file
-  // on disk, and a person reading a lineage wants to know what the thing is. The
-  // number comes back only when two outputs share a type and the name alone
-  // would point at either.
-  let targetRows = $derived(
-    targets.map((t, i) => {
-      const name = t.type || '(no type yet)'
-      const shared = targets.filter((o) => (o.type || '') === (t.type || '')).length > 1
-      return {
-        kind: 'target',
-        key: `#${i}`,
-        id: i,
-        type: t.type,
-        label: shared ? `${name} #${i + 1}` : name,
-        // Stored as numbers, keyed as strings, everywhere else on this page.
-        // Left unconverted the two never met: a tick never showed, and the
-        // summary fell through to printing the raw 0-based position.
-        parents: (t.parents ?? []).map((p) => `#${p}`),
-      }
-    }),
+  // An output is named by its *type* and by nothing else. Two outputs of one
+  // type used to carry a `#N` here counting the order they are drawn in; what
+  // tells them apart now is the highlight that lights the row you are pointing
+  // at, which is the one thing an ordinal never did -- you still had to count
+  // rows to use it.
+  let targetRows = $derived.by(() =>
+    topoOrder(
+      targets.map((t) => ({ key: refKey(t.id), parents: (t.parents ?? []).map(refKey), t })),
+    ).map((r) => ({
+      kind: 'target',
+      key: r.key,
+      id: r.t.id,
+      type: r.t.type,
+      parents: r.parents,
+    })),
   )
 
-  let inputByKey = $derived(new Map(inputRows.map((r) => [r.key, r])))
-  let targetByKey = $derived(new Map(targetRows.map((r) => [r.key, r])))
+  let orderedInputRows = $derived(topoOrder(inputRows))
 
-  // Every key each row descends from, however far up. A row states one level,
-  // so this is the fixpoint over them -- and it is what keeps a cycle out of
-  // the menu below.
-  let ancestors = $derived.by(() => {
-    const out = new Map(inputRows.map((r) => [r.key, new Set(r.parents)]))
-    // a set only ever gains members and there are finitely many, so a loop
-    // already on disk cannot spin this
-    for (;;) {
-      let grew = false
-      for (const set of out.values()) {
-        for (const p of [...set]) {
-          for (const up of out.get(p) ?? []) {
-            if (set.has(up)) continue
-            set.add(up)
-            grew = true
-          }
-        }
-      }
-      if (!grew) break
-    }
-    return out
-  })
+  let inputByKey = $derived(byKey(inputRows))
+  let targetByKey = $derived(byKey(targetRows))
 
-  // Listed in the order the data descends: parents above the things made from
-  // them, so a pangenome leads the assemblies it was built from rather than
-  // turning up wherever its path happened to sort. Sorting by raw ancestor
-  // *count* used to stand in for this, but it isn't actually a topological
-  // order on arrival: a fresh row with no parents yet has a count of zero, so
-  // it would sort ahead of any older row that already has lineage, landing
-  // wherever the depths happened to fall rather than at the bottom it was
-  // added to.
-  //
-  // Kahn's algorithm, seeded by insertion order instead, is the honest
-  // version: a row is eligible the moment every one of its parents has
-  // already been placed, and among eligible rows the one that arrived first
-  // goes next. A row with no parents is eligible immediately and -- having
-  // arrived after everything already eligible -- keeps the position it was
-  // added to. A row only moves when it is actually given a parent that sits
-  // later in the list, which is the real reorder `animate:flip` below is for.
-  let orderedInputRows = $derived.by(() => {
-    const remaining = new Map(inputRows.map((r) => [r.key, new Set(r.parents)]))
-    const out = []
-    while (remaining.size) {
-      const next = inputRows.find((r) => remaining.has(r.key) && remaining.get(r.key).size === 0)
-      // a cycle (only ever possible in data loaded off disk -- `inputOptions`
-      // refuses to offer one interactively) leaves nothing eligible; rather
-      // than drop rows or loop forever, flush what's left in arrival order
-      if (!next) {
-        for (const r of inputRows) if (remaining.has(r.key)) out.push(r)
-        break
-      }
-      out.push(next)
-      remaining.delete(next.key)
-      for (const parents of remaining.values()) parents.delete(next.key)
-    }
-    return out
-  })
+  // computed once per half rather than once per open menu: `candidates` would
+  // otherwise rebuild the fixpoint for every row on every render
+  let inputAncestors = $derived(ancestorsOf(inputRows))
+  let targetAncestors = $derived(ancestorsOf(targetRows))
 
-  // What a row may be given as a parent. Three things are excluded, and the
-  // third is the one worth saying out loud: a row cannot descend from something
-  // that descends from *it*. Nothing downstream defines a cycle -- `AsSamples`
-  // walks up and then back down, so a loop makes every branch the whole library.
-  function inputOptions(row) {
-    const have = new Set(row.parents)
-    return inputRows
-      .filter((r) => r.key !== row.key && !have.has(r.key) && !ancestors.get(r.key)?.has(row.key))
-      .map((r) => ({ key: r.key, label: r.label, sub: r.type }))
-  }
+  // What a row may be given as a parent. The rule itself is shared
+  // (`lib/lineage`), because "can this be a parent" has one answer and the two
+  // halves having had two is how the outputs came to refuse links that were
+  // perfectly legal -- and now the *wording* is shared too, since there is
+  // nothing here to word: an option is a row's key and its type, whichever half
+  // is asking.
+  const optionsFor = (rows, row, anc) =>
+    candidates(rows, row.key, anc).map((r) => ({ key: r.key, type: r.type }))
 
-  // Outputs are positions, and a target may only name one declared *before* it
-  // -- `ops.workflow._add_targets` refuses a forward reference, so offering one
-  // here would be offering a link the generate then throws out. Ordering does
-  // the cycle check for free.
-  function targetOptions(row) {
-    const have = new Set(row.parents)
-    return targetRows
-      .filter((r) => r.id < row.id && !have.has(r.key))
-      .map((r) => ({ key: r.key, label: r.label }))
-  }
+  // Why the menu is empty, when it is. Two honest cases and they are not the
+  // same: there is nothing else in this half yet, or everything else in it
+  // already descends from this row.
+  const parentNote = (rows, options) =>
+    options.length
+      ? null
+      : rows.length < 2
+        ? 'nothing else here to descend from yet'
+        : 'everything else here already descends from this'
 
   // A parent whose row has since gone still has to be shown, or an entry would
   // sit in a lineage nothing on the page admits to. The path a parent chip used
   // to lead with is not unique enough to tell rows apart either -- the hover
   // highlight on the row itself already does that -- so the chip states only
-  // what the parent *is*.
-  function chosenFor(row, byKey) {
-    return row.parents.map((k) => ({ key: k, sub: byKey.get(k)?.type ?? null }))
+  // what the parent *is*, under the same field name an option carries.
+  function chosenFor(row, index) {
+    return row.parents.map((k) => ({ key: k, type: index.get(k)?.type ?? null }))
   }
 
-  // Which row a parent line is pointing at. The label is a path on an input and
-  // a type name on an output, and neither is unique enough to find the row by
-  // eye in a long list -- so hovering the line marks the row itself.
-  let hover = $state(null)
+  // Which *link* a parent line is. A type name is what a chip and a menu entry
+  // both state, and it is shared by every row of that type -- so finding the
+  // row by eye is the highlight's job: hovering the line marks the two rows it
+  // joins.
+  //
+  // The link and not just the parent: marking the parent alone left the reader
+  // to remember which row they were pointing from, and marking everything
+  // downstream of the parent (which is what a node-keyed highlight does to a
+  // rail) answered a question nobody asked.
+  let hover = $state(null) // {child, parent} | null
+
+  // ... as the roles `DagRail` paints. `link` and nothing around it: this is the
+  // one frame with no `related` tier at all, because a parent's *other* children
+  // are not what the chip is pointing at. Both bands are handed the one map, and
+  // each paints its rail and its rows' backgrounds off it, so the two cannot
+  // disagree about what is marked -- which is also why the halves' two id spaces
+  // have to stay disjoint.
+  let hlMarks = $derived(
+    hover ? marks({ role: POINTED, ...link(hover.parent, hover.child) }) : null,
+  )
 
   const setType = (row, v) =>
     row.kind === 'target' ? ontarget?.(row.id, { type: v }) : onrow?.(row.id, { dtype: v })
-
-  // An output nothing makes will not solve.
-  const describeType = (row) =>
-    counts
-      ? (t) => {
-          const c = counts(t)
-          return {
-            note: `${c.produced} produce · ${c.consumed} consume`,
-            warn: row.kind === 'target' ? c.produced === 0 : c.produced === 0 && c.consumed === 0,
-          }
-        }
-      : null
 
 </script>
 
@@ -273,7 +200,14 @@
      "left the field" is focus leaving the whole control rather than the input
      inside it -- tabbing from the box to the caret is not leaving. Without this
      a type typed and tabbed away from persisted nothing until some other field
-     happened to blur. -->
+     happened to blur.
+
+     Focusing the row and picking a type are two moves and both aim the panel:
+     the first says "this row", and no second `focusin` fires after a pick, so
+     without the second the panel would still be showing whatever the row held
+     before. A field blurred mid-type without a pick deliberately moves nothing
+     -- the persist below is all that happens -- so the panel never chases half
+     a name. -->
 {#snippet typeCell(row)}
   <div
     class="typefield"
@@ -286,9 +220,16 @@
       value={row.type ?? ''}
       options={typeOptions}
       placeholder="namespace::type"
-      describe={describeType(row)}
       onchange={(v) => setType(row, v)}
-      oncommit={() => oncommit?.()}
+      oncommit={(picked) => {
+        // `onfocus` aims the panel, `oncommit` writes the recipe to disk --
+        // two props one line apart, and only the name of the parameter says
+        // which value belongs to which
+        onfocus?.(picked)
+        oncommit?.()
+      }}
+      onpreview={(t) => onpreview?.(t)}
+      onclose={() => onpreviewend?.()}
     />
   </div>
 {/snippet}
@@ -300,20 +241,19 @@
      delete on an output. -->
 {#snippet detail(row)}
   {@const isTarget = row.kind === 'target'}
+  {@const peers = isTarget ? targetRows : inputRows}
+  {@const options = optionsFor(peers, row, isTarget ? targetAncestors : inputAncestors)}
   <div class="row-item detail">
     <div class="typecell">{@render typeCell(row)}</div>
     <div class="parentcell">
       <ParentPicker
+        self={row.key}
         chosen={chosenFor(row, isTarget ? targetByKey : inputByKey)}
-        options={isTarget ? targetOptions(row) : inputOptions(row)}
-        note={isTarget
-          ? row.id === 0
-            ? null
-            : 'an output can only come off one declared before it'
-          : null}
+        {options}
+        note={parentNote(peers, options)}
         onadd={(k) => onparents?.(row, [...row.parents, k])}
         onremove={(k) => onparents?.(row, row.parents.filter((x) => x !== k))}
-        onhover={(k) => (hover = k)}
+        onhover={(link) => (hover = link)}
       />
     </div>
     <span class="trail">
@@ -324,71 +264,78 @@
   </div>
 {/snippet}
 
-<!-- The columns of the attached sheet, as something to put in a field rather
-     than something to type from memory. It inserts at the caret and hands focus
-     back, because the usual gesture is `/data/` then a column then `_R1.fq.gz`. -->
-{#snippet columnPicker(row, field)}
-  {#if columns.length}
-    <select
-      class="cols small"
-      aria-label="insert a column"
-      value=""
-      onchange={(e) => {
-        const col = e.currentTarget.value
-        e.currentTarget.value = ''
-        if (!col) return
-        const box = document.getElementById(fieldId(row, field))
-        if (!box) return
-        const at = box.selectionStart ?? box.value.length
-        const next = `${box.value.slice(0, at)}{${col}}${box.value.slice(box.selectionEnd ?? at)}`
-        onrow?.(row.id, { [field]: next })
-        box.focus()
-        const caret = at + col.length + 2
-        requestAnimationFrame(() => box.setSelectionRange(caret, caret))
-      }}
-    >
-      <option value="">{'{ }'}</option>
-      {#each columns as c}<option value={c}>{c}</option>{/each}
-    </select>
-  {/if}
-{/snippet}
+<!-- One field, two states, and the sheet decides which. With columns it is a
+     strict choice from them -- there is nothing to type, because the sheet
+     carries the finished value and metasmith never builds a string out of one.
+     Without, it is the free text it always was.
 
-<!-- A field that names one column and nothing else: a choice from the sheet's
-     own columns, not a string to type -- which is what a sample table attached
-     is *for*. A field around a token in a longer pattern (a path with a column
-     in the middle of it) is still free text with `columnPicker` to insert into,
-     since a dropdown cannot represent that shape at all. -->
-{#snippet sampleField(row, field, value, placeholder, mono)}
-  {@const col = wholeToken(value)}
-  {#if columns.length && col !== null && !isFreeform(row, field)}
+     The two are two separate stores on the row, so neither write touches the
+     other: switching a sheet on and off moves between the last answer given to
+     each. A binding naming a column *this* sheet lacks draws blank and is left
+     alone, so re-attaching the sheet it came from restores it.
+
+     `field` is only a name, for the label an assistive reader gets. What a
+     write means is the caller's business: a path sets one key on the row, a
+     value entry rewrites the whole list it is a member of. -->
+{#snippet sampleField(row, field, value, column, placeholder, mono, apply, bind)}
+  {#if hasTable}
     <select
       class="grow{mono ? ' mono' : ''}"
+      class:unset={!column}
       aria-label={`${field}, a column of the attached sheet`}
-      value={col}
-      onchange={(e) => onrow?.(row.id, { [field]: `{${e.currentTarget.value}}` })}
+      value={columns.includes(column) ? column : ''}
+      onchange={(e) => {
+        bind(e.currentTarget.value)
+        // a select has no blur-after-typing to save on, so the change *is* the
+        // commit -- without this every choice would sit unpersisted until some
+        // other field happened to blur
+        oncommit?.()
+      }}
     >
+      <option value="">choose a column…</option>
       {#each columns as c}<option value={c}>{c}</option>{/each}
     </select>
-    <button
-      class="star"
-      title="type a pattern around a column instead of naming one plainly"
-      onclick={() => setFreeform(row, field, true)}
-    >pattern</button>
   {:else}
     <input
       class="grow{mono ? ' mono' : ''}"
-      id={fieldId(row, field)}
       {value}
       {placeholder}
       spellcheck="false"
-      oninput={(e) => onrow?.(row.id, { [field]: e.currentTarget.value })}
-      onblur={() => {
-        oncommit?.()
-        setFreeform(row, field, false)
-      }}
+      oninput={(e) => apply(e.currentTarget.value)}
+      onblur={() => oncommit?.()}
     />
-    {@render columnPicker(row, field)}
   {/if}
+{/snippet}
+
+<!-- One field of a value row: its key, and what it holds. The key is literal in
+     both states and never a column -- so the grouping key, what fans out and
+     the validation messages all read one set of fields, and a key that happens
+     to match a column name means nothing. With one entry the key is optional
+     and says so; with two or more it is what the field is called in the object
+     the row writes, and the server refuses a launch off a recipe where one is
+     blank. -->
+{#snippet valueEntry(row, ents, i)}
+  {@const e = ents[i]}
+  {@const only = ents.length === 1}
+  <input
+    class="keybox"
+    value={e.key}
+    placeholder={only ? 'key (optional)' : 'key'}
+    aria-label="the key this field is written under"
+    spellcheck="false"
+    oninput={(ev) => patchEntry(row, i, { key: ev.currentTarget.value })}
+    onblur={() => oncommit?.()}
+  />
+  {@render sampleField(
+    row,
+    `values.${i}`,
+    e.value,
+    e.column,
+    'GCF_000005845.2',
+    false,
+    (text) => patchEntry(row, i, { value: text }),
+    (col) => patchEntry(row, i, { column: col }),
+  )}
 {/snippet}
 
 <!-- What an input row holds -- a path or a literal value -- is a switch on the
@@ -437,80 +384,121 @@
         Nothing here yet. Add the files and values you have — the planner works
         out the steps from their types alone.
       </p>
-    {/if}
-    {#each orderedInputRows as row (row.key)}
-      {@const info = row.type && counts ? counts(row.type) : null}
-      {@const array = isArrayRow(row.row)}
-      <div class="entry" class:hl={hover === row.key} animate:flip={{ duration: 150 }}>
-        <!-- Two lines, not one: the path is the longest thing on an input row and
-             was being squeezed into a sliver beside a combobox and a menu. What
-             the row points at goes on the first line; what it *is* and what it
-             came from go on the second -- and that second line is the whole of an
-             output row. -->
-        <div class="row-item">
-          {@render modeSwitch(row)}
+    {:else}
+      <LineageBand rows={orderedInputRows} marks={hlMarks}>
+        {#snippet body(row)}
+          {@const info = row.type && counts ? counts(row.type) : null}
+          {@const bound = isBound(row.row)}
+          <!-- Two lines, not one: the path is the longest thing on an input row and
+               was being squeezed into a sliver beside a combobox and a menu. What
+               the row points at goes on the first line; what it *is* and what it
+               came from go on the second -- and that second line is the whole of an
+               output row. -->
           {#if row.row.mode === 'value'}
-            <!-- One field, not two. The library names its own file, so there is
-                 nothing here to call it; a token in the value is what makes the
-                 row a sample array, which is why the placeholder advertises one
-                 as soon as a sheet is attached. -->
-            {@render sampleField(row, 'value', row.row.value, columns.length ? '{sample}' : 'GCF_000005845.2', false)}
+            {@const ents = rowEntries(row.row)}
+            <!-- A value row holds a list, one line per entry. One entry is
+                 what a value row has always been -- a box, with an optional
+                 key beside it -- and it stays on the switch's own line so
+                 the common row does not grow. Give it a key, or a second
+                 entry, and the row writes the JSON object those pairs
+                 describe instead of the text: which is the point, since
+                 hand-typed JSON in that box has braces in it and braces are
+                 what make a row a sample array.
+
+                 The add sits hard left, against the switch, on the switch's
+                 own line: a second entry pushes the fields down under it
+                 rather than moving the button that made them, and it is
+                 nowhere near the deletes on the right. -->
+            <div class="row-item">
+              {@render modeSwitch(row)}
+              <button class="star" title="another field, under its own key" onclick={() => addEntry(row)}>+</button>
+              {#if ents.length === 1}
+                {@render valueEntry(row, ents, 0)}
+              {:else}
+                <span class="grow"></span>
+              {/if}
+              <span class="trail">
+                <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
+              </span>
+            </div>
+            {#if ents.length > 1}
+              {#each ents as _e, i}
+                <div class="row-item entryline">
+                  {@render valueEntry(row, ents, i)}
+                  <span class="trail fieldtrail">
+                    <DeleteControl title="discard this field" onconfirm={() => dropEntry(row, i)} />
+                  </span>
+                </div>
+              {/each}
+            {/if}
           {:else}
-            {@render sampleField(
-              row,
-              'path',
-              row.row.path,
-              columns.length ? '/data/{sample}_R1.fastq.gz' : '/data/sample_01.fastq.gz',
-              true,
-            )}
+            <div class="row-item">
+              {@render modeSwitch(row)}
+              {@render sampleField(
+                row,
+                'path',
+                row.row.path,
+                row.row.column,
+                '/data/sample_01.fastq.gz',
+                true,
+                (text) => onrow?.(row.id, { path: text }),
+                (col) => onrow?.(row.id, { column: col }),
+              )}
+              <span class="trail">
+                <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
+              </span>
+            </div>
           {/if}
 
-          <span class="trail">
-            <DeleteControl title="discard this row" onconfirm={() => onremoveRow?.(row.id)} />
-          </span>
-        </div>
+          {@render detail(row)}
 
-        {@render detail(row)}
+          {#if hasTable}
+            <!-- With a sheet attached this row is one declaration, not N rows:
+                 what it says about itself is a count of how many items it
+                 stands for. A field bound to nothing makes that count zero, and
+                 saying so here is what keeps the row from going quiet -- it
+                 registers nothing until it is bound. -->
+            <div class="notes row wrap small">
+              {#if !bound}
+                <span class="tag warn">pick a column for every field — this registers nothing</span>
+              {:else if expansion?.counts?.[row.id]}
+                <span class="tag">× {expansion.counts[row.id]} registered</span>
+              {:else}
+                <span class="tag">× {rowCount} once expanded</span>
+              {/if}
+              <!-- A sample's mask is one index item's lineage, so a reference
+                   sitting beside the per-sample files is in no sample at all.
+                   Marking it shared is the third way in, and it applies to any
+                   row under a sheet: the usual shape is a column repeating one
+                   path down every row, which groups onto the single instance
+                   this then shares.
 
-        {#if array}
-          <!-- An array row is one declaration, not N rows: what it says about
-               itself is a count of how many items it stands for. -->
-          <div class="notes row wrap small">
-            {#if expansion?.counts?.[row.id]}
-              <span class="tag">× {expansion.counts[row.id]} registered</span>
-            {:else}
-              <span class="tag">× {rowCount} once expanded</span>
-            {/if}
-          </div>
-        {/if}
+                   Keyed by the row, not by a path: a row may not have one yet,
+                   and the generate turns the reference into every path that row
+                   registered, between the sync that made them and the solve
+                   that reads them. -->
+              <button
+                class="star"
+                class:on={sharedPaths.includes(row.key)}
+                aria-pressed={sharedPaths.includes(row.key)}
+                title={sharedPaths.includes(row.key)
+                  ? 'every sample sees this'
+                  : 'let every sample see this — a reference beside the per-sample files is otherwise in no sample at all'}
+                onclick={() => onshared?.(row.key, !sharedPaths.includes(row.key))}
+              >shared by every sample</button>
+            </div>
+          {/if}
 
-        <!-- Keyed by the row, not by a path: a row may not have one yet, which
-             is the normal state of a fresh recipe, and it is the row that is
-             durable in any case. The generate turns it into a path between the
-             sync that made it and the solve that reads it. -->
-        {#if columns.length && !array}
-          <div class="notes row wrap small">
-            <button
-              class="star"
-              class:on={sharedPaths.includes(row.key)}
-              aria-pressed={sharedPaths.includes(row.key)}
-              title={sharedPaths.includes(row.key)
-                ? 'every sample sees this'
-                : 'let every sample see this — a reference beside the per-sample files is otherwise in no sample at all'}
-              onclick={() => onshared?.(row.key, !sharedPaths.includes(row.key))}
-            >shared by every sample</button>
-          </div>
-        {/if}
+          {#if row.type && !info?.known}
+            <div class="notes row wrap small">
+              <span class="tag warn">not a type in this library</span>
+            </div>
+          {/if}
+        {/snippet}
+      </LineageBand>
+    {/if}
 
-        {#if row.type && !info?.known}
-          <div class="notes row wrap small">
-            <span class="tag warn">not a type in this library</span>
-          </div>
-        {/if}
-      </div>
-    {/each}
-
-    <div class="entry addrow">
+    <div class="addrow">
       <!-- One button, not a choice up front: a path and a value are the same
            kind of thing to add, a row, and what it holds is a switch on the row
            itself rather than a different action to take here. -->
@@ -526,35 +514,38 @@
     </div>
     {#if targetRows.length === 0}
       <p class="small muted pad">Nothing wanted yet. Add at least one to solve.</p>
+    {:else}
+      <!-- a wanted output is a requested one: the engine's solid marker, the
+           same one the plan's diagram draws it with -->
+      <LineageBand rows={targetRows} kind="target" marks={hlMarks}>
+        {#snippet body(row)}
+          {@const info = row.type && counts ? counts(row.type) : null}
+          {@const dup = targetRows.some(
+            (o) =>
+              o.id !== row.id &&
+              o.type === row.type &&
+              row.type &&
+              JSON.stringify([...o.parents].sort()) === JSON.stringify([...row.parents].sort()),
+          )}
+          {@render detail(row)}
+
+          {#if row.type || dup}
+            <div class="notes row wrap small">
+              {#if row.type && !info?.known}
+                <span class="tag warn">not a type in this library</span>
+              {:else if info?.known && info.produced === 0}
+                <span class="muted">nothing can make this — the plan will not solve</span>
+              {/if}
+              {#if dup}
+                <span class="tag warn">already wanted, with the same lineage</span>
+              {/if}
+            </div>
+          {/if}
+        {/snippet}
+      </LineageBand>
     {/if}
-    {#each targetRows as row (row.key)}
-      {@const info = row.type && counts ? counts(row.type) : null}
-      {@const dup = targetRows.some(
-        (o) =>
-          o.id !== row.id &&
-          o.type === row.type &&
-          row.type &&
-          JSON.stringify([...o.parents].sort()) === JSON.stringify([...row.parents].sort()),
-      )}
-      <div class="entry" class:hl={hover === row.key}>
-        {@render detail(row)}
 
-        {#if row.type || dup}
-          <div class="notes row wrap small">
-            {#if row.type && !info?.known}
-              <span class="tag warn">not a type in this library</span>
-            {:else if info?.known && info.produced === 0}
-              <span class="muted">nothing can make this — the plan will not solve</span>
-            {/if}
-            {#if dup}
-              <span class="tag warn">already wanted, with the same lineage</span>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    {/each}
-
-    <div class="entry addrow">
+    <div class="addrow">
       <button class="small" onclick={() => onadd?.('output')}>+ an output</button>
       <span class="small muted">a type you want out of this — the planner finds the way to it</span>
     </div>
@@ -587,20 +578,31 @@
      pinned to `.out` */
   .heading:not(:first-child) { border-top: 3px solid var(--line); }
   .heading .count { text-transform: none; letter-spacing: 0; }
-  /* the border is on the entry rather than the row, so a row and the line of
-     tags under it read as one thing rather than two */
-  .entry { border-bottom: 1px solid var(--line); }
-  .rows > .entry:last-child { border-bottom: none; }
-  /* the one mark left on a row, and it comes from a pointer sitting on a parent
-     line somewhere else: "that link means *this* row". Clicking a type moves the
-     panel and marks nothing -- it used to mark every row of that type, in both
-     halves, so touching an input lit up an output that shared its name. */
-  .entry.hl { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+  /* A row and everything about how it sits beside a rail is `LineageBand`'s,
+     including the border under it -- Svelte scopes styles per component, so a
+     rule here could not reach those rows anyway. What is left in this box is
+     the two add-rows, which are this card's own elements and carry the same
+     border so the run of rows reads as one list. The last of them closes the
+     box, so it drops it. */
+  .addrow { border-bottom: 1px solid var(--line); }
+  .rows > .addrow:last-child { border-bottom: none; }
   .row-item {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
+  }
+  /* file and value are the same row seen two ways, so the row may not change
+     height between them. A path is drawn in the mono face at 12.5px and a value
+     in the proportional one at the page size, and a field left to size itself
+     off its own font is a pixel or two taller in one mode than the other --
+     which twitches the row, which redraws the lineage rail measured against it.
+     Pinned here rather than globally: nothing else on the page swaps a field's
+     face under the cursor. */
+  .row-item input,
+  .row-item select {
+    height: 28px;
+    line-height: 1.35;
   }
   /* the second line of an input row, and the whole of an output row: same
      columns, no gap above it, so an input's two lines read as one row */
@@ -626,12 +628,32 @@
   .typecell { flex: 1 1 240px; min-width: 140px; max-width: 360px; }
   .typefield { min-width: 0; }
   .parentcell { flex: 1 1 auto; min-width: 0; padding-top: 1px; }
-  /* fixed whether or not it holds a delete: it is what puts an output's × over
-     the × on an input's first line */
-  .trail { flex: 0 0 20px; display: flex; justify-content: flex-end; align-items: center; }
-  /* narrow on purpose: it sits beside a field that wants the width, and what it
-     holds is one short word at a time */
-  .cols { flex: 0 0 auto; width: 4.5em; padding: 2px 2px; }
+  /* 20px whether or not it holds a delete: it is what puts an output's × over
+     the × on an input's first line -- so nothing else may live in it. A value
+     row's add button sits on the left, against the mode switch. */
+  .trail {
+    flex: 0 0 auto;
+    min-width: 20px;
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    align-items: center;
+  }
+  /* one field of a multi-field value row: indented under the line carrying the
+     mode switch, so the block reads as belonging to the row rather than as
+     three rows that happen to be adjacent */
+  .row-item.entryline { padding-top: 0; padding-left: 28px; }
+  /* a field's × is inset from the row's ×, which stays hard right: two deletes
+     in one column would read as the same delete, and one of them discards the
+     whole row */
+  .trail.fieldtrail { padding-right: 16px; }
+  /* narrow, like `.cols`: a key is one word and the value beside it is what
+     wants the width */
+  .keybox { flex: 0 1 8em; min-width: 4em; }
+  /* a field under a sheet that has chosen no column yet. It is a blank in the
+     recipe, not a constant, and the row's own note says so -- this is only what
+     makes the blank findable in a long list. */
+  .unset { border-color: var(--warn, var(--line)); }
 
   /* two labelled halves, one lit -- a slider read as one control to flip
      rather than two buttons doing different things */

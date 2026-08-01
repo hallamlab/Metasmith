@@ -318,9 +318,9 @@ opened. And it is a value, not a flag: nothing downstream tests for `None` or a 
 **A sample type is a way of branching a plan, not a precondition for one.**
 `plan_workflow(sample_type=None)` plans the library as it stands — one sample holding
 everything in it — and naming a type splits it into one run per item of that type
-(`AsSamples`). The GUI passes `None` unless a sample table is attached, in which case it
-passes the type of the sample-array row marked as the index; the CLI's `--sample-type` is
-optional for the same reason.
+(`AsSamples`). The GUI always passes `None`, sheet or no sheet — a sampled recipe plans as one
+unified view and the runtime fans it back out — so a non-null value only ever comes from a
+request written directly; the CLI's `--sample-type` is optional for the same reason.
 
 **A sample's mask is one index item's lineage, so both directions of the shape matter.** An
 index item with a *parent* puts that parent's whole subtree in every mask and collapses all
@@ -328,7 +328,10 @@ samples into one view; an item beside the index that nothing links to it lands i
 all and the planner never sees it, though it is still staged. `ops.samples.validate` refuses
 the first and `plan_workflow(shared_input_paths=…)` is the way out of the second — it appends
 one masked view of the input library alongside the resource libraries, which is where a thing
-every sample sees belongs.
+every sample sees belongs. The GUI states it as a **row** reference (`#id`), never a path: under
+a sheet that row registered one path per distinct set of cells and none of them exists until the
+solve, so `generate_workflow` resolves the reference to every path the row made, between the sync
+that made them and the solve that reads them.
 
 **Planning is not reentrant, and the lock for it lives at the mutation.** `TransformInstance.Load`
 imports each transform by bare module name, mutates `sys.path`, calls `importlib.reload`, and
@@ -515,9 +518,23 @@ for consumers running their own.
   unrelated merge steps hash alike and get hoisted 14 rows from their readers. An instance's
   block is its descendants minus everything its siblings also reach — *not* its dominator
   subtree, which loses any node with a second parent and leaves a stub the hoist acts on wrongly.
+- **How far a marker sits from its label is measured and not ranked.** Lanes run right to left,
+  so lane 0 is the one beside the labels and a node pushed out to lane 3 is three lanes from its
+  own name. `measure` totals that as `marker_lanes`. It was a selection term for one commit and
+  was taken back out: it costs ~11% more crossings across `compare_layouts.py --corpus 300`,
+  buys nothing on the metagenomics plan, and the packings that chase it produce rails that leave
+  a lane and come straight back. Kept as a measurement so the case can be re-argued in numbers.
+- **A rail that leaves the corridor between its own two ends is a `detour`, and it is the last
+  tie-break and nothing more.** Crossings cannot see one — a rail sent out to a lane of its own
+  between two rows one apart comes straight back without crossing anything — which is how the
+  lane repack came to lose to the greedy pass on a graph it drew better. Most detours are
+  forced (seven children off one parent are seven parallel rails), so it sits last in
+  `_compose`'s key, behind everything anyone would trade for: across
+  `compare_layouts.py --corpus 300` it leaves rail, lanes and crossings byte-identical and
+  changes 2 drawings.
 - **Where a pass has two defensible answers, both are drawn and measured.** `measure` returns
-  congruence, rail rows, lanes, crossings and module contiguity; `layout` picks on
-  `(congruence, rail, lanes, crossings)` — symmetry ahead of length, which costs ~1% on graphs
+  congruence, rail rows, lanes, crossings, detours and module contiguity; `layout` picks
+  on `(congruence, rail, lanes, crossings)` — symmetry ahead of length, which costs ~1% on graphs
   that have none. Congruence is *modal*, the largest set of instances arranged alike: mean
   agreement is too coarse to separate row orders, and offsets are measured against the previous
   instance because instances fanning out of one node cannot share absolute lanes. Prefer adding
@@ -811,7 +828,12 @@ rename applied as part of the save — what that costs differs by collection, si
 workflow's directory becomes the task bundle a run stages from while an agent is one yaml
 nothing points into. And **incompleteness is reported, never refused, until launch**: you
 make an agent days before its cluster exists in your ssh config, so `problems`/`valid` ride
-on the payload and only the launch route enforces them.
+on the payload and only the launch route enforces them. The recipe answers to the same rule
+from the other side — a half-filled one still solves, because that is how you find out what a
+plan needs — so `ops.inputs.problems` is recorded into `result.yml` *at solve time* and
+`POST /runs` refuses on it. The verdict has to belong to the solve that produced the bundle a
+run would stage, not to what the page says at click time; the way to clear it is to fill the
+box in and solve again, which is the same solve that puts the fix into the bundle.
 
 **The recipe's input rows are the durable thing; the input library is built from them.** A row
 lives in `request.yml`, is saved when a field is left, and never becomes anything else — there
@@ -845,24 +867,53 @@ exactly once, then mints. Because an array row lives in the record's *generation
 than its row map, its legacy binding is a separate fallback — and the browser carries `name` as
 an inert passthrough for one release so that binding survives the first sync.
 
-**A sample table is a sheet plus one declared row per kind of input.** `ops.samples` parses a
-csv/tsv/excel upload (stored verbatim under a fixed stem, because the workflow directory *is*
-the task bundle root) and says what is wrong with it. A row carrying a `{column}` token — in its
-path, or in a value row's *value* — is a **sample array**: one declaration standing for N items
-indexed by the sheet, not a second kind of row. The recipe shows an array row's count and never
-the items it made. It is deliberately *not* called a template: that word now means a stored
-workflow you start from, and the two were being confused in the same page.
+**What a value row holds is a list of keyed fields, and `render_value` is the only thing that
+turns it into a file.** One field with no key writes its text verbatim — which is what a value
+row has always written, so a recipe migrating to the list form moves no byte and re-mints
+nothing — and anything else writes the JSON object those pairs describe, each value typed by
+`scalar` (a JSON scalar becomes that scalar; a list, an object or anything unparseable
+stays its text; quoting is the escape hatch). Those three live in `ops/rows.py` rather than in
+`ops/inputs.py`, because `ops.samples` needs the same shape and `inputs` already imports it —
+`frontend/src/lib/rows.js` is the page's copy, for the same reason. The scalar rule is on the
+server, once, because the GUI's params boxes read it too. Read metadata is several facts, and a
+line of hand-typed JSON in one box is not something a person can edit — which is what the keyed
+form is for, and why **adoption splits a registered JSON object into keyed fields**, but only
+when `render_value` reproduces the file byte for byte: a leaf's identity is content addressed, so
+a file this did not write is one it must not rewrite.
+
+**The presence of a sample table is the only thing that decides how a field behaves.** With no
+sheet, every path and every value is the free text typed into it. With one, every row of the
+recipe is a **sample array** — one declaration standing for N items indexed by the sheet — and
+every field is a strict choice from that sheet's columns, holding whatever the chosen cell holds.
+There is no syntax that flags a field as naming a column: braces are ordinary characters, and the
+spreadsheet must carry finished values because nothing builds a string out of one. A value
+entry's **key** is the exception and is literal in both states; it names the field in the object
+the row writes and is never read as a column.
+
+**Each field stores both answers, so the switch is not destructive.** A file row carries `path`
+*and* `column`; a value entry carries `value` *and* `column`. Neither is derived from the other,
+so attaching a sheet, binding a column, detaching it and editing the text moves between two
+remembered states rather than overwriting one — and a binding naming a column the current sheet
+lacks draws blank while staying on the row, so re-attaching the sheet it came from restores it.
+There is deliberately **no constant under a sheet**: a field bound to nothing is a blank in the
+recipe (reported by `unbound_problems`, drawn on the row, and it registers nothing), not a value
+that stands as it is. Saying "the same for every sample" means a column repeated down the sheet,
+which costs a column there and nothing in the library.
+
+`ops.samples` parses a csv/tsv/excel upload (stored verbatim under a fixed stem, because the
+workflow directory *is* the task bundle root) and says what is wrong with it. The recipe shows an
+array row's count and never the items it made. It is deliberately *not* called a template: that
+word now means a stored workflow you start from, and the two were being confused in the same page.
 
 **What an array row expands into is keyed on identity, not on sheet position.** A file row
-substitutes its path per sheet row; a value row has no path to substitute, so its mint is keyed
-on the sheet cells its `value` reads. That distinction is the whole of how multiplicity is
-expressed here: two sheet rows naming one pangenome are two samples of *one* pangenome, and a
+registers its bound cell as the path; a value row has no path to bind, so its mint is keyed on
+the union of the sheet cells its fields bind. That distinction is the whole of how multiplicity
+is expressed here: two sheet rows naming one pangenome are two samples of *one* pangenome, and a
 per-sheet-row key would turn that shared parent into three pangenomes holding one genome each —
-which plans fine, and is wrong. Keying on the cells rather than the text they produce also means
-rewording a template around a token rewrites contents without re-registering anything. Two
-entries landing on one path is therefore a deliberate grouping, and a value row can no longer
-disagree with itself about what a shared entry holds: one key implies one substituted value by
-construction, since `substitute` reads exactly the columns the key is built from.
+which plans fine, and is wrong. Keying on the columns rather than on what the row renders to also
+means relabelling a field rewrites contents without re-registering anything. Two entries landing
+on one path is therefore a deliberate grouping, and a value row cannot disagree with itself about
+what a shared entry holds: one key implies one set of cells by construction.
 
 **A template is a starting point, and `+ workflow` is where you pick one.** Templates live at
 `<stdlib>/templates/<name>/` — a `spec.yml` plus the deferred input rows it names — and are
@@ -938,6 +989,31 @@ constant on the page, and a column header nudged into place with `position: rela
 still sizes the box. Each row states the `dag_cy` it was placed at, so this is assertable
 from the page rather than by eye.
 
+**A surface with rows of its own sends them up, rather than applying them to what comes
+back.** `LineageRail.svelte` (the recipe's git-log-style lineage columns beside the input
+rows and, separately, the output rows) is `MiniGraph.svelte`'s trick again — `POST
+/api/dag/layout` for placement — but recipe rows are not the plan DAG's uniform-pitch steps:
+a value row wraps, an array row grows a count note, and their order is the form's. So the
+request carries `order` (the rows, as the page lists them) and `row_y` (each row's measured
+`offsetTop`, from `RecipeCard.svelte`), and the response is the finished drawing. Both halves
+matter: the engine reorders rows freely when it is allowed to, so a rail laid out in one order
+and drawn in another runs through its own markers; and re-baking the curves in the browser
+means a second implementation of `dag_draw`'s pixel pass with nothing holding the two in step
+— which is what `frontend/src/lib/dagpaths.js` was. An edge crosses the wire as a `d` string
+and nothing else.
+
+**A type name is split in one place on the page, and it cuts where the engine cuts.**
+`frontend/src/lib/types.js` splits `namespace::name` at the *first* `::`, as
+`models/dag_draw.py:default_label` does; `TypeName.svelte` is the two stacked lines that
+follow from it (namespace at half size above, bare name below), and every list, menu and
+field on the page draws through those two. The half a page prints of a type is the *name* —
+a namespace is shared by every type in a library, so it never tells two rows apart; which
+row an entry means is the hover highlight's job. Two consequences that fail silently if
+forgotten: a caller cannot style the stack from outside (styles are scoped per component,
+so colour crosses as `--typename-ink`), and any control holding a type must be the same
+height settled as it is focused, since `LineageRail` is drawn against the row's measured
+`offsetTop`.
+
 ---
 
 ## Release versioning
@@ -978,6 +1054,24 @@ skipping them ships something empty that nobody notices for a while:
   Treat a non-zero `-br` as fatal rather than continuing. The cross-compile image is upstream
   and `-brc` pulls it — it must never `docker build` over that tag, because the replacement
   has no osxcross and silently reduces `-br` to linux-only.
+- `-be` — the solver engine (`main/solver_engine/`, same four targets, same upstream image via
+  `-bec`). Unlike the relay it is **not** in the docker image: the solver runs locally at plan
+  time, so `-be` stages the binaries into `src/metasmith/engine/` and they ship as package data
+  in the wheel and sdist. That staging directory is the *only* place a binary is looked for, in
+  all three contexts: `PYTHONPATH=src` makes it the package's own `engine/`, which is where an
+  installed wheel resolves too, so nothing is added to PATH and there is one lookup rather than
+  three. Run `-bel` once and source runs use the engine.
+  The engine carries the whole search and is the default — 7.5s versus 1.1s on
+  `metagenomics_from_paired_reads`, same plan — so absence is recoverable but not free: a wheel
+  with no engine plans correctly and slowly, and nothing fails. Hence the guard on every
+  shipping build (`-bp`/`-bc`/`-bd` run `_assert_solver_engine`; override
+  `MSM_SKIP_SOLVER_CHECK=1`), which also refuses a `-bel` host build via the `BUILD_KIND` marker,
+  since nothing about a Linux ELF says musl versus the build machine's glibc.
+  Reverting to the Python solver is a class pin — `solver_backend._set_solver_class`,
+  `UsePythonSolver()`, or `pytest --solver=python` — never an environment variable; an
+  *unasked-for* fallback warns once per process. `MSM_SOLVER_TRACE=1` is read by the binary
+  itself and makes it narrate its decisions and its frontier on stderr, which is how a
+  differential failure gets localised to a draw.
 
 ## `examples/` — minimal regression library
 

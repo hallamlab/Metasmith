@@ -51,6 +51,13 @@ if __name__ == "__main__":
                 # main/transforms/std/create.py. Pure data: no module in here, so
                 # find_packages cannot see it and nothing but this line ships it.
                 "std/**",
+                # the msm_solver binaries, one per platform, built by
+                # `dev.sh -be` and never committed. Unlike msm_relay -- which
+                # runs on the agent host and is baked into the docker image --
+                # the solver runs locally at plan time, so it has to be inside
+                # the wheel and the conda package. Absent is a supported state:
+                # metasmith then plans on the python solver.
+                "engine/**",
             ],
             # examples
             # "package-name": ["*.txt"],

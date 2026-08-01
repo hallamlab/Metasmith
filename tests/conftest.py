@@ -8,6 +8,7 @@ Override by adding explicit `@pytest.mark.<name>` on a test — auto-markers
 are additive, not exclusive.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -28,6 +29,10 @@ _TESTS_ROOT = Path(__file__).resolve().parent
 _DIR_MARKERS: list[tuple[str, list[str]]] = [
     ("unit", ["fast"]),
     ("flow", ["fast"]),
+    # Solver correctness -- which transforms get chosen, and whether the plan
+    # that comes back is sound. Separate from `flow`, which asks what the
+    # runtime then does with a plan it is handed.
+    ("solver", ["fast"]),
     ("cache", ["fast"]),
     ("gui", ["fast", "gui"]),
     # bootstrap was `slow` because one 10k-scale class lived in its biggest
@@ -44,7 +49,67 @@ _DIR_MARKERS: list[tuple[str, list[str]]] = [
 ]
 
 
+def pytest_addoption(parser):
+    """`--solver=` -- which implementation the whole session's solves run on.
+
+    This is what lets one axis be run both ways, which it has to be: the
+    failure mode here is a *green* run that silently used the other
+    implementation, and no assertion in `tests/solver` notices it. `rust` fails
+    the session outright when no usable binary is staged, rather than quietly
+    doing what `auto` would have done -- asking for a thing and getting
+    something else is the shape of the bug, not the workaround for it.
+    """
+    parser.addoption(
+        "--solver", action="store", default="auto",
+        choices=["auto", "python", "rust"],
+        help="solver implementation for this session (default: auto)",
+    )
+    parser.addoption(
+        "--python-solver", action="store_true", default=False,
+        help="also run the tests that need the python solver (see the"
+             " `python_solver` marker); off by default, including in the"
+             " release suite",
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _solver_selection(request):
+    from metasmith.models.solver_backend import (
+        PythonSolver, RustSolver, _set_solver_class,
+    )
+    choice = request.config.getoption("--solver")
+    if choice == "auto":
+        yield
+        return
+    if choice == "rust" and not RustSolver.Available():
+        pytest.fail(
+            "--solver=rust, but no msm_solver advertising `solve` is staged for"
+            " this platform (./dev.sh -bel). Refusing to run the python solver"
+            " under a rust label."
+        )
+    previous = _set_solver_class(PythonSolver if choice == "python" else RustSolver)
+    yield
+    _set_solver_class(previous)
+
+
 def pytest_collection_modifyitems(config, items):
+    # The python solver is on its way out. The engine is what ships and what the
+    # suite is asking about, so tests that need the python implementation --
+    # parity sweeps that use it as the engine's reference, and the few that
+    # trace its internals -- are opt-in rather than part of any routine run,
+    # release included. Reach for `--python-solver` when there is reason to
+    # suspect the engine, which is the one case the comparison still answers.
+    #
+    # Skipped rather than deselected: a gate that vanishes without saying so is
+    # how this suite lost four files once already.
+    if not config.getoption("--python-solver"):
+        skip_python_solver = pytest.mark.skip(
+            reason="needs the python solver; pass --python-solver to run it"
+        )
+        for item in items:
+            if "python_solver" in item.keywords:
+                item.add_marker(skip_python_solver)
+
     # A file matching no prefix gets NO marker and therefore runs in no gate.
     # That is silent by construction -- the tests collect, pass locally, and are
     # simply never selected again -- and it had already swallowed four files
@@ -105,6 +170,38 @@ def virtual_runtime_bounce(tmp_path, monkeypatch):
     runtime.setup(monkeypatch)
     _configure_agent_paths(monkeypatch, runtime.home)
     return runtime
+
+
+@pytest.fixture(scope="session")
+def metasmith_libraries_root() -> Path:
+    """Resolve the sibling ``metasmith-libraries/main/`` project root.
+
+    Lives here rather than in one axis's conftest because three axes want the
+    real standard library: `flow` solves every shipped template, `solver`
+    fingerprints them, and `perf` benchmarks them.
+
+    Resolution order:
+    1. ``METASMITH_LIBRARIES_ROOT`` env var (if set and existing).
+    2. Sibling layout: ``<workspace>/projects/metasmith-libraries/main``.
+    3. Skip with an actionable reason.
+    """
+    env = os.environ.get("METASMITH_LIBRARIES_ROOT")
+    if env:
+        p = Path(env).expanduser().resolve()
+        if p.exists():
+            return p
+        pytest.skip(
+            f"METASMITH_LIBRARIES_ROOT={env!r} does not exist; "
+            "unset it or point at metasmith-libraries/main"
+        )
+    sibling = Path(__file__).resolve().parents[3] / "metasmith-libraries" / "main"
+    if sibling.exists():
+        return sibling
+    pytest.skip(
+        "metasmith-libraries/main not found alongside metasmith project; "
+        "set METASMITH_LIBRARIES_ROOT to override "
+        f"(expected at {sibling})"
+    )
 
 
 @pytest.fixture

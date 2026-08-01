@@ -8,12 +8,13 @@ never in a route body.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
-import re
 import shutil
 import threading
+from dataclasses import replace
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..agents import Spec, Template
 from ..hashing import KeyGenerator
-from ..models.dag_renderer import THEMES, NodeKind
+from ..models.dag_renderer import THEMES
 from ..models.paths import is_deferred
 from ..models.workflow import NextflowProcessName
 from ..ops import agent as op_agent
@@ -548,20 +549,12 @@ def _checked_preset(value: str | None) -> str | None:
 def _param_value(v):
     """Text typed into a box, given the type it looks like.
 
-    One rule, so it is the same everywhere: a value that reads as a JSON scalar
-    becomes that scalar, anything else stays the string it was. `50` reaches
-    nextflow as a number, `--partition=x` as a string, and `"50"` as a string on
-    purpose -- which is the escape hatch for the one case the rule gets wrong.
+    One rule, so it is the same everywhere -- `50` reaches nextflow as a number,
+    `--partition=x` as a string, `"50"` as a string on purpose. The rule itself
+    lives on the server side, in `ops.inputs`, because a keyed value row is
+    typed by exactly this and the CLI builds those too.
     """
-    if not isinstance(v, str): return v
-    s = v.strip()
-    if not s: return v
-    try:
-        parsed = json.loads(s)
-    except ValueError:
-        return v
-    if isinstance(parsed, (dict, list)): return v
-    return parsed
+    return op_inputs.scalar(v)
 
 
 def _checked_params(raw, what: str = "params") -> dict | None:
@@ -909,10 +902,20 @@ def deploy_agent(name):
 # -- templates ---------------------------------------------------------------
 #
 # A template is a workflow you start from: a spec whose input paths are
-# DEFERRED, shipped in the standard library beside the transforms it names.
-# There is no separate format to keep in step -- these routes read the same
-# `Spec` a stored workflow record is, and creating from one is an ordinary
-# create with that spec and its input rows.
+# DEFERRED. Two places ship them: the standard library, beside the transforms
+# it names, and a project's own `user_templates/`, where "save as template"
+# below writes one from a workflow's current recipe. There is no separate
+# format to keep in step for either -- these routes read the same `Spec` a
+# stored workflow record is, and creating from one is an ordinary create with
+# that spec and its input rows.
+#
+# Where the two differ is only what their names resolve against: a library
+# template ships beside the libraries it uses, a user's does not, so it is
+# handed this project's standard library instead (`Template.Load`). After that
+# nothing below asks which kind it has, except to know what a version stamp is
+# keyed on and whether it can be deleted.
+
+USER_TEMPLATES_DIRNAME = "user_templates"
 
 
 def _target_names(targets) -> list[str]:
@@ -924,25 +927,61 @@ def _templates(p) -> dict[str, Template]:
     found = stdlib.discover(p.root)
     if not found["present"]:
         return {}
-    return {t.name: t for t in Template.Discover(found["path"])}
+    return {t.name: t for t in Template.Discover(found["path"], libraries=found)}
 
 
-def _template(p, name: str) -> Template:
-    tmpl = _templates(p).get(name)
-    if tmpl is None:
-        raise ProjectError(f"no template named [{name}]")
-    return tmpl
+def _user_templates(p) -> dict[str, Template]:
+    if not (p.root / USER_TEMPLATES_DIRNAME).is_dir():
+        return {}
+    return {
+        t.name: t for t in Template.Discover(
+            p.root, dirname=USER_TEMPLATES_DIRNAME,
+            libraries=stdlib.discover(p.root),
+        )
+    }
 
 
-def _template_dag_path(p, name: str, commit: str | None, theme: str) -> Path:
+def _all_templates(p) -> dict[str, tuple[Template, str]]:
+    """Every template on offer, tagged with where it came from.
+
+    A user-saved template that happens to share a name with a library one
+    wins the slot: it is the one the user can see and delete from the GUI, and
+    `save_as_template` already refuses to create the collision in the first
+    place -- this ordering only matters for a name a library pull introduces
+    after the fact.
+    """
+    out = {name: (t, "library") for name, t in _templates(p).items()}
+    out.update({name: (t, "user") for name, t in _user_templates(p).items()})
+    return out
+
+
+def _template_version(p, name: str, source: str) -> str | None:
+    """What a template's drawing cache is keyed on, besides its name.
+
+    A library template moves with the stdlib commit -- a library pull can
+    change what it solves to. A user template has no commit; its own
+    `spec.yml` mtime stands in instead, since re-saving under the same name is
+    the one way its content changes.
+    """
+    if source == "library":
+        return stdlib.discover(p.root)["commit"]
+    path = Template.PathIn(p.root, name, dirname=USER_TEMPLATES_DIRNAME)
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        mtime = 0
+    return hashlib.sha1(f"user:{name}:{mtime}".encode()).hexdigest()
+
+
+def _template_dag_path(p, name: str, version: str | None, theme: str) -> Path:
     """Where a template's drawing is cached.
 
-    Keyed on the stdlib commit as much as on the name: a library pull can
-    change what a template solves to, and a cache that ignored the commit would
-    leave the modal drawing the previous graph with nothing to say it was
-    stale. Files under an old commit simply stop being asked for.
+    Keyed on the version (see `_template_version`) as much as on the name: a
+    cache that ignored it would leave the modal drawing the previous graph
+    with nothing to say it was stale. Files under an old version simply stop
+    being asked for.
     """
-    stamp = (commit or "unversioned")[:12]
+    stamp = (version or "unversioned")[:12]
     return p.cache_dir / "template_dags" / stamp / f"{name}.{theme}.svg"
 
 
@@ -952,28 +991,59 @@ def _theme_arg() -> str:
     return theme if theme in THEMES else "light"
 
 
+def _template_summary(p, name: str, tmpl: Template, source: str, theme: str) -> dict:
+    return {
+        "name": name,
+        "description": tmpl.description,
+        "sample_type": tmpl.spec.sample_type,
+        "target_types": _target_names(tmpl.spec.target_types),
+        "source": source,
+        # what this project's standard library could not account for -- listed
+        # rather than refused, same as everywhere else here, and the two doors
+        # that need it resolved (`_render_template_dag`, `create_workflow`)
+        # refuse by name
+        "problems": list(tmpl.unresolved),
+        # so the modal can show a cached drawing immediately and only
+        # start a job for one it has never drawn
+        "dag_ready": _template_dag_path(p, name, _template_version(p, name, source), theme).is_file(),
+    }
+
+
+def _libraries_or_all(found: dict, transforms, resources) -> tuple[list, list]:
+    """Empty means every library this project has.
+
+    The GUI never narrows either list, so "empty" is the normal state and has
+    to mean something: it is what lets a workflow -- or a template -- made in
+    one project draw on whatever the next one happens to have, rather than
+    freezing today's list. Stated here because two callers apply it: a solve
+    (`generate`) and a template's own DAG, which is the same solve.
+    """
+    return (
+        list(transforms or found["transform_libraries"]),
+        list(resources or found["resource_libraries"]),
+    )
+
+
+def _assert_resolved(name: str, tmpl: Template) -> None:
+    assert not tmpl.unresolved, (
+        f"template [{name}] names {', '.join(tmpl.unresolved)}, which this "
+        f"project's standard library does not have"
+    )
+
+
 @bp.get("/templates")
 def list_templates():
     """The starting points on offer, cheaply: this reads yaml, never solves."""
     p = _project()
-    commit = stdlib.discover(p.root)["commit"]
     theme = _theme_arg()
     return jsonify([
-        {
-            "name": t.name,
-            "description": t.description,
-            "sample_type": t.spec.sample_type,
-            "target_types": _target_names(t.spec.target_types),
-            # so the modal can show a cached drawing immediately and only
-            # start a job for one it has never drawn
-            "dag_ready": _template_dag_path(p, t.name, commit, theme).is_file(),
-        }
-        for t in _templates(p).values()
+        _template_summary(p, name, tmpl, source, theme)
+        for name, (tmpl, source) in _all_templates(p).items()
     ])
 
 
-def _render_template_dag(p, tmpl: Template, name: str, theme: str) -> tuple[Path, int]:
-    """Solve `tmpl` and draw it, caching under (template, stdlib commit, theme).
+def _render_template_dag(p, tmpl: Template, name: str, source: str, theme: str) -> tuple[Path, int]:
+    """Solve `tmpl` and draw it, caching under (template, version, theme).
 
     Shared by the request-triggered route below and `warm_template_dags`
     (`app.py`), which pre-draws every template at server start so the first
@@ -981,9 +1051,15 @@ def _render_template_dag(p, tmpl: Template, name: str, theme: str) -> tuple[Path
     `_plan_lock` -- transform import is process-global, rendering is not --
     so a caller holds it for as little of its own turn as this does.
     """
-    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    svg = _template_dag_path(p, name, _template_version(p, name, source), theme)
+    _assert_resolved(name, tmpl)
+    transforms, resources = _libraries_or_all(
+        stdlib.discover(p.root),
+        tmpl.spec.transform_libraries, tmpl.spec.resource_libraries,
+    )
+    spec = replace(tmpl.spec, transform_libraries=transforms, resource_libraries=resources)
     with _plan_lock:
-        task = tmpl.spec.Solve()
+        task = spec.Solve()
     assert task.ok, (
         f"template [{name}] does not solve against this library: "
         f"dropped {sorted(task.plan.dropped_targets)}"
@@ -1000,20 +1076,22 @@ def _render_template_dag(p, tmpl: Template, name: str, theme: str) -> tuple[Path
 def render_template_dag(name):
     """Solve a template and draw it -- as a job, because a solve is seconds.
 
-    Cached on (template, stdlib commit, theme): paid once, and every later
-    modal is served from disk -- often already warmed by `warm_template_dags`
-    before this route is ever hit.
+    Cached on (template, version, theme): paid once, and every later modal is
+    served from disk -- often already warmed by `warm_template_dags` before
+    this route is ever hit.
     """
     p = _project()
-    tmpl = _template(p, name)
+    tmpl, source = _all_templates(p).get(name, (None, None))
+    if tmpl is None:
+        raise ProjectError(f"no template named [{name}]")
     theme = _theme_arg()
-    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    svg = _template_dag_path(p, name, _template_version(p, name, source), theme)
     if svg.is_file():
         return jsonify({"template": name, "theme": theme, "cached": True})
 
     def _work(job):
         with LogCapture(job):
-            _, step_count = _render_template_dag(p, tmpl, name, theme)
+            _, step_count = _render_template_dag(p, tmpl, name, source, theme)
             return {"template": name, "theme": theme, "step_count": step_count}
 
     job = _jobs().submit(
@@ -1026,12 +1104,34 @@ def render_template_dag(name):
 def template_dag(name):
     """The cached drawing. Absent until the job above has drawn it."""
     p = _project()
-    _template(p, name)  # 4xx on an unknown name rather than a missing file
+    tmpl, source = _all_templates(p).get(name, (None, None))
+    if tmpl is None:
+        raise ProjectError(f"no template named [{name}]")
     theme = _theme_arg()
-    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    svg = _template_dag_path(p, name, _template_version(p, name, source), theme)
     if not svg.is_file():
         raise ProjectError(f"template [{name}] has not been drawn for theme [{theme}] yet")
     return Response(svg.read_text(), mimetype="image/svg+xml")
+
+
+@bp.delete("/templates/<name>")
+def delete_template(name):
+    """Remove a user-saved template outright -- there is nothing that depends
+    on one, so unlike a workflow/agent/run this is not a two-press archive.
+
+    A library-shipped template cannot be deleted here: it lives in the
+    standard library checkout, and removing it from there is a library change,
+    not a GUI action.
+    """
+    p = _project()
+    if name not in _user_templates(p):
+        if name in _templates(p):
+            raise ProjectError(
+                f"[{name}] ships with the standard library and cannot be deleted here"
+            )
+        raise ProjectError(f"no saved template named [{name}]")
+    shutil.rmtree(Template.PathIn(p.root, name, dirname=USER_TEMPLATES_DIRNAME).parent)
+    return jsonify({"name": name, "action": "deleted"})
 
 
 # -- workflows ---------------------------------------------------------------
@@ -1075,17 +1175,17 @@ def get_workflow(name):
     out = _workflow_summary(wf)
     out["request"] = wf.request
     # backfill for results written before the summary existed, and for anything
-    # planned by the CLI directly into a workflow directory. The geometry is
+    # planned by the CLI directly into a workflow directory. The drawing is
     # tested by its newest key rather than by its presence, since a result
     # stored against an older shape of it would otherwise never be revisited.
     if wf.ok and (
         not wf.result.get("step_display")
-        or "top_cy" not in (wf.result.get("dag_geometry") or {})
+        or (wf.result.get("plan_graph") or {}).get("v") != op_workflow.GEOMETRY_VERSION
     ):
-        display, dag_geometry = _step_display(wf.path)
+        display, plan_graph = _step_display(wf.path, p.root)
         if display:
             wf = p.write_result(name, wf.result | {
-                "step_display": display, "dag_geometry": dag_geometry,
+                "step_display": display, "plan_graph": plan_graph,
             })
     out["result"] = wf.result
     out["runs"] = [_run_summary(r) for r in p.list_runs(workflow=name, include_archived=True)]
@@ -1110,7 +1210,13 @@ def create_workflow():
     b = _body()
     p = _project()
     name = slugify(b["name"]) if b.get("name") else None
-    template = _template(p, b["template"]) if b.get("template") else None
+    template = None
+    if b.get("template"):
+        found = _all_templates(p).get(b["template"])
+        if found is None:
+            raise ProjectError(f"no template named [{b['template']}]")
+        template, _ = found
+        _assert_resolved(b["template"], template)
 
     # A workflow record is a spec plus the store's bookkeeping, so what a create
     # may set is exactly the spec's fields -- named there rather than listed
@@ -1221,6 +1327,55 @@ def fork_workflow(name):
     return jsonify(_workflow_summary(p.read_workflow(forked.name))), 201
 
 
+@bp.post("/workflows/<name>/save_as_template")
+def save_as_template(name):
+    """Save this workflow's current recipe as a starting point to reuse.
+
+    A template is just a save: what the workflow's own request already says,
+    written by `Template.Save` in the one form that travels -- names. What
+    makes that safe is the precondition: this workflow has already solved,
+    successfully, so the recipe being saved is one that plans. A template is
+    never solved here and never carries a plan; its own DAG is drawn on demand
+    from the names it stores, exactly like a library template's.
+
+    The input library is the same idea one level further: every item becomes a
+    fresh deferred placeholder (`op_data.derive_template_library`), keeping its
+    type and its lineage but losing the actual path or value it pointed at.
+    """
+    p = _project()
+    wf = p.read_workflow(name)
+    b = _body()
+    tmpl_name = slugify(b.get("name") or "")
+    assert tmpl_name, "a template name is required"
+    if tmpl_name in _all_templates(p):
+        raise ProjectError(f"a template named [{tmpl_name}] already exists")
+    assert wf.ok, (
+        f"workflow [{name}] has no successful plan: a template is a recipe "
+        f"known to solve, so generate one first"
+    )
+
+    # Handed to the spec as a live library, so it packs through `PackInline`
+    # like a library-shipped template's does. `type_library_paths` builds the
+    # derived library's own type registration -- needed to validate a deferred
+    # item's dtype at all, and to inline at all -- but no path reaches the
+    # saved file: `Template.Save` keeps only the manifest's `ns::type` strings.
+    derived = op_data.derive_template_library(
+        str(p.input_library_path(name)),
+        type_library_paths=stdlib.discover(p.root)["data_types"],
+    )
+    spec = Spec(
+        input_library=derived,
+        target_types=wf.request.get("target_types") or [],
+        transform_libraries=list(wf.request.get("transform_libraries") or []),
+        resource_libraries=list(wf.request.get("resource_libraries") or []),
+        sample_type=wf.request.get("sample_type"),
+        shared_input_paths=list(wf.request.get("shared_input_paths") or []),
+    )
+    tmpl = Template(name=tmpl_name, spec=spec, description=b.get("description") or "")
+    tmpl.Save(p.root, dirname=USER_TEMPLATES_DIRNAME)
+    return jsonify(_template_summary(p, tmpl_name, tmpl, "user", _theme_arg())), 201
+
+
 def _given_summary(lib_path: str) -> list[dict]:
     """Every input the planner was handed, as type + identity + lineage.
 
@@ -1279,8 +1434,10 @@ def generate_workflow(name):
     assert targets, "at least one target type is required"
 
     found = stdlib.discover(p.root)
-    transforms = wf.request.get("transform_libraries") or found["transform_libraries"]
-    resources = wf.request.get("resource_libraries") or found["resource_libraries"]
+    transforms, resources = _libraries_or_all(
+        found,
+        wf.request.get("transform_libraries"), wf.request.get("resource_libraries"),
+    )
     lib_path = str(p.input_library_path(name))
     commit = found["commit"]
     # Read here, in the request thread, not inside `_work` below: everything in
@@ -1292,6 +1449,13 @@ def generate_workflow(name):
 
     def _work(job):
         with LogCapture(job):
+            # Phase markers for the GUI's progress bar -- a job log line like
+            # any other, but prefixed so JobLog can pull it out of the log and
+            # drive a stage indicator instead of printing it. The solver
+            # itself is one opaque call (see below); these three are the real
+            # boundaries either side of it.
+            job.emit("PHASE:syncing")
+
             # The recipe's rows are the durable thing; the input library is
             # built from them. This is where that happens -- always, every
             # solve, rather than behind a gesture a user could forget after
@@ -1304,13 +1468,22 @@ def generate_workflow(name):
             # A row with no path yet cannot be named by one, which is the
             # normal state of a fresh recipe -- so the request says which *row*
             # every sample should see, and it becomes a path here, between the
-            # sync that made it and the solve that reads it.
+            # sync that made it and the solve that reads it. With a sheet
+            # attached that row is a sample array and registered one path per
+            # distinct set of cells: marking it shared means all of them, which
+            # for the usual case -- a column repeating one reference down the
+            # sheet -- is the single instance those cells grouped onto.
             registered = synced["rows"]
-            shared = [
-                registered[s[1:]] if s.startswith("#") else s
-                for s in shared_refs
-                if not s.startswith("#") or s[1:] in registered
-            ] or None
+            generated = synced["generated"]
+            shared: list[str] = []
+            for s in shared_refs:
+                if not s.startswith("#"):
+                    shared.append(s)
+                elif s[1:] in registered:
+                    shared.append(registered[s[1:]])
+                else:
+                    shared += list(dict.fromkeys(generated.get(s[1:], [])))
+            shared = shared or None
 
             # a stale bundle from a previous generate must not outlive it: the
             # result the user sees and the bundle the CLI stages have to agree.
@@ -1341,8 +1514,10 @@ def generate_workflow(name):
                 },
                 input_library=lib_path,
             )
+            job.emit("PHASE:solving")
             with _plan_lock:
                 result = op_workflow.plan_spec(spec, workspace=str(staging))
+            job.emit("PHASE:finishing")
             if result.get("success"):
                 # promote the bundle to the workflow directory, so the readable
                 # name is the address the CLI can stage
@@ -1350,7 +1525,7 @@ def generate_workflow(name):
                 assert staged.is_dir(), f"planner wrote no bundle at [{staged}]"
                 for item in staged.iterdir():
                     shutil.move(str(item), str(wf.path / item.name))
-                result["step_display"], result["dag_geometry"] = _step_display(wf.path)
+                result["step_display"], result["plan_graph"] = _step_display(wf.path, p.root)
             if staging.exists():
                 shutil.rmtree(staging)
             result["stdlib_commit"] = commit
@@ -1369,6 +1544,12 @@ def generate_workflow(name):
                 for t in targets
             ]
             result["sample_type"] = sample_type
+            # What the recipe this bundle was solved from still had blanks in.
+            # Recorded rather than tested at launch on purpose: the gate is
+            # about the plan a run would stage, not about what the page says
+            # now, so filling a box in clears it on the next solve -- which is
+            # the same solve that would put the fix into the bundle.
+            result["recipe_problems"] = op_inputs.problems(rows, table)
             p.write_result(name, result)
             return result
 
@@ -1403,22 +1584,54 @@ def _load_task(bundle: Path):
         return op_workspace.load_task(None, str(bundle))
 
 
-def _step_display(bundle: Path) -> tuple[list[dict], dict | None]:
-    """A readable summary of the plan's steps, plus where each one sits in the
-    diagram the GUI draws beside it.
+def _stdlib_transforms(root: Path) -> tuple[list[dict], dict[tuple[str, str], int]]:
+    """The panel's transform list, and how to find a plan step in it.
+
+    What a click on a plan node has to end up as. The panel addresses transforms
+    by position in `stdlib.type_index`, and a plan step knows only its own
+    definition file and its library's content hash -- the library the plan was
+    solved against is a staged clone, so its absolute paths are not the indexed
+    clone's and cannot be the join. A name and a file name together are, in
+    practice, unique; a pair that is not is dropped rather than guessed at, and
+    that node is simply left unclickable.
+
+    `root` is passed rather than read off the app: at generate time this runs on
+    a job thread, where there is no request context to read it from.
+    """
+    try:
+        transforms = stdlib.type_index(root).get("transforms") or []
+    except Exception:
+        return [], {}
+    seen: dict[tuple[str, str], int | None] = {}
+    for i, tr in enumerate(transforms):
+        key = (Path(str(tr.get("path") or "")).name, str(tr.get("name") or ""))
+        seen[key] = None if key in seen else i
+    return transforms, {k: v for k, v in seen.items() if v is not None}
+
+
+def _step_display(bundle: Path, root: Path) -> tuple[list[dict], dict | None]:
+    """A readable summary of the plan's steps, and the plan's whole drawing.
 
     The packed form of a step is a wire format -- instance ids and a dependency
     map -- with nothing a person would want to read. The step objects themselves
     carry `uses` and `produces`, so the summary is built once at generate time
-    and stored beside the result. The vertical position comes from the same
-    `DagRenderer` that draws the plan's SVG -- `BuildDAG()` is constructed once
-    and its `.geometry()` is the one place a layout becomes pixels, so the row a
-    step's controls sit at is guaranteed to agree with the marker in the image.
+    and stored beside the result.
+
+    The drawing is stored with it, and for the same reason. The page draws the
+    plan itself now rather than showing a rendered image, so it needs the
+    placement; laying it out per request would repeat the most expensive thing
+    metasmith does with a plan on every page load, and it cannot change without
+    a re-solve. Storing it also collapses a duplication: this used to run
+    `BuildDAG().geometry()` as a *second, independent* layout from the one the
+    `/dag` route rendered, the two agreeing only because both took the same
+    defaults.
     """
     try:
         task = _load_task(bundle)
     except Exception:
         return [], None
+    catalogue, by_index = _stdlib_transforms(root)
+    node_extra: dict[str, dict] = {}
     out = []
     for step in task.plan.steps:
         # What the transform asks for, so an empty override box reads as "as
@@ -1431,9 +1644,10 @@ def _step_display(bundle: Path) -> tuple[list[dict], dict | None]:
             if res.memory is not None: declared["memory_gb"] = round(res.memory.value_gb, 3)
             if res.duration is not None:
                 declared["duration_h"] = round(res.duration._delta.total_seconds() / 3600, 3)
+        file_name = Path(str(step.transform._path)).name
         out.append({
             "order": step.order,
-            "transform": Path(str(step.transform._path)).name,
+            "transform": file_name,
             "declared_resources": declared,
             # The file name above is what a person recognises; this is what
             # nextflow calls the step, and the two need not be the same string.
@@ -1444,32 +1658,39 @@ def _step_display(bundle: Path) -> tuple[list[dict], dict | None]:
             "produces": sorted({
                 inst.dtype_name for group in step.produces for inst in group
             }),
-            "dag_cy": None,
         })
+        # the node id `BuildDAG` gives this step -- transform names are the
+        # definition file's stem, so three checkm steps are all "checkm" and
+        # only the number tells them apart
+        node_extra[f"{step.order} {step.transform.name}"] = {
+            "step": step.order,
+            "transform_index": by_index.get((file_name, step.transform.name)),
+        }
     out.sort(key=lambda s: s["order"])
 
-    dag_geometry = None
+    plan_graph = None
     try:
-        geo = task.plan.BuildDAG().geometry()
-        by_order = {
-            int(m.group(1)): n.cy
-            for n in geo.nodes
-            if n.kind == NodeKind.TRANSFORM and (m := re.match(r"^(\d+) ", n.name))
-        }
-        for step in out:
-            step["dag_cy"] = by_order.get(step["order"])
-        dag_geometry = {
-            "width": geo.width, "height": geo.height, "row_pitch": geo.row_pitch,
-            # the first drawn row, so a caller putting a header beside the
-            # diagram can sit it level with the top node rather than above the
-            # whole thing. The plate's top margin is not otherwise derivable
-            # from `height` without also knowing how many rows there are.
-            "top_cy": min((n.cy for n in geo.nodes), default=None),
-        }
+        plan_graph = op_workflow.serialize_geometry(task.plan.BuildDAG())
+        for n in plan_graph["nodes"]:
+            x = node_extra.get(n["id"])
+            if x is None:
+                # a data node stands for a type, and its id is the type's name --
+                # which is exactly what the panel's type view is addressed by
+                if n["kind"] != "transform":
+                    n["type"] = n["id"]
+                continue
+            n.update(x)
+            i = x["transform_index"]
+            tr = catalogue[i] if i is not None and i < len(catalogue) else None
+            # the library, stacked above the step's name. `BuildDAG` cannot put
+            # it there: a plan step knows its library only as a content hash,
+            # and the readable name is the index's.
+            if tr and tr.get("library_name"):
+                n["namespace"] = tr["library_name"]
     except Exception:
-        _LOG.warning("no dag geometry for [%s]; step rows will not line up", bundle, exc_info=True)
+        _LOG.warning("no dag geometry for [%s]; the diagram will not draw", bundle, exc_info=True)
 
-    return out, dag_geometry
+    return out, plan_graph
 
 
 @bp.get("/workflows/<name>/dag")
@@ -1511,6 +1732,10 @@ def dag_layout():
     nodes = b.get("nodes") or []
     edges = b.get("edges") or []
     assert isinstance(nodes, list) and isinstance(edges, list), "nodes and edges must be lists"
+    order = b.get("order")
+    row_y = b.get("row_y")
+    assert order is None or isinstance(order, list), "order must be a list of node ids"
+    assert row_y is None or isinstance(row_y, dict), "row_y must be a node id -> y map"
     return jsonify(op_workflow.dag_geometry(
         nodes, edges,
         # COLUMN, so every label starts at one x, clear of the rails: the panel
@@ -1520,7 +1745,44 @@ def dag_layout():
         label_mode=b.get("label_mode", "column"),
         font_size=float(b.get("font_size", 13.0)),
         max_label_chars=int(b.get("max_label_chars", 22)),
+        # a caller drawing beside rows it already has on the page: the recipe's
+        # rails, whose rows are form rows and whose heights the browser owns
+        order=[str(x) for x in order] if order else None,
+        row_y={str(k): float(v) for k, v in row_y.items()} if row_y else None,
+        min_lanes=int(b.get("min_lanes", 0)),
     ))
+
+
+@bp.get("/dag/theme")
+def dag_theme():
+    """Both themes' ink, so a drawing made in the browser and one rendered to a
+    file are the same drawing in the same two inks.
+
+    Restating the palette in CSS is how they would drift: `DARK` is defined as
+    `LIGHT` with only its colours replaced, precisely so a marker's shape, its
+    scale and its stroke weight cannot differ between them, and a stylesheet
+    holding a second copy of any of it gives that guarantee away. Both are
+    served at once because the page toggles theme without a network round trip.
+    """
+    return jsonify({
+        name: {
+            "plate": {
+                "background": theme.plate.background,
+                "edge": theme.plate.edge,
+            },
+            "styles": {
+                kind.name.lower(): {
+                    "fill": st.fill, "stroke": st.stroke,
+                    "text": st.text, "muted": st.muted,
+                    "shape": st.svg_shape, "marker_scale": st.marker_scale,
+                    "stroke_width": st.stroke_width, "rx": st.rx,
+                    "solid": st.solid,
+                }
+                for kind, st in theme.styles.items()
+            },
+        }
+        for name, theme in THEMES.items()
+    })
 
 
 # -- the input library -------------------------------------------------------
@@ -1701,6 +1963,18 @@ def create_run():
     wf = p.read_workflow(workflow)
     if not wf.ok:
         raise ProjectError(f"workflow [{workflow}] has no successful plan to run")
+    # Incompleteness in a recipe is reported and never refused -- right up to
+    # here. A deferred input has no file to stage and a nameless pair has no key
+    # to be read under, so this is where "still being filled in" stops being a
+    # work in progress. Off the stored result, not the current rows: it is the
+    # bundle that would be staged, and a result from before this key existed has
+    # no blanks by definition.
+    recipe_problems = list(wf.result.get("recipe_problems") or [])
+    if recipe_problems:
+        raise ProjectError(
+            f"workflow [{workflow}] was planned from an unfinished recipe: "
+            f"{'; '.join(recipe_problems)} -- fill them in and solve again"
+        )
     if not p.agent_exists(agent_name):
         raise ProjectError(f"no agent named [{agent_name}]")
     # an agent is saveable while it is still being filled in; this is the point

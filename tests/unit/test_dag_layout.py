@@ -293,3 +293,92 @@ def test_wide_fan_out_stays_consistent(size):
     lay = _lay(edges)
     assert lay.height == size + 1
     assert lay.width <= size + 1
+
+
+# --- rails that leave their corridor -----------------------------------------
+
+
+def _detours(lay):
+    """Edges given a lane outside the span between their endpoints' lanes."""
+    return [
+        (e.src, e.dst)
+        for e in lay.edges
+        if not e.back
+        and not (
+            min(lay[e.src].lane, lay[e.dst].lane)
+            <= e.lane
+            <= max(lay[e.src].lane, lay[e.dst].lane)
+        )
+    ]
+
+
+def test_a_rail_between_neighbouring_rows_does_not_take_a_lane_of_its_own():
+    """The amplicon library, which is two tools sharing one input.
+
+    Its `asv_seqs -> classify` edge joins two rows one apart, in lanes 1 and 0 —
+    and was drawn out to lane 2 and straight back, which reads as the drawing
+    having lost the line. The repack already knew better (a rail spanning no row
+    takes its target's lane); it lost to the greedy pass, which tied it on
+    congruence, width *and* crossings, because a rail that leaves and returns
+    crosses nothing. `detours` is the tie-break that separates them.
+    """
+    edges = [
+        ("asv_seqs", "map_contigs"),
+        ("assembly", "map_contigs"),
+        ("identity_threshold", "map_contigs"),
+        ("map_contigs", "asv_contig_map"),
+        ("asv_seqs", "classify"),
+        ("silva_classifier", "classify"),
+        ("classify", "asv_taxonomy"),
+    ]
+    lay = _lay(edges)
+    assert _detours(lay) == []
+
+
+def test_a_fan_out_is_allowed_every_lane_it_needs():
+    """The other side of it: seven children off one parent are seven parallel
+    rails, and six of them have to be outside the corridor by construction.
+    `detours` is a tie-break precisely so it never bids against that.
+    """
+    edges = [("root", f"leaf_{i}") for i in range(7)]
+    edges += [(f"leaf_{i}", "sink") for i in range(7)]
+    lay = _lay(edges)
+    assert measure(lay).lanes <= 8
+    assert measure(lay).detours == len(_detours(lay))
+
+
+# --- rows the caller brought -------------------------------------------------
+
+
+def test_a_caller_may_fix_the_rows():
+    """A form whose fields are the nodes lays them out itself; the engine
+    choosing its own order would draw rails across the markers."""
+    mine = ["c", "b", "a", "d"]
+    lay = layout({n: None for n in mine}, [("a", "d"), ("b", "d")], order=mine)
+    assert _rows(lay) == mine
+
+
+def test_an_order_that_would_reverse_an_edge_is_declined():
+    """Ignored rather than raised on -- the caller is a wire payload and may be
+    one edit stale -- but never honoured: every backend is written against
+    every edge pointing downward."""
+    edges = [("a", "b")]
+    assert _rows(layout({}, edges, order=["b", "a"])) == ["a", "b"]
+    assert _rows(layout({}, edges, order=["a"])) == ["a", "b"]
+    assert _rows(layout({}, edges, order=["a", "b", "c"])) == ["a", "b"]
+
+
+def test_given_rows_still_keep_the_rails_off_the_markers():
+    """Fixing the rows changes only which row a node is in. Every invariant the
+    backends are written against still has to hold, and the one that a caller's
+    order could plausibly break is the one that says a vertical rail never runs
+    through a node cell.
+    """
+    order = ["a", "b", "c", "d", "e"]
+    edges = [("a", "b"), ("a", "c"), ("b", "c"), ("a", "d"), ("a", "e"), ("d", "e")]
+    lay = layout({n: None for n in order}, edges, order)
+    assert _rows(lay) == order
+    occupied = {(n.row, n.lane) for n in lay.nodes}
+    for e in lay.edges:
+        for row in range(lay[e.src].row + 1, lay[e.dst].row):
+            assert (row, e.lane) not in occupied
