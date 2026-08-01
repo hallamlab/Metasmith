@@ -14,11 +14,11 @@
 //!   two transforms. Here that is the arena index.
 //! - Dependencies compare by **structure**, since `Node.__eq__` compares
 //!   signatures. Here that is the interned `DepId`.
-//! - The distance walk's cycle guard compares transforms by **key**, which is
-//!   printed from properties alone. Duplicate transforms share it, and so do two
-//!   transforms differing only in a lineage constraint. That is `sig`, not the
-//!   index -- and using the index instead would let the walk revisit a duplicate
-//!   forever, which on a cyclic problem does not terminate.
+//! - The distance walk memoizes on transforms by **identity**, so the arena
+//!   index again. `sig` is printed from properties alone, so duplicate
+//!   transforms share it and so do two transforms differing only in a lineage
+//!   constraint -- memoizing on it drops the second one reached out of the
+//!   distance table, and out of the search with it.
 //!
 //! The payload's node table serves both roles. Every entry becomes a `DepId`,
 //! because transforms refer to them as dependencies, and *also* an `EpId`,
@@ -311,25 +311,32 @@ impl Problem {
         for v in self.demand2producer.values_mut() { v.sort_unstable(); }
         for v in self.product2consumer.values_mut() { v.sort_unstable(); }
 
-        // Distance to target, by a single-pass backward BFS, globally
-        // memoized (`seen`) rather than per-path: a node expands once, on
-        // first reach, so total work is O(V+E) regardless of how many
-        // distinct paths reach it. `distance` becomes true shortest-path
-        // distance (first visit wins, BFS is by levels); `opportunity` still
-        // accumulates once per incoming edge (more ways in = higher score)
-        // but no longer re-expands past an already-seen node, so it can't
-        // blow up the way the old "count every simple path" walk did on a
-        // transform universe with many overlapping cycles -- e.g. a
-        // pre-expanded STRIPS state graph, where every reversible action is
-        // its own inverse edge.
+        // Distance to target, by a single-pass backward BFS, memoized on the
+        // transform rather than on the path it was reached by: a transform
+        // expands once, on first reach, so total work is O(V+E) no matter how
+        // many distinct paths reach it. The predecessor walked every simple
+        // path, which is combinatorial once cycles overlap and does not
+        // terminate on e.g. a pre-expanded STRIPS state graph, where every
+        // reversible action is its own inverse edge.
+        //
+        // `distance` is the memo, which makes the arena index the notion of
+        // sameness. That is deliberate and it is *not* the guard the walk used
+        // to carry: `sig` is shared by duplicate transforms and by two
+        // transforms differing only in a lineage constraint, and those have
+        // different producer edges. Memoizing on it would leave the second one
+        // reached with no distance entry at all -- and membership here is not
+        // decoration, it is what `relevant_transforms` and the no-path bail
+        // below read, so the transform would silently leave the search.
+        //
+        // `distance` is now shortest-path rather than longest-simple-path, and
+        // `opportunity` still accumulates once per incoming edge. Both feed the
+        // mcts guiding score only.
         let mut todo: std::collections::VecDeque<(TransformId, i64)> =
             std::collections::VecDeque::from([(self.target_index, -1)]);
-        let mut seen: Set<u32> = Set::default();
         while let Some((step, consumer_dist)) = todo.pop_front() {
             let dist = consumer_dist + 1;
             *self.opportunity.entry(step).or_insert(1) += dist;
-            let sig = self.transforms[step as usize].sig;
-            if !seen.insert(sig) { continue; }
+            if self.distance.contains_key(&step) { continue; }
             self.distance.insert(step, dist);
             for pi in 0..self.transforms[step as usize].requires.len() {
                 let req = self.transforms[step as usize].requires[pi];

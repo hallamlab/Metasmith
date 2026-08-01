@@ -7,7 +7,6 @@ from pathlib import Path
 from collections import deque
 
 from ..hashing import KeyGenerator
-from ..logging import Log
 from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 from .solver_rng import DecisionStream, argmax_index, argmin_index
 from .solver_math import entropy
@@ -497,25 +496,33 @@ def _solve_by_mcts_python(
     # estimate distance of nodes to target to provide guiding metric
     # filter out nodes that don't contribute to production of targets
     #
-    # Single-pass backward BFS, globally memoized (`seen`) rather than
-    # per-path: a node's expansion happens once, on first reach, so total work
-    # is O(V+E) regardless of how many distinct paths reach it. `distance_scores`
-    # becomes true shortest-path distance (first visit wins, BFS is by levels);
-    # `opportunity_scores` still accumulates once per incoming edge (more ways
-    # in = higher score) but no longer re-expands past an already-seen node, so
-    # it can't blow up the way a naive "count every simple path" walk would on
-    # a transform universe with many overlapping cycles -- e.g. a pre-expanded
-    # STRIPS state graph, where every reversible action is its own inverse edge.
+    # Single-pass backward BFS, memoized on the transform rather than on the
+    # path it was reached by: a transform expands once, on first reach, so total
+    # work is O(V+E) no matter how many distinct paths reach it. The predecessor
+    # walked every simple path, which is combinatorial once cycles overlap and
+    # does not terminate on e.g. a pre-expanded STRIPS state graph, where every
+    # reversible action is its own inverse edge.
+    #
+    # `distance_scores` is the memo, so the memo's notion of sameness is
+    # `Transform`'s -- identity, since `Transform` defines `__hash__` and not
+    # `__eq__`. Not `node.key`: that is printed from properties alone, so
+    # duplicate transforms share it and so do two transforms differing only in a
+    # lineage constraint, which have different producer edges. Keying on it
+    # leaves the second one reached with no distance at all, and membership here
+    # is what `relavent_transforms` and the no-path bail below read -- the
+    # transform would leave the search silently.
+    #
+    # `distance_scores` is now shortest-path rather than longest-simple-path,
+    # and `opportunity_scores` still accumulates once per incoming edge. Both
+    # feed the mcts guiding score only.
     opportunity_scores: dict[Transform, int] = {}
     distance_scores: dict[Transform, int] = {}
     todo: deque[tuple[Transform, int]] = deque([(target, -1)])
-    seen: set[str] = set()
     while len(todo)>0:
         node, consumer_distance = todo.popleft()
         dist = consumer_distance+1
         opportunity_scores[node] = opportunity_scores.get(node, 1)+dist
-        if node.key in seen: continue
-        seen.add(node.key)
+        if node in distance_scores: continue
         distance_scores[node] = dist
         for p in node.requires:
             for producer in demand2producer.get(p, ()): # when tr requires a terminal endpoint that is not given

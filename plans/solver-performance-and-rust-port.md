@@ -2057,6 +2057,117 @@ which is worth knowing and does not change the default.
 - `_solver_type` and `_set_solver_class` are underscore-named at the user's
   request and are nonetheless imported by `tests/conftest.py` and three test
   modules. If notebook users are meant to reach for this, a public alias beside
-  them costs nothing.
-- The refiner/`rectify` laundering and `_is_valid`'s incomplete `# looped` branch
-  are still carried in both implementations, unchanged by this task.
+  them costs nothing. **Declined in T9**: `solver_backend.__all__` already
+  exports `UsePythonSolver`, `ResetSolverSelection` and `Backend`, which is the
+  whole public surface anyone needs; the underscore names stay internal.
+- ~~The refiner/`rectify` laundering and `_is_valid`'s incomplete `# looped`
+  branch are still carried in both implementations, unchanged by this task.~~
+  **Wrong, and it was already wrong when written**: T5e closed both, and this
+  bullet was copied forward without being re-read. See T5e.
+
+## T9 — the sibling scope's distance walk, through this harness
+
+`feat/planning` hit a transform universe the solver could not plan on at all: a
+pre-expanded STRIPS state graph, where every reversible action is its own inverse
+edge, so the producer graph is dense mutual inverses. `solve_by_mcts`'s preamble
+never returned on it, and that scope fixed the walk in both implementations and
+proved the fix on a PlanBench Blocksworld corpus — 0% coverage to 100%.
+
+The fix is `eef7a26` and it is merged rather than cherry-picked, so the commit is
+one commit shared with `feat/planning` instead of two copies of it. The benchmark
+harness that proved it (`bfa7be3`, ~3.2k lines of vendored instances) stays on
+that branch; with `eef7a26` an ancestor of both, bringing it over later is a
+merge with nothing to reconcile.
+
+### The walk, and why it did not terminate
+
+`distance_scores` was the longest **simple** path backward from the target, and
+it was computed by enumerating simple paths — a LIFO walk carrying the path it
+came by as its only cycle guard. The number of simple paths in a graph with
+overlapping cycles is combinatorial, and the curve is visible on the generator's
+own `cycle_density` dial without any of PlanBench: at 25 transforms the preamble
+takes 0.16s, at 29 it takes 3.6s, and at 35 it does not finish inside a minute.
+`tests/solver/test_distance_walk.py` pins the 35-transform shape.
+
+The replacement is a single-pass backward BFS that expands each transform once.
+Bounded, and it terminates on that shape in 4ms.
+
+### The memo has to be identity, and the incoming version keyed it on `sig`
+
+`eef7a26` memoized on `Transform.key` (Python) and the interned `sig` (Rust),
+which are printed from properties alone. Duplicate transforms share one, and so
+do two transforms differing only in a lineage constraint — and those have
+different producer edges. Under a key-scoped memo the second one reached is never
+recorded, and membership in the distance table is not decoration: it builds
+`relavent_transforms` and it answers "is there a path from the givens at all". A
+transform that loses its entry leaves the search with nothing said.
+
+The Rust header comment argued for `sig` on the grounds that the index "would let
+the walk revisit a duplicate forever". That was true of the *path* guard it was
+written for and does not carry to a global memo, which visits nothing twice by
+construction. Corrected on both sides; the memo is now the distance table itself,
+whose notion of sameness is Python's `Transform` identity and the arena index.
+
+Neither implementation's answer moved on the corpus, so this is a correction
+made from reading rather than from a failing test — which is why
+`test_distance_walk.py` carries a problem with five duplicate transforms and
+asserts the table contains two entries sharing a key. Restoring the `sig` memo
+makes that assertion fire.
+
+### What the harness said, which is not what the commit message said
+
+> Both are only ever used as an MCTS guiding heuristic, not a correctness
+> requirement, so the changed semantics are safe.
+
+The first half is true and the conclusion is not. Sweeping 2,400 generated
+problems — eight profiles × 300 seeds, `check_plan` on every answer:
+
+| walk | unsolved | notes |
+| --- | --- | --- |
+| longest simple path (the predecessor) | 18 | does not terminate on dense cycles |
+| BFS shortest path (`eef7a26`) | 63 | terminates |
+| BFS, `opportunity` as a plain edge count | 60 | |
+| BFS, `opportunity` carrying walk multiplicity | 64 | |
+| longest walk, capped at \|V\| | 80 | distance saturates at the cap |
+| longest path over the SCC condensation | 63 | fixes 56, breaks 53 others |
+| BFS shortest path, `opportunity` arm flat | 21 | |
+
+Nothing is unsound anywhere in that table — `check_plan` is clean on all 2,400
+under every variant. What moves is how many problems the search *finishes*, and
+all 45 lost solves are on the two cycle-dense profiles.
+
+The mechanism is the second exploit arm. `_SELECTION_WEIGHTS` gives 75% to a
+distance arm that prefers transforms near the target and 20% to an opportunity
+arm which, under the old walk, preferred transforms far from it — because
+`opportunity` accumulated `dist` once per arriving path, so it inherited the
+long-path depths. The two arms pulled against each other on purpose, and nothing
+in the code says so. Collapsing distance to shortest-path flattens it (0..3 where
+the old walk gave 0..11 on the same instance) and re-derives `opportunity` from
+it, so both arms end up preferring the same shallow transforms and the search
+stops pushing deep enough to reach the target.
+
+Every attempt to rebuild `opportunity` from a bounded walk lands on 60–64. The
+one thing that recovers the solve rate is taking the arm out of the decision
+altogether — 21 against the predecessor's 18 — which says the arm has been
+carrying its 20% on the strength of a quantity no bounded walk reproduces.
+
+### Where this is left
+
+Merged and corrected: the walk terminates, the memo is identity, and
+`test_distance_walk.py` pins both halves. Ten tests in `tests/solver` fail on the
+merged state and every one of them is downstream of the solve-rate finding, not
+of the merge:
+
+- three corpus fingerprints (`cyclic`, `product-groups`, `kitchen-sink`) moved,
+  which a distance heuristic is entitled to do;
+- `sink-9391` no longer solves, which takes `test_known_unsound.py`'s last
+  anchor and all five of `test_refiner_validity.py` with it — that file traces
+  the refiner link by link on an instance that now never reaches the refiner;
+- `test_engine_differential` reports four `sink` cases where the Python side
+  exceeded its cap, which is the reference getting slower, not a disagreement.
+
+Re-pinning the fingerprints and re-anchoring the refiner tests is mechanical and
+is deliberately **not** done here, because doing it would bury the solve-rate
+finding under a green suite. Which way to resolve it is a decision about the
+solver rather than about this merge: keep the arm and accept 63, or take the
+measurement seriously and change what the second exploit arm scores.

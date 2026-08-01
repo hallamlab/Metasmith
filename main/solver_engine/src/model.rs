@@ -30,7 +30,8 @@
 //! Transforms are the mirror image. `Transform` defines `__hash__` and *not*
 //! `__eq__`, so `==` is `is` and two duplicate transforms are two transforms --
 //! identity, always. Their structural key exists too, since `str(Transform)`
-//! prints properties only, and the distance walk's cycle guard uses it.
+//! prints properties only, but nothing in the search may treat it as an
+//! identity: the distance walk did, briefly, and lost transforms to it.
 //!
 //! Finally, a type is a bitset. `IsA` -- "are y's properties a subset of x's" --
 //! is the hottest primitive in the system, and interning property strings to
