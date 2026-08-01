@@ -48,7 +48,9 @@ generated problems change `check_plan` verdict on a change of PRNG alone, so an
 because anything was fixed — re-anchor from a fresh sweep instead of promoting
 it. `solver_rng.py` owns both halves of every decision (the ChaCha8 stream and
 the rule that turns bits into an index) because either half left implicit is
-somewhere the Rust port silently disagrees.
+somewhere the Rust port silently disagrees. Changing the guiding heuristic moves
+anchors the same way, and can take one out of reach of the search entirely, so
+the same rule applies to it.
 
 **Container layout is not allowed to reach the plan.** The solver iterates sets
 in places where order decides which application lands on the frontier first,

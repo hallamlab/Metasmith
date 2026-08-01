@@ -34,11 +34,16 @@ The anchor problem is chosen, not arbitrary: it has to exercise the whole chain
 at once, and **which problems do is a property of how the solver breaks ties**,
 not of the defect. `cyclic-217` was the anchor until T4 swapped numpy's stream
 for the ChaCha8 contract; `sink-6623` until T5a stated the iteration order the
-solver had been taking from CPython's hash tables. Each change left the mechanism
-untouched and moved which problems fell into it. `sink-9391` is the current
-anchor because it survived both and puts the refiner under the most pressure:
-4,038 of the states it validates are cyclic, and 318 of those used to be
-accepted.
+solver had been taking from CPython's hash tables; `sink-9391` until T9 replaced
+the backward distance walk and the search stopped finding a plan for it at all —
+an instance the search never solves reaches the refiner not at all, and traces
+nothing. Each change left the mechanism untouched and moved which problems fell
+into it, which is the thing to check first when this file goes red.
+
+`sink-9396` is the current anchor, picked by sweeping the sink profile for a seed
+that clears every link above in one solve. It puts the refiner under comparable
+pressure to its predecessor: of the 2,744 states it validates, 1,764 are cyclic,
+and 745 of the rejections come from the loop branch.
 """
 
 from __future__ import annotations
@@ -67,12 +72,12 @@ from metasmith.testing.solver_verification import (
     generate_problem,
 )
 
-#: The anchor: the search hands the refiner a sound plan, a cyclic state reaches
-#: `rectify`, the returned plan is unrunnable, and the loop-rejection branch
-#: fires 2259 times in the one solve. All four links, one problem.
-ANCHOR = "sink-9391"
+#: The anchor: the search hands the refiner a sound plan, cyclic states are put
+#: in front of the refiner and rejected, and the loop-rejection branch fires 745
+#: times in the one solve. All four links, one problem.
+ANCHOR = "sink-9396"
 ANCHOR_CASE = (
-    9391,
+    9396,
     GeneratorDials(
         n_types=9, n_given=2, n_given_groups=2, n_extra_transforms=6,
         cycle_density=0.4, lineage_density=0.7, n_duplicate_transforms=2,

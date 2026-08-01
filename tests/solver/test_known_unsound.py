@@ -25,9 +25,11 @@ decides, not only of what it decides**, and that is worth remembering if these
 ever need re-deriving. Swapping numpy's stream for ChaCha8 (T4) took the count
 from 59 to 5 and replaced the membership outright; stating the iteration order
 the solver used to take from CPython's hash tables (T5a) took it from 5 to 7 and
-replaced it again. Neither touched the defect. So a *failure* here is a real
-regression, but a failure after a change to a decision rule should be checked
-against a fresh sweep before it is believed to be one.
+replaced it again; replacing the backward distance walk (T9) left six of the
+seven solving and took `sink-9391` out of reach of the search entirely. None
+touched the defect. So a *failure* here is a real regression, but a failure
+after a change to a decision rule should be checked against a fresh sweep before
+it is believed to be one.
 """
 
 from __future__ import annotations
@@ -50,12 +52,18 @@ _SINK = GeneratorDials(
     product_group_density=0.5, target_lineage=1.0, max_requirements=3,
 )
 
-#: (name, seed, dials) — every unsound case in the last 10,000-problem sweep
-#: that had any. `sink-9391` is the one that survived both re-anchorings, and is
-#: the anchor `test_refiner_validity.py` traces the mechanism on.
+#: (name, seed, dials) — the unsound cases from the last 10,000-problem sweep
+#: that the search still finds an answer for.
 FORMERLY_UNSOUND = [
-    (f"sink-{s}", s, _SINK) for s in (6503, 6807, 8575, 9087, 9375, 9391, 9927)
+    (f"sink-{s}", s, _SINK) for s in (6503, 6807, 8575, 9087, 9375, 9927)
 ]
+
+#: The seventh. T9's distance walk is a single-pass BFS rather than a longest
+#: simple path, which is what makes it terminate on a densely cyclic universe,
+#: and the depth signal it gives the search is correspondingly flatter. On the
+#: two cycle-dense generator profiles that costs solves — 18 to 63 unsolved in
+#: 2,400 — and this is one of them.
+UNREACHED = ("sink-9391", 9391, _SINK)
 
 
 @pytest.mark.parametrize(
@@ -65,6 +73,27 @@ def test_a_cyclic_transform_graph_yields_a_runnable_plan(name, seed, dials):
     problem = generate_problem(seed, dials, name=name)
     verdict = check_plan(problem, problem.solve())
     assert verdict.ok, verdict.violations
+
+
+def test_the_instance_the_search_no_longer_reaches_says_so():
+    """A refusal is an acceptable answer here; a confident wrong one is not.
+
+    `sink-9391` is the hardest instance this project has generated and the
+    search stopped finding a plan for it. That is the failure mode this codebase
+    accepts — no answer in preference to a bad one — so what is pinned is the
+    *honesty* of it: `complete` is False, and the partial plan carries no
+    application of the target. The regression to fear is not that this starts
+    solving again, which would be welcome; it is that it starts returning a plan
+    while still not having one.
+    """
+    name, seed, dials = UNREACHED
+    problem = generate_problem(seed, dials, name=name)
+    solution = problem.solve()
+    assert not solution.complete, (
+        "sink-9391 reports a complete solve -- if the search genuinely reaches it"
+        " again, move it back into FORMERLY_UNSOUND rather than relaxing this"
+    )
+    assert not any(s.transform is problem.target for s in solution.dependency_plan)
 
 
 def test_an_unsatisfiable_target_is_reported_as_unsolved():

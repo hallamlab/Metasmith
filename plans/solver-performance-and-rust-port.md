@@ -2151,23 +2151,61 @@ one thing that recovers the solve rate is taking the arm out of the decision
 altogether — 21 against the predecessor's 18 — which says the arm has been
 carrying its 20% on the strength of a quantity no bounded walk reproduces.
 
-### Where this is left
+### It is also faster everywhere, including where there are no cycles
 
-Merged and corrected: the walk terminates, the memo is identity, and
-`test_distance_walk.py` pins both halves. Ten tests in `tests/solver` fail on the
-merged state and every one of them is downstream of the solve-rate finding, not
-of the merge:
+Timing the preamble alone (`max_iter=1, max_refine=0`, minimum of 15 reps), the
+BFS is never slower and is flat at ~0.7–0.9 ms from 8 transforms to 55, where the
+predecessor climbed with the graph. The case worth naming is `acyclic-wide-48` —
+no cycles at all, just many interchangeable producers — which went 1.92 ms to
+0.94 ms. The blow-up was never about cycles; it was about how many distinct paths
+reach a transform, and cycles are only the cheapest way to make that number
+large.
 
-- three corpus fingerprints (`cyclic`, `product-groups`, `kitchen-sink`) moved,
-  which a distance heuristic is entitled to do;
-- `sink-9391` no longer solves, which takes `test_known_unsound.py`'s last
-  anchor and all five of `test_refiner_validity.py` with it — that file traces
-  the refiner link by link on an instance that now never reaches the refiner;
-- `test_engine_differential` reports four `sink` cases where the Python side
-  exceeded its cap, which is the reference getting slower, not a disagreement.
+### The decision: keep the arm, accept the DNFs
 
-Re-pinning the fingerprints and re-anchoring the refiner tests is mechanical and
-is deliberately **not** done here, because doing it would bury the solve-rate
-finding under a green suite. Which way to resolve it is a decision about the
-solver rather than about this merge: keep the arm and accept 63, or take the
-measurement seriously and change what the second exploit arm scores.
+Accuracy is the standing requirement and a refusal is preferable to a wrong
+answer. Nothing in the table above is unsound, so the 63 are the solver declining
+to answer on the two cycle-dense profiles rather than answering badly — the
+acceptable failure mode. The `opportunity`-flat variant would buy 42 of them
+back, but it does so by deleting an exploit arm on the strength of a quantity no
+bounded walk reproduces, and that is a change to how the search decides, not a
+consequence of this merge. It is not made here. The walk lands as merged, memo
+corrected.
+
+What that costs, recorded so it is not rediscovered as a bug:
+
+- **Solve rate on cycle-dense instances.** 18 → 63 unsolved in 2,400. Zero
+  unsound under any variant.
+- **Three corpus fingerprints moved** — `cyclic`, `product-groups`,
+  `kitchen-sink` — and are re-pinned. `check_plan` is green on all eight. This is
+  the third kind of change entitled to move a pin, alongside the PRNG (T4) and
+  the stated iteration order (T5a): **the guiding heuristic itself**. The first
+  two moved which plan the search happened to find; this one moves what the
+  search is steered towards, which is the same kind of licence.
+- **One shipped template moved.** `isolate_assembly_from_long_reads`
+  `537402bc8fa9491c8c4929af` → `e0e15a83ce4630ca7fcb15bb`, `check_plan` green.
+  The other three — `annotation_palette`, `metagenomics_from_paired_reads`,
+  `pangenome_heatmap` — are byte-identical. A real workflow's plan changing shape
+  is the visible face of the heuristic change, and the reason a template pin is
+  worth having.
+- **`sink-9391` stopped solving**, and it was the anchor for
+  `test_refiner_validity.py`'s whole chain — an instance that never reaches the
+  refiner traces nothing. Re-anchored on `sink-9396`, which was picked by
+  sweeping the profile for a seed clearing all five links in one solve: 2,744
+  validated states, 1,764 of them cyclic and every one rejected, 745 rejections
+  from the loop branch. Third re-anchoring, third reason — `cyclic-217` fell to
+  the PRNG contract, `sink-6623` to the iteration order, `sink-9391` to this.
+  Each time the mechanism was untouched and only membership moved, which is
+  exactly what that file's docstring warns to check before believing a failure
+  there. `sink-9391` itself stays pinned in `test_known_unsound.py`, asserting
+  the refusal is honest: `complete` False, no target application, no plan
+  offered.
+- **Four `sink` cases in `test_engine_differential` stopped fitting the cap.**
+  Not a disagreement — all four rerun uncapped come back `identical`, needing
+  37.0s, 45.8s, 26.6s and 29.9s of reference time against 20s. Giving up costs
+  the full mcts budget and the Python reference pays it at fifteen times the
+  engine's price, so the instances that got harder to solve got much more than
+  twice as slow on the reference side. They are listed in the test as settled
+  rather than absorbed into a larger cap: the fast axis would pay that cap four
+  times over, and an unadjudicated case nobody has looked at should still fail
+  the gate.

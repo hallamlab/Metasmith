@@ -6,11 +6,13 @@ fingerprint is topological, so a change that reorders steps or reshuffles which
 plan* comes back does not.
 
 Updating `fingerprints.json` is therefore a deliberate act, not housekeeping.
-Two kinds of change are expected to move these legitimately, and both are
-changes to *how the solver decides* rather than to what it decides: swapping
-the PRNG, and stating an iteration order the solver was previously taking from
-CPython's hash tables. Either finds a different, equally valid plan, and parity
-across one is argued over distributions rather than digests.
+Three kinds of change are expected to move these legitimately, and all three are
+changes to *how the solver decides* rather than to what it decides: swapping the
+PRNG, stating an iteration order the solver was previously taking from CPython's
+hash tables, and changing the heuristic the search is guided by — the last of
+those replaced the backward distance walk and moved three of these eight. Each
+finds a different, equally valid plan, and parity across one is argued over
+distributions rather than digests.
 
 Regenerate with::
 
