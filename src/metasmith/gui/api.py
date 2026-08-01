@@ -14,6 +14,7 @@ import logging
 import os
 import shutil
 import threading
+from dataclasses import replace
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -907,6 +908,12 @@ def deploy_agent(name):
 # format to keep in step for either -- these routes read the same `Spec` a
 # stored workflow record is, and creating from one is an ordinary create with
 # that spec and its input rows.
+#
+# Where the two differ is only what their names resolve against: a library
+# template ships beside the libraries it uses, a user's does not, so it is
+# handed this project's standard library instead (`Template.Load`). After that
+# nothing below asks which kind it has, except to know what a version stamp is
+# keyed on and whether it can be deleted.
 
 USER_TEMPLATES_DIRNAME = "user_templates"
 
@@ -920,13 +927,18 @@ def _templates(p) -> dict[str, Template]:
     found = stdlib.discover(p.root)
     if not found["present"]:
         return {}
-    return {t.name: t for t in Template.Discover(found["path"])}
+    return {t.name: t for t in Template.Discover(found["path"], libraries=found)}
 
 
 def _user_templates(p) -> dict[str, Template]:
     if not (p.root / USER_TEMPLATES_DIRNAME).is_dir():
         return {}
-    return {t.name: t for t in Template.Discover(p.root, dirname=USER_TEMPLATES_DIRNAME)}
+    return {
+        t.name: t for t in Template.Discover(
+            p.root, dirname=USER_TEMPLATES_DIRNAME,
+            libraries=stdlib.discover(p.root),
+        )
+    }
 
 
 def _all_templates(p) -> dict[str, tuple[Template, str]]:
@@ -986,10 +998,37 @@ def _template_summary(p, name: str, tmpl: Template, source: str, theme: str) -> 
         "sample_type": tmpl.spec.sample_type,
         "target_types": _target_names(tmpl.spec.target_types),
         "source": source,
+        # what this project's standard library could not account for -- listed
+        # rather than refused, same as everywhere else here, and the two doors
+        # that need it resolved (`_render_template_dag`, `create_workflow`)
+        # refuse by name
+        "problems": list(tmpl.unresolved),
         # so the modal can show a cached drawing immediately and only
         # start a job for one it has never drawn
         "dag_ready": _template_dag_path(p, name, _template_version(p, name, source), theme).is_file(),
     }
+
+
+def _libraries_or_all(found: dict, transforms, resources) -> tuple[list, list]:
+    """Empty means every library this project has.
+
+    The GUI never narrows either list, so "empty" is the normal state and has
+    to mean something: it is what lets a workflow -- or a template -- made in
+    one project draw on whatever the next one happens to have, rather than
+    freezing today's list. Stated here because two callers apply it: a solve
+    (`generate`) and a template's own DAG, which is the same solve.
+    """
+    return (
+        list(transforms or found["transform_libraries"]),
+        list(resources or found["resource_libraries"]),
+    )
+
+
+def _assert_resolved(name: str, tmpl: Template) -> None:
+    assert not tmpl.unresolved, (
+        f"template [{name}] names {', '.join(tmpl.unresolved)}, which this "
+        f"project's standard library does not have"
+    )
 
 
 @bp.get("/templates")
@@ -1013,8 +1052,14 @@ def _render_template_dag(p, tmpl: Template, name: str, source: str, theme: str) 
     so a caller holds it for as little of its own turn as this does.
     """
     svg = _template_dag_path(p, name, _template_version(p, name, source), theme)
+    _assert_resolved(name, tmpl)
+    transforms, resources = _libraries_or_all(
+        stdlib.discover(p.root),
+        tmpl.spec.transform_libraries, tmpl.spec.resource_libraries,
+    )
+    spec = replace(tmpl.spec, transform_libraries=transforms, resource_libraries=resources)
     with _plan_lock:
-        task = tmpl.spec.Solve()
+        task = spec.Solve()
     assert task.ok, (
         f"template [{name}] does not solve against this library: "
         f"dropped {sorted(task.plan.dropped_targets)}"
@@ -1149,29 +1194,6 @@ def get_workflow(name):
     return jsonify(out)
 
 
-def _resolve_user_template_libraries(available: list[str], names: list[str]) -> list[str]:
-    """The transform/resource-library counterpart of `_resolve_user_template_types`.
-
-    A user template that narrowed which libraries it draws from (the usual
-    case is every one, which `save_as_template` leaves empty and this never
-    sees) records each by directory name rather than by path, for the same
-    reason: the project it was saved from may not be the one creating a
-    workflow from it. `available` is this project's own stdlib list, and a
-    name is matched against it by directory name.
-    """
-    by_name = {Path(a).name: a for a in available}
-    resolved = []
-    for v in names:
-        base = Path(v).name
-        found = by_name.get(base)
-        assert found, (
-            f"template needs library [{base}], not found in this project's "
-            f"standard library"
-        )
-        resolved.append(found)
-    return resolved
-
-
 @bp.post("/workflows")
 def create_workflow():
     """Create a workflow and its live input library.
@@ -1188,12 +1210,13 @@ def create_workflow():
     b = _body()
     p = _project()
     name = slugify(b["name"]) if b.get("name") else None
-    template, tmpl_source = (None, None)
+    template = None
     if b.get("template"):
         found = _all_templates(p).get(b["template"])
         if found is None:
             raise ProjectError(f"no template named [{b['template']}]")
-        template, tmpl_source = found
+        template, _ = found
+        _assert_resolved(b["template"], template)
 
     # A workflow record is a spec plus the store's bookkeeping, so what a create
     # may set is exactly the spec's fields -- named there rather than listed
@@ -1204,13 +1227,6 @@ def create_workflow():
         # in the body still wins, so a caller can override what it starts from
         packed = template.spec.Pack()
         request_fields = {k: packed[k] for k in Spec.FIELDS} | request_fields
-        if tmpl_source == "user":
-            found = stdlib.discover(p.root)
-            for key in ("transform_libraries", "resource_libraries"):
-                if request_fields.get(key):
-                    request_fields[key] = _resolve_user_template_libraries(
-                        found[key], request_fields[key],
-                    )
     wf = p.create_workflow(name=name, request=request_fields)
 
     types = b.get("type_libraries")
@@ -1224,11 +1240,9 @@ def create_workflow():
         # than re-added row by row: a deferred path is minted once and identity
         # follows it, so re-adding would give this workflow a task key other
         # than the one the template was validated at.
-        inline = template.spec.input_library
-        if tmpl_source == "user":
-            op_data.materialize_user_template(inline, lib_path, type_library_paths=types)
-        else:
-            op_data.materialize_template(inline, lib_path, type_library_paths=types)
+        op_data.materialize_template(
+            template.spec.input_library, lib_path, type_library_paths=types,
+        )
     # ...and its rows are the copy's rows: the template ships a library, and
     # this is where those items become the editable recipe. Adopted now rather
     # than on the first read so a generate posted straight at a fresh workflow
@@ -1317,22 +1331,16 @@ def fork_workflow(name):
 def save_as_template(name):
     """Save this workflow's current recipe as a starting point to reuse.
 
-    A template is just a save: what the workflow's own request already says --
-    almost always nothing, since the GUI never narrows `transform_libraries`/
-    `resource_libraries` from "every one this project has" -- and when it
-    does say something, only the library *names*, not where this project
-    happens to keep them (see `_resolve_user_template_libraries`). No library
-    location is ever frozen into a saved template, so it never has an
-    absolute path to break on in another checkout -- including this one's
-    own, when `MetasmithLibraries` is a symlink to a shared checkout rather
-    than a copy inside the project.
+    A template is just a save: what the workflow's own request already says,
+    written by `Template.Save` in the one form that travels -- names. What
+    makes that safe is the precondition: this workflow has already solved,
+    successfully, so the recipe being saved is one that plans. A template is
+    never solved here and never carries a plan; its own DAG is drawn on demand
+    from the names it stores, exactly like a library template's.
 
-    The input library is rebuilt the same way, one level further: every item
-    becomes a fresh deferred placeholder (`op_data.derive_template_library`),
-    keeping its type and its lineage but losing the actual path or value it
-    pointed at, and its type namespaces are recorded by *name*, not by path --
-    resolved back against whichever project's stdlib creates a workflow from
-    it (see `_resolve_user_template_types`).
+    The input library is the same idea one level further: every item becomes a
+    fresh deferred placeholder (`op_data.derive_template_library`), keeping its
+    type and its lineage but losing the actual path or value it pointed at.
     """
     p = _project()
     wf = p.read_workflow(name)
@@ -1341,34 +1349,25 @@ def save_as_template(name):
     assert tmpl_name, "a template name is required"
     if tmpl_name in _all_templates(p):
         raise ProjectError(f"a template named [{tmpl_name}] already exists")
+    assert wf.ok, (
+        f"workflow [{name}] has no successful plan: a template is a recipe "
+        f"known to solve, so generate one first"
+    )
 
-    targets = wf.request.get("target_types") or []
-    assert targets, "this workflow has no target types yet"
-
-    # `type_library_paths` only builds the derived library's own type
-    # registration -- needed to validate a deferred item's dtype at all --
-    # and never reaches the saved template: every manifest entry already
-    # names its type as a plain `ns::type` string, and that is all a user
-    # template's input library packs (see `op_data.materialize_user_template`,
-    # which reads the needed namespaces straight back off those strings). No
-    # `types` mapping to a path -- real or by name -- has anything left to say.
+    # Handed to the spec as a live library, so it packs through `PackInline`
+    # like a library-shipped template's does. `type_library_paths` builds the
+    # derived library's own type registration -- needed to validate a deferred
+    # item's dtype at all, and to inline at all -- but no path reaches the
+    # saved file: `Template.Save` keeps only the manifest's `ns::type` strings.
     derived = op_data.derive_template_library(
         str(p.input_library_path(name)),
         type_library_paths=stdlib.discover(p.root)["data_types"],
     )
-    packed_input = derived.Pack()
-    # By directory name, not by path -- same reasoning as `types` above. Left
-    # empty (the normal case) rather than named at all, so a workflow started
-    # from this falls back to *its own* project's full stdlib at generate
-    # time, same as a blank workflow already does.
-    def _names(libs) -> list[str]:
-        return [Path(lp).name for lp in libs]
-
     spec = Spec(
-        input_library=packed_input,
-        target_types=targets,
-        transform_libraries=_names(wf.request.get("transform_libraries") or []),
-        resource_libraries=_names(wf.request.get("resource_libraries") or []),
+        input_library=derived,
+        target_types=wf.request.get("target_types") or [],
+        transform_libraries=list(wf.request.get("transform_libraries") or []),
+        resource_libraries=list(wf.request.get("resource_libraries") or []),
         sample_type=wf.request.get("sample_type"),
         shared_input_paths=list(wf.request.get("shared_input_paths") or []),
     )
@@ -1435,8 +1434,10 @@ def generate_workflow(name):
     assert targets, "at least one target type is required"
 
     found = stdlib.discover(p.root)
-    transforms = wf.request.get("transform_libraries") or found["transform_libraries"]
-    resources = wf.request.get("resource_libraries") or found["resource_libraries"]
+    transforms, resources = _libraries_or_all(
+        found,
+        wf.request.get("transform_libraries"), wf.request.get("resource_libraries"),
+    )
     lib_path = str(p.input_library_path(name))
     commit = found["commit"]
     # Read here, in the request thread, not inside `_work` below: everything in

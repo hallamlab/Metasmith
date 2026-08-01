@@ -176,9 +176,15 @@ def _build_transform_lib(
     transforms: dict[str, str],
     *,
     namespace: str = "mock",
+    library_name: str = "transforms.xgdb",
 ) -> TransformInstanceLibrary:
-    """Build a transforms.xgdb that uses the given types_path under `namespace`."""
-    tr_path = base_dir / "transforms.xgdb"
+    """Build a transforms.xgdb that uses the given types_path under `namespace`.
+
+    `library_name` is the directory the library *is* -- a library repository
+    lays these out as `transforms/<name>` with nothing between, which is what
+    a template's stored library name is matched against (`library_index`).
+    """
+    tr_path = base_dir / library_name
     tr_path.mkdir(parents=True, exist_ok=True)
     meta = tr_path / "_metadata"
     types_dir = meta / "types"

@@ -1,11 +1,11 @@
 """`Template`: a deferred spec, on disk, that travels.
 
 The property worth pinning is portability. A template is written in one
-checkout and read in another, so every library reference in it has to be
-relative to the repository root and resolved against wherever that root turns
-out to be. The failure mode of getting this wrong is quiet: the spec loads, the
-solve reports an unknown type, and nothing points at the absolute path that
-came along for the ride.
+checkout and read in another, so what is written is names -- a type namespace,
+a library directory -- and reading one resolves those names against whatever
+repository it is being read in. The failure mode of getting this wrong is
+quiet: the spec loads, the solve reports an unknown type, and nothing points at
+the path that came along for the ride.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from metasmith.agents import Spec, Template
+from metasmith.agents.templates import library_index
 from metasmith.models.libraries import DataInstanceLibrary
 from metasmith.models.paths import DEFERRED
 from metasmith.testing import mock_transforms as mt
@@ -28,8 +29,9 @@ def _repo(root: Path) -> tuple[Path, Spec]:
     (root / "data_types").mkdir(parents=True, exist_ok=True)
     types_path = _build_type_lib(root / "data_types" / "mock.yml")
     tr_lib = _build_transform_lib(
-        root / "transforms" / "mock", types_path,
+        root / "transforms", types_path,
         dict(mt.identity_transform("mock::assembly", "mock::bam")),
+        library_name="mock",
     )
 
     inputs = DataInstanceLibrary(root / "templates" / "assembly_to_bam" / "inputs.xgdb")
@@ -45,31 +47,49 @@ def _repo(root: Path) -> tuple[Path, Spec]:
     )
 
 
-def test_a_saved_template_is_written_with_relative_references(tmp_path: Path):
+def test_a_saved_template_is_written_with_names_only(tmp_path: Path):
+    """Not one path in the file: not a library's, not a type namespace's."""
+    import yaml
+
     root, spec = _repo(tmp_path / "lib")
     out = Template(name="assembly_to_bam", spec=spec, description="mock").Save(root)
+    written = yaml.safe_load(out.read_text())
 
-    packed = Template.Load(out).Pack()
-    for ref in packed["transform_libraries"]:
-        assert not Path(ref).is_absolute(), ref
+    assert written["transform_libraries"] == ["mock"]
     # input_library is inline data (see `PackInline`), not a directory
-    # reference -- only its type namespace paths are references to check.
-    for ref in packed["input_library"]["types"].values():
-        assert not Path(ref).is_absolute(), ref
-    assert packed["input_library"]["types"] == {"mock": "data_types/mock.yml"}
-    assert packed["description"] == "mock"
+    # reference; the namespace it needs is named by its manifest's own
+    # `ns::type` strings, so there is no type map left to write.
+    assert "types" not in written["input_library"]
+    assert written["description"] == "mock"
+
+    def _strings(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                yield from _strings(k)
+                yield from _strings(v)
+        elif isinstance(node, list):
+            for v in node: yield from _strings(v)
+        elif isinstance(node, str):
+            yield node
+
+    # a deferred input path is the one absolute string a template does carry:
+    # it is an identity, minted once, not a location on this machine
+    stray = [s for s in _strings(written) if Path(s).is_absolute() and str(root) in s]
+    assert not stray, stray
 
 
-def test_a_reference_outside_the_root_is_refused(tmp_path: Path):
-    """The one way to save successfully and still be useless everywhere else."""
+def test_a_library_the_repository_does_not_have_is_reported_not_raised(tmp_path: Path):
+    """A name with nothing behind it is the loaded template's own problem.
+
+    Listing what a project offers must not break on one bad entry, so `Load`
+    records it; whoever goes on to solve it is where it becomes an error.
+    """
     root, spec = _repo(tmp_path / "lib")
-    outside = _build_transform_lib(
-        tmp_path / "elsewhere", _build_type_lib(tmp_path / "other.yml"),
-        dict(mt.identity_transform("mock::assembly", "mock::bam")),
-    )
-    spec.transform_libraries = [outside]
-    with pytest.raises(AssertionError, match="outside"):
-        Template(name="assembly_to_bam", spec=spec).Save(root)
+    out = Template(name="assembly_to_bam", spec=spec).Save(root)
+    shutil.rmtree(root / "transforms" / "mock")
+
+    template = Template.Load(out)
+    assert template.unresolved == ["transform library [mock]"]
 
 
 def test_a_template_solves_after_the_repository_moves(tmp_path: Path):
@@ -83,6 +103,31 @@ def test_a_template_solves_after_the_repository_moves(tmp_path: Path):
 
     (template,) = Template.Discover(moved)
     assert template.name == "assembly_to_bam"
+    task = template.spec.Solve()
+    assert task.ok and task.plan.steps
+
+
+def test_a_template_resolves_against_a_repository_it_did_not_ship_in(tmp_path: Path):
+    """The user-template case, at the layer that decides it.
+
+    A template the GUI saves lives in the project, not beside the libraries it
+    names -- so the names are resolved against a repository handed in rather
+    than against the one it sits in. Everything after that is the same object a
+    library-shipped template loads to.
+    """
+    root, spec = _repo(tmp_path / "lib")
+    elsewhere = tmp_path / "project"
+    out = Template(name="assembly_to_bam", spec=spec).Save(
+        elsewhere, dirname="user_templates",
+    )
+
+    # nothing beside it to resolve against: reported, not raised
+    assert Template.Load(out).unresolved == [
+        "type namespace [mock]", "transform library [mock]",
+    ]
+
+    template = Template.Load(out, libraries=library_index(root))
+    assert not template.unresolved
     task = template.spec.Solve()
     assert task.ok and task.plan.steps
 

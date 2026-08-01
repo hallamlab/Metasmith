@@ -1256,9 +1256,24 @@ class TestSaveAsTemplate:
     """A workflow's recipe, saved as a starting point -- inputs stripped."""
 
     def _seeded(self, client, count=2) -> str:
+        """A workflow with a plan: the precondition for saving one as a template.
+
+        A template is never solved when it is saved or when it is loaded, so
+        the guarantee that it can be solved at all is this one -- the recipe
+        being saved is one that already worked.
+        """
         name = _make_workflow(client)
         _seed_inputs(client, name, count)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
         return name
+
+    def _drawn(self, client, tmpl: str) -> str:
+        r = client.post(f"/api/templates/{tmpl}/dag")
+        assert r.status_code == 202, r.get_json()
+        _finish(client, r.get_json())
+        svg = client.get(f"/api/templates/{tmpl}/dag")
+        assert svg.status_code == 200, svg.get_json()
+        return svg.get_data(as_text=True)
 
     def test_saves_under_user_templates_with_blank_inputs(self, client, project_root):
         name = self._seeded(client, count=2)
@@ -1278,6 +1293,46 @@ class TestSaveAsTemplate:
         assert all(v["type"] == "mock::assembly" for v in manifest.values())
         seeded_names = {f"sample_{i}.fa" for i in range(2)}
         assert not any(n in str(k) for k in manifest for n in seeded_names)
+        # names, not locations: nothing in the file points into this project
+        assert "types" not in raw["input_library"]
+        assert not [
+            v for v in raw["transform_libraries"] + raw["resource_libraries"]
+            if str(project_root) in v or "/" in v
+        ]
+
+    def test_its_dag_can_be_drawn_like_any_other_template_s(self, client):
+        """The reported bug, from the outside.
+
+        Opening `+ workflow` draws every template it lists, a user's included,
+        by solving it -- so a saved template that only names its types has to
+        arrive at that solve with them resolved, or the modal fails on
+        `namespace [...] not found`.
+        """
+        name = self._seeded(client, count=1)
+        client.post(f"/api/workflows/{name}/save_as_template", json={"name": "my-tpl"})
+        assert "<svg" in self._drawn(client, "my-tpl")
+        assert client.get("/api/templates").get_json()[0]["problems"] == []
+
+    def test_a_name_this_project_cannot_account_for_is_listed_then_refused(
+        self, client, project_root
+    ):
+        """Incompleteness is reported until it is used, same as everywhere else.
+
+        A template written against libraries this project does not have is
+        still a template: it lists, with what is missing said plainly. The
+        refusal happens at the door that needs it resolved.
+        """
+        name = self._seeded(client, count=1)
+        client.post(f"/api/workflows/{name}/save_as_template", json={"name": "my-tpl"})
+        spec_path = project_root / "user_templates" / "my-tpl" / "spec.yml"
+        raw = yaml.safe_load(spec_path.read_text())
+        raw["transform_libraries"] = ["not_here"]
+        spec_path.write_text(yaml.safe_dump(raw))
+
+        (entry,) = client.get("/api/templates").get_json()
+        assert entry["problems"] == ["transform library [not_here]"]
+        r = client.post("/api/workflows", json={"template": "my-tpl"})
+        assert r.status_code == 400 and "not_here" in r.get_json()["error"]
 
     def test_listed_alongside_library_templates(self, client, template):
         name = self._seeded(client)
@@ -1294,9 +1349,23 @@ class TestSaveAsTemplate:
         assert len(items) == 2
         assert all(i["type_name"] == "mock::assembly" for i in items)
 
-    def test_requires_a_target(self, client):
-        name = client.post("/api/workflows", json={}).get_json()["name"]
-        r = client.post(f"/api/workflows/{name}/save_as_template", json={"name": "no-target"})
+    def test_a_workflow_that_has_not_solved_is_refused(self, client):
+        """No plan, no template: the recipe has never been shown to work, and
+        nothing downstream solves one before offering it."""
+        name = _make_workflow(client)
+        _seed_inputs(client, name, 1)
+        r = client.post(f"/api/workflows/{name}/save_as_template", json={"name": "unsolved"})
+        assert r.status_code == 400
+        assert "no successful plan" in r.get_json()["error"]
+
+    def test_a_workflow_whose_plan_failed_is_refused(self, client):
+        """`planned` is not `ok`: a solve that drops its target leaves a result."""
+        name = _make_workflow(client, targets=("mock::unreachable",))
+        _seed_inputs(client, name, 1)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        detail = client.get(f"/api/workflows/{name}").get_json()
+        assert detail["planned"] and detail["success"] is False
+        r = client.post(f"/api/workflows/{name}/save_as_template", json={"name": "failed"})
         assert r.status_code == 400
 
     def test_name_collision_is_refused(self, client):
@@ -1368,6 +1437,10 @@ class TestSaveAsTemplate:
                 f"/api/workflows/{name}/save_as_template", json={"name": "my-tpl"},
             )
             assert r.status_code == 201, r.get_json()
+            assert r.get_json()["problems"] == []
+            # the second unresolved reference, and it fails in its own frame:
+            # a narrowed library is a name too, and the DAG is drawn by solving
+            assert "<svg" in self._drawn(client, "my-tpl")
 
             made = client.post("/api/workflows", json={"template": "my-tpl"})
             assert made.status_code == 201, made.get_json()
