@@ -757,6 +757,14 @@
 
   async function solve() {
     requestingSolve = true
+    // Cleared here, not left to `JobLog`'s own reset -- that only fires once
+    // `jobId` changes below, and the request round trip happens before that.
+    // Without this, solving again after a failed (or even a successful) solve
+    // would draw the bar from the *previous* job's last phase/status for that
+    // whole gap -- a bar that looks finished, or failed, before the new job
+    // has said anything at all.
+    jobStatus = null
+    jobPhase = null
     const job = await attempt(() => api.post(`/workflows/${name}/generate`, requestBody()))
     requestingSolve = false
     if (job) jobId = job.id
@@ -990,12 +998,7 @@
                plan below it is, and this is the same amount of the card an
                already-solved workflow used to lose to a wall of scrollback. -->
           <details class="log-details">
-            <summary class="small muted">
-              log
-              <span class="tag" class:ok={jobStatus === 'done'} class:bad={jobStatus === 'failed'}>
-                {jobStatus ?? ''}
-              </span>
-            </summary>
+            <summary class="small muted">log</summary>
             <JobLog
               {jobId}
               header={false}
@@ -1008,8 +1011,6 @@
                 await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
                 if (summary?.status === 'failed') {
                   notify(summary?.error ?? 'solve failed', 'refused')
-                } else {
-                  notify('plan solved', 'info')
                 }
               }}
             />
@@ -1024,7 +1025,10 @@
           </p>
         {:else if wf.success}
           <div class="spread">
-            <h3>plan</h3>
+            <div class="row">
+              <h3>plan</h3>
+              <span class="tag ok">success</span>
+            </div>
             <div class="row">
               <span class="tag ok">{wf.step_count} step(s)</span>
               <button
