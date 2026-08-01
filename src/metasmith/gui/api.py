@@ -1283,6 +1283,13 @@ def generate_workflow(name):
 
     def _work(job):
         with LogCapture(job):
+            # Phase markers for the GUI's progress bar -- a job log line like
+            # any other, but prefixed so JobLog can pull it out of the log and
+            # drive a stage indicator instead of printing it. The solver
+            # itself is one opaque call (see below); these three are the real
+            # boundaries either side of it.
+            job.emit("PHASE:syncing")
+
             # The recipe's rows are the durable thing; the input library is
             # built from them. This is where that happens -- always, every
             # solve, rather than behind a gesture a user could forget after
@@ -1341,8 +1348,10 @@ def generate_workflow(name):
                 },
                 input_library=lib_path,
             )
+            job.emit("PHASE:solving")
             with _plan_lock:
                 result = op_workflow.plan_spec(spec, workspace=str(staging))
+            job.emit("PHASE:finishing")
             if result.get("success"):
                 # promote the bundle to the workflow directory, so the readable
                 # name is the address the CLI can stage

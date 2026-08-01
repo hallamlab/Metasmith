@@ -9,7 +9,13 @@
   // the workflow page's plan card puts it behind a `<details>` and reads
   // `status` back (bindable) to paint its own summary's tag, rather than
   // showing "log" twice.
-  let { jobId = null, onend, header = true, status = $bindable(null) } = $props()
+  let {
+    jobId = null,
+    onend,
+    header = true,
+    status = $bindable(null),
+    phase = $bindable(null),
+  } = $props()
   let lines = $state([])
   let box = $state(null)
 
@@ -18,9 +24,18 @@
     if (!id) return
     lines = []
     status = 'running'
+    phase = null
     const stop = api.stream(
       id,
       (line) => {
+        // A phase marker is progress-bar signal, not log content -- the
+        // caller reads it back through the bindable rather than seeing it
+        // printed, the same way `status` never shows up as a log line either.
+        const marker = /^PHASE:(\w+)$/.exec(line)
+        if (marker) {
+          phase = marker[1]
+          return
+        }
         lines = [...lines.slice(-2000), line]
         queueMicrotask(() => box && (box.scrollTop = box.scrollHeight))
       },

@@ -11,6 +11,8 @@
   import SampleTable from '../components/SampleTable.svelte'
   import ShareOut from '../components/ShareOut.svelte'
   import SidePanel from '../components/SidePanel.svelte'
+  import Spinner from '../components/Spinner.svelte'
+  import StageProgress from '../components/StageProgress.svelte'
   import HintsPanel from './HintsPanel.svelte'
   import LibraryList from './LibraryList.svelte'
   import RecipeCard from './RecipeCard.svelte'
@@ -33,6 +35,31 @@
   let items = $state([])
   let jobId = $state(null)
   let jobStatus = $state(null)
+  let jobPhase = $state(null)
+
+  // The solve button's own busy state, and the bar beside it. There's no
+  // percentage worth showing -- the solver itself is one call we can't see
+  // inside -- but the job genuinely does move through these three steps in
+  // order (see the `PHASE:` markers `_work` emits in gui/api.py), so the bar
+  // says which one it's on rather than faking a fill. It stays visible
+  // through a failure (the failed segment is the point), but drops away on
+  // success, once `jobStatus` reaches `'done'`.
+  const SOLVE_STAGES = ['syncing', 'solving', 'finishing']
+  // Covers the gap between the click and the POST resolving with a job id --
+  // otherwise the button would sit un-busy for the first leg of the round
+  // trip, which is exactly the moment a second click is most tempting.
+  let requestingSolve = $state(false)
+  let solving = $derived(
+    requestingSolve || (!!jobId && jobStatus !== 'done' && jobStatus !== 'failed'),
+  )
+  let showSolveBar = $derived(solving || jobStatus === 'failed')
+  let solveStage = $derived(Math.max(0, SOLVE_STAGES.indexOf(jobPhase)))
+  let solveStageStates = $derived.by(() => {
+    if (!showSolveBar) return SOLVE_STAGES.map(() => 'idle')
+    return SOLVE_STAGES.map((_, i) =>
+      i < solveStage ? 'done' : i > solveStage ? 'idle' : jobStatus === 'failed' ? 'failed' : 'running',
+    )
+  })
   let sharing = $state(false)
   let launching = $state(false)
   let agentChoice = $state('')
@@ -729,7 +756,9 @@
   }
 
   async function solve() {
+    requestingSolve = true
     const job = await attempt(() => api.post(`/workflows/${name}/generate`, requestBody()))
+    requestingSolve = false
     if (job) jobId = job.id
   }
 
@@ -920,8 +949,11 @@
         <button
           class="primary"
           onclick={solve}
-          disabled={recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
-        >{wf.planned ? 'solve again' : 'solve'}</button>
+          disabled={solving || recipe.targets.length === 0 || blankTarget || dupTarget || !!tableProblem}
+        >
+          {#if solving}<Spinner />{/if}
+          {solving ? 'solving…' : wf.planned ? 'solve again' : 'solve'}
+        </button>
         {#if recipe.targets.length === 0}
           <span class="small muted">add at least one output</span>
         {:else if blankTarget}
@@ -945,6 +977,10 @@
         {/if}
       </div>
 
+      {#if showSolveBar}
+        <StageProgress stages={SOLVE_STAGES} stageStates={solveStageStates} />
+      {/if}
+
       <div class="card col" style="gap:10px">
         {#if jobId}
           <!-- one log for both jobs this page starts: a solve and a bundle
@@ -964,11 +1000,17 @@
               {jobId}
               header={false}
               bind:status={jobStatus}
-              onend={async () => {
+              bind:phase={jobPhase}
+              onend={async (summary) => {
                 // four independent reads, not a chain: solving is ~400ms of
                 // server and this used to add three sequential round trips to
                 // the end of it
                 await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
+                if (summary?.status === 'failed') {
+                  notify(summary?.error ?? 'solve failed', 'refused')
+                } else {
+                  notify('plan solved', 'info')
+                }
               }}
             />
           </details>

@@ -6,6 +6,7 @@
   import CopyButton from '../components/CopyButton.svelte'
   import JobLog from '../components/JobLog.svelte'
   import SidePanel from '../components/SidePanel.svelte'
+  import StageProgress from '../components/StageProgress.svelte'
   import FileTree from '../components/FileTree.svelte'
   import FilePreview from '../components/FilePreview.svelte'
 
@@ -343,14 +344,7 @@
       </div>
     </div>
 
-    <div class="progress">
-      {#each STAGES as label, i}
-        <div class="seg {stageStates[i]}">
-          <span class="bar"></span>
-          <span class="label">{label}</span>
-        </div>
-      {/each}
-    </div>
+    <StageProgress stages={STAGES} {stageStates} />
     {#if traceFailed}
       <p class="small warnline">
         {trace.failed} task{trace.failed === 1 ? '' : 's'} failed. Nextflow was told to
@@ -622,30 +616,7 @@
   .loading { padding: 18px; }
   .treebox { height: 100%; overflow: auto; }
 
-  /* A progress bar rather than a row of dots: the three stages are consecutive,
-     so the thing that reads them is a filled track, and the four states carry
-     the whole meaning -- grey nothing yet, blue underway, green done, red
-     failed. Position is exactly what is keyed on: only the current stage
-     (see `stateStatus` above) carries a status color, every stage before it
-     is done and every stage after it is idle. */
-  .progress { display: flex; gap: 4px; }
-  .seg { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-  .seg .bar { height: 6px; border-radius: 3px; background: var(--line); }
-  .seg .label {
-    font-size: 12px;
-    color: var(--muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .seg.running .bar { background: var(--accent); }
-  .seg.running .label { color: var(--accent); }
-  .seg.done .bar { background: var(--ok); }
-  .seg.done .label { color: var(--ok); }
-  .seg.failed .bar { background: var(--bad); }
-  .seg.failed .label { color: var(--bad); }
-
-  /* the same four states again, as a marker beside a row */
+  /* the same four states as StageProgress's segments, as a marker beside a row */
   .pip {
     display: inline-block;
     width: 8px;
