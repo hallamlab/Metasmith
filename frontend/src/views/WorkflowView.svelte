@@ -7,6 +7,7 @@
   import JobLog from '../components/JobLog.svelte'
   import DagRail from '../components/DagRail.svelte'
   import MiniGraph from '../components/MiniGraph.svelte'
+  import SaveAsTemplate from '../components/SaveAsTemplate.svelte'
   import SaveChip from '../components/SaveChip.svelte'
   import SampleTable from '../components/SampleTable.svelte'
   import ShareOut from '../components/ShareOut.svelte'
@@ -61,6 +62,7 @@
     )
   })
   let sharing = $state(false)
+  let savingTemplate = $state(false)
   let launching = $state(false)
   let agentChoice = $state('')
   let presetChoice = $state('')
@@ -920,6 +922,7 @@
              this workflow and what is in it -- so it is here. -->
         <div class="row">
           {#if wf.archived_at}<button onclick={unarchive}>restore</button>{/if}
+          <button class="small" onclick={() => (savingTemplate = true)}>save as template</button>
           <button class="small" onclick={() => (sharing = true)}>share</button>
         </div>
       </div>
@@ -1338,6 +1341,14 @@
 
   {#if sharing}
     <ShareOut kind="workflow" name={wf.name} onclose={() => (sharing = false)} />
+  {/if}
+
+  {#if savingTemplate}
+    <SaveAsTemplate
+      workflowName={wf.name}
+      suggestedName={displayName}
+      onclose={() => (savingTemplate = false)}
+    />
   {/if}
 {/if}
 

@@ -8,6 +8,7 @@ never in a route body.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -900,10 +901,14 @@ def deploy_agent(name):
 # -- templates ---------------------------------------------------------------
 #
 # A template is a workflow you start from: a spec whose input paths are
-# DEFERRED, shipped in the standard library beside the transforms it names.
-# There is no separate format to keep in step -- these routes read the same
-# `Spec` a stored workflow record is, and creating from one is an ordinary
-# create with that spec and its input rows.
+# DEFERRED. Two places ship them: the standard library, beside the transforms
+# it names, and a project's own `user_templates/`, where "save as template"
+# below writes one from a workflow's current recipe. There is no separate
+# format to keep in step for either -- these routes read the same `Spec` a
+# stored workflow record is, and creating from one is an ordinary create with
+# that spec and its input rows.
+
+USER_TEMPLATES_DIRNAME = "user_templates"
 
 
 def _target_names(targets) -> list[str]:
@@ -918,22 +923,60 @@ def _templates(p) -> dict[str, Template]:
     return {t.name: t for t in Template.Discover(found["path"])}
 
 
+def _user_templates(p) -> dict[str, Template]:
+    if not (p.root / USER_TEMPLATES_DIRNAME).is_dir():
+        return {}
+    return {t.name: t for t in Template.Discover(p.root, dirname=USER_TEMPLATES_DIRNAME)}
+
+
+def _all_templates(p) -> dict[str, tuple[Template, str]]:
+    """Every template on offer, tagged with where it came from.
+
+    A user-saved template that happens to share a name with a library one
+    wins the slot: it is the one the user can see and delete from the GUI, and
+    `save_as_template` already refuses to create the collision in the first
+    place -- this ordering only matters for a name a library pull introduces
+    after the fact.
+    """
+    out = {name: (t, "library") for name, t in _templates(p).items()}
+    out.update({name: (t, "user") for name, t in _user_templates(p).items()})
+    return out
+
+
 def _template(p, name: str) -> Template:
-    tmpl = _templates(p).get(name)
-    if tmpl is None:
+    found = _all_templates(p).get(name)
+    if found is None:
         raise ProjectError(f"no template named [{name}]")
-    return tmpl
+    return found[0]
 
 
-def _template_dag_path(p, name: str, commit: str | None, theme: str) -> Path:
+def _template_version(p, name: str, source: str) -> str | None:
+    """What a template's drawing cache is keyed on, besides its name.
+
+    A library template moves with the stdlib commit -- a library pull can
+    change what it solves to. A user template has no commit; its own
+    `spec.yml` mtime stands in instead, since re-saving under the same name is
+    the one way its content changes.
+    """
+    if source == "library":
+        return stdlib.discover(p.root)["commit"]
+    path = Template.PathIn(p.root, name, dirname=USER_TEMPLATES_DIRNAME)
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        mtime = 0
+    return hashlib.sha1(f"user:{name}:{mtime}".encode()).hexdigest()
+
+
+def _template_dag_path(p, name: str, version: str | None, theme: str) -> Path:
     """Where a template's drawing is cached.
 
-    Keyed on the stdlib commit as much as on the name: a library pull can
-    change what a template solves to, and a cache that ignored the commit would
-    leave the modal drawing the previous graph with nothing to say it was
-    stale. Files under an old commit simply stop being asked for.
+    Keyed on the version (see `_template_version`) as much as on the name: a
+    cache that ignored it would leave the modal drawing the previous graph
+    with nothing to say it was stale. Files under an old version simply stop
+    being asked for.
     """
-    stamp = (commit or "unversioned")[:12]
+    stamp = (version or "unversioned")[:12]
     return p.cache_dir / "template_dags" / stamp / f"{name}.{theme}.svg"
 
 
@@ -943,28 +986,32 @@ def _theme_arg() -> str:
     return theme if theme in THEMES else "light"
 
 
+def _template_summary(p, name: str, tmpl: Template, source: str, theme: str) -> dict:
+    return {
+        "name": name,
+        "description": tmpl.description,
+        "sample_type": tmpl.spec.sample_type,
+        "target_types": _target_names(tmpl.spec.target_types),
+        "source": source,
+        # so the modal can show a cached drawing immediately and only
+        # start a job for one it has never drawn
+        "dag_ready": _template_dag_path(p, name, _template_version(p, name, source), theme).is_file(),
+    }
+
+
 @bp.get("/templates")
 def list_templates():
     """The starting points on offer, cheaply: this reads yaml, never solves."""
     p = _project()
-    commit = stdlib.discover(p.root)["commit"]
     theme = _theme_arg()
     return jsonify([
-        {
-            "name": t.name,
-            "description": t.description,
-            "sample_type": t.spec.sample_type,
-            "target_types": _target_names(t.spec.target_types),
-            # so the modal can show a cached drawing immediately and only
-            # start a job for one it has never drawn
-            "dag_ready": _template_dag_path(p, t.name, commit, theme).is_file(),
-        }
-        for t in _templates(p).values()
+        _template_summary(p, name, tmpl, source, theme)
+        for name, (tmpl, source) in _all_templates(p).items()
     ])
 
 
-def _render_template_dag(p, tmpl: Template, name: str, theme: str) -> tuple[Path, int]:
-    """Solve `tmpl` and draw it, caching under (template, stdlib commit, theme).
+def _render_template_dag(p, tmpl: Template, name: str, source: str, theme: str) -> tuple[Path, int]:
+    """Solve `tmpl` and draw it, caching under (template, version, theme).
 
     Shared by the request-triggered route below and `warm_template_dags`
     (`app.py`), which pre-draws every template at server start so the first
@@ -972,7 +1019,7 @@ def _render_template_dag(p, tmpl: Template, name: str, theme: str) -> tuple[Path
     `_plan_lock` -- transform import is process-global, rendering is not --
     so a caller holds it for as little of its own turn as this does.
     """
-    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    svg = _template_dag_path(p, name, _template_version(p, name, source), theme)
     with _plan_lock:
         task = tmpl.spec.Solve()
     assert task.ok, (
@@ -991,20 +1038,22 @@ def _render_template_dag(p, tmpl: Template, name: str, theme: str) -> tuple[Path
 def render_template_dag(name):
     """Solve a template and draw it -- as a job, because a solve is seconds.
 
-    Cached on (template, stdlib commit, theme): paid once, and every later
-    modal is served from disk -- often already warmed by `warm_template_dags`
-    before this route is ever hit.
+    Cached on (template, version, theme): paid once, and every later modal is
+    served from disk -- often already warmed by `warm_template_dags` before
+    this route is ever hit.
     """
     p = _project()
-    tmpl = _template(p, name)
+    tmpl, source = _all_templates(p).get(name, (None, None))
+    if tmpl is None:
+        raise ProjectError(f"no template named [{name}]")
     theme = _theme_arg()
-    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    svg = _template_dag_path(p, name, _template_version(p, name, source), theme)
     if svg.is_file():
         return jsonify({"template": name, "theme": theme, "cached": True})
 
     def _work(job):
         with LogCapture(job):
-            _, step_count = _render_template_dag(p, tmpl, name, theme)
+            _, step_count = _render_template_dag(p, tmpl, name, source, theme)
             return {"template": name, "theme": theme, "step_count": step_count}
 
     job = _jobs().submit(
@@ -1017,12 +1066,34 @@ def render_template_dag(name):
 def template_dag(name):
     """The cached drawing. Absent until the job above has drawn it."""
     p = _project()
-    _template(p, name)  # 4xx on an unknown name rather than a missing file
+    tmpl, source = _all_templates(p).get(name, (None, None))
+    if tmpl is None:
+        raise ProjectError(f"no template named [{name}]")
     theme = _theme_arg()
-    svg = _template_dag_path(p, name, stdlib.discover(p.root)["commit"], theme)
+    svg = _template_dag_path(p, name, _template_version(p, name, source), theme)
     if not svg.is_file():
         raise ProjectError(f"template [{name}] has not been drawn for theme [{theme}] yet")
     return Response(svg.read_text(), mimetype="image/svg+xml")
+
+
+@bp.delete("/templates/<name>")
+def delete_template(name):
+    """Remove a user-saved template outright -- there is nothing that depends
+    on one, so unlike a workflow/agent/run this is not a two-press archive.
+
+    A library-shipped template cannot be deleted here: it lives in the
+    standard library checkout, and removing it from there is a library change,
+    not a GUI action.
+    """
+    p = _project()
+    if name not in _user_templates(p):
+        if name in _templates(p):
+            raise ProjectError(
+                f"[{name}] ships with the standard library and cannot be deleted here"
+            )
+        raise ProjectError(f"no saved template named [{name}]")
+    shutil.rmtree(Template.PathIn(p.root, name, dirname=USER_TEMPLATES_DIRNAME).parent)
+    return jsonify({"name": name, "action": "deleted"})
 
 
 # -- workflows ---------------------------------------------------------------
@@ -1210,6 +1281,48 @@ def fork_workflow(name):
     if src_record.is_file():
         shutil.copy2(src_record, op_samples.record_path(p.input_library_path(forked.name)))
     return jsonify(_workflow_summary(p.read_workflow(forked.name))), 201
+
+
+@bp.post("/workflows/<name>/save_as_template")
+def save_as_template(name):
+    """Save this workflow's current recipe as a starting point to reuse.
+
+    What is saved is the recipe's *shape*, not this run's own files: every
+    input becomes a fresh deferred placeholder (`op_data.derive_template_library`),
+    keeping its type and its lineage but losing the actual path or value it
+    pointed at. Target types, which libraries it draws from, and the sample
+    split all carry over -- resolved the same way `generate_workflow` resolves
+    them, since an ungenerated workflow's request may never have written its
+    library defaults down explicitly.
+    """
+    p = _project()
+    wf = p.read_workflow(name)
+    b = _body()
+    tmpl_name = slugify(b.get("name") or "")
+    assert tmpl_name, "a template name is required"
+    if tmpl_name in _all_templates(p):
+        raise ProjectError(f"a template named [{tmpl_name}] already exists")
+
+    targets = wf.request.get("target_types") or []
+    assert targets, "this workflow has no target types yet"
+    found = stdlib.discover(p.root)
+    transforms = wf.request.get("transform_libraries") or found["transform_libraries"]
+    resources = wf.request.get("resource_libraries") or found["resource_libraries"]
+
+    derived = op_data.derive_template_library(
+        str(p.input_library_path(name)), type_library_paths=found["data_types"],
+    )
+    spec = Spec(
+        input_library=derived,
+        target_types=targets,
+        transform_libraries=transforms,
+        resource_libraries=resources,
+        sample_type=wf.request.get("sample_type"),
+        shared_input_paths=list(wf.request.get("shared_input_paths") or []),
+    )
+    tmpl = Template(name=tmpl_name, spec=spec, description=b.get("description") or "")
+    tmpl.Save(p.root, dirname=USER_TEMPLATES_DIRNAME)
+    return jsonify(_template_summary(p, tmpl_name, tmpl, "user", _theme_arg())), 201
 
 
 def _given_summary(lib_path: str) -> list[dict]:

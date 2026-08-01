@@ -1242,6 +1242,72 @@ class TestTemplates:
         assert client.get(f"/api/workflows/{name}/inputs").get_json()["items"] == []
 
 
+class TestSaveAsTemplate:
+    """A workflow's recipe, saved as a starting point -- inputs stripped."""
+
+    def _seeded(self, client, count=2) -> str:
+        name = _make_workflow(client)
+        _seed_inputs(client, name, count)
+        return name
+
+    def test_saves_under_user_templates_with_blank_inputs(self, client, project_root):
+        name = self._seeded(client, count=2)
+        r = client.post(f"/api/workflows/{name}/save_as_template", json={"name": "my-tpl"})
+        assert r.status_code == 201, r.get_json()
+        body = r.get_json()
+        assert body["source"] == "user"
+        assert body["target_types"] == ["mock::bam"]
+
+        spec_path = project_root / "user_templates" / "my-tpl" / "spec.yml"
+        assert spec_path.is_file()
+        raw = yaml.safe_load(spec_path.read_text())
+        manifest = raw["input_library"]["manifest"]
+        # same shape (one item per seeded input, same type) but none of the
+        # source workflow's own file paths made it into the saved template
+        assert len(manifest) == 2
+        assert all(v["type"] == "mock::assembly" for v in manifest.values())
+        seeded_names = {f"sample_{i}.fa" for i in range(2)}
+        assert not any(n in str(k) for k in manifest for n in seeded_names)
+
+    def test_listed_alongside_library_templates(self, client, template):
+        name = self._seeded(client)
+        client.post(f"/api/workflows/{name}/save_as_template", json={"name": "my-tpl"})
+        body = client.get("/api/templates").get_json()
+        sources = {t["name"]: t["source"] for t in body}
+        assert sources == {template: "library", "my-tpl": "user"}
+
+    def test_creating_from_it_reproduces_the_shape(self, client):
+        name = self._seeded(client, count=2)
+        client.post(f"/api/workflows/{name}/save_as_template", json={"name": "my-tpl"})
+        made = client.post("/api/workflows", json={"template": "my-tpl"}).get_json()["name"]
+        items = client.get(f"/api/workflows/{made}/inputs").get_json()["items"]
+        assert len(items) == 2
+        assert all(i["type_name"] == "mock::assembly" for i in items)
+
+    def test_requires_a_target(self, client):
+        name = client.post("/api/workflows", json={}).get_json()["name"]
+        r = client.post(f"/api/workflows/{name}/save_as_template", json={"name": "no-target"})
+        assert r.status_code == 400
+
+    def test_name_collision_is_refused(self, client):
+        name = self._seeded(client)
+        assert client.post(
+            f"/api/workflows/{name}/save_as_template", json={"name": "dup"}
+        ).status_code == 201
+        second = self._seeded(client)
+        assert client.post(
+            f"/api/workflows/{second}/save_as_template", json={"name": "dup"}
+        ).status_code == 409
+
+    def test_user_template_can_be_deleted_but_library_one_cannot(self, client, template):
+        name = self._seeded(client)
+        client.post(f"/api/workflows/{name}/save_as_template", json={"name": "my-tpl"})
+        assert client.delete("/api/templates/my-tpl").status_code == 200
+        assert "my-tpl" not in {t["name"] for t in client.get("/api/templates").get_json()}
+        assert client.delete(f"/api/templates/{template}").status_code == 409
+        assert client.delete("/api/templates/nope").status_code == 409
+
+
 class TestTypeResync:
     """A workflow's input library must not stay pinned to the stdlib as it
     stood the day the workflow was created."""

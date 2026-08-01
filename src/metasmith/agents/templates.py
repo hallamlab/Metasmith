@@ -55,11 +55,16 @@ class Template:
     # -- on disk -----------------------------------------------------------
 
     @staticmethod
-    def PathIn(root: Path | str, name: str) -> Path:
-        return Path(root) / TEMPLATES_DIR / name / TEMPLATE_FILE
+    def PathIn(root: Path | str, name: str, dirname: str = TEMPLATES_DIR) -> Path:
+        return Path(root) / dirname / name / TEMPLATE_FILE
 
-    def Save(self, root: Path | str) -> Path:
-        """Write `<root>/templates/<name>/spec.yml`, references made relative.
+    def Save(self, root: Path | str, dirname: str = TEMPLATES_DIR) -> Path:
+        """Write `<root>/<dirname>/<name>/spec.yml`, references made relative.
+
+        `dirname` defaults to the library-shipped `templates/`, but a caller
+        with its own place to keep them (the GUI's project-local
+        `user_templates/`) can point this elsewhere without a second format to
+        keep in step.
 
         Refuses a reference outside the root: that is the one way a template
         can be written successfully and still be useless everywhere else.
@@ -84,7 +89,7 @@ class Template:
             f"template [{self.name}] references libraries outside [{root}], so it would "
             f"name nothing in another checkout: {', '.join(escaped)}"
         )
-        out = self.PathIn(root, self.name)
+        out = self.PathIn(root, self.name, dirname=dirname)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(
             yaml.safe_dump(
@@ -109,12 +114,12 @@ class Template:
         )
 
     @classmethod
-    def Discover(cls, root: Path | str) -> list["Template"]:
+    def Discover(cls, root: Path | str, dirname: str = TEMPLATES_DIR) -> list["Template"]:
         """Every template in a library repository, by name."""
         root = Path(root).resolve()
         found = [
             cls.Load(p, root=root)
-            for p in sorted((root / TEMPLATES_DIR).glob(f"*/{TEMPLATE_FILE}"))
+            for p in sorted((root / dirname).glob(f"*/{TEMPLATE_FILE}"))
         ]
         return sorted(found, key=lambda t: t.name)
 

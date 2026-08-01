@@ -75,18 +75,17 @@ def warm_template_dags(p: "Project") -> None:  # noqa: F821
     """
     from ..logging import Log
     from ..models.dag_renderer import THEMES
-    from . import stdlib
-    from .api import _render_template_dag, _template_dag_path, _templates
+    from .api import _all_templates, _render_template_dag, _template_dag_path, _template_version
 
     try:
-        commit = stdlib.discover(p.root)["commit"]
-        for name, tmpl in _templates(p).items():
+        for name, (tmpl, source) in _all_templates(p).items():
+            version = _template_version(p, name, source)
             for theme in THEMES:
-                svg = _template_dag_path(p, name, commit, theme)
+                svg = _template_dag_path(p, name, version, theme)
                 if svg.is_file():
                     continue
                 try:
-                    _render_template_dag(p, tmpl, name, theme)
+                    _render_template_dag(p, tmpl, name, source, theme)
                 except Exception as exc:
                     Log.Warn(f"could not pre-draw template [{name}] ({theme}): {exc}")
     except Exception as exc:  # a modal that has to draw it itself is the fallback

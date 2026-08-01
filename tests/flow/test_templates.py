@@ -157,6 +157,40 @@ def test_every_shipped_template_still_solves_once_the_gui_owns_it(
         )
 
 
+def test_deriving_a_template_strips_paths_but_keeps_shape(tmp_path: Path):
+    """`derive_template_library`: what "save as template" builds on.
+
+    A live library with a two-item chain (a read pair sharing a parent) goes
+    in; what comes out has the same item count, the same types, and the same
+    parent structure, but not one of the original paths -- every one is a
+    freshly minted deferred placeholder.
+    """
+    from metasmith.ops import data as op_data
+
+    root = tmp_path / "lib"
+    (root / "data_types").mkdir(parents=True)
+    types_path = _build_type_lib(root / "data_types" / "mock.yml")
+
+    live = DataInstanceLibrary(tmp_path / "workflow" / "input.xgdb")
+    live.AddTypeLibrary(types_path)
+    raw = live.AddItem(tmp_path / "raw.txt", "mock::assembly")
+    (tmp_path / "raw.txt").write_text("x")
+    derived_child = live.AddItem(tmp_path / "child.txt", "mock::bam", parents=[raw])
+    (tmp_path / "child.txt").write_text("y")
+    live.Save()
+
+    tmpl_lib = op_data.derive_template_library(str(live.location), type_library_paths=[str(types_path)])
+
+    assert len(tmpl_lib.manifest) == 2
+    assert set(tmpl_lib.manifest.values()) == {"mock::assembly", "mock::bam"}
+    assert not (set(tmpl_lib.manifest) & {raw, derived_child})
+
+    [child_path] = [p for p, d in tmpl_lib.manifest.items() if d == "mock::bam"]
+    assert [p.path for p in tmpl_lib.parents[child_path]] == [
+        p for p, d in tmpl_lib.manifest.items() if d == "mock::assembly"
+    ]
+
+
 def test_the_same_template_reloads_to_the_same_task_key(tmp_path: Path):
     """A deferred path is minted once and persisted; identity follows it.
 

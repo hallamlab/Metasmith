@@ -1,6 +1,7 @@
 <script>
   import { api } from '../lib/api.svelte.js'
   import { attempt, createWorkflow, ui } from '../lib/state.svelte.js'
+  import DeleteControl from './DeleteControl.svelte'
   import JobLog from './JobLog.svelte'
   import Modal from './Modal.svelte'
 
@@ -156,6 +157,15 @@
     creating = false
     if (out) onclose?.()
   }
+
+  async function deleteTemplate() {
+    const gone = picked
+    const out = await attempt(() => api.del(`/templates/${gone}`))
+    if (out) {
+      templates = templates.filter((t) => t.name !== gone)
+      if (picked === gone) picked = ''
+    }
+  }
 </script>
 
 <Modal title="new workflow" subtitle="start from a template, or from nothing" {onclose}>
@@ -197,12 +207,17 @@
 
   <label class="col small">
     <span class="muted">template</span>
-    <select bind:value={picked}>
-      <option value="">blank</option>
-      {#each templates as t (t.name)}
-        <option value={t.name}>{t.name}</option>
-      {/each}
-    </select>
+    <div class="row">
+      <select bind:value={picked}>
+        <option value="">blank</option>
+        {#each templates as t (t.name)}
+          <option value={t.name}>{t.name}</option>
+        {/each}
+      </select>
+      {#if chosen?.source === 'user'}
+        <DeleteControl title="delete template" archived onconfirm={deleteTemplate} />
+      {/if}
+    </div>
   </label>
   <p class="small muted desc">
     {chosen?.description || (picked ? '' : 'nothing is planned until you generate')}
