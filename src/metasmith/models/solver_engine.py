@@ -1,18 +1,26 @@
-"""Finding, checking, and deciding whether to use the Rust solver engine.
+"""Finding a solver binary and deciding whether to trust it.
+
+This module answers *is this binary trustworthy*. Which implementation actually
+runs is `solver_backend`'s question, and that is the module everything outside
+the solver should import.
 
 `msm_solver` is not `msm_relay`. The relay runs on the *agent host* and is baked
 into the docker image, so `bootstrap.py` can copy the right one out at deploy
 time. The solver runs *locally, at plan time*, in whatever process is doing the
 planning -- the CLI, the GUI, a notebook -- and that process may never have seen
 an agent. So the binaries ship inside the pip wheel and conda package as package
-data, and this module is what picks one out.
+data, and this module is what picks one out. There is exactly one place a binary
+comes from: `<metasmith package>/engine/`, which `PYTHONPATH=src` makes the same
+directory `./dev.sh -be` stages into, so a source checkout, the container image
+and an installed conda package all resolve identically. PATH is deliberately not
+consulted -- a second source of binaries is the thing this design is avoiding.
 
 Three things have to be true before a binary is used, and each has its own way
 of failing quietly:
 
-1. **It exists for this platform.** Absence is the normal case, not an error --
-   a source checkout has no binaries at all, and everything still works. Absence
-   means the Python solver runs.
+1. **It exists for this platform.** Absence is recoverable but no longer silent:
+   the Python solver takes over and `solver_backend` says so once, because a
+   correct-and-fifteen-times-slower planner is not something anyone notices.
 2. **It answers `version` with versions this build agrees with.** The repo has
    scar tissue here: `LIN_PAYLOAD_VERSION` drifted from its Groovy emitter and
    failed every containerized task while the fast suite stayed green. A version
@@ -20,19 +28,17 @@ of failing quietly:
    *refusal plus a warning*, never a shrug.
 3. **It advertises the capability being asked for.** The port lands one piece at
    a time; a build that implements the decision contract but not the search says
-   so, and the search falls back without anyone having to remember to.
+   so, and the search falls back -- saying so, per (1) -- without anyone having
+   to remember to.
 
-`METASMITH_SOLVER_ENGINE` overrides the search: a path uses that binary, and
-`0`/`off`/`python`/`none` forces the Python path. The forced-off value is what
-lets the fallback be *exercised* rather than merely present.
+Nothing here reads the environment. The implementation this process uses is
+pinned in code, via `solver_backend._set_solver_class`.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import platform
-from contextlib import contextmanager
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,8 +59,6 @@ ENGINE_DIR = Path(__file__).parent.parent/"engine"
 #: Written by the staging step; the packaging guard reads it. Not used here --
 #: a host-linked build is perfectly good to *run*, it is only wrong to ship.
 BUILD_KIND_FILE = "BUILD_KIND"
-ENV_OVERRIDE = "METASMITH_SOLVER_ENGINE"
-_FORCE_PYTHON = {"0", "off", "no", "false", "python", "none"}
 
 #: How long `version` gets to answer. It reads no input and writes one line; a
 #: binary that cannot manage that is broken, and hanging the planner while it
@@ -148,27 +152,15 @@ def ResetEngineCache():
     _cache = None
 
 def GetEngine() -> EngineInfo|None:
-    """The engine this process will use, probed once."""
+    """The engine this build ships for this platform, probed once."""
     global _cache
     if _cache is not None: return _cache[0]
-
-    override = os.environ.get(ENV_OVERRIDE, "").strip()
-    if override.lower() in _FORCE_PYTHON and override != "":
-        Log.Info(f"{ENV_OVERRIDE}=[{override}]: using the python solver")
+    path = packaged_engine_path()
+    if path is None:
+        # Not a warning here. Absence is a resolution outcome, not a decision;
+        # `solver_backend` is what knows whether anyone asked for this.
         _cache = (None,)
         return None
-    if override:
-        path = Path(override)
-        if not path.is_file():
-            Log.Warn(f"{ENV_OVERRIDE} points at [{path}], which is not a file")
-            _cache = (None,)
-            return None
-    else:
-        path = packaged_engine_path()
-        if path is None:
-            _cache = (None,) # the normal case in a source checkout; not worth a line
-            return None
-
     _cache = (probe_engine(path),)
     return _cache[0]
 
@@ -176,32 +168,6 @@ def EngineFor(capability: str) -> EngineInfo|None:
     """The engine, but only if it can do the thing being asked of it."""
     info = GetEngine()
     return info if info is not None and info.Supports(capability) else None
-
-@contextmanager
-def UsePythonSolver():
-    """Force the python solver for the duration of the block.
-
-    Two callers need this and they need it for opposite reasons. A differential
-    test needs a *reference* -- comparing the engine against itself is a green
-    run that proves nothing, and that is the easiest mistake to make here because
-    both sides go through the same `solve()`. And a test whose subject is the
-    python implementation -- CPython's set layout, say, or how many times a
-    particular branch fires -- stops testing anything at all the moment the
-    search runs somewhere else.
-    """
-    previous = os.environ.get(ENV_OVERRIDE)
-    os.environ[ENV_OVERRIDE] = "python"
-    ResetEngineCache()
-    try:
-        yield
-    finally:
-        if previous is None: os.environ.pop(ENV_OVERRIDE, None)
-        else: os.environ[ENV_OVERRIDE] = previous
-        ResetEngineCache()
-
-def Backend(capability: str) -> str:
-    """`"rust"` or `"python"` -- what will actually run. For tests and reporting."""
-    return "rust" if EngineFor(capability) is not None else "python"
 
 class EngineError(RuntimeError):
     """The engine was believed, asked to work, and failed anyway."""

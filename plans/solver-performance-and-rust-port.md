@@ -1937,3 +1937,126 @@ are all pinned by those suites and none moved.
   is the largest single line item and there is no exact way found to shrink it
   further. Anything beyond this has to beat "exact by construction", which all four
   of these were and both of the dropped ones were not.
+
+## T8 — the engine as the default, not the accelerator
+
+The port was complete after T5e and still opt-in by accident: `solve_by_mcts`
+consulted `EngineFor("solve")`, took the engine when there was one, and fell back
+in silence when there was not. That is the right posture for a feature landing
+piece by piece and the wrong one for a finished replacement — a checkout that
+forgot to stage a binary plans *correctly* and fifteen times slower, with nothing
+on screen. T8 inverts it: the engine is what runs, the Python solver is a stated
+reversion, and an unasked-for fallback says so.
+
+### Selection is an object
+
+`models/solver_backend.py` is new and is the only module anything outside the
+solver should import. It holds `Solver` / `PythonSolver` / `RustSolver`, the
+`_solver_type` global, `_set_solver_class` (which returns the previous value, so
+a scoped override can put it back) and `_get_solver_class`. `solver_engine.py`
+keeps its own job — *is this binary trustworthy*: resolve, probe, refuse — and
+loses everything about *which implementation runs*.
+
+`solve_by_mcts` keeps its exact signature and becomes
+`_get_solver_class()().Solve(...)`; its old body is `_solve_by_mcts_python`.
+Both implementations import each other lazily, because `solver.py` and
+`solver_backend.py` reference one another and an eager import at either end is a
+cycle.
+
+Two things the class had to get right that a boolean would not have:
+
+- **Auto-detection must not memoise into `_solver_type`.** `EngineFor` already
+  caches the probe, so re-checking is free, and writing the class back would make
+  `ResetEngineCache()` unable to re-detect a binary that appeared or moved —
+  which is exactly what every resolution test does.
+- **A pin that cannot be honoured is an error.** `RustSolver.Solve` raises when
+  no engine advertises `solve` rather than quietly serving the other one. Falling
+  back past an explicit request is the same mistake `solve_via_engine` already
+  refuses to make past the handshake.
+
+### `METASMITH_SOLVER_ENGINE` is gone
+
+Deleted outright, along with `_FORCE_PYTHON` and the override branch in
+`GetEngine()`. An environment variable cannot be scoped, cannot be restored, and
+is invisible at the call site — and this is a core execution path, where the
+caller needs to be able to state its choice and hand back what it replaced.
+`UsePythonSolver()` keeps its name and meaning and is now two `_set_solver_class`
+calls. `MSM_SOLVER_TRACE` stays: the Rust binary reads it, metasmith never does,
+and `tests/unit/test_solver_engine_packaging.py` pins that distinction by
+grepping `src/metasmith` for the old name.
+
+What the env var was *also* doing was letting CI run the axis both ways. That is
+now `pytest --solver=auto|python|rust`, applied session-wide through the class.
+`--solver=rust` fails the session when no usable binary is staged rather than
+falling back — this axis's characteristic failure is a green run that silently
+used the other implementation, and a flag that quietly does the opposite of what
+it says would be a new instance of it.
+
+One test needed a shape it did not have before.
+`test_the_reference_side_is_not_the_engine_wearing_a_hat` asserts the *default* —
+engine staged, nothing said, engine runs — so it unpins for its own duration;
+otherwise it reports on
+`--solver=` rather than on the code. The converse is `test_solver_engine.py`'s
+autouse fixture, which restores the ambient pin instead of clearing it, so the
+option survives the one file that sets pins on purpose.
+
+### One resolver, three contexts
+
+No new mechanism, which was the point. `packaged_engine_path()` still looks only
+at `<metasmith package>/engine/msm_solver.<arch>-<os>`; `PYTHONPATH=src` makes
+that `src/metasmith/engine/`, which is where `-be`/`-bel` stage and where an
+installed wheel resolves. PATH is deliberately not consulted — a second source of
+binaries is what this design exists to avoid, and it is the one thing that would
+behave differently in a container than in a checkout.
+
+The fake-binary tests moved onto that same resolver: each writes its fake as
+`msm_solver.{platform_slot()}` into a `tmp_path` patched over `ENGINE_DIR`, so the
+refusals are exercised through the real lookup rather than through a test-only
+door that the env var used to provide.
+
+`-bd` gained `_assert_solver_engine`, which `-bp` and `-bc` already ran. The gap
+was *partly* self-detecting — `engine/` sits inside the tree `_build_hash` walks,
+so a stale stage moves `FULL_VERSION` and `_assert_dist_matches_source` fires —
+but it reported a hash mismatch instead of naming the cause.
+`tests/unit/test_solver_engine_packaging.py` pins the three silent ones: the
+resolver is the package's own `engine/`, `setup.py` still lists `engine/**`, and
+all three shipping verbs run the guard.
+
+### Gates
+
+| gate | result |
+|---|---|
+| `tests/solver --solver=rust` | **376 passed**, 1 xfailed |
+| `tests/solver --solver=python` | **376 passed**, 1 xfailed |
+| fast suite | **1,740 passed**, 7 skipped, 4 xfailed |
+| `tests/perf --solver=rust` / `--solver=python` | **13 passed** each |
+| `git diff tests/solver/fingerprints.json` | **empty** |
+| four shipped templates, default vs pinned python | **identical fingerprints** |
+| `./dev.sh -bd` on a `-bel` stage | refuses, naming the three missing slots and `BUILD_KIND=local` |
+| `-be` then `-bp` | 4 slots in both the sdist and the wheel |
+| wheel in a fresh venv, `env -i`, no metasmith on PATH | resolves inside site-packages, `Backend("solve") == "rust"` |
+
+`tests/perf` needed one change to survive a session-wide pin. Its `engine`
+fixture now pins `RustSolver` for its own duration, because
+`test_the_refiner_under_load_stays_within_its_measured_cost` is a stopwatch on
+the *engine's* refiner and takes `problem.solve()` at ambient: under
+`--solver=python` it measured the other implementation against a number that was
+never about it and reported 298s against an 8s bound. Asking for the `engine`
+fixture is the statement that the module's subject is the engine, so the fixture
+now says so.
+
+The last two are the whole of the drop-in claim. Timing on the same box, default
+path against the reversion: `metagenomics_from_paired_reads` 0.77s versus 8.08s,
+`annotation_palette` 0.84s versus 0.43s, `isolate_assembly` 0.64s versus 0.55s,
+`pangenome_heatmap` 0.40s versus 0.26s — the three small templates are dominated
+by library discovery and the subprocess hop costs more than it saves on them,
+which is worth knowing and does not change the default.
+
+### Carried forward
+
+- `_solver_type` and `_set_solver_class` are underscore-named at the user's
+  request and are nonetheless imported by `tests/conftest.py` and three test
+  modules. If notebook users are meant to reach for this, a public alias beside
+  them costs nothing.
+- The refiner/`rectify` laundering and `_is_valid`'s incomplete `# looped` branch
+  are still carried in both implementations, unchanged by this task.

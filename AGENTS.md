@@ -1045,16 +1045,21 @@ skipping them ships something empty that nobody notices for a while:
 - `-be` — the solver engine (`main/solver_engine/`, same four targets, same upstream image via
   `-bec`). Unlike the relay it is **not** in the docker image: the solver runs locally at plan
   time, so `-be` stages the binaries into `src/metasmith/engine/` and they ship as package data
-  in the wheel and sdist. Absence is a supported state — metasmith falls back to the Python
-  solver — which is precisely why it needs a guard: a wheel with no engine plans correctly and
-  slowly, so nothing fails. `-bp`/`-bc` run `_assert_solver_engine`; override
-  `MSM_SKIP_SOLVER_CHECK=1`. It also refuses a `-bel` host build via the `BUILD_KIND` marker,
+  in the wheel and sdist. That staging directory is the *only* place a binary is looked for, in
+  all three contexts: `PYTHONPATH=src` makes it the package's own `engine/`, which is where an
+  installed wheel resolves too, so nothing is added to PATH and there is one lookup rather than
+  three. Run `-bel` once and source runs use the engine.
+  The engine carries the whole search and is the default — 7.5s versus 1.1s on
+  `metagenomics_from_paired_reads`, same plan — so absence is recoverable but not free: a wheel
+  with no engine plans correctly and slowly, and nothing fails. Hence the guard on every
+  shipping build (`-bp`/`-bc`/`-bd` run `_assert_solver_engine`; override
+  `MSM_SKIP_SOLVER_CHECK=1`), which also refuses a `-bel` host build via the `BUILD_KIND` marker,
   since nothing about a Linux ELF says musl versus the build machine's glibc.
-  The engine now carries the whole search, so "plans correctly and slowly" is
-  literal: 7.5s versus 1.1s on `metagenomics_from_paired_reads`, same plan.
-  `METASMITH_SOLVER_ENGINE=python` forces the fallback, and
-  `MSM_SOLVER_TRACE=1` makes the engine narrate its decisions and its frontier
-  on stderr, which is how a differential failure gets localised to a draw.
+  Reverting to the Python solver is a class pin — `solver_backend._set_solver_class`,
+  `UsePythonSolver()`, or `pytest --solver=python` — never an environment variable; an
+  *unasked-for* fallback warns once per process. `MSM_SOLVER_TRACE=1` is read by the binary
+  itself and makes it narrate its decisions and its frontier on stderr, which is how a
+  differential failure gets localised to a draw.
 
 ## `examples/` — minimal regression library
 

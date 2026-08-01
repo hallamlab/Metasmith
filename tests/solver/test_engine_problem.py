@@ -20,11 +20,10 @@ from __future__ import annotations
 
 import pytest
 
+from metasmith.models.solver_backend import Backend, UsePythonSolver
 from metasmith.models.solver_engine import (
     SOLVER_WIRE_VERSION,
-    Backend,
     CallEngine,
-    UsePythonSolver,
     packaged_engine_path,
     probe_engine,
 )

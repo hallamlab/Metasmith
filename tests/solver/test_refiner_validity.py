@@ -54,7 +54,7 @@ def _python_solver():
     by patching them; with the search running elsewhere it would count zero and
     assert nothing.
     """
-    from metasmith.models.solver_engine import UsePythonSolver
+    from metasmith.models.solver_backend import UsePythonSolver
     with UsePythonSolver():
         yield
 

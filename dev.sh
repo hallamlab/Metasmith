@@ -315,6 +315,11 @@ case $1 in
     ;;
     -bd) # docker
         _assert_gui_bundle || exit 1
+        # The image installs the sdist, so it carries whatever is staged here.
+        # A stale stage is *mostly* self-detecting -- engine/ sits inside the
+        # tree _build_hash walks, so staging changes FULL_VERSION -- but that
+        # reports a hash mismatch rather than naming the cause.
+        _assert_solver_engine || exit 1
         # pre-download requirements
         mkdir -p $HERE/lib
         cd $HERE/lib
@@ -395,6 +400,11 @@ case $1 in
 
     -r)
         shift
+        # This also settles where the solver engine comes from: putting src/ on
+        # the path makes src/metasmith/engine/ the package's own engine dir --
+        # the exact directory an installed wheel resolves against, and the one
+        # -be/-bel stage into. So there is one lookup in all three contexts and
+        # nothing to add to PATH. Run -bel once and source runs use the engine.
         export PYTHONPATH=$HERE/src:$PYTHONPATH
         python -m $NAME $@
     ;;

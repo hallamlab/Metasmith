@@ -90,15 +90,17 @@ occur solving the metagenomics template. Anything that treats a signature as an
 identity (dedup, removal, memoization) is a correctness risk, not an
 optimization.
 
-**A green run does not tell you which solver ran it.** `msm_solver` is used when
-it is present and can do the job, and absent it the Python solver runs — so this
-axis passes either way and would go on passing if the Rust side quietly stopped
-being reached. `test_solver_engine.py` is where that is made visible:
-`Backend(capability)` says which one, the resolution branches are driven with
-fake binaries so the refusals fire on every machine, and
-`METASMITH_SOLVER_ENGINE=python` forces the fallback so it is a path something
-runs rather than a path that merely exists. Run the axis both ways when touching
-either implementation.
+**A green run does not tell you which solver ran it.** `msm_solver` is the
+default and the Python solver is the reversion, but both answer the same
+`solve_by_mcts` — so this axis passes either way and would go on passing if the
+Rust side quietly stopped being reached. `test_solver_engine.py` is where that is
+made visible: `Backend(capability)` says which one, and the resolution branches
+are driven with fake binaries staged into a patched `ENGINE_DIR`, so the refusals
+fire on every machine rather than only on one that shipped a bad build.
+`pytest --solver=python|rust` runs the whole axis on a stated implementation, and
+`--solver=rust` *fails* rather than falling back when no binary is staged —
+asking for one thing and silently getting the other is the bug, not the
+workaround. Run it both ways when touching either implementation.
 
 **Two version constants, and they are not interchangeable.**
 `SOLVER_RNG_VERSION` covers the decision contract, `SOLVER_WIRE_VERSION` the
@@ -117,7 +119,9 @@ solves, for exactly this reason. The same applies to any test whose subject is
 the Python implementation rather than the answer: `test_iteration_order.py` salts
 CPython's hash layout and `test_refiner_validity.py` counts how often a branch of
 the Python refiner fires, and neither means anything with the search running
-elsewhere. Both pin the whole file.
+elsewhere. Both pin the whole file. A test that instead asserts the *default* —
+engine staged, nothing said, engine runs — has to unpin for its own duration, or
+it reports on `--solver=` rather than on the code.
 
 **One seed per problem hides a whole regime.** The stream decides how big a plan
 the search settles on, and the refiner's cost climbs steeply with plan size:

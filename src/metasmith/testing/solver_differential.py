@@ -55,14 +55,13 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
+from ..models.solver_backend import Backend, UsePythonSolver
 from ..models.solver_engine import (
     SOLVER_WIRE_VERSION,
-    Backend,
     CallEngine,
     EngineError,
     EngineFor,
     EngineInfo,
-    UsePythonSolver,
 )
 from ..models.solver_wire import decode_plan, encode_problem
 from .solver_verification import (

@@ -332,22 +332,23 @@ def solve_by_mcts(
     max_iter: int=256,
     max_refine: int=256,
 ) -> Solution:
-    # The Rust engine, when this build has one that advertises `solve`. Absence
-    # is normal and silent -- a source checkout ships no binaries -- and
-    # `METASMITH_SOLVER_ENGINE=python` forces this path so the fallback is a
-    # thing CI runs rather than a thing CI contains. Past the handshake an error
-    # is not caught: the engine has already claimed the right wire version and
-    # the right capability, so falling back would turn a real defect into a
-    # mysterious slowdown.
-    from .solver_engine import EngineFor
-    _engine = EngineFor("solve")
-    if _engine is not None:
-        from .solver_wire import solve_via_engine
-        return solve_via_engine(
-            _engine, given, transforms, target,
-            seed=seed, max_iter=max_iter, max_refine=max_refine,
-        )
+    """The planner's one entry point. Which implementation answers it is a
+    choice `solver_backend` owns -- the Rust engine by default, the Python body
+    below when something pinned it or when no usable binary is staged."""
+    from .solver_backend import _get_solver_class
+    return _get_solver_class()().Solve(
+        given, transforms, target,
+        seed=seed, max_iter=max_iter, max_refine=max_refine,
+    )
 
+def _solve_by_mcts_python(
+    given: list[set[Endpoint]],
+    transforms: Iterable[Transform],
+    target: Transform,
+    seed: int=42,
+    max_iter: int=256,
+    max_refine: int=256,
+) -> Solution:
     # One stream for the whole solve, owned by this call. The old
     # `np.random.seed(seed)` mutated process-global state: two solves in one
     # process could not be independent, and any other numpy consumer silently

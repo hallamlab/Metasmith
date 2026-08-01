@@ -31,7 +31,7 @@ def _python_solver():
     CPython's set layout is this file's whole subject; there is none to salt in
     the engine, and a green run there would mean nothing at all.
     """
-    from metasmith.models.solver_engine import UsePythonSolver
+    from metasmith.models.solver_backend import UsePythonSolver
     with UsePythonSolver():
         yield
 

@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import pytest
 
-from metasmith.models.solver_engine import Backend, EngineFor, UsePythonSolver
+from metasmith.models.solver_backend import Backend, UsePythonSolver, _set_solver_class
+from metasmith.models.solver_engine import EngineFor
 from metasmith.testing.solver_differential import (
     SOLVE_SEEDS,
     SWEEP_PROFILES,
@@ -46,13 +47,22 @@ def test_the_reference_side_is_not_the_engine_wearing_a_hat(engine):
     So the guard is asserted directly: outside the block the engine is what
     runs, inside it the Python solver is, and the sweep's reference helper
     carries that same assertion at every call site.
+
+    Unpinned for the duration, deliberately. The claim under test is about the
+    *default* -- with an engine staged and nothing said, the engine runs -- and
+    a session-wide `--solver=python` would otherwise make this test report on
+    the flag rather than on the code.
     """
-    assert Backend("solve") == "rust", (
-        "this test is vacuous without an engine -- the fixture should have skipped"
-    )
-    with UsePythonSolver():
-        assert Backend("solve") == "python"
-    assert Backend("solve") == "rust", "UsePythonSolver leaked past its block"
+    previous = _set_solver_class(None)
+    try:
+        assert Backend("solve") == "rust", (
+            "this test is vacuous without an engine -- the fixture should have skipped"
+        )
+        with UsePythonSolver():
+            assert Backend("solve") == "python"
+        assert Backend("solve") == "rust", "UsePythonSolver leaked past its block"
+    finally:
+        _set_solver_class(previous)
 
 
 def test_the_sweep_visits_every_profile_and_every_stream():

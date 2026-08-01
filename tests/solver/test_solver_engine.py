@@ -4,12 +4,14 @@ Two halves, and they are deliberately independent.
 
 The first half needs no Rust at all. Every branch of the resolution logic is
 driven with a *fake* engine -- a script that prints whatever handshake the test
-wants -- so the refusals get exercised on every machine and in CI, including the
-ones that only ever fire when someone ships a mismatched build. The fallback in
-particular is a real path here, not a flag nobody runs: the suite that follows
-this file has always run with no binary present, and
-`test_a_solve_is_identical_with_the_engine_forced_off` makes that an assertion
-instead of an accident.
+wants, written into a `tmp_path` standing in for `ENGINE_DIR` -- so the refusals
+get exercised on every machine and in CI, including the ones that only ever fire
+when someone ships a mismatched build. There is one resolver and no environment
+override, so patching the directory is how a fake gets found; that is the same
+lookup an installed wheel does. The fallback in particular is a real path here,
+not a flag nobody runs: the suite that follows this file has always run with no
+binary present, and `test_a_solve_is_identical_with_the_python_solver_pinned`
+makes that an assertion instead of an accident.
 
 The second half is the differential gate and skips when no binary is staged. It
 replays generated scripts of decisions through both implementations and compares
@@ -25,11 +27,16 @@ import sys
 import pytest
 
 from metasmith.models import solver_engine as engine_module
+from metasmith.models.solver_backend import (
+    Backend,
+    PythonSolver,
+    ResetSolverSelection,
+    RustSolver,
+    _set_solver_class,
+)
 from metasmith.models.solver_engine import (
     ENGINE_NAME,
-    ENV_OVERRIDE,
     SOLVER_WIRE_VERSION,
-    Backend,
     CallEngine,
     EngineError,
     EngineFor,
@@ -44,24 +51,45 @@ from metasmith.testing.rng_trace import execute_ops, execute_ops_via_engine, gen
 
 
 @pytest.fixture(autouse=True)
-def _isolate_engine_cache(monkeypatch):
-    """The probe is cached per process; every test here changes what it'd find."""
-    monkeypatch.delenv(ENV_OVERRIDE, raising=False)
+def _isolate_engine_cache():
+    """The probe is cached per process; every test here changes what it'd find.
+
+    The class pin is handled in both directions, and *restored* rather than
+    cleared: this file is where the pin gets set on purpose, so a leak out of it
+    would decide the answer for every test after it in the session -- a whole
+    axis quietly measuring the wrong implementation. Restoring also keeps
+    `--solver=` intact for the files that follow.
+    """
+    previous = _set_solver_class(None)
     ResetEngineCache()
+    ResetSolverSelection()
     yield
+    _set_solver_class(previous)
     ResetEngineCache()
 
 
-def _fake_engine(tmp_path, body: str, name: str="fake_engine"):
+def _fake_engine(tmp_path, body: str, name: str|None=None):
     """A binary that behaves however the test needs it to.
+
+    Written under the name `packaged_engine_path` looks for by default, so a
+    test that also patches `ENGINE_DIR` to `tmp_path` finds it through the one
+    real resolver rather than through a test-only door.
 
     `sys.executable` rather than `python` in the shebang: the test env is a
     conda env that may not put a bare `python` on PATH, and a fake that fails to
     launch would pass the refusal tests for the wrong reason.
     """
-    p = tmp_path/name
+    p = tmp_path/(name or f"{ENGINE_NAME}.{platform_slot()}")
     p.write_text(f"#!{sys.executable}\nimport json, sys\n{body}\n", encoding="utf-8")
     p.chmod(p.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    return p
+
+
+def _staged(tmp_path, monkeypatch, body: str):
+    """A fake engine, staged where the resolver will find it."""
+    monkeypatch.setattr(engine_module, "ENGINE_DIR", tmp_path)
+    p = _fake_engine(tmp_path, body)
+    ResetEngineCache()
     return p
 
 
@@ -101,22 +129,34 @@ def test_a_missing_binary_is_the_normal_case(tmp_path, monkeypatch):
     assert Backend("rng") == "python"
 
 
-def test_the_env_var_can_force_the_python_path(tmp_path, monkeypatch):
-    """The fallback is only a real path if something exercises it on purpose."""
-    good = _fake_engine(tmp_path, _handshake())
-    monkeypatch.setattr(engine_module, "ENGINE_DIR", tmp_path)
-    monkeypatch.setenv(ENV_OVERRIDE, str(good))
+def test_the_class_pin_forces_the_python_path(tmp_path, monkeypatch):
+    """The fallback is only a real path if something exercises it on purpose.
+
+    Note what the pin does *not* touch: a staged engine is still resolved and
+    still believed. Selection is a statement about this process, not a claim
+    that the binary is bad, which is why the pin lives beside the probe rather
+    than inside it.
+    """
+    _staged(tmp_path, monkeypatch, _handshake(capabilities=["rng", "solve"]))
     assert GetEngine() is not None
+    assert Backend("solve") == "rust"
 
-    ResetEngineCache()
-    monkeypatch.setenv(ENV_OVERRIDE, "python")
-    assert GetEngine() is None
+    _set_solver_class(PythonSolver)
+    assert Backend("solve") == "python"
     assert Backend("rng") == "python"
+    assert GetEngine() is not None, "a pin selects an implementation, it does not unstage one"
+
+    _set_solver_class(None)
+    assert Backend("solve") == "rust", "None restores automatic detection"
 
 
-def test_the_env_var_pointing_nowhere_falls_back(monkeypatch, tmp_path):
-    monkeypatch.setenv(ENV_OVERRIDE, str(tmp_path/"not-here"))
-    assert GetEngine() is None
+def test_the_pin_hands_back_what_it_replaced(tmp_path, monkeypatch):
+    """`_set_solver_class` returns the previous value so a scoped override can
+    put it back -- which is the whole of what `UsePythonSolver` does."""
+    _staged(tmp_path, monkeypatch, _handshake(capabilities=["rng", "solve"]))
+    assert _set_solver_class(RustSolver) is None
+    assert _set_solver_class(PythonSolver) is RustSolver
+    assert _set_solver_class(None) is PythonSolver
 
 
 @pytest.mark.parametrize(
@@ -155,8 +195,7 @@ def test_a_broken_binary_is_refused_rather_than_trusted(tmp_path, body, ids):
 
 def test_a_capability_it_does_not_advertise_falls_back(tmp_path, monkeypatch):
     """The port lands one piece at a time, and says which piece it has landed."""
-    monkeypatch.setattr(engine_module, "ENGINE_DIR", tmp_path)
-    monkeypatch.setenv(ENV_OVERRIDE, str(_fake_engine(tmp_path, _handshake())))
+    _staged(tmp_path, monkeypatch, _handshake())
     assert EngineFor("rng") is not None
     assert EngineFor("solve") is None
     assert Backend("solve") == "python"
@@ -173,7 +212,7 @@ def test_a_believed_engine_that_then_fails_raises(tmp_path, monkeypatch):
         "\nif sys.argv[1] != 'version':\n"
         "    sys.stderr.write('boom'); sys.exit(1)\n"
     )
-    monkeypatch.setenv(ENV_OVERRIDE, str(_fake_engine(tmp_path, body)))
+    _staged(tmp_path, monkeypatch, body)
     info = GetEngine()
     assert info is not None
     with pytest.raises(EngineError):
@@ -181,10 +220,23 @@ def test_a_believed_engine_that_then_fails_raises(tmp_path, monkeypatch):
 
 
 def test_a_believed_engine_round_trips_a_payload(tmp_path, monkeypatch):
-    monkeypatch.setenv(ENV_OVERRIDE, str(_fake_engine(tmp_path, _handshake())))
+    _staged(tmp_path, monkeypatch, _handshake())
     info = GetEngine()
     assert info is not None
     assert CallEngine(info, "rng-trace", {"seed": 7}) == {"echo": {"seed": 7}}
+
+
+def test_the_rust_solver_refuses_rather_than_serving_the_other_one(tmp_path, monkeypatch):
+    """A pin that cannot be honoured is an error, not a silent substitution.
+
+    `RustSolver` is pinned with an engine that does not advertise `solve`. The
+    tempting behaviour -- fall back, plan correctly, say nothing -- turns an
+    explicit request into a fifteen-times slowdown with no evidence.
+    """
+    _staged(tmp_path, monkeypatch, _handshake())
+    _set_solver_class(RustSolver)
+    with pytest.raises(EngineError):
+        RustSolver().Solve([set()], [], None)
 
 
 # --------------------------------------------------------------------------
@@ -202,12 +254,13 @@ def test_the_search_runs_on_the_engine_when_there_is_one():
     assert Backend("solve") == "rust"
 
 
-def test_a_solve_is_identical_with_the_engine_forced_off(monkeypatch):
-    """The fallback gate. Trivially true while no engine solves; not later.
+def test_a_solve_is_identical_with_the_python_solver_pinned():
+    """The drop-in claim, as a gate: reverting must not change the plan.
 
-    It is written now so that the day the Rust search is switched on, the
-    question "does turning it off still give the same plan" is already being
-    asked on every run rather than being remembered.
+    Trivially true on a machine with no engine, and the point of the whole
+    exercise on one that has it -- the default path and the reversion have to
+    fingerprint the same, or "drop-in replacement" was a description of an
+    intention rather than of the code.
     """
     from metasmith.testing.solver_bench import CORPUS
     from metasmith.testing.solver_verification import generate_problem, plan_fingerprint
@@ -215,12 +268,10 @@ def test_a_solve_is_identical_with_the_engine_forced_off(monkeypatch):
     seed, dials = CORPUS[0][1], CORPUS[0][2]
     problem = generate_problem(seed, dials, name=CORPUS[0][0])
 
-    ResetEngineCache()
-    with_engine = plan_fingerprint(problem.solve())
-    monkeypatch.setenv(ENV_OVERRIDE, "python")
-    ResetEngineCache()
+    by_default = plan_fingerprint(problem.solve())
+    _set_solver_class(PythonSolver)
     assert Backend("solve") == "python"
-    assert plan_fingerprint(problem.solve()) == with_engine
+    assert plan_fingerprint(problem.solve()) == by_default
 
 
 # --------------------------------------------------------------------------

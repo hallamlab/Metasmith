@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import pytest
 
+from metasmith.models.solver_backend import RustSolver, _set_solver_class
 from metasmith.models.solver_engine import EngineFor
 from metasmith.testing.solver_differential import (
     SOLVE_SEEDS,
@@ -30,10 +31,20 @@ from metasmith.testing.solver_differential import (
 
 @pytest.fixture(scope="module")
 def engine():
+    """The engine, and a pin saying so.
+
+    Asking for this fixture *is* the statement that the module's subject is the
+    engine, so it pins for its own duration rather than inheriting `--solver=`.
+    The cost bound below is a tripwire on the engine's refiner: run on the
+    python one it measures a different implementation against a number that was
+    never about it, and reports a factor of eighty as a regression.
+    """
     info = EngineFor("solve")
     if info is None:
         pytest.skip("no msm_solver advertising `solve` (./dev.sh -bel)")
-    return info
+    previous = _set_solver_class(RustSolver)
+    yield info
+    _set_solver_class(previous)
 
 
 def test_the_two_implementations_agree_at_corpus_scale(engine):

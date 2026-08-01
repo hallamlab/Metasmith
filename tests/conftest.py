@@ -49,6 +49,43 @@ _DIR_MARKERS: list[tuple[str, list[str]]] = [
 ]
 
 
+def pytest_addoption(parser):
+    """`--solver=` -- which implementation the whole session's solves run on.
+
+    This is what lets one axis be run both ways, which it has to be: the
+    failure mode here is a *green* run that silently used the other
+    implementation, and no assertion in `tests/solver` notices it. `rust` fails
+    the session outright when no usable binary is staged, rather than quietly
+    doing what `auto` would have done -- asking for a thing and getting
+    something else is the shape of the bug, not the workaround for it.
+    """
+    parser.addoption(
+        "--solver", action="store", default="auto",
+        choices=["auto", "python", "rust"],
+        help="solver implementation for this session (default: auto)",
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _solver_selection(request):
+    from metasmith.models.solver_backend import (
+        PythonSolver, RustSolver, _set_solver_class,
+    )
+    choice = request.config.getoption("--solver")
+    if choice == "auto":
+        yield
+        return
+    if choice == "rust" and not RustSolver.Available():
+        pytest.fail(
+            "--solver=rust, but no msm_solver advertising `solve` is staged for"
+            " this platform (./dev.sh -bel). Refusing to run the python solver"
+            " under a rust label."
+        )
+    previous = _set_solver_class(PythonSolver if choice == "python" else RustSolver)
+    yield
+    _set_solver_class(previous)
+
+
 def pytest_collection_modifyitems(config, items):
     # A file matching no prefix gets NO marker and therefore runs in no gate.
     # That is silent by construction -- the tests collect, pass locally, and are
