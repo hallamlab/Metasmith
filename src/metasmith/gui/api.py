@@ -1178,6 +1178,29 @@ def _resolve_user_template_types(p, inline: dict) -> dict:
     return inline | {"types": resolved}
 
 
+def _resolve_user_template_libraries(available: list[str], names: list[str]) -> list[str]:
+    """The transform/resource-library counterpart of `_resolve_user_template_types`.
+
+    A user template that narrowed which libraries it draws from (the usual
+    case is every one, which `save_as_template` leaves empty and this never
+    sees) records each by directory name rather than by path, for the same
+    reason: the project it was saved from may not be the one creating a
+    workflow from it. `available` is this project's own stdlib list, and a
+    name is matched against it by directory name.
+    """
+    by_name = {Path(a).name: a for a in available}
+    resolved = []
+    for v in names:
+        base = Path(v).name
+        found = by_name.get(base)
+        assert found, (
+            f"template needs library [{base}], not found in this project's "
+            f"standard library"
+        )
+        resolved.append(found)
+    return resolved
+
+
 @bp.post("/workflows")
 def create_workflow():
     """Create a workflow and its live input library.
@@ -1210,6 +1233,13 @@ def create_workflow():
         # in the body still wins, so a caller can override what it starts from
         packed = template.spec.Pack()
         request_fields = {k: packed[k] for k in Spec.FIELDS} | request_fields
+        if tmpl_source == "user":
+            found = stdlib.discover(p.root)
+            for key in ("transform_libraries", "resource_libraries"):
+                if request_fields.get(key):
+                    request_fields[key] = _resolve_user_template_libraries(
+                        found[key], request_fields[key],
+                    )
     wf = p.create_workflow(name=name, request=request_fields)
 
     types = b.get("type_libraries")
@@ -1315,14 +1345,15 @@ def fork_workflow(name):
 def save_as_template(name):
     """Save this workflow's current recipe as a starting point to reuse.
 
-    A template is just a save: what the workflow's own request already says,
-    verbatim (`transform_libraries`/`resource_libraries` are almost always
-    unset -- the GUI never fills them in -- and a workflow started from the
-    result falls back to *its own* project's stdlib at generate time, same as
-    a blank workflow already does). No library location is ever frozen into
-    it, so it never has an absolute path to break on in another checkout --
-    including this one's own, when `MetasmithLibraries` is a symlink to a
-    shared checkout rather than a copy inside the project.
+    A template is just a save: what the workflow's own request already says --
+    almost always nothing, since the GUI never narrows `transform_libraries`/
+    `resource_libraries` from "every one this project has" -- and when it
+    does say something, only the library *names*, not where this project
+    happens to keep them (see `_resolve_user_template_libraries`). No library
+    location is ever frozen into a saved template, so it never has an
+    absolute path to break on in another checkout -- including this one's
+    own, when `MetasmithLibraries` is a symlink to a shared checkout rather
+    than a copy inside the project.
 
     The input library is rebuilt the same way, one level further: every item
     becomes a fresh deferred placeholder (`op_data.derive_template_library`),
@@ -1355,11 +1386,18 @@ def save_as_template(name):
         type_library_paths=stdlib.discover(p.root)["data_types"],
     )
     packed_input = derived.Pack() | {"types": {ns: ns for ns in derived.types}}
+    # By directory name, not by path -- same reasoning as `types` above. Left
+    # empty (the normal case) rather than named at all, so a workflow started
+    # from this falls back to *its own* project's full stdlib at generate
+    # time, same as a blank workflow already does.
+    def _names(libs) -> list[str]:
+        return [Path(lp).name for lp in libs]
+
     spec = Spec(
         input_library=packed_input,
         target_types=targets,
-        transform_libraries=list(wf.request.get("transform_libraries") or []),
-        resource_libraries=list(wf.request.get("resource_libraries") or []),
+        transform_libraries=_names(wf.request.get("transform_libraries") or []),
+        resource_libraries=_names(wf.request.get("resource_libraries") or []),
         sample_type=wf.request.get("sample_type"),
         shared_input_paths=list(wf.request.get("shared_input_paths") or []),
     )

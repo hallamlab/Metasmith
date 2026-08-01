@@ -1345,6 +1345,37 @@ class TestSaveAsTemplate:
             ).get_json()["items"]
             assert len(items) == 1 and items[0]["type_name"] == "mock::assembly"
 
+    def test_saves_when_transform_libraries_were_narrowed_under_a_symlinked_stdlib(
+        self, _app, tmp_path
+    ):
+        """Narrowing which libraries a workflow draws from writes their real,
+        resolved paths into its own request -- the same paths a symlinked
+        stdlib resolves to outside the project. Saving that as a template
+        must not freeze those in either: only the library names travel, same
+        as a type namespace.
+        """
+        root = _fabricate_project(
+            tmp_path / "project", mlib_target=tmp_path / "shared_stdlib_checkout",
+        )
+        for client in _client_on(_app, root, tmp_path / "ssh_config"):
+            name = self._seeded(client, count=1)
+            available = stdlib.discover(root)["transform_libraries"]
+            assert client.patch(
+                f"/api/workflows/{name}", json={"transform_libraries": available},
+            ).status_code == 200
+
+            r = client.post(
+                f"/api/workflows/{name}/save_as_template", json={"name": "my-tpl"},
+            )
+            assert r.status_code == 201, r.get_json()
+
+            made = client.post("/api/workflows", json={"template": "my-tpl"})
+            assert made.status_code == 201, made.get_json()
+            detail = client.get(f"/api/workflows/{made.get_json()['name']}").get_json()
+            assert sorted(Path(p).name for p in detail["request"]["transform_libraries"]) == (
+                sorted(Path(p).name for p in available)
+            )
+
 
 class TestTypeResync:
     """A workflow's input library must not stay pinned to the stdlib as it
