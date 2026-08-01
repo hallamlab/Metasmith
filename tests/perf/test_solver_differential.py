@@ -14,11 +14,17 @@ A case the sweep reports as unadjudicated is settled by rerunning it with
 ``--timeout 0``; the report prints the flags. That matters because the cap is
 not a verdict, and a sweep that quietly counted capped cases as agreement would
 report 100% on a corpus it never finished reading.
+
+**Opt-in**, for the reason given in the fast-axis file: this is a gate on the
+port, not on the shipped solver, and it charges a python solve per case to be
+one. Pass `--python-solver`.
 """
 
 from __future__ import annotations
 
 import pytest
+
+pytestmark = pytest.mark.python_solver
 
 from metasmith.models.solver_backend import RustSolver, _set_solver_class
 from metasmith.models.solver_engine import EngineFor

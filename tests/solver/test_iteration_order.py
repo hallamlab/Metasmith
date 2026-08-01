@@ -19,11 +19,18 @@ the Rust port cannot reproduce, because the port has no CPython set to imitate.
 This is a hard prerequisite for the port, not a style preference. The
 alternative to stating the order is reimplementing CPython's set probing
 sequence in Rust and pinning it to an interpreter version.
+
+**Opt-in** (`--python-solver`). The subject is CPython's set layout, so there is
+nothing here to run against the engine -- it has no set to salt. The prerequisite
+this states was met before the port landed; with the python solver retiring, the
+file is history that can still be re-run rather than a standing gate.
 """
 
 from __future__ import annotations
 
 import pytest
+
+pytestmark = pytest.mark.python_solver
 
 @pytest.fixture(autouse=True)
 def _python_solver():

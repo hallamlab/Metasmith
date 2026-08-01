@@ -30,6 +30,11 @@ invisible.
 The tests below assert the chain is broken and keep tracing the same links, so a
 regression says which one came back.
 
+**Opt-in** (`--python-solver`). Tracing is how this file localises a break, and
+there is nothing to trace in the engine; the outcome it protects is pinned
+implementation-agnostically in `test_known_unsound.py`, which does run by
+default. Reach for this when that one goes red and the reason is not obvious.
+
 The anchor problem is chosen, not arbitrary: it has to exercise the whole chain
 at once, and **which problems do is a property of how the solver breaks ties**,
 not of the defect. `cyclic-217` was the anchor until T4 swapped numpy's stream
@@ -51,6 +56,9 @@ from __future__ import annotations
 import sys
 
 import pytest
+
+pytestmark = pytest.mark.python_solver
+
 
 @pytest.fixture(autouse=True)
 def _python_solver():

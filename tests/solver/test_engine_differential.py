@@ -14,11 +14,19 @@ The size here is the size that stays in the fast gate. The full sweep lives in
 
 The first test in this file is not about the solver at all. It is about whether
 this file means anything.
+
+**Opt-in.** Everything here runs the python solver as the engine's reference, so
+it is off unless `--python-solver` is passed. The engine is what ships; a
+routine run is asking whether *it* is correct, not whether a second
+implementation agrees with it. This is what to reach for when there is reason to
+suspect the engine.
 """
 
 from __future__ import annotations
 
 import pytest
+
+pytestmark = pytest.mark.python_solver
 
 from metasmith.models.solver_backend import Backend, UsePythonSolver, _set_solver_class
 from metasmith.models.solver_engine import EngineFor

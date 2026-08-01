@@ -23,6 +23,7 @@ Both halves of that are load-bearing, and they pull against each other:
 
 from __future__ import annotations
 
+import pytest
 import time
 from collections import Counter
 
@@ -62,6 +63,7 @@ def test_a_densely_cyclic_universe_does_not_stall_the_preamble():
     )
 
 
+@pytest.mark.python_solver
 def test_transforms_sharing_a_key_each_keep_their_own_distance():
     """The discriminator is duplicate keys *present* in the table at all.
 

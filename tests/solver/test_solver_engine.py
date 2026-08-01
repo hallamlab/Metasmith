@@ -254,6 +254,7 @@ def test_the_search_runs_on_the_engine_when_there_is_one():
     assert Backend("solve") == "rust"
 
 
+@pytest.mark.python_solver
 def test_a_solve_is_identical_with_the_python_solver_pinned():
     """The drop-in claim, as a gate: reverting must not change the plan.
 

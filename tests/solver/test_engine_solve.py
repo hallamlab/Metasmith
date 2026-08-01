@@ -17,11 +17,19 @@ different sequences.
 
 The `describe` gate in `test_engine_problem.py` runs first for a reason: if the
 problem was read differently, everything here fails and none of it says why.
+
+**Opt-in** (`--python-solver`). Every test here goes through `_both`, which
+forces a python solve to have something to compare against, and the python
+solver is on its way out. What still holds the engine to account without it is
+`check_plan`, which shares no code with either implementation -- see
+`test_known_unsound.py` and the corpus pin.
 """
 
 from __future__ import annotations
 
 import pytest
+
+pytestmark = pytest.mark.python_solver
 
 from metasmith.models.solver_backend import Backend, UsePythonSolver
 from metasmith.models.solver_engine import (

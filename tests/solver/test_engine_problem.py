@@ -134,6 +134,7 @@ def _describe_engine(engine, encoded):
     }
 
 
+@pytest.mark.python_solver  # the reference side is a python solve
 @pytest.mark.parametrize("name,problem", list(_cases()), ids=lambda x: x if isinstance(x, str) else "")
 def test_the_engine_derives_what_the_solver_derives(engine, name, problem):
     encoded = encode_problem(

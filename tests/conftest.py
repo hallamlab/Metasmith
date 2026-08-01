@@ -64,6 +64,12 @@ def pytest_addoption(parser):
         choices=["auto", "python", "rust"],
         help="solver implementation for this session (default: auto)",
     )
+    parser.addoption(
+        "--python-solver", action="store_true", default=False,
+        help="also run the tests that need the python solver (see the"
+             " `python_solver` marker); off by default, including in the"
+             " release suite",
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -87,6 +93,23 @@ def _solver_selection(request):
 
 
 def pytest_collection_modifyitems(config, items):
+    # The python solver is on its way out. The engine is what ships and what the
+    # suite is asking about, so tests that need the python implementation --
+    # parity sweeps that use it as the engine's reference, and the few that
+    # trace its internals -- are opt-in rather than part of any routine run,
+    # release included. Reach for `--python-solver` when there is reason to
+    # suspect the engine, which is the one case the comparison still answers.
+    #
+    # Skipped rather than deselected: a gate that vanishes without saying so is
+    # how this suite lost four files once already.
+    if not config.getoption("--python-solver"):
+        skip_python_solver = pytest.mark.skip(
+            reason="needs the python solver; pass --python-solver to run it"
+        )
+        for item in items:
+            if "python_solver" in item.keywords:
+                item.add_marker(skip_python_solver)
+
     # A file matching no prefix gets NO marker and therefore runs in no gate.
     # That is silent by construction -- the tests collect, pass locally, and are
     # simply never selected again -- and it had already swallowed four files

@@ -6,6 +6,14 @@ does the planner choose a set of transform applications that is *sound*?
 **This is not `tests/flow`.** Flow asks what the runtime does with a plan it is
 handed. This axis asks whether the plan should ever have been handed over.
 
+**The engine is the subject; the python solver is not.** Roughly a third of the
+files here were written to hold a new port against the implementation it
+replaced, and that job is done — they now carry `@pytest.mark.python_solver` and
+skip unless `--python-solver` is passed. A new test belongs on the default path,
+which means adjudicating the engine's answer with `check_plan` rather than
+comparing it to a second solver's. If you cannot state what a test asserts
+without naming the python implementation, it is a port test, not a solver test.
+
 ## What goes in this file
 
 Why this axis is shaped the way it is, and the traps that make a green test
