@@ -33,14 +33,24 @@ from tests.e2e.docker.conftest import create_transform_library
 # as a local reminder of what the file is for; it is no longer what selects it.
 pytestmark = pytest.mark.gui
 
-def _fabricate_project(root: Path) -> Path:
+def _fabricate_project(root: Path, mlib_target: Path | None = None) -> Path:
     """A project with a stand-in standard library already in place.
 
     The GUI clones the real one; here it is fabricated so the tests never touch
     the network. A function as well as a fixture because sharing needs two
     projects at once -- an export is only worth anything somewhere else.
+
+    `mlib_target`, when given, makes `MetasmithLibraries` a symlink to a
+    checkout elsewhere rather than a directory inside the project -- the shape
+    a real project can have (a shared dev checkout) and the one that once made
+    `save_as_template` fail: resolving the symlink lands outside the project
+    root.
     """
     mlib = root / "MetasmithLibraries"
+    if mlib_target is not None:
+        mlib_target.mkdir(parents=True, exist_ok=True)
+        root.mkdir(parents=True, exist_ok=True)
+        mlib.symlink_to(mlib_target)
     (mlib / "data_types").mkdir(parents=True)
 
     types = DataTypeLibrary()
@@ -1306,6 +1316,34 @@ class TestSaveAsTemplate:
         assert "my-tpl" not in {t["name"] for t in client.get("/api/templates").get_json()}
         assert client.delete(f"/api/templates/{template}").status_code == 409
         assert client.delete("/api/templates/nope").status_code == 409
+
+    def test_saves_and_recreates_when_the_stdlib_is_a_symlinked_checkout(self, _app, tmp_path):
+        """The reported bug: `MetasmithLibraries` a symlink to a shared checkout.
+
+        `stdlib.discover` resolves it -- deliberately, so a workflow and the
+        library it loaded from agree -- and that used to leak a real,
+        symlink-crossing path into the saved template, which then fell outside
+        the project root and tripped `Template.Save`'s portability check. A
+        template only ever names what it needs now (namespace names, and
+        whatever the workflow's own request already held), so there is nothing
+        left for that check to catch.
+        """
+        root = _fabricate_project(
+            tmp_path / "project", mlib_target=tmp_path / "shared_stdlib_checkout",
+        )
+        for client in _client_on(_app, root, tmp_path / "ssh_config"):
+            name = self._seeded(client, count=1)
+            r = client.post(
+                f"/api/workflows/{name}/save_as_template", json={"name": "my-tpl"},
+            )
+            assert r.status_code == 201, r.get_json()
+
+            made = client.post("/api/workflows", json={"template": "my-tpl"})
+            assert made.status_code == 201, made.get_json()
+            items = client.get(
+                f"/api/workflows/{made.get_json()['name']}/inputs"
+            ).get_json()["items"]
+            assert len(items) == 1 and items[0]["type_name"] == "mock::assembly"
 
 
 class TestTypeResync:

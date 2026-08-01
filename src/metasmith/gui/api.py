@@ -943,13 +943,6 @@ def _all_templates(p) -> dict[str, tuple[Template, str]]:
     return out
 
 
-def _template(p, name: str) -> Template:
-    found = _all_templates(p).get(name)
-    if found is None:
-        raise ProjectError(f"no template named [{name}]")
-    return found[0]
-
-
 def _template_version(p, name: str, source: str) -> str | None:
     """What a template's drawing cache is keyed on, besides its name.
 
@@ -1156,6 +1149,35 @@ def get_workflow(name):
     return jsonify(out)
 
 
+def _resolve_user_template_types(p, inline: dict) -> dict:
+    """A user template's `types` entries are namespace names, not paths.
+
+    `save_as_template` records only what a namespace is called (see there),
+    since the project it was saved from may have no path in common with the
+    one creating a workflow from it. This is the other half: look each name
+    up against *this* project's own standard library (by filename stem, the
+    same list a blank workflow's library is built from) before a real library
+    is built from it. A stdlib-shipped template's `types` are real relative
+    paths already and never reach here.
+    """
+    types = inline.get("types") or {}
+    if not types:
+        return inline
+    by_stem = {Path(tp).stem: tp for tp in stdlib.discover(p.root)["data_types"]}
+    resolved = {}
+    for ns, v in types.items():
+        # a name-only marker survives `Spec.Unpack`'s path-join unchanged in
+        # its basename, however it got prefixed on the way through
+        stem = Path(v).name
+        found = by_stem.get(stem)
+        assert found, (
+            f"template needs data type namespace [{stem}], not found in this "
+            f"project's standard library"
+        )
+        resolved[ns] = found
+    return inline | {"types": resolved}
+
+
 @bp.post("/workflows")
 def create_workflow():
     """Create a workflow and its live input library.
@@ -1172,7 +1194,12 @@ def create_workflow():
     b = _body()
     p = _project()
     name = slugify(b["name"]) if b.get("name") else None
-    template = _template(p, b["template"]) if b.get("template") else None
+    template, tmpl_source = (None, None)
+    if b.get("template"):
+        found = _all_templates(p).get(b["template"])
+        if found is None:
+            raise ProjectError(f"no template named [{b['template']}]")
+        template, tmpl_source = found
 
     # A workflow record is a spec plus the store's bookkeeping, so what a create
     # may set is exactly the spec's fields -- named there rather than listed
@@ -1196,9 +1223,10 @@ def create_workflow():
         # than re-added row by row: a deferred path is minted once and identity
         # follows it, so re-adding would give this workflow a task key other
         # than the one the template was validated at.
-        op_data.materialize_template(
-            template.spec.input_library, lib_path, type_library_paths=types,
-        )
+        inline = template.spec.input_library
+        if tmpl_source == "user":
+            inline = _resolve_user_template_types(p, inline)
+        op_data.materialize_template(inline, lib_path, type_library_paths=types)
     # ...and its rows are the copy's rows: the template ships a library, and
     # this is where those items become the editable recipe. Adopted now rather
     # than on the first read so a generate posted straight at a fresh workflow
@@ -1287,13 +1315,21 @@ def fork_workflow(name):
 def save_as_template(name):
     """Save this workflow's current recipe as a starting point to reuse.
 
-    What is saved is the recipe's *shape*, not this run's own files: every
-    input becomes a fresh deferred placeholder (`op_data.derive_template_library`),
+    A template is just a save: what the workflow's own request already says,
+    verbatim (`transform_libraries`/`resource_libraries` are almost always
+    unset -- the GUI never fills them in -- and a workflow started from the
+    result falls back to *its own* project's stdlib at generate time, same as
+    a blank workflow already does). No library location is ever frozen into
+    it, so it never has an absolute path to break on in another checkout --
+    including this one's own, when `MetasmithLibraries` is a symlink to a
+    shared checkout rather than a copy inside the project.
+
+    The input library is rebuilt the same way, one level further: every item
+    becomes a fresh deferred placeholder (`op_data.derive_template_library`),
     keeping its type and its lineage but losing the actual path or value it
-    pointed at. Target types, which libraries it draws from, and the sample
-    split all carry over -- resolved the same way `generate_workflow` resolves
-    them, since an ungenerated workflow's request may never have written its
-    library defaults down explicitly.
+    pointed at, and its type namespaces are recorded by *name*, not by path --
+    resolved back against whichever project's stdlib creates a workflow from
+    it (see `_resolve_user_template_types`).
     """
     p = _project()
     wf = p.read_workflow(name)
@@ -1305,18 +1341,25 @@ def save_as_template(name):
 
     targets = wf.request.get("target_types") or []
     assert targets, "this workflow has no target types yet"
-    found = stdlib.discover(p.root)
-    transforms = wf.request.get("transform_libraries") or found["transform_libraries"]
-    resources = wf.request.get("resource_libraries") or found["resource_libraries"]
 
+    # `type_library_paths` only builds the derived library's own type
+    # registration -- needed to validate a deferred item's dtype at all --
+    # and never reaches the saved template: `types` below is packed by name,
+    # not by the (possibly symlinked) path this project happens to load it
+    # from. `load_data_lib` does not restore `_type_sources` on a plain load
+    # (only `PackInline` needs it), so the source workflow's own library
+    # never has one to offer here even when it was created from these same
+    # paths.
     derived = op_data.derive_template_library(
-        str(p.input_library_path(name)), type_library_paths=found["data_types"],
+        str(p.input_library_path(name)),
+        type_library_paths=stdlib.discover(p.root)["data_types"],
     )
+    packed_input = derived.Pack() | {"types": {ns: ns for ns in derived.types}}
     spec = Spec(
-        input_library=derived,
+        input_library=packed_input,
         target_types=targets,
-        transform_libraries=transforms,
-        resource_libraries=resources,
+        transform_libraries=list(wf.request.get("transform_libraries") or []),
+        resource_libraries=list(wf.request.get("resource_libraries") or []),
         sample_type=wf.request.get("sample_type"),
         shared_input_paths=list(wf.request.get("shared_input_paths") or []),
     )
