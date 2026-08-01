@@ -7,6 +7,7 @@ from pathlib import Path
 from collections import deque
 
 from ..hashing import KeyGenerator
+from ..logging import Log
 from .dag_renderer import DagRenderer, Label, LabelMode, NodeKind
 from .solver_rng import DecisionStream, argmax_index, argmin_index
 from .solver_math import entropy
@@ -493,29 +494,32 @@ def _solve_by_mcts_python(
     demand2product = {c: _by_dependency(v) for c, v in demand2product.items()}
     demand2producer = {c: _by_transform(v) for c, v in demand2producer.items()}
 
-    @dataclass
-    class DistNode:
-        step: Transform
-        dist: int
-        path: set[str] = field(default_factory=set)
     # estimate distance of nodes to target to provide guiding metric
     # filter out nodes that don't contribute to production of targets
+    #
+    # Single-pass backward BFS, globally memoized (`seen`) rather than
+    # per-path: a node's expansion happens once, on first reach, so total work
+    # is O(V+E) regardless of how many distinct paths reach it. `distance_scores`
+    # becomes true shortest-path distance (first visit wins, BFS is by levels);
+    # `opportunity_scores` still accumulates once per incoming edge (more ways
+    # in = higher score) but no longer re-expands past an already-seen node, so
+    # it can't blow up the way a naive "count every simple path" walk would on
+    # a transform universe with many overlapping cycles -- e.g. a pre-expanded
+    # STRIPS state graph, where every reversible action is its own inverse edge.
     opportunity_scores: dict[Transform, int] = {}
     distance_scores: dict[Transform, int] = {}
-    todo: list[DistNode] = [DistNode(target, -1)]
+    todo: deque[tuple[Transform, int]] = deque([(target, -1)])
+    seen: set[str] = set()
     while len(todo)>0:
-        curr = todo.pop()
-        node, consumer_distance = curr.step, curr.dist
-        if node.key in curr.path: continue
-        path = curr.path|{node.key}
+        node, consumer_distance = todo.popleft()
         dist = consumer_distance+1
-        other_dist = distance_scores.get(node, -1)
-        if dist>other_dist:
-            distance_scores[node] = dist
         opportunity_scores[node] = opportunity_scores.get(node, 1)+dist
+        if node.key in seen: continue
+        seen.add(node.key)
+        distance_scores[node] = dist
         for p in node.requires:
             for producer in demand2producer.get(p, ()): # when tr requires a terminal endpoint that is not given
-                todo.append(DistNode(producer, dist, path))
+                todo.append((producer, dist))
     relavent_transforms = [tr for tr in transforms if tr in distance_scores]
     if given_appl.transform not in distance_scores:
         # no path from givens to target; bail with a structured Solution
