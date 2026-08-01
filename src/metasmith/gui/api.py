@@ -1149,35 +1149,6 @@ def get_workflow(name):
     return jsonify(out)
 
 
-def _resolve_user_template_types(p, inline: dict) -> dict:
-    """A user template's `types` entries are namespace names, not paths.
-
-    `save_as_template` records only what a namespace is called (see there),
-    since the project it was saved from may have no path in common with the
-    one creating a workflow from it. This is the other half: look each name
-    up against *this* project's own standard library (by filename stem, the
-    same list a blank workflow's library is built from) before a real library
-    is built from it. A stdlib-shipped template's `types` are real relative
-    paths already and never reach here.
-    """
-    types = inline.get("types") or {}
-    if not types:
-        return inline
-    by_stem = {Path(tp).stem: tp for tp in stdlib.discover(p.root)["data_types"]}
-    resolved = {}
-    for ns, v in types.items():
-        # a name-only marker survives `Spec.Unpack`'s path-join unchanged in
-        # its basename, however it got prefixed on the way through
-        stem = Path(v).name
-        found = by_stem.get(stem)
-        assert found, (
-            f"template needs data type namespace [{stem}], not found in this "
-            f"project's standard library"
-        )
-        resolved[ns] = found
-    return inline | {"types": resolved}
-
-
 def _resolve_user_template_libraries(available: list[str], names: list[str]) -> list[str]:
     """The transform/resource-library counterpart of `_resolve_user_template_types`.
 
@@ -1255,8 +1226,9 @@ def create_workflow():
         # than the one the template was validated at.
         inline = template.spec.input_library
         if tmpl_source == "user":
-            inline = _resolve_user_template_types(p, inline)
-        op_data.materialize_template(inline, lib_path, type_library_paths=types)
+            op_data.materialize_user_template(inline, lib_path, type_library_paths=types)
+        else:
+            op_data.materialize_template(inline, lib_path, type_library_paths=types)
     # ...and its rows are the copy's rows: the template ships a library, and
     # this is where those items become the editable recipe. Adopted now rather
     # than on the first read so a generate posted straight at a fresh workflow
@@ -1375,17 +1347,16 @@ def save_as_template(name):
 
     # `type_library_paths` only builds the derived library's own type
     # registration -- needed to validate a deferred item's dtype at all --
-    # and never reaches the saved template: `types` below is packed by name,
-    # not by the (possibly symlinked) path this project happens to load it
-    # from. `load_data_lib` does not restore `_type_sources` on a plain load
-    # (only `PackInline` needs it), so the source workflow's own library
-    # never has one to offer here even when it was created from these same
-    # paths.
+    # and never reaches the saved template: every manifest entry already
+    # names its type as a plain `ns::type` string, and that is all a user
+    # template's input library packs (see `op_data.materialize_user_template`,
+    # which reads the needed namespaces straight back off those strings). No
+    # `types` mapping to a path -- real or by name -- has anything left to say.
     derived = op_data.derive_template_library(
         str(p.input_library_path(name)),
         type_library_paths=stdlib.discover(p.root)["data_types"],
     )
-    packed_input = derived.Pack() | {"types": {ns: ns for ns in derived.types}}
+    packed_input = derived.Pack()
     # By directory name, not by path -- same reasoning as `types` above. Left
     # empty (the normal case) rather than named at all, so a workflow started
     # from this falls back to *its own* project's full stdlib at generate

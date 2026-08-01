@@ -170,6 +170,40 @@ def materialize_template(
     }
 
 
+def materialize_user_template(
+    inline: dict,
+    dest_path: str,
+    type_library_paths: list[str],
+) -> dict:
+    """`materialize_template`'s counterpart for a user-saved template.
+
+    A user template's manifest already names every type it needs as an
+    ordinary `ns::type` string (see `save_as_template`/
+    `derive_template_library`) -- nothing to resolve ahead of time, unlike a
+    stdlib template's `PackInline`d library, which points at a real path.
+    This attaches every one of this project's own type libraries up front,
+    the same set a blank workflow's library is built from, and lets
+    `DataInstanceLibrary.Unpack` validate the manifest against them the way
+    it always does -- a namespace the manifest needs but this project's
+    library does not have fails there, in its own words.
+    """
+    dest = Path(dest_path).resolve()
+    assert not dest.exists() or not any(dest.iterdir()), (
+        f"copy destination [{dest}] already exists and is not empty"
+    )
+    staging = DataInstanceLibrary(dest)
+    for tp in type_library_paths:
+        staging.AddTypeLibrary(Path(tp).resolve(), on_exist="skip")
+    lib = DataInstanceLibrary.Unpack(location=dest, raw=inline, dtypes=staging.types)
+    lib.types = staging.types
+    lib.Save()
+    return {
+        "library": str(dest),
+        "type_namespaces": list(lib.types.keys()),
+        "key": lib.GetKey(),
+    }
+
+
 def derive_template_library(
     library_path: str,
     type_library_paths: list[str] | None = None,
