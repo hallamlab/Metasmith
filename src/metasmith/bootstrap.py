@@ -19,6 +19,41 @@ from .env import Environment, Rootfs
 from .models.lineage import ArityMismatchError, LinPayload, MissingInstanceError
 from .coms.via_file_watcher import RemoteShell
 
+_RELAY_MIN_SIZE = 100_000
+_ELF_MAGIC = b"\x7fELF"
+_MACHO_MAGICS = (b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf")
+
+def _assert_real_relay(path: Path, architecture: str, system: str):
+    """Client-side counterpart to dev.sh's `_assert_real_relays`.
+
+    That check only ever runs against the maintainer's own build at publish
+    time; this runs at deploy time against whatever image the consumer's
+    docker/apptainer actually served -- including a stale locally-cached
+    image the publish-time check never saw. Checked before the copy so a
+    failure leaves the destination absent rather than a corrupt file that
+    would look "already deployed" on every later call.
+    """
+    if not path.exists():
+        raise AssertionError(
+            f"relay binary not found in image at [{path}] for platform [{architecture}-{system}]"
+        )
+    size = path.stat().st_size
+    with open(path, "rb") as f:
+        magic = f.read(4)
+    if system == "darwin":
+        kind, ok_magic = "Mach-O", magic in _MACHO_MAGICS
+    else:
+        kind, ok_magic = "ELF", magic == _ELF_MAGIC
+    if not (ok_magic and size > _RELAY_MIN_SIZE):
+        raise AssertionError(
+            f"relay binary at [{path}] looks like a stub or is corrupted "
+            f"(expected {kind} magic, size>{_RELAY_MIN_SIZE}B; got "
+            f"magic={magic.hex()} size={size}B). This means the metasmith "
+            f"image itself is bad -- most likely a stale locally-cached "
+            f"image tag. Try a fresh `docker pull <image>` / re-deploy, or "
+            f"rebuild via dev.sh if this is a dev image."
+        )
+
 def DeployFromContainer(workspace: Path, architecture: str, system: str):
     deploy_root = workspace
     Log.Info(f"deploying to [{deploy_root}]")
@@ -42,6 +77,7 @@ def DeployFromContainer(workspace: Path, architecture: str, system: str):
     relay_server_dest = deploy_root/"relay/msm_relay"
     Log.Info(f"deploying relay server to [{relay_server_dest}]")
     if not relay_server_dest.exists():
+        _assert_real_relay(relay_server, architecture, system)
         relay_server_dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(relay_server, relay_server_dest)
 

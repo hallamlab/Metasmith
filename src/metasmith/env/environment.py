@@ -346,6 +346,24 @@ class Environment:
         #
         # `self.rootfs` short-circuits the chain when someone has declared the
         # answer; see Rootfs.
+        if self.runtime == Runtime.DOCKER:
+            # Docker owns its own image cache, keyed by tag -- but `docker run`
+            # only pulls when the tag is entirely absent locally (pull policy
+            # `missing`), so a stale or broken image already sitting under a
+            # tag (an old `./dev.sh -bd` build, or a pull from before a fix
+            # landed) is trusted forever with no freshness check. Refresh is
+            # therefore unconditional here, not gated on `force`: a `docker
+            # pull` on an already-current tag is a cheap manifest check, not a
+            # re-download. If the pull itself fails -- unreachable registry, or
+            # a tag that only ever existed as a local dev build and was never
+            # pushed -- fall back to whatever is already cached locally rather
+            # than hard failing; only error if neither is available.
+            image = self._get_image()
+            return (
+                f'{self.MakePullCommand()} || '
+                f'docker image inspect "{image}" >/dev/null 2>&1 || '
+                f'{{ echo "ERROR: could not pull [{image}] and no local copy is cached" >&2; exit 1; }}'
+            )
         sif, sandbox = self.GetLocalPath(), self.GetSandboxPath()
         if sif is None or sandbox is None: return ""
         prefix = f'mkdir -p "{sif.parent}"; ' + (f'rm -rf {sandbox} {sif}; ' if force else '')
@@ -387,6 +405,12 @@ class Environment:
         # (mamba/native). The fallback chain lives in MakeMaterialiseCommand,
         # which execute-time provisioning calls too.
         steps: list[tuple[str, str|None]] = []
+        if self.runtime == Runtime.DOCKER and not self.native:
+            steps.append((
+                self.MakeMaterialiseCommand(force=assertive),
+                "{docker pull (refresh) -> fall back to existing local image if unreachable/local-only}",
+            ))
+            return steps
         if not self.GetLocalPath():
             return steps
         display = {

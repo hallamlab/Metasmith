@@ -229,9 +229,30 @@ AGENT_HOME = Path("/arc/home/u/msm_home")
 
 
 class TestProvisionGolden:
-    def test_docker_has_nothing_to_provision(self):
-        # no local image store for docker; the daemon owns its own cache
-        assert _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME) == []
+    def test_docker_refreshes_via_pull_with_local_fallback(self):
+        # Docker's own image cache is keyed by tag, and `docker run` only
+        # pulls when the tag is entirely absent (pull policy `missing`) -- so
+        # without an explicit pull a stale/broken local image under a tag is
+        # trusted forever. The provisioning step is an unconditional pull
+        # (cheap manifest check when already current) that falls back to
+        # whatever's cached locally only if the pull itself can't reach the
+        # registry (offline host, or a tag that only ever existed locally).
+        steps = _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME)
+        assert len(steps) == 1
+        cmd = steps[0][0]
+        assert cmd == (
+            'docker pull --platform=linux/amd64 quay.io/example/tool:1.0 || '
+            'docker image inspect "quay.io/example/tool:1.0" >/dev/null 2>&1 || '
+            '{ echo "ERROR: could not pull [quay.io/example/tool:1.0] and no local copy is cached" >&2; exit 1; }'
+        )
+
+    def test_docker_native_has_nothing_to_provision(self):
+        # native=True means no container boundary exists -- nothing to pull.
+        env = Environment(
+            image=IMAGE, runtime=Runtime.DOCKER, native=True,
+            container=ContainerDef(cache=CACHE, workdir=Path("/ws"), binds=list(BINDS)),
+        )
+        assert env.ProvisionSteps(agent_home=AGENT_HOME) == []
 
     def test_apptainer_materialises_one_artifact_without_asking_the_host(self):
         """One artifact, no probe -- and the sandbox rung never packs a squashfs.
@@ -258,3 +279,12 @@ class TestProvisionGolden:
     def test_assertive_forces_a_rebuild(self):
         steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME, assertive=True)
         assert steps[0][0].startswith(f'mkdir -p "{STORE}"; rm -rf {SANDBOX} {SIF}; if [ ! -e {SIF} ]')
+
+    def test_docker_assertive_is_a_no_op(self):
+        # Docker has no sidecar artifact to `rm -rf` first -- a pull already
+        # refreshes every time, so `assertive` (whose only other meaning is
+        # "redo the relay extraction step" in Agent.Deploy) doesn't change
+        # the emitted command here.
+        default_cmd = _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME)[0][0]
+        assertive_cmd = _container(Runtime.DOCKER).ProvisionSteps(agent_home=AGENT_HOME, assertive=True)[0][0]
+        assert default_cmd == assertive_cmd

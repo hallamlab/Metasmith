@@ -667,6 +667,18 @@ reader its own PGID upstream, which is the property the hand-rolled arms were bu
 1.3.0 — the version in the original report — remains untested, and `rootfs="sandbox"` is the
 answer if it ever comes back.
 
+**Docker also materialises through `ProvisionSteps`, unconditionally.** `docker run`'s pull
+policy is "only if the tag is absent," so without an explicit pull a stale or broken image
+already sitting under a tag — an old local `./dev.sh -bd` build, or a pull from before a fix
+landed — is trusted forever with no freshness check. `MakeMaterialiseCommand` therefore
+always attempts `docker pull` for Docker, falling back to whatever's cached locally
+(`docker image inspect`) only when the pull itself can't reach the registry, so a
+never-pushed dev image still works. This isn't gated behind `assertive` — that flag means
+"redo relay extraction," a narrower and different thing; a plain pull on an already-current
+tag is a cheap manifest check. `DeployFromContainer` separately verifies the extracted relay
+binary's magic bytes and size before copying it, so a stub or corrupted relay (whatever
+image it came from) fails with a precise error instead of a bare "missing" assertion later.
+
 ### Nextflow
 
 **Pinned to `nextflow=26.04.1`**, whose strict syntax parser is on by default. Generated
