@@ -326,7 +326,7 @@ path to the output data, where:
 - :python:`iout.external` is the absolute path on the filesystem
 - :python:`iout.container` is the path when viewed from inside a container
 
-We can now use :python:`context.ExecWithContainer(...)` to specify how fastANI 
+We can now use :python:`context.ExecWithEnv()` to specify how fastANI 
 will be run with the newly created :python:`genomes` file.
 
 .. code-block:: python
@@ -335,8 +335,8 @@ will be run with the newly created :python:`genomes` file.
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--threads {threads}"
-    context.ExecWithContainer(
-        image = image,
+    context.ExecWithEnv().ifContainerDo(
+        env = image,
         cmd = f"""
             fastANI {threads} --queryList {genomes} --refList {genomes} --output {iout.container}
         """,
@@ -410,8 +410,8 @@ The full :python:`fastani.py`.
 
         threads = context.params.get('cpus')
         threads = "" if threads is None else f"--threads {threads}"
-        context.ExecWithContainer(
-            image = image,
+        context.ExecWithEnv().ifContainerDo(
+            env = image,
             cmd = f"""
                 fastANI {threads} --queryList {genomes} --refList {genomes} --output {iout.container}
             """,
@@ -535,7 +535,7 @@ target :python:`ani::table`; the solver discovers the chain
     agent_home = Source.FromLocal(WORKSPACE/"msm_home")
     smith = Agent(
         home = agent_home,
-        runtime=ContainerRuntime.DOCKER,
+        runtime=Runtime.DOCKER,
     )
 
     upstream_targets = TargetBuilder()

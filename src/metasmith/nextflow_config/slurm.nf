@@ -3,6 +3,12 @@
 // parameter defaults
 params {
     slurmAccount = '<slurm_account>'
+    // Some sites charge GPU work to a separate allocation code (Sockeye does).
+    // clusterOptions is a *scalar* directive, so a GPU step composes its whole
+    // string and cannot append an account -- it has to replace it. Leave null
+    // to charge GPU steps to slurmAccount like everything else, or set it via
+    // RunWorkflow(params={"slurmGpuAccount": "..."}).
+    slurmGpuAccount = null
 
     executor {
         queueSize = 100
@@ -24,6 +30,12 @@ params {
         cpus = 4
         memory = '16 GB'                    // https://www.nextflow.io/docs/latest/reference/stdlib-types.html#memoryunit
         time = '6hours'                     // https://www.nextflow.io/docs/latest/reference/stdlib-types.html#duration
+        // Scheduler flags. `clusterOptions` replaces the built-in base string
+        // (rarely wanted); `clusterOptionsExtra` appends to it, which is the
+        // generic sbatch-flag injection point:
+        //      RunWorkflow(params={"process_clusterOptionsExtra": "--partition=bigmem"})
+        clusterOptions = null
+        clusterOptionsExtra = ''
     }
 }
 
@@ -101,7 +113,7 @@ process {
     //      but we will request N cpus ourselves, so 1 is meant to prevent SLURM
     //      from doing something unexpected, like duplicating jobs.
     //      not sure if this is needed
-    clusterOptions = "--nodes=1 --ntasks=1 --account=${params.slurmAccount}"
+    clusterOptions = (params.process.clusterOptions ?: "--nodes=1 --ntasks=1 --account=${params.slurmAccount}") + (params.process.clusterOptionsExtra ? " ${params.process.clusterOptionsExtra}" : "")
 
     maxRetries = params.process.tries+2     // this must be larger than errorStrategy
     maxErrors = '-1'                        // quotes bypass groovy parser bug, should set to number of samples?

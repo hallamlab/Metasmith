@@ -17,6 +17,7 @@ from typing import Any
 import yaml
 
 from ..constants import AgentPaths
+from ..models.lineage import LinPayload
 from ..models.remote import Source
 
 
@@ -156,11 +157,11 @@ class VirtualE2ERuntime:
 
     def _install_agent_definition(self) -> None:
         from ..agents import Agent
-        from ..coms.containers import ContainerRuntime
+        from ..env import Runtime
 
         agent = Agent(
             home=Source.FromLocal(self.home),
-            runtime=ContainerRuntime.DOCKER,
+            runtime=Runtime.DOCKER,
             container="virtual/metasmith:test",
         )
         lib = self.home / "lib"
@@ -324,17 +325,9 @@ def _seed_lineage(inst) -> dict[str, list[int]]:
     return {k: sorted(set(v)) for k, v in lineage.items()}
 
 
-def _select_instances(insts: list, start: int, end: int) -> list:
-    if len(insts) == 0:
-        return []
-    if len(insts) == 1:
-        return list(insts)
-    chunk = list(insts[start:end])
-    if chunk:
-        return chunk
-    if start < len(insts):
-        return [insts[start]]
-    return [insts[-1]]
+# Single-sourced in models/workflow/grouping.py — the Nextflow codegen reads
+# the same answer to decide when a key is whole, and the two must not drift.
+from ..models.workflow.grouping import select_for_key as _select_for_key
 
 
 def _merge_lineage(maps: list[dict[str, list[int]]]) -> dict[str, list[int]]:
@@ -375,16 +368,31 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
         + [d for group in step.transform.model.produces for d in group]
     }
 
+    # Slot -> on-channel name. The real compiler takes this from the archetype
+    # `get_archetype` picked; here the dependency_map's own first instance is
+    # that archetype, since this runtime does no endpoint merging. Omitting a
+    # slot with no instances matches the real emitter, which zips against
+    # `used_archetypes`.
+    slot_channels = {
+        dep.key: insts[0].dtype.key
+        for dep in step.transform.model.requires
+        if (insts := step.dependency_map.get(dep, []))
+    }
+
     inp = ",".join(x.dtype.key for x in used)
     out = ";".join(",".join(x.dtype.key for x in group) for group in produced)
 
     with open(invocation_dir / METADATA_FILE, "w", encoding="utf-8") as f:
         f.write("res 1/1.GB/1\n")
-        f.write(f"lin {json.dumps(lineages, separators=(',', ':'))}\n")
+        # Same envelope the Groovy emitter puts on the wire — bootstrap parses
+        # both through `LinPayload.from_json`, so a bare list here would be a
+        # silent divergence between the two runtimes.
+        f.write(f"lin {LinPayload(v=LinPayload.VERSION, entries=lineages).to_json()}\n")
         f.write("fmt 2\n")
         f.write(f"din {json.dumps(dep_in, separators=(',', ':'))}\n")
         f.write(f"dot {json.dumps(dep_out, separators=(',', ':'))}\n")
         f.write(f"sar {json.dumps(structure_arity, separators=(',', ':'))}\n")
+        f.write(f"slk {json.dumps(slot_channels, separators=(',', ':'))}\n")
         f.write(f"par {len(step.group_by_instances)}\n")
         f.write(f"inp {inp}\n")
         f.write(f"out {out}\n")
@@ -393,6 +401,119 @@ def _write_metadata_file(step, invocation_dir: Path, lineages: list[dict[str, An
 def _manifest_name_for_target(target) -> str:
     spec = target.instance.dtype_name.replace("::", "-").replace(" ", "_")
     return f"{spec}.{target.instance.dtype.key}.{target.instance.instance_id}.json"
+
+
+def _read_hit_decisions(workspace: Path) -> dict[int, dict]:
+    """Probe cache.sqlite for each step's cache_key from workflow.step_*.meta.
+
+    Mirrors the codegen path's compile-time probe: a step is "hit" when
+    its meta file declares ``cacheable true`` AND the cache_key resolves
+    to an entry whose output_root is still on disk. The virtual nextflow
+    runtime uses this to skip the bootstrap call entirely and emit the
+    cached files as if they had just been produced — the symmetric pin
+    of the synthetic ``Channel.of(...)`` path that real Nextflow uses.
+    """
+    from ..caching.layout import default_cache_root, out_dir
+
+    home = Path(os.environ.get(HOME_ENV, str(AgentPaths.HOME_ROOT)))
+    cache_root = default_cache_root(home)
+    if not cache_root.exists():
+        return {}
+    if os.environ.get("METASMITH_CACHE", "1").lower() in {
+        "0", "false", "off", "no"
+    }:
+        return {}
+    meta_specs: dict[int, dict] = {}
+    for meta_path in sorted(workspace.glob("workflow.step_*.meta")):
+        try:
+            order = int(meta_path.stem.rsplit("_", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        cache_key_hex: str | None = None
+        cacheable = True
+        for line in meta_path.read_text().splitlines():
+            if line.startswith("cache_key "):
+                cache_key_hex = line.split(" ", 1)[1].strip()
+            elif line.startswith("cacheable "):
+                cacheable = line.split(" ", 1)[1].strip().lower() == "true"
+        if cache_key_hex is None:
+            continue
+        meta_specs[order] = {
+            "cache_key": bytes.fromhex(cache_key_hex),
+            "cacheable": cacheable,
+        }
+    if not meta_specs:
+        return {}
+    from ..caching.store import CacheStore
+
+    hits: dict[int, dict] = {}
+    store = CacheStore.open(cache_root)
+    try:
+        for order, spec in meta_specs.items():
+            if not spec["cacheable"]:
+                continue
+            entry = store.probe(spec["cache_key"])
+            if entry is None or not store.files_exist(entry):
+                continue
+            hits[order] = {
+                "cache_key": spec["cache_key"],
+                "output_dir": out_dir(entry.output_root),
+            }
+            store.touch(spec["cache_key"])
+    finally:
+        store.close()
+    return hits
+
+
+def _populate_hit_outputs(
+    step,
+    hit: dict,
+    lineage_by_instance: dict[str, dict[str, list[int]]],
+    produced_by_dep: dict[str, list],
+) -> None:
+    """Build produced_by_dep + lineage_by_instance from a cached step's outputs.
+
+    The cached output directory holds per-branch files matching the
+    ``1-1-{branch+1}.*-{dtype_key}{ext}`` shape that virtual nextflow
+    emits at miss time. Group them by (branch, dep) and route each into
+    the corresponding produced DataInstance just as the miss path would.
+    """
+    output_dir: Path = hit["output_dir"]
+    cached_files = sorted(p for p in output_dir.glob("*") if p.is_file())
+
+    input_maps: list[dict[str, list[int]]] = []
+    for dep in step.transform.model.requires:
+        dep_insts = list(step.dependency_map.get(dep, []))
+        if not dep_insts:
+            continue
+        lineages = [
+            lineage_by_instance.get(inst.instance_id, _seed_lineage(inst))
+            for inst in dep_insts
+        ]
+        input_maps.append(_merge_lineage(lineages))
+    merged_inputs = _merge_lineage(input_maps)
+
+    for branch_idx, dep_group in enumerate(step.transform.model.produces):
+        for dep in dep_group:
+            insts = list(step.dependency_map.get(dep, []))
+            if not insts:
+                continue
+            out_inst = insts[0]
+            ext = out_inst.dtype.GetPreferredFileExtension()
+            suffix = f"-{out_inst.dtype.key}{ext}"
+            branch_prefix = f"1-1-{branch_idx + 1}."
+            matching = [
+                f for f in cached_files
+                if f.name.startswith(branch_prefix) and f.name.endswith(suffix)
+            ]
+            for fpath in matching:
+                curr = dict(merged_inputs)
+                curr[out_inst.dtype.key] = [hash15(str(fpath))]
+                curr = {k: sorted(set(v)) for k, v in curr.items()}
+                lineage_by_instance[out_inst.instance_id] = curr
+                produced_by_dep.setdefault(out_inst.dtype.key, []).append(
+                    (fpath.resolve(), curr, out_inst.instance_id)
+                )
 
 
 def cli_nextflow(argv: list[str]) -> int:
@@ -417,9 +538,7 @@ def cli_nextflow(argv: list[str]) -> int:
 
     workspace = Path.cwd()
     output_root = (workspace / output_name).resolve()
-    manifests_dir = output_root / "_manifests"
     output_root.mkdir(parents=True, exist_ok=True)
-    manifests_dir.mkdir(parents=True, exist_ok=True)
 
     task = _load_task_from_workspace(workspace)
     bootstrap = Path(os.environ.get(HOME_ENV, str(AgentPaths.HOME_ROOT))) / "lib/msm_bootstrap"
@@ -433,7 +552,32 @@ def cli_nextflow(argv: list[str]) -> int:
     nxf_work = workspace / "nxf_work"
     nxf_work.mkdir(exist_ok=True)
 
+    # S3 — probe cache before walking steps. On hit, the step's outputs
+    # are sourced from <cache_root>/<key>/out/ and the executor never
+    # fires. Misses fall through to the existing bootstrap path and the
+    # post-exec promote (S5) deposits their outputs into the cache.
+    # The `_metasmith/trace.jsonl` rows for hits are written at compile
+    # time by `_compute_cache_decisions`; the executor only emits its
+    # own virtual-runtime trace event for diagnostics here.
+    hit_decisions = _read_hit_decisions(workspace)
+
     for step in task.plan.steps:
+        if step.order in hit_decisions:
+            hit = hit_decisions[step.order]
+            write_trace(
+                {
+                    "type": "cache_hit",
+                    "step": step.order,
+                    "step_name": step.transform.name,
+                    "cache_key": hit["cache_key"].hex(),
+                    "host": host,
+                }
+            )
+            _populate_hit_outputs(
+                step, hit, lineage_by_instance, produced_by_dep
+            )
+            continue
+
         group_total = max(1, len(step.group_by_instances))
         batch_size = max(1, int(step.transform.batch_size))
 
@@ -442,27 +586,51 @@ def cli_nextflow(argv: list[str]) -> int:
             invocation_dir = nxf_work / f"step_{step.order:02}" / f"batch_{start:04}_{end:04}"
             invocation_dir.mkdir(parents=True, exist_ok=True)
 
-            lineage_entry: dict[str, Any] = {}
-            files: list[list[str]] = []
+            # One lineage member per group key in the window — the same arity
+            # the real runtime puts on the wire (`Orchestrator._collateBatch`
+            # builds one index per member, `LinPayload.entries` carries them
+            # all). Writing one member for the whole window would make
+            # `context.AsBatch()` yield once here and `batch_size` times under
+            # Nextflow, and this runtime is what pins the contract cheaply.
+            members: list[dict[str, Any]] = []
             input_maps: list[dict[str, list[int]]] = []
+            group_insts = step.group_by_instances
 
-            for dep in step.transform.model.requires:
-                dep_insts = list(step.dependency_map.get(dep, []))
-                selected = _select_instances(dep_insts, start, end)
-                dtype_key = selected[0].dtype.key if selected else dep.key
-                paths = [str(inst.ResolvePath()) for inst in selected]
-                files.append(paths)
-                hashes = [hash15(str(Path(p))) for p in paths]
-                lineage_entry[dtype_key] = hashes
+            for key_idx in range(start, end):
+                key_inst = group_insts[key_idx] if key_idx < len(group_insts) else None
+                lineage_entry: dict[str, Any] = {}
+                files: list[list[str]] = []
+                prov: list[list[dict]] = []
 
-                lineages = [
-                    lineage_by_instance.get(inst.instance_id, {dtype_key: hashes})
-                    for inst in selected
-                ]
-                input_maps.append(_merge_lineage(lineages))
+                for dep in step.transform.model.requires:
+                    dep_insts = list(step.dependency_map.get(dep, []))
+                    selected = _select_for_key(dep_insts, key_inst, key_idx)
+                    dtype_key = selected[0].dtype.key if selected else dep.key
+                    paths = [str(inst.ResolvePath()) for inst in selected]
+                    files.append(paths)
+                    hashes = [hash15(str(Path(p))) for p in paths]
+                    lineage_entry[dtype_key] = hashes
 
-            lineage_entry["FILES"] = files
-            _write_metadata_file(step, invocation_dir, [lineage_entry])
+                    lineages = [
+                        lineage_by_instance.get(inst.instance_id, {dtype_key: hashes})
+                        for inst in selected
+                    ]
+                    input_maps.append(_merge_lineage(lineages))
+                    # The per-item maps the real Orchestrator keeps un-flattened
+                    # in `group()`. Emitted here so a protocol correlating two
+                    # grouped slots has a fast test at all -- without it the
+                    # only proof is a containerized run.
+                    prov.append([
+                        lineage_by_instance.get(inst.instance_id)
+                        or _seed_lineage(inst)
+                        for inst in selected
+                    ])
+
+                lineage_entry[LinPayload.FILES_KEY] = files
+                lineage_entry[LinPayload.PROV_KEY] = prov
+                members.append(lineage_entry)
+
+            _write_metadata_file(step, invocation_dir, members)
 
             dep_arity = {
                 dep.key: len(step.dependency_map.get(dep, []))
@@ -510,7 +678,15 @@ def cli_nextflow(argv: list[str]) -> int:
                     insts = list(step.dependency_map.get(dep, []))
                     if not insts:
                         continue
-                    out_inst = _select_instances(insts, start, end)[0]
+                    # The instance whose dtype/extension names this batch's
+                    # output files. Same question as the input side, so same
+                    # answer: lineage first, position after. Produced
+                    # instances usually carry no registered parents, in which
+                    # case this is the positional slice it always was.
+                    _first_key = (
+                        group_insts[start] if start < len(group_insts) else None
+                    )
+                    out_inst = _select_for_key(insts, _first_key, start)[0]
                     ext = out_inst.dtype.GetPreferredFileExtension()
                     pattern = f"*-*-{branch_idx + 1}.*-{out_inst.dtype.key}{ext}"
                     files = sorted(invocation_dir.glob(pattern))
@@ -550,7 +726,7 @@ def cli_nextflow(argv: list[str]) -> int:
                             (fpath.resolve(), curr, out_inst.instance_id)
                         )
 
-    # Publish manifests for targets.
+    # Publish target outputs (lineage now rides on trace.jsonl).
     for target in task.plan.targets:
         dep_key = target.instance.dtype.key
         entries = produced_by_dep.get(dep_key, [])
@@ -559,24 +735,9 @@ def cli_nextflow(argv: list[str]) -> int:
 
         out_dir = output_root / target.name.replace(" ", "_")
         out_dir.mkdir(parents=True, exist_ok=True)
-        manifest_rows: list[list[str]] = []
-        for i, (src, lineage, _inst_id) in enumerate(entries):
+        for i, (src, _lineage, _inst_id) in enumerate(entries):
             dest = out_dir / f"{i + 1:04}_{src.name}"
             shutil.copy2(src, dest)
-            manifest_rows.append([json.dumps(lineage, separators=(",", ":")), str(dest)])
-
-        manifest = manifests_dir / _manifest_name_for_target(target)
-        with open(manifest, "w", encoding="utf-8") as f:
-            json.dump(manifest_rows, f)
-        write_trace(
-            {
-                "type": "manifest_written",
-                "target": target.name,
-                "dep_key": dep_key,
-                "count": len(manifest_rows),
-                "manifest": str(manifest),
-            }
-        )
 
     # Produce optional report files if requested.
     for k in ["-with-report", "-with-dag", "-with-timeline", "-with-trace"]:

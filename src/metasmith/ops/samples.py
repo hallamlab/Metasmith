@@ -1,0 +1,520 @@
+"""Sample tables: one sheet, one declared row per kind of input, N runs.
+
+Metasmith has always been able to fan a plan out across samples -- register a
+per-sample marker, hang that sample's files off it, and name the marker's type
+as the sample type. What it has never had is a way to *say* that other than one
+`AddItem` call per sample per file. This module is that way: a table you already
+have, plus one declared input row per column, expanded into the library.
+
+**A sheet attached is the whole switch.** With one, every input row of the
+recipe is a sample array: one declaration standing for N items, each of its
+fields bound to a column and holding whatever that column's cell holds. With no
+sheet, every field is the text typed into it. Nothing about the text decides
+this -- there is no syntax that flags a field as naming a column, and braces in
+a value are ordinary characters. The sheet carries finished values; nothing here
+builds a string out of one.
+
+An array row is never registered as it stands. Array rows wire into an arbitrary
+parent DAG the same way any other input row does -- a column with no parents, a
+column parented to another -- and every table row instances that whole DAG once.
+There is no privileged "index" column and no per-sample masking here:
+multiplicity (how many distinct pangenomes, how many distinct samples) falls out
+of ordinary lineage, the same way `group_by` resolves it at the transform level.
+Two rows that land on the same cells share one instance -- a deliberate
+grouping, not a collision, and the only way to say "these samples share one of
+these".
+
+A value row has no path to bind: the library mints one, keyed on the columns
+that row's entries bind. So the sharing above is decided by those columns, and a
+value row cannot disagree with itself about what a shared entry holds -- one key
+implies one set of cells by construction. Binding a second field to a second
+column is how you say two sheet rows are no longer the same thing, and the
+grouping follows.
+
+A row with a field left unbound while a sheet is attached is an unfinished
+recipe, not a constant: it registers nothing, and :func:`unbound_problems` names
+it rather than letting it disappear. A value that really is the same for every
+sample is a column repeated down the sheet -- which costs a column and nothing
+in the library, since identical cells group onto one instance anyway.
+
+(`AsSamples`, elsewhere in metasmith, masks a library by an index item's
+ancestors/descendants; it is a valid, separate, lower-level primitive that this
+module does not use or produce.)
+
+(A *template*, elsewhere in metasmith, is a stored workflow you start from --
+a different thing entirely, which is why this one is not called that.)
+
+This module reads the sheet and says what is wrong with it; it does not write
+to a library. `ops.inputs.sync` is the one writer, and it registers array rows
+and plain rows in the same pass -- they are the same kind of row and there is
+one library state, so two functions with two ideas of what is in it is exactly
+the state that leaves it half built.
+
+The record of what was put down lives here because this module owns its shape.
+It is server-owned and belongs beside `result.yml`, never in the request the
+browser rewrites wholesale.
+"""
+from __future__ import annotations
+
+import io
+from pathlib import Path
+
+from ._common import load_data_lib
+from .rows import column_of
+from .rows import entries as row_entries
+
+DELIMITED_SUFFIXES = {".csv": ",", ".tsv": "\t", ".tab": "\t", ".txt": None}
+EXCEL_SUFFIXES = {".xlsx", ".xlsm"}
+
+EXCEL_HELP = (
+    "reading excel needs openpyxl, which this install does not have. "
+    "Save the sheet as csv and paste or upload that instead."
+)
+
+
+# -- the table ---------------------------------------------------------------
+
+
+def _columns_of(header: list) -> list[str]:
+    cols = [str(c).strip() for c in header]
+    assert all(cols), "the table has a column with no name in its header row"
+    dupes = sorted({c for c in cols if cols.count(c) > 1})
+    assert not dupes, (
+        f"the table names the same column more than once: {', '.join(dupes)} -- "
+        f"a field bound to one could mean either"
+    )
+    return cols
+
+
+def parse_table(data: bytes, fmt: str | None = None, filename: str | None = None) -> dict:
+    """Read a sheet into `{format, columns, rows, row_count}`.
+
+    Every cell comes back as a string with NA handling off, deliberately: left
+    to itself pandas turns an empty cell into the float `NaN` -- a literal `nan`
+    in a path -- and a sample id of `007` into `7`.
+    """
+    import pandas as pd
+
+    fmt = (fmt or "").strip().lower() or None
+    suffix = Path(filename or "").suffix.lower()
+    if fmt is None:
+        fmt = "excel" if suffix in EXCEL_SUFFIXES else "delimited"
+
+    # The header row is taken here rather than left to pandas: given two columns
+    # of the same name pandas silently renames the second to `x.1`, and a token
+    # would then mean whichever of the two the user was not thinking of.
+    if fmt == "excel":
+        try:
+            import openpyxl  # noqa: F401
+        except ImportError:
+            raise AssertionError(EXCEL_HELP)
+        frame = pd.read_excel(
+            io.BytesIO(data), dtype=str, keep_default_na=False, engine="openpyxl",
+            header=None,
+        )
+    else:
+        text = data.decode("utf-8-sig") if isinstance(data, bytes) else str(data)
+        assert text.strip(), "the table is empty"
+        sep = {"csv": ",", "tsv": "\t"}.get(fmt, DELIMITED_SUFFIXES.get(suffix))
+        frame = pd.read_csv(
+            io.StringIO(text),
+            # sep=None asks the python engine to sniff the delimiter, which is
+            # what makes "or other table" mean anything
+            sep=sep, engine="python" if sep is None else "c",
+            dtype=str, keep_default_na=False, header=None,
+        )
+        fmt = "delimited"
+
+    records = list(frame.itertuples(index=False, name=None))
+    assert records, "the table is empty"
+    columns = _columns_of(records[0])
+    rows = [
+        {col: str(val).strip() for col, val in zip(columns, record)}
+        for record in records[1:]
+    ]
+    assert rows, "the table has a header row and nothing under it"
+    return {"format": fmt, "columns": columns, "rows": rows, "row_count": len(rows)}
+
+
+def read_table_file(path: str | Path, fmt: str | None = None) -> dict:
+    p = Path(path)
+    assert p.is_file(), f"no table at [{p}]"
+    return parse_table(p.read_bytes(), fmt=fmt, filename=p.name)
+
+
+# -- the attached sheet ------------------------------------------------------
+#
+# Stored verbatim, under a fixed stem beside the library. Verbatim because it is
+# the user's own file and re-emitting a parsed copy would quietly drop whatever
+# the parse did not understand; under a fixed stem because the workflow
+# directory *is* the task bundle root, and a name taken from the upload could
+# collide with `task.yml`, `data/`, `transforms/` or the staging directory.
+
+TABLE_STEM = "sample_table"
+DEFAULT_SUFFIX = ".csv"
+# The upload's own name, or its absence: the sheet itself is always stored
+# under the fixed stem above, so this is the only place a paste is told apart
+# from an upload once the request that made it is gone. Named with an
+# underscore rather than a dot so `{TABLE_STEM}.*` -- which finds the sheet
+# itself -- never matches it.
+ORIGIN_FILE = f"{TABLE_STEM}_origin.txt"
+
+
+def attached_table_path(where: str | Path) -> Path | None:
+    found = sorted(Path(where).glob(f"{TABLE_STEM}.*"))
+    return found[0] if found else None
+
+
+def attach_table(
+    where: str | Path,
+    data: bytes,
+    filename: str | None = None,
+    fmt: str | None = None,
+) -> dict:
+    """Store a sheet, replacing whatever was there. Parses first: an unreadable
+    upload should leave the previous one alone rather than half-replace it."""
+    where = Path(where)
+    parsed = parse_table(data, fmt=fmt, filename=filename)
+    suffix = Path(filename or "").suffix.lower()
+    if suffix not in DELIMITED_SUFFIXES and suffix not in EXCEL_SUFFIXES:
+        suffix = DEFAULT_SUFFIX
+    detach_table(where)
+    where.mkdir(parents=True, exist_ok=True)
+    dest = where / f"{TABLE_STEM}{suffix}"
+    dest.write_bytes(data)
+    # Written unconditionally, even empty for a paste: its mere presence is what
+    # tells "attached with no name, on purpose" apart from "attached before this
+    # file existed", which `read_attached_table` falls back to `dest.name` for.
+    (where / ORIGIN_FILE).write_text(filename or "", encoding="utf-8")
+    return {"filename": filename or "pasted", "path": str(dest), **parsed}
+
+
+def read_attached_table(where: str | Path) -> dict | None:
+    p = attached_table_path(where)
+    if p is None:
+        return None
+    origin = Path(where) / ORIGIN_FILE
+    if origin.is_file():
+        name = origin.read_text(encoding="utf-8").strip() or "pasted"
+    else:
+        name = p.name  # attached before ORIGIN_FILE existed
+    return {"filename": name, "path": str(p), **read_table_file(p)}
+
+
+def detach_table(where: str | Path) -> dict:
+    removed = []
+    for p in sorted(Path(where).glob(f"{TABLE_STEM}.*")):
+        p.unlink()
+        removed.append(p.name)
+    origin = Path(where) / ORIGIN_FILE
+    if origin.is_file():
+        origin.unlink()
+        removed.append(origin.name)
+    return {"removed": removed}
+
+
+# -- sample arrays -----------------------------------------------------------
+
+
+def bound_fields(row: dict) -> list[tuple[str, str]]:
+    """(label, bound column) for every field of a row, in order.
+
+    Mode-aware: a value row states no path and a file row has no values, so
+    reading both regardless would let a field the row does not use decide what
+    it fans out over. A value row's `name` is not a field -- it is the filename
+    a library used to make the user type, and it never binds anything.
+
+    Labelled the way the page labels the box each one came from, so "names a
+    column this table does not have" points at a box the reader can find rather
+    than at the row as a whole.
+    """
+    if row.get("mode") == "value":
+        ents = row_entries(row)
+        return [
+            (
+                f"[{e['key']}]" if e["key"]
+                else ("value" if len(ents) == 1 else f"field {i + 1}"),
+                e["column"],
+            )
+            for i, e in enumerate(ents)
+        ]
+    return [("path", column_of(row))]
+
+
+def is_bound(row: dict) -> bool:
+    """Whether every field of this row names a column. See the module docstring
+    for why a partly-bound row is a blank rather than a mix of the two states."""
+    fields = bound_fields(row)
+    return bool(fields) and all(col for _label, col in fields)
+
+
+def unbound_problems(rows: list[dict]) -> list[dict]:
+    """Rows that would register nothing because a field names no column.
+
+    Deliberately not part of :func:`validate`, whose problems are refusals: a
+    half-filled recipe is the normal way to work out what a plan needs, and this
+    is a blank in it rather than something that would fail. It is read at launch
+    and drawn beside the row, so nothing disappears quietly.
+    """
+    out: list[dict] = []
+    for row in rows:
+        if not isinstance(row, dict) or not (row.get("dtype") or "").strip():
+            continue
+        label = row_label(row)
+        for field, col in bound_fields(row):
+            if not col:
+                out.append(_problem(str(row.get("id")), (
+                    f"[{label}] has no column chosen for its {field}"
+                )))
+    return out
+
+
+def row_label(row: dict) -> str:
+    """What to call a row in a message about it.
+
+    A value row is not called anything -- the library names its file and that
+    name is a uuid nobody typed. What it *holds* is the only thing a person
+    would recognise it by, so a clamped first line of its first entry is the
+    label, carrying that entry's key when it has one.
+
+    A row built entirely under a sheet has no text in it at all; its column is
+    then the only recognisable thing about it, and that is a fallback for the
+    label rather than a rule about what the field means.
+    """
+    if row.get("mode") == "value":
+        ents = row_entries(row)
+        first = ents[0] if ents else {"key": "", "value": "", "column": ""}
+        head = (first["value"] or "").strip().splitlines()
+        text = head[0] if head else first["column"]
+        if first["key"]:
+            text = f"{first['key']}: {text}" if text else first["key"]
+        if len(text) > 40:
+            text = text[:40] + "\u2026"
+    else:
+        text = (row.get("path") or "").strip() or column_of(row)
+    return text or str(row.get("id"))
+
+
+def _array_parents(row: dict) -> list[str]:
+    return [str(p)[1:] for p in (row.get("parents") or []) if str(p).startswith("#")]
+
+
+def _plain_parents(row: dict) -> list[str]:
+    return [str(p) for p in (row.get("parents") or []) if not str(p).startswith("#")]
+
+
+def order_array_rows(array_rows: list[dict]) -> list[dict]:
+    """Array rows, parents before children. Assumes the lineage is acyclic."""
+    by_id = {str(t["id"]): t for t in array_rows}
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def visit(tid: str, stack: tuple[str, ...] = ()):
+        if tid in seen or tid not in by_id:
+            return
+        assert tid not in stack, "these rows descend from each other in a loop"
+        for p in _array_parents(by_id[tid]):
+            visit(p, stack + (tid,))
+        seen.add(tid)
+        out.append(by_id[tid])
+
+    for t in array_rows:
+        visit(str(t["id"]))
+    return out
+
+
+# -- validation --------------------------------------------------------------
+
+
+def _problem(where: str, message: str) -> dict:
+    return {"where": where, "message": message}
+
+
+def array_rows_of(rows: list[dict]) -> list[dict]:
+    """The rows a sheet expands: every one with a type and no blank binding.
+
+    Not a question about any row's text. This is the whole of "what fans out"
+    now, and it is only ever asked where a table is already in hand.
+    """
+    return [
+        r for r in rows
+        if isinstance(r, dict) and r.get("id") is not None
+        and (r.get("dtype") or "").strip() and is_bound(r)
+    ]
+
+
+def validate(library_path: str, table: dict, rows: list[dict]) -> dict:
+    """Everything this expansion would fail on, without touching the library.
+
+    Refusals only. A row still missing a binding is a blank rather than a
+    failure and is reported by :func:`unbound_problems`; refusing it here would
+    stop a half-filled recipe solving, which is how a plan gets worked out.
+
+    `rows` is the whole input side of the recipe, because half of what can be
+    wrong is about how one row relates to another. Returns
+    `{problems, array_rows}`; `problems` empty means expandable.
+    """
+    array_rows = array_rows_of(rows)
+    problems: list[dict] = []
+    if not array_rows:
+        return {"problems": problems, "array_rows": []}
+
+    columns = set(table.get("columns") or [])
+    by_id = {str(t["id"]): t for t in array_rows}
+    all_ids = {str(r["id"]) for r in rows if r.get("id") is not None}
+
+    for t in array_rows:
+        tid = str(t["id"])
+        label = row_label(t)
+        for field, col in bound_fields(t):
+            # The page offers a select, so this is not a state a user can type
+            # themselves into -- but a stored binding outlives the sheet it was
+            # chosen from, and a re-upload with a renamed column lands here.
+            if col not in columns:
+                problems.append(_problem(tid, (
+                    f"[{label}] names a column [{col}] in its {field}, which "
+                    f"this table does not have"
+                )))
+        for p in _array_parents(t):
+            # ...against every row, not just the array ones: an array row
+            # descending from a plain row is one declared DAG hung off a single
+            # shared input, which is the ordinary shape of a sample recipe
+            if p not in all_ids:
+                problems.append(_problem(tid, f"[{label}] descends from a row that is gone"))
+
+    try:
+        order_array_rows(array_rows)
+    except AssertionError as exc:
+        problems.append(_problem("lineage", str(exc)))
+        return {"problems": problems, "array_rows": array_rows}
+
+    problems += _path_problems(library_path, table, array_rows, by_id, rows)
+    return {"problems": problems, "array_rows": array_rows}
+
+
+def _path_problems(library_path, table, array_rows, by_id, rows) -> list[dict]:
+    """What the paths the sheet holds are wrong about.
+
+    Checked before anything is registered, because `AddItem` asserts mid-loop on
+    a path already in the manifest and `Save` is at the end -- a collision found
+    the hard way leaves a half-expanded library on disk.
+
+    With a sheet attached there are no non-array rows, so the namespace a cell
+    could collide with is the manifest alone, less what the last expansion put
+    there itself.
+    """
+    lib = load_data_lib(library_path)
+    stored = read_record(library_path)
+    previous = set(stored.get("paths", []))
+    owned = {str(v) for v in (stored.get("rows") or {}).values()}
+    existing = {str(p) for p in lib.manifest} - previous - owned
+    problems: list[dict] = []
+    minted: dict[str, tuple[str, str, int, str | None]] = {}
+    columns = set(table.get("columns") or [])
+    # a row bound to a column that is not there is already reported, and reading
+    # its cell here would report the same thing twice in another spelling
+    array_rows = [
+        t for t in array_rows if all(c in columns for _f, c in bound_fields(t))
+    ]
+
+    for i, record in enumerate(table.get("rows") or []):
+        for t in array_rows:
+            tid = str(t["id"])
+            label = row_label(t)
+            # the list, not a dict of it: two entries can share a label (an
+            # empty key twice), and collapsing them would drop a column check
+            fields = bound_fields(t)
+            missing = [
+                c for _label, c in fields if not (record.get(c) or "").strip()
+            ]
+            if missing:
+                problems.append(_problem(tid, (
+                    f"row {i + 1} of the table has nothing under "
+                    f"{', '.join(sorted(set(missing)))}, which [{label}] needs"
+                )))
+                continue
+            if t.get("mode") == "value":
+                # A value row states no path -- the library mints one, keyed on
+                # the cells this row's entries bind. It cannot collide with a
+                # file row's path, with another value row's, or with anything
+                # already registered, so the whole path-collision story below
+                # simply does not apply to it. The empty-cell check above is
+                # what is left, and it is the useful one.
+                continue
+            path = (record.get(dict(fields)["path"]) or "").strip()
+            value = None
+            if not path:
+                problems.append(_problem(tid, f"[{label}] comes out empty on row {i + 1}"))
+            elif path in existing:
+                problems.append(_problem(tid, (
+                    f"[{label}] comes out as [{path}] on row {i + 1}, which is "
+                    f"already registered"
+                )))
+            elif path in minted:
+                other_tid, other_label, other_row, other_value = minted[path]
+                if other_tid == tid:
+                    # the same declared column landing on the same path again is a
+                    # deliberate grouping -- rows sharing one path become one
+                    # shared instance, which is how "these samples share one of
+                    # these" is said.
+                    pass
+                else:
+                    problems.append(_problem(tid, (
+                        f"[{label}] comes out as [{path}] on row {i + 1}, which is "
+                        f"also what [{other_label}] comes out as on row {other_row}"
+                    )))
+            else:
+                minted[path] = (tid, label, i + 1, value)
+        if len(problems) > 40:
+            problems.append(_problem("", "...and more; the first forty are shown"))
+            break
+
+    # A literal path in a lineage is a leftover from when a registered row was
+    # named by its path; a row is named by its id now. It still has to point at
+    # something the library holds.
+    reachable = {str(p) for p in lib.manifest}
+    for t in array_rows:
+        for p in _plain_parents(t):
+            if p not in reachable:
+                problems.append(_problem(str(t["id"]), (
+                    f"descends from [{p}], which is not registered"
+                )))
+    return problems
+
+
+# -- the record --------------------------------------------------------------
+#
+# What the last expansion put down, so the next one can take back exactly that
+# and no more. Server-owned and beside the library rather than in the request:
+# the browser rewrites the request wholesale through an unlocked
+# read-modify-write on nearly every edit, and would race a background expand.
+
+RECORD_FILE = "expansion.yml"
+
+
+def record_path(library_path: str | Path) -> Path:
+    return Path(library_path).parent / RECORD_FILE
+
+
+def read_record(library_path: str | Path) -> dict:
+    import yaml
+
+    p = record_path(library_path)
+    if not p.is_file():
+        return {}
+    with open(p) as f:
+        return yaml.safe_load(f) or {}
+
+
+def write_record(library_path: str | Path, record: dict) -> Path:
+    import yaml
+
+    p = record_path(library_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    with open(tmp, "w") as f:
+        yaml.safe_dump(record, f, sort_keys=False)
+    tmp.replace(p)
+    return p
+
+

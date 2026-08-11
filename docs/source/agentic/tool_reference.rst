@@ -83,7 +83,7 @@ Command                                                           Purpose
 ``metasmith task list``                                           List cached tasks in workspace
 ``metasmith task show KEY``                                       Plan + targets for one task
 ``metasmith task hints KEY``                                      ``PlanHint`` records for diagnosis
-``metasmith task dag KEY [--format svg]``                         Render the DAG, returns the file path
+``metasmith task dag KEY [--format svg|text|dot|png]``            Render the DAG, returns the file path
 ``metasmith task delete KEY``                                     Remove a cached task
 ================================================================  ============================================================
 

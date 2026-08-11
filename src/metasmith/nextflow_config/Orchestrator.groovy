@@ -1,16 +1,41 @@
 import groovy.json.JsonOutput
 
 class Orchestrator {
-    private Map pending_tasks
+    // Reserved index key carrying a leaf's canonical instance_id from the
+    // Python given-lineage seed. postIn relocates it to index[<name>] and
+    // strips it, so it never propagates as a lineage key. Kept in lockstep
+    // with workflow.py's given-seed (SELF_ID_KEY).
+    public static final String SELF_ID_KEY = "__self__"
+
+    // Reserved index keys the task reads and nothing downstream may see.
+    // FILES is the staged path per slot; PROV is the per-item index maps
+    // behind those paths, kept un-flattened so a protocol can ask which item
+    // of one grouped slot another descends from. Both are added on the way
+    // into a task and stripped on the way out (_debatch) -- leaving either in
+    // would propagate it through every descendant index forever and put a
+    // nested value into promoted shard manifests. Kept in lockstep with
+    // models/lineage.py's LinPayload.FILES_KEY / PROV_KEY.
+    public static final String FILES_KEY = "FILES"
+    public static final String PROV_KEY = "PROV"
+
     private Map index_history
     private Map child2parent
     private def one_null
+    private List _dispatchLog
 
     Orchestrator(one_null) {
-        this.pending_tasks = new java.util.concurrent.ConcurrentHashMap()
         this.index_history = new java.util.concurrent.ConcurrentHashMap()
         this.child2parent = new java.util.concurrent.ConcurrentHashMap()
         this.one_null = one_null
+        this._dispatchLog = Collections.synchronizedList(new ArrayList())
+    }
+
+    public List getDispatchLog() {
+        return new ArrayList(this._dispatchLog)
+    }
+
+    private void _logDispatch(name, relation, by_hash, item_hash) {
+        this._dispatchLog.add([name, relation, by_hash, item_hash])
     }
 
     public void seedParents(Map data) {
@@ -21,73 +46,35 @@ class Orchestrator {
         }
     }
 
-    private synchronized def registerPendingTarget(String target, Map index) {
-        // println("  <<ADD $target // $index")
-        def pending_targets = this.pending_tasks.get(target, java.util.concurrent.ConcurrentHashMap.newKeySet()) // this also sets if not exist
-        pending_targets.add(index)
-    }
-
-    private synchronized def removePendingTarget(String target, Map index) {
-        if (!(target in this.pending_tasks)) return
-        def pending_targets = this.pending_tasks[target]
-        if (pending_targets==null) return
-        // println("  - rm $target // $index // $pending_targets")
-        pending_targets.remove(index)
-        // // use the linage in the index to figure out which inputs were
-        // // used to produce the output (@index) and remove these from pending_tasks
-        // pending_targets = pending_targets.collect((candidate_index) -> {
-        //     for (c : candidate_index) {
-        //         if (!(c.key in index) || !index[c.key].containsAll(c.value)) {
-        //             return null
-        //         }
-        //     }
-        //     return candidate_index
-        // })
-        // .findAll(x -> x!=null)
-        if (pending_targets.size()==0) {
-            this.pending_tasks.remove(target)
-        } else {
-            this.pending_tasks[target] = pending_targets
-        }
-    }
-
     private synchronized def registerIndexHistory(String name, Map index) {
         def hist = this.index_history.get(name, Collections.synchronizedList(new ArrayList())) // sets if $name not in index_history
         hist.add(index)
     }
 
-    private synchronized def getExpectedSize(String grouping_by, String name, group_ks) {
-        def pending_targets = this.pending_tasks[name]
-        def size_valid = pending_targets==null? true : pending_targets.collect(i -> i[grouping_by]).every(ks -> ks.every(k -> !(k in group_ks)))
-        def expected_size = !size_valid? -1 : this.index_history[name].collect(i -> i[grouping_by]).findAll(ks -> ks.any(k -> (k in group_ks))).size()
-        // println("  * $grouping_by $name $group_ks // $size_valid/$expected_size // $pending_targets")
-        return new Tuple2(size_valid, expected_size)
-    }
-
-    public List _post(streams, names, fullHash) {
+    public List _post(streams, names, slot_ids) {
         // streams is a list of each of the channels produced:
         // output:
         //      tuple val(index),path("*i") <- stream 1
         //      tuple val(index),path("*j") <- stream 2
-        // the index is then copied for multiple files
-        return [names, streams].transpose().collect((name, stream) -> {
+        // the index is then copied for multiple files.
+        //
+        // The on-channel per-file identity is md5("<slot_id>::<filename>"),
+        // byte-identical to the canonical off-channel file id
+        // (LinPayload.mint_file_id in Python). slot_ids[i] is the compile-time
+        // slot identity threaded in by the generator (workflow.py). When it is
+        // absent (null/empty) the channel name stands in, so the id stays
+        // deterministic and per-file for direct/test callers.
+        return [names, streams, slot_ids].transpose().collect((name, stream, slot_id) -> {
+            def sid = (slot_id == null || slot_id == "") ? name : slot_id
             return new Tuple2(
                 name,
                 stream.flatMap((index, group) -> {
-                    this.removePendingTarget(name, index)
                     if (!(group instanceof List)) {
                         group = [group]
                     }
                     return group.collect((item) -> { // map
-                        def LIMIT = 14 // 0..14 is 15 characters and enables sign to be ignored
-                        def hash = ""
-                        if (fullHash) {
-                            hash = "$item".md5()[0..LIMIT]
-                        } else {
-                            hash = "${item.name}".md5()[0..LIMIT]
-                        }
-                        def v = Long.parseLong(hash, 16)
-                        // println("post: <$name> $v $hash $item")
+                        def v = "${sid}::${item.name}".md5()
+                        // println("post: <$name> $v $item")
                         index = [:]+index // copy the hashmap
                         index[name] = [v]
                         this.registerIndexHistory(name, index)
@@ -100,12 +87,35 @@ class Orchestrator {
         })
     }
 
-    public List post(streams, names) {
-        return this._post(_debatch(streams), names, false)
+    public List post(streams, names, slot_ids = null) {
+        def sids = (slot_ids == null) ? names.collect { null } : slot_ids
+        return this._post(_debatch(streams), names, sids)
     }
 
     public List postIn(streams, names) {
-        return this._post(streams, names, true)
+        // Leaves (given inputs). The per-file identity is the leaf's canonical
+        // instance_id, threaded in from the Python given-lineage seed under
+        // SELF_ID_KEY and relocated here to index[name] — byte-identical to
+        // the off-channel instance_id (single point of provenance). Direct/test
+        // callers that pass no seed fall back to the full-path md5 so the id
+        // stays deterministic and per-file.
+        return [names, streams].transpose().collect((name, stream) -> {
+            return new Tuple2(
+                name,
+                stream.flatMap((index, group) -> {
+                    if (!(group instanceof List)) {
+                        group = [group]
+                    }
+                    return group.collect((item) -> {
+                        index = [:]+index // copy the hashmap
+                        def self_id = index.remove(SELF_ID_KEY)
+                        index[name] = (self_id != null) ? self_id : ["$item".md5()]
+                        this.registerIndexHistory(name, index)
+                        return [index, item]
+                    })
+                })
+            )
+        })
     }
 
     // Replaces `[*process_call(...)]` in generated workflow.nf. Nextflow
@@ -124,7 +134,11 @@ class Orchestrator {
 
     private def combineIndexes(indexes) {
         def combined_index = [:]
-        def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) // reduce
+        // Reserved keys hold nested structures, not hash lists; unioning them
+        // would be meaningless. Unreachable today (they are stripped before
+        // anything re-enters here), but it makes "an index value is a list of
+        // hashes" true locally instead of true by argument elsewhere.
+        def keys = indexes.inject([:].keySet(), (result, i) -> result+i.keySet()) - [FILES_KEY, PROV_KEY] // reduce
         for (key : keys) {
             // if any is missing, use the remainder
             // if remainder different, skip
@@ -144,29 +158,105 @@ class Orchestrator {
 
     private class SynchronizedHashGroup {
         private Map map
+        private Map seen
 
         SynchronizedHashGroup() {
             this.map = [:]
+            this.seen = [:]
         }
 
-        public synchronized void register(k, v) {
+        // Returns true if (k, dedup_key) was newly inserted; false if it was
+        // already present. When dedup_key is null, no dedup is performed and
+        // every register call inserts.
+        public synchronized boolean register(k, v, dedup_key) {
+            if (dedup_key != null) {
+                def seen_set = this.seen.get(k, new HashSet())
+                if (seen_set.contains(dedup_key)) {
+                    return false
+                }
+                seen_set.add(dedup_key)
+                this.seen[k] = seen_set
+            }
             this.map[k] = this.map.get(k, [])+[v]
+            return true
         }
 
         public synchronized def get(k) {
-            return this.map[k].clone()
+            def cur = this.map[k]
+            return cur == null ? [] : new ArrayList(cur)
         }
     }
-    
+
     private boolean isParent(String parent, String child) {
         if (parent==child) return false
         if (!(child in this.child2parent)) return false
         def parents = this.child2parent[child]
         if (parent in parents) return true
-        return parents.any(p -> this.isParent(parent, p)) 
+        return parents.any(p -> this.isParent(parent, p))
     }
 
+    // Walk the parent graph from `name` and collect every transitive ancestor.
+    private Set _collectAncestors(String name) {
+        def result = new HashSet()
+        def visited = new HashSet()
+        def stack = [name]
+        while (!stack.isEmpty()) {
+            def cur = stack.remove(stack.size() - 1)
+            if (visited.contains(cur)) continue
+            visited.add(cur)
+            def parents = this.child2parent.get(cur)
+            if (parents == null) continue
+            parents.each((p) -> {
+                result.add(p)
+                stack.add(p)
+            })
+        }
+        return result
+    }
+
+    // Find the first shared-ancestor key between two streams (used to key the
+    // SIBLING dispatch join). Returns null if there is no shared ancestor.
+    private String _firstSharedAncestor(String a, String b) {
+        if (a == b) return null
+        def anc_a = this._collectAncestors(a)
+        if (anc_a.isEmpty()) return null
+        def anc_b = this._collectAncestors(b)
+        def common = anc_a.intersect(anc_b)
+        if (common.isEmpty()) return null
+        return common.iterator().next()
+    }
+
+    // Classify a non-by stream's lineage relationship to the by-stream. Each
+    // class drives a distinct dispatch path inside group(). Construction-time
+    // (one call per stream per group() invocation), not per-item.
+    private String classify(String name, String by_name) {
+        if (this.isParent(name, by_name)) return "PARENT_OF_BY"
+        if (this.isParent(by_name, name)) return "DESCENDANT_OF_BY"
+        if (this._firstSharedAncestor(name, by_name) != null) return "SIBLING"
+        return "WILDCARD"
+    }
+
+    // 4-arg form: no per-key expectations, so every key flushes at channel
+    // close. Kept for direct callers and for any step whose attribution the
+    // planner could not pin down.
     public def group(by, streams, targets, batch_size) {
+        return this.group(by, streams, targets, batch_size, null)
+    }
+
+    // `expected` maps a stream name to how many items each by-key will
+    // receive, letting a key emit the instant its bag is whole instead of
+    // waiting for the slowest OTHER key's tail. Absent or non-positive means
+    // "wait for close", which is always safe.
+    //
+    // The asymmetry is the design: over-counting degrades to the close-flush
+    // that already happens, while under-counting emits a PARTIAL group — the
+    // failure this whole path exists to prevent. `grouping.expected_per_key`
+    // therefore answers only where the attribution is unambiguous, and the
+    // `one_null` sentinel stays as the backstop for everything else. It also
+    // has to: `errorStrategy 'ignore'` is process-wide (local.nf, slurm.nf),
+    // so a dropped task means a key that never reaches its count, and that
+    // must degrade to a late flush rather than a hang.
+    public def group(by, streams, targets, batch_size, expected) {
         def parents = streams.collect((k, s) -> k) as Set
         for (t : targets) {
             def existing = this.child2parent.get(t, java.util.concurrent.ConcurrentHashMap.newKeySet())
@@ -183,6 +273,17 @@ class Orchestrator {
             def (name, _stream) = stream
             return name!=by_name
         })
+
+        // Classify each non-by stream once, up front. The result drives the
+        // dispatch branch each stream takes in `to_group.collect` below.
+        // Every branch emits ONE tuple per by-key carrying that key's whole
+        // list of matched items — see the contract note on `_batch`.
+        def stream_relations = [:]
+        to_group.each { stream ->
+            def (s_name, s_chan) = stream
+            stream_relations[s_name] = this.classify(s_name, by_name)
+        }
+
         def by_parsed = by_stream.map(item -> {
             def (index, value) = item
             def group_k = index[by_name]
@@ -193,11 +294,13 @@ class Orchestrator {
 
         return _batch(batch_size, to_group
         .collect((stream) -> {
-            // if a given stream is a parent, we use the by_stream as an index
-            // and emit parents as they complete with the corresponding item of the by_stream
             def (name, _stream) = stream
-            def _is_parent = this.isParent(name, by_name)
-            if (_is_parent) {
+            def relation = stream_relations[name]
+            this._logDispatch(name, relation, null, null)
+
+            if (relation == "PARENT_OF_BY") {
+                // PARENT branch (unchanged): combine(by:0) on the parent's own
+                // hash, which by-items carry as idx[parent_name].
                 return _stream.map((item) -> {
                     def (_index, _value) = item
                     def k = _index[name]
@@ -206,39 +309,170 @@ class Orchestrator {
                 .combine(by_stream.map((item) -> {
                     def (_index, _value) = item
                     def k = _index[name]
-                    return new Tuple2(k, _index[by]) // instead of a value, we pass through the "by index"
+                    return new Tuple2(k, _index[by]) // pass through the "by index"
                 }), by: 0)
                 .map((combined) -> {
-                    def (_, item, key) = combined // first is key of parent, used to sync with by
-                    // println("$by // $name  // $key // $item")
+                    def (_, item, key) = combined
                     return [new Tuple3(key, name, [item])]
                 })
             }
-            // else not parent...
 
-            // Buffer non-parent items by group key and emit only when the stream
-            // closes. Emitting early from transient index_history snapshots can
-            // split a single logical group into multiple partial groups.
+            if (relation == "DESCENDANT_OF_BY") {
+                // DESCENDANT branch: S items carry the by-hashes they descend
+                // from in idx[by_name]. Mirror of the PARENT branch with the
+                // join key inverted, then combine(by:0) against by_stream's
+                // own hash.
+                //
+                // Items are AGGREGATED per by-hash before the join, so the
+                // branch emits one tuple per key carrying that key's whole
+                // list. Emitting one tuple per (key, item) — as this branch
+                // did between bbbb599 and the fix — multiplies through the
+                // cartesian `inject` fold below and forces `_batch` to try to
+                // reassemble the group afterwards, which is what shattered a
+                // collecting transform's input into singletons.
+                def _name = name
+                def pending_items = [:]
+                def seen_per_key = [:]
+                def flushed_keys = new HashSet()
+                def n_expected = (expected == null) ? -1 : ((expected[name] ?: -1) as int)
+                return _stream.concat(this.one_null)
+                .flatMap((item) -> {
+                    if (item == null) {
+                        // Upstream closed: flush every key that did not reach
+                        // its expected count (or had none to reach).
+                        return pending_items
+                        .findAll((h, items) -> !flushed_keys.contains(h))
+                        .collect((h, items) -> new Tuple2([h], items))
+                    }
+                    def (_index, _value) = item
+                    def by_hashes = _index[by_name]
+                    if (by_hashes == null) {
+                        // Lineage violation: stream is declared as a
+                        // descendant of by_name but the item's index
+                        // doesn't carry by_name. Log and drop.
+                        this._logDispatch(_name, "LINEAGE_VIOLATION", null, null)
+                        return []
+                    }
+                    // Bag-insertion dedup guards against retry/replay
+                    // duplication, matching the WILDCARD branch.
+                    def item_hash = "$_value".md5()
+                    def ready = []
+                    by_hashes.each((h) -> {
+                        def seen_for_key = seen_per_key.get(h, new HashSet())
+                        if (seen_for_key.contains(item_hash)) return
+                        seen_for_key.add(item_hash)
+                        seen_per_key[h] = seen_for_key
+                        def group = pending_items.get(h, [])
+                        group.add(item)
+                        pending_items[h] = group
+                        if (n_expected > 0 && group.size() >= n_expected && !flushed_keys.contains(h)) {
+                            flushed_keys.add(h)
+                            ready.add(new Tuple2([h], new ArrayList(group)))
+                        }
+                    })
+                    return ready
+                })
+                .combine(by_stream.map((item) -> {
+                    def (_index, _value) = item
+                    def by_h = _index[by_name]
+                    if (by_h == null || by_h.size() != 1) {
+                        return new Tuple2([], _index[by])
+                    }
+                    return new Tuple2([by_h[0]], _index[by])
+                }), by: 0)
+                .map((combined) -> {
+                    def (_, items, key) = combined
+                    return [new Tuple3(key, _name, items)]
+                })
+            }
+
+            if (relation == "SIBLING") {
+                // SIBLING branch: join on a shared ancestor's hash. Both sides
+                // key on idx[anc_key] and combine(by:0). The final key emitted
+                // is the by-item's own hash, so the downstream set-overlap
+                // filter still matches by_parsed cleanly.
+                //
+                // Aggregated per ancestor hash for the same reason as
+                // DESCENDANT_OF_BY above.
+                def anc_key = this._firstSharedAncestor(name, by_name)
+                def _name = name
+                def pending_items = [:]
+                def seen_per_key = [:]
+                def flushed_keys = new HashSet()
+                // Note this bag is keyed on the ANCESTOR hash, not the by-key:
+                // two by-items sharing one ancestor share one bag, so an
+                // expected count here is per ancestor, not per by-key.
+                def n_expected = (expected == null) ? -1 : ((expected[name] ?: -1) as int)
+                return _stream.concat(this.one_null)
+                .flatMap((item) -> {
+                    if (item == null) {
+                        return pending_items
+                        .findAll((h, items) -> !flushed_keys.contains(h))
+                        .collect((h, items) -> new Tuple2([h], items))
+                    }
+                    def (_index, _value) = item
+                    def anc_hashes = _index[anc_key]
+                    if (anc_hashes == null) return []
+                    def item_hash = "$_value".md5()
+                    def ready = []
+                    anc_hashes.each((h) -> {
+                        def seen_for_key = seen_per_key.get(h, new HashSet())
+                        if (seen_for_key.contains(item_hash)) return
+                        seen_for_key.add(item_hash)
+                        seen_per_key[h] = seen_for_key
+                        def group = pending_items.get(h, [])
+                        group.add(item)
+                        pending_items[h] = group
+                        if (n_expected > 0 && group.size() >= n_expected && !flushed_keys.contains(h)) {
+                            flushed_keys.add(h)
+                            ready.add(new Tuple2([h], new ArrayList(group)))
+                        }
+                    })
+                    return ready
+                })
+                .combine(by_stream.flatMap((item) -> {
+                    def (_index, _value) = item
+                    def anc_hashes = _index[anc_key]
+                    if (anc_hashes == null) return []
+                    return anc_hashes.collect((h) -> new Tuple2([h], _index[by]))
+                }), by: 0)
+                .map((combined) -> {
+                    def (_, items, key) = combined
+                    return [new Tuple3(key, _name, items)]
+                })
+            }
+
+            // WILDCARD (relation == "WILDCARD"): no lineage relationship
+            // between this stream and the by-stream. Cartesian fan-out is
+            // semantically correct here — every by-item is paired with
+            // every S-item — so we must wait for the upstream to close.
+            // Bag-insertion dedup guards against retry/replay duplication.
             def pending_groups = [:]
+            def seen_per_group = [:]
             return _stream.concat(this.one_null)
             .flatMap((item) -> {
-                if (item==null) { // this is the final call. There is no item
-                    // last chance, flush remaining groups
+                if (item==null) {
                     return pending_groups
                     .collect((key, value) -> {
                         return new Tuple3(key, name, value)
                     })
                 } else {
-                    // register this group
                     def (index, value) = item
                     def group_k = index[by_name]
+                    def item_hash = "$value".md5()
+                    def seen_for_group = seen_per_group.get(group_k, new HashSet())
+                    if (seen_for_group.contains(item_hash)) {
+                        return []
+                    }
+                    seen_for_group.add(item_hash)
+                    seen_per_group[group_k] = seen_for_group
                     def group = pending_groups.get(group_k, [])
                     group.add(new Tuple2(index, value))
                     pending_groups[group_k] = group
                     return []
                 }
             })
-            .map(x -> [x]) // see combine() below
+            .map(x -> [x])
         })
         .inject(by_parsed, (result, channel) -> { // reduce (to channel)
             // cant use ${combine(by: 0)} since when k not in index,
@@ -274,30 +508,47 @@ class Orchestrator {
                 def (key, name, gg) = xx
                 // println(" . $by_name // $key // $name // $gg")
             }))
-            def common_index = this.combineIndexes(groups.collect(channel -> channel.collect(group -> group[0])).flatten())
+            // Per-item indexes, kept UN-flattened. combineIndexes unions and
+            // uniques these into one map, which is the right answer for the
+            // task's own lineage and destroys the only record of which item
+            // came from where. Built from the same `groups` in the same
+            // closure as `values` below, so PROV[s][i] describes values[s][i]
+            // by construction rather than by an ordering to maintain.
+            // Defensive copy: these maps are the ones _post handed out and are
+            // also held by index_history, and the task serialises them -- the
+            // shared-collection race the .view/formatMap trap is made of.
+            def per_item = groups.collect(channel -> channel.collect(group -> [:] + group[0]))
+            def common_index = this.combineIndexes(per_item.flatten())
             def values = groups.collect(channel -> channel.collect(group -> group[-1]))
-            for (target : targets) {
-                this.registerPendingTarget(target, common_index)
-            }
+            common_index[PROV_KEY] = per_item
             return [common_index, *values]
         }))
     }
 
+    private def _collateBatch(batch) {
+        def streams = batch.collect(item -> {
+            def index = [:]+item[0] // copy to avoid mutating shared state
+            def values = item[1..-1]
+            index[FILES_KEY] = values.collect(group -> group*.toString())
+            return [index, *values]
+        }).transpose()
+        def indexes = streams[0]
+        // careful, this unique() could remove real file collisions as well!
+        // this is needed for cases where reference dbs are passed multiple times per batch
+        def values = streams[1..-1].collect(stream -> stream.flatten().unique())
+        return [indexes, *values]
+    }
+
+    // `size` is the GROUP-COUNT axis, never the within-group member count:
+    // every branch of group() emits one result per by-key holding that key's
+    // whole list, so collating `size` of them folds `size` whole groups into
+    // one task. This is what `batch_size` means everywhere else in the system
+    // — `plan_oracle` predicts `ceil(len(group_by_instances) / batch_size)`
+    // tasks, `cache_decisions` and `virtual_runtime` both chunk
+    // `group_by_instances` by it, and `checkm`/`gtdbtk` pair `group_by=asm`
+    // with `batch_size=25`/`100` while iterating `context.AsBatch()`.
     public def _batch(size, channel) {
-        // return proc(channel)
-        return channel.collate(size).map(batch -> {
-            def streams = batch.collect(item -> {
-                def index = [:]+item[0] // copy to avoid mutating the map stored in pending_tasks
-                def values = item[1..-1]
-                index['FILES'] = values.collect(group -> group*.toString())
-                return [index, *values]
-            }).transpose()
-            def indexes = streams[0]
-            // careful, this unique() could remove real file collisions as well!
-            // this is needed for cases where reference dbs are passed multiple times per batch
-            def values = streams[1..-1].collect(stream -> stream.flatten().unique())
-            return [indexes, *values]
-        })
+        return channel.collate(size).map(batch -> this._collateBatch(batch))
     }
 
     public def _debatch(streams) {
@@ -313,7 +564,8 @@ class Orchestrator {
                 def is_batched = indexes instanceof List
                 indexes = is_batched ? indexes : [indexes]
                 indexes = indexes.collect(index -> {
-                    index.remove('FILES')
+                    index.remove(FILES_KEY)
+                    index.remove(PROV_KEY)
                     return index
                 })
                 bag = (bag instanceof List)? bag : [bag]

@@ -154,10 +154,27 @@ TransformInstance(
     }
 
 
-def branching_transforms() -> dict[str, str]:
-    """Two producers + merger: assembly -> branch_a, assembly -> branch_b, (branch_a + branch_b) -> merged."""
-    return {
-        "produce_a": '''
+_BRANCH_NAMES = ["a", "b", "c", "d", "e", "f", "g", "h"]
+
+
+def branching_transforms(n: int = 2) -> dict[str, str]:
+    """N producers + merger: assembly -> branch_<letter> for each of N letters,
+    (branch_a + branch_b + ... branch_<n-1>) -> merged.
+
+    Default N=2 preserves the original two-branch contract. N up to 8 is
+    supported by the static `_BRANCH_NAMES` table; callers requesting more
+    branches get a ValueError so the conftest type fixture stays in sync.
+    """
+    if not (2 <= n <= len(_BRANCH_NAMES)):
+        raise ValueError(
+            f"branching_transforms: n must be in [2, {len(_BRANCH_NAMES)}], got {n}"
+        )
+
+    names = _BRANCH_NAMES[:n]
+    transforms: dict[str, str] = {}
+
+    for letter in names:
+        transforms[f"produce_{letter}"] = f'''
 from pathlib import Path
 from metasmith.models.libraries import (
     TransformInstanceLibrary,
@@ -170,16 +187,22 @@ from metasmith.models.solver import Transform
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 dep = model.AddRequirement(lib.GetType("mock::assembly"))
-out = model.AddProduct(lib.GetType("mock::branch_a"))
+out = model.AddProduct(lib.GetType("mock::branch_{letter}"))
 
 def protocol(context: ExecutionContext):
-    out_path = Path("branch_a.txt")
-    out_path.write_text("branch a content")
-    return ExecutionResult(manifest=[{out: out_path}], success=True)
+    out_path = Path("branch_{letter}.txt")
+    out_path.write_text("branch {letter} content")
+    return ExecutionResult(manifest=[{{out: out_path}}], success=True)
 
 TransformInstance(protocol=protocol, model=model, group_by=dep)
-''',
-        "produce_b": '''
+'''
+
+    dep_decls = "\n".join(
+        f'dep_{letter} = model.AddRequirement(lib.GetType("mock::branch_{letter}"))'
+        for letter in names
+    )
+    primary = names[0]
+    transforms["merge"] = f'''
 from pathlib import Path
 from metasmith.models.libraries import (
     TransformInstanceLibrary,
@@ -191,40 +214,17 @@ from metasmith.models.solver import Transform
 
 lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
-dep = model.AddRequirement(lib.GetType("mock::assembly"))
-out = model.AddProduct(lib.GetType("mock::branch_b"))
-
-def protocol(context: ExecutionContext):
-    out_path = Path("branch_b.txt")
-    out_path.write_text("branch b content")
-    return ExecutionResult(manifest=[{out: out_path}], success=True)
-
-TransformInstance(protocol=protocol, model=model, group_by=dep)
-''',
-        "merge": '''
-from pathlib import Path
-from metasmith.models.libraries import (
-    TransformInstanceLibrary,
-    TransformInstance,
-    ExecutionContext,
-    ExecutionResult,
-)
-from metasmith.models.solver import Transform
-
-lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
-model = Transform()
-dep_a = model.AddRequirement(lib.GetType("mock::branch_a"))
-dep_b = model.AddRequirement(lib.GetType("mock::branch_b"))
+{dep_decls}
 out = model.AddProduct(lib.GetType("mock::merged"))
 
 def protocol(context: ExecutionContext):
     out_path = Path("merged.txt")
     out_path.write_text("merged content")
-    return ExecutionResult(manifest=[{out: out_path}], success=True)
+    return ExecutionResult(manifest=[{{out: out_path}}], success=True)
 
-TransformInstance(protocol=protocol, model=model, group_by=dep_a)
-''',
-    }
+TransformInstance(protocol=protocol, model=model, group_by=dep_{primary})
+'''
+    return transforms
 
 
 def shared_input_transform() -> dict[str, str]:
@@ -262,6 +262,166 @@ TransformInstance(
     model=model,
     group_by=asm,
 )
+'''
+    }
+
+
+def multi_slot_producer(slots: int = 2) -> dict[str, str]:
+    """Single-input transform with N declared output products (distinct dtypes).
+
+    Each product lives in its own branch via `NewProductGroup` (matches the
+    `branching_transforms` shape), so the planner emits N distinct slots and
+    the orchestrator routes each downstream consumer independently. Drives
+    F1-F4 (fan-out catalog).
+    """
+    assert slots >= 1, "multi_slot_producer needs at least one slot"
+    slot_lines: list[str] = []
+    write_lines: list[str] = []
+    manifest_entries: list[str] = []
+    for i in range(slots):
+        if i > 0:
+            slot_lines.append(f"model.NewProductGroup()")
+        slot_lines.append(
+            f'out_{i} = model.AddProduct(lib.GetType("mock::slot_{i}"))'
+        )
+        write_lines.append(
+            f'p_{i} = Path("slot_{i}.txt"); p_{i}.write_text("slot {i} content")'
+        )
+        manifest_entries.append(f"{{out_{i}: p_{i}}}")
+    slots_src = "\n".join(slot_lines)
+    writes_src = "\n    ".join(write_lines)
+    manifest_src = ", ".join(manifest_entries)
+    return {
+        "multi_slot_producer": f'''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+dep = model.AddRequirement(lib.GetType("mock::assembly"))
+{slots_src}
+
+def protocol(context: ExecutionContext):
+    {writes_src}
+    return ExecutionResult(manifest=[{manifest_src}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=dep)
+'''
+    }
+
+
+def group_then_unfold() -> dict[str, str]:
+    """Group-then-unfold pair: T1 groups by root, T2 unfolds via `AsBatch`.
+
+    The first transform consumes a per-sample input keyed by a shared root
+    parent (`group_by=root`) and writes one aggregate output. The second
+    transform iterates `context.AsBatch()` to re-emit per-batch products
+    matching the upstream batch shape. Drives GS1-GS3.
+    """
+    return {
+        "group_aggregate": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+root = model.AddRequirement(lib.GetType("mock::sample_metadata"))
+dep = model.AddRequirement(lib.GetType("mock::assembly"), parents={root})
+out = model.AddProduct(lib.GetType("mock::grouped"))
+
+def protocol(context: ExecutionContext):
+    out_path = Path("grouped.txt")
+    out_path.write_text("grouped aggregate")
+    return ExecutionResult(manifest=[{out: out_path}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=root)
+''',
+        "unfold_batch": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+dep = model.AddRequirement(lib.GetType("mock::grouped"))
+out = model.AddProduct(lib.GetType("mock::unfolded"))
+
+def protocol(context: ExecutionContext):
+    results = []
+    for batch_ctx in context.AsBatch():
+        out_path = batch_ctx.Output(out)
+        out_path.local.write_text("unfolded sample")
+        results.append(ExecutionResult(manifest=[{out: out_path.local}], success=True))
+    return results
+
+TransformInstance(protocol=protocol, model=model, group_by=dep, batch_size=1)
+''',
+    }
+
+
+def failing_at_slot_k(k: int = 1, slots: int = 2) -> dict[str, str]:
+    """Multi-slot producer where slot `k` reports failure; other slots succeed.
+
+    Mirrors `multi_slot_producer` but the protocol returns
+    `ExecutionResult(success=False)` for slot `k` while the remaining slots
+    return success. Drives T3 (failure telemetry) and B3 (sibling-branch
+    independence). `k` is 0-indexed; defaults to slot 1.
+    """
+    assert slots >= 1, "failing_at_slot_k needs at least one slot"
+    assert 0 <= k < slots, f"k={k} out of range for slots={slots}"
+    slot_lines: list[str] = []
+    for i in range(slots):
+        if i > 0:
+            slot_lines.append("model.NewProductGroup()")
+        slot_lines.append(
+            f'out_{i} = model.AddProduct(lib.GetType("mock::slot_{i}"))'
+        )
+    slots_src = "\n".join(slot_lines)
+    return {
+        "failing_at_slot_k": f'''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+dep = model.AddRequirement(lib.GetType("mock::assembly"))
+{slots_src}
+
+def protocol(context: ExecutionContext):
+    results = []
+    for i in range({slots}):
+        if i == {k}:
+            raise RuntimeError(f"intentional failure at slot {{i}}")
+        p = Path(f"slot_{{i}}.txt")
+        p.write_text(f"slot {{i}} content")
+        slot_dep = locals()[f"out_{{i}}"]
+        results.append(ExecutionResult(manifest=[{{slot_dep: p}}], success=True))
+    return results
+
+TransformInstance(protocol=protocol, model=model, group_by=dep)
 '''
     }
 
@@ -337,4 +497,77 @@ def protocol(context: ExecutionContext):
 
 TransformInstance(protocol=protocol, model=model, group_by=dep)
 '''
+    }
+
+
+def labelled_collection() -> dict[str, str]:
+    """A collecting transform that pairs each item with the label it descends from.
+
+    The ppanggolin shape, reduced: a `root` groups everything; each `label` is a
+    user-supplied value under that root; each `assembly` descends from a label
+    and is transformed per-sample into a `bam`. The collecting step then sees N
+    labels and N bams at once and has to say which goes with which.
+
+    Position cannot answer that — the two groups are accumulated independently
+    in task-arrival order — so the protocol asks `SourceOf`, which reads the
+    ancestry each item arrived with. Drives LP6-LP8.
+
+    A label that resolves to nothing is written as `UNPAIRED` rather than
+    skipped, so a regression shows up as a wrong pairing in the output instead
+    of as a shorter file.
+    """
+    return {
+        "label_item": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+dep = model.AddRequirement(lib.GetType("mock::assembly"))
+out = model.AddProduct(lib.GetType("mock::bam"))
+
+def protocol(context: ExecutionContext):
+    inp = context.Input(dep)
+    out_path = Path("item.txt")
+    out_path.write_text(inp.local.read_text())
+    return ExecutionResult(manifest=[{out: out_path}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=dep)
+''',
+        "collect_labelled": '''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+root  = model.AddRequirement(lib.GetType("mock::sample_metadata"))
+label = model.AddRequirement(lib.GetType("mock::label"), parents={root})
+item  = model.AddRequirement(lib.GetType("mock::bam"), parents={label})
+out   = model.AddProduct(lib.GetType("mock::merged"))
+
+def protocol(context: ExecutionContext):
+    lines = []
+    for p in context.InputGroup(item):
+        src = context.SourceOf(p, label)
+        name = src.local.read_text().strip() if src is not None else "UNPAIRED"
+        body = p.local.read_text().strip().splitlines()[0]
+        lines.append(name + "\\t" + body)
+    out_path = context.Output(out)
+    out_path.local.write_text("\\n".join(sorted(lines)) + "\\n")
+    return ExecutionResult(manifest=[{out: out_path.local}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=root)
+''',
     }

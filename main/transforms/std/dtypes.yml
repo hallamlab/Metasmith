@@ -5,6 +5,10 @@ ontology:
   version: '1.25'
 schema: 0.8.3
 types:
+  abricate_report:
+    properties:
+      data: AMR and virulence gene hits from ABRicate
+      format: TSV
   assembly:
     properties:
       data: Sequence assembly
@@ -94,6 +98,27 @@ types:
     properties:
       data: Amino acid sequences of all CDS
       format: FAA
+  clusterprofiler_enrich_script:
+    properties:
+      data: R script
+      format: .R
+      provides: clusterprofiler_enrich.R
+  eggnog_annotations:
+    properties:
+      data: eggNOG-mapper functional annotations
+      format: TSV
+  eggnog_database:
+    properties:
+      data: eggNOG-mapper reference database
+      format: Directory
+  enrichment_plot:
+    properties:
+      data: KEGG/GO functional-enrichment dotplot
+      format: PNG
+  enrichment_table:
+    properties:
+      data: KEGG/GO functional-enrichment results table
+      format: TSV
   functional_annotations:
     properties:
       data: Compiled functional annotations from all sources
@@ -160,6 +185,11 @@ types:
   miniasm_estimate:
     properties:
       format: Target bases estimated by miniasm
+  oci_image_abricate:
+    properties:
+      data: OCI
+      format: Software container
+      provides: abricate
   oci_image_bakta:
     properties:
       data: OCI
@@ -177,11 +207,26 @@ types:
       data: OCI
       format: Software container
       provides: bedtools
+  oci_image_clusterprofiler:
+    properties:
+      data: OCI
+      format: Software container
+      provides: clusterProfiler
   oci_image_diamond:
     properties:
       data: OCI
       format: Software container
       provides: diamond
+  oci_image_eggnog_mapper:
+    properties:
+      data: OCI
+      format: Software container
+      provides: emapper.py
+  oci_image_fastp:
+    properties:
+      data: OCI
+      format: Software container
+      provides: fastp
   oci_image_fasterq_dump:
     properties:
       data: OCI
@@ -262,6 +307,11 @@ types:
       provides:
       - seqtk
       - gzip
+  oci_image_spades:
+    properties:
+      data: OCI
+      format: Software container
+      provides: spades
   oci_image_trimmomatic:
     properties:
       data: OCI
@@ -328,6 +378,12 @@ types:
       data: Sequence assembly
       format: Directory
       from: Short reads
+  short_reads_qc:
+    properties:
+      data: Short sequence
+      format: Sequence file
+      layout: Interleaved
+      qc: cleaned by fastp
   short_reads_trimmed:
     properties:
       data: Short sequence

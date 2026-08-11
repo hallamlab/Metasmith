@@ -1,1 +1,0 @@
-# Metasmith models test subpackage

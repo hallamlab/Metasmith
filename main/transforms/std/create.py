@@ -45,7 +45,7 @@ items: list[Any] = [
     (HERE/f"containers/{k}", k, v['type'])
     for k, v in d["manifest"].items()
 ]
-containers = DataInstanceLibrary(OUTPUT/"containers.xgdb", include_std=False)
+containers = DataInstanceLibrary(OUTPUT/"containers.xgdb")
 containers.AddTypeLibrary("std", dtypes)
 for s, d, t in items: containers.AddItem(d, t)
 containers.Save()
@@ -54,7 +54,7 @@ verify_and_sync(HERE/"containers", containers.location, items)
 # -----------------------
 # transforms
 print(f"transforms")
-transforms = TransformInstanceLibrary(OUTPUT/"transforms.xgdb", include_std=False)
+transforms = TransformInstanceLibrary(OUTPUT/"transforms.xgdb")
 transforms.AddTypeLibrary("std", dtypes)
 def check_protocol_file(p: Path):
     assert p.is_file() and p.suffix == ".py"

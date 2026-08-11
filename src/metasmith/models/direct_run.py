@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ..agents import Agent
 from ..bootstrap import ExecuteStep
-from ..coms.containers import ContainerRuntime
+from ..env import Environment
 from ..coms.terminals import LiveShell
 from ..constants import AgentPaths
 from ..logging import Log
@@ -29,26 +29,18 @@ from ..models.solver import Dependency, Endpoint
 from ..models.workflow import WorkflowStep
 
 
-def _detect_runtime() -> ContainerRuntime:
-    import shutil
-    if shutil.which("docker"):
-        return ContainerRuntime.DOCKER
-    if shutil.which("apptainer") or shutil.which("singularity"):
-        return ContainerRuntime.APPTAINER
-    return ContainerRuntime.DOCKER
-
-
 def _load_or_make_agent(agent_home: Path | None) -> Agent:
     if agent_home is not None:
         agent_yml = agent_home / "lib" / "agent.yml"
         if agent_yml.exists():
             return Agent.Load(agent_yml)
     # Synthesize a minimal agent rooted at cwd; sufficient for path translation
-    # and container invocation when no deployed agent is reachable.
+    # and container invocation when no deployed agent is reachable. Runtime
+    # detection lives with the rest of the routing in the env module.
     home = agent_home if agent_home is not None else Path.cwd()
     return Agent(
         home=Source.FromLocal(home),
-        runtime=_detect_runtime(),
+        runtime=Environment.Detect(),
     )
 
 
@@ -203,6 +195,10 @@ def RunTransform(
 
     original_cwd = Path.cwd()
     Log.Info(f"direct-run [{inst.name}] in [{work_dir}]")
+    # The internals dir the bounce script lives in. ExecWithEnv makes it too, but
+    # a plain host work dir should have it either way -- transforms and the step
+    # log both assume it exists.
+    (work_dir / "_metasmith").mkdir(parents=True, exist_ok=True)
     os.chdir(work_dir)
     try:
         with LiveShell() as shell:
@@ -218,6 +214,12 @@ def RunTransform(
                 input_by_dep=input_by_dep,
                 dep2output=dep2output,
                 params={"cpus": 1, "memory": 1, "attempt": 1},
+                # direct-run is host-local: no bootstrap container, nothing bound
+                # at /ws. Without this every containerized transform reports
+                # success=False despite having produced its outputs, because the
+                # standard `output.local.exists()` idiom checks a /ws path that
+                # only exists inside the nextflow bootstrap container.
+                host_local=True,
             )
     finally:
         os.chdir(original_cwd)

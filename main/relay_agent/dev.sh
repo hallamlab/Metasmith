@@ -30,8 +30,14 @@ case $1 in
     ###################################################
     # build
     -bb)
-        docker build \
-            -t $DOCKER_IMAGE .
+        # DOCKER_IMAGE is an *upstream* image: it carries the osxcross toolchain
+        # that the two *-apple-darwin targets link against. Building ./Dockerfile
+        # over this tag (which is what this branch used to do) replaces it with a
+        # plain rust image, so `-b` fails both darwin targets with
+        # "cc: unrecognized command-line option '-framework'" and leaves the stub
+        # binaries in target/ for the image build to bake. That is the 0.18.4
+        # stub-relay bug. Pull, do not build.
+        docker pull $DOCKER_IMAGE
     ;;
     -b)
         in_container sh ./build.sh

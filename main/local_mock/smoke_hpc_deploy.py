@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 from metasmith.python_api import (
-    Agent, SshSource, ContainerRuntime,
+    Agent, SshSource, Runtime,
     DataInstanceLibrary, TransformInstanceLibrary, TargetBuilder,
 )
 
@@ -28,7 +28,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES = REPO_ROOT / "examples"
 
 HOST_PROFILES = {
-    "sockeye": dict(scratch_root="/scratch", setup_commands=["module load apptainer"]),
+    # sockeye's apptainer/1.3.1 module is built against gcc/9.4.0 and must be
+    # loaded after it; a bare `module load apptainer` silently no-ops. /scratch
+    # is allocation-coded and refuses mkdir, so deploy to $HOME (=/arc/home/$USER).
+    "sockeye": dict(scratch_root=None, setup_commands=["module load gcc/9.4.0", "module load apptainer"]),
     "fir":     dict(scratch_root="/scratch", setup_commands=["module load apptainer"]),
     "mira":    dict(scratch_root=None,       setup_commands=[]),
 }
@@ -37,6 +40,16 @@ HOST_PROFILES = {
 def resolve_remote_user(host: str) -> str:
     res = subprocess.run(
         ["ssh", host, "echo $USER"],
+        capture_output=True, text=True, check=True,
+    )
+    return res.stdout.strip()
+
+
+def resolve_remote_home(host: str) -> str:
+    # $HOME is not always /home/$USER (sockeye: /arc/home/$USER). Resolve it so
+    # the fallback agent path is real and writable.
+    res = subprocess.run(
+        ["ssh", host, "echo $HOME"],
         capture_output=True, text=True, check=True,
     )
     return res.stdout.strip()
@@ -55,13 +68,13 @@ def main(argv=None):
     if profile["scratch_root"]:
         agent_path = f"{profile['scratch_root']}/{user}/metasmith_smoke_{ts}"
     else:
-        agent_path = f"/home/{user}/metasmith_smoke_{ts}"
+        agent_path = f"{resolve_remote_home(args.host)}/metasmith_smoke_{ts}"
     print(f"==> smoke target: {args.host}:{agent_path}", flush=True)
 
     home = SshSource(host=args.host, path=agent_path).AsSource()
     smith = Agent(
         home=home,
-        runtime=ContainerRuntime.APPTAINER,
+        runtime=Runtime.APPTAINER,
         setup_commands=profile["setup_commands"],
     )
 

@@ -2,24 +2,11 @@ from __future__ import annotations
 import os
 import re
 from typing import IO, Callable, Any
-# import gevent
-# from gevent.lock import Semaphore as Condition
-# from gevent import Greenlet
-# from gevent.select import select
 
 from threading import Condition, Thread
 from select import select
 import subprocess
-from time import sleep
-
-# from dataclasses import dataclass, field
-# import json
-# from pathlib import Path
-# import pty
-# import time
-# import random
-# from collections import deque
-# import hashlib
+from time import sleep, monotonic
 
 from ..hashing import KeyGenerator
 from ..serialization import StdTime
@@ -46,15 +33,34 @@ def RemoveTrailingNewline(s):
     return s
 
 def RemoveLeadingIndent(s: str):
+    """Dedent by the COMMON indent, not by the first non-empty line's.
+
+    Measuring off the first line and slicing that many characters off every line
+    destroys any line that is deliberately less indented -- and a heredoc body is
+    exactly that. An embedded
+
+        python3 - <<'PY'
+    lines of script at column 0
+    PY
+
+    lost 8 characters from every line of the script and the terminator lost its
+    own line, so the shell never saw `PY` and the command died on an unterminated
+    heredoc. Taking the minimum leaves such a block untouched.
+
+    Whitespace-only lines carry no indent information (a blank line inside an
+    otherwise indented block is usually truly empty), so they do not drag the
+    minimum to zero.
+    """
     lines = s.split("\n")
     if len(lines) == 0: return s
-    indent = 0
-    for line in lines:
-        if line == "": continue
+    def _indent_of(line: str):
+        n = 0
         for c in line:
-            if c not in {" ", "\t"}: break
-            indent += 1
-        break
+            if c not in {" ", "\t"}: return n
+            n += 1
+        return None  # whitespace-only
+    indents = [i for i in (_indent_of(l) for l in lines) if i is not None]
+    indent = min(indents) if indents else 0
     cleaned = "\n".join([l[indent:] for l in lines])
     cleaned = cleaned.strip()
     if lines[-1][indent:] == "": cleaned += "\n"
@@ -91,6 +97,12 @@ class NonBlockingReader:
         self._worker = None
         self._is_closed = False
         self._io_handle = io_handle
+        # Marked on every non-empty read, *before* the line split. A caller
+        # bounding an operation by silence needs to know the far end is still
+        # emitting bytes -- rsync's progress redraws a line with carriage
+        # returns and may not complete one for minutes on a large file, so a
+        # mark taken per line would call a healthy transfer dead.
+        self._last_read_at = monotonic()
         self._start(io_handle)
 
     def _start(self, io_handle: int):
@@ -124,6 +136,7 @@ class NonBlockingReader:
                         # Real EOF on the fd. Flush any remainder and stop.
                         _eof[0] = True
                         break
+                    self._last_read_at = monotonic()
                     _buffer.append(chunk)
                     _buffer_bytes += len(chunk)
                     # Bound the buffer: if a single line exceeds MAX_LINE_BYTES,
@@ -216,6 +229,10 @@ class NonBlockingReader:
     def IsClosed(self):
         with self._lock:
             return self._is_closed
+
+    def SecondsSinceRead(self) -> float:
+        """How long this stream has been silent, in seconds."""
+        return monotonic() - self._last_read_at
 
     def Dispose(self):
         try:

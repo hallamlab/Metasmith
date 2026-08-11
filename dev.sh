@@ -85,6 +85,78 @@ _assert_real_relays() {
 # whose embedded build hash disagrees with the image tag (and with the conda
 # build). Recompute the live source hash and require a matching sdist in dist/.
 # Override with MSM_SKIP_DIST_CHECK=1.
+# Refuse to package without a built GUI bundle. It is generated rather than
+# committed, so skipping --build-gui ships an empty static/ and `msm gui`
+# serves nothing — a failure invisible until someone opens the page. Same
+# shape as the stub-relay bug in 0.18.4, and guarded the same way. Set
+# MSM_SKIP_GUI_CHECK=1 to override.
+_gui_static="$HERE/src/$NAME/gui/static"
+_assert_gui_bundle() {
+    [ -n "$MSM_SKIP_GUI_CHECK" ] && {
+        echo "MSM_SKIP_GUI_CHECK set — skipping GUI bundle check"
+        return 0
+    }
+    if [ ! -f "$_gui_static/index.html" ]; then
+        echo ""
+        echo "ERROR: the GUI bundle is missing at $_gui_static"
+        echo ""
+        echo "  It is built, not committed, so a fresh checkout has none. Build it first:"
+        echo "    $HERE/dev.sh --build-gui"
+        echo ""
+        echo "  Override (NOT recommended) by setting MSM_SKIP_GUI_CHECK=1."
+        return 1
+    fi
+    echo "gui bundle: $(du -sh "$_gui_static" | cut -f1) at $_gui_static"
+    return 0
+}
+
+# Refuse to package a wheel whose solver binaries are missing, stubbed, or
+# host-linked. Same failure shape as the stub relays and the unbuilt GUI bundle,
+# and it is *quieter* than either: metasmith without a solver engine plans on
+# the python fallback and works, just slowly, so nothing fails and no one finds
+# out. The build-kind marker is written by the staging step because nothing
+# about a linux ELF says whether it was linked against musl or against this
+# machine's glibc, and only one of those runs on someone else's machine.
+# Set MSM_SKIP_SOLVER_CHECK=1 to override.
+_engine_stage="$HERE/src/$NAME/engine"
+_assert_solver_engine() {
+    [ -n "$MSM_SKIP_SOLVER_CHECK" ] && {
+        echo "MSM_SKIP_SOLVER_CHECK set — skipping solver engine check"
+        return 0
+    }
+    local bad="" kind="(none)"
+    [ -f "$_engine_stage/BUILD_KIND" ] && kind="$(cat "$_engine_stage/BUILD_KIND")"
+    for slot in x86_64-linux:7f454c46 arm64-linux:7f454c46 \
+                x86_64-darwin:cffaedfe arm64-darwin:cffaedfe; do
+        local tgt=${slot%:*} want=${slot##*:}
+        local f="$_engine_stage/msm_solver.$tgt"
+        local sz magic ok=yes
+        sz=$(stat -c %s "$f" 2>/dev/null || echo 0)
+        magic=$(head -c 4 "$f" 2>/dev/null | od -An -tx1 | tr -d " ")
+        [ "$magic" = "$want" ] || ok=no
+        [ "$sz" -gt 100000 ] || ok=no
+        printf "  %-14s size=%-8s magic=%-8s %s\n" "$tgt" "$sz" "${magic:-none}" "$ok"
+        [ "$ok" = "yes" ] || bad="$bad $tgt"
+    done
+    if [ -n "$bad" ] || [ "$kind" != "cross" ]; then
+        echo ""
+        echo "ERROR: the solver engine binaries in $_engine_stage are not shippable"
+        [ -n "$bad" ] && echo "  bad or missing slots:$bad"
+        [ "$kind" != "cross" ] && echo "  build kind is [$kind], expected [cross] (a -bl build only runs on this host)"
+        echo ""
+        echo "  Build them first:"
+        echo "    $HERE/dev.sh -bec   # one time: pull the rust cross-compile container"
+        echo "    $HERE/dev.sh -be    # build all 4 targets and stage them"
+        echo ""
+        echo "  Without them metasmith still plans, on the python solver — which is"
+        echo "  why this is a guard rather than a build failure you'd notice."
+        echo "  Override (NOT recommended) by setting MSM_SKIP_SOLVER_CHECK=1."
+        return 1
+    fi
+    echo "solver engine: 4/4 cross-built binaries in $_engine_stage"
+    return 0
+}
+
 _assert_dist_matches_source() {
     [ -n "$MSM_SKIP_DIST_CHECK" ] && {
         echo "MSM_SKIP_DIST_CHECK set — skipping dist/source hash check"
@@ -130,6 +202,7 @@ echo ""
 # # add pypi api token as file to ./secrets [https://pypi.org/help/#apitoken]
 # # make some changes to source
 # # bump up ./src/*/version.txt
+# dev.sh --build-gui # build the frontend bundle (needs node; not committed)
 # dev.sh -bp # build the pip package
 # dev.sh -up # test upload to testpypi
 # dev.sh -upload-pypi # release to pypi index for pip install
@@ -142,6 +215,7 @@ echo ""
 #
 # example workflow 3, containerization:
 # dev.sh --idev # create a local conda dev env
+# dev.sh --build-gui # build the frontend bundle (needs node; not committed)
 # dev.sh -bd # build docker image
 # dev.sh -ud # publish to quay.io
 # dev.sh -bs # build apptainer image from local docker image
@@ -175,8 +249,24 @@ case $1 in
 
     ###################################################
     # build
+    --build-gui) # frontend bundle for `msm gui`
+        # Needs node. It is a build dependency only — the bundle is shipped
+        # prebuilt, so the runtime env has no use for it and base.yml does not
+        # carry it.
+        command -v npm >/dev/null || {
+            echo "ERROR: npm not found. The GUI bundle needs node to build:"
+            echo "  conda create -n msm_node -c conda-forge nodejs"
+            echo "  conda activate msm_node && $HERE/dev.sh --build-gui"
+            exit 1
+        }
+        cd $HERE/frontend
+        [ -d node_modules ] || npm install --no-audit --no-fund
+        npm run build
+    ;;
     -bp) # pip
         # build pip package
+        _assert_gui_bundle || exit 1
+        _assert_solver_engine || exit 1
         [ -d ./build ] && rm -r build
         [ -d ./dist ] && rm -r dist
         # Stamp build_hash.txt before sdist/wheel so FULL_VERSION is baked in.
@@ -195,6 +285,7 @@ case $1 in
     ;;
     -bc) # conda
         # requires built pip package
+        _assert_solver_engine || exit 1
         _assert_dist_matches_source || exit 1
         rm -r $HERE/conda_build
         python ./conda_recipe/compile_recipe.py
@@ -208,7 +299,27 @@ case $1 in
         cd $HERE/main/relay_agent
         ./dev.sh -b
     ;;
+    -bec) # build the container for building the solver engine
+        # The same upstream image the relay uses, so -brc and this are
+        # interchangeable; both exist so neither build has to know about the other.
+        cd $HERE/main/solver_engine
+        ./dev.sh -bb
+    ;;
+    -be) # build the solver engine (4 targets) and stage it into the package
+        cd $HERE/main/solver_engine
+        ./dev.sh -b
+    ;;
+    -bel) # solver engine, host toolchain, host target only — dev loop, not shippable
+        cd $HERE/main/solver_engine
+        ./dev.sh -bl
+    ;;
     -bd) # docker
+        _assert_gui_bundle || exit 1
+        # The image installs the sdist, so it carries whatever is staged here.
+        # A stale stage is *mostly* self-detecting -- engine/ sits inside the
+        # tree _build_hash walks, so staging changes FULL_VERSION -- but that
+        # reports a hash mismatch rather than naming the cause.
+        _assert_solver_engine || exit 1
         # pre-download requirements
         mkdir -p $HERE/lib
         cd $HERE/lib
@@ -289,8 +400,29 @@ case $1 in
 
     -r)
         shift
+        # This also settles where the solver engine comes from: putting src/ on
+        # the path makes src/metasmith/engine/ the package's own engine dir --
+        # the exact directory an installed wheel resolves against, and the one
+        # -be/-bel stage into. So there is one lookup in all three contexts and
+        # nothing to add to PATH. Run -bel once and source runs use the engine.
         export PYTHONPATH=$HERE/src:$PYTHONPATH
         python -m $NAME $@
+    ;;
+    --gui) # serve the web GUI over its own scratch workspace
+        shift
+        # Pinned, not prepended, for the same reason -tg pins it: a workspace
+        # PYTHONPATH resolves `metasmith` to some *other* checkout, and the
+        # page then serves a server none of your edits are in -- which reads
+        # as "my change did nothing" rather than as a wrong interpreter.
+        export PYTHONPATH=$HERE/src
+        # `msm gui` writes its project directory (agents/, workflows/, runs/,
+        # the served config, the standard-library clone) into the cwd, so it
+        # is given one under scratch/ -- already gitignored wholesale -- and
+        # never the repo root, which it would otherwise litter.
+        ws=$HERE/scratch/gui-main
+        mkdir -p $ws
+        cd $ws
+        python -m $NAME gui $@
     ;;
     -rd) # docker
             # -e XDG_CACHE_HOME="/ws"\
@@ -337,6 +469,25 @@ case $1 in
         cd $HERE
         export PYTHONPATH=$HERE/src:$PYTHONPATH
         pytest $@
+    ;;
+
+    -tg) # just the GUI's suite -- the inner loop while working on the page
+        shift
+        cd $HERE
+        # Pinned, not prepended: a *relative* entry inherited from the caller's
+        # PYTHONPATH (a workspace that exports `../../src`) is re-resolved
+        # against the cwd of every process and every temp dir a test chdirs to,
+        # and the stat misses alone doubled this suite's wall time.
+        export PYTHONPATH=$HERE/src
+        # The directory is the definition of the set -- tests/conftest.py stamps
+        # `gui` on everything under it, and a file that lands under no axis at
+        # all fails collection rather than going quiet. Handing pytest the path
+        # matters as much as the -m: collection imports every module it walks,
+        # and importing the e2e ones costs more than this whole suite takes.
+        [ -d "$HERE/tests/gui" ] || { echo "tests/gui/ is missing"; exit 1; }
+        # -q and no per-test names: this is meant to be run every minute, so
+        # what it prints is the count and the failures, not a 200-line roster.
+        pytest -m gui -q --durations=0 --durations-min=0.25 $HERE/tests/gui $@
     ;;
 
     -td) # inject updates to an agent home for dev binds

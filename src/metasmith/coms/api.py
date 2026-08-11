@@ -3,6 +3,7 @@ from pathlib import Path
 from ..logging import Log
 from ..bootstrap import DeployFromContainer, StageAndRunTransform
 from ..agents import RunWorkflow, StageWorkflow, CheckWorkflow
+from ..env import Rootfs
 
 class Api:
     def deploy_from_container(self, body: dict):
@@ -25,7 +26,12 @@ class Api:
             Path(workspace), int(step_index), host,
             stage_root=Path(stage_root) if stage_root else None,
         )
-        exit(res.success)
+        # `exit(True)` is exit status 1 -- success reported failure and failure
+        # reported success. Invisible under a container runtime, where this call
+        # sits mid-script in msm_bootstrap and the relay teardown supplies the
+        # script's status; on the relay-free path it IS the last command, so the
+        # inversion made every successful mamba step a failed nextflow task.
+        exit(0 if res.success else 1)
 
     def stage_workflow(self, body: dict):
         task_key = body.get("task_key")
@@ -33,7 +39,12 @@ class Api:
         verify = body.get("verify", "False").strip().title()=="True"
         host = body.get("host")
         assert host, "[host] is required"
-        StageWorkflow(task_key, verify, host)
+        # Absent means "no override" -- the agent's own tendency stands. Parsed
+        # here rather than defaulted, so a typo fails loudly instead of quietly
+        # staging with the mode the caller was trying to move away from.
+        rootfs = body.get("rootfs")
+        rootfs = Rootfs.Parse(rootfs) if rootfs else None
+        StageWorkflow(task_key, verify, host, rootfs=rootfs)
 
     def run_workflow(self, body: dict):
         key = body.get("key")
