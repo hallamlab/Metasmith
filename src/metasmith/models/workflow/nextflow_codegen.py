@@ -59,7 +59,7 @@ from ...caching.layout import default_cache_root, out_dir, staging_dir
 from ...constants import AgentPaths
 from ...env import ContainerDef, Environment, Rootfs, Runtime
 from ...logging import Log
-from ..libraries import DataInstance, GPU_LABEL
+from ..libraries import DataInstance, GPU_LABEL, ResolveEnvImage
 from ..lineage import LinPayload
 from ..paths import PathMap
 from ..solver import Endpoint
@@ -200,15 +200,27 @@ class NextflowGenContext:
     # tendency stands and nothing about the compiled workspace changes.
     rootfs: "Rootfs|None" = None
 
-def _read_env_declarations(step) -> dict[str, list[str]]:
-    """Which of `container:` / `conda:` each env resource this step names carries.
+def _read_env_declarations(step) -> dict[str, dict[str, str]|None]:
+    """What each env resource this step names resolves to, per world.
 
-    Keyed by the resource's own file name. A resource that cannot be read (not
-    yet staged, binary, unparseable) is recorded as `null` -- unknown, which the
-    preflight must not read as absent, or a workspace staged before the resource
-    landed would fail for the wrong reason.
+    Keyed by the resource's own file name; the value maps `container` / `conda`
+    to the image or env name that world would actually use. A resource that
+    cannot be read (not yet staged, binary, unparseable) is recorded as `null` --
+    unknown, which the preflight must not read as absent, or a workspace staged
+    before the resource landed would fail for the wrong reason.
+
+    The values were once just the list of keys present, which answered the only
+    question then being asked ("can this agent run this step"). Recording what
+    they resolve *to* is what lets a pre-flight materialise name the images a
+    staged workspace needs without re-reading a transform library the launching
+    host may not have. Membership means the same thing in both shapes, so the
+    portability check reads either generation unchanged -- see
+    `AgentPaths.ENV_MANIFEST_SCHEMA`.
+
+    Resolution goes through `ResolveEnvImage`, the same helper execution uses, so
+    the manifest and the run can never disagree about what a resource means.
     """
-    found: dict[str, list[str]|None] = {}
+    found: dict[str, dict[str, str]|None] = {}
     for dep in getattr(step.transform, "_env_deps", []):
         for inst in step.dependency_map.get(dep, []):
             try:
@@ -216,16 +228,23 @@ def _read_env_declarations(step) -> dict[str, list[str]]:
                 name = Path(p).name
                 if name in found: continue
                 with open(p) as f:
-                    parsed = yaml.safe_load(f.read())
+                    content = f.read()
+                parsed = yaml.safe_load(content)
             except Exception:
                 found[Path(str(getattr(inst, "dtype_name", dep.key))).name] = None
                 continue
             if isinstance(parsed, dict):
-                found[name] = sorted(k for k in ("container", "conda") if parsed.get(k))
+                found[name] = {
+                    key: ResolveEnvImage(content, runtime, p)
+                    for key, runtime in (("container", Runtime.APPTAINER), ("conda", Runtime.MAMBA))
+                    if parsed.get(key)
+                }
             else:
                 # A legacy bare-URI (*.oci) resource is a container image and
-                # nothing else -- that is exactly what ResolveEnvImage does with it.
-                found[name] = ["container"]
+                # nothing else -- that is exactly what ResolveEnvImage does with
+                # it, and why asking it for the conda form here would be wrong:
+                # it would answer with the same URI.
+                found[name] = {"container": ResolveEnvImage(content, Runtime.APPTAINER, p)}
     return found
 
 def apply_fs_strategy(context: NextflowGenContext) -> None:
@@ -466,6 +485,10 @@ def prepare_nextflow(task, context: NextflowGenContext):
         # has nothing to run, and a declaration with no arm to use it is
         # equally unrunnable. `arms: null` means the source could not be
         # scanned -- unknown, not "declared nothing".
+        #
+        # `envs` also carries what each world resolves to, which is what a
+        # pre-flight materialise reads: the launching host may hold no transform
+        # library, and stage time is the one moment the resources are on disk.
         _scan = step.transform._env_scan
         env_requirements[process_name] = {
             "step": step.order,
@@ -1137,7 +1160,20 @@ def prepare_nextflow(task, context: NextflowGenContext):
     # line with a trailing newline so `cat`-ing it back over the agent shell
     # cannot silently truncate.
     with open(context.work_dir/AgentPaths.ENV_MANIFEST, "w") as f:
-        json.dump({"schema": 1, "steps": env_requirements}, f, separators=(",", ":"))
+        json.dump(
+            {
+                "schema": AgentPaths.ENV_MANIFEST_SCHEMA,
+                # The per-task rootfs override, recorded beside the images
+                # because whoever materialises them ahead of a run has to
+                # produce the artifact the steps will actually look for. It is
+                # otherwise reachable only from per-step meta, which the
+                # launching host would have to parse a step at a time. `null`
+                # means none was declared, so the agent's own tendency stands.
+                "rootfs": None if context.rootfs is None else context.rootfs.value,
+                "steps": env_requirements,
+            },
+            f, separators=(",", ":"),
+        )
         f.write("\n")
 
     wf_output = []

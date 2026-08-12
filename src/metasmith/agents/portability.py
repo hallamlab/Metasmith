@@ -21,6 +21,14 @@ class EnvPortabilityError(Exception):
     """A staged workflow names a tool this agent's runtime cannot provide."""
 
 def _read_env_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
+    # The per-step half, which is all the portability check wants.
+    return _read_env_manifest_doc(shell, workspace).get("steps", {})
+
+def _read_env_manifest_doc(shell: LiveShell, workspace: Path) -> dict:
+    # The whole manifest. The image pre-flight needs more than the steps -- the
+    # workspace's staged rootfs override rides at the top level, because it
+    # decides which artifact a pre-fetch must produce.
+    #
     # Per-step tool-environment declarations recorded at stage time. Absent for
     # workspaces staged by an older metasmith, which is indistinguishable from
     # "nothing to check" and is treated as such -- otherwise every already-staged
@@ -31,7 +39,7 @@ def _read_env_manifest(shell: LiveShell, workspace: Path) -> dict[str, dict]:
     if "{" not in text: return {}
     try:
         text = text[text.index("{"):text.rindex("}")+1]
-        return json.loads(text).get("steps", {})
+        return json.loads(text)
     except (json.JSONDecodeError, ValueError) as e:
         # Same reasoning as the GPU manifest: a file that exists but does not
         # parse means the check cannot be performed, and skipping it silently is
@@ -69,8 +77,12 @@ def _check_env_portability(manifest: dict[str, dict], env: Environment) -> None:
             continue
         for name, fields in sorted((v.get("envs") or {}).items()):
             if fields is None: continue  # resource unreadable at stage time
+            # `fields` is a list of keys (schema 1) or a mapping of key to what
+            # it resolves to (schema 2). Membership -- the only thing asked of it
+            # here -- reads the same on both, so a workspace staged by either
+            # generation gets the same verdict. `sorted` renders both as names.
             if FIELD not in fields:
-                offenders.append(f"{who}: env resource [{name}] has no '{FIELD}:' entry (has {fields or ['nothing']})")
+                offenders.append(f"{who}: env resource [{name}] has no '{FIELD}:' entry (has {sorted(fields) or ['nothing']})")
     if offenders:
         raise EnvPortabilityError(
             f"agent runtime [{env.runtime.name}] runs tools without a container, but"

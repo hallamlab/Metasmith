@@ -7,7 +7,8 @@ Client side, in the order a caller uses them: `targets` states what is wanted,
 `workflow_ops` / `run_control` are mixed into `Agent` to give it the verbs --
 generate, stage, run, then wait, tail, cancel. `shell` is the held-open
 connection all three reach for; `gpu` and `portability` are the two preflights
-that refuse a run the far side cannot honour.
+that refuse a run the far side cannot honour, and `images` is the third, which
+only reports -- plus the pre-flight fetch a caller asks for by name.
 
 Agent side, launched by the staged agent from inside its container: `runner`
 holds the three RPC entry points and `collect` reassembles a finished run.
@@ -36,6 +37,11 @@ from .gpu import (
 )
 from .portability import (
     EnvPortabilityError, _check_env_portability, _read_env_manifest,
+    _read_env_manifest_doc,
+)
+from .images import (
+    ImageMaterialiseError, _check_image_store, _manifest_images,
+    _materialise_images, _tool_environment_for,
 )
 from .workflow_ops import GetNxfConfigPresets
 from .agent import Agent

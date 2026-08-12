@@ -80,6 +80,13 @@ class AgentPaths:
     # what runtime the agent is. Same split, and same file-shaped seam, as the
     # GPU manifest above.
     ENV_MANIFEST = "workflow.env.json"
+    # Bumped when a recorded entry changes shape. Schema 1 listed which of
+    # `container:` / `conda:` each resource carried; schema 2 maps each to what
+    # it resolves to, so a pre-flight materialise can name a workspace's images
+    # without the transform library. Membership means the same thing in both, so
+    # the portability check reads either -- nothing branches on this number, but
+    # a wire format that changed silently is how the next reader gets it wrong.
+    ENV_MANIFEST_SCHEMA = 2
     # Nextflow's own `-with-trace` table, one row per task attempt. It is the
     # only per-step record that survives `rm -rf work/`, and the only one that
     # reports an exit code, so every consumer asking "which steps died" reads
