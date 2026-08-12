@@ -132,13 +132,15 @@ class _Host:
         stub.chmod(0o755)
         self._bindir = bindir
 
-    def run(self, cmd: str, *, pull="good", build="good", sandbox="good"):
+    def run(self, cmd: str, *, pull="good", build="good", sandbox="good", cachedir=None):
         env = {
             k: v for k, v in os.environ.items()
             # unset so the store root's ${APPTAINER_CACHEDIR:-<cache>} falls
             # through to the cache this host was built with
             if k != "APPTAINER_CACHEDIR"
         }
+        if cachedir is not None:
+            env["APPTAINER_CACHEDIR"] = str(cachedir)
         env.update(
             PATH=f"{self._bindir}{os.pathsep}{os.environ['PATH']}",
             MSM_STUB_LOG=str(self.log),
@@ -356,3 +358,44 @@ class TestForcedModeBehaviour:
         assert res.returncode == 0, res.stderr
         assert sandbox_stamp.is_file()
         assert host.subcommands("build") == []
+
+
+# --------------------------------------------------------------------------
+# the store is the thing apptainer is handed -- never a registry URI
+#
+# Antonio, 2026-06-23, against v0.18.x: "I set APPTAINER_CACHEDIR and it made
+# no difference"; his only fix was overwriting the `.oci` files with absolute
+# local SIF paths, in the Mac copy and the Sockeye copy both. The store-root
+# redesign that landed after that report is what fixed it, so these are a
+# regression pin rather than a fix -- they are expected to pass the first time
+# they are run, and a failure here means the redesign does not cover his case
+# after all.
+# --------------------------------------------------------------------------
+
+class TestRunTimeNeverNamesARegistry:
+    @pytest.mark.parametrize("rootfs", [Rootfs.AUTO, Rootfs.SIF, Rootfs.SANDBOX])
+    def test_a_materialised_image_is_run_from_the_store(self, rootfs, tmp_path):
+        env = _apptainer(tmp_path, rootfs=rootfs)
+        cmd = env.MakeRunCommand(local=True)
+        assert "docker://" not in cmd, "apptainer was handed a registry URI to convert"
+        assert str(env.GetLocalPath().parent) in cmd
+
+    def test_the_store_root_follows_apptainer_cachedir(self, host, tmp_path):
+        """The setting Antonio set, doing what he expected it to do.
+
+        Asserted by running the emitted chain rather than by reading it: the
+        store root is a shell expression expanded on the execution host, so
+        whether it is honoured is a question about the shell, not about the
+        string.
+        """
+        elsewhere = tmp_path/"scratch_cache"
+        elsewhere.mkdir()
+        env = _apptainer(host.store)
+        res = host.run(env.MakeMaterialiseCommand(), cachedir=elsewhere)
+        assert res.returncode == 0, res.stderr
+        landed = elsewhere/env.GetLocalPath().name
+        assert landed.read_text() == "GOOD"
+        assert landed.with_suffix(".sif.verified").is_file()
+        assert not (host.store/env.GetLocalPath().name).exists(), (
+            "the image went to the built-in default despite APPTAINER_CACHEDIR"
+        )

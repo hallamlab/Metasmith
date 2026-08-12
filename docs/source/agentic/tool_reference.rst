@@ -107,6 +107,7 @@ G. Lifecycle / execution
 Command                                                           Purpose
 ================================================================  ============================================================
 ``metasmith workflow stage AGENT TASK [--on-exist ...]``          Compile DAG → Nextflow and transfer
+``metasmith workflow materialise AGENT TASK [--force]``           Fetch the task's tool images onto the agent first
 ``metasmith workflow run AGENT TASK [--preset P] [--params JSON]`` Detached launch
 ``metasmith workflow wait AGENT TASK [--timeout S]``              Block on sentinel
 ``metasmith workflow tail AGENT TASK [--source agent|main] [--lines N]`` Last N lines of agent.log or main.log
