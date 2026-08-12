@@ -635,6 +635,18 @@ is a different command rather than the same one with a flag. Each arm clears its
 partial output first: a half-written SIF still satisfies the `[ -e ]` the run command
 checks.
 
+**Existence is not evidence, so every arm mounts what it produced before claiming it.**
+`apptainer exec <artifact> true` is the probe — a SIF that arrives with a bad squashfs
+superblock passes both `[ -e ]` and a header-only `sif list`, and fails only inside a tool
+reading its own rootfs, hops from the pull that caused it; `apptainer verify` asks about
+signatures biocontainers do not carry. A pass writes a sibling `.verified` stamp and a
+failure deletes the artifact, so a bad rung falls through to the next instead of poisoning
+the host. **The stamp is what makes this affordable**: `_materialised_test` requires artifact
+*and* stamp, so the cost is one container start per image per host rather than one per task,
+and an artifact standing alone — from a metasmith predating this, or from a corrupt pull — is
+mounted once and then either stamped or replaced. Clear a stamp wherever you clear its
+artifact, or `assertive` re-pulls into a "verified" claim nothing will ever re-check.
+
 **`Rootfs` (`auto` | `sif` | `sandbox`) is the manual override**, declared in two places
 with one spelling: `Agent.Deploy(rootfs=…)` sets the host's standing tendency (persisted
 into `agent.yml`, so tool images inherit it), and `Agent.StageWorkflow(task, rootfs=…)`

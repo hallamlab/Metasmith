@@ -9,10 +9,14 @@ Bootstrap correctness: the code paths that prepare the workspace before any flow
 | `test_container_binds.py` | ExecWithContainer bind-mount construction (Docker + Apptainer dialects). |
 | `test_container_sandbox.py` | The `Rootfs` modes: GetSandboxPath, MakeBuildSandboxCommand, which artifact MakeRunCommand names. |
 | `test_container_extra_args.py` | `args=` pass-through to runtime. |
+| `test_container_integrity.py` | Mount-test + stamp: what the materialise chain verifies, and what the reuse test requires. |
 
 Default marker: `fast`. It was `slow` while the 10k-scale `DataInstanceLibraryPerformance` class
 lived in `test_libraries.py`; six tests of 20-50s kept ~100 sub-millisecond ones out of the daily
 loop. The scale tests are `tests/perf/test_library_scale.py` now. Nothing here pulls a real image —
 every container test asserts the *emitted command string*, which is the point of the axis.
+`test_container_integrity.py` additionally *runs* that string against a stub `apptainer` on PATH,
+which keeps the same rule (no registry, no container start) while letting a fallback chain be
+tested as logic rather than as text.
 
 Reuse: `src/metasmith/env/environment.py:Environment.MakeMaterialiseCommand`.

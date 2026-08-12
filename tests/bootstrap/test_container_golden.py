@@ -255,7 +255,14 @@ class TestProvisionGolden:
         assert env.ProvisionSteps(agent_home=AGENT_HOME) == []
 
     def test_apptainer_materialises_one_artifact_without_asking_the_host(self):
-        """One artifact, no probe -- and the sandbox rung never packs a squashfs.
+        """One artifact, nothing asked of the host -- and the sandbox rung never
+        packs a squashfs.
+
+        "Without asking the host" is about *capability* detection: nothing here
+        inspects the apptainer version or the setuid bit to choose a mechanism,
+        because that guessed wrong in both directions. The chain does mount each
+        artifact it produces, which is a question about the artifact rather than
+        about the host, and is the only thing that can answer it.
 
         The sandbox is built straight from the registry so mksquashfs is never
         invoked on that rung, which is what makes it usable as the last-resort
@@ -266,7 +273,11 @@ class TestProvisionGolden:
         assert len(steps) == 1
         cmd = steps[0][0]
 
-        assert cmd.startswith(f'mkdir -p "{STORE}"; if [ ! -e {SIF} ] && [ ! -d {SANDBOX} ]; then')
+        # The gate is artifact AND stamp: an unstamped artifact is one nothing
+        # has mounted, so it is not "already materialised".
+        assert cmd.startswith(
+            f'mkdir -p "{STORE}"; {{ [ -e {SIF} ] && [ -e {SIF}.verified ]; }}'
+        )
         assert f'apptainer build --force --sandbox {SANDBOX} {IMAGE}' in cmd, (
             "sandbox rung is not building from the registry"
         )
@@ -278,7 +289,11 @@ class TestProvisionGolden:
 
     def test_assertive_forces_a_rebuild(self):
         steps = _container(Runtime.APPTAINER).ProvisionSteps(agent_home=AGENT_HOME, assertive=True)
-        assert steps[0][0].startswith(f'mkdir -p "{STORE}"; rm -rf {SANDBOX} {SIF}; if [ ! -e {SIF} ]')
+        # The stamps go with the artifacts they vouch for; left behind, the
+        # re-pull would land under a "verified" claim nothing ever re-checked.
+        assert steps[0][0].startswith(
+            f'mkdir -p "{STORE}"; rm -rf {SANDBOX} {SIF} {SANDBOX}.verified {SIF}.verified; '
+        )
 
     def test_docker_assertive_is_a_no_op(self):
         # Docker has no sidecar artifact to `rm -rf` first -- a pull already

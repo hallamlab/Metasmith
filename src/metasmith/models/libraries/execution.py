@@ -144,15 +144,27 @@ def _materialised_test(env: Environment) -> str:
     the old host-level override inert: a `.sandbox` left in a shared image
     store by some past run satisfied the test, materialising was skipped, and a
     forced-SIF run was quietly a sandbox run.
+
+    "In the form we asked for" includes *proven to mount*, so the stamp
+    `Environment.MakeVerifyCommand` writes counts as much as the artifact. That
+    is what keeps the check to one container start per image per host rather
+    than one per task: every task consults this, and only the first task to find
+    no stamp pays for materialising. An artifact standing without its stamp --
+    left by a metasmith that predates the check, or by a pull that produced a
+    bad squashfs superblock -- reads as not yet materialised, which is exactly
+    what sends it back through the chain to be mounted once and settled.
     """
     sif, sandbox = env.GetLocalPath(), env.GetSandboxPath()
+    sif_stamp, sandbox_stamp = env.GetLocalStampPath(), env.GetSandboxStampPath()
+    ok_sif = f'( [ -e {sif} ] && [ -e {sif_stamp} ] )'
+    ok_sandbox = f'( [ -d {sandbox} ] && [ -e {sandbox_stamp} ] )'
     match env.rootfs:
         case Rootfs.SIF:
-            return f'[ -e {sif} ]'
+            return ok_sif
         case Rootfs.SANDBOX:
-            return f'[ -d {sandbox} ]'
+            return ok_sandbox
         case _:
-            return f'( [ -e {sif} ] || [ -d {sandbox} ] )'
+            return f'( {ok_sif} || {ok_sandbox} )'
 
 
 class EnvDispatch:

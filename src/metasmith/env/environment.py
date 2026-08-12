@@ -148,6 +148,48 @@ class Environment:
             case Runtime.APPTAINER:
                 return self._store_root()/f"{self._cached_name()}.sandbox"
 
+    def _stamp_path(self, artifact: "Path|None"):
+        # Sibling of the artifact, never inside it: the sandbox artifact is a
+        # directory, and a stamp within it would be taken by the `rm -rf` that
+        # replaces the tree -- which reads as "never verified" and costs a
+        # re-fetch every time.
+        if artifact is None: return None
+        return Path(f"{artifact}.verified")
+
+    def GetLocalStampPath(self):
+        return self._stamp_path(self.GetLocalPath())
+
+    def GetSandboxStampPath(self):
+        return self._stamp_path(self.GetSandboxPath())
+
+    def MakeVerifyCommand(self, *, sandbox: bool = False):
+        """Prove the materialised artifact actually mounts, and record that it did.
+
+        `apptainer exec <artifact> true` is the probe because mounting the
+        rootfs is the exact thing that failed: a SIF that downloaded with a bad
+        squashfs superblock satisfies the `[ -e ]` every arm of the chain used
+        to gate on, and only fails when a tool tries to read its own
+        filesystem — hops away from the pull that produced it, reported as
+        something else entirely. A header-only inspection (`sif list`) passes on
+        exactly those images, and `apptainer verify` answers a different
+        question: cryptographic signatures, which biocontainers do not carry.
+
+        `--no-home --cleanenv` keep the probe answering about the image rather
+        than about host state. A false negative here is expensive — it deletes
+        a sound artifact of several hundred megabytes and fetches it again.
+
+        Success writes a sibling stamp; failure removes the artifact *and* any
+        stamp and reports failure, so the caller's fallback chain advances to
+        its next rung instead of trusting what it just produced.
+        """
+        artifact = self.GetSandboxPath() if sandbox else self.GetLocalPath()
+        stamp = self.GetSandboxStampPath() if sandbox else self.GetLocalStampPath()
+        if artifact is None or stamp is None: return ""
+        return (
+            f'{{ apptainer exec --no-home --cleanenv {artifact} true >/dev/null 2>&1 '
+            f'&& : > {stamp}; }} || {{ rm -rf {artifact} {stamp}; false; }}'
+        )
+
     def MakeBuildSandboxCommand(self, from_image: bool = False):
         # Build the unpacked sandbox dir. By default this unpacks a
         # previously-pulled SIF; with from_image=True it builds the sandbox
@@ -340,9 +382,14 @@ class Environment:
         # first. Guessing was the old shape and it was wrong in both directions:
         # it unpacked on hosts that did not need it (chamois runs a real
         # multi-container workflow on SIFs alone), and on micb0 nothing static
-        # can predict that mksquashfs will segfault. Each arm removes its own
-        # partial output first, because a half-written SIF still satisfies the
-        # `[ -e ]` the run command checks.
+        # can predict that mksquashfs will segfault.
+        #
+        # Each arm removes its own partial output first, and — the thing that
+        # makes "fall back" mean anything — each proves its output mounts before
+        # claiming it. Existence was the old test, and a SIF that arrives with a
+        # bad squashfs superblock satisfies it, so a host that fetched one
+        # trusted it forever and every tool reading its own rootfs failed
+        # somewhere unrelated. See MakeVerifyCommand for the probe and the stamp.
         #
         # `self.rootfs` short-circuits the chain when someone has declared the
         # answer; see Rootfs.
@@ -366,12 +413,38 @@ class Environment:
             )
         sif, sandbox = self.GetLocalPath(), self.GetSandboxPath()
         if sif is None or sandbox is None: return ""
-        prefix = f'mkdir -p "{sif.parent}"; ' + (f'rm -rf {sandbox} {sif}; ' if force else '')
+        sif_stamp, sandbox_stamp = self.GetLocalStampPath(), self.GetSandboxStampPath()
+        verify_sif = self.MakeVerifyCommand()
+        verify_sandbox = self.MakeVerifyCommand(sandbox=True)
+        # "Already materialised" is the artifact *and* its stamp. An artifact
+        # standing alone is one nothing has ever mounted -- which is the state
+        # every image predating this check is in, and the state a corrupt pull
+        # leaves behind. So each mode opens with a rung that adopts what is
+        # already there: mount it once, stamp it if it holds, and let the verify
+        # remove it if it does not, which drops through to a real fetch. That
+        # costs one container start, never a re-download, for a store full of
+        # sound images.
+        done_sif = f'{{ [ -e {sif} ] && [ -e {sif_stamp} ]; }}'
+        done_sandbox = f'{{ [ -d {sandbox} ] && [ -e {sandbox_stamp} ]; }}'
+        adopt_sif = f'{{ [ -e {sif} ] && {verify_sif}; }}'
+        adopt_sandbox = f'{{ [ -d {sandbox} ] && {verify_sandbox}; }}'
+        prefix = f'mkdir -p "{sif.parent}"; ' + (
+            # The stamp goes wherever the artifact goes, or an assertive deploy
+            # re-pulls into a stale "verified" claim -- worse than the state it
+            # was clearing, because nothing will ever look again.
+            f'rm -rf {sandbox} {sif} {sandbox_stamp} {sif_stamp}; ' if force else ''
+        )
         match self.rootfs:
             case Rootfs.SANDBOX:
                 # Straight from the registry: mksquashfs is never invoked, which
                 # is the whole point on a host whose copy is broken.
-                return prefix + f'[ -d {sandbox} ] || {self.MakeBuildSandboxCommand(from_image=True)}'
+                return (
+                    prefix
+                    + f'{done_sandbox} '
+                    f'|| {adopt_sandbox} '
+                    f'|| {{ rm -rf {sandbox} {sandbox_stamp}; '
+                    f'{self.MakeBuildSandboxCommand(from_image=True)} && {verify_sandbox}; }}'
+                )
             case Rootfs.SIF:
                 # No unpack rung — the mode says a directory rootfs is not
                 # acceptable, so failing to build the SIF must fail, not
@@ -379,11 +452,13 @@ class Environment:
                 # sandbox goes: it is 2.4 GB of tree that nothing will read.
                 return (
                     prefix
-                    + f'rm -rf {sandbox}; '
-                    + f'if [ ! -e {sif} ]; then '
-                    f'{self.MakePullCommand()} '
-                    f'|| {{ rm -f {sif}; {self.MakeBuildSifCommand(no_fragments=True)}; }}; '
-                    f'fi'
+                    + f'rm -rf {sandbox} {sandbox_stamp}; '
+                    + f'{done_sif} '
+                    f'|| {adopt_sif} '
+                    # `pull` refuses to write over an existing file, so the
+                    # rejected artifact has to go before the fetch, not after.
+                    f'|| {{ rm -f {sif} {sif_stamp}; {self.MakePullCommand()} && {verify_sif}; }} '
+                    f'|| {{ rm -f {sif}; {self.MakeBuildSifCommand(no_fragments=True)} && {verify_sif}; }}'
                 )
             case _:
                 # A sandbox present under AUTO is not a leftover to clean up: it
@@ -392,11 +467,14 @@ class Environment:
                 # known to segfault here. So either artifact counts as done.
                 return (
                     prefix
-                    + f'if [ ! -e {sif} ] && [ ! -d {sandbox} ]; then '
-                    f'{self.MakePullCommand()} '
-                    f'|| {{ rm -f {sif}; {self.MakeBuildSifCommand(no_fragments=True)}; }} '
-                    f'|| {{ rm -f {sif}; {self.MakeBuildSandboxCommand(from_image=True)}; }}; '
-                    f'fi'
+                    + f'{done_sif} '
+                    f'|| {done_sandbox} '
+                    f'|| {adopt_sif} '
+                    f'|| {adopt_sandbox} '
+                    f'|| {{ rm -f {sif} {sif_stamp}; {self.MakePullCommand()} && {verify_sif}; }} '
+                    f'|| {{ rm -f {sif}; {self.MakeBuildSifCommand(no_fragments=True)} && {verify_sif}; }} '
+                    f'|| {{ rm -rf {sandbox} {sandbox_stamp}; '
+                    f'{self.MakeBuildSandboxCommand(from_image=True)} && {verify_sandbox}; }}'
                 )
 
     def ProvisionSteps(self, *, agent_home: Path, assertive: bool=False) -> list[tuple[str, str|None]]:
@@ -414,9 +492,9 @@ class Environment:
         if not self.GetLocalPath():
             return steps
         display = {
-            Rootfs.SIF: "{rootfs=sif: pull sif -> build sif (-no-fragments)}",
-            Rootfs.SANDBOX: "{rootfs=sandbox: unpack sandbox from registry}",
-        }.get(self.rootfs, "{pull sif -> build sif (-no-fragments) -> unpack sandbox}")
+            Rootfs.SIF: "{rootfs=sif: pull sif -> build sif (-no-fragments), each mount-tested}",
+            Rootfs.SANDBOX: "{rootfs=sandbox: unpack sandbox from registry, mount-tested}",
+        }.get(self.rootfs, "{pull sif -> build sif (-no-fragments) -> unpack sandbox, each mount-tested}")
         steps.append((self.MakeMaterialiseCommand(force=assertive), display))
         return steps
 
