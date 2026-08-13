@@ -53,7 +53,7 @@ from .solver_rng import SOLVER_RNG_VERSION
 SOLVER_WIRE_VERSION = 2
 
 ENGINE_NAME = "msm_solver"
-#: Where `main/solver_engine/dev.sh --stage` puts the binaries, and what
+#: Where `src/workflow_solver/dev.sh --stage` puts the binaries, and what
 #: `setup.py`'s `engine/**` package-data entry ships.
 ENGINE_DIR = Path(__file__).parent.parent/"engine"
 #: Written by the staging step; the packaging guard reads it. Not used here --

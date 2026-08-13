@@ -1,7 +1,7 @@
 **
 !/envs
 !/lib
-!/src
+!/src/metasmith
+!/src/bash_relay
 !/dist
-!/main/relay_agent/
 !metasmith_starter.ipynb

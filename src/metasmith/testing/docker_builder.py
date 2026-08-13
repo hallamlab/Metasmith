@@ -158,7 +158,7 @@ def ensure_lib_prerequisites() -> Path:
         (globus_dir / "README").write_text("stub for testing")
 
     # relay binary stubs (sufficient for -stub runs)
-    relay_base = REPO_ROOT / "main/relay_agent/target"
+    relay_base = REPO_ROOT / "src/bash_relay/target"
     for platform in [
         "x86_64-unknown-linux-musl",
         "aarch64-unknown-linux-musl",

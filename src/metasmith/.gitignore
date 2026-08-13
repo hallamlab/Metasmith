@@ -1,1 +1,8 @@
 /engine
+
+/scratch/*
+!/scratch/gui-main.dvc
+!/scratch/.gitignore
+
+/lib/*
+!/lib/local

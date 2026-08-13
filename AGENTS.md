@@ -29,7 +29,7 @@ Corollaries:
 Use the `msm` mamba environment: `mamba run -n msm <command>`.
 
 **Pin `PYTHONPATH` to this worktree's `src/`; do not merely unset it.** `metasmith` is not
-installed into `msm` at all — `tests/conftest.py` inserts `src/` for in-process imports, so
+installed into `msm` at all — `tests/metasmith/conftest.py` inserts `src/` for in-process imports, so
 an unset `PYTHONPATH` looks fine until a subprocess test spawns `python -m metasmith` and
 fails on its own. An ambient workspace `PYTHONPATH` is the opposite trap: it resolves the
 import to some other checkout. `PYTHONPATH="$PWD/src" mamba run -n msm …` is the form that
@@ -210,7 +210,7 @@ branches on the runtime is a bug; declare the need instead. That holds inside th
 package too: `MakeBindsParam` is the only place a mount is spelled, and the shell templates
 `env` renders must interpolate it rather than hand-write a flag — a literal reads correctly
 under whichever runtime the author had in mind and is silently wrong under the other.
-`TestBindDialectPurity` in `tests/bootstrap/test_env_deploy_scripts.py` holds that line by
+`TestBindDialectPurity` in `tests/metasmith/bootstrap/test_env_deploy_scripts.py` holds that line by
 scanning each rendered script for the other dialect's tokens. `ifContainerDo(args=[...])`
 appends verbatim runtime flags just before the image, so a flag passed there beats the
 framework default of the same name — but the dialect is the caller's problem, and mounts go
@@ -343,7 +343,7 @@ Two failure modes taught that: the loud one is `spec not found for the module`, 
 one is a snapshot-and-restore putting a concurrent load's entry back **permanently** — nothing
 fails, every later import scans more directories, and a day-old server plans an order of
 magnitude slower (0.4s → 9s per solve, measured). Pinned by
-`tests/unit/test_transform_load_is_serialised.py`.
+`tests/metasmith/unit/test_transform_load_is_serialised.py`.
 
 **Every transform file opens with `ResolveParentLibrary(__file__)`**, so a library's own load
 re-enters it once per transform. Without the per-root cache behind that call, loading the
@@ -372,7 +372,7 @@ past the run and crashes on a missing results directory. The contract is a senti
 agent home re-parses it on the next save. It was not: `SshSource` renders `ssh://host:path`
 while `Parse` split on `/` and read the `:` as part of the host, so a remote home grew a
 colon per save until nothing could reach it. Pinned by
-`tests/unit/test_source_parse.py::TestSshRoundTrip`.
+`tests/metasmith/unit/test_source_parse.py::TestSshRoundTrip`.
 
 ### Re-exporting packages
 
@@ -381,8 +381,8 @@ module docstring and re-exports, nothing else. They were single files until they
 2100–2600 lines; the dotted paths did not change, and are not allowed to. `metasmith/
 __init__.py` is entirely commented out, so those paths *are* the public API — the standard
 library of transforms is a separate repo reaching them through `python_api`. None of the
-three declares `__all__`: notebooks under `main/` star-import them and pick up names they
-never import themselves. `tests/unit/test_module_surface.py` holds a snapshot of the
+three declares `__all__`: notebooks under `research/metasmith/` star-import them and pick up names they
+never import themselves. `tests/metasmith/unit/test_module_surface.py` holds a snapshot of the
 pre-split namespace and fails on any name that stops being reachable.
 
 Two things a re-export does *not* give you, both of which cost a debugging session each:
@@ -472,7 +472,7 @@ enforcing that all three views are absolute, `..`-free, and mutually consistent.
 The container is **dual-bound**: the host scope dir lands at both `/ws` (`WORK_ROOT`) and
 `/msm_home` (`HOME_ROOT`). Nextflow may resolve a work dir through either, so anything
 mapping a cwd back to the host must check both prefixes and route HOME_ROOT cwds through
-`agent.real_path`. Pinned by `tests/unit/test_sbatch_home_root_cwd.py`.
+`agent.real_path`. Pinned by `tests/metasmith/unit/test_sbatch_home_root_cwd.py`.
 
 **Anything codegen writes into the workflow graph must be in container coordinates**, because
 channel values become the FILES manifest and are read back inside the per-step bootstrap
@@ -484,7 +484,7 @@ literal goes through `PathMap`. This holds for host-side targets too — `bin/sb
 the two roots outward before submitting, and a host-spelled path is invisible to it.
 `publishDir` is the single deliberate exception. `ContractRuntime.check_emitted_addresses`
 fails a test when a producer breaks this; every `NextflowGenContext` in the suite except
-`tests/cache/test_codegen.py` collapses `external_home` onto `HOME_ROOT`, which is why the
+`tests/metasmith/cache/test_codegen.py` collapses `external_home` onto `HOME_ROOT`, which is why the
 bug it pins was invisible for so long.
 
 ### DAG rendering
@@ -669,7 +669,7 @@ answer if it ever comes back.
 
 **Docker also materialises through `ProvisionSteps`, unconditionally.** `docker run`'s pull
 policy is "only if the tag is absent," so without an explicit pull a stale or broken image
-already sitting under a tag — an old local `./dev.sh -bd` build, or a pull from before a fix
+already sitting under a tag — an old local `./dev/metasmith.sh -bd` build, or a pull from before a fix
 landed — is trusted forever with no freshness check. `MakeMaterialiseCommand` therefore
 always attempts `docker pull` for Docker, falling back to whatever's cached locally
 (`docker image inspect`) only when the pull itself can't reach the registry, so a
@@ -784,13 +784,13 @@ by path and exits. Cold-load cost for parsing type/data/transform manifests is s
 that this is the right trade; the caching an earlier MCP server held in `ServerState` is now
 just disk reads.
 
-The CLI's full surface is documented in `docs/source/agentic/` (`tool_reference.rst`); the
+The CLI's full surface is documented in `docs/metasmith/source/agentic/` (`tool_reference.rst`); the
 command tree is discoverable with `--help` and is not restated here. Two things about it are
 not discoverable: `--json` routes progress logs to stderr so the stream stays clean, and
 errors exit non-zero to stderr rather than being swallowed into `{"error": ...}`.
 
 To run the CLI against this checkout's own source rather than whatever `metasmith` an
-ambient `PYTHONPATH` resolves to, use `./dev.sh -r <args>` rather than a bare `msm`/`metasmith`.
+ambient `PYTHONPATH` resolves to, use `./dev/metasmith.sh -r <args>` rather than a bare `msm`/`metasmith`.
 
 ## Web GUI
 
@@ -799,7 +799,7 @@ agent, inputs, plan, run, results — without writing Python. Transform *authori
 deliberately absent; it stays in the notebook and CLI.
 
 To run against this checkout's own source rather than whatever `metasmith` an ambient
-`PYTHONPATH` resolves to, launch with `./dev.sh --gui` rather than a bare `msm gui`.
+`PYTHONPATH` resolves to, launch with `./dev/metasmith.sh --gui` rather than a bare `msm gui`.
 
 The wiring: `store.py` owns the project directory (`agents/`, `workflows/<name>/`,
 `runs/<name>/`); `stdlib.py` owns the standard-library clone and builds the whole-type-system
@@ -807,13 +807,13 @@ index the browser is shipped in one fetch, so library toggles and produced-by/co
 readouts cost no round trip; `sshconfig.py` owns the marked block metasmith writes into
 `~/.ssh/config`; `jobs.py` runs background work and SSE log streams; `watcher.py` rediscovers
 live runs from disk; `api.py`/`app.py` are the routes and the Flask app. Frontend source is
-`frontend/` (Svelte 5 + Vite) — the bundle under `src/metasmith/gui/static/` is generated by
-`./dev.sh --build-gui` and never committed, and node is a build dependency deliberately kept
-out of `envs/base.yml`.
+`src/metasmith/frontend/` (Svelte 5 + Vite) — the bundle under `src/metasmith/gui/static/` is generated by
+`./dev/metasmith.sh --build-gui` and never committed, and node is a build dependency deliberately kept
+out of `envs/metasmith/base.yml`.
 
-Test selection is by **directory**, not by hand-written marks: `tests/conftest.py` maps each
-directory under `tests/` to its markers and stamps them at collection, failing loudly on a
-file that sits under no axis — so dropping a file into `tests/gui/` is all it takes to join
+Test selection is by **directory**, not by hand-written marks: `tests/metasmith/conftest.py` maps each
+directory under `tests/metasmith/` to its markers and stamps them at collection, failing loudly on a
+file that sits under no axis — so dropping a file into `tests/metasmith/gui/` is all it takes to join
 the set, and a `pytestmark` line is redundant. Handing pytest those paths matters as much as
 the `-m` does: `-m gui` alone still *collects* the whole tree, and importing the e2e modules
 costs more than this suite takes to run. It is meant to be run every minute, so the number to
@@ -859,7 +859,7 @@ is precisely the state that leaves it half built, which is why registration live
 task key is a function of identity, so a clear-and-rebuild would silently re-mint every id on
 every solve and cost every user their cache with nothing on screen to say so. A row whose path,
 type and lineage the library already holds has *nothing called on it*, and a library nothing
-changed in is not saved at all. `tests/unit/test_input_rows.py` pins that directly, because a
+changed in is not saved at all. `tests/metasmith/unit/test_input_rows.py` pins that directly, because a
 suite that only asserts "the library ends up right" passes a rebuild.
 
 **Which row owns which manifest entry is recorded, not re-derived** — a deferred path is minted,
@@ -886,7 +886,7 @@ nothing — and anything else writes the JSON object those pairs describe, each 
 `scalar` (a JSON scalar becomes that scalar; a list, an object or anything unparseable
 stays its text; quoting is the escape hatch). Those three live in `ops/rows.py` rather than in
 `ops/inputs.py`, because `ops.samples` needs the same shape and `inputs` already imports it —
-`frontend/src/lib/rows.js` is the page's copy, for the same reason. The scalar rule is on the
+`src/metasmith/frontend/src/lib/rows.js` is the page's copy, for the same reason. The scalar rule is on the
 server, once, because the GUI's params boxes read it too. Read metadata is several facts, and a
 line of hand-typed JSON in one box is not something a person can edit — which is what the keyed
 form is for, and why **adoption splits a registered JSON object into keyed fields**, but only
@@ -1011,11 +1011,11 @@ request carries `order` (the rows, as the page lists them) and `row_y` (each row
 matter: the engine reorders rows freely when it is allowed to, so a rail laid out in one order
 and drawn in another runs through its own markers; and re-baking the curves in the browser
 means a second implementation of `dag_draw`'s pixel pass with nothing holding the two in step
-— which is what `frontend/src/lib/dagpaths.js` was. An edge crosses the wire as a `d` string
+— which is what `src/metasmith/frontend/src/lib/dagpaths.js` was. An edge crosses the wire as a `d` string
 and nothing else.
 
 **A type name is split in one place on the page, and it cuts where the engine cuts.**
-`frontend/src/lib/types.js` splits `namespace::name` at the *first* `::`, as
+`src/metasmith/frontend/src/lib/types.js` splits `namespace::name` at the *first* `::`, as
 `models/dag_draw.py:default_label` does; `TypeName.svelte` is the two stacked lines that
 follow from it (namespace at half size above, bare name below), and every list, menu and
 field on the page draws through those two. The half a page prints of a type is the *name* —
@@ -1038,7 +1038,7 @@ gitignored, absent in fresh checkouts — everything then degrades to bare semve
 the single `+`→`-` substitution; the wheel name, the default agent container, `dev.sh`'s
 `DOCKER_TAG`, and `testing/docker_builder` all read that one chain. Identical source ↔
 identical hash ↔ identical image tag, which is what removes the chicken-and-egg of an
-embedded commit hash. Pinned by `tests/unit/test_container_tag.py`, `tests/unit/test_dev_sh_tag.py`.
+embedded commit hash. Pinned by `tests/metasmith/unit/test_container_tag.py`, `tests/metasmith/unit/test_dev_sh_tag.py`.
 
 Bump: edit `version.txt`, commit, then build+publish, then tag. A release ships **both** a
 quay image and a conda package — `RELEASE_PROTOCOL.md` is the followable sequence and the
@@ -1066,7 +1066,7 @@ skipping them ships something empty that nobody notices for a while:
   Treat a non-zero `-br` as fatal rather than continuing. The cross-compile image is upstream
   and `-brc` pulls it — it must never `docker build` over that tag, because the replacement
   has no osxcross and silently reduces `-br` to linux-only.
-- `-be` — the solver engine (`main/solver_engine/`, same four targets, same upstream image via
+- `-be` — the solver engine (`src/workflow_solver/`, same four targets, same upstream image via
   `-bec`). Unlike the relay it is **not** in the docker image: the solver runs locally at plan
   time, so `-be` stages the binaries into `src/metasmith/engine/` and they ship as package data
   in the wheel and sdist. That staging directory is the *only* place a binary is looked for, in
@@ -1085,11 +1085,11 @@ skipping them ships something empty that nobody notices for a while:
   itself and makes it narrate its decisions and its frontier on stderr, which is how a
   differential failure gets localised to a draw.
 
-## `examples/` — minimal regression library
+## `src/metasmith/examples/` — minimal regression library
 
-Top-level `examples/` is the smallest valid metasmith library — agnostic (no host or runtime
+`src/metasmith/examples/` is the smallest valid metasmith library — agnostic (no host or runtime
 references) and reusable for any deploy/runtime smoke test: one namespace, one container
 `.oci` pointing at the metasmith image itself, one transform (name → greeting), and a
 committed `_metadata/`. Rebuild after editing with
-`python -m metasmith build -t examples/data_types -r examples`. Used from smoke scripts such
-as `main/local_mock/smoke_hpc_deploy.py`.
+`python -m metasmith build -t src/metasmith/examples/data_types -r src/metasmith/examples`. Used from smoke scripts such
+as `research/metasmith/local_mock/smoke_hpc_deploy.py`.

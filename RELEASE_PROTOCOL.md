@@ -6,7 +6,7 @@ publish them. Keep this followable end-to-end without re-deriving the steps.
 All commands run from the repo root in the `msm` conda env:
 
 ```
-mamba run -n msm ./dev.sh <flag>
+mamba run -n msm ./dev/metasmith.sh <flag>
 ```
 
 ---
@@ -19,7 +19,7 @@ have been exercised. Focus the verification on what a release actually changes.
 ### Run the suite
 
 ```
-PYTHONPATH="$PWD/src" mamba run -n msm python -m pytest tests/ \
+PYTHONPATH="$PWD/src" mamba run -n msm python -m pytest tests/metasmith \
     -m "not docker and not e2e_docker and not e2e_agentic and not nextflow \
         and not network and not requires_docker and not requires_apptainer \
         and not requires_ssh_localhost and not requires_docker_dev_image"
@@ -37,7 +37,7 @@ containers).
 
 Note this does **not** exclude `slow` — the `perf` axis (10k-item libraries) is
 a few minutes and belongs in a release gate. For the minute-by-minute dev loop
-use `-m fast`, and `./dev.sh -tg` for the GUI alone.
+use `-m fast`, and `./dev/metasmith.sh -tg` for the GUI alone.
 
 ### Exercise the gated tiers when relevant
 
@@ -67,7 +67,7 @@ infrastructure the dev box may lack. Run the ones a release touches:
   the release affects actually run a real tool end-to-end.
 - **Apptainer is host-specific.** SIF-vs-sandbox behavior, userns permissions,
   and module availability differ per HPC host; validate on a real target host
-  (`main/local_mock/smoke_hpc_deploy.py`) rather than assuming the dev box
+  (`research/metasmith/local_mock/smoke_hpc_deploy.py`) rather than assuming the dev box
   generalizes.
 
 ---
@@ -76,7 +76,7 @@ infrastructure the dev box may lack. Run the ones a release touches:
 
 The version lives in one file: `src/metasmith/version.txt`, a bare PEP 440
 release segment (e.g. `0.19.0`) — no `+` or `-`. Everything downstream
-(`constants.VERSION`/`FULL_VERSION`/`CONTAINER_TAG`, `setup.py`, the `dev.sh`
+(`constants.VERSION`/`FULL_VERSION`/`CONTAINER_TAG`, `setup.py`, the `dev/metasmith.sh`
 docker tag, the default agent container) derives from it. `build_hash.txt` is a
 short hash over the source tree, stamped automatically at build time.
 
@@ -105,14 +105,14 @@ metasmith from the shell environment.
 ```
 unset PYTHONPATH
 
-./dev.sh -brc        # one-time: fetch the rust cross-compile container
-./dev.sh -br         # build the relay binaries (all four arch/os targets)
-./dev.sh -be         # build the solver engine (same four targets) + stage it
-./dev.sh --build-gui # build the frontend bundle (needs node; see below)
-./dev.sh -bp         # build the pip wheel + sdist  (stamps build_hash.txt)
-./dev.sh -bd         # build the docker image, tagged <version>-<hash>
-./dev.sh -bs         # build the apptainer .sif from the local docker image
-./dev.sh -bc         # build the conda package from the wheel
+./dev/metasmith.sh -brc        # one-time: fetch the rust cross-compile container
+./dev/metasmith.sh -br         # build the relay binaries (all four arch/os targets)
+./dev/metasmith.sh -be         # build the solver engine (same four targets) + stage it
+./dev/metasmith.sh --build-gui # build the frontend bundle (needs node; see below)
+./dev/metasmith.sh -bp         # build the pip wheel + sdist  (stamps build_hash.txt)
+./dev/metasmith.sh -bd         # build the docker image, tagged <version>-<hash>
+./dev/metasmith.sh -bs         # build the apptainer .sif from the local docker image
+./dev/metasmith.sh -bc         # build the conda package from the wheel
 ```
 
 `-brc`/`-br` produce the relay binaries that get baked into the docker image;
@@ -127,7 +127,7 @@ osxcross toolchain with a plain rust image; `-br` then failed both
 `_assert_real_relays` catches that at `-bs`/`-ud`, not at `-bd` — so if `-br`
 reports a compile error, stop and fix it rather than continuing to `-bd`.
 
-`-be` cross-compiles `main/solver_engine/` to the same four targets, using the
+`-be` cross-compiles `src/workflow_solver/` to the same four targets, using the
 same upstream container (`-bec` pulls it, and is interchangeable with `-brc`),
 and stages the binaries into `src/metasmith/engine/`. That directory is
 generated, never committed, and shipped as package data — because unlike the
@@ -146,11 +146,11 @@ directory is generated and never committed, so a fresh checkout has none, and
 without it the package would ship an empty static directory — a failure nobody
 notices until someone opens the page. `-bp` and `-bd` refuse to run when it is
 missing. It needs node, which is a build dependency only and deliberately absent
-from `envs/base.yml`:
+from `envs/metasmith/base.yml`:
 
 ```
 mamba create -n msm_node -c conda-forge nodejs
-mamba run -n msm_node ./dev.sh --build-gui
+mamba run -n msm_node ./dev/metasmith.sh --build-gui
 ```
 
 ---
@@ -161,8 +161,8 @@ The account has no write access to the upstream (`hallamlab`) repo, so releases
 go out through the fork and a pull request per release.
 
 ```
-./dev.sh -ud    # push the docker image to quay.io/hallamlab/metasmith
-./dev.sh -uc    # upload the conda package to anaconda.org/hallamlab
+./dev/metasmith.sh -ud    # push the docker image to quay.io/hallamlab/metasmith
+./dev/metasmith.sh -uc    # upload the conda package to anaconda.org/hallamlab
 ```
 
 The anaconda-client token persists at `~/.config/binstar/*.token` and lasts a
@@ -182,7 +182,7 @@ Then:
    0.18.3, #65 → 0.18.8), and treating the last one as still open is how 0.20.0
    and 0.20.1 shipped to quay and anaconda without ever reaching upstream.
 3. Retag quay **`latest`** (and the bare `X.Y.Z`) onto the new image. There is no
-   dev.sh step, but it needs no web UI either — `docker tag <image>:<version>-<hash>
+   dev/metasmith.sh step, but it needs no web UI either — `docker tag <image>:<version>-<hash>
    <image>:latest && docker push <image>:latest`, same for the bare version.
 4. Install the published conda package into a throwaway env and confirm the
    solver engine actually runs there (see below).
@@ -214,17 +214,17 @@ checkout otherwise shadows the install and the test proves nothing.
 |------|---------|----------|
 | Test | `pytest -m "not docker and not e2e_docker and not e2e_agentic and not nextflow and not network and not requires_*"` | green gate |
 | Bump | edit `src/metasmith/version.txt` + commit | new version |
-| Relay | `./dev.sh -brc` (pull) then `./dev.sh -br` | relay binaries — 4 targets, none stubs |
-| Solver | `./dev.sh -bec` (pull) then `./dev.sh -be` | `src/metasmith/engine/` — 4 targets, shipped in the wheel |
-| GUI | `./dev.sh --build-gui` (needs node) | `src/metasmith/gui/static/` |
-| Wheel | `./dev.sh -bp` | pip wheel + sdist, build hash |
-| Docker | `./dev.sh -bd` | local image `<version>-<hash>` |
-| SIF | `./dev.sh -bs` | `metasmith.sif` |
-| Conda | `./dev.sh -bc` | conda package |
-| Publish image | `./dev.sh -ud` | image on quay.io |
-| Publish conda | `./dev.sh -uc` | package on anaconda.org |
+| Relay | `./dev/metasmith.sh -brc` (pull) then `./dev/metasmith.sh -br` | relay binaries — 4 targets, none stubs |
+| Solver | `./dev/metasmith.sh -bec` (pull) then `./dev/metasmith.sh -be` | `src/metasmith/engine/` — 4 targets, shipped in the wheel |
+| GUI | `./dev/metasmith.sh --build-gui` (needs node) | `src/metasmith/gui/static/` |
+| Wheel | `./dev/metasmith.sh -bp` | pip wheel + sdist, build hash |
+| Docker | `./dev/metasmith.sh -bd` | local image `<version>-<hash>` |
+| SIF | `./dev/metasmith.sh -bs` | `metasmith.sif` |
+| Conda | `./dev/metasmith.sh -bc` | conda package |
+| Publish image | `./dev/metasmith.sh -ud` | image on quay.io |
+| Publish conda | `./dev/metasmith.sh -uc` | package on anaconda.org |
 | Retag quay | `docker tag`/`docker push` for `latest` + bare `X.Y.Z` | movable tags on quay.io |
 | Tags/branches | `git push origin release dev vX.Y.Z` | release on the fork |
 | Upstream | a **new** PR `release` → `hallamlab:release` | release upstream |
 
-> The env is `msm`. Run `dev.sh` and tests through `mamba run -n msm`.
+> The env is `msm`. Run `dev/metasmith.sh` and tests through `mamba run -n msm`.
