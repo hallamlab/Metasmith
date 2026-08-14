@@ -1,0 +1,32 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  accession:
+    properties:
+      Data: NCBI accession
+      arity: 1
+      ext: txt
+  accession_list:
+    properties:
+      arity: N
+      database: NCBI
+      ext: csv
+  assembly_accession:
+    properties:
+      Data: NCBI accession
+      arity: 1
+      database: assemblies
+      ext: txt
+  sra_accession:
+    properties:
+      Data: NCBI accession
+      arity: 1
+      database: SRA
+      ext: txt
+  sra_cache:
+    properties:
+    - sra prefetch cache

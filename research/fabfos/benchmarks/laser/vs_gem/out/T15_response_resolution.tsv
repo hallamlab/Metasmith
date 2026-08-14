@@ -1,0 +1,3 @@
+method	readout	units	n_designs	n_cells	n_abstained	floor_kind	band	band_n_cells	band_n_designs	band_worst	n_answered	frac_answered	n_unanswered	n_up	n_down	n_exact_zero	median_abs_nonzero	max_abs
+ECSPr	delta draw at target	current (arbitrary units)	99	99	41	measured: baseline re-solved with weights jittered by 1e-10	3.5816293507406893e-13	99	99	3.5816293507406893e-14	85	0.8585858585858586	14	67	31	1	1.139472923569057e-10	0.001079957668467573
+FBA	delta max flux at target	mmol / gDW / h	99	99	0	empirical: designs whose edits left the model unchanged	7.528413448198988e-12	8098	104	1.228378960800491	25	0.25252525252525254	74	37	45	17	3.3573144264664734e-13	52.42961997457646

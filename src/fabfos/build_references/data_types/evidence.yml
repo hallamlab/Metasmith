@@ -1,0 +1,61 @@
+# evidence:: -- what each tool actually said, kept per tool and per version.
+#
+# ONE TYPE, AND THE TOOL IS A DIRECTORY INSIDE IT. `data/processed/<tool>/<version>/`
+# mirrors `originals/<source>/<release>/`, and for the same reason: the release IS the
+# identity of the bytes. `chem_prop.tsv` alone says nothing about which MNXM space it
+# belongs to, and a saved RXNMapper cache says nothing about which RXNMapper produced it
+# -- `(metabolite, canonical rank)` is an RDKIT canonical rank, so two rdkit versions give
+# one metabolite two rank systems and two caches that look comparable are not. The version
+# is a DIRECTORY NAME rather than a line in a metadata file because a fact you must open a
+# file to learn is a fact people stop checking.
+#
+# There used to be nine types, one per producing step, so the results tree -- which is
+# laid out by type -- named the lane. That attribution now lives inside the artifact
+# instead: every step writes its evidence root, and the root holds one `<tool>/` directory
+# per tool it ran. Same fact, one level down, and the type system stops growing a name
+# every time a step learns to keep something.
+#
+# A TYPE WITH SEVERAL PRODUCERS IS ONLY SAFE BECAUSE NOTHING CONSUMES THIS ONE. The
+# planner resolves a requirement to exactly ONE producer and reports a healthy plan; a
+# second producer is silently dropped. That is why the five `interm::aam_member_*` and
+# `interm::direction_member_*` types are NOT collapsed the same way -- doing so would turn
+# a three-member ensemble into a one-member ensemble behind a plan that looks fine.
+# Nothing requires `evidence::tool_output`, so it has no such tiebreak to lose.
+#
+# WHY THESE ARE NOT interm::. They were, and that was the defect. `interm::` is transient
+# by definition, so the run ended and three different things went with the work directory:
+#
+#   * THE EXPENSIVE ONES. LocalMapper over ~45k reactions is most of a day of CPU. Losing
+#     its cache makes every downstream change -- a fusion rule, a gate threshold, an
+#     extractor fix -- re-pay that day to answer a question the mapper already answered.
+#   * THE ANSWER TO "WHY NOT". A reaction that produced no pairs did so for a reason the
+#     extractor recorded per reaction. With that gone, "why did this drop out" is only
+#     answerable by re-running the thing that dropped it.
+#   * THE PROVENANCE CLAIM. A fused row says `source=rxnmapper+indigo`. That is a claim
+#     ABOUT the members, and a claim that cannot be checked against what the members said
+#     is not provenance -- it is an assertion with a schema.
+#
+# WHY NOT lookup::. `lookup::` is what every step READS -- shared inputs, deduplicated so
+# five consumers cannot drift. These are what steps WROTE. Nothing downstream reads them;
+# that is the point. They are kept so a human, or the next build, can check.
+#
+# EACH TOOL FOLDER CARRIES ITS OWN manifest.json AND INDEX.tsv -- every tracked package
+# version at the time of writing, and per file the byte count, row count and digest. An
+# evidence directory nobody can navigate is a pile. A path that is missing is recorded as
+# ABSENT rather than skipped, because "produced nothing" and "never ran" are different
+# facts and only one of them is a bug.
+#
+# KEEPING IT IS NOT BEST-EFFORT. A step whose evidence directory is missing or empty
+# FAILS, rather than succeeding on its primary product alone. The copy happens seconds
+# after the tool finished, in the same command, so an absence does not mean "we were busy"
+# -- it means something went wrong that a green step would hide.
+types:
+  tool_output:
+    properties:
+      _: >-
+        What the steps of one build actually wrote, as `<tool>/<version>/` directories --
+        the tool's own output verbatim, the per-record status table saying why anything
+        was refused, the derived table, and the manifest and index that make the lot
+        re-interpretable rather than merely re-readable. One artifact per producing step;
+        a step that ran several tools contributes several directories. Never read by a
+        downstream step -- kept so the claims made about it can be checked.

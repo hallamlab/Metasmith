@@ -1,0 +1,26 @@
+{
+ "host": "e_coli_k12",
+ "n_panel": 84,
+ "n_add_universe": 472,
+ "n_native_add": 344,
+ "n_novel_add": 128,
+ "n_inserted": 106,
+ "n_unmappable": 22,
+ "n_reactions_with_created_metabolites": 59,
+ "n_created_metabolites": 91,
+ "n_demand": 48,
+ "n_target_absent": 36,
+ "bridge_tiers": {
+  "direct": 386,
+  "inchikey": 14,
+  "formula_charge": 10,
+  "created": 91,
+  "reused": 0
+ },
+ "media_exchanges_absent": [],
+ "n_designs": 709,
+ "n_real": 209,
+ "n_topology_unchanged": 27,
+ "n_all_native_add": 69,
+ "n_medium_unresolved": 9
+}

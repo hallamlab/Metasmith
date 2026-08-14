@@ -1,0 +1,179 @@
+# buildlib:: -- method modules the build transforms import, build side only.
+#
+# The shipped library already has this shape: `lib::` under
+# src/metasmith_libraries/resources/lib/, required by a transform and reached with
+# a `sys.path.insert` in its driver (functionalAnnotation/gpr_4lane.py requires
+# `lib::fabfos_evidence.py` exactly this way). This is the same pattern on the build
+# side, and it exists for the same reason: the AAM and direction ensembles are ~2,000
+# lines of method between them, and a driver string is no place for a method.
+#
+# Why a SECOND namespace rather than more `lib::` entries. `lib::` ships in the wheel
+# (AGENTS.md, "The two libraries") -- it is what a fosmid RUN executes. Nothing here
+# runs during a fosmid pipeline; these modules only ever execute while COMPILING a
+# reference. Putting them in `lib::` would ship the reaction-universe mappers and the
+# thermodynamics ensemble to every user who installs FabFos to assemble fosmids.
+#
+# The split is the same one build.sh's header describes for data types, applied to
+# code: run-side in the submodule, build-only here.
+types:
+  build_module:
+    properties:
+      _: python module imported by a build transform's driver; never ships in the wheel
+      usage: library
+
+  # -- the shared lookups ------------------------------------------------------
+  # Read by every layer of the AAM stack and by the direction lane. This module is what
+  # makes the atom node identity ONE artifact instead of five agreeing implementations
+  # of `CanonicalRankAtoms`, and one crosswalk loader instead of two with opposite
+  # collision policies.
+  mnx_lookups.py:
+    extends: [build_module]
+    properties:
+      src: mnx_lookups
+      _: builds and reads the five lookups -- reactions, metabolites, atom_ranks, xrefs, synonyms -- and owns the canonical-rank and formula-count definitions every consumer used to re-implement
+
+  # -- the atom-atom mapping ensemble -----------------------------------------
+  # ecspr_atom_pairs.py is the EXTRACTOR, and it is one module for all three members
+  # on purpose: every member's correspondence is expressed in the same identity,
+  # (metabolite, CanonicalRankAtoms(breakTies=True)), so two mappers that map the same
+  # physical atom name the same node. A second extractor would silently make that
+  # untrue while every table still looked well-formed.
+  ecspr_atom_pairs.py:
+    extends: [build_module]
+    properties:
+      src: ecspr_atom_pairs
+      _: equation parsing, per-metabolite canonicalisation, and pairs_from_mapped -- the one identity bookkeeper every AAM member runs through
+  refs_encoding.py:
+    extends: [build_module]
+    properties:
+      src: refs_encoding
+      _: node packing, the vocabulary, and the bake-identity block -- one module so the bake and the gate cannot disagree about the encoding
+  aam_metacyc_member.py:
+    extends: [build_module]
+    properties:
+      src: aam_metacyc_member
+      _: the curated (independent) AAM member -- MetaCyc atom-mappings-smiles.dat joined to MNXR through reac_xref
+  aam_neural_members.py:
+    extends: [build_module]
+    properties:
+      src: aam_neural_members
+      _: the two correlated AAM members -- reaction SMILES built from reac_prop+chem_prop, mapped by RXNMapper and LocalMapper, resumable
+  aam_combine.py:
+    extends: [build_module]
+    properties:
+      src: aam_combine
+      _: the AAM combiner -- consensus / single-member credit / disagreement dilution, with the neural-neural discount
+  aam_indigo_member.py:
+    extends: [build_module]
+    properties:
+      src: aam_indigo_member
+      _: the third, NON-NEURAL ensemble member and the curation arbiter -- Indigo automap, sharded, with the sidecar that makes an uninterruptible compiled hang cost one reaction instead of the run
+  aam_shard.py:
+    extends: [build_module]
+    properties:
+      src: aam_shard
+      _: the crc32 partition and the attempted-ids sidecar, shared by the Indigo and neural lanes -- the id is flushed BEFORE the attempt, and the sidecar's shard-spec header refuses a resume across a different shard count
+  aam_layers.py:
+    extends: [build_module]
+    properties:
+      src: aam_layers
+      _: the additive layer stack and its four refusing gates -- a layer may only ADD what nothing below it claimed, and "additive" is checked rather than asserted
+  build_evidence.py:
+    extends: [build_module]
+    properties:
+      src: build_evidence
+      _: keeps each tool's raw output at data/processed/<tool>/<version>/ with the manifest and index that make it re-interpretable -- the originals/ shape, one layer down
+  aam_curation.py:
+    extends: [build_module]
+    properties:
+      src: aam_curation
+      _: layer 3 -- eight proposer lanes emitting one six-column record, the body-cancel and per-element balance gates, and the admission check that refuses the four ways a curated row can be silently wrong
+  aam_worklist.py:
+    extends: [build_module]
+    properties:
+      src: aam_worklist
+      _: adjudicates the whole reaction universe before any mapper runs -- one closed-set verdict and one blocker family per reaction, so a reaction that produced nothing is distinguishable from one that was never attempted
+
+  # -- the directionality ensemble --------------------------------------------
+  dir_canon.py:
+    extends: [build_module]
+    properties:
+      src: dir_canon
+      _: the direction ensemble's frozen constants (RT, TAU_SHARED, SIGMA_0, the clamp) -- the build-side mirror of src/fabfos/canon.py's DIR_*
+  dir_refdata.py:
+    extends: [build_module]
+    properties:
+      src: dir_refdata
+      _: MetaNetX loaders for the direction ensemble -- MNXR sides/stoichiometry, MNXM properties, and the metacyc crosswalks
+  dir_metacyc_flatfile.py:
+    extends: [build_module]
+    properties:
+      src: dir_metacyc_flatfile
+      _: reader for MetaCyc's reactions.dat attribute-value flat file (REACTION-DIRECTION, LEFT, RIGHT)
+  dir_thermo_eq.py:
+    extends: [build_module]
+    properties:
+      src: dir_thermo_eq
+      _: the eQuilibrator member -- component-contribution dGr'0 routed by InChIKey, with the uninformative-sigma ceiling
+  dir_thermo_dgbyg.py:
+    extends: [build_module]
+    properties:
+      src: dir_thermo_dgbyg
+      _: the dGbyG member -- learned-GNN dGr'0 routed by SMILES, abstaining on any R-group wildcard
+  dir_drive.py:
+    extends: [build_module]
+    properties:
+      src: dir_drive
+      _: the lane's two driver steps -- build the reaction universe, evaluate one thermo member. A module rather than a string inside the transform, so run_r6.sh and the transform run the SAME code
+  dir_curated.py:
+    extends: [build_module]
+    properties:
+      src: dir_curated
+      _: the curated member -- REACTION-DIRECTION re-expressed in MNXR orientation by compound-set comparison
+  dir_calibrate.py:
+    extends: [build_module]
+    properties:
+      src: dir_calibrate
+      _: category -> dG' calibration on the eQuilibrator measured arm only
+  dir_combine.py:
+    extends: [build_module]
+    properties:
+      src: dir_combine
+      _: the direction combiner -- correlated thermo vote, independent curated prior, shrink-to-reversible
+
+  # -- the benchmark side ------------------------------------------------------
+  bench_cohorts.py:
+    extends: [build_module]
+    properties:
+      src: bench_cohorts
+      _: the four benchmark arms, read out of the acquired literature products in one schema
+  bench_evidence_weights.py:
+    extends: [build_module]
+    properties:
+      src: bench_evidence_weights
+      _: the deployed per-protein belief weight -- 1.0 per protein split across lanes, then by score, then across fanout
+  # SEVEN routes from an entry to its reactions, not one. The conditions lane reached 203
+  # of 845 entries by projecting a gene label through the bridge's accession slice, while
+  # the curated reaction ids and LASER's own gene-to-reaction table sat unread beside it.
+  # The routes and their layering live here so the transform holds only which givens they
+  # read -- the same split every other method module in this namespace makes.
+  bench_edges.py:
+    extends: [build_module]
+    properties:
+      src: bench_edges
+      _: benchmark entry -> MNXR edge set -- the curated, override, MetaCyc, bridge (accession/EC/KO) and literature routes, layered with every agreeing route recorded
+  # ONE definition of what `in_atom_universe` means for a benchmark row. It differs from
+  # the bake's coverage by the transport exclusion, and two builders inlining that
+  # difference is how three comments came to claim the exclusion while no code did it.
+  bench_universe.py:
+    extends: [build_module]
+    properties:
+      src: bench_universe
+      _: the benchmark's atom universe -- the bake's mapped reactions less MetaNetX-flagged transport, with the count both builders report
+
+  # -- the bake ----------------------------------------------------------------
+  bake_metabolism.py:
+    extends: [build_module]
+    properties:
+      src: bake_metabolism
+      _: encode the two intermediates into the three compiled tables under one bake identity, with the row-by-row round-trip selftest

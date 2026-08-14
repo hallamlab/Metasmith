@@ -1,0 +1,31 @@
+# build-refs-cobra -- reading curated genome-scale models.
+#
+# Named by src/metasmith_libraries/resources/env/cobra.env (`conda: build-refs-cobra`)
+# and used by build_references/transforms/benchmark/host_gpr_gem.py.
+#
+# Small on purpose. This env opens a BiGG JSON and reads reaction ids, gene ids and
+# GPR rule strings out of it; it never solves anything, so no solver beyond cobra's
+# bundled default is pinned. The rule string is CARRIED into the GPR table, not
+# evaluated -- evaluating at bake time bakes in one condition, and `cobra.GPR.eval`
+# takes the knocked-OUT set rather than the active one, an inversion that once
+# reported more reactions live after a knockout than before.
+#
+# This is the ONE place the ECSPr engine is used as a package import rather than
+# through its command line: the crosswalk sits inside a generated driver that also
+# imports two buildlib modules, so shelling out from the middle of it would mean
+# marshalling a cobra model through a file for no gain. `ecspr` therefore appears
+# below as a dependency, and it brings scipy with it -- `ecspr.build` re-exports the
+# solver at module scope, so importing the crosswalk pulls in `ecspr.graph`.
+name: build-refs-cobra
+channels:
+  - hallamlab
+  - conda-forge
+dependencies:
+  - python=3.12
+  - cobra=0.31.*
+  - pandas=2.3.*
+  - pyarrow>=24
+  - numpy<2
+  - scipy
+  - ecspr
+  - requests

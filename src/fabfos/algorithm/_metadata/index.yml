@@ -1,0 +1,6 @@
+manifest:
+  fabfos_recovery.py:
+    instance_id: 1e20deb136d5d3c54c209ba12827e2d01e3879d0f900e611aea5cc1b0200ee96f160
+    origin: leaf
+    type: algorithm::fabfos_recovery.py
+schema: v1

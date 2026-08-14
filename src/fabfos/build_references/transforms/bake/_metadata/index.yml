@@ -1,0 +1,54 @@
+manifest:
+  aam_ensemble.py:
+    instance_id: 1e20c911775add09280748fe256593abac468fcfc1886b7d00878364e1f9e085b7be
+    origin: leaf
+    type: transforms::transform
+  aam_rescue.py:
+    instance_id: 1e20412a9c93db11388abf8bc1d8f226ad691c5997de8cd804cc0d01b636b3f848c4
+    origin: leaf
+    type: transforms::transform
+  aam_worklist.py:
+    instance_id: 1e20655eafeefb1faaf572ef0db6c70739ee04c663ce21a6d558ca8ad693fe509b69
+    origin: leaf
+    type: transforms::transform
+  dgbyg.py:
+    instance_id: 1e207378998207e81ddb6a98d7f6888c0ae59754f70a46f59f46a8595cc196ca915f
+    origin: leaf
+    type: transforms::transform
+  direction_bake.py:
+    instance_id: 1e20b465d3ededabc16eb80e0393912b857e2866f9bc4d48542c9526e7070724e016
+    origin: leaf
+    type: transforms::transform
+  direction_ensemble.py:
+    instance_id: 1e2026acf030a322e48c52d89f091d457f040388709d517ab492bd035d17145005f3
+    origin: leaf
+    type: transforms::transform
+  equilibrator.py:
+    instance_id: 1e20fc14bf26619118d96e2f5db4fdbfb945e4411e5db4abc7124ecf82db63c5cecf
+    origin: leaf
+    type: transforms::transform
+  indigo.py:
+    instance_id: 1e20c1a0429f54b1b6aa5018bb2b60ce8ba6f7bad7decb1d60c136ff0a99fd221d0c
+    origin: leaf
+    type: transforms::transform
+  indigo_rescue.py:
+    instance_id: 1e2047cd7e4206f4c5f13b5d36ac127203168547e2d0c62722b86b9db752f4411ae0
+    origin: leaf
+    type: transforms::transform
+  localmapper.py:
+    instance_id: 1e20a546208c17fde50a42c04351f9bc92110d8129fd5d1d683ce773129044a6328d
+    origin: leaf
+    type: transforms::transform
+  localmapper_rescue.py:
+    instance_id: 1e2095cc7c08231bba8961e6b3d133b08f1c95d4f5acf2d4716764ef8764803297bc
+    origin: leaf
+    type: transforms::transform
+  rxnmapper.py:
+    instance_id: 1e20b75d33abfbc677d55f0eba5947ba707e1783112475867f989c3618d55445591e
+    origin: leaf
+    type: transforms::transform
+  rxnmapper_rescue.py:
+    instance_id: 1e20f4f17020d1e8c52dd75ba9e77cd41965c538f8929f19f88cca264b6963c2d0bd
+    origin: leaf
+    type: transforms::transform
+schema: v1

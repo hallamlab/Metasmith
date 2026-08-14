@@ -1,0 +1,33 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  comebin_contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table
+      ext: tsv
+      method: comebin
+  contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table
+      ext: tsv
+  metabat2_contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table
+      ext: tsv
+      method: metabat2
+  metagenome_sample:
+    properties:
+    - a metagenome sample identifier for binning
+  semibin2_contig_to_bin_table:
+    properties:
+      _:
+      - contig to bin assignment table
+      ext: tsv
+      method: semibin2
