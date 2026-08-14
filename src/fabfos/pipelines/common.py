@@ -49,7 +49,7 @@ def resolve_library_root() -> Path:
 
     1. ``$FABFOS_LIBRARY`` -- explicit override.
     2. The bundled copy a conda install ships at ``fabfos/_library``.
-    3. The dev sibling submodule ``src/metasmith_libraries``.
+    3. The dev sibling module ``src/metasmith_libraries``.
     """
     override = os.environ.get("FABFOS_LIBRARY")
     if override:
@@ -73,7 +73,7 @@ def resolve_library_root() -> Path:
     raise FileNotFoundError(
         "could not locate the FabFos metasmith library. Set FABFOS_LIBRARY, "
         "install the package with a bundled library, or run from a source "
-        "checkout with the metasmith_libraries submodule present."
+        "checkout with the sibling src/metasmith_libraries module present."
     )
 
 

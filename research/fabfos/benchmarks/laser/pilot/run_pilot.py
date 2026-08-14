@@ -2,12 +2,12 @@
 """Generic LASER pilot: <host GEM> background vs <host GEM> + <condition edits>, measured
 at a named target under the universal-leakage ("universal ground") method.
 
-    ./dev.sh -e ...            # the measurement itself, whatever this script wraps
-    mamba run -n ecspr python main/benchmarks/laser/run_pilot.py \
+    ./dev/ecspr.sh -e ...            # the measurement itself, whatever this script wraps
+    mamba run -n ecspr python research/fabfos/benchmarks/laser/pilot/run_pilot.py \
         --condition-id "LASER:Record1419612292.57:M1" --host e_coli_k12 --target Isoprene
 
-Writes main/benchmarks/laser/cache/pilot_<slug>.json, and the conditions table it
-measured against beside it.
+Writes research/fabfos/benchmarks/laser/pilot/cache/pilot_<slug>.json, and the
+conditions table it measured against beside it.
 
 WHAT THIS SCRIPT IS FOR, NOW THAT ECSPr HAS A CLI
 --------------------------------------------------
