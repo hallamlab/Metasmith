@@ -1,0 +1,29 @@
+name: isolate_assembly_from_long_reads
+description: 'Assemble an isolate genome from long reads with hifiasm-meta, and annotate
+  it
+
+  against UniRef50 and KOFAM.'
+sample_type: sequences::long_reads
+target_types:
+- sequences::hifiasm_meta_assembly
+- annotation::diamond_uniref50_results
+- annotation::kofamscan_results
+transform_libraries:
+- transforms/logistics
+- transforms/assembly
+- transforms/metagenomics
+- transforms/functionalAnnotation
+resource_libraries:
+- resources/env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/bdd0f0d1c2144b1fba4cbcc73e988d11:
+      type: sequences::long_reads
+      instance_id: 1e20a199d5c2463b4db69843b515273443aaa086d3fb78fc3aa5ef64b7beac0cec3b
+      origin: leaf
+  types:
+    sequences: data_types/sequences.yml
+    ref: data_types/ref.yml
+    annotation: data_types/annotation.yml

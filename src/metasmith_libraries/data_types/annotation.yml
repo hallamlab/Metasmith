@@ -1,0 +1,593 @@
+types:
+  # InterProScan
+  interproscan_results:
+    properties:
+      _: Parsed InterProScan protein matches
+      Format: CSV
+      ext: csv
+  interproscan_json:
+    properties:
+      _: InterProScan annotations in JSON format
+      Format: JSON
+      ext: json
+  interproscan_gff:
+    properties:
+      _: InterProScan annotations in GFF3 format
+      Format: GFF3
+      ext: gff3
+  interproscan_source:
+    properties:
+      _: Marker for InterProScan data location
+
+  # KofamScan
+  kofamscan_results:
+    properties:
+      _: Filtered KofamScan KO assignments
+      Format: CSV
+      ext: csv
+  kofamscan_source:
+    properties:
+      _: Marker for KofamScan database download
+
+  # Protein embedding parents
+  protein_functional_embeddings:
+    properties:
+      _: Per-protein embedding vectors derived from sequence alone (functional/semantic)
+      Format: Parquet
+      ext: parquet
+  protein_structural_embeddings:
+    properties:
+      _: Per-protein embedding vectors that incorporate structural information
+      Format: Parquet
+      ext: parquet
+  protein_embedding_index:
+    properties:
+      _: Sequence-id to row index mapping for a protein embedding parquet
+      Format: CSV
+      ext: csv
+
+  # ProteinBERT
+  proteinbert_embeddings:
+    extends:
+    - protein_functional_embeddings
+    properties:
+      _: ProteinBERT embedding vectors
+      Format: Parquet
+      ext: parquet
+  proteinbert_index:
+    extends:
+    - protein_embedding_index
+    properties:
+      _: ProteinBERT sequence index
+      Format: CSV
+      ext: csv
+
+  # ProtT5-XL (Rostlab encoder-only embeddings)
+  prott5_embeddings:
+    extends:
+    - protein_functional_embeddings
+    properties:
+      _: ProtT5-XL UniRef50 embedding vectors (1024-dim)
+      Format: Parquet
+      ext: parquet
+  prott5_index:
+    extends:
+    - protein_embedding_index
+    properties:
+      _: ProtT5 sequence index
+      Format: CSV
+      ext: csv
+
+  # ESM-C (EvolutionaryScale Cambrian)
+  esm_c_embeddings:
+    extends:
+    - protein_functional_embeddings
+    properties:
+      _: ESM-C embedding vectors (300M=960-dim, 600M=1152-dim)
+      Format: Parquet
+      ext: parquet
+  esm_c_index:
+    extends:
+    - protein_embedding_index
+    properties:
+      _: ESM-C sequence index
+      Format: CSV
+      ext: csv
+
+  # Ankh
+  ankh_embeddings:
+    extends:
+    - protein_functional_embeddings
+    properties:
+      _: Ankh embedding vectors (base=768-dim, large=1536-dim)
+      Format: Parquet
+      ext: parquet
+  ankh_index:
+    extends:
+    - protein_embedding_index
+    properties:
+      _: Ankh sequence index
+      Format: CSV
+      ext: csv
+
+  # SaProt (structure-aware, requires 3Di tokens)
+  saprot_embeddings:
+    extends:
+    - protein_structural_embeddings
+    properties:
+      _: SaProt embedding vectors (1280-dim)
+      Format: Parquet
+      ext: parquet
+  saprot_index:
+    extends:
+    - protein_embedding_index
+    properties:
+      _: SaProt sequence index
+      Format: CSV
+      ext: csv
+
+  # Boltz-2 (structure predictor; pair/single rep extraction)
+  boltz_pair_embeddings:
+    extends:
+    - protein_structural_embeddings
+    properties:
+      _: Boltz-2 pooled pair-representation embedding vectors
+      Format: Parquet
+      ext: parquet
+  boltz_index:
+    extends:
+    - protein_embedding_index
+    properties:
+      _: Boltz-2 sequence index
+      Format: CSV
+      ext: csv
+
+  # DeepEC
+  deepec_predictions:
+    properties:
+      _: DeepEC EC number predictions
+      ext: tsv
+
+  # DIAMOND UniRef50
+  diamond_uniref50_results:
+    properties:
+      _: DIAMOND alignment to UniRef50
+      Format: BLAST6
+      ext: tsv
+  uniref50_source:
+    properties:
+      _: Marker for UniRef50 database download
+
+  # antiSMASH
+  antismash_json:
+    properties:
+      _: antiSMASH JSON results per assembly
+      Format: JSON
+      ext: json
+  antismash_regions_gbk:
+    properties:
+      _: antiSMASH GenBank region files (tar)
+      Format: GenBank
+      ext: tar.gz
+  antismash_db:
+    properties:
+      _: antiSMASH database directory (Pfam, ClusterBlast, MIBiG, Resfams)
+  antismash_source:
+    properties:
+      _: Marker for antiSMASH database download
+
+  # BUSCO
+  busco_results:
+    properties:
+      _: BUSCO completeness assessment summary
+      Format: JSON
+      ext: json
+  busco_full_table:
+    properties:
+      _: BUSCO full results table with per-sequence marker assignments
+      Format: TSV
+      ext: tsv
+  busco_lineage:
+    properties:
+      _: Pre-downloaded BUSCO lineage dataset directory
+  busco_source:
+    properties:
+      _: Marker for BUSCO lineage dataset specification
+
+  # Bakta
+  bakta_db:
+    properties:
+      _: Bakta light database directory
+  bakta_gff:
+    properties:
+      _: Bakta non-coding annotation in GFF3 format (tRNA, rRNA, ncRNA, CRISPR, riboswitches)
+      Format: GFF3
+      ext: gff3
+  bakta_tsv:
+    properties:
+      _: Bakta non-coding annotation summary table
+      Format: TSV
+      ext: tsv
+
+  # DeepTFactor
+  deeptfactor_results:
+    properties:
+      _: DeepTFactor TF predictions (binary TF/non-TF with probability score)
+      Format: TSV
+      ext: tsv
+
+  # PredicTF
+  predictf_db:
+    properties:
+      _: PredicTF database directory (deeparg-largerepo + model files)
+  predictf_results:
+    properties:
+      _: PredicTF high-confidence TF predictions with family classification
+      Format: TSV
+      ext: tsv
+  predictf_potential:
+    properties:
+      _: PredicTF lower-confidence potential TF predictions
+      Format: TSV
+      ext: tsv
+
+  # eggNOG-mapper
+  eggnog_data:
+    properties:
+      _: eggNOG-mapper database directory
+  eggnog_source:
+    properties:
+      _: Marker for eggNOG database download
+  eggnog_results:
+    properties:
+      _: eggNOG-mapper functional annotations (GO, KEGG, Pfam, COG)
+      Format: TSV
+      ext: tsv
+
+  # VirSorter2
+  virsorter2_viral_sequences:
+    properties:
+      _: VirSorter2 identified viral sequences
+      Format: FASTA
+      ext: fa
+  virsorter2_scores:
+    properties:
+      _: VirSorter2 viral scores and metadata
+      ext: tsv
+  virsorter2_affi_contigs:
+    properties:
+      _: VirSorter2 gene affiliation table for DRAM-v
+      ext: tab
+  virsorter2_boundary:
+    properties:
+      _: VirSorter2 viral boundary positions
+      ext: tsv
+  virsorter2_db:
+    properties:
+      _: VirSorter2 reference database directory
+
+  # DRAM-v
+  dramv_annotations:
+    properties:
+      _: DRAM-v gene annotations for viral contigs
+      ext: tsv
+  dramv_distill:
+    properties:
+      _: DRAM-v distilled AMG summary and visualizations
+  dram_db:
+    properties:
+      _: DRAM database directory
+  dram_annotations:
+    properties:
+      _: DRAM gene annotations (dbCAN/KOfam/Pfam) TSV
+      ext: tsv
+
+  # PromoTech
+  promotech_predictions:
+    properties:
+      _: PromoTech bacterial promoter predictions per assembly
+      Format: TSV
+      ext: tsv
+
+  # Pathway Tools (PathoLogic / ptools)
+  ptools_annotation_table:
+    properties:
+      _: Long-format per-ORF functional annotations (EC / GO / KEGG / UniProt / FUNCTION) for ingestion by Pathway Tools
+      Format: Parquet
+      ext: parquet
+  pgdb_archive:
+    properties:
+      _: Canonical PathoLogic "cyc" folder (data/, kb/, reports/) packaged as a tarball
+      Format: tar.gz
+      ext: tgz
+  pgdb_csv_tables:
+    properties:
+      _: Parsed PGDB tables (proteins, reactions, enzymes, pathways, genes, compounds + linkages) as plain CSVs packaged in a tarball
+      Format: tar.gz
+      ext: tgz
+
+  # DIAMOND TCDB
+  tcdb_diamond_db:
+    properties:
+      _: DIAMOND-formatted TCDB database
+      ext: dmnd
+  diamond_tcdb_results:
+    properties:
+      _: DIAMOND alignment to TCDB (Transporter Classification Database)
+      Format: BLAST6
+      ext: tsv
+  diamond_tcdb2_results:
+    properties:
+      _: DIAMOND alignment to TCDB (batch 2)
+      Format: BLAST6
+      ext: tsv
+
+  # -----------------------------------------
+  # Per-chunk siblings of the ORF-annotation outputs.
+  # Each is a DISTINCT sibling (no `extends`) of its non-chunk counterpart
+  # so the metasmith solver requires the matching merge_<tool> transform to
+  # produce the per-sample target dtype — chunk outputs can never satisfy
+  # the target directly. See chunkOrfsForAnnotation + merge_<tool>.py.
+  interproscan_results_chunk:
+    properties:
+      _: Per-chunk InterProScan CSV (sibling of interproscan_results)
+      Format: CSV
+      granularity: chunk
+      ext: csv
+  kofamscan_results_chunk:
+    properties:
+      _: Per-chunk KofamScan CSV (sibling of kofamscan_results)
+      Format: CSV
+      granularity: chunk
+      ext: csv
+  proteinbert_embeddings_chunk:
+    properties:
+      _: Per-chunk ProteinBERT embeddings (sibling of proteinbert_embeddings)
+      Format: Parquet
+      granularity: chunk
+      ext: parquet
+  proteinbert_index_chunk:
+    properties:
+      _: Per-chunk ProteinBERT index (sibling of proteinbert_index)
+      Format: CSV
+      granularity: chunk
+      ext: csv
+  deepec_predictions_chunk:
+    properties:
+      _: Per-chunk DeepEC TSV (sibling of deepec_predictions)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  diamond_uniref50_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND UniRef50 BLAST6 (sibling of diamond_uniref50_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+  busco_full_table_chunk:
+    properties:
+      _: Per-chunk BUSCO full_table.tsv (sibling of busco_full_table)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  deeptfactor_results_chunk:
+    properties:
+      _: Per-chunk DeepTFactor TSV (sibling of deeptfactor_results)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  predictf_results_chunk:
+    properties:
+      _: Per-chunk PredicTF TF mapping (sibling of predictf_results)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  predictf_potential_chunk:
+    properties:
+      _: Per-chunk PredicTF potential TF mapping (sibling of predictf_potential)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  eggnog_results_chunk:
+    properties:
+      _: Per-chunk eggNOG-mapper annotations (sibling of eggnog_results)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  dram_annotations_chunk:
+    properties:
+      _: Per-chunk DRAM annotations.tsv (sibling of dram_annotations)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+  diamond_tcdb_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND TCDB BLAST6 (sibling of diamond_tcdb_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+
+  # ===========================================================================
+  # Resistome / virulence / mobilome (originals_from_antonio_2_resistome).
+  # Every product here is keyed on the original k141_XXXXXX contig ID:
+  #   - DIAMOND/protein tools keep qseqid = Prodigal ORF header (k141_XXXXXX_N)
+  #   - contig tools (PathoFact/IntegronFinder/MEF) keep the contig name column
+  # so Antonio's master integration table merges by contig_id. Do NOT rename.
+  # ===========================================================================
+
+  # --- ARG: MEGARes 2.0 (DIAMOND; clone of the tcdb_diamond pattern) ---
+  megares_diamond_db:
+    properties:
+      _: DIAMOND-formatted MEGARes database
+      ext: dmnd
+  megares_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to MEGARes (antibiotic/biocide/metal ARGs)
+      Format: BLAST6
+      ext: tsv
+  megares_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND MEGARes BLAST6 (sibling of megares_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+
+  # --- ARG / co-selection: BacMet2 (DIAMOND) ---
+  bacmet_diamond_db:
+    properties:
+      _: DIAMOND-formatted BacMet2 database (metal + biocide resistance)
+      ext: dmnd
+  bacmet_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to BacMet2 (metal/biocide resistance genes)
+      Format: BLAST6
+      ext: tsv
+  bacmet_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND BacMet2 BLAST6 (sibling of bacmet_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+
+  # --- Virulence: VFDB (DIAMOND) ---
+  vfdb_diamond_db:
+    properties:
+      _: DIAMOND-formatted VFDB database (virulence factor proteins)
+      ext: dmnd
+  vfdb_diamond_results:
+    properties:
+      _: DIAMOND alignment of ORFs to VFDB (virulence factors)
+      Format: BLAST6
+      ext: tsv
+  vfdb_diamond_results_chunk:
+    properties:
+      _: Per-chunk DIAMOND VFDB BLAST6 (sibling of vfdb_diamond_results)
+      Format: BLAST6
+      granularity: chunk
+      ext: tsv
+
+  # --- ARG: RGI / CARD ---
+  card_db:
+    properties:
+      _: CARD database loaded into the RGI image (card.json + wildcard, post rgi load)
+  rgi_results:
+    properties:
+      _: RGI main ARG hits on Prodigal proteins (TSV; ORF_ID column = k141_XXXXXX_N)
+      Format: TSV
+      ext: txt
+  rgi_results_chunk:
+    properties:
+      _: Per-chunk RGI hits (distinct sibling of rgi_results; merge_rgi produces the per-sample dtype)
+      Format: TSV
+      granularity: chunk
+      ext: txt
+
+  # --- ARG: AMRFinderPlus ---
+  amrfinderplus_db:
+    properties:
+      _: AMRFinderPlus database directory (version must match the bundled binary)
+  amrfinderplus_results:
+    properties:
+      _: AMRFinderPlus protein hits (TSV; Protein_id column = k141_XXXXXX_N)
+      Format: TSV
+      ext: tsv
+  amrfinderplus_results_chunk:
+    properties:
+      _: Per-chunk AMRFinderPlus hits (distinct sibling of amrfinderplus_results; merge_amrfinderplus produces the per-sample dtype)
+      Format: TSV
+      granularity: chunk
+      ext: tsv
+
+  # --- Mobilome: IntegronFinder ---
+  integronfinder_summary:
+    properties:
+      _: IntegronFinder per-contig integron summary (CALIN/complete/in0 counts)
+      Format: TSV
+      ext: tsv
+  integronfinder_integrons:
+    properties:
+      _: IntegronFinder detailed integron elements table (contig IDs preserved)
+      Format: TSV
+      ext: tsv
+
+  # --- Mobilome: MobileElementFinder (BUILD-blocked container) ---
+  mobileelementfinder_results:
+    properties:
+      _: MobileElementFinder MGE/IS-element hits (CSV; contig IDs preserved)
+      Format: CSV
+      ext: csv
+
+  # --- Virulence/integrative: PathoFact 2.0 (BUILD-blocked container) ---
+  pathofact_db:
+    properties:
+      _: PathoFact 2.0 bundled databases (HMMs + models)
+  pathofact_amr:
+    properties:
+      _: PathoFact ARG predictions (contig IDs preserved)
+      Format: TSV
+      ext: tsv
+  pathofact_vf:
+    properties:
+      _: PathoFact virulence-factor predictions (contig IDs preserved)
+      Format: TSV
+      ext: tsv
+  pathofact_tox:
+    properties:
+      _: PathoFact toxin predictions (contig IDs preserved)
+      Format: TSV
+      ext: tsv
+  pathofact_mge:
+    properties:
+      _: PathoFact mobile-genetic-element predictions (contig IDs preserved)
+      Format: TSV
+      ext: tsv
+
+  # --- Source tracking: crAssphage mapping (no contig_id dependency) ---
+  crassphage_ref:
+    properties:
+      _: crAssphage reference genome NC_024711 FASTA (for BBMap mapping)
+      Format: FASTA
+      ext: fa
+  crassphage_coverage:
+    properties:
+      _: BBMap per-sample crAssphage coverage stats (human faecal marker)
+      Format: TSV
+      ext: tsv
+
+  # --- Source tracking: FEAST (BUILD-blocked container; external refs) ---
+  feast_sources:
+    properties:
+      _: FEAST external source community profiles (gut/livestock/wildlife/soil/freshwater)
+  feast_proportions:
+    properties:
+      _: FEAST estimated source-environment contribution proportions
+      Format: TSV
+      ext: tsv
+
+  # --- Strain profiling: StrainPhlAn (conditional) ---
+  # MetaPhlAn SGB marker DB (mpa_vJan25_CHOCOPhlAnSGB_202503) that produced the
+  # metaphlan_sam upstream; sample2markers.py -d needs the matching .pkl to
+  # reconstruct consensus markers. Bound read-only at /mpa_db by the transform.
+  metaphlan_db:
+    properties:
+      _: MetaPhlAn vJan25 CHOCOPhlAnSGB marker database (dir holding the .pkl)
+  strainphlan_consensus_markers:
+    properties:
+      _: StrainPhlAn per-sample consensus markers from the MetaPhlAn SAM
+      ext: pkl
+
+  # --- Strain/abundance: inStrain (option b: reads vs shared derep-MAG ref) ---
+  # Each sample's clean reads are mapped to ONE project-level dereplicated
+  # representative-MAG reference (binning::derep_mag_ref), then profiled; the
+  # cross-sample `inStrain compare` step (instrain_compare) yields strain sharing.
+  instrain_profile:
+    properties:
+      _: inStrain profile output directory (per-MAG SNV/microdiversity vs derep-MAG ref)
+  instrain_genome_info:
+    properties:
+      _: inStrain per-genome summary (coverage, nucleotide diversity, breadth)
+      Format: TSV
+      ext: tsv
+  instrain_compare:
+    properties:
+      _: inStrain compare output (cross-sample popANI / strain sharing over the shared derep-MAG ref)

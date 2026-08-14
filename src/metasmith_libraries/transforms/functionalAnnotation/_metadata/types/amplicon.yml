@@ -1,0 +1,45 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  asv_contig_map:
+    properties:
+      Format: BLAST6
+      _:
+      - ASV to contig mapping via BLASTn
+      ext: tsv
+  asv_seqs:
+    properties:
+      Data: 16S rRNA amplicon sequence variants
+      Format: FASTA
+      _:
+      - ASV sequences
+      ext: fasta
+  asv_table:
+    properties:
+      Data: sample by ASV count matrix
+      _:
+      - ASV abundance table
+      ext: tsv
+  asv_taxonomy:
+    properties:
+      _:
+      - ASV taxonomy classifications
+      ext: tsv
+  blast_identity_threshold:
+    properties:
+    - Minimum percent identity for BLAST mapping (e.g., 97 or 100)
+  silva_db:
+    properties:
+    - SILVA SSURef NR99 reference database formatted for VSEARCH
+  silva_nb_classifier:
+    properties:
+      _:
+      - Pre-trained QIIME2 naive Bayes classifier for SILVA
+      ext: qza
+  silva_source:
+    properties:
+    - SILVA SSURef NR99 database source URL

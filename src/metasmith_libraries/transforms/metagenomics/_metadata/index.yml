@@ -1,0 +1,90 @@
+manifest:
+  binning/aggregator.py:
+    instance_id: 1e20f1a388eccf0607395d8ccedd5f45bb95f16270c75c081fb510714bdb5570e00e
+    origin: leaf
+    type: transforms::transform
+  binning/checkm.py:
+    instance_id: 1e20368ca9fc74c7258ff213b1c2857db52ef1169a7992a8481ab7794be9c734e971
+    origin: leaf
+    type: transforms::transform
+  binning/comebin.py:
+    instance_id: 1e20e4ba9c914bd2ef35556ed83d4b0a78df3192a7785650a108f09a28b3dfdd74c2
+    origin: leaf
+    type: transforms::transform
+  binning/metabat2.py:
+    instance_id: 1e200dcf178c93ee393c0a36f9ad180f0817f5cbbfd224717802c68701bda00b723c
+    origin: leaf
+    type: transforms::transform
+  binning/semibin2.py:
+    instance_id: 1e2087eb5394ed099f4e6784565eb1f7de230871bce642ffc2bc33636322ef689343
+    origin: leaf
+    type: transforms::transform
+  binning/skani_dedup.py:
+    instance_id: 1e205e0497731b4c39d56fd2360a29496042967ab61a849f2a57fb3d095e9b975c63
+    origin: leaf
+    type: transforms::transform
+  crassphage.py:
+    instance_id: 1e20decf618200394a84823d8be3f9e6b0485f9f164dc7ac1d89f941f6c989ecdc33
+    origin: leaf
+    type: transforms::transform
+  instrain.py:
+    instance_id: 1e20781308b699fa83ee6362d2852184f8d9a86bbd497b760f7b60a0503a85328f1c
+    origin: leaf
+    type: transforms::transform
+  instrain_compare.py:
+    instance_id: 1e20fa4feb7d8ccf61bed998cf75591c212f8b7f3427dcaae568e60260e7330227f7
+    origin: leaf
+    type: transforms::transform
+  prodigal.py:
+    instance_id: 1e20a8e831af8ca06cd91cf8e89b527525f3eaf0dba5a8c0184fde6a134ce8bc0564
+    origin: leaf
+    type: transforms::transform
+  taxonomy/centrifuger.py:
+    instance_id: 1e20428cb643359e7addf387e332a581b8d04e9bb6b6af21c006fb55e31421eb8c2a
+    origin: leaf
+    type: transforms::transform
+  taxonomy/fastani.py:
+    instance_id: 1e20e1f6fd5a49847dac9caa0547655b7b89041987371d418113f15aa450c715eddb
+    origin: leaf
+    type: transforms::transform
+  taxonomy/feast.py:
+    instance_id: 1e20c0ed0a9d73fbe891297d48a8155b690272b76f4440d94bbf31a2ea74bb4933a8
+    origin: leaf
+    type: transforms::transform
+  taxonomy/ganon2.py:
+    instance_id: 1e202a55ce9f5940be80f94dc3d043295aae3020bab2a2804317da6cbf5abbb1a3e8
+    origin: leaf
+    type: transforms::transform
+  taxonomy/genomad.py:
+    instance_id: 1e20a8fd52533338d4ad61a9befd96297a2f3f5d53cf307e11e44150b16c777f2f70
+    origin: leaf
+    type: transforms::transform
+  taxonomy/gtdbtk.py:
+    instance_id: 1e20102e8b722143ee2b949aa3a5c9d12c2d9728390d920a5562eeae6cd0c4160d61
+    origin: leaf
+    type: transforms::transform
+  taxonomy/kraken2.py:
+    instance_id: 1e208871d132c97be0c256076ba8c7b929004dc7b5119cc0dff989923e0d7a433392
+    origin: leaf
+    type: transforms::transform
+  taxonomy/metabuli.py:
+    instance_id: 1e20e15f5f6b1258d001971c8492fe69b07fee2ca5f1de475b5faffed94fe65b5ebf
+    origin: leaf
+    type: transforms::transform
+  taxonomy/metaphlan.py:
+    instance_id: 1e20feffe97626db09df5a54f5a531f75ceb31519ca97b71e49e0c39d94ca5eb5f34
+    origin: leaf
+    type: transforms::transform
+  taxonomy/phyloflash.py:
+    instance_id: 1e20bfa1771080e774787fa1b260bd20ded9d27e756d2638144310a9e53942d99a09
+    origin: leaf
+    type: transforms::transform
+  taxonomy/strainphlan.py:
+    instance_id: 1e20e32fa1472f79485abedf6fec827134c588713213780ec106419b95ca45a69da5
+    origin: leaf
+    type: transforms::transform
+  taxonomy/sylph.py:
+    instance_id: 1e2058d40f1a1157585769c88d5d8ac75093baeb273f0cd8a824ec5eca2f0f0ef121
+    origin: leaf
+    type: transforms::transform
+schema: v1

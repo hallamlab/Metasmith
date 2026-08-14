@@ -1,0 +1,6 @@
+name: miniasm
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - miniasm=0.2_r168

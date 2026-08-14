@@ -1,0 +1,350 @@
+types:
+  assembly:
+    properties:
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+      origin: assembler
+  contig_batch:
+    properties:
+      _: Fixed-size (~5 Mbp) batch of a per-sample contig FASTA; fans out contig-level annotators (genomad, virsorter2, integron_finder). Distinct sibling of assembly (NOT a subtype, like orf_chunk to orfs) so the solver routes batches only to batch-consuming contig tools, never to whole-assembly consumers. Headers are reversibly sample-prefixed (SG<id>~k141_N) by w4_rebatch.py; w4_recompile.py strips the prefix + regroups results per sample.
+      Format: FASTA
+      Data: nucleic acid sequence
+      granularity: batch
+      ext: fna
+  putative_genome:
+    properties:
+      Format: FASTA
+      Data: nucleic acid sequence
+      ext: fna
+      genome_scope: single
+  gbk:
+    properties:
+      Format: genbank file
+      ext: gbk
+  gff:
+    properties:
+      Format: gene feature format
+      ext: gff
+  reads:
+    properties:
+      _: DNA reads
+      qc: none
+      Format: FASTQ
+      Data: nucleic acid sequence
+      compression: gzip
+      ext: fq.gz
+      pair_state: complete
+  unpaired_read_half:
+    properties:
+      qc: none
+      Format: FASTQ
+      Data: nucleic acid sequence
+      compression: gzip
+      ext: fq.gz
+      pair_state: half
+  clean_reads:
+    extends:
+    - reads
+    properties:
+      qc: filtered
+  discarded_reads:
+    extends:
+    - reads
+    properties:
+      qc: discarded
+# -----------------------------------------
+# short reads
+  short_reads:
+    extends:
+    - reads
+    properties:
+      read_length: short
+  short_reads_pe:
+    extends:
+    - short_reads
+    properties:
+      parity: interleaved
+  short_reads_se:
+    extends:
+    - short_reads
+    properties:
+      parity: single
+  read_pair:
+    properties:
+      atomic: a pair of read files
+  forward_short_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: forward
+      read_length: short
+      ext: fq
+      compression: none
+  zipped_forward_short_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: forward
+      read_length: short
+  reverse_short_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: reverse
+      qc: none
+      read_length: short
+      ext: fq
+      compression: none
+  zipped_reverse_short_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: reverse
+      read_length: short
+  forward_ora_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: forward
+      read_length: short
+      ext: fastq.ora
+      compression: ora
+  reverse_ora_reads:
+    extends:
+    - unpaired_read_half
+    properties:
+      parity: paired end
+      direction: reverse
+      read_length: short
+      ext: fastq.ora
+      compression: ora
+  clean_short_reads:
+    extends:
+    - clean_reads
+    properties:
+      read_length: short
+  discarded_short_reads:
+    extends:
+    - discarded_reads
+    properties:
+      read_length: short
+  clean_short_reads_pe:
+    extends:
+    - clean_short_reads
+    properties:
+      parity: interleaved
+  clean_short_reads_se:
+    extends:
+    - clean_short_reads
+    properties:
+      parity: single
+# -----------------------------------------
+# long reads
+  long_reads:
+    extends:
+    - reads
+    properties:
+      parity: single
+      read_length: long
+  clean_long_reads:
+    extends:
+    - clean_reads
+    properties:
+      parity: single
+      read_length: long
+  100x_long_reads:
+    extends:
+    - clean_long_reads
+    properties:
+      qc: read_depth_stratified
+      coverage: 100x
+  discarded_long_reads:
+    extends:
+    - discarded_reads
+    properties:
+      parity: single
+      read_length: long
+# -----------------------------------------
+# pacbio
+  pacbio_hifi_bam:
+    properties:
+      _: PacBio HiFi reads in BAM format
+      Format: BAM
+      Data: nucleic acid sequence
+      read_length: long
+      parity: single
+      ext: bam
+# -----------------------------------------
+# reports
+  read_metadata:
+    properties:
+      _: read metadata
+      fields:
+      - parity        # one of: single, paired
+      - length_class  # one of: short, long
+      ext: json
+
+  read_qc_stats:
+    properties:
+      _: read QC stats
+      fields:
+      - reads
+      - bases
+      - mean_quality
+      - phred_encoding
+      - N50
+      - GC
+      ext: json
+  fastqc_html_report:
+    properties:
+      _: fastqc html report
+      ext: html
+  fastqc_raw_report:
+    properties:
+      _: fastqc raw report
+      ext: zip
+  nanoplot_html_report:
+    properties:
+      _: nanoplot html report
+      ext: html
+  nanoplot_raw_report:
+    properties:
+      _: nanoplot raw report
+      ext: gz
+
+  assembly_stats:
+    properties:
+      _: assembly stats
+      fields:
+      - fraction_reads_mapped
+      - length
+      - N50
+      - GC
+      - number_of_contigs
+      ext: json
+  assembly_per_contig_coverage:
+    properties:
+      _: assembly per contig coverage
+      ext: tsv
+  assembly_per_bp_coverage:
+    properties:
+      _: assembly per bp coverage
+      ext: gz
+# -----------------------------------------
+# assembly
+  miniasm_gfa:
+    properties:
+      _: miniasm rough assembly
+      Format: graphical fragment assembly
+      ext: gfa
+  isolate_assembly:
+    extends:
+    - assembly
+    - putative_genome
+    properties:
+      subject: isolate
+  chromosomal_contig:
+    extends:
+    - putative_genome
+    properties:
+      _: curated single-chromosome contig from a long-read assembly
+      origin: long_read_pseudo_bin
+  hifiasm_meta_assembly:
+    extends:
+    - assembly
+    properties:
+      method: hifiasm-meta
+  flye_assembly:
+    extends:
+    - assembly
+    properties:
+      method: flye
+  megahit_assembly:
+    extends:
+    - assembly
+    properties:
+      method: megahit
+  flye_raw_assembly:
+    extends:
+    - assembly
+    properties:
+      method: flye using raw reads
+# -----------------------------------------
+# metagenomic bins (putative single-genome FASTAs from a binner)
+  bin_fasta:
+    extends:
+    - putative_genome
+    properties:
+      _: a single metagenomic bin FASTA file
+  metabat2_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: metabat2
+  semibin2_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: semibin2
+  comebin_bin_fasta:
+    extends:
+    - bin_fasta
+    properties:
+      method: comebin
+# -----------------------------------------
+# protein
+  orfs:
+    properties:
+      Format: FASTA
+      Data: protein sequence
+      content: open reading frames
+      granularity: whole   # whole per-sample ORF set; orf_chunk (granularity:chunk) is a
+                           # true sibling, NOT a subtype — without this discriminator orf_chunk
+                           # is a property-superset of orfs and satisfies orfs requirements, so
+                           # whole-sample tools (rgi, amrfinderplus) fan out over every chunk.
+      ext: faa
+  orfs_shard:
+    extends:
+    - orfs
+    properties:
+      _: Length-balanced shard of an ORF FASTA; fans out embedding transforms
+      ext: faa
+  orf_chunk:
+    properties:
+      _: Fixed-size (~5000 ORF) chunk of a per-sample ORF FASTA; fans out CPU/IO-bound annotators (distinct sibling of orfs, like forward_short_reads is to short_reads)
+      Format: FASTA
+      Data: protein sequence
+      content: open reading frames
+      granularity: chunk
+      ext: faa
+  orf_batch:
+    properties:
+      _: Large (~3hr/job-calibrated) batch of a per-sample ORF FASTA; fans out the AMR ORF tools (rgi, amrfinderplus, megares, bacmet, vfdb). Distinct sibling of orfs (granularity:batch, NOT a subtype — like contig_batch to assembly and orf_chunk to orfs) so the solver routes AMR-sized batches to the AMR ORF tools without entangling them with the W2 annotation orf_chunk path (granularity:chunk). Produced in-DAG by splitOrfsForAmr.py (replacing the external w4_rebatch.py); headers reversibly sample-prefixed (SG<id>~k141_N_k) so w4_recompile.py splits on the first '~' to de-prefix + regroup per sample.
+      Format: FASTA
+      Data: protein sequence
+      content: open reading frames
+      granularity: batch
+      ext: faa
+# -----------------------------------------
+# protein structures
+  predicted_structures:
+    properties:
+      _: Predicted protein structures keyed by ORF id (tar of mmCIF files)
+      Format: mmCIF
+      ext: tar.gz
+  structure_3di_tokens:
+    properties:
+      _: Foldseek 3Di token strings per ORF (sequence_id -> 3di)
+      Format: Parquet
+      ext: parquet
+  boltz_structures:
+    properties:
+      _: Boltz-2 predicted structures (tar of mmCIF files)
+      Format: mmCIF
+      ext: tar.gz

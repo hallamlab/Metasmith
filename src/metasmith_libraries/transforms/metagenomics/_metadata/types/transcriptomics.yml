@@ -1,0 +1,114 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  braker3_gff:
+    properties:
+      _:
+      - Braker3 gene predictions in GFF3 format
+      ext: gff3
+  braker3_proteins:
+    properties:
+      _:
+      - Braker3 predicted protein sequences
+      ext: faa
+  contamination_report:
+    properties:
+      Format: TSV
+      _:
+      - BLAST-based contamination check report
+      ext: tsv
+  count_table:
+    properties:
+      _:
+      - normalized count table
+      ext: tsv
+  deseq2_results:
+    properties:
+      _:
+      - DESeq2 differential expression results for all pairwise comparisons
+      ext: csv
+  diff_count_table:
+    properties:
+      _:
+      - DESeq2-normalized count table for differential expression
+      ext: tsv
+  experiment:
+    properties:
+      logistics: to group samples into a transcriptomics experiment
+  gene_count_table:
+    properties:
+      _:
+      - gene-level count matrix from StringTie
+      ext: csv
+  merged_bam:
+    properties:
+      _:
+      - merged BAM from all samples in an experiment
+      ext: bam
+  merged_gtf:
+    properties:
+      _:
+      - StringTie merged transcript annotation across all samples
+      ext: gtf
+  organellar_bam:
+    properties:
+      _:
+      - RNA-seq reads aligned to organellar reference
+      ext: bam
+  organellar_gene_count_table:
+    properties:
+      _:
+      - organellar gene-level count matrix
+      ext: csv
+  organellar_gff:
+    properties:
+      Format: GFF3
+      _:
+      - organellar gene annotation in GFF3 format
+      ext: gff3
+  organellar_reference:
+    properties:
+      Format: FASTA
+      _:
+      - organellar reference genome FASTA extracted from GenBank
+      ext: fna
+  salmon_index:
+    properties:
+    - salmon quasi-mapping index
+  salmon_quant:
+    properties:
+      _:
+      - salmon quantification output
+      ext: sf
+  star_bam:
+    properties:
+      _:
+      - STAR-aligned coordinate-sorted BAM
+      ext: bam
+  star_index:
+    properties:
+    - STAR genome index for splice-aware alignment
+  stringtie_gtf:
+    properties:
+      _:
+      - StringTie per-sample transcript assembly
+      ext: gtf
+  stringtie_quant_gtf:
+    properties:
+      _:
+      - StringTie quantified transcript GTF with expression estimates
+      ext: gtf
+  volcano_plot:
+    properties:
+      _:
+      - interactive volcano plot of pairwise differential expression
+      ext: html
+  volcano_plot_png:
+    properties:
+      _:
+      - static volcano plot image of pairwise differential expression
+      ext: png

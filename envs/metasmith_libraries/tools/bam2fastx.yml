@@ -1,0 +1,6 @@
+name: bam2fastx
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - pbtk=3.1.1

@@ -1,0 +1,5 @@
+channels:
+  - hallamlab
+  - bioconda
+dependencies:
+  - metasmith
