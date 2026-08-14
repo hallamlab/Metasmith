@@ -1,0 +1,99 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  atom_pairs:
+    properties:
+      Format: parquet
+      _:
+      - atom-atom mapping table (AAM), one row per (mnxr, element, substrate atom
+        -> product atom) transit. `sub_idx`/`prod_idx` are canonical atom RANKS within
+        a metabolite, not names -- decoding a node back to a chemical identity needs
+        `metabolite_names`. `pair_w` is the atom-transit count, which is both the
+        edge weight and, via the w<=0 drop, the connectivity.
+      ext: parquet
+      fields:
+      - confidence
+      - element
+      - method
+      - mnxr
+      - pair_w
+      - prod_idx
+      - product
+      - source
+      - sub_idx
+      - substrate
+  conditions:
+    properties:
+      Format: parquet
+      _:
+      - the measurement's condition set -- one row per condition, naming the source
+        (growth substrate) and sink (biomass precursor) metabolite hubs and the element
+        the transit is scored on. Per-experiment on purpose; the engine has no default
+        set.
+      ext: parquet
+      fields:
+      - condition_id
+      - element
+      - media
+      - sink_hub
+      - source_hub
+  direction_ratios:
+    properties:
+      Format: parquet
+      _:
+      - per-reaction DIRECTIONALITY ratios for the directed (diode) solve; MNXR ->
+        g_rev/g_fwd = exp(dG'/RT) from the fused direction ensemble. ratio==1.0 is
+        reversible (parity with the undirected model); every reaction is present.
+      ext: parquet
+      fields:
+      - dG_prime
+      - dir_confidence
+      - dir_method
+      - dir_tier
+      - mnxr
+      - ratio
+      - sigma
+  metabolite_names:
+    properties:
+      Format: parquet
+      _:
+      - MNXM -> chemical identity (name, formula, per-element atom counts). REQUIRED
+        to decode `atom_pairs` -- that table carries metabolite ids and canonical
+        atom ranks, so without this the node keys of the atom-transfer graph have
+        no chemical meaning and the conditions' source/sink hubs cannot be resolved
+        onto it.
+      ext: parquet
+      fields:
+      - element
+      - formula
+      - mnxm
+      - n_atoms
+      - name
+  results:
+    properties:
+      Format: parquet
+      _:
+      - THE ECSPr measurement. One row per (unit, condition, metric, direction) carrying
+        the observed effect and its significance against the staged null. `delta_total`
+        asks whether a unit raised total conductance to biomass and is scored up-tail
+        only; `delta_clr` asks whether it REDISTRIBUTED where the element lands and
+        is scored in both tails, since fed and starved are different claims that |delta|
+        would merge into a number supporting neither.
+      ext: parquet
+      fields:
+      - condition_id
+      - delta_obs
+      - direction
+      - element
+      - media
+      - metabolite
+      - metric
+      - n_orfs
+      - p
+      - q
+      - survives
+      - unit

@@ -1,0 +1,17 @@
+# The conda side of `env::ncbi-datasets.env`.
+#
+# The declaration already names `conda: ncbi-datasets`; this is the spec that makes an env
+# by that name exist. Only `host_genome` uses it, to pull the three host assemblies:
+#
+#   datasets download genome accession <GCF_...> --include genome,protein,gff3,gbff
+#   dataformat / unzip to the four sequences:: products
+#
+# `unzip` is listed because the datasets CLI delivers a zip and the transform unpacks it
+# in the same shell; without it the download succeeds and the step fails on the next line.
+name: ncbi-datasets
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - ncbi-datasets-cli
+  - unzip

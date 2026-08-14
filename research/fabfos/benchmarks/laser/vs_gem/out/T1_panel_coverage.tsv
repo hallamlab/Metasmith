@@ -1,0 +1,22 @@
+gate	arm	n_obs	n_targets	example_lost
+raw	(all)	382	184	
+mutation filter (147 lost)	(all)	235	116	(2S)-pinocembrin; (4S)-limonene
+non-probe (medium or carbon named)	(all)	225	107	curated:* mechanism probes
+names a specific product	(all)	181	82	Biomass; Carboxylic acids; Carotenoids
+target in the C atom universe	(all)	172	74	3-hydroxy-gamma-butyrolactone; Glucaric Acid; L-erythro-5,6,7,8-tetrahydrobiopterin
+target present in this arm's panel	e_coli_dh10b__denovo_ev__C__dir	10	9	14 target cells abstained
+target present in this arm's panel	e_coli_dh10b__fba_a0.1__C__dir	20	8	0 target cells abstained
+target present in this arm's panel	e_coli_dh10b__gem__C__dir	6	6	18 target cells abstained
+target present in this arm's panel	e_coli_dh10b__gem__C__und	6	6	18 target cells abstained
+target present in this arm's panel	e_coli_dh10b__trivial__C__dir	24	12	0 target cells abstained
+target present in this arm's panel	e_coli_k12__denovo_ev__C__dir	120	46	35 target cells abstained
+target present in this arm's panel	e_coli_k12__denovo_ev__C__und	120	46	35 target cells abstained
+target present in this arm's panel	e_coli_k12__denovo_uni__C__dir	120	46	35 target cells abstained
+target present in this arm's panel	e_coli_k12__fba_a0.0__C__dir	121	36	0 target cells abstained
+target present in this arm's panel	e_coli_k12__fba_a0.1__C__dir	117	34	0 target cells abstained
+target present in this arm's panel	e_coli_k12__fba_a0.3__C__dir	117	34	0 target cells abstained
+target present in this arm's panel	e_coli_k12__fba_a0.5__C__dir	116	33	0 target cells abstained
+target present in this arm's panel	e_coli_k12__fba_a0.9__C__dir	116	33	0 target cells abstained
+target present in this arm's panel	e_coli_k12__gem__C__dir	98	31	61 target cells abstained
+target present in this arm's panel	e_coli_k12__gem__C__und	98	31	61 target cells abstained
+target present in this arm's panel	e_coli_k12__trivial__C__dir	154	63	0 target cells abstained

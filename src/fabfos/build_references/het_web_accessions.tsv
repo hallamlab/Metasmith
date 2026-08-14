@@ -1,0 +1,19 @@
+# Accessions read out of the literature, for labels no UniProt query reaches.
+#
+# AUTO-ACCEPTED, UNDER THEIR OWN TIER. A label a query cannot reach and a paper's methods
+# section names outright is still an identification, and holding it behind a human accept
+# step just means it never lands. What makes that safe is that it is recorded
+# differently: `curate_het_screen.py` writes `reason` as `web:<doi>`, and
+# `bench_edges.uniprot_edges` routes the resulting edges as `web` rather than
+# `bridge_uniprot`, so a reader can always tell a query's answer from a reading of prose.
+#
+# EVERY COLUMN IS REQUIRED. A literature accession without its source is a bare
+# assertion; the loader refuses a row missing any of doi / url / quote / retrieved rather
+# than accepting a claim nobody can check. `quote` is verbatim from the cited source.
+#
+# `gene` and `source` must match the LASER label and GeneSource EXACTLY -- they are the
+# join key `bench_cohorts` uses, and a near-miss silently resolves nothing.
+#
+# Empty of rows on purpose. The lane is wired and tested; filling it is a literature pass
+# per label, and an unfilled row here is an honest "not done" rather than a guess.
+gene	source	uniprot	protein_name	organism	seq	doi	url	quote	retrieved

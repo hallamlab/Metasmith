@@ -1,0 +1,23 @@
+token	n_obs	status	tier	note	mnxms	in_universe	via
+Amino Acids	6	amino_acids	override	status declaration	MNXM1105732;MNXM1106761;MNXM1107769;MNXM1107821;MNXM114;MNXM1364268;MNXM1364497;MNXM142;MNXM199;MNXM29;MNXM37;MNXM728337;MNXM737787;MNXM738068;MNXM738804;MNXM739527;MNXM741173;MNXM741553;MNXM741664;MNXM76	True	
+Amino acids	24	amino_acids	override	status declaration	MNXM1105732;MNXM1106761;MNXM1107769;MNXM1107821;MNXM114;MNXM1364268;MNXM1364497;MNXM142;MNXM199;MNXM29;MNXM37;MNXM728337;MNXM737787;MNXM738068;MNXM738804;MNXM739527;MNXM741173;MNXM741553;MNXM741664;MNXM76	True	
+Crude glycerol	1	resolved	override_name+conservative_in_universe	unique	MNXM89612	True	glycerol
+Ethyl acetate	1	resolved	conservative_in_universe	unique	MNXM8595	True	
+Fructose	1	resolved	override_name+conservative_in_universe	ambiguous	MNXM1363862;MNXM1363863;MNXM1364098	True	D-fructose
+Gluconate	1	resolved	override_name+conservative_in_universe	unique	MNXM341	True	D-gluconate
+Glucose	143	resolved	override_name+conservative_in_universe	ruleB_merge	MNXM1105027;MNXM1364060;MNXM1364061	True	D-glucose
+Glycerol	40	resolved	conservative_in_universe	unique	MNXM89612	True	
+Glyercol	1	resolved	override_name+conservative_in_universe	unique	MNXM89612	True	glycerol
+Lactate	1	resolved	override_name+conservative_in_universe	unique	MNXM1371363	True	(S)-lactate
+Mannose	1	resolved	override_name+conservative_in_universe	ambiguous	MNXM1105806;MNXM1364107	True	D-mannose
+Methanol	1	resolved	conservative_in_universe	unique	MNXM729799	True	
+N15 labeling	1	not_a_carbon_source	override	status declaration		False	
+Sorbitol	2	resolved	override_name+conservative_in_universe	unique	MNXM736685	True	D-sorbitol
+Starch	1	resolved	conservative_in_universe	ambiguous_no_structure	MNXM1103451;MNXM725899;MNXM725902;MNXM725910	True	
+Xylose	11	resolved	override_name+conservative_in_universe	unique	MNXM169454	True	D-xylose
+cellobionic acid	1	unresolved	override	status declaration		False	
+fumarate	1	resolved	conservative_in_universe	unique	MNXM737340	True	
+glucose	3	resolved	override_name+conservative_in_universe	ruleB_merge	MNXM1105027;MNXM1364060;MNXM1364061	True	D-glucose
+glycerol	1	resolved	conservative_in_universe	unique	MNXM89612	True	
+starch	1	resolved	override_name+conservative_in_universe	ambiguous_no_structure	MNXM1103451;MNXM725899;MNXM725902;MNXM725910	True	starch
+xylose	1	resolved	override_name+conservative_in_universe	unique	MNXM169454	True	D-xylose

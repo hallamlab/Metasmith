@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Eydallin pilot: does glycogen draw current, and does one condition move it?
+
+The Eydallin cohort measures ONE metabolite (glycogen) across many gene-level
+perturbations, so before any scoring can mean anything the target has to be a node the
+media-to-ground probe can actually reach. This script answers that first, and only then
+applies a single condition.
+
+Two things it deliberately does NOT inherit from the study tier:
+
+- The perturbation is modelled as a CONDUCTANCE FOLD-CHANGE on the perturbed reaction,
+  not as an edge addition. Eydallin 2010 is an ASKA *overexpression* screen and every
+  hit gene is already native to K-12, so "add the reaction" is a no-op; raising its
+  weight is the only operation that means anything in a conductance model. (The study
+  tier currently labels this cohort `arm=lof` / `n_del=1`, which is the opposite
+  perturbation -- see the README.)
+
+- The target is read off the built graph rather than assumed present. `measure_leak`'s
+  draw dict only has keys for metabolites that became NODES; a missing key is a coverage
+  gap, not a zero, and the two must never be collapsed.
+
+Reference basis is tier4 atom pairs + the bake direction table, matching
+main/benchmarks/laser/pilot/run_pilot.py so the two pilots are comparable. NOT the
+deployed canonical basis.
+
+    docker run --rm -v $PWD:/ws -w /ws fabfos:local \
+        python main/benchmarks/eydallin/run_pilot_glycogen.py --gene glgC --fold 2.0
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[3]
+LIB = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
+sys.path.insert(0, str(LIB))
+
+from ecspr_build import load_pairs, load_direction_ratios, graph_from_pairs  # noqa: E402
+from ecspr_graph import Terminal, measure_leak                              # noqa: E402
+from ecspr_directed import _HAVE_CHOLMOD                                    # noqa: E402
+
+ATOM_PAIRS = ROOT / "data" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
+CHEM_PROP = ROOT / "data" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
+HOST_GEM = ROOT / "data" / "benchmarks" / "hosts" / "e_coli_k12" / "gpr_gem.parquet"
+BAKE = ROOT / "data" / "processed" / "metabolism_bake"
+OUT_DIR = Path(__file__).resolve().parent / "cache"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Glycogen is not one MetaNetX id. MNXM738130 is the BiGG species iML1515 uses;
+# MNXM738131 is the KEGG-keyed one. They carry DIFFERENT reaction sets in the atom-pair
+# table, so both are probed and reported separately -- silently picking one would hide
+# whichever half of the evidence disagrees.
+GLYCOGEN = {"MNXM738130": "Glycogen (BiGG, iML1515 species)",
+            "MNXM738131": "Glycogen (KEGG C00182)"}
+# Waypoints along glucose -> glycogen, reported beside the target so a zero at the target
+# can be localised to the step where carbon actually stops. These are the ids the
+# atom-pair table itself uses for the glycogen route -- NOT the ones `chem_prop` returns
+# for the obvious names. `alpha-D-glucose 1-phosphate` (MNXM1364214) is a different
+# MetaNetX entry from the `D-glucopyranose 1-phosphate` (MNXM1364212) that PGMT and GLGC
+# actually carry, and probing the first reads as "G1P is absent from the graph".
+WAYPOINTS = {"MNXM1364111": "D-glucose 6-phosphate (HEX1 product)",
+             "MNXM1364212": "D-glucopyranose 1-phosphate (PGMT product, GLGC substrate)",
+             "MNXM1105977": "ADP-alpha-D-glucose (GLGC substrate as written)",
+             "MNXM8348": "Branching glycogen"}
+SOURCE_NAME = "D-glucose"
+
+
+def build_direction_ratios(out_path: Path) -> Path:
+    direction = pd.read_parquet(BAKE / "direction.parquet")
+    vocab = pd.read_parquet(BAKE / "vocab.parquet")
+    rxn_vocab = vocab[vocab.kind == "rxn"][["code", "symbol"]].rename(
+        columns={"code": "rxn", "symbol": "mnxr"})
+    df = direction.merge(rxn_vocab, on="rxn", how="inner")
+    df = df[df.mnxr != "EMPTY"][["mnxr", "ratio"]]
+    df.to_parquet(out_path)
+    return out_path
+
+
+def resolve_source(pairs: pd.DataFrame) -> str:
+    cp = pd.read_csv(CHEM_PROP, sep="\t", comment="#",
+                     names=["id", "name", "reference", "formula", "charge", "mass",
+                            "inchi", "inchikey", "smiles"])
+    hit = cp[cp["name"].astype(str).str.lower() == SOURCE_NAME.lower()]
+    universe = set(pairs["substrate"]) | set(pairs["product"])
+    for mnxm in hit["id"]:
+        if mnxm in universe:
+            return mnxm
+    raise SystemExit(f"[pilot] {SOURCE_NAME} resolves to {list(hit['id'])}, none of which "
+                     f"is in the atom-pair universe for this element")
+
+
+def gene_reactions(gene: str) -> list:
+    host = pd.read_parquet(HOST_GEM)
+    rows = host[host["feature_name"].astype(str) == gene]
+    if not len(rows):
+        raise SystemExit(f"[pilot] gene {gene!r} carries no reaction in the host GEM")
+    return sorted(set(rows["mnxr"].dropna().astype(str)))
+
+
+def incident_report(graph, mnxm: str) -> dict:
+    """What the built graph knows about a metabolite. `n_nodes` 0 means it never became a
+    node at all, which is the case a missing draw key must be distinguished from."""
+    nodes = [i for i, nd in enumerate(graph.nodes)
+             if isinstance(nd, tuple) and nd[0] == mnxm]
+    inc = [(graph.nodes[a], graph.nodes[b]) for (a, b) in graph.edges
+           if a in nodes or b in nodes]
+    partners = sorted({p[0] for e in inc for p in e
+                       if isinstance(p, tuple) and p[0] != mnxm})
+    return dict(n_nodes=len(nodes), n_incident_edges=len(inc), partner_metabolites=partners)
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    p.add_argument("--gene", default="glgC",
+                   help="host gene to perturb (feature_name in the host GEM)")
+    p.add_argument("--fold", type=float, default=2.0,
+                   help="conductance fold-change on that gene's reactions; "
+                        "0 deletes them (LOF), >1 is the overexpression model")
+    p.add_argument("--element", default="C")
+    p.add_argument("--leak", type=float, default=1e-6)
+    args = p.parse_args()
+
+    pairs = load_pairs(ATOM_PAIRS, element=args.element)
+    ratios = load_direction_ratios(build_direction_ratios(OUT_DIR / "direction_ratios.parquet"))
+    host = pd.read_parquet(HOST_GEM)
+    base_w = {m: 1.0 for m in host["mnxr"].dropna().astype(str).unique()}
+
+    rxns = gene_reactions(args.gene)
+    pert_w = dict(base_w)
+    for r in rxns:
+        if args.fold == 0:
+            pert_w.pop(r, None)
+        else:
+            pert_w[r] = base_w.get(r, 0.0) * args.fold
+    print(f"[pilot] {args.gene}: {len(rxns)} reaction(s) {rxns} at fold {args.fold}",
+          file=sys.stderr)
+
+    src_mnxm = resolve_source(pairs)
+    probes = {**GLYCOGEN, **WAYPOINTS}
+
+    def solve(weights, tag):
+        g = graph_from_pairs(pairs, args.element, weights, ratios)
+        print(f"[pilot] {tag}: {g.n:,} nodes / {g.m:,} edges from "
+              f"{g.meta['n_reactions_used']:,} reactions "
+              f"(AAM gap {g.meta['n_aam_gap']:,})", file=sys.stderr)
+        src = Terminal.metabolite(g, src_mnxm, label="source")
+        if src.missing:
+            raise SystemExit(f"[pilot] source {src_mnxm} absent from the built graph")
+        r = measure_leak(g, src, [], leak=args.leak)
+        return g, r
+
+    g_base, r_base = solve(base_w, "base")
+    g_pert, r_pert = solve(pert_w, "pert")
+
+    out = dict(
+        gene=args.gene, gene_reactions=rxns, fold=args.fold,
+        element=args.element, leak=args.leak, ground="universal",
+        source=SOURCE_NAME, source_mnxm=src_mnxm,
+        reference_basis="tier4 atom pairs + bake direction (not the deployed canon)",
+        cholmod_available=_HAVE_CHOLMOD,
+        base=dict(total=r_base["total"], converged=r_base["converged"],
+                  n_metabolites=r_base["n_metabolites"],
+                  n_nodes=g_base.n, n_edges=g_base.m),
+        pert=dict(total=r_pert["total"], converged=r_pert["converged"],
+                  n_metabolites=r_pert["n_metabolites"],
+                  n_nodes=g_pert.n, n_edges=g_pert.m),
+        probes={},
+    )
+    for mnxm, label in probes.items():
+        db, dp = r_base["draw"].get(mnxm), r_pert["draw"].get(mnxm)
+        out["probes"][mnxm] = dict(
+            name=label,
+            draw_base=db, draw_pert=dp,
+            delta=(None if db is None or dp is None else dp - db),
+            in_draw_base=db is not None, in_draw_pert=dp is not None,
+            graph_base=incident_report(g_base, mnxm),
+        )
+
+    path = OUT_DIR / f"pilot_{args.gene}_fold{args.fold}_{args.element}.json"
+    path.write_text(json.dumps(out, indent=1, sort_keys=True))
+    print(json.dumps(out, indent=1, sort_keys=True))
+    print(f"\nwrote {path}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

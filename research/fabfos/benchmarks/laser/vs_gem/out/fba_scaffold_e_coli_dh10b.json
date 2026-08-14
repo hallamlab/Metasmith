@@ -1,0 +1,26 @@
+{
+ "host": "e_coli_dh10b",
+ "n_panel": 84,
+ "n_add_universe": 472,
+ "n_native_add": 325,
+ "n_novel_add": 147,
+ "n_inserted": 115,
+ "n_unmappable": 32,
+ "n_reactions_with_created_metabolites": 60,
+ "n_created_metabolites": 90,
+ "n_demand": 49,
+ "n_target_absent": 35,
+ "bridge_tiers": {
+  "direct": 423,
+  "inchikey": 13,
+  "formula_charge": 13,
+  "created": 90,
+  "reused": 0
+ },
+ "media_exchanges_absent": [],
+ "n_designs": 526,
+ "n_real": 26,
+ "n_topology_unchanged": 3,
+ "n_all_native_add": 3,
+ "n_medium_unresolved": 1
+}

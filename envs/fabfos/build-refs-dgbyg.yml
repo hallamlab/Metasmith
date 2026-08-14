@@ -1,0 +1,64 @@
+# build-refs-dgbyg -- the direction ensemble's learned member, on its own.
+#
+# Named by src/metasmith_libraries/resources/env/dgbyg.env (`conda: build-refs-dgbyg`)
+# and used by build_references/transforms/bake/dgbyg.py.
+#
+# WHY IT IS NOT IN build-refs-equilibrator, which lists dGbyG and resolves. It resolves
+# and it does not import: dGbyG's source carries a same-quote nested f-string, legal only
+# from Python 3.12, and that env is pinned to 3.11 for the eQuilibrator stack. So the
+# member was installed, unimportable, and failing as a SyntaxError rather than as the
+# ImportError the unavailable-member guard looks for.
+#
+# PYTHON 3.12, therefore, and no equilibrator packages: the two thermodynamic members
+# share nothing but the reaction universe they are asked about, and that arrives as a
+# file. Splitting them also means the eQuilibrator image stays ~1.5 GB rather than
+# carrying a second torch.
+#
+# CPU torch. This runs on whatever partition has a slot; a CUDA pin would make the env
+# unbuildable on the machines that actually schedule it.
+name: build-refs-dgbyg
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  # rdkit is the WILDCARD GUARD, not a featuriser convenience: dGbyG returns a confident
+  # number for an R-group `*` because rdkit hands it a valid feature vector, so the
+  # member parses every participant here and abstains on any wildcard it finds. Same pin
+  # as the other two images so no lane disagrees about what a molecule is.
+  - rdkit=2026.03.*
+  - numpy>=2
+  - pandas=2.3.*
+  - pyarrow>=24
+  - scipy=1.17.*
+  - git
+  # dGbyG's OWN RUNTIME DEPENDENCIES, listed here because the package declares NONE.
+  # Its setup.py has no install_requires at all -- the dependency list exists only as a
+  # full conda export of the author's machine (environment.yml, python 3.13, ~200 pins),
+  # which is not installable alongside our pins. So `pip install git+...` never brought
+  # these either; it produced a package that imports `pubchempy` at module level with no
+  # pubchempy present. These five are exactly what `from dGbyG.api import ...` touches:
+  #   pubchempy, biopython   _to_mol_methods, at module level
+  #   jpype1, portalocker, tqdm   _get_pKa_methods, at module level
+  # `cobra` is NOT here: it is imported only by utils/GEM_utils.py, which is not on the
+  # api import path, and pulling it in would put a solver stack in this image for nothing.
+  - pubchempy
+  - biopython
+  - jpype1
+  - portalocker
+  - tqdm
+  - pip
+  - pip:
+      - torch==2.8.0
+      - torch-geometric
+#
+# dGbyG ITSELF IS NOT LISTED, and that is the correction this file exists to record.
+# `envs/build-refs-equilibrator.yml` installs it as `git+https://github.com/f-wc/dGbyG.git`
+# and describes the result as "weights included". It is not: the 100 pre-trained heads
+# (~105 MB) sit at the repository root, outside `src/dGbyG/`, and no packaging declares
+# them -- so pip lands the python and none of the tensors. `api.py` then looks for them at
+# `__file__.split('src')[0] + 'models/...'`, which resolves to nonsense from site-packages.
+#
+# After creating this env, run the same script the container uses:
+#     mamba run -n build-refs-dgbyg bash docker/ecspr_bake/load/install_dgbyg.sh /opt/dGbyG
+# It clones at a pinned commit, registers the checkout with a .pth (not PYTHONPATH, which
+# every transform overwrites), and asserts the heads actually load.

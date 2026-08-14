@@ -1,0 +1,31 @@
+# The conda side of `env::polars.env`.
+#
+# That declaration carried only a `container:` key, which makes it unusable under the
+# MAMBA runtime: metasmith selects an env's `conda:` key when the runtime is MAMBA and
+# ASSERTS when the selected key is absent, and the runtime is one global setting rather
+# than a per-step choice.
+#
+# This env is a plumbing env, not a tool env. Its two consumers use it only to reshape
+# arrays into a parquet file -- no model, no weights, no GPU, nothing baked into the
+# image that a package cannot supply:
+#
+#   proteinbert.py   loads ProteinBERT's per-shard .npy, vstacks them, slices the last
+#                    512 dims and writes one parquet          (numpy + polars)
+#   foldseek_3di.py  same shape of work; NOT in this graph, listed so the spec is not
+#                    silently scoped to a single caller
+#
+# That is why polars is the one member of stage 2's container-only trio that a conda
+# spec can honestly reproduce -- see envs/README or the fix agent's notes for why
+# `clean` and `proteinbert` cannot.
+#
+# polars pinned to the image's minor (quay.io/hallamlab/polars:1.38.1) so the parquet
+# writer behaves the same either side of the runtime switch. `write_parquet` is native
+# to polars, so pyarrow is deliberately NOT pinned here -- adding it would imply a
+# dependency the combiner does not have.
+name: polars
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - polars=1.38.*
+  - numpy=2.*

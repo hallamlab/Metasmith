@@ -1,0 +1,30 @@
+{
+ "base_converged": true,
+ "base_n_aam_gap": 279,
+ "cholmod_available": true,
+ "conditions": [
+  "Keio:argA",
+  "Keio:hisG",
+  "Keio:trpE",
+  "Keio:argH",
+  "Keio:argD"
+ ],
+ "element": "C",
+ "floor": 1e-15,
+ "ground": "universal",
+ "host": "e_coli_k12",
+ "leak": 1e-06,
+ "mechanical_agree": 3,
+ "mechanical_rows": 6,
+ "mechanical_scoreable": 6,
+ "n_metabolites_background": 1022,
+ "n_scored_background": 991,
+ "reference_basis": "tier4 (not the canonical MNXref release)",
+ "source": "D-glucose",
+ "source_mnxm": "MNXM1364061",
+ "targets": {
+  "L-arginine": "MNXM739527",
+  "L-histidine": "MNXM1107769",
+  "L-tryptophan": "MNXM741553"
+ }
+}

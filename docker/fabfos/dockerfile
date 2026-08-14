@@ -1,0 +1,44 @@
+# The fabfos runtime: assembly + annotation's conda-installable lanes + ECSPr with
+# CHOLMOD, bundled in one docker-native image (no SIF, no HPC sync -- see dev.sh).
+#
+# TWO ENVS, ONE IMAGE. `fabfos` (numpy<2: scikit-sparse/CHOLMOD, cobra, the assembly
+# and annotation CLI tools) and `fabfos_polars` (numpy>=2: polars) cannot share one
+# conda env for the same reason docker/ecspr_bake/dockerfile splits :aam from
+# :direction -- see env.yml and env_polars.yml for which half needs which numpy.
+#
+# CLEAN AND PROTEINBERT ARE NOT HERE. Their weights have no standalone file anywhere
+# in this repo -- they exist only inside the bespoke external_clean/external_proteinbert
+# images -- so they are reference data on their own containers, same bucket as uniref,
+# the kofam profile DB, and the ecspr_bake outputs. Nothing downstream of this image
+# can produce CLEAN's or ProteinBERT's lane; their outputs must be staged from
+# elsewhere, same as any other reference input.
+#
+# gfatools HAS NO CONDA FALLBACK (env/gfatools.env carries only a `container:` key) --
+# its binary is copied from its own upstream image instead of installed.
+#
+# Base is digest-pinned, not :latest, for the same reason docker/ecspr_bake/dockerfile
+# gives: an image whose base moves under it is not a reproducible image.
+FROM condaforge/miniforge3:25.3.0-3 AS build-env
+ARG VERIFY
+
+COPY env.yml /opt/env.yml
+COPY env_polars.yml /opt/env_polars.yml
+RUN --mount=type=cache,target=/opt/conda/pkgs \
+    --mount=type=cache,target=/root/.cache/pip \
+    mamba env create -n fabfos -f /opt/env.yml \
+    && mamba env create -n fabfos_polars -f /opt/env_polars.yml
+ENV PATH=/opt/conda/envs/fabfos/bin:$PATH
+
+# gfatools has no bioconda package -- lift the binary out of its own upstream image
+# rather than build it from source.
+FROM dnalinux/gfatools:final-gt AS gfatools
+
+FROM build-env AS final
+COPY --from=gfatools /gfatools-final-gt/gfatools /usr/local/bin/gfatools
+
+# Fail the BUILD, not a queued job hours later, if a pin regressed.
+RUN python -c "${VERIFY}"
+
+ADD ./load/tini /tini
+RUN chmod +x /tini
+ENTRYPOINT ["/tini", "-s", "-g", "--"]

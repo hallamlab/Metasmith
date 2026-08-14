@@ -1,0 +1,29 @@
+unit	target	host	n_designs	n_papers	n_pairs	kendall_tau
+e_coli_k12__denovo_ev__C__dir	ethanol	e_coli_k12	5	5	10	-0.4
+e_coli_k12__denovo_ev__C__und	ethanol	e_coli_k12	5	5	10	-0.2
+e_coli_k12__denovo_uni__C__dir	ethanol	e_coli_k12	5	5	10	-0.4
+e_coli_k12__fba_a0.0__C__dir	ethanol	e_coli_k12	5	5	10	-0.4
+e_coli_k12__fba_a0.1__C__dir	ethanol	e_coli_k12	5	5	10	-0.4
+e_coli_k12__fba_a0.3__C__dir	ethanol	e_coli_k12	5	5	10	-0.4
+e_coli_k12__fba_a0.5__C__dir	ethanol	e_coli_k12	5	5	10	0.2
+e_coli_k12__fba_a0.9__C__dir	ethanol	e_coli_k12	5	5	10	-0.4
+e_coli_k12__gem__C__dir	ethanol	e_coli_k12	5	5	10	0.2
+e_coli_k12__gem__C__und	ethanol	e_coli_k12	5	5	10	0.4
+e_coli_k12__trivial__C__dir	ethanol	e_coli_k12	5	5	6	0.3333333333333333
+e_coli_k12__fba_a0.0__C__dir	lycopene	e_coli_k12	8	3	0	
+e_coli_k12__fba_a0.1__C__dir	lycopene	e_coli_k12	8	3	0	
+e_coli_k12__fba_a0.3__C__dir	lycopene	e_coli_k12	8	3	0	
+e_coli_k12__fba_a0.5__C__dir	lycopene	e_coli_k12	8	3	0	
+e_coli_k12__fba_a0.9__C__dir	lycopene	e_coli_k12	8	3	0	
+e_coli_k12__trivial__C__dir	lycopene	e_coli_k12	8	3	0	
+e_coli_k12__denovo_ev__C__dir	succinate	e_coli_k12	14	6	74	0.32432432432432434
+e_coli_k12__denovo_ev__C__und	succinate	e_coli_k12	14	6	74	0.3783783783783784
+e_coli_k12__denovo_uni__C__dir	succinate	e_coli_k12	14	6	74	0.2702702702702703
+e_coli_k12__fba_a0.0__C__dir	succinate	e_coli_k12	14	6	89	-0.43820224719101125
+e_coli_k12__fba_a0.1__C__dir	succinate	e_coli_k12	14	6	89	-0.2808988764044944
+e_coli_k12__fba_a0.3__C__dir	succinate	e_coli_k12	14	6	89	0.3258426966292135
+e_coli_k12__fba_a0.5__C__dir	succinate	e_coli_k12	14	6	85	0.03529411764705882
+e_coli_k12__fba_a0.9__C__dir	succinate	e_coli_k12	14	6	63	-0.2698412698412698
+e_coli_k12__gem__C__dir	succinate	e_coli_k12	14	6	74	-0.1891891891891892
+e_coli_k12__gem__C__und	succinate	e_coli_k12	14	6	74	0.0
+e_coli_k12__trivial__C__dir	succinate	e_coli_k12	14	6	0	
