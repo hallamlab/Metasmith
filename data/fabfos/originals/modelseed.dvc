@@ -1,0 +1,6 @@
+outs:
+- md5: f7df9084faac728015c1aea9fb647d82.dir
+  size: 12887818
+  nfiles: 2
+  hash: md5
+  path: modelseed

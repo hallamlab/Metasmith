@@ -1,0 +1,6 @@
+outs:
+- md5: 7fe9f4af3669a52842e436d99640f825.dir
+  size: 1405932085
+  nfiles: 3
+  hash: md5
+  path: equilibrator

@@ -1,0 +1,6 @@
+outs:
+- md5: ca94c3a129a08a01f56cc59f3e6360fd.dir
+  size: 17376921851
+  nfiles: 1
+  hash: md5
+  path: uniref50_dmnd

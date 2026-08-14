@@ -1,0 +1,6 @@
+outs:
+- md5: 1b00fd35f87a44021f2481a655d8f505.dir
+  size: 246331
+  nfiles: 2
+  hash: md5
+  path: kegg

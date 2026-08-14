@@ -1,0 +1,6 @@
+outs:
+- md5: 87e99287ad2fe6bd803fb5247747e966.dir
+  size: 162848747
+  nfiles: 5
+  hash: md5
+  path: annotation_alts
