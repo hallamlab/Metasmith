@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[5]
 HERE = Path(__file__).resolve().parent
 REFS = HERE / "refs"
 OUT = HERE / "out"
@@ -22,17 +22,17 @@ CACHE = HERE / "cache"
 for _d in (REFS, OUT, CACHE):
     _d.mkdir(parents=True, exist_ok=True)
 
-EXTRACTION = ROOT / "data" / "benchmarks" / "laser" / "extraction.tsv"
-ATOM_PAIRS = ROOT / "data" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
-TIER4_FREEZE = ROOT / "data" / "benchmark" / "reference_tier4" / "TIER4_FREEZE.md"
-BAKE = ROOT / "data" / "processed" / "metabolism_bake"
-MNX = ROOT / "data" / "originals" / "metanetx" / "4.5"
+EXTRACTION = ROOT / "data" / "fabfos" / "benchmarks" / "laser" / "extraction.tsv"
+ATOM_PAIRS = ROOT / "data" / "fabfos" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
+TIER4_FREEZE = ROOT / "data" / "fabfos" / "benchmark" / "reference_tier4" / "TIER4_FREEZE.md"
+BAKE = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake"
+MNX = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5"
 CHEM_PROP = MNX / "chem_prop.tsv"
 CHEM_XREF = MNX / "chem_xref.tsv"
 REAC_PROP = MNX / "reac_prop.tsv"
 REAC_XREF = MNX / "reac_xref.tsv"
-HOSTS = ROOT / "data" / "benchmarks" / "hosts"
-DENOVO = ROOT / "data" / "fabfos"
+HOSTS = ROOT / "data" / "fabfos" / "benchmarks" / "hosts"
+DENOVO = ROOT / "data" / "fabfos" / "runs"
 LIB = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
 
 # The pool of counterfactual designs is seeded once here and nowhere else. If two

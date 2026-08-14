@@ -19,13 +19,13 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "data" / "fabfos" / "scadc_ecspr" / "refs"
+ROOT = Path(__file__).resolve().parents[3]
+OUT = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "refs"
 OUT.mkdir(parents=True, exist_ok=True)
 
-ATOM_PAIRS_TIER4 = ROOT / "data" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
-BAKE_DIR = ROOT / "data" / "processed" / "metabolism_bake"
-CHEM_PROP = ROOT / "data" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
+ATOM_PAIRS_TIER4 = ROOT / "data" / "fabfos" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
+BAKE_DIR = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake"
+CHEM_PROP = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
 
 FORMULA_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
 
@@ -124,7 +124,7 @@ def build_conditions(atom_pairs: pd.DataFrame):
                           element="C", source_hub=source_hub, sink_hub=sink_hub,
                           media="glucose_minimal"))
     df = pd.DataFrame(rows)
-    out = ROOT / "data" / "fabfos" / "scadc_ecspr" / "conditions.parquet"
+    out = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "conditions.parquet"
     df.to_parquet(out)
     print(f"conditions: {len(df)} rows -> {out}")
     print(df)

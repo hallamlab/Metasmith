@@ -20,8 +20,8 @@ import common as C  # noqa: E402
 
 BIGG_CACHE = C.CACHE / "biggM_bridge.parquet"
 MODELS = {
-    "e_coli_k12": C.ROOT / "data/originals/genomes/e_coli_k12/GEM/iML1515.json",
-    "e_coli_dh10b": C.ROOT / "data/originals/genomes/e_coli_dh10b/GEM/iECDH10B_1368.json",
+    "e_coli_k12": C.ROOT / "data/fabfos/originals/genomes/e_coli_k12/GEM/iML1515.json",
+    "e_coli_dh10b": C.ROOT / "data/fabfos/originals/genomes/e_coli_dh10b/GEM/iECDH10B_1368.json",
 }
 
 

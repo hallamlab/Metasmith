@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """R6, the metabolism bake, in PARTS -- planned here, executed on Sockeye under SLURM.
 
-    PYTHONPATH=src/metasmith/src python tests/build_references_bake_parts_on_hpc.py direction
+    PYTHONPATH=src python tests/fabfos/build_references_bake_parts_on_hpc.py direction
     ... build_references_bake_parts_on_hpc.py members --run --user txyliu
 
 WHY PARTS AND NOT ONE RUN. `build_references_bake_on_hpc.py` plans all twelve lanes and
@@ -68,12 +68,12 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 
 # The PINNED engine, ahead of whatever is installed. Planning works on either; execution
 # does not -- only the pin resolves a `container:`/`conda:` env declaration by runtime
 # instead of handing the whole declaration to apptainer as a URI.
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
 
@@ -89,7 +89,7 @@ from metasmith.python_api import (                                      # noqa: 
 
 # The site bundle and the cluster checks live with the other executing drivers; there is
 # one copy of "what sockeye does differently" and this is not a second one.
-sys.path.insert(0, str(REPO / "examples"))
+sys.path.insert(0, str(REPO / "research" / "fabfos" / "examples"))
 from _driver import (                                                   # noqa: E402
     SOCKEYE_ACCOUNT, SOCKEYE_CONTAINER, SOCKEYE_HOST, SOCKEYE_IMAGE_STORE,
     SOCKEYE_SETUP_COMMANDS,
@@ -98,9 +98,9 @@ from _driver import (                                                   # noqa: 
 )
 
 MLIB = REPO / "src" / "metasmith_libraries"
-BREF = REPO / "build_references"
-DATA = REPO / "data"
-ARTIFACTS = REPO / "tests" / "artifacts"
+BREF = REPO / "src" / "fabfos" / "build_references"
+DATA = REPO / "data" / "fabfos"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 WORK_ROOT = DATA / "scratch" / "r6_bake_parts"
 
 TYPE_LIBRARIES = (
@@ -531,7 +531,7 @@ def place_images(host: str, branch: str, cache_dir: str, container: str) -> None
                 + f"\nThe registry copy is NOT a fallback -- the repo is private, and the "
                 f"compute nodes have no route out regardless. Build and place it:\n"
                 f"    docker/ecspr_bake/dev.sh --build --sif --sync   (task images)\n"
-                f"    cd src/metasmith && ./dev.sh --update_container (agent image)\n"
+                f"    ./dev/metasmith.sh --update_container           (agent image)\n"
                 f"Do NOT point at an older agent image: the staging semantics come from "
                 f"the agent, and one that disagrees with the engine on the PYTHONPATH is "
                 f"the exact mismatch the dev overlay exists to prevent.")

@@ -13,7 +13,7 @@ transform is never imported, so `metasmith.python_api` is not needed and the dri
 under test is byte-identical to the one a real run would write.
 
     mamba run -n msm-fabfos python build_references/run_benchmark_conditions_local.py \\
-        --out data/scratch/bench_conditions_local
+        --out data/fabfos/scratch/bench_conditions_local
 
 Outputs land under `--out` and are NOT a publishable artifact: the type declarations,
 the BUILD.json and the DVC pin all come from a real run. Read them, compare them, throw
@@ -28,8 +28,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-BREF = REPO / "build_references"
+REPO = Path(__file__).resolve().parents[3]
+BREF = Path(__file__).resolve().parent
 TRANSFORMS = BREF / "transforms" / "benchmark"
 BUILDLIB = BREF / "resources" / "buildlib"
 
@@ -37,14 +37,14 @@ BUILDLIB = BREF / "resources" / "buildlib"
 # than threaded through argparse so a run of this script cannot quietly point at a
 # different tree's extractions than the one it reports on.
 GIVENS = {
-    "extracts": REPO / "data" / "benchmarks" / "_extractions",
-    "het":      REPO / "data" / "originals" / "benchmarks" / "het_screen",
-    "bridge":   REPO / "data" / "processed" / "mnxr_lookup" / "mnxr_lookup.parquet",
-    "metanetx": REPO / "data" / "originals" / "metanetx",
+    "extracts": REPO / "data" / "fabfos" / "benchmarks" / "_extractions",
+    "het":      REPO / "data" / "fabfos" / "originals" / "benchmarks" / "het_screen",
+    "bridge":   REPO / "data" / "fabfos" / "processed" / "mnxr_lookup" / "mnxr_lookup.parquet",
+    "metanetx": REPO / "data" / "fabfos" / "originals" / "metanetx",
     # `raw::laser_records` -- the upstream checkout, for `inputs/Gene-Reaction
     # Pairings.txt`. NOT the extraction: this is the repository LASER publishes.
-    "laser":    REPO / "data" / "originals" / "benchmarks" / "laser",
-    "hosts_gem": REPO / "data" / "benchmarks",
+    "laser":    REPO / "data" / "fabfos" / "originals" / "benchmarks" / "laser",
+    "hosts_gem": REPO / "data" / "fabfos" / "benchmarks",
 }
 
 
@@ -87,7 +87,7 @@ def run_driver(name: str, fmt: dict, work: Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", default="data/scratch/bench_conditions_local",
+    ap.add_argument("--out", default="data/fabfos/scratch/bench_conditions_local",
                     help="where the two products land (relative to the repo root)")
     ap.add_argument("--only", choices=("condition_gpr", "conditions"), default=None)
     args = ap.parse_args()

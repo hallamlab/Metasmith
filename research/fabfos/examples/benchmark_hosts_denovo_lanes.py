@@ -48,9 +48,9 @@ import sys
 from hashlib import md5
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
 
@@ -70,7 +70,7 @@ from _driver import (                                                   # noqa: 
 import benchmark_hosts_denovo_on_hpc as B2                              # noqa: E402
 
 MLIB = REPO / "src" / "metasmith_libraries"
-DATA = REPO / "data"
+DATA = REPO / "data" / "fabfos"
 PROCESSED = DATA / "processed"
 ORIGINALS = DATA / "originals"
 SCRATCH = DATA / "scratch"
@@ -249,7 +249,7 @@ def build_inputs(work: Path, lanes: list[str], site: dict) -> DataInstanceLibrar
             if not site["remote"] and not Path(at).exists():
                 raise SystemExit(
                     f"{dtype} is not at {at}.\n  `dvc checkout "
-                    f"data/processed/{rel.split('/')[0]}.dvc`")
+                    f"data/fabfos/processed/{rel.split('/')[0]}.dvc`")
             print(f"    {dtype:32s} {at}")
             inputs.AddItem(at, dtype)
         # Source folders, compiled on the machine that reads them.
@@ -441,7 +441,7 @@ def push_sources(site: dict, lanes: list[str]) -> None:
             dest = f"{site['data']}/originals/{rel}"
             if not src.exists():
                 raise SystemExit(f"{src} is not materialised; `dvc checkout "
-                                 f"data/originals/{rel}.dvc`")
+                                 f"data/fabfos/originals/{rel}.dvc`")
             ssh_once(host, f"mkdir -p {Path(dest).parent}")
             print(f"  {src.relative_to(REPO)}  ->  {host}:{dest}")
             subprocess.run(["rsync", "-a", "--info=progress2",

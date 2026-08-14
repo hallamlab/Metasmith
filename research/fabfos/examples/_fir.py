@@ -33,9 +33,9 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir() and str(_ENGINE) not in sys.path:
     sys.path.insert(0, str(_ENGINE))
 
@@ -173,7 +173,7 @@ def provision_dev_overlay_remote(host: str, agent_home: str, *, repo: Path = REP
     The tarball is rebuilt unconditionally: its mtime+size IS the stage key, so a
     stale one is indistinguishable from a current one until a task fails.
     """
-    src = repo / "src" / "metasmith" / "src" / "metasmith"
+    src = repo / "src" / "metasmith"
     if not (src / "__init__.py").exists():
         raise SystemExit(f"the pinned engine is not at {src}; "
                          f"`git submodule update --init src/metasmith`")

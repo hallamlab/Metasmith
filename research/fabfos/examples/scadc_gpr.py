@@ -17,7 +17,7 @@
 
 WHERE IT PUBLISHES
 ------------------
-Three chunks beside the inserts, under the run folder `data/fabfos/scadc_fosmids/`.
+Three chunks beside the inserts, under the run folder `data/fabfos/runs/scadc_fosmids/`.
 `annotations/` takes the ORF set and the four lanes the 4-lane mapper is built from;
 `annotation_alts/` takes the three alternative-tool lanes; `gpr/` takes the two mapper
 tables. The per-lane layout is `<lane>/fosmids.<lane>.<ext>`, which is what every other
@@ -71,9 +71,9 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
 
@@ -92,11 +92,11 @@ from _fir import (                                                     # noqa: E
 )
 
 MLIB = REPO / "src" / "metasmith_libraries"
-DATA = REPO / "data"
+DATA = REPO / "data" / "fabfos"
 PROCESSED = DATA / "processed"
-RUNS = DATA / "fabfos"
+RUNS = DATA / "runs"
 SCRATCH = DATA / "scratch"
-ARTIFACTS = REPO / "tests" / "artifacts"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 
 FOSMIDS = RUNS / "scadc_fosmids"
 INSERTS = FOSMIDS / "sequences" / "inserts" / "inserts.fna"
@@ -160,7 +160,7 @@ def expected_transforms(lanes: int) -> set[str]:
 # ids that happen to look alike.
 #
 # THE LAYOUT IS THE RUN-FOLDER LAYOUT, not one this driver invents. A lane lands at
-# `<lane>/fosmids.<lane>.<ext>`, which is what every `data/fabfos/<run>/` already does
+# `<lane>/fosmids.<lane>.<ext>`, which is what every `data/fabfos/runs/<run>/` already does
 # -- so a reader who has walked one annotated sequence set in this tree has walked all
 # of them. `ezpred` gets its own directory rather than joining the hosts' `ecpred/`:
 # the near-identical spelling is a coincidence between two different tools, and
@@ -278,7 +278,7 @@ def build_inputs(work: Path, lanes: int, remote_processed: str,
     if not INSERTS.exists():
         raise SystemExit(
             f"the recovered inserts are not at {INSERTS.relative_to(REPO)}.\n"
-            f"  Materialise the pin: `dvc checkout data/fabfos/scadc_fosmids/sequences.dvc`")
+            f"  Materialise the pin: `dvc checkout data/fabfos/runs/scadc_fosmids/sequences.dvc`")
     n = sum(1 for line in INSERTS.open() if line.startswith(">"))
     print(f"    fabfos::putative_inserts     {INSERTS.relative_to(REPO)}  ({n} records)")
     # Copied in, so it is a RELATIVE member of the library and travels with the task.

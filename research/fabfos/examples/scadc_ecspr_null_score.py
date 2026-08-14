@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Score `data/fabfos/scadc_ecspr/results.parquet` against the frozen null draws in
-`data/fabfos/scadc_ecspr/null/draws.parquet` (plan T3). Pure local join + stats pass
+"""Score `data/fabfos/runs/scadc_ecspr/results.parquet` against the frozen null draws in
+`data/fabfos/runs/scadc_ecspr/null/draws.parquet` (plan T3). Pure local join + stats pass
 -- no fir job, no --preflight/--run/--retrieve/--publish shape (see plan's T3
 approach note: "this step runs locally").
 
@@ -27,9 +27,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
-RESULTS = ROOT / "data" / "fabfos" / "scadc_ecspr" / "results.parquet"
-NULL_DRAWS = ROOT / "data" / "fabfos" / "scadc_ecspr" / "null" / "draws.parquet"
+ROOT = Path(__file__).resolve().parents[3]
+RESULTS = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "results.parquet"
+NULL_DRAWS = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "null" / "draws.parquet"
 Q_THRESHOLD = 0.05
 
 

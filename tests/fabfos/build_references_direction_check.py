@@ -4,9 +4,9 @@
     python tests/build_references_direction_check.py
 
 READS WHAT WAS RETRIEVED, not what was run. `build_references_bake_parts_on_hpc.py
-direction` lands `interm::direction_annotation` at `data/temp/_seams/` and the two
-evidence directories at `data/temp/metacyc_direction/` and
-`data/temp/direction_calibration/`; this opens those. A run whose retrieval was wrong
+direction` lands `interm::direction_annotation` at `data/fabfos/temp/_seams/` and the two
+evidence directories at `data/fabfos/temp/metacyc_direction/` and
+`data/fabfos/temp/direction_calibration/`; this opens those. A run whose retrieval was wrong
 reads as an absent file here rather than as a wrong number.
 
 FOUR CHECKS, AND THREE OF THEM ARE ABOUT THE CURATED MEMBER rather than the fusion. The
@@ -40,8 +40,8 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO = Path(__file__).resolve().parent.parent
-DATA = REPO / "data"
+REPO = Path(__file__).resolve().parents[2]
+DATA = REPO / "data" / "fabfos"
 TEMP = DATA / "temp"
 
 ANNOTATION = TEMP / "_seams" / "direction_annotation.parquet"

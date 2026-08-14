@@ -67,15 +67,15 @@ from metasmith.python_api import (
     Runtime,
 )
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 MLIB = REPO / "src" / "metasmith_libraries"
-BREF = REPO / "build_references"
-ARTIFACTS = REPO / "tests" / "artifacts"
+BREF = REPO / "src" / "fabfos" / "build_references"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 
 # THE ONE GIVEN. `fabfos_data::metacyc` is a source FOLDER holding one release
 # directory, so this is the folder above `26/`, not `26/` itself.
 GIVEN_TYPE = "fabfos_data::metacyc"
-GIVEN_AT = REPO / "data" / "originals" / "metacyc"
+GIVEN_AT = REPO / "data" / "fabfos" / "originals" / "metacyc"
 
 # The R6 trio, by artifact id in build_references/REFERENCES.md.
 TARGETS = [

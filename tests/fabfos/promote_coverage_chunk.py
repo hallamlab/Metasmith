@@ -135,7 +135,7 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("kind", choices=sorted(SUMMARIES))
     ap.add_argument("results", help="the retrieved <run>/results directory")
-    ap.add_argument("chunk", help="data/fabfos/<run>/<name> to create")
+    ap.add_argument("chunk", help="data/fabfos/runs/<run>/<name> to create")
     a = ap.parse_args()
     return promote(a.kind, Path(a.results).resolve(), Path(a.chunk).resolve())
 

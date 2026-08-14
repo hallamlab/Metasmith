@@ -32,8 +32,8 @@ predictors to trust in a named regime, and it should be made once, in writing, a
 these numbers rather than re-derived from a plot.
 
     python tests/build_references_dgbyg_fusion.py \
-        --eq    data/temp/_seams/direction_member_eq.parquet \
-        --dgbyg data/temp/_seams/direction_member_dgbyg.parquet
+        --eq    data/fabfos/temp/_seams/direction_member_eq.parquet \
+        --dgbyg data/fabfos/temp/_seams/direction_member_dgbyg.parquet
 """
 import argparse
 import math
@@ -42,7 +42,7 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 
 # The band within which a group-contribution number is treated as the arm cancelling
 # rather than as an estimate that happens to be small. 1 kJ/mol is well under the arm's
@@ -73,9 +73,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--eq", type=Path,
-                    default=REPO / "data/temp/_seams/direction_member_eq.parquet")
+                    default=REPO / "data/fabfos/temp/_seams/direction_member_eq.parquet")
     ap.add_argument("--dgbyg", type=Path,
-                    default=REPO / "data/temp/_seams/direction_member_dgbyg.parquet")
+                    default=REPO / "data/fabfos/temp/_seams/direction_member_dgbyg.parquet")
     ap.add_argument("--near-zero", type=float, default=NEAR_ZERO_KJ,
                     help="kJ/mol band treated as the GC arm cancelling (default 1.0)")
     a = ap.parse_args()

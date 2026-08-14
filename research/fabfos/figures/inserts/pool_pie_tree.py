@@ -34,9 +34,9 @@ POOL 01 IS ONE NODE
   barcodes. The lineage has one pool 01, so its three libraries are summed into
   one donut. Drawing them separately would draw the common ancestor three times.
 
-INPUT   data/fabfos/scadc_fosmids/pools/pool_lineage.csv
-        data/fabfos/scadc_fosmids/sequences/insert_coverage/insert_coverage_matrix.tsv
-        data/fabfos/scadc_fosmids/sequences/insert_coverage/pool_summary.tsv
+INPUT   data/fabfos/runs/scadc_fosmids/pools/pool_lineage.csv
+        data/fabfos/runs/scadc_fosmids/sequences/insert_coverage/insert_coverage_matrix.tsv
+        data/fabfos/runs/scadc_fosmids/sequences/insert_coverage/pool_summary.tsv
 ENV     mamba run -n figure-net python main/figures/inserts/pool_pie_tree.py
 OUT     cache/pool_pie_tree.{png,svg}
         cache/pool_pie_tree_legend.{png,svg}

@@ -54,9 +54,9 @@ import shutil
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
 
@@ -73,12 +73,12 @@ from _driver import (                                                   # noqa: 
 import benchmark_hosts_denovo_on_hpc as B2                              # noqa: E402
 import benchmark_hosts_denovo_lanes as LN                               # noqa: E402
 
-BREF = REPO / "build_references"
+BREF = REPO / "src" / "fabfos" / "build_references"
 MLIB = REPO / "src" / "metasmith_libraries"
-DATA = REPO / "data"
+DATA = REPO / "data" / "fabfos"
 PROCESSED = DATA / "processed"
 SCRATCH = DATA / "scratch"
-ARTIFACTS = REPO / "tests" / "artifacts"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 
 GENOMES = B2.GENOMES
 TARGET_4 = B2.TARGET_4
@@ -396,7 +396,7 @@ def main() -> int:
 
     if a.publish or a.publish_dry_run:
         return publish_by_type(local_results, B2.PUBLISH_AT,
-                               REPO / "data" / "benchmarks" / "denovo",
+                               REPO / "data" / "fabfos" / "benchmarks" / "denovo",
                                dry_run=a.publish_dry_run, repo=REPO)
 
     agent = local_agent(work)

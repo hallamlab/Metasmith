@@ -172,7 +172,7 @@ explicitly:
 ## `assembly_stats_on_fir.py` — not a test
 
 The executing half of the coverage lane the fosmids compile-check describes:
-`data/fabfos/scadc_fosmids/sequences/inserts/inserts.fna` mapped against each of the 35 SCADC pools'
+`data/fabfos/runs/scadc_fosmids/sequences/inserts/inserts.fna` mapped against each of the 35 SCADC pools'
 host-filtered reads on fir, one slurm job per pool. Like the executing drivers
 in `research/fabfos/examples/`, plan-only is the default — `--run` executes, `--offline` plans
 with no host contact at all, `--preflight` checks the remote prerequisites,

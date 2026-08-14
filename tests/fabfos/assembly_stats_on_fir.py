@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Coverage of the recovered fosmid inserts, one job per SCADC pool, on fir.
 
-    PYTHONPATH=src/metasmith/src:src python tests/assembly_stats_on_fir.py
-    PYTHONPATH=src/metasmith/src:src python tests/assembly_stats_on_fir.py --offline
-    PYTHONPATH=src/metasmith/src:src python tests/assembly_stats_on_fir.py --preflight
-    PYTHONPATH=src/metasmith/src:src python tests/assembly_stats_on_fir.py --run --pools pool03_CAATCGAC
-    PYTHONPATH=src/metasmith/src:src python tests/assembly_stats_on_fir.py --run
-    PYTHONPATH=src/metasmith/src:src python tests/assembly_stats_on_fir.py --summarize <dir>/results
+    PYTHONPATH=src python tests/fabfos/assembly_stats_on_fir.py
+    PYTHONPATH=src python tests/fabfos/assembly_stats_on_fir.py --offline
+    PYTHONPATH=src python tests/fabfos/assembly_stats_on_fir.py --preflight
+    PYTHONPATH=src python tests/fabfos/assembly_stats_on_fir.py --run --pools pool03_CAATCGAC
+    PYTHONPATH=src python tests/fabfos/assembly_stats_on_fir.py --run
+    PYTHONPATH=src python tests/fabfos/assembly_stats_on_fir.py --summarize <dir>/results
 
 WHY THIS EXISTS
 ---------------
-`data/fabfos/scadc_fosmids/sequences/inserts` holds 183 putative fosmid inserts recovered from 35 pools,
+`data/fabfos/runs/scadc_fosmids/sequences/inserts` holds 183 putative fosmid inserts recovered from 35 pools,
 but nothing states how much of each pool's sequencing actually lands on that set.
 The recovery chain calls junctions from positive vector evidence and never looks
 at depth, so coverage has never been measured here at all.
@@ -113,9 +113,8 @@ from collections import Counter
 import yaml
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
-sys.path.insert(0, str(REPO / "src" / "metasmith" / "src"))
 
 from fabfos.pipelines.common import resolve_library_root  # noqa: E402
 
@@ -127,7 +126,7 @@ from metasmith.python_api import (  # noqa: E402
 LIB = resolve_library_root()
 ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
 
-INSERT_DIR = REPO / "data" / "fabfos" / "scadc_fosmids" / "sequences" / "inserts"
+INSERT_DIR = REPO / "data" / "fabfos" / "runs" / "scadc_fosmids" / "sequences" / "inserts"
 # The shipped set, and the reference actually mapped against, are allowed to
 # differ: the reference may carry the pCC1fos backbone as an extra record so the
 # ~15% of every pool that lands on the vector is counted rather than lost. Both
@@ -662,7 +661,7 @@ def main() -> int:
     if not INSERTS.exists():
         raise SystemExit(
             f"{INSERTS} is not checked out. "
-            f"`mamba run -n dvc dvc checkout data/fabfos/scadc_fosmids/sequences/inserts.dvc`")
+            f"`mamba run -n dvc dvc checkout data/fabfos/runs/scadc_fosmids/sequences/inserts.dvc`")
 
     expected = pools_from_inserts()
     print(f"=== {len(expected)} pools named by {MEMBERSHIP.name} ===", flush=True)
@@ -696,7 +695,7 @@ def main() -> int:
     print(f"    {len(pools)} of {len(available)} pools", flush=True)
 
     ts = int(time.time())
-    staging = REPO / "data" / "scratch" / "resolve" / f"insert_stats_{ts}"
+    staging = REPO / "data" / "fabfos" / "scratch" / "resolve" / f"insert_stats_{ts}"
     staging.mkdir(parents=True, exist_ok=True)
 
     inputs = build_inputs(staging, pools)

@@ -137,7 +137,7 @@ RESOLVE = f"""
         echo "[aam] no {CURATED_DAT} under $MCREL (looked in ./ and ./data/)." \\
              'MetaCyc flat-files are LICENSED and not redistributable, so nothing' \\
              'fetches this -- place the distribution under' \\
-             'data/originals/metacyc/<release>/. Losing it does not shrink this' \\
+             'data/fabfos/originals/metacyc/<release>/. Losing it does not shrink this' \\
              'ensemble evenly: it removes LAYER 1, the only member that is a curated' \\
              'database rather than a model, and the only one that can break a tie' \\
              'between two transformers over the same SMILES' >&2

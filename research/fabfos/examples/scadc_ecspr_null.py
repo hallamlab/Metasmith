@@ -7,7 +7,7 @@ the SAME atom-resolved engine `scadc_ecspr.py` used for the observed run.
     python examples/scadc_ecspr_null.py --run --pilot        # ~20 draws/bucket/style
     python examples/scadc_ecspr_null.py --run                # ~1000 draws/bucket/style
     python examples/scadc_ecspr_null.py --retrieve --pilot
-    python examples/scadc_ecspr_null.py --publish --pilot    # data/fabfos/scadc_ecspr/null/
+    python examples/scadc_ecspr_null.py --publish --pilot    # data/fabfos/runs/scadc_ecspr/null/
 
 WHY THIS DOES NOT GO THROUGH THE METASMITH TransformInstance MACHINERY
 ------------------------------------------------------------------------
@@ -27,7 +27,7 @@ image via a plain `sbatch` job, one `ssh_once` per step, never a poll loop
 THE NULL BASIS
 ---------------
 `examples/scadc_ecspr_null_draw.py` (staged to fir, not run locally) draws
-ORFs from the metag pool (`data/fabfos/scadc_metagenome/`, published by T1) in two
+ORFs from the metag pool (`data/fabfos/runs/scadc_metagenome/`, published by T1) in two
 styles -- A (uniform) and D (contiguous window on one contig) -- at N sizes
 bucketed off the OBSERVED run's own `n_orfs` distribution (computed fresh
 each `--run`, not copied from any other run's fixed buckets), resolves each
@@ -42,18 +42,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[3]
 ECSPR_PKG = ROOT / "src" / "ecspr"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _driver import FIR_HOST, ssh_once  # noqa: E402
 
-METAGENOME = ROOT / "data" / "fabfos" / "scadc_metagenome"
-ECSPR = ROOT / "data" / "fabfos" / "scadc_ecspr"
+METAGENOME = ROOT / "data" / "fabfos" / "runs" / "scadc_metagenome"
+ECSPR = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr"
 REFS = ECSPR / "refs"
 CONDITIONS = ECSPR / "conditions.parquet"
 RESULTS = ECSPR / "results.parquet"
-HOST_GEM = ROOT / "data" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
+HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
 NULL_OUT = ECSPR / "null"
 
 REMOTE_WORK = "/scratch/phyberos/fabfos_metagenome"
@@ -116,7 +116,7 @@ def write_observed_n() -> Path:
         raise SystemExit(
             "pyarrow is not available locally to read results.parquet's n_orfs "
             "column. Run on a host with pandas/pyarrow, or hand-edit "
-            "data/fabfos/scadc_ecspr/refs/observed_n_orfs.txt directly.")
+            "data/fabfos/runs/scadc_ecspr/refs/observed_n_orfs.txt directly.")
     t = pq.read_table(RESULTS, columns=["unit", "n_orfs"])
     d = t.to_pydict()
     ns = sorted({n for u, n in zip(d["unit"], d["n_orfs"]) if u != "epi300_host"})

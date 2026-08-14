@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """R6, the metabolism bake: planned here, executed on hardware we control, in three parts.
 
-    PYTHONPATH=src/metasmith/src python tests/build_references_bake_split.py aam
+    PYTHONPATH=src python tests/fabfos/build_references_bake_split.py aam
     ... build_references_bake_split.py members --run --host chamois --user tliu
 
 WHY A SIBLING AND NOT A FLAG ON THE SOCKEYE DRIVER. `build_references_bake_on_hpc.py`
@@ -62,12 +62,12 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 
 # The PINNED engine, ahead of whatever is installed -- same reasoning as the HPC driver:
 # the agent container tag is derived from the engine's own build hash, so importing the
 # wrong one asks quay for a manifest that does not exist.
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
 
@@ -82,9 +82,9 @@ from metasmith.python_api import (                                      # noqa: 
 )
 
 MLIB = REPO / "src" / "metasmith_libraries"
-BREF = REPO / "build_references"
-DATA = REPO / "data"
-ARTIFACTS = REPO / "tests" / "artifacts"
+BREF = REPO / "src" / "fabfos" / "build_references"
+DATA = REPO / "data" / "fabfos"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 WORK_ROOT = DATA / "scratch" / "r6_bake_split"
 
 TYPE_LIBRARIES = (
@@ -571,7 +571,7 @@ def place_images(host: str, branch: str, cache_dir: str, container: str) -> None
                 f"    {local}\n"
                 f"The registry copy is NOT a fallback -- the repo is private. Build it:\n"
                 f"    docker/ecspr_bake/dev.sh --build --sif --sync   (task images)\n"
-                f"    cd src/metasmith && ./dev.sh --update_container (agent image)\n"
+                f"    ./dev/metasmith.sh --update_container           (agent image)\n"
                 f"Do not point at an older agent image: the staging semantics come from "
                 f"the agent, and one that disagrees with the engine on the PYTHONPATH is "
                 f"exactly the mismatch assert_pinned_engine exists to prevent.")
@@ -589,7 +589,7 @@ def assert_pinned_engine() -> str:
             f"engine version [{got}] is not the pin [{want}].\n"
             f"  imported from: {Path(metasmith.__file__).parent}\n"
             f"Re-run with the pin first on the path:\n"
-            f"  PYTHONPATH=src/metasmith/src python tests/{Path(__file__).name} ...")
+            f"  PYTHONPATH=src python tests/fabfos/{Path(__file__).name} ...")
     return got
 
 

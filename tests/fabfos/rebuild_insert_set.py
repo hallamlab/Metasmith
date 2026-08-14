@@ -39,13 +39,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
 from fabfos.algorithm import fabfos_recovery as fr   # noqa: E402
 
-ASSEMBLIES = REPO / "data/fabfos/scadc_fosmids/assembly/assemblies"
-VECTOR = REPO / "data/originals/vector/pcc1.fna"
+ASSEMBLIES = REPO / "data/fabfos/runs/scadc_fosmids/assembly/assemblies"
+VECTOR = REPO / "data/fabfos/originals/vector/pcc1.fna"
 # blastn is looked up on PATH; nothing else on this machine carries it.
 BLAST_BIN = Path(os.environ.get("FABFOS_BLAST_BIN",
                                 "/home/tony/lib/miniforge3/envs/fabfos-bio/bin"))

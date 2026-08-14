@@ -69,10 +69,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 
 # The PINNED engine, ahead of whatever is installed in the env.
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
 
@@ -90,12 +90,12 @@ from _driver import (                                                   # noqa: 
 )
 
 MLIB = REPO / "src" / "metasmith_libraries"
-BREF = REPO / "build_references"
-DATA = REPO / "data"
+BREF = REPO / "src" / "fabfos" / "build_references"
+DATA = REPO / "data" / "fabfos"
 ORIGINALS = DATA / "originals"
 PROCESSED = DATA / "processed"
 SCRATCH = DATA / "scratch"
-ARTIFACTS = REPO / "tests" / "artifacts"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 
 # Every source folder the four compiles read. Staged as-is: a `fabfos_data::` type is
 # a WHOLE upstream distribution, and each compile asserts for itself that the folder

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run the frozen ECSPr X/Y benchmark v3 on an HPC host, then retrieve the result.
 
-    PYTHONPATH=src/metasmith/src:src python examples/benchmark_v3_on_hpc.py --user txyliu
-    PYTHONPATH=src/metasmith/src:src python examples/benchmark_v3_on_hpc.py --user txyliu --plan-only
+    PYTHONPATH=src python examples/benchmark_v3_on_hpc.py --user txyliu
+    PYTHONPATH=src python examples/benchmark_v3_on_hpc.py --user txyliu --plan-only
 
 The defaults target SOCKEYE. This ran on fir first and moved, for a reason that
 belongs in the record rather than in a commit message: fir's /scratch was
@@ -20,7 +20,7 @@ passes would have produced a number, and the number would have been unsound.
 
 THE ENGINE ON PYTHONPATH MUST BE THE PINNED ONE -- READ THIS BEFORE CHANGING IT
 -------------------------------------------------------------------------------
-Note the `src/metasmith/src` FIRST. The `fabfos` conda env resolves `metasmith`
+Note the `src` FIRST. The `fabfos` conda env resolves `metasmith`
 to a local editable checkout (~/lib/locals/metasmith) which is ahead of the
 submodule pin. That matters here in a way it does not for a local plan, because
 `Deploy()` pulls the agent container by a tag derived from the engine's OWN
@@ -89,7 +89,7 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "src"))
 
 from fabfos import canon  # noqa: E402
@@ -263,7 +263,7 @@ def assert_pinned_engine() -> str:
     import metasmith
     got = (Path(metasmith.__file__).parent / "version.txt").read_text().strip()
     # noqa: E501 -- see agent_container() for why the version alone is not the tag
-    want = (REPO / "src/metasmith/src/metasmith/version.txt").read_text().strip()
+    want = (REPO / "src/metasmith/version.txt").read_text().strip()
     if got != want:
         raise SystemExit(
             f"engine version [{got}] is not the pin [{want}].\n"
@@ -272,7 +272,7 @@ def assert_pinned_engine() -> str:
             f"RELEASED versions have images on quay -- deploying [{got}] would "
             f"fail with 'manifest unknown' after creating a remote directory.\n"
             f"Re-run with the pin first on the path:\n"
-            f"  PYTHONPATH=src/metasmith/src:src python {Path(__file__).name} ..."
+            f"  PYTHONPATH=src python {Path(__file__).name} ..."
         )
     return got
 

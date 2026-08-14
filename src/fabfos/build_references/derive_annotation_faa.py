@@ -49,9 +49,9 @@ import csv
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-GENOMES = REPO / "data" / "fabfos"
-ORIGINALS = REPO / "data" / "originals" / "genomes"
+REPO = Path(__file__).resolve().parents[3]
+GENOMES = REPO / "data" / "fabfos" / "runs"
+ORIGINALS = REPO / "data" / "fabfos" / "originals" / "genomes"
 
 # host -> the prefix its files are named by. `annotations/<prefix>.faa` is the target.
 HOSTS = {

@@ -54,10 +54,10 @@ from metasmith.python_api import (
     Runtime,
 )
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 MLIB = REPO / "src" / "metasmith_libraries"
-BREF = REPO / "build_references"
-ARTIFACTS = REPO / "tests" / "artifacts"
+BREF = REPO / "src" / "fabfos" / "build_references"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 
 # By artifact id in build_references/REFERENCES.md.
 TARGETS = [

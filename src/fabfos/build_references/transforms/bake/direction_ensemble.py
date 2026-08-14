@@ -109,7 +109,7 @@ RESOLVE = f"""
         echo "[direction] no {CURATED_DAT} under $MCREL (looked in ./ and ./data/)." \\
              'MetaCyc flat-files are LICENSED and not redistributable, so nothing' \\
              'fetches this -- place the distribution under' \\
-             'data/originals/metacyc/<release>/. Without it this ensemble keeps only' \\
+             'data/fabfos/originals/metacyc/<release>/. Without it this ensemble keeps only' \\
              'its two CORRELATED members and has nothing that can break a tie' >&2
         exit 1
     fi

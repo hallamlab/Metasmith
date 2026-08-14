@@ -49,17 +49,18 @@ from ecspr import conditions as cond_mod
 from ecspr import probes
 
 # One deeper than it used to be: the driver moved into pilot/ alongside the
-# vs_gem harness, so the repo root is four parents up, not three.
-ROOT = Path(__file__).resolve().parents[4]
+# vs_gem harness, and the monorepo migration nested the whole tree under
+# research/fabfos/, so the repo root is five parents up, not three.
+ROOT = Path(__file__).resolve().parents[5]
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent / "cache"
 
-ATOM_PAIRS = ROOT / "data" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
-CHEM_PROP = ROOT / "data" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
-HOSTS_DIR = ROOT / "data" / "benchmarks" / "hosts"
-EDITS = ROOT / "data" / "benchmarks" / "laser" / "gpr_manual.parquet"
+ATOM_PAIRS = ROOT / "data" / "fabfos" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
+CHEM_PROP = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
+HOSTS_DIR = ROOT / "data" / "fabfos" / "benchmarks" / "hosts"
+EDITS = ROOT / "data" / "fabfos" / "benchmarks" / "laser" / "gpr_manual.parquet"
 
-_bake_direction = ROOT / "data" / "processed" / "metabolism_bake" / "direction.parquet"
-_bake_vocab = ROOT / "data" / "processed" / "metabolism_bake" / "vocab.parquet"
+_bake_direction = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake" / "direction.parquet"
+_bake_vocab = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake" / "vocab.parquet"
 
 # The host's own unit_id inside gpr_gem.parquet -- what "background" means for this
 # study. Read off the table rather than hardcoded, so a different host still works.

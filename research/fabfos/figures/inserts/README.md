@@ -2,7 +2,7 @@
 
 Six figures on what this pipeline recovers from pooled fosmid DNA, drawn on its
 own output: the 170 inserts of the SCADC run under
-`data/fabfos/scadc_fosmids/`. They replace an earlier set drawn in the `scadc`
+`data/fabfos/runs/scadc_fosmids/`. They replace an earlier set drawn in the `scadc`
 project on a 199-contig set produced before this pipeline existed, under a
 different identity metric — so every number on them has moved. These are not a
 reproduction of those.

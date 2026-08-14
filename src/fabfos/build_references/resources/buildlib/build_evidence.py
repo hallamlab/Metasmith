@@ -287,7 +287,7 @@ def parse_args():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("collect"); p.set_defaults(fn=cmd_collect)
-    p.add_argument("--root", required=True, help="data/processed/")
+    p.add_argument("--root", required=True, help="data/fabfos/processed/")
     p.add_argument("--tool", required=True, help="the folder name, e.g. rxnmapper")
     p.add_argument("--version", default=None,
                    help="the release directory. Read from the package when it can be; "
