@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] /
+sys.path.insert(0, str(Path(__file__).resolve().parents[5] /
                        "src/metasmith_libraries/resources/lib"))
 import common as C  # noqa: E402
 import bridge  # noqa: E402

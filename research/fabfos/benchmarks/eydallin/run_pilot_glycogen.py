@@ -35,7 +35,7 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 LIB = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
 sys.path.insert(0, str(LIB))
 
@@ -43,10 +43,10 @@ from ecspr_build import load_pairs, load_direction_ratios, graph_from_pairs  # n
 from ecspr_graph import Terminal, measure_leak                              # noqa: E402
 from ecspr_directed import _HAVE_CHOLMOD                                    # noqa: E402
 
-ATOM_PAIRS = ROOT / "data" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
-CHEM_PROP = ROOT / "data" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
-HOST_GEM = ROOT / "data" / "benchmarks" / "hosts" / "e_coli_k12" / "gpr_gem.parquet"
-BAKE = ROOT / "data" / "processed" / "metabolism_bake"
+ATOM_PAIRS = ROOT / "data" / "fabfos" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
+CHEM_PROP = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
+HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_k12" / "gpr_gem.parquet"
+BAKE = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake"
 OUT_DIR = Path(__file__).resolve().parent / "cache"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 

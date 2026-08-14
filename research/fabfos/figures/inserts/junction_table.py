@@ -12,7 +12,7 @@ SPEC
   Nothing else is derived, so this table costs one file read and needs neither
   the pieces rebuild nor blastn.
 
-INPUT   data/fabfos/scadc_fosmids/sequences/inserts/insert_metadata/inserts.csv
+INPUT   data/fabfos/runs/scadc_fosmids/sequences/inserts/insert_metadata/inserts.csv
 ENV     mamba run -n figure-net python main/figures/inserts/junction_table.py
 OUT     cache/junction_table.{png,svg}
         cache/junction_table.tsv

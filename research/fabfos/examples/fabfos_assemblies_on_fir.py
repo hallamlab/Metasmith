@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Re-assemble the SCADC fosmid pools on fir, keeping the assembly graphs.
 
-    PYTHONPATH=src/metasmith/src:src python examples/fabfos_assemblies_on_fir.py --plan-only
-    PYTHONPATH=src/metasmith/src:src python examples/fabfos_assemblies_on_fir.py --pools pool03_CAATCGAC
-    PYTHONPATH=src/metasmith/src:src python examples/fabfos_assemblies_on_fir.py            # all 35
+    PYTHONPATH=src python examples/fabfos_assemblies_on_fir.py --plan-only
+    PYTHONPATH=src python examples/fabfos_assemblies_on_fir.py --pools pool03_CAATCGAC
+    PYTHONPATH=src python examples/fabfos_assemblies_on_fir.py            # all 35
 
 WHY THIS EXISTS
 ---------------
@@ -72,7 +72,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "src"))
 
 from fabfos.pipelines.common import resolve_library_root  # noqa: E402

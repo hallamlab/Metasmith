@@ -36,10 +36,10 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-DRIVER = REPO / "examples" / "cyanoverse_gpr.py"
-STATE = REPO / "data" / "scratch" / "campaign_state.tsv"
-LOGS = REPO / "data" / "scratch" / "campaign_logs"
+REPO = Path(__file__).resolve().parents[3]
+DRIVER = REPO / "research" / "fabfos" / "examples" / "cyanoverse_gpr.py"
+STATE = REPO / "data" / "fabfos" / "scratch" / "campaign_state.tsv"
+LOGS = REPO / "data" / "fabfos" / "scratch" / "campaign_logs"
 N_SHARDS = 994
 MAX_CONSECUTIVE_FAILURES = 3
 
@@ -87,7 +87,7 @@ def run_batch(spec: str, env: dict) -> tuple[int, str]:
     # recording it would attribute this failure to the wrong run directory --
     # so it is only read when the file is newer than the attempt's start.
     key = ""
-    work = REPO / "data" / "scratch" / f"cyanoverse_gpr_{spec.replace(':', '_')}"
+    work = REPO / "data" / "fabfos" / "scratch" / f"cyanoverse_gpr_{spec.replace(':', '_')}"
     rk = work / "RUN_KEY"
     if rk.exists() and rk.stat().st_mtime >= started:
         key = rk.read_text().strip()
@@ -108,7 +108,7 @@ def main() -> int:
 
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
-        [str(REPO / "src"), str(REPO / "src" / "metasmith" / "src"),
+        [str(REPO / "src"),
          env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
 
     specs = [f"{i}:{min(i + a.batch_size, a.end)}"

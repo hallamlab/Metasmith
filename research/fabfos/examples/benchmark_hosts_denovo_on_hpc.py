@@ -45,9 +45,9 @@ import shutil
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
 
@@ -92,13 +92,13 @@ SITES = {
     ),
 }
 
-BREF = REPO / "build_references"
+BREF = REPO / "src" / "fabfos" / "build_references"
 MLIB = REPO / "src" / "metasmith_libraries"
-DATA = REPO / "data"
+DATA = REPO / "data" / "fabfos"
 PROCESSED = DATA / "processed"
-SCADC = DATA / "fabfos" / "scadc_fosmids"
+SCADC = DATA / "runs" / "scadc_fosmids"
 SCRATCH = DATA / "scratch"
-ARTIFACTS = REPO / "tests" / "artifacts"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 
 INSERTS = SCADC / "sequences" / "inserts" / "inserts.fna"
 
@@ -124,7 +124,7 @@ REFS_7 = dict(REFS_4, **{
     "ref::ezpred_model": "ezpred_model/EZpred",
 })
 
-GENOMES = REPO / "data" / "originals" / "genomes"
+GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 
 TARGET_4 = "annotation::gpr_table"
 TARGET_7 = "annotation::gpr_table_7lane"
@@ -348,12 +348,12 @@ def check_plan(task, lanes: int) -> int:
 
 
 def publish(results: Path, *, dry_run: bool, lanes: int = 4) -> int:
-    rc = publish_by_type(results, PUBLISH_AT, REPO / "data" / "benchmarks" / "denovo",
+    rc = publish_by_type(results, PUBLISH_AT, REPO / "data" / "fabfos" / "benchmarks" / "denovo",
                          dry_run=dry_run, repo=REPO)
     if rc == 0 and not dry_run:
         # The pin IS the provenance: this commit carries both this script and the
         # .dvc file the next line writes, so re-running it here reproduces the chunk.
-        print("Pin the chunk:  dvc add data/fabfos/scadc_fosmids/annotations")
+        print("Pin the chunk:  dvc add data/fabfos/runs/scadc_fosmids/annotations")
     return rc
 
 
@@ -367,7 +367,7 @@ def verify(results: Path, lanes: int) -> int:
               f"step that died.", file=sys.stderr)
         return 2
     print(f"{', '.join(targets)} present. "
-          f"Now: --publish (then `dvc add data/fabfos/scadc_fosmids/annotations`).")
+          f"Now: --publish (then `dvc add data/fabfos/runs/scadc_fosmids/annotations`).")
     return 0
 
 

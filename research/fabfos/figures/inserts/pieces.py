@@ -29,8 +29,8 @@ NO BACKBONE BLAST
   evidence. Closure is not recomputed here at all: `inserts.csv` ships `ends` and
   that column is the one to use.
 
-INPUT   data/fabfos/scadc_fosmids/assembly/assemblies/          70 FASTA + graphs
-        data/fabfos/scadc_fosmids/sequences/inserts/            junctions, membership
+INPUT   data/fabfos/runs/scadc_fosmids/assembly/assemblies/          70 FASTA + graphs
+        data/fabfos/runs/scadc_fosmids/sequences/inserts/            junctions, membership
 ENV     mamba run -n figure-net python main/figures/inserts/pieces.py --verify
 OUT     cache/pieces/  the rebuilt piece set, in the pipeline's own C##### keys
         `--verify` re-derives the 170 centroid sequences and diffs them against

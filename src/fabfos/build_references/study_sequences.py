@@ -52,12 +52,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-BENCH = REPO / "data" / "benchmarks"
-GENOMES = REPO / "data" / "originals" / "genomes"
-OUT_ROOT = REPO / "data" / "scratch" / "study_sequences"
+REPO = Path(__file__).resolve().parents[3]
+BENCH = REPO / "data" / "fabfos" / "benchmarks"
+GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
+OUT_ROOT = REPO / "data" / "fabfos" / "scratch" / "study_sequences"
 # The heterologous curation, shared with the conditions layer -- see load_het_curation.
-HET_TABLE = (REPO / "data" / "originals" / "benchmarks" / "het_screen"
+HET_TABLE = (REPO / "data" / "fabfos" / "originals" / "benchmarks" / "het_screen"
              / "heterologous_uniprot.tsv")
 
 STUDIES = ("laser", "keio", "eydallin", "aromatic", "fa_supply", "forsberg",

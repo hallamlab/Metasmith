@@ -18,8 +18,8 @@ READS ARE POST-DEPLETION
   here and no trimming report, so this figure cannot and does not say what QC
   removed -- it says what the assembler was given and what it returned.
 
-INPUT   data/fabfos/scadc_fosmids/assembly/assembly_stats/assembly_summary.tsv
-        data/fabfos/scadc_fosmids/assembly/assembly_stats/read_qc_stats/*.json
+INPUT   data/fabfos/runs/scadc_fosmids/assembly/assembly_stats/assembly_summary.tsv
+        data/fabfos/runs/scadc_fosmids/assembly/assembly_stats/read_qc_stats/*.json
 ENV     mamba run -n figure-net python main/figures/inserts/readqc_vs_assembly.py
 OUT     cache/readqc_vs_assembly_grid.{png,svg}
         cache/readqc_vs_assembly_legend.{png,svg}

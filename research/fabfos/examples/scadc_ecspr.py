@@ -5,7 +5,7 @@ oxaloacetate, AMP} under the universal leakage ground.
 
     python examples/scadc_ecspr.py
 
-Writes `data/fabfos/scadc_ecspr/results.parquet` (`ecspr::results` schema, p/q/survives
+Writes `data/fabfos/runs/scadc_ecspr/results.parquet` (`ecspr::results` schema, p/q/survives
 left null -- no significance test this pass) directly, via
 plain pandas/numpy/scipy over the `ecspr` package. Does NOT go through the
 metasmith `TransformInstance`/container machinery -- it predates
@@ -28,13 +28,13 @@ from ecspr.build import load_pairs, load_direction_ratios, graph_from_pairs
 from ecspr.evidence import per_unit_weights
 from ecspr.graph import Terminal, solve
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[3]
 
-REFS = ROOT / "data" / "fabfos" / "scadc_ecspr" / "refs"
-GPR = ROOT / "data" / "fabfos" / "scadc_fosmids" / "gpr" / "gpr_4lane.parquet"
-HOST_GEM = ROOT / "data" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
-CONDITIONS = ROOT / "data" / "fabfos" / "scadc_ecspr" / "conditions.parquet"
-OUT = ROOT / "data" / "fabfos" / "scadc_ecspr" / "results.parquet"
+REFS = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "refs"
+GPR = ROOT / "data" / "fabfos" / "runs" / "scadc_fosmids" / "gpr" / "gpr_4lane.parquet"
+HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
+CONDITIONS = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "conditions.parquet"
+OUT = ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr" / "results.parquet"
 
 ELEMENT = "C"
 MEDIA = "glucose_minimal"

@@ -60,7 +60,7 @@ import pyarrow.parquet as pq
 
 REPO = Path(__file__).resolve().parents[3]
 
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir() and str(_ENGINE) not in sys.path:
     sys.path.insert(0, str(_ENGINE))
 sys.path.insert(0, str(REPO / "src"))
@@ -530,7 +530,7 @@ def main() -> int:
     shards = shard_names(a.shards)
     suffix = "_control" if a.control else ""
     work = Path(a.work).resolve() if a.work else (
-        REPO / "data" / "scratch"
+        REPO / "data" / "fabfos" / "scratch"
         / f"cyanoverse_gpr_{a.shards.replace(':', '_')}{suffix}")
     work.mkdir(parents=True, exist_ok=True)
     local_results = work / "results"

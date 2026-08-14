@@ -3,7 +3,7 @@
 Draws ORFs from the metagenome pool, resolves them to {mnxr: E} via the SAME
 per-ORF conservation weights (`ecspr.evidence.per_unit_weights`) and solves on
 the SAME atom-resolved engine (`ecspr.build`/`ecspr.graph`) that produced
-`data/fabfos/scadc_ecspr/results.parquet` -- never the retired SMW star solver. Host
+`data/fabfos/runs/scadc_ecspr/results.parquet` -- never the retired SMW star solver. Host
 GEM weights are added on top of every draw exactly as `scadc_ecspr.py` adds
 them on top of each observed unit's weights.
 

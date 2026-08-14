@@ -4,9 +4,9 @@
     python build_references/derive_uniref90_bsr_csv.py IN.blast6.tsv OUT.csv \
         --id-column contig --split last-underscore
     python build_references/derive_uniref90_bsr_csv.py --selftest METAG.blast6.tsv \
-        data/fabfos/scadc_metagenome/annotation_alts/uniref90/metag.uniref90.csv
+        data/fabfos/runs/scadc_metagenome/annotation_alts/uniref90/metag.uniref90.csv
 
-A `uniref90/` under `data/fabfos/<run>/annotation_alts/` ships either form: the
+A `uniref90/` under `data/fabfos/runs/<run>/annotation_alts/` ships either form: the
 7-column table `<id>,orf,ref_id,description,bsr,evalue,percent_identity`, or the
 14-column NCBI blast6 with `stitle` and a trailing BSR it is reformatted from. The
 metagenome copy is the 7-column form, dh10b's is the blast6, and this script is the

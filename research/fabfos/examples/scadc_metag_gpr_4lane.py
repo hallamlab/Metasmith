@@ -7,7 +7,7 @@
 
 WHY THIS EXISTS
 ---------------
-`data/fabfos/scadc_metagenome/gpr/gpr_3lane.parquet` carries clean/kofam/uniref50
+`data/fabfos/runs/scadc_metagenome/gpr/gpr_3lane.parquet` carries clean/kofam/uniref50
 but not `pbert`, because when it was compiled the embed-transfer lane needed a
 dense (222,019 x 13,112) float32 indicator matrix -- 10.84 GiB, 99.97% zeros --
 and running it over 1,442,614 ORFs was not schedulable. Two things have changed:
@@ -17,7 +17,7 @@ the metagenome's ProteinBERT embeddings are already computed and pinned at
 engineering.
 
 That matters because the OBSERVED fosmid measurement
-(`data/fabfos/scadc_fosmids/gpr/gpr_4lane.parquet`) is 4-lane while the null it
+(`data/fabfos/runs/scadc_fosmids/gpr/gpr_4lane.parquet`) is 4-lane while the null it
 was scored against was drawn from a 3-lane pool. The bases did not match. This
 closes that.
 
@@ -56,19 +56,19 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[3]
 TRANSFORM = ROOT / "src" / "metasmith_libraries" / "transforms" / "fabfos" / "gpr_4lane.py"
 LIB = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
 
-METAG = ROOT / "data" / "fabfos" / "scadc_metagenome"
+METAG = ROOT / "data" / "fabfos" / "runs" / "scadc_metagenome"
 EMB = METAG / "annotations" / "proteinbert" / "metag.pbert.npy"
 EMB_IDX = METAG / "annotations" / "proteinbert" / "metag.pbert.index.csv"
 ORFS_CSV = METAG / "sequences" / "metag.orfs.csv"
 GPR3 = METAG / "gpr" / "gpr_3lane.parquet"
 GPR4 = METAG / "gpr" / "gpr_4lane.parquet"
-POOL = ROOT / "data" / "processed" / "reference_label_pool" / "pool"
+POOL = ROOT / "data" / "fabfos" / "processed" / "reference_label_pool" / "pool"
 
-SLABS = ROOT / "data" / "scratch" / "metag_pbert_lane"
+SLABS = ROOT / "data" / "fabfos" / "scratch" / "metag_pbert_lane"
 
 SOURCE = "metag"          # the `source` column gpr_3lane.parquet already carries
 LANE_SET = "chosen_4"

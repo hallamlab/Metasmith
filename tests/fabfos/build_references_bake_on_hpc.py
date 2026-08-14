@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """R6, the metabolism bake: planned here, executed on Sockeye.
 
-    PYTHONPATH=src/metasmith/src python tests/build_references_bake_on_hpc.py
-    ... tests/build_references_bake_on_hpc.py --run --user txyliu
+    PYTHONPATH=src python tests/fabfos/build_references_bake_on_hpc.py
+    ... tests/fabfos/build_references_bake_on_hpc.py --run --user txyliu
 
 WHAT THIS REPLACES, AND WHY THAT MATTERS MORE THAN WHAT IT ADDS. R6 used to be run by a
 pair of shell drivers whose stages called the same `buildlib::` modules the transforms
@@ -80,13 +80,13 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 
 # The PINNED engine, ahead of whatever is installed. The `msm` env resolves metasmith
 # through a global symlink into a different worktree; the agent container tag is derived
 # from the engine's own version, so importing the wrong one asks quay for a manifest that
 # does not exist and the run dies ~40s in with "manifest unknown".
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
 
@@ -101,9 +101,9 @@ from metasmith.python_api import (                                      # noqa: 
 )
 
 MLIB = REPO / "src" / "metasmith_libraries"
-BREF = REPO / "build_references"
-DATA = REPO / "data"
-ARTIFACTS = REPO / "tests" / "artifacts"
+BREF = REPO / "src" / "fabfos" / "build_references"
+DATA = REPO / "data" / "fabfos"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 SCRATCH = DATA / "scratch"
 WORK = SCRATCH / "r6_bake"
 
@@ -465,7 +465,7 @@ def assert_agent_image(host: str, cache_dir: str, container: str) -> None:
         f"\n"
         f"Its tag is {{version}}-{{build hash of the engine source}}, so moving the "
         f"src/metasmith pin invalidates it. Build and sync a matching one:\n"
-        f"    cd src/metasmith && ./dev.sh --update_container\n"
+        f"    ./dev/metasmith.sh --update_container\n"
         f"    rsync -a {local} {host}:{dest}\n"
         f"\n"
         f"Do NOT work around this by pointing at an older agent image: the staging "
@@ -541,7 +541,7 @@ def assert_pinned_engine() -> str:
             f"engine version [{got}] is not the pin [{want}].\n"
             f"  imported from: {Path(metasmith.__file__).parent}\n"
             f"Re-run with the pin first on the path:\n"
-            f"  PYTHONPATH=src/metasmith/src python tests/{Path(__file__).name} ...")
+            f"  PYTHONPATH=src python tests/fabfos/{Path(__file__).name} ...")
     return got
 
 

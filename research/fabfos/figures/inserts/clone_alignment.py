@@ -32,8 +32,8 @@ PREPARING THE REFERENCE
   The vector file's FIRST record only: its second is a host chromosome, and using
   the pair excises host sequence from everything it touches.
 
-INPUT   data/fabfos/scadc_fosmids/plasmidsaurus/*.fasta
-        data/fabfos/scadc_fosmids/sequences/inserts/inserts.fna
+INPUT   data/fabfos/runs/scadc_fosmids/plasmidsaurus/*.fasta
+        data/fabfos/runs/scadc_fosmids/sequences/inserts/inserts.fna
         data/originals/vector/pcc1.fna   (record 1)
 ENV     mamba run -n figure-net python main/figures/inserts/clone_alignment.py
         needs blastn on PATH; FABFOS_BLAST_BIN points at it

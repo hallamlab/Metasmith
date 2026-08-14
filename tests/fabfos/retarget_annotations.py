@@ -50,8 +50,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-RUN = REPO / "data/fabfos/scadc_fosmids"
+REPO = Path(__file__).resolve().parents[2]
+RUN = REPO / "data/fabfos/runs/scadc_fosmids"
 NEW_INSERTS = RUN / "sequences/inserts/inserts.fna"
 DVC_CACHE = Path("/home/tony/agentic_workspace/data/.dvc_cache/files/md5")
 
@@ -134,7 +134,7 @@ def split_orf(orf: str) -> tuple[str, int]:
 def resolve_old_inserts() -> Path:
     """The superseded inserts.fna, via HEAD's sequences.dvc into the shared cache."""
     pin = subprocess.run(
-        ["git", "-C", str(REPO), "show", "HEAD:data/fabfos/scadc_fosmids/sequences.dvc"],
+        ["git", "-C", str(REPO), "show", "HEAD:data/fabfos/runs/scadc_fosmids/sequences.dvc"],
         capture_output=True, text=True, check=True).stdout
     md5 = next(l.split("md5:")[1].strip() for l in pin.splitlines() if "md5:" in l)
     manifest = json.loads((DVC_CACHE / md5[:2] / md5[2:]).read_text())
@@ -732,7 +732,7 @@ def validate(out: Path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", type=Path, default=REPO / "data/scratch/retarget",
+    ap.add_argument("--out", type=Path, default=REPO / "data/fabfos/scratch/retarget",
                     help="tree to write; never a materialised chunk")
     ap.add_argument("--inserts", type=Path, default=NEW_INSERTS,
                     help="the insert set to retarget ONTO")

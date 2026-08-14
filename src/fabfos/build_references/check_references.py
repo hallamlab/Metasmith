@@ -36,9 +36,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 MLIB = REPO / "src" / "metasmith_libraries"
-BREF = REPO / "build_references"
+BREF = Path(__file__).resolve().parent
 sys.path.insert(0, str(BREF / "resources" / "buildlib"))
 # The ECSPr engine is an installed package now, not a staged file: nothing is added
 # to sys.path for it, and an ImportError below means the env lacks `ecspr` rather
@@ -429,7 +429,7 @@ def main() -> int:
                          "annotation half is checked against the PIN, which outlives "
                          "the run, so `--processed` alone is a complete gate for it. "
                          "Only the metabolism checks need a results tree.")
-    ap.add_argument("--processed", type=Path, default=REPO / "data" / "processed",
+    ap.add_argument("--processed", type=Path, default=REPO / "data" / "fabfos" / "processed",
                     help="the pinned processed tier, where the annotation references "
                          "are checked -- a run's results are transient, the pin is not")
     a = ap.parse_args()

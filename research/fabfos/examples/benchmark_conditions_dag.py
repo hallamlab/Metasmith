@@ -29,9 +29,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 # The pinned engine ahead of whatever this machine has installed. See AGENTS.md.
-sys.path.insert(0, str(REPO / "src" / "metasmith" / "src"))
+sys.path.insert(0, str(REPO / "src"))
 
 from metasmith.python_api import (                                    # noqa: E402
     Agent,
@@ -43,9 +43,9 @@ from metasmith.python_api import (                                    # noqa: E4
 )
 
 MLIB = REPO / "src" / "metasmith_libraries"
-BREF = REPO / "build_references"
-DATA = REPO / "data"
-ARTIFACTS = REPO / "tests" / "artifacts"
+BREF = REPO / "src" / "fabfos" / "build_references"
+DATA = REPO / "data" / "fabfos"
+ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 WORK = DATA / "scratch" / "benchmark_conditions_dag"
 
 AGENT_ENV = "msm-fabfos"

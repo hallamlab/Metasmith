@@ -2,8 +2,8 @@
 """Measure this build's atom-pair table against the deployed tier-4 table.
 
     python tests/build_references_tier4_agreement.py \
-        --pairs data/processed/ensemble/<ver>/aam_pairs.parquet \
-        --ledger data/processed/ensemble/<ver>/ledger.parquet
+        --pairs data/fabfos/processed/ensemble/<ver>/aam_pairs.parquet \
+        --ledger data/fabfos/processed/ensemble/<ver>/ledger.parquet
 
 WHY THERE IS A TARGET AT ALL. `atom_pairs_tier4.parquet` -- 2,455,235 correspondences
 over 63,621 reactions, frozen 2026-07-20 -- already exists. It was produced by a chain of
@@ -48,8 +48,8 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO = Path(__file__).resolve().parent.parent
-DEFAULT_TIER4 = REPO / "data" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
+REPO = Path(__file__).resolve().parents[2]
+DEFAULT_TIER4 = REPO / "data" / "fabfos" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
 
 MOL_KEY = ["mnxr", "element", "substrate", "product"]
 ATOM_KEY = MOL_KEY + ["sub_idx", "prod_idx"]
@@ -99,7 +99,7 @@ def main():
         raise SystemExit(
             f"[tier4] {t4p} is absent. It is a VALIDATION artifact -- read by this gate "
             f"and by nothing in the build -- and it is dvc-tracked, so `dvc pull "
-            f"data/benchmark/reference_tier4.dvc` fetches it. Its absence must not be "
+            f"data/fabfos/benchmark/reference_tier4.dvc` fetches it. Its absence must not be "
             f"read as agreement.")
 
     ours = _norm(pd.read_parquet(a.pairs, columns=ATOM_KEY + ["method", "source"]))

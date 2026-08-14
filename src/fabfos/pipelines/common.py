@@ -35,7 +35,7 @@ from metasmith.python_api import (
 
 # src/fabfos/pipelines/common.py -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DATA_PROCESSED = REPO_ROOT / "data" / "processed"
+DATA_PROCESSED = REPO_ROOT / "data" / "fabfos" / "processed"
 
 
 def _looks_like_library(root: Path) -> bool:

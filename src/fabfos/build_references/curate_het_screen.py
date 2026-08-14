@@ -65,12 +65,12 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-BENCH = REPO / "data" / "benchmarks"
-LASER_ROOT = REPO / "data" / "originals" / "benchmarks" / "laser"
+REPO = Path(__file__).resolve().parents[3]
+BENCH = REPO / "data" / "fabfos" / "benchmarks"
+LASER_ROOT = REPO / "data" / "fabfos" / "originals" / "benchmarks" / "laser"
 LASER_INPUTS = LASER_ROOT / "inputs"
-PUBLISH_AT = REPO / "data" / "originals" / "benchmarks" / "het_screen"
-OUT_ROOT = REPO / "data" / "scratch" / "het_screen"
+PUBLISH_AT = REPO / "data" / "fabfos" / "originals" / "benchmarks" / "het_screen"
+OUT_ROOT = REPO / "data" / "fabfos" / "scratch" / "het_screen"
 
 # Hand-authored, git text, beside the code that reads it. `curated/` is gone as a data
 # tier (REFERENCES.md) and anything hand-authored that comes back has to come back as

@@ -8,8 +8,8 @@
 
     python examples/scadc_metag_ecspr_null.py --draws --workers 12   # or solve here
 
-    data/fabfos/scadc_metagenome/nulls/draws.parquet     the null distribution
-    data/fabfos/scadc_metagenome/ecspr/results.parquet   the observed run scored against it
+    data/fabfos/runs/scadc_metagenome/nulls/draws.parquet     the null distribution
+    data/fabfos/runs/scadc_metagenome/ecspr/results.parquet   the observed run scored against it
 
 Two chunks, because they have different lifetimes: the draws cost a cluster job to
 regenerate, the scoring costs seconds and is re-run whenever a default moves. Note
@@ -77,7 +77,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "src" / "metasmith_libraries" / "resources" / "lib"))
 
@@ -86,12 +86,12 @@ from scadc_ecspr_null_draw import (  # noqa: E402  -- the rule, not a copy of it
     n_buckets, resolve_weights,
 )
 
-METAG = ROOT / "data" / "fabfos" / "scadc_metagenome"
+METAG = ROOT / "data" / "fabfos" / "runs" / "scadc_metagenome"
 GPR4 = METAG / "gpr" / "gpr_4lane.parquet"
 ORFS_CSV = METAG / "sequences" / "metag.orfs.csv"
 NULLS = METAG / "nulls"          # the draws
 SCORED = METAG / "ecspr"         # the observed run scored against them
-HOST_GEM = ROOT / "data" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
+HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_epi300" / "gpr_gem.parquet"
 
 FULL_K = 1000
 SEED = 20260731
@@ -104,16 +104,16 @@ def ecspr_dir() -> Path:
     """The observed run's own directory.
 
     Two paths are live: `data/scadc/ecspr/` is where the measurement was
-    written, `data/fabfos/scadc_ecspr/` is where the `data/fabfos/` reorg put
+    written, `data/fabfos/runs/scadc_ecspr/` is where the `data/fabfos/` reorg put
     the run collection and where the older drivers still point. Neither is
     DVC-pinned. Resolved rather than assumed, so this script does not silently
     score against an empty directory.
     """
-    for c in (ROOT / "data" / "fabfos" / "scadc_ecspr", ROOT / "data" / "scadc" / "ecspr"):
+    for c in (ROOT / "data" / "fabfos" / "runs" / "scadc_ecspr", ROOT / "data" / "scadc" / "ecspr"):
         if (c / "results.parquet").exists():
             return c
     raise SystemExit(
-        "[null] no observed ECSPr run found at data/fabfos/scadc_ecspr/ or "
+        "[null] no observed ECSPr run found at data/fabfos/runs/scadc_ecspr/ or "
         "data/scadc/ecspr/ -- this null has nothing to be the null FOR")
 
 

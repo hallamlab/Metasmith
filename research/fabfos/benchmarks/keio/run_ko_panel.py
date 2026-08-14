@@ -52,21 +52,21 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 CLI = ROOT / "docker" / "fabfos" / "bin" / "ecspr_cli.py"
 HERE = Path(__file__).resolve().parent
 CACHE = HERE / "cache"
 OUT = HERE / "out"
 
-ATOM_PAIRS = ROOT / "data" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
-CHEM_PROP = ROOT / "data" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
-HOST_GEM = ROOT / "data" / "benchmarks" / "hosts" / "e_coli_k12" / "gpr_gem.parquet"
-KEIO = ROOT / "data" / "benchmarks" / "keio"
+ATOM_PAIRS = ROOT / "data" / "fabfos" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
+CHEM_PROP = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
+HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_k12" / "gpr_gem.parquet"
+KEIO = ROOT / "data" / "fabfos" / "benchmarks" / "keio"
 EDITS = KEIO / "gpr_manual.parquet"
 EXTRACTION = KEIO / "extraction.tsv"
 EXPECTATIONS = KEIO / "Y" / "expectations.tsv"
 
-_BAKE = ROOT / "data" / "processed" / "metabolism_bake"
+_BAKE = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake"
 
 SOURCE_NAME = "D-glucose"
 SOURCE_ALIASES = ["D-glucose", "glucose"]

@@ -12,10 +12,10 @@ look at and a `.svg` vector master beside it, from one stem.
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[2]
+REPO = HERE.parents[3]
 CACHE = HERE / "cache"
 
-RUN = REPO / "data" / "fabfos" / "scadc_fosmids"
+RUN = REPO / "data" / "fabfos" / "runs" / "scadc_fosmids"
 SEQUENCES = RUN / "sequences"
 INSERTS = SEQUENCES / "inserts"
 INSERT_META = INSERTS / "insert_metadata"
@@ -23,7 +23,7 @@ COVERAGE = SEQUENCES / "insert_coverage"
 ASSEMBLY = RUN / "assembly"
 POOLS = RUN / "pools"
 PLASMIDSAURUS = RUN / "plasmidsaurus"
-VECTOR = REPO / "data" / "originals" / "vector" / "pcc1.fna"
+VECTOR = REPO / "data" / "fabfos" / "originals" / "vector" / "pcc1.fna"
 
 # The coverage matrix's reference is inserts PLUS the backbone, so that a read off
 # the vector has somewhere to map and the mapped fraction means something. That

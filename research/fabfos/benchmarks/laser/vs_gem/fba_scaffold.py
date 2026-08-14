@@ -166,7 +166,7 @@ class MetBridge:
 # LASER's own direction opinion
 # ---------------------------------------------------------------------------
 
-LASER_ADDED = (C.ROOT / "data/originals/benchmarks/laser/inputs/"
+LASER_ADDED = (C.ROOT / "data/fabfos/originals/benchmarks/laser/inputs/"
                "Ecoli iJO1366 LASER Added Reactions.txt")
 
 

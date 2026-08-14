@@ -429,10 +429,10 @@ opens a store must too.
 * `data/originals/metanetx/4.5/reac_xref.tsv` — MNXR -> `kegg.reaction:` cross-reference.
 * `KEGG.pathways` — vendored here (92 KB). ModelSEED's copy of the KEGG pathway ->
   reaction table; there is no copy under `data/originals/kegg`.
-* `data/fabfos/scadc_fosmids/gpr/gpr_4lane.parquet` and
-  `data/fabfos/scadc_fosmids/sequences/insert_coverage/insert_coverage_matrix.tsv` — the insert
+* `data/fabfos/runs/scadc_fosmids/gpr/gpr_4lane.parquet` and
+  `data/fabfos/runs/scadc_fosmids/sequences/insert_coverage/insert_coverage_matrix.tsv` — the insert
   reaction calls and the depth-per-(insert, pool) matrix the dominant clone is ranked from.
-* `data/fabfos/e_coli_epi300/{gpr,ecspr}/` — where this directory's own durable outputs are
+* `data/fabfos/runs/e_coli_epi300/{gpr,ecspr}/` — where this directory's own durable outputs are
   pinned: the union and named-clone GPR tables, and the EPI300 pairwise I_eff solve plus its
   glucose probe. Everything else it writes is a cache under `cache/`.
 * `scratch/mnx_reference/mnx_universe_base_C.pkl` — **gitignored**, and the only input the

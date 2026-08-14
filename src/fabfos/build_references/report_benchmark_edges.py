@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO = Path(__file__).resolve().parent.parent
-BUILDLIB = REPO / "build_references" / "resources" / "buildlib"
+REPO = Path(__file__).resolve().parents[3]
+BUILDLIB = Path(__file__).resolve().parent / "resources" / "buildlib"
 sys.path.insert(0, str(BUILDLIB))
 
 from bench_cohorts import load_all_cohorts                    # noqa: E402
@@ -39,12 +39,12 @@ def entry_set(df: pd.DataFrame) -> set:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--gpr", default="data/scratch/bench_conditions_local/"
+    ap.add_argument("--gpr", default="data/fabfos/scratch/bench_conditions_local/"
                                      "condition_gpr.parquet")
-    ap.add_argument("--extracts", default="data/benchmarks/_extractions")
-    ap.add_argument("--het", default="data/originals/benchmarks/het_screen")
-    ap.add_argument("--bridge", default="data/processed/mnxr_lookup/mnxr_lookup.parquet")
-    ap.add_argument("--metanetx", default="data/originals/metanetx")
+    ap.add_argument("--extracts", default="data/fabfos/benchmarks/_extractions")
+    ap.add_argument("--het", default="data/fabfos/originals/benchmarks/het_screen")
+    ap.add_argument("--bridge", default="data/fabfos/processed/mnxr_lookup/mnxr_lookup.parquet")
+    ap.add_argument("--metanetx", default="data/fabfos/originals/metanetx")
     a = ap.parse_args()
 
     P = lambda p: (REPO / p) if not Path(p).is_absolute() else Path(p)

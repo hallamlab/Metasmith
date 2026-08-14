@@ -32,11 +32,11 @@ A constant subtended angle means the bow is proportional to the chord, so the ar
 consistent visual family from the shortest edge to the one crossing the circle.
 
     python chromosome_ring.py --sparse cache/_old3/pairwise_Ieff_epi300_clone2.npz \
-        --gpr-table ../../../data/fabfos/e_coli_epi300/gpr/gpr_epi300_clone2.parquet \
-        --gem-table ../../../data/fabfos/e_coli_epi300/gpr/gpr_gem.parquet \
+        --gpr-table ../../../data/fabfos/runs/e_coli_epi300/gpr/gpr_epi300_clone2.parquet \
+        --gem-table ../../../data/fabfos/runs/e_coli_epi300/gpr/gpr_gem.parquet \
         --gbk ../../../data/originals/genomes/e_coli_dh10b/genome/NC_010473.1.gbk \
-        --fosmid-gff ../../../data/fabfos/scadc_fosmids/annotations/fosmids.gff \
-        --fosmid-table ../../../data/fabfos/scadc_fosmids/gpr/gpr_4lane.parquet \
+        --fosmid-gff ../../../data/fabfos/runs/scadc_fosmids/annotations/fosmids.gff \
+        --fosmid-table ../../../data/fabfos/runs/scadc_fosmids/gpr/gpr_4lane.parquet \
         --insert pool33_TTGTCGGT:... --out cache/chrom/clone2
 """
 import argparse

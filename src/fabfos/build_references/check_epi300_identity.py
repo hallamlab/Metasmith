@@ -49,8 +49,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-GENOMES = REPO / "data" / "originals" / "genomes"
+REPO = Path(__file__).resolve().parents[3]
+GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 
 # The two strains, and which one owns the model.
 GEM_HOST = "e_coli_dh10b"

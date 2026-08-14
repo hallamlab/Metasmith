@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Assembly statistics for the 35 SCADC pools' OWN assemblies, both assemblers, on fir.
 
-    PYTHONPATH=src/metasmith/src:src python tests/original_assembly_stats_on_fir.py
-    PYTHONPATH=src/metasmith/src:src python tests/original_assembly_stats_on_fir.py --offline
-    PYTHONPATH=src/metasmith/src:src python tests/original_assembly_stats_on_fir.py --preflight
-    PYTHONPATH=src/metasmith/src:src python tests/original_assembly_stats_on_fir.py --run
-    PYTHONPATH=src/metasmith/src:src python tests/original_assembly_stats_on_fir.py --summarize <dir>/results
+    PYTHONPATH=src python tests/fabfos/original_assembly_stats_on_fir.py
+    PYTHONPATH=src python tests/fabfos/original_assembly_stats_on_fir.py --offline
+    PYTHONPATH=src python tests/fabfos/original_assembly_stats_on_fir.py --preflight
+    PYTHONPATH=src python tests/fabfos/original_assembly_stats_on_fir.py --run
+    PYTHONPATH=src python tests/fabfos/original_assembly_stats_on_fir.py --summarize <dir>/results
 
 WHY THIS EXISTS, BESIDE ITS SIBLING
 -----------------------------------
@@ -87,10 +87,9 @@ import time
 from collections import Counter
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(REPO / "src"))
-sys.path.insert(0, str(REPO / "src" / "metasmith" / "src"))
 
 import assembly_stats_on_fir as ins  # noqa: E402  the shared machinery
 
@@ -101,7 +100,7 @@ from metasmith.python_api import (  # noqa: E402
 
 LIB = ins.LIB
 ARTIFACTS = ins.ARTIFACTS
-ASSEMBLIES = REPO / "data" / "fabfos" / "scadc_fosmids" / "assembly"
+ASSEMBLIES = REPO / "data" / "fabfos" / "runs" / "scadc_fosmids" / "assembly"
 
 # The two contig FASTA suffixes under the assemblies chunk. Both are declared as
 # the GENERIC assembly type -- see the module docstring for what declaring them as
@@ -148,7 +147,7 @@ def pools_from_assemblies() -> dict[str, dict[str, Path]]:
     if not found:
         raise SystemExit(
             f"no *.{{{','.join(sorted(ASSEMBLERS))}}}.fna under {ASSEMBLIES}. "
-            f"`mamba run -n dvc dvc checkout data/fabfos/scadc_fosmids/assembly.dvc`")
+            f"`mamba run -n dvc dvc checkout data/fabfos/runs/scadc_fosmids/assembly.dvc`")
     return found
 
 
@@ -465,7 +464,7 @@ def main() -> int:
           f"{len(pools) * len(ASSEMBLERS)} stats jobs", flush=True)
 
     ts = int(time.time())
-    staging = REPO / "data" / "scratch" / "resolve" / f"asm_stats_{ts}"
+    staging = REPO / "data" / "fabfos" / "scratch" / "resolve" / f"asm_stats_{ts}"
     staging.mkdir(parents=True, exist_ok=True)
 
     inputs = build_inputs(staging, pools, assemblies)
