@@ -1,0 +1,87 @@
+name: metagenomics_from_paired_reads
+description: 'Full metagenomics workflow from paired short reads: QC, assembly, ORF
+  calling,
+
+  functional annotation, three binners with quality filtering and dereplication,
+
+  and contig-, bin- and SSU-level taxonomy.'
+sample_type: sequences::read_metadata
+target_types:
+- sequences::read_qc_stats
+- sequences::orfs
+- sequences::assembly_stats
+- sequences::assembly_per_contig_coverage
+- sequences::assembly_per_bp_coverage
+- annotation::diamond_uniref50_results
+- annotation::kofamscan_results
+- taxonomy::metabuli
+- taxonomy::phyloflash_summary
+- binning_local::cluster_table
+- sequences::metabat2_bin_fasta
+- sequences::semibin2_bin_fasta
+- sequences::comebin_bin_fasta
+- type: taxonomy::checkm_stats
+  parents:
+  - 10
+- type: taxonomy::gtdbtk
+  parents:
+  - 10
+- type: taxonomy::checkm_stats
+  parents:
+  - 11
+- type: taxonomy::gtdbtk
+  parents:
+  - 11
+- type: taxonomy::checkm_stats
+  parents:
+  - 12
+- type: taxonomy::gtdbtk
+  parents:
+  - 12
+- binning::metabat2_contig_to_bin_table
+- binning::semibin2_contig_to_bin_table
+- binning::comebin_contig_to_bin_table
+transform_libraries:
+- transforms/logistics
+- transforms/assembly
+- transforms/metagenomics
+- transforms/functionalAnnotation
+resource_libraries:
+- resources/env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/ab843fce08dc4c4c9f99aee25d2e266b:
+      type: sequences::zipped_forward_short_reads
+      parents:
+        Nw88OWRelfEO@read_pair.txt: sequences::read_pair
+      instance_id: 1e2047fcdad76cf3fab1919d92ff053f5057c2c5106049b5b0a78eba3be802d22f93
+      origin: leaf
+    /msm_deferred/fa46fce52b024558886fa4d71deb8ef6:
+      type: sequences::zipped_reverse_short_reads
+      parents:
+        Nw88OWRelfEO@read_pair.txt: sequences::read_pair
+      instance_id: 1e20b9a515657786c03a463c488e29c4db15bfb3e769ed131c0d2f79a747462cc79b
+      origin: leaf
+    read_pair.txt:
+      type: sequences::read_pair
+      parents:
+        Nw88OWRelfEO@reads_metadata.json: sequences::read_metadata
+      instance_id: 1e208dd4fc887ff8a337a82e158e6655ab99c8bb4459963bb1a87cae387924276fbc
+      origin: leaf
+    reads_metadata.json:
+      type: sequences::read_metadata
+      instance_id: 1e20df13c34373fa27fc7c55b66f2b4a82cfb8d629f937c4c0b7f6bd0eeeb3d53152
+      origin: leaf
+  types:
+    sequences: data_types/sequences.yml
+    alignment: data_types/alignment.yml
+    ref: data_types/ref.yml
+    annotation: data_types/annotation.yml
+    taxonomy: data_types/taxonomy.yml
+    binning: data_types/binning.yml
+    binning_local: data_types/binning_local.yml
+  values:
+    reads_metadata.json: '{"parity": "paired", "length_class": "short"}'
+    read_pair.txt: sample_1

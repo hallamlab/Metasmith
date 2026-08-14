@@ -1,0 +1,34 @@
+types:
+  asv_seqs:
+    properties:
+      _: ASV sequences
+      Format: FASTA
+      Data: 16S rRNA amplicon sequence variants
+      ext: fasta
+  asv_table:
+    properties:
+      _: ASV abundance table
+      Data: sample by ASV count matrix
+      ext: tsv
+  asv_contig_map:
+    properties:
+      _: ASV to contig mapping via BLASTn
+      Format: BLAST6
+      ext: tsv
+  blast_identity_threshold:
+    properties:
+      _: Minimum percent identity for BLAST mapping (e.g., 97 or 100)
+  silva_source:
+    properties:
+      _: SILVA SSURef NR99 database source URL
+  silva_db:
+    properties:
+      _: SILVA SSURef NR99 reference database formatted for VSEARCH
+  silva_nb_classifier:
+    properties:
+      _: Pre-trained QIIME2 naive Bayes classifier for SILVA
+      ext: qza
+  asv_taxonomy:
+    properties:
+      _: ASV taxonomy classifications
+      ext: tsv

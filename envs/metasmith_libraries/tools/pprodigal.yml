@@ -1,0 +1,6 @@
+name: pprodigal
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - pprodigal=1.0.1

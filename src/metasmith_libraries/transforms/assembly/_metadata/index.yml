@@ -1,0 +1,54 @@
+manifest:
+  assembly_stats.py:
+    instance_id: 1e20d7a6b37bdd270ac2573836f5b943591caebcc5716a06ba4e39071725ae490741
+    origin: leaf
+    type: transforms::transform
+  bbduk.py:
+    instance_id: 1e204db8419d56378c5979ae020aa17c1ae117f87cdd9452f049560d87419900c8ca
+    origin: leaf
+    type: transforms::transform
+  filtlong.py:
+    instance_id: 1e203002d1c4b1bce8c211a0f31347958e3a360ea447884923053e5fe77de796abbf
+    origin: leaf
+    type: transforms::transform
+  flye.py:
+    instance_id: 1e2067db6e54dbc56896028c8b8d38cc40811a3ec07f613f0de88a577b7bc8dc6d6f
+    origin: leaf
+    type: transforms::transform
+  flye_raw.py:
+    instance_id: 1e206e0229c275305e07c5ce9122ccf4990bf717bbd4f4cb6e26d41f0b92f9c976b4
+    origin: leaf
+    type: transforms::transform
+  hifi/filtlong_targeted.py:
+    instance_id: 1e20bbd9df11898eb47fcc64ffb2425ed22b891a9e0b6ed8b2fb10faaa698add76bd
+    origin: leaf
+    type: transforms::transform
+  hifi/hifiasm.py:
+    instance_id: 1e20189813c9dbb7983fc24fd27006f93eb58e912c87b40b226aeb54187ae1cb8d6a
+    origin: leaf
+    type: transforms::transform
+  hifi/hifiasm_meta.py:
+    instance_id: 1e20b1d08faa426711f824db8886df5a459d01439059ecf4edfa17725aaa36a8c255
+    origin: leaf
+    type: transforms::transform
+  hifi/miniasm.py:
+    instance_id: 1e2050188d9342ad1d29c1dc63dcb75e9495469aa73c7f256bcf72f39daa428a29e9
+    origin: leaf
+    type: transforms::transform
+  hifi/pbBam2fastq.py:
+    instance_id: 1e2051121a93eaa5678fd01e51458202681d582dc3239cb3473d2451ab0824e037c6
+    origin: leaf
+    type: transforms::transform
+  megahit.py:
+    instance_id: 1e20f7b56113f0c004722fb6f9700df53a45736a701694e94941f552b1ee066ec6f2
+    origin: leaf
+    type: transforms::transform
+  select_chromosomal_contigs.py:
+    instance_id: 1e201ea468b0627b5b801b0546ad4c84bbf079d3f4b01afa4edcfaf1f12611951907
+    origin: leaf
+    type: transforms::transform
+  seqkit_reads.py:
+    instance_id: 1e20ca17a164cea7d631d6077f1bc342b559912dba1ba4fa37b191178d908b8eaa37
+    origin: leaf
+    type: transforms::transform
+schema: v1

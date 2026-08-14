@@ -1,0 +1,18 @@
+manifest:
+  bsr_histogram.py:
+    instance_id: 1e205e5097e6b267d515ed11681950f1358bec1a6e09f47520742c28ba39e21685d0
+    origin: leaf
+    type: transforms::transform
+  diamond_all_vs_all.py:
+    instance_id: 1e2012514b4c2dc4f32d081ed93f44b43e70987919b496d004f76fc1d6228fa9dd52
+    origin: leaf
+    type: transforms::transform
+  heatmap.py:
+    instance_id: 1e20c3808cf1659cf8db26cae4dc1162baefd5425b47fc928f8fc0983fb512e6c949
+    origin: leaf
+    type: transforms::transform
+  ppanggolin.py:
+    instance_id: 1e20d1fe6f88987a98fc52b954c4fd8b1dc99c713d159eb216a3f3094b1a626a699e
+    origin: leaf
+    type: transforms::transform
+schema: v1

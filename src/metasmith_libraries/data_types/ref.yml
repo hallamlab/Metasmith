@@ -1,0 +1,139 @@
+types:
+  reference_data:
+    properties:
+      _: reference database
+  genomad:
+    extends:
+    - reference_data
+    properties:
+      _: for geNomad
+  uniref50_diamond_db:
+    extends:
+    - reference_data
+    properties:
+      _: DIAMOND-formatted UniRef50 database
+      ext: dmnd
+  kofamscan_profiles:
+    extends:
+    - reference_data
+    properties:
+      _: KofamScan HMM profile directory containing .hmm files
+      ext: tgz
+  kofamscan_ko_list:
+    extends:
+    - reference_data
+    properties:
+      _: KofamScan KO list file
+      ext: tsv
+  interproscan_data:
+    extends:
+    - reference_data
+    properties:
+      _: InterProScan data directory
+      ext: tgz
+  metabuli_ref:
+    extends:
+    - reference_data
+    properties:
+      _: metabuli reference database
+  gtdb:
+    extends:
+    - reference_data
+    properties:
+      _: genome taxonomy database
+  kraken2_db:
+    extends:
+    - reference_data
+    properties:
+      _: Kraken2 database directory (hash.k2d + Bracken kmer_distrib)
+  centrifuger_db:
+    extends:
+    - reference_data
+    properties:
+      _: Centrifuger FM-index prefix (.1.cfr .. .4.cfr files share a common prefix)
+  sylph_db:
+    extends:
+    - reference_data
+    properties:
+      _: sylph sketch database (single .syldb file)
+      ext: syldb
+  ganon2_db:
+    extends:
+    - reference_data
+    properties:
+      _: ganon2 database prefix (.hibf + .tax files share a common prefix)
+  metaphlan_db:
+    extends:
+    - reference_data
+    properties:
+      _: MetaPhlAn 4 database directory (bowtie2 + .pkl + .nwk)
+  phyloflash_db:
+    extends:
+    - reference_data
+    properties:
+      _: phyloFlash SILVA SSU DB dir (bbmap + UDB + tax tree)
+  antismash:
+    extends:
+    - reference_data
+    properties:
+      _: for antiSMASH
+
+  # Deep-learning model weights (swappable inputs to embedding transforms)
+  protein_model_weights:
+    extends:
+    - reference_data
+    properties:
+      _: Weights bundle for a protein deep-learning model
+  prott5_xl_uniref50_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: ProtT5-XL UniRef50 encoder weights (Rostlab/prot_t5_xl_uniref50)
+      ext: tgz
+  esm_c_300m_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: ESM-C 300M weights (EvolutionaryScale/esmc-300m)
+      ext: tgz
+  esm_c_600m_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: ESM-C 600M weights (EvolutionaryScale/esmc-600m)
+      ext: tgz
+  ankh_base_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: Ankh-base weights (ElnaggarLab/ankh-base)
+      ext: tgz
+  ankh_large_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: Ankh-large weights (ElnaggarLab/ankh-large)
+      ext: tgz
+  saprot_650m_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: SaProt 650M AF2 weights (westlake-repl/SaProt_650M_AF2)
+      ext: tgz
+  esmfold_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: ESMFold v1 weights (facebook/esmfold_v1)
+      ext: tgz
+  boltz2_weights:
+    extends:
+    - protein_model_weights
+    properties:
+      _: Boltz-2 weights (boltz-community/boltz-2)
+      ext: tgz
+  boltz_msa_db:
+    extends:
+    - reference_data
+    properties:
+      _: ColabFold MSA databases for Boltz-2 (~2 TB; unused stub)

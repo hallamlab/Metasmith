@@ -1,0 +1,38 @@
+types:
+  metagenome_sample:
+    properties:
+      _: a metagenome sample identifier for binning
+
+  contig_to_bin_table:
+    properties:
+      _: contig to bin assignment table
+      ext: tsv
+
+  metabat2_contig_to_bin_table:
+    extends:
+    - contig_to_bin_table
+    properties:
+      method: metabat2
+
+  semibin2_contig_to_bin_table:
+    extends:
+    - contig_to_bin_table
+    properties:
+      method: semibin2
+
+  comebin_contig_to_bin_table:
+    extends:
+    - contig_to_bin_table
+    properties:
+      method: comebin
+
+  # Project-level dereplicated representative-MAG reference for inStrain option (b).
+  # Built ONCE (outside the DAG) from the is_centroid_95==1 bins in
+  # binning/cluster_table.tsv: their contigs concatenated into a single FASTA with
+  # scaffold names namespaced by bin_id (<bin_id>~k141_N — bare k141_N collide
+  # across samples/bins), plus a scaffold->genome table (.stb) and a minimap2
+  # index (.mmi). Staged like a reference DB and provided to the driver as an
+  # input; inStrain maps every sample's reads to it, then compares across samples.
+  derep_mag_ref:
+    properties:
+      _: dereplicated representative-MAG reference dir (mag_ref.fna + mag_ref.stb + mag_ref.mmi)

@@ -1,0 +1,310 @@
+manifest:
+  amrfinderplus.env:
+    instance_id: 1e2017a6707d0cd1db72352a33463ee2504b0cad5dcecaf252692c241100c5151ee0
+    origin: leaf
+    type: env::amrfinderplus.env
+  ankh.env:
+    instance_id: 1e200e0e7eb40907f06338c4f73e0baa06d9fd9049d39ece4d144f74b897c74b5b8e
+    origin: leaf
+    type: env::ankh.env
+  antismash.env:
+    instance_id: 1e2039f711aaf44b7718627783aa93e8a2fe6c13ee6c0a3d32ef303a09249f7d7441
+    origin: leaf
+    type: env::antismash.env
+  bakta.env:
+    instance_id: 1e20b3a8d97c44e3f365173dbba815f286d9a6d4775302617f04742b34b61195d94a
+    origin: leaf
+    type: env::bakta.env
+  bam2fastx.env:
+    instance_id: 1e20a8c0280e3b9e187b418e2f1b6f75a01330bffbf3fcd71fa61e2229279fa00c03
+    origin: leaf
+    type: env::bam2fastx.env
+  bbtools.env:
+    instance_id: 1e20866873e4e1731aab4803068627e6505f69b7892f64310fede1da6716672d5620
+    origin: leaf
+    type: env::bbtools.env
+  bedtools.env:
+    instance_id: 1e205213ba72759adf7248bdbe5d6586ef09bcf4e3fcf0f48f5ffd690eaf9272d232
+    origin: leaf
+    type: env::bedtools.env
+  blast.env:
+    instance_id: 1e2058bdb01d2cd9e97de1ab29aefb91eb85cb8a4b23bb496ce4a45254a42414cab2
+    origin: leaf
+    type: env::blast.env
+  bracken.env:
+    instance_id: 1e204d83ec66f3b5ccfa4b8cf122dee43e17323cb43d24c4e8ba08302134d053961f
+    origin: leaf
+    type: env::bracken.env
+  braker3.env:
+    instance_id: 1e20fbd6f563783ebec4b1652b2e58a2249b7f023ba89aea773d22fe914025504d9c
+    origin: leaf
+    type: env::braker3.env
+  busco.env:
+    instance_id: 1e20de4f7e94cc15fecb534b2999993621ab200162d016cb0b1fa247b8d0fa63cd62
+    origin: leaf
+    type: env::busco.env
+  centrifuger.env:
+    instance_id: 1e2016db2fa939eac2ad5a587f49e042537a5539d0a28c7b120554201ebe81bac268
+    origin: leaf
+    type: env::centrifuger.env
+  checkm.env:
+    instance_id: 1e2005afa5ff7da1cbc00188850925da18ee362e7af91c490adf417b87ec765a55b8
+    origin: leaf
+    type: env::checkm.env
+  comebin.env:
+    instance_id: 1e2017a012efe18bba21f05c9c3df5d03c199186612359bf877624038ec634806650
+    origin: leaf
+    type: env::comebin.env
+  deepec.env:
+    instance_id: 1e2045a575895637c75bbce39ed737c2c22966ec4c39d1d63e5c059787d66d181521
+    origin: leaf
+    type: env::deepec.env
+  deeptfactor.env:
+    instance_id: 1e20821d071d8575ebac3cf5d768720428133878a0a1f8b589f5812136d716e4c40c
+    origin: leaf
+    type: env::deeptfactor.env
+  diamond.env:
+    instance_id: 1e20f20565c678d85daf20254ac084d10d7cb694b1dfe5e2a80cc2dc88341e401b66
+    origin: leaf
+    type: env::diamond.env
+  dram.env:
+    instance_id: 1e20585579526180c790aabb54f9a630702f6b9fefa4a09c02fb1c5d4a71083d2c91
+    origin: leaf
+    type: env::dram.env
+  eggnog-mapper.env:
+    instance_id: 1e20b087a0e8f3e27ed2fc3fd582c0ae229e66f6ac9787bdb9737e94366658d325b8
+    origin: leaf
+    type: env::eggnog-mapper.env
+  esmc.env:
+    instance_id: 1e203be0d2deba54f41064e6fbd43b96557a20f1cbfedd1f2300ef81513c90a321ee
+    origin: leaf
+    type: env::esmc.env
+  esmfold.env:
+    instance_id: 1e204fdbd4067a4c23dc5b2837710a7f3259995f101b15990cfb7f06929608153e71
+    origin: leaf
+    type: env::esmfold.env
+  fastani.env:
+    instance_id: 1e2094f284b0920708392d4f5a81561d452f4ee57c8fbad493c7ad5f4619387c3580
+    origin: leaf
+    type: env::fastani.env
+  fastp.env:
+    instance_id: 1e20a3e1325b268108494f25ad5e47ebfe8e6968b05261622ead89e4b3e68592ba48
+    origin: leaf
+    type: env::fastp.env
+  fastqc.env:
+    instance_id: 1e2041c368e79ec9e0cab7ddf7b034efb87deb50b3378422b933ce52b426afd41aba
+    origin: leaf
+    type: env::fastqc.env
+  feast.env:
+    instance_id: 1e20a5fa154ecf7e052d80ffa68906b83915419e95ffd1fd2e3c804f027fbbfdec85
+    origin: leaf
+    type: env::feast.env
+  filtlong.env:
+    instance_id: 1e20ba976e17b845bfc5dc9cd2213864c88fd4bf5d3d58bc59a34fee7aa507b1db2d
+    origin: leaf
+    type: env::filtlong.env
+  flye.env:
+    instance_id: 1e20ed132f3c72ebc233350f0c153014b32d5d8a49a320138aae45a549f1dcb98994
+    origin: leaf
+    type: env::flye.env
+  foldseek.env:
+    instance_id: 1e204cdf6d1e98578b1088529dab0a6d01dad35cfed1fcc5cc2ac2d16595da707043
+    origin: leaf
+    type: env::foldseek.env
+  ganon.env:
+    instance_id: 1e206672e5d832cf4725d052d82e4ace434abcb6962da2b91e143a2bf9f870cbdd58
+    origin: leaf
+    type: env::ganon.env
+  genomad.env:
+    instance_id: 1e205c84a79769dbde7372280f0aa0da220d13231af47fd59d46745391cf8205ae0c
+    origin: leaf
+    type: env::genomad.env
+  gfatools.env:
+    instance_id: 1e20c08ac1a0628b2c4697b2fd6b07a562123578f05bf4caadfd56a85f3e4580421b
+    origin: leaf
+    type: env::gfatools.env
+  gffread.env:
+    instance_id: 1e20c5a5cfaced5e1bfcc0cc8d236378002b89ccc68a167f6c4933084302da452a5a
+    origin: leaf
+    type: env::gffread.env
+  gtdbtk.env:
+    instance_id: 1e207327f69a4a5e12fa5e50aee9efae75256986faddcb4d3f198c284e6f2488f1af
+    origin: leaf
+    type: env::gtdbtk.env
+  hifiasm-meta.env:
+    instance_id: 1e208544e773670e824c04a24559dcfc0c833227b1038f98934339ed291383d1e129
+    origin: leaf
+    type: env::hifiasm-meta.env
+  hifiasm.env:
+    instance_id: 1e204364ecd4cfe7963b0eb98783d85cfccf2893792c0c5c57cf33728bcada1da65e
+    origin: leaf
+    type: env::hifiasm.env
+  instrain.env:
+    instance_id: 1e202ee09d0bfe55ee0a7f14b9dd2b129426c505ebc5e0aac6c19a7975cdb3379faa
+    origin: leaf
+    type: env::instrain.env
+  integronfinder.env:
+    instance_id: 1e20defdfd1f2a08041c1715cef72c1d2ce8e2953cc10fe5399d43c8e5c47aa3e9aa
+    origin: leaf
+    type: env::integronfinder.env
+  interproscan.env:
+    instance_id: 1e202e865025b6c9c367701af193bcbf0c9a8a68f7a0ff6fb631dc2d444371bcc354
+    origin: leaf
+    type: env::interproscan.env
+  kofamscan.env:
+    instance_id: 1e206b5ea316a1eb100bd942758196eef60d11f4fc4c5c3ded565c4ab7e3cfcdb57e
+    origin: leaf
+    type: env::kofamscan.env
+  kraken2.env:
+    instance_id: 1e204577ff6bb8d8ad897213dcf0bf41f9cf4b3b765ec6840ff4b61f9bc453bca430
+    origin: leaf
+    type: env::kraken2.env
+  megahit.env:
+    instance_id: 1e20bbe2e535d1b00010d0fcb28ebfbdc27544a172f854f19fe0ecaa600912c7484c
+    origin: leaf
+    type: env::megahit.env
+  metabat2.env:
+    instance_id: 1e20a64903e350b05b4acd485685f9b7cc540ebe9d793d4ec388c7889436cc53600c
+    origin: leaf
+    type: env::metabat2.env
+  metabolomics-python.env:
+    instance_id: 1e20ebdd85e15e79801605fa1c56adcff56b3c29a5ac2c12990b3f59b363eac360fd
+    origin: leaf
+    type: env::metabolomics-python.env
+  metabuli.env:
+    instance_id: 1e2081b419b02fdd87b847f17d39d20418ca89144cfee5f63624ba3294cb95b893b5
+    origin: leaf
+    type: env::metabuli.env
+  metaphlan.env:
+    instance_id: 1e200bda29f511e7a31f96bdf386082b4e385db42f83da6db6865f7cb991b9a4be24
+    origin: leaf
+    type: env::metaphlan.env
+  miniasm.env:
+    instance_id: 1e204e70b70a41b2961ff2f7ce2a10db04d3ccfb1509eaefe044ecb835de02c9bbb5
+    origin: leaf
+    type: env::miniasm.env
+  minimap2.env:
+    instance_id: 1e20d4dbfaa27e320390cd9f556909d971c56dc8c5a38933955714dfc8411400c4da
+    origin: leaf
+    type: env::minimap2.env
+  mobileelementfinder.env:
+    instance_id: 1e200c6c00003b457df4806ad69abc7049d8b7175350d62510e14df4e76f17fb1605
+    origin: leaf
+    type: env::mobileelementfinder.env
+  nanoplot.env:
+    instance_id: 1e20c95272d5ad2b2e9d465f21d85c53851c613a10a2ae6466a5841a6034319d4103
+    origin: leaf
+    type: env::nanoplot.env
+  ncbi-datasets.env:
+    instance_id: 1e208f71bc0f3ecb0aafd35d97dbfbd6e045b4fa4313268d66bdcf71ee3cce072a27
+    origin: leaf
+    type: env::ncbi-datasets.env
+  orad.env:
+    instance_id: 1e2073c6b49975fe45ce3f9bb116eee12ad40777482c3a6a7a9781b0d730cac8e300
+    origin: leaf
+    type: env::orad.env
+  pathofact.env:
+    instance_id: 1e202e9f3544d1e7edb59ff618d7c335d932c921e511e8d25d01755d1760e7e2c0ba
+    origin: leaf
+    type: env::pathofact.env
+  pathologic.env:
+    instance_id: 1e20e4a7904c1d07511059b9b60d762cc97d76839b636010af7279f1e21fe9fb6531
+    origin: leaf
+    type: env::pathologic.env
+  phyloflash.env:
+    instance_id: 1e20dcf0382461283f0cca1aa063503bb951eeddc9e3d86172bcab19980d649b36e1
+    origin: leaf
+    type: env::phyloflash.env
+  polars.env:
+    instance_id: 1e20ad1e1834298a953069a530418c40590b3ad20284752ecea9fcec1df819f3a99f
+    origin: leaf
+    type: env::polars.env
+  ppanggolin.env:
+    instance_id: 1e20b04e29856be29d7e646f82f71f664c5c47e5cc6e3c7efbe55e480478bcd7b1d5
+    origin: leaf
+    type: env::ppanggolin.env
+  pprodigal.env:
+    instance_id: 1e20df8352a9a6a02155dd9e17113c3c9d466a7cb658f106fc41d7cef00670413b16
+    origin: leaf
+    type: env::pprodigal.env
+  predictf.env:
+    instance_id: 1e20c921896034919c2a4c397f5f5ff1f8975c7ef046882c43074e6173ea89bf0835
+    origin: leaf
+    type: env::predictf.env
+  promotech.env:
+    instance_id: 1e200f3e58272875bbfad04c8f125628cb3d72a00269e6f727938c5544b97de76a74
+    origin: leaf
+    type: env::promotech.env
+  proteinbert.env:
+    instance_id: 1e20c25b67383e488ba266f7fef96e2b3cb4aad7d11f3a3b72517019348630384027
+    origin: leaf
+    type: env::proteinbert.env
+  prott5.env:
+    instance_id: 1e20336aa350da3aa70aaa1a5963b3a01e80e7dcd7d3db695df294d49242c20bb264
+    origin: leaf
+    type: env::prott5.env
+  pydeseq2.env:
+    instance_id: 1e20659046537465c8f857021193c5ccdbfe43dd9bcd6cebe52458ee523f77e12551
+    origin: leaf
+    type: env::pydeseq2.env
+  python_for_data_science.env:
+    instance_id: 1e20370a3ad498a9e36dca8f18e435f2efdbf28648b459077199fd2f3b54e8637621
+    origin: leaf
+    type: env::python_for_data_science.env
+  qiime2.env:
+    instance_id: 1e20b9283388e9809915850a4dabdcc28db1bd820e62e26a5393ef9f060e81c98a71
+    origin: leaf
+    type: env::qiime2.env
+  rgi.env:
+    instance_id: 1e20315a9cbed7eab479ba87e929cdf39eb967f371d374e96d27edb52747ab19ced3
+    origin: leaf
+    type: env::rgi.env
+  salmon.env:
+    instance_id: 1e20b8c79d54604bfc0124d11b75feaa3de0d16d9d788a3b07a5c6beb722d7842f0d
+    origin: leaf
+    type: env::salmon.env
+  samtools.env:
+    instance_id: 1e2020a3db79705ad8a30468f7252f9f136c8dbb22cea3a4afcd7b8ed8f493048c78
+    origin: leaf
+    type: env::samtools.env
+  saprot.env:
+    instance_id: 1e20a307f46094fe7dfb43d01dddde93d21a4208cb28d6c3b81b00d87d783529795e
+    origin: leaf
+    type: env::saprot.env
+  semibin.env:
+    instance_id: 1e20a921d5b347a583ff094a0194e15c7d52dd61194a5b3524cbe464499d348087e7
+    origin: leaf
+    type: env::semibin.env
+  seqkit.env:
+    instance_id: 1e20edebd2db656c58bab851eb51cfd2e0ee1a8b8987dfdd8a87e20e6be59bf432c6
+    origin: leaf
+    type: env::seqkit.env
+  skani.env:
+    instance_id: 1e20d842361a81ca8db6eb8964a8121734120652824c7efb8c18620dbcc8f9a5435e
+    origin: leaf
+    type: env::skani.env
+  sra-tools.env:
+    instance_id: 1e204c125dcc4dcea4a2575c76f06b391845b19b48bf2e9c093eba9a46af4058edf7
+    origin: leaf
+    type: env::sra-tools.env
+  star.env:
+    instance_id: 1e20947bcf49e550e48f8ff6883b3b3cae8727608e05bead179a9b4ffcc112578a12
+    origin: leaf
+    type: env::star.env
+  stringtie.env:
+    instance_id: 1e20d23b681ea5fec47f536bfddf845373af8b85351a074e87b72b91e66d3ed1066d
+    origin: leaf
+    type: env::stringtie.env
+  sylph.env:
+    instance_id: 1e20fc8e4a73aee5cc64c83f71a9f1a09ba7ca0d69f850860838e711bcb2504d3c5e
+    origin: leaf
+    type: env::sylph.env
+  virsorter2.env:
+    instance_id: 1e20f9494951a764307418849ec506e1962701b50de0da7ed8aab6f6e09680106eea
+    origin: leaf
+    type: env::virsorter2.env
+  vsearch.env:
+    instance_id: 1e20b9c8c814a8d4f7ec76a2e598c32ffc12919d7a0c5a9d15a85499fcaaba19b415
+    origin: leaf
+    type: env::vsearch.env
+schema: v1

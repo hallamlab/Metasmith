@@ -33,7 +33,10 @@ if __name__ == "__main__":
             "Operating System :: POSIX :: Linux",
         ],
         package_dir={"": "src"},
-        packages=setuptools.find_packages(where="src"),
+        # metasmith_libraries is its own nested package (src/metasmith_libraries/
+        # has its own setup.py) -- excluded here so it ships as its own
+        # standalone distribution, not bundled inside metasmith's wheel.
+        packages=setuptools.find_packages(where="src", exclude=["metasmith_libraries", "metasmith_libraries.*"]),
         package_data={
             "":[ # "" is all packages
                 "version.txt",

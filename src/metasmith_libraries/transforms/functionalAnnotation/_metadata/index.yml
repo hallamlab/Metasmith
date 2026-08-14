@@ -1,0 +1,210 @@
+manifest:
+  add_orfs_to_centroids.py:
+    instance_id: 1e20f53a693e9caccd76eb2de3d4ca668aa9a532f7f06701ee2e434ffe4433a5564c
+    origin: leaf
+    type: transforms::transform
+  amrfinderplus.py:
+    instance_id: 1e20d6f8eb6d013306cdd028e2500947494886cfddde607a5417381220f93dae735f
+    origin: leaf
+    type: transforms::transform
+  ankh.py:
+    instance_id: 1e200326de323b7c36ff4d56f8de1f7b9751aa374255e428d3bac21572ef8045a453
+    origin: leaf
+    type: transforms::transform
+  antismash.py:
+    instance_id: 1e208d191903406f5307b09aea59da08013ce4b3d9cae32e59d335fe55a8963bd338
+    origin: leaf
+    type: transforms::transform
+  bacmet.py:
+    instance_id: 1e20b9d98e7470f86889d3c36d923dc59418274ca4f844980fb26dbf913478b40382
+    origin: leaf
+    type: transforms::transform
+  bakta_noncoding.py:
+    instance_id: 1e20313b0772af74bf74742a1dc530504fd122c5b0812e77a402cf6d4231a3f74373
+    origin: leaf
+    type: transforms::transform
+  busco.py:
+    instance_id: 1e20b106192a88f8a378a0d1a6f05919f64839d0f4ca774a512a4f9607d9f89ddaa6
+    origin: leaf
+    type: transforms::transform
+  busco_full_table.py:
+    instance_id: 1e20ea54aed7f8acb1b765c9246f65a2bacfb4c8255cb8a3d6127887a82b9c07958e
+    origin: leaf
+    type: transforms::transform
+  deepec.py:
+    instance_id: 1e20bfa47d55c5d09cfa84a425058892b63d3fe0de4a5156f4c9bd2052982db42128
+    origin: leaf
+    type: transforms::transform
+  deeptfactor.py:
+    instance_id: 1e20b0d15bb86b119e5daa2fe7ce083b573d30d4d5c3ed8115a0b8670f3571ec532a
+    origin: leaf
+    type: transforms::transform
+  diamond_linclust.py:
+    instance_id: 1e202d200bd6e06895d1a5eaa97ddfde5390f833b46d97b1ac4f61433599e349c0f8
+    origin: leaf
+    type: transforms::transform
+  diamond_tcdb.py:
+    instance_id: 1e203f8df3ffaa5d442b52fe41622d6d6ff23978b66708a33751bd738d8b72cee5a5
+    origin: leaf
+    type: transforms::transform
+  diamond_tcdb2.py:
+    instance_id: 1e20694e7e7448f7cf77de9bde8753b44eab546ea1f59aff6adbfc1b92e7aa4b88b3
+    origin: leaf
+    type: transforms::transform
+  diamond_uniref50.py:
+    instance_id: 1e204737ed3fdad67ade50b838a258469001b37d5764ef354e9f87f507e97407ba70
+    origin: leaf
+    type: transforms::transform
+  dram_annotate_genes.py:
+    instance_id: 1e205c6452e012fe69d51ab9e0c1e065fb1e693242d0799dd7b89b15f663e2431e9e
+    origin: leaf
+    type: transforms::transform
+  dramv.py:
+    instance_id: 1e20993b08795ab461e66abb9e8cfa212b93b6a7fbd8fa21db5a59cf22078596e8d7
+    origin: leaf
+    type: transforms::transform
+  eggnog_mapper.py:
+    instance_id: 1e205ed9829b42bf0c2c167dfea7a4ba0b87efb6be567cdb39a9cc62d6061564e379
+    origin: leaf
+    type: transforms::transform
+  esm_c.py:
+    instance_id: 1e204ebfb4dbe182fbf0c4eff60aca0dc73f6b6b61a46458cf66abc34eaf806bb799
+    origin: leaf
+    type: transforms::transform
+  esmfold.py:
+    instance_id: 1e20a4b9e733c2f290f1d3933f8907260dd3425abb068b2791c64d02404172a321a0
+    origin: leaf
+    type: transforms::transform
+  foldseek_3di.py:
+    instance_id: 1e2090555c4429f0ddd83fd258b9b896db9667aab298b2af2de77601d8752c59dec4
+    origin: leaf
+    type: transforms::transform
+  integronfinder.py:
+    instance_id: 1e2095e7f781aa5c9d6e6e8fdab9c0728605ec1c0b27c0c0862034c915b709b9bb83
+    origin: leaf
+    type: transforms::transform
+  interproscan.py:
+    instance_id: 1e20f01f305c15715e6ec26e496d565e0cf099ed5cd04757e5bb55339a52e72f5e0e
+    origin: leaf
+    type: transforms::transform
+  kofamscan.py:
+    instance_id: 1e2094ac232b6732de18be2bc5e481e0cd7980e4dae2312ba3679cf5303342cbd8c9
+    origin: leaf
+    type: transforms::transform
+  megares.py:
+    instance_id: 1e20837681af3a56e49a2e5076490634637107467bd8e64e43b735e19191078a8bf8
+    origin: leaf
+    type: transforms::transform
+  merge_amrfinderplus.py:
+    instance_id: 1e20cde3fbfecdcc6f29020e67480b62d5f400fb47dbd0b3d862b0268e518d36a01f
+    origin: leaf
+    type: transforms::transform
+  merge_bacmet.py:
+    instance_id: 1e20c6a992c7439d11bc06019f84a7441765244768f77d1cc69bf060d42dbcdc05ef
+    origin: leaf
+    type: transforms::transform
+  merge_busco_full_table.py:
+    instance_id: 1e20999460dfa6fdaa96500fb288dd2e84d22ac1f4c9fc66e948307c572e64741add
+    origin: leaf
+    type: transforms::transform
+  merge_deepec.py:
+    instance_id: 1e20c6d8553b09b1ea20360fadb081b64d40864b2543633d151456e745ba89cfacd7
+    origin: leaf
+    type: transforms::transform
+  merge_deeptfactor.py:
+    instance_id: 1e203fcb4688e356649ee903d387ee17058ce0b30dba89d0a2b64c6fe73f101c54bb
+    origin: leaf
+    type: transforms::transform
+  merge_diamond_tcdb.py:
+    instance_id: 1e201eb0213d616671bae3d216786596d839d83cf91c2e6705a6c8a2085acb3c4c12
+    origin: leaf
+    type: transforms::transform
+  merge_diamond_uniref50.py:
+    instance_id: 1e20f63a28c11d3d2756ca411b99ac3eadfab75c3a80fe9bb06a05bd99927f68d3ec
+    origin: leaf
+    type: transforms::transform
+  merge_dram_annotate_genes.py:
+    instance_id: 1e20e5213360598066d5aaf407ee589f8bab2b06f4fbf08d36acca8242c842845aed
+    origin: leaf
+    type: transforms::transform
+  merge_eggnog_mapper.py:
+    instance_id: 1e20d7d48fe18f3ac9f913aa962ba4d0916b70c6491c8416d736ae07eb519a919ec5
+    origin: leaf
+    type: transforms::transform
+  merge_interproscan.py:
+    instance_id: 1e2006a6d7be8e4585fff52722da64fac5144bfa41bfd1bc187e32695985a843c35b
+    origin: leaf
+    type: transforms::transform
+  merge_kofamscan.py:
+    instance_id: 1e20af99a68725f6e42838af64f24fd3b0f40079a6e3a303c7b7b79727d129136112
+    origin: leaf
+    type: transforms::transform
+  merge_megares.py:
+    instance_id: 1e204770fff0b5edfbbb9e6ef48a5ce5f1109da59e1fac75b9c794a71e07d984d3db
+    origin: leaf
+    type: transforms::transform
+  merge_predictf.py:
+    instance_id: 1e207c5389584b65c35e9634ebb325a44b50c0b1b5effa1668c63577caf2741dafba
+    origin: leaf
+    type: transforms::transform
+  merge_proteinbert.py:
+    instance_id: 1e20206aa94fd926810da12992191e881db67ee1a42cacf37058a672aa2a597d06b0
+    origin: leaf
+    type: transforms::transform
+  merge_rgi.py:
+    instance_id: 1e2070c126303f9aa317505910f1dd27de83f2e73012b836ea88b813978155ebe91b
+    origin: leaf
+    type: transforms::transform
+  merge_vfdb.py:
+    instance_id: 1e2000c98d544e6bfdd555dac34425bd6540ae9a153cfe1d4772f8d1e5206a1fed73
+    origin: leaf
+    type: transforms::transform
+  mobileelementfinder.py:
+    instance_id: 1e20b1c4c3a80c2fe9b09c939bc325d48332878ac87692a7b99fc4ed870646225a32
+    origin: leaf
+    type: transforms::transform
+  pathofact.py:
+    instance_id: 1e208b53b0de4cdbf281297276310827c2b3794b810b97e7d5be18960a5516528665
+    origin: leaf
+    type: transforms::transform
+  pathologic.py:
+    instance_id: 1e20b0158ea42b98a6d8b63ac788d30034b2107ad66d49030de960e00db9d15f02ca
+    origin: leaf
+    type: transforms::transform
+  predictf.py:
+    instance_id: 1e2069d78817ac297aa4b9a929933f524257a0170050220136e84e8169d743812af7
+    origin: leaf
+    type: transforms::transform
+  promotech.py:
+    instance_id: 1e204515c83c18b233b8ec3287de6ccd3d9bcbd84caf4ad02e5f150dd51952e554a9
+    origin: leaf
+    type: transforms::transform
+  proteinbert.py:
+    instance_id: 1e204ad24c378e5d8f2d6041a4086411e2a1b10ca6c06686d7c3994c9b5f5445014e
+    origin: leaf
+    type: transforms::transform
+  prott5.py:
+    instance_id: 1e20ec63823688203600cfef848f84bd13273159f06acc545a7566658876b18922af
+    origin: leaf
+    type: transforms::transform
+  ptools_annotation_gather.py:
+    instance_id: 1e20075d383fd32d8ab584f183f246b79965349dd53e23bdac03870a0bc07f77614b
+    origin: leaf
+    type: transforms::transform
+  rgi.py:
+    instance_id: 1e206d8ccd36d04d04051b7267928ff0ea31b1f53568e4a5c47de24d49663b979857
+    origin: leaf
+    type: transforms::transform
+  saprot.py:
+    instance_id: 1e20909f2adf2499c9f44b5327b4d65145b0d799cbee3834643d205751a62e70a810
+    origin: leaf
+    type: transforms::transform
+  vfdb.py:
+    instance_id: 1e204753cd0b60b968f648fc9a31ac88f1daaa0e83d86f65b4ec78bef3425d6f135a
+    origin: leaf
+    type: transforms::transform
+  virsorter2.py:
+    instance_id: 1e206d196e05c3d6862889ae9b47bbe496dceddefcc8ba9a61efb9f6537791477ff9
+    origin: leaf
+    type: transforms::transform
+schema: v1

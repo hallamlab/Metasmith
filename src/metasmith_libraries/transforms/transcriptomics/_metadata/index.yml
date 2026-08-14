@@ -1,0 +1,78 @@
+manifest:
+  blast_contamination_check.py:
+    instance_id: 1e205634ecf291b320282fdead7d79b6b4d3a793559ff9218fee827c6e041a9d457f
+    origin: leaf
+    type: transforms::transform
+  braker3.py:
+    instance_id: 1e202abcbe56e803164cbb28f04048daeea54885af2bcb75966324f26ca0bde85a44
+    origin: leaf
+    type: transforms::transform
+  deseq2.py:
+    instance_id: 1e2007abe897b6b7b281a5447a7faa294b13d72c31c12dceb884b9466f5bb0ac0b14
+    origin: leaf
+    type: transforms::transform
+  genbank_to_reference.py:
+    instance_id: 1e20f7c61e312bd16092af6eb4319c02993827f754badc5e88d1d7f4a8cd3f131ae0
+    origin: leaf
+    type: transforms::transform
+  gffread_proteins.py:
+    instance_id: 1e20284737974abac77f6cd57513ce4c0c227ec977c87cbb9dcf69f87ef6da7de83c
+    origin: leaf
+    type: transforms::transform
+  merge_bams.py:
+    instance_id: 1e2007733a6acd766950e743e58542efea96d35db14bcb5de3cff9747e17072efaef
+    origin: leaf
+    type: transforms::transform
+  minimap2_rnaseq_align.py:
+    instance_id: 1e203a376510ec653a3da56478faf0c0c8cf217b917a8d697bd11558017b1aca6ef4
+    origin: leaf
+    type: transforms::transform
+  organellar_count_matrix.py:
+    instance_id: 1e205920e92c2c3ecf25b8a95976e158dab85346e4987b5dde2b8fcab47bd72b32a9
+    origin: leaf
+    type: transforms::transform
+  pydeseq2.py:
+    instance_id: 1e204d7bd1439458054e3046e6fb1bfea52239f8bebf5d4c7d5d6309758e8d6bba96
+    origin: leaf
+    type: transforms::transform
+  salmon_count_table.py:
+    instance_id: 1e2051d06bf7495d70626a25265dece30350cb3480bddeb44e5c5e8cfae0a5726015
+    origin: leaf
+    type: transforms::transform
+  salmon_index.py:
+    instance_id: 1e209c91363140f07903a217b452bc831cd1c420b6d18178d3963d458a67cc0b83b4
+    origin: leaf
+    type: transforms::transform
+  salmon_quant.py:
+    instance_id: 1e20b6907606c4e9dca8249ab398dcf1f0e183bc1551dcd1a25b2259fa5a33b8e12d
+    origin: leaf
+    type: transforms::transform
+  star_align.py:
+    instance_id: 1e202e5fdc6357fb456cefc0b71394a57a2b5552c295143869c262b317331de99b5d
+    origin: leaf
+    type: transforms::transform
+  star_genome_index.py:
+    instance_id: 1e20b30a0f0ef451fbdf05da6efa96f983a26d642109cca8ef450f28ef41bb205ef1
+    origin: leaf
+    type: transforms::transform
+  stringtie_assemble.py:
+    instance_id: 1e2072f368b8509159c1e19114ab132c51f73a6f2e12a5cc3ccea967f433c7cf797e
+    origin: leaf
+    type: transforms::transform
+  stringtie_count_matrix.py:
+    instance_id: 1e204a4cd6efd60f7f627596947180d41fc3a3269c8510a1db9e5df0830cdc84a374
+    origin: leaf
+    type: transforms::transform
+  stringtie_merge.py:
+    instance_id: 1e20c53c386e897c13644501e3c39387fef145039ad57049a19e8faf59c48ea809b8
+    origin: leaf
+    type: transforms::transform
+  stringtie_quant.py:
+    instance_id: 1e2072f3dddfbf87e854f7e92c051876b1df483d476b19f4a457e891d90f8e48b69b
+    origin: leaf
+    type: transforms::transform
+  volcano_plot.py:
+    instance_id: 1e20b2f84c4d5e43482d81b6d09feaf20ce76952798bac56ccbf7ab99b78005f201f
+    origin: leaf
+    type: transforms::transform
+schema: v1

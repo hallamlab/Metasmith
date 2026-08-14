@@ -1,0 +1,52 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  crashed_cultures:
+    properties:
+      atomic_description: table of crashed/outlier culture replicates per sample
+      ext: csv
+      format: CSV
+  factor_importance_plot:
+    properties:
+      atomic_description: top factor importance bar chart
+      ext: svg
+      format: SVG
+  growth_characteristics_plot:
+    properties:
+      atomic_description: growth curve panel plot with logistic fits
+      ext: svg
+      format: SVG
+  growth_data:
+    properties:
+      atomic_description: media optimization growth curve data
+      ext: csv
+      format: CSV
+  model_suggestions:
+    properties:
+      atomic_description: optimized media composition suggestions
+      ext: csv
+      format: CSV
+  model_suggestions_plot:
+    properties:
+      atomic_description: model suggestions vs best tested scatter
+      ext: svg
+      format: SVG
+  response_surface_1d_plot:
+    properties:
+      atomic_description: 1D cross-section response surface plot
+      ext: svg
+      format: SVG
+  response_surface_2d_plot:
+    properties:
+      atomic_description: 2D heatmap response surface plot
+      ext: svg
+      format: SVG
+  response_surface_coefficients:
+    properties:
+      atomic_description: polynomial response surface model coefficients
+      ext: csv
+      format: CSV

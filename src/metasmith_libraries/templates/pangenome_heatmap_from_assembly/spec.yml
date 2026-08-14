@@ -1,0 +1,38 @@
+name: pangenome_heatmap_from_assembly
+description: Build a pangenome from NCBI assembly accessions and render it as a heatmap.
+sample_type: ncbi::assembly_accession
+target_types:
+- pangenome::heatmap
+transform_libraries:
+- transforms/logistics
+- transforms/pangenome
+resource_libraries:
+- resources/env
+- resources/lib
+shared_input_paths:
+- pangenome.json
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/c20b33400bd74d76b1fab7f573c45dba:
+      type: ncbi::assembly_accession
+      parents:
+        XVdEOUF6teNN@/msm_deferred/c8bbfb6b0d1b4769af257d1ead7b303c: ncbi::genome_name
+      instance_id: 1e20e980ef5e330d362d5fd87ab63980f19af1ad31132e44da8882b1f5f541cb6587
+      origin: leaf
+    /msm_deferred/c8bbfb6b0d1b4769af257d1ead7b303c:
+      type: ncbi::genome_name
+      parents:
+        XVdEOUF6teNN@pangenome.json: pangenome::pangenome
+      instance_id: 1e2060695315e035ec0bacbca824653ff11235886681289810b4ceb46928593879cb
+      origin: leaf
+    pangenome.json:
+      type: pangenome::pangenome
+      instance_id: 1e20c9959e1885818b6ee3d8e7024809fec0523b5c333908baeeb94de20987690bca
+      origin: leaf
+  types:
+    ncbi: data_types/ncbi.yml
+    pangenome: data_types/pangenome.yml
+    sequences: data_types/sequences.yml
+  values:
+    pangenome.json: '{"logistics": "pangenome"}'

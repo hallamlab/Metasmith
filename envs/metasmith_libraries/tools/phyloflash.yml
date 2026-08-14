@@ -1,0 +1,6 @@
+name: phyloflash
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - phyloflash=3.4.2

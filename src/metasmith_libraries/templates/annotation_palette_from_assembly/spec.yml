@@ -1,0 +1,40 @@
+name: annotation_palette_from_assembly
+description: 'Run the broadest feasible set of annotators against an existing assembly:
+
+  KOFAMSCAN, DIAMOND UniRef50, eggNOG-mapper and ProteinBERT on its ORFs, plus
+
+  Metabuli contig-level taxonomy.'
+sample_type: sequences::assembly
+target_types:
+- annotation::kofamscan_results
+- annotation::diamond_uniref50_results
+- annotation::eggnog_results
+- annotation::proteinbert_embeddings
+- annotation::proteinbert_index
+- taxonomy::metabuli
+transform_libraries:
+- transforms/logistics
+- transforms/metagenomics
+- transforms/functionalAnnotation
+resource_libraries:
+- resources/env
+shared_input_paths:
+- eggnog_source.marker
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/801362b132b047d7b5f5e83ae7001c5c:
+      type: sequences::assembly
+      instance_id: 1e20e9d7bbbd8ec0d30df951ffa66670c250363cc454b571d1e90ea203bf38be160e
+      origin: leaf
+    eggnog_source.marker:
+      type: annotation::eggnog_source
+      instance_id: 1e20d5223cce30ae1e9e4a66319bc6f1edb45da822a588d3173e43b9e1625f14c38a
+      origin: leaf
+  types:
+    sequences: data_types/sequences.yml
+    ref: data_types/ref.yml
+    annotation: data_types/annotation.yml
+    taxonomy: data_types/taxonomy.yml
+  values:
+    eggnog_source.marker: trigger

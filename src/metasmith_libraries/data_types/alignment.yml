@@ -1,0 +1,9 @@
+types:
+  bam:
+    properties:
+      _: binary alignment map
+      ext: bam
+  csi:
+    properties:
+      _: coordinate sorted index
+      ext: csi
