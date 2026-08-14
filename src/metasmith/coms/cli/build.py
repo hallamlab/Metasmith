@@ -53,6 +53,23 @@ def register(subs):
                         parents=[sub_parent])
     _tr.set_defaults(func=_cmd_transforms)
 
+    _vl = sp.add_parser(
+        "vendor-library",
+        help="copy a metasmith library's shippable pieces into a vendored destination",
+        description="Copy each --src NAME=PATH into --dst/NAME, replacing --dst "
+                    "wholesale, and stamp a content hash for later drift checks. "
+                    "--check verifies an existing bundle against live source "
+                    "without copying, e.g. --src data_types=src/metasmith_libraries/"
+                    "data_types --src resources=... --src envs=envs/metasmith_libraries.",
+    )
+    _vl.add_argument("--src", action="append", required=True, dest="vendor_srcs",
+                     help="NAME=PATH to vendor into --dst/NAME (repeatable)")
+    _vl.add_argument("--dst", required=True, dest="vendor_dst",
+                     help="destination directory (replaced wholesale)")
+    _vl.add_argument("--check", action="store_true",
+                     help="verify the existing bundle matches live source; do not copy")
+    _vl.set_defaults(func=_cmd_vendor_library)
+
     p.set_defaults(func=_cmd_all)
 
 
@@ -74,3 +91,9 @@ def _cmd_uniques(args):
 
 def _cmd_transforms(args):
     return _ops.compile_transforms(_arg(args, "transform_dirs"), _arg(args, "type_dirs"))
+
+
+def _cmd_vendor_library(args):
+    if args.check:
+        return _ops.check_vendor_library(args.vendor_srcs, args.vendor_dst)
+    return _ops.vendor_library(args.vendor_srcs, args.vendor_dst)

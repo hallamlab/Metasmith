@@ -1,44 +1,93 @@
-"""The standard library clone, and what a project bootstrap consists of.
+"""The standard library snapshot, and what a project bootstrap consists of.
 
 `msm lab` and `msm gui` open the same working directory and need the same things
-in it: the bundled example resources, and a clone of the standard library. That
+in it: the bundled example resources, and a copy of the standard library. That
 bootstrap lives here so the two front ends share it rather than drifting apart.
 
-The library is pulled from main with no configuration -- there is deliberately no
-UI for it and no per-project pin. Everything it contains is offered to the
-planner, so adding a transform library to the repository is enough to make it
-available.
+There is deliberately no UI for it and no per-project pin. Everything the
+library contains is offered to the planner, so adding a transform library to
+the repository is enough to make it available.
 """
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from ..agents.templates import library_index
-from ..constants import MODULE_PATH, STDLIB_NAME, STDLIB_URL
+from ..constants import MODULE_PATH, STDLIB_NAME, STDLIB_SPARSE_PATH, STDLIB_URL
 from ..logging import Log
 
 
-def clone_stdlib(root: Path, url: str = STDLIB_URL) -> dict:
-    """Clone the standard library into `root` if it is not already there.
+def _vendor_bundle_dir() -> Path:
+    return MODULE_PATH / "vendor" / "metasmith_libraries"
 
-    A failed clone is reported, not raised: a user without network access should
-    still get a notebook or a page, with the absence stated plainly rather than a
-    traceback at startup. Callers surface `error` in the UI.
+
+def _sparse_checkout_library(url: str, dest: Path) -> subprocess.CompletedProcess:
+    """Fetch just `STDLIB_SPARSE_PATH` from `url` into a scratch clone, then
+    copy it into `dest`. A cone-mode sparse-checkout keeps the fetch to one
+    path instead of the whole monorepo; copying rather than leaving `dest`
+    inside the scratch clone keeps `dest` itself the library root, the same
+    shape `discover()` expects from a vendored bundle."""
+    with tempfile.TemporaryDirectory(prefix="metasmith_stdlib_") as tmp:
+        clone = Path(tmp) / "clone"
+        steps = [
+            ["git", "clone", "--depth", "1", "--filter=blob:none",
+             "--no-checkout", url, str(clone)],
+            ["git", "-C", str(clone), "sparse-checkout", "init", "--cone"],
+            ["git", "-C", str(clone), "sparse-checkout", "set", STDLIB_SPARSE_PATH],
+            ["git", "-C", str(clone), "checkout"],
+        ]
+        for cmd in steps:
+            res = subprocess.run(cmd, text=True, capture_output=True)
+            if res.returncode != 0:
+                return res
+        shutil.copytree(clone / STDLIB_SPARSE_PATH, dest)
+    return subprocess.CompletedProcess(steps[-1], 0, "", "")
+
+
+def clone_stdlib(root: Path, url: str = STDLIB_URL) -> dict:
+    """Materialize the standard library into `root` if it is not already there.
+
+    Prefers the version-pinned snapshot vendored into this install
+    (`dev/metasmith.sh --vendor-library`) -- deterministic, offline, and
+    exactly what the running engine was built against; the standalone
+    MetasmithLibraries repo `url` used to point at is retired post-migration.
+    Falls back to a live sparse-checkout of `url` (now the monorepo) only when
+    `METASMITH_STDLIB_LIVE=1` is set: an explicit opt-in, not automatic, since
+    a silent live-fetch default would mask a missing vendor bundle instead of
+    saying so plainly. Either way, a failure is reported, not raised: a user
+    without network access should still get a notebook or a page, with the
+    absence stated in the UI rather than a traceback at startup.
     """
     dest = Path(root) / STDLIB_NAME
     if dest.exists():
         return {"path": str(dest), "cloned": False}
-    Log.Info(f"downloading standard library from [{url}]...")
-    res = subprocess.run(
-        ["git", "clone", "--depth", "1", url, str(dest)],
-        text=True, capture_output=True,
-    )
-    if res.returncode != 0:
-        err = res.stderr.strip() or f"git clone exited {res.returncode}"
-        Log.Error(f"failed to clone [{url}]: {err}")
+
+    bundle = _vendor_bundle_dir()
+    if bundle.is_dir():
+        Log.Info(f"copying vendored standard library from [{bundle}]...")
+        shutil.copytree(bundle, dest)
+        return {"path": str(dest), "cloned": True, "source": "vendor"}
+
+    if not os.environ.get("METASMITH_STDLIB_LIVE"):
+        err = (
+            "no vendored standard library shipped with this install, and live "
+            f"fetch is opt-in. Set METASMITH_STDLIB_LIVE=1 to sparse-checkout "
+            f"[{STDLIB_SPARSE_PATH}] from [{url}] instead."
+        )
+        Log.Error(err)
         return {"path": str(dest), "cloned": False, "error": err}
-    return {"path": str(dest), "cloned": True}
+
+    Log.Info(f"sparse-checking out standard library from [{url}]...")
+    res = _sparse_checkout_library(url, dest)
+    if res.returncode != 0:
+        err = res.stderr.strip() or f"git exited {res.returncode}"
+        Log.Error(f"failed to fetch [{url}]: {err}")
+        return {"path": str(dest), "cloned": False, "error": err}
+    return {"path": str(dest), "cloned": True, "source": "live"}
 
 
 def stdlib_commit(root: Path) -> str | None:
