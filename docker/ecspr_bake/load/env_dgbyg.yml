@@ -1,0 +1,60 @@
+# ecspr_bake:dgbyg -- the direction ensemble's learned member.
+#
+# The container form of envs/build-refs-dgbyg.yml. THREE images out of this directory
+# now, and the third one exists for a different reason than the second:
+#
+#   :aam        torch 2.2.1, numpy<2      -- the two neural mappers' C-API build
+#   :direction  numpy>=2, python 3.11     -- equilibrator-cache 0.7.1's floor
+#   :dgbyg      torch 2.8, python 3.12    -- dGbyG's source needs 3.12 to PARSE
+#
+# The numpy bound is what separates :aam from the other two. It is NOT what separates
+# :dgbyg from :direction -- torch 2.8 is a numpy 2 build, and the local
+# `build-refs-equilibrator` env carries both members and resolves fine. What separates
+# them is that dGbyG uses a same-quote nested f-string, so under python 3.11 it raises
+# SyntaxError at import. The previous note in env_direction.yml called the third image a
+# numpy consequence; it is a python-version one, and the distinction matters because it
+# means the two thermodynamic members COULD share an image at 3.12 if anyone wanted them
+# to. They do not share one here because keeping torch out of :direction keeps it small.
+#
+# THE WEIGHTS ARE BAKED IN, AND THEY DO NOT COME FROM PIP. dGbyG's 100 heads are ~105 MB
+# of .pt files at the REPOSITORY root -- outside the package, declared as package data by
+# nothing -- and `api.py` finds them with `__file__.split('src')[0]`, which only resolves
+# from a source checkout. So the repo is cloned at a pinned commit by
+# load/install_dgbyg.sh and registered with a .pth. No transform acquires the weights and
+# no data/ chunk holds them, which is the same call CLEAN's ESM-1b gets: weights that
+# ship with a method are part of the method.
+name: ecspr_bake_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  # The wildcard guard reads through rdkit, so it is a hard dependency of the member's
+  # CORRECTNESS and not only of its featuriser. Same pin as the other two images.
+  - rdkit=2026.03.*
+  - numpy>=2
+  - pandas=2.3.*
+  - pyarrow>=24
+  - scipy=1.17.*
+  # git, because dGbyG is CLONED rather than pip-installed. Its 100 pre-trained heads
+  # live at the repository root, outside `src/dGbyG/`, and no packaging declares them --
+  # `pip install git+...` yields 344 KB of python and no tensors. See load/install_dgbyg.sh.
+  - git
+  # dGbyG's OWN RUNTIME DEPENDENCIES, listed here because the package declares NONE.
+  # Its setup.py has no install_requires at all -- the dependency list exists only as a
+  # full conda export of the author's machine (environment.yml, python 3.13, ~200 pins),
+  # which is not installable alongside our pins. So `pip install git+...` never brought
+  # these either; it produced a package that imports `pubchempy` at module level with no
+  # pubchempy present. These five are exactly what `from dGbyG.api import ...` touches:
+  #   pubchempy, biopython   _to_mol_methods, at module level
+  #   jpype1, portalocker, tqdm   _get_pKa_methods, at module level
+  # `cobra` is NOT here: it is imported only by utils/GEM_utils.py, which is not on the
+  # api import path, and pulling it in would put a solver stack in this image for nothing.
+  - pubchempy
+  - biopython
+  - jpype1
+  - portalocker
+  - tqdm
+  - pip
+  - pip:
+      - torch==2.8.0
+      - torch-geometric

@@ -1,0 +1,37 @@
+package:
+  name: <NAME>
+  version: <VERSION>
+
+source:
+  path: ../../src/ecspr
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -v --no-deps
+  entry_points:
+<ENTRY>
+
+test:
+  imports:
+    - <NAME>
+  commands:
+    - pip check
+    - <NAME> --help
+    - <NAME> --where
+  requires:
+    - pip
+
+requirements:
+  host:
+    - pip
+<PYTHON>
+
+  run:
+<REQUIREMENTS>
+
+about:
+  home: https://github.com/<USER>/<NAME>
+  summary: <SHORT_SUMMARY>
+  license: 'gpl-v3'
+  license_file: ../../LICENSE

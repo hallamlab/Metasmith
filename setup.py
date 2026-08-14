@@ -33,10 +33,14 @@ if __name__ == "__main__":
             "Operating System :: POSIX :: Linux",
         ],
         package_dir={"": "src"},
-        # metasmith_libraries is its own nested package (src/metasmith_libraries/
-        # has its own setup.py) -- excluded here so it ships as its own
-        # standalone distribution, not bundled inside metasmith's wheel.
-        packages=setuptools.find_packages(where="src", exclude=["metasmith_libraries", "metasmith_libraries.*"]),
+        # metasmith_libraries and ecspr are each their own nested package (their
+        # own setup.py/pyproject.toml under src/) -- excluded here so they ship
+        # as their own standalone distributions, not bundled inside metasmith's
+        # wheel.
+        packages=setuptools.find_packages(
+            where="src",
+            exclude=["metasmith_libraries", "metasmith_libraries.*", "ecspr", "ecspr.*"],
+        ),
         package_data={
             "":[ # "" is all packages
                 "version.txt",
