@@ -1,0 +1,84 @@
+ARG CONDA_ENV=ecspr_bake_env
+ARG ENV_FILE=load/env_aam.yml
+ARG VERIFY=import rdkit; print('ok', rdkit.__version__)
+ARG POST_INSTALL=none
+
+# The R6 metabolism bake. TWO images out of this one directory, selected by ENV_FILE:
+#
+#   :aam        the atom-atom mapping stack + the curation arbiter
+#   :direction  the eQuilibrator member + the direction combiner
+#   :dgbyg      the learned thermodynamic member, weights and all
+#
+# They are two images and not one because `equilibrator-cache 0.7.1` requires numpy>=2
+# while torch 2.2.1 is compiled against the numpy 1.x C API. See load/env_aam.yml for
+# what that break looks like when it is forced -- it is a warning, not an error, which
+# is why the assertions below exist.
+#
+# WHY THESE IMAGES EXIST AT ALL. R6 was the MAMBA half of the runtime split for one
+# reason: `rdkit.env`, `equilibrator.env` and `cobra.env` carried a `conda:` key and no
+# `container:`, so no container runtime could satisfy the graph. That made the bake
+# unrunnable anywhere the conda envs are not already built -- which includes every HPC
+# node. These are the missing half, and they move R6 from "runs on one workstation" to
+# "runs on Sockeye".
+#
+# NO DATA IS BAKED IN. Not the MetaNetX release, not the 1.3 GB eQuilibrator compound
+# cache, and above all not MetaCyc -- which is LICENSED AND NOT REDISTRIBUTABLE, so an
+# image carrying it could not be moved anywhere. Every input arrives as a bind at run
+# time, which is also what keeps these images a stable size rather than growing with the
+# data.
+#
+# Base is PINNED by a digest-bearing tag rather than :latest. Sibling recipes in
+# container_builds/ track :latest and have silently rotted against it -- mamba 2.x
+# dropped `--no-default-packages`, so they no longer build. An image whose base moves
+# under it is not a reproducible image.
+FROM condaforge/miniforge3:25.3.0-3 AS build-env
+# RE-DECLARED INSIDE THE STAGE, all four. An ARG before FROM is global scope and is NOT
+# visible to a stage that does not name it again -- it expands to the empty string with
+# no warning. That is not a hypothetical: POST_INSTALL was declared only globally on its
+# first outing, so `if [ "$POST_INSTALL" = "dgbyg" ]` compared against nothing, the
+# dGbyG clone was skipped, and the step reported success in 0.3s. The VERIFY below is
+# what caught it.
+ARG CONDA_ENV
+ARG ENV_FILE
+ARG VERIFY
+ARG POST_INSTALL
+
+# avoid permission issues when manipulating added files under /opt
+RUN old_umask=`umask` \
+    && umask 0000 \
+    && umask $old_umask
+
+# TWO CACHE MOUNTS, AND THE SECOND ONE IS THE EXPENSIVE OMISSION. Only the conda package
+# cache was mounted, so every rebuild re-DOWNLOADED the pip half from PyPI -- for :dgbyg
+# that is the ~900 MB torch 2.8 wheel plus torch-geometric, on every attempt, including
+# the attempts that fail one line later in the verify step. Editing an env file must
+# re-solve the environment; it must not re-fetch bytes that have not changed.
+#
+# Both are shared across the three tags on purpose: they pin different versions of the
+# same packages, and a cache is keyed by content, so the overlap is free.
+COPY ${ENV_FILE} /opt/env.yml
+RUN --mount=type=cache,target=/opt/conda/pkgs \
+    --mount=type=cache,target=/root/.cache/pip \
+    mamba env create -n ${CONDA_ENV} -f /opt/env.yml
+ENV PATH=/opt/conda/envs/${CONDA_ENV}/bin:$PATH
+
+# CPU torch in the AAM image, deliberately. Both neural mappers run over ~45k reactions;
+# LocalMapper is the long pole either way, and a CUDA pin would make the image unusable
+# on the CPU partitions where this actually gets scheduled.
+
+# A per-tag post-install, for the one dependency that cannot come from an env file.
+# dGbyG's pre-trained heads live at its repository root and are not packaged, so the
+# :dgbyg image clones the repo instead of pip-installing it -- see load/install_dgbyg.sh
+# for the two independent reasons pip cannot work. Named by tag rather than by a boolean
+# so a second such case reads as a second case.
+COPY load/install_dgbyg.sh /opt/install_dgbyg.sh
+RUN if [ "$POST_INSTALL" = "dgbyg" ]; then bash /opt/install_dgbyg.sh; fi
+
+# Fail the BUILD, not a queued job six hours later, if a pin regressed. Every assertion
+# passed as VERIFY is a break this lane has already had -- see the two env files.
+RUN python -c "${VERIFY}"
+
+# Singularity uses tini but raises warnings because the -s flag is not used.
+ADD ./load/tini /tini
+RUN chmod +x /tini
+ENTRYPOINT ["/tini", "-s", "-g", "--"]

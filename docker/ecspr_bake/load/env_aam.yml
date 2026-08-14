@@ -1,0 +1,52 @@
+# ecspr_bake:aam -- the four-member atom-atom mapping stack and the curation arbiter.
+#
+# WHY THIS IS NOT ONE IMAGE WITH THE DIRECTION LANE. It was, for one build. The merge is
+# IMPOSSIBLE and the reason is a single declared bound:
+#
+#     equilibrator-cache 0.7.1  requires  numpy>=2.0
+#     torch 2.2.1               is compiled against the numpy 1.x C API
+#
+# The local envs are the proof: `build-refs-equilibrator` runs numpy 2.4.6 and
+# `build-refs-rdkit` runs numpy 1.26.4. Forcing them together does not fail loudly --
+# pip's resolver refuses, but if you talk it round, torch emits
+# "Failed to initialize NumPy: _ARRAY_API not found" as a WARNING and carries on with
+# its tensor<->numpy bridge broken, so both neural mappers produce garbage hours into a
+# run. Two images is the honest shape, and it costs almost nothing because the direction
+# half needs no torch at all once dGbyG is deferred.
+#
+# PYTHON 3.12, matching envs/build-refs-rdkit.yml, which this image is the container
+# form of.
+name: ecspr_bake_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  # The shared identity. Every member -- curated, both neural, Indigo -- canonicalises
+  # its atoms through THIS rdkit. Two rdkit versions give one metabolite two rank
+  # systems and the members silently stop naming the same physical atom the same node,
+  # which is the whole reason the four live in one env rather than four.
+  - rdkit=2026.03.*
+  - numpy<2
+  - pandas=2.3.*
+  - pyarrow>=24
+  - scipy=1.17.*
+  - networkx=3.*
+  - requests
+  # setuptools 81 dropped pkg_resources from the default install and BOTH neural mappers
+  # import it at module top, so an unpinned env resolves to 83 and neither mapper imports
+  # at all -- a ZERO-member neural ensemble that still imports rdkit and still writes a
+  # plausible empty table. Upstream's own notice says "pin to Setuptools<81".
+  - setuptools<81
+  - pip
+  - pip:
+      - torch==2.2.1
+      # localmapper -> dgl 2.1 -> `torchdata.datapipes`, which torchdata REMOVED in
+      # 0.10. Unpinned, pip takes 0.11 and localmapper does not import.
+      - torchdata==0.7.1
+      - transformers==4.49.0
+      - rxnmapper==0.4.3
+      - localmapper==0.1.5
+      # Indigo is both the ensemble's third member and the ARBITER of the curation
+      # sweep: a proposed structure is accepted only if Indigo can map the completed
+      # reaction and an element then balances. Hard dependency of two layers.
+      - epam-indigo==1.45.0

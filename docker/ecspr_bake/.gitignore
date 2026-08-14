@@ -1,0 +1,6 @@
+# Build outputs, not sources. The .sif is ~5 GB and the tini binary is fetched by
+# dev.sh --build; both are reproducible from what IS tracked (dockerfile + load/*.yml).
+build.log
+*.sif
+load/tini
+sif.log
