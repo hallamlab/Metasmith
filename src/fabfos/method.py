@@ -15,7 +15,7 @@ it is a composition -- so what is hashed here is the ordered, canonically
 serialized set of things that would change an answer:
 
   1. canon's content, and its declared STATUS
-  2. the transform library's commit, and whether it was dirty
+  2. a content hash over the transform library's tree, and whether it is bundled
   3. metasmith's own FULL_VERSION (already version+build_hash)
   4. every container name -> digest, sorted
   5. the sha256 of the data library's index (the index, not 46 GB of bytes --
@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -72,17 +71,6 @@ def _sha256_file(p: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
-
-
-def _git(repo: Path, *args: str) -> str | None:
-    try:
-        out = subprocess.run(
-            ["git", "-C", str(repo), *args],
-            capture_output=True, text=True, timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return out.stdout.strip() if out.returncode == 0 else None
 
 
 @dataclass
@@ -181,33 +169,27 @@ def describe_method(repo: Path | None = None) -> MethodDescription:
     except Exception as e:  # canon must not be able to break `--describe-method`
         components["canon"]["import_error"] = f"{type(e).__name__}: {e}"
 
-    # 2. the transform library: commit, and whether it was dirty. A dirty
-    #    library is recorded, never silently ignored -- it means the method
-    #    being run is not the method the commit names.
+    # 2. the transform library: a content hash over whatever `lib_root`
+    #    actually resolves to. `resolve_library_root()` can return a bundled
+    #    copy (`src/fabfos/_library`) or the dev sibling (`src/metasmith_libraries`)
+    #    -- hashing the resolved tree directly, the same way metasmith's own
+    #    `_build_hash.py` hashes its source tree, answers "what content is this
+    #    run actually using" regardless of which one that is. `bundled` stays in
+    #    the document alongside the hash: a bundled copy is made by `dev/fabfos.sh
+    #    -b`'s plain `cp -r`, which does not stamp anything, so nothing here can
+    #    prove the copy matches its source at the moment it was taken -- two ids
+    #    that differ when the method did not is the safe direction for the error
+    #    to run.
     try:
+        from metasmith._build_hash import compute_build_hash
         from .pipelines.common import resolve_library_root
         from .pipelines import DOMAINS
 
         lib_root = resolve_library_root()
-        # `git -C <path>` walks UP to the nearest repo, so asking a bundled
-        # copy for its commit answers with whatever repo CONTAINS it -- for
-        # `src/fabfos/_library` that is the superproject, and the method then
-        # claims the FRONT END's commit as the library's. Silently: both are
-        # plausible-looking sha1s. Ask only a path that is its own repo root.
-        def _repo_root_of(p: Path) -> "Path | None":
-            top = _git(p, "rev-parse", "--show-toplevel")
-            return p if top == str(p) else None
-
-        # A bundle is a copy, so its commit is the SOURCE's, not necessarily
-        # the copy's -- `dev.sh -b` copies and does not stamp. The bundle's own
-        # content still reaches the id through `type_contract` below.
-        bundled = _repo_root_of(lib_root) is None
-        lib_repo = _repo_root_of(_REPO / "src" / "metasmith_libraries") if bundled \
-            else lib_root
+        bundled = lib_root == _MODULE / "_library"
         components["transform_library"] = {
             "bundled": bundled,
-            "source_commit": _git(lib_repo, "rev-parse", "HEAD") if lib_repo else None,
-            "dirty": bool(_git(lib_repo, "status", "--porcelain")) if lib_repo else None,
+            "content_hash": compute_build_hash(lib_root),
             "domains": sorted(DOMAINS),
         }
         # 6. the type contract -- one library per namespace
