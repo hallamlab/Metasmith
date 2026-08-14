@@ -1,0 +1,6 @@
+outs:
+- md5: 6916fae827f9eef513c7fd33d7d62116.dir
+  size: 661830747
+  nfiles: 45
+  hash: md5
+  path: ezpred_model

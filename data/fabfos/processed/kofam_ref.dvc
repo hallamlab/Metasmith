@@ -1,0 +1,6 @@
+outs:
+- md5: 59e24a1aeb8fdc243b698f42e50468d9.dir
+  size: 7635112230
+  nfiles: 27757
+  hash: md5
+  path: kofam_ref

@@ -1,0 +1,6 @@
+outs:
+- md5: 4c9eb65ac2ca0405305a684016920762.dir
+  size: 93714741
+  nfiles: 3
+  hash: md5
+  path: swissprot

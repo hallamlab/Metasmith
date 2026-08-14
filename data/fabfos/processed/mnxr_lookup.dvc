@@ -1,0 +1,6 @@
+outs:
+- md5: 82ca82f8ef32dba5ce2112c52f733771.dir
+  size: 132940769
+  nfiles: 1
+  hash: md5
+  path: mnxr_lookup

@@ -1,0 +1,6 @@
+outs:
+- md5: 7b94062b7ebef4b800d0d089c92d2bc0.dir
+  size: 2138297631
+  nfiles: 1
+  hash: md5
+  path: esm_c_weights
