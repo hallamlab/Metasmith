@@ -9,15 +9,15 @@ run in seconds and need no test data beyond empty stand-in files.
 
 `conftest.py` puts `src/` on `sys.path` (appended, not prepended -- `fabfos`
 has no installed copy in the test envs, but `src/metasmith` and
-`src/metasmith_libraries` are submodule checkouts that must NOT shadow the
-installed `metasmith` package; see the module docstring).
+`src/metasmith_libraries` are sibling packages under the same `src/` that must
+NOT shadow the installed `metasmith` package; see the module docstring).
 
 ## `test_assembly_driver.py`
 
 The recovery half: raw pooled-clone reads through QC, cleaning, host
 filtering, both assemblers, and `resolve_inserts` to `fabfos::putative_inserts`
 + `insert_metadata`, plus `assembly_stats` pinned to the recovered inserts.
-Renders `tests/artifacts/assembly_dag.svg`.
+Renders `tests/fabfos/artifacts/assembly_dag.svg`.
 
 ## `test_annotation_driver.py`
 
@@ -26,7 +26,7 @@ The annotation half: one ORF FASTA through the canonical four lanes
 `annotation::gpr_table`. `annotation.py` only ever demands the canonical
 target, so `gpr_7lane` / `gpr_table_7lane` is out of scope here -- it stays a
 real library capability, just not one this driver builds. Renders
-`tests/artifacts/annotation_dag.svg`.
+`tests/fabfos/artifacts/annotation_dag.svg`.
 
 ## `test_ecspr_driver.py`
 
@@ -36,7 +36,7 @@ single `ecspr_measure` transform. Two units are supplied to exercise the
 multi-unit staging path, but the per-unit job fan-out (`group_by=exp`) is a
 runtime property invisible to planning -- see `metasmith-runtime-fanout` --
 so the plan itself still shows one `ecspr_measure` step. Renders
-`tests/artifacts/ecspr_dag.svg`.
+`tests/fabfos/artifacts/ecspr_dag.svg`.
 
 ## What now runs, and what does not
 
@@ -58,7 +58,7 @@ test therefore still checks that the chain *plans*, not that it runs.
 
 Joins the halves above into **one** plan and runs them into the measurement —
 raw pooled-clone reads all the way to `ecspr::results` — so the seams are what is
-under test. **14 steps.** Renders `tests/artifacts/reads_to_ecspr_dag.svg`.
+under test. **14 steps.** Renders `tests/fabfos/artifacts/reads_to_ecspr_dag.svg`.
 
 ### The measurement stage
 
@@ -154,7 +154,8 @@ None of this shows up in the DAG, which is the point: the planner still sees one
 
 > Note: editing a `data_types/*.yml` or transform in `src/metasmith_libraries`
 > requires regenerating the per-library `_metadata/` snapshots before these tests
-> see the change — `./dev.sh -b` only bundles. See the submodule's build step
+> see the change — `./dev/fabfos.sh -b` only bundles. See
+> `src/metasmith_libraries`'s own build step, `dev/libraries.sh -b`
 > (`python -m metasmith build all --types … --uniques … --transforms …`).
 
 ## `audit_final_steps.py`
@@ -163,17 +164,17 @@ Unrelated to the three drivers above -- a data-driven audit of the algorithms
 in `chimera_split.py`/`coverage_trim.py` against real scadc ground truth, not
 a planning compile-check. See its module docstring. Skips cleanly if the
 scadc profile pickle isn't reachable. Not picked up by the default `pytest
-tests/` collection (its filename doesn't match `test_*.py`); run it
+tests/fabfos/` collection (its filename doesn't match `test_*.py`); run it
 explicitly:
 
-    PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" python -m pytest tests/audit_final_steps.py -v -s
+    PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" python -m pytest tests/fabfos/audit_final_steps.py -v -s
 
 ## `assembly_stats_on_fir.py` — not a test
 
 The executing half of the coverage lane the fosmids compile-check describes:
 `data/fabfos/scadc_fosmids/sequences/inserts/inserts.fna` mapped against each of the 35 SCADC pools'
 host-filtered reads on fir, one slurm job per pool. Like the executing drivers
-in `examples/`, plan-only is the default — `--run` executes, `--offline` plans
+in `research/fabfos/examples/`, plan-only is the default — `--run` executes, `--offline` plans
 with no host contact at all, `--preflight` checks the remote prerequisites,
 `--summarize` rebuilds the tables from an already-retrieved results directory.
 
@@ -201,7 +202,7 @@ are content hashes, but `_manifests/given.csv` maps each given's `instance_index
 to its path — and the driver names every `read_metadata` file for its pool — while
 each product manifest entry carries the `lineage` that says which index it
 consumed. Joining the two names every output, needs no run directory, and so
-survives fir's scratch being cleaned. `examples/verify_assembly_graphs.py` had to
+survives fir's scratch being cleaned. `research/fabfos/examples/verify_assembly_graphs.py` had to
 scrape `nxf_work/*/*/.command.sh` only because one product type there was
 published with no ancestry at all.
 
@@ -243,13 +244,13 @@ does not have both assemblies.
 
 Everything in this directory is planning-only, and that is what lets it pass on a
 machine holding none of the reference bytes. Anything that stages, containerises
-or executes lives in `examples/`:
+or executes lives in `research/fabfos/examples/`:
 
 | | |
 |---|---|
-| `examples/annotation_references_build.py` | builds R3/R4/R5/R7 from the pinned `data/originals/` folders; APPTAINER |
-| `examples/scadc_gpr.py` | inserts → prodigal → the lanes → a GPR table; APPTAINER |
-| `examples/_driver.py` | what both need: the dev overlay, waiting on a run's log, reading manifests, publishing |
+| `research/fabfos/examples/annotation_references_build.py` | builds R3/R4/R5/R7 from the pinned `data/originals/` folders; APPTAINER |
+| `research/fabfos/examples/scadc_gpr.py` | inserts → prodigal → the lanes → a GPR table; APPTAINER |
+| `research/fabfos/examples/_driver.py` | what both need: the dev overlay, waiting on a run's log, reading manifests, publishing |
 
 The three drivers that used to sit here — `build_references_dag.py` and the two
 `build_references_stage*` halves — were deleted because none of them could plan any
@@ -258,8 +259,8 @@ refused to import unless the engine carried the MAMBA executor, which the
 annotation half does not use. A gate that cannot run is not a gate.
 
 The plan-only gates for the two reference halves are
-`examples/annotation_references_dag.py` (10 steps, **no given at all**) and
-`examples/metabolism_references_dag.py` (exactly one given, the licensed MetaCyc
+`research/fabfos/examples/annotation_references_dag.py` (10 steps, **no given at all**) and
+`research/fabfos/examples/metabolism_references_dag.py` (exactly one given, the licensed MetaCyc
 drop-in). Both still resolve from nothing.
 
 ## Running
@@ -268,18 +269,18 @@ Needs an environment with the `metasmith` package **and** graphviz's `dot` on
 `PATH`. The `msm` conda env has both:
 
 ```bash
-PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" python -m pytest tests/ -v
+PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" python -m pytest tests/fabfos/ -v
 ```
 
 Each driver test also runs standalone to just print the plan and (re)write its
 SVG, e.g.:
 
 ```bash
-PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" python tests/test_assembly_driver.py
+PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" python tests/fabfos/test_assembly_driver.py
 ```
 
 > Note: editing a `data_types/*.yml` or transform in `src/metasmith_libraries`
 > requires regenerating the per-library `_metadata/` snapshots before these
-> tests see the change -- `./dev.sh -b` only bundles. See the submodule's
-> build step (`python -m metasmith build all --types … --uniques … --transforms
-> …`).
+> tests see the change -- `./dev/fabfos.sh -b` only bundles. See
+> `src/metasmith_libraries`'s own build step, `dev/libraries.sh -b`
+> (`python -m metasmith build all --types … --uniques … --transforms …`).

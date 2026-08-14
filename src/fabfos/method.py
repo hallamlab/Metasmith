@@ -26,9 +26,10 @@ serialized set of things that would change an answer:
   7. the planner's domain list, because the candidate space is part of the
      method
 
-A run against a BUNDLED library (`src/fabfos/_library`, what `dev.sh -b` copies
-and a wheel ships) hashes to a different id than the same library resolved from
-the submodule, because `bundled` is part of the document. That is deliberate and
+A run against a BUNDLED library (`src/fabfos/_library`, what `dev/fabfos.sh -b`
+copies and a wheel ships) hashes to a different id than the same library resolved
+from the sibling `src/metasmith_libraries` module, because `bundled` is part of
+the document. That is deliberate and
 it under-claims: bundling copies without stamping, so nothing here can prove the
 copy matches its source, and two ids that differ when the method did not is the
 safe direction for the error to run.
