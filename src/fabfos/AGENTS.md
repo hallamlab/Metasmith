@@ -72,22 +72,17 @@ library commit, the engine's `FULL_VERSION`, container digests, the data index,
 the type contract and the planner's domain list. `fabfos --describe-method`
 prints the document the id hashes.
 
-**Known-broken until the library-versioning fix lands:** the "transform library
-commit" component (`method.py`'s `transform_library.source_commit`/`dirty`/
-`bundled`) works by asking whether `resolve_library_root()`'s path IS its own git
-repo root (`_repo_root_of`, which requires `git rev-parse --show-toplevel` at that
-path to equal the path itself). Before the monorepo merge, the submodule boundary
-made that true for a real checkout and false for a bundled copy, so the check
-told the two apart. Post-migration `src/metasmith_libraries` is a plain
-subdirectory of this repo, so `git rev-parse --show-toplevel` from inside it
-returns the *monorepo's* root instead — the check now returns false unconditionally,
-for BOTH cases. Confirmed live: `describe_method()` reports
-`{"bundled": true, "source_commit": null, "dirty": null}` even when running
-against the unbundled sibling module, not a real bundled copy. Tracked follow-up
-(T6): replace the whole mechanism with a content hash over
-`src/metasmith_libraries/` (the same tree-hashing approach `metasmith`'s own
-`build_hash.txt` already uses) — content hashing doesn't depend on a repo
-boundary that no longer exists.
+The "transform library" component (`method.py`'s `transform_library.content_hash`/
+`bundled`) used to identify a bundled copy vs. the dev sibling by asking whether
+`resolve_library_root()`'s path was its own git repo root — a check the submodule
+boundary made meaningful and the monorepo merge made vacuous (both cases became
+"a plain subdirectory of this repo," so it returned false unconditionally). It now
+hashes whatever `resolve_library_root()` actually resolves to, the same tree-hashing
+approach `metasmith`'s own `build_hash.txt` uses — content hashing doesn't depend on
+a repo boundary, so it works identically for a bundled copy or the sibling module.
+`bundled` stays in the document alongside the hash on purpose: a bundled copy is a
+plain `cp -r` that never stamps anything, so nothing proves it matches its source at
+the moment it was taken.
 
 ## Things that fail silently
 
