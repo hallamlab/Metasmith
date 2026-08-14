@@ -30,24 +30,59 @@ class TestCommandSurface:
 
 
 class TestBootstrap:
-    def test_clones_once(self, tmp_path):
+    def test_prefers_the_vendored_bundle(self, tmp_path):
+        """The default path: no network involved at all when a bundle shipped."""
+        bundle = tmp_path / "bundle"
+        (bundle / "data_types").mkdir(parents=True)
+
+        with mock.patch.object(stdlib, "_vendor_bundle_dir", return_value=bundle), \
+             mock.patch.object(stdlib.subprocess, "run") as m:
+            first = stdlib.clone_stdlib(tmp_path)
+            second = stdlib.clone_stdlib(tmp_path)
+        assert first["cloned"] is True
+        assert first["source"] == "vendor"
+        assert (tmp_path / stdlib.STDLIB_NAME / "data_types").is_dir()
+        assert second["cloned"] is False
+        m.assert_not_called()
+
+    def test_no_bundle_and_no_opt_in_fails_without_touching_the_network(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("METASMITH_STDLIB_LIVE", raising=False)
+        with mock.patch.object(stdlib, "_vendor_bundle_dir", return_value=tmp_path / "absent"), \
+             mock.patch.object(stdlib.subprocess, "run") as m:
+            out = stdlib.clone_stdlib(tmp_path)
+        assert out["cloned"] is False
+        assert "opt-in" in out["error"]
+        assert "METASMITH_STDLIB_LIVE" in out["error"]
+        m.assert_not_called()
+
+    def test_opt_in_live_fetch_sparse_checks_out_and_copies(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("METASMITH_STDLIB_LIVE", "1")
         calls = []
 
         def _fake_git(cmd, **kwargs):
             calls.append(cmd)
-            Path(cmd[-1]).mkdir(parents=True)
+            if cmd[1] == "clone":
+                clone_dir = Path(cmd[-1])
+                (clone_dir / stdlib.STDLIB_SPARSE_PATH).mkdir(parents=True)
+                (clone_dir / stdlib.STDLIB_SPARSE_PATH / "data_types").mkdir()
             return mock.Mock(returncode=0, stdout="", stderr="")
 
-        with mock.patch.object(stdlib.subprocess, "run", side_effect=_fake_git):
-            first = stdlib.clone_stdlib(tmp_path)
-            second = stdlib.clone_stdlib(tmp_path)
-        assert first["cloned"] is True
-        assert second["cloned"] is False
-        assert len(calls) == 1
+        with mock.patch.object(stdlib, "_vendor_bundle_dir", return_value=tmp_path / "absent"), \
+             mock.patch.object(stdlib.subprocess, "run", side_effect=_fake_git):
+            out = stdlib.clone_stdlib(tmp_path)
+        assert out["cloned"] is True
+        assert out["source"] == "live"
+        assert (tmp_path / stdlib.STDLIB_NAME / "data_types").is_dir()
+        # clone --no-checkout, sparse-checkout init, sparse-checkout set, checkout
+        assert len(calls) == 4
+        assert calls[0][1] == "clone"
+        assert stdlib.STDLIB_SPARSE_PATH in calls[2]
 
-    def test_a_failed_clone_is_reported_not_raised(self, tmp_path):
+    def test_a_failed_live_fetch_is_reported_not_raised(self, tmp_path, monkeypatch):
         """No network should still leave you with a usable page, not a traceback."""
-        with mock.patch.object(stdlib.subprocess, "run") as m:
+        monkeypatch.setenv("METASMITH_STDLIB_LIVE", "1")
+        with mock.patch.object(stdlib, "_vendor_bundle_dir", return_value=tmp_path / "absent"), \
+             mock.patch.object(stdlib.subprocess, "run") as m:
             m.return_value = mock.Mock(returncode=128, stdout="", stderr="could not resolve host")
             out = stdlib.clone_stdlib(tmp_path)
         assert out["cloned"] is False

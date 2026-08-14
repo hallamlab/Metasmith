@@ -23,17 +23,18 @@ case $1 in
         mamba env create --no-default-packages -f "$HERE/envs/fabfos/base.yml"
     ;;
     -b|--bundle-library) # copy the metasmith library into the package for shipping
-        echo "bundling metasmith library: $LIB_SRC -> $LIB_DST"
-        rm -rf "$LIB_DST"
-        mkdir -p "$LIB_DST"
-        # the pieces the planner loads at runtime
-        for sub in data_types resources transforms; do
-            cp -r "$LIB_SRC/$sub" "$LIB_DST/$sub"
-        done
-        # plus envs/ -- the conda recipes behind each `conda:` declaration, which
+        echo "bundling metasmith library: $LIB_SRC (+ $LIB_ENVS) -> $LIB_DST"
+        # shared with metasmith's own release (dev/metasmith.sh --vendor-library):
+        # data_types/resources/transforms are the pieces the planner loads at
+        # runtime; envs/ -- the conda recipes behind each `conda:` declaration --
         # the planner never reads but a `--runtime mamba` install needs to create
-        # its tool envs
-        cp -r "$LIB_ENVS" "$LIB_DST/envs"
+        # its tool envs.
+        PYTHONPATH="$HERE/src" python -m metasmith build vendor-library \
+            --src "data_types=$LIB_SRC/data_types" \
+            --src "resources=$LIB_SRC/resources" \
+            --src "transforms=$LIB_SRC/transforms" \
+            --src "envs=$LIB_ENVS" \
+            --dst "$LIB_DST"
         "$HERE/dev/fabfos.sh" --build-metadata
     ;;
     -bm|--build-metadata) # regenerate the _metadata snapshots the planner resolves against

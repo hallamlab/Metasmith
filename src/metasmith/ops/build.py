@@ -1,6 +1,8 @@
 """Library compilation — thin wrapper over models.build_libraries decomposed steps."""
 from __future__ import annotations
 
+import hashlib
+import shutil
 from pathlib import Path
 
 from ..models.build_libraries import (
@@ -9,6 +11,36 @@ from ..models.build_libraries import (
     CompileTransformLibrary,
     Build,
 )
+from .._build_hash import compute_build_hash
+
+def _parse_vendor_srcs(srcs: list[str]) -> dict[str, Path]:
+    """Parse `NAME=PATH` pairs into a name -> source-dir mapping. NAME becomes
+    the destination subdir it is copied to -- explicit rather than sniffed,
+    since a library's shippable pieces live under unrelated top-level
+    directories in this repo (`src/<lib>/data_types`, but `envs/<lib>` as a
+    whole becomes `envs`), so there is no single naming convention to infer."""
+    mapping: dict[str, Path] = {}
+    for item in srcs:
+        if "=" not in item:
+            raise ValueError(f"--src must be NAME=PATH, got [{item}]")
+        name, _, path = item.partition("=")
+        name = name.strip()
+        if not name:
+            raise ValueError(f"--src [{item}] has an empty NAME")
+        if name in mapping:
+            raise ValueError(f"--src NAME [{name}] given more than once")
+        p = Path(path).resolve()
+        if not p.is_dir():
+            raise FileNotFoundError(f"--src {name}=[{p}] is not a directory")
+        mapping[name] = p
+    return mapping
+
+
+def _library_content_hash(mapping: dict[str, Path]) -> str:
+    """Hash of each named source dir, reusing `_build_hash.compute_build_hash`
+    per dir rather than a second walker."""
+    parts = [f"{name}:{compute_build_hash(path)}" for name, path in sorted(mapping.items())]
+    return hashlib.md5("\0".join(parts).encode()).hexdigest()[:7]
 
 
 def load_types(type_dirs: list[str]) -> dict:
@@ -42,3 +74,41 @@ def build_all(
         transform_dirs=[Path(p) for p in transform_dirs],
         unique_dirs=[Path(p) for p in (unique_dirs or [])],
     )
+
+
+def vendor_library(srcs: list[str], dst: str) -> dict:
+    """Copy each `NAME=PATH` source into `dst/NAME`, replacing `dst` wholesale,
+    and stamp the source content hash alongside it so `check_vendor_library`
+    can later detect drift."""
+    mapping = _parse_vendor_srcs(srcs)
+    dst_path = Path(dst).resolve()
+    content_hash = _library_content_hash(mapping)
+
+    if dst_path.exists():
+        shutil.rmtree(dst_path)
+    dst_path.mkdir(parents=True)
+    for name, path in mapping.items():
+        shutil.copytree(path, dst_path / name)
+    (dst_path / "VENDOR_HASH").write_text(content_hash)
+    return {"dst": str(dst_path), "vendored": sorted(mapping), "content_hash": content_hash}
+
+
+def check_vendor_library(srcs: list[str], dst: str) -> dict:
+    """Verify an existing vendored bundle at `dst` still matches the live
+    content of `srcs`, without copying anything. Raises if it doesn't."""
+    mapping = _parse_vendor_srcs(srcs)
+    dst_path = Path(dst).resolve()
+    stamp_file = dst_path / "VENDOR_HASH"
+    if not stamp_file.exists():
+        raise FileNotFoundError(
+            f"no vendored bundle at [{dst_path}] (missing VENDOR_HASH) -- run "
+            f"vendor-library first"
+        )
+    live_hash = _library_content_hash(mapping)
+    stamped_hash = stamp_file.read_text().strip()
+    if stamped_hash != live_hash:
+        raise ValueError(
+            f"vendored bundle at [{dst_path}] is stale: stamped [{stamped_hash}], "
+            f"live source [{live_hash}]. Re-run vendor-library."
+        )
+    return {"dst": str(dst_path), "content_hash": live_hash, "ok": True}
