@@ -115,10 +115,22 @@ REUSED = {
     "annotation::kofamscan_results": "{shard}.kofam.csv",
 }
 
-EXPECTED_TRANSFORMS = {"clean", "diamond_uniref50", "proteinbert", "gpr_4lane"}
-# Its presence means the reuse silently did not take -- see the module docstring
-# on `solver.py:603-605`.
-FORBIDDEN_TRANSFORMS = {"kofamscan"}
+# Three of the four lanes are sharded now: kofamscan, diamond_uniref50 and
+# proteinbert consume `sequences::orf_chunk` and produce `*_chunk`, so the lane
+# is a chunk step, the annotators, and a merge back to the whole-proteome product
+# `gpr_4lane` requires. `clean` is not sharded and needs no merge.
+EXPECTED_TRANSFORMS = {
+    "chunkOrfsForAnnotation",
+    "clean", "diamond_uniref50", "proteinbert",
+    "merge_diamond_uniref50", "merge_proteinbert",
+    "gpr_4lane",
+}
+# Either one present means the reuse silently did not take -- see the module
+# docstring on `solver.py:603-605`. The merge belongs here as much as the
+# annotator: reusing the finished whole-proteome product must remove the whole
+# kofam lane, and a plan that kept the merge would be recombining chunks it
+# never computed.
+FORBIDDEN_TRANSFORMS = {"kofamscan", "merge_kofamscan"}
 
 # Nothing above 3 h: `slurm.nf` doubles the ask on retry, and a 6 h retry cannot
 # be scheduled ahead of fir's 08:00 ALL_NODES maintenance window -- it sits

@@ -75,38 +75,41 @@ def protocol(context: ExecutionContext):
     cpus = context.params.get("cpus")
     cpus_string = "" if cpus is None else f"-t {cpus}"
     temp_sam_path = Path("./temp.sam")
-    context.ExecWithEnv().ifContainerDo(
-        env = img_mm2,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             minimap2 {preset} -a -2 {cpus_string} \
                 {iasm.container} {ireads.container} > {temp_sam_path}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img_mm2, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img_mm2, cmd=_cmd)
 
     Log.Info("convert to BAM, sort and index")
     cpus_string = "" if cpus is None else f"-@ {cpus}"
     bam_file = "temp.bam"
     alignment_stats_file = "alignment_stats.tsv"
-    context.ExecWithEnv().ifContainerDo(
-        env = img_sam,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             samtools view {cpus_string} -b {temp_sam_path} \
                 | samtools sort {cpus_string} -o {bam_file} -O bam
             samtools index {cpus_string} -c {bam_file}
             samtools flagstat {cpus_string} -O tsv {bam_file} >{alignment_stats_file}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img_sam, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img_sam, cmd=_cmd)
 
     Log.Info("calculating per bp coverage")
     cov_tsv = "bp_cov.tsv"
     _header = "\t".join(["contig", "start", "end", "fold_coverage"])
-    context.ExecWithEnv().ifContainerDo(
-        env = img_bed,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             echo "{_header}" >{cov_tsv}
             bedtools genomecov -ibam {bam_file} -bg >>{cov_tsv}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img_bed, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img_bed, cmd=_cmd)
 
     Log.Info("compressing per bp coverage")
     cpus_string = ""
@@ -150,7 +153,19 @@ def protocol(context: ExecutionContext):
             f.readline() # header
             for l in f:
                 k, s, e, val = l[:-1].split("\t")
-                s, e, val = [int(x) for x in [s, e, val]]
+                # Depth is a float, not an int. bedtools carries genomecov's
+                # depth as a double (it is divided by -scale, default 1.0) and
+                # prints it through a C++ ostream at the default 6 significant
+                # digits -- so the moment a pileup reaches a million-fold the
+                # column reads `1.24488e+06` and int() rejects it. Every library
+                # that peaked below 1e6 parsed fine, which is why this surfaced
+                # only on the deepest ones, after the alignment was already paid
+                # for. Coordinates stay int(): bedtools prints those from an
+                # integer type, and if they ever did arrive in that form the
+                # value would already have lost digits, so parsing them more
+                # leniently would corrupt `e-s` instead of reporting it.
+                s, e = int(s), int(e)
+                val = float(val)
                 if k != last_k:
                     _submit()
                     last_k = k
@@ -193,12 +208,13 @@ def protocol(context: ExecutionContext):
 
     Log.Info("running seqkit")
     seqkit_stats_file = "seqkit_stats.tsv"
-    context.ExecWithEnv().ifContainerDo(
-        env = img_sqk,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             seqkit stat --all --tabular {iasm.container} >{seqkit_stats_file}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img_sqk, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img_sqk, cmd=_cmd)
     Log.Info("compiling stats")
     df = pd.read_csv(seqkit_stats_file, sep="\t")
     seqkit_stats = {k:_from_np(v) for k, v in dict(df.iloc[0]).items()}

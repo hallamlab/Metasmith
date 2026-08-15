@@ -21,9 +21,8 @@ def protocol(context: ExecutionContext):
     mem = context.params.get('memory')
     mem = "" if mem is None else f"--max-ram {int(float(mem))-6}"
     job_name = "metabuli_out"
-    context.ExecWithEnv().ifContainerDo(
-        env = image,
-        cmd = f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             metabuli classify \
                 {iasm.container} \
                 {iref.container} \
@@ -38,7 +37,9 @@ def protocol(context: ExecutionContext):
             mv ./*report.tsv {irep.container}
             mv ./*krona.html {ihtml.container}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     
     return ExecutionResult(
         manifest=[

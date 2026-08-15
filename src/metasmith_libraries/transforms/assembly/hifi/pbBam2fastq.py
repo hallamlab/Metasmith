@@ -12,14 +12,15 @@ def protocol(context: ExecutionContext):
     iout = context.Output(out)
 
     temp_prefix = "converted"
-    context.ExecWithEnv().ifContainerDo(
-        env=img,
-        cmd=f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
         ln -sf {ibam.container} /ws/input.bam
         pbindex /ws/input.bam
         bam2fastq -o {temp_prefix} /ws/input.bam
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img, cmd=_cmd)
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-p {threads}"

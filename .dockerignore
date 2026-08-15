@@ -1,3 +1,7 @@
+# Deny-all plus an allow-list, so a new top-level directory costs nothing until an
+# image actually needs it. Only the images whose build CONTEXT IS THE REPO ROOT read
+# this file -- docker/metasmith and docker/ecspr. docker/fabfos and docker/ecspr_bake
+# build from their own directory and are unaffected.
 **
 !/envs
 !/lib
@@ -5,3 +9,7 @@
 !/src/bash_relay
 !/dist
 !metasmith_starter.ipynb
+# docker/ecspr: the package, its suite (the image runs it at --check), and tini.
+!/src/ecspr
+!/tests/ecspr
+!/docker/ecspr/load

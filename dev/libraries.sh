@@ -69,7 +69,13 @@ case $1 in
 
     ###################################################
     # build
-    -b) # update std xgdbs
+    -bm|--build-metadata) # regenerate _metadata/ -- what a fresh checkout needs, and all it needs
+        # `_metadata/` is a build product and is not tracked, so a fresh clone
+        # has none and every solve raises before planning. This is the arm that
+        # fixes that, and it takes seconds. `-b` is this plus the template gate,
+        # which is an author's check rather than a prerequisite for using the
+        # library -- hence the split, mirroring dev/fabfos.sh.
+        #
         # msm build's STEP positional must precede the flags; --types,
         # --uniques, --transforms are now single-value/repeatable. Build
         # the flag list by repeating each flag once per resolved path.
@@ -86,10 +92,18 @@ case $1 in
         for d in "$LIB"/resources/*/; do args+=(--uniques "${d%/}"); done
         for d in "$LIB"/transforms/*/; do args+=(--transforms "${d%/}"); done
         $msm "${args[@]}" || exit 1
+    ;;
+    -b) # update std xgdbs: metadata, then solve every template against it
+        "$HERE/dev/libraries.sh" -bm || exit 1
         # Templates are solved against the metadata just rebuilt: a transform
         # whose products changed shape takes its templates down here, by name,
         # instead of in someone's GUI a week later.
-        ${PYTHON:-python} "$LIB/build_templates.py" || exit 1
+        #
+        # This is the slow half, and unevenly so: three of the four templates
+        # solve in 2-3s and `metagenomics_from_paired_reads` -- 16 targets,
+        # three binners, per-lineage checkm/gtdbtk -- is the rest of the wall
+        # clock. Pass template names to solve a subset while iterating.
+        ${PYTHON:-python} "$LIB/build_templates.py" "${@:2}" || exit 1
     ;;
     ###################################################
     # test

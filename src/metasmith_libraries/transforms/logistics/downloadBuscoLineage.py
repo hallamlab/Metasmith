@@ -13,15 +13,16 @@ def protocol(context: ExecutionContext):
 
     # busco --download ignores --download_path and always writes to
     # ./busco_downloads/ relative to cwd. Download there then move.
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             busco \
                 --download {LINEAGE} \
                 --download_path ./busco_downloads
             mv ./busco_downloads/lineages/{LINEAGE} {iout.container}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

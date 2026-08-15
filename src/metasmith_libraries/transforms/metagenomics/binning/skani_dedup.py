@@ -61,10 +61,11 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
     ani_tsv = "skani_ani.tsv"
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"skani triangle -l {bins_list} --sparse -o {ani_tsv} -t {threads}",
-    )
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"skani triangle -l {bins_list} --sparse -o {ani_tsv} -t {threads}"
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     # Parse skani edges; build symmetric ANI map for medoid scoring.
     ani_map: dict[tuple[str, str], float] = {}

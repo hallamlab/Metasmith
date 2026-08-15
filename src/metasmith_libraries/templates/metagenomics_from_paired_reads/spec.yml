@@ -42,12 +42,12 @@ target_types:
 - binning::semibin2_contig_to_bin_table
 - binning::comebin_contig_to_bin_table
 transform_libraries:
-- transforms/logistics
-- transforms/assembly
-- transforms/metagenomics
-- transforms/functionalAnnotation
+- logistics
+- assembly
+- metagenomics
+- functionalAnnotation
 resource_libraries:
-- resources/env
+- env
 shared_input_paths: []
 input_library:
   schema: v1
@@ -74,14 +74,6 @@ input_library:
       type: sequences::read_metadata
       instance_id: 1e20df13c34373fa27fc7c55b66f2b4a82cfb8d629f937c4c0b7f6bd0eeeb3d53152
       origin: leaf
-  types:
-    sequences: data_types/sequences.yml
-    alignment: data_types/alignment.yml
-    ref: data_types/ref.yml
-    annotation: data_types/annotation.yml
-    taxonomy: data_types/taxonomy.yml
-    binning: data_types/binning.yml
-    binning_local: data_types/binning_local.yml
   values:
     reads_metadata.json: '{"parity": "paired", "length_class": "short"}'
     read_pair.txt: sample_1

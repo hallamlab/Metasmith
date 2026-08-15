@@ -5,6 +5,8 @@ import hashlib
 import shutil
 from pathlib import Path
 
+import yaml
+
 from ..models.build_libraries import (
     LoadTypeLibraries,
     CompileUniqueLibrary,
@@ -76,10 +78,71 @@ def build_all(
     )
 
 
+def _assert_metadata_present(dst_path: Path) -> None:
+    """Refuse a bundle whose `_metadata/` came out empty.
+
+    `_metadata/` is a build product, not tracked source (see
+    `_authoring.py`/AGENTS.md): a fresh checkout has none until something
+    compiles it. The hash check above catches a bundle going *stale* after
+    a source edit, but it cannot catch a bundle that was *always* empty --
+    e.g. vendoring run before the compile step, or a compile that silently
+    produced nothing. That failure is silent by nature (the library loads
+    and resolves nothing; nothing raises), so this is the one place it gets
+    turned into a raise.
+    """
+    found = list(dst_path.rglob("_metadata"))
+    if not found:
+        raise ValueError(
+            f"vendored bundle at [{dst_path}] carries no _metadata/ at all -- "
+            f"it was built from an uncompiled source tree. Compile first "
+            f"(`dev/libraries.sh -bm` or `metasmith build all ...`), then re-vendor."
+        )
+    empty = [d for d in found if not any(d.rglob("*"))]
+    if empty:
+        rel = ", ".join(str(d.relative_to(dst_path)) for d in sorted(empty))
+        raise ValueError(
+            f"vendored bundle at [{dst_path}] carries empty _metadata/ dirs: {rel}. "
+            f"A library with no metadata loads and resolves nothing, silently -- "
+            f"this is refused rather than shipped. Compile first, then re-vendor."
+        )
+
+    # A present, non-empty `_metadata/` is still not proof of a usable library:
+    # a compile that resolved no sources writes `types/` and an index whose
+    # manifest is `{}`, which is the same silence one directory further in.
+    # The manifest is what the loader iterates, so that is what gets asserted.
+    hollow = []
+    for d in sorted(found):
+        index = d / "index.yml"
+        if not index.is_file():
+            hollow.append((d, "no index.yml"))
+            continue
+        try:
+            doc = yaml.safe_load(index.read_text()) or {}
+        except yaml.YAMLError as e:
+            hollow.append((d, f"unreadable index.yml ({e.__class__.__name__})"))
+            continue
+        if not (doc.get("manifest") or {}):
+            hollow.append((d, "index.yml lists nothing"))
+    if hollow:
+        rel = ", ".join(f"{d.relative_to(dst_path)} ({why})" for d, why in hollow)
+        raise ValueError(
+            f"vendored bundle at [{dst_path}] carries unusable metadata: {rel}. "
+            f"A library whose manifest is empty resolves nothing, silently -- "
+            f"this is refused rather than shipped. Compile first, then re-vendor."
+        )
+
+
 def vendor_library(srcs: list[str], dst: str) -> dict:
     """Copy each `NAME=PATH` source into `dst/NAME`, replacing `dst` wholesale,
     and stamp the source content hash alongside it so `check_vendor_library`
-    can later detect drift."""
+    can later detect drift.
+
+    Copies only -- it does not compile. `_metadata/` is a build product
+    (`metasmith build all`/`dev/libraries.sh -bm`), and the caller must run
+    that against the *source* directories named in `srcs` before vendoring,
+    or this refuses the empty bundle that copying an uncompiled tree
+    produces (see `_assert_metadata_present`).
+    """
     mapping = _parse_vendor_srcs(srcs)
     dst_path = Path(dst).resolve()
     content_hash = _library_content_hash(mapping)
@@ -89,13 +152,15 @@ def vendor_library(srcs: list[str], dst: str) -> dict:
     dst_path.mkdir(parents=True)
     for name, path in mapping.items():
         shutil.copytree(path, dst_path / name)
+    _assert_metadata_present(dst_path)
     (dst_path / "VENDOR_HASH").write_text(content_hash)
     return {"dst": str(dst_path), "vendored": sorted(mapping), "content_hash": content_hash}
 
 
 def check_vendor_library(srcs: list[str], dst: str) -> dict:
     """Verify an existing vendored bundle at `dst` still matches the live
-    content of `srcs`, without copying anything. Raises if it doesn't."""
+    content of `srcs` and carries non-empty compiled metadata, without
+    copying anything. Raises if either is false."""
     mapping = _parse_vendor_srcs(srcs)
     dst_path = Path(dst).resolve()
     stamp_file = dst_path / "VENDOR_HASH"
@@ -111,4 +176,5 @@ def check_vendor_library(srcs: list[str], dst: str) -> dict:
             f"vendored bundle at [{dst_path}] is stale: stamped [{stamped_hash}], "
             f"live source [{live_hash}]. Re-run vendor-library."
         )
+    _assert_metadata_present(dst_path)
     return {"dst": str(dst_path), "content_hash": live_hash, "ok": True}

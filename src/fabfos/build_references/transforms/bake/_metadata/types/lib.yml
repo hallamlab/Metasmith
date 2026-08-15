@@ -5,18 +5,6 @@ ontology:
   version: '1.25'
 schema: v1
 types:
-  ecspr_build.py:
-    properties:
-      src: ecspr_build
-      usage: command line
-  ecspr_directed.py:
-    properties:
-      src: ecspr_directed
-      usage: library
-  ecspr_graph.py:
-    properties:
-      src: ecspr_graph
-      usage: library
   extract_noncoding_chunks.py:
     properties:
       src: extract_noncoding_chunks

@@ -58,7 +58,10 @@ REMOTE_UNIREF50_DMND = REF / "diamond" / "uniref50.dmnd"
 LOCAL_ASSEMBLY = Path(os.environ.get("MSM_ASSEMBLY", "<assembly.fna>"))  # nucleotide assembly FASTA
 OUT_DIR = Path("results/diamond_uniref50_sockeye")
 
-MLIB = Path(__file__).resolve().parent.parent.parent
+# The transform library. `parents[3]` is the repo root (examples/ ->
+# metasmith_libraries/ -> research/ -> root); the library itself lives under
+# src/. Pointing at the root instead resolves no types and asserts nothing.
+MLIB = Path(__file__).resolve().parents[3] / "src" / "metasmith_libraries"
 
 
 def require_configured():

@@ -147,6 +147,11 @@ def _lanes(work: Path, rng, seven: bool, pool_stacks=("emb_pbert.npy",),
         uniref=str(work / "uniref.tsv"), bridge=str(work / "bridge.parquet"),
         pbert_emb=str(work / "pbert.parquet"), pbert_idx=str(work / "pbert_index.csv"),
         pool=str(work / "pool"), out=str(work / "gpr.parquet"),
+        # The BLAS thread floor the 4-lane driver bakes in; only that mapper has
+        # the slot, and `format` ignores a key the 7-lane template does not use.
+        # One, because these fixtures are a few rows and the driver would
+        # otherwise oversubscribe every core in the suite.
+        threads=1,
     )
     if seven:
         _write_deepec(work / "deepec.tsv")
@@ -292,8 +297,10 @@ def test_mapper_refuses_an_orf_id_mismatch(tmp_path):
         fh.write(">something_else_1\nMKV\n")
     r = _run(_render("gpr_4lane", kw), tmp_path)
     assert r.returncode != 0
-    # every lane's rows are filtered out against the FASTA, so the table empties
-    assert "the table is empty" in r.stderr
+    # The mapper catches this at the lane rather than downstream at the empty
+    # table, and says which lane and which id, because the id space is the thing
+    # actually wrong and "the table is empty" named only the symptom.
+    assert "ORF ids that are not in this shard's FASTA" in r.stderr
     assert not (tmp_path / "gpr.parquet").exists()
 
 

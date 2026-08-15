@@ -35,7 +35,18 @@ from fabfos.pipelines import annotation, common
 
 ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
 
-EXPECTED_TRANSFORMS = {"kofamscan", "clean", "diamond_uniref50", "proteinbert", "gpr_4lane"}
+# The full lane, with nothing supplied. Three of the four annotators are sharded
+# -- kofamscan, diamond_uniref50 and proteinbert take `sequences::orf_chunk` and
+# produce `*_chunk` -- so each is bracketed by the chunker and its own merge back
+# to the whole-proteome product `gpr_4lane` requires. `clean` takes whole ORFs and
+# needs no merge. `tests/fabfos/test_cyanoverse_gpr_reuse.py` is the same lane with
+# the kofam product supplied, which is what removes that annotator and its merge.
+EXPECTED_TRANSFORMS = {
+    "chunkOrfsForAnnotation",
+    "kofamscan", "clean", "diamond_uniref50", "proteinbert",
+    "merge_kofamscan", "merge_diamond_uniref50", "merge_proteinbert",
+    "gpr_4lane",
+}
 
 
 def _given_orf_count(task) -> int:

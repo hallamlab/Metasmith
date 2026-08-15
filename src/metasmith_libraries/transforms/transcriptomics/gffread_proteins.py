@@ -13,10 +13,11 @@ def protocol(context: ExecutionContext):
     iasm = context.Input(asm)
     iout = context.Output(out)
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"gffread {igtf.container} -g {iasm.container} -y {iout.container}",
-    )
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"gffread {igtf.container} -g {iasm.container} -y {iout.container}"
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists(),

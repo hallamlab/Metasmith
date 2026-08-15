@@ -1,0 +1,10 @@
+check	requirement	rationale
+publication_layout	All required module, summary, reference, and intermediate directories exist	Confirms successful atomic publication
+sample_accounting	Published manifest sample IDs equal supplied manifest and metadata IDs	Detects dropped, duplicated, or mismatched samples
+non_target_truth	Every supplied contaminant and mitochondrial truth feature is identified and absent from the final microbial table	Validates local BLAST and non-target filtering
+taxonomy	At least one microbial ASV receives a non-empty taxonomy assignment	Confirms taxonomy classification completed
+indicator_analysis	At least one FDR-significant Type_Group or Case indicator matches an implanted group-effect ASV	Demonstrates recovery of known group structure
+voc_correlation	At least one implanted positive ASV-VOC pair is recovered with rho >= 0.30	Demonstrates truth-aligned microbiome-VOC analysis
+network_analysis	The inferred graph has at least 10 edges, a multi-node module, and at least one edge within an implanted module	Rejects an uninformative or fully truth-discordant network
+plot_contract	Every plot-producing showcase module emits at least one SVG	Confirms editable publication figures
+manifest_integrity	Every module file listed in module_output_manifest.tsv exists and matches its SHA-256	Detects incomplete or altered publication outputs

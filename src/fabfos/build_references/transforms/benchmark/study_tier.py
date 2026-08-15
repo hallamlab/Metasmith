@@ -94,7 +94,9 @@ CONDITION_COLS = (
 )
 
 # A condition is scored PER ELEMENT, because the atom-resolved network is built per
-# element and a condition's expected direction is an element-specific claim.
+# element and a condition's expected direction is an element-specific claim. A study may
+# narrow this (`elements` in its STUDIES entry) but never widen it: the four are the
+# elements the bake carries.
 ELEMENTS = ("C", "N", "P", "S")
 
 # The seven studies, and how each one's extraction is shaped. A fact in this file for the
@@ -104,15 +106,44 @@ ELEMENTS = ("C", "N", "P", "S")
 # `reader` names the extraction's shape, not the paper:
 #   obs_mnxr  -- one row per observation, reactions in add_mnxr/del_mnxr list columns
 #   gene_del  -- one row per knocked-out gene
+#   gene_ovx_row -- one row per OVEREXPRESSED gene: gene_del's shape, action=add, and a
+#                declared phenotype -> direction map instead of a uniform one
 #   gene_row  -- one row per (gene, reaction) claim, already attributed
+#   gene_ovx  -- one row per (strain, gene, reaction); the strain is the condition
+#
+# `elements` narrows which elements a study is scored on, and is present only where the
+# paper's readout is about ONE of them. The default replicates a study's measured
+# direction onto all four, which is right when the observable is growth or fitness --
+# every element feeds it -- and wrong when the observable is a named compound: Eydallin
+# measured GLYCOGEN, a glucose polymer, so `aspP` lowering it is a claim about carbon and
+# about nothing else. The N/P/S copies of those rows asserted three directions the paper
+# never measured, and a scorer cannot tell them from the one it did.
 STUDIES = {
     "laser":      dict(reader="obs_mnxr", cohort="gof",      arm="gof", host="e_coli_k12"),
     "keio":       dict(reader="gene_del", cohort="lof",      arm="lof", host="e_coli_k12"),
-    "eydallin":   dict(reader="gene_del", cohort="eydallin", arm="lof", host="e_coli_k12"),
+    # AN ASKA SCREEN, NOT A DELETION SCREEN, AND READ AGAINST THE STRAIN IT WAS RUN IN.
+    # Eydallin et al. overexpressed each gene from the ASKA library, so a condition ADDS
+    # a copy; `gene_del` made every one of the 86 a knockout, which is the opposite
+    # perturbation, and `measured` came out uniformly `down` when the paper reports 28
+    # genes raising glycogen and 58 lowering it. The direction map below is the paper's
+    # own classification, and it is declared here rather than inferred from a string
+    # because a phenotype label is study-specific vocabulary.
+    #
+    # The host is AG1 -- the library's own strain, borrowing DH1's model under a measured
+    # genotype edit (see host_gpr_gem.py). It was e_coli_k12, which is a different
+    # strain's background for a screen nobody ran in MG1655.
+    "eydallin":   dict(reader="gene_ovx_row", cohort="eydallin", arm="gof",
+                       host="e_coli_ag1", elements=("C",),
+                       directions={"glycogen_excess": "up",
+                                   "glycogen_deficient": "down"}),
     "aromatic":   dict(reader="gene_row", cohort="aromatic", arm="gof", host="e_coli_epi300"),
     "pg_anionic": dict(reader="gene_row", cohort="pg_anionic", arm="gof", host="e_coli_epi300"),
     "forsberg":   dict(reader="gene_row", cohort="forsberg", arm="gof", host="e_coli_epi300"),
     "fa_supply":  dict(reader="gene_row", cohort="fa_supply", arm="gof", host="e_coli_epi300"),
+    # The only GOF cohort with MEASURED NEGATIVES: sixty ORFs individually rebuilt
+    # and assayed, of which six moved the phenotype. LASER records what its authors
+    # chose to assay, so it has no negatives to speak of; this one does.
+    "aska_ffa":   dict(reader="gene_ovx", cohort="aska_ffa", arm="gof", host="e_coli_k12"),
 }
 
 # THREE KINDS OF CONTROL, because each catches a different failure, and they are
@@ -274,6 +305,46 @@ def rows_gene_del(df, spec):
     return out
 
 
+def rows_gene_ovx_row(df, spec):
+    """One row per OVEREXPRESSED gene -- `gene_del`'s mirror, for an ASKA-style screen.
+
+    Same extraction shape, opposite perturbation: a clone ADDS a copy of its gene, so
+    the condition's rows are `action=add`. That is the only structural difference, and
+    it is the one that matters -- a knockout removes a route and an overexpression adds
+    conductance to one, and nothing downstream can tell them apart after the fact.
+
+    DIRECTION COMES FROM THE PAPER'S OWN LABEL, through the map the study declares.
+    `gene_del` can assert `measured=down` for every row because a knockout removing a
+    route is uniform; a screen that reports genes in BOTH directions cannot, and reading
+    58 deficient genes as 58 confirmations of `down` while the other 28 say `up` would
+    make the answer key agree with itself no matter what happened. A label the map does
+    not cover yields NO direction rather than a guess -- B5 drops a condition whose
+    direction is unknown, which is the honest shape of "we do not know".
+    """
+    directions = spec.get("directions") or {{}}
+    out = []
+    for _, r in df.iterrows():
+        gene = str(r.get("gene_set") or r.get("gene") or "").strip()
+        gene = gene.split(":")[0] if gene else gene
+        if not gene:
+            continue
+        cid = str(r.get("obs_id") or "").strip() or f"{{spec['cohort']}}:{{gene}}"
+        label = str(r.get("phenotype") or "").strip()
+        mnxrs = split_ids(r.get("add_mnxr") or r.get("del_mnxr")) or [None]
+        for mnxr in mnxrs:
+            out.append(dict(
+                feature_id=gene, feature_kind="curated_gene",
+                feature_name=str(r.get("function_supplTableS1") or r.get("subsystem") or ""),
+                mnxr=mnxr, evidence_id=cid,
+                evidence_name=str(r.get("b_number") or r.get("gene_norm") or ""),
+                condition_id=cid, action="add", source_organism="",
+                measured=directions.get(label, ""),
+                citation=str(r.get("doi") or r.get("citation") or ""),
+                note=label or str(r.get("note") or ""),
+            ))
+    return out
+
+
 def cell(r, key):
     """A field as a clean string, or ''. `str(nan or "")` is `'nan'` -- NaN is TRUTHY,
     so the usual `or ""` idiom silently turns a missing reaction into the literal
@@ -361,26 +432,81 @@ def rows_gene_row(df, spec):
     return out
 
 
+def rows_gene_ovx(df, spec):
+    """One row per (strain, gene, reaction) -- THE STRAIN IS THE CONDITION.
+
+    An overexpression screen measures a strain, and a strain carries one or two
+    named ORFs whose every reaction belongs to that one measurement. So the
+    condition id is the extraction's own `obs_id` rather than the row number:
+    grouping by row would turn one clone carrying twenty-one reactions into
+    twenty-one conditions of one reaction each, and score each of them against
+    the same single titer.
+
+    Attribution is per gene, because here the curator could make it -- the
+    extraction resolves each ORF to its own b-number and that b-number's own
+    reactions. `feature_id` is therefore the b-number, which is also what the
+    null pool is drawn on: a drawn clone and a tested clone have to be the same
+    kind of thing or the comparison is between two different questions.
+
+    An ORF the model has no reaction for still emits a row with a null mnxr. The
+    strain was built and measured, and a gene the network cannot see is a result
+    about the method's reach, not an absence of data -- dropping it would shrink
+    the denominator to the cases that were already going to work.
+    """
+    out = []
+    for _, r in df.iterrows():
+        cid = cell(r, "obs_id")
+        role = cell(r, "role") or "add"
+        if not cid or role == "control":
+            continue
+        gene = cell(r, "gene")
+        out.append(dict(
+            feature_id=cell(r, "b_number") or None, feature_kind="curated_gene",
+            feature_name=gene, mnxr=cell(r, "mnxr") or None,
+            evidence_id=cid, evidence_name=cell(r, "strain_id"),
+            condition_id=cid, action="del" if role == "del" else "add",
+            source_organism="",
+            measured=cell(r, "measured") or "unknown",
+            citation=cell(r, "citation"), note=cell(r, "note"),
+        ))
+    return out
+
+
 def declared_controls(df, spec, study):
     """`role=control` rows, kept as declared controls rather than dropped."""
     out = []
     for i, r in df.iterrows():
         if cell(r, "role") != "control":
             continue
+        # An extraction that names its own observations keeps its own id -- a
+        # control is one of the study's strains, and renaming it here would
+        # break the join back to the measurement it was read beside.
+        cid = cell(r, "obs_id") or f"{{study}}:CTRL:{{cell(r, 'gene') or i}}"
         out.append(dict(
-            condition_id=f"{{study}}:CTRL:{{cell(r, 'gene') or i}}",
+            condition_id=cid,
             element=cell(r, "element"), note=cell(r, "note"),
             citation=cell(r, "citation"),
-            measured_dir=cell(r, "expected_dir"),
+            # `expected_dir` where the contrast tables carry one; otherwise the
+            # measured direction, which is the same claim under another name.
+            measured_dir=cell(r, "expected_dir") or {{
+                "up": "+", "down": "-", "flat": "0"}}.get(cell(r, "measured"), ""),
         ))
     return out
 
 
 READERS = {{"obs_mnxr": rows_obs_mnxr, "gene_del": rows_gene_del,
-            "gene_row": rows_gene_row}}
+            "gene_ovx_row": rows_gene_ovx_row,
+            "gene_row": rows_gene_row, "gene_ovx": rows_gene_ovx}}
+DECLARES = ("gene_row", "gene_ovx")
 
 summary = []
 for study, spec in sorted(STUDIES.items()):
+    # The elements THIS study is scored on. A subset of ELEMENTS, never a superset --
+    # an element the bake does not carry has no network to be scored on.
+    els = tuple(spec.get("elements", ELEMENTS))
+    if not set(els) <= set(ELEMENTS):
+        raise SystemExit(f"[study] {{study}}: elements {{els}} are not a subset of "
+                         f"{{ELEMENTS}}, which is what the bake carries")
     src = EXTRACT / study / "extraction.tsv"
     if not src.exists():
         raise SystemExit(f"[study] no extraction for {{study}} at {{src}}")
@@ -393,7 +519,7 @@ for study, spec in sorted(STUDIES.items()):
         df = pd.read_csv(src, sep="\t", dtype=str, keep_default_na=False,
                          na_values=[""])
     raw = READERS[spec["reader"]](df, spec)
-    declared = declared_controls(df, spec, study) if spec["reader"] == "gene_row" else []
+    declared = declared_controls(df, spec, study) if spec["reader"] in DECLARES else []
 
     d = OUT / study
     d.mkdir(parents=True, exist_ok=True)
@@ -414,8 +540,12 @@ for study, spec in sorted(STUDIES.items()):
     # the GEM table's uniform 1.0 rests on. The evidence-weighted line is gpr_denovo.
     gpr["raw_score"] = np.float32(1.0)
     gpr["projection_via"] = "curated"
-    gpr["in_atom_universe"] = gpr["mnxr"].isin(universe)
-    gpr.loc[gpr["mnxr"].isna(), "in_atom_universe"] = None
+    # Nullable, because a row with no reaction has no answer to "is it in the atom
+    # universe" and `False` would be one. Under pandas 2 a None into a bool column
+    # upcast silently; pandas 3 refuses outright, so the dtype is declared rather
+    # than left to whichever version happens to be installed.
+    gpr["in_atom_universe"] = gpr["mnxr"].isin(universe).astype("boolean")
+    gpr.loc[gpr["mnxr"].isna(), "in_atom_universe"] = pd.NA
     gpr["cohort"] = spec["cohort"]
     # No boolean rule: a curated claim is per gene or per observation, and inventing one
     # would make this look like the same kind of claim a GEM makes.
@@ -452,7 +582,7 @@ for study, spec in sorted(STUDIES.items()):
         # same answer for all of them and none of it is about the species that crossed.
         known = g[g["mnxr"].notna()]
         structural = len(known) > 0 and not known["in_atom_universe"].astype(bool).any()
-        for el in ELEMENTS:
+        for el in els:
             conds.append(dict(
                 study=study, condition_id=cid, cohort=spec["cohort"], arm=spec["arm"],
                 tier="primary", host=host, element=el,
@@ -471,7 +601,7 @@ for study, spec in sorted(STUDIES.items()):
 
     # The unperturbed host. Declared, not inferred: it is the zero point every result in
     # this study is a difference from, and a study without one has nothing to diff.
-    for el in ELEMENTS:
+    for el in els:
         conds.append(dict(
             study=study, condition_id=f"{{study}}:BASELINE", cohort=spec["cohort"],
             arm=spec["arm"], tier="control", host=host, element=el,
@@ -481,7 +611,7 @@ for study, spec in sorted(STUDIES.items()):
     # The curator's OWN declared controls. Emitted only for the element the curator
     # named, because a control declared on the P axis says nothing about C.
     for c in declared:
-        for el in ([c["element"]] if c["element"] in ELEMENTS else list(ELEMENTS)):
+        for el in ([c["element"]] if c["element"] in els else list(els)):
             conds.append(dict(
                 study=study, condition_id=c["condition_id"], cohort=spec["cohort"],
                 arm=spec["arm"], tier="control", host=host, element=el,
@@ -495,7 +625,7 @@ for study, spec in sorted(STUDIES.items()):
     on_path = named[named["in_atom_universe"].astype(bool) & named["mnxr"].isin(background)]
     if len(on_path):
         pick = sorted(on_path["mnxr"].unique())[0]
-        for el in ELEMENTS:
+        for el in els:
             conds.append(dict(
                 study=study, condition_id=f"{{study}}:ONPATH", cohort=spec["cohort"],
                 arm=spec["arm"], tier="control", host=host, element=el,
@@ -527,6 +657,10 @@ for study, spec in sorted(STUDIES.items()):
             if mnxr is None or (isinstance(mnxr, float) and np.isnan(mnxr)):
                 continue
             for el, heads in products_of.get(mnxr, {{}}).items():
+                # The study's own elements, for the same reason the conditions are: an
+                # expectation on an element the paper did not read is not an expectation.
+                if el not in els:
+                    continue
                 for mnxm in heads:
                     yrows.append(dict(
                         condition_id=cid, element=el, mnxm=mnxm,
@@ -554,7 +688,7 @@ for study, spec in sorted(STUDIES.items()):
         "# The sparse default\n\n"
         "Any `(condition_id, element, mnxm)` triple ABSENT from `expectations.tsv` is "
         "`expected_dir=0`. Storing the zeros would be "
-        f"{{len(cdf['condition_id'].unique()) * len(ELEMENTS) * 1000:,}}-ish rows of "
+        f"{{len(cdf['condition_id'].unique()) * len(els) * 1000:,}}-ish rows of "
         "nothing.\n\n"
         "A condition whose measured direction is UNKNOWN contributes NO rows at all -- "
         "it is not a row of zeros. \"We don't know\" and \"we expect no movement\" are "
@@ -568,12 +702,19 @@ for study, spec in sorted(STUDIES.items()):
 
     kinds = sorted(set(cdf["control_kind"]) - {{""}})
     print(f"[study] {{study:11s}} {{len(gpr):>6,}} gpr rows  "
-          f"{{gpr['condition_id'].nunique():>4,}} conditions x {{len(ELEMENTS)}} elements  "
+          f"{{gpr['condition_id'].nunique():>4,}} conditions x {{'+'.join(els)}}  "
           f"{{named['mnxr'].nunique():>5,}} MNXR  "
           f"{{len(in_base):>4,}} in base  {{len(covered):>4,}} lane-reachable  "
           f"controls {{kinds}}", flush=True)
 
     attribution = "per observation" if spec["reader"] == "obs_mnxr" else "per gene"
+    # Empty for a study on the full element set, so those READMEs are unchanged by the
+    # narrowing having become expressible at all.
+    narrowed = "" if len(els) == len(ELEMENTS) else (
+        f"Scored on **{{'+'.join(els)}} only**. The paper's readout is a named compound "
+        f"rather than growth, so its measured direction is a claim about that element and "
+        f"about no other; replicating it onto the rest would assert directions nobody "
+        f"measured, and nothing downstream could tell those apart from the one that was.\n\n")
     (d / "README.md").write_text(
         f"# `{{study}}`\n\n"
         f"Cohort `{{spec['cohort']}}`, arm `{{spec['arm']}}`, read against host "
@@ -584,11 +725,13 @@ for study, spec in sorted(STUDIES.items()):
         f"that turns a PDF supplement into rows.\n\n"
         f"| | |\n|---|---|\n"
         f"| gpr rows | {{len(gpr):,}} |\n"
-        f"| conditions | {{gpr['condition_id'].nunique():,}} x {{len(ELEMENTS)}} elements |\n"
+        f"| conditions | {{gpr['condition_id'].nunique():,}} x {{len(els)}} element"
+        f"{{'s' if len(els) > 1 else ''}} |\n"
         f"| distinct MNXR | {{named['mnxr'].nunique():,}} |\n"
         f"| already in the {{host}} background | {{len(in_base):,}} |\n"
         f"| reachable through the de-novo bridge | {{len(covered):,}} |\n"
         f"| controls | {{', '.join(kinds)}} |\n\n"
+        f"{{narrowed}}"
         f"Reaction attribution is `{{attribution}}`. Where the extraction resolved "
         f"reactions to the "
         f"observation rather than to a gene, `feature_id` is null and `feature_kind` is "

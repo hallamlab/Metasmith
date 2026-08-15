@@ -28,7 +28,7 @@ THREE CLASSES OF TOKEN, AND CONFLATING THEM IS THE FAILURE THIS EXISTS TO AVOID.
                     decision, and this reports them for a curator rather than guessing.
 
 LOCAL FIRST, AND MOST OF IT IS LOCAL. The three host proteomes already pinned under
-`data/originals/genomes/` carry `[gene=]` and `[locus_tag=]` on every header, and every
+`data/fabfos/originals/genomes/` carry `[gene=]` and `[locus_tag=]` on every header, and every
 study but LASER is an E. coli K-12 derivative -- so the great majority of tokens resolve
 with no network at all, against the exact sequences the host half was annotated from.
 That is a stronger provenance than a fresh fetch would give: the study's genes and the
@@ -61,7 +61,7 @@ HET_TABLE = (REPO / "data" / "fabfos" / "originals" / "benchmarks" / "het_screen
              / "heterologous_uniprot.tsv")
 
 STUDIES = ("laser", "keio", "eydallin", "aromatic", "fa_supply", "forsberg",
-           "pg_anionic")
+           "pg_anionic", "aska_ffa")
 
 # E. coli, for a taxon-restricted UniProt query. The studies that are not LASER are all
 # K-12 derivatives, and LASER's `lineage` column says K12/B/C/W throughout -- so a

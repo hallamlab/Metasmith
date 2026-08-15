@@ -11,10 +11,11 @@ ref   = model.AddProduct(lib.GetType("ref::metabuli_ref"))
 def protocol(context: ExecutionContext):
     idb = context.Output(ref)
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd="metabuli databases GTDB . tmp",
-    )
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = "metabuli databases GTDB . tmp"
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     Path("gtdb").rename(idb.local)
 
     return ExecutionResult(

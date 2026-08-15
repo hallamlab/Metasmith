@@ -78,7 +78,7 @@ sys.path.insert(0, str(REPO / "src"))
 from fabfos.pipelines.common import resolve_library_root  # noqa: E402
 
 from metasmith.python_api import (  # noqa: E402
-    Agent, ContainerRuntime, DataInstanceLibrary, DataTypeLibrary, SshSource,
+    Agent, Runtime, DataInstanceLibrary, DataTypeLibrary, SshSource,
     TargetBuilder, TransformInstanceLibrary,
 )
 
@@ -226,7 +226,7 @@ def main() -> int:
                   for d in DOMAINS]
 
     home = SshSource(host=a.host, path=a.agent_home).AsSource()
-    agent = Agent(home=home, runtime=ContainerRuntime.APPTAINER,
+    agent = Agent(home=home, runtime=Runtime.APPTAINER,
                   container=a.container, setup_commands=SETUP_COMMANDS)
 
     print("=== planning ===", flush=True)

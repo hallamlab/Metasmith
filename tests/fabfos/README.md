@@ -155,7 +155,7 @@ None of this shows up in the DAG, which is the point: the planner still sees one
 > Note: editing a `data_types/*.yml` or transform in `src/metasmith_libraries`
 > requires regenerating the per-library `_metadata/` snapshots before these tests
 > see the change — `./dev/fabfos.sh -b` only bundles. See
-> `src/metasmith_libraries`'s own build step, `dev/libraries.sh -b`
+> `src/metasmith_libraries`'s own build step, `dev/libraries.sh -bm`
 > (`python -m metasmith build all --types … --uniques … --transforms …`).
 
 ## `audit_final_steps.py`
@@ -282,5 +282,5 @@ PATH="/home/tony/lib/miniforge3/envs/msm/bin:$PATH" python tests/fabfos/test_ass
 > Note: editing a `data_types/*.yml` or transform in `src/metasmith_libraries`
 > requires regenerating the per-library `_metadata/` snapshots before these
 > tests see the change -- `./dev/fabfos.sh -b` only bundles. See
-> `src/metasmith_libraries`'s own build step, `dev/libraries.sh -b`
+> `src/metasmith_libraries`'s own build step, `dev/libraries.sh -bm`
 > (`python -m metasmith build all --types … --uniques … --transforms …`).

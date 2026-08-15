@@ -22,16 +22,17 @@ def protocol(context: ExecutionContext):
     # input is just a single fastq stream to metaphlan (bowtie2 underneath),
     # which doesn't enforce pair semantics on the input; --db_dir replaces the
     # v4.1 --bowtie2db flag.
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             metaphlan {ireads.container} \
                 --input_type fastq --offline \
                 --db_dir {idb.container} {threads_arg} \
                 -o {iprof.container} \
                 --mapout {isam.container}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{

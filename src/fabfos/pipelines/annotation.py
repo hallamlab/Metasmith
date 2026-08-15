@@ -29,8 +29,7 @@ because the ``pbert`` lane's kNN vote is not bit-reproducible across runs.
 
 Usage:
 
-    python -m fabfos.pipelines.annotation --orfs orfs.faa \\
-        --dag reports/dag/annotation
+    python -m fabfos.pipelines.annotation --orfs orfs.faa
 
     python -m fabfos.pipelines.annotation --orfs orfs.faa --output ./out --run
 """
@@ -54,7 +53,7 @@ from metasmith.python_api import (
 
 from . import common
 
-DOMAINS = ["functionalAnnotation", "fabfos"]
+DOMAINS = ["functionalAnnotation", "fabfos", "logistics"]
 
 ORFS_DIR_GLOB = "*.faa"
 
@@ -228,7 +227,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--label-pool", default=None, metavar="DIR")
     p.add_argument("--staging", default=None, help="working dir (default: <output>/_fabfos)")
     p.add_argument("--output", default="./fabfos_annotation_out", help="output directory")
-    p.add_argument("--dag", default="reports/dag/annotation", help="path base for the rendered SVG")
+    p.add_argument("--dag", default="research/fabfos/reports/dag/annotation", help="path base for the rendered SVG")
     p.add_argument("--runtime", choices=[r.value for r in Runtime],
                     default=Runtime.APPTAINER.value)
     p.add_argument("--threads", type=int, default=8)

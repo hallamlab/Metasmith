@@ -50,7 +50,10 @@ HPC_HOST      = os.environ.get("MSM_HPC_HOST", "sockeye")            # ssh host 
 SLURM_ACCOUNT = os.environ.get("MSM_SLURM_ACCOUNT", "<slurm-allocation>")
 SETUP_COMMANDS = ["module load gcc/9.4.0", "module load apptainer"]  # Sockeye module order
 
-MLIB = Path(__file__).resolve().parent.parent.parent
+# The transform library. `parents[3]` is the repo root (examples/ ->
+# metasmith_libraries/ -> research/ -> root); the library itself lives under
+# src/. Pointing at the root instead resolves no types and asserts nothing.
+MLIB = Path(__file__).resolve().parents[3] / "src" / "metasmith_libraries"
 
 # ── read inputs (uploaded to the cluster) ────────────────────────────────────
 R1 = Path(os.environ.get("MSM_READS_R1", "<reads-R1.fq.gz>"))

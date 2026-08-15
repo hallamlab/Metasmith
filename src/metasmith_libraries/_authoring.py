@@ -9,7 +9,7 @@ that differs: what the inputs are, and what to build from them.
     build the deferred input library  ->  build the spec  ->  solve it
 
 The solve *is* the test. A template that no longer solves against the transforms
-beside it is a broken template, and `./dev.sh -b` fails naming it.
+beside it is a broken template, and `dev/libraries.sh -b` fails naming it.
 
 Two things a driver must not do. It must not name an agent -- a template says
 what to build, never where; whoever loads it supplies the host. And it must not

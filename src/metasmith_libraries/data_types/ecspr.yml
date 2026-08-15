@@ -1,0 +1,88 @@
+types:
+# -----------------------------------------
+# ECSPr measurement -- the downstream consumer of the fosmid GPR table.
+#
+# The three parquets below are the frozen MetaNetX-derived reference basis. All
+# are NETWORK-AGNOSTIC (static functions of the MNXR/MNXM id space), so they are
+# shared staged inputs, never per-experiment: pinning them to a run would imply
+# the basis changes between runs, which is exactly what the pinned MNXREF
+# release exists to prevent.
+  atom_pairs:
+    properties:
+      _: atom-atom mapping table (AAM), one row per (mnxr, element, substrate atom -> product atom) transit. `sub_idx`/`prod_idx` are canonical atom RANKS within a metabolite, not names -- decoding a node back to a chemical identity needs `metabolite_names`. `pair_w` is the atom-transit count, which is both the edge weight and, via the w<=0 drop, the connectivity.
+      Format: parquet
+      fields:
+      - mnxr
+      - element
+      - substrate
+      - product
+      - sub_idx
+      - prod_idx
+      - pair_w
+      - method
+      - source
+      - confidence
+      ext: parquet
+  direction_ratios:
+    properties:
+      _: per-reaction DIRECTIONALITY ratios for the directed (diode) solve; MNXR -> g_rev/g_fwd = exp(dG'/RT) from the fused direction ensemble. ratio==1.0 is reversible (parity with the undirected model); every reaction is present.
+      Format: parquet
+      fields:
+      - mnxr
+      - ratio
+      - dG_prime
+      - sigma
+      - dir_tier
+      - dir_method
+      - dir_confidence
+      ext: parquet
+  metabolite_names:
+    properties:
+      _: MNXM -> chemical identity (name, formula, per-element atom counts). REQUIRED to decode `atom_pairs` -- that table carries metabolite ids and canonical atom ranks, so without this the node keys of the atom-transfer graph have no chemical meaning and the conditions' source/sink hubs cannot be resolved onto it.
+      Format: parquet
+      fields:
+      - mnxm
+      - name
+      - formula
+      - element
+      - n_atoms
+      ext: parquet
+# -----------------------------------------
+# Per-experiment. The condition set is the EXPERIMENT'S choice, not the engine's
+# -- the caller stages the set it means. Do not infer it from a filename.
+  conditions:
+    properties:
+      _: the measurement's condition set -- TERMINALS plus a MASK, one row per condition. The terminals name the source (growth substrate) hub, the sink (biomass precursor) hubs, the readout hubs and the element; the mask is three (column, values) pairs over the GPR table, where `background_*` is what is always in (the host), `mask_*` is what this condition adds, and `drop_*` withholds rows the other two let through. An overexpression is therefore a host row and a clone row both being selected and their conductances summing, and a knockout is a drop; the engine takes no perturbation argument and interprets no action column. `sink_hub` and `readout_hub` are separate because naming a metabolite a sink gives it a PORT to ground instead of a leak, which changes the answer, while reading it changes nothing. Per-experiment on purpose; the engine has no default set. `ecspr draw` emits its null pool in exactly this schema, which is what makes the null arm the same command with a different file.
+      Format: parquet
+      fields:
+      - condition_id
+      - element
+      - source_hub
+      - sink_hub
+      - readout_hub
+      - media
+      - background_column
+      - background_values
+      - mask_column
+      - mask_values
+      - drop_column
+      - drop_values
+      - arm
+      - cohort
+      - is_control
+      - stratum
+      - n_units
+      - draw_id
+      ext: parquet
+  results:
+    properties:
+      _: THE ECSPr measurement -- one row per (condition, probe, orientation, element, readout). `readout` is a sink metabolite, any metabolite from the universal ground's draw vector, or `total`; a readout whose name starts with `_` is a per-condition DIAGNOSTIC (coverage, convergence, the AAM gap, whether the condition abstained) carried in the same table so a result cannot be read without it. Significance is NOT here -- it is a subtraction and a rank over these rows against a null measured in the same schema, which `ecspr score` performs -- so a baseline is named at scoring time rather than flagged at measurement time.
+      Format: parquet
+      fields:
+      - condition_id
+      - probe
+      - orientation
+      - element
+      - readout
+      - value
+      ext: parquet

@@ -6,6 +6,9 @@ data rows, then a final `##`-prefix footer. Strategy: from the first chunk,
 keep everything up through the column-header line; from subsequent chunks,
 strip ALL leading `#`-prefix lines; drop trailing `##` footer lines from
 intermediate chunks (keep only from the last chunk).
+
+This transform runs no container, so the ExecWithEnv port swept past it. Finding
+it on the old call shape is expected, not an oversight.
 """
 from metasmith.python_api import *
 

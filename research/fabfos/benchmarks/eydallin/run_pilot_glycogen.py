@@ -15,13 +15,25 @@ Two things it deliberately does NOT inherit from the study tier:
   tier currently labels this cohort `arm=lof` / `n_del=1`, which is the opposite
   perturbation -- see the README.)
 
+  That holds for a gene the HOST GEM carries, which is only 32 of the cohort's 86.
+  For the other 54 the gene is native to K-12 but iML1515 gives it no reaction, so a
+  fold-change multiplies a weight that does not exist and the perturbed solve is the
+  base solve. `--rxn`/`--weight` is the addition model those need: name the reaction
+  the clone supplies and set its conductance absolutely. aspP is the case that forced
+  it -- ADP-sugar pyrophosphatase is `MNXR152881` (biggR:ADPGLC), atom-mapped on
+  carbon over exactly the ids the host route uses, and absent from the GEM.
+
 - The target is read off the built graph rather than assumed present. `measure_leak`'s
   draw dict only has keys for metabolites that became NODES; a missing key is a coverage
   gap, not a zero, and the two must never be collapsed.
 
-Reference basis is tier4 atom pairs + the bake direction table, matching
-main/benchmarks/laser/pilot/run_pilot.py so the two pilots are comparable. NOT the
-deployed canonical basis.
+Reference basis is the bake, atom pairs and direction from the same directory. It was
+tier4 atom pairs + bake direction when this pilot was written and run; tier4's pin is
+retired (the chunk stays reachable from the commit that carried it), and the swap is
+not cosmetic -- glgA and
+glgP have carbon rows here and had none there, so the numbers cached under `cache/` do
+NOT reproduce on this basis. Re-run before quoting any of them. That also breaks
+comparability with main/benchmarks/laser/pilot/run_pilot.py until it moves too.
 
     docker run --rm -v $PWD:/ws -w /ws fabfos:local \
         python main/benchmarks/eydallin/run_pilot_glycogen.py --gene glgC --fold 2.0
@@ -36,14 +48,16 @@ from pathlib import Path
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[4]
-LIB = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
-sys.path.insert(0, str(LIB))
+sys.path.insert(0, str(ROOT / "src"))
 
-from ecspr_build import load_pairs, load_direction_ratios, graph_from_pairs  # noqa: E402
-from ecspr_graph import Terminal, measure_leak                              # noqa: E402
-from ecspr_directed import _HAVE_CHOLMOD                                    # noqa: E402
+from ecspr.build import load_pairs, load_direction_ratios, graph_from_pairs  # noqa: E402
+from ecspr.graph import Terminal, measure_leak, solve                        # noqa: E402
+from ecspr.directed import _HAVE_CHOLMOD                                     # noqa: E402
 
-ATOM_PAIRS = ROOT / "data" / "fabfos" / "benchmark" / "reference_tier4" / "atom_pairs_tier4.parquet"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bake_pairs                                                             # noqa: E402
+
+ATOM_PAIRS = bake_pairs.atom_pairs()
 CHEM_PROP = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5" / "chem_prop.tsv"
 HOST_GEM = ROOT / "data" / "fabfos" / "benchmarks" / "hosts" / "e_coli_k12" / "gpr_gem.parquet"
 BAKE = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake"
@@ -116,10 +130,18 @@ def incident_report(graph, mnxm: str) -> dict:
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--gene", default="glgC",
-                   help="host gene to perturb (feature_name in the host GEM)")
+                   help="host gene to perturb (feature_name in the host GEM); with "
+                        "--rxn it only labels the run")
     p.add_argument("--fold", type=float, default=2.0,
                    help="conductance fold-change on that gene's reactions; "
                         "0 deletes them (LOF), >1 is the overexpression model")
+    p.add_argument("--rxn", action="append", default=None, metavar="MNXR",
+                   help="perturb these reactions directly instead of looking the gene "
+                        "up in the host GEM; repeatable")
+    p.add_argument("--weight", type=float, default=None,
+                   help="SET the perturbed reactions' conductance to this value rather "
+                        "than multiplying by --fold. Required for a reaction the host "
+                        "GEM does not carry, where a fold-change multiplies zero")
     p.add_argument("--element", default="C")
     p.add_argument("--leak", type=float, default=1e-6)
     args = p.parse_args()
@@ -129,14 +151,32 @@ def main():
     host = pd.read_parquet(HOST_GEM)
     base_w = {m: 1.0 for m in host["mnxr"].dropna().astype(str).unique()}
 
-    rxns = gene_reactions(args.gene)
+    rxns = sorted(set(args.rxn)) if args.rxn else gene_reactions(args.gene)
     pert_w = dict(base_w)
-    for r in rxns:
-        if args.fold == 0:
-            pert_w.pop(r, None)
-        else:
-            pert_w[r] = base_w.get(r, 0.0) * args.fold
-    print(f"[pilot] {args.gene}: {len(rxns)} reaction(s) {rxns} at fold {args.fold}",
+    if args.weight is not None:
+        mode = f"set weight {args.weight}"
+        for r in rxns:
+            if args.weight == 0:
+                pert_w.pop(r, None)
+            else:
+                pert_w[r] = args.weight
+    else:
+        mode = f"fold {args.fold}"
+        for r in rxns:
+            if args.fold == 0:
+                pert_w.pop(r, None)
+            else:
+                pert_w[r] = base_w.get(r, 0.0) * args.fold
+    # A reaction the host does not carry has base weight 0, so a fold-change leaves the
+    # perturbed network identical to the base one. Say so rather than reporting the
+    # resulting zero delta as a measurement.
+    absent = [r for r in rxns if r not in base_w]
+    if absent and args.weight is None:
+        raise SystemExit(f"[pilot] {absent} carry no weight in the host GEM, so --fold "
+                         f"multiplies zero and the perturbed solve IS the base solve. "
+                         f"Pass --weight to model the clone supplying the reaction.")
+    print(f"[pilot] {args.gene}: {len(rxns)} reaction(s) {rxns} at {mode}"
+          f"{f' (ADDED, absent from host GEM: {absent})' if absent else ''}",
           file=sys.stderr)
 
     src_mnxm = resolve_source(pairs)
@@ -160,7 +200,7 @@ def main():
         gene=args.gene, gene_reactions=rxns, fold=args.fold,
         element=args.element, leak=args.leak, ground="universal",
         source=SOURCE_NAME, source_mnxm=src_mnxm,
-        reference_basis="tier4 atom pairs + bake direction (not the deployed canon)",
+        reference_basis="metabolism_bake atom pairs + direction (not the deployed canon)",
         cholmod_available=_HAVE_CHOLMOD,
         base=dict(total=r_base["total"], converged=r_base["converged"],
                   n_metabolites=r_base["n_metabolites"],

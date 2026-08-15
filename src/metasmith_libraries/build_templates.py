@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Author every template in this directory, and fail naming the ones that broke.
 
-`./dev.sh -b` runs this after rebuilding the `_metadata/`, which is what makes a
+`dev/libraries.sh -b` runs this after rebuilding the `_metadata/`, which is what makes a
 template a tested artifact rather than a stale example: the solve is the
 assertion, and a transform whose products changed shape takes the templates that
 depend on it down with it, by name, at build time.
@@ -11,7 +11,7 @@ A template author is a module here defining `NAME`, `DESCRIPTION` and
 this directory is run drivers that talk to real clusters on import and must not
 be swept up by a build.
 
-    python main/build_templates.py [--rebuild] [--dag] [name ...]
+    python src/metasmith_libraries/build_templates.py [--rebuild] [--dag] [name ...]
 """
 
 from __future__ import annotations

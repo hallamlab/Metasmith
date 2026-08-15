@@ -24,19 +24,16 @@ THE PLACEMENT IS DECIDED BY WHAT A LANE NEEDS, NOT BY WHERE THERE IS ROOM.
                         any of this needs a scheduler at all
 
 ORFS ARE NOT PRODUCED HERE, THEY ARE STAGED. A host proteome IS the ORF set -- NCBI
-already called the genes -- and `benchmark/host_proteomes.py` copies the file byte for
-byte under the name the acquisition gave it. Running it once per site would produce
-three identical copies of each file under three different task keys, and the mapper's
-`source` column is that file's stem, which is how B2 joins a table back to its host. So
-the proteome is staged directly, declared as a child of the host set, and every site
-annotates the same bytes under the same name.
+already called the genes -- so the proteome is staged directly, declared as a child of
+the host set, and every site annotates the same bytes. Running `host_proteomes` once per
+site would produce identical copies of each file under different task keys for nothing.
 
 EVERY LANE OUTPUT IS ATTRIBUTED FROM THE RUN'S OWN LINEAGE, never from a file name.
-Metasmith names products by content hash and stages inputs under channel keys, so a
-results directory holding three `clean_predictions` says nothing about which host each
-belongs to. `--collect` reads each product's manifest, takes the ORF-channel hash out of
-its lineage, and resolves that back through the run's staged input listing. That is the
-only attribution that cannot silently pair a table with the wrong host.
+Metasmith names products by content hash and directories by type, so a results tree
+holding five `clean_predictions` says nothing about which host each belongs to.
+`--collect` reads `results/_metadata/index.yml`, which lists every product's PARENTS by
+type, and takes the accession off the `sequences::orfs` one. That is the only
+attribution that cannot silently pair a table with the wrong host.
 """
 from __future__ import annotations
 
@@ -99,8 +96,14 @@ LANES = {
         # doesn't exist". Staged givens do not have this problem -- they are bound
         # through the data mount, which is translated. So the expansion is a one-time
         # setup on the machine, and the workflow only ever reads a given.
-        refs={"ref::kofamscan_profiles": "kofam/profiles",
-              "ref::kofamscan_ko_list": "kofam/ko_list"},
+        # TAKEN FROM B2's REFS_4, not written out again. This copy said `kofam/profiles`
+        # and `kofam/ko_list`; the reference tier publishes `kofam_ref/profiles` and
+        # `kofam_ref/ko_list.tsv`, and the two have not agreed for as long as anyone has
+        # run the split route. The symptom is not a missing file -- apptainer refuses to
+        # create a container whose bind source does not exist, so every kofamscan task
+        # dies at exit 127, which reads as "kofamscan is not installed".
+        refs={k: B2.REFS_4[k] for k in
+              ("ref::kofamscan_profiles", "ref::kofamscan_ko_list")},
     ),
     "clean": dict(
         transform="clean",
@@ -138,9 +141,13 @@ SITES = {
     "local": dict(executor="local", remote=False),
     "micb0": dict(executor="local", remote=True, host=MICB0_HOST,
                   agent_home=MICB0_AGENT_HOME, data=MICB0_DATA, agent=micb0_agent),
+    # `data` IS DERIVED FROM B2's, not written out again. The references moved to /arc
+    # -- kofam's 27,757 small files are a metadata workload sockeye's scratch tier
+    # cannot serve -- and this copy still named /scratch, so every lane needing a
+    # reference looked for it where it has not been for some time.
     "sockeye": dict(executor="slurm", remote=True, host=SOCKEYE_HOST,
                     agent_home=B2.SITES["sockeye"]["agent_home"],
-                    data="/scratch/st-shallam-1/txyliu/fabfos_b2",
+                    data=str(Path(B2.SITES["sockeye"]["processed"]).parent),
                     agent=sockeye_agent, image_store=SOCKEYE_IMAGE_STORE,
                     account=SOCKEYE_ACCOUNT, gpu_account=SOCKEYE_GPU_ACCOUNT,
                     gpu=SOCKEYE_GPU),
@@ -206,7 +213,7 @@ def _host_proteomes() -> list[Path]:
     if not GENOMES.exists():
         raise SystemExit(
             f"the host set is not at {GENOMES.relative_to(REPO)}.\n"
-            f"  Materialise the pin: `dvc checkout data/originals/genomes.dvc`")
+            f"  Materialise the pin: `dvc checkout data/fabfos/originals/genomes.dvc`")
     out = []
     for host in sorted(p for p in GENOMES.glob("*") if (p / "genome").is_dir()):
         faa = sorted((host / "genome").glob("*.faa"))
@@ -361,65 +368,141 @@ def orf_by_hash(staged: Path) -> dict[int, str]:
     return out
 
 
+def _accession_from_content(src: Path, candidates: list[str]) -> str | None:
+    """The one candidate accession that appears in the file's first records, or None.
+
+    Every lane's per-record id is NCBI's -- `lcl|<accession>_prot_<protein>_<n>` -- so a
+    text output names the proteome it was computed from. Read a few lines rather than the
+    file: these run to tens of MB and the answer is on line two.
+    """
+    if src.suffix not in (".csv", ".tsv", ".txt"):
+        return None
+    head = []
+    with src.open(errors="ignore") as fh:
+        for _ in range(20):
+            line = fh.readline()
+            if not line:
+                break
+            head.append(line)
+    text = "".join(head)
+    hits = {c for c in candidates if c in text}
+    return hits.pop() if len(hits) == 1 else None
+
+
+def _accession_from_sibling(rel: str, resolved: dict[str, str]) -> str | None:
+    """The accession of another product from the SAME TASK.
+
+    A task's products share the `{batch}-{i}-{branch}.{hash}` prefix the engine gives
+    them, so ProteinBERT's embeddings parquet -- which carries no readable ids -- takes
+    the accession its index CSV resolved by content. Nothing else in the tree pairs the
+    two, and pairing them by position would be a guess.
+    """
+    stem = Path(rel).name.rsplit("-", 1)[0]
+    for other, acc in resolved.items():
+        if Path(other).name.rsplit("-", 1)[0] == stem:
+            return acc
+    return None
+
+
 def collect(results: Path, staged: Path, lanes: list[str], dest: Path,
             *, dry_run: bool = False) -> int:
-    """Lane products -> `<dest>/<accession>/<name>`, attributed from run lineage.
+    """Lane products -> `<dest>/<accession>/<name>`, attributed from the results index.
 
-    The manifest of each product carries the lineage of the task that made it: one hash
-    per input channel. Intersecting that with the ORF channel's own hashes names the
-    host, and nothing else in the results tree does -- product file names are content
-    hashes and the directory names are types.
+    ATTRIBUTION COMES FROM THE RUN'S OWN LINEAGE, never from a file name -- product file
+    names are content hashes and the directory names are types, so a results tree holding
+    five `clean_predictions` says nothing about which host each belongs to.
+
+    WHERE that lineage lives changed under this driver. It used to be a
+    `_manifests/<ns>-<name>.*.json` sidecar; at this engine pin `CollectResults` writes
+    one `_metadata/index.yml` instead and the sidecar is gone, so the old reader found no
+    manifests and reported that a run producing every output had produced nothing. The
+    index is the better source anyway: each product entry lists its PARENTS by type, so
+    the `sequences::orfs` parent names the proteome directly and no hash-matching stands
+    between the two.
     """
-    man_dir = results / "_manifests"
-    if not man_dir.is_dir():
-        raise SystemExit(f"no _manifests under {results}; the run produced nothing")
-    by_hash = orf_by_hash(staged)
-    if not by_hash:
-        raise SystemExit(f"no ORF input listing under {staged}/inputs -- cannot "
-                         f"attribute any lane output to a host")
+    idx = results / "_metadata" / "index.yml"
+    if not idx.is_file():
+        raise SystemExit(
+            f"no results index at {idx} -- either nothing was retrieved, or collection "
+            f"did not finish. Check `_metasmith/logs.*/nxf_tasks.csv` on the host first.")
+    import yaml
+    manifest = (yaml.safe_load(idx.read_text()) or {}).get("manifest", {})
     wanted = {d: n for lane in lanes for d, n in LANES[lane]["products"].items()}
+    # Every proteome in the host set, which is what a lane output may name. Read from the
+    # host set rather than from this run's parents, so a product whose lineage is wrong
+    # can still be placed.
+    all_accessions = [p.stem for p in sorted(GENOMES.glob("*/genome/*.faa"))]
 
-    n_ok = 0
-    for dtype, fname in wanted.items():
-        stem = dtype.replace("::", "-") + "."
-        entries = []
-        for mf in sorted(man_dir.glob("*.json")):
-            if not mf.name.startswith(stem):
-                continue
-            entries += json.loads(mf.read_text())
-        if not entries:
-            print(f"  {dtype}: NO manifest entries -- the step did not run, or died on "
-                  f"every retry and Nextflow ignored it")
+    n_ok, seen, resolved = 0, {d: 0 for d in wanted}, {}
+    # TEXT PRODUCTS FIRST, so a binary one can borrow its task-mate's answer: the
+    # ProteinBERT parquet has no readable ids and takes the accession its index CSV
+    # resolved by content. Alphabetical order puts `_embeddings` before `_index`, which
+    # is exactly backwards.
+    for rel, entry in sorted(manifest.items(),
+                             key=lambda kv: (Path(kv[0]).suffix
+                                             not in (".csv", ".tsv", ".txt"), kv[0])):
+        dtype = entry.get("type")
+        if dtype not in wanted or entry.get("origin") != "lineage":
             continue
-        for e in entries:
-            hosts = {by_hash[h] for hs in e.get("lineage", {}).values() for h in hs
-                     if h in by_hash}
-            if len(hosts) != 1:
-                print(f"  {dtype} {e['instance_id']}: lineage names {sorted(hosts)} -- "
-                      f"cannot attribute to one host", file=sys.stderr)
-                return 1
-            acc = hosts.pop()
-            src = (results / e["path"])
-            if not src.exists():
-                cands = list((results / e["path"]).parent.glob(
-                    Path(e["path"]).name + "*"))
-                if not cands:
-                    print(f"  {dtype} {acc}: manifest names {e['path']}, which is not "
-                          f"in the results tree", file=sys.stderr)
-                    return 1
-                src = cands[0]
-            out = dest / acc / fname
-            print(f"  {src.relative_to(results)}  ->  {out.relative_to(dest.parent)}")
-            if not dry_run:
-                out.parent.mkdir(parents=True, exist_ok=True)
-                real = src.resolve()
-                if real.is_dir():
-                    if out.exists():
-                        shutil.rmtree(out)
-                    shutil.copytree(real, out)
-                else:
-                    shutil.copyfile(real, out)
-            n_ok += 1
+        orfs = [k.split("@", 1)[-1] for k, t in (entry.get("parents") or {}).items()
+                if t == "sequences::orfs"]
+        src = results / rel
+        # CONTENT FIRST, LINEAGE SECOND, and that order is not a preference. Measured on
+        # this run: the ProteinBERT lane's recorded lineage does not describe what it
+        # read -- its embeddings entry lists all five proteomes as parents, and its index
+        # entries list one apiece that is the WRONG one for three of the five. A lane
+        # output's record ids are NCBI's and carry the contig accession, so the file
+        # states which proteome it describes and cannot be wrong about it. Lineage is
+        # kept as the fallback for a product that carries no readable id, and a
+        # DISAGREEMENT between the two is printed rather than resolved silently.
+        by_content = _accession_from_content(src, all_accessions)
+        by_lineage = Path(orfs[0]).stem if len(orfs) == 1 else None
+        # Sibling BEFORE lineage for a product that carries no readable id. A single ORF
+        # parent looks authoritative and is not: several entries in this run carry
+        # exactly one, and it is the wrong one. Its task-mate's content is a fact about
+        # the same task.
+        acc = by_content or _accession_from_sibling(rel, resolved) or by_lineage
+        if by_content and by_lineage and by_content != by_lineage:
+            print(f"  ! {rel}: the run's lineage says {by_lineage}, the file's own "
+                  f"record ids say {by_content}. Taking the file.", file=sys.stderr)
+        if not acc:
+            print(f"  {dtype} {rel}: {len(orfs)} ORF parent(s) and nothing in the output "
+                  f"names a proteome -- cannot attribute to one host", file=sys.stderr)
+            return 1
+        resolved[rel] = acc
+        if not src.exists():
+            print(f"  {dtype} {acc}: the index names {rel}, which is not in the results "
+                  f"tree", file=sys.stderr)
+            return 1
+        out = dest / acc / wanted[dtype]
+        print(f"  {rel}  ->  {out.relative_to(dest.parent)}")
+        if not dry_run:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            real = src.resolve()
+            if real.is_dir():
+                if out.exists():
+                    shutil.rmtree(out)
+                shutil.copytree(real, out)
+            else:
+                shutil.copyfile(real, out)
+        n_ok += 1
+        seen[dtype] += 1
+    # ONE OUTPUT PER HOST PER TYPE, checked rather than assumed. Two products landing on
+    # one accession means two hosts' tables were written to one path and a third host has
+    # none -- which is the exact silent mis-pairing this whole attribution exists to
+    # prevent, and it is invisible in the copy log unless someone counts.
+    for dtype in wanted:
+        got = [a for r, a in resolved.items() if manifest[r].get("type") == dtype]
+        if len(set(got)) != len(got):
+            dupes = sorted({a for a in got if got.count(a) > 1})
+            print(f"  {dtype}: {len(got)} products over {len(set(got))} hosts -- "
+                  f"{dupes} claimed twice. One host's output has overwritten another's.",
+                  file=sys.stderr)
+            return 1
+    for dtype, n in seen.items():
+        if not n:
+            print(f"  {dtype}: NO entries in the index -- the step did not run, or died "
+                  f"on every retry and Nextflow ignored it", file=sys.stderr)
     if not n_ok:
         print("  NOTHING COLLECTED.", file=sys.stderr)
         return 1

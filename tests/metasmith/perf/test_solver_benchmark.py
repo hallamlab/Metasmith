@@ -1,6 +1,7 @@
 """The solver's perf corpus, and the determinism the corpus depends on.
 
-Two things live here, both needing the sibling ``metasmith-libraries`` checkout:
+Two things live here, both needing the compiled standard library
+(``src/metasmith_libraries``, built by ``dev/libraries.sh -bm``):
 
 * a cross-process determinism pin — the property that makes every fingerprint
   comparison downstream mean anything;
