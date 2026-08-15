@@ -54,7 +54,7 @@ from metasmith.python_api import (
 
 from . import common
 
-DOMAINS = ["functionalAnnotation", "fabfos"]
+DOMAINS = ["functionalAnnotation", "fabfos", "logistics"]
 
 ORFS_DIR_GLOB = "*.faa"
 
