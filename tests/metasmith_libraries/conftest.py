@@ -6,6 +6,15 @@ enabling consistent testing against local Docker deployment.
 """
 import pytest
 from pathlib import Path
+
+# `manual/` holds hand-run drivers, not tests. Two are named `test_*` and do
+# their work at IMPORT time -- `test_asv_analysis.py` resolves its workspace to
+# `Path(".")` and deploys an agent there, which is how an `msm_home/` keeps
+# appearing at the repo root. `pytest.ini` already excludes the directory, but
+# that file is only read when pytest is rooted HERE; run from the repo root it
+# loses to `pyproject.toml` and the exclusion silently stops applying.
+# `collect_ignore` is per-directory and does not care which config won.
+collect_ignore = ["manual"]
 from metasmith.python_api import (
     Agent,
     Runtime,
