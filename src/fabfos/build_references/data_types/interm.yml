@@ -55,6 +55,34 @@ types:
         four types would let a lane be handed one build's crosswalk and another's
         placeholders, and the extractor would suppress the wrong atoms without complaint.
 
+  aam_partial:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        A DIRECTORY, for the same reason `aam_rescue` is: three artifacts that only mean
+        anything together. `partial_universe.parquet` holds the element-reduced
+        submissions AND the reduced participant lists -- the extractor must read those
+        rather than re-parse the equation, or the strict guard calls every submission
+        `stripped`. `partial_forced.parquet` holds the pairs conservation settles without
+        any mapper, already in the extractor's shape. `summary.tsv` records what the
+        reduction could NOT reach, which is the half a coverage claim is made of.
+
+  # A THIRD MEMBER PASS, over the partial universe. Same three members, same shape as
+  # the rescue pass -- what differs is only what they are pointed at, and that is the
+  # argument for keeping them separate types rather than one with a mode.
+  aam_member_rxnmapper_partial:
+    extends: [build_intermediate]
+    properties:
+      _: RXNMapper over the element-reduced submissions; pairs keyed on (reaction, element)
+  aam_member_localmapper_partial:
+    extends: [build_intermediate]
+    properties:
+      _: LocalMapper over the element-reduced submissions; pairs keyed on (reaction, element)
+  aam_member_indigo_partial:
+    extends: [build_intermediate]
+    properties:
+      _: Indigo over the element-reduced submissions; pairs keyed on (reaction, element)
+
   # -- the AAM lanes ----------------------------------------------------------
   # No `aam_layer_metacyc` here, and its absence is a decision. The curated layer was a
   # type for one afternoon, produced by a lane of its own and consumed by the members as

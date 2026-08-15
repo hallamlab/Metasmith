@@ -31,7 +31,8 @@ MODULES = [
     "ecspr.bake.aam.combine", "ecspr.bake.aam.curation",
     "ecspr.bake.aam.indigo_member", "ecspr.bake.aam.layers",
     "ecspr.bake.aam.metacyc_member", "ecspr.bake.aam.neural_members",
-    "ecspr.bake.aam.shard", "ecspr.bake.aam.worklist",
+    "ecspr.bake.aam.partial", "ecspr.bake.aam.shard",
+    "ecspr.bake.aam.worklist",
     "ecspr.bake.direction",
     "ecspr.bake.direction.calibrate", "ecspr.bake.direction.canon",
     "ecspr.bake.direction.combine", "ecspr.bake.direction.curated",
@@ -49,17 +50,20 @@ NEEDS_A_TOOL = {
     "ecspr.bake.direction.thermo_dgbyg": "dGbyG",
     "ecspr.bake.atom_pairs": "rdkit",
     "ecspr.bake.aam.combine": "rdkit",          # via ..atom_pairs
+    "ecspr.bake.aam.partial": "rdkit",          # via ..atom_pairs
 }
 
 # {module: {verb: {flags}}} -- "" is the verb-less case (one flat parser).
 # Frozen from the pre-move flat modules; every entry was byte-identical across the
-# migration. The only additions since are `--collapsed-atom-limit` on the two steps
-# that apply the size cut, which is the AAM change and is meant to show up here.
+# migration. The additions since are the AAM change and are meant to show up here:
+# `--collapsed-atom-limit` on the two steps that apply the size cut, `--partial` where
+# the partial lane's products are read, and `ecspr.bake.aam.partial` itself.
 CLI = {
     "ecspr.bake.aam.worklist": {
         "build": {"--reactions", "--metabolites", "--atom-limit", "--char-limit",
                   "--collapsed-atom-limit", "--out", "--out-summary"},
-        "close": {"--worklist", "--pairs", "--rescued", "--out", "--out-summary"},
+        "close": {"--worklist", "--pairs", "--rescued", "--partial",
+                  "--out", "--out-summary"},
     },
     "ecspr.bake.aam.curation": {
         "propose": {"--lookups", "--worklist", "--chebi", "--modelseed",
@@ -67,6 +71,11 @@ CLI = {
         "complete": {"--lookups", "--worklist", "--crosswalk", "--char-limit",
                      "--atom-limit", "--collapsed-atom-limit",
                      "--out", "--out-balance", "--out-placeholders"},
+    },
+    "ecspr.bake.aam.partial": {
+        "build": {"--lookups", "--worklist", "--rescued", "--covered",
+                  "--atom-limit", "--char-limit",
+                  "--out", "--out-forced", "--out-summary"},
     },
     "ecspr.bake.aam.layers": {
         "fuse": {"--member", "--out"},
@@ -89,7 +98,8 @@ CLI = {
     "ecspr.bake.atom_pairs": {
         "extract": {"--aam", "--reac-prop", "--chem-prop", "--out", "--out-status",
                     "--align", "--connectivity-fallback", "--fallback-forced",
-                    "--balance", "--placeholders", "--resolved", "--min-confidence"},
+                    "--balance", "--placeholders", "--resolved", "--min-confidence",
+                    "--partial"},
         "selftest": set(),
     },
     "ecspr.bake.metabolism": {

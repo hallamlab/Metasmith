@@ -19,19 +19,32 @@ verdict, so a reaction we miss carries the reason we missed it.
 
 THE TWO SIZE BOUNDS ARE DIFFERENT BOUNDS
 ----------------------------------------
-`too_long` is the 8,000-CHARACTER cap the neural members already had. `oversize` is a
-cap on the reaction's ATOM count, and it is new. They refuse different reactions and
-they exist for different reasons, so merging them would make the atom threshold
-unmovable -- you could not raise it without also raising a limit that is about
-transformer context rather than about cost.
+`too_long` is the 8,000-CHARACTER cap the neural members already had; `oversize` is a
+cap on the reaction's ATOM count. They refuse different reactions and exist for
+different reasons, so merging them would make the atom threshold unmovable -- you could
+not raise it without also raising a limit that is about transformer context rather than
+about cost.
 
-The atom threshold's warrant is a measured yield curve, taken by joining reaction size
-to the deployed tier-4 table: reactions under 300 atoms bank at 91-99%, 300-400 at
-40.4%, 400-600 at 28.4%, 600-800 at 5.3%, 1,200-1,600 at 1.4%, and above 1,600 atoms
-exactly zero of 124 banked. Cutting at 600 removes 0.80% of the buildable universe and
-12 of the 54,382 reactions the deployed table banked -- 0.022% -- while removing the
-reactions that cost minutes each and OOM-killed the LocalMapper lane twice. It is a
-named constant because it is a judgement call, not a fact.
+Each threshold's warrant is a measured yield curve, taken by joining reaction size to
+the reactions the deployed bake banked. Under the expanded count: 98-99% up to 600, then
+12.8% at 600-800, 1.3% at 800-1,200 and zero above. Cutting at 600 removes 0.9% of the
+buildable universe while removing the reactions that cost minutes each and OOM-killed
+the LocalMapper lane twice. It is a named constant because it is a judgement call, not
+a fact.
+
+AND THE COUNT ITSELF WAS WRONG, WHICH IS WHY THERE ARE NOW THREE CONSTANTS
+--------------------------------------------------------------------------
+`rxn_smiles` is a stoichiometric EXPANSION: a coefficient of 16 writes the metabolite
+sixteen times. So the atom cap has been measuring how many times a molecule APPEARS
+rather than how much distinct chemistry a mapper must attend to -- and nitrogenase,
+which hydrolyses 16 ATP, was refused at 1,236 atoms while the acetylene-reduction proxy
+for exactly that chemistry sailed through.
+
+`collapse` writes each distinct molecule once per side, and a reaction the expanded
+measure refuses gets a second reading under `COLLAPSED_ATOM_LIMIT`. A reaction the
+expanded measure ADMITS is untouched, byte for byte, which is what makes "coverage may
+only go up" a property of the construction: 57,061 mappable before, 57,515 after, none
+lost. Both counts are kept on every row so either curve stays recomputable.
 
 VERDICTS ARE ASSIGNED IN GATE ORDER and only `oversize` / `too_long` remove anything
 that the current graph would otherwise map. Everything else names a reaction no mapper
@@ -406,13 +419,26 @@ def cmd_build(args):
 # after the build as well as before it.
 
 OUTCOMES = (
-    "banked",                  # the reaction contributed pairs to the final table
+    "banked",                  # the reaction contributed pairs, at least one from a full map
+    # A PARTIAL MAP IS ITS OWN OUTCOME, and this is the half the goal names explicitly.
+    # Every pair this reaction contributed came from the partial lane -- one element,
+    # from a reduced submission or from conservation. It is neither `banked` (nothing
+    # ever mapped the whole reaction) nor `mapped_nothing` (it did produce pairs), and
+    # collapsing it into either is the stop line: a partially-mapped reaction that reads
+    # as banked overstates coverage, and one that reads as dropped hides it.
+    "banked_partial",
+    "partial_declined",        # offered to the partial lane, still no pair survived
     "mapped_nothing",          # mappable, went to the lanes, no pair survived
     "rescued_nothing",         # completed by the rescue, still no pair survived
     "rescue_declined",         # blocked, and no lane could complete it
     "oversize", "too_long", "non_molecule", "no_transfer", "pseudo_reaction",
     "unparseable_equation",
 )
+
+# What `aam.partial` stamps on every pair row it produces. Named here because `close`
+# reads it to tell a partial bank from a full one, and two spellings of one string is
+# how an outcome silently stops being assigned.
+PARTIAL_SOURCE = "partial"
 
 
 def cmd_close(args):
@@ -423,6 +449,16 @@ def cmd_close(args):
     if args.rescued:
         rescued = set(pd.read_parquet(args.rescued, columns=["mnxr"])["mnxr"])
 
+    # Offered to the partial lane. Read rather than inferred: which reactions a member
+    # returned nothing for is a fact about a RUN, and the lane's own universe is where
+    # that fact is written down.
+    offered = set()
+    if args.partial:
+        offered = set(pd.read_parquet(args.partial, columns=["base_mnxr"])["base_mnxr"])
+
+    full = pairs[pairs["source"] != PARTIAL_SOURCE]
+    banked_full = set(full["mnxr"])
+
     by_rxn = pairs.groupby("mnxr")
     n_pairs = by_rxn.size()
     els = by_rxn["element"].apply(lambda s: ",".join(sorted(set(s))))
@@ -432,7 +468,12 @@ def cmd_close(args):
 
     def outcome(mnxr, verdict):
         if mnxr in banked:
-            return "banked"
+            # A reaction with even one pair from a full map is `banked`; the partial
+            # provenance of its other elements survives in the per-row method/source and
+            # in the `sources` column, which is where a per-element question belongs.
+            return "banked" if mnxr in banked_full else "banked_partial"
+        if mnxr in offered:
+            return "partial_declined"
         if verdict == "mappable":
             return "mapped_nothing"
         if verdict == "blocked_no_structure":
@@ -465,6 +506,8 @@ def cmd_close(args):
     for X in ("C", "N", "S", "P"):
         lines.append(f"element_reactions\t{X}\t"
                      f"{int(pairs.loc[pairs.element == X, 'mnxr'].nunique())}")
+    lines.append(f"partial\toffered\t{len(offered)}")
+    lines.append(f"partial\tpair_rows\t{int((pairs['source'] == PARTIAL_SOURCE).sum())}")
     lines.append(f"rescue\tcompleted\t{len(rescued)}")
     lines.append(f"rescue\tbanked\t{len(resc)}")
     lines.append(f"rescue\tbanked_with_consensus\t{n_consensus}")
@@ -478,8 +521,6 @@ def cmd_close(args):
     for o in OUTCOMES:
         print(f"  {o:<24} {int(oc.get(o, 0)):>8,}")
     print(f"  {'TOTAL':<24} {len(wl):>8,}")
-    print(f"\n  of which mappable only after a stoichiometric collapse: "
-          f"{int(wl['collapsed'].sum()):,}")
     print(f"\nrescue: {len(rescued):,} completed, {len(resc):,} banked, "
           f"{n_consensus:,} of those carry a consensus correspondence "
           f"(the deployed table has zero -- every rescued reaction there is one "
@@ -496,6 +537,10 @@ def parse_args(argv=None):
     p.add_argument("--worklist", required=True)
     p.add_argument("--pairs", required=True, help="the stacked aam_pairs parquet")
     p.add_argument("--rescued", default=None, help="the rescued universe parquet")
+    p.add_argument("--partial", default=None,
+                   help="the partial lane's universe. Its `base_mnxr` set is what was "
+                        "OFFERED to the lane, which is what distinguishes a reaction the "
+                        "lane could not reach from one nothing tried.")
     p.add_argument("--out", required=True)
     p.add_argument("--out-summary", required=True)
 

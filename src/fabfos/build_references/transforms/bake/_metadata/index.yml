@@ -1,6 +1,10 @@
 manifest:
   aam_ensemble.py:
-    instance_id: 1e20e8ce1dae4ecbc7fe17f448e768690f886cdca5ed53fbaa62d7652c3051d4f439
+    instance_id: 1e200cb99acb6de37de46f9d18b533b7caddb1d88fab9ffe580f5432708b935f8cae
+    origin: leaf
+    type: transforms::transform
+  aam_partial.py:
+    instance_id: 1e2005efc98c3640dbb53ded6cb6d2365d73199f6be00d67a2d8c4e52539b6d2a3f0
     origin: leaf
     type: transforms::transform
   aam_rescue.py:
@@ -31,6 +35,10 @@ manifest:
     instance_id: 1e20cd36de0c19b2f674566e28ab730dd7a5affd4fe8209f3d76f50d67ec9a7dfd9f
     origin: leaf
     type: transforms::transform
+  indigo_partial.py:
+    instance_id: 1e20c200c761828a1c00f99199ee43540f1456e0298ad3827d82102cae5297402d22
+    origin: leaf
+    type: transforms::transform
   indigo_rescue.py:
     instance_id: 1e20f11e25faa6ce32b965a48d59f11a0db99418377725f212667fb618414924790a
     origin: leaf
@@ -39,12 +47,20 @@ manifest:
     instance_id: 1e20bf168506f9bb858f5f967b971203979c17e13a4dec0595d49de2e56cac21d6a2
     origin: leaf
     type: transforms::transform
+  localmapper_partial.py:
+    instance_id: 1e20f4e9c8a1daa56d1c35cb247090cc01bed80175fff165d95b57f5a368ea12468d
+    origin: leaf
+    type: transforms::transform
   localmapper_rescue.py:
     instance_id: 1e2096137c22a7c40eb49ce0997f7d05ffffc3c77c13366b6f35f845141310d62f9c
     origin: leaf
     type: transforms::transform
   rxnmapper.py:
     instance_id: 1e2047b8014cca9d95a0e9f41a2fc46ed60aaa6f5b777f75102d752a0639f498296c
+    origin: leaf
+    type: transforms::transform
+  rxnmapper_partial.py:
+    instance_id: 1e2045ce5b3963506bedc62ebc610f2d4f76f9af7538b6ab8ee2bb2104c317ce3da9
     origin: leaf
     type: transforms::transform
   rxnmapper_rescue.py:
