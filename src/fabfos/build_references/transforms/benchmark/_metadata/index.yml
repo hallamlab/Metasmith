@@ -12,7 +12,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   host_gpr_gem.py:
-    instance_id: 1e20ffa8633f8f3e72f762af4682bc559e694f09f5f4d15bd8c019e6d7d29095d832
+    instance_id: 1e20e823a5f3b56f7875ebd1b7641bf75bc36422d27674f6ebfb24ee16b17d2d2fb5
     origin: leaf
     type: transforms::transform
   host_proteomes.py:

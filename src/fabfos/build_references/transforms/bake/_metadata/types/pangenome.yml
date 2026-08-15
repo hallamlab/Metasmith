@@ -5,6 +5,14 @@ ontology:
   version: '1.25'
 schema: v1
 types:
+  all_vs_all_blast:
+    properties:
+      Data: pooled all-vs-all diamond blastp (blast6, genome-tagged ids)
+      ext: tsv
+  bsr_histogram:
+    properties:
+      Data: histogram of cross-genome BLAST score ratio distances
+      ext: svg
   heatmap:
     properties:
       Data: pangenome matrix
