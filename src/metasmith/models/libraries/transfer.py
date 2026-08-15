@@ -174,7 +174,19 @@ class _StoreTransfer:
         types_path = path/cls._path_to_types
         index_path = meta_path/(cls._index_name+ext)
         assert path.exists(), f"path [{path}] does not exist"
-        assert index_path.exists(), f"index file [{index_path}] does not exist"
+        if not index_path.exists():
+            # A directory holding sources but no `_metadata/` has not been
+            # compiled — the ordinary state of a fresh checkout, since the
+            # compiled form is a build product and is not tracked. Say so,
+            # because the bare "index file does not exist" reads as a
+            # corrupted library and sends the reader looking at the wrong
+            # thing entirely.
+            uncompiled = any(path.glob("*.yml")) or any(path.glob("*.py"))
+            hint = (
+                " -- this looks like an uncompiled library: it holds sources but"
+                " no compiled _metadata/. Run `metasmith build` against it first."
+            ) if uncompiled else ""
+            raise AssertionError(f"index file [{index_path}] does not exist{hint}")
 
         dtypes = {}
         for p in types_path.iterdir():
