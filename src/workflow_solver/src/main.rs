@@ -7,11 +7,18 @@
 //! finds out which of those it is looking at, and what this build can be asked
 //! to do.
 //!
-//! What it can be asked to do today is `rng` and nothing else: the decision
-//! contract, ported and differentially tested, with the search still to come.
-//! The Python side reads `capabilities` and falls back for the rest, so the
-//! delivery path -- four targets, packaging, resolution, fallback -- is proven
-//! before the search depends on it.
+//! It advertises `rng` and `solve`: the decision contract, ported and
+//! differentially tested, and the search itself. The Python side reads
+//! `capabilities` and falls back per capability rather than wholesale, which is
+//! what let the delivery path -- four targets, packaging, resolution, fallback
+//! -- be proven before the search depended on it.
+//!
+//! **A fallback to Python is not evidence that this binary lacks the search.**
+//! The staged artifact is what decides: if it is absent, or present and not
+//! executable, resolution never gets as far as reading `capabilities`. That is
+//! a live failure mode rather than a hypothetical -- the staged copy is a
+//! read-only hardlink out of a shared cache, and a whole tree of solves ran on
+//! the slower Python search without one line of output saying so.
 
 mod det;
 mod mcts;
