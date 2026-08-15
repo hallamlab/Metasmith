@@ -28,7 +28,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   genomes.py:
-    instance_id: 1e203185de6210b1d732bdfce31fecc66f54afe3e0fd5fa5d7df60328b00f1d94282
+    instance_id: 1e2088fb406b9cea55e3bc292e43f4964c226cce1f21571e9c096e3eec9a53a9958d
     origin: leaf
     type: transforms::transform
   kegg.py:

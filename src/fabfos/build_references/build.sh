@@ -24,7 +24,10 @@
 # ref.yml that they reference does not reach them until they are recompiled.
 set -euo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-REPO="$(dirname "$HERE")"
+# up three: build_references/ -> fabfos/ -> src/ -> the repository root. The
+# monorepo nested the package one level deeper than the standalone fabfos repo
+# this script was written in.
+REPO="$(cd "$HERE/../../.." && pwd)"
 MLIB="$REPO/src/metasmith_libraries"
 
 if command -v msm >/dev/null 2>&1; then

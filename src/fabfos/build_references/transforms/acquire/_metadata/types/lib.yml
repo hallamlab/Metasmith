@@ -5,6 +5,10 @@ ontology:
   version: '1.25'
 schema: v1
 types:
+  bsr_histogram.py:
+    properties:
+      src: bsr_histogram
+      usage: command line
   extract_noncoding_chunks.py:
     properties:
       src: extract_noncoding_chunks
