@@ -11,15 +11,16 @@ def protocol(context: ExecutionContext):
     iout=context.Output(out)
     threads = context.params.get('cpus')
     threads = 4 if threads is None else threads
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             STAR --runMode genomeGenerate \
                 --genomeDir star_idx \
                 --genomeFastaFiles {iasm.container} \
                 --runThreadN {threads}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     context.LocalShell(f"mv star_idx {iout.local}")
     return ExecutionResult(
         manifest=[

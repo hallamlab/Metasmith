@@ -20,9 +20,8 @@ def protocol(context: ExecutionContext):
     # Use global environment model (works for most samples)
     environment = "global"
 
-    context.ExecWithEnv().ifContainerDo(
-        env = image,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             export PATH=/opt/conda/bin:$PATH
             SemiBin2 single_easy_bin \
                 -i {iasm.container} \
@@ -31,7 +30,9 @@ def protocol(context: ExecutionContext):
                 --environment {environment} \
                 -t {threads}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     # Find all bin files and output each one separately
     outputs = []

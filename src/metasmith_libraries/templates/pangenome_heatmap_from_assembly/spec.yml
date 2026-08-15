@@ -4,11 +4,11 @@ sample_type: ncbi::assembly_accession
 target_types:
 - pangenome::heatmap
 transform_libraries:
-- transforms/logistics
-- transforms/pangenome
+- logistics
+- pangenome
 resource_libraries:
-- resources/env
-- resources/lib
+- env
+- lib
 shared_input_paths:
 - pangenome.json
 input_library:
@@ -30,9 +30,5 @@ input_library:
       type: pangenome::pangenome
       instance_id: 1e20c9959e1885818b6ee3d8e7024809fec0523b5c333908baeeb94de20987690bca
       origin: leaf
-  types:
-    ncbi: data_types/ncbi.yml
-    pangenome: data_types/pangenome.yml
-    sequences: data_types/sequences.yml
   values:
     pangenome.json: '{"logistics": "pangenome"}'

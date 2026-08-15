@@ -26,9 +26,8 @@ def protocol(context: ExecutionContext):
     threads = "" if threads is None else f"-p {threads}"
 
     # Build diamond database from existing centroids and search new ORFs
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             diamond makedb --in {icentroids.container} -d centroid_db \
             && diamond blastp \
                 -d centroid_db \
@@ -38,8 +37,10 @@ def protocol(context: ExecutionContext):
                 --query-cover 80 \
                 --max-target-seqs 1 \
                 {threads}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     # Parse hits to find which new ORFs matched existing centroids
     # hits.tsv is BLAST tabular: query, subject, pident, ...

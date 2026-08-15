@@ -11,10 +11,11 @@ ref = model.AddProduct(lib.GetType("ref::genomad"))
 def protocol(context: ExecutionContext):
     idb = context.Output(ref)
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd="/usr/local/bin/_entrypoint.sh genomad download-database .",
-    )
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = "/usr/local/bin/_entrypoint.sh genomad download-database ."
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     Path("genomad_db").rename(idb.local)
 
     return ExecutionResult(

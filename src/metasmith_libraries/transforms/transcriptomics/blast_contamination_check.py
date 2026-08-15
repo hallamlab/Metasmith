@@ -14,9 +14,8 @@ def protocol(context: ExecutionContext):
     iorgref   = context.Input(orgref)
     iout      = context.Output(out)
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             makeblastdb \
                 -in {iassembly.container} \
                 -dbtype nucl \
@@ -27,8 +26,10 @@ def protocol(context: ExecutionContext):
                 -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen" \
                 -evalue 1e-10 \
                 -out {iout.container}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

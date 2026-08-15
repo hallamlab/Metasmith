@@ -103,10 +103,11 @@ normed.index.name = "gene_id"
 normed.to_csv(output, sep="\\t")
 """)
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"python pydeseq2_normalize.py {manifest} {iout.container}",
-    )
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"python pydeseq2_normalize.py {manifest} {iout.container}"
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[
             {

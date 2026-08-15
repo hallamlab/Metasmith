@@ -80,10 +80,11 @@ de_df.to_csv(output_file)
 print(f"Wrote {output_file} ({len(de_df)} genes, {len(de_frames)} comparisons)", flush=True)
 """)
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"python run_deseq2.py {icounts.container} {iout.container} {cpus}",
-    )
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"python run_deseq2.py {icounts.container} {iout.container} {cpus}"
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists(),

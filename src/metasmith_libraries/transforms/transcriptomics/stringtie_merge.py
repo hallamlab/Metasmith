@@ -22,16 +22,17 @@ def protocol(context: ExecutionContext):
         for p in gtf_paths:
             f.write(f"{p.container}\n")
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             stringtie --merge \
                 -G {igff.container} \
                 -o merged.gtf \
                 -p {threads} \
                 {gtf_list}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     context.LocalShell(f"mv merged.gtf {iout.local}")
     return ExecutionResult(
         manifest=[

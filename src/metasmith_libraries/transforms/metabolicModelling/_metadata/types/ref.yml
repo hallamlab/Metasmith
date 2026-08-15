@@ -18,6 +18,13 @@ types:
   antismash:
     properties:
     - for antiSMASH
+  atom_pairs:
+    properties:
+      _:
+      - Compiled atom-atom mapping, one row per single atom correspondence (element,
+        rxn, tail_node, head_node packed as met_code<<rank_bits|atom_rank, pair_w);
+        orientation stored as written
+      ext: parquet
   boltz2_weights:
     properties:
       _:
@@ -29,6 +36,17 @@ types:
   centrifuger_db:
     properties:
     - Centrifuger FM-index prefix (.1.cfr .. .4.cfr files share a common prefix)
+  direction_ratios:
+    properties:
+      _:
+      - Per-reaction directionality (rxn, ratio = g_rev/g_fwd = exp(dG'/RT), dir_tier);
+        ratio > 1 FLIPS the edge, it does not amplify it
+      ext: parquet
+  ec_to_mnxr:
+    properties:
+      _:
+      - EC -> MNXR fan-out bridge table (tab-separated; columns ec, mnxr)
+      ext: tsv
   esm_c_300m_weights:
     properties:
       _:
@@ -44,20 +62,51 @@ types:
       _:
       - ESMFold v1 weights (facebook/esmfold_v1)
       ext: tgz
+  ezpred_model:
+    properties:
+    - EZpred DL-only EC-head model bundle (kad-ecoli/EZpred predict.py + MLP heads)
   ganon2_db:
     properties:
     - ganon2 database prefix (.hibf + .tax files share a common prefix)
   genomad:
     properties:
     - for geNomad
+  gpr_table_denovo:
+    properties:
+      Format: DIRECTORY
+      _:
+      - Per-host GPR tables inferred from each host's own annotation lanes, hosts/<host>/gpr_denovo.parquet
+        (long-format, one row per ORF x channel x MNXR)
+  gpr_table_gem:
+    properties:
+      Format: DIRECTORY
+      _:
+      - Per-host GPR tables asserted by a curated genome-scale model, hosts/<host>/gpr_gem.parquet
+        (long-format, one row per gene x MNXR; uniform raw_score)
   gtdb:
     properties:
     - genome taxonomy database
+  host_gem_identity_report:
+    properties:
+      _:
+      - Re-measured delta between a host and the host whose curated model it borrows
+      ext: md
   interproscan_data:
     properties:
       _:
       - InterProScan data directory
       ext: tgz
+  ko_to_kegg_r:
+    properties:
+      _:
+      - KO -> KEGG reaction links from each KO's flat-file REACTION block (tab-separated;
+        columns ko, kegg_r)
+      ext: tsv
+  ko_to_mnxr:
+    properties:
+      _:
+      - KO -> MNXR fan-out bridge table (tab-separated; columns ko, mnxr)
+      ext: tsv
   kofamscan_ko_list:
     properties:
       _:
@@ -65,18 +114,29 @@ types:
       ext: tsv
   kofamscan_profiles:
     properties:
-      _:
-      - KofamScan HMM profile directory containing .hmm files
-      ext: tgz
+    - KofamScan HMM profile directory -- .hmm files directly under it, unpacked
   kraken2_db:
     properties:
     - Kraken2 database directory (hash.k2d + Bracken kmer_distrib)
+  metabolism_vocab:
+    properties:
+      _:
+      - Int-code vocabulary for the compiled metabolism tables (kind, code, symbol;
+        met and rxn densely coded within kind)
+      ext: parquet
   metabuli_ref:
     properties:
     - metabuli reference database
   metaphlan_db:
     properties:
     - MetaPhlAn 4 database directory (bowtie2 + .pkl + .nwk)
+  mnxr_lookup:
+    properties:
+      _:
+      - Consolidated intermediate-id -> MNXR bridge (id, id_source in {ko,ec,uniprot},
+        mnxr, evidence_quality); the three id spaces are disjoint, so id alone is
+        unambiguous and id_source is a label
+      ext: parquet
   phyloflash_db:
     properties:
     - phyloFlash SILVA SSU DB dir (bbmap + UDB + tax tree)
@@ -91,6 +151,14 @@ types:
   reference_data:
     properties:
     - reference database
+  reference_label_pool:
+    properties:
+    - Reference embeddings + their MNXR labels for kNN label transfer (orf_index.parquet
+      + emb_*.npy)
+  reference_label_pool_esmc:
+    properties:
+    - Reference ESM-C embeddings + their MNXR labels for kNN label transfer (orf_index.parquet
+      + emb_esmc.npy)
   saprot_650m_weights:
     properties:
       _:
@@ -101,6 +169,12 @@ types:
       _:
       - sylph sketch database (single .syldb file)
       ext: syldb
+  uniprot_to_mnxr:
+    properties:
+      _:
+      - UniProt -> MNXR bridge via Rhea DR (parquet; uniprot_accession, dr_source,
+        mnxr)
+      ext: parquet
   uniref50_diamond_db:
     properties:
       _:

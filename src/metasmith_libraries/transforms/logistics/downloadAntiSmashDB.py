@@ -11,13 +11,14 @@ def protocol(context: ExecutionContext):
 
     # antiSMASH bundles a download command that fetches Pfam, ClusterBlast,
     # MIBiG, Resfams, NRPS/PKS substrate prediction models, etc.
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             mkdir -p {iout.container}
             download-antismash-databases --database-dir {iout.container}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],
