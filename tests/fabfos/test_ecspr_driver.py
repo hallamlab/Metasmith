@@ -75,6 +75,52 @@ def test_ecspr_driver_plans(tmp_path):
     assert svg.exists() and svg.stat().st_size > 0, f"DAG SVG not written: {svg}"
 
 
+def test_copy_staging_names_inputs_for_the_unit(tmp_path):
+    """``stage="copy"`` makes every input a RELATIVE member, named for its unit.
+
+    Both halves matter and neither is visible in the plan. Relative, because an
+    absolute local path is an external input a remote agent binds rather than
+    transfers, so referencing one makes it refuse to stage at all. Named for the
+    unit, because nextflow stages a process's inputs by basename and every
+    composed network calls its table `gpr.parquet` -- two units in one library
+    would collide on the name and hand a step the wrong network, silently.
+
+    See `research/fabfos/examples/nostoc_ecspr.py`, which is the caller this
+    exists for: one invocation per composed graph, each passing that graph's own
+    atom-pair table.
+    """
+    pairs = tmp_path / "atom_pairs.parquet"
+    pairs.touch()
+    direction = tmp_path / "direction.parquet"
+    direction.touch()
+
+    units = []
+    for name in ("net_a", "net_b"):
+        d = tmp_path / name
+        d.mkdir()
+        # The colliding basenames the naming rule exists for.
+        (d / "gpr.parquet").touch()
+        (d / "conditions.parquet").touch()
+        units.append(ecspr.Unit(name=name, gpr_table=d / "gpr.parquet",
+                                conditions=d / "conditions.parquet"))
+
+    work = tmp_path / "work"
+    seen = []
+    agent, task, stubs = ecspr.generate_workflow(
+        work, units=units, atom_pairs=pairs, direction_ratios=direction,
+        runtime=Runtime.APPTAINER, stage="copy", on_inputs=seen.append,
+    )
+
+    assert task.ok, f"copy-staged plan failed: {task.plan}"
+    assert stubs == {}, stubs
+    assert len(seen) == 1, "on_inputs must run once, after staging and before planning"
+
+    staged = {p.name for p in (work / "inputs.xgdb").iterdir() if p.suffix == ".parquet"}
+    assert {"net_a.gpr.parquet", "net_b.gpr.parquet",
+            "net_a.conditions.parquet", "net_b.conditions.parquet",
+            "atom_pairs.parquet", "direction.parquet"} <= staged, sorted(staged)
+
+
 if __name__ == "__main__":
     import tempfile
 

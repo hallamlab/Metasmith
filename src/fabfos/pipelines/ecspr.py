@@ -14,8 +14,23 @@ every unit, never per-unit -- pinning them to a run would wrongly imply the
 basis changes between runs.
 
 REFERENCE DEFAULTS. ``atom_pairs`` and ``direction_ratios`` default to this
-repo's baked copies at ``data/processed/metabolism_bake/{atom_pairs,direction}
-.parquet``.
+repo's baked copies at ``data/fabfos/processed/metabolism_bake/{atom_pairs,
+direction}.parquet``. Those are stored CODED -- integer reaction and metabolite
+ids against the bake's own vocab -- and the graph builder reads the string
+schema, so the caller decodes first (`benchmarks/eydallin/bake_pairs.py`).
+Handing the coded table straight through does not raise: `element == "C"` is
+compared against integers, matches nothing, and an empty graph is measured.
+
+A COMPOSED PAIR TABLE IS NOT NETWORK-AGNOSTIC, and that is the one place this
+driver's shape is decided by something other than the type contract. The
+reference parquets are shared because they are static functions of the
+MNXR/MNXM id space. A community network built by ``ecspr.compose`` is not: it
+carries organism-prefixed metabolite ids and bridge rows that mean nothing to
+any other network. Rather than pin the reference type per-experiment -- which
+would change the measurement transform and weaken a contract that is right for
+every other caller -- the caller invokes this driver ONCE PER COMPOSED GRAPH and
+passes that graph's tables through ``--atom-pairs`` / ``--direction-ratios``.
+See ``research/fabfos/examples/nostoc_ecspr.py``.
 
 `ecspr::metabolite_names` is NOT staged. Deciding which MNXM a name means is
 what someone does while WRITING a conditions table -- the table names its hubs
@@ -30,12 +45,15 @@ Usage:
 
     python -m fabfos.pipelines.ecspr \\
         --unit pool_a:gpr_a.parquet:conditions_a.parquet \\
-        --unit pool_b:gpr_b.parquet:conditions_b.parquet \\
-        --dag reports/dag/ecspr --plan-only
+        --unit pool_b:gpr_b.parquet:conditions_b.parquet
+
+Planning is what it does; ``--run`` opts into executing. The DAG lands under
+``research/fabfos/reports/dag/`` unless ``--dag`` says otherwise.
 """
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,8 +97,18 @@ def parse_unit(spec: str) -> Unit:
 
 
 def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
-                  direction_ratios: Path | None
+                  direction_ratios: Path | None, stage: str = "reference"
                   ) -> tuple[DataInstanceLibrary, dict[str, Path]]:
+    """``stage="copy"`` copies every input into the library instead of naming it.
+
+    An input given as an absolute LOCAL path is an EXTERNAL input: metasmith binds it
+    verbatim into the remote container and does not transfer it, so a remote agent
+    refuses to stage a workflow whose inputs live only on this machine. Copying makes
+    each one a relative member of the library, which travels with the task. That is
+    affordable here and nowhere near affordable for the annotation lane's references --
+    a composed network is tens of megabytes, the DIAMOND database is tens of gigabytes,
+    which is why those stay external and are proved resident by the caller instead.
+    """
     lib = common.resolve_library_root()
 
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
@@ -88,16 +116,34 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
     for ns in ("fabfos", "annotation", "ecspr"):
         inputs.AddTypeLibrary(lib / "data_types" / f"{ns}.yml")
 
+    def _add(path: Path, dtype: str, *, name: str, parents=None):
+        p = Path(path).expanduser().resolve()
+        if stage == "copy":
+            # Named for the UNIT, not for the file. Every composed network calls its
+            # tables `gpr.parquet` / `atom_pairs.parquet`, and nextflow stages a
+            # process's inputs by basename -- two of them in one library would collide
+            # on a name and silently hand a step the wrong network.
+            shutil.copy(p, inputs.location / name)
+            inputs.AddItem(name, dtype, parents=parents or set())
+        else:
+            inputs.AddItem(p, dtype, parents=parents or set())
+
     for unit in units:
         exp = inputs.AddValue(f"experiment_{unit.name}.txt", unit.name, "fabfos::experiment")
-        inputs.AddItem(unit.gpr_table.expanduser().resolve(), "annotation::gpr_table", parents={exp})
-        inputs.AddItem(unit.conditions.expanduser().resolve(), "ecspr::conditions", parents={exp})
+        _add(unit.gpr_table, "annotation::gpr_table",
+             name=f"{unit.name}.gpr.parquet", parents={exp})
+        _add(unit.conditions, "ecspr::conditions",
+             name=f"{unit.name}.conditions.parquet", parents={exp})
 
     stubs: dict[str, Path] = {}
-    for dtype, given, default in (
-        ("ecspr::atom_pairs", atom_pairs, DEFAULT_ATOM_PAIRS),
-        ("ecspr::direction_ratios", direction_ratios, DEFAULT_DIRECTION_RATIOS),
+    for dtype, given, default, stem in (
+        ("ecspr::atom_pairs", atom_pairs, DEFAULT_ATOM_PAIRS, "atom_pairs"),
+        ("ecspr::direction_ratios", direction_ratios, DEFAULT_DIRECTION_RATIOS, "direction"),
     ):
+        src = given if given is not None else default
+        if stage == "copy" and src is not None and Path(src).expanduser().exists():
+            _add(Path(src), dtype, name=f"{stem}.parquet")
+            continue
         path, real = common.stage_ref(inputs, work, dtype, given=given, default=default)
         if not real:
             stubs[dtype] = path
@@ -108,12 +154,24 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
 
 def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
                        direction_ratios: Path | None, runtime: Runtime,
-                       agent_env: str | None = None):
+                       agent_env: str | None = None, stage: str = "reference",
+                       agent=None, on_inputs=None):
+    """``on_inputs(inputs)`` runs after the library is built and before planning.
+
+    The one seam a site needs, and the same one ``annotation.generate_workflow``
+    exposes: instance identities are settled at this point and the plan key is derived
+    from them, so anything that must hold about them has to happen here or not at all.
+    ``agent`` is injected for the same reason -- a cluster driver and the shipped gate
+    must resolve this stage through one code path, with the site's hostnames and
+    accounts staying with the caller.
+    """
     lib = common.resolve_library_root()
     inputs, stubs = build_inputs(
         work, units=units, atom_pairs=atom_pairs,
-        direction_ratios=direction_ratios,
+        direction_ratios=direction_ratios, stage=stage,
     )
+    if on_inputs is not None:
+        on_inputs(inputs)
 
     resources = [
         DataInstanceLibrary.Load(lib / "resources" / "env"),
@@ -125,7 +183,8 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
     targets = TargetBuilder()
     targets.Add("ecspr::results")
 
-    agent = common.make_agent(work, runtime, container=agent_env)
+    if agent is None:
+        agent = common.make_agent(work, runtime, container=agent_env)
     task = agent.GenerateWorkflow(
         samples=list(inputs.AsSamples("fabfos::experiment")),
         resources=resources,
@@ -144,7 +203,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--direction-ratios", default=None, metavar="PARQUET")
     p.add_argument("--staging", default=None, help="working dir (default: <output>/_fabfos)")
     p.add_argument("--output", default="./fabfos_ecspr_out", help="output directory")
-    p.add_argument("--dag", default="reports/dag/ecspr", help="path base for the rendered SVG")
+    p.add_argument("--dag", default="research/fabfos/reports/dag/ecspr", help="path base for the rendered SVG")
     p.add_argument("--runtime", choices=[r.value for r in Runtime],
                     default=Runtime.APPTAINER.value)
     p.add_argument("--threads", type=int, default=8)

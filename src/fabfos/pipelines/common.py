@@ -11,7 +11,7 @@ profiles, the ECSPr atom-mapping basis, the ``algorithm::fabfos_recovery.py``
 script) either have no producer transform in the library or have no confirmed
 real file on this machine yet -- see each driver's module docstring for which.
 ``stage_ref`` below stages the real file when one is given or found at a
-default path, and falls back to an empty stub (so --plan-only / --dag still
+default path, and falls back to an empty stub (so planning and --dag still
 resolves and renders) otherwise, always reporting which happened. A run
 against a stub will fail inside the container, loudly, which is correct: the
 gap is real and a driver papering over it would be a false claim.
