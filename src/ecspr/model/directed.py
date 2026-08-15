@@ -1,5 +1,5 @@
 """ECSPr directed (rectified "diode" network) solver -- the directional companion to
-the undirected effective-conductance measurement in ``ecspr.graph.py``.
+the undirected effective-conductance measurement in ``ecspr.model.graph.py``.
 
 Each reaction edge carries a forward conductance ``g+`` and a backward conductance
 ``g-``. A metabolite potential field ``phi`` induces a per-edge signed potential drop

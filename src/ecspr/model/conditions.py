@@ -23,14 +23,14 @@ Mask, three ``(column, values)`` pairs with the values ``|``-joined:
 ``background_column`` / ``background_values`` is what is always in (the host),
 ``mask_column`` / ``mask_values`` is what this condition adds, and
 ``drop_column`` / ``drop_values`` withholds rows the other two let through.
-See :mod:`ecspr.gpr` for the semantics and why the background is stated.
+See :mod:`ecspr.model.gpr` for the semantics and why the background is stated.
 Study metadata, carried through and never interpreted here: ``arm``, ``cohort``,
 ``is_control``, ``stratum``, ``n_units``, ``draw_id``.
 
 ``is_control`` is the one field scoring reads. A control is a unit the study
 asserts is a no-op; its mask reaches no atom-mapped reaction, so it must return
 the baseline exactly, and the spread over the controls is therefore the numerical
-floor every z-score has to clear. See :mod:`ecspr.scoring`.
+floor every z-score has to clear. See :mod:`ecspr.model.scoring`.
 """
 from __future__ import annotations
 

@@ -280,7 +280,7 @@ def main():
           f"{len(like)} drawable in --like")
 
     # The direction reference: the bake's integer-coded table decoded onto MNXR,
-    # which is the shape `ecspr.build.load_direction_ratios` reads.
+    # which is the shape `ecspr.model.build.load_direction_ratios` reads.
     dpath = args.out / "direction_ratios.parquet"
     d = pd.read_parquet(BAKE / "direction.parquet")
     v = pd.read_parquet(BAKE / "vocab.parquet")

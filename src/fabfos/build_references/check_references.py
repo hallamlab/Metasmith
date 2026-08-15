@@ -100,14 +100,14 @@ def check_equivalence(ident: dict, vocab_p: Path, pairs_p: Path, dir_p: Path,
                       src_pairs: Path, src_dir: Path) -> None:
     """The compiled tables must build the same graph as the reference builder.
 
-    ``ecspr.build.graph_from_pairs`` works on the STRING tables and is the definition;
+    ``ecspr.model.build.graph_from_pairs`` works on the STRING tables and is the definition;
     ``refs_encoding.compile_atom_graph`` works on the compiled ones and is the thing being
     checked. Node ORDER differs -- the baked table is sorted, so first-seen order differs
     -- which is why nodes are compared as sets and conductances sorted before comparison.
     """
     print("\nequivalence -- the compiled tables build the same graph as the builder")
     try:
-        from ecspr.build import graph_from_pairs
+        from ecspr.model.build import graph_from_pairs
     except ImportError as e:
         note(f"the `ecspr` package is not installed in this env ({e}); equivalence "
              f"not checked -- run this under the `ecspr` or `build-refs-cobra` env")

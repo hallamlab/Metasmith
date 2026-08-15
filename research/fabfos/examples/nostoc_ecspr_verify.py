@@ -35,10 +35,10 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "src"))
 
-import ecspr.build as eb  # noqa: E402
-import ecspr.compose as ec  # noqa: E402
-import ecspr.evidence as en  # noqa: E402
-from ecspr.graph import Terminal, measure_leak  # noqa: E402
+import ecspr.model.build as eb  # noqa: E402
+import ecspr.model.compose as ec  # noqa: E402
+import ecspr.model.evidence as en  # noqa: E402
+from ecspr.model.graph import Terminal, measure_leak  # noqa: E402
 
 # The bake is stored CODED and the graph builder reads the string schema, so it is
 # decoded before use -- see `benchmarks/eydallin/bake_pairs.py`, which owns that decode

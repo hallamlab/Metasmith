@@ -6,7 +6,7 @@ per-unit (fosmid contig / metaG ORF) addition maps for the same allocation.
 
 Ported from the archived `metasmith_libraries/resources/lib/ecspr_network.py`
 (pre-atom-graph star lane) -- the belief-conservation math is topology-agnostic,
-only the consumer changed (`ecspr.build.graph_from_pairs` takes `E_r` as `weights`
+only the consumer changed (`ecspr.model.build.graph_from_pairs` takes `E_r` as `weights`
 directly, in place of the retired reaction-hub star graph).
 
 Env: numpy + pandas (CPU).

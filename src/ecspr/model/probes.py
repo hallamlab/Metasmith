@@ -5,7 +5,7 @@ ONE OUTPUT SCHEMA, WHATEVER THE PROBE
 Every measurement is a row of ``(condition_id, probe, orientation, element,
 readout, value)``. ``readout`` is a sink metabolite, any metabolite from the
 universal ground's draw vector, or ``total``. That is what lets
-:mod:`ecspr.scoring` be probe-blind, and it is why a baseline is named at SCORING
+:mod:`ecspr.model.scoring` be probe-blind, and it is why a baseline is named at SCORING
 time rather than flagged at measurement time: a delta is a subtraction over rows,
 never something a probe was told to compute.
 

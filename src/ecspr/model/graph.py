@@ -50,7 +50,7 @@ the same proportion either way.
 
 THE SOLVE
 ---------
-Reused wholesale from :mod:`ecspr.directed`: signed incidence, softplus-smoothed diode,
+Reused wholesale from :mod:`ecspr.model.directed`: signed incidence, softplus-smoothed diode,
 Newton with an energy-Armijo line search, CHOLMOD symbolic reuse. Nothing about the
 rectified network changes -- only the topology it runs on, and the fact that terminals are
 node sets rather than single nodes. When ``gm == gp`` everywhere the network is symmetric
@@ -107,13 +107,13 @@ class AtomGraph:
     forward / backward conductances (``gm = ratio * gp``, ratio = ``g_rev/g_fwd`` from the
     direction ensemble; ratio 1.0 is the undirected limit).
 
-    Deliberately the same data shape :class:`ecspr.directed.OrientedNet` carries, so it
+    Deliberately the same data shape :class:`ecspr.model.directed.OrientedNet` carries, so it
     hands straight to ``build_incidence`` and ``directed_ceff``. The difference is that
     there are no reaction nodes: an edge IS an atom transfer, so orientation comes from the
     pair table's substrate/product columns and no reac_prop role parsing is needed.
 
     ``meta`` carries build provenance (element, reaction count, AAM-gap count, ...). The
-    builders in :mod:`ecspr.build` fill it; nothing here reads it.
+    builders in :mod:`ecspr.model.build` fill it; nothing here reads it.
     """
     nodes: list
     edges: list
@@ -523,7 +523,7 @@ def solve(graph: AtomGraph, source: Terminal, sink: Terminal, *, tol=None, warm=
 
     The terminals are shorted by exact contraction, unit current is injected source->sink,
     and the rectified network is solved by the smoothed-diode Newton in
-    :mod:`ecspr.directed`. When every backward conductance equals its forward conductance
+    :mod:`ecspr.model.directed`. When every backward conductance equals its forward conductance
     the network is symmetric and one linear solve is exact -- that path is taken explicitly.
 
     An empty terminal, or two terminals with no connecting path, gives a DEFINITE ZERO

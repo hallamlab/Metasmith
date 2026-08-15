@@ -5,7 +5,7 @@ nothing here may read it. The bytes are not gone -- the chunk stays reachable fr
 the last commit that carried the pin -- but the bake is the atom-pair basis now.
 
 The bake stores `(rxn, tail_met, head_met, element, method, source)` as integer vocab
-codes, while `ecspr.build.load_pairs` wants the string schema the frozen reference used
+codes, while `ecspr.model.build.load_pairs` wants the string schema the frozen reference used
 (`mnxr/element/substrate/product/sub_idx/prod_idx`). Handing `load_pairs` the encoded
 table does not raise -- `df[df.element == "C"]` compares ints to a string and returns
 zero rows, so the graph comes back empty rather than wrong-looking. Hence this decode,

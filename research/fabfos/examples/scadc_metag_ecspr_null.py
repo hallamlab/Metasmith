@@ -122,8 +122,8 @@ _W: dict = {}
 
 
 def _init(conditions_path, ratios_path, pairs_path, host_mnxr, baseline):
-    from ecspr.build import graph_from_pairs, load_direction_ratios, load_pairs
-    from ecspr.graph import Terminal, solve
+    from ecspr.model.build import graph_from_pairs, load_direction_ratios, load_pairs
+    from ecspr.model.graph import Terminal, solve
     cond = pd.read_parquet(conditions_path)
     _W.update(
         pairs=load_pairs(pairs_path, element=ELEMENT),
@@ -189,7 +189,7 @@ def run_draws(k: int, workers: int) -> int:
 
     # The host baseline, in the parent, before any fork: it is subtracted from
     # every draw, so it must be ONE number rather than one per worker.
-    from ecspr.build import load_direction_ratios, load_pairs  # noqa: F401
+    from ecspr.model.build import load_direction_ratios, load_pairs  # noqa: F401
     host_mnxr = sorted(pd.read_parquet(HOST_GEM).mnxr.dropna().unique().tolist())
     _init(conditions, ratios_path, pairs_path, host_mnxr, (0.0, [0.0]))
     t0 = time.time()
@@ -209,7 +209,7 @@ def run_draws(k: int, workers: int) -> int:
     print(f"[null] loading {GPR4.relative_to(ROOT)}", flush=True)
     gpr = pd.read_parquet(GPR4)
     lanes = sorted(gpr["channel"].unique().tolist())
-    from ecspr.evidence import per_unit_weights
+    from ecspr.model.evidence import per_unit_weights
     per_orf = per_unit_weights(gpr, "orf")
     del gpr
     print(f"[null] lanes={lanes}  {len(per_orf):,} ORFs carry >=1 nominated MNXR",

@@ -33,8 +33,8 @@ from scipy.stats import spearmanr
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ecspr.build import load_pairs, load_direction_ratios, graph_from_pairs  # noqa: E402
-from ecspr.graph import Terminal, measure_leak                               # noqa: E402
+from ecspr.model.build import load_pairs, load_direction_ratios, graph_from_pairs  # noqa: E402
+from ecspr.model.graph import Terminal, measure_leak                               # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bake_pairs  # noqa: E402

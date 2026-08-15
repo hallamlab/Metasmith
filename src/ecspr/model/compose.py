@@ -14,7 +14,7 @@ the null this experiment is trying to reject.
 THE WHOLE CONSTRUCTION IS A PAIR-TABLE TRANSFORM
 ------------------------------------------------
 A graph node is the plain tuple `(metabolite_string, atom_rank)`, and every terminal,
-leak and report path in :mod:`ecspr.graph` keys off that string. So a private copy is
+leak and report path in :mod:`ecspr.model.graph` keys off that string. So a private copy is
 bought by PREFIXING the metabolite ids (`NOS:MNXM1364061`), and a bridge is one more pair row with a
 pseudo-reaction id. Nothing in the graph builder, the solver or either measurement
 transform learns that communities exist -- which is the same indifference that lets those
@@ -34,7 +34,7 @@ THE BRIDGE WEIGHT IS A GENE-LEVEL MISMATCH, DILUTED TWICE
 ---------------------------------------------------------
 The unit is the GENE, not the reaction, and a gene's belief is diluted on the way down:
 
-    e_g(r)  ORF g's belief on reaction r -- `ecspr.evidence.nomination_contributions`,
+    e_g(r)  ORF g's belief on reaction r -- `ecspr.model.evidence.nomination_contributions`,
             summing to exactly 1.0 per ORF. The first dilution: a gene spread over many
             reactions contributes proportionally less to any one of them.
 
@@ -222,7 +222,7 @@ def carrier_blacklist(names: pd.DataFrame, *, extra=(), keep=CARRIER_KEEP) -> pd
 def reaction_beliefs(gpr: pd.DataFrame) -> pd.Series:
     """`{mnxr: SUM_g e_g(r)}` -- the belief-conserving allocation, one genome's worth.
 
-    This is `ecspr.evidence.compute_E`, named here because the bridge math reads the same
+    This is `ecspr.model.evidence.compute_E`, named here because the bridge math reads the same
     quantity the conductances do and must not drift from it.
     """
     return _net.compute_E(gpr, "compose")
@@ -449,7 +449,7 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
 def make_conditions(*, network_id, source_org, sink_orgs, substrates, precursors,
                     media, elements=ELEMENTS, two_terminal_precursors=None) -> tuple:
     """The condition sets for ONE directed measurement of one composed network,
-    returned as `(ground, two_terminal)` lists of `ecspr.conditions.Condition`.
+    returned as `(ground, two_terminal)` lists of `ecspr.model.conditions.Condition`.
 
     `a -> b` means glucose injected into copy `a` with the biomass endpoints read in copy
     `b`. Under the leakage ground there is no endpoint to place -- the precursors carry the
@@ -464,7 +464,7 @@ def make_conditions(*, network_id, source_org, sink_orgs, substrates, precursors
     command line (`ecspr ground` / `ecspr two-point`) and a conditions table carries no
     mode, so a single table would have to be filtered by whoever staged it -- and a set
     built for one probe staged against the other measures something nobody asked for.
-    Write each list to its own file with `ecspr.conditions.write`.
+    Write each list to its own file with `ecspr.model.conditions.write`.
 
     `condition_id` carries the network and direction and `media` carries the composition
     parameters, because those two strings are the only columns both measurements carry --
@@ -666,7 +666,7 @@ def _selftest_conditions():
 
 def _selftest() -> int:
     print("=" * 70)
-    print("ecspr.compose self-tests")
+    print("ecspr.model.compose self-tests")
     print("=" * 70)
     _selftest_copies()
     _selftest_singleton()
