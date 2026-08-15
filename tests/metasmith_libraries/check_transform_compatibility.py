@@ -109,9 +109,30 @@ def make_inputs(type_ns, type_file, item_type, item_path="/dev/null", label="tes
     inputs.Save()
     return inputs
 
+def make_params():
+    """A library holding the caller-supplied parameters a chain may require.
+
+    `clustering::min_identity` has no producer anywhere in the library and is
+    not meant to: it is a threshold the caller chooses, the same shape of thing
+    as an env or a reference database. So it arrives the way those do -- as a
+    resource library offered to every sample -- rather than as an input derived
+    from the assembly. Supplying it is what the two clustering cases below were
+    missing; without it `diamond_linclust` has an unsatisfiable requirement and
+    the whole chain is correctly reported as unplannable.
+    """
+    p_dir = tmpdir / "params"
+    if p_dir.exists():
+        shutil.rmtree(p_dir)
+    params = DataInstanceLibrary(p_dir)
+    params.Purge()
+    params.AddTypeLibrary(namespace="clustering", lib=DataTypeLibrary.Load(ROOT / "data_types/clustering.yml"))
+    params.AddValue("min_identity.txt", "0.9", "clustering::min_identity")
+    params.Save()
+    return params
+
 agent_home = Source.FromLocal(tmpdir / "agent_home")
 
-# Test cases: (name, input_setup, target_type, sample_type)
+# Test cases: (name, input_setup, target_type, sample_type[, extra_resources])
 test_cases = [
     # assembly -> ORF prediction (assembly + functionalAnnotation)
     (
@@ -126,6 +147,7 @@ test_cases = [
         lambda: make_inputs("sequences", "sequences.yml", "sequences::assembly"),
         "clustering::augmented_centroids",
         "sequences::assembly",
+        make_params,
     ),
     # assembly -> clustering (diamond linclust chain)
     (
@@ -133,6 +155,7 @@ test_cases = [
         lambda: make_inputs("sequences", "sequences.yml", "sequences::assembly"),
         "clustering::centroids",
         "sequences::assembly",
+        make_params,
     ),
     # assembly -> antismash (functional annotation)
     (
@@ -152,14 +175,16 @@ test_cases = [
 
 smith = Agent(home=agent_home, runtime=Runtime.DOCKER)
 
-for name, setup_fn, target_type, sample_type in test_cases:
-    def _gen(sf=setup_fn, tt=target_type, st=sample_type):
+for case in test_cases:
+    name, setup_fn, target_type, sample_type = case[:4]
+    extra_fn = case[4] if len(case) > 4 else None
+    def _gen(sf=setup_fn, tt=target_type, st=sample_type, xf=extra_fn):
         inputs = sf()
         targets = TargetBuilder()
         targets.Add(tt)
         task = smith.GenerateWorkflow(
             samples=inputs.AsSamples(st),
-            resources=resources,
+            resources=resources + ([xf()] if xf else []),
             transforms=all_transforms,
             targets=targets,
         )

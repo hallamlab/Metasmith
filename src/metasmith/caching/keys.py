@@ -23,6 +23,9 @@ produces a stable order regardless of declaration order in the model).
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import cbor2
 from blake3 import blake3
 
@@ -109,6 +112,58 @@ def content_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
             if not chunk:
                 break
             hasher.update(chunk)
+    return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
+
+
+def directory_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
+    """`content_multihash_key`, for a library item that is a directory.
+
+    A leaf whose path is a directory used to fall through to the random-id
+    branch, because only `is_file()` was content-addressable. The standard
+    library ships one such item (`lib::local`), so every compile minted it a
+    fresh id -- which defeats the staleness arm of the bundle guard and denied a
+    cache hit to every transform consuming it, on runs that were otherwise
+    perfectly reusable.
+
+    The digest covers each entry's tree-relative path *and* its bytes, walked in
+    sorted order so it never depends on readdir order, with an explicit type tag
+    and length framing so no two distinct trees can serialize to the same byte
+    stream. Symlinks are digested as their target text rather than followed: a
+    link is part of the tree's shape, and following one can leave the directory
+    or fail to terminate. OSError propagates, as it does for a file.
+    """
+    hasher = blake3()
+    root = Path(path)
+
+    def feed(tag: bytes, rel: bytes, extra: bytes = b""):
+        hasher.update(tag + len(rel).to_bytes(8, "big") + rel)
+        hasher.update(len(extra).to_bytes(8, "big") + extra)
+
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        # Sorted in place so os.walk itself descends deterministically, not just
+        # so this level is ordered.
+        dirnames.sort()
+        here = Path(dirpath)
+        rel_dir = here.relative_to(root)
+        for name in sorted(dirnames + filenames):
+            p = here/name
+            rel = (rel_dir/name).as_posix().encode("utf-8")
+            if p.is_symlink():
+                feed(b"l", rel, os.readlink(p).encode("utf-8"))
+            elif p.is_dir():
+                feed(b"d", rel)
+            elif p.is_file():
+                feed(b"f", rel, p.stat().st_size.to_bytes(8, "big"))
+                with open(p, "rb") as f:
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        hasher.update(chunk)
+            else:
+                # A fifo, socket or device node. It has no content to address,
+                # but its presence and name are still part of the tree.
+                feed(b"o", rel)
     return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
 
 

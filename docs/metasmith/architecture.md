@@ -601,6 +601,27 @@ content-hashed asset names included. Measured, not assumed.
 The two Rust products are built separately and shipped differently; see
 `docs/bash_relay/architecture.md` and `docs/workflow_solver/architecture.md`.
 
+### When a build artifact may be DVC-pinned
+
+A generated artifact earns a pin when rebuilding it is expensive *and* the pin is genuinely how it
+reaches consumers — `src/metasmith/engine.dvc` qualifies on both counts, since it carries a
+four-target cross-compile that a source checkout has no other way to obtain. An artifact that
+something regenerates on demand does not qualify, and neither does one nothing reads; the GUI's
+`scratch/gui-main` pin managed to be both, snapshotting 31 files of local run detritus that
+`dev/metasmith.sh --gui` recreates with `mkdir -p`, and its objects had already left every cache
+by the time it was removed.
+
+The consumer-side rule matters more than the pin: **never require the pinned copy to be usable in
+place.** A materialised DVC output is a read-only hardlink into a cache shared with every other
+worktree, so it cannot be chmodded (that mutates their copy) or unprotected (that dirties the pin
+over a permission bit that is not content). Code that needs to *run* a pinned file must copy it
+somewhere writable first — `solver_engine._runnable_engine_path` is the worked example, and the
+reason it exists is that the alternative failed silently for a long time.
+
+The residual risk is unchanged by any of this and worth stating plainly: a pin whose objects leave
+every cache is unrecoverable, because the pin records a hash rather than the bytes. The engine
+pin is one careless collection away from being exactly that.
+
 ## `src/metasmith/examples/`
 
 The smallest valid metasmith library — agnostic (no host or runtime references) and reusable for

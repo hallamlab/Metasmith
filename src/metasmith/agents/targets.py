@@ -28,7 +28,21 @@ class TargetBuilder:
 
     def Add(self, target_type: str, parents: Iterable[TargetSpec]|None=None) -> TargetSpec:
         assert "::" in target_type, f'expected @type to in the form of "namespace::type_name" but got [{target_type}]'
-        spec = TargetSpec(target_type, tuple(parents or ()))
+        parents = tuple(parents or ())
+        # A type *name* passed where a handle belongs is the one way to defeat
+        # the duplicate check without noticing: it builds a TargetSpec that
+        # equals nothing already added, so the request sails through and the
+        # caller believes it asserted something it did not. Checked here rather
+        # than left to the reader, because the failure is silent and the symptom
+        # -- a plan with a target missing -- surfaces far from the cause.
+        for p in parents:
+            assert isinstance(p, TargetSpec), (
+                f'target [{target_type}] was given [{p!r}] as a parent, which is'
+                ' a type name rather than a handle. Parents are the TargetSpec'
+                ' values Add returns; pass the handle you got back from the'
+                " parent's own Add."
+            )
+        spec = TargetSpec(target_type, parents)
         for existing in self._items:
             assert existing != spec, f'target [{target_type}] with identical parents already added'
         self._items.append(spec)

@@ -18,9 +18,17 @@ consulted -- a second source of binaries is the thing this design is avoiding.
 Three things have to be true before a binary is used, and each has its own way
 of failing quietly:
 
-1. **It exists for this platform.** Absence is recoverable but no longer silent:
-   the Python solver takes over and `solver_backend` says so once, because a
-   correct-and-fifteen-times-slower planner is not something anyone notices.
+1. **It exists for this platform, and can be executed.** Absence is recoverable
+   but no longer silent: the Python solver takes over and `solver_backend` says
+   so once, because a correct-and-fifteen-times-slower planner is not something
+   anyone notices. *Present but not executable* is the same outcome by a much
+   quieter route, and it is not hypothetical -- in a source checkout the staged
+   binary arrives as a mode-444 hardlink out of a shared DVC cache, and a whole
+   tree of solves ran on the Python search with nothing in the log but one
+   `Permission denied` nobody read. `_runnable_engine_path` is the answer, and
+   it copies out rather than repairing in place: the file is shared with every
+   other worktree, so `chmod` would mutate their cache object and `dvc
+   unprotect` would dirty the pin over a permission bit that is not content.
 2. **It answers `version` with versions this build agrees with.** The repo has
    scar tissue here: `LIN_PAYLOAD_VERSION` drifted from its Groovy emitter and
    failed every containerized task while the fast suite stayed green. A version
@@ -31,18 +39,24 @@ of failing quietly:
    so, and the search falls back -- saying so, per (1) -- without anyone having
    to remember to.
 
-Nothing here reads the environment. The implementation this process uses is
-pinned in code, via `solver_backend._set_solver_class`.
+No environment variable selects an implementation or a binary -- that is pinned
+in code, via `solver_backend._set_solver_class`. The environment is read only to
+locate a scratch directory for the staged copy above (`TMPDIR`, via
+`tempfile.gettempdir`), which cannot change *which* engine is chosen.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import platform
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..caching.keys import content_multihash_key
 from ..logging import Log
 from .solver_rng import SOLVER_RNG_VERSION
 
@@ -83,6 +97,58 @@ def packaged_engine_path(engine_dir: Path|None=None) -> Path|None:
     p = (engine_dir or ENGINE_DIR)/f"{ENGINE_NAME}.{platform_slot()}"
     return p if p.is_file() else None
 
+def _stage_dir() -> Path:
+    """Where a non-executable packaged binary gets copied so it can be run.
+
+    Under the system temp directory rather than a config-driven location, and
+    per-uid so two users on one host never contend: this is a *cache*, safe to
+    delete at any moment, and a reboot clearing it costs one 1 MB copy.
+    """
+    uid = getattr(os, "geteuid", lambda: "shared")()
+    return Path(tempfile.gettempdir())/f"metasmith-engine-{uid}"
+
+def _runnable_engine_path(path: Path) -> Path|None:
+    """`path` if it can be executed, else an executable copy of it.
+
+    An installed wheel or conda package lands its binaries 755 and this returns
+    immediately, paying one `os.access` call. The copy is for the source
+    checkout, where the file is a read-only hardlink into a DVC cache shared
+    with every other worktree -- see the module docstring for why fixing it in
+    place is not available to us.
+
+    The copy is named by its *content* digest, so a rebuilt engine is never
+    shadowed by the stale copy of an older one, and it is published by
+    `os.replace` from a temporary name in the same directory, so a second
+    process reading it concurrently sees either nothing or a complete file --
+    never a half-written one it would then try to execute.
+    """
+    if os.access(path, os.X_OK):
+        return path
+    try:
+        digest = content_multihash_key(path).hex()
+    except OSError as e:
+        Log.Warn(f"solver engine at [{path}] could not be read: {e}")
+        return None
+
+    staged = _stage_dir()/f"{path.name}.{digest[:16]}"
+    if os.access(staged, os.X_OK):
+        return staged
+    try:
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        tmp = staged.with_name(f"{staged.name}.{os.getpid()}.part")
+        shutil.copyfile(path, tmp)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, staged)
+    except OSError as e:
+        Log.Warn(
+            f"solver engine at [{path}] is not executable and could not be"
+            f" staged to [{staged}]: {e}. Falling back to the python solver,"
+            " which is correct but roughly 15x slower."
+        )
+        return None
+    Log.Info(f"staged a runnable copy of the solver engine at [{staged}]")
+    return staged
+
 @dataclass(frozen=True)
 class EngineInfo:
     """What a binary said about itself, once it was believed."""
@@ -109,6 +175,24 @@ def probe_engine(path: Path) -> EngineInfo|None:
             [str(path), "version"],
             capture_output=True, text=True, timeout=HANDSHAKE_TIMEOUT,
         )
+    # Split out rather than folded into the OSError arm below: these two have a
+    # fix the reader can act on, and saying "could not be run" for all three
+    # buried the actionable ones. A permission failure here means staging was
+    # skipped or lost a race, and is worth naming with the mode.
+    except PermissionError as e:
+        mode = "?"
+        try:
+            mode = oct(path.stat().st_mode & 0o777)
+        except OSError:
+            pass
+        Log.Warn(
+            f"solver engine at [{path}] is not executable (mode {mode}): {e}."
+            " A staged copy should have prevented this; see _runnable_engine_path."
+        )
+        return None
+    except FileNotFoundError as e:
+        Log.Warn(f"solver engine at [{path}] is gone: {e}. It was there a moment ago.")
+        return None
     except (OSError, subprocess.SubprocessError) as e:
         Log.Warn(f"solver engine at [{path}] could not be run: {e}")
         return None
@@ -161,7 +245,14 @@ def GetEngine() -> EngineInfo|None:
         # `solver_backend` is what knows whether anyone asked for this.
         _cache = (None,)
         return None
-    _cache = (probe_engine(path),)
+    # Probe what we will actually call, not what we found: in a source checkout
+    # those differ, and probing the unrunnable original would refuse an engine
+    # that works perfectly well once copied out.
+    runnable = _runnable_engine_path(path)
+    if runnable is None:
+        _cache = (None,)
+        return None
+    _cache = (probe_engine(runnable),)
     return _cache[0]
 
 def EngineFor(capability: str) -> EngineInfo|None:
