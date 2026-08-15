@@ -1,0 +1,51 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  read_metadata:
+    properties:
+      _:
+      - read metadata
+      ext: json
+      fields:
+      - length_class
+      - parity
+  read_pair:
+    properties:
+      atomic: a pair of read files
+  short_reads:
+    properties:
+      Data: nucleic acid sequence
+      Format: FASTQ
+      _:
+      - DNA reads
+      compression: gzip
+      ext: fq.gz
+      pair_state: complete
+      qc: none
+      read_length: short
+  zipped_forward_short_reads:
+    properties:
+      Data: nucleic acid sequence
+      Format: FASTQ
+      compression: gzip
+      direction: forward
+      ext: fq.gz
+      pair_state: half
+      parity: paired end
+      qc: none
+      read_length: short
+  zipped_reverse_short_reads:
+    properties:
+      Data: nucleic acid sequence
+      Format: FASTQ
+      compression: gzip
+      direction: reverse
+      ext: fq.gz
+      pair_state: half
+      parity: paired end
+      qc: none
+      read_length: short
