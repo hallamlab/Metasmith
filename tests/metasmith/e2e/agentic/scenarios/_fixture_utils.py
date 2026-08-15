@@ -27,8 +27,11 @@ from ..harness.sandbox import SandboxLayout, env_for_agent
 
 
 _ENV_NAME = "msm_env"
-_METASMITH_LIBRARIES_REPO = "https://github.com/hallamlab/MetasmithLibraries.git"
-_MLIB_LAYOUT_MARKER = Path("resources") / "containers" / "_metadata" / "index.yml"
+#: What makes a directory a library root. Deliberately a SOURCE directory and
+#: not a compiled `_metadata/` path: metadata is a build product and is no
+#: longer tracked, so keying the check on it would make an uncompiled checkout
+#: look like "not a library" instead of "a library nobody has built".
+_MLIB_LAYOUT_MARKER = Path("data_types")
 
 
 def _msm_bin(layout: SandboxLayout) -> Path:
@@ -74,22 +77,19 @@ def _resolve_lib_root(candidate: Path) -> Path | None:
     return None
 
 
-def _metasmith_libraries_cache_dir() -> Path:
-    return _project_root() / "tests" / "e2e_agentic" / ".cache" / "MetasmithLibraries"
-
-
 def _metasmith_libraries_root() -> Path:
-    """Resolve the source MetasmithLibraries checkout.
+    """The standard library these scenarios stage into their sandbox.
 
-    Priority:
-    1. ``METASMITH_LIBRARIES_ROOT`` env var.
-    2. Sibling dir ``<project_root>/../metasmith-libraries`` (dev layout).
-    3. Auto-bootstrap clone into
-       ``tests/e2e/agentic/.cache/MetasmithLibraries`` (gitignored).
+    It lives in this repo now, at ``src/metasmith_libraries``. This used to
+    hunt for a sibling ``metasmith-libraries`` checkout and, failing that,
+    ``git clone`` hallamlab/MetasmithLibraries from GitHub into a cache — at
+    COLLECTION time, since the axis conftest calls this to decide whether to
+    skip. Both halves had gone wrong: the sibling is archived, and the public
+    mirror is old enough to still carry the pre-env-migration
+    ``resources/containers/`` layout, so the fallback did not fail, it
+    silently supplied a DIFFERENT standard library than the one under test.
 
-    No ``git pull`` on subsequent runs — the cache clone is a one-shot
-    bootstrap. To update, delete the cache dir (or set the env var to a
-    fresh checkout).
+    ``METASMITH_LIBRARIES_ROOT`` still overrides.
     """
     explicit = os.environ.get("METASMITH_LIBRARIES_ROOT")
     if explicit:
@@ -100,70 +100,42 @@ def _metasmith_libraries_root() -> Path:
                 f"{_MLIB_LAYOUT_MARKER} (checked both root and root/main)"
             )
         return root
-    # Walk up from the project root checking each level for a sibling
-    # checkout. Multi-worktree layouts (e.g. `projects/metasmith/dev/`)
-    # place the real sibling project two parents up rather than one.
-    pr = _project_root()
-    for ancestor in (pr.parent, pr.parent.parent):
-        root = _resolve_lib_root(ancestor / "metasmith-libraries")
-        if root is not None:
-            return root
-    cache_root = _resolve_lib_root(_metasmith_libraries_cache_dir())
-    if cache_root is not None:
-        return cache_root
-    cache = _metasmith_libraries_cache_dir()
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    if cache.exists():
-        shutil.rmtree(cache)
-    r = subprocess.run(
-        ["git", "clone", "--depth=1", _METASMITH_LIBRARIES_REPO, str(cache)],
-        capture_output=True, text=True,
-    )
-    if r.returncode != 0:
-        raise RuntimeError(
-            f"auto-clone of MetasmithLibraries failed (exit {r.returncode}):\n"
-            f"  stdout: {r.stdout[-500:]}\n  stderr: {r.stderr[-500:]}\n"
-            f"  set METASMITH_LIBRARIES_ROOT to point at an existing checkout, "
-            f"or clone manually into {cache.parent.parent}"
-        )
-    root = _resolve_lib_root(cache)
+    root = _resolve_lib_root(_project_root() / "src" / "metasmith_libraries")
     if root is None:
         raise RuntimeError(
-            f"auto-cloned MetasmithLibraries at {cache} is missing {_MLIB_LAYOUT_MARKER}"
+            f"no standard library at {_project_root() / 'src' / 'metasmith_libraries'}"
         )
     return root
 
 
 def stage_real_libraries(layout: SandboxLayout) -> Path:
-    """Clone MetasmithLibraries into ``<sandbox>/MetasmithLibraries``.
+    """Copy the standard library into ``<sandbox>/MetasmithLibraries``.
 
-    Uses the resolved source checkout (env var, sibling dir, or auto-clone
-    cache) as the local origin for a ``git clone --depth=1`` into the
-    sandbox. The sandbox carries its own .git dir, so test runs preserve
-    provenance (HEAD SHA visible via ``git -C <sandbox>/MetasmithLibraries
-    rev-parse HEAD``).
+    A copy rather than a ``git clone``: the library is a directory inside this
+    repo, not a repository, so cloning it would fetch the whole monorepo and
+    land the library three levels down from where the tutorials expect it.
+    Provenance is this repo's HEAD, recorded beside the copy — the sandbox no
+    longer carries a .git dir of its own.
 
-    The tutorials expect ``MLIB = <sandbox>/MetasmithLibraries`` —
-    matching the canonical layout the docs reference at
-    ``docs/source/setup/tutorials.rst``.
+    The tutorials expect ``MLIB = <sandbox>/MetasmithLibraries``, matching the
+    layout the docs reference at ``docs/source/setup/tutorials.rst``.
     """
     source = _metasmith_libraries_root()
     dest = layout.root / "MetasmithLibraries"
     if dest.exists():
         shutil.rmtree(dest)
-    r = subprocess.run(
-        ["git", "clone", "--depth=1", str(source), str(dest)],
-        capture_output=True, text=True,
-    )
-    if r.returncode != 0:
-        raise RuntimeError(
-            f"sandbox clone of MetasmithLibraries from {source} failed "
-            f"(exit {r.returncode}):\n  stdout: {r.stdout[-500:]}\n"
-            f"  stderr: {r.stderr[-500:]}"
-        )
+    shutil.copytree(source, dest, symlinks=True)
     if not _validate_mlib(dest):
         raise RuntimeError(
             f"staged MetasmithLibraries at {dest} is missing {_MLIB_LAYOUT_MARKER}"
+        )
+    head = subprocess.run(
+        ["git", "-C", str(_project_root()), "rev-parse", "HEAD"],
+        capture_output=True, text=True,
+    )
+    if head.returncode == 0:
+        (dest / "STAGED_FROM").write_text(
+            f"{_project_root()}\n{head.stdout.strip()}\n"
         )
     return dest
 

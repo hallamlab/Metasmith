@@ -12,8 +12,8 @@ Usage::
 
 The corpus is the four shipped templates (real transform libraries, real
 search) plus a fixed slice of generated instances covering the pressures the
-harness dials expose. Template cases are skipped, not failed, when the sibling
-``metasmith-libraries`` checkout is absent — the generated slice always runs.
+harness dials expose. Template cases are skipped, not failed, when the standard
+library has not been compiled — the generated slice always runs.
 """
 
 from __future__ import annotations
@@ -139,13 +139,21 @@ STRESS_CORPUS: list[tuple[str, int, GeneratorDials]] = [
 
 
 def _libraries_root() -> Path | None:
+    """The standard library to benchmark against, or None to skip.
+
+    It is in this repo: `src/metasmith_libraries`, a sibling package of this
+    one. The archived `metasmith-libraries` checkout this used to look for is
+    gone, and `_metadata/` is compiled rather than tracked — so `None` here
+    means "nobody has run `dev/libraries.sh -b`", not "no library".
+    """
     env = os.environ.get("METASMITH_LIBRARIES_ROOT")
     if env:
         p = Path(env).expanduser().resolve()
         return p if p.exists() else None
-    # .../projects/metasmith/<checkout>/src/metasmith/testing/solver_bench.py
-    sibling = Path(__file__).resolve().parents[5] / "metasmith-libraries" / "main"
-    return sibling if sibling.exists() else None
+    # .../src/metasmith/testing/solver_bench.py -> .../src/metasmith_libraries
+    root = Path(__file__).resolve().parents[2] / "metasmith_libraries"
+    compiled = root / "transforms" / "logistics" / "_metadata" / "index.yml"
+    return root if compiled.exists() else None
 
 
 def run_generated(cases: list[tuple[str, int, GeneratorDials]] | None = None) -> dict[str, Any]:

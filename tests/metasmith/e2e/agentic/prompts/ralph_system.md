@@ -13,12 +13,11 @@ WORKSPACE = Path("{SANDBOX}/workspace").resolve()
 MLIB      = Path("{SANDBOX}/MetasmithLibraries").resolve()
 ```
 
-`MLIB` points at a real clone of the
-[MetasmithLibraries](https://github.com/hallamlab/MetasmithLibraries) repo
-that has been pre-staged in this sandbox. It contains the canonical
-`data_types/`, `resources/containers/`, `resources/lib/`, and `transforms/*`
-trees the tutorials reference. Notebook helpers like `ipynbButtonLink(...)`
-are illustrative and can be skipped.
+`MLIB` points at the real standard library, pre-staged into this sandbox
+from the metasmith repo itself. It contains the canonical `data_types/`,
+`resources/env/`, `resources/lib/`, and `transforms/*` trees the tutorials
+reference. Notebook helpers like `ipynbButtonLink(...)` are illustrative and
+can be skipped.
 
 If the tutorial requires creating an agent, use:
 

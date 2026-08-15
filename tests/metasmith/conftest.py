@@ -174,16 +174,17 @@ def virtual_runtime_bounce(tmp_path, monkeypatch):
 
 @pytest.fixture(scope="session")
 def metasmith_libraries_root() -> Path:
-    """Resolve the sibling ``metasmith-libraries/main/`` project root.
+    """The standard library, which lives in this repo.
 
     Lives here rather than in one axis's conftest because three axes want the
     real standard library: `flow` solves every shipped template, `solver`
     fingerprints them, and `perf` benchmarks them.
 
-    Resolution order:
-    1. ``METASMITH_LIBRARIES_ROOT`` env var (if set and existing).
-    2. Sibling layout: ``<workspace>/projects/metasmith-libraries/main``.
-    3. Skip with an actionable reason.
+    It used to resolve a sibling `metasmith-libraries/main` checkout, which is
+    now archived — and the anchor was one level short of where that sibling
+    actually sat, so this had been quietly skipping all three axes since the
+    monorepo layout landed. ``METASMITH_LIBRARIES_ROOT`` still overrides, for
+    testing against a library that is not this one.
     """
     env = os.environ.get("METASMITH_LIBRARIES_ROOT")
     if env:
@@ -192,16 +193,17 @@ def metasmith_libraries_root() -> Path:
             return p
         pytest.skip(
             f"METASMITH_LIBRARIES_ROOT={env!r} does not exist; "
-            "unset it or point at metasmith-libraries/main"
+            "unset it or point at a library root"
         )
-    sibling = Path(__file__).resolve().parents[4] / "metasmith-libraries" / "main"
-    if sibling.exists():
-        return sibling
-    pytest.skip(
-        "metasmith-libraries/main not found alongside metasmith project; "
-        "set METASMITH_LIBRARIES_ROOT to override "
-        f"(expected at {sibling})"
-    )
+    root = Path(__file__).resolve().parents[2] / "src" / "metasmith_libraries"
+    # `_metadata/` is compiled, not tracked, so a fresh checkout has none and
+    # every solve below would raise on a missing index. Say which command
+    # fixes it rather than failing three axes with an assertion from the loader.
+    if not (root / "transforms" / "logistics" / "_metadata" / "index.yml").exists():
+        pytest.skip(
+            f"the standard library at {root} is not compiled — run `dev/libraries.sh -b`"
+        )
+    return root
 
 
 @pytest.fixture

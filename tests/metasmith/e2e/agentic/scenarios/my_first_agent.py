@@ -16,12 +16,11 @@ def _stage_pangenome_fixtures(layout: SandboxLayout) -> None:
 
     The tutorials load ``MLIB/data_types/*.yml``, ``MLIB/resources/{containers,lib}``,
     and ``MLIB/transforms/{logistics,pangenome}`` from the canonical
-    ``MetasmithLibraries`` layout. Rather than synthesising fixtures that
-    drift from real type and transform names (``getNcbiAssembly``,
-    ``ppanggolin``, ``heatmap``, etc.), the harness clones the real lib
-    in via :func:`stage_real_libraries`. The agent then sees the same
-    library a tutorial reader would clone with
-    ``git clone https://github.com/hallamlab/MetasmithLibraries.git``.
+    library layout. Rather than synthesising fixtures that drift from real
+    type and transform names (``getNcbiAssembly``, ``ppanggolin``,
+    ``heatmap``, etc.), the harness stages the real standard library via
+    :func:`stage_real_libraries`. The agent then sees the same library a
+    tutorial reader gets with the repo.
     """
     stage_real_libraries(layout)
 
