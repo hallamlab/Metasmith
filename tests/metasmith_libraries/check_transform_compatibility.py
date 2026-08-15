@@ -1,11 +1,20 @@
 """
 Verify all transform libraries load, type references resolve, and
 cross-domain workflow generation succeeds for representative targets.
+
+A SCRIPT, not a pytest module -- it defines no test functions, does all its
+work at import time and calls `sys.exit(1)` on failure. Named `test_*` it was
+collected, and that exit surfaced as an INTERNALERROR that aborted the whole
+session before any real test ran. Run it directly:
+
+    PYTHONPATH=src python tests/metasmith_libraries/check_transform_compatibility.py
 """
 import sys, shutil, tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# The library root: tests and the library sit on opposite sides of the
+# monorepo, so this is an explicit path rather than a walk up out of tests/.
+ROOT = Path(__file__).resolve().parents[2] / "src" / "metasmith_libraries"
 sys.path.insert(0, str(ROOT))
 
 from metasmith.python_api import (

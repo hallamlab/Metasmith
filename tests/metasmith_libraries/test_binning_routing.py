@@ -19,7 +19,7 @@ from metasmith.python_api import (
     TargetBuilder,
 )
 
-from tests.conftest import MLIB
+from conftest import MLIB
 
 
 @pytest.fixture(scope="module")

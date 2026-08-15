@@ -14,7 +14,9 @@ import pytest
 from metasmith.python_api import DataTypeLibrary
 
 
-MLIB = Path(__file__).resolve().parent.parent
+# The library root: tests and the library sit on opposite sides of the
+# monorepo, so this is an explicit path rather than a walk up out of tests/.
+MLIB = Path(__file__).resolve().parents[2] / "src" / "metasmith_libraries"
 
 
 @pytest.fixture(scope="module")
