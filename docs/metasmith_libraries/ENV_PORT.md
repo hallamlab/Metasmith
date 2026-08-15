@@ -55,5 +55,5 @@ column because its tools take large reference databases as binds.
 Whoever picks the mamba path up: the 59 are the mechanical set, and
 `dev/libraries.sh --create-envs` builds the conda environments to test them against.
 
-Reproduce the table with `venv_arms.py report <lib>...` (see the run's scratch
-project).
+Reproduce the table with `venv_arms.py report <lib>...` — the script sits beside
+this file, and is run from a library root.
