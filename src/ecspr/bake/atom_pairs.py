@@ -476,6 +476,53 @@ def distinct_structures(mnxms: list, smiles_of: dict) -> int:
     return n
 
 
+def reduce_for_element(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str):
+    """The same reaction with only the participants that carry element X.
+
+    WHY A REDUCTION IS SOUND AND A STRIP IS NOT. `pairs_from_mapped`'s `stripped` guard
+    exists because dropping a molecule makes the mapper re-route ITS atoms onto whatever
+    remains. That cannot happen here: an atom of X cannot come from a participant
+    carrying no X, so removing the X-free participants removes no possible source and no
+    possible destination for an X atom. Only X's pairs are read out of the result; the
+    other elements' maps in a reduced submission are discarded unread, because for them
+    the reduction IS a strip.
+
+    WHY IT IS WORTH DOING. RXNMapper's transformer takes 512 tokens and the reactions it
+    returns nothing for are the long ones -- median SMILES length 983 against the
+    universe's 268. That is a context-window limit eating a BIASED sample: the reactions
+    with the most and largest cofactors. `3 NADPH + 3 NADP+` blows the limit while
+    contributing no sulfur at all, so for a single element most of a long reaction is
+    irrelevant and the reduced submission is small.
+
+    THE BALANCE IS THE ADMISSION TEST, and it is arithmetic over MetaNetX formulas. X
+    must balance across the KEPT set -- if it does not, some X is entering or leaving
+    through a participant this reduction dropped, which is exactly the re-routing the
+    guard above refuses. `count_element` returns None for anything it cannot trust (a
+    `*` polymer, a nested group, an absent formula) and None propagates to a REFUSAL
+    here, never to a zero: a formula read as "carries no X" would let the reduction
+    certify a balance it never checked.
+
+    Returns `(kept_subs, kept_prods)` with stoichiometry preserved, or None. Both sides
+    must be non-empty: a reduction with nothing on one side is not a reaction, and a
+    reaction where X only appears on one side is unbalanced by definition.
+    """
+    keep_s, keep_p, n_s, n_p = [], [], 0, 0
+    for side, keep, ms in ((0, keep_s, sub_mnxms), (1, keep_p, prod_mnxms)):
+        for m in ms:
+            c = count_element(formulas.get(m), X)
+            if c is None:
+                return None
+            if c:
+                keep.append(m)
+                if side == 0:
+                    n_s += c
+                else:
+                    n_p += c
+    if not keep_s or not keep_p or n_s != n_p:
+        return None
+    return keep_s, keep_p
+
+
 def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
                       canon: dict, conn: dict = None, align: str = "strict",
                       collapsed_counts: tuple | None = None):
@@ -714,16 +761,38 @@ def cmd_extract(args):
         print(f"[atom-pairs] {len(bal):,} (rxn, element) balance verdicts; "
               f"{nbad:,} refused as unbalanced", flush=True)
 
-    eqs = load_equations(Path(args.reac_prop), mnxrs)
+    # THE PARTIAL LANE BRINGS ITS OWN PARTICIPANT LISTS, and that is the whole coupling.
+    # Its submissions are ELEMENT REDUCTIONS -- the X-free participants are gone on
+    # purpose -- so re-deriving the lists from `reac_prop` would hand every one of them
+    # the full equation, and the strict guard would call every one `stripped`. Reading
+    # the lists the reduction actually made is also what keeps the reduction logic in
+    # one file: this side never has to know how a submission was chosen.
+    partial_of = {}
+    if args.partial:
+        pu = pd.read_parquet(args.partial)
+        for r in pu.itertuples(index=False):
+            partial_of[r.mnxr] = (r.base_mnxr, r.element, list(r.sub_mnxms),
+                                  list(r.prod_mnxms))
+        print(f"[atom-pairs] partial mode: {len(partial_of):,} element-reduced "
+              f"submissions, each read for ONE element", flush=True)
+
     want = set()
     parsed = {}
-    for r, eq in eqs.items():
-        pe = parse_equation(eq)
-        if pe:
-            parsed[r] = pe
-            want |= set(pe[0]) | set(pe[1])
-    print(f"[atom-pairs] {len(parsed):,} equations parsed; {len(want):,} metabolites",
-          flush=True)
+    if partial_of:
+        for key, (_base, _el, ks, kp) in partial_of.items():
+            parsed[key] = (ks, kp)
+            want |= set(ks) | set(kp)
+        print(f"[atom-pairs] {len(parsed):,} reduced submissions; "
+              f"{len(want):,} metabolites", flush=True)
+    else:
+        eqs = load_equations(Path(args.reac_prop), mnxrs)
+        for r, eq in eqs.items():
+            pe = parse_equation(eq)
+            if pe:
+                parsed[r] = pe
+                want |= set(pe[0]) | set(pe[1])
+        print(f"[atom-pairs] {len(parsed):,} equations parsed; {len(want):,} metabolites",
+              flush=True)
 
     raw = load_mnxm_smiles(Path(args.chem_prop), want)
     raw.update({m: s for m, s in ph.items() if m in want})
@@ -797,13 +866,26 @@ def cmd_extract(args):
                      and bal.get((r, el), True)}
             if not pairs:
                 status = "placeholder_only"
+        out_mnxr = r
+        if partial_of:
+            # ONE ELEMENT IS READ OUT, and the rest are discarded UNREAD. For any other
+            # element the reduction really is a strip -- the participants carrying it
+            # were dropped and the mapper re-routed their atoms -- so a map that happens
+            # to be present for them is not evidence, it is the failure mode.
+            out_mnxr, only = partial_of[r][0], partial_of[r][1]
+            dropped = {el for el, _s, _p in pairs} - {only}
+            if dropped:
+                tally[f"other elements discarded unread"] += len(dropped)
+            pairs = {(el, sm, pm): v for (el, sm, pm), v in pairs.items() if el == only}
+            if not pairs and status in ("ok", "ambiguous_diluted"):
+                status = "no_pairs_for_element"
         tally[status] += 1
         status_rows.append(dict(mnxr=r, status=status, n_sub=len(subs),
                                 n_prod=len(prods),
                                 n_mapped_sub=len({p[1] for p in pairs}),
                                 n_mapped_prod=len({p[2] for p in pairs})))
         for (el, sm, pm), idxs in pairs.items():
-            rows.append(dict(mnxr=r, element=el, substrate=sm, product=pm,
+            rows.append(dict(mnxr=out_mnxr, element=el, substrate=sm, product=pm,
                              n_atoms=len(idxs),
                              sub_idx=",".join(str(i) for i, _, _ in idxs),
                              prod_idx=",".join(str(j) for _, j, _ in idxs),
@@ -865,6 +947,11 @@ def parse_args(argv=None):
     p.add_argument("--balance", default=None,
                    help="ecspr_aam_rescue per-(reaction, element) concrete-balance "
                         "verdicts; unbalanced elements are dropped for that reaction.")
+    p.add_argument("--partial", default=None,
+                   help="an `ecspr.bake.aam.partial` universe. Its rows carry the "
+                        "element-reduced participant lists and the ONE element each "
+                        "submission is read for; every other element's map is discarded "
+                        "unread, because for those the reduction is a strip.")
     p.add_argument("--reac-prop", required=True)
     p.add_argument("--chem-prop", required=True)
     p.add_argument("--out", required=True, help="pairs parquet")

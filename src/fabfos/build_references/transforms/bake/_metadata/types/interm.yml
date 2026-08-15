@@ -14,6 +14,9 @@ types:
         timeouts at a longer budget. A hang writes no row; the sidecar is the only
         thing that says it happened.
       ext: parquet
+  aam_member_indigo_partial:
+    properties:
+    - Indigo over the element-reduced submissions; pairs keyed on (reaction, element)
   aam_member_indigo_rescue:
     properties:
       _:
@@ -28,6 +31,10 @@ types:
         reason this is its own step: a method change anywhere else must not re-pay
         it.'
       ext: parquet
+  aam_member_localmapper_partial:
+    properties:
+    - LocalMapper over the element-reduced submissions; pairs keyed on (reaction,
+      element)
   aam_member_localmapper_rescue:
     properties:
       _:
@@ -42,6 +49,9 @@ types:
         from the equation, one fragment per participant, so a template-count mismatch
         really does mean a molecule went missing and the mapper re-routed its atoms.'
       ext: parquet
+  aam_member_rxnmapper_partial:
+    properties:
+    - RXNMapper over the element-reduced submissions; pairs keyed on (reaction, element)
   aam_member_rxnmapper_rescue:
     properties:
       _:
@@ -58,6 +68,15 @@ types:
         / <member>_only / disagree_diluted -- a provenance record, never a usability
         gate.'
       ext: parquet
+  aam_partial:
+    properties:
+    - 'A DIRECTORY, for the same reason `aam_rescue` is: three artifacts that only
+      mean anything together. `partial_universe.parquet` holds the element-reduced
+      submissions AND the reduced participant lists -- the extractor must read those
+      rather than re-parse the equation, or the strict guard calls every submission
+      `stripped`. `partial_forced.parquet` holds the pairs conservation settles without
+      any mapper, already in the extractor''s shape. `summary.tsv` records what the
+      reduction could NOT reach, which is the half a coverage claim is made of.'
   aam_rescue:
     properties:
     - 'A DIRECTORY, because the rescue is four artifacts that only mean anything together:

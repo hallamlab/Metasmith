@@ -152,6 +152,11 @@ BRANCHES = {
             "indigo", "rxnmapper", "localmapper",
             "aam_rescue",
             "indigo_rescue", "rxnmapper_rescue", "localmapper_rescue",
+            # Pass 3: element-reduced submissions for what no full map reached, and the
+            # same three mappers over them. Sequenced after both passes because its
+            # target set is what ENDED with nothing -- a fact about a run.
+            "aam_partial",
+            "indigo_partial", "rxnmapper_partial", "localmapper_partial",
             "aam_ensemble",
         },
         targets=["ref::atom_pairs", "ref::metabolism_vocab"],
@@ -170,6 +175,10 @@ BRANCHES = {
             "rxnmapper_rescue":   "rxnmapper_rescue",
             "localmapper_rescue": "localmapper_rescue",
             "indigo_rescue":      "indigo_rescue",
+            "partial":            "aam_partial",
+            "rxnmapper_partial":  "rxnmapper_partial",
+            "localmapper_partial": "localmapper_partial",
+            "indigo_partial":     "indigo_partial",
             "metacyc":            "aam_ensemble",
             "ensemble":           "aam_ensemble",
         },

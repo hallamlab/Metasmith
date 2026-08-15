@@ -160,6 +160,12 @@ EXPECTED = {
     "rxnmapper", "localmapper", "indigo",
     "aam_rescue",
     "rxnmapper_rescue", "localmapper_rescue", "indigo_rescue",
+    # Pass 3, the partial lane: element-reduced submissions for the reactions no full
+    # map reached, and the same three mappers over them. It sits AFTER both mapper
+    # passes because its target set is "what ended with nothing", which is a fact about
+    # a run rather than about a reaction.
+    "aam_partial",
+    "rxnmapper_partial", "localmapper_partial", "indigo_partial",
     "aam_ensemble",
     "equilibrator", "dgbyg", "direction_ensemble",
 }

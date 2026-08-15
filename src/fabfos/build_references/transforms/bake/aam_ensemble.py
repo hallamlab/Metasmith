@@ -84,6 +84,14 @@ m_rxn_r     = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper_res
 m_local_r   = model.AddRequirement(lib.GetType("interm::aam_member_localmapper_rescue"))
 m_indigo_r  = model.AddRequirement(lib.GetType("interm::aam_member_indigo_rescue"))
 
+# PASS 3, the partial lane. Its three members are element-reduced submissions, so their
+# pairs reach only one element of a reaction each -- which is why they become a layer of
+# their own, laid down LAST, rather than a fourth member of L2.
+m_rxn_p     = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper_partial"))
+m_local_p   = model.AddRequirement(lib.GetType("interm::aam_member_localmapper_partial"))
+m_indigo_p  = model.AddRequirement(lib.GetType("interm::aam_member_indigo_partial"))
+partial     = model.AddRequirement(lib.GetType("interm::aam_partial"))
+
 worklist    = model.AddRequirement(lib.GetType("interm::aam_worklist"))
 rescue      = model.AddRequirement(lib.GetType("interm::aam_rescue"))
 reactions   = model.AddRequirement(lib.GetType("lookup::reactions"))
@@ -150,6 +158,10 @@ def protocol(context: ExecutionContext):
     irxn_r = context.Input(m_rxn_r)
     iloc_r = context.Input(m_local_r)
     iind_r = context.Input(m_indigo_r)
+    irxn_p = context.Input(m_rxn_p)
+    iloc_p = context.Input(m_local_p)
+    iind_p = context.Input(m_indigo_p)
+    ipar   = context.Input(partial)
     iwl  = context.Input(worklist)
     ires = context.Input(rescue)
     irx  = context.Input(reactions)
@@ -214,6 +226,23 @@ def protocol(context: ExecutionContext):
             --member indigo={iind_r.container} \
             --out L3/stack.parquet
 
+        # ---- L4: fuse the three pass-3 members -------------------------------------
+        # Same arithmetic again, over the element-reduced submissions. What makes this
+        # layer different is not how its members are fused but what a row of it CLAIMS:
+        # one element of a reaction nothing mapped whole. That is carried in the method
+        # and source it is stamped with at stack time, not here.
+        # The forced arm needs no fusion: conservation settles it, so there is one
+        # answer and no members to disagree. It is laid down as its own layer, ahead of
+        # the mapped partials, because "conservation leaves no choice" outranks "three
+        # mappers agreed about a reduced submission".
+        mkdir -p L4
+        cp {ipar.container}/partial_forced.parquet L4/forced.parquet
+        {py} -m ecspr.bake.aam.layers fuse \
+            --member rxnmapper={irxn_p.container} \
+            --member localmapper={iloc_p.container} \
+            --member indigo={iind_p.container} \
+            --out L4/stack.parquet
+
         # ---- the stack ------------------------------------------------------------
         # In order, most trusted first.
         # Written under its own NAME first and copied to the product path second. The
@@ -224,6 +253,8 @@ def protocol(context: ExecutionContext):
             --layer metacyc=L1/pairs.parquet,curated,1.0 \
             --layer ensemble=L2/stack.parquet \
             --layer curation=L3/stack.parquet \
+            --layer partial=L4/forced.parquet,partial_forced,1.0 \
+            --layer partial=L4/stack.parquet,partial_reduced,1.0 \
             --out aam_pairs.parquet
         cp aam_pairs.parquet {iout.container}
 
@@ -234,6 +265,7 @@ def protocol(context: ExecutionContext):
         {py} -m ecspr.bake.aam.worklist close \
             --worklist {iwl.container} --pairs aam_pairs.parquet \
             --rescued {ires.container}/rescued.parquet \
+            --partial {ipar.container}/partial_universe.parquet \
             --out L3/ledger.parquet --out-summary L3/ledger_summary.tsv
 
         # ---- the bake: vocabulary + encoded pairs ---------------------------------
@@ -250,7 +282,8 @@ def protocol(context: ExecutionContext):
         # next to the two fused layer tables that explain it. The crosswalk itself is
         # `aam_rescue`'s evidence, where it is produced.
         {py} -m ecspr.bake.evidence collect --root _ev --tool ensemble \
-            --file L2/stack.parquet L3/stack.parquet aam_pairs.parquet \
+            --file L2/stack.parquet L3/stack.parquet L4/stack.parquet \
+                   L4/forced.parquet aam_pairs.parquet \
                    L3/ledger.parquet L3/ledger_summary.tsv
         mkdir -p {iev.container}
         cp -r _ev/. {iev.container}/
