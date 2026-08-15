@@ -1,0 +1,13 @@
+name: aspire_asv_mag_link
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - pandas
+  - numpy
+  - biopython
+  - matplotlib-base
+  - seaborn
+  - blast

@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${ASPIRE_REAL_MAMBA:?ASPIRE_REAL_MAMBA must identify the controller mamba executable}"
+: "${ASPIRE_MAMBA_LOCK_FILE:?ASPIRE_MAMBA_LOCK_FILE must identify the shared lock file}"
+
+exec 9>"$ASPIRE_MAMBA_LOCK_FILE"
+if ! flock -n 9; then
+  echo "[controller] Another environment is being built; waiting for the serialized mamba slot." >&2
+  lock_timeout="${ASPIRE_MAMBA_LOCK_TIMEOUT:-1800}"
+  lock_waited=0
+  while ! flock -w 30 9; do
+    lock_waited=$((lock_waited + 30))
+    echo "[controller] Still waiting for the mamba build slot (${lock_waited}s elapsed)." >&2
+    if (( lock_waited >= lock_timeout )); then
+      echo "Timed out waiting for another ASPIRE Conda environment build after ${lock_waited} seconds." >&2
+      exit 75
+    fi
+  done
+  echo "[controller] Acquired the serialized mamba slot; starting environment build." >&2
+fi
+
+mamba_args=("$@")
+has_channel_priority=0
+has_override_channels=0
+environment_file=""
+previous_arg=""
+for arg in "${mamba_args[@]}"; do
+  case "$arg" in
+    --strict-channel-priority|--no-channel-priority|--channel-priority|--channel-priority=*)
+      has_channel_priority=1
+      ;;
+    --override-channels)
+      has_override_channels=1
+      ;;
+  esac
+  if [[ "$previous_arg" == "--file" || "$previous_arg" == "-f" ]]; then
+    environment_file="$arg"
+  fi
+  case "$arg" in
+    --file=*) environment_file="${arg#--file=}" ;;
+  esac
+  previous_arg="$arg"
+done
+if [[ " ${mamba_args[*]} " == *" env create "* && "$has_override_channels" -eq 0 ]]; then
+  override_env_pattern="${ASPIRE_MAMBA_OVERRIDE_ENV_PATTERN:-(^|/)(spieceasi/env\.yml)$}"
+  if [[ -n "$environment_file" && "$environment_file" =~ $override_env_pattern ]]; then
+    echo "[controller] Allowing configured Conda channels while solving this mixed-channel environment." >&2
+  else
+    mamba_args+=(--override-channels)
+    echo "[controller] Using only channels declared by the ASPIRE environment file." >&2
+  fi
+fi
+if [[ " ${mamba_args[*]} " == *" env create "* && "$has_channel_priority" -eq 0 ]]; then
+  flexible_env_pattern="${ASPIRE_MAMBA_FLEXIBLE_ENV_PATTERN:-(^|/)(qiime2\.yml|taxonomy/env\.yml|spieceasi/env\.yml)$}"
+  if [[ -n "$environment_file" && "$environment_file" =~ $flexible_env_pattern ]]; then
+    mamba_args+=(--channel-priority flexible)
+    echo "[controller] Using flexible channel priority for this mixed-channel environment." >&2
+  else
+    mamba_args+=(--strict-channel-priority)
+    echo "[controller] Enforcing strict channel priority for reproducible environment solving." >&2
+  fi
+fi
+
+set +e
+timeout --foreground "${ASPIRE_MAMBA_BUILD_TIMEOUT:-900}" \
+  "$ASPIRE_REAL_MAMBA" "${mamba_args[@]}"
+status=$?
+set -e
+if [[ "$status" -ne 0 ]]; then
+  if [[ "$status" -eq 124 ]]; then
+    echo "Environment build exceeded ${ASPIRE_MAMBA_BUILD_TIMEOUT:-900} seconds and was terminated." >&2
+    echo "Reduce or pin the environment dependencies instead of increasing the timeout indefinitely." >&2
+  fi
+  exit "$status"
+fi

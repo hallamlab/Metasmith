@@ -1,0 +1,62 @@
+# -----------------------------
+# R / RStudio
+# -----------------------------
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# -----------------------------
+# Python cache / local tooling
+# -----------------------------
+.codex
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# -----------------------------
+# Local virtual/env folders
+# -----------------------------
+.controller_env/
+.controller_env.*/
+.venv/
+venv/
+env/
+conda-local/
+
+# -----------------------------
+# Nextflow runtime artifacts
+# -----------------------------
+.nextflow/
+.nextflow*
+nxf-tmp.*
+work/
+.aspire/
+
+# Common Nextflow report/trace artifacts (when emitted in repo root)
+timeline.html
+report.html
+trace.txt
+dag.html
+dag.dot
+
+# -----------------------------
+# Generated analysis outputs
+# -----------------------------
+reports/
+mock_run*.yml
+mock_run*.manifest.tsv
+
+# -----------------------------
+# OS/editor noise
+# -----------------------------
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
