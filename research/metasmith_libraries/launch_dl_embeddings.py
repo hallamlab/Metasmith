@@ -206,7 +206,7 @@ def run_one(
     # MCTS seed=42 (metasmith default) lands in a local optimum for the 6-target
     # `--only all` search that adds a redundant downloadESMFoldWeights step
     # despite the weight tarball being pre-staged. Seeds 1/7/99/2024 find the
-    # optimal 7-step plan; see main/probe_planner.py for the sweep.
+    # optimal 7-step plan; see probe_planner.py beside this file for the sweep.
     task = DL.spec(inputs, targets_to_run).Solve(seed=1)
 
     if not task.ok or len(task.plan.steps) == 0:

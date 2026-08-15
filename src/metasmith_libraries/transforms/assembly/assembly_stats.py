@@ -153,7 +153,19 @@ def protocol(context: ExecutionContext):
             f.readline() # header
             for l in f:
                 k, s, e, val = l[:-1].split("\t")
-                s, e, val = [int(x) for x in [s, e, val]]
+                # Depth is a float, not an int. bedtools carries genomecov's
+                # depth as a double (it is divided by -scale, default 1.0) and
+                # prints it through a C++ ostream at the default 6 significant
+                # digits -- so the moment a pileup reaches a million-fold the
+                # column reads `1.24488e+06` and int() rejects it. Every library
+                # that peaked below 1e6 parsed fine, which is why this surfaced
+                # only on the deepest ones, after the alignment was already paid
+                # for. Coordinates stay int(): bedtools prints those from an
+                # integer type, and if they ever did arrive in that form the
+                # value would already have lost digits, so parsing them more
+                # leniently would corrupt `e-s` instead of reporting it.
+                s, e = int(s), int(e)
+                val = float(val)
                 if k != last_k:
                     _submit()
                     last_k = k

@@ -9,8 +9,8 @@ It exists because `--only all` used to add a `downloadESMFoldWeights` step that
 seed sweep below is how that was pinned to an MCTS local optimum rather than a
 missing input.
 
-    python main/probe_planner.py [case]        # see CASES
-    python main/probe_planner.py all_seeds     # the sweep
+    python research/metasmith_libraries/probe_planner.py [case]     # see CASES
+    python research/metasmith_libraries/probe_planner.py all_seeds  # the sweep
 
 Input paths are irrelevant to a plan, so they are deferred: what is being probed
 is which transforms the solver reaches for, and nothing here opens a file.

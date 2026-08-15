@@ -98,7 +98,10 @@ R1 = Path(os.environ.get("MSM_READS_R1", "<reads-R1.fq.gz>"))
 R2 = Path(os.environ.get("MSM_READS_R2", "<reads-R2.fq.gz>"))
 OUT_DIR = Path("results/metag_workflow_sockeye")
 
-MLIB = Path(__file__).resolve().parent.parent.parent
+# The transform library. `parents[3]` is the repo root (examples/ ->
+# metasmith_libraries/ -> research/ -> root); the library itself lives under
+# src/. Pointing at the root instead resolves no types and asserts nothing.
+MLIB = Path(__file__).resolve().parents[3] / "src" / "metasmith_libraries"
 
 SUBMIT = "--run" in sys.argv
 

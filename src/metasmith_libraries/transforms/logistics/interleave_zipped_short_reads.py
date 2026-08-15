@@ -22,9 +22,27 @@ def protocol(context: ExecutionContext):
     # which is set using the "ext" property of the type
     # so both of these are needed, dispite having identical protocols.
     # The input types differ!
+
+    # unbgzip=f is load-bearing, not tidying. By default bbmap sends EVERY .gz
+    # through its BGZF reader (ReadWrite.getGZipInputStream), which then splits
+    # the stream on block boundaries that plain gzip does not have. Above a few
+    # hundred MB the split lands mid-deflate and the reader thread dies with
+    # "Not a gzip file" while the process keeps waiting -- so the task hangs
+    # instead of failing, and SLURM, nextflow and any log-watching monitor all
+    # report it as RUNNING. unbgzip=f falls through to external pigz, which is
+    # both correct on multi-member gzip and faster. Do not remove it without
+    # re-testing on a >1 GB library, and check READ COUNTS, not exit codes:
+    # multithreadedbgzf=f, the other obvious knob, exits 0 having silently
+    # dropped 90% of the reads.
+    #
+    # The same latent bug is in interleave_short_reads, ora2fastq, filtlong,
+    # sylph, ganon2 and phyloflash. They are untouched because the run that
+    # found this did not exercise them, and an untested edit is not a fix.
+
     # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f'''
         reformat.sh \
+            unbgzip=f \
             in1="{ir1.container}" \
             in2="{ir2.container}" \
             out=stdout.fq \
