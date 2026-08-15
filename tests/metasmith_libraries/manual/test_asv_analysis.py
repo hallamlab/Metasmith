@@ -7,7 +7,11 @@ from metasmith.python_api import DataTypeLibrary, DataInstanceLibrary, Transform
 from metasmith.python_api import Source
 from metasmith.python_api import TargetBuilder, Resources, Size, Duration
 
-WORKSPACE = Path(".").resolve()
+# Anchored on this file, never on cwd: this script DEPLOYS an agent home under
+# WORKSPACE, so a cwd-relative anchor writes a deployment artifact into whatever
+# directory it happened to be launched from -- which is how one landed in the
+# repo root. Every sibling script here anchors the same way.
+WORKSPACE = Path(__file__).parent.resolve()
 MLIB = WORKSPACE.parent  # tests/ is inside MetasmithLibraries/
 DATA_DIR = Path("/home/tony/workspace/asv_task")
 

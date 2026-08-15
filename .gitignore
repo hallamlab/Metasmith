@@ -21,7 +21,12 @@ __pycache__
 !/conda_recipe/*/compile_recipe.py
 !/conda_recipe/*/meta_template.yaml
 
+# A deployed agent home, under every spelling anyone has used for one. These are
+# deployment artifacts, never repo content, and a script that anchors its home on
+# cwd rather than on __file__ drops one wherever it was launched from.
 **/metasmith_home
+**/msm_home
+**/test_msm_home
 
 .pixi
 pixi.lock
