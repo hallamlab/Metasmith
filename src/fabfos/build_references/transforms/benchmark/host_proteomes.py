@@ -12,12 +12,18 @@ planner is free to satisfy the mapper requirement from whatever ORF set is cheap
 reach -- in a full pipeline, a prodigal run on a fosmid assembly -- and the host
 attribution then gets attached to a table built from something else entirely.
 
-NOTHING IS PARSED OR RENAMED. The proteome is NCBI's, at the name the acquisition gave
-it, copied byte for byte. The mapper's `source` column is the staged file's stem, which
-is how B2 joins a table back to its host, so a rename here would break that join
-silently.
+NOTHING IS PARSED. The proteome is NCBI's, copied byte for byte -- but it IS renamed,
+because it has to be: the engine names every product and the generated nextflow process
+collects that name and nothing else. The accession therefore does not survive into the
+staged file's stem, so B2 cannot attribute a mapper table by its file name and does not:
+it reads the ORF IDS in the table and asks which proteome they came from. That join is
+the stronger one anyway -- it holds whatever anything is called.
 """
 from metasmith.python_api import *
+# EXPLICIT, because `python_api`'s star export does not carry it. This ran for the first
+# time on 0.20.4 and died in the container with `name 'Path' is not defined` after the
+# job had queued -- the transform is only executed remotely, so nothing local catches it.
+from pathlib import Path
 
 lib   = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
@@ -34,20 +40,24 @@ def protocol(context: ExecutionContext):
         raise SystemExit(f"no host/genome/ directories under {src}")
 
     manifest = []
-    for host in hosts:
+    for i, host in enumerate(hosts):
         faa = sorted((host / "genome").glob("*.faa"))
         if len(faa) != 1:
             raise SystemExit(
                 f"{host.name}: expected exactly one proteome under genome/, found "
-                f"{[p.name for p in faa]}. The mapper's `source` column is the staged "
-                f"file's stem, so two would make the host attribution ambiguous.")
-        iout = context.Output(out)
-        # Named for the sequence accession, which is what the acquisition named it and
-        # what B2 joins on.
-        dest = iout.local.parent / faa[0].name
+                f"{[p.name for p in faa]}. One proteome per host is what makes the "
+                f"attribution in host_gpr_denovo unambiguous.")
+        # THE OUTPUT PATH IS THE ENGINE'S, NOT OURS. `_get_output_paths` names each
+        # product `{batch}-{i}-{branch}.{hash}-{key}{ext}` and the generated nextflow
+        # process collects exactly that glob, so a file written beside it under the
+        # accession name is invisible: the step runs, writes five proteomes, and the
+        # task fails on `ls: cannot access '*-1.*-<key>.faa'`. The index is what makes
+        # a scatter a scatter -- one call to Output per host, not one per step.
+        iout = context.Output(out, i)
+        dest = Path(str(iout.local))
         dest.write_bytes(faa[0].read_bytes())
         n = sum(1 for line in dest.open() if line.startswith(">"))
-        Log.Info(f"{host.name}: {faa[0].name}  {n:,} proteins")
+        Log.Info(f"{host.name}: {faa[0].name} -> {dest.name}  {n:,} proteins")
         manifest.append({out: dest})
 
     return ExecutionResult(

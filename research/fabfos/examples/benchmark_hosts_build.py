@@ -22,7 +22,7 @@ TWO GIVENS, and both are declared rather than tolerated:
                                    would build the reference off a fresh pull rather
                                    than off the pins this build describes
   * the metabolism bake         -- R6's product, DVC-pinned at
-                                   data/processed/metabolism_bake/ for the same reason as
+                                   data/fabfos/processed/metabolism_bake/ for the same reason as
                                    the genomes: this build reads the pin the benchmark was
                                    measured against, not whatever a fresh R6 run would
                                    mint. R6 makes it -- see REFERENCES.md § R6 for
@@ -39,6 +39,7 @@ meaning.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -90,7 +91,7 @@ STAGED = {
 FORBIDDEN = ("aam_ensemble", "direction_ensemble", "mnx_lookups", "genomes", "metanetx")
 
 
-def plan(work: Path):
+def plan(work: Path, *, hosts_only: bool = False):
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
     for tl in ("ncbi.yml", "sequences.yml", "annotation.yml", "ref.yml", "lib.yml"):
         inputs.AddTypeLibrary(MLIB / "data_types" / tl)
@@ -124,7 +125,13 @@ def plan(work: Path):
 
     targets = TargetBuilder()
     targets.Add("ref::gpr_table_gem")
-    targets.Add("bench::study_benchmark")
+    # THE STUDY TIER IS SEPARABLE ON PURPOSE. Publishing it rewrites every study folder,
+    # and eydallin's `Y/` then comes back without `measured_glycogen.tsv` -- the one file
+    # in a study folder this tier does not write. A host-set change (a strain added, an
+    # edit list moved) has no business dragging that along, so `--hosts-only` asks for
+    # the half that changed.
+    if not hosts_only:
+        targets.Add("bench::study_benchmark")
 
     agent = Agent(home=Source.FromLocal(work / "agent_home"),
                   runtime=Runtime.MAMBA,
@@ -144,6 +151,9 @@ def main() -> int:
     ap.add_argument("--work", type=Path, default=None)
     ap.add_argument("--publish", action="store_true",
                     help=f"copy the tables into {PUBLISH_AT.relative_to(REPO)}")
+    ap.add_argument("--hosts-only", action="store_true",
+                    help="build and publish the host tables alone, leaving the study "
+                         "folders as they are -- see plan()")
     a = ap.parse_args()
 
     work = a.work or (SCRATCH / "benchmark_hosts")
@@ -151,7 +161,7 @@ def main() -> int:
         shutil.rmtree(work)
     work.mkdir(parents=True, exist_ok=True)
 
-    missing, inputs, agent, task = plan(work)
+    missing, inputs, agent, task = plan(work, hosts_only=a.hosts_only)
     if not task.ok:
         print(f"FAILED to plan:\n{task.plan}")
         return 1
@@ -168,9 +178,11 @@ def main() -> int:
         problems.append(
             f"a producer of a STAGED type is in the plan: {sorted(forbidden)}. Asking "
             f"for a host GPR table must not rebuild the references it reads.")
-    if len(task.plan.steps) != 2:
-        problems.append(f"expected two steps (hosts, studies), got "
-                        f"{len(task.plan.steps)}")
+    want_steps = 1 if a.hosts_only else 2
+    if len(task.plan.steps) != want_steps:
+        problems.append(f"expected {want_steps} step(s)"
+                        + ("" if a.hosts_only else " (hosts, studies)")
+                        + f", got {len(task.plan.steps)}")
 
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     svg = ARTIFACTS / "benchmark_hosts_dag.svg"
@@ -217,7 +229,18 @@ def main() -> int:
         print(f"    study {st.parent.name}")
     for m in made:
         print(f"    {m.parent.name:<16} {m.stat().st_size:,} B")
-    if len(made) != 3:
+    # ONE TABLE PER HOST THE TRANSFORM SAYS IT BUILT, rather than a number written here.
+    # The host set moved twice already -- DH1 and AG1 arrived for the ASKA cohorts -- and
+    # a hardcoded count turns "a host was silently dropped" and "a host was deliberately
+    # added" into the same failure.
+    if not made:
+        print("FAIL: the run completed and produced no host table at all")
+        return 3
+    want = json.loads((made[0].parent.parent.parent / "BUILD.json").read_text())
+    want_hosts = sorted(want["gem_source"])
+    if sorted(p.parent.name for p in made) != want_hosts:
+        print(f"FAIL: built {sorted(p.parent.name for p in made)}, "
+              f"BUILD.json declares {want_hosts}")
         return 3
 
     src = made[0].parent.parent          # .../hosts
@@ -238,14 +261,17 @@ def main() -> int:
         for host_dir in sorted(src.glob("*")):
             replace(host_dir / "gpr_gem.parquet", dest / host_dir.name / "gpr_gem.parquet")
         replace(src.parent / "BUILD.json", dest / "BUILD_gem.json")
-        sroot = studies[0].parent.parent
-        for study_dir in sorted(p for p in sroot.glob("*") if p.is_dir()):
+        sroot = studies[0].parent.parent if studies else None
+        for study_dir in sorted(p for p in sroot.glob("*") if p.is_dir()) if sroot else []:
             d = DATA / "benchmarks" / study_dir.name
             if d.exists():
                 shutil.rmtree(d)
             shutil.copytree(study_dir, d)
-        replace(sroot / "BUILD.json", DATA / "benchmarks" / "BUILD_studies.json")
-        print(f"\npublished -> {dest} and {DATA / 'benchmarks'}/<study>/")
+        if sroot:
+            replace(sroot / "BUILD.json", DATA / "benchmarks" / "BUILD_studies.json")
+        print(f"\npublished -> {dest}"
+              + (f" and {DATA / 'benchmarks'}/<study>/" if sroot else
+                 " (host tables only; the study folders were left alone)"))
     else:
         print(f"\nnot published. Re-run with --publish to copy into {PUBLISH_AT}.")
     return 0

@@ -28,7 +28,10 @@ packages = ["ecspr", "ecspr.commands"]
 ecspr = "."
 
 [tool.setuptools.package-data]
-ecspr = ["version.txt", "env.yml"]
+# build_hash.txt is gitignored but MUST ship: an installed ecspr reads it to
+# report FULL_VERSION, so leaving it out makes every container claim the bare
+# release segment and a result stops being traceable to a source state.
+ecspr = ["version.txt", "env.yml", "build_hash.txt"]
 
 [tool.setuptools.dynamic]
 version = { file = ["version.txt"] }

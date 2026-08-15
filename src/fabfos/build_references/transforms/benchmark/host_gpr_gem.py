@@ -16,6 +16,11 @@ EPI300 BORROWS DH10B'S MODEL, and the borrow happens HERE rather than in the
 acquisition. Writing DH10B's JSON a second time under EPI300 would assert a download
 that never happened and put identical bytes at two paths claiming two provenances.
 
+AG1 BORROWS DH1'S THE SAME WAY, and needs the borrow more: it has no assembly at NCBI
+either, so there is no genome to compare and the licence is the genotype Qimron et al.
+state. `check_ag1_identity.py` is that measurement, and unlike EPI300's it is not free
+-- see EDIT_LIST.
+
 THE BORROW IS NOT FREE, and earlier work here recorded that it was. `proV` and `fhuA`
 are PSEUDOGENES in EPI300 -- both in AND clauses, so seven transport reactions go dark.
 That is the whole edit list; nothing else in the model's 1,327 genes differs. It was
@@ -70,6 +75,14 @@ GEM_SOURCE = {
     "e_coli_k12":    "e_coli_k12",
     "e_coli_dh10b":  "e_coli_dh10b",
     "e_coli_epi300": "e_coli_dh10b",
+    "e_coli_dh1":    "e_coli_dh1",
+    # AG1 IS THE SECOND BORROW AND IT IS NOT LIKE THE FIRST. The ASKA library lives in
+    # AG1, which NCBI does not have at all -- there is no genome to compare, only the
+    # genotype Qimron et al. state: a DH1 derivative carrying recA1, endA1, gyrA96,
+    # thi-1, hsdR17, supE44 and relA1. `check_ag1_identity.py` measures what those cost
+    # the model, and W3110 is deliberately NOT here: it is where a clone's sequence
+    # comes from, not a strain this tree reads a model against.
+    "e_coli_ag1":    "e_coli_dh1",
 }
 
 # host -> the borrowed model's reactions that strain cannot carry, by the MODEL's own
@@ -91,7 +104,23 @@ GEM_SOURCE = {
 # all seven are already marked out of universe and carry no edge either way. Editing them
 # out would move no measurement while making the two tables differ, so the honest table is
 # DH10B's read faithfully under the EPI300 tag.
-EDIT_LIST = {}
+#
+# AG1 IS NOT EMPTY, AND THE CONTRAST IS THE POINT. Its genotype is seven markers and
+# `check_ag1_identity.py` measures each against this model: five of them -- recA1, endA1,
+# gyrA96, hsdR17, supE44 -- name no gene in it, so they are free. `relA1` names `relA`,
+# which carries two reactions: GDPDPK is `relA or spoT` and survives on the isozyme,
+# GTPDPK is relA alone and goes dark. One reaction, and it is INSIDE the atom universe,
+# so this borrow moves the network where EPI300's could not.
+#
+# `thi-1` IS DELIBERATELY ABSENT. It is a classical thiamine-auxotrophy allele rather
+# than a locus, and the module it lies in is 12 genes over 10 reactions here. Picking one
+# would put a fabricated deletion into the background of every eydallin condition, and a
+# fabricated deletion is worse than a known gap because nothing downstream can tell.
+# What the marker really says is that AG1 needs thiamine in the medium, which is a claim
+# about the medium and belongs where the medium is declared.
+EDIT_LIST = {
+    "e_coli_ag1": ("GTPDPK",),
+}
 
 DRIVER = r'''
 import json, os, sys

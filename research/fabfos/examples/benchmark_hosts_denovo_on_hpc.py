@@ -102,7 +102,7 @@ ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 
 INSERTS = SCADC / "sequences" / "inserts" / "inserts.fna"
 
-# The compiled references, by type -> the file or directory under data/processed/.
+# The compiled references, by type -> the file or directory under data/fabfos/processed/.
 # `ref::reference_label_pool` is a DIRECTORY (index + embedding stack), which is the
 # whole reason it is one product: the consumer addresses the stack by row, so an index
 # from one build against a stack from another misindexes every row silently.
@@ -211,12 +211,17 @@ def expected_transforms(lanes: int) -> set[str]:
     set per host without parsing a single record.
     """
     sys.path.insert(0, str(REPO / "tests"))
-    from test_gpr_workflow import EXPECTED_TRANSFORMS  # noqa: E402
-    all_of_them = set(EXPECTED_TRANSFORMS)
+    # `test_gpr_workflow` was retired in a690638 when the pilot compile-checks became
+    # per-driver unit tests, and this import went with it -- the driver then died on
+    # ModuleNotFoundError before it could preflight anything. Its successor covers the
+    # FOUR canonical lanes only, by design (see that file's header), so the three
+    # decided-against lanes are named here rather than subtracted from a set that no
+    # longer carries them.
+    from test_annotation_driver import EXPECTED_TRANSFORMS  # noqa: E402
+    four = set(EXPECTED_TRANSFORMS) | {"host_proteomes", "host_gpr_denovo"}
     if lanes == 7:
-        return all_of_them | {"host_proteomes", "host_gpr_denovo"}
-    return ((all_of_them - {"deepec", "ezpred", "esm_c", "gpr_7lane"})
-            | {"host_proteomes", "host_gpr_denovo"})
+        return four | {"deepec", "ezpred", "esm_c", "gpr_7lane"}
+    return four
 
 
 def check_refs(host: str, remote_processed: str, lanes: int) -> None:
@@ -250,7 +255,7 @@ def build_inputs(work: Path, lanes: int, remote_processed: str) -> DataInstanceL
     if not GENOMES.exists():
         raise SystemExit(
             f"the host set is not at {GENOMES.relative_to(REPO)}.\n"
-            f"  Materialise the pin: `dvc checkout data/originals/genomes.dvc`")
+            f"  Materialise the pin: `dvc checkout data/fabfos/originals/genomes.dvc`")
     n = sum(1 for _ in GENOMES.glob("*/genome/*.faa"))
     print(f"    fabfos_data::genomes         {GENOMES.relative_to(REPO)}  "
           f"({n} proteomes)")
@@ -397,7 +402,7 @@ def main() -> int:
                          "0.19.0-fabfos, sockeye the engine-derived tag. Pointing one "
                          "site at the other's is a MISSING agent in preflight.")
     ap.add_argument("--remote-processed", default=None,
-                    help="the host-side mirror of data/processed/, where the "
+                    help="the host-side mirror of data/fabfos/processed/, where the "
                          "references are read from. Placed there by "
                          "annotation_references_build.py --publish-remote, or moved "
                          "between clusters with globus.")

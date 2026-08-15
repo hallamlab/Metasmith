@@ -22,6 +22,12 @@ case $1 in
     --ibase) # create the dev conda env
         mamba env create --no-default-packages -f "$HERE/envs/fabfos/base.yml"
     ;;
+    --idev) # layer the packaging toolchain (conda-build, boa, anaconda-client) on top
+        # Everything that BUILDS or PUBLISHES a package -- -bc here, -be/-ue in
+        # dev/ecspr.sh -- needs this. Defaults to the base env; pass a name to
+        # overlay a different one.
+        mamba env update -n "${2:-fabfos}" -f "$HERE/envs/fabfos/dev.yml"
+    ;;
     -b|--bundle-library) # copy the metasmith library into the package for shipping
         echo "bundling metasmith library: $LIB_SRC (+ $LIB_ENVS) -> $LIB_DST"
         # shared with metasmith's own release (dev/metasmith.sh --vendor-library):
@@ -69,8 +75,9 @@ case $1 in
     ;;
 
     *)
-        echo "usage: dev/fabfos.sh [--ibase|-b|-bm|-bp|-bc|-r ...]"
+        echo "usage: dev/fabfos.sh [--ibase|--idev|-b|-bm|-bp|-bc|-r ...]"
         echo "  --ibase              create the dev conda env"
+        echo "  --idev [env]         add conda-build/boa/anaconda-client (needed by -bc, and by dev/ecspr.sh -be/-ue)"
         echo "  -b|--bundle-library  copy the metasmith library into the package for shipping"
         echo "  -bm|--build-metadata regenerate the _metadata snapshots"
         echo "  -bp|--build-pip      build the wheel/sdist"

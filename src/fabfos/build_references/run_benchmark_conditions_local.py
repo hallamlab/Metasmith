@@ -45,6 +45,10 @@ GIVENS = {
     # Pairings.txt`. NOT the extraction: this is the repository LASER publishes.
     "laser":    REPO / "data" / "fabfos" / "originals" / "benchmarks" / "laser",
     "hosts_gem": REPO / "data" / "fabfos" / "benchmarks",
+    # The bake -- ONE artifact in three files, which is why they are named as one
+    # given rather than three. `study_tier` reads all three and refuses if their
+    # identity blocks disagree.
+    "bake":     REPO / "data" / "fabfos" / "processed" / "metabolism_bake",
 }
 
 
