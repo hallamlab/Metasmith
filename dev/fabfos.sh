@@ -29,6 +29,11 @@ case $1 in
         mamba env update -n "${2:-fabfos}" -f "$HERE/envs/fabfos/dev.yml"
     ;;
     -b|--bundle-library) # copy the metasmith library into the package for shipping
+        # Compile before copy: _metadata/ is a build product (see -bm below),
+        # not tracked source, so a fresh checkout has none until this runs.
+        # vendor-library only COPIES -- run this first or it ships an empty
+        # bundle, which `--check`/-bp/-bc now refuse rather than shipping.
+        "$HERE/dev/fabfos.sh" --build-metadata
         echo "bundling metasmith library: $LIB_SRC (+ $LIB_ENVS) -> $LIB_DST"
         # shared with metasmith's own release (dev/metasmith.sh --vendor-library):
         # data_types/resources/transforms are the pieces the planner loads at
@@ -41,7 +46,6 @@ case $1 in
             --src "transforms=$LIB_SRC/transforms" \
             --src "envs=$LIB_ENVS" \
             --dst "$LIB_DST"
-        "$HERE/dev/fabfos.sh" --build-metadata
     ;;
     -bm|--build-metadata) # regenerate the _metadata snapshots the planner resolves against
         # `--bundle-library` only COPIES; the per-library _metadata/ snapshots are
