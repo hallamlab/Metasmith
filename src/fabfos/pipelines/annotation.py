@@ -52,26 +52,18 @@ from metasmith.python_api import (
     TransformInstanceLibrary,
 )
 
+from .. import refs
 from . import common
 
 DOMAINS = ["functionalAnnotation", "fabfos", "logistics"]
 
 ORFS_DIR_GLOB = "*.faa"
 
-# type -> its path RELATIVE to a `processed/` root. One declaration, so the
-# local default root and a remote agent's mirror derive from the same table
-# instead of drifting as two lists.
-#
-# `ref::reference_label_pool` is a DIRECTORY (index + embedding stack), which is
-# why it is one product: the consumer addresses the stack by row, so an index
-# from one build against a stack from another misindexes every row silently.
-REF_LAYOUT = {
-    "ref::kofamscan_profiles": "kofam_ref/profiles",
-    "ref::kofamscan_ko_list": "kofam_ref/ko_list.tsv",
-    "ref::uniref50_diamond_db": "uniref50_dmnd/uniref50.dmnd",
-    "ref::mnxr_lookup": "mnxr_lookup/mnxr_lookup.parquet",
-    "ref::reference_label_pool": "reference_label_pool/pool",
-}
+# type -> its path RELATIVE to a `processed/` root. Derived from the ONE
+# declaration in `fabfos.refs`, which the freeze step reads too: the library
+# build and this list keying an entry differently would mis-identify a
+# reference rather than fail, so there is no second copy to drift.
+REF_LAYOUT = {k: refs.relpaths_for(k)[0] for k in refs.ANNOTATION_REFS}
 
 DEFAULT_KOFAM_PROFILES = common.DATA_PROCESSED / REF_LAYOUT["ref::kofamscan_profiles"]
 DEFAULT_KOFAM_KO_LIST = common.DATA_PROCESSED / REF_LAYOUT["ref::kofamscan_ko_list"]
@@ -95,8 +87,18 @@ def _as_orf_list(orfs) -> list[Path]:
 def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list: Path | None,
                   uniref50_db: Path | None, mnxr_lookup: Path | None, label_pool: Path | None,
                   refs_root: "str | Path | None" = None, verify_refs: bool = True,
-                  stage_orfs: str = "copy",
-                  ) -> tuple[DataInstanceLibrary, dict[str, Path]]:
+                  stage_orfs: str = "copy", use_frozen_refs: bool = True,
+                  ) -> tuple[DataInstanceLibrary, dict[str, Path], "DataInstanceLibrary | None"]:
+    """Build the run's input library. Third return value is the frozen refs.
+
+    The references are not staged into `inputs` when a frozen reference library
+    covers them: registering one costs a content hash of up to 17 GB, on every
+    plan, to re-derive an id that was already settled. See `fabfos.refs`. The
+    frozen library is returned rather than re-loaded by the caller so there is
+    one resolution site, and it is None whenever the references went through
+    `stage_ref` after all -- an un-migrated checkout, `verify_refs=False`, or an
+    override.
+    """
     lib = common.resolve_library_root()
 
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
@@ -142,7 +144,25 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
         "ref::reference_label_pool": label_pool,
     }
     stubs: dict[str, Path] = {}
+    # Only a LOCAL root can be frozen: `verify_refs=False` names paths on another
+    # host, where there is nothing to stat, mark or hash in the first place.
+    frozen = None
+    if use_frozen_refs and verify_refs and refs_root is None:
+        frozen = refs.load_frozen_refs(common.DATA_PROCESSED)
+        if frozen is None:
+            print("fabfos: no frozen reference library; staging references the slow"
+                  " way. Build one with `python -m fabfos.refs freeze`.")
+    covered = set(frozen.manifest.values()) if frozen is not None else set()
+
+    overridden = set()
     for dtype, rel in REF_LAYOUT.items():
+        # An override is a different file, so its identity is not the frozen
+        # one and it has to be staged. The frozen row is then masked out below,
+        # or the solver sees two candidates of one type and picks arbitrarily.
+        if dtype in covered and given[dtype] is None:
+            continue
+        if dtype in covered:
+            overridden.add(dtype)
         if refs_root is None:
             default = common.DATA_PROCESSED / rel
         else:
@@ -155,7 +175,9 @@ def build_inputs(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list
             stubs[dtype] = path
 
     inputs.Save()
-    return inputs, stubs
+    if frozen is not None:
+        frozen = refs.refs_view(frozen, set(REF_LAYOUT) & covered - overridden)
+    return inputs, stubs, frozen
 
 
 def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko_list: Path | None,
@@ -171,7 +193,7 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
     to happen here or not at all.
     """
     lib = common.resolve_library_root()
-    inputs, stubs = build_inputs(
+    inputs, stubs, frozen_refs = build_inputs(
         work, orfs=orfs, kofam_profiles=kofam_profiles, kofam_ko_list=kofam_ko_list,
         uniref50_db=uniref50_db, mnxr_lookup=mnxr_lookup, label_pool=label_pool,
         refs_root=refs_root, verify_refs=verify_refs, stage_orfs=stage_orfs,
@@ -182,6 +204,7 @@ def generate_workflow(work: Path, *, orfs, kofam_profiles: Path | None, kofam_ko
     resources = [
         DataInstanceLibrary.Load(lib / "resources" / "env"),
         DataInstanceLibrary.Load(lib / "resources" / "lib"),
+        *([frozen_refs] if frozen_refs is not None else []),
         inputs,
     ]
     transforms = [TransformInstanceLibrary.Load(lib / f"transforms/{d}") for d in DOMAINS]

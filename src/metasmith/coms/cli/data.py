@@ -135,6 +135,38 @@ def register(subs):
         a.src_uri, a.dest, a.cache_root, a.on_exist, not a.no_image,
     ))
 
+    _fz = sp.add_parser("freeze", help="trust this library's recorded ids; refuse mutation")
+    _fz.add_argument("library")
+    _fz.add_argument("--no-permissions", action="store_true",
+                     help="skip the read-only mark; stamps are still recorded")
+    _fz.add_argument("--deep", action="store_true",
+                     help="also record content digests -- a full pass over the data,"
+                          " and the only thing `verify --deep` can compare against")
+    _fz.set_defaults(func=lambda a: _ops.freeze_library(
+        a.library, not a.no_permissions, a.deep,
+    ))
+
+    _uf = sp.add_parser("unfreeze", help="lift a freeze and restore write on its entries")
+    _uf.add_argument("library")
+    _uf.add_argument("--keep-permissions", action="store_true",
+                     help="leave the read-only marks in place")
+    _uf.set_defaults(func=lambda a: _ops.unfreeze_library(a.library, not a.keep_permissions))
+
+    _rs = sp.add_parser(
+        "restamp",
+        help="re-record a frozen library's stat stamps, moving no identity",
+    )
+    _rs.add_argument("library")
+    _rs.add_argument("--entry", default=None, help="one entry, instead of all")
+    _rs.set_defaults(func=lambda a: _ops.restamp_library(a.library, a.entry))
+
+    _vf = sp.add_parser("verify", help="report drift in a frozen library")
+    _vf.add_argument("library")
+    _vf.add_argument("--deep", action="store_true",
+                     help="re-derive content digests; expensive, and the only check"
+                          " without the holes the cheap ones have")
+    _vf.set_defaults(func=lambda a: _ops.verify_library(a.library, a.deep))
+
     _lin = sp.add_parser("lineage", help="show an item's type + ancestors")
     _lin.add_argument("library")
     _lin.add_argument("item_path")

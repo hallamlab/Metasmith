@@ -4,12 +4,13 @@ A `DataInstance` is one such file. Its `instance_id` is the identity every
 downstream cache decision is made from, which is why minting one lives next
 door in `identity` rather than inline here.
 
-`DataInstanceLibrary` composes three mixins onto the store operations below:
+`DataInstanceLibrary` composes four mixins onto the store operations below:
 `_LeafIdentity` for how a leaf is named, `_StoreTransfer` for getting the
-store on and off disk, `_TelemetryQueries` for reading its trace back. Mixins
-rather than modules of free functions because each needs the store's own state
-(`instance_meta`, `location`, `_trace_index`); kept off this class so a change
-to any one of them is a file someone can read end to end.
+store on and off disk, `_FrozenLibrary` for taking recorded ids at their word
+instead of re-deriving them, `_TelemetryQueries` for reading its trace back.
+Mixins rather than modules of free functions because each needs the store's own
+state (`instance_meta`, `location`, `_trace_index`); kept off this class so a
+change to any one of them is a file someone can read end to end.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from ...logging import Log
 from ..paths import DEFERRED, _DeferredPath, mint_deferred_path
 from ..remote import Logistics, Source, SourceType
 from ..solver import Dependency, Endpoint
+from .frozen import _FrozenLibrary
 from .identity import _LeafIdentity
 from .telemetry_api import _TelemetryQueries
 from .transfer import _StoreTransfer
@@ -160,7 +162,7 @@ class DataInstance:
             }
         return inst
 
-class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
+class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _FrozenLibrary, _TelemetryQueries):
     schema: str = "v1"
     _path_to_meta: Path = Path("./_metadata")
     _path_to_types: Path = Path("./_metadata/types")
@@ -196,6 +198,9 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         # round trip (Save/Load copy the namespace itself), only for
         # PackInline, which references the namespace instead of copying it.
         self._type_sources: dict[str, Path] = {}
+        # The `frozen:` block from index.yml, or None for the overwhelming
+        # majority of libraries. See frozen.py.
+        self._frozen: dict|None = None
         if isinstance(location, DataInstanceLibrary):
             other = location
             self.location = other.location
@@ -204,6 +209,10 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
             self.instance_meta = other.instance_meta
             self.fork_id = other.fork_id
             self._type_sources = other._type_sources
+            # ...including the freeze, or the copy constructor is a laundering
+            # route: `DataInstanceLibrary(frozen_lib)` would hand back a
+            # writable library over the same location and the same meta dict.
+            self._frozen = other._frozen
         else:
             location = Path(location).resolve()
             if not location.exists():
@@ -216,6 +225,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         return other in self.manifest
 
     def Purge(self):
+        self._refuse_if_frozen("Purge")
         if self.location.exists():
             shutil.rmtree(self.location)
         self.location.mkdir(exist_ok=True)
@@ -441,7 +451,13 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
                     to_inst = self.Get(child_path)
                     yield (from_inst, to_inst)
 
-    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None):
+    def _register(self, path, dtype: str, parents, set_identity):
+        """Manifest bookkeeping shared by AddItem and RegisterItem.
+
+        The two differ only in where the `instance_id` comes from, and that
+        difference is the whole point of having both -- so it is the only thing
+        the caller supplies, as `set_identity(path)`.
+        """
         if parents is None:
             parents = []
         for p in parents:
@@ -452,18 +468,55 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         # receipt, and persisted from then on.
         path = mint_deferred_path() if path is DEFERRED else Path(path)
         assert path not in self.manifest, f"[{path}] already added"
-        type_model = self.GetType(dtype) # check if datatype exists
+        self.GetType(dtype) # check if datatype exists
         self.manifest[path] = dtype
+        set_identity(path)
+        self.AddParentsTo(path, [self.Get(p) for p in parents])
+        self._invalidate_endpoint_cache()
+        return path
+
+    def AddItem(self, path: Path|str|_DeferredPath, dtype: str, parents: Iterable[Path]|None=None):
+        self._refuse_if_frozen("AddItem")
         # R1: mint the leaf instance_id at AddItem time. When the file is
         # present the id is derived from (content digest ⊕ relative path)
         # so two runs on byte-identical inputs at the same layout mint the
         # same id → cross-run cache reuse, while distinct files that share
         # bytes stay distinct; when the file is absent it falls back to a
         # unique-per-call random id (legacy S2 behaviour). See _mint_leaf_id.
-        self._mint_leaf_id(path)
-        self.AddParentsTo(path, [self.Get(p) for p in parents])
-        self._invalidate_endpoint_cache()
-        return path
+        return self._register(path, dtype, parents, self._mint_leaf_id)
+
+    def RegisterItem(
+        self,
+        path: Path|str,
+        dtype: str,
+        *,
+        instance_id: str,
+        origin: str = "leaf",
+        lineage_payload: bytes|None = None,
+        parents: Iterable[Path]|None = None,
+    ):
+        """Add an item whose identity the caller already knows.
+
+        `AddItem` derives an id by reading the file, which is right when the
+        bytes are the only evidence available and wrong when something stronger
+        exists: a DVC pin's digest, or the lineage id of the transform that
+        produced the file. Both are cheaper *and* more truthful than re-hashing
+        24 GB, and both were previously only reachable by writing into
+        `instance_meta` behind the library's back -- which several callers did.
+
+        The id is taken verbatim. Whatever a caller derives it from has to be
+        something two hosts agree on, or cross-host cache reuse quietly stops.
+        """
+        def _set(p: Path):
+            self.instance_meta[p] = {
+                "instance_id": instance_id,
+                "origin": origin,
+                "lineage_payload": lineage_payload,
+                "fork_id": self.fork_id,
+            }
+        self._refuse_if_frozen("RegisterItem")
+        assert origin in {"leaf", "lineage", "imported"}, f"bad origin {origin!r}"
+        return self._register(path, dtype, parents, _set)
 
     def SetLineageInstance(
         self,
@@ -479,6 +532,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         transform produced an output whose identity is the lineage_key
         over its (transform_key, signature, sorted_input_ids).
         """
+        self._refuse_if_frozen("SetLineageInstance")
         assert origin in {"lineage", "imported"}, (
             f"origin must be lineage or imported, got {origin!r}"
         )
@@ -489,6 +543,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         }
 
     def AddValue(self, name: str, value: str|dict, dtype: str, parents: Iterable[Path]|None=None):
+        self._refuse_if_frozen("AddValue")
         path = Path(name)
         if isinstance(value, dict):
             value = json.dumps(value)
@@ -501,6 +556,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         self._endpoint_cache.clear()
 
     def Remove(self, path: Path):
+        self._refuse_if_frozen("Remove")
         assert path in self.manifest, f"not found [{path}]"
         try:
             K = Path("./test")
@@ -544,6 +600,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         Rename data instance in library and the file system.
         *library will be corrupted if change is not saved
         """
+        self._refuse_if_frozen("Rename")
         assert path in self.manifest, f"not found [{path}]"
         assert path.is_absolute() == new.is_absolute(), f"can not mix relative and absolute paths [{path}, {new}]"
         assert new not in self.manifest, f"already exists [{new}]"
@@ -576,6 +633,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         Rename all items in the library based on the path stem of their parent of the given type.
         Uses a transactional approach: plans all renames, executes filesystem moves, then commits manifest atomically.
         """
+        self._refuse_if_frozen("RenameByParent")
         # Phase A — Plan (read-only)
         rename_plan: list[tuple[Path, Path]] = []  # (old_path, proposed_new_path)
 
@@ -680,13 +738,17 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
             self._invalidate_endpoint_cache()
         self.AddParentsTo(p, parents)
 
+    #: Top-level index keys that are ABOUT the library rather than part of what
+    #: it is. `remote_src` is where a copy came from; `frozen` is a stat stamp
+    #: over the same manifest. Letting either into the key would move the
+    #: library key -- and so every task key built on it -- when nothing about
+    #: the data changed, which for `frozen` would re-break the plan stability
+    #: freezing exists to buy: a legitimate re-stamp must be invisible here.
+    _KEY_EXCLUDED_TOP_LEVEL = ("remote_src", "frozen")
+
     def _calculate_key(self, _raw_override=None):
-        if _raw_override is not None:
-            me_d = {k: v for k, v in _raw_override.items() if k != "remote_src"}
-        else:
-            me_d = self.Pack()
-            for k in ["remote_src"]:
-                if k in me_d: del me_d[k]
+        src = _raw_override if _raw_override is not None else self.Pack()
+        me_d = {k: v for k, v in src.items() if k not in self._KEY_EXCLUDED_TOP_LEVEL}
         me = yaml.dump(me_d)
         self._hash, self._key = KeyGenerator.FromStr(me, l=12)
         return self._key
@@ -702,6 +764,7 @@ class DataInstanceLibrary(_LeafIdentity, _StoreTransfer, _TelemetryQueries):
         return self._hash
 
     def PruneTypes(self, save: bool=True, whitelist: set[str|Dependency|Endpoint]|None=None):
+        self._refuse_if_frozen("PruneTypes")
         used_type_names = set(self.manifest.values())
         if whitelist is None: whitelist = set() 
         wl_names = {x for x in whitelist if isinstance(x, str)}

@@ -27,6 +27,7 @@ from .resources import Duration, Gpu, GPU_LABEL, Gpus, Resources, Size
 from .types import (
     DataTypeLibrary, DataTypeOntologies, DataTypeOntology, yaml_safe_load,
 )
+from .frozen import FrozenLibraryError
 from .instances import DataInstance, DataInstanceLibrary, DataInstanceLibraryView
 from .transforms import (
     TransformInstance, TransformInstanceLibrary, TransformInstanceLibraryView,

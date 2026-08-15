@@ -49,6 +49,7 @@ from metasmith.python_api import (
     TransformInstanceLibrary,
 )
 
+from .. import refs
 from . import common
 
 # `ecspr_measure` lives in the `fabfos` transform domain, beside the GPR builders
@@ -57,8 +58,10 @@ from . import common
 # domain of its own only while it was a contract with no protocol.
 DOMAINS = ["fabfos"]
 
-DEFAULT_ATOM_PAIRS = common.DATA_PROCESSED / "metabolism_bake" / "atom_pairs.parquet"
-DEFAULT_DIRECTION_RATIOS = common.DATA_PROCESSED / "metabolism_bake" / "direction.parquet"
+# Relative paths come from the one table in `fabfos.refs`, which the freeze
+# step reads too -- a second copy here would mis-key an entry rather than fail.
+DEFAULT_ATOM_PAIRS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::atom_pairs")[0]
+DEFAULT_DIRECTION_RATIOS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::direction_ratios")[0]
 
 
 @dataclass
@@ -79,8 +82,14 @@ def parse_unit(spec: str) -> Unit:
 
 
 def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
-                  direction_ratios: Path | None
-                  ) -> tuple[DataInstanceLibrary, dict[str, Path]]:
+                  direction_ratios: Path | None, use_frozen_refs: bool = True,
+                  ) -> tuple[DataInstanceLibrary, dict[str, Path], "DataInstanceLibrary | None"]:
+    """Third return value is the frozen reference library, or None.
+
+    Same arrangement as the annotation lane: a reference covered by the frozen
+    library is not staged into `inputs`, because staging it means re-hashing it
+    on every plan to arrive at an id that is already recorded. See
+    `fabfos.refs`."""
     lib = common.resolve_library_root()
 
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
@@ -94,23 +103,32 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
         inputs.AddItem(unit.conditions.expanduser().resolve(), "ecspr::conditions", parents={exp})
 
     stubs: dict[str, Path] = {}
+    frozen = refs.load_frozen_refs(common.DATA_PROCESSED) if use_frozen_refs else None
+    covered = set(frozen.manifest.values()) if frozen is not None else set()
+    overridden = set()
     for dtype, given, default in (
         ("ecspr::atom_pairs", atom_pairs, DEFAULT_ATOM_PAIRS),
         ("ecspr::direction_ratios", direction_ratios, DEFAULT_DIRECTION_RATIOS),
     ):
+        if dtype in covered and given is None:
+            continue
+        if dtype in covered:
+            overridden.add(dtype)
         path, real = common.stage_ref(inputs, work, dtype, given=given, default=default)
         if not real:
             stubs[dtype] = path
 
     inputs.Save()
-    return inputs, stubs
+    if frozen is not None:
+        frozen = refs.refs_view(frozen, set(refs.ECSPR_REFS) & covered - overridden)
+    return inputs, stubs, frozen
 
 
 def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
                        direction_ratios: Path | None, runtime: Runtime,
                        agent_env: str | None = None):
     lib = common.resolve_library_root()
-    inputs, stubs = build_inputs(
+    inputs, stubs, frozen_refs = build_inputs(
         work, units=units, atom_pairs=atom_pairs,
         direction_ratios=direction_ratios,
     )
@@ -118,6 +136,7 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
     resources = [
         DataInstanceLibrary.Load(lib / "resources" / "env"),
         DataInstanceLibrary.Load(lib / "resources" / "lib"),
+        *([frozen_refs] if frozen_refs is not None else []),
         inputs,
     ]
     transforms = [TransformInstanceLibrary.Load(lib / f"transforms/{d}") for d in DOMAINS]

@@ -78,3 +78,8 @@ std_assembly_data
 /.cache/
 /MetasmithLibraries/
 /example_resources/
+
+# the frozen reference library (`python -m fabfos.refs freeze`). Generated, and
+# its manifest holds ABSOLUTE paths, so a committed copy would be wrong on every
+# other machine -- the ids inside it are not, which is the point.
+/data/fabfos/refs.xgdb/

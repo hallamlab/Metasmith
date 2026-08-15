@@ -9,10 +9,34 @@ DOCKER_IMAGE=joseluisq/rust-linux-darwin-builder:2.0.0-beta.1
 # the pip wheel and conda package as package data.
 STAGE="$HERE/../../src/metasmith/engine"
 
+# Cargo's build directory, deliberately OUTSIDE the worktree and shared by every
+# scope on this machine. The stage above is a per-scope build artifact and has to
+# stay one -- it was DVC-tracked once so siblings could skip the cross build, and
+# DVC checks its outputs out read-only, which cost every plan in every worktree
+# the executable bit and silently reverted the solver to the python fallback.
+# Sharing the *compilation* is how that convenience comes back without the
+# artifact being shared: registry deps and the four cross targets are built once,
+# and only msm_solver itself recompiles per scope. Cargo locks the directory, so
+# two scopes building at once block rather than corrupt.
+#
+# Split in two because the container runs as root and leaves root-owned files
+# behind: a host `-bl` build sharing one root would fail on cargo's own
+# `.rustc_info.json` at the top of it. They are different toolchains against
+# different targets anyway, so nothing is lost by keeping them apart.
+TARGET_DIR="${MSM_SOLVER_TARGET_DIR:-$HOME/.cache/metasmith/solver-target}"
+CROSS_TARGET_DIR="$TARGET_DIR/cross"
+HOST_TARGET_DIR="$TARGET_DIR/host"
+mkdir -p "$CROSS_TARGET_DIR" "$HOST_TARGET_DIR"
+
 in_container() {
     echo "in container: $@"
+    # Mounted at its own host path, not at a container-local one: cargo records
+    # absolute paths in its fingerprints, so the directory has to be called the
+    # same thing on both sides or every build invalidates the last one's work.
     docker run --rm \
         --mount type=bind,source="$HERE",target="/root/src"\
+        --mount type=bind,source="$CROSS_TARGET_DIR",target="$CROSS_TARGET_DIR"\
+        --env CARGO_TARGET_DIR="$CROSS_TARGET_DIR" \
         --workdir /root/src \
         $DOCKER_IMAGE \
         "$@"
@@ -23,11 +47,16 @@ in_container() {
 # one convention rather than two.
 stage_one() {
     local triple=$1 slot=$2
-    local src="$HERE/target/$triple/release/msm_solver"
+    local src="$CROSS_TARGET_DIR/$triple/release/msm_solver"
     [ -f "$src" ] || return 1
     mkdir -p "$STAGE"
     cp "$src" "$STAGE/msm_solver.$slot"
-    chmod +x "$STAGE/msm_solver.$slot"
+    # An explicit mode, not `chmod +x`. `cp` writes through an existing file and
+    # keeps its mode, so restaging over a 444 checkout (which is how these
+    # arrived while engine/ was DVC-tracked) left 555 -- runnable, but not what
+    # anyone asked for, and it makes the packaging guard's mode column lie about
+    # what a fresh build produces.
+    chmod 755 "$STAGE/msm_solver.$slot"
     echo "  staged $slot  ($(stat -c %s "$src") bytes)"
 }
 
@@ -77,6 +106,7 @@ case $1 in
         # Host toolchain, host target, no docker -- seconds instead of minutes.
         # The binary is dynamically linked against this machine's libc, which is
         # exactly what `cross` output is not, hence the marker.
+        export CARGO_TARGET_DIR="$HOST_TARGET_DIR"
         cargo build --release || exit 1
         # Clear the stage first. A host build refreshes exactly one slot, and
         # leaving the other three behind from an earlier `-be` is how a stale
@@ -84,7 +114,7 @@ case $1 in
         # 0.18.4 stub-relay bug wearing different clothes.
         rm -rf "$STAGE"
         mkdir -p "$STAGE"
-        cp "$HERE/target/release/msm_solver" "$STAGE/msm_solver.$(uname -m | sed 's/aarch64/arm64/')-$(uname -s | tr 'A-Z' 'a-z')"
+        cp "$HOST_TARGET_DIR/release/msm_solver" "$STAGE/msm_solver.$(uname -m | sed 's/aarch64/arm64/')-$(uname -s | tr 'A-Z' 'a-z')"
         echo "local" > "$STAGE/BUILD_KIND"
         echo "staged a HOST-LINKED build to $STAGE -- fine to test with, refused by -bp"
     ;;
@@ -99,6 +129,7 @@ case $1 in
     # run
     -r)
         shift
+        export CARGO_TARGET_DIR="$HOST_TARGET_DIR"
         cargo run --release -- $@
     ;;
     *)

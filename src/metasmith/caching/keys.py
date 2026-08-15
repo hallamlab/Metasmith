@@ -23,6 +23,8 @@ produces a stable order regardless of declaration order in the model).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import cbor2
 from blake3 import blake3
 
@@ -110,6 +112,30 @@ def content_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
                 break
             hasher.update(chunk)
     return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
+
+
+def tree_multihash_key(root, *, chunk_size: int = 1 << 20) -> bytes:
+    """The directory analogue of `content_multihash_key`.
+
+    blake3 over the canonical-CBOR encoding of sorted
+    `(relative posix path, file digest)` pairs, so it depends on the tree\'s
+    content and layout and on nothing else -- not mtimes, not modes, not the
+    order the filesystem happens to hand back.
+
+    **Deliberately not wired into `_mint_leaf_id`.** A directory reference here
+    is 27,756 files and 7.2 GB; making `AddItem` walk it would reintroduce, in a
+    worse form, the per-plan re-hash that frozen libraries exist to remove. This
+    is for `metasmith data freeze --deep` and `verify --deep`: expensive, on
+    demand, never automatic.
+    """
+    root = Path(root)
+    entries = []
+    for p in sorted(root.rglob("*")):
+        if not p.is_file() or p.is_symlink():
+            continue
+        entries.append((p.relative_to(root).as_posix(),
+                        content_multihash_key(p, chunk_size=chunk_size)))
+    return KEY_PREFIX + _digest(canonical_cbor(entries))
 
 
 def lineage_key(

@@ -164,17 +164,59 @@ carry parent/child links (genomes under a pangenome); `AsSamples("type")` splits
 library into per-item views for parallel processing, each sample carrying the matched item
 plus its ancestors.
 
-Each `DataInstance` has a stable `instance_id` derived from **path, dtype name, and parent
-library — never file bytes**. Bioinformatic inputs reach hundreds of GB, so content
-hashing is deliberately off the table; the consequence is that changing a path or a type
-re-registers the row and costs cache reuse downstream, and two different files at one path
-collide. (`instance_id` is *stored* per path rather than re-derived, so anything that moves a
+Each `DataInstance` has a stable `instance_id`. A **leaf** present on disk is content-addressed
+at `AddItem` time — `multihash(blake3(bytes) ‖ library-relative path)` — which is what makes two
+independent runs over identical inputs hit the same cache shards; the path is folded in so N
+degenerate-but-distinct files do not collapse to one identity. An absent or unreadable one falls
+back to a random per-call id and gets no reuse. Everything downstream of a transform is not
+hashed at all: an intermediate's identity is pure provenance (see *Task cache and lineage*), which
+is why a live Nextflow run never re-reads its own outputs to name them. (`instance_id` is *stored*
+per path rather than re-derived, so anything that moves a
 manifest entry has to move its `instance_meta` with it — the fallback for a missing one derives
 from the library key, which is a hash of the whole manifest, and that makes one row's identity
 a function of every other row's.) That is worked around by an explicit user-driven fork, not by an automatic fix.
 The id survives `WithDType()` retyping and `Pack()`/`Unpack()`, which is what makes
 `Load()` + `Trace()` the correct way to map results back to inputs — never filename or
 work-directory parsing.
+
+### Frozen libraries
+
+Content addressing is right for an input a user just produced and wrong for a reference
+database. `metasmith data freeze` marks a library as one whose recorded ids are already
+correct: it refuses every mutation, returns each `instance_meta` entry verbatim without
+touching the filesystem, and records a stat stamp per top-level entry that `Load` checks.
+The fabfos annotation lane's `build_inputs` went from 10.0s to 0.23s on that change, against
+a solve that costs 1.0s, and its plan key became stable — the two directory references were
+getting a fresh `uuid4` per build, so it had not been stable on one machine, let alone two.
+
+**Both checks are cheap assertions, and their gaps are the point.** They catch accidental
+drift for the price of a stat; they are a smoke alarm, not a lock, and the failure direction
+is asymmetric — an undetected content swap under an unchanged id is a false cache *hit*,
+which replays a stale shard and emits silently wrong science with no error anywhere. The
+read-only mark is non-recursive by design (27,756 files under one reference), so it does not
+protect the *inside* of a directory entry, and it is inert against the owner, against root,
+against a `dvc checkout` of a different pin, and against anyone constructing a library
+directly. The stat stamp is not a content check: a same-size edit preserving mtime passes,
+a directory's mtime says nothing about what changed inside it, and clock skew across
+NFS/Lustre makes a stamp taken elsewhere non-comparable — so a foreign-host stamp warns
+rather than raises, which narrows honest coverage to the machine that froze. The full
+enumeration lives in `models/libraries/frozen.py`; read it before trusting or changing
+either mechanism.
+
+The likely day-to-day failure is a **false positive**: re-materialising the same data moves
+mtime and nothing else. `metasmith data restamp` is the remedy and moves no identity —
+fabfos does it automatically when the DVC pin the ids were minted from is unchanged, which
+is a strictly stronger check than any stat. Switching the check off is not the remedy;
+`METASMITH_FROZEN_NOCHECK=1` exists for an emergency and is documented as one.
+`metasmith data verify --deep` is the escape hatch with none of these gaps: it re-derives
+real content digests against a `freeze --deep` baseline, costs a full pass over the data, is
+never automatic, and reports `UNVERIFIABLE` rather than `OK` where no baseline exists.
+
+This does **not** overturn `docs/metasmith/plans/cross-run-reentrancy.md`'s rejection of a
+`(size, mtime)` shortcut. That rejected mtime as the *derivation* of identity. Here the id
+comes from content or from a DVC pin's digest, and the stamp only raises a question about an
+id that already exists, failing closed. What the rejection rested on — that hashing is a
+one-time build cost — is the premise the fabfos driver violated by re-paying it per plan.
 
 ### Transforms
 
@@ -1073,12 +1115,27 @@ skipping them ships something empty that nobody notices for a while:
   all three contexts: `PYTHONPATH=src` makes it the package's own `engine/`, which is where an
   installed wheel resolves too, so nothing is added to PATH and there is one lookup rather than
   three. Run `-bel` once and source runs use the engine.
+  **The stage is a per-scope build artifact and must not be version-controlled by anything** —
+  not git, not DVC. It was DVC-tracked for a while so sibling worktrees could skip the cross
+  build; DVC materialises its outputs as read-only hardlinks into the shared cache and does not
+  carry the exec bit, so every worktree got mode 444 and every plan in all of them reverted to
+  the Python search on a permission error at the handshake. The mode follows the file into the
+  artifacts too: 444 survives an sdist unchanged and normalises to 644 in a wheel, so a release
+  cut from a materialised stage ships a dead engine. What that pin was buying is bought instead
+  by `MSM_SOLVER_TARGET_DIR` (default `~/.cache/metasmith/solver-target`), a cargo target
+  directory shared by every scope on the machine — the *compilation* is shared, the artifact is
+  not, and only `msm_solver` itself recompiles per scope.
   The engine carries the whole search and is the default — 7.5s versus 1.1s on
   `metagenomics_from_paired_reads`, same plan — so absence is recoverable but not free: a wheel
   with no engine plans correctly and slowly, and nothing fails. Hence the guard on every
   shipping build (`-bp`/`-bc`/`-bd` run `_assert_solver_engine`; override
-  `MSM_SKIP_SOLVER_CHECK=1`), which also refuses a `-bel` host build via the `BUILD_KIND` marker,
-  since nothing about a Linux ELF says musl versus the build machine's glibc.
+  `MSM_SKIP_SOLVER_CHECK=1`), which checks size, magic bytes, the exec bit, and refuses a `-bel`
+  host build via the `BUILD_KIND` marker, since nothing about a Linux ELF says musl versus the
+  build machine's glibc. That guard runs *before* pip, and the mode can be lost during pip, so
+  `-ud`/`-bs` additionally run `_assert_engine_in_image`, which asks the installed package inside
+  the tagged image which backend it will use and requires `rust` — the same relationship
+  `_assert_real_relays` has to the relay, and the last automatic gate before anything leaves the
+  machine.
   Reverting to the Python solver is a class pin — `solver_backend._set_solver_class`,
   `UsePythonSolver()`, or `pytest --solver=python` — never an environment variable; an
   *unasked-for* fallback warns once per process. `MSM_SOLVER_TRACE=1` is read by the binary
