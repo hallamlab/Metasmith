@@ -89,7 +89,9 @@ std_assembly_data
 /src/metasmith_libraries/transforms/*/_metadata/
 /src/fabfos/algorithm/_metadata/
 
-# The library suite deploys a real agent home to run against; conftest.py names
-# this path. Same class as the root-level deploy artifacts above -- a deployed
-# home is a build product of running the tests, not repo content.
+# A deployed agent home is a build product of running something, not repo
+# content. `/msm_home/` is the current spelling and the one the ignore rules
+# missed -- they named two older ones. The tests' own home sits one directory
+# deeper and is named by tests/metasmith_libraries/conftest.py.
+/msm_home/
 /tests/metasmith_libraries/test_msm_home/
