@@ -1,0 +1,15 @@
+mnxr	atoms	chars	atoms_c_all	chars_c_all	verdict	repaid_by_collapse
+MNXR116835	601.0	1483.0	451	1114	mappable	True
+MNXR193775	601.0	1694.0	465	1272	mappable	True
+MNXR197053	603.0	1639.0	603	1639	oversize	False
+MNXR144001	605.0	1752.0	605	1752	oversize	False
+MNXR193659	609.0	2089.0	609	2089	oversize	False
+MNXR200635	609.0	2081.0	609	2081	oversize	False
+MNXR197055	625.0	1719.0	625	1719	oversize	False
+MNXR197210	642.0	1768.0	642	1768	oversize	False
+MNXR197057	647.0	1799.0	647	1799	oversize	False
+MNXR200740	663.0	2269.0	663	2269	oversize	False
+MNXR197059	669.0	1879.0	669	1879	oversize	False
+MNXR123247	795.0	2353.0	795	2353	oversize	False
+MNXR118667	820.0	2329.0	190	481	mappable	True
+MNXR200638	961.0	3095.0	961	3095	oversize	False

@@ -52,19 +52,21 @@ NEEDS_A_TOOL = {
 }
 
 # {module: {verb: {flags}}} -- "" is the verb-less case (one flat parser).
-# Frozen from the pre-move flat modules; every entry was byte-identical across
-# the migration and is expected to stay that way.
+# Frozen from the pre-move flat modules; every entry was byte-identical across the
+# migration. The only additions since are `--collapsed-atom-limit` on the two steps
+# that apply the size cut, which is the AAM change and is meant to show up here.
 CLI = {
     "ecspr.bake.aam.worklist": {
         "build": {"--reactions", "--metabolites", "--atom-limit", "--char-limit",
-                  "--out", "--out-summary"},
+                  "--collapsed-atom-limit", "--out", "--out-summary"},
         "close": {"--worklist", "--pairs", "--rescued", "--out", "--out-summary"},
     },
     "ecspr.bake.aam.curation": {
         "propose": {"--lookups", "--worklist", "--chebi", "--modelseed",
                     "--override", "--drop-lane", "--out"},
         "complete": {"--lookups", "--worklist", "--crosswalk", "--char-limit",
-                     "--atom-limit", "--out", "--out-balance", "--out-placeholders"},
+                     "--atom-limit", "--collapsed-atom-limit",
+                     "--out", "--out-balance", "--out-placeholders"},
     },
     "ecspr.bake.aam.layers": {
         "fuse": {"--member", "--out"},

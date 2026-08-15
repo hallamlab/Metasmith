@@ -58,8 +58,28 @@ import pyarrow.parquet as pq
 # loud failure at the top of the lane rather than a quiet difference in coverage.
 SMILES_LEN_LIMIT = 8000
 
-# The atom cap. See the header for the yield curve that warrants 600.
+# The atom cap on the EXPANDED string. See the header for the yield curve that
+# warrants 600. It stays exactly where it is: it is what decides whether a reaction is
+# mapped as written, and every reaction under it is mapped byte-for-byte as before.
 ATOM_LIMIT = 600
+
+# The atom cap on the COLLAPSED string -- the second chance a reaction gets when the
+# expanded measure would refuse it.
+#
+# RE-DERIVED, not carried across, and it lands on the same number -- which is a result
+# rather than a coincidence, and is why the derivation is written down. 600's warrant is
+# a yield curve over the EXPANDED count, and a curve stops describing a measure the
+# moment you change what is being counted. So the collapsed number was taken the same
+# way the original was: bin all 57,593 buildable reactions by COLLAPSED atom count, join
+# to the reactions the deployed bake actually banked, and cut where the yield falls off.
+#
+#   collapsed atoms   400-500  500-550  550-600 | 600-650  650-700  700-800  800-1000
+#   banking rate        0.821    0.935    0.812 |   0.269    0.167    0.100     0.056
+#
+# The knee is sharp and it is at 600 under both measures. Cutting there admits 454 of
+# the 532 reactions the expanded measure refuses. `research/fabfos/benchmarks/
+# aam_collapse/` reproduces the curve.
+COLLAPSED_ATOM_LIMIT = 600
 
 VERDICTS = (
     "mappable",              # goes to the mapper lanes
@@ -129,8 +149,73 @@ def count_atoms(rxn_smiles: str):
     return None if m is None else m.GetNumAtoms()
 
 
+def collapse(rxn_smiles: str):
+    """The same reaction with each distinct molecule written once per side.
+
+    THE POINT. `rxn_smiles` is a stoichiometric EXPANSION: a coefficient of 16 writes
+    the metabolite sixteen times, so `count_atoms` measures how many times a molecule
+    APPEARS rather than how much distinct chemistry the mapper must attend to.
+    Nitrogenase hydrolyses 16 ATP; its expanded string counts over a thousand atoms and
+    is refused, while the acetylene-reduction proxy for exactly that chemistry sails
+    through. Counting each distinct molecule once is an exact reduction rather than an
+    approximation -- a repeated component contributes no structure the mapper has not
+    already attended to.
+
+    DEDUPE PER SIDE, NOT ACROSS THE REACTION. Water on the left and water on the right
+    are two occurrences that both have to exist for the equation to read; the same
+    molecule twice on ONE side is the copy the cap should never have counted.
+
+    SPLIT AS TEXT, PARSE NOTHING. This is not an optimisation, it is the whole reason
+    the function is safe to call on anything: MNXR144749's expanded string is 80.7 MB
+    and RDKit does not return from parsing it, so a collapse that parsed first would
+    reintroduce the hour-inside-one-call failure the gate ordering exists to avoid. A
+    text split of 80 MB is nothing. Component boundaries are `.` at depth zero -- inside
+    no bracket and no parenthesis -- which is exactly SMILES's own component separator.
+
+    Returns the collapsed string, or None when there is nothing to split (no `>>`).
+    Order is preserved within each side, so the result is a deterministic function of
+    the input rather than of a set's iteration order.
+    """
+    if not rxn_smiles or ">>" not in rxn_smiles:
+        return None
+    lhs, _, rhs = rxn_smiles.partition(">>")
+    return ".".join(_uniq(_components(lhs))) + ">>" + ".".join(_uniq(_components(rhs)))
+
+
+def _components(side: str):
+    """Split a SMILES side on the `.` that separate components, and only those.
+
+    A `.` inside brackets or parentheses is part of a token, not a boundary. Tracking
+    the two depths is cheaper than any parse and is the only correctness requirement:
+    splitting on every `.` would cut molecules in half and dedupe fragments of them.
+    """
+    out, start, depth = [], 0, 0
+    for i, ch in enumerate(side):
+        if ch in "[(":
+            depth += 1
+        elif ch in "])":
+            depth -= 1
+        elif ch == "." and depth == 0:
+            out.append(side[start:i])
+            start = i + 1
+    out.append(side[start:])
+    return [c for c in out if c]
+
+
+def _uniq(items):
+    seen, out = set(), []
+    for c in items:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
 def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
-               char_limit: int) -> pd.DataFrame:
+               char_limit: int,
+               collapsed_atom_limit: int | None = None) -> pd.DataFrame:
+    if collapsed_atom_limit is None:
+        collapsed_atom_limit = COLLAPSED_ATOM_LIMIT
     rows = []
     for i, r in enumerate(reactions.itertuples(index=False)):
         subs = list(r.substrates) if r.substrates is not None else []
@@ -151,6 +236,32 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
         if smi and chars <= char_limit:
             atoms = count_atoms(smi)
 
+        # THE COLLAPSED MEASURE, and the rule that makes coverage monotone.
+        #
+        # A reaction that passes on the EXPANDED measure keeps its expanded string, byte
+        # for byte -- same universe, same map, same pairs, same weights. The collapse is
+        # attempted only for a reaction that would otherwise be REFUSED, so no existing
+        # row can move and "coverage may only go up" is a property of the construction
+        # rather than something to check afterwards. It is also why a 1,236-atom string
+        # is still never handed to a mapper, which is what the cap was protecting.
+        #
+        # Both counts are recorded either way. Keeping them side by side is what lets the
+        # yield curve be recomputed under either measure from one table, and what makes
+        # the change a diff rather than a claim.
+        smi_c = atoms_c = chars_c = None
+        collapsed = False
+        would_refuse = smi is not None and (
+            chars > char_limit or atoms is None or atoms > atom_limit)
+        if would_refuse:
+            smi_c = collapse(smi)
+            if smi_c is not None:
+                chars_c = len(smi_c)
+                # The character cap applies to the COLLAPSED string because that is the
+                # string the mapper would see -- and it still gates the parse, for the
+                # same 80.7 MB reason as above.
+                if chars_c <= char_limit:
+                    atoms_c = count_atoms(smi_c)
+
         if int(r.n_blockers) < 0:
             verdict = "unparseable_equation"
         elif not subs or not prods:
@@ -168,18 +279,31 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
             # blockers empty but no SMILES: the lookup builder declined for some other
             # reason. Recorded rather than folded into a neighbouring class.
             verdict = "blocked_no_structure"
+        elif chars <= char_limit and atoms is not None and atoms <= atom_limit:
+            verdict = "mappable"
+        elif (chars_c is not None and chars_c <= char_limit
+                and atoms_c is not None and atoms_c <= collapsed_atom_limit):
+            # Recovered by collapse. `mappable` and not a verdict of its own: the
+            # members treat it exactly as they treat any other mappable reaction, and a
+            # separate verdict would mean adding a branch to every reader of the
+            # worklist to say "and also this one". WHICH string was mapped is what
+            # readers actually need, and that is the `collapsed` column.
+            verdict, collapsed = "mappable", True
         elif chars > char_limit:
             verdict = "too_long"
-        elif atoms is None or atoms > atom_limit:
-            verdict = "oversize"
         else:
-            verdict = "mappable"
+            verdict = "oversize"
 
         rows.append(dict(
             mnxr=r.mnxr, verdict=verdict, atoms=atoms, chars=chars,
+            atoms_collapsed=atoms_c, chars_collapsed=chars_c, collapsed=collapsed,
             n_blockers=int(r.n_blockers), blockers=blockers, blocker_families=fams,
             is_transport=str(r.is_transport), is_balanced=str(r.is_balanced),
-            classifs=str(r.classifs), rxn_smiles=smi,
+            classifs=str(r.classifs),
+            # THE STRING THE MEMBERS MAP. Expanded unless the collapse rescued this
+            # reaction, in which case it is the collapsed one -- and `collapsed` says
+            # which, so no consumer has to infer it from a length.
+            rxn_smiles=(smi_c if collapsed else smi),
         ))
         if (i + 1) % 20000 == 0:
             print(f"[worklist]   adjudicated {i + 1:,}/{len(reactions):,}", flush=True)
@@ -188,7 +312,14 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
 
 SCHEMA = pa.schema([
     ("mnxr", pa.string()), ("verdict", pa.string()),
-    ("atoms", pa.int32()), ("chars", pa.int32()), ("n_blockers", pa.int32()),
+    # `atoms`/`chars` always describe the EXPANDED string, so the pre-collapse yield
+    # curve stays recomputable from a post-collapse table. The `_collapsed` pair is
+    # populated only where a collapse was attempted -- i.e. where the expanded measure
+    # would have refused -- so a null there means "did not need it", not "unknown".
+    ("atoms", pa.int32()), ("chars", pa.int32()),
+    ("atoms_collapsed", pa.int32()), ("chars_collapsed", pa.int32()),
+    ("collapsed", pa.bool_()),
+    ("n_blockers", pa.int32()),
     ("blockers", pa.list_(pa.string())), ("blocker_families", pa.list_(pa.string())),
     ("is_transport", pa.string()), ("is_balanced", pa.string()),
     ("classifs", pa.string()), ("rxn_smiles", pa.string()),
@@ -218,7 +349,8 @@ def cmd_build(args):
     print(f"[worklist] {len(rx):,} reactions, {len(name_of):,} metabolite names",
           flush=True)
 
-    wl = adjudicate(rx, name_of, args.atom_limit, args.char_limit)
+    wl = adjudicate(rx, name_of, args.atom_limit, args.char_limit,
+                    args.collapsed_atom_limit)
     pq.write_table(pa.Table.from_pandas(wl, schema=SCHEMA, preserve_index=False),
                    args.out, compression="zstd")
 
@@ -233,8 +365,18 @@ def cmd_build(args):
     for lo, hi in ((0, 300), (300, 600), (600, 1200), (1200, 100000)):
         n = int(((built["atoms"] >= lo) & (built["atoms"] < hi)).sum())
         lines.append(f"atom_bin\t{lo}-{hi}\t{n}")
+    # The collapsed count for the same bins, over the reactions a collapse was
+    # attempted on. Side by side with the expanded bins above, this IS the movement --
+    # a reader can see where the recovered reactions came from without a second table.
+    coll = wl[wl["atoms_collapsed"].notna()]
+    for lo, hi in ((0, 300), (300, 600), (600, 1200), (1200, 100000)):
+        n = int(((coll["atoms_collapsed"] >= lo) & (coll["atoms_collapsed"] < hi)).sum())
+        lines.append(f"collapsed_atom_bin\t{lo}-{hi}\t{n}")
+    lines.append(f"collapse\trecovered\t{int(wl['collapsed'].sum())}")
+    lines.append(f"collapse\tattempted\t{int(wl['atoms_collapsed'].notna().sum())}")
     lines.append(f"limit\tatom_limit\t{args.atom_limit}")
     lines.append(f"limit\tchar_limit\t{args.char_limit}")
+    lines.append(f"limit\tcollapsed_atom_limit\t{args.collapsed_atom_limit}")
     Path(args.out_summary).write_text("\n".join(lines) + "\n")
 
     print("\n" + "=" * 60)
@@ -246,6 +388,8 @@ def cmd_build(args):
     if unknown:
         raise SystemExit(f"[worklist] verdict outside the closed set: {sorted(unknown)}")
     print(f"  {'TOTAL':<24} {len(wl):>8,}")
+    print(f"\n  of which mappable only after a stoichiometric collapse: "
+          f"{int(wl['collapsed'].sum()):,}")
     print("\nblocker families (metabolite-blocked reactions may carry several):")
     for f in FAMILIES:
         print(f"  {f:<24} {int(fam.get(f, 0)):>8,}")
@@ -334,6 +478,8 @@ def cmd_close(args):
     for o in OUTCOMES:
         print(f"  {o:<24} {int(oc.get(o, 0)):>8,}")
     print(f"  {'TOTAL':<24} {len(wl):>8,}")
+    print(f"\n  of which mappable only after a stoichiometric collapse: "
+          f"{int(wl['collapsed'].sum()):,}")
     print(f"\nrescue: {len(rescued):,} completed, {len(resc):,} banked, "
           f"{n_consensus:,} of those carry a consensus correspondence "
           f"(the deployed table has zero -- every rescued reaction there is one "
@@ -358,6 +504,9 @@ def parse_args(argv=None):
     p.add_argument("--metabolites", required=True, help="lookup::metabolites parquet")
     p.add_argument("--atom-limit", type=int, default=ATOM_LIMIT)
     p.add_argument("--char-limit", type=int, default=SMILES_LEN_LIMIT)
+    p.add_argument("--collapsed-atom-limit", type=int, default=COLLAPSED_ATOM_LIMIT,
+                   help="the cap on the DISTINCT-molecule count, applied only to "
+                        "reactions the expanded measure would refuse")
     p.add_argument("--out", required=True)
     p.add_argument("--out-summary", required=True)
     return ap.parse_args(argv)
