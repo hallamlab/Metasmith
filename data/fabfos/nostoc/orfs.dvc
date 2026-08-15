@@ -1,0 +1,6 @@
+outs:
+- md5: 2fd45ce5e83abf2acdc9665f7da40ee9.dir
+  size: 6181015
+  nfiles: 3
+  hash: md5
+  path: orfs

@@ -68,7 +68,8 @@ every DVC-pinned chunk is additionally still pinned on `dev`, `dev1` and `dev3`.
 | `processed/` | **compiled here**, from `originals/` only. These are the direct refs the run pipeline consumes. |
 | `benchmarks/` | compiled here. The evaluation set. |
 | ~~`benchmark/`~~ | **retired 2026-08-14.** Held one chunk, the AAM freeze `reference_tier4`. The pin is dropped, not the bytes: the chunk stays reachable from the last commit that carried `data/fabfos/benchmark/reference_tier4.dvc`, which is what versioning data alongside code buys. The atom-pair basis is `processed/metabolism_bake`. |
-| `fabfos/` | **run outputs** — one folder per run (`scadc_fosmids/`, `scadc_metagenome/`, and the three hosts), each holding the chunks that run produced. A run folder is named `<study>_<material>` where the run belongs to a study, and for the hosts by the strain, which is the whole of what identifies them. Not a reference tier: nothing in `processed/` may depend on it. |
+| `runs/` | **run outputs** — one folder per run (`scadc_fosmids/`, `scadc_metagenome/`, the host strains, and `eydallin_clones/`), each holding the chunks that run produced. A run folder is named `<study>_<material>` where the run belongs to a study, and for the hosts by the strain, which is the whole of what identifies them. Not a reference tier: nothing in `processed/` may depend on it. |
+| `nostoc/` | **study data**, not a reference. The three-member community's proteomes and what the run pipeline produced from them. See *`nostoc/`* below. |
 
 **`benchmark/` and `benchmarks/` were one tier spelled two ways** — two branches had
 each named the evaluation tier for itself and the merge kept both. Retiring tier4
@@ -701,6 +702,43 @@ each release name is a claim about.
 | `genomes/` | NCBI assemblies + BiGG models | R1, B1, B2 |
 | `vector/` | pCC1 | R2. **A GIVEN:** lab-internal, unpublished, no upstream URL |
 | `literature/` | `laser/`, `keio/`, `eydallin/` — three cohorts — plus `het_screen/`, which is **not** a fourth: it is LASER's heterologous slice resolved to UniProt, joined on `(label, source organism)` rather than concatenated. `curate_het_screen.py` produces it | B3, B4 |
+---
+
+## `nostoc/` — study data for the three-member community
+
+Not a reference tier. Nothing in `processed/` or `benchmarks/` reads it, and no artifact
+above depends on it; it is here because the run pipeline's *inputs and outputs* for the
+`Ana_PS` community (BioProject PRJNA1405787) need the same two-level pin and the same
+"named here or deleted" rule as everything else under `data/`.
+
+| chunk | what |
+|---|---|
+| `orfs/` | `{NOS,ERY,RHI}.faa` — prodigal proteomes over the three hifiasm-meta MAGs. **A GIVEN:** produced outside this repo, no transform. 5,930 / 3,192 / 4,402 records. The stem is the organism key every downstream table joins on |
+| `annotation/` | `<organism>/{gpr_4lane.parquet, <organism>.faa}` plus `PROVENANCE.md` — the canonical four-lane GPR tables and the proteome each describes. Produced by `research/fabfos/examples/nostoc_gpr.py` on fir, over `src/fabfos/pipelines/annotation.py`, from `orfs/` and five `processed/` refs |
+| `ecspr/` | the composed community measurement: `networks/` (seven composed graphs, their bridge reports and condition sets), `results/` (the 21 measured units), `figures/`, and the composition's own reference frames. Produced by `research/fabfos/examples/nostoc_ecspr.py` |
+
+The proteomes are pinned rather than symlinked into the workspace data share because the
+organism key is the file *stem*: a run whose only record of which bytes were `NOS` is a
+symlink target is not reproducible.
+
+`ecspr/results/` IS THE MEASUREMENT OF RECORD AND CANNOT BE REPRODUCED BY THE CURRENT
+LIBRARY. It was measured by two transforms, one per probe, writing a wide table each. The
+library has since collapsed both probes into one `ecspr::results` type — a long table
+keyed by a `probe` column — produced by `ecspr_measure` dispatching the `ecspr`
+command-line tool, and it declares no two-point step at all. The chunk is what any claim
+about this community rests on, and `research/fabfos/examples/nostoc_ecspr_verify.py
+--products` is what re-checks it.
+
+**`ecspr/networks/*/conditions_*.parquet` are readable history, not inputs.** They are the
+pre-split shape: one row per (condition, *sink*), with a `mode` column the two transforms
+filtered on themselves — 92 rows for the NOS singleton. `ecspr.conditions.read` has no
+`mode` and reads every row as its own condition, so those 92 become 92 one-sink ground
+solves where `ecspr.compose.make_conditions` now intends four, one per element, each
+naming every precursor at once. Nothing raises; the numbers are just a different
+measurement. `nostoc_ecspr.py --compose` writes the current shape beside them and
+`check_conditions` refuses the old one, which is the only thing standing between a re-run
+and a plausible wrong answer.
+
 ---
 
 ## Deletions
