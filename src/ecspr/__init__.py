@@ -2,14 +2,22 @@
 
 WHAT THIS PACKAGE IS
 --------------------
-A GPR table in; a measurement out. Nothing here edits a network, resolves a
-metabolite name, or knows what a perturbation is: a condition is a MASK over the
-rows of a GPR table, and the difference between two conditions is a subtraction
-the caller does over the results. That is the whole contract, and it is what lets
-the deployed pipeline and a benchmark script run the identical command.
+A GPR table in; a measurement out. Nothing in :mod:`ecspr.model` edits a network,
+resolves a metabolite name, or knows what a perturbation is: a condition is a
+MASK over the rows of a GPR table, and the difference between two conditions is a
+subtraction the caller does over the results. That is the whole contract, and it
+is what lets the deployed pipeline and a benchmark script run the identical
+command.
+
+:mod:`ecspr.bake` is the other half and runs at a different time and in different
+containers: it turns the MNXref universe into the atom pairs and direction ratios
+the model layer reads. **The two never import each other at module scope.** They
+are installed into images with disjoint dependency stacks -- the bake images carry
+rdkit or a torch stack, the measurement env carries scipy and cobra -- so an
+import across the seam does not degrade, it fails at load.
 
 TWO LAYERS, IN :mod:`ecspr.model`
---------------------------------
+---------------------------------
 The **engine** measures one network:
 
   :mod:`~ecspr.model.directed`   the rectified-diode Newton solve and its CHOLMOD

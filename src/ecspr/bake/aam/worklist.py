@@ -342,7 +342,7 @@ def cmd_close(args):
     return 0
 
 
-def parse_args():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -360,7 +360,7 @@ def parse_args():
     p.add_argument("--char-limit", type=int, default=SMILES_LEN_LIMIT)
     p.add_argument("--out", required=True)
     p.add_argument("--out-summary", required=True)
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
 if __name__ == "__main__":

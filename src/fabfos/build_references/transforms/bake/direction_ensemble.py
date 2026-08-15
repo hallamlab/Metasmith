@@ -56,18 +56,7 @@ metacyc    = model.AddRequirement(lib.GetType("fabfos_data::metacyc"))
 member_eq  = model.AddRequirement(lib.GetType("interm::direction_member_eq"))
 member_db  = model.AddRequirement(lib.GetType("interm::direction_member_dgbyg"))
 
-driver     = model.AddRequirement(lib.GetType("buildlib::dir_drive.py"))
-curated_m  = model.AddRequirement(lib.GetType("buildlib::dir_curated.py"))
-flatfile   = model.AddRequirement(lib.GetType("buildlib::dir_metacyc_flatfile.py"))
-calibrate  = model.AddRequirement(lib.GetType("buildlib::dir_calibrate.py"))
-combiner   = model.AddRequirement(lib.GetType("buildlib::dir_combine.py"))
-thermo_eq  = model.AddRequirement(lib.GetType("buildlib::dir_thermo_eq.py"))
-refdata    = model.AddRequirement(lib.GetType("buildlib::dir_refdata.py"))
-canon_m    = model.AddRequirement(lib.GetType("buildlib::dir_canon.py"))
-# Not used by this lane, imported by dir_drive at module scope for the dGbyG lane's
-# fan-out. Staged here because a driver that cannot import is a lane that cannot start.
-sharder    = model.AddRequirement(lib.GetType("buildlib::aam_shard.py"))
-evidence   = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib    = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 annot      = model.AddProduct(lib.GetType("interm::direction_annotation"))
 # ONE evidence product, holding `<tool>/<version>/` for each tool this step ran --
@@ -122,7 +111,7 @@ def protocol(context: ExecutionContext):
     imc  = context.Input(metacyc)
     ieq  = context.Input(member_eq)
     idb  = context.Input(member_db)
-    ilib = context.Input(combiner)
+    ilib = context.Input(bakelib)
     iout = context.Output(annot)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -133,24 +122,24 @@ def protocol(context: ExecutionContext):
     cmd = f"""
         {resolve}
         # The base list, recomputed from the same release the members were asked about.
-        {py} {libdir}/dir_drive.py universe --reac-prop $MNX/reac_prop.tsv \
+        {py} -m ecspr.bake.direction.drive universe --reac-prop $MNX/reac_prop.tsv \
             --out _universe.json
 
         # The curated member. Per-reaction AND per-MNXR are both kept, because the
         # orientation alignment between them IS the claim: a per-MNXR table alone cannot
         # be checked against what MetaCyc actually said.
-        {py} {libdir}/dir_curated.py \
+        {py} -m ecspr.bake.direction.curated \
             --metacyc-reactions $MC/{CURATED_DAT} \
             --reac-xref $MNX/reac_xref.tsv \
             --reac-prop $MNX/reac_prop.tsv \
             --chem-xref $MNX/chem_xref.tsv \
             --out _curated_per_mnxr.parquet \
             --out-per-reaction _curated_per_reaction.parquet
-        {py} {libdir}/build_evidence.py collect --root _ev --tool metacyc_direction \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool metacyc_direction \
             --version $MCVER \
             --file _curated_per_mnxr.parquet _curated_per_reaction.parquet
 
-        {py} {libdir}/dir_calibrate.py \
+        {py} -m ecspr.bake.direction.calibrate \
             --curated _curated_per_mnxr.parquet \
             --reac-prop $MNX/reac_prop.tsv \
             --eq-member {ieq.container} \
@@ -161,7 +150,7 @@ def protocol(context: ExecutionContext):
         # needed and for different reasons: the product path is content-addressed, and an
         # evidence directory holding a content-addressed filename is one nobody can read,
         # while `check_references.py` looks for this table by this literal name.
-        {py} {libdir}/dir_combine.py \
+        {py} -m ecspr.bake.direction.combine \
             --base-mnxrs _universe.json \
             --eq {ieq.container} \
             --dgbyg {idb.container} \
@@ -173,7 +162,7 @@ def protocol(context: ExecutionContext):
         # The calibration POINTS, not just the fitted bins: the fit is a claim about the
         # curated bins, and a claim whose points are gone cannot be re-examined when a
         # bin looks wrong.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool direction_calibration \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool direction_calibration \
             --file _calibration.parquet _calibration_points.parquet \
                    direction_annotation.parquet
         mkdir -p {iev.container}

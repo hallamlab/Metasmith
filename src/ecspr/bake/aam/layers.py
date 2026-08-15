@@ -334,7 +334,7 @@ def cmd_stack(args):
     return 0
 
 
-def parse_args():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -348,7 +348,7 @@ def parse_args():
     p.add_argument("--layer", action="append", required=True,
                    help="name=path[,method[,confidence]] -- IN ORDER, most trusted first")
     p.add_argument("--out", required=True)
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
 if __name__ == "__main__":

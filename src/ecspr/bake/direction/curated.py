@@ -21,7 +21,7 @@ reaction ids MetaCyc already supplies rather than independent evidence -- and th
 is MetaCyc. The `source` column is kept so a second pgdb could be added back without a
 schema change.
 
-Standalone: `python dir_curated.py --out <parquet>` (run under an env with pandas).
+Standalone: `python -m ecspr.bake.direction.curated --out <parquet>` (any env with pandas).
 """
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from dir_metacyc_flatfile import load_reactions
-from dir_refdata import (
+from .metacyc_flatfile import load_reactions
+from .refdata import (
     load_source_to_mnxr,
     load_mnxr_sides,
     load_metacyc_compound_to_mnxm,
@@ -164,7 +164,7 @@ def build(metacyc_reactions, reac_xref, reac_prop, chem_xref):
     return per_rxn, per_mnxr
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--metacyc-reactions", required=True,
                     help="the licensed drop-in's reactions.dat")
@@ -173,7 +173,7 @@ def main():
     ap.add_argument("--chem-xref", required=True)
     ap.add_argument("--out", required=True, help="per-MNXR parquet")
     ap.add_argument("--out-per-reaction", default=None)
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     per_rxn, per_mnxr = build(Path(a.metacyc_reactions), Path(a.reac_xref),
                               Path(a.reac_prop), Path(a.chem_xref))
     per_mnxr.to_parquet(a.out, index=False)

@@ -20,10 +20,7 @@ metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 rescue    = model.AddRequirement(lib.GetType("interm::aam_rescue"))
 m_indigo  = model.AddRequirement(lib.GetType("interm::aam_member_indigo_rescue"))
 m_rxn     = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper_rescue"))
-neural    = model.AddRequirement(lib.GetType("buildlib::aam_neural_members.py"))
-sharder   = model.AddRequirement(lib.GetType("buildlib::aam_shard.py"))
-extractor = model.AddRequirement(lib.GetType("buildlib::ecspr_atom_pairs.py"))
-evidence  = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib   = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 pairs     = model.AddProduct(lib.GetType("interm::aam_member_localmapper_rescue"))
 ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -55,7 +52,7 @@ def protocol(context: ExecutionContext):
     ires = context.Input(rescue)
     iind = context.Input(m_indigo)
     irxn = context.Input(m_rxn)
-    ilib = context.Input(neural)
+    ilib = context.Input(bakelib)
     iout = context.Output(pairs)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -71,7 +68,7 @@ def protocol(context: ExecutionContext):
     cmd = f"""
         {resolve}
         mkdir -p members
-        {py} {libdir}/aam_neural_members.py --member {MEMBER} \
+        {py} -m ecspr.bake.aam.neural_members --member {MEMBER} \
             --worklist {R}/rescued.parquet \
             --covered {iind.container} {irxn.container} \
             --timeout {TIMEOUT_S} \
@@ -79,14 +76,14 @@ def protocol(context: ExecutionContext):
             --timeout-log members/{TOOL}.timeouts \
             --mem-budget-gb {MEM_BUDGET_GB} \
             --out members/{TOOL}.tsv
-        {py} {libdir}/ecspr_atom_pairs.py extract \
+        {py} -m ecspr.bake.atom_pairs extract \
             --aam members/{TOOL}.tsv --align strict \
             --placeholders {R}/placeholders.tsv --resolved {R}/crosswalk.tsv \
             --balance {R}/balance.tsv \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
             --out {iout.container} --out-status members/{TOOL}_status.tsv
 
-        {py} {libdir}/build_evidence.py collect --root _ev --tool {TOOL} \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool {TOOL} \
             --file members/{TOOL}.tsv members/{TOOL}.attempted \
                    members/{TOOL}.timeouts \
                    members/{TOOL}_status.tsv {iout.container}

@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import dir_canon as canon   # sibling in buildlib::; see its header for why it is a copy
+from . import canon   # see its header for why it is a copy rather than an import of ecspr
 
 # All knobs come from canon (committed before this run). Bound here to the names
 # the combiner math uses.
@@ -150,7 +150,7 @@ def build(base_mnxrs, eq_df, db_df, curated, calib_df, sigma_0):
     return pd.DataFrame(rows)
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-mnxrs", required=True)
     ap.add_argument("--eq", required=True)
@@ -160,7 +160,7 @@ def main():
     ap.add_argument("--sigma0", type=float, default=canon.DIR_SIGMA_0,
                     help="reversible-default prior width; defaults to canon.DIR_SIGMA_0")
     ap.add_argument("--out", required=True)
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     lo, hi = canon.DIR_SIGMA_0_BAND
     if not (lo < a.sigma0 < hi):
         raise SystemExit(f"sigma0={a.sigma0} outside plausibility band {canon.DIR_SIGMA_0_BAND} "

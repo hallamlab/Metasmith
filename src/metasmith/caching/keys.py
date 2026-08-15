@@ -23,6 +23,9 @@ produces a stable order regardless of declaration order in the model).
 
 from __future__ import annotations
 
+import os
+from pathlib import Path as _Path
+
 import cbor2
 from blake3 import blake3
 
@@ -110,6 +113,69 @@ def content_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
                 break
             hasher.update(chunk)
     return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
+
+
+def tree_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
+    """Return the multihash key over a DIRECTORY's contents, recursively.
+
+    The file analogue of `content_multihash_key`, and it exists for the same
+    reason: a leaf that is a directory -- a vendored python package, a profile
+    database -- otherwise falls through to a random per-call id, so an unchanged
+    tree gets a new identity on every library recompile and invalidates every
+    downstream cache entry that ever read it. That is a silent miss, not a
+    silent hit, but for a multi-day bake it is expensive enough to be a bug.
+
+    Every entry contributes its LIBRARY-RELATIVE path and its bytes, so a rename
+    with no content change and a content change with no rename both move the
+    digest. Directories are not hashed as entries themselves: an empty directory
+    carries nothing a consumer can read, and git cannot represent one anyway, so
+    counting it would make a tree's identity depend on whether it survived a
+    checkout. A symlink contributes its TARGET STRING rather than the bytes it
+    points at -- following it would make the digest depend on something outside
+    the tree, and `Logistics` copies symlinks as symlinks.
+
+    Per-file digests are memoized on `(path, size, mtime_ns)`, so re-staging an
+    untouched tree costs one stat per file rather than a full read. The cache is
+    keyed on mtime and can therefore be fooled by a write that preserves both
+    size and mtime -- which is why it is a within-process cache over a tree the
+    build step just wrote, and never a substitute for the digest itself.
+
+    OSError propagates: an unreadable entry in a tree being addressed is not
+    something to paper over with a partial digest.
+    """
+    root = _Path(path)
+    hasher = blake3()
+    hasher.update(b"tree\x00")
+    for p in sorted(root.rglob("*")):
+        rel = str(p.relative_to(root)).encode("utf-8")
+        if p.is_symlink():
+            hasher.update(b"l\x00" + rel + b"\x00" + os.readlink(p).encode("utf-8") + b"\x00")
+            continue
+        if not p.is_file():
+            continue
+        hasher.update(b"f\x00" + rel + b"\x00" + _file_digest(p, chunk_size) + b"\x00")
+    return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
+
+
+_FILE_DIGEST_CACHE: dict[tuple[str, int, int], bytes] = {}
+
+
+def _file_digest(path, chunk_size: int) -> bytes:
+    st = path.stat()
+    ck = (str(path), st.st_size, st.st_mtime_ns)
+    hit = _FILE_DIGEST_CACHE.get(ck)
+    if hit is not None:
+        return hit
+    hasher = blake3()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    digest = hasher.digest(length=BLAKE3_DIGEST_LEN)
+    _FILE_DIGEST_CACHE[ck] = digest
+    return digest
 
 
 def lineage_key(

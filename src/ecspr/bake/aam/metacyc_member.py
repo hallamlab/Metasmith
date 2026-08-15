@@ -254,7 +254,7 @@ def load_member(smiles_dat: Path, reac_xref: Path) -> dict:
             for r in per_mnxr.itertuples(index=False)}
 
 
-def main():
+def main(argv=None):
     # No default paths. The originals pointed into the sibling project's data tree; here
     # the inputs are staged by the planner and named on the command line.
     ap = argparse.ArgumentParser(description=__doc__,
@@ -267,7 +267,7 @@ def main():
                          "each cost. Printed either way, but printing is not keeping: "
                          "'MetaCyc reaches 13,947 of 16,818' is only interpretable "
                          "next to WHICH 2,804 were declined and why")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     per_mnxr, rep = build(a.smiles_dat, a.reac_xref)
     per_mnxr.to_csv(a.out, sep="\t", index=False)

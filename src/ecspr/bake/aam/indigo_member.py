@@ -56,8 +56,8 @@ from pathlib import Path
 
 import pandas as pd
 
-import aam_shard
-from aam_shard import shard_of
+from . import shard as aam_shard
+from .shard import shard_of
 
 COLUMNS = ("mnxr", "rxn_smiles", "mapped_rxn_smiles", "confidence", "status")
 
@@ -237,7 +237,7 @@ def cmd_merge(args):
     return 0
 
 
-def parse_args():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -266,7 +266,7 @@ def parse_args():
                    help="how many shard caches there must be; a glob that matched fewer "
                         "is a short member, not a small one")
     p.add_argument("--out", required=True)
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
 if __name__ == "__main__":

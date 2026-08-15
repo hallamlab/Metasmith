@@ -75,10 +75,7 @@ model = Transform()
 image     = model.AddRequirement(lib.GetType("env::rdkit.env"))
 metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 worklist  = model.AddRequirement(lib.GetType("interm::aam_worklist"))
-indigo_m  = model.AddRequirement(lib.GetType("buildlib::aam_indigo_member.py"))
-sharder   = model.AddRequirement(lib.GetType("buildlib::aam_shard.py"))
-extractor = model.AddRequirement(lib.GetType("buildlib::ecspr_atom_pairs.py"))
-evidence  = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib   = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 pairs     = model.AddProduct(lib.GetType("interm::aam_member_indigo"))
 ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -102,7 +99,7 @@ RESOLVE = """
 def protocol(context: ExecutionContext):
     imnx = context.Input(metanetx)
     irx  = context.Input(worklist)
-    ilib = context.Input(indigo_m)
+    ilib = context.Input(bakelib)
     iout = context.Output(pairs)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -118,7 +115,7 @@ def protocol(context: ExecutionContext):
 
         pids=""
         for i in $(seq 0 {SHARDS - 1}); do
-            {py} {libdir}/aam_indigo_member.py map \
+            {py} -m ecspr.bake.aam.indigo_member map \
                 --worklist {irx.container} \
                 --shard $i/{SHARDS} --timeout {TIMEOUT_S} \
                 --sidecar members/indigo_$i.attempted \
@@ -136,10 +133,10 @@ def protocol(context: ExecutionContext):
             exit 1
         fi
 
-        {py} {libdir}/aam_indigo_member.py merge \
+        {py} -m ecspr.bake.aam.indigo_member merge \
             --shard-file members/indigo_*.tsv --expect {SHARDS} \
             --out members/indigo.tsv
-        {py} {libdir}/ecspr_atom_pairs.py extract \
+        {py} -m ecspr.bake.atom_pairs extract \
             --aam members/indigo.tsv --align strict --fallback-forced \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
             --out {iout.container} --out-status members/indigo_status.tsv
@@ -147,7 +144,7 @@ def protocol(context: ExecutionContext):
         # The SIDECARS are evidence in their own right: they say what was ATTEMPTED, and
         # subtracting them from the caches names the reactions Indigo hung on -- which
         # nothing else records, because a hang writes no row.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool indigo \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool indigo \
             --file members/indigo.tsv members/indigo_*.tsv \
                    members/indigo_*.attempted members/indigo_status.tsv \
                    {iout.container}

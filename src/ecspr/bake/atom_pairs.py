@@ -798,7 +798,7 @@ def cmd_selftest(args):
     return 0
 
 
-def parse_args():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -846,7 +846,7 @@ def parse_args():
                         "at confidence 0.032, so a gate here would cost real pairs)")
 
     p = sub.add_parser("selftest"); p.set_defaults(fn=cmd_selftest)
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
 if __name__ == "__main__":

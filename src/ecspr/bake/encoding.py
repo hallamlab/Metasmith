@@ -75,12 +75,12 @@ the unfavoured direction.
 
 Build side, not run side
 ------------------------
-This module lives in ``buildlib::`` because everything that calls it today compiles a
-reference. :func:`compile_atom_graph` is the exception in kind -- it READS a finished
-bake -- and it is here because the reference gate is what calls it, to check the compiled
-tables against ``ecspr.model.build.graph_from_pairs`` on the string tables. When a run-side
-transform first needs to read a bake, that half moves to ``lib::``; until then, shipping
-it in the wheel would ship a reader nothing calls.
+This module sits under ``ecspr.bake`` rather than ``ecspr.model`` because everything that
+calls it today compiles a reference. :func:`compile_atom_graph` is the exception in kind
+-- it READS a finished bake -- and it is here because the reference gate is what calls it,
+to check the compiled tables against ``ecspr.model.build.graph_from_pairs`` on the string
+tables. When a run-side consumer first needs to read a bake, that half moves down to the
+model layer; until then it would be a reader nothing calls.
 """
 
 from __future__ import annotations
@@ -307,7 +307,7 @@ def read_identity(path) -> dict:
     if raw is None:
         raise ValueError(
             f"{path} carries no bake identity -- it was not written by "
-            f"compile/bake_metabolism.py, or it was rewritten by a tool that dropped "
+            f"ecspr.bake.metabolism, or it was rewritten by a tool that dropped "
             f"the file-level metadata")
     return json.loads(raw.decode())
 
@@ -430,7 +430,10 @@ def compile_atom_graph(element: str, weights: dict, *, ident: dict, vocab: Vocab
     Node *order* differs from ``graph_from_pairs`` (the baked table is sorted, so
     first-seen order differs); node and edge *counts*, and every conductance, do not.
     """
-    from ecspr.model.graph import AtomGraph  # deferred: only the compile path needs scipy
+    # Deferred, and load-bearing rather than merely tidy: the bake images carry no
+    # scipy, so a module-scope import here would make every AAM lane fail at import.
+    # Only this one function, which runs in the gate's env, needs the model layer.
+    from ..model.graph import AtomGraph
 
     ecode = vocab.codes("element")[element]
     pairs = pairs[pairs["element"].to_numpy() == ecode]

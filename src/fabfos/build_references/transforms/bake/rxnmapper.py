@@ -40,10 +40,7 @@ model = Transform()
 image     = model.AddRequirement(lib.GetType("env::rdkit.env"))
 metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 worklist  = model.AddRequirement(lib.GetType("interm::aam_worklist"))
-neural    = model.AddRequirement(lib.GetType("buildlib::aam_neural_members.py"))
-sharder   = model.AddRequirement(lib.GetType("buildlib::aam_shard.py"))
-extractor = model.AddRequirement(lib.GetType("buildlib::ecspr_atom_pairs.py"))
-evidence  = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib   = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 pairs     = model.AddProduct(lib.GetType("interm::aam_member_rxnmapper"))
 ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -68,7 +65,7 @@ RESOLVE = """
 def protocol(context: ExecutionContext):
     imnx = context.Input(metanetx)
     iwl  = context.Input(worklist)
-    ilib = context.Input(neural)
+    ilib = context.Input(bakelib)
     iout = context.Output(pairs)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -86,7 +83,7 @@ def protocol(context: ExecutionContext):
 
         pids=""
         for i in $(seq 0 {SHARDS - 1}); do
-            {py} {libdir}/aam_neural_members.py --member {MEMBER} \
+            {py} -m ecspr.bake.aam.neural_members --member {MEMBER} \
                 --worklist {iwl.container} \
                 --shard $i/{SHARDS} \
                 --sidecar members/{MEMBER}_$i.attempted \
@@ -104,10 +101,10 @@ def protocol(context: ExecutionContext):
             exit 1
         fi
 
-        {py} {libdir}/aam_neural_members.py --member {MEMBER} \
+        {py} -m ecspr.bake.aam.neural_members --member {MEMBER} \
             --merge-from members/{MEMBER}_*.tsv \
             --out members/{MEMBER}.tsv
-        {py} {libdir}/ecspr_atom_pairs.py extract \
+        {py} -m ecspr.bake.atom_pairs extract \
             --aam members/{MEMBER}.tsv --align strict --fallback-forced \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
             --out {iout.container} --out-status members/{MEMBER}_status.tsv
@@ -118,7 +115,7 @@ def protocol(context: ExecutionContext):
         # `collect` resolves that itself; the lane just names the tool.
         # The SIDECARS are evidence in their own right: subtracting them from the caches
         # names the reactions a shard died inside, which nothing else records.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool {MEMBER} \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool {MEMBER} \
             --file members/{MEMBER}.tsv members/{MEMBER}_*.tsv \
                    members/{MEMBER}_*.attempted members/{MEMBER}_status.tsv \
                    {iout.container}

@@ -44,7 +44,7 @@ from pathlib import Path
 
 import pandas as pd
 
-import aam_shard
+from . import shard as aam_shard
 
 # The equation term grammar, verbatim from the deployed builder. NOTE it matches only
 # `MNXM...@compartment` terms -- specials like `WATER@MNXD1` and `BIOMASS@MNXD1` do NOT
@@ -429,7 +429,7 @@ def run_localmapper(todo: list[tuple[str, str]], emit, sidecar=None, budget_gb=N
               f"abstained", flush=True)
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--member", required=True, choices=["rxnmapper", "localmapper"])
@@ -476,7 +476,7 @@ def main():
                     help="cap the number of reactions mapped this invocation; the cache "
                          "is resumable, so this splits one long run rather than "
                          "shrinking the member")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     if a.merge_from:
         missing = [str(p) for p in a.merge_from if not Path(p).exists()]

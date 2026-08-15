@@ -36,6 +36,33 @@ else
     msm=(python -m metasmith)
 fi
 
+# --- vendor ecspr into the library ------------------------------------------
+# The bake method is a python package (`ecspr.bake`), not a pile of flat files,
+# and a transform reaches it as `python3 -m ecspr.bake.<lane>.<module>`. So the
+# library has to carry a copy: `buildlib::ecspr` is ONE staged input whose
+# instance_id is the tree digest, which is what carries provenance from source
+# to baked result and what lets an unchanged tree re-stage into a cache hit.
+#
+# Generated, gitignored, never edited in place -- the same arrangement as
+# `dev/fabfos.sh --bundle-library`. It is regenerated HERE, immediately before
+# the metadata compile, because a copy made by some other invocation is a copy
+# the index does not describe.
+#
+# Copy, do not link: Logistics copies symlinks as symlinks, so a linked vendor
+# would stage a dangling path on any host that is not this one. The exclusions
+# are the three things that change without the code changing -- leave one in and
+# the id moves for a reason nobody can review.
+ECSPR_SRC="$REPO/src/ecspr"
+ECSPR_DST="$HERE/resources/buildlib/ecspr"
+echo "== vendoring $ECSPR_SRC -> $ECSPR_DST"
+rm -rf "$ECSPR_DST"
+mkdir -p "$ECSPR_DST"
+tar -C "$ECSPR_SRC" -cf - \
+    --exclude='__pycache__' --exclude='*.pyc' \
+    --exclude='.egg-info' --exclude='*.egg-info' \
+    --exclude='build_hash.txt' --exclude='build' --exclude='dist' \
+    . | tar -C "$ECSPR_DST" -xf -
+
 args=(build all
       --types "$MLIB/data_types"
       --types "$HERE/data_types")

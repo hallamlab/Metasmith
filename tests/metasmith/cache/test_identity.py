@@ -172,6 +172,84 @@ def test_addItem_unique_per_call_when_file_absent(tmp_path):
     )
 
 
+def test_addItem_directory_leaf_is_content_addressed(tmp_path):
+    """R1: a DIRECTORY leaf is tree-addressed, not random.
+
+    The case is a vendored python package or a profile database staged as
+    one item. Before the directory arm existed these fell to the random
+    fallback, so a library recompile over an unchanged tree minted a new id
+    and discarded every cached run that had read it -- days of compute for
+    a tree nobody touched. Three claims, and the third is the one that
+    makes it safe: an unchanged tree is stable, a changed file moves it,
+    and a RENAME with no content change moves it too (the digest folds each
+    entry's relative path, so a tree cannot be reshuffled invisibly).
+    """
+    from metasmith.models.libraries import DataInstanceLibrary, DataTypeLibrary
+    from metasmith.models.solver import Endpoint
+
+    types = DataTypeLibrary()
+    types["seed"] = Endpoint(properties={"seed"})
+    tpath = tmp_path / "types.yml"
+    types.Save(tpath)
+
+    def _build_once(files: dict[str, str]) -> str:
+        lib = DataInstanceLibrary(tmp_path / "samples.xgdb")
+        lib.Purge()
+        lib.AddTypeLibrary(tpath, namespace="cf")
+        pkg = lib.location / "pkg"
+        for rel, payload in files.items():
+            p = pkg / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(payload, encoding="utf-8")
+        lib.AddItem(Path("pkg"), "cf::seed")
+        return lib.Get(Path("pkg")).instance_id
+
+    tree = {"__init__.py": "", "mod.py": "X = 1\n", "sub/leaf.py": "Y = 2\n"}
+    id1 = _build_once(tree)
+    id2 = _build_once(tree)
+    assert id1 == id2, (
+        "re-staging an unchanged directory minted a different id; a directory "
+        "leaf must be tree-addressed or every recompile throws away the cache"
+    )
+    assert bytes.fromhex(id1)[:2] == b"\x1e\x20"
+
+    assert _build_once({**tree, "sub/leaf.py": "Y = 3\n"}) != id1, "content change not seen"
+    renamed = {"__init__.py": "", "mod.py": "X = 1\n", "sub/other.py": "Y = 2\n"}
+    assert _build_once(renamed) != id1, "rename with identical bytes not seen"
+
+
+def test_tree_key_ignores_empty_directories_and_reads_symlink_targets(tmp_path):
+    """The two shape decisions in `tree_multihash_key`, pinned.
+
+    An empty directory contributes nothing: git cannot represent one, so
+    counting it would make a tree's identity depend on whether it survived
+    a checkout. A symlink contributes its TARGET STRING rather than the
+    bytes it points at -- following it would make the digest depend on
+    something outside the tree, and Logistics copies symlinks as symlinks,
+    so the target is what actually gets staged.
+    """
+    from metasmith.caching.keys import tree_multihash_key
+
+    base = tmp_path / "t"
+    (base / "sub").mkdir(parents=True)
+    (base / "sub" / "f.txt").write_text("hello", encoding="utf-8")
+    before = tree_multihash_key(base)
+
+    (base / "empty").mkdir()
+    assert tree_multihash_key(base) == before, "an empty directory moved the digest"
+
+    (base / "link").symlink_to("sub/f.txt")
+    with_link = tree_multihash_key(base)
+    assert with_link != before, "a new symlink did not move the digest"
+
+    (base / "link").unlink()
+    (base / "link").symlink_to("sub/other.txt")   # dangling, deliberately
+    assert tree_multihash_key(base) != with_link, (
+        "retargeting a symlink did not move the digest; the target string is "
+        "what is staged, so it has to participate"
+    )
+
+
 def test_lineage_id_static_no_inputs(tmp_path):
     """G9: leaf-less transform output id is identical across workspaces.
 

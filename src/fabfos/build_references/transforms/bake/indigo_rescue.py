@@ -29,10 +29,7 @@ model = Transform()
 image     = model.AddRequirement(lib.GetType("env::rdkit.env"))
 metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 rescue    = model.AddRequirement(lib.GetType("interm::aam_rescue"))
-indigo_m  = model.AddRequirement(lib.GetType("buildlib::aam_indigo_member.py"))
-sharder   = model.AddRequirement(lib.GetType("buildlib::aam_shard.py"))
-extractor = model.AddRequirement(lib.GetType("buildlib::ecspr_atom_pairs.py"))
-evidence  = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib   = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 pairs     = model.AddProduct(lib.GetType("interm::aam_member_indigo_rescue"))
 ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -59,7 +56,7 @@ RESOLVE = """
 def protocol(context: ExecutionContext):
     imnx = context.Input(metanetx)
     ires = context.Input(rescue)
-    ilib = context.Input(indigo_m)
+    ilib = context.Input(bakelib)
     iout = context.Output(pairs)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -74,7 +71,7 @@ def protocol(context: ExecutionContext):
 
         pids=""
         for i in $(seq 0 {SHARDS - 1}); do
-            {py} {libdir}/aam_indigo_member.py map \
+            {py} -m ecspr.bake.aam.indigo_member map \
                 --worklist {R}/rescued.parquet \
                 --shard $i/{SHARDS} --timeout {TIMEOUT_S} \
                 --sidecar members/{TOOL}_$i.attempted \
@@ -88,17 +85,17 @@ def protocol(context: ExecutionContext):
             exit 1
         fi
 
-        {py} {libdir}/aam_indigo_member.py merge \
+        {py} -m ecspr.bake.aam.indigo_member merge \
             --shard-file members/{TOOL}_*.tsv --expect {SHARDS} \
             --out members/{TOOL}.tsv
-        {py} {libdir}/ecspr_atom_pairs.py extract \
+        {py} -m ecspr.bake.atom_pairs extract \
             --aam members/{TOOL}.tsv --align strict \
             --placeholders {R}/placeholders.tsv --resolved {R}/crosswalk.tsv \
             --balance {R}/balance.tsv \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
             --out {iout.container} --out-status members/{TOOL}_status.tsv
 
-        {py} {libdir}/build_evidence.py collect --root _ev --tool {TOOL} \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool {TOOL} \
             --file members/{TOOL}.tsv members/{TOOL}_*.tsv \
                    members/{TOOL}_*.attempted members/{TOOL}_status.tsv \
                    {iout.container}
