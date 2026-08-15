@@ -40,7 +40,10 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(REPO / "build_references" / "resources" / "buildlib"))
+# `src/fabfos/`, not the repo root: the monorepo nested the package one level
+# deeper than the standalone fabfos repo this driver was written in, and the path
+# it kept pointing at does not exist -- so this import has not resolved since.
+sys.path.insert(0, str(REPO / "src" / "fabfos" / "build_references" / "resources" / "buildlib"))
 import bench_universe as bu                                            # noqa: E402
 
 MAPPER = REPO / "data/scratch/clone_gpr_sockeye/results/annotation-gpr_table"

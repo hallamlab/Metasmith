@@ -7,9 +7,13 @@ transform instance library**, not a directory of scripts:
 build_references/
   data_types/     raw:: interm:: bench:: buildlib:: lookup::  (build-only namespaces)
   resources/
-    buildlib/     the ported method -- the AAM layer stack and its four members, the
-                  curation sweep, the direction ensemble, the bake encoding, the
-                  benchmark cohort readers. Build side only; never in the wheel.
+    buildlib/     ecspr/  -- the whole bake method, VENDORED from src/ecspr by
+                              build.sh: the AAM layer stack and its members, the
+                              curation sweep, the direction ensemble, the encoding.
+                              Generated, gitignored, invoked as `python3 -m ecspr.bake.*`
+                  the five flat modules small enough to stay files: the MetaNetX
+                  lookups builder and the four benchmark cohort readers.
+                  Build side only; never in the wheel.
   transforms/
     acquire/      one per upstream SOURCE FOLDER; nothing here is derived
     bake/         R6 -- the atom-mapping and direction ensembles
@@ -38,10 +42,14 @@ executing driver stages the DVC-pinned source folders under `data/fabfos/origina
 **asserts no acquire transform is in the plan** — a reference built from a fresh pull is
 not the reference these pins describe.
 
-The method behind each table lives in `resources/buildlib/` (`buildlib::`, build side
-only). It is derived from the previous generation's scripts rather than copied: the AAM
-recovery sweep's eleven scripts are consolidated into five proposer lanes plus one
-arbiter, and the chemistry tables three of them duplicated verbatim are now one table.
+The method behind each table lives in `buildlib::` (build side only). The bake half of
+it is `ecspr.bake`, a package staged as ONE hashed directory rather than as twenty-one
+flat files, because a requirement list that restates an import graph is a list that
+drifts from it — and the drift shows up as an ImportError six hours into a queued job.
+The five modules that remain flat are the ones nothing else imports. It is all derived
+from the previous generation's scripts rather than copied: the AAM recovery sweep's
+eleven scripts are consolidated into five proposer lanes plus one arbiter, and the
+chemistry tables three of them duplicated verbatim are now one table.
 One artifact is deliberately short of its deployed form and says so where it is built:
 B3/B4/B5 read the *extracted* cohort tables rather than re-extracting from the papers.
 That is not a gap to close — there is no transform that turns a PDF supplement into
@@ -447,9 +455,11 @@ prediction — the heads' output columns are indexed by the IA tables' label ord
 `build.sh` skips along with any underscore-prefixed directory. It needs the EZpred
 *source tree*, and where patched source lives is unresolved: our copy carries the
 DL-only fork (no MMseqs2 homolog augmentation, no Foldseek template fusion), so it is
-not what any URL returns and cannot sit in `originals/`; and it does not fit
-`buildlib::`'s flat one-module-per-file shape. Both candidate resolutions are stated in
-`transforms/_deferred/README.md`.
+not what any URL returns and cannot sit in `originals/`. Its shape objection to
+`buildlib::` no longer holds — `buildlib::ecspr` is a directory-typed entry with a tree
+digest for an identity, which is exactly the resolution
+`transforms/_deferred/README.md` names as the second candidate. Where the patched source
+should LIVE is still open.
 
 **The lane runs regardless.** The assembled bundle is staged at
 `<processed>/ezpred_model/EZpred` and declared as a given in `examples/scadc_gpr.py`'s
