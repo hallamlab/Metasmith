@@ -36,10 +36,33 @@ into two call sequences.
 from pathlib import Path
 
 _MODULE = Path(__file__).resolve().parent
-with open(_MODULE / "version.txt") as _f:
-    __version__ = _f.read().strip()
 
 NAME = "ecspr"
-USER = "hallamlab"  # github id
+USER = "hallamlab"  # github id, and the quay.io / anaconda org
 SHORT_SUMMARY = ("Atom-resolved conductance measurement over metabolic GPR tables")
 ENTRY_POINTS = [f"{NAME}={NAME}.cli:main"]
+
+# Versioning, on metasmith's model and deliberately independent of it and of
+# FabFos: ECSPr ships as its own package and its own image, so `version.txt`
+# here is bumped when ECSPr ships, not when FabFos does.
+
+# Public version (PEP 440 release segment). Bumped by hand when shipping.
+with open(_MODULE / "version.txt") as _f:
+    VERSION = _f.read().strip()
+
+# Build-time content hash of the source tree. Written by `_build_hash.py
+# --write` immediately before a build; gitignored, and absent in a fresh
+# checkout (which then degrades to the bare VERSION).
+_bh = _MODULE / "build_hash.txt"
+BUILD_HASH = _bh.read_text().strip() if _bh.exists() else ""
+
+# Canonical version string -- PEP 440 local form. What `ecspr --version`
+# reports, so a result can be traced to the exact source state that produced it.
+FULL_VERSION = f"{VERSION}+{BUILD_HASH}" if BUILD_HASH else VERSION
+__version__ = FULL_VERSION
+
+# Container tag -- FULL_VERSION rendered for Docker, which rejects '+'. This is
+# the single +->- translation site; docker/ecspr/dev.sh derives its tag here so
+# the image name and the version the image reports cannot disagree.
+CONTAINER_TAG = FULL_VERSION.replace("+", "-")
+CONTAINER_IMAGE = f"quay.io/{USER}/{NAME}"

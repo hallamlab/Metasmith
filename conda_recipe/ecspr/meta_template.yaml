@@ -8,6 +8,7 @@ source:
 build:
   noarch: python
   number: 0
+  string: <BUILD_STRING>
   script: {{ PYTHON }} -m pip install . -v --no-deps
   entry_points:
 <ENTRY>
@@ -16,9 +17,15 @@ test:
   imports:
     - <NAME>
   commands:
-    - pip check
+    # NO `pip check`. conda-forge builds scikit-sparse 0.5.0 AGAINST numpy 1.26
+    # -- that is its conda-level dependency -- but ships upstream's unpatched
+    # wheel metadata saying `numpy>2.0`. pip check reads the metadata, not the
+    # solve, so it fails on a claim conda-forge has already overruled, and the
+    # binding demonstrably works (a real CHOLMOD solve is asserted at image
+    # build time). Restore this if ecspr's own deps ever need policing.
     - <NAME> --help
     - <NAME> --where
+    - <NAME> --version
   requires:
     - pip
 

@@ -1,7 +1,10 @@
 /cache
 *.sif
 __pycache__
+# stamped from the source tree immediately before each build; committing one would
+# let a tag name a source state that is not the one in the tree
 /src/metasmith/build_hash.txt
+/src/ecspr/build_hash.txt
 .ipynb_checkpoints
 .virtual_documents
 /*.ipynb

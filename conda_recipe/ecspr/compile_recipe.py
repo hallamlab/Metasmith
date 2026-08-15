@@ -21,7 +21,14 @@ HERE = Path(os.path.realpath(__file__)).parent
 PKG = HERE.parent.parent / "src" / "ecspr"
 sys.path.insert(0, str(PKG.parent))
 
-from ecspr import NAME, SHORT_SUMMARY, USER, ENTRY_POINTS, __version__ as VERSION  # noqa: E402
+from ecspr import NAME, SHORT_SUMMARY, USER, ENTRY_POINTS, VERSION, BUILD_HASH  # noqa: E402
+
+# The conda package's VERSION is the bare release segment -- metasmith does the
+# same, and a `+local` there would be a version nobody can type into a spec. The
+# source state goes in the BUILD STRING instead, which is what build strings are
+# for: two builds of different source can then coexist under one version rather
+# than silently overwriting each other in the channel.
+BUILD_STRING = f"py_{BUILD_HASH}" if BUILD_HASH else "py_0"
 
 # The suite's and the image verify step's dependencies, not the package's.
 TEST_ONLY = {"pytest", "networkx", "pip"}
@@ -46,7 +53,8 @@ entry = "\n".join(f"    - {e}" for e in ENTRY_POINTS)
 
 template = (HERE / "meta_template.yaml").read_text()
 for k, v in {"USER": USER, "NAME": NAME, "SHORT_SUMMARY": SHORT_SUMMARY,
-             "VERSION": VERSION, "ENTRY": entry, "REQUIREMENTS": reqs,
+             "VERSION": VERSION, "BUILD_STRING": BUILD_STRING,
+             "ENTRY": entry, "REQUIREMENTS": reqs,
              "PYTHON": python_ver}.items():
     template = template.replace(f"<{k}>", v)
 (HERE / "meta.yaml").write_text(template)

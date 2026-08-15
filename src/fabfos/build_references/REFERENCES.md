@@ -34,7 +34,7 @@ separate runs because they fail differently and are re-run on different schedule
 | metabolism (R6 and the bake) | `examples/metabolism_references_dag.py` — exactly one given | `tests/build_references_bake_on_hpc.py` | APPTAINER |
 
 The gates plan from nothing, so they resolve on a machine holding none of the bytes; the
-executing driver stages the DVC-pinned source folders under `data/originals/` instead and
+executing driver stages the DVC-pinned source folders under `data/fabfos/originals/` instead and
 **asserts no acquire transform is in the plan** — a reference built from a fresh pull is
 not the reference these pins describe.
 
@@ -67,17 +67,22 @@ every DVC-pinned chunk is additionally still pinned on `dev`, `dev1` and `dev3`.
 | `originals/` | **acquired only** — one folder per upstream *source*, held byte-for-byte as served, under `<source>/<release>/`. Nothing here is produced by a transform in this repo. Two are `given`: licensed or lab-internal, with no URL and no producer. |
 | `processed/` | **compiled here**, from `originals/` only. These are the direct refs the run pipeline consumes. |
 | `benchmarks/` | compiled here. The evaluation set. |
-| `benchmark/` | the AAM freeze (`reference_tier4`). Distinct from `benchmarks/` above by one letter, which is a defect, not a distinction — see below. |
+| ~~`benchmark/`~~ | **retired 2026-08-14.** Held one chunk, the AAM freeze `reference_tier4`. The pin is dropped, not the bytes: the chunk stays reachable from the last commit that carried `data/fabfos/benchmark/reference_tier4.dvc`, which is what versioning data alongside code buys. The atom-pair basis is `processed/metabolism_bake`. |
 | `fabfos/` | **run outputs** — one folder per run (`scadc_fosmids/`, `scadc_metagenome/`, and the three hosts), each holding the chunks that run produced. A run folder is named `<study>_<material>` where the run belongs to a study, and for the hosts by the strain, which is the whole of what identifies them. Not a reference tier: nothing in `processed/` may depend on it. |
 
-**`benchmark/` and `benchmarks/` should be one tier.** They arrived from two
-branches that had each named the evaluation tier for itself, and merging them
-kept both because the pins underneath are real and disjoint. `benchmarks/` is
-additionally pinned at level *one* — the whole tier as a single 54-file chunk —
-which is the pin-depth rule below being broken rather than an exception to it.
-Neither is load-bearing on the other; folding `benchmark/reference_tier4` into
-`benchmarks/` and splitting that chunk per cohort is the fix, and it is a data
-job, not a doc job.
+**`benchmark/` and `benchmarks/` were one tier spelled two ways** — two branches had
+each named the evaluation tier for itself and the merge kept both. Retiring tier4
+emptied the singular one, so the collision is gone by subtraction rather than by the
+fold that was planned. `benchmarks/` remains pinned at level *one*, the whole tier as a
+single 54-file chunk, which is the pin-depth rule below being broken rather than an
+exception to it; splitting it per cohort is still open, and is a data job.
+
+**Retiring tier4 leaves consumers pointing at a path that no longer exists.** They fail
+loudly on a missing file, which is the good case — but `main/benchmarks/{aska,keio,laser}`
+each produced results *on* that basis, so repointing them to the bake invalidates those
+results rather than porting them. The two bases are not nested: on carbon the bake adds
+4,842 reactions and drops 2,641, and 70 of the reactions iML1515 needs are covered only
+by tier4. Anything re-run on the bake is a new measurement.
 
 `curated/` is gone. It held hand-authored judgement with no producer — the ECSPr axis
 definitions and the B4 benchmark decisions — and both are recoverable only from the
@@ -136,7 +141,7 @@ in the build DAG — a transform that only restates a file is a step that can go
 in exchange for nothing. It is a pinned raw file the run pipeline reads directly.
 
 Still worth recording why it is 8 KB: the artifact previously at
-`data/processed/vector/` was 4.5 MB and held **two** records, pCC1fos plus a 4.7 MB
+`data/fabfos/processed/vector/` was 4.5 MB and held **two** records, pCC1fos plus a 4.7 MB
 EPI300 assembly contig. That is a combined vector+background file for the pool-size
 estimate, and shipping it as the vector would have made every vector-vs-insert
 comparison quietly also a host comparison.
@@ -192,7 +197,7 @@ destroys lane independence.
 Five derived tables every metabolism step reads instead of re-parsing MetaNetX.
 **Requires:** `originals/{metanetx,chebi,modelseed}/` + `originals/metacyc/` **[LICENSED]**.
 
-These land under `data/processed/` and are **named artifacts**, which is what makes that
+These land under `data/fabfos/processed/` and are **named artifacts**, which is what makes that
 legitimate under the tier rule rather than a leak. Naming them was not a convenience:
 before them, `chem_prop.tsv` (810 MB) was opened and re-parsed by the pair extractor, both
 neural members, the curated member, the direction lane's universe builder and every
@@ -512,13 +517,19 @@ Every study folder holds exactly `extraction.tsv`, `gpr_manual.parquet`,
 `conditions.tsv`, `Y/` and `README.md`. A folder missing one is a named failure; a folder
 with an extra one is a schema violation, and `study_tier` checks both.
 
-### B1 · `hosts/<host>/gpr_gem.parquet`  (3 hosts)
+### B1 · `hosts/<host>/gpr_gem.parquet`  (one per host with a model or a borrow)
 The GPR a curated genome-scale model asserts. One job over the host set — the tier
 delivers it as one folder, and per-host jobs would need the planner to split that into
-three givens, where a requirement binds ONE concrete type and sibling subtypes silently
+per-host givens, where a requirement binds ONE concrete type and sibling subtypes silently
 collapse.
-**Requires:** `originals/genomes/` (the two curated GEMs), `originals/metanetx/` for the
+**Requires:** `originals/genomes/` (the curated GEMs), `originals/metanetx/` for the
 BiGG → MNXR crosswalk, R5, and the metabolism bake for `in_atom_universe`.
+
+The host set is `acquire/genomes.py`'s and the borrow map is `host_gpr_gem.py`'s; neither
+is listed here, because a roster in a doc is the thing that rots. **Two hosts have no
+model of their own**: EPI300 borrows DH10B's, AG1 borrows DH1's. W3110 is in the set with
+no GEM at all — it is where an ASKA clone's SEQUENCE comes from, not a strain a model is
+read against.
 
 **EPI300's borrow of DH10B's model is not free.** `proV` and `fhuA` are pseudogenes in
 EPI300 — both in AND clauses, so seven transport reactions go dark, and nothing else in
@@ -530,7 +541,17 @@ deleted. The join that means something is the protein — exact sequence where i
 symbol otherwise. `check_epi300_identity.py` asserts the edit list IS that pair costing
 those seven reactions, rather than asserting it is empty.
 
-### B2 · `hosts/<host>/gpr_denovo.parquet`  (3 hosts)
+**AG1's borrow of DH1's is not free either, and there is no genome to compare.** AG1 is
+absent from NCBI, so the licence is the genotype Qimron et al. state — seven markers —
+and `check_ag1_identity.py` measures each against the model rather than reasoning about
+what they sound like. Five name no gene in it. `relA1` names `relA`, which sits alone on
+`GTPDPK` and beside `spoT` on `GDPDPK`, so the edit is one reaction and the isozyme keeps
+the other. Unlike EPI300's seven, it is INSIDE the atom universe: this borrow moves the
+network. `thi-1` is a classical allele rather than a locus and is deliberately NOT edited
+— it is a claim about the medium, and picking one of the thiamine module's reactions
+would put a fabricated deletion in every eydallin condition's background.
+
+### B2 · `hosts/<host>/gpr_denovo.parquet`  (one per host proteome)
 The GPR that host's own annotation lanes infer, produced by the **shipped** 4-lane mapper
 running on each proteome exactly as it runs on a fosmid ORF set. That is the point of
 wiring it this way: it makes the benchmark a test of the method rather than of a file
@@ -597,6 +618,13 @@ deletes, and the control it is read against. **A condition may only be emitted i
 study's GPR table knows the edge set it names**, so the conditions are built FROM the
 table rather than beside it.
 
+**Which elements a study is scored on is a property of its readout, not of the tier.**
+The default is all four, which is right when the observable is growth or fitness; a study
+whose observable is a named compound gets `elements` in its `STUDIES` entry and is emitted
+on that element alone. `eydallin` measures glycogen, so it is C-only — the N/P/S copies of
+its rows asserted three directions the paper never measured, and nothing downstream could
+tell them from the one it did.
+
 Four control kinds, declared per study rather than inferred: `baseline` (the unperturbed
 host — the zero point every result is a difference from), `structural` (a perturbation
 that cannot reach the network, so it must return zero), `on_path` (an in-base atom-mapped
@@ -623,6 +651,12 @@ unknown contributes no rows at all**, not a row of zeros: "we don't know" and "w
 no movement" are different claims. **A metabolite two of a condition's reactions disagree
 about gets no expectation**, rather than a coin-flip.
 
+**`eydallin/Y/measured_glycogen.tsv` is the one file in a study folder this tier does not
+write.** Eydallin's screen publishes no data table — its 86 values exist only as the bars
+of Fig. 1 — so `main/benchmarks/eydallin/digitize_fig1.py` measures them off the JPEG and
+drops the result here. A `study_tier` run emits a fresh `Y/` without it; re-run that script
+after one, or the cohort silently loses its magnitudes and keeps only their signs.
+
 **Nothing on Y's input path may be an ECSPr result.** A key derived from the
 implementation cannot fail. The line is precise and the loose version is wrong: Y may read
 the network's STRUCTURE — which metabolites a reaction's atoms flow into is a fact about
@@ -636,7 +670,7 @@ the model — but never a RESULT. `audit_y_inputs` enforces it over the paths th
 The 79 biomass source→sink axis **definitions**. Graph-independent: it is set4 itself, so
 it is the same table regardless of which universe the solve runs on. Declared
 `producer: hand-curated`, `determinism: frozen` in the incumbent provenance. 28 KB — git
-text, not a DVC chunk. The pin (`data/processed/ECSPr_axes.dvc`) had no content;
+text, not a DVC chunk. The pin (`data/fabfos/processed/ECSPr_axes.dvc`) had no content;
 the file has to be recovered from the incumbent tree.
 
 ### C2 · `benchmark_decisions/`

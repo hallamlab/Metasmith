@@ -10,8 +10,9 @@
 # ROOT (see dev.sh), so this reads src/ecspr/env.yml directly rather than a copy
 # under docker/ that would drift.
 #
-# Base is digest-pinned, not :latest: an image whose base moves under it is not a
-# reproducible image.
+# Base is version-pinned, not :latest: an image whose base moves under it is not a
+# reproducible image. This is a TAG pin, not a digest -- upstream could in
+# principle repush it, which is the residual risk of not carrying a sha256 here.
 FROM condaforge/miniforge3:25.3.0-3 AS build-env
 ARG VERIFY
 
@@ -20,9 +21,15 @@ RUN --mount=type=cache,target=/opt/conda/pkgs \
     mamba env create -n ecspr -f /opt/ecspr_env.yml
 ENV PATH=/opt/conda/envs/ecspr/bin:$PATH
 
-# The package is installed FROM SOURCE, not from a conda channel. Nothing is
-# published to hallamlab yet, and installing the tree the image was built from is
-# also what makes the image's version answer for the source it holds.
+# The package is installed FROM SOURCE even though it is also on the hallamlab
+# channel: installing the tree the image was built from is what makes the
+# image's version answer for the source it holds, which dev.sh --check then
+# asserts. Pulling the channel build instead would let the tag and the contents
+# drift by one publish.
+#
+# build_hash.txt rides along inside src/ecspr (it is gitignored, not
+# context-ignored, and dev.sh stamps it immediately before this build) -- which
+# is how the installed package reports 0.1.0+<hash> rather than bare 0.1.0.
 COPY src/ecspr /opt/ecspr
 COPY tests/ecspr /opt/tests/ecspr
 RUN pip install --no-deps /opt/ecspr

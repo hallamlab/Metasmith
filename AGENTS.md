@@ -220,6 +220,13 @@ The protocol sees three path views — `.local`, `.container`, `.external` — h
 the framework (`context.Input/InputGroup/Output`). Under a runtime with no container
 boundary all three are the same host path.
 
+**Write the product AT the output path, never beside it under a friendlier name.** The
+engine names every output `{batch}-{i}-{branch}.{hash}-{key}{ext}` and the generated process
+collects exactly that glob, so a file written next to it is invisible: the step does its
+work, reports success internally, and the task dies on a failed `ls`. A scatter emits N of
+them through one `context.Output(out, i)` call per item — and nothing downstream can read a
+host or a sample out of those names, so attribution has to come from the file's *content*.
+
 `TransformInstanceLibrary.AsView(mask, invert=)` hides transforms by file path without
 rebuilding the library on disk (mirrors `DataInstanceLibrary.AsView`); `virtual_runtime`
 validates contracts without pulling images.
@@ -373,6 +380,13 @@ agent home re-parses it on the next save. It was not: `SshSource` renders `ssh:/
 while `Parse` split on `/` and read the `:` as part of the host, so a remote home grew a
 colon per save until nothing could reach it. Pinned by
 `tests/metasmith/unit/test_source_parse.py::TestSshRoundTrip`.
+
+**The remote dev overlay delivers CODE, not DEPENDENCIES.** It binds the pinned engine over
+the agent image's `site-packages`, which is what lets an old base tag run a new engine —
+until the engine gains a third-party import the image's env does not carry. Adding `cbor2`
+was enough: on the older tag every task then died in `caching/keys.py` with
+`ModuleNotFoundError`, *after* staging, so the first sign of it was a queued job failing. A
+new dependency in `envs/metasmith/base.yml` means the site's base tag has to move too.
 
 ### Re-exporting packages
 
@@ -747,6 +761,17 @@ content-addressing collapses every degenerate-but-distinct input (N empty files,
 samples) onto one id, which flattens fan-out and trips the solver's O(n²) collision path.
 Absent or remote inputs fall back to a random per-call id and get no reuse.
 `METASMITH_LEAF_RANDOM=1` opts the whole mechanism out.
+
+**So does a leaf that is a DIRECTORY** — the content branch is guarded on `is_file()` and
+there is no directory arm, so every staged reference *folder* (kofam's 27,757-file profile
+set is one) mints a fresh id per stage and nothing downstream of it can reuse a cached
+result. The visible symptom is the `lib::local` line churning in `_metadata/` on every
+rebuild; the expensive one is silent. The naive fix does not scale — hashing a 300k-file
+folder on every `AddItem` trades a miss for a full tree read — so the options worth weighing
+are reusing a DVC pin's existing content hash, memoizing per-file digests on
+`(path, size, mtime)` so an unchanged folder re-stages stat-only, or letting a caller declare
+an id for an immutable acquisition. Whatever is chosen, anything weaker than real content
+hashing can produce a *false* hit, which is worse than today's miss.
 
 **A hit short-circuits the executor at compile time, not at run time.** The probe rewrites
 that step's emission in `workflow.nf` into a synthetic channel routed through

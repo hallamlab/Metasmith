@@ -158,7 +158,19 @@ SOCKEYE_GPU = Gpu(memory=Size.GB(32), extra=["--partition=gpu"])
 # further on (`faf42dd`, hash 5ac3800 -- the fix that stops the host CUDA_VISIBLE_DEVICES
 # being forwarded into the container, which matters here because CLEAN draws a GPU). The
 # overlay is what delivers that commit to both ends; the base image only has to exist.
-SOCKEYE_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.19.0-6639608"
+#
+# 0.19.0 NO LONGER WORKS AS THE BASE, and the overlay is why. Binding a newer engine
+# over an older image's site-packages delivers CODE, not DEPENDENCIES: the pinned engine
+# gained `cbor2` (base.yml pins 5.6.5) for its cache keys, that image's conda env does
+# not carry it, and every task died in `metasmith/caching/keys.py` with
+# ModuleNotFoundError -- after staging, so the first sign of it is a queued job failing.
+# The base image only has to exist, but its ENV has to be a superset of what the overlay
+# imports, and a new third-party dependency is exactly what breaks that.
+#
+# 0.20.4 is the newest published tag and carries it. fir's 0.19.0-fabfos above has the
+# same problem and is left alone: it is not this session's site and repointing a tag
+# nobody ran would be a guess.
+SOCKEYE_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.20.4"
 
 
 def ssh_once(host: str, command: str) -> str:
@@ -199,6 +211,11 @@ def sockeye_agent(*, host: str = SOCKEYE_HOST, agent_home: str = SOCKEYE_AGENT_H
                                 + [f"export APPTAINER_CACHEDIR={image_store}"])
 
 
+# The workstation's agent image. Same rule as the two clusters': a published tag whose
+# env is a superset of what the pinned engine imports.
+LOCAL_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.20.4"
+
+
 def local_agent(work: Path) -> Agent:
     """A local APPTAINER agent -- plan-shape checks, and the small steps that belong here.
 
@@ -208,11 +225,15 @@ def local_agent(work: Path) -> Agent:
     over the label pool. A step that fits runs here perfectly well, and `--run` against
     this agent now means it.
 
-    `Agent.container` defaults to `metasmith:{CONTAINER_TAG}`, which on an engine with
-    no BUILD_HASH is the plain version tag. The image only has to exist; what makes the
+    `Agent.container` defaults to `metasmith:{CONTAINER_TAG}` -- the engine's own version
+    -- and THAT TAG NEED NOT EXIST. The pinned engine is 0.20.1 and quay has 0.20.3 and
+    0.20.4 and no 0.20.1, so the default resolved to `manifest unknown` before a single
+    step ran. Named explicitly here for the same reason the two remote sites name theirs:
+    the image only has to exist and carry the engine's dependencies, and what makes the
     executor the same engine as the planner is `provision_dev_overlay_local` below.
     """
-    return Agent(home=Source.FromLocal(work / "agent_home"), runtime=Runtime.APPTAINER)
+    return Agent(home=Source.FromLocal(work / "agent_home"), runtime=Runtime.APPTAINER,
+                 container=LOCAL_CONTAINER)
 
 
 def provision_dev_overlay_local(agent_home: Path, *, repo: Path = REPO) -> None:

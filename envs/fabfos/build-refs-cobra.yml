@@ -13,12 +13,20 @@
 # This is the ONE place the ECSPr engine is used as a package import rather than
 # through its command line: the crosswalk sits inside a generated driver that also
 # imports two buildlib modules, so shelling out from the middle of it would mean
-# marshalling a cobra model through a file for no gain. `ecspr` therefore appears
-# below as a dependency, and it brings scipy with it -- `ecspr.build` re-exports the
-# solver at module scope, so importing the crosswalk pulls in `ecspr.graph`.
+# marshalling a cobra model through a file for no gain.
+#
+# `ecspr` IS NOT LISTED BELOW, AND THAT IS NOT AN OMISSION. The conda package is built
+# but unpublished -- `./dev.sh -ue` is what would put it on the hallamlab channel, and
+# until someone runs it a spec naming `ecspr` cannot be solved at all: the env fails to
+# create and every step that needs it dies with "prefix does not exist", which reads
+# like a broken installation rather than an unpublished package. `envs/setup_agent_env.sh`
+# installs it EDITABLE from `src/ecspr` instead, exactly as `./dev.sh --iecspr` does for
+# the `ecspr` env -- and editable is the better answer here anyway, since this env and a
+# benchmark then run the same source tree. `scipy` stays listed because it arrived as an
+# ecspr dependency: `ecspr.build` re-exports the solver at module scope, so importing the
+# crosswalk pulls in `ecspr.graph`.
 name: build-refs-cobra
 channels:
-  - hallamlab
   - conda-forge
 dependencies:
   - python=3.12
@@ -27,5 +35,5 @@ dependencies:
   - pyarrow>=24
   - numpy<2
   - scipy
-  - ecspr
   - requests
+  - pip

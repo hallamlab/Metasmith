@@ -424,11 +424,11 @@ opens a store must too.
 
 ## Inputs that live outside this directory
 
-* `data/processed/metabolism_bake/{vocab,atom_pairs,direction}.parquet` — DVC-tracked,
+* `data/fabfos/processed/metabolism_bake/{vocab,atom_pairs,direction}.parquet` — DVC-tracked,
   built on `capellaz` from MetaNetX 4.5.
-* `data/originals/metanetx/4.5/reac_xref.tsv` — MNXR -> `kegg.reaction:` cross-reference.
+* `data/fabfos/originals/metanetx/4.5/reac_xref.tsv` — MNXR -> `kegg.reaction:` cross-reference.
 * `KEGG.pathways` — vendored here (92 KB). ModelSEED's copy of the KEGG pathway ->
-  reaction table; there is no copy under `data/originals/kegg`.
+  reaction table; there is no copy under `data/fabfos/originals/kegg`.
 * `data/fabfos/runs/scadc_fosmids/gpr/gpr_4lane.parquet` and
   `data/fabfos/runs/scadc_fosmids/sequences/insert_coverage/insert_coverage_matrix.tsv` — the insert
   reaction calls and the depth-per-(insert, pool) matrix the dominant clone is ranked from.
@@ -442,10 +442,10 @@ opens a store must too.
 
 ## Running the sweep off this box
 
-`ECSPR_LIB` and `ECSPR_BAKE` override the two absolute paths `atom_graph` and `ieff_ground`
-otherwise hard-code, so the scripts run unmodified anywhere the ECSPr library and the
-metabolism bake are staged side by side. Nothing else needs to travel: numpy, scipy, pandas,
-a parquet reader, the bake, and a GPR table.
+ECSPr is imported from this repo's own `src/`, found `__file__`-relative, so a figure tracks
+the package with no install. `ECSPR_SRC` overrides that directory and `ECSPR_BAKE` the bake,
+so the scripts run unmodified anywhere the two are staged side by side. Nothing else needs to
+travel: numpy, scipy, pandas, a parquet reader, the bake, and a GPR table.
 
 On fir specifically: stage under `/project`, never `/scratch`, which this repo has measured
 silently dropping files. The venv wants `--system-site-packages` and `fastparquet` — the
@@ -458,10 +458,12 @@ refusals across all 120 blocks. Use one node's worth of forked workers rather th
 array contention is the condition this repo records producing bus errors on fir's overlay
 filesystem, and the sweep already splits its source list across forks.
 
-## Note for `nosco`: `ecspr_directed._SPDReuse`
+## Open against `src/ecspr/directed.py`: `_SPDReuse`
 
-Three defects, found while running it at 589k unknowns. Not fixed here — the library lives
-in the `nosco` worktree and this scope only wraps it (`ieff_ground.VerifiedSPD`).
+Three defects, found while running it at 589k unknowns, and inherited verbatim by the
+package when ECSPr was extracted (`directed.py:221`, `:226`, `:207/222`). Not fixed there —
+this scope wraps it instead (`ieff_ground.VerifiedSPD`), because the wrapper is what the
+figure's numbers were validated on.
 
 * The CHOLMOD acceptance test `|Hx - rhs|_inf <= 1e-6 (|rhs|_inf + 1)` is scale-blind: it
   ignores `|H||x|`, so a backward-stable factorization of a kappa~1e9 diode Hessian can be
@@ -473,5 +475,5 @@ in the `nosco` worktree and this scope only wraps it (`ieff_ground.VerifiedSPD`)
   path once CHOLMOD punts (50-80% of directed solves)" cannot be checked. Counted properly:
   zero fallbacks in 54 universe solves and 365 medium solves.
 
-Also `figure-net` has `sksparse` and the pinned ecspr container does not, so anything
+Also `figure-net` has `sksparse` and `ecspr:2026.07.14` did not, so anything
 promoted into the library must not assume CHOLMOD is present.

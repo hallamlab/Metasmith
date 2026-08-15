@@ -79,7 +79,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(ROOT / "src" / "metasmith_libraries" / "resources" / "lib"))
+sys.path.insert(0, str(ROOT / "src"))
 
 from scadc_ecspr_null_draw import (  # noqa: E402  -- the rule, not a copy of it
     ELEMENT, clr, draw_contiguous, draw_seed, draw_uniform, load_orf_pool,
@@ -122,8 +122,8 @@ _W: dict = {}
 
 
 def _init(conditions_path, ratios_path, pairs_path, host_mnxr, baseline):
-    from ecspr_build import graph_from_pairs, load_direction_ratios, load_pairs
-    from ecspr_graph import Terminal, solve
+    from ecspr.build import graph_from_pairs, load_direction_ratios, load_pairs
+    from ecspr.graph import Terminal, solve
     cond = pd.read_parquet(conditions_path)
     _W.update(
         pairs=load_pairs(pairs_path, element=ELEMENT),
@@ -189,7 +189,7 @@ def run_draws(k: int, workers: int) -> int:
 
     # The host baseline, in the parent, before any fork: it is subtracted from
     # every draw, so it must be ONE number rather than one per worker.
-    from ecspr_build import load_direction_ratios, load_pairs  # noqa: F401
+    from ecspr.build import load_direction_ratios, load_pairs  # noqa: F401
     host_mnxr = sorted(pd.read_parquet(HOST_GEM).mnxr.dropna().unique().tolist())
     _init(conditions, ratios_path, pairs_path, host_mnxr, (0.0, [0.0]))
     t0 = time.time()
@@ -209,7 +209,7 @@ def run_draws(k: int, workers: int) -> int:
     print(f"[null] loading {GPR4.relative_to(ROOT)}", flush=True)
     gpr = pd.read_parquet(GPR4)
     lanes = sorted(gpr["channel"].unique().tolist())
-    from ecspr_evidence import per_unit_weights
+    from ecspr.evidence import per_unit_weights
     per_orf = per_unit_weights(gpr, "orf")
     del gpr
     print(f"[null] lanes={lanes}  {len(per_orf):,} ORFs carry >=1 nominated MNXR",
@@ -283,7 +283,7 @@ REMOTE_WORK = "/scratch/phyberos/fabfos_metagenome"
 REMOTE_GPR4 = f"{REMOTE_WORK}/results/metag_gpr_4lane.parquet"
 REMOTE_ORFS = f"{REMOTE_WORK}/raw/metag.orfs.csv"
 REMOTE_REFS = f"{REMOTE_WORK}/ecspr_refs"
-REMOTE_LIB = f"{REMOTE_WORK}/lib"
+REMOTE_LIB = f"{REMOTE_WORK}/lib/ecspr"
 REMOTE_OUT = f"{REMOTE_WORK}/results/null4_draws_b%a.csv"
 SIF = ("/scratch/phyberos/cache/apptainer/"
        "docker..quay.io_hallamlab_python_for_data_science..1.2.5.sif")
@@ -328,17 +328,18 @@ def fir_run(k: int, host: str) -> int:
     draw_script = Path(__file__).resolve().parent / "scadc_ecspr_null_draw.py"
 
     print(f"=== staging the 4-lane table + draw script on {host} ===")
-    ssh_once(host, f"mkdir -p {REMOTE_WORK}/logs {REMOTE_WORK}/results {REMOTE_LIB}")
+    # REMOTE_LIB itself is removed, not made: `scp -r` of the package into the
+    # parent would otherwise nest it one level deeper on every re-stage.
+    ssh_once(host, f"mkdir -p {REMOTE_WORK}/logs {REMOTE_WORK}/results "
+                   f"{Path(REMOTE_LIB).parent}; rm -rf {REMOTE_LIB}")
     for src, dst in ((GPR4, REMOTE_GPR4), (draw_script, f"{REMOTE_WORK}/")):
         print(f"  {Path(src).name} -> {dst}")
         subprocess.run(["scp", "-q", str(src), f"{host}:{dst}"], check=True)
-    # The lib is already staged from the July run, but it is what the solve IS
-    # -- re-sent so a shard can never run an older engine than this table.
-    lib = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
-    for name in ("ecspr_build.py", "ecspr_graph.py", "ecspr_directed.py",
-                 "ecspr_evidence.py"):
-        subprocess.run(["scp", "-q", str(lib / name), f"{host}:{REMOTE_LIB}/"],
-                       check=True)
+    # The lib is what the solve IS -- re-sent every run so a shard can never
+    # run an older engine than this table. `--lib-dir` names the package
+    # directory itself; the draw script puts its PARENT on sys.path.
+    subprocess.run(["scp", "-qr", str(ROOT / "src" / "ecspr"),
+                    f"{host}:{Path(REMOTE_LIB).parent}/"], check=True)
 
     missing = ssh_once(host, "; ".join(
         f'[ -e "{p}" ] || echo "MISSING {p}"'

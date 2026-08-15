@@ -7,7 +7,7 @@ solving the rectified network reports, in a single solve, the current every *oth
 reaction draws -- so an N x N pairwise table costs N solves rather than N^2. Entry (a, b)
 is that attributed current; the layout consumes ``R = 1/max(I, I^T)``.
 
-**Why this file exists rather than calling the library.** ``ecspr_directed._SPDReuse``
+**Why this file exists rather than calling the library.** ``ecspr.directed._SPDReuse``
 tries CHOLMOD, accepts the result when ``|Hx - rhs|_inf <= 1e-6 (|rhs|_inf + 1)``, and
 otherwise drops to a Tikhonov-ridged ``splu``. Three things about that shape are wrong and
 all three bite at 589k unknowns:
@@ -21,8 +21,8 @@ all three bite at 589k unknowns:
   "the sole hot path once CHOLMOD punts (50-80% of directed solves)" is unmeasurable.
   Here they are integer counters.
 
-The library lives in the ``nosco`` worktree and is not edited from this scope; these are
-reported there as a note.
+All three are inherited verbatim by ``src/ecspr/directed.py``; they are filed against it in
+the README rather than fixed here, because this wrapper is what the figure is validated on.
 
 **Cost.** The rectified conductance depends on the sign of each edge's own potential drop,
 so the matrix changes between Newton iterates and every iterate pays a fresh numeric
@@ -48,13 +48,12 @@ import numpy as np
 import scipy.sparse as sp
 
 import os                                                            # noqa: E402
-LIB = os.environ.get(
-    "ECSPR_LIB",
-    "/home/tony/agentic_workspace/projects/fabfos/nosco/src/metasmith_libraries/resources/lib")
-if LIB not in sys.path:
-    sys.path.insert(0, LIB)
-import ecspr_directed as ed                                          # noqa: E402
-from ecspr_graph import attach_leak, OMEGA                           # noqa: E402
+from pathlib import Path                                             # noqa: E402
+SRC = os.environ.get("ECSPR_SRC", str(Path(__file__).resolve().parents[4] / "src"))
+if SRC not in sys.path:
+    sys.path.insert(0, SRC)
+import ecspr.directed as ed                                          # noqa: E402
+from ecspr.graph import attach_leak, OMEGA                           # noqa: E402
 
 from atom_graph import incidence                                     # noqa: E402
 
@@ -249,11 +248,11 @@ class VerifiedSPD:
 def newton_rhs(B, gp, gm, I, keep, reuse, phi0=None,
                tol=ed.DIRECTED_TOL, maxit=ed.DIRECTED_MAXIT,
                delta=ed.DIODE_SMOOTH_DELTA, etol=1e-13, stale_ok=False):
-    """``ecspr_directed.directed_ceff``'s smoothed-diode Newton, generalized from
+    """``ecspr.directed.directed_ceff``'s smoothed-diode Newton, generalized from
     ``I = e_s - e_t`` to an arbitrary injection vector.
 
     That generalization is what fixes the sparsity pattern across sources: contracting a
-    source terminal into a supernode (which is what ``ecspr_graph.solve`` does) changes the
+    source terminal into a supernode (which is what ``ecspr.graph.solve`` does) changes the
     topology, so CHOLMOD must re-analyse per source. Injecting distributed current instead
     leaves the pattern identical, and is the more physical reading for a probe that reads
     downstream current anyway.

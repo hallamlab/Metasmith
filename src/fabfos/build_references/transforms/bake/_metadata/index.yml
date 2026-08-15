@@ -28,19 +28,19 @@ manifest:
     origin: leaf
     type: transforms::transform
   indigo.py:
-    instance_id: 1e20c1a0429f54b1b6aa5018bb2b60ce8ba6f7bad7decb1d60c136ff0a99fd221d0c
+    instance_id: 1e20d9028c6729c10c678a21ee76e254d9230e788817cf02020b41ad6f70f5f128c4
     origin: leaf
     type: transforms::transform
   indigo_rescue.py:
-    instance_id: 1e2047cd7e4206f4c5f13b5d36ac127203168547e2d0c62722b86b9db752f4411ae0
+    instance_id: 1e205f92c0a745a33fd295c4c6deab6a40673737043b8c67ada8f4c9b70062457350
     origin: leaf
     type: transforms::transform
   localmapper.py:
-    instance_id: 1e20a546208c17fde50a42c04351f9bc92110d8129fd5d1d683ce773129044a6328d
+    instance_id: 1e2075b60bdfc5894b983452ec3deca4a277dc4862a92cef3ff58922cd0bf918bdd5
     origin: leaf
     type: transforms::transform
   localmapper_rescue.py:
-    instance_id: 1e2095cc7c08231bba8961e6b3d133b08f1c95d4f5acf2d4716764ef8764803297bc
+    instance_id: 1e201f71ce07f88be24f32949ca014c8b5c3efde158a96374e56e27f605fd3a63386
     origin: leaf
     type: transforms::transform
   rxnmapper.py:
