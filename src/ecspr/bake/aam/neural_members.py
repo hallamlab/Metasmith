@@ -206,15 +206,20 @@ def universe_from_worklist(worklist_parquet: Path, exclude=None) -> dict[str, st
     over = [m for m, s in out.items() if len(s) > SMILES_LEN_LIMIT]
     if over:
         # Belt and braces: the worklist applies this same cap, so a hit here means the
-        # two limits have drifted apart rather than that a long reaction slipped through.
+        # two limits have drifted apart rather than that a long reaction slipped
+        # through. It is checked against whichever string the worklist wrote -- for a
+        # collapsed reaction that is the collapsed one, which is what the member will
+        # actually be handed and therefore what the cap is about.
         raise SystemExit(
             f"[aam] {len(over):,} mappable reactions exceed SMILES_LEN_LIMIT "
             f"({SMILES_LEN_LIMIT}), e.g. {over[0]}. The worklist and this module "
             f"disagree about the character cap; fix the constant, do not filter here.")
+    n_collapsed = int(d["collapsed"].sum()) if "collapsed" in d.columns else 0
     n_map = len(out)
     if exclude:
         out = {m: s for m, s in out.items() if m not in exclude}
     print(f"[aam] worklist: {n_all:,} reactions adjudicated, {n_map:,} mappable"
+          + (f" ({n_collapsed:,} as a stoichiometric collapse)" if n_collapsed else "")
           + (f", {n_map - len(out):,} already claimed by a lower layer" if exclude else ""),
           flush=True)
     return out

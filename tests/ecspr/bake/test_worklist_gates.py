@@ -109,9 +109,14 @@ def test_the_two_size_bounds_are_separate_bounds():
     changed by changing a character count, which is not what it measures. The
     pin: a reaction can be over one and under the other, in both directions.
     """
+    # One component per side, so the collapse has nothing to remove -- both caps
+    # therefore act on the same string and the separation is what is being shown.
     long_but_small = "O" * 300 + ">>" + "O" * 300          # 603 chars, 600 atoms
-    assert _verdicts([dict(rxn_smiles=long_but_small)], char_limit=100) == ["too_long"]
-    assert _verdicts([dict(rxn_smiles=long_but_small)], atom_limit=100) == ["oversize"]
+    df = W.adjudicate(_reactions([dict(rxn_smiles=long_but_small)]), {}, 600, 100)
+    assert list(df["verdict"]) == ["too_long"]
+    df = W.adjudicate(_reactions([dict(rxn_smiles=long_but_small)]), {}, 100, 8000,
+                      collapsed_atom_limit=100)
+    assert list(df["verdict"]) == ["oversize"]
     assert _verdicts([dict(rxn_smiles=long_but_small)]) == ["mappable"]
 
 
@@ -138,6 +143,110 @@ def test_count_atoms_spans_both_sides_and_counts_copies():
     assert W.count_atoms("CC>>CC") == 4
     one = W.count_atoms("CCO")
     assert W.count_atoms(".".join(["CCO"] * 16) + ">>C") == 16 * one + 1
+
+
+# --- the collapse ---------------------------------------------------------
+
+def test_collapse_writes_each_distinct_molecule_once_per_side():
+    """Per side, not across the reaction.
+
+    Water on the left and water on the right are two occurrences that both have
+    to exist for the equation to read; the same molecule twice on ONE side is
+    the copy the cap should never have counted. A collapse that deduped across
+    the reaction would delete one side of every water-conserving reaction.
+    """
+    assert W.collapse("CC.CC.O>>CCO.O") == "CC.O>>CCO.O"
+    assert W.collapse(".".join(["OP(=O)(O)O"] * 16) + ">>N") == "OP(=O)(O)O>>N"
+    assert W.collapse("CC>>CC") == "CC>>CC", "an already-distinct reaction must not move"
+
+
+def test_collapse_splits_only_at_component_boundaries():
+    """A `.` inside brackets or parentheses is part of a token, not a boundary.
+
+    Splitting on every `.` would cut molecules in half and then dedupe fragments
+    of them -- producing a shorter string that is not the same chemistry, which
+    is the one failure mode this whole change must not have.
+    """
+    assert W.collapse("[Na+].[Cl-]>>[Na+]") == "[Na+].[Cl-]>>[Na+]"
+    tricky = "C(=O)([O-])[O-].C(=O)([O-])[O-]>>O"
+    assert W.collapse(tricky) == "C(=O)([O-])[O-]>>O"
+
+
+def test_collapse_never_parses_and_so_is_safe_on_the_unbounded_string():
+    """A text split, not a parse. MNXR144749's expanded string is 80.7 MB and
+    RDKit does not return from parsing it, so a collapse that parsed first would
+    reintroduce the hour-inside-one-call failure the gate ordering exists to
+    avoid. Ten megabytes here, and it returns."""
+    huge = ".".join(["C" * 40] * 250_000) + ">>C"
+    assert len(huge) > 10_000_000
+    assert W.collapse(huge) == "C" * 40 + ">>C"
+
+
+def test_a_reaction_under_the_expanded_cap_keeps_its_expanded_string():
+    """The invariant that makes "coverage may only go up" structural.
+
+    A reaction the expanded measure admits is mapped byte for byte as before --
+    same universe, same map, same pairs, same weights. Only a reaction that
+    would otherwise have been REFUSED is mapped collapsed, so no existing row
+    can move, and the monotonicity is a property of the construction rather than
+    something to verify after the fact.
+    """
+    smi = "CC.CC>>CCCC"
+    df = W.adjudicate(_reactions([dict(rxn_smiles=smi)]), {}, 600, 8000)
+    assert df["verdict"][0] == "mappable"
+    assert df["rxn_smiles"][0] == smi, "an admitted reaction's string was rewritten"
+    assert df["collapsed"][0] is False or not df["collapsed"][0]
+    assert df["atoms_collapsed"][0] is None, "a collapse was attempted where none was needed"
+
+
+def test_a_reaction_the_expanded_cap_refuses_is_recovered_collapsed():
+    """The nitrogenase shape: sixteen copies of one cofactor, small chemistry.
+
+    Both counts are recorded, and `collapsed` says which string `rxn_smiles`
+    holds -- so no consumer has to infer it from a length, and the pre-collapse
+    yield curve stays recomputable from a post-collapse table.
+    """
+    smi = ".".join(["CCOCCOCCO"] * 40) + ">>CCO"
+    df = W.adjudicate(_reactions([dict(rxn_smiles=smi)]), {}, 200, 8000)
+    assert df["verdict"][0] == "mappable"
+    assert bool(df["collapsed"][0]) is True
+    assert df["rxn_smiles"][0] == "CCOCCOCCO>>CCO"
+    assert df["atoms"][0] > 200, "the expanded count must still describe the input"
+    assert df["atoms_collapsed"][0] <= 200
+
+
+def test_the_collapsed_cap_is_its_own_bound_and_still_refuses():
+    """Collapse is a second chance, not an exemption.
+
+    A reaction whose DISTINCT chemistry is genuinely large is still refused, and
+    still as `oversize` -- the verdict set does not grow, because every reader of
+    the worklist would then need a branch for a new one.
+    """
+    smi = ".".join(["C" * 300] * 5) + ">>C"
+    df = W.adjudicate(_reactions([dict(rxn_smiles=smi)]), {}, 600, 8000,
+                      collapsed_atom_limit=100)
+    assert df["verdict"][0] == "oversize"
+    assert not df["collapsed"][0]
+    assert df["atoms_collapsed"][0] == 301, (          # the 300-carbon component + the product
+        "the collapsed count is recorded even when the collapse does not rescue")
+
+
+def test_the_character_cap_applies_to_the_collapsed_string_and_still_gates_the_parse():
+    """`too_long` is about transformer context, so it is about the string the
+    mapper SEES -- which for a recovered reaction is the collapsed one. That
+    alone rescues part of the too_long tail. The parse stays behind the cap: a
+    collapsed string still over it is never handed to RDKit."""
+    smi = ".".join(["CCO"] * 4000) + ">>C"          # far over 8,000 chars expanded
+    df = W.adjudicate(_reactions([dict(rxn_smiles=smi)]), {}, 600, 8000)
+    assert df["verdict"][0] == "mappable"
+    assert bool(df["collapsed"][0]) is True
+    assert df["atoms"][0] is None, "the expanded string was parsed above the char cap"
+    assert df["chars_collapsed"][0] < 8000
+
+    still = ".".join(["C" * 9000, "O"]) + ">>C"     # one component alone is over
+    df = W.adjudicate(_reactions([dict(rxn_smiles=still)]), {}, 600, 8000)
+    assert df["verdict"][0] == "too_long"
+    assert df["atoms_collapsed"][0] is None, "a collapsed string over the cap was parsed"
 
 
 # --- the blocker families -------------------------------------------------

@@ -1777,7 +1777,8 @@ def merge(lanes: dict):
     return pd.DataFrame(rows, columns=list(CROSSWALK_COLS))
 
 
-def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=None):
+def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=None,
+             collapsed_atom_limit=None):
     """Build the completed reaction SMILES for every rescuable reaction. NO MAPPER RUNS.
 
     THIS USED TO BE `arbitrate`, AND IT USED TO MAP. Indigo ran here, inside the curation
@@ -1836,16 +1837,26 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
         except KeyError:
             tally["still missing a structure"] += 1
             continue
-        if len(rxn) > smiles_limit:
-            tally["SMILES over the length limit"] += 1
-            continue
-        atoms = None
-        if atom_limit:
-            atoms = aam_worklist.count_atoms(rxn)
-            if atoms is None or atoms > atom_limit:
-                # The same cut the worklist applies to pass 1, applied to the reactions
-                # the rescue creates. A completed reaction is a NEW string, so it has to
-                # be measured again rather than inherited.
+        # THE SAME TWO CUTS THE WORKLIST APPLIES TO PASS 1, and the same second chance.
+        # A completed reaction is a NEW string, so it has to be measured again rather
+        # than inherited -- and both sides call the same functions against the same
+        # constants, or the two disagree about what oversize means.
+        atoms = aam_worklist.count_atoms(rxn) if atom_limit else None
+        collapsed = False
+        if len(rxn) > smiles_limit or (atom_limit and (atoms is None or atoms > atom_limit)):
+            rxn_c = aam_worklist.collapse(rxn)
+            ok = False
+            if rxn_c is not None and len(rxn_c) <= smiles_limit:
+                atoms_c = aam_worklist.count_atoms(rxn_c) if collapsed_atom_limit else None
+                ok = (not collapsed_atom_limit
+                      or (atoms_c is not None and atoms_c <= collapsed_atom_limit))
+            if ok:
+                rxn, atoms, collapsed = rxn_c, atoms_c, True
+                tally["recovered by collapse"] += 1
+            elif len(rxn) > smiles_limit:
+                tally["SMILES over the length limit"] += 1
+                continue
+            else:
                 tally["over the atom limit"] += 1
                 continue
         banked = False
@@ -1862,7 +1873,7 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
             tally["no element balances"] += 1
             continue
         rescued.append(dict(mnxr=r.mnxr, verdict="mappable", rxn_smiles=rxn,
-                            atoms=atoms, chars=len(rxn)))
+                            atoms=atoms, chars=len(rxn), collapsed=collapsed))
     tally["RESCUED"] = len(rescued)
     return rescued, bal_rows, ph_smi, ph_tag, tally
 
@@ -1953,7 +1964,7 @@ def cmd_complete(args):
     targets = _targets(refs, args.worklist)
     rescued, bal, ph_smi, ph_tag, tally = complete(
         refs, resolved, targets, smiles_limit=args.char_limit,
-        atom_limit=args.atom_limit)
+        atom_limit=args.atom_limit, collapsed_atom_limit=args.collapsed_atom_limit)
 
     pq.write_table(
         pa.Table.from_pandas(
@@ -2008,6 +2019,10 @@ def parse_args(argv=None):
     p.add_argument("--crosswalk", required=True)
     p.add_argument("--char-limit", type=int, default=aam_worklist.SMILES_LEN_LIMIT)
     p.add_argument("--atom-limit", type=int, default=aam_worklist.ATOM_LIMIT)
+    p.add_argument("--collapsed-atom-limit", type=int,
+                   default=aam_worklist.COLLAPSED_ATOM_LIMIT,
+                   help="the cap on the DISTINCT-molecule count, applied only to "
+                        "completed reactions the expanded measure would refuse")
     p.add_argument("--out", required=True, help="the rescued universe, parquet")
     p.add_argument("--out-balance", required=True)
     p.add_argument("--out-placeholders", required=True)

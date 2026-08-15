@@ -451,8 +451,34 @@ def forced_pairs(sub_mnxms: list, prod_mnxms: list, formulas: dict, ranks_of: di
     return out
 
 
+def distinct_structures(mnxms: list, smiles_of: dict) -> int:
+    """How many components a side has once each distinct structure is written once.
+
+    The count `aam.worklist.collapse` produces, arrived at from the participant list
+    rather than from the string -- so the extractor can recognise a collapsed reaction
+    without the worklist having to hand it a flag, and the threshold logic stays in one
+    file. Keyed on the RAW SMILES, the same strings the reaction string was built from:
+    re-canonicalising here would merge tautomer pairs the builder wrote separately and
+    make this count too small.
+
+    A participant with no SMILES counts as its own component. It cannot appear in a
+    reaction string at all -- the lookup builder refuses to build one and the reaction
+    is blocked -- so this is defensive, and it errs toward the expanded count, which
+    means a refusal rather than an admission.
+    """
+    seen, n = set(), 0
+    for m in mnxms:
+        s = smiles_of.get(m)
+        key = s if s is not None else ("\0unknown", m)
+        if key not in seen:
+            seen.add(key)
+            n += 1
+    return n
+
+
 def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
-                      canon: dict, conn: dict = None, align: str = "strict"):
+                      canon: dict, conn: dict = None, align: str = "strict",
+                      collapsed_counts: tuple | None = None):
     """(pairs, status). pairs: {(element, sm, pm) -> [(sub_rank, prod_rank)]}.
 
     The atom identifiers are CANONICAL RANKS within each metabolite's own molecule,
@@ -467,6 +493,12 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
                        participant count, and a mismatch means a molecule went missing
                        before mapping and the mapper re-routed its atoms onto whatever
                        was left. The counts survive that; the pairs do not. Refuse.
+    `collapsed_counts` is the per-side count of DISTINCT structures, and it is the
+    second template count strict mode will accept -- see the guard below. It is the
+    caller's to compute because only the caller holds the metabolite-to-SMILES map the
+    reaction string was built from, and computing it here from `canon` would compare a
+    re-canonicalised structure against a raw one and disagree on the tautomer cases.
+
       "structural"  -- a FOREIGN database wrote it, over its OWN participant set. The
                        counts are then expected to differ and carry no information:
                        MetaCyc writes the water that MetaNetX leaves implicit and omits
@@ -498,8 +530,21 @@ def pairs_from_mapped(mapped_smi: str, sub_mnxms: list, prod_mnxms: list,
     # generic), so the mapper re-routed orphan atoms onto whatever remained. The
     # counts survive that; the pairs do not. Only meaningful when WE built the SMILES
     # -- see `align` in the docstring.
-    if align == "strict" and (n_sub_t != len(sub_mnxms) or n_prod_t != len(prod_mnxms)):
-        return {}, "stripped"
+    #
+    # TWO ACCEPTABLE COUNTS, and the guard is not weakened by having both. A reaction
+    # the worklist collapsed carries one component per DISTINCT structure per side, so
+    # its template count is the collapsed count rather than the expanded one -- and a
+    # count check that knew only the expanded number would refuse every reaction the
+    # collapse rescued, which is the whole population this exists to admit.
+    # `collapsed_counts` is the caller's per-side distinct count, computed from the
+    # SAME metabolite-to-SMILES map the reaction string was built from. Neither
+    # matching is still a refusal: a genuinely stripped reaction matches nothing.
+    if align == "strict":
+        exact = (n_sub_t == len(sub_mnxms) and n_prod_t == len(prod_mnxms))
+        as_collapsed = (collapsed_counts is not None
+                        and (n_sub_t, n_prod_t) == tuple(collapsed_counts))
+        if not (exact or as_collapsed):
+            return {}, "stripped"
 
     # WEIGHTED name candidates per template. A shared-canonical-SMILES ambiguity is
     # DILUTED across its candidates (weight 1/k), not refused -- see `match_mols`.
@@ -733,7 +778,9 @@ def cmd_extract(args):
         subs, prods = pe
         pairs, status = pairs_from_mapped(
             getattr(rec, "mapped_rxn_smiles", None), subs, prods, canon,
-            conn=conn if args.connectivity_fallback else None, align=args.align)
+            conn=conn if args.connectivity_fallback else None, align=args.align,
+            collapsed_counts=(distinct_structures(subs, raw),
+                              distinct_structures(prods, raw)))
         if not pairs and status == "no_mapping" and args.fallback_forced:
             fp = forced_pairs(subs, prods, formulas, ranks_of)
             if fp:
