@@ -1,7 +1,9 @@
 # The standard transform library — authoring notes
 
 The type system, the solver, and the execution model are the engine's and are
-documented in the repo-root `AGENTS.md`. This file is only about authoring the
+documented in `docs/metasmith/architecture.md`; what this module *is* and how it
+relates to its neighbours is `docs/metasmith_libraries/architecture.md`. This
+file is only about authoring the
 library that sits on top of them: what the build guarantees, how an environment is
 declared, and the handful of rules whose failure mode is silence rather than an
 error.

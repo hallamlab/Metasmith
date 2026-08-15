@@ -209,7 +209,8 @@ The audit ran against 0.18.4, before `env/`, `caching/`, `gui/` and `std/`
 existed in their current form. Every row was re-checked against the
 consolidated tree on 2026-07-27; the **Now** column is that re-check, and it
 supersedes the original verdict wherever the two disagree. One of them does:
-S1 called `main/script_runner/` dead, and it is not.
+S1 called `main/script_runner/` dead, and it is not. (The `main/` tree has since
+moved under `research/metasmith/`; paths in the table below are pre-migration.)
 
 | ID | Tier → Goal | Finding | Now (2026-07-27) |
 |----|------|---------|---------------|
