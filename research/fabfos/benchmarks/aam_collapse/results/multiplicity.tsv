@@ -1,0 +1,14 @@
+statistic	value
+count	394.0
+mean	5.5381
+std	5.2857
+min	1.0033
+25%	3.3695
+50%	4.6813
+75%	6.5956
+90%	8.4675
+max	89.1739
+recovered_reactions	454.0
+deployed_pair_rows_per_reaction	37.49
+estimated_new_pair_rows	17021.0
+estimated_share_of_table	0.00687

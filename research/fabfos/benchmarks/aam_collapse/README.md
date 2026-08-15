@@ -1,7 +1,8 @@
 # What the stoichiometric collapse moves
 
 `measure_collapse.py` re-adjudicates the whole MNXref reaction universe under both size
-measures and joins the result to the deployed bake. `results/` holds the tables it wrote,
+measures and joins the result to the deployed bake. `measure_partial.py` sizes what the
+partial lane would reach, using the worklist the first script writes. `results/` holds the tables it wrote,
 committed so the next session re-runs the script and diffs rather than re-deriving.
 
 Everything it needs is local: `data/fabfos/originals/metanetx/4.5` plus a built
@@ -15,6 +16,11 @@ seconds, so the reporting half can be iterated on with `--rebuild` omitted.
         --bake data/fabfos/processed/metabolism_bake \
         --outdir research/fabfos/benchmarks/aam_collapse/results
 
+    mamba run -n rdkit-scratch python research/fabfos/benchmarks/aam_collapse/measure_partial.py \
+        --lookups <built lookups dir> \
+        --worklist research/fabfos/benchmarks/aam_collapse/results/worklist_both_measures.parquet \
+        --outdir research/fabfos/benchmarks/aam_collapse/results
+
 ## The tables
 
 | file | what it answers |
@@ -24,7 +30,9 @@ seconds, so the reporting half can be iterated on with `--rebuild` omitted.
 | `recovered.tsv` | every reaction the collapse admits, with both counts and what refused it before. |
 | `nitrogen.tsv` | every reaction carrying an N2 species, by id and equation. The scope exists for these. |
 | `deployed_bake_debt.tsv` | reactions the deployed bake holds that the 600-atom cut refuses. A pre-existing regression, not one this change introduces. |
-| `populations.tsv` | what is still refused, and how much of it. The partial lane's target sizes. |
+| `populations.tsv` | what is still refused, and how much of it. |
+| `multiplicity.tsv` | how much stoichiometric repetition the recovered reactions carry — the one thing collapse changes about a row's *shape*. |
+| `partial_lane_yield.tsv` | what the partial lane reaches, per target population. Written by `measure_partial.py`. |
 
 ## Reading them
 
@@ -40,4 +48,14 @@ curve of zeros, which reads as a result rather than as a bug.
 
 **A recovered reaction is ADMITTED, not banked.** This measures which reactions the
 mappers are allowed to see. Whether they produce pairs is what a rebake answers, and
-nothing local stands in for it.
+nothing local stands in for it. Every row of `partial_lane_yield.tsv` past the first is
+likewise a PROXY: the lane's real target set is "admitted and still ended with nothing",
+which cannot be known without having run the mappers, so the table sweeps reaction length
+rather than picking a threshold.
+
+**`n_atoms` counts atom-index triples, so a collapsed reaction emits one where an
+expanded one emits sixteen.** No existing row moves — collapse only touches reactions
+that were refused — but the new rows sit on a different footing from a comparable
+expanded reaction's. `multiplicity.tsv` sizes it: median 4.7x, max 89x, over an estimated
+0.7% of the table. Whether those weights should be re-expanded by coefficient is a
+question about edge weights, and it is the user's.

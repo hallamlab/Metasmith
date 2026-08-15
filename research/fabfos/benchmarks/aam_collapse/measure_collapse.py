@@ -20,6 +20,8 @@ any of the pleasing numbers, because it is the campaign's stop line written as a
   recovered.tsv          every reaction the collapse admits, with both counts
   nitrogen.tsv           the N-fixation reactions by name, not as a count
   populations.tsv        what is still refused and why -- the partial lane's target sizes
+  multiplicity.tsv       how much stoichiometric repetition the recovered reactions carry,
+                         which is the one thing collapse changes about a row's SHAPE
 
 WHAT THE CURVE RESTS ON. The deployed bake PREDATES the 600-atom cut -- it holds 14
 reactions the cut now refuses -- so it can speak about the bins above the threshold,
@@ -187,6 +189,37 @@ def main(argv=None):
     print(f"[measure] the expanded cap refuses {len(debt):,} reactions the deployed bake "
           f"banked; the collapse repays {int(debt['repaid_by_collapse'].sum()):,} of them",
           flush=True)
+
+    # ---- the multiplicity question, quantified -------------------------------
+    # THE ONE THING COLLAPSE CHANGES ABOUT A ROW'S SHAPE, and it is a real question
+    # about edge weights rather than a formatting detail. `n_atoms` counts atom-index
+    # triples, so a collapsed reaction emits ONE triple per pair where an expanded one
+    # emits sixteen. No EXISTING row moves -- collapse only touches reactions that were
+    # refused -- but the new rows sit on a different footing from a comparable expanded
+    # reaction's, and that is the user's call, not this script's.
+    rec2 = wl[wl["collapsed"]].copy()
+    rec2["multiplicity"] = rec2["atoms"] / rec2["atoms_collapsed"]
+    mult = rec2["multiplicity"].describe(percentiles=[0.25, 0.5, 0.75, 0.9])
+    # How large the new rows would be as a share of the table, at the deployed bake's
+    # observed rows-per-reaction. An ESTIMATE and labelled as one: whether these
+    # reactions bank at all is what the rebake answers.
+    pairs_per_rxn = len(refs.load_atom_pairs(a.bake / "atom_pairs.parquet")) / max(
+        1, len(banked))
+    mrows = [dict(statistic=k, value=round(float(v), 4)) for k, v in mult.items()]
+    mrows.append(dict(statistic="recovered_reactions", value=int(len(rec2))))
+    mrows.append(dict(statistic="deployed_pair_rows_per_reaction",
+                      value=round(pairs_per_rxn, 2)))
+    mrows.append(dict(statistic="estimated_new_pair_rows",
+                      value=round(len(rec2) * pairs_per_rxn)))
+    mrows.append(dict(statistic="estimated_share_of_table",
+                      value=round(len(rec2) * pairs_per_rxn
+                                  / max(1, len(refs.load_atom_pairs(
+                                      a.bake / "atom_pairs.parquet"))), 5)))
+    pd.DataFrame(mrows).to_csv(a.outdir / "multiplicity.tsv", sep="\t", index=False)
+    print(f"[measure] collapsed reactions carry a median stoichiometric multiplicity of "
+          f"{mult['50%']:.1f}x (max {mult['max']:.1f}x); at the deployed bake's "
+          f"{pairs_per_rxn:.0f} rows/reaction the recovered set is an estimated "
+          f"{len(rec2) * pairs_per_rxn:,.0f} new rows", flush=True)
 
     # ---- the nitrogen case, by name ------------------------------------------
     # A count of recovered reactions does not answer the question this scope exists for.
