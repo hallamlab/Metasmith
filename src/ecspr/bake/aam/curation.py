@@ -67,7 +67,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-import aam_worklist
+from . import worklist as aam_worklist
 
 ELEMENTS = ("C", "N", "S", "P")
 
@@ -1983,7 +1983,7 @@ def cmd_complete(args):
     return 0
 
 
-def parse_args():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -2011,7 +2011,7 @@ def parse_args():
     p.add_argument("--out", required=True, help="the rescued universe, parquet")
     p.add_argument("--out-balance", required=True)
     p.add_argument("--out-placeholders", required=True)
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
 if __name__ == "__main__":

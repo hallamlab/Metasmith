@@ -88,13 +88,7 @@ worklist    = model.AddRequirement(lib.GetType("interm::aam_worklist"))
 rescue      = model.AddRequirement(lib.GetType("interm::aam_rescue"))
 reactions   = model.AddRequirement(lib.GetType("lookup::reactions"))
 
-curated_m   = model.AddRequirement(lib.GetType("buildlib::aam_metacyc_member.py"))
-worklib     = model.AddRequirement(lib.GetType("buildlib::aam_worklist.py"))
-layers      = model.AddRequirement(lib.GetType("buildlib::aam_layers.py"))
-extractor   = model.AddRequirement(lib.GetType("buildlib::ecspr_atom_pairs.py"))
-evidence    = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
-encoding    = model.AddRequirement(lib.GetType("buildlib::refs_encoding.py"))
-baker       = model.AddRequirement(lib.GetType("buildlib::bake_metabolism.py"))
+bakelib     = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 stacked     = model.AddProduct(lib.GetType("interm::aam_pairs"))
 out_vocab   = model.AddProduct(lib.GetType("ref::metabolism_vocab"))
@@ -159,7 +153,7 @@ def protocol(context: ExecutionContext):
     iwl  = context.Input(worklist)
     ires = context.Input(rescue)
     irx  = context.Input(reactions)
-    ilib = context.Input(layers)
+    ilib = context.Input(bakelib)
     iout = context.Output(stacked)
     ivoc = context.Output(out_vocab)
     ienc = context.Output(out_pairs)
@@ -181,10 +175,10 @@ def protocol(context: ExecutionContext):
         # 55.5% of the curated records for a reason that was never chemistry.
         # `--connectivity-fallback` is the InChIKey connectivity match TIER4_FREEZE
         # named and recorded as never attempted.
-        {py} {libdir}/aam_metacyc_member.py \
+        {py} -m ecspr.bake.aam.metacyc_member \
             --smiles-dat $MC/{CURATED_DAT} --reac-xref $MNX/reac_xref.tsv \
             --out L1/metacyc.tsv --out-report L1/refused_residues.tsv
-        {py} {libdir}/ecspr_atom_pairs.py extract \
+        {py} -m ecspr.bake.atom_pairs extract \
             --aam L1/metacyc.tsv --align structural --connectivity-fallback \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
             --out L1/pairs.parquet --out-status L1/status.tsv
@@ -193,7 +187,7 @@ def protocol(context: ExecutionContext):
         # "MetaCyc reaches 13,947 of 16,818" is only interpretable next to which 2,804
         # were declined and what each cost. MetaCyc has no package to ask, so its
         # RELEASE is the version -- the same one the drop-in is filed under.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool metacyc \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool metacyc \
             --version $MCVER \
             --file L1/metacyc.tsv L1/refused_residues.tsv L1/pairs.parquet \
                    L1/status.tsv
@@ -201,7 +195,7 @@ def protocol(context: ExecutionContext):
         # ---- L2: fuse the three pass-1 members ------------------------------------
         # All three are required inputs, so there is no "skip the absent one" branch to
         # write. If a member is to be dropped, it is dropped from the graph.
-        {py} {libdir}/aam_layers.py fuse \
+        {py} -m ecspr.bake.aam.layers fuse \
             --member rxnmapper={irxn.container} \
             --member localmapper={iloc.container} \
             --member indigo={iind.container} \
@@ -214,7 +208,7 @@ def protocol(context: ExecutionContext):
         # already recorded in the crosswalk and already tested by the balance gate that
         # let it through. Fusing rather than stamping `curated_recovery, 1.0` is what
         # makes a rescued row's provenance say which members actually spoke.
-        {py} {libdir}/aam_layers.py fuse \
+        {py} -m ecspr.bake.aam.layers fuse \
             --member rxnmapper={irxn_r.container} \
             --member localmapper={iloc_r.container} \
             --member indigo={iind_r.container} \
@@ -226,7 +220,7 @@ def protocol(context: ExecutionContext):
         # product path is content-addressed and says nothing about what is in it, so
         # collecting it directly would put an opaque filename in the evidence -- and the
         # evidence is the half a human reads.
-        {py} {libdir}/aam_layers.py stack \
+        {py} -m ecspr.bake.aam.layers stack \
             --layer metacyc=L1/pairs.parquet,curated,1.0 \
             --layer ensemble=L2/stack.parquet \
             --layer curation=L3/stack.parquet \
@@ -237,7 +231,7 @@ def protocol(context: ExecutionContext):
         # Every MNXR gets an outcome, including the ones no lane ever attempted. This is
         # what lets the tier-4 gate report a miss WITH ITS REASON instead of reporting a
         # number nobody can act on.
-        {py} {libdir}/aam_worklist.py close \
+        {py} -m ecspr.bake.aam.worklist close \
             --worklist {iwl.container} --pairs aam_pairs.parquet \
             --rescued {ires.container}/rescued.parquet \
             --out L3/ledger.parquet --out-summary L3/ledger_summary.tsv
@@ -248,14 +242,14 @@ def protocol(context: ExecutionContext):
         # rather than agreed on twice. `pairs` bakes AND selftests in one invocation and
         # exits non-zero on a failed round trip -- a merged pair of atoms RAISES the
         # network's conductance, so it reads downstream as an improvement.
-        {py} {libdir}/bake_metabolism.py pairs \
+        {py} -m ecspr.bake.metabolism pairs \
             --aam-pairs aam_pairs.parquet --reactions {irx.container} \
             --out-vocab {ivoc.container} --out-pairs {ienc.container}
 
         # The LEDGER is the half a human reads: what every reaction in the universe did,
         # next to the two fused layer tables that explain it. The crosswalk itself is
         # `aam_rescue`'s evidence, where it is produced.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool ensemble \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool ensemble \
             --file L2/stack.parquet L3/stack.parquet aam_pairs.parquet \
                    L3/ledger.parquet L3/ledger_summary.tsv
         mkdir -p {iev.container}

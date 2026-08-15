@@ -48,9 +48,7 @@ atom_ranks  = model.AddRequirement(lib.GetType("lookup::atom_ranks"))
 xrefs       = model.AddRequirement(lib.GetType("lookup::xrefs"))
 synonyms    = model.AddRequirement(lib.GetType("lookup::synonyms"))
 
-curation    = model.AddRequirement(lib.GetType("buildlib::aam_curation.py"))
-worklib     = model.AddRequirement(lib.GetType("buildlib::aam_worklist.py"))
-evidence    = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib     = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 out_rescue  = model.AddProduct(lib.GetType("interm::aam_rescue"))
 ev          = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -65,7 +63,7 @@ def protocol(context: ExecutionContext):
     iar  = context.Input(atom_ranks)
     ixr  = context.Input(xrefs)
     isy  = context.Input(synonyms)
-    ilib = context.Input(curation)
+    ilib = context.Input(bakelib)
     iout = context.Output(out_rescue)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -89,12 +87,12 @@ def protocol(context: ExecutionContext):
         {stage_lookups}
         mkdir -p rescue
 
-        {py} {libdir}/aam_curation.py propose --lookups _lookups \
+        {py} -m ecspr.bake.aam.curation propose --lookups _lookups \
             --worklist {iwl.container} \
             --chebi {ich.container} --modelseed {ims.container} \
             --out rescue/crosswalk.tsv
 
-        {py} {libdir}/aam_curation.py complete --lookups _lookups \
+        {py} -m ecspr.bake.aam.curation complete --lookups _lookups \
             --worklist {iwl.container} \
             --crosswalk rescue/crosswalk.tsv \
             --out rescue/rescued.parquet \
@@ -112,7 +110,7 @@ def protocol(context: ExecutionContext):
         # The CROSSWALK is the curation: the only place the assertions are written down,
         # each with the basis that warrants it and the lane that made it. Nothing else in
         # the build records what was CLAIMED, as against what survived the gates.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool rescue \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool rescue \
             --file rescue/crosswalk.tsv rescue/placeholders.tsv rescue/balance.tsv \
                    rescue/rescued.parquet
         mkdir -p {iev.container}

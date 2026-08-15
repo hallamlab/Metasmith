@@ -1,9 +1,11 @@
 """How a leaf gets its identity -- the one thing that decides cache reuse.
 
-A leaf's `instance_id` is `multihash(blake3(file_bytes) || relpath)` when the
-file is present at `AddItem` time, which is what makes two independent runs
-over identical inputs hit the same cache shards with no import step. Folding
-the relative path in is not decoration: pure content-addressing collapses every
+A leaf's `instance_id` is `multihash(blake3(content) || relpath)` when the leaf
+is present at `AddItem` time, which is what makes two independent runs over
+identical inputs hit the same cache shards with no import step. `content` is the
+file's bytes, or -- for a directory leaf such as a vendored python package or a
+profile database -- the recursive tree digest in `..caching.keys`. Folding the
+relative path in is not decoration: pure content-addressing collapses every
 degenerate-but-distinct input -- N empty files, byte-identical samples -- onto
 one id, which flattens fan-out and trips the solver's O(n^2) collision path.
 Absent or remote inputs fall back to a random per-call id and get no reuse. A
@@ -30,7 +32,7 @@ import time
 import uuid
 from pathlib import Path
 
-from ...caching.keys import content_multihash_key, multihash_key
+from ...caching.keys import content_multihash_key, multihash_key, tree_multihash_key
 from ...hashing import KeyGenerator
 from ..paths import is_deferred
 
@@ -39,14 +41,21 @@ class _LeafIdentity:
     def _mint_leaf_id(self, path: Path) -> str:
         """Create a leaf instance_id for `path`.
 
-        Cross-run reentrancy (R1): when the resolved path is a readable
-        regular file at mint time, the id is derived from the file's
-        content digest AND its library-relative path —
-        `multihash(blake3(file_bytes) || relpath)`. Two independent runs
-        that lay the same input bytes at the same relative path mint the
-        *same* leaf id, so their downstream cache_keys match and the second
-        run resumes from the cache without a manual `metasmith data
-        import-library` bridge.
+        Cross-run reentrancy (R1): when the resolved path is readable at
+        mint time, the id is derived from its content digest AND its
+        library-relative path — `multihash(blake3(content) || relpath)`.
+        Two independent runs that lay the same input bytes at the same
+        relative path mint the *same* leaf id, so their downstream
+        cache_keys match and the second run resumes from the cache without
+        a manual `metasmith data import-library` bridge.
+
+        A DIRECTORY is addressed the same way, over `tree_multihash_key`'s
+        recursive digest. It is the file arm's promise applied to a leaf
+        that happens to be a tree: a vendored package re-staged unchanged
+        keeps its id, so a library recompile stops discarding every cached
+        run that read it. Without it a directory fell to the random branch
+        below, which is why kofam's 27,757-file profile set has been
+        minting a fresh id per stage and losing reuse silently.
 
         The relative path is folded in (not content alone) so that two
         DISTINCT inputs which happen to share bytes — e.g. N empty/degenerate
@@ -56,14 +65,14 @@ class _LeafIdentity:
         the solver's O(n^2) id-collision path. Content is still part of the
         key, so a different file reusing a path can never cause a false hit.
 
-        When the file is absent/unreadable at mint time (remote or lazily
+        When the path is absent/unreadable at mint time (remote or lazily
         materialized inputs), we fall back to the legacy unique-per-call id
         (uuid4 + time_ns via the multihash encoding). Such leaves get no
         cross-run reuse — acceptable, and it preserves the old behaviour
-        exactly for the no-file case.
+        exactly for the no-content case.
 
         Set METASMITH_LEAF_RANDOM=1 to force the legacy random id even when
-        the file is present (opt-out kill-switch). The id is stored in
+        the leaf is present (opt-out kill-switch). The id is stored in
         self.instance_meta and returned. `origin` stays "leaf" either way —
         a content-addressed input is still a user-supplied leaf.
         """
@@ -91,10 +100,20 @@ class _LeafIdentity:
             except ValueError:
                 fold_path = path
             try:
+                content = None
                 if abs_path.is_file():
                     # content digest ⊕ library-relative path → stable across
                     # runs/hosts yet distinct per (path, content) pair.
                     content = content_multihash_key(abs_path)
+                elif abs_path.is_dir():
+                    # A directory leaf -- a vendored package, a profile database
+                    # -- used to fall straight through to the random branch, so
+                    # an unchanged tree got a new identity on every recompile
+                    # and threw away every cached run that had read it. The tree
+                    # digest is the same promise as the file one: same bytes at
+                    # the same relative layout, same id.
+                    content = tree_multihash_key(abs_path)
+                if content is not None:
                     fold = str(fold_path).encode("utf-8")
                     if self.fork_id:
                         # A fork is the user saying "treat these inputs as new"

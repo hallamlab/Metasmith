@@ -59,12 +59,7 @@ model = Transform()
 image     = model.AddRequirement(lib.GetType("env::dgbyg.env"))
 metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 
-driver    = model.AddRequirement(lib.GetType("buildlib::dir_drive.py"))
-member_db = model.AddRequirement(lib.GetType("buildlib::dir_thermo_dgbyg.py"))
-refdata   = model.AddRequirement(lib.GetType("buildlib::dir_refdata.py"))
-canon_m   = model.AddRequirement(lib.GetType("buildlib::dir_canon.py"))
-sharder   = model.AddRequirement(lib.GetType("buildlib::aam_shard.py"))
-evidence  = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib   = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 out_db    = model.AddProduct(lib.GetType("interm::direction_member_dgbyg"))
 ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -94,7 +89,7 @@ RESOLVE = """
 
 def protocol(context: ExecutionContext):
     imnx = context.Input(metanetx)
-    ilib = context.Input(driver)
+    ilib = context.Input(bakelib)
     iout = context.Output(out_db)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -111,7 +106,7 @@ def protocol(context: ExecutionContext):
         # Recomputed rather than passed -- see equilibrator.py. Same release, same code,
         # same list; a shared node between two independent members would only serialise
         # them.
-        {py} {libdir}/dir_drive.py universe --reac-prop $MNX/reac_prop.tsv \
+        {py} -m ecspr.bake.direction.drive universe --reac-prop $MNX/reac_prop.tsv \
             --out _universe.json
         mkdir -p members
 
@@ -122,7 +117,7 @@ def protocol(context: ExecutionContext):
         # the shell fails at the end of the lane rather than at import.
         pids=""
         for i in $(seq 0 {SHARDS - 1}); do
-            {py} {libdir}/dir_drive.py eval --member dgbyg --require \
+            {py} -m ecspr.bake.direction.drive eval --member dgbyg --require \
                 --universe _universe.json --shard $i/{SHARDS} \
                 --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
                 --out members/dgbyg_$i.parquet &
@@ -140,7 +135,7 @@ def protocol(context: ExecutionContext):
         # The merge is this lane's completeness proof, which is why it is handed the
         # universe rather than just the tables: eight files that parse is not the same
         # claim as eight files that add up to what was asked about.
-        {py} {libdir}/dir_drive.py merge --member dgbyg \
+        {py} -m ecspr.bake.direction.drive merge --member dgbyg \
             --shard-file members/dgbyg_*.parquet --expect {SHARDS} \
             --universe _universe.json --out {iout.container}
 
@@ -150,7 +145,7 @@ def protocol(context: ExecutionContext):
         # PER-SHARD tables as well as the merged one -- the reasons are what separate the
         # guard firing from the model failing, and a shard that abstained on everything is
         # only visible before the concatenation.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool dgbyg \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool dgbyg \
             --file _universe.json members/dgbyg_*.parquet {iout.container}
         mkdir -p {iev.container}
         cp -r _ev/. {iev.container}/

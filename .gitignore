@@ -94,6 +94,14 @@ std_assembly_data
 /src/metasmith_libraries/transforms/*/_metadata/
 /src/fabfos/algorithm/_metadata/
 
+# The vendored copy of src/ecspr that build_references/build.sh stages as
+# `buildlib::ecspr`. Generated from the source tree immediately before the
+# metadata compile, so committing it would be committing a second copy of a
+# package this repository already holds -- and one that can disagree with it.
+# build_references/_metadata IS tracked; this is the one build product under it
+# that is not.
+/src/fabfos/build_references/resources/buildlib/ecspr/
+
 # A deployed agent home is a build product of running something, not repo
 # content. `/msm_home/` is the current spelling and the one the ignore rules
 # missed -- they named two older ones. The tests' own home sits one directory

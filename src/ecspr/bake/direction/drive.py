@@ -41,8 +41,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from aam_shard import parse_spec, shard_of
-from dir_refdata import load_mnxr_stoich, load_mnxm_props
+from ..aam.shard import parse_spec, shard_of
+from .refdata import load_mnxr_stoich, load_mnxm_props
 
 MEMBER_COLS = ("mnxr", "dg", "sigma", "flag", "reason")
 
@@ -75,9 +75,9 @@ def cmd_eval(args):
     # "The member is not usable in this environment" is one fact however it presents.
     try:
         if args.member == "eq":
-            from dir_thermo_eq import EquilibratorMember as M
+            from .thermo_eq import EquilibratorMember as M
         else:
-            from dir_thermo_dgbyg import DgbygMember as M
+            from .thermo_dgbyg import DgbygMember as M
     except (ImportError, SyntaxError) as e:
         # --require is for a DEDICATED LANE, whose only product is this table. There, an
         # unusable member is a failed step; writing an empty table would publish silence
@@ -174,7 +174,7 @@ def cmd_merge(args):
     return 0
 
 
-def parse_args():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -208,7 +208,7 @@ def parse_args():
                    help="the list the shards were drawn from; the merge refuses unless "
                         "they reconstitute it exactly.")
     p.add_argument("--out", required=True)
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
 if __name__ == "__main__":

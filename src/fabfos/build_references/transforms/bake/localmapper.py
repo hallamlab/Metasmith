@@ -66,10 +66,7 @@ worklist  = model.AddRequirement(lib.GetType("interm::aam_worklist"))
 # constraint the role implies: a gap-filler that runs first fills the whole universe.
 m_indigo  = model.AddRequirement(lib.GetType("interm::aam_member_indigo"))
 m_rxn     = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper"))
-neural    = model.AddRequirement(lib.GetType("buildlib::aam_neural_members.py"))
-sharder   = model.AddRequirement(lib.GetType("buildlib::aam_shard.py"))
-extractor = model.AddRequirement(lib.GetType("buildlib::ecspr_atom_pairs.py"))
-evidence  = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib   = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 pairs     = model.AddProduct(lib.GetType("interm::aam_member_localmapper"))
 ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -106,7 +103,7 @@ def protocol(context: ExecutionContext):
     iwl  = context.Input(worklist)
     iind = context.Input(m_indigo)
     irxn = context.Input(m_rxn)
-    ilib = context.Input(neural)
+    ilib = context.Input(bakelib)
     iout = context.Output(pairs)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -131,7 +128,7 @@ def protocol(context: ExecutionContext):
 
         pids=""
         for i in $(seq 0 {SHARDS - 1}); do
-            {py} {libdir}/aam_neural_members.py --member {MEMBER} \
+            {py} -m ecspr.bake.aam.neural_members --member {MEMBER} \
                 --worklist {iwl.container} \
                 --covered {iind.container} {irxn.container} \
                 --shard $i/{SHARDS} --timeout {TIMEOUT_S} \
@@ -161,10 +158,10 @@ def protocol(context: ExecutionContext):
         for i in $(seq 0 {SHARDS - 1}); do
             shards="$shards members/{MEMBER}_$i.tsv"
         done
-        {py} {libdir}/aam_neural_members.py --member {MEMBER} \
+        {py} -m ecspr.bake.aam.neural_members --member {MEMBER} \
             --merge-from $shards \
             --out members/{MEMBER}.tsv
-        {py} {libdir}/ecspr_atom_pairs.py extract \
+        {py} -m ecspr.bake.atom_pairs extract \
             --aam members/{MEMBER}.tsv --align strict --fallback-forced \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
             --out {iout.container} --out-status members/{MEMBER}_status.tsv
@@ -172,7 +169,7 @@ def protocol(context: ExecutionContext):
         # The per-shard caches, sidecars AND timeout logs are all evidence. The timeout
         # log is the only thing separating "LocalMapper declined" from "LocalMapper ran
         # out of budget", because unlike a hang a timeout writes a row.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool {MEMBER} \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool {MEMBER} \
             --file members/{MEMBER}.tsv members/{MEMBER}_*.tsv \
                    members/{MEMBER}_*.attempted members/{MEMBER}_*.timeouts \
                    members/{MEMBER}_status.tsv {iout.container}

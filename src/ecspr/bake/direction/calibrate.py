@@ -31,8 +31,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from dir_refdata import load_mnxr_stoich, load_mnxm_props
-from dir_thermo_eq import EquilibratorMember
+from .refdata import load_mnxr_stoich, load_mnxm_props
+from .thermo_eq import EquilibratorMember
 
 MAD_K = 1.4826  # MAD -> robust sigma for a normal
 
@@ -198,7 +198,7 @@ def sanity(cal: pd.DataFrame, points: pd.DataFrame):
     print(f"[tractable] eQ reason breakdown:\n{points['reason'].value_counts().to_string()}")
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--curated", required=True, help="curated per-MNXR parquet (T2)")
     ap.add_argument("--reac-prop", required=True)
@@ -213,7 +213,7 @@ def main():
     ap.add_argument("--out-calibration", required=True)
     ap.add_argument("--out-points", required=True)
     ap.add_argument("--limit", type=int, default=None, help="cap eQ reactions (testing)")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     if a.eq_member:
         points = points_from_member(Path(a.curated), Path(a.reac_prop), Path(a.eq_member))
     elif a.chem_prop:

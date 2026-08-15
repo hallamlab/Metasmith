@@ -50,7 +50,6 @@ metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 pairs     = model.AddRequirement(lib.GetType("ref::atom_pairs"))
 vocab     = model.AddRequirement(lib.GetType("ref::metabolism_vocab"))
 direction = model.AddRequirement(lib.GetType("ref::direction_ratios"))
-encoding  = model.AddRequirement(lib.GetType("buildlib::refs_encoding.py"))
 # What `in_atom_universe` MEANS for a benchmark row, shared with the study tier so the
 # two cannot answer the same question differently. It is the bake's coverage less
 # transport; see the module for why the filter is here and not at the bake.
@@ -129,10 +128,11 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-sys.path.insert(0, os.path.dirname("{encoding}"))
 sys.path.insert(0, os.path.dirname("{universe_m}"))
+# Both halves come from the installed ecspr: `model` builds the network, `bake`
+# reads the compiled tables. Only bench_universe is still a staged flat file.
 from ecspr.model.build import crosswalk_gem, load_model
-import refs_encoding as refs
+from ecspr.bake import encoding as refs
 import bench_universe as bu
 
 GENOMES = Path("{genomes}")
@@ -320,7 +320,6 @@ print(f"[gem_gpr] {{len(summary)}} hosts -> {{OUT}}/hosts/<host>/gpr_gem.parquet
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
     driver = DRIVER.format(
-        encoding=context.Input(encoding).container,
         universe_m=context.Input(universe_m).container,
         genomes=context.Input(genomes).container,
         metanetx=context.Input(metanetx).container,

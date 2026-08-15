@@ -12,14 +12,14 @@ SEE is a different thing from a gap you cannot. A reference that covers less tha
 hoped is a NOTE; a reference that disagrees with itself is a FAILURE. Only the second
 exits non-zero.
 
-The load-bearing check is the equivalence one. ``bake_metabolism``'s own selftest proves
+The load-bearing check is the equivalence one. ``ecspr.bake.metabolism``'s own selftest proves
 the encoding round-trips row by row; this proves the encoded tables BUILD THE SAME GRAPH
 as the reference builder does from the string tables -- same nodes, same edge count, same
 conductances, per element. Those are different claims: a bake can round-trip perfectly and
 still be joined wrongly at compile time, and the resulting graph is plausible rather than
 broken.
 
-The constants check exists for a subtler reason. ``buildlib::dir_canon`` is a copy of
+The constants check exists for a subtler reason. ``ecspr.bake.direction.canon`` is a copy of
 ``src/fabfos/canon.py``'s ``DIR_*`` block, because the direction ensemble runs in a conda
 env that has no import path to the fabfos package. Two copies of a constant drift, and
 this pair drifts silently: one COMPUTES a ratio and the other VALIDATES a table carrying
@@ -39,12 +39,12 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[3]
 MLIB = REPO / "src" / "metasmith_libraries"
 BREF = Path(__file__).resolve().parent
-sys.path.insert(0, str(BREF / "resources" / "buildlib"))
-# The ECSPr engine is an installed package now, not a staged file: nothing is added
-# to sys.path for it, and an ImportError below means the env lacks `ecspr` rather
-# than that a path was wrong.
+# Both halves of what this gate compares now come from one package: `ecspr.bake` is
+# the build method and `ecspr.model` is the run-side consumer it is checked against.
+# Nothing is added to sys.path -- an ImportError below means the env lacks `ecspr`
+# rather than that a path was wrong.
 
-import refs_encoding as refs  # noqa: E402
+from ecspr.bake import encoding as refs  # noqa: E402
 
 FAILURES: list[str] = []
 
@@ -101,7 +101,7 @@ def check_equivalence(ident: dict, vocab_p: Path, pairs_p: Path, dir_p: Path,
     """The compiled tables must build the same graph as the reference builder.
 
     ``ecspr.model.build.graph_from_pairs`` works on the STRING tables and is the definition;
-    ``refs_encoding.compile_atom_graph`` works on the compiled ones and is the thing being
+    ``ecspr.bake.encoding.compile_atom_graph`` works on the compiled ones and is the thing being
     checked. Node ORDER differs -- the baked table is sorted, so first-seen order differs
     -- which is why nodes are compared as sets and conductances sorted before comparison.
     """
@@ -161,7 +161,7 @@ def check_direction_constants() -> None:
     """
     print("\nconstants -- the direction ensemble's two copies agree")
     try:
-        import dir_canon
+        from ecspr.bake.direction import canon as dir_canon
         sys.path.insert(0, str(REPO / "src"))
         from fabfos import canon
     except Exception as e:                                       # pragma: no cover

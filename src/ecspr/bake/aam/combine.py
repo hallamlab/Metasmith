@@ -61,16 +61,14 @@ from pathlib import Path
 
 import pandas as pd
 
-# Siblings in buildlib:: -- the transform's driver puts this directory on sys.path, the
-# same way functionalAnnotation/gpr_4lane.py reaches lib::fabfos_evidence.py. The
-# extractor in particular is deliberately shared: every member's correspondence has to be
-# expressed in ONE identity, (metabolite, CanonicalRankAtoms(breakTies=True)), or two
-# mappers stop naming the same physical atom the same node while every table still looks
-# well-formed.
-from ecspr_atom_pairs import (ELEMENTS, load_equations, parse_equation,       # noqa: E402,F401
-                              load_mnxm_smiles, canon_smiles, pairs_from_mapped,
-                              load_placeholders, load_resolved, load_balance)
-from aam_metacyc_member import load_member as load_metacyc                    # noqa: E402
+# The extractor is deliberately shared rather than reimplemented per member: every
+# member's correspondence has to be expressed in ONE identity, (metabolite,
+# CanonicalRankAtoms(breakTies=True)), or two mappers stop naming the same physical atom
+# the same node while every table still looks well-formed.
+from ..atom_pairs import (ELEMENTS, load_equations, parse_equation,           # noqa: F401
+                          load_mnxm_smiles, canon_smiles, pairs_from_mapped,
+                          load_placeholders, load_resolved, load_balance)
+from .metacyc_member import load_member as load_metacyc
 
 # --- ensemble tunables (committed before the run; would graduate to canon.py the way
 #     DIR_TAU_SHARED did once the ensemble is canonical -- provisional, so kept local). ---
@@ -223,15 +221,15 @@ def build(members_src: dict, parsed: dict, canon: dict):
         status={k: dict(v) for k, v in status_counts.items()}))
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     # No default paths. The originals pointed at a sibling project's scratch cache and at
     # its data tree; here every input is staged by the planner and named explicitly.
     ap.add_argument("--rxnmapper", type=Path, required=True,
-                    help="the RXNMapper member's cached tsv (aam_neural_members.py --out)")
+                    help="the RXNMapper member's cached tsv (neural_members --out)")
     ap.add_argument("--localmapper", type=Path, required=True,
-                    help="the LocalMapper member's cached tsv (aam_neural_members.py --out)")
+                    help="the LocalMapper member's cached tsv (neural_members --out)")
     ap.add_argument("--mcs", type=Path, default=None,
                     help="the structural MCS member's cached tsv (mcs_member.py --out): a "
                          "fourth, INDEPENDENT (undiscounted) member. Its atoms are named "
@@ -262,7 +260,7 @@ def main():
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--overlap-only", action="store_true",
                     help="restrict to reactions BOTH neural members cover (the demonstration set)")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     # Ordered member map: neural pair first, curated last (order only affects report layout
     # and the deterministic source string, never the fusion result).

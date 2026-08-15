@@ -59,7 +59,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-import refs_encoding as refs
+from . import encoding as refs
 
 
 def _say(msg=""):
@@ -563,7 +563,7 @@ def cmd_direction(args):
     return selftest_direction(Path(args.direction), Path(args.vocab), Path(args.out))
 
 
-def parse_args():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -591,7 +591,7 @@ def parse_args():
                    help="ref::metabolism_vocab from the AAM assembly. This step does not "
                         "mint a vocabulary -- it inherits one, identity block and all.")
     p.add_argument("--out", required=True)
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
 if __name__ == "__main__":
