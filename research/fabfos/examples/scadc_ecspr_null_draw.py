@@ -1,8 +1,8 @@
 """Null-draw sampler + solver for the SCADC ECSPr significance test (plan T2).
 
 Draws ORFs from the metagenome pool, resolves them to {mnxr: E} via the SAME
-per-ORF conservation weights (`ecspr.evidence.per_unit_weights`) and solves on
-the SAME atom-resolved engine (`ecspr.build`/`ecspr.graph`) that produced
+per-ORF conservation weights (`ecspr.model.evidence.per_unit_weights`) and solves on
+the SAME atom-resolved engine (`ecspr.model.build`/`ecspr.model.graph`) that produced
 `data/fabfos/runs/scadc_ecspr/results.parquet` -- never the retired SMW star solver. Host
 GEM weights are added on top of every draw exactly as `scadc_ecspr.py` adds
 them on top of each observed unit's weights.
@@ -175,9 +175,9 @@ def main():
         # PARENT is what goes on sys.path -- `ecspr` is a package now, not four
         # loose modules.
         sys.path.insert(0, str(Path(a.lib_dir).resolve().parent))
-    from ecspr.build import load_pairs, load_direction_ratios, graph_from_pairs
-    from ecspr.evidence import per_unit_weights
-    from ecspr.graph import Terminal, solve
+    from ecspr.model.build import load_pairs, load_direction_ratios, graph_from_pairs
+    from ecspr.model.evidence import per_unit_weights
+    from ecspr.model.graph import Terminal, solve
 
     pairs = load_pairs(a.pairs, element=ELEMENT)
     ratios = load_direction_ratios(a.ratios)

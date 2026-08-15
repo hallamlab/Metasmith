@@ -15,14 +15,17 @@ build-backend = "setuptools.build_meta"
 name = "ecspr"
 dynamic = ["version"]
 description = "Atom-resolved conductance measurement over metabolic GPR tables"
-requires-python = ">=3.12"
+# The floor is the direction stack's, not the measurement layer's: `ecspr.bake`
+# runs inside images pinned at 3.11, and a floor above them makes the package
+# uninstallable exactly where the bake needs it.
+requires-python = ">=3.11"
 license = { text = "GPL-3.0" }
 
 [project.scripts]
 ecspr = "ecspr.cli:main"
 
 [tool.setuptools]
-packages = ["ecspr", "ecspr.commands"]
+packages = ["ecspr", "ecspr.commands", "ecspr.model"]
 
 [tool.setuptools.package-dir]
 ecspr = "."

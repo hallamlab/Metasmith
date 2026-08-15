@@ -165,7 +165,7 @@ and `data/fabfos/originals/metanetx` checked out, and both submodules initialise
 `digitize_fig1.py` needs none of that — only the acquisition chunk and an env with pypdf
 and Pillow: `mamba run -n figure-net python main/benchmarks/eydallin/digitize_fig1.py`.
 
-`bake_pairs.py` decodes the bake into the schema `ecspr.build.load_pairs` reads. Handing
+`bake_pairs.py` decodes the bake into the schema `ecspr.model.build.load_pairs` reads. Handing
 that loader the encoded table does not raise — the element filter compares ints to `"C"`
 and returns zero rows — so the graph comes back empty rather than obviously wrong. Clear
 `cache/*.parquet` after a bake repin.

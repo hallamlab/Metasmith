@@ -23,8 +23,8 @@
 # installs it EDITABLE from `src/ecspr` instead, exactly as `./dev.sh --iecspr` does for
 # the `ecspr` env -- and editable is the better answer here anyway, since this env and a
 # benchmark then run the same source tree. `scipy` stays listed because it arrived as an
-# ecspr dependency: `ecspr.build` re-exports the solver at module scope, so importing the
-# crosswalk pulls in `ecspr.graph`.
+# ecspr dependency: `ecspr.model.build` re-exports the solver at module scope, so importing the
+# crosswalk pulls in `ecspr.model.graph`.
 name: build-refs-cobra
 channels:
   - conda-forge

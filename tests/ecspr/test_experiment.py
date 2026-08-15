@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ecspr import conditions as cond_mod
-from ecspr import nulls, probes, scoring
-from ecspr.gpr import condition_weights, load_gpr
+from ecspr.model import conditions as cond_mod
+from ecspr.model import nulls, probes, scoring
+from ecspr.model.gpr import condition_weights, load_gpr
 
 HOST = "iML1515"
 

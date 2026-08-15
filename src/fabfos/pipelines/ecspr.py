@@ -24,7 +24,7 @@ compared against integers, matches nothing, and an empty graph is measured.
 A COMPOSED PAIR TABLE IS NOT NETWORK-AGNOSTIC, and that is the one place this
 driver's shape is decided by something other than the type contract. The
 reference parquets are shared because they are static functions of the
-MNXR/MNXM id space. A community network built by ``ecspr.compose`` is not: it
+MNXR/MNXM id space. A community network built by ``ecspr.model.compose`` is not: it
 carries organism-prefixed metabolite ids and bridge rows that mean nothing to
 any other network. Rather than pin the reference type per-experiment -- which
 would change the measurement transform and weaken a contract that is right for

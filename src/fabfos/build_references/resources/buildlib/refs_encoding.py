@@ -69,7 +69,7 @@ Orientation
 -----------
 ``atom_pairs`` stores tail/head exactly as the source table writes substrate/product.
 The ``ratio > 1`` edge flip stays a consumer-side operation (see
-``ecspr.build.graph_from_pairs``): 10,485 of the 83,796 ratios exceed 1, so a bake that
+``ecspr.model.build.graph_from_pairs``): 10,485 of the 83,796 ratios exceed 1, so a bake that
 pre-flipped would double-apply against a consumer that also flips, silently restoring
 the unfavoured direction.
 
@@ -78,7 +78,7 @@ Build side, not run side
 This module lives in ``buildlib::`` because everything that calls it today compiles a
 reference. :func:`compile_atom_graph` is the exception in kind -- it READS a finished
 bake -- and it is here because the reference gate is what calls it, to check the compiled
-tables against ``ecspr.build.graph_from_pairs`` on the string tables. When a run-side
+tables against ``ecspr.model.build.graph_from_pairs`` on the string tables. When a run-side
 transform first needs to read a bake, that half moves to ``lib::``; until then, shipping
 it in the wheel would ship a reader nothing calls.
 """
@@ -413,7 +413,7 @@ def compile_atom_graph(element: str, weights: dict, *, ident: dict, vocab: Vocab
                        ratio_lut: np.ndarray | None = None, meta: dict | None = None):
     """Build one element's :class:`AtomGraph` from the baked tables.
 
-    Semantically identical to ``ecspr.build.graph_from_pairs`` -- same edge definition,
+    Semantically identical to ``ecspr.model.build.graph_from_pairs`` -- same edge definition,
     same ``ratio > 1`` flip, same parallel-edge summation, same drop of zero-conductance
     and self-loop rows -- but the join, the flip and the edge factorisation all happen on
     integers, and metabolite symbols are decoded only for the surviving unique nodes.
@@ -430,7 +430,7 @@ def compile_atom_graph(element: str, weights: dict, *, ident: dict, vocab: Vocab
     Node *order* differs from ``graph_from_pairs`` (the baked table is sorted, so
     first-seen order differs); node and edge *counts*, and every conductance, do not.
     """
-    from ecspr.graph import AtomGraph  # deferred: only the compile path needs scipy
+    from ecspr.model.graph import AtomGraph  # deferred: only the compile path needs scipy
 
     ecode = vocab.codes("element")[element]
     pairs = pairs[pairs["element"].to_numpy() == ecode]

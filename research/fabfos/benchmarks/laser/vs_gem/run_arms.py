@@ -35,9 +35,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[5] / "src"))
 import common as C  # noqa: E402
 import bridge  # noqa: E402
-import ecspr.build as EB  # noqa: E402
-import ecspr.evidence as EV  # noqa: E402
-from ecspr.graph import Terminal, measure_leak  # noqa: E402
+import ecspr.model.build as EB  # noqa: E402
+import ecspr.model.evidence as EV  # noqa: E402
+from ecspr.model.graph import Terminal, measure_leak  # noqa: E402
 
 LOG = logging.getLogger("run_arms")
 ARMS = ("gem", "denovo_ev", "denovo_uni")

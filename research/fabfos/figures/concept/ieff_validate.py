@@ -4,7 +4,7 @@ Three checks, in order of what they protect:
 
 **Conservation.** Re-solves a sample of sources and confirms the current leaving through
 OMEGA is the ampere that was injected, and that this module's ``bincount`` attribution
-reproduces ``ecspr.build.reaction_currents`` -- the library function the earlier probe
+reproduces ``ecspr.model.build.reaction_currents`` -- the library function the earlier probe
 figures used. An attribution bug would not show up as a wrong-looking figure; it would show
 up as a plausible one.
 
@@ -50,7 +50,7 @@ def overlap(A, B, k):
 def conservation(scale, n=6, leak=1e-6, gpr_table=None):
     """Per source: current out through OMEGA against the ampere injected, the KCL residual
     at every interior node, and this module's ``bincount`` attribution against the exact
-    expression ``ecspr.build.reaction_currents`` evaluates (a pandas groupby over the same
+    expression ``ecspr.model.build.reaction_currents`` evaluates (a pandas groupby over the same
     provenance rows). The library function itself takes a ``Solution``, whose edge currents
     come through terminal contraction; the universal-ground sweep never contracts, so the
     comparison is against the formula rather than a hand-built Solution object."""

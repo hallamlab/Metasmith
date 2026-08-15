@@ -731,9 +731,9 @@ about this community rests on, and `research/fabfos/examples/nostoc_ecspr_verify
 
 **`ecspr/networks/*/conditions_*.parquet` are readable history, not inputs.** They are the
 pre-split shape: one row per (condition, *sink*), with a `mode` column the two transforms
-filtered on themselves — 92 rows for the NOS singleton. `ecspr.conditions.read` has no
+filtered on themselves — 92 rows for the NOS singleton. `ecspr.model.conditions.read` has no
 `mode` and reads every row as its own condition, so those 92 become 92 one-sink ground
-solves where `ecspr.compose.make_conditions` now intends four, one per element, each
+solves where `ecspr.model.compose.make_conditions` now intends four, one per element, each
 naming every precursor at once. Nothing raises; the numbers are just a different
 measurement. `nostoc_ecspr.py --compose` writes the current shape beside them and
 `check_conditions` refuses the old one, which is the only thing standing between a re-run

@@ -131,7 +131,7 @@ import pyarrow.parquet as pq
 
 sys.path.insert(0, os.path.dirname("{encoding}"))
 sys.path.insert(0, os.path.dirname("{universe_m}"))
-from ecspr.build import crosswalk_gem, load_model
+from ecspr.model.build import crosswalk_gem, load_model
 import refs_encoding as refs
 import bench_universe as bu
 

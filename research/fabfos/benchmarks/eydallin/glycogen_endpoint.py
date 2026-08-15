@@ -29,8 +29,8 @@ sys.path.insert(0, str(ROOT / "src/ecspr"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import bake_pairs  # noqa: E402
-from ecspr.build import graph_from_pairs, load_direction_ratios, load_pairs  # noqa: E402
-from ecspr.graph import Terminal, solve  # noqa: E402
+from ecspr.model.build import graph_from_pairs, load_direction_ratios, load_pairs  # noqa: E402
+from ecspr.model.graph import Terminal, solve  # noqa: E402
 
 HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
 

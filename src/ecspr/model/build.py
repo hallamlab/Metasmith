@@ -1,4 +1,4 @@
-"""Build an :class:`ecspr.graph.AtomGraph` -- from atom pairs, from a GEM, or from a GPR.
+"""Build an :class:`ecspr.model.graph.AtomGraph` -- from atom pairs, from a GEM, or from a GPR.
 
 Three builders, one output. Everything downstream measures the same object, so what a
 number means is decided entirely by which reaction set went in and with what conductance.

@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 
 # Diagnostics ride in the results table under a leading underscore; scoring is
-# about measurements and steps over them. See :mod:`ecspr.probes`.
+# about measurements and steps over them. See :mod:`ecspr.model.probes`.
 DIAG_PREFIX = "_"
 KEY = ("probe", "orientation", "element", "readout")
 
@@ -76,7 +76,7 @@ def score(observed: pd.DataFrame, null: pd.DataFrame, *, baseline: str,
           conditions=None) -> pd.DataFrame:
     """One row per observed measurement, scored against the null pool.
 
-    ``conditions`` (a list of :class:`ecspr.conditions.Condition`) supplies
+    ``conditions`` (a list of :class:`ecspr.model.conditions.Condition`) supplies
     ``is_control`` and the ``n_units`` stratum. Without it, scoring is global only
     and says so by leaving the stratum columns empty.
     """

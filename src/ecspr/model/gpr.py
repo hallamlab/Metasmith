@@ -26,7 +26,7 @@ TWO WEIGHTINGS, ONE SHAPE
 Both are a sum over the UNITS a mask selected, differing only in what a unit
 contributes to a reaction:
 
-  * ``belief``  -- :mod:`ecspr.evidence`'s belief-conserving allocation, so each
+  * ``belief``  -- :mod:`ecspr.model.evidence`'s belief-conserving allocation, so each
     feature's total nomination is 1.0 spread across the reactions it nominates.
     The evidence lane: a promiscuous annotation must not out-vote a specific one.
   * ``uniform`` -- 1.0 per unit that nominates the reaction at all. The curated-GEM
@@ -44,7 +44,7 @@ from .evidence import per_unit_weights
 
 WEIGHTINGS = ("belief", "uniform")
 
-# The long GPR schema's own names, mapped onto the ones `ecspr.evidence` speaks.
+# The long GPR schema's own names, mapped onto the ones `ecspr.model.evidence` speaks.
 # `feature_id` is null on curated rows (a curated set names a construct, not an
 # ORF), so the fallback chain is what keeps belief conservation per-construct there
 # instead of collapsing every curated row onto one null "ORF".
@@ -95,7 +95,7 @@ def apply_mask(df: pd.DataFrame, *, background_column=None, background_values=()
 
 
 def _normalise(df: pd.DataFrame) -> pd.DataFrame:
-    """Rename the long GPR schema onto the column names `ecspr.evidence` reads."""
+    """Rename the long GPR schema onto the column names `ecspr.model.evidence` reads."""
     out = df.copy()
     orf = None
     for c in _ORF_FALLBACK:

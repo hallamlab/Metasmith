@@ -7,7 +7,7 @@
     python research/fabfos/examples/nostoc_ecspr.py --run --only NOS-ERY_bl-on   # one network
 
     {NOS,ERY,RHI} gpr_4lane + the reference bake
-        -> ecspr.compose  -> per-network atom_pairs + direction + gpr + conditions
+        -> ecspr.model.compose  -> per-network atom_pairs + direction + gpr + conditions
         -> ecspr_measure  -> ecspr::results
 
 WHAT `a -> b` MEANS. Glucose is injected into member `a`'s private copy of the network
@@ -69,8 +69,8 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "src"))
 
-import ecspr.compose as ec  # noqa: E402
-import ecspr.conditions as econd  # noqa: E402
+import ecspr.model.compose as ec  # noqa: E402
+import ecspr.model.conditions as econd  # noqa: E402
 
 # The bake is stored CODED and the graph builder reads the string schema, so it is
 # decoded before use -- see `benchmarks/eydallin/bake_pairs.py`, which owns that decode
@@ -260,7 +260,7 @@ def check_conditions(path: Path) -> None:
     guard and not a comment. The staged sets in the pinned `nostoc/ecspr` chunk are one
     row per (condition, SINK) with a `mode` column -- 92 rows for the NOS singleton --
     because the transforms that consumed them filtered on `mode` themselves.
-    `ecspr.conditions.read` has no `mode`: it reads every row as its own Condition, so
+    `ecspr.model.conditions.read` has no `mode`: it reads every row as its own Condition, so
     those 92 rows become 92 one-sink ground solves where today's `make_conditions`
     intends 4, one per element, each naming every precursor at once. Nothing raises. The
     numbers are simply a different measurement.
