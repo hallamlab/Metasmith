@@ -15,13 +15,14 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads_arg = "" if threads is None else f"--nproc {threads}"
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             mkdir -p {iout.container}
             metaphlan --install --bowtie2db {iout.container} {threads_arg}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{out: iout.local}],
         success=iout.local.exists(),

@@ -22,16 +22,17 @@ def protocol(context: ExecutionContext):
     # which is set using the "ext" property of the type
     # so both of these are needed, dispite having identical protocols.
     # The input types differ!
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f'''
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f'''
         reformat.sh \
             in1="{ir1.container}" \
             in2="{ir2.container}" \
             out=stdout.fq \
         | pigz {threads} > {iout.container}
         '''
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     return ExecutionResult(
         manifest=[{
             out: iout.local

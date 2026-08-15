@@ -196,8 +196,10 @@ def _plan_reads_to_ecspr(work: Path):
     transforms = [
         TransformInstanceLibrary.Load(MLIB / "transforms" / d)
         # the GPR mappers AND the measurement live in the fabfos domain, the run
-        # tools in functionalAnnotation, prodigal in metagenomics
-        for d in ("assembly", "fabfos", "metagenomics", "functionalAnnotation")
+        # tools in functionalAnnotation, prodigal in metagenomics, and the ORF
+        # chunker three of the four annotation lanes now feed from in logistics
+        for d in ("assembly", "fabfos", "metagenomics", "functionalAnnotation",
+                  "logistics")
     ]
 
     # the lineage chain is the seam: inserts -> orfs -> gpr table -> measurement.

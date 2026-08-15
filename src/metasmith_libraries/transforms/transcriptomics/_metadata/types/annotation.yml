@@ -125,6 +125,12 @@ types:
   card_db:
     properties:
     - CARD database loaded into the RGI image (card.json + wildcard, post rgi load)
+  clean_predictions:
+    properties:
+      Format: TSV
+      _:
+      - CLEAN contrastive EC predictions (Query ID, Predicted EC number, clean_score)
+      ext: tsv
   crassphage_coverage:
     properties:
       Format: TSV
@@ -248,6 +254,24 @@ types:
       _:
       - ESM-C sequence index
       ext: csv
+  esm_c_layer_means:
+    properties:
+      Format: NumPy .npy
+      _:
+      - 'Per-layer mean hidden states from ESM-C 600M -- layers 34, 35 and 36, each
+        1152-dim, stacked (n_sequences, 3, 1152) and keyed by esm_c_index. This is
+        a SEPARATE product from esm_c_embeddings because it is a different tensor:
+        that one is the normalised final output, these are the raw per-block hidden
+        states EZpred''s heads were trained on (`repr_layers: [34, 35, 36]` in its
+        own settings.py). Feeding the final embedding in their place gives the heads
+        one third of their features, from the wrong tensor.'
+      ext: npy
+  ezpred_predictions:
+    properties:
+      Format: CSV
+      _:
+      - EZpred DL-only EC-head predictions (sequence_id, ec_number, score, head_kind)
+      ext: csv
   feast_proportions:
     properties:
       Format: TSV
@@ -257,6 +281,23 @@ types:
   feast_sources:
     properties:
     - FEAST external source community profiles (gut/livestock/wildlife/soil/freshwater)
+  gpr_table:
+    properties:
+      Format: Parquet
+      _:
+      - Gene-attributed GPR evidence table (long-format, one row per source x ORF
+        x channel x intermediate x MNXR); the canonical chosen-4 lane set. Schema
+        in lib::fabfos_evidence.py::SCHEMA_COLS
+      ext: parquet
+      lane_set: chosen_4
+  gpr_table_7lane:
+    properties:
+      Format: Parquet
+      _:
+      - GPR table from the full 7 lanes (kofam, CLEAN, DeepEC, EZpred, uniref50, ProteinBERT,
+        ESM-C)
+      ext: parquet
+      lane_set: full_7
   instrain_compare:
     properties:
     - inStrain compare output (cross-sample popANI / strain sharing over the shared

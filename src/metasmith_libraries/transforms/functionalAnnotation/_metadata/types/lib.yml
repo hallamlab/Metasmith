@@ -13,6 +13,14 @@ types:
     properties:
       src: extract_noncoding_chunks
       usage: command line
+  fabfos_embed_transfer.py:
+    properties:
+      src: fabfos_embed_transfer
+      usage: command line
+  fabfos_evidence.py:
+    properties:
+      src: fabfos_evidence
+      usage: command line
   hierarchical_clustering.py:
     properties:
       src: hierarchical_clustering

@@ -13,4 +13,4 @@ rendering, and running.
 # method must not require importing metasmith. ``tests/test_domains.py`` is what
 # keeps it honest -- add a domain to a driver and that test fails until this
 # list follows.
-DOMAINS = ["assembly", "fabfos", "functionalAnnotation"]
+DOMAINS = ["assembly", "fabfos", "functionalAnnotation", "logistics"]

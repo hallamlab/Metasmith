@@ -1,6 +1,6 @@
 manifest:
   add_orfs_to_centroids.py:
-    instance_id: 1e20f53a693e9caccd76eb2de3d4ca668aa9a532f7f06701ee2e434ffe4433a5564c
+    instance_id: 1e20c8540d3ecb054406089887e7aeda8a9a3123abd2be6b2e08569ccbe07ac5ff78
     origin: leaf
     type: transforms::transform
   amrfinderplus.py:
@@ -31,6 +31,10 @@ manifest:
     instance_id: 1e20ea54aed7f8acb1b765c9246f65a2bacfb4c8255cb8a3d6127887a82b9c07958e
     origin: leaf
     type: transforms::transform
+  clean.py:
+    instance_id: 1e2059dcf697034f4632e4f8ee9967caf2215b4b5cba1c97463c9e32b59778d6aa85
+    origin: leaf
+    type: transforms::transform
   deepec.py:
     instance_id: 1e20bfa47d55c5d09cfa84a425058892b63d3fe0de4a5156f4c9bd2052982db42128
     origin: leaf
@@ -40,7 +44,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   diamond_linclust.py:
-    instance_id: 1e202d200bd6e06895d1a5eaa97ddfde5390f833b46d97b1ac4f61433599e349c0f8
+    instance_id: 1e20b80a7dffa130191d0102c056b0a0f42cf63ea7a8047b870894476cf8a1987f5e
     origin: leaf
     type: transforms::transform
   diamond_tcdb.py:
@@ -52,7 +56,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   diamond_uniref50.py:
-    instance_id: 1e204737ed3fdad67ade50b838a258469001b37d5764ef354e9f87f507e97407ba70
+    instance_id: 1e2001f515c4f96622351ef7b994d6f71935e2000354f0c25fa8e991568dff0582e6
     origin: leaf
     type: transforms::transform
   dram_annotate_genes.py:
@@ -68,11 +72,15 @@ manifest:
     origin: leaf
     type: transforms::transform
   esm_c.py:
-    instance_id: 1e204ebfb4dbe182fbf0c4eff60aca0dc73f6b6b61a46458cf66abc34eaf806bb799
+    instance_id: 1e20adf10d5450b82c9bcab0ef65cd12f16a913859e13a0d75dfcc2f2197fd36bebd
     origin: leaf
     type: transforms::transform
   esmfold.py:
     instance_id: 1e20a4b9e733c2f290f1d3933f8907260dd3425abb068b2791c64d02404172a321a0
+    origin: leaf
+    type: transforms::transform
+  ezpred.py:
+    instance_id: 1e20c3e4cb221a47d8fd4da2e0c861215f4767005fffef93da919a0c7866373273d1
     origin: leaf
     type: transforms::transform
   foldseek_3di.py:
@@ -88,7 +96,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   kofamscan.py:
-    instance_id: 1e2094ac232b6732de18be2bc5e481e0cd7980e4dae2312ba3679cf5303342cbd8c9
+    instance_id: 1e209bcf7ef4903ef79e1fce043dfb8b3a7b1a1f7ff30ac46640ee44d4f857c93a59
     origin: leaf
     type: transforms::transform
   megares.py:
@@ -180,7 +188,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   proteinbert.py:
-    instance_id: 1e204ad24c378e5d8f2d6041a4086411e2a1b10ca6c06686d7c3994c9b5f5445014e
+    instance_id: 1e206f5692d1979659bf094e86aed9e9088ccdfbc0f983be0db2d999e0480a926ac4
     origin: leaf
     type: transforms::transform
   prott5.py:
