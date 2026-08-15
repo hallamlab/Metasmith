@@ -35,6 +35,28 @@ fails on its own. An ambient workspace `PYTHONPATH` is the opposite trap: it res
 import to some other checkout. `PYTHONPATH="$PWD/src" mamba run -n msm …` is the form that
 is right under both.
 
+## A fresh checkout is not runnable until the libraries are compiled
+
+Every transform library carries a `_metadata/` directory compiled from its
+`data_types/*.yml` and its transform Python. **It is a build product and is not
+tracked**, so a fresh clone has none — and a library with no metadata does not
+degrade, it raises: `DataTypeLibrary` asserts the index exists before planning
+begins. Two commands, because there are two libraries and only one of them is
+reached by the vendoring step:
+
+    dev/libraries.sh -b     # the standard library under src/metasmith_libraries
+    dev/fabfos.sh -bm       # fabfos's own algorithm library, inside the package
+
+The second is easy to forget precisely because it is inside `src/fabfos/` rather
+than under a library root, which is also why `--vendor-library` never sees it.
+
+The ordering that makes this work at all: compiling metadata needs a working
+engine, and the engine needs the library — so the compile must run from the
+source tree (`PYTHONPATH=src python -m metasmith`), never from an installed
+package. `dev/metasmith.sh --vendor-library` does exactly that before it copies,
+and refuses to stamp a bundle whose metadata came out empty. Shipping one that
+did would be silent: the GUI's type panel simply goes blank.
+
 ---
 
 ## What Metasmith is

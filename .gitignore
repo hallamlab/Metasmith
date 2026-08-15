@@ -76,3 +76,20 @@ std_assembly_data
 /.cache/
 /MetasmithLibraries/
 /example_resources/
+
+# _metadata/ under the standard library and under fabfos's own algorithm
+# library is a build product (`metasmith build all`), not source -- compiled
+# from data_types/*.yml + the transform Python by dev/libraries.sh -b (the
+# standard library) or dev/fabfos.sh -bm (fabfos's own, since it sits inside
+# the package and is not reached by --vendor-library). A stale or missing
+# copy is silent (the library loads and resolves nothing, no error anywhere),
+# which is what _assert_metadata_present in ops/build.py now guards against
+# at vendor time. See AGENTS.md > "The build is not optional".
+/src/metasmith_libraries/resources/*/_metadata/
+/src/metasmith_libraries/transforms/*/_metadata/
+/src/fabfos/algorithm/_metadata/
+
+# The library suite deploys a real agent home to run against; conftest.py names
+# this path. Same class as the root-level deploy artifacts above -- a deployed
+# home is a build product of running the tests, not repo content.
+/tests/metasmith_libraries/test_msm_home/

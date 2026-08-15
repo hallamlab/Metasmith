@@ -1,6 +1,0 @@
-manifest:
-  response_surface.py:
-    instance_id: 1e2029997085433ccdc4021f14cb41f54f9f831351c64676add42660168fdbd2ed42
-    origin: leaf
-    type: transforms::transform
-schema: v1

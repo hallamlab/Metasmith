@@ -170,6 +170,18 @@ _lib_vendor_srcs=(
     "--src" "transforms=$HERE/src/metasmith_libraries/transforms"
     "--src" "envs=$HERE/envs/metasmith_libraries"
 )
+# `_metadata/` under src/metasmith_libraries/ is a build product, not tracked
+# source (dev/libraries.sh -b regenerates it the same way). --vendor-library
+# copies only, so a fresh checkout with nothing compiled yet would otherwise
+# ship an empty bundle -- compile in place first, same args as libraries.sh -b.
+_compile_library_metadata() {
+    local lib="$HERE/src/metasmith_libraries"
+    local args=(build all --types "$lib/data_types")
+    local d
+    for d in "$lib"/resources/*/; do args+=(--uniques "${d%/}"); done
+    for d in "$lib"/transforms/*/; do args+=(--transforms "${d%/}"); done
+    PYTHONPATH="$HERE/src" python -m metasmith "${args[@]}"
+}
 _assert_library_bundle() {
     [ -n "$MSM_SKIP_LIBRARY_CHECK" ] && {
         echo "MSM_SKIP_LIBRARY_CHECK set — skipping vendored-library check"
@@ -296,6 +308,7 @@ case $1 in
         npm run build
     ;;
     --vendor-library) # bundle metasmith_libraries into src/metasmith/vendor/ for shipping
+        _compile_library_metadata
         PYTHONPATH="$HERE/src" python -m metasmith build vendor-library \
             "${_lib_vendor_srcs[@]}" --dst "$_lib_vendor"
     ;;
