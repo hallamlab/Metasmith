@@ -1,0 +1,851 @@
+<title>The Cap Counted Copies</title>
+
+<style>
+/* ---------------------------------------------------------------------------
+   Palette. Neutrals carry a green-grey cast toward the verdigris accent rather
+   than sitting on a pure grey, so the ground reads as chosen. Two signal hues
+   and they mean one thing each throughout: verdigris = admitted, sienna =
+   refused or cost. Neither is decorative anywhere on the page.
+   --------------------------------------------------------------------------- */
+:root {
+  --ground:      #f1f4f2;
+  --panel:       #fbfcfb;
+  --ink:         #171d1e;
+  --ink-soft:    #4b5654;
+  --ink-faint:   #79847f;
+  --rule:        #cfd7d3;
+  --rule-soft:   #e2e8e5;
+  --admit:       #0d6156;
+  --admit-wash:  #dcebe6;
+  --refuse:      #9c4f22;
+  --refuse-wash: #f2e3d8;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --measure: 66ch;
+  --step--1: 0.83rem;
+  --step-0:  1.0625rem;
+  --step-1:  1.31rem;
+  --step-2:  1.7rem;
+  --step-3:  2.3rem;
+  --step-4:  clamp(2.6rem, 6vw, 3.9rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #12181a;
+    --panel:       #182022;
+    --ink:         #e6ecea;
+    --ink-soft:    #a5b2ae;
+    --ink-faint:   #74827e;
+    --rule:        #2c3739;
+    --rule-soft:   #222c2e;
+    --admit:       #63c9b4;
+    --admit-wash:  #16302d;
+    --refuse:      #e29767;
+    --refuse-wash: #33221a;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:      #12181a;
+  --panel:       #182022;
+  --ink:         #e6ecea;
+  --ink-soft:    #a5b2ae;
+  --ink-faint:   #74827e;
+  --rule:        #2c3739;
+  --rule-soft:   #222c2e;
+  --admit:       #63c9b4;
+  --admit-wash:  #16302d;
+  --refuse:      #e29767;
+  --refuse-wash: #33221a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: var(--step-0);
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: 0 clamp(1.1rem, 4vw, 3rem) 6rem;
+}
+
+/* The measured column every argument sits in. Instrument panels break out of it. */
+.col { max-width: var(--measure); }
+
+p { margin: 0 0 1.1em; }
+p + p { text-indent: 0; }
+a { color: var(--admit); text-underline-offset: 0.18em; }
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--admit); outline-offset: 3px; border-radius: 2px;
+}
+strong { font-weight: 600; }
+em.q { font-style: normal; color: var(--ink-soft); }
+
+/* --- masthead ------------------------------------------------------------ */
+
+header.mast {
+  padding: clamp(3rem, 9vw, 6.5rem) 0 clamp(2rem, 5vw, 3.5rem);
+  border-bottom: 1px solid var(--rule);
+}
+.kicker {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 1.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+h1 {
+  font-size: var(--step-4);
+  line-height: 1.02;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin: 0 0 1.2rem;
+  max-width: 20ch;
+}
+.standfirst {
+  font-size: var(--step-1);
+  line-height: 1.5;
+  color: var(--ink-soft);
+  max-width: 56ch;
+  margin: 0;
+}
+
+/* --- the hero object: one reaction, written twice ------------------------- */
+
+.twice {
+  margin: clamp(2.5rem, 6vw, 4rem) 0;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.twice-row {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+  gap: 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.twice-row:last-child { border-bottom: 0; }
+.twice-label {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 1.1rem 0 1.1rem 1.2rem;
+  border-right: 1px solid var(--rule-soft);
+}
+.twice-body { padding: 1.1rem 1.2rem; overflow-x: auto; }
+.glyphs { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.g {
+  width: 11px; height: 22px; border-radius: 1px;
+  background: var(--rule); flex: none;
+}
+.g.atp { background: var(--refuse); opacity: 0.75; }
+.g.core { background: var(--admit); }
+.g.op { width: auto; height: auto; background: none;
+        font-family: var(--mono); font-size: var(--step--1);
+        color: var(--ink-faint); padding: 0 0.4rem; }
+.twice-count {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  margin-top: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.twice-count b { color: var(--ink); font-weight: 600; }
+.verdict {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.18em 0.55em;
+  border-radius: 2px;
+  vertical-align: 0.1em;
+}
+.verdict.no { background: var(--refuse-wash); color: var(--refuse); }
+.verdict.yes { background: var(--admit-wash); color: var(--admit); }
+
+/* --- sections ------------------------------------------------------------- */
+
+section { padding: clamp(2.6rem, 6vw, 4.2rem) 0 0; }
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.eyebrow::before {
+  content: "";
+  width: 1.6rem; height: 1px; background: var(--rule); flex: none;
+}
+.eyebrow[data-kind="measured"]::before { background: var(--admit); }
+.eyebrow[data-kind="invariant"]::before { background: var(--ink-soft); }
+.eyebrow[data-kind="limit"]::before { background: var(--refuse); }
+h2 {
+  font-size: var(--step-3);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  margin: 0 0 1.1rem;
+  max-width: 26ch;
+}
+h3 {
+  font-size: var(--step-1);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 2.2rem 0 0.7rem;
+  text-wrap: balance;
+}
+
+/* --- the ledger of what moved -------------------------------------------- */
+
+.ledger {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  margin: 2rem 0;
+  overflow: hidden;
+}
+.ledger div { background: var(--panel); padding: 1.1rem 1.2rem; }
+.ledger dt {
+  font-family: var(--mono); font-size: var(--step--1);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ink-faint); margin: 0 0 0.45rem;
+}
+.ledger dd {
+  margin: 0; font-size: var(--step-2); line-height: 1.05;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+.ledger dd small {
+  display: block; font-size: var(--step--1); font-family: var(--mono);
+  color: var(--ink-soft); margin-top: 0.4rem; letter-spacing: 0;
+}
+.ledger .up dd { color: var(--admit); }
+.ledger .flat dd { color: var(--ink); }
+
+/* --- the curve ------------------------------------------------------------ */
+
+figure { margin: 2.2rem 0; }
+figure svg { display: block; width: 100%; height: auto; }
+figcaption {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  margin-top: 0.9rem;
+  max-width: 62ch;
+  line-height: 1.55;
+}
+.chart-frame {
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  border-radius: 3px;
+  padding: 1.4rem 1.2rem 1rem;
+  overflow-x: auto;
+}
+.legend {
+  display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem;
+  font-family: var(--mono); font-size: var(--step--1);
+  color: var(--ink-soft); margin-bottom: 1rem;
+}
+.legend span { display: inline-flex; align-items: center; gap: 0.45rem; }
+.swatch { width: 0.85rem; height: 0.6rem; border-radius: 1px; flex: none; }
+
+/* --- tables --------------------------------------------------------------- */
+
+.tbl-frame { overflow-x: auto; margin: 1.8rem 0; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+caption {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-bottom: 0.7rem;
+}
+th, td { text-align: right; padding: 0.5rem 0.75rem; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; padding-left: 0; }
+thead th {
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-faint);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+tbody tr { border-bottom: 1px solid var(--rule-soft); }
+tbody tr:last-child { border-bottom: 0; }
+tbody tr.knee { background: var(--refuse-wash); }
+tbody tr.knee td { color: var(--refuse); }
+td.eq { font-size: 0.76rem; white-space: normal; text-align: left; color: var(--ink-soft); }
+.id { color: var(--ink); }
+
+/* --- callouts ------------------------------------------------------------- */
+
+.note {
+  border-left: 2px solid var(--rule);
+  padding: 0.1rem 0 0.1rem 1.3rem;
+  margin: 1.8rem 0;
+  color: var(--ink-soft);
+}
+.note.hard { border-left-color: var(--refuse); }
+.note strong { color: var(--ink); }
+
+/* --- decisions ------------------------------------------------------------ */
+
+.decisions { display: grid; gap: 1.4rem; margin: 2.2rem 0 0; }
+@media (min-width: 62rem) { .decisions { grid-template-columns: 1fr 1fr; } }
+.decision {
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  border-radius: 3px;
+  padding: 1.6rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.decision h3 { margin: 0; font-size: var(--step-1); }
+.decision .ask {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--refuse);
+  margin: 0;
+}
+.decision p { margin: 0; font-size: var(--step--1); line-height: 1.6; color: var(--ink-soft); }
+.rec {
+  border-top: 1px solid var(--rule-soft);
+  padding-top: 0.9rem;
+  margin-top: auto;
+  font-size: var(--step--1);
+  line-height: 1.55;
+}
+.rec b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--admit);
+  margin-bottom: 0.4rem;
+}
+
+footer {
+  margin-top: clamp(3rem, 8vw, 5rem);
+  padding-top: 1.6rem;
+  border-top: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  color: var(--ink-faint);
+  line-height: 1.7;
+}
+footer code { color: var(--ink-soft); }
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="kicker">
+    <span>fabfos / bake</span>
+    <span>AAM coverage</span>
+    <span>decision report</span>
+  </p>
+  <h1>The cap counted copies, not chemistry</h1>
+  <p class="standfirst">
+    Nitrogenase hydrolyses sixteen ATP. The size cut counted all sixteen and refused
+    the reaction. Counting each distinct molecule once admits 454 reactions, loses
+    none, and puts every nitrogenase back in the universe. Two things are yours to
+    sign off before any of it reaches Sockeye.
+  </p>
+</header>
+
+<div class="twice" role="figure" aria-label="MNXR175605 written twice: expanded and collapsed">
+  <div class="twice-row">
+    <div class="twice-label">As written</div>
+    <div class="twice-body">
+      <div class="glyphs" aria-hidden="true">
+        <span class="g core"></span>
+        <span class="g"></span><span class="g"></span><span class="g"></span><span class="g"></span>
+        <span class="g"></span><span class="g"></span>
+        <span class="g atp"></span><span class="g atp"></span><span class="g atp"></span><span class="g atp"></span>
+        <span class="g atp"></span><span class="g atp"></span><span class="g atp"></span><span class="g atp"></span>
+        <span class="g atp"></span><span class="g atp"></span><span class="g atp"></span><span class="g atp"></span>
+        <span class="g atp"></span><span class="g atp"></span><span class="g atp"></span><span class="g atp"></span>
+        <span class="g"></span><span class="g"></span><span class="g"></span><span class="g"></span>
+        <span class="g"></span><span class="g"></span><span class="g"></span><span class="g"></span>
+        <span class="g core"></span><span class="g core"></span>
+        <span class="g atp"></span><span class="g atp"></span><span class="g atp"></span><span class="g atp"></span>
+        <span class="g atp"></span><span class="g atp"></span><span class="g atp"></span><span class="g atp"></span>
+        <span class="g atp"></span><span class="g atp"></span><span class="g atp"></span><span class="g atp"></span>
+        <span class="g atp"></span><span class="g atp"></span><span class="g atp"></span><span class="g atp"></span>
+        <span class="g op">…</span>
+      </div>
+      <p class="twice-count">
+        MNXR175605 · <b>1,236</b> atoms · 3,875 chars
+        &nbsp;<span class="verdict no">oversize</span>
+      </p>
+    </div>
+  </div>
+  <div class="twice-row">
+    <div class="twice-label">Collapsed</div>
+    <div class="twice-body">
+      <div class="glyphs" aria-hidden="true">
+        <span class="g core"></span>
+        <span class="g"></span>
+        <span class="g atp"></span>
+        <span class="g"></span>
+        <span class="g op">&gt;&gt;</span>
+        <span class="g atp"></span>
+        <span class="g core"></span>
+        <span class="g"></span>
+        <span class="g"></span>
+      </div>
+      <p class="twice-count">
+        MNXR175605 · <b>98</b> atoms · 481 chars
+        &nbsp;<span class="verdict yes">mappable</span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<section>
+  <p class="eyebrow" data-kind="invariant">The invariant, before any of the numbers</p>
+  <div class="col">
+    <h2>Coverage cannot go down. It is a property of the construction.</h2>
+    <p>
+      A reaction the old measure admits keeps its expanded string byte for byte — same
+      universe, same map, same pairs, same weights. The collapse is attempted
+      <em class="q">only</em> for a reaction that would otherwise have been refused. So there
+      is no path by which an existing row moves, and the superset check below is a
+      confirmation rather than a hope.
+    </p>
+  </div>
+
+  <dl class="ledger">
+    <div class="flat">
+      <dt>Mappable before</dt>
+      <dd>57,061</dd>
+    </div>
+    <div class="up">
+      <dt>Mappable after</dt>
+      <dd>57,515<small>+454</small></dd>
+    </div>
+    <div class="flat">
+      <dt>Lost</dt>
+      <dd>0<small>the stop line, checked first</small></dd>
+    </div>
+    <div class="flat">
+      <dt>Still refused</dt>
+      <dd>78<small>67 oversize, 11 too long</small></dd>
+    </div>
+  </dl>
+
+  <div class="col">
+    <p>
+      Of the 454 recovered, 394 were refused for atom count and 60 for character length —
+      the character cap now applies to the collapsed string, because that is the string a
+      mapper would actually see. Measured over all 83,795 reactions in MNXref 4.5, against
+      a locally rebuilt lookup table.
+    </p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow" data-kind="measured">Why this scope exists</p>
+  <div class="col">
+    <h2>Every nitrogenase is back, and here they are by name.</h2>
+    <p>
+      Fifty-five reactions in the universe carry an N₂ species. Five of them were refused,
+      and they are the five that write the actual nitrogen-fixation chemistry — while the
+      acetylene-reduction assay, a small proxy for exactly that chemistry, sailed through
+      the whole time. The bake's nitrogen story was missing precisely where the organism's
+      is.
+    </p>
+  </div>
+
+  <div class="tbl-frame">
+    <table>
+      <caption>The five, with what refused them and what admits them</caption>
+      <thead>
+        <tr>
+          <th scope="col">Reaction</th>
+          <th scope="col">EC</th>
+          <th scope="col">Was</th>
+          <th scope="col">Atoms</th>
+          <th scope="col">Collapsed</th>
+          <th scope="col">Now</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="id">MNXR175605</td><td>1.18.6.1</td>
+          <td>oversize</td><td>1,236</td><td>98</td><td>mappable</td>
+        </tr>
+        <tr>
+          <td class="id">MNXR109381</td><td>1.18.6.1</td>
+          <td>oversize</td><td>1,236</td><td>98</td><td>mappable</td>
+        </tr>
+        <tr>
+          <td class="id">MNXR192176</td><td>1.19.6.1</td>
+          <td>oversize</td><td>1,292</td><td>136</td><td>mappable</td>
+        </tr>
+        <tr>
+          <td class="id">MNXR163643</td><td>1.18.6.2</td>
+          <td>too long</td><td>9,117 ch</td><td>98</td><td>mappable</td>
+        </tr>
+        <tr>
+          <td class="id">MNXR184138</td><td>1.18.6.2</td>
+          <td>too long</td><td>8,925 ch</td><td>98</td><td>mappable</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <p>
+      EC 1.18.6.1 is ferredoxin nitrogenase (16 ATP), 1.19.6.1 the flavodoxin form, and
+      1.18.6.2 the 40-ATP variant — which was refused for <em class="q">length</em> rather
+      than size, so it would have survived any change to the atom threshold alone. The
+      distinct chemistry in all five is under 140 atoms.
+    </p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow" data-kind="measured">The threshold, re-derived rather than reused</p>
+  <div class="col">
+    <h2>The measure was wrong. The number turns out to be right.</h2>
+    <p>
+      600 was calibrated against the expanded count, and a curve stops describing a
+      measure the moment you change what is being counted — so carrying the constant
+      across would have been borrowing a justification. Taken the same way the original
+      was: bin every buildable reaction by its collapsed atom count, join to the reactions
+      the deployed bake actually banked, and cut where the yield falls off.
+    </p>
+  </div>
+
+  <figure>
+    <div class="chart-frame">
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--ink-faint)"></span> expanded count</span>
+        <span><span class="swatch" style="background:var(--admit)"></span> collapsed count</span>
+        <span><span class="swatch" style="background:var(--refuse)"></span> past the knee</span>
+      </div>
+      <svg viewBox="0 0 760 300" role="img"
+           aria-label="Banking rate against atom count. Under both measures the rate holds above 80 percent up to 600 atoms and collapses beyond it: 26.9 percent at 600 to 650, 16.7 percent at 650 to 700, 10 percent at 700 to 800, 5.6 percent at 800 to 1000, and zero above 1000.">
+        <!-- gridlines -->
+        <g stroke="currentColor" stroke-width="1" opacity="0.16">
+          <line x1="52" y1="30"  x2="748" y2="30"></line>
+          <line x1="52" y1="86"  x2="748" y2="86"></line>
+          <line x1="52" y1="142" x2="748" y2="142"></line>
+          <line x1="52" y1="198" x2="748" y2="198"></line>
+          <line x1="52" y1="254" x2="748" y2="254"></line>
+        </g>
+        <g font-family="ui-monospace, monospace" font-size="11" fill="currentColor" opacity="0.55">
+          <text x="44" y="34"  text-anchor="end">100%</text>
+          <text x="44" y="90"  text-anchor="end">75%</text>
+          <text x="44" y="146" text-anchor="end">50%</text>
+          <text x="44" y="202" text-anchor="end">25%</text>
+          <text x="44" y="258" text-anchor="end">0</text>
+        </g>
+
+        <!-- expanded series: hairline outline bars -->
+        <g fill="none" stroke="currentColor" opacity="0.42" stroke-width="1.5">
+          <rect x="62"  y="45"  width="30" height="209"></rect>
+          <rect x="150" y="36"  width="30" height="218"></rect>
+          <rect x="238" y="43"  width="30" height="211"></rect>
+          <rect x="326" y="35"  width="30" height="219"></rect>
+          <rect x="414" y="46"  width="30" height="208"></rect>
+          <rect x="502" y="199" width="30" height="55"></rect>
+          <rect x="590" y="243" width="30" height="11"></rect>
+          <rect x="678" y="253" width="30" height="1"></rect>
+        </g>
+
+        <!-- collapsed series: filled -->
+        <g>
+          <rect x="96"  y="46"  width="30" height="208" fill="var(--admit)"></rect>
+          <rect x="184" y="44"  width="30" height="210" fill="var(--admit)"></rect>
+          <rect x="272" y="80"  width="30" height="174" fill="var(--admit)"></rect>
+          <rect x="360" y="70"  width="30" height="184" fill="var(--admit)"></rect>
+          <rect x="448" y="58"  width="30" height="196" fill="var(--admit)"></rect>
+          <rect x="536" y="194" width="30" height="60"  fill="var(--refuse)"></rect>
+          <rect x="624" y="235" width="30" height="19"  fill="var(--refuse)"></rect>
+          <rect x="712" y="253" width="30" height="1"   fill="var(--refuse)"></rect>
+        </g>
+
+        <!-- the cut -->
+        <line x1="494" y1="18" x2="494" y2="266" stroke="var(--refuse)"
+              stroke-width="1.5" stroke-dasharray="4 4"></line>
+        <text x="488" y="16" text-anchor="end" font-family="ui-monospace, monospace"
+              font-size="11" fill="var(--refuse)">the cut — 600 atoms</text>
+
+        <!-- x axis -->
+        <line x1="52" y1="254" x2="748" y2="254" stroke="currentColor" opacity="0.45"></line>
+        <g font-family="ui-monospace, monospace" font-size="11" fill="currentColor"
+           opacity="0.6" text-anchor="middle">
+          <text x="94"  y="274">0–100</text>
+          <text x="182" y="274">100–200</text>
+          <text x="270" y="274">200–300</text>
+          <text x="358" y="274">300–500</text>
+          <text x="446" y="274">500–600</text>
+          <text x="534" y="274">600–700</text>
+          <text x="622" y="274">700–1k</text>
+          <text x="710" y="274">1k+</text>
+        </g>
+        <text x="400" y="294" text-anchor="middle" font-family="ui-monospace, monospace"
+              font-size="11" fill="currentColor" opacity="0.5">atoms in the reaction</text>
+      </svg>
+    </div>
+    <figcaption>
+      Banking rate against reaction size, over all 57,593 buildable reactions joined to the
+      66,051 the deployed bake holds. The deployed bake predates the 600-atom cut, which is
+      what lets it speak about the bins past it — the only place a threshold can actually be
+      argued.
+    </figcaption>
+  </figure>
+
+  <div class="tbl-frame">
+    <table>
+      <caption>The knee, at the resolution the decision needs</caption>
+      <thead>
+        <tr>
+          <th scope="col">Collapsed atoms</th>
+          <th scope="col">Reactions</th>
+          <th scope="col">Banked</th>
+          <th scope="col">Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>400–500</td><td>195</td><td>160</td><td>82.1%</td></tr>
+        <tr><td>500–550</td><td>46</td><td>43</td><td>93.5%</td></tr>
+        <tr><td>550–600</td><td>48</td><td>39</td><td>81.2%</td></tr>
+        <tr class="knee"><td>600–650</td><td>26</td><td>7</td><td>26.9%</td></tr>
+        <tr class="knee"><td>650–700</td><td>12</td><td>2</td><td>16.7%</td></tr>
+        <tr class="knee"><td>700–800</td><td>10</td><td>1</td><td>10.0%</td></tr>
+        <tr class="knee"><td>800–1,000</td><td>18</td><td>1</td><td>5.6%</td></tr>
+        <tr class="knee"><td>1,000+</td><td>13</td><td>0</td><td>0%</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <p>
+      Arriving at 600 again by doing the work is the finding. It also means the change is
+      cleanly separable: what moved is <em class="q">what gets counted</em>, and nothing
+      about where the line sits.
+    </p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow" data-kind="limit">A debt the cap was already carrying</p>
+  <div class="col">
+    <h2>The deployed bake holds fourteen reactions the current cut refuses.</h2>
+    <p>
+      Found while building the curve, and it is not caused by this change — the 600-atom
+      expanded cut already loses them, and has since it landed. The collapse repays three.
+      The other eleven carry no stoichiometric repeats at all: their collapsed count equals
+      their expanded one, between 603 and 961 atoms, so no amount of better counting
+      reaches them.
+    </p>
+    <div class="note hard">
+      <p style="margin:0">
+        <strong>They would need <code>ATOM_LIMIT</code> itself raised</strong>, which is a
+        different decision with a different cost: the 600–800 expanded bin holds 117
+        reactions banking at 12.8%, so raising the line to 700 attempts roughly a hundred
+        more reactions to recover about fifteen. Deliberately left alone here. Named in
+        <code>results/deployed_bake_debt.tsv</code>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow" data-kind="measured">The second half — what is still refused</p>
+  <div class="col">
+    <h2>Partial mapping, and what it can be expected to reach.</h2>
+    <p>
+      Seventy-eight reactions remain refused by size, and a much larger population banks
+      nothing for a reason that is not chemistry at all: RXNMapper's transformer accepts
+      512 tokens, and the reactions it returns nothing for are the long ones — median
+      SMILES length 983 against the universe's 268. A context-window limit, eating a
+      biased sample.
+    </p>
+    <p>
+      That bias is what makes the fix sound. For a single element most of a long reaction
+      is irrelevant — <em class="q">3 NADPH + 3 NADP⁺</em> blows the limit while contributing
+      no sulfur at all. So the submission keeps only the participants carrying that element,
+      requires the element to balance across what remains, and reads only that element's
+      pairs back out. Dropping a participant that carries no X cannot re-route an X atom,
+      which is what separates this from the strip the extractor refuses.
+    </p>
+  </div>
+
+  <div class="tbl-frame">
+    <table>
+      <caption>What the lane reaches. The first row is exact; the rest sweep a proxy</caption>
+      <thead>
+        <tr>
+          <th scope="col">Target population</th>
+          <th scope="col">Reactions</th>
+          <th scope="col">Forced exactly</th>
+          <th scope="col">Needing a mapper</th>
+          <th scope="col">Total (rxn, element)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Size-refused <em class="q">(exact)</em></td><td>78</td><td>23</td><td>3</td><td>26</td></tr>
+        <tr><td>SMILES ≥ 1,600 ch</td><td>94</td><td>5</td><td>60</td><td>65</td></tr>
+        <tr><td>SMILES ≥ 1,200 ch</td><td>366</td><td>56</td><td>450</td><td>506</td></tr>
+        <tr><td>SMILES ≥ 900 ch</td><td>1,254</td><td>332</td><td>1,617</td><td>1,949</td></tr>
+        <tr><td>SMILES ≥ 600 ch</td><td>4,586</td><td>1,892</td><td>6,164</td><td>8,056</td></tr>
+        <tr><td>SMILES ≥ 400 ch</td><td>13,049</td><td>8,746</td><td>17,142</td><td>25,888</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <p>
+      <strong>Forced exactly</strong> means conservation leaves one possibility and no
+      mapper is involved: one substrate and one product carrying the element in equal
+      counts is a unique bijection. At the ≥ 900-character row — the closest local match to
+      the recorded no-mapping set — that arm alone is 12,567 pair rows for zero mapper time.
+    </p>
+    <p>
+      The real target set cannot be computed here. It is <em class="q">admitted and still
+      ended with nothing</em>, which is a fact about a run, so the table sweeps reaction
+      length rather than pretending to know where the token limit bites. The lane itself
+      computes it properly, by subtracting every member's pairs table from what was
+      admitted.
+    </p>
+    <div class="note">
+      <p style="margin:0">
+        <strong>A partial map can never overwrite a real one.</strong> The layer goes down
+        last, and the stack restricts each layer to what nothing below it claimed — so a
+        partial contributes nothing at all where a member already reached, not a lower
+        weight and not a second row. Every row it does contribute carries
+        <code>source=partial</code>, and the ledger gains <code>banked_partial</code> and
+        <code>partial_declined</code> so a partially-mapped reaction is never counted as
+        banked or as dropped.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow" data-kind="limit">What none of this shows</p>
+  <div class="col">
+    <h2>Admitted is not banked.</h2>
+    <p>
+      Everything above measures which reactions the mappers are now allowed to see.
+      Whether they produce pairs for them is what a rebake answers, and no local artifact
+      stands in for it. The goal's own success indicator — that the Nostoc GPR builds a
+      network whose AAM permits N fixation — needs the rebake and then the GPR, in that
+      order. What can honestly be claimed today is the rung below it: the reactions
+      carrying the chemistry are admitted, and their distinct chemistry is small enough
+      that the mappers have every reason to reach them.
+    </p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow" data-kind="limit">Yours to sign off</p>
+  <div class="col">
+    <h2>Two decisions, each with the numbers behind it.</h2>
+  </div>
+
+  <div class="decisions">
+    <article class="decision">
+      <p class="ask">Decision 1 — pair weights</p>
+      <h3>Leave the collapsed reactions' weights as mapped?</h3>
+      <p>
+        <code>n_atoms</code> counts atom-index triples, so a collapsed reaction emits one
+        triple per pair where an expanded one emits sixteen. No existing row moves — the
+        collapse only touches reactions that were already refused — but the new rows sit on
+        a different footing from a comparable expanded reaction's.
+      </p>
+      <p>
+        Sized: the recovered set carries a median multiplicity of 4.7× (IQR 3.4–6.6, max
+        89×), and at the deployed bake's 37 rows per reaction it is an estimated 17,021
+        rows, 0.7% of the table.
+      </p>
+      <div class="rec">
+        <b>Recommendation — leave them as mapped</b>
+        Re-expanding by coefficient would make a reaction's edge weight scale with how many
+        ATP it happens to hydrolyse, which is the same conflation of stoichiometry with
+        chemistry that put the cap in the wrong place. At 0.7% of the table the choice is
+        cheap to revisit; at 89× on the tail it is not cheap to get wrong.
+      </div>
+    </article>
+
+    <article class="decision">
+      <p class="ask">Decision 2 — the rebake</p>
+      <h3>Does this warrant the Sockeye time?</h3>
+      <p>
+        The collapse admits 454 reactions including all five nitrogenases, at no cost to
+        any existing row. The partial lane adds a projected ~1,900 (reaction, element)
+        combinations at the closest proxy, of which ~330 need no mapper at all. The whole
+        R6 graph plans at 22 steps and MetaCyc is still its only given.
+      </p>
+      <p>
+        Against that: pass 3 is three more mapper lanes, and the reactions it targets are
+        by construction the awkward ones. The forced arm is free and could ship alone.
+      </p>
+      <div class="rec">
+        <b>Recommendation — rebake, once</b>
+        The five nitrogenases are the reason this scope exists and nothing short of a bake
+        puts them in a table. Running the partial lane in the same pass costs one extra
+        stage rather than a second campaign, and its ledger words mean a disappointing
+        result is legible rather than invisible.
+      </div>
+    </article>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Every number reproduces from <code>research/fabfos/benchmarks/aam_collapse/</code> —
+    <code>measure_collapse.py</code> and <code>measure_partial.py</code>, with the tables
+    they wrote committed beside them. Universe: MNXref 4.5, 83,795 reactions, 57,593
+    buildable. Reference: the deployed <code>metabolism_bake</code> trio at vocab
+    <code>675826f1bdae1f20</code>, 66,051 reactions and 2,476,265 pair rows.
+  </p>
+  <p>
+    The method is <code>ecspr.bake</code>. Gate: <code>tests/ecspr/bake</code>, 118 passed,
+    2 skipped, six seconds.
+  </p>
+</footer>
+
+</div>

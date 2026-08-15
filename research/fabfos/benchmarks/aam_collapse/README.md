@@ -5,11 +5,12 @@ measures and joins the result to the deployed bake. `measure_partial.py` sizes w
 partial lane would reach, using the worklist the first script writes. `results/` holds the tables it wrote,
 committed so the next session re-runs the script and diffs rather than re-deriving.
 
-Everything it needs is local: `data/fabfos/originals/metanetx/4.5` plus a built
-`lookup::` directory (minutes, from `ecspr.bake` is not needed — `buildlib::mnx_lookups`
-builds it), and the materialised `data/fabfos/processed/metabolism_bake` trio. The
-adjudication is about eight minutes of rdkit and is cached; everything after it is
-seconds, so the reporting half can be iterated on with `--rebuild` omitted.
+Everything they need is local: `data/fabfos/originals/metanetx/4.5`, the materialised
+`data/fabfos/processed/metabolism_bake` trio, and a built `lookup::` directory —
+`buildlib::mnx_lookups build` makes that from the MetaNetX drop-in in a few minutes, and
+it is a build product nothing tracks, so put it somewhere disposable. The adjudication is
+about eight minutes of rdkit and is cached; everything after it is seconds, so the
+reporting half can be iterated on without `--rebuild`.
 
     mamba run -n rdkit-scratch python research/fabfos/benchmarks/aam_collapse/measure_collapse.py \
         --lookups <built lookups dir> \
