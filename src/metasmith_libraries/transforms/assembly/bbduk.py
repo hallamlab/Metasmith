@@ -52,6 +52,7 @@ def protocol(context: ExecutionContext):
     # Same command either way: this tool is a plain CLI in both worlds.
     _cmd = f"""\
             bbduk.sh {xmx} {threads} \
+            unbgzip=f \
             {parg} ref=/bbmap/resources/adapters.fa \
             qin={phred_scale} qout=33 {setting} \
             in={ireads.container} \
