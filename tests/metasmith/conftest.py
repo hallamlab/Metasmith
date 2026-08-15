@@ -201,7 +201,7 @@ def metasmith_libraries_root() -> Path:
     # fixes it rather than failing three axes with an assertion from the loader.
     if not (root / "transforms" / "logistics" / "_metadata" / "index.yml").exists():
         pytest.skip(
-            f"the standard library at {root} is not compiled — run `dev/libraries.sh -b`"
+            f"the standard library at {root} is not compiled — run `dev/libraries.sh -bm`"
         )
     return root
 

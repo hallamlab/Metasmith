@@ -12,10 +12,12 @@ and its research drivers `research/metasmith_libraries/`.
 
 ## The build is not optional
 
-    dev/libraries.sh -b
+    dev/libraries.sh -bm    # compile _metadata/ -- seconds
+    dev/libraries.sh -b     # the same, then solve every template -- much slower
 
-rebuilds every `_metadata/` from the source YAML and transform Python, then solves
-every template against what it just built.
+`-bm` rebuilds every `_metadata/` from the source YAML and transform Python. `-b`
+adds the template gate on top; take that before you push a transform whose products
+changed shape, not every time you need a working tree.
 
 **`_metadata/` missing is fatal, not cosmetic.** With sources present and
 `_metadata/index.yml` absent, a solve does not degrade to resolving fewer types — it

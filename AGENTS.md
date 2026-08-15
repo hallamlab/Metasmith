@@ -44,11 +44,15 @@ degrade, it raises: `DataTypeLibrary` asserts the index exists before planning
 begins. Two commands, because there are two libraries and only one of them is
 reached by the vendoring step:
 
-    dev/libraries.sh -b     # the standard library under src/metasmith_libraries
+    dev/libraries.sh -bm    # the standard library under src/metasmith_libraries
     dev/fabfos.sh -bm       # fabfos's own algorithm library, inside the package
 
 The second is easy to forget precisely because it is inside `src/fabfos/` rather
 than under a library root, which is also why `--vendor-library` never sees it.
+
+`dev/libraries.sh -b` is `-bm` plus a solve of every shipped template — an
+author's gate on whether a changed transform still supports them, not a
+prerequisite for using the library. It is also much slower, so the split matters.
 
 The ordering that makes this work at all: compiling metadata needs a working
 engine, and the engine needs the library — so the compile must run from the
