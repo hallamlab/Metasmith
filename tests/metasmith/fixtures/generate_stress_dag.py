@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
 """Regenerate `stress_dag.json` from the spanish-lakes metagenomics recipe.
 
-Run by hand, not by the suite. Planning this workflow needs the sibling
-`metasmith-libraries` checkout, four transform libraries, a container resource
-library, and a solver run — none of which belong on the test path. The fixture
-it writes is just the node/edge lists, so everything downstream reads a plain
-JSON file and touches no disk beyond it.
+HISTORICAL, as of the monorepo migration, and left as written on purpose. The
+two paths below name branches of the `metasmith-libraries` project — a
+`spanish-lakes-metagenomics` transform library and a `phyloflash` read set —
+that were never ported here and exist only in that archived repository and its
+bundle under `data/archive/repo-bundles/`. Neither path resolves on this
+machine any more, so this script does not run as-is.
 
-    python tests/fixtures/generate_stress_dag.py tests/fixtures/stress_dag.json
+That is the honest state, and better than the alternative: repointing MLIB at
+this repo's `src/metasmith_libraries` would still execute, and would quietly
+regenerate a DIFFERENT DAG than the committed `stress_dag.json` — a fixture
+whose whole value is being a fixed, large, real plan. To regenerate it, restore
+those two branches from the bundle first.
+
+Run by hand, never by the suite: planning this needs four transform libraries,
+a resource library and a solver run, none of which belong on the test path. The
+fixture it writes is just node/edge lists, so everything downstream reads plain
+JSON and touches no disk beyond it.
+
+    python tests/metasmith/fixtures/generate_stress_dag.py \
+        tests/metasmith/fixtures/stress_dag.json
 
 It writes to a path rather than stdout because metasmith's logger prints the
 planner's resolution trace there.
 
-The recipe lives at
-`metasmith-libraries/spanish-lakes-metagenomics/main/metag_workflow_from_reads.py`
-and is mirrored here rather than imported: it pins `sys.path` at a different
-metasmith worktree and renders at import time.
+The recipe is mirrored here rather than imported: upstream it pins `sys.path`
+at a different metasmith worktree and renders at import time.
 """
 import json
 import sys

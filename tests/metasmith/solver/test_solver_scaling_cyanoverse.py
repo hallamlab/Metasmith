@@ -12,9 +12,9 @@ for 45+ minutes due to O(n^2) scaling in mask computation, view
 iteration, and list concatenation. The regression catches O(n^2) at any
 n; the pre-fix code hung at n=21081 which was the production case.
 
-Pulls its type and transform libraries from the sibling
-``metasmith-libraries/main/`` project via the
-``metasmith_libraries_root`` fixture in ``tests/conftest.py``. The
+Pulls its type and transform libraries from this repo's standard library
+(``src/metasmith_libraries``) via the ``metasmith_libraries_root`` fixture
+in ``tests/metasmith/conftest.py``. The
 original test wired against the now-deleted cyanoverse ``skani_triangle``
 transform; we switched to the equivalent production-graph topology under
 ``fastani`` / ``sequences::putative_genome`` because cyanoverse's

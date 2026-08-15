@@ -13,11 +13,11 @@ target_types:
 - annotation::proteinbert_index
 - taxonomy::metabuli
 transform_libraries:
-- transforms/logistics
-- transforms/metagenomics
-- transforms/functionalAnnotation
+- logistics
+- metagenomics
+- functionalAnnotation
 resource_libraries:
-- resources/env
+- env
 shared_input_paths:
 - eggnog_source.marker
 input_library:
@@ -31,10 +31,5 @@ input_library:
       type: annotation::eggnog_source
       instance_id: 1e20d5223cce30ae1e9e4a66319bc6f1edb45da822a588d3173e43b9e1625f14c38a
       origin: leaf
-  types:
-    sequences: data_types/sequences.yml
-    ref: data_types/ref.yml
-    annotation: data_types/annotation.yml
-    taxonomy: data_types/taxonomy.yml
   values:
     eggnog_source.marker: trigger

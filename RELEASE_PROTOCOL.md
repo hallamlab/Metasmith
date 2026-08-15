@@ -49,7 +49,7 @@ infrastructure the dev box may lack. Run the ones a release touches:
   workflow generation.
 - **`network`** — remote-shell paths; needs `LIVESHELL_REMOTE_HOST`.
 - **`e2e_agentic`** — live agent-driven scenarios; opt-in, needs an API key and a
-  MetasmithLibraries checkout.
+  compiled standard library (`dev/libraries.sh -b`).
 
 ### Focus areas
 
