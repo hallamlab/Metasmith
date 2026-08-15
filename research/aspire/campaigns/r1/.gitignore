@@ -1,0 +1,7 @@
+# Staged campaign inputs and harvested outputs. `.campaigns/metabuli/query/`
+# alone is a 6.7 GB concatenated contig file rebuilt from the published tree in
+# seconds -- it is derived data, and committing it once would be permanent.
+.campaigns/
+
+# Rendered DAGs, submitted task keys, generated publish scripts.
+.cache/

@@ -1,0 +1,20 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  cluster_table:
+    properties:
+      _:
+      - skani-derived clustering table; rows are bins, marks medoid centroid per cluster
+      ext: tsv
+  quality_bin_fasta:
+    properties:
+      Data: nucleic acid sequence
+      Format: FASTA
+      _:
+      - bin passing quality threshold (post-aggregator pool from all binners)
+      ext: fna
+      origin: aggregator_pool

@@ -1,0 +1,489 @@
+manifest:
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/NTC_read_metadata.json:
+    instance_id: 1e205362bedf1ab66a3d60dfe335b9d8bb4551487fe5ed2db00f832b57adaf85e4f9
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/NTC_read_pair.json:
+    instance_id: 1e209ec7ffe725cd47ac8a4be00dca11059785e95b40b3231991c934493afcf82512
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S10_read_metadata.json:
+    instance_id: 1e20c058a8f17b33fbb0e3301139becfcb4c5332dba6c57681067d4809a3300621a1
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S10_read_pair.json:
+    instance_id: 1e205f7995ad897f967410caa82661d1af9c1d1301952ea1dc7ddeb623c5bbaf93ed
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S11_read_metadata.json:
+    instance_id: 1e2015743459e71db054f0ee7db84ec014bb7371cf8250816697af9a712f63521cd1
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S11_read_pair.json:
+    instance_id: 1e20f224035a58c445e7ffb3ea0de5c66bbb05d03866a36ea8f9e72f6d276c7f3192
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S12_read_metadata.json:
+    instance_id: 1e2087b3c7c7b85b7cfc3d5dae65f61a97bd047657158c9d126f3aeea25f14fa000e
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S12_read_pair.json:
+    instance_id: 1e20e6bc145405aeb7b37890facb2fdad75ca5d9ae6f4647d473dee826fce4683d16
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S13_read_metadata.json:
+    instance_id: 1e20266361de96ef344eafa80786427deae2115da66d5a67823bc590db2ab39a0d4e
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S13_read_pair.json:
+    instance_id: 1e207ca9248689eec0f26122a0d5d355584a13e76e5913998b0ec349beedda67e911
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S16_read_metadata.json:
+    instance_id: 1e204e86010f97626c3142171b0f999942dcfd1326a730e0a25c69230e54627f272f
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S16_read_pair.json:
+    instance_id: 1e2021f0d2d58963493cd96f92f9f7e59dff551d7741b482bfa69174e695a5805e8c
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S17_read_metadata.json:
+    instance_id: 1e20b3f900770acc9f1bb28e5ffeffcd86deb6131adb5ab8c54db2cfb1a4a34fb15b
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S17_read_pair.json:
+    instance_id: 1e20415ea46faf664feff245ed37f047892f84caee632b7f3cedf2fef11d9932d66f
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S18_read_metadata.json:
+    instance_id: 1e2086e9a69ba0cac65fd6de2235191a32eb0c36d703f0cf64ac2b1ef2ffafb81a9e
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S18_read_pair.json:
+    instance_id: 1e20083da6a5c00b45fe91b023b4b3c20ffba6883f8bbdd7543dbe5ba77ad3b26a97
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S1_read_metadata.json:
+    instance_id: 1e2049d6ee0d8a62465f062b4f96b347828837b300d87077c5d3cd0d1ecc6590838a
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S1_read_pair.json:
+    instance_id: 1e201e1a594f0dcdb4f0e9ae01acbe2d13044532bcb07365b1b3b416a17dabfcf67a
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S20_read_metadata.json:
+    instance_id: 1e2070df64750d110aaa786f868ae914f97caf45733d735aafba039570539cf1e9ad
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S20_read_pair.json:
+    instance_id: 1e2005cb77cd8eeaca312c43f814917b70e661d3bd3d96dde2faccadc9e7fad2bb1b
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S21_read_metadata.json:
+    instance_id: 1e20f9fc53c54d1c011559396f82bb8b2dea365c262a3449cacb759a93bcad03223c
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S21_read_pair.json:
+    instance_id: 1e209211bbe3beb7d8b9cfa42091b32ab30b95e4ecc4dee1d61dd958f2ad821bdb6c
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S22_read_metadata.json:
+    instance_id: 1e205a3cacfb9675c0cf4a7cfae3e6d4454851dca2ea9c2cc2bec93ae1d7cb65bbbc
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S22_read_pair.json:
+    instance_id: 1e20d5f53ff6004c9758d4b74b4c593310195d479682593256c525919a8c90a42e07
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S24_read_metadata.json:
+    instance_id: 1e2061105a28be0cf84fa0cd8f103ca5586535818c54377521531152caad25d8e9b6
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S24_read_pair.json:
+    instance_id: 1e200bc9855287eb422e68f834629167af44b3fac6b58ae0c54d6db880f53c0a7d04
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S25_read_metadata.json:
+    instance_id: 1e20096456779188485d2b534e06dd1f2aabe4004ab1fcc767a78bc9d76da641a31b
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S25_read_pair.json:
+    instance_id: 1e2078ebbb6080bf9d2fdf229d2d7e38ef291023eb69dc320b413a8162cfec2546a2
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S26_read_metadata.json:
+    instance_id: 1e20251fa96e4a8497c2b200457fe57d550c343f1c60a651dbda4706754b1bce633e
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S26_read_pair.json:
+    instance_id: 1e206cd9aaee902977151a32f2c31c58528871fc1c61950fea24d52c2d420615e4cb
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S27_read_metadata.json:
+    instance_id: 1e20c1ff46977fb64776399c870a35b113f81b814e54dde576d5850521f71971fb1d
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S27_read_pair.json:
+    instance_id: 1e2032c4f3dbe0cefd37b9d44046b0b9648fd22bf0c171803f96df126b196d453ded
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S28_read_metadata.json:
+    instance_id: 1e208b89940187439c9efa951c26c3afc3a46d885b572fd3520bd8fe3080dd7572a6
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S28_read_pair.json:
+    instance_id: 1e20ba20dc193ca484f733bbe2dd9847bf19f7e9666e801fce1b89178ba20a755eb5
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S29_read_metadata.json:
+    instance_id: 1e207b6786c60b1856fe2699f9add14958171adc80b469974a8db0b71f247552e92e
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S29_read_pair.json:
+    instance_id: 1e20c29131e3248254679f5c91d48e8eda538277f68716afa1db5e5ff60cae844b37
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S30_read_metadata.json:
+    instance_id: 1e2054cfab88d64dcc2b41bb6927ba742ad58327bec8bbaec39693e03b9c1dbc53f3
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S30_read_pair.json:
+    instance_id: 1e20352e1e2242b831df564c74bede8a74557b2de14f9821c768102ef36110d9abb9
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S32_read_metadata.json:
+    instance_id: 1e20f072a899b7c36152669ee5ae6f6be2713e5ee8b9723cec755ba4f9f3b3863d18
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S32_read_pair.json:
+    instance_id: 1e20d7f592affb8216fe35e7fce238da49cb566b1e6d34f6f587f7df7be536a92294
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S33_read_metadata.json:
+    instance_id: 1e202dedf47b2f6132a2b8072a3f9e34373c115c72d335e513024929118fdb87beab
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S33_read_pair.json:
+    instance_id: 1e20dff584a2d1d78158864dca1f6fb7ac1796d1297c12e567724fb36ca4e014c741
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S3_read_metadata.json:
+    instance_id: 1e20e4c7dd6d00dade744a43c72ed52fc0cef08cfe3edd39710e50ca40c7b2662f1e
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S3_read_pair.json:
+    instance_id: 1e208102284bad53543a66731c086f22f430309435555fba9dfde4ebc3ede5b68f9e
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S6_read_metadata.json:
+    instance_id: 1e20d960b7612f0578af7ae327017697cf29a4a6f978095f23c9353d9394154caa88
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S6_read_pair.json:
+    instance_id: 1e2043859e6d373ac519f90c21fc42a75b94bc209a277d6ea8d02956a6795af25dc4
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S9_read_metadata.json:
+    instance_id: 1e20df10d81dc9b5559af76daf33ca236b307de5c560e5ec026e1c1e05d2fd299ff6
+    origin: leaf
+    type: sequences::read_metadata
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S9_read_pair.json:
+    instance_id: 1e201a9cf9bd553af44e708ca207f475ae9461ab56b6b837a8df48f8b11cd5e71ef3
+    origin: leaf
+    type: sequences::read_pair
+  /msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env:
+    instance_id: 1e207c722b7794f615e3555c372aeef229d4b6297c1c20f622706f42289b856b2a03
+    origin: leaf
+    type: env::bbtools.env
+  /scratch/phyberos/gmcf3495/reads/NTC_R1.fastq.gz:
+    instance_id: 1e20f5f6731ed98c67615a934420bc315d2c593ee87c7fa7ef285d8f7a63bb084edf
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S10_R2.fastq.gz:
+    instance_id: 1e208467ecbab981b588df65b0b0480fbb75a5260f2e8864d56dfbc1f8e61f08dd05
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S11_R2.fastq.gz:
+    instance_id: 1e208d773f55afbd5f695fcd95134cd5e99f9f298058df008dfad63f6c0801e2e636
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S12_R2.fastq.gz:
+    instance_id: 1e20cc9f7ac55da3cdd21161c243cd6d0c051fc8f5b4d11ab519ec230b1d0673adc6
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S13_R2.fastq.gz:
+    instance_id: 1e201354d24142db70b6e8c1764b73c51146003b3f431d21973dd1f75c2af79cac41
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S16_R1.fastq.gz:
+    instance_id: 1e208f31619267c1ad8348c3f7298cbb8f31b67f8369ef95e2df41e3b3d4889cee43
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S17_R1.fastq.gz:
+    instance_id: 1e205f35d120944299d6f303b7b72e63c78186b46f9a9b7bfd4e76999165113a4366
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S18_R1.fastq.gz:
+    instance_id: 1e206c304946d3c4c6d02e8ea72292efc333a65fa33b29f9ba41baf594591f0cb419
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S1_R1.fastq.gz:
+    instance_id: 1e2049e4ac743686c32037fee19f800fba07aadba468050a417fe4eb4a843139d743
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S1_R2.fastq.gz:
+    instance_id: 1e2090cb77651f8c29586bce4c78a14e1e917870225035fa5fad922820f4dcbf4f71
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S20_R1.fastq.gz:
+    instance_id: 1e2075c54ffc67388a2ba9727483d6a1329ea4bd26df4d00d36bae044cdb0f31c006
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S20_R2.fastq.gz:
+    instance_id: 1e20a0916e837ecb27ec56c0f3d02d1c302bacccb0f484fd345cd51ab83ed2a8d953
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S21_R2.fastq.gz:
+    instance_id: 1e20cc9f55a2ddfb7d75c2900c2a48b02a2bc1d4c46d84f71d0be6e7d117c8dd8e5c
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S22_R1.fastq.gz:
+    instance_id: 1e2072ac017bf0f00697a2de5b57947d179791963c97e89d296ba41fe264c8d3962a
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S24_R1.fastq.gz:
+    instance_id: 1e20eb79745cc12052761e2ef8866ffc9a9eb55287a6afd3b52a6229770d4906040b
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S24_R2.fastq.gz:
+    instance_id: 1e204b62824f0dce8f078af85b8711cb8ff5b620579f86fc0676f73895cd0b15abfd
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S25_R2.fastq.gz:
+    instance_id: 1e204176de8b858191ccf28a8e502b368dec720518facce43e6c5777699da36ecb60
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S26_R1.fastq.gz:
+    instance_id: 1e20f55d633d2e581e00e961da0c82c9334f9e7a9e2d2e2a5eb3b61b8a7ad0f9b3a1
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S29_R1.fastq.gz:
+    instance_id: 1e2087d2eeb97adb3a3f586a8de69cd412ac7ac8db76cd080a9dc38b34c1994853c5
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S30_R2.fastq.gz:
+    instance_id: 1e202a7001bfc32459211d314d9ebd0d72e4e30977cf579fa11aa5ca6863a984f87f
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S32_R1.fastq.gz:
+    instance_id: 1e203d012ccb8e7fcd85cdcf8fb932849bbd63cbda3fad307c168cb460f218090424
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S32_R2.fastq.gz:
+    instance_id: 1e20db187c86ec47c0b58b69361eae38d35149091950bcba37380f399c24dc7e36be
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S33_R1.fastq.gz:
+    instance_id: 1e20c1730f1f9b10d75f1d1ea6e5f0a5575f9ed30749467ba8224a45c0bba8c4dc79
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S3_R1.fastq.gz:
+    instance_id: 1e209b58238139d746d826b6c9cd2e1ed39cf0ed1d753795d892d0053e735cd9f638
+    origin: leaf
+    type: sequences::zipped_forward_short_reads
+  /scratch/phyberos/gmcf3495/reads/S3_R2.fastq.gz:
+    instance_id: 1e202f57cb5020d46f4cf32e83c807775f9dac4f775dc7fc06aa6a12c6bd57c96182
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  /scratch/phyberos/gmcf3495/reads/S9_R2.fastq.gz:
+    instance_id: 1e20d1f6269441a205b8d03816bb6fdc3aa1d89078d133394bababc807607e72defd
+    origin: leaf
+    type: sequences::zipped_reverse_short_reads
+  out/1-1-1.1Fo5StL5eRRfliQ6-RohhQFjN.fq.gz:
+    instance_id: bb4845245d30a4ef00c44fcdcfbb789b
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S16_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S16_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S20_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S20_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S25_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S25_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S20_R1.fastq.gz: sequences::zipped_forward_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S25_R2.fastq.gz: sequences::zipped_reverse_short_reads
+    type: sequences::short_reads
+  out/1-1-1.96XAX7d7DwhaM0Cb-RohhQFjN.fq.gz:
+    instance_id: 46e434153e125aa3a6d64c0ae5c09852
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S17_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S17_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S20_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S20_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S17_R1.fastq.gz: sequences::zipped_forward_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S20_R2.fastq.gz: sequences::zipped_reverse_short_reads
+    type: sequences::short_reads
+  out/1-1-1.AupyCKap1uWeTnrs-RohhQFjN.fq.gz:
+    instance_id: da0a86bdfa21093a3029a967db36524d
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S13_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S13_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S18_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S18_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S28_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S28_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S13_R2.fastq.gz: sequences::zipped_reverse_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S18_R1.fastq.gz: sequences::zipped_forward_short_reads
+    type: sequences::short_reads
+  out/1-1-1.BU0h7TwomghxoePn-RohhQFjN.fq.gz:
+    instance_id: 143fafde84e4c4b04dfebbde6ab8d989
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S21_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S21_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S26_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S26_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S30_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S30_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S21_R2.fastq.gz: sequences::zipped_reverse_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S26_R1.fastq.gz: sequences::zipped_forward_short_reads
+    type: sequences::short_reads
+  out/1-1-1.J4gPoE9nZxJunBA6-RohhQFjN.fq.gz:
+    instance_id: 78d4120a7b17a14a6089872d15b77998
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/NTC_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/NTC_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S16_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S16_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S32_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S32_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S16_R1.fastq.gz: sequences::zipped_forward_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S32_R2.fastq.gz: sequences::zipped_reverse_short_reads
+    type: sequences::short_reads
+  out/1-1-1.NprhBRX7I4ifqFGq-RohhQFjN.fq.gz:
+    instance_id: f37cb26da37407c51e83749ea851d5f1
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S11_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S11_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S27_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S27_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S32_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S32_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S11_R2.fastq.gz: sequences::zipped_reverse_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S32_R1.fastq.gz: sequences::zipped_forward_short_reads
+    type: sequences::short_reads
+  out/1-1-1.OzqzHFruW3qMFIpj-RohhQFjN.fq.gz:
+    instance_id: dc3ed415ba1668c29293ca1e28cbc633
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S12_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S12_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S24_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S24_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S6_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S6_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S12_R2.fastq.gz: sequences::zipped_reverse_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S24_R1.fastq.gz: sequences::zipped_forward_short_reads
+    type: sequences::short_reads
+  out/1-1-1.Q4PbwR3l9fmWTtwP-RohhQFjN.fq.gz:
+    instance_id: 66f211d07caf6ed675d2aa5febeb7d8d
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S24_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S24_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S29_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S29_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S33_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S33_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S24_R2.fastq.gz: sequences::zipped_reverse_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S33_R1.fastq.gz: sequences::zipped_forward_short_reads
+    type: sequences::short_reads
+  out/1-1-1.SMXK0buagAuSBoTY-RohhQFjN.fq.gz:
+    instance_id: c4dd15eae5feae4214f5e37f0b80f4e1
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S1_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S1_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S1_R1.fastq.gz: sequences::zipped_forward_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S1_R2.fastq.gz: sequences::zipped_reverse_short_reads
+    type: sequences::short_reads
+  out/1-1-1.l7GLG6PZl1om8yyg-RohhQFjN.fq.gz:
+    instance_id: fda1980914fd4fbab443b8de2cd2ebe1
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S10_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S10_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S22_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S22_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S10_R2.fastq.gz: sequences::zipped_reverse_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S22_R1.fastq.gz: sequences::zipped_forward_short_reads
+    type: sequences::short_reads
+  out/1-1-1.oufc6bvweoJWA9Mc-RohhQFjN.fq.gz:
+    instance_id: a00d08cd389c70b808c625610e5a0e9c
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S12_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S12_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S29_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S29_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S3_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S3_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S29_R1.fastq.gz: sequences::zipped_forward_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S3_R2.fastq.gz: sequences::zipped_reverse_short_reads
+    type: sequences::short_reads
+  out/1-1-1.uOTlJ82EE4B11HLl-RohhQFjN.fq.gz:
+    instance_id: 44581d1ee051b37c4420b694e10e7079
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/NTC_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/NTC_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S26_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S26_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S9_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S9_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/NTC_R1.fastq.gz: sequences::zipped_forward_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S9_R2.fastq.gz: sequences::zipped_reverse_short_reads
+    type: sequences::short_reads
+  out/1-1-1.vwymP2FGrCra0NoX-RohhQFjN.fq.gz:
+    instance_id: 47debe64a93d91817a6c743dc8fd9313
+    lineage_payload: ''
+    origin: lineage
+    parents:
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S30_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S30_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S33_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S33_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S3_read_metadata.json: sequences::read_metadata
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/cNIjNLyYRZxT/S3_read_pair.json: sequences::read_pair
+      bxrgOXzaiEN2@/msm_home/runs/dcYCo2Px/_metasmith/task/data/mOGUecUDK7wL/bbtools.env: env::bbtools.env
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S30_R2.fastq.gz: sequences::zipped_reverse_short_reads
+      bxrgOXzaiEN2@/scratch/phyberos/gmcf3495/reads/S3_R1.fastq.gz: sequences::zipped_forward_short_reads
+    type: sequences::short_reads
+schema: v1
