@@ -21,7 +21,13 @@ from metasmith.python_api import (
 
 # Paths relative to this file
 WORKSPACE = Path(__file__).parent.resolve()
-MLIB = WORKSPACE.parent  # MetasmithLibraries root
+# The library root. In the standalone repo this was `tests/..`; in the monorepo the
+# tests and the library moved to opposite sides of the tree, so it is an explicit
+# path from the repo root. Getting it wrong is quiet rather than loud: `tmp_inputs`
+# skips a type library whose file does not exist, so a test that should resolve a
+# dozen types resolves none and asserts nothing.
+MLIB = WORKSPACE.parent.parent / "src" / "metasmith_libraries"
+assert (MLIB / "data_types").is_dir(), f"library root does not look like one: {MLIB}"
 TEST_DATA_DIR = WORKSPACE / "test_data"
 TEST_MSM_HOME = WORKSPACE / "test_msm_home"
 
