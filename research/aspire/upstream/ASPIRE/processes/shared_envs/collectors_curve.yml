@@ -1,0 +1,9 @@
+name: collectors_curve_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pandas
+  - numpy
+  - seaborn
+  - matplotlib-base

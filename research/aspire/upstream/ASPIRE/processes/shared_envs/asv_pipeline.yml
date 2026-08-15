@@ -1,0 +1,11 @@
+name: asv_pipeline_env
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  # Early workflow tools (FASTP_QC through FILTER_TABLE)
+  - fastp
+  - vsearch
+  - python=3.11
+  - pandas
+  - biopython

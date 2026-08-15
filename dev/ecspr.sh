@@ -42,6 +42,9 @@ case $1 in
         mamba run -n ecspr python -m pytest "$HERE/tests/ecspr" "$@"
     ;;
     -be|--build-ecspr) # compile + build the ecspr conda package, and refresh its tool env
+        # Stamp the source hash FIRST: it becomes the conda build string, so a
+        # package built from a stale stamp would name the wrong source state.
+        PYTHONPATH="$HERE/src" python -m ecspr._build_hash --write
         python "$HERE/conda_recipe/ecspr/compile_recipe.py"
         "$HERE/conda_recipe/ecspr/call_build.sh"
         # envs/metasmith_libraries/tools/ecspr.yml is what a `--runtime mamba`
@@ -62,11 +65,24 @@ dst.write_text(head + "name: ecspr\nchannels:\n  - hallamlab\n"
 print(f"wrote {dst}")
 PY
     ;;
+    -ue|--upload-ecspr) # publish the built ecspr conda package to the hallamlab channel
+        # `anaconda login` is a human step and is deliberately NOT done here.
+        # The command lives in the repo so it is not retyped from memory: the
+        # channel is read from the package's own constants, not hard-coded.
+        USER_ORG=$(PYTHONPATH="$HERE/src" python -c "import ecspr; print(ecspr.USER)")
+        pkgs=$(ls "$HERE"/conda_build/noarch/ecspr-*.tar.bz2 2>/dev/null || true)
+        [ -z "$pkgs" ] && { echo "upload-ecspr: no package in conda_build/noarch -- run -be first" >&2; exit 1; }
+        echo "uploading to anaconda.org/$USER_ORG:"; echo "$pkgs"
+        for p in $pkgs; do anaconda upload -u "$USER_ORG" "$p"; done
+    ;;
     *)
-        echo "usage: dev/ecspr.sh [--iecspr|-e ...|-te|-be]"
+        echo "usage: dev/ecspr.sh [--iecspr|-e ...|-te|-be|-ue]"
         echo "  --iecspr             create the ecspr env and install src/ecspr editable"
         echo "  -e|--ecspr           run the ecspr CLI from source: -e ground --gpr ..."
         echo "  -te|--test-ecspr     run tests/ecspr"
         echo "  -be|--build-ecspr    build the ecspr conda package + refresh envs/metasmith_libraries/tools/ecspr.yml"
+        echo "  -ue|--upload-ecspr   publish it to the hallamlab channel (anaconda login first)"
+        echo "  (the ecspr IMAGE is docker/ecspr/dev.sh --build|--check|--push)"
+        echo "  (the packaging toolchain -be/-ue need comes from dev/fabfos.sh --idev)"
     ;;
 esac

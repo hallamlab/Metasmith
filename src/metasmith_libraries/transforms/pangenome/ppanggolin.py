@@ -49,10 +49,11 @@ def protocol(context: ExecutionContext):
     ipg = context.Output(pg)
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--cpu {threads}"
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"ppanggolin all --anno {gb_list} --identity 0.3 --coverage 0.8 {threads} --output {ipg.container}",
-    )
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"ppanggolin all --anno {gb_list} --identity 0.3 --coverage 0.8 {threads} --output {ipg.container}"
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     imatrix = context.Output(matrix)
     context.LocalShell(f"cp {ipg.local}/matrix.csv {imatrix.local}")
     return ExecutionResult(

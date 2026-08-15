@@ -1,0 +1,88 @@
+condition_id	figure	clones	n_clones	ffa_mg_L	fold_change	measured_dir	n_reactions	n_atom_mapped	n_ecspr_reactions	mappable	mappable_ecspr	is_control	control_kind
+aska_ffa:fig1c:bcr	fig1c	bcr	1	982.3	1.228	0	0	0	0	False	False	0	
+aska_ffa:fig1c:cmr	fig1c	cmr	1	584.1	0.73	-	2	0	0	False	False	1	structural
+aska_ffa:fig1c:dps	fig1c	dps	1	168.1	0.21	-	0	0	0	False	False	0	
+aska_ffa:fig1c:fabZ	fig1c	fabZ	1	407.1	0.509	-	14	11	11	True	True	0	
+aska_ffa:fig1c:fpr	fig1c	fpr	1	407.1	0.509	-	5	5	0	True	False	0	
+aska_ffa:fig1c:lsrB	fig1c	lsrB	1	548.7	0.686	-	1	0	1	False	True	1	structural
+aska_ffa:fig1c:mscL	fig1c	mscL	1	699.1	0.874	0	1	0	0	False	False	1	structural
+aska_ffa:fig1c:nepI	fig1c	nepI	1	1336.3	1.671	+	2	0	2	False	True	1	structural
+aska_ffa:fig1c:norR	fig1c	norR	1	769.9	0.963	0	0	0	0	False	False	0	
+aska_ffa:fig1c:rfaY	fig1c	rfaY	1	2461.3	3.078	+	1	1	1	True	True	0	
+aska_ffa:fig1c:setA	fig1c	setA	1	336.3	0.421	-	1	0	1	False	True	1	structural
+aska_ffa:fig1c:setB	fig1c	setB	1	194.7	0.243	-	1	0	1	False	True	1	structural
+aska_ffa:fig1c:sufE	fig1c	sufE	1	681.4	0.852	0	4	0	0	False	False	1	structural
+aska_ffa:fig1c:tesA	fig1c	tesA	1	672.6	0.841	0	21	21	21	True	True	0	
+aska_ffa:fig1c:trpC	fig1c	trpC	1	646.0	0.808	0	2	2	2	True	True	0	
+aska_ffa:fig1c:wcaA	fig1c	wcaA	1	885.0	1.107	0	0	0	0	False	False	0	
+aska_ffa:fig1c:yaaA	fig1c	yaaA	1	619.5	0.775	-	0	0	0	False	False	0	
+aska_ffa:fig1c:ydeA	fig1c	ydeA	1	1902.7	2.38	+	3	0	3	False	True	1	structural
+aska_ffa:fig1c:yeeS	fig1c	yeeS	1	646.0	0.808	0	0	0	0	False	False	0	
+aska_ffa:fig1c:yegL	fig1c	yegL	1	637.2	0.797	-	0	0	0	False	False	0	
+aska_ffa:fig1c:yfaO	fig1c	yfaO	1	663.7	0.83	0	3	3	3	True	True	0	
+aska_ffa:fig1c:ygdD	fig1c	ygdD	1	1115.0	1.394	+	0	0	0	False	False	0	
+aska_ffa:fig1c:yjcO	fig1c	yjcO	1	716.8	0.896	0	0	0	0	False	False	0	
+aska_ffa:fig1c:yoaE	fig1c	yoaE	1	97.3	0.122	-	0	0	0	False	False	0	
+aska_ffa:fig1d:dRfaY	fig1d	rfaY	1	458.0	0.573	-	0	0	0	False	False	0	
+aska_ffa:fig1d:dRfaY-comp	fig1d	rfaY	1	2091.0	2.615	+	1	1	1	True	True	0	
+aska_ffa:fig3b:lptA	fig3b	lptA	1	167.6	0.21	-	9	0	0	False	False	1	structural
+aska_ffa:fig3b:lptB	fig3b	lptB	1	838.1	1.048	0	9	0	0	False	False	1	structural
+aska_ffa:fig3b:lptD	fig3b	lptD	1	246.1	0.308	-	9	0	0	False	False	1	structural
+aska_ffa:fig3b:lptE	fig3b	lptE	1	745.4	0.932	0	9	0	0	False	False	1	structural
+aska_ffa:fig3b:lpxH	fig3b	lpxH	1	809.6	1.013	0	1	0	1	False	True	1	structural
+aska_ffa:fig3b:lpxK	fig3b	lpxK	1	1093.1	1.367	+	1	1	1	True	True	0	
+aska_ffa:fig3b:lpxL	fig3b	lpxL	1	1674.4	2.094	+	1	0	0	False	False	1	structural
+aska_ffa:fig3b:lpxM	fig3b	lpxM	1	495.7	0.62	-	2	1	1	True	True	0	
+aska_ffa:fig3b:msbA	fig3b	msbA	1	1317.7	1.648	+	32	0	31	False	True	1	structural
+aska_ffa:fig3b:waaC	fig3b	waaC	1	888.0	1.111	0	1	1	1	True	True	0	
+aska_ffa:fig3b:waaF	fig3b	waaF	1	1172.2	1.466	+	1	1	0	True	False	0	
+aska_ffa:fig3b:waaG	fig3b	waaG	1	602.7	0.754	-	1	1	1	True	True	0	
+aska_ffa:fig3b:waaP	fig3b	waaP	1	431.5	0.54	-	1	1	0	True	False	0	
+aska_ffa:fig3b:waaQ	fig3b	waaQ	1	724.0	0.905	0	1	1	1	True	True	0	
+aska_ffa:fig4c:RF	fig4c	rfaY	1	2240.3	1.0	0	1	1	1	True	True	0	
+aska_ffa:fig4c:asd	fig4c	asd|rfaY	2	2298.2	1.026	0	2	2	2	True	True	0	
+aska_ffa:fig4c:fabB	fig4c	fabB|rfaY	2	731.0	0.326	-	14	10	11	True	True	0	
+aska_ffa:fig4c:folE	fig4c	folE|rfaY	2	1888.9	0.843	0	2	2	2	True	True	0	
+aska_ffa:fig4c:glxK	fig4c	glxK|rfaY	2	2298.2	1.026	0	2	2	2	True	True	0	
+aska_ffa:fig4c:gppA	fig4c	gppA|rfaY	2	309.9	0.138	-	2	2	2	True	True	0	
+aska_ffa:fig4c:gpsA	fig4c	gpsA|rfaY	2	2216.4	0.989	0	2	2	2	True	True	0	
+aska_ffa:fig4c:hydN	fig4c	hydN|rfaY	2	2251.5	1.005	0	1	1	1	True	True	0	
+aska_ffa:fig4c:lacI	fig4c	lacI|rfaY	2	1643.3	0.734	-	1	1	1	True	True	0	
+aska_ffa:fig4c:lpxD	fig4c	lpxD|rfaY	2	883.0	0.394	-	2	2	2	True	True	0	
+aska_ffa:fig4c:nudG	fig4c	nudG|rfaY	2	1994.2	0.89	0	3	3	3	True	True	0	
+aska_ffa:fig4c:opgD	fig4c	opgD|rfaY	2	2181.3	0.974	0	1	1	1	True	True	0	
+aska_ffa:fig4c:pntA	fig4c	pntA|rfaY	2	2333.3	1.042	0	2	1	2	True	True	0	
+aska_ffa:fig4c:rimM	fig4c	rfaY|rimM	2	3389.2	1.513	+	1	1	1	True	True	0	
+aska_ffa:fig4c:rsxG	fig4c	rfaY|rsxG	2	2122.8	0.948	0	1	1	1	True	True	0	
+aska_ffa:fig4c:setA	fig4c	rfaY|setA	2	426.9	0.191	-	2	1	2	True	True	0	
+aska_ffa:fig4c:setB	fig4c	rfaY|setB	2	251.5	0.112	-	2	1	2	True	True	0	
+aska_ffa:fig4c:tas	fig4c	rfaY|tas	2	2134.5	0.953	0	1	1	1	True	True	0	
+aska_ffa:fig4c:yafL	fig4c	rfaY|yafL	2	3447.6	1.539	+	1	1	1	True	True	0	
+aska_ffa:fig4c:yafZ	fig4c	rfaY|yafZ	2	2181.3	0.974	0	1	1	1	True	True	0	
+aska_ffa:fig4c:ybeF	fig4c	rfaY|ybeF	2	2497.1	1.115	0	1	1	1	True	True	0	
+aska_ffa:fig4c:ydeA	fig4c	rfaY|ydeA	2	812.9	0.363	-	4	1	4	True	True	0	
+aska_ffa:fig4c:yggR	fig4c	rfaY|yggR	2	2508.8	1.12	0	1	1	1	True	True	0	
+aska_ffa:fig4c:yjdF	fig4c	rfaY|yjdF	2	2204.7	0.984	0	1	1	1	True	True	0	
+aska_ffa:fig4c:ytfK	fig4c	rfaY|ytfK	2	1900.6	0.848	0	1	1	1	True	True	0	
+aska_ffa:fig5a:rfaY-rimM	fig5a	rfaY|rimM	2	3389.2		0	1	1	1	True	True	0	
+aska_ffa:fig5a:rfaY-rimM-fadR	fig5a	fadR|rfaY|rimM	3	4848.7	1.431	+	1	1	1	True	True	0	
+aska_ffa:fig5a:rfaY-yafL	fig5a	rfaY|yafL	2	3447.6		0	1	1	1	True	True	0	
+aska_ffa:fig5a:rfaY-yafL-fadR	fig5a	fadR|rfaY|yafL	3	5736.1	1.664	+	1	1	1	True	True	0	
+aska_ffa:figS4:RF	figS4	rfaY	1	2240.3	1.0	0	1	1	1	True	True	0	
+aska_ffa:figS4:norR-lacI	figS4	lacI|norR	2	1673.8	0.747	-	0	0	0	False	False	0	
+aska_ffa:figS4:norR-nepI	figS4	nepI|norR	2	1395.7	0.623	-	2	0	2	False	True	1	structural
+aska_ffa:figS4:norR-wcaA	figS4	norR|wcaA	2	1624.2	0.725	-	0	0	0	False	False	0	
+aska_ffa:figS4:norR-ydeA	figS4	norR|ydeA	2	879.1	0.392	-	3	0	3	False	True	1	structural
+aska_ffa:figS4:norR-ygdD	figS4	norR|ygdD	2	988.4	0.441	-	0	0	0	False	False	0	
+aska_ffa:figS4:rfaY-lacI	figS4	lacI|rfaY	2	1634.1	0.729	-	1	1	1	True	True	0	
+aska_ffa:figS4:rfaY-nepI	figS4	nepI|rfaY	2	1435.4	0.641	-	3	1	3	True	True	0	
+aska_ffa:figS4:rfaY-norR	figS4	norR|rfaY	2	303.0	0.135	-	1	1	1	True	True	0	
+aska_ffa:figS4:rfaY-wcaA	figS4	rfaY|wcaA	2	2150.7	0.96	0	1	1	1	True	True	0	
+aska_ffa:figS4:rfaY-ydeA	figS4	rfaY|ydeA	2	799.7	0.357	-	4	1	4	True	True	0	
+aska_ffa:figS4:ygdD-lacI	figS4	lacI|ygdD	2	2110.9	0.942	0	0	0	0	False	False	0	
+aska_ffa:figS4:ygdD-nepI	figS4	nepI|ygdD	2	1514.9	0.676	-	2	0	2	False	True	1	structural
+aska_ffa:figS4:ygdD-rfaY	figS4	rfaY|ygdD	2	2001.7	0.893	0	1	1	1	True	True	0	
+aska_ffa:figS4:ygdD-wcaA	figS4	wcaA|ygdD	2	1703.6	0.76	-	0	0	0	False	False	0	
+aska_ffa:figS4:ygdD-ydeA	figS4	ydeA|ygdD	2	1505.0	0.672	-	3	0	3	False	True	1	structural
+aska_ffa:figS5:rimM	figS5	rimM	1	723.9	0.905	0	0	0	0	False	False	0	
+aska_ffa:figS5:yafL	figS5	yafL	1	853.2	1.067	0	0	0	0	False	False	0	

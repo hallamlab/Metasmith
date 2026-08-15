@@ -4,7 +4,7 @@ Three checks, in order of what they protect:
 
 **Conservation.** Re-solves a sample of sources and confirms the current leaving through
 OMEGA is the ampere that was injected, and that this module's ``bincount`` attribution
-reproduces ``ecspr_build.reaction_currents`` -- the library function the earlier probe
+reproduces ``ecspr.build.reaction_currents`` -- the library function the earlier probe
 figures used. An attribution bug would not show up as a wrong-looking figure; it would show
 up as a plausible one.
 
@@ -29,9 +29,12 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-LIB = "/home/tony/agentic_workspace/projects/fabfos/nosco/src/metasmith_libraries/resources/lib"
-if LIB not in sys.path:
-    sys.path.insert(0, LIB)
+# Staged for the sibling modules imported inside the check functions below -- this module
+# imports no ECSPr symbol of its own. See `atom_graph.py` for ECSPR_SRC.
+import os                                                            # noqa: E402
+SRC = os.environ.get("ECSPR_SRC", str(HERE.parents[3] / "src"))
+if SRC not in sys.path:
+    sys.path.insert(0, SRC)
 
 
 def overlap(A, B, k):
@@ -47,7 +50,7 @@ def overlap(A, B, k):
 def conservation(scale, n=6, leak=1e-6, gpr_table=None):
     """Per source: current out through OMEGA against the ampere injected, the KCL residual
     at every interior node, and this module's ``bincount`` attribution against the exact
-    expression ``ecspr_build.reaction_currents`` evaluates (a pandas groupby over the same
+    expression ``ecspr.build.reaction_currents`` evaluates (a pandas groupby over the same
     provenance rows). The library function itself takes a ``Solution``, whose edge currents
     come through terminal contraction; the universal-ground sweep never contracts, so the
     comparison is against the formula rather than a hand-built Solution object."""

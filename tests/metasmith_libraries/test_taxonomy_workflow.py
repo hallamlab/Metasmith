@@ -18,7 +18,7 @@ from metasmith.python_api import (
     Size,
 )
 
-from tests.conftest import (
+from conftest import (
     wait_for_workflow,
     verify_tsv_output,
     MLIB,

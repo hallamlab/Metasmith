@@ -19,26 +19,28 @@ def protocol(context: ExecutionContext):
     threads  = context.params.get('cpus')
     threads_arg = "" if threads is None else f"--threads {threads}"
 
-    context.ExecWithEnv().ifContainerDo(
-        env=img_bb,
-        cmd=f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             reformat.sh in={ireads.container} \
                 out1=split_r1.fq.gz out2=split_r2.fq.gz
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img_bb, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img_bb, cmd=_cmd)
 
     # ganon classify writes <prefix>.rep and <prefix>.tre alongside each other.
     # Use a stable prefix in the container's CWD then move both outputs.
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             ganon classify --db-prefix {idb.container} \
                 --paired-reads split_r1.fq.gz split_r2.fq.gz \
                 --output-prefix ganon2_out {threads_arg}
             mv ganon2_out.rep {iclass.container}
             mv ganon2_out.tre {irep.container}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{

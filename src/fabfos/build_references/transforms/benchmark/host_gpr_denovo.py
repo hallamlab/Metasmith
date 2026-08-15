@@ -59,21 +59,34 @@ OUT     = Path("{out}")
 GPR_COLS = {gpr_cols}
 PREFIX = "{prefix}"
 
-# staged mapper table -> the host it describes. The mapper names its `source` after the
-# ORF file's stem, which for a host proteome is that host's sequence accession -- which
-# is exactly how the acquisition names the file. That is the join, and it is why the
-# mapper's `source` column was made to name the ORF SET rather than the assay.
+# staged mapper table -> the host it describes, BY THE ORF IDS IN IT.
+#
+# The file name cannot carry this. `host_proteomes` copies each proteome to the path the
+# engine assigns -- `{{batch}}-{{i}}-{{branch}}.{{hash}}-{{key}}.faa`, which the generated
+# nextflow process collects by glob -- so the accession does not survive into the staged
+# stem, and the mapper's `source` column is that stem. Attributing on it read the
+# accession for exactly as long as nobody ran this step.
+#
+# The ids do carry it. Every record in a host's proteome is unique to that assembly, so
+# the ORFs a table describes name their proteome whatever the file is called. That is the
+# same rule check_epi300_identity.py settled on for a different join: go by content.
 ACCESSION_FOR_HOST = {{}}
+HOST_FOR_ORF = {{}}
 for d in sorted(p for p in GENOMES.glob("*") if p.is_dir()):
     faa = sorted((d / "genome").glob("*.faa"))
     if len(faa) != 1:
         raise SystemExit(f"[denovo_gpr] expected one proteome under {{d}}/genome, "
                          f"found {{[p.name for p in faa]}}")
     ACCESSION_FOR_HOST[d.name] = faa[0].stem
-HOST_FOR_ACCESSION = {{v: k for k, v in ACCESSION_FOR_HOST.items()}}
-if len(HOST_FOR_ACCESSION) != len(ACCESSION_FOR_HOST):
-    raise SystemExit(f"[denovo_gpr] two hosts share a proteome accession: "
-                     f"{{ACCESSION_FOR_HOST}} -- the source column cannot name the host")
+    for line in faa[0].open():
+        if line.startswith(">"):
+            orf = line[1:].split()[0]
+            # A record id shared by two hosts would make the attribution ambiguous, and
+            # silence about it would attach one host's table to another. RefSeq protein
+            # ids are per-assembly here because the id carries the contig accession.
+            if HOST_FOR_ORF.setdefault(orf, d.name) != d.name:
+                raise SystemExit(f"[denovo_gpr] ORF id {{orf}} appears in two host "
+                                 f"proteomes -- attribution by id is not possible")
 
 tables = [Path(p) for p in {gpr_paths}]
 print(f"[denovo_gpr] {{len(tables)}} mapper table(s) for {{len(ACCESSION_FOR_HOST)}} hosts",
@@ -87,13 +100,16 @@ for path in tables:
     if len(srcs) != 1:
         raise SystemExit(f"[denovo_gpr] {{path.name}} carries {{len(srcs)}} ORF sets "
                          f"{{srcs}} -- one table must describe one proteome")
-    host = HOST_FOR_ACCESSION.get(srcs[0])
-    if host is None:
+    attributed = {{HOST_FOR_ORF.get(o) for o in g["orf"].unique()}}
+    known = sorted(h for h in attributed if h)
+    if len(known) != 1 or None in attributed:
         raise SystemExit(
-            f"[denovo_gpr] mapper table {{path.name}} names ORF set {{srcs[0]!r}}, which "
-            f"is none of the host proteomes {{sorted(HOST_FOR_ACCESSION)}}. The host set "
-            f"is declared in acquire/genomes.py; a table from some other ORF set has no "
-            f"host to attribute it to.")
+            f"[denovo_gpr] mapper table {{path.name}} (source {{srcs[0]!r}}) has ORFs "
+            f"from {{known or 'no'}} host proteome(s)"
+            + (", and some belong to none of them" if None in attributed else "")
+            + f". The host set is declared in acquire/genomes.py; a table whose ORFs "
+              f"are not one host's has no host to attribute it to.")
+    host = known[0]
     if host in seen:
         raise SystemExit(f"[denovo_gpr] two mapper tables both name {{host}}")
     seen.add(host)

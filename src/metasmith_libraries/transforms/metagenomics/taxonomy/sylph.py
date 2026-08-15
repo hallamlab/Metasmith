@@ -17,23 +17,25 @@ def protocol(context: ExecutionContext):
     threads  = context.params.get('cpus')
     threads_arg = "" if threads is None else f"-t {threads}"
 
-    context.ExecWithEnv().ifContainerDo(
-        env=img_bb,
-        cmd=f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             reformat.sh in={ireads.container} \
                 out1=split_r1.fq.gz out2=split_r2.fq.gz
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img_bb, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img_bb, cmd=_cmd)
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             sylph profile {idb.container} \
                 -1 split_r1.fq.gz -2 split_r2.fq.gz \
                 {threads_arg} \
                 -o {iprof.container}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{

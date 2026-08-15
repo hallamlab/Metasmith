@@ -9,12 +9,12 @@ target_types:
 - annotation::diamond_uniref50_results
 - annotation::kofamscan_results
 transform_libraries:
-- transforms/logistics
-- transforms/assembly
-- transforms/metagenomics
-- transforms/functionalAnnotation
+- logistics
+- assembly
+- metagenomics
+- functionalAnnotation
 resource_libraries:
-- resources/env
+- env
 shared_input_paths: []
 input_library:
   schema: v1
@@ -23,7 +23,3 @@ input_library:
       type: sequences::long_reads
       instance_id: 1e20a199d5c2463b4db69843b515273443aaa086d3fb78fc3aa5ef64b7beac0cec3b
       origin: leaf
-  types:
-    sequences: data_types/sequences.yml
-    ref: data_types/ref.yml
-    annotation: data_types/annotation.yml

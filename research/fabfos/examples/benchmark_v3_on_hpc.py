@@ -203,12 +203,12 @@ def prepull_images(host: str, cache_dir: str, images: list[str],
         # with empty outputs. Pre-placing the .sif in the persistent store is
         # what makes the failure impossible rather than invisible.
         #
-        # NOTE (2026-07-20): an earlier version of this comment blamed registry
-        # privacy ("PRIVATE repo -> unauthorized"). That was a misdiagnosis:
-        # `quay.io/hallamlab/external_ecspr` is PUBLIC and anonymously
-        # pullable. After the rename, `quay.io/hallamlab/ecspr` is private
-        # (quay defaults new repos to private) -- so on that reference the
-        # auth story is now true, but it was never the reason for this branch.
+        # Registry privacy was never the reason for this branch, and the two
+        # readings of it that were written here are both wrong. Measured
+        # anonymously (`/v2/<repo>/tags/list`): `hallamlab/ecspr` answers 200,
+        # `hallamlab/external_ecspr` and `hallamlab/ecspr_bake` answer 401. So
+        # the canonical image IS anonymously pullable and the branch is still
+        # needed -- the compute nodes have no route to the registry at all.
         # Either way we do not put registry credentials on a shared cluster:
         # the login is a personal Docker Desktop credential, and a secret
         # copied onto a multi-user filesystem cannot be un-copied.

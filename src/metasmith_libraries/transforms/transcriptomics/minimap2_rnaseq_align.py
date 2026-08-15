@@ -27,24 +27,26 @@ def protocol(context: ExecutionContext):
 
     # minimap2: short-read mode (-x sr), no splice awareness = prokaryotic
     # Add read group with sample name so downstream tools can identify the sample
-    context.ExecWithEnv().ifContainerDo(
-        env=mm2_img,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             minimap2 -a -x sr -t {threads} \
                 -R '@RG\\tID:{sample_name}\\tSM:{sample_name}' \
                 {iref.container} {ir1.container} {ir2.container} \
                 > aligned.sam
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=mm2_img, cmd=_cmd) \
+        .ifVirtualEnvDo(env=mm2_img, cmd=_cmd)
 
     # samtools: sort and index
-    context.ExecWithEnv().ifContainerDo(
-        env=sam_img,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             samtools sort -@ {threads} -o {iout.container} aligned.sam && \
             samtools index {iout.container}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=sam_img, cmd=_cmd) \
+        .ifVirtualEnvDo(env=sam_img, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{out: iout.local}],

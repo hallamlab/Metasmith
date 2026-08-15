@@ -1,0 +1,10 @@
+name: plot_metadata_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pandas
+  - numpy
+  - seaborn
+  - matplotlib-base
+  - scipy

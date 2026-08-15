@@ -1,0 +1,21 @@
+# Hand-maintained, unlike every other file in this directory: `gen_tool_envs.py`
+# derives a one-line bioconda spec from a biocontainers image URI, and ecspr is
+# neither. This is `src/ecspr/env.yml` plus the `ecspr` package itself, and
+# `dev/ecspr.sh -be` rewrites it from that file so the two cannot disagree.
+#
+# numpy<2 is what scikit-sparse's CHOLMOD binding and cobra jointly require --
+# see src/ecspr/env.yml for why, and why pip is not a route to CHOLMOD here.
+name: ecspr
+channels:
+  - hallamlab
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - numpy<2
+  - pandas=2.3.*
+  - pyarrow>=24
+  - scipy=1.17.*
+  - scikit-sparse
+  - cobra=0.31.*
+  - ecspr

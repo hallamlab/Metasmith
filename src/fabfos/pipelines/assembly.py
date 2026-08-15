@@ -25,8 +25,7 @@ Usage:
 
     python -m fabfos.pipelines.assembly \\
         --reads pool_0.fq.gz --reads pool_1.fq.gz \\
-        --host host_background.fna --pcc1 pcc1fos_backbone.fna \\
-        --dag reports/dag/assembly --plan-only
+        --host host_background.fna --pcc1 pcc1fos_backbone.fna
 
     python -m fabfos.pipelines.assembly --reads pool_0.fq.gz \\
         --host host.fna --pcc1 pcc1.fna --output ./out --run
@@ -131,7 +130,7 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="algorithm::fabfos_recovery.py script; omit to stage a stub (plan-only)")
     p.add_argument("--staging", default=None, help="working dir (default: <output>/_fabfos)")
     p.add_argument("--output", default="./fabfos_assembly_out", help="output directory")
-    p.add_argument("--dag", default="reports/dag/assembly", help="path base for the rendered SVG")
+    p.add_argument("--dag", default="research/fabfos/reports/dag/assembly", help="path base for the rendered SVG")
     p.add_argument("--runtime", choices=[r.value for r in Runtime],
                     default=Runtime.APPTAINER.value)
     p.add_argument("--threads", type=int, default=8)

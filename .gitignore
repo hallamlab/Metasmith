@@ -1,7 +1,10 @@
 /cache
 *.sif
 __pycache__
+# stamped from the source tree immediately before each build; committing one would
+# let a tag name a source state that is not the one in the tree
 /src/metasmith/build_hash.txt
+/src/ecspr/build_hash.txt
 .ipynb_checkpoints
 .virtual_documents
 /*.ipynb
@@ -78,3 +81,22 @@ std_assembly_data
 /.cache/
 /MetasmithLibraries/
 /example_resources/
+
+# _metadata/ under the standard library and under fabfos's own algorithm
+# library is a build product (`metasmith build all`), not source -- compiled
+# from data_types/*.yml + the transform Python by dev/libraries.sh -bm (the
+# standard library) or dev/fabfos.sh -bm (fabfos's own, since it sits inside
+# the package and is not reached by --vendor-library). A stale or missing
+# copy is silent (the library loads and resolves nothing, no error anywhere),
+# which is what _assert_metadata_present in ops/build.py now guards against
+# at vendor time. See AGENTS.md > "The build is not optional".
+/src/metasmith_libraries/resources/*/_metadata/
+/src/metasmith_libraries/transforms/*/_metadata/
+/src/fabfos/algorithm/_metadata/
+
+# A deployed agent home is a build product of running something, not repo
+# content. `/msm_home/` is the current spelling and the one the ignore rules
+# missed -- they named two older ones. The tests' own home sits one directory
+# deeper and is named by tests/metasmith_libraries/conftest.py.
+/msm_home/
+/tests/metasmith_libraries/test_msm_home/

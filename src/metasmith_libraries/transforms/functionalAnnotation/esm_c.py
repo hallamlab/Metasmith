@@ -1,4 +1,3 @@
-import os
 from metasmith.python_api import *
 from pathlib import Path
 
@@ -6,16 +5,23 @@ lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
 model = Transform()
 
 image    = model.AddRequirement(lib.GetType("env::esmc.env"))
-weights  = model.AddRequirement(lib.GetType("ref::esm_c_300m_weights"))
-orfs     = model.AddRequirement(lib.GetType("sequences::orfs_shard"))
+weights  = model.AddRequirement(lib.GetType("ref::esm_c_600m_weights"))
+orfs     = model.AddRequirement(lib.GetType("sequences::orfs"))
 out_emb  = model.AddProduct(lib.GetType("annotation::esm_c_embeddings"))
 out_idx  = model.AddProduct(lib.GetType("annotation::esm_c_index"))
+# The per-layer hidden-state means EZpred's heads actually take. See the note on
+# annotation::esm_c_layer_means -- this is a different tensor from out_emb, not a
+# slice of it, so it is a product rather than something a consumer can derive.
+out_lay  = model.AddProduct(lib.GetType("annotation::esm_c_layer_means"))
 
 
 # Module-level constants per metasmith/dev guidance (msg #153): the
 # user_params runtime override channel was reverted, so all tuning lives
-# here. ESM-C 300M trained at 2048 context; sliding-window aggregation
-# handles longer ORFs (~380/1.44M for metag) via length-weighted mean.
+# here. ESM-C trained at 2048 context; sliding-window aggregation handles
+# longer ORFs (~380/1.44M for metag) via length-weighted mean.
+# 600M (1152-dim) is the canonical backbone -- it is also what the EZpred DL
+# EC heads consume, so ezpred reuses these embeddings instead of re-embedding.
+MODEL_NAME   = "esmc_600m"
 BATCH_SIZE   = 32
 MAX_LEN      = 2048
 CHUNK_OVERLAP = 128
@@ -37,6 +43,7 @@ p.add_argument("--model-name", default="esmc_300m", choices=["esmc_300m", "esmc_
 p.add_argument("--fasta", required=True)
 p.add_argument("--out-parquet", required=True)
 p.add_argument("--out-index", required=True)
+p.add_argument("--out-layers", required=True)
 p.add_argument("--device", default="cuda")
 p.add_argument("--batch-size", type=int, default=32)
 p.add_argument("--max-len", type=int, default=2048)
@@ -48,6 +55,7 @@ weights_dir = os.path.abspath(a.weights)
 fasta = os.path.abspath(a.fasta)
 out_parquet = os.path.abspath(a.out_parquet)
 out_index = os.path.abspath(a.out_index)
+out_layers = os.path.abspath(a.out_layers)
 os.chdir(weights_dir)
 
 from esm.models.esmc import ESMC
@@ -105,6 +113,13 @@ t0 = time.time()
 # Per-ORF accumulator: weighted sum of chunk-mean embeddings, plus total weight
 acc_vec = [None] * len(seqs)
 acc_w   = [0.0]  * len(seqs)
+# EZpred's own fasta2plm.py takes `hidden_states.mean(axis=2)` then indexes
+# `[layer-1]` for each of layers 34/35/36 -- so layer L is block L-1 of the stack,
+# and the tensor is the RAW per-block output, not the normalised `embeddings` the
+# forward also returns. Accumulated with the same length weights as the mean vector
+# so a chunked long sequence is treated identically in both products.
+REPR_LAYERS = [34, 35, 36]
+acc_lay = [None] * len(seqs)
 with torch.no_grad():
     for i in range(0, len(flat), a.batch_size):
         batch_entries = flat[i:i+a.batch_size]
@@ -113,6 +128,14 @@ with torch.no_grad():
         ids_t = enc.input_ids.to(device)
         mask  = (ids_t != pad_id)
         out = client(sequence_tokens=ids_t, sequence_id=mask)
+        if out.hidden_states is None:
+            raise SystemExit(
+                "[esm_c] the forward returned no hidden_states, so the per-layer "
+                "means EZpred needs cannot be built. Its heads take layers 34/35/36 "
+                "and there is no way to recover them from `embeddings` alone.")
+        # (n_layers, batch, seq, dim) -> (n_layers, batch, dim), mean over the
+        # sequence axis exactly as EZpred does before selecting its layers.
+        hs_mean = out.hidden_states.float().mean(axis=2).cpu().numpy()
         for k, (si, _, w) in enumerate(batch_entries):
             valid = mask[k]
             idxs = valid.nonzero(as_tuple=True)[0]
@@ -123,6 +146,9 @@ with torch.no_grad():
             vec = vec.float().cpu().numpy() * w
             if acc_vec[si] is None: acc_vec[si] = vec
             else:                   acc_vec[si] = acc_vec[si] + vec
+            lay = np.stack([hs_mean[L - 1, k] for L in REPR_LAYERS]) * w
+            if acc_lay[si] is None: acc_lay[si] = lay
+            else:                   acc_lay[si] = acc_lay[si] + lay
             acc_w[si] += w
         if (i // a.batch_size) % 10 == 0:
             elapsed = time.time() - t0
@@ -136,6 +162,14 @@ emb = np.vstack(embeddings)
 cols = [f"dim_{i}" for i in range(emb.shape[1])]
 pd.DataFrame(emb, columns=cols).to_parquet(out_parquet, index=False)
 pd.DataFrame({"sequence_id": ids, "index": list(range(len(ids)))}).to_csv(out_index, index=False)
+layers = np.stack([acc_lay[i] / acc_w[i] for i in range(len(seqs))]).astype(np.float32)
+# Written through an open handle, not by path. `np.save(path, ...)` appends `.npy`
+# to any name that does not already end in it, so passing the product path directly
+# writes the array BESIDE the file the step declared -- the step then reports its
+# product missing while the bytes sit next to it. A handle takes the name as given.
+with open(out_layers, "wb") as _fh:
+    np.save(_fh, layers)
+print(f"layer means {layers.shape} (layers {REPR_LAYERS}) -> {out_layers}", flush=True)
 print(f"done: {len(embeddings)} embeddings in {time.time()-t0:.1f}s", flush=True)
 '''
 
@@ -145,6 +179,7 @@ def protocol(context: ExecutionContext):
     iw      = context.Input(weights)
     iemb    = context.Output(out_emb)
     iidx    = context.Output(out_idx)
+    ilay    = context.Output(out_lay)
 
     # Constants baked at module top (BATCH_SIZE, MAX_LEN, CHUNK_OVERLAP);
     # the inference script auto-downgrades to CPU if torch doesn't see a GPU.
@@ -162,17 +197,14 @@ def protocol(context: ExecutionContext):
             (context.external_cwd/"weights", "/weights"),
             (context.external_cwd/script.name, f"/work/{script.name}"),
         ],
-        # MIG cotenancy: the relay's bash subprocess loses SLURM's CUDA_VISIBLE_DEVICES,
-        # so `$VAR` won't expand. Read it from os.environ (the metasmith container
-        # has it set via the nextflow beforeScript APPTAINERENV_CUDA_VISIBLE_DEVICES)
-        # and embed the literal MIG UUID so apptainer binds the right slice.
-        args=["--nv", "--env", f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES','')}"],
         cmd=f"""
             python /work/{script.name} \
                 --weights /weights \
+                --model-name {MODEL_NAME} \
                 --fasta {iorfs.container} \
                 --out-parquet {iemb.container} \
                 --out-index {iidx.container} \
+                --out-layers {ilay.container} \
                 --device {device} \
                 --batch-size {BATCH_SIZE} \
                 --max-len {MAX_LEN} \
@@ -181,19 +213,27 @@ def protocol(context: ExecutionContext):
     )
 
     return ExecutionResult(
-        manifest=[{out_emb: iemb.local, out_idx: iidx.local}],
-        success=iemb.local.exists() and iidx.local.exists(),
+        manifest=[{out_emb: iemb.local, out_idx: iidx.local, out_lay: ilay.local}],
+        # All three, non-empty. The layer means are the product EZpred actually
+        # consumes, so an absent one is the failure that matters most here.
+        success=all(f.exists() and f.stat().st_size > 0
+                    for f in (iemb.local, iidx.local, ilay.local)),
     )
 
 
-# NOTE: GPU via context.params["gpus"]; Resources has no gpus= field yet.
 TransformInstance(
     protocol=protocol,
     model=model,
     group_by=orfs,
+    # DECLARING the GPU is what gets one allocated -- see the note in clean.py.
+    # Hand-written `--nv` exposes whatever devices the node already has, which
+    # under a batch scheduler is none. ESM-C 600M at the upstream batch size is
+    # the larger of the two models here.
     resources=Resources(
         cpus=4,
         memory=Size.GB(16),
         duration=Duration(hours=3),
+        gpus=Gpus.REQUIRED,
+        gpu_memory=Size.GB(24),
     ),
 )

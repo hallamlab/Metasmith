@@ -25,13 +25,14 @@ def protocol(context: ExecutionContext):
     with open(dep_path.local) as f:
         acc = f.readline().strip()
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             datasets download genome accession {acc} \
                 --include gff3,protein,genome,gbff
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     context.LocalShell(f"unzip ncbi_dataset.zip")
 
     output_manifest = {}

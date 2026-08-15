@@ -23,10 +23,11 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-t {threads}"
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"/usr/local/bin/_entrypoint.sh genomad end-to-end {iasm.container} genomad_output {idb.container} {threads} --cleanup",
-    )
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"/usr/local/bin/_entrypoint.sh genomad end-to-end {iasm.container} genomad_output {idb.container} {threads} --cleanup"
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     prefix = Path(iasm.local).stem
     summary_dir = Path(f"genomad_output/{prefix}_summary")

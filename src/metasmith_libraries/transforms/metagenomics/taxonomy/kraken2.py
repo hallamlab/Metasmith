@@ -30,7 +30,7 @@ def protocol(context: ExecutionContext):
         env=img_bb,
         cmd=f"""
             reformat.sh in={ireads.container} \
-                out1=split_r1.fq.gz out2=split_r2.fq.gz
+                unbgzip=f out1=split_r1.fq.gz out2=split_r2.fq.gz
         """
     )
 

@@ -1,0 +1,298 @@
+product	sample	transform	upstream	task_dir
+1-1-1.01HCK9dZAMAbMukq-GRtIgDmU.tsv	S25	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e4/96827345ea25007f35b85c9db46770
+1-1-1.01HCK9dZAMAbMukq-SHpMEj1q.tsv	S25	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e4/96827345ea25007f35b85c9db46770
+1-1-1.01HCK9dZAMAbMukq-cD8zPnH4.parquet	S25	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e4/96827345ea25007f35b85c9db46770
+1-1-1.01HCK9dZAMAbMukq-maz6nFbQ.tsv	S25	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e4/96827345ea25007f35b85c9db46770
+1-1-1.0VfzvJWdknZPJFgy-RohhQFjN.fq.gz	NTC	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/84/3b564b3583346afe13c5e323fac77e
+1-1-1.0c6ryb63U9iwcNMQ-8Q3EVkm5.tsv	S24	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/dd/143263b36a6238efeb342ef0398cd7
+1-1-1.0c6ryb63U9iwcNMQ-8lecuclo.parquet	S24	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/dd/143263b36a6238efeb342ef0398cd7
+1-1-1.0c6ryb63U9iwcNMQ-iP7EX2jM.tsv	S24	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/dd/143263b36a6238efeb342ef0398cd7
+1-1-1.0lhx9L7ESzbqwRvO-HAd1j0iE.json	S10	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/97/b474af30c9333a9b96eedeff665827
+1-1-1.1yhRfb23RzUd4iU5-RohhQFjN.fq.gz	S28	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/87/7ebda1db24f16e706fdfd7a5d62953
+1-1-1.28fRCa04qtF7fKyR-8Q3EVkm5.tsv	S1	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/39/bf05f81ecf6b4913344ed2079fa3de
+1-1-1.28fRCa04qtF7fKyR-8lecuclo.parquet	S1	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/39/bf05f81ecf6b4913344ed2079fa3de
+1-1-1.28fRCa04qtF7fKyR-iP7EX2jM.tsv	S1	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/39/bf05f81ecf6b4913344ed2079fa3de
+1-1-1.2xIMBGbiOseSxQCD-GRtIgDmU.tsv	S11	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9b/0ef3c85ee17da2cb3e5f00ad0e2210
+1-1-1.2xIMBGbiOseSxQCD-SHpMEj1q.tsv	S11	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9b/0ef3c85ee17da2cb3e5f00ad0e2210
+1-1-1.2xIMBGbiOseSxQCD-cD8zPnH4.parquet	S11	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9b/0ef3c85ee17da2cb3e5f00ad0e2210
+1-1-1.2xIMBGbiOseSxQCD-maz6nFbQ.tsv	S11	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9b/0ef3c85ee17da2cb3e5f00ad0e2210
+1-1-1.3KOUweyBl8EbC37i-RohhQFjN.fq.gz	S20	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ab/6c089220c8da1441c47ff142e55575
+1-1-1.439bc1teDfM1Xh9n-8Q3EVkm5.tsv	S20	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c9/c1e5035e4fb0b36eb8626c9145de35
+1-1-1.439bc1teDfM1Xh9n-8lecuclo.parquet	S20	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c9/c1e5035e4fb0b36eb8626c9145de35
+1-1-1.439bc1teDfM1Xh9n-iP7EX2jM.tsv	S20	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c9/c1e5035e4fb0b36eb8626c9145de35
+1-1-1.43m4EUl7JcJZxetZ-HAd1j0iE.json	S8	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/7e/e7880736bb8474f2796b8bd46fde1e
+1-1-1.4B6fy8hZZ8vSXE6B-GRtIgDmU.tsv	S5	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e2/275b136ec71e6247a5266e7c270b7d
+1-1-1.4B6fy8hZZ8vSXE6B-SHpMEj1q.tsv	S5	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e2/275b136ec71e6247a5266e7c270b7d
+1-1-1.4B6fy8hZZ8vSXE6B-cD8zPnH4.parquet	S5	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e2/275b136ec71e6247a5266e7c270b7d
+1-1-1.4B6fy8hZZ8vSXE6B-maz6nFbQ.tsv	S5	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e2/275b136ec71e6247a5266e7c270b7d
+1-1-1.4LivI2qF6nQ0g6hi-RohhQFjN.fq.gz	S26	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/58/f3a189cf9e3b6b591318ae96df2c6f
+1-1-1.4un81LIPOwOfVns4-8Q3EVkm5.tsv	S18	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/2d/89eb2f36586df946a07499960bee49
+1-1-1.4un81LIPOwOfVns4-8lecuclo.parquet	S18	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/2d/89eb2f36586df946a07499960bee49
+1-1-1.4un81LIPOwOfVns4-iP7EX2jM.tsv	S18	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/2d/89eb2f36586df946a07499960bee49
+1-1-1.4xCV6JRU6HkGatYq-GRtIgDmU.tsv	S20	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5e/e464c4e44d774628b39ae9950183bd
+1-1-1.4xCV6JRU6HkGatYq-SHpMEj1q.tsv	S20	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5e/e464c4e44d774628b39ae9950183bd
+1-1-1.4xCV6JRU6HkGatYq-cD8zPnH4.parquet	S20	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5e/e464c4e44d774628b39ae9950183bd
+1-1-1.4xCV6JRU6HkGatYq-maz6nFbQ.tsv	S20	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5e/e464c4e44d774628b39ae9950183bd
+1-1-1.5L7plJK7KoUHYBrc-RohhQFjN.fq.gz	S11	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/99/27be08644131ee11e29661078c489b
+1-1-1.5l5mGEGow2rbOVQl-8Q3EVkm5.tsv	S11	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/8b/7c5f533c0b3cf241e0f60c29543d1a
+1-1-1.5l5mGEGow2rbOVQl-8lecuclo.parquet	S11	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/8b/7c5f533c0b3cf241e0f60c29543d1a
+1-1-1.5l5mGEGow2rbOVQl-iP7EX2jM.tsv	S11	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/8b/7c5f533c0b3cf241e0f60c29543d1a
+1-1-1.7WWrTcBLeTLku6Kf-8Q3EVkm5.tsv	S8	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f9/cb5348f5b56b589fb082b5c566f7f7
+1-1-1.7WWrTcBLeTLku6Kf-8lecuclo.parquet	S8	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f9/cb5348f5b56b589fb082b5c566f7f7
+1-1-1.7WWrTcBLeTLku6Kf-iP7EX2jM.tsv	S8	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f9/cb5348f5b56b589fb082b5c566f7f7
+1-1-1.7rMQZ4Ula2DmGaEd-GRtIgDmU.tsv	NTC	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/91/f6bf5e397a2c9f7fd6cc6e15ef6209
+1-1-1.7rMQZ4Ula2DmGaEd-SHpMEj1q.tsv	NTC	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/91/f6bf5e397a2c9f7fd6cc6e15ef6209
+1-1-1.7rMQZ4Ula2DmGaEd-cD8zPnH4.parquet	NTC	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/91/f6bf5e397a2c9f7fd6cc6e15ef6209
+1-1-1.7rMQZ4Ula2DmGaEd-maz6nFbQ.tsv	NTC	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/91/f6bf5e397a2c9f7fd6cc6e15ef6209
+1-1-1.7ywvZvwwIvowYIlc-HAd1j0iE.json	S29	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/88/a4f3466971c12fe34563bcfa367586
+1-1-1.8MSEef0blHeYv5jI-8Q3EVkm5.tsv	NTC	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/cc6d2ce84f650b95e4a9a6122b7e60
+1-1-1.8MSEef0blHeYv5jI-8lecuclo.parquet	NTC	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/cc6d2ce84f650b95e4a9a6122b7e60
+1-1-1.8MSEef0blHeYv5jI-iP7EX2jM.tsv	NTC	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/cc6d2ce84f650b95e4a9a6122b7e60
+1-1-1.9AjOqVTJNROY7DBG-GRtIgDmU.tsv	S2	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/23/36fd52ff80e6f55e6b864e55f75a08
+1-1-1.9AjOqVTJNROY7DBG-SHpMEj1q.tsv	S2	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/23/36fd52ff80e6f55e6b864e55f75a08
+1-1-1.9AjOqVTJNROY7DBG-cD8zPnH4.parquet	S2	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/23/36fd52ff80e6f55e6b864e55f75a08
+1-1-1.9AjOqVTJNROY7DBG-maz6nFbQ.tsv	S2	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/23/36fd52ff80e6f55e6b864e55f75a08
+1-1-1.9YgRvd1yUUrEnCjR-8Q3EVkm5.tsv	S14	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9a/be51fce9030afc0e5ec6a0ec92fd5b
+1-1-1.9YgRvd1yUUrEnCjR-8lecuclo.parquet	S14	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9a/be51fce9030afc0e5ec6a0ec92fd5b
+1-1-1.9YgRvd1yUUrEnCjR-iP7EX2jM.tsv	S14	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9a/be51fce9030afc0e5ec6a0ec92fd5b
+1-1-1.ASzGp3FikUvCSeI1-8Q3EVkm5.tsv	S26	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/71/da8d73803c8c29926badb49ebcb93d
+1-1-1.ASzGp3FikUvCSeI1-8lecuclo.parquet	S26	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/71/da8d73803c8c29926badb49ebcb93d
+1-1-1.ASzGp3FikUvCSeI1-iP7EX2jM.tsv	S26	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/71/da8d73803c8c29926badb49ebcb93d
+1-1-1.AXK1NbQNocBd4qqI-GRtIgDmU.tsv	S14	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/00/7d4027562d4c170c79b364cd5e18fa
+1-1-1.AXK1NbQNocBd4qqI-SHpMEj1q.tsv	S14	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/00/7d4027562d4c170c79b364cd5e18fa
+1-1-1.AXK1NbQNocBd4qqI-cD8zPnH4.parquet	S14	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/00/7d4027562d4c170c79b364cd5e18fa
+1-1-1.AXK1NbQNocBd4qqI-maz6nFbQ.tsv	S14	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/00/7d4027562d4c170c79b364cd5e18fa
+1-1-1.BACcJkTxWSoLnUg1-HAd1j0iE.json	S11	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/80/44562de140f817e1f168ec37294b75
+1-1-1.BrgvYV4bksugid5K-RohhQFjN.fq.gz	S2	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e0/c9ef3bc0991d204473022aa5a46cec
+1-1-1.CD6QZpjNMxRy2BPt-HAd1j0iE.json	S24	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/28/ac7f1e2b02d04f56706da4fd54d055
+1-1-1.CEPNkP3djLbF1a4c-RohhQFjN.fq.gz	S24	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/bd/1077637fd9d20a1adf55cc9ad9b107
+1-1-1.CNI1jcL33E2M2uV6-GRtIgDmU.tsv	S19	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/01/8ad0bf30f9c99f326adf45fb447789
+1-1-1.CNI1jcL33E2M2uV6-SHpMEj1q.tsv	S19	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/01/8ad0bf30f9c99f326adf45fb447789
+1-1-1.CNI1jcL33E2M2uV6-cD8zPnH4.parquet	S19	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/01/8ad0bf30f9c99f326adf45fb447789
+1-1-1.CNI1jcL33E2M2uV6-maz6nFbQ.tsv	S19	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/01/8ad0bf30f9c99f326adf45fb447789
+1-1-1.CWEUjZcYlFLsmIdL-HAd1j0iE.json	S21	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/19/7d894465f674bb30141c04fcfed0b6
+1-1-1.ClzuA45gFfYGa4OC-RohhQFjN.fq.gz	S9	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/da/6b9966bf67ce9a9f9b98a08d9e1fa1
+1-1-1.E7S5GJo5ekcoOV27-GRtIgDmU.tsv	S33	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c5/078686ac91a05c704bfb4c89e0e99e
+1-1-1.E7S5GJo5ekcoOV27-SHpMEj1q.tsv	S33	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c5/078686ac91a05c704bfb4c89e0e99e
+1-1-1.E7S5GJo5ekcoOV27-cD8zPnH4.parquet	S33	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c5/078686ac91a05c704bfb4c89e0e99e
+1-1-1.E7S5GJo5ekcoOV27-maz6nFbQ.tsv	S33	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c5/078686ac91a05c704bfb4c89e0e99e
+1-1-1.FFksa7f4386drlu3-HAd1j0iE.json	S5	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ea/5ae0eef3454974625c80cff1f502e5
+1-1-1.FKp680zKVo15dKgx-GRtIgDmU.tsv	S21	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ae/f83bdff6f91973d2e67fb5a9b58451
+1-1-1.FKp680zKVo15dKgx-SHpMEj1q.tsv	S21	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ae/f83bdff6f91973d2e67fb5a9b58451
+1-1-1.FKp680zKVo15dKgx-cD8zPnH4.parquet	S21	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ae/f83bdff6f91973d2e67fb5a9b58451
+1-1-1.FKp680zKVo15dKgx-maz6nFbQ.tsv	S21	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ae/f83bdff6f91973d2e67fb5a9b58451
+1-1-1.FXMpdMZVoXreYynH-8Q3EVkm5.tsv	S28	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/23/79cbf711443ab12b1d376c46cb14c2
+1-1-1.FXMpdMZVoXreYynH-8lecuclo.parquet	S28	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/23/79cbf711443ab12b1d376c46cb14c2
+1-1-1.FXMpdMZVoXreYynH-iP7EX2jM.tsv	S28	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/23/79cbf711443ab12b1d376c46cb14c2
+1-1-1.FXUzw6YavmkfL8VT-8Q3EVkm5.tsv	S10	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/eb/17c22687c92f7806001926d8767f94
+1-1-1.FXUzw6YavmkfL8VT-8lecuclo.parquet	S10	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/eb/17c22687c92f7806001926d8767f94
+1-1-1.FXUzw6YavmkfL8VT-iP7EX2jM.tsv	S10	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/eb/17c22687c92f7806001926d8767f94
+1-1-1.Fxzn1HbE69HrqGhP-8Q3EVkm5.tsv	S21	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/60/e6e5f7ef8ec3ed75653f1918cba4b5
+1-1-1.Fxzn1HbE69HrqGhP-8lecuclo.parquet	S21	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/60/e6e5f7ef8ec3ed75653f1918cba4b5
+1-1-1.Fxzn1HbE69HrqGhP-iP7EX2jM.tsv	S21	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/60/e6e5f7ef8ec3ed75653f1918cba4b5
+1-1-1.HIf9Dokx54dhfif3-8Q3EVkm5.tsv	S3	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/22/93c1ae6dcd1a9f0d12c30f15dc65ba
+1-1-1.HIf9Dokx54dhfif3-8lecuclo.parquet	S3	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/22/93c1ae6dcd1a9f0d12c30f15dc65ba
+1-1-1.HIf9Dokx54dhfif3-iP7EX2jM.tsv	S3	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/22/93c1ae6dcd1a9f0d12c30f15dc65ba
+1-1-1.IPNSBGNPpc9mx9pb-GRtIgDmU.tsv	S9	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9f/b14a3641fe88e34d76e1ef3b477429
+1-1-1.IPNSBGNPpc9mx9pb-SHpMEj1q.tsv	S9	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9f/b14a3641fe88e34d76e1ef3b477429
+1-1-1.IPNSBGNPpc9mx9pb-cD8zPnH4.parquet	S9	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9f/b14a3641fe88e34d76e1ef3b477429
+1-1-1.IPNSBGNPpc9mx9pb-maz6nFbQ.tsv	S9	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/9f/b14a3641fe88e34d76e1ef3b477429
+1-1-1.IxcbKN8xKbb2LFuz-RohhQFjN.fq.gz	S3	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/8a/0a2e1e8bceff3731e143fd8e8897f7
+1-1-1.IzegYHTs976DEGdA-HAd1j0iE.json	S23	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e3/4e973716353edbcd40cccdfd7110cb
+1-1-1.JY18N2LHdJyyKRwd-GRtIgDmU.tsv	S16	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/39/29e26f577bbc175d1ed772870b919f
+1-1-1.JY18N2LHdJyyKRwd-SHpMEj1q.tsv	S16	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/39/29e26f577bbc175d1ed772870b919f
+1-1-1.JY18N2LHdJyyKRwd-cD8zPnH4.parquet	S16	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/39/29e26f577bbc175d1ed772870b919f
+1-1-1.JY18N2LHdJyyKRwd-maz6nFbQ.tsv	S16	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/39/29e26f577bbc175d1ed772870b919f
+1-1-1.JZ2ao2vSVftn1tmM-RohhQFjN.fq.gz	S32	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/3f/ac366394490a1bc9cc9d306c779990
+1-1-1.JlzxZwbeosGoCNJt-8Q3EVkm5.tsv	S16	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d9/f102fd7191584b3ba30b9845b78944
+1-1-1.JlzxZwbeosGoCNJt-8lecuclo.parquet	S16	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d9/f102fd7191584b3ba30b9845b78944
+1-1-1.JlzxZwbeosGoCNJt-iP7EX2jM.tsv	S16	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d9/f102fd7191584b3ba30b9845b78944
+1-1-1.LDYTioCZvLduINZA-HAd1j0iE.json	S15	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/24/512b61a9ae0732c28f1b6121ee94d0
+1-1-1.LNk3O4tSKzI8rL9u-HAd1j0iE.json	S26	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/d93f643b222cc126d749e9f10d3c6b
+1-1-1.LdtwVSGjyfVMg23s-RohhQFjN.fq.gz	S23	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/37/995862f019ae7f4cc9b7b9fd6bab34
+1-1-1.MbhITNXdkxvPKGfs-RohhQFjN.fq.gz	S6	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/0c/58cc16ae36edfdb2e9042c88372df0
+1-1-1.MsBMpKnBOHHpWeP4-8Q3EVkm5.tsv	S6	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/13/d73def0821ada006f8d9e050c444e7
+1-1-1.MsBMpKnBOHHpWeP4-8lecuclo.parquet	S6	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/13/d73def0821ada006f8d9e050c444e7
+1-1-1.MsBMpKnBOHHpWeP4-iP7EX2jM.tsv	S6	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/13/d73def0821ada006f8d9e050c444e7
+1-1-1.NNyoZTXdWm2HAgXk-8Q3EVkm5.tsv	S22	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/10/f62483d4c95ecdcbee28fa6431ee53
+1-1-1.NNyoZTXdWm2HAgXk-8lecuclo.parquet	S22	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/10/f62483d4c95ecdcbee28fa6431ee53
+1-1-1.NNyoZTXdWm2HAgXk-iP7EX2jM.tsv	S22	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/10/f62483d4c95ecdcbee28fa6431ee53
+1-1-1.OBdPGjAx0bHjVYNS-8Q3EVkm5.tsv	S7	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f8/4df3cf7fbb10919ac95c241d094c02
+1-1-1.OBdPGjAx0bHjVYNS-8lecuclo.parquet	S7	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f8/4df3cf7fbb10919ac95c241d094c02
+1-1-1.OBdPGjAx0bHjVYNS-iP7EX2jM.tsv	S7	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f8/4df3cf7fbb10919ac95c241d094c02
+1-1-1.OLagzcT9G7gpvwju-8Q3EVkm5.tsv	S23	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/6c367e4278b46273cccf2c3bdf8952
+1-1-1.OLagzcT9G7gpvwju-8lecuclo.parquet	S23	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/6c367e4278b46273cccf2c3bdf8952
+1-1-1.OLagzcT9G7gpvwju-iP7EX2jM.tsv	S23	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/6c367e4278b46273cccf2c3bdf8952
+1-1-1.OQAfa5L53OPTxmyh-HAd1j0iE.json	S30	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/0b/cddaacaf9f53794ab2a583625fdd41
+1-1-1.P29oe1y1H8NiuGkv-HAd1j0iE.json	S4	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/01/ed606da8f410b374fb13c775c0bca8
+1-1-1.PUUqZ2VnRpL11taq-8Q3EVkm5.tsv	S12	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/2d/c92ab611c9049e90d3d212ee5f137d
+1-1-1.PUUqZ2VnRpL11taq-8lecuclo.parquet	S12	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/2d/c92ab611c9049e90d3d212ee5f137d
+1-1-1.PUUqZ2VnRpL11taq-iP7EX2jM.tsv	S12	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/2d/c92ab611c9049e90d3d212ee5f137d
+1-1-1.Pa6ucpXzUxAcuJtu-GRtIgDmU.tsv	S17	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/68/749e1065e50de8ca6f71f8f91d2f10
+1-1-1.Pa6ucpXzUxAcuJtu-SHpMEj1q.tsv	S17	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/68/749e1065e50de8ca6f71f8f91d2f10
+1-1-1.Pa6ucpXzUxAcuJtu-cD8zPnH4.parquet	S17	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/68/749e1065e50de8ca6f71f8f91d2f10
+1-1-1.Pa6ucpXzUxAcuJtu-maz6nFbQ.tsv	S17	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/68/749e1065e50de8ca6f71f8f91d2f10
+1-1-1.PkimTfaEniSFqsdN-HAd1j0iE.json	S17	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/33/c8993ea67d77cd2b9f2e112ab408bf
+1-1-1.PzWGcdbrENYnIEsl-HAd1j0iE.json	S33	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/8f/4c9f259abc5be516311e5abf4dff15
+1-1-1.QLVpFAPfSc0Wb2iw-HAd1j0iE.json	S1	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/bf/8b7599ca8bb31da3ed41d5ecfee638
+1-1-1.QOTDnidJ9lByNc7y-RohhQFjN.fq.gz	S25	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/fd/4f8c8506c42b071fe6f8478b62411f
+1-1-1.QQPjJFqnviKKDdns-HAd1j0iE.json	S19	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/af/c663016502442a207545c80b67b1a8
+1-1-1.QQTrU8TKInNUYeoO-HAd1j0iE.json	NTC	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/57/d7cf8252ee8e0074c632374a252a6f
+1-1-1.QX1uCKm9RNmRtfAx-HAd1j0iE.json	S6	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a1/7dd008ad4e46b7b4d1c3e4bbc2abc5
+1-1-1.QgjOzZ09l9i6knsR-GRtIgDmU.tsv	S1	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/fc/096ebde533c7415cc095839d9ec149
+1-1-1.QgjOzZ09l9i6knsR-SHpMEj1q.tsv	S1	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/fc/096ebde533c7415cc095839d9ec149
+1-1-1.QgjOzZ09l9i6knsR-cD8zPnH4.parquet	S1	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/fc/096ebde533c7415cc095839d9ec149
+1-1-1.QgjOzZ09l9i6knsR-maz6nFbQ.tsv	S1	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/fc/096ebde533c7415cc095839d9ec149
+1-1-1.QklBXQgP2QFZv9Ze-RohhQFjN.fq.gz	S8	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/51/2530b153bc55ad3c9cb89525076f0d
+1-1-1.Qr8WER28PwzTwUhF-GRtIgDmU.tsv	S4	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/1c/b94b01073b68b77db3c6c243d46ff7
+1-1-1.Qr8WER28PwzTwUhF-SHpMEj1q.tsv	S4	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/1c/b94b01073b68b77db3c6c243d46ff7
+1-1-1.Qr8WER28PwzTwUhF-cD8zPnH4.parquet	S4	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/1c/b94b01073b68b77db3c6c243d46ff7
+1-1-1.Qr8WER28PwzTwUhF-maz6nFbQ.tsv	S4	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/1c/b94b01073b68b77db3c6c243d46ff7
+1-1-1.R2YM4kqhMat1tSDX-HAd1j0iE.json	S25	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/81/4c93bd79084a10e8881765281d8d3d
+1-1-1.RJslMZLJ1A0JGMxw-HAd1j0iE.json	S18	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d3/42c09210cc5b864de3c0bdcafb6a56
+1-1-1.S2Fy1aDDtFSwvBNP-HAd1j0iE.json	S13	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f2/fc346230d42481369a6b5f65dad93c
+1-1-1.SE6URQqgwsDooLq4-GRtIgDmU.tsv	S26	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c8/8d32aa4d51f2f2142fcf4ca5fa37cf
+1-1-1.SE6URQqgwsDooLq4-SHpMEj1q.tsv	S26	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c8/8d32aa4d51f2f2142fcf4ca5fa37cf
+1-1-1.SE6URQqgwsDooLq4-cD8zPnH4.parquet	S26	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c8/8d32aa4d51f2f2142fcf4ca5fa37cf
+1-1-1.SE6URQqgwsDooLq4-maz6nFbQ.tsv	S26	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c8/8d32aa4d51f2f2142fcf4ca5fa37cf
+1-1-1.Slp2zAk0cuYifAEl-HAd1j0iE.json	S27	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/0a/61f95abe8d8635374fda9ed63407a0
+1-1-1.SnPdwxepFipTP6fQ-RohhQFjN.fq.gz	S14	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/bb/f9080d0324d98d1cdeb473b0ae99c5
+1-1-1.TM0TJzwkzYhQz8vO-RohhQFjN.fq.gz	S13	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/cd/868b1eefca1d3e6ef4251b90254200
+1-1-1.UuWOdRNf2iRU3a0s-GRtIgDmU.tsv	S3	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a0/9f7f902dad08d9c968a0cdc4a88389
+1-1-1.UuWOdRNf2iRU3a0s-SHpMEj1q.tsv	S3	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a0/9f7f902dad08d9c968a0cdc4a88389
+1-1-1.UuWOdRNf2iRU3a0s-cD8zPnH4.parquet	S3	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a0/9f7f902dad08d9c968a0cdc4a88389
+1-1-1.UuWOdRNf2iRU3a0s-maz6nFbQ.tsv	S3	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a0/9f7f902dad08d9c968a0cdc4a88389
+1-1-1.V2bVmlHdVTTPu7C4-RohhQFjN.fq.gz	S16	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d2/c7ada6fc318ef11046803159e0d3dc
+1-1-1.Vneit8ULTahKdRZb-GRtIgDmU.tsv	S29	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/4e/ea3611cae28d42f7dd75f4cb23e43e
+1-1-1.Vneit8ULTahKdRZb-SHpMEj1q.tsv	S29	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/4e/ea3611cae28d42f7dd75f4cb23e43e
+1-1-1.Vneit8ULTahKdRZb-cD8zPnH4.parquet	S29	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/4e/ea3611cae28d42f7dd75f4cb23e43e
+1-1-1.Vneit8ULTahKdRZb-maz6nFbQ.tsv	S29	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/4e/ea3611cae28d42f7dd75f4cb23e43e
+1-1-1.W6RLtc1JWrQak6xQ-GRtIgDmU.tsv	S28	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c5/6dfbc0f283b6b01e3e2196066c48bb
+1-1-1.W6RLtc1JWrQak6xQ-SHpMEj1q.tsv	S28	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c5/6dfbc0f283b6b01e3e2196066c48bb
+1-1-1.W6RLtc1JWrQak6xQ-cD8zPnH4.parquet	S28	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c5/6dfbc0f283b6b01e3e2196066c48bb
+1-1-1.W6RLtc1JWrQak6xQ-maz6nFbQ.tsv	S28	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c5/6dfbc0f283b6b01e3e2196066c48bb
+1-1-1.WnzuuFCPEnCvCwgu-8Q3EVkm5.tsv	S2	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/80/667c032515a6a1fd0b8d1c35cf22a7
+1-1-1.WnzuuFCPEnCvCwgu-8lecuclo.parquet	S2	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/80/667c032515a6a1fd0b8d1c35cf22a7
+1-1-1.WnzuuFCPEnCvCwgu-iP7EX2jM.tsv	S2	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/80/667c032515a6a1fd0b8d1c35cf22a7
+1-1-1.X9ogN7cwWyqV1rpF-GRtIgDmU.tsv	S30	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/82/f586575e2f1c09db4ef273e60b16e0
+1-1-1.X9ogN7cwWyqV1rpF-SHpMEj1q.tsv	S30	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/82/f586575e2f1c09db4ef273e60b16e0
+1-1-1.X9ogN7cwWyqV1rpF-cD8zPnH4.parquet	S30	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/82/f586575e2f1c09db4ef273e60b16e0
+1-1-1.X9ogN7cwWyqV1rpF-maz6nFbQ.tsv	S30	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/82/f586575e2f1c09db4ef273e60b16e0
+1-1-1.X9tFaexu0G0BDtTv-RohhQFjN.fq.gz	S19	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/20/d8b88ff16c5b6cd1567796ce14e9ed
+1-1-1.XRi701FcJjjCcIJE-GRtIgDmU.tsv	S7	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/3d/903bc7e236b6f1afc71f5c318b214f
+1-1-1.XRi701FcJjjCcIJE-SHpMEj1q.tsv	S7	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/3d/903bc7e236b6f1afc71f5c318b214f
+1-1-1.XRi701FcJjjCcIJE-cD8zPnH4.parquet	S7	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/3d/903bc7e236b6f1afc71f5c318b214f
+1-1-1.XRi701FcJjjCcIJE-maz6nFbQ.tsv	S7	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/3d/903bc7e236b6f1afc71f5c318b214f
+1-1-1.XWXfrEsWbQLdMO4D-HAd1j0iE.json	S3	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/8d/16e2b829e81950697a9a42121cec57
+1-1-1.Xa23GR7ltX1EMCaq-RohhQFjN.fq.gz	S12	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a7/a696d53af47974e10f1897405552cc
+1-1-1.Xgbxr3gIEwHxmPmK-8Q3EVkm5.tsv	S19	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/fc/2f7033d4bb06f6bf6c5e754e0721c5
+1-1-1.Xgbxr3gIEwHxmPmK-8lecuclo.parquet	S19	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/fc/2f7033d4bb06f6bf6c5e754e0721c5
+1-1-1.Xgbxr3gIEwHxmPmK-iP7EX2jM.tsv	S19	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/fc/2f7033d4bb06f6bf6c5e754e0721c5
+1-1-1.ZJ2SGey17DpJpgmG-RohhQFjN.fq.gz	S29	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d5/44e4f05d1483208961cde90720c148
+1-1-1.ZMmuxNE2X321lGae-HAd1j0iE.json	S22	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5a/c71a7c760e0211b7ea244283b1833b
+1-1-1.Zo5ifukfMkVkjzFe-HAd1j0iE.json	S16	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c2/8ab54ad806184b499c2a10b1ed40c5
+1-1-1.ZoDf6dZEoZKHIMZH-RohhQFjN.fq.gz	S4	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/57/53a07b03e07de4784e2eab9f5c3732
+1-1-1.aOi7XDv1jodLoeTG-8Q3EVkm5.tsv	S5	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/61/424c2f97e275a8e1077b5e5dd58e3a
+1-1-1.aOi7XDv1jodLoeTG-8lecuclo.parquet	S5	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/61/424c2f97e275a8e1077b5e5dd58e3a
+1-1-1.aOi7XDv1jodLoeTG-iP7EX2jM.tsv	S5	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/61/424c2f97e275a8e1077b5e5dd58e3a
+1-1-1.as0LFV4jcZBVeaAT-GRtIgDmU.tsv	S15	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ed/390bc288c2af5f3b0c522d5fb00468
+1-1-1.as0LFV4jcZBVeaAT-SHpMEj1q.tsv	S15	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ed/390bc288c2af5f3b0c522d5fb00468
+1-1-1.as0LFV4jcZBVeaAT-cD8zPnH4.parquet	S15	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ed/390bc288c2af5f3b0c522d5fb00468
+1-1-1.as0LFV4jcZBVeaAT-maz6nFbQ.tsv	S15	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ed/390bc288c2af5f3b0c522d5fb00468
+1-1-1.btskgvYgpK5TkYCK-GRtIgDmU.tsv	S27	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/60/b14f01c4e285755c8127cdfcf471cd
+1-1-1.btskgvYgpK5TkYCK-SHpMEj1q.tsv	S27	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/60/b14f01c4e285755c8127cdfcf471cd
+1-1-1.btskgvYgpK5TkYCK-cD8zPnH4.parquet	S27	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/60/b14f01c4e285755c8127cdfcf471cd
+1-1-1.btskgvYgpK5TkYCK-maz6nFbQ.tsv	S27	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/60/b14f01c4e285755c8127cdfcf471cd
+1-1-1.cx5YyqKikBXCDIgb-RohhQFjN.fq.gz	S22	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e8/16ad2ab8bb3e29f29e79587b11cf1a
+1-1-1.dkxUd6oX3A1OfOjr-RohhQFjN.fq.gz	S27	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a3/aaf4fc129c73d20cf1c01e965642a0
+1-1-1.gVVBUR8o37O955bo-HAd1j0iE.json	S2	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/08/77bf1f8c560f2b1abd6d950c4b8957
+1-1-1.ht35i4w4poYLcZKA-RohhQFjN.fq.gz	S17	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/41/749d2574c14980f9b6ed5b3e7419c5
+1-1-1.iP23sOYqqJi5vqYd-8Q3EVkm5.tsv	S4	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/63/772dd113439657d0663ef2be1aaf6c
+1-1-1.iP23sOYqqJi5vqYd-8lecuclo.parquet	S4	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/63/772dd113439657d0663ef2be1aaf6c
+1-1-1.iP23sOYqqJi5vqYd-iP7EX2jM.tsv	S4	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/63/772dd113439657d0663ef2be1aaf6c
+1-1-1.k4fdE5Ly8YhbqO1Y-RohhQFjN.fq.gz	S5	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a6/90e1ae9e2a5de97a35a77f088a43d3
+1-1-1.mDxVGaoPbZ5795FZ-GRtIgDmU.tsv	S24	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e1/d7f8efbe7714e50e0dee2e47145cf9
+1-1-1.mDxVGaoPbZ5795FZ-SHpMEj1q.tsv	S24	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e1/d7f8efbe7714e50e0dee2e47145cf9
+1-1-1.mDxVGaoPbZ5795FZ-cD8zPnH4.parquet	S24	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e1/d7f8efbe7714e50e0dee2e47145cf9
+1-1-1.mDxVGaoPbZ5795FZ-maz6nFbQ.tsv	S24	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e1/d7f8efbe7714e50e0dee2e47145cf9
+1-1-1.mEiZZ5B1TErMYJfM-GRtIgDmU.tsv	S18	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e1/15278ede26cd16d2df98cad6478dc7
+1-1-1.mEiZZ5B1TErMYJfM-SHpMEj1q.tsv	S18	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e1/15278ede26cd16d2df98cad6478dc7
+1-1-1.mEiZZ5B1TErMYJfM-cD8zPnH4.parquet	S18	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e1/15278ede26cd16d2df98cad6478dc7
+1-1-1.mEiZZ5B1TErMYJfM-maz6nFbQ.tsv	S18	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e1/15278ede26cd16d2df98cad6478dc7
+1-1-1.mc8I4AjkmrBUk49V-HAd1j0iE.json	S20	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/1d/1e90161cc3dad77010b34a8e041be8
+1-1-1.n5PO00ZwFZr5cUCB-8Q3EVkm5.tsv	S17	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/85/85318f59998662108c40cbfbf232b1
+1-1-1.n5PO00ZwFZr5cUCB-8lecuclo.parquet	S17	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/85/85318f59998662108c40cbfbf232b1
+1-1-1.n5PO00ZwFZr5cUCB-iP7EX2jM.tsv	S17	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/85/85318f59998662108c40cbfbf232b1
+1-1-1.nCeLnPSiD1XZVwqJ-GRtIgDmU.tsv	S13	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/dd/6c0b29c5d1ffa811c44f1fef2974bc
+1-1-1.nCeLnPSiD1XZVwqJ-SHpMEj1q.tsv	S13	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/dd/6c0b29c5d1ffa811c44f1fef2974bc
+1-1-1.nCeLnPSiD1XZVwqJ-cD8zPnH4.parquet	S13	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/dd/6c0b29c5d1ffa811c44f1fef2974bc
+1-1-1.nCeLnPSiD1XZVwqJ-maz6nFbQ.tsv	S13	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/dd/6c0b29c5d1ffa811c44f1fef2974bc
+1-1-1.nXQanJEGt3xJDy8L-GRtIgDmU.tsv	S8	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/b5/24dd55c660e65deaa88385f88622b6
+1-1-1.nXQanJEGt3xJDy8L-SHpMEj1q.tsv	S8	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/b5/24dd55c660e65deaa88385f88622b6
+1-1-1.nXQanJEGt3xJDy8L-cD8zPnH4.parquet	S8	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/b5/24dd55c660e65deaa88385f88622b6
+1-1-1.nXQanJEGt3xJDy8L-maz6nFbQ.tsv	S8	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/b5/24dd55c660e65deaa88385f88622b6
+1-1-1.o3c9CZgtU9S2sjB0-GRtIgDmU.tsv	S32	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c2/37009d98b2f16592876ab0c11341f9
+1-1-1.o3c9CZgtU9S2sjB0-SHpMEj1q.tsv	S32	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c2/37009d98b2f16592876ab0c11341f9
+1-1-1.o3c9CZgtU9S2sjB0-cD8zPnH4.parquet	S32	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c2/37009d98b2f16592876ab0c11341f9
+1-1-1.o3c9CZgtU9S2sjB0-maz6nFbQ.tsv	S32	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/c2/37009d98b2f16592876ab0c11341f9
+1-1-1.oEtMqfWVbBxXHV95-GRtIgDmU.tsv	S12	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a3/8c38c96db81bc989d8eb52b626379b
+1-1-1.oEtMqfWVbBxXHV95-SHpMEj1q.tsv	S12	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a3/8c38c96db81bc989d8eb52b626379b
+1-1-1.oEtMqfWVbBxXHV95-cD8zPnH4.parquet	S12	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a3/8c38c96db81bc989d8eb52b626379b
+1-1-1.oEtMqfWVbBxXHV95-maz6nFbQ.tsv	S12	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a3/8c38c96db81bc989d8eb52b626379b
+1-1-1.oP1PiCLDlN0wkUGY-GRtIgDmU.tsv	S31	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e2/a8d31da95a2017db6c92d534f3aa0d
+1-1-1.oP1PiCLDlN0wkUGY-SHpMEj1q.tsv	S31	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e2/a8d31da95a2017db6c92d534f3aa0d
+1-1-1.oP1PiCLDlN0wkUGY-cD8zPnH4.parquet	S31	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e2/a8d31da95a2017db6c92d534f3aa0d
+1-1-1.oP1PiCLDlN0wkUGY-maz6nFbQ.tsv	S31	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e2/a8d31da95a2017db6c92d534f3aa0d
+1-1-1.onKJTzIZowunFZQ0-GRtIgDmU.tsv	S23	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/56/b6c6ed3f21eb6429f13d2068da43af
+1-1-1.onKJTzIZowunFZQ0-SHpMEj1q.tsv	S23	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/56/b6c6ed3f21eb6429f13d2068da43af
+1-1-1.onKJTzIZowunFZQ0-cD8zPnH4.parquet	S23	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/56/b6c6ed3f21eb6429f13d2068da43af
+1-1-1.onKJTzIZowunFZQ0-maz6nFbQ.tsv	S23	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/56/b6c6ed3f21eb6429f13d2068da43af
+1-1-1.p1QnjaK0pZTPHSOO-RohhQFjN.fq.gz	S7	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d0/db499a197da0a7d9be65f269319b7f
+1-1-1.pSRHzwXxwgh9HiR8-8Q3EVkm5.tsv	S32	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/df/27da15df3a81bddc930e47bb9a4450
+1-1-1.pSRHzwXxwgh9HiR8-8lecuclo.parquet	S32	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/df/27da15df3a81bddc930e47bb9a4450
+1-1-1.pSRHzwXxwgh9HiR8-iP7EX2jM.tsv	S32	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/df/27da15df3a81bddc930e47bb9a4450
+1-1-1.pTyFOFXUKR9VRJhF-RohhQFjN.fq.gz	S1	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d5/bd9c4191998c95de3153911d4e2947
+1-1-1.pVBNjuotPj26YKHX-HAd1j0iE.json	S14	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/7f/ad58d864c705e5fde28347b2aeb6e2
+1-1-1.q0BoI0MIToSUMnVL-RohhQFjN.fq.gz	S33	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/85/043874a026e136ad0913e0523fcc2a
+1-1-1.qH3Bq7v4cXhkGLAf-RohhQFjN.fq.gz	S10	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/25/4543247b88ce6a0d4a0379a4cbde96
+1-1-1.qN0TocA9AAHxywJY-GRtIgDmU.tsv	S10	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/12/44f51e031154166d90beff06cd0ee5
+1-1-1.qN0TocA9AAHxywJY-SHpMEj1q.tsv	S10	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/12/44f51e031154166d90beff06cd0ee5
+1-1-1.qN0TocA9AAHxywJY-cD8zPnH4.parquet	S10	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/12/44f51e031154166d90beff06cd0ee5
+1-1-1.qN0TocA9AAHxywJY-maz6nFbQ.tsv	S10	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/12/44f51e031154166d90beff06cd0ee5
+1-1-1.rkqeraU9nB2D79Rw-HAd1j0iE.json	S7	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/bc/1023d3021c44df2c01b405e7bebd5e
+1-1-1.rngFrsO4eNgfgh74-HAd1j0iE.json	S32	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d0/49e5bd6723bb91ccda20c307a66b74
+1-1-1.tdiMdWfixh6fjadZ-GRtIgDmU.tsv	S22	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/0f86c6ddd2305c9c9cf926d8785263
+1-1-1.tdiMdWfixh6fjadZ-SHpMEj1q.tsv	S22	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/0f86c6ddd2305c9c9cf926d8785263
+1-1-1.tdiMdWfixh6fjadZ-cD8zPnH4.parquet	S22	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/0f86c6ddd2305c9c9cf926d8785263
+1-1-1.tdiMdWfixh6fjadZ-maz6nFbQ.tsv	S22	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/5f/0f86c6ddd2305c9c9cf926d8785263
+1-1-1.tzI2Z7R08UsWbSsM-HAd1j0iE.json	S9	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f4/c15a17a4408a905c3666c80c24ac60
+1-1-1.tzRPVczh5iORmfyC-HAd1j0iE.json	S31	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f9/11c3d2e3e9bde00bd6d2dd2b5592a1
+1-1-1.ubpmBAJp4EcjX09P-8Q3EVkm5.tsv	S15	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/da/16aa80d5f74cc4ff7e8cbf140a851f
+1-1-1.ubpmBAJp4EcjX09P-8lecuclo.parquet	S15	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/da/16aa80d5f74cc4ff7e8cbf140a851f
+1-1-1.ubpmBAJp4EcjX09P-iP7EX2jM.tsv	S15	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/da/16aa80d5f74cc4ff7e8cbf140a851f
+1-1-1.vZleBNrOn2qClpIr-RohhQFjN.fq.gz	S18	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/cb/f90f3be4ac7518265978a01abd1764
+1-1-1.wE2wf498KZm7WPgc-RohhQFjN.fq.gz	S31	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/91/2ea10220f02f709d5eba1a35869e96
+1-1-1.wWW9uQ49yIZ5GeXM-8Q3EVkm5.tsv	S31	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/0f/2f6517e8a8aff9754d91513f77cc50
+1-1-1.wWW9uQ49yIZ5GeXM-8lecuclo.parquet	S31	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/0f/2f6517e8a8aff9754d91513f77cc50
+1-1-1.wWW9uQ49yIZ5GeXM-iP7EX2jM.tsv	S31	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/0f/2f6517e8a8aff9754d91513f77cc50
+1-1-1.xVuoJ7ITKW5iVBWQ-RohhQFjN.fq.gz	S15	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/d7/0989ae9ddf504c107ed1d7baf37340
+1-1-1.xZvD8e7qQi8PUA2N-GRtIgDmU.tsv	S6	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/cc/25537c0809deda87da3adcbbce2f7e
+1-1-1.xZvD8e7qQi8PUA2N-SHpMEj1q.tsv	S6	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/cc/25537c0809deda87da3adcbbce2f7e
+1-1-1.xZvD8e7qQi8PUA2N-cD8zPnH4.parquet	S6	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/cc/25537c0809deda87da3adcbbce2f7e
+1-1-1.xZvD8e7qQi8PUA2N-maz6nFbQ.tsv	S6	kraken2	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/cc/25537c0809deda87da3adcbbce2f7e
+1-1-1.xiyEvdNYAYUFhZ5W-8Q3EVkm5.tsv	S33	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/7c/3e1d5a0283472d1fa6144f9a967f31
+1-1-1.xiyEvdNYAYUFhZ5W-8lecuclo.parquet	S33	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/7c/3e1d5a0283472d1fa6144f9a967f31
+1-1-1.xiyEvdNYAYUFhZ5W-iP7EX2jM.tsv	S33	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/7c/3e1d5a0283472d1fa6144f9a967f31
+1-1-1.xn7pdkPDnqeJBL2t-8Q3EVkm5.tsv	S29	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ea/3ee4ddec08b3ecde985cb2d50d9a17
+1-1-1.xn7pdkPDnqeJBL2t-8lecuclo.parquet	S29	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ea/3ee4ddec08b3ecde985cb2d50d9a17
+1-1-1.xn7pdkPDnqeJBL2t-iP7EX2jM.tsv	S29	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/ea/3ee4ddec08b3ecde985cb2d50d9a17
+1-1-1.xu9VFZly1lpfU6l4-8Q3EVkm5.tsv	S13	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a2/e5175fa73fa6a1c40529dcb17fbf31
+1-1-1.xu9VFZly1lpfU6l4-8lecuclo.parquet	S13	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a2/e5175fa73fa6a1c40529dcb17fbf31
+1-1-1.xu9VFZly1lpfU6l4-iP7EX2jM.tsv	S13	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/a2/e5175fa73fa6a1c40529dcb17fbf31
+1-1-1.yZNYTvf1iyHHfSU6-HAd1j0iE.json	S12	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/48/6fd4ddf2e27bb3e52c7d55993e7d2b
+1-1-1.z6MlKJdtSC7Lyht2-HAd1j0iE.json	S28	seqkit_reads	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/e1/1b081d5044a9c886ed51551bff37f1
+1-1-1.zERBWmwtz19RsOuH-RohhQFjN.fq.gz	S30	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/97/e1309e15559e608b8245667394e845
+1-1-1.zPUGC9JfHEVjWc2C-RohhQFjN.fq.gz	S21	interleave_zipped_short_reads		/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/f8/86fac855c7f4b113ba0019ce943fe0
+1-1-1.zSjcwN1i83ybtX6d-8Q3EVkm5.tsv	S30	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/36/e71351fda6f4661ffd7feaf30301c1
+1-1-1.zSjcwN1i83ybtX6d-8lecuclo.parquet	S30	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/36/e71351fda6f4661ffd7feaf30301c1
+1-1-1.zSjcwN1i83ybtX6d-iP7EX2jM.tsv	S30	centrifuger	interleave_zipped_short_reads	/scratch/phyberos/gmcf3495/metasmith/runs/KMQ5eomS/nxf_work/36/e71351fda6f4661ffd7feaf30301c1

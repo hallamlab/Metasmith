@@ -1,6 +1,6 @@
 outs:
-- md5: c7b3aabc131309742042ea7a68b4d663.dir
-  size: 62974846
-  nfiles: 11
+- md5: 9d0f8949db9dba1ae0bb71077e8cc387.dir
+  size: 104667775
+  nfiles: 18
   hash: md5
   path: genomes

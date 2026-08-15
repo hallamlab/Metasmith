@@ -59,23 +59,25 @@ def protocol(context: ExecutionContext):
     cpus = context.params.get("cpus")
     cpus_string = "" if cpus is None else f"-t {cpus}"
     temp_mapping_path = Path("./temp.paf.gz")
-    context.ExecWithEnv().ifContainerDo(
-        env = img_mm2,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             minimap2 {preset} {cpus_string} \
                 {ireads.container} {ireads.container} | gzip -1 >{temp_mapping_path}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img_mm2, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img_mm2, cmd=_cmd)
 
     Log.Info("miniasm")
-    context.ExecWithEnv().ifContainerDo(
-        env = img_mam,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             miniasm \
                 -f {ireads.container} {temp_mapping_path} \
                 >{iout_asm.container}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img_mam, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img_mam, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[{
