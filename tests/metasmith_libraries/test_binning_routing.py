@@ -203,17 +203,35 @@ class TestCheckMLineageRouting:
 
 
 class TestCheckMParallelFork:
-    """Row 37 contract: a comparison harness must drive four separate
-    workflows (one per lineage). TargetBuilder rejects the same target
-    type added twice, so the "all four in one plan" pattern is run as
-    four planning calls instead."""
+    """Row 37 contract: the same target type may be asked for more than once
+    when its parents differ -- that is what makes rows 33-36 four distinct
+    requests rather than four collisions. `Add` refuses only a request
+    identical in *both* type and parents, which is one request asked for twice.
+
+    The comparison harness still drives four separate workflows, one per
+    lineage. Whether it must, now that same-type-different-parents plans in a
+    single call, is an open library-design question and deliberately not
+    settled here."""
 
     def test_row37_target_builder_refuses_duplicate(self):
         targets = TargetBuilder()
-        parent = targets.Add("sequences::metabat2_bin_fasta")
-        targets.Add("taxonomy::checkm_stats", parents={parent})
-        targets.Add("sequences::semibin2_bin_fasta")
+        metabat2 = targets.Add("sequences::metabat2_bin_fasta")
+        semibin2 = targets.Add("sequences::semibin2_bin_fasta")
+        targets.Add("taxonomy::checkm_stats", parents={metabat2})
+        # Same type, different parent: a genuinely distinct request, accepted.
+        targets.Add("taxonomy::checkm_stats", parents={semibin2})
+        # Same type and the same parent: the duplicate, refused.
         with pytest.raises(AssertionError, match="already added"):
+            targets.Add("taxonomy::checkm_stats", parents={metabat2})
+
+    def test_row37_a_type_name_is_not_a_handle(self):
+        """The defect this file carried: `parents={"ns::type"}` builds a spec
+        that equals nothing already added, so the duplicate the test means to
+        construct never exists and the assertion never fires. Guarded now, so
+        the mistake fails loudly at the call instead of silently passing."""
+        targets = TargetBuilder()
+        targets.Add("sequences::semibin2_bin_fasta")
+        with pytest.raises(AssertionError, match="rather than a handle"):
             targets.Add(
                 "taxonomy::checkm_stats",
                 parents={"sequences::semibin2_bin_fasta"},

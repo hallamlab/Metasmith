@@ -1,7 +1,8 @@
 """How a leaf gets its identity -- the one thing that decides cache reuse.
 
-A leaf's `instance_id` is `multihash(blake3(file_bytes) || relpath)` when the
-file is present at `AddItem` time, which is what makes two independent runs
+A leaf's `instance_id` is `multihash(blake3(contents) || relpath)` when the path
+is present at `AddItem` time -- a file's bytes, or a directory's whole tree
+digested by `directory_multihash_key` -- which is what makes two independent runs
 over identical inputs hit the same cache shards with no import step. Folding
 the relative path in is not decoration: pure content-addressing collapses every
 degenerate-but-distinct input -- N empty files, byte-identical samples -- onto
@@ -30,7 +31,11 @@ import time
 import uuid
 from pathlib import Path
 
-from ...caching.keys import content_multihash_key, multihash_key
+from ...caching.keys import (
+    content_multihash_key,
+    directory_multihash_key,
+    multihash_key,
+)
 from ...hashing import KeyGenerator
 from ..paths import is_deferred
 
@@ -91,10 +96,20 @@ class _LeafIdentity:
             except ValueError:
                 fold_path = path
             try:
+                # A directory is addressed exactly as a file is -- same fold,
+                # same fork handling -- because it is the same kind of thing to
+                # everything downstream: a library item whose bytes decide reuse.
+                # Only the digest differs. Anything that is neither (absent, or
+                # remote) still falls to the random branch below, which is what
+                # that branch is for.
+                content = None
                 if abs_path.is_file():
                     # content digest ⊕ library-relative path → stable across
                     # runs/hosts yet distinct per (path, content) pair.
                     content = content_multihash_key(abs_path)
+                elif abs_path.is_dir():
+                    content = directory_multihash_key(abs_path)
+                if content is not None:
                     fold = str(fold_path).encode("utf-8")
                     if self.fork_id:
                         # A fork is the user saying "treat these inputs as new"
@@ -135,7 +150,10 @@ class _LeafIdentity:
         re-randomizing on every one.
         """
         abs_path = path if path.is_absolute() else self.location / path
-        if not os.environ.get("METASMITH_LEAF_RANDOM") and abs_path.is_file():
+        # `exists()` rather than `is_file()`: a directory item is content-
+        # addressable too, and sending it down the derive-from-the-old-id branch
+        # would fork it off a random predecessor instead of its own contents.
+        if not os.environ.get("METASMITH_LEAF_RANDOM") and abs_path.exists():
             self._mint_leaf_id(path)
         else:
             seed = f"{entry['instance_id']}\x00fork:{self.fork_id}".encode("utf-8")

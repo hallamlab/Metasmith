@@ -24,8 +24,9 @@ from metasmith.models.solver_backend import Backend, UsePythonSolver
 from metasmith.models.solver_engine import (
     SOLVER_WIRE_VERSION,
     CallEngine,
+    GetEngine,
+    ResetEngineCache,
     packaged_engine_path,
-    probe_engine,
 )
 from metasmith.models.solver_wire import encode_problem
 from metasmith.testing.solver_bench import CORPUS
@@ -34,12 +35,16 @@ from metasmith.testing.solver_verification import GeneratorDials, generate_probl
 
 @pytest.fixture(scope="module")
 def engine():
+    # Through `GetEngine`, not `probe_engine(packaged_engine_path())` -- see the
+    # `rust_engine` fixture in test_solver_engine.py for why those differ in a
+    # source checkout, and what it cost to learn.
     path = packaged_engine_path()
     if path is None:
         pytest.skip("no msm_solver staged for this platform (./dev.sh -be)")
-    info = probe_engine(path)
+    ResetEngineCache()
+    info = GetEngine()
     if info is None:
-        pytest.fail(f"a binary is staged at [{path}] but failed its handshake")
+        pytest.fail(f"a binary is staged at [{path}] but could not be resolved or failed its handshake")
     return info
 
 

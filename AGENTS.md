@@ -74,8 +74,14 @@ the GUI's type panel simply goes blank.
 The engine, the standard transform library, fabfos and ASPIRE live here as directories rather
 than as pinned submodules, so a change to a library and to the consumer that needs it is **one
 commit** — which is the entire reason for the shape. Each product also gets a workspace scope
-layer named for it, and a scope's branch is named for the scope with no `feat/` prefix:
-`engine/dev`, `fabfos/dev`, `libraries/mono`, `aspire/release`.
+layer named for it, and a scope the migration **created** has a branch named for the scope
+exactly: `fabfos/dev`, `libraries/mono`, `aspire/release`.
+
+The engine scopes are the exception, because the migration *relocated* them rather than creating
+them, and a branch with history is not worth renaming: `engine/dev` is on `feat/dev`,
+`engine/release` on `release`, `engine/release-review` on `review/v0.19-src`. **So the scope name
+is not a reliable guess at the branch name** — ask the scope database (`scope search`), which is
+the only thing that actually knows.
 
 **Git stores refs as paths, so a nested branch permanently forbids a bare branch of its first
 segment.** With `fabfos/dev` in this repository, no ref may ever be named `fabfos` — and the
@@ -84,8 +90,10 @@ could exist. `engine`, `fabfos`, `libraries` and `aspire` are therefore burnt na
 permanently. A create that would collide is refused by name when it goes through `scope_create`;
 a hand-rolled `git branch fabfos` just fails.
 
-`feat/monorepo` is the exception and predates the convention: it is the migration that assembled
-the tree, and it merges onto the engine's mainline rather than being a product line of its own.
+The migration that assembled this tree was `feat/monorepo`. It has landed: `feat/dev` and every
+product branch now contain it, its scope is retired, and the branch itself is gone. The state it
+finished in is preserved as `archive/monorepo` on `origin`, which is where to look for the
+migration's own history rather than for anything you would branch from today.
 
 ## The modules
 

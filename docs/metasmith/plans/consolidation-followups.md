@@ -305,3 +305,96 @@ Note #240 was later given a design resolution in the `verification` scope
 auto-transfer) — but that is a deliberate-behavior decision, not proof that
 G1/G2/G3's end-to-end smoke now passes; it was not re-run here before the
 scope closed.
+
+## Carried forward from the monorepo migration (2026-08-15)
+
+The migration that folded the engine, the standard library, fabfos and ASPIRE
+into one tree retired the `metasmith/monorepo` scope. These are the items that
+outlived it. Each names the scope that should pick it up and the first move, so
+none of them depends on a session's task list to survive. Five sibling defects
+found alongside these were fixed in the wrap-up itself and are deliberately
+absent — this file holds only what is still open.
+
+**Nine tier-4 readers still resolve a retired data path.** They point at a base
+that the migration replaced, and the sharp edge is that the replacement is not
+the same data: anything quoted from an old run has to be **re-run, not
+re-labelled**, because the numbers can legitimately differ. Belongs to a fabfos
+scope. First move: enumerate the readers and confirm which published figures, if
+any, were produced from the retired base.
+
+**The two-point probe is not declared as a transform, so the community lane
+cannot be re-measured.** Deferred by an explicit decision rather than forgotten.
+It is blocked on a type question, and nobody should start coding before that is
+settled: both probes currently write one result type, and two producers of a
+single type give the planner nothing to tell them apart — so the declaration has
+to introduce the distinction before it can be useful. Belongs to a fabfos scope.
+
+**The four-plan binning comparison harness may be routing around a constraint
+that no longer exists.** `TestCheckMParallelFork` in
+`tests/metasmith_libraries/test_binning_routing.py` asserted that a comparison
+must be driven as four separate planning calls because `TargetBuilder` refuses
+the same target type twice. That is not the contract: it refuses the same type
+*with the same parents*, and rows 32–37 in the same file exercise exactly the
+same-type-different-parents shape the harness says is impossible. The test now
+states the real contract and the harness is untouched, because whether it can
+collapse to one plan is a library-design call, not a test fix. Belongs to
+`libraries/mono`. First move: try the four lineages as one target set and see
+whether the resulting plan is what the harness produces today.
+
+**The logistics e2e tests cannot pass under the `local` preset.**
+`getNcbiSra.py` (and five sibling `download*` transforms) declare
+`memory=Size.GB(64)`, while `src/metasmith/nextflow_config/local.nf` pins the
+local executor to `8 GB` and the tests override only cpus and queue size.
+Nextflow refuses the process before it runs, and the visible symptom is the
+unhelpful `No reads downloaded from SRA`. Host RAM is irrelevant — this fails on
+a 58 GB machine. It is long-standing rather than new; it only became *visible*
+when the library suite began collecting again. Note also that the class carries
+`@pytest.mark.slow` and `@pytest.mark.network` but nothing deselects either for
+that suite, and `network` is registered project-wide with a different meaning
+("requires LIVESHELL_REMOTE_HOST"), so an opt-in-looking test is in fact
+always-on. First move: decide between the test naming a memory override, the
+preset defaulting to the host's real memory, and the suite honouring its own
+markers — they are three different policies, not three spellings of one fix.
+
+**A DVC-pinned build artifact whose objects leave every cache is
+unrecoverable.** The rule the migration settled is written up under
+"When a build artifact may be DVC-pinned" in `docs/metasmith/architecture.md`.
+Recorded here as the residual risk it manages rather than removes:
+`src/metasmith/engine.dvc` holds a four-target cross-compile that exists in no
+other form, so one careless collection destroys it. The `scratch/gui-main` pin
+was the same class of object and its bytes were **already gone** from the shared
+cache when it was dropped — which is what the failure mode looks like in
+practice, and the reason it was worth writing down.
+
+### Two things the solver fix made visible
+
+Both were hidden by the same mechanism and are recorded here because fixing the
+engine is what exposed them. The differential gate's fixtures probed
+`packaged_engine_path()` directly, which in a source checkout is a read-only
+hardlink that cannot be executed — so the gate erred out in half a second,
+reported "a binary is staged but failed its handshake", and never ran. A gate
+that fails for an environmental reason, in the vocabulary of a build problem, is
+worse than no gate; the fixtures now resolve through `GetEngine`, the same call
+the planner makes.
+
+**The two implementations disagree by one ULP on `log2`.** With the gate
+running, `test_a_generated_script_agrees_draw_for_draw` fails on four of five
+seeds. It is not a decision-rule divergence: `test_the_two_streams_are_the_same_stream`
+passes, `draws` is identical on every seed, and all eight differing entries out
+of ~10,000 are `log2` differing in the final digit — Rust's libm against
+CPython's. Plans do not diverge from it, because the stream never drifts. The
+open question is narrower and worth stating: a one-ULP difference in a score can
+still flip an `argmax` at a near-tie, and while the hand-written tie cases pass,
+that is not proof over generated corpora. Whatever policy is chosen — a ULP
+tolerance, one side adopting the other's implementation, or asserting on `draws`
+alone — say so next to `SOLVER_RNG_VERSION`, which currently asserts an
+agreement that does not hold.
+
+**Two of those tests are expensive, and the axis they sit in says they are not.**
+`tests/metasmith/solver/` maps to `fast`, but
+`test_the_engine_reads_the_shipped_templates` solves every shipped template and
+`test_a_demand_with_several_producers_lists_them_in_rank_order` walks the
+corpus; together they add roughly 35 minutes to a gate that was 16. They were
+free only because they were broken. Note the axis is assigned by directory and
+markers are additive, so adding `slow` does not remove `fast` — moving them is a
+change to `_DIR_MARKERS` or to the file's location, not a one-line annotation.

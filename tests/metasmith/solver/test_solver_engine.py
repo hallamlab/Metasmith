@@ -281,13 +281,23 @@ def test_a_solve_is_identical_with_the_python_solver_pinned():
 
 @pytest.fixture(scope="module")
 def rust_engine():
-    """The staged binary, or a skip. Built by `./dev.sh -be` (or `-bel`)."""
+    """The staged binary, or a skip. Built by `./dev.sh -be` (or `-bel`).
+
+    Resolved through `GetEngine`, which is what the planner calls, rather than
+    by probing `packaged_engine_path()` directly. Those are not the same thing
+    in a source checkout: the packaged copy is a read-only hardlink out of the
+    shared DVC cache, so probing it in place fails on permissions no matter how
+    good the build is. This gate erroring out for that reason -- while saying
+    "failed its handshake", which points at the binary -- is a large part of why
+    a whole tree of solves ran on the python search unnoticed.
+    """
     path = packaged_engine_path()
     if path is None:
         pytest.skip("no msm_solver staged for this platform (./dev.sh -be)")
-    info = probe_engine(path)
+    ResetEngineCache()
+    info = GetEngine()
     if info is None:
-        pytest.fail(f"a binary is staged at [{path}] but failed its handshake")
+        pytest.fail(f"a binary is staged at [{path}] but could not be resolved or failed its handshake")
     return info
 
 
