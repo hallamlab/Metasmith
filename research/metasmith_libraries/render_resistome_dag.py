@@ -126,6 +126,8 @@ main.AddItem(mock("sample.orfs.faa"), "sequences::orfs", parents={asm})
 main.AddItem(mock("bin.1.fa"), "sequences::comebin_bin_fasta", parents={asm})
 main.AddItem(mock("contig_to_bin.tsv"), "binning::comebin_contig_to_bin_table", parents={asm})
 main.AddItem(mock("metaphlan_profile.tsv"), "taxonomy::metaphlan_profile", parents={asm})
+main.AddItem(mock("sample.clean.fq.gz"), "sequences::clean_short_reads", parents={asm})
+main.AddItem(mock("mag_ref"), "binning::derep_mag_ref")
 main.Save()
 
 # One target per terminal resistome transform (multi-output transforms — pathofact,
