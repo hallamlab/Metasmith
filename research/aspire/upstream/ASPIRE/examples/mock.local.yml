@@ -1,0 +1,384 @@
+paths:
+  input_dir: /home/ryan/Projects/UBC/DECOI/results/dataset/mock_dataset/fastq
+  output_dir: /home/ryan/Projects/UBC/LMP/ASPIRE_mock_output
+  # Hidden persistent runtime used by Nextflow -resume.
+  runtime_dir: /home/ryan/Projects/UBC/LMP/ASPIRE_mock_output/.aspire
+  keep_runtime_dir: true
+  # Optional granular overrides:
+  # work_dir: /scratch/aspire/nf_work
+  # conda_cache_dir: /shared/aspire/conda_cache
+  # Optional. When omitted, ASPIRE discovers FASTQs and writes
+  # <output_dir>/metadata/run_manifest.tsv for reuse.
+  # manifest: /home/ryan/Projects/UBC/DECOI/results/dataset/mock_dataset/fastq_manifest.tsv
+
+resources:
+  threads: 4
+  single_end: false
+
+filename_patterns:
+  r1_tokens:
+    - R1
+  r2_tokens:
+    - R2
+  ext_patterns:
+    - "\\.fastq\\.gz$"
+    - "\\.fq\\.gz$"
+    - "\\.fastq$"
+    - "\\.fq$"
+  sample_strip_regex: "(_S[0-9]+)?(_L[0-9]{3})?(_R[12])?(_[12])?(_001)?$"
+
+fastp:
+  trim_front_r1: 19
+  trim_tail_r1: 0
+  trim_front_r2: 20
+  trim_tail_r2: 0
+
+merge:
+  max_diffs: 20
+  min_overlap: 5
+  trunc_quality: 5
+  allow_stagger: true
+
+filter:
+  max_ee: 1.0
+  min_len: 230
+  max_len: 350
+
+table_filter:
+  min_sample_sum: 1000
+  min_asv_sum: 0
+  script: processes/filter_table/filter_ASV_table.py
+
+concat:
+  relabel: true
+  label_sep: ":"
+
+unoise:
+  min_size: 3
+
+swarm:
+  distance: 1
+
+sina:
+  reference:
+  reference_url: https://www.arb-silva.de/fileadmin/silva_databases/release_138_2/ARB_files/SILVA_138.2_SSURef_NR99_03_07_24_opt.arb.gz
+  download_subdir: sina_reference
+  regions:
+    - V4
+  trim_to: V4
+  batch_size: 1000000
+  keep_gaps: false
+  threads: 4
+  verbose: false
+
+taxonomy:
+  ref_taxonomy:
+  ref_taxonomy_url: https://data.qiime2.org/2024.10/common/silva-138-99-tax.qza
+  ref_taxonomy_filename: silva-138_2-ssu-nr99-tax.qza
+  ref_sequences:
+  ref_sequences_url: https://data.qiime2.org/2024.10/common/silva-138-99-seqs.qza
+  ref_sequences_filename: silva-138_2-ssu-nr99-seqs-DNA.qza
+  download_subdir: taxonomy_reference
+  output_dir: taxonomy
+  output_tsv: ASV_SILVA_tax.full-length.vsearch.tsv
+  stats_tsv: ASV_SILVA_stats.full-length.vsearch.tsv
+  uppercase_fasta: ASVs.upper.fasta
+  threads: 4
+
+mito:
+  enabled: true
+  run_mitomaster: false
+  # ASPIRE builds reusable nucleotide BLAST databases under output/reference.
+  mito_fasta: /home/ryan/Projects/UBC/DECOI/results/dataset/mock_dataset/references/mitochondria.fasta
+  contaminant_fasta: /home/ryan/Projects/UBC/DECOI/results/dataset/mock_dataset/references/contaminants.fasta
+
+filter_counts:
+  enabled: true
+  metadata: /home/ryan/Projects/UBC/DECOI/results/dataset/mock_dataset/sample_metadata.tsv
+  output: ASV_target.tsv
+  group_col: Type_Group
+  sample_id_col: sample_id
+  min_group_size: 2
+  abundance_threshold: 0.0
+  min_consensus: 0.0
+  save_intermediates: true
+
+general_stats:
+  enabled: true
+
+sankey:
+  enabled: true
+  metadata: /home/ryan/Projects/UBC/DECOI/results/dataset/mock_dataset/sample_metadata.tsv
+  sample_col: sample_id
+  group1_col: Type_Group
+  color_col: Color
+  palette_file: metadata_palette.template.tsv
+  vertical_order: [Bronchial Brush, BAL]
+  arrangement: freeform
+
+metadata_plots:
+  enabled: true
+  metadata: /home/ryan/Projects/UBC/DECOI/results/dataset/mock_dataset/sample_metadata.tsv
+  sample_col: sample_id
+  type_col: Type_Group
+  color_col: Color
+  palette_file: metadata_palette.template.tsv
+  # Optional two-column value/color TSV. If omitted, ASPIRE creates a stable
+  # palette and an augmented metadata table under output/metadata.
+  # palette_file: metadata_palette.tsv
+  run_micro: true
+  run_mito: true
+  subtraction_groups: []
+  group_order: [Bronchial Brush, BAL]
+
+batch_correction:
+  enabled: true
+  output_dir: batch_correction
+  sample_id_col: sample_id
+  batch_col: batch
+  asv_orientation: features_rows
+  biological_covariates: Type_Group,Case
+  biological_color_col: Type_Group
+  color_palette_col: Color
+  conqur_mode: standard
+  conqur_num_core: 4
+  conqur_auto_install: true
+  random_state: 42
+
+outlier_detection:
+  enabled: true
+  sample_col: sample_id
+  group_cols: [Type_Group,Case]
+  asv_orientation: samples_rows
+  pre_transformed: true
+  transform: none
+  vote_threshold: 3
+
+collectors_curve:
+  enabled: true
+  sample_col: sample_id
+  group_col: Type_Group
+  color_col: Color
+  group_order: [Bronchial Brush, BAL]
+  permutations: 999
+  seed: 42
+  formats: pdf,svg
+
+plot_upset:
+  enabled: true
+  sample_id_col: sample_id
+  group_col: Type_Group
+  color_col: Color
+  group_order: [Bronchial Brush, BAL]
+  formats: pdf,svg,png
+
+bubbleplotter:
+  enabled: true
+  sample_col: sample_id
+  group1_col: Type_Group
+  group2_col: Case
+  color_col: Color
+  group1_order: [Bronchial Brush, BAL]
+  formats: pdf,png,svg
+
+umap_clustering:
+  enabled: true
+  sample_col: sample_id
+  group1_col: Type_Group
+  group2_col: Case
+  color_col: Color
+  group1_order: [Bronchial Brush, BAL]
+  group1_palette: "Bronchial Brush=#009E73,BAL=#0072B2"
+  group2_palette: "Control=#8C8C8C,Cancer=#D55E00"
+  formats: pdf,png,svg
+  n_neighbors: 8
+  min_cluster_size: 4
+
+diversity:
+  enabled: true
+  sample_col: sample_id
+  group1_col: Type_Group
+  group2_col: Case
+  color_col: Color
+  block_col: Participant_ID
+  group_order: [Bronchial Brush, BAL]
+  group1_palette: "Bronchial Brush=#009E73,BAL=#0072B2"
+  group2_palette: "Control=#8C8C8C,Cancer=#D55E00"
+  run_mito: true
+  permanova_perms: 999
+  random_state: 42
+  patient_aware:
+    enabled: true
+    sample_col: sample_id
+    patient_col: Participant_ID
+    case_col: Case
+    type_col: Type_Group
+    sample_types: Bronchial Brush,BAL
+    exclude_contralateral_in_cancer: true
+    contralateral_col: lung_status
+    contralateral_value: Contralateral
+    contralateral_sample_types: Bronchial Brush,BAL
+    permutations: 999
+    seed: 42
+    require_complete_types: true
+
+indicspecies:
+  enabled: true
+  sample_col: sample_id
+  color_col: Color
+  group_cols: [Type_Group, Case]
+  block_col: Participant_ID
+  perms: 999
+  seed: 42
+  q_threshold: 0.10
+  min_n: 2
+  plot_enabled: true
+  plot_pairs_mode: all
+  focus_group1_label: Bronchial Brush
+  group_orders:
+    Type_Group: [Bronchial Brush, BAL]
+    Case: [Control, Cancer]
+  group_palettes:
+    Type_Group: "Bronchial Brush=#009E73,BAL=#0072B2"
+    Case: "Control=#8C8C8C,Cancer=#D55E00"
+
+voc_correlation:
+  enabled: true
+  metadata_sample_col: sample_id
+  type_col: Type_Group
+  patient_col: Participant_ID
+  case_col: Case
+  sample_types: Bronchial Brush
+  voc_table: /home/ryan/Projects/UBC/DECOI/results/dataset/mock_dataset/chemistry.tsv
+  voc_sample_col: sample_id
+  sample_id_mode: exact
+  use_legacy_voc_subset: false
+  # Empty selects all numeric feature columns automatically.
+  voc_columns: []
+
+power_analysis:
+  enabled: true
+  sample_col: sample_id
+  patient_col: Participant_ID
+  case_col: Case
+  type_col: Type_Group
+  sample_sizes_cancer: 4,6,8,10
+  sample_sizes_stype: 4,6,8,10
+  n_simulations: 100
+  n_perm: 199
+  seed: 42
+  keep_contralateral_in_cancer: false
+  skip_estimate: false
+  skip_plot: false
+
+taxonomy_patient_aware:
+  enabled: true
+  sample_col: sample_id
+  patient_col: Participant_ID
+  case_col: Case
+  type_col: Type_Group
+  count_col: count
+  tax_levels: Phylum,Family
+  sample_types: Bronchial Brush,BAL
+  exclude_contralateral_in_cancer: true
+  contralateral_col: lung_status
+  contralateral_value: Contralateral
+  contralateral_sample_types: Bronchial Brush,BAL
+  top_n: 12
+
+lung_status_analysis:
+  enabled: true
+  sample_col: sample_id
+  type_col: Type_Group
+  sample_types: Bronchial Brush
+  case_col: Case
+  patient_col: Participant_ID
+  lung_status_col: lung_status
+  status_a_value: TumorSide
+  status_b_value: Contralateral
+  reference_status_value: Healthy
+  permutations: 999
+  seed: 42
+
+clustermaps:
+  enabled: true
+  sample_col: sample_id
+  sample_code_col: sample_id
+  asv_id_col: ASV_ID
+  group1_col: Type_Group
+  group2_col: Case
+  group1_order: [Bronchial Brush, BAL, Bronchial Brush+BAL, not_indicator]
+  group1_palette: "Bronchial Brush=#009E73,BAL=#0072B2,Bronchial Brush+BAL=#56B4E9,not_indicator=#D3D3D3"
+  group2_palette: "Control=#8C8C8C,Cancer=#D55E00"
+  ranks: Phylum,Class,Order,Family,Genus,Species,ASV_ID
+  formats: pdf,png,svg
+  run_mito: true
+
+spieceasi:
+  enabled: true
+  output_dir: spieceasi
+  prefix: spieceasi
+  network_enabled: true
+  modules_enabled: true
+  metadata: /home/ryan/Projects/UBC/DECOI/results/dataset/mock_dataset/sample_metadata.tsv
+  color_col: Color
+  focus_group1_label: Bronchial Brush
+  group_orders:
+    Type_Group: [Bronchial Brush, BAL]
+    Case: [Control, Cancer]
+  group_palettes:
+    Type_Group: "Bronchial Brush=#009E73,BAL=#0072B2"
+    Case: "Control=#8C8C8C,Cancer=#D55E00"
+  network_modes: [all]
+  transpose: true
+  min_rel_abund: 0.001
+  min_prevalence: 0.05
+  remove_zero_var: true
+  method: glasso
+  lambda_min_ratio: 0.01
+  nlambda: 20
+  rep_num: 50
+  thresh: 0.2
+  ncores: 4
+  seed: 42
+  edge_threshold: 0.02
+  keep_negative: true
+  module_methods: leiden
+  module_resolutions: 0.8,1.0
+  module_reps: 50
+  module_seed: 42
+
+asv_mag_link:
+  enabled: false
+
+master_summary:
+  enabled: true
+
+environments:
+  main: processes/fastp_qc/env.yml
+  sina: processes/sina_trim/env.yml
+  taxonomy: processes/taxonomy/env.yml
+  mitomaster: processes/mitomaster/env.yml
+  mito_checker: processes/mito_decontam/env.yml
+  filter_counts: processes/shared_envs/asv_pipeline.yml
+  general_stats: processes/general_stats/env.yml
+  sankey: processes/sankey/env.yml
+  plot_metadata: processes/plot_metadata/env.yml
+  batch_correction: processes/asv_batch_correction/env.yml
+  outlier_checker: processes/outlier_checker/env.yml
+  collectors_curve: processes/collectors_curve/env.yml
+  plot_upset: processes/plot_upset/env.yml
+  bubbleplotter: processes/bubbleplotter/env.yml
+  umap_clustering: processes/umap_clustering/env.yml
+  diversity: processes/diversity_analysis/env.yml
+  indicspecies: processes/indicspecies/env.yml
+  voc_correlation: processes/voc_correlation/env.yml
+  clustermaps: processes/clustermaps/env.yml
+  power_analysis: processes/power_analysis_pipeline/env.yml
+  taxonomy_patient_aware: processes/taxonomy_patient_aware/env.yml
+  lung_status_analysis: processes/lung_status_analysis/env.yml
+  spieceasi: processes/spieceasi/env.yml
+  network_modules: processes/network_modules/env.yml
+  network: processes/graph_network/env.yml
+  master_summary: processes/master_summary/env.yml
+  asv_mag_link: processes/asv_mag_link/env.yml

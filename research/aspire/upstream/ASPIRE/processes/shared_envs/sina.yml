@@ -1,0 +1,11 @@
+name: sina-pipeline
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.11
+  - sina=1.7.2
+  - pandas
+  - biopython
+  - tqdm

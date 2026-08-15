@@ -1,0 +1,17 @@
+name: qiime2-amplicon-2024.10
+channels:
+  - qiime2/label/r2024.10
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.10
+  - qiime2=2024.10
+  - q2-feature-classifier=2024.10
+  - pandas
+  - numpy
+  - scipy
+  - scikit-learn
+  - biopython
+  - setuptools<=71
+  - pip
