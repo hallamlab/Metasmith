@@ -35,12 +35,11 @@ EXEMPT_DIRS = {
     "scratch",
 }
 EXEMPT_SUFFIXES = {".pyc", ".pyi"}
-# Repo bookkeeping that happens to live inside the package directory. Both
-# describe how `engine/` is produced and stored, not anything a user needs:
-# the binaries themselves ship via the `engine/**` glob.
+# Repo bookkeeping that happens to live inside the package directory. It
+# describes how `engine/` is produced, not anything a user needs: the binaries
+# themselves ship via the `engine/**` glob.
 EXEMPT_FILES = {
     ".gitignore",     # ignores the built engine/ so the binaries stay untracked
-    "engine.dvc",     # DVC pointer to those binaries in the shared cache
 }
 
 

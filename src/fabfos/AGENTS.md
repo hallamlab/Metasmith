@@ -103,6 +103,15 @@ the moment it was taken.
   worktrees and `dvc checkout` hardlinks, so an in-place edit corrupts that chunk
   for every worktree. There is no DVC remote: `dvc checkout` works, `dvc pull`
   does not.
+- **A `dvc checkout` refused with EACCES on a reference.** `python -m fabfos.refs
+  freeze` marks the top-level reference entries read-only, which is what makes
+  the annotation lane stop re-hashing 24 GB on every plan (`fabfos/refs.py`, and
+  metasmith's `models/libraries/frozen.py` for what that protection does and does
+  not cover). Run `python -m fabfos.refs unfreeze` before checking out or pulling
+  those chunks, and re-freeze after — the freeze reads no data and is instant.
+  A checkout of the *same* pin is handled without asking: the ids are derived
+  from the pin's md5, so an unchanged md5 means the ids are still correct and the
+  stamps are re-recorded silently.
 - **A count transcribed out of a data chunk into prose.** Insert, ORF and row
   counts, per-channel totals and reference pin hashes belong to the chunk that
   holds them. Copied into a README they go stale on the next repin with no diff

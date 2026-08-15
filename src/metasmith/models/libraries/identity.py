@@ -11,6 +11,12 @@ DEFERRED row is the exception: it has no bytes either, but its minted path is
 persisted, so its id comes from that path and survives the library being rebuilt
 from a spec.
 
+A **frozen** library opts out of all of it: `_resolve_instance_meta` returns its
+recorded entry verbatim and never mints. That is where the cost of re-deriving a
+24 GB reference database's identity on every plan actually goes away, and it is
+the one place a recorded id is trusted rather than checked -- see `frozen.py`
+for what does and does not stand behind that trust.
+
 Mixed into `DataInstanceLibrary` rather than left inline because a change here
 silently invalidates or false-hits every cached run, and that deserves to be a
 file someone can read end to end. `_calculate_key` / `GetKey` / `__hash__`
@@ -156,7 +162,23 @@ class _LeafIdentity:
         track (e.g., a transient view from WithDType on an unrelated lib).
         In both cases we mint a deterministic legacy-shape id so existing
         v0.18 serializations resolve identically.
+
+        A frozen library short-circuits all of it: its recorded entry is
+        returned verbatim, with no fork comparison and no re-mint. This is
+        where the per-plan re-hash actually dies -- the `Get()` path reaches
+        here, not `AddItem`. A frozen library with no entry for a path is a
+        bug in whatever built it, not a cue to invent one.
         """
+        if self.is_frozen:
+            entry = self.instance_meta.get(path)
+            if entry is None:
+                from .frozen import FrozenLibraryError
+                raise FrozenLibraryError(
+                    f"[{path}] is not recorded in the frozen library at"
+                    f" [{self.location}], and a frozen library will not mint an"
+                    " id. Rebuild and re-freeze it."
+                )
+            return entry
         if path in self.instance_meta:
             entry = self.instance_meta[path]
             if entry.get("fork_id") == self.fork_id:

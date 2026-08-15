@@ -141,6 +141,17 @@ host target only); it writes a `BUILD_KIND` marker the guard reads, because
 nothing about a Linux ELF says whether it was linked against musl or against the
 build machine's glibc.
 
+**Do not put that directory under version control of any kind, including DVC.**
+It was DVC-tracked briefly so sibling worktrees could share one cross-build. DVC
+materialises outputs as read-only hardlinks and does not carry the exec bit, so
+the binaries checked out mode 444, the handshake failed with a permission error,
+and every plan in every worktree fell back to the Python solver. The mode is not
+repaired by packaging either: 444 survives an sdist unchanged and normalises to
+644 in a wheel. `_assert_solver_engine` now checks the exec bit, and each scope
+builds its own stage; `MSM_SOLVER_TARGET_DIR` (default
+`~/.cache/metasmith/solver-target`) shares the cargo build directory across
+scopes so only the first build is cold.
+
 `--build-gui` compiles the web GUI into `src/metasmith/gui/static/`. That
 directory is generated and never committed, so a fresh checkout has none, and
 without it the package would ship an empty static directory — a failure nobody
@@ -205,6 +216,12 @@ env -u PYTHONPATH mamba run -n vXYZ python -c \
 
 `rust`, not `python`. Clearing `PYTHONPATH` is load-bearing — the workspace
 checkout otherwise shadows the install and the test proves nothing.
+
+`-ud` and `-bs` now run this same question against the tagged docker image
+(`_assert_engine_in_image`) and refuse on `python`, so the image half of this
+check is automatic. The conda half is not: `-bc` builds from the wheel and the
+recipe's patchelf behaviour is the failure mode above, so the clean-room mamba
+install stays a manual step.
 
 ---
 

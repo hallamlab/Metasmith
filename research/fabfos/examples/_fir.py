@@ -561,8 +561,46 @@ def _products_on_disk(results: Path, dtype: str) -> list[Path]:
     return found
 
 
+def _record_publish_provenance(results: Path, src: Path, dest_root: Path,
+                               dest: Path, refs_root: Path) -> None:
+    """Carry the product's lineage id across the copy that would lose it.
+
+    A published reference IS a transform product, and its `instance_id` is a
+    real `origin: lineage` id over the producing step's cache key. Copying the
+    bytes without the run's `_metadata/index.yml` demotes it to a leaf, which is
+    why `fabfos.refs` otherwise has to derive an identity from the DVC pin. This
+    writes the real one into the sidecar the freeze step reads.
+
+    Best effort, and silent when it cannot: a fully cached resume publishes
+    every file and records none of them (`_products_on_disk` exists for exactly
+    that), so an absent index is a normal outcome and not a failure to report.
+    """
+    try:
+        from fabfos import refs as _refs
+        lib = results_index(results)
+        real = src.resolve()
+        for path in lib.manifest:
+            if lib.Get(path).ResolvePath().resolve() != real:
+                continue
+            meta = lib.instance_meta.get(path)
+            if not meta:
+                return
+            _refs.record_published_provenance(
+                refs_root,
+                Path(dest).resolve().relative_to(Path(dest_root).resolve()).as_posix()
+                if Path(dest).resolve() != Path(dest_root).resolve() else dest.name,
+                instance_id=meta["instance_id"],
+                origin=meta.get("origin", "lineage"),
+                run=results.parent.name,
+            )
+            return
+    except Exception as e:  # a publish must not fail over its own bookkeeping
+        print(f"    (could not record provenance for {src.name}: {e})")
+
+
 def publish_by_type(results: Path, mapping: dict[str, str], dest_root: Path,
-                    *, dry_run: bool, repo: Path = REPO) -> int:
+                    *, dry_run: bool, repo: Path = REPO,
+                    record_provenance_at: "Path | None" = None) -> int:
     """Copy a run's results to the paths `data/` declares, keyed by produced type.
 
     THE SINGLE-SOURCE PUBLISHER. Use it when the run has one sample and the
@@ -585,6 +623,10 @@ def publish_by_type(results: Path, mapping: dict[str, str], dest_root: Path,
     Under `mode='rellink'` the entries are relative symlinks into the work tree,
     so the copy follows them; the work tree is transient and a published symlink
     into it dangles the moment the run directory is cleaned.
+
+    Pass `record_provenance_at=<processed root>` when publishing a *reference*.
+    The bytes carry no identity, and the copy is where the product's lineage id
+    would otherwise be lost -- see `_record_publish_provenance`.
     """
     if not results.exists():
         raise SystemExit(f"no results at {results}; run with --run first")
@@ -622,6 +664,9 @@ def publish_by_type(results: Path, mapping: dict[str, str], dest_root: Path,
                     if dest.exists() or dest.is_symlink():
                         dest.unlink()
                     shutil.copyfile(real, dest)
+                if record_provenance_at is not None:
+                    _record_publish_provenance(results, src, dest_root, dest,
+                                               record_provenance_at)
             moved += 1
     if not moved:
         print("  NOTHING PUBLISHED -- no result directory matched this driver's map. "
