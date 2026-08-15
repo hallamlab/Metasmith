@@ -37,10 +37,15 @@ from ieff_ground import (GroundSystem, SymmetricField, cone_solve,   # noqa: E40
 # The medium every concept figure so far has used: the reactions in the giant component of
 # the MetaNetX-universe carbon star graph. Kept as a pickle because that graph is what the
 # earlier (retired) star-topology figures were built on, so the reaction set is comparable.
-STAR_PICKLE = Path("/home/tony/agentic_workspace/projects/fabfos/figure/scratch/"
-                   "mnx_reference/mnx_universe_base_C.pkl")
-XREF = Path("/home/tony/agentic_workspace/projects/fabfos/figure/data/originals/"
-            "metanetx/4.5/reac_xref.tsv")
+# Vendored beside the scripts, like KEGG.pathways and for the same reason: it
+# lived in gitignored scratch in a repository that is now archived and read-only,
+# so this 578 KB was the only copy. It is a pickle, so it is version-fragile --
+# if it ever stops loading, rebuild the giant component rather than chasing the
+# pickle protocol, and accept that the reaction set will no longer be comparable
+# to the retired star-topology figures.
+STAR_PICKLE = Path(__file__).resolve().parent / "mnx_universe_base_C.pkl"
+XREF = (Path(__file__).resolve().parents[4]
+        / "data/fabfos/originals/metanetx/4.5/reac_xref.tsv")
 
 
 def star_medium():

@@ -4,7 +4,10 @@
 `src/metasmith_libraries/transforms/aspire/` is a port of. It is somebody else's
 code and nothing here modifies it — every file is exactly what upstream committed.
 
-    source     projects/metasmith-libraries/aspire/scratch/ASPIRE (a git clone)
+    source     projects/metasmith-libraries/aspire/scratch/ASPIRE (a git clone),
+               a gitignored directory in a repository archived 2026-08-15 as
+               projects/metasmith-libraries-ARCHIVED-20260815 — this copy and
+               data/archive/repo-bundles/ASPIRE-20260815.bundle are what remain
     commit     50a18c57a00dd840848499b7ccec975d5ac70af4
     dated      2026-07-17, "Group SI accumulation plots by depth"
     contents   149 entries (125 files + 24 symlinks), 51 commits of history

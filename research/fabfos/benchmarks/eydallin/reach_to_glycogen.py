@@ -27,7 +27,9 @@ from pathlib import Path
 
 import pandas as pd
 
-R = "/home/tony/agentic_workspace/projects/fabfos/bench-aska"
+# Everything this reads is pinned in this repository. It used to be read out of
+# the fabfos bench-aska worktree, which is archived and read-only now.
+R = str(Path(__file__).resolve().parents[4])
 BAKE = f"{R}/data/fabfos/processed/metabolism_bake"
 
 GENES = ["ptsI", "ptsN", "nagB", "nagD", "malP", "gntT", "xylG", "rpiB", "talA", "rbsR",

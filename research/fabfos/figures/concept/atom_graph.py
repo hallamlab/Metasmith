@@ -34,7 +34,7 @@ from ecspr.graph import AtomGraph                                    # noqa: E40
 
 BAKE = Path(os.environ.get(
     "ECSPR_BAKE",
-    "/home/tony/agentic_workspace/projects/fabfos/figure/data/processed/metabolism_bake"))
+    str(Path(__file__).resolve().parents[4] / "data/fabfos/processed/metabolism_bake")))
 TINY = np.finfo(float).tiny
 
 

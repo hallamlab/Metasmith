@@ -15,8 +15,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-MATRIX = Path("/home/tony/agentic_workspace/projects/fabfos/figure/data/fabfos/"
-              "scadc_fosmids/sequences/insert_coverage/insert_coverage_matrix.tsv")
+MATRIX = (Path(__file__).resolve().parents[4]
+          / "data/fabfos/runs/scadc_fosmids/sequences/insert_coverage"
+          / "insert_coverage_matrix.tsv")
 
 
 def main():

@@ -122,9 +122,11 @@ INCUMBENT_CACHE = INCUMBENT_ROOT / "cache"
 # NEITHER directory is safe to GLOB -- both mix live and retired sizes. Curate by explicit
 # list (see FROZEN_NULL_FILES) and read the grid from DRAW_SIZES.
 INCUMBENT_K1000 = INCUMBENT_CACHE / "K1000"
+# The transform library. The default named a worktree of the metasmith-libraries
+# repository, which is archived; the library is content in this tree now.
 ENGINE_LIB = Path(_os.environ.get(
     "FABFOS_ENGINE_LIB",
-    "/home/tony/agentic_workspace/projects/metasmith-libraries/fabfos",
+    str(Path(__file__).resolve().parents[1] / "metasmith_libraries"),
 ))
 
 # The experiment-side METHOD scripts -- the solve/null/parity/direction spine. Not a

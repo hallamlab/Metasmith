@@ -34,8 +34,8 @@ import umap                                                          # noqa: E40
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-XREF = Path("/home/tony/agentic_workspace/projects/fabfos/figure/data/originals/"
-            "metanetx/4.5/reac_xref.tsv")
+XREF = (Path(__file__).resolve().parents[4]
+        / "data/fabfos/originals/metanetx/4.5/reac_xref.tsv")
 # ModelSEED's copy of the KEGG pathway -> reaction table (Source ID / Name / Reactions),
 # vendored here because the promoted scripts must not depend on gitignored scratch.
 PATHWAYS = HERE / "KEGG.pathways"
