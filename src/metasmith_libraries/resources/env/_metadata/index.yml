@@ -51,6 +51,14 @@ manifest:
     instance_id: 1e2005afa5ff7da1cbc00188850925da18ee362e7af91c490adf417b87ec765a55b8
     origin: leaf
     type: env::checkm.env
+  clean.env:
+    instance_id: 1e20bd085975c55bda14288cf2ff66ee5cc2f79a9ec83029832a2c37bdd6d70ef02c
+    origin: leaf
+    type: env::clean.env
+  cobra.env:
+    instance_id: 1e2087b96ab2bf47eca5d48e5cbe247472daaafae023260630e9abb0281a63b28128
+    origin: leaf
+    type: env::cobra.env
   comebin.env:
     instance_id: 1e2017a012efe18bba21f05c9c3df5d03c199186612359bf877624038ec634806650
     origin: leaf
@@ -63,6 +71,10 @@ manifest:
     instance_id: 1e20821d071d8575ebac3cf5d768720428133878a0a1f8b589f5812136d716e4c40c
     origin: leaf
     type: env::deeptfactor.env
+  dgbyg.env:
+    instance_id: 1e20779ff2566c8820f7e90ab49619d67190fbd37b28cc80d74464a80400a89a307e
+    origin: leaf
+    type: env::dgbyg.env
   diamond.env:
     instance_id: 1e20f20565c678d85daf20254ac084d10d7cb694b1dfe5e2a80cc2dc88341e401b66
     origin: leaf
@@ -71,10 +83,18 @@ manifest:
     instance_id: 1e20585579526180c790aabb54f9a630702f6b9fefa4a09c02fb1c5d4a71083d2c91
     origin: leaf
     type: env::dram.env
+  ecspr.env:
+    instance_id: 1e20689efb7279319330ab0533bbdc15808dd17d4881950168ca585c68d053cf31ff
+    origin: leaf
+    type: env::ecspr.env
   eggnog-mapper.env:
     instance_id: 1e20b087a0e8f3e27ed2fc3fd582c0ae229e66f6ac9787bdb9737e94366658d325b8
     origin: leaf
     type: env::eggnog-mapper.env
+  equilibrator.env:
+    instance_id: 1e20de69e0a7ed7900736a30aeab731d4f75620d9b5fa18efd4d7567ca1c9e271a53
+    origin: leaf
+    type: env::equilibrator.env
   esmc.env:
     instance_id: 1e203be0d2deba54f41064e6fbd43b96557a20f1cbfedd1f2300ef81513c90a321ee
     origin: leaf
@@ -83,6 +103,10 @@ manifest:
     instance_id: 1e204fdbd4067a4c23dc5b2837710a7f3259995f101b15990cfb7f06929608153e71
     origin: leaf
     type: env::esmfold.env
+  ezpred.env:
+    instance_id: 1e20605763699cb0ed57c70f59346d7cd1839c7effd20a7ad11d51c0b8af4758568c
+    origin: leaf
+    type: env::ezpred.env
   fastani.env:
     instance_id: 1e2094f284b0920708392d4f5a81561d452f4ee57c8fbad493c7ad5f4619387c3580
     origin: leaf
@@ -216,7 +240,7 @@ manifest:
     origin: leaf
     type: env::phyloflash.env
   polars.env:
-    instance_id: 1e20ad1e1834298a953069a530418c40590b3ad20284752ecea9fcec1df819f3a99f
+    instance_id: 1e2091231775bac1de37db1ad8adaab72f49b9952318dcb3ee9a5bdadba66907b616
     origin: leaf
     type: env::polars.env
   ppanggolin.env:
@@ -248,13 +272,17 @@ manifest:
     origin: leaf
     type: env::pydeseq2.env
   python_for_data_science.env:
-    instance_id: 1e20370a3ad498a9e36dca8f18e435f2efdbf28648b459077199fd2f3b54e8637621
+    instance_id: 1e200126eb912137c918f8d655bdb59d26931217abd67748d4bc777c7560e0cfe5d3
     origin: leaf
     type: env::python_for_data_science.env
   qiime2.env:
     instance_id: 1e20b9283388e9809915850a4dabdcc28db1bd820e62e26a5393ef9f060e81c98a71
     origin: leaf
     type: env::qiime2.env
+  rdkit.env:
+    instance_id: 1e20346d0534f45dc6e8452871a61c54fbe0db50d42ea0a2ed294556eeaa6f5eab9b
+    origin: leaf
+    type: env::rdkit.env
   rgi.env:
     instance_id: 1e20315a9cbed7eab479ba87e929cdf39eb967f371d374e96d27edb52747ab19ced3
     origin: leaf
@@ -283,6 +311,10 @@ manifest:
     instance_id: 1e20d842361a81ca8db6eb8964a8121734120652824c7efb8c18620dbcc8f9a5435e
     origin: leaf
     type: env::skani.env
+  spades.env:
+    instance_id: 1e20a42e006e340aaa426d478de881b9ad758e77c4ad152a7a90d33f301ec7ff5857
+    origin: leaf
+    type: env::spades.env
   sra-tools.env:
     instance_id: 1e204c125dcc4dcea4a2575c76f06b391845b19b48bf2e9c093eba9a46af4058edf7
     origin: leaf

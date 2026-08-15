@@ -37,15 +37,16 @@ def protocol(context: ExecutionContext):
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--threads {threads}"
     # memory defaults to 0.9 of available [--memory 0.9]
-    context.ExecWithEnv().ifContainerDo(
-        env = image,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             flye --meta {err} {threads} \
                 {preset} {ireads.container} \
                 --out-dir long_reads_assembly
             mv long_reads_assembly/assembly.fasta {iout.container}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     
     return ExecutionResult(
         manifest=[

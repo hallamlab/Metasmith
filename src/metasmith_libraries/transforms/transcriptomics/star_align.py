@@ -16,9 +16,8 @@ def protocol(context: ExecutionContext):
     iout=context.Output(out)
     threads = context.params.get('cpus')
     threads = 8 if threads is None else threads
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             STAR --genomeDir {iidx.container} \
                 --readFilesIn {ir1.container} {ir2.container} \
                 --readFilesCommand zcat \
@@ -27,8 +26,10 @@ def protocol(context: ExecutionContext):
                 --limitBAMsortRAM 10000000000 \
                 --runThreadN {threads} \
                 --outFileNamePrefix star_out/
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     context.LocalShell(f"mv star_out/Aligned.sortedByCoord.out.bam {iout.local}")
     return ExecutionResult(
         manifest=[

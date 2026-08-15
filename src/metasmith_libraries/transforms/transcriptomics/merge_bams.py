@@ -20,14 +20,15 @@ def protocol(context: ExecutionContext):
         for p in bam_paths:
             f.write(f"{p.container}\n")
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             samtools merge -@ {threads} -b {bam_list} merged.bam
             samtools sort -@ {threads} -o sorted.bam merged.bam
             samtools index sorted.bam
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
     context.LocalShell(f"mv sorted.bam {iout.local}")
     return ExecutionResult(
         manifest=[{out: iout.local}],

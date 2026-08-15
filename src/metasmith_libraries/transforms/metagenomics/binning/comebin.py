@@ -43,19 +43,25 @@ def protocol(context: ExecutionContext):
     contig_count = int(Path("contig_count.txt").read_text().strip())
     batch_size = max(32, min(contig_count, 1024))
 
-    context.ExecWithEnv().ifContainerDo(
-        env = image,
-        args=[
-            "--nv",
-            "--env", f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES','')}",
-        ],
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds. The GPU
+    # passthrough is not — it is a container-runtime flag with no venv analogue,
+    # so it rides on that arm alone.
+    _cmd = f"""
             mkdir -p {bam_dir}
             cp -L {ibam.container} {bam_dir}/
             mkdir -p {workdir}
             run_comebin.sh -a {iasm.container} -o {workdir} -p {bam_dir} -t {threads} -b {batch_size}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(
+            env=image,
+            args=[
+                "--nv",
+                "--env", f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES','')}",
+            ],
+            cmd=_cmd,
+        ) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     outputs = []
     bin_dir = f"{workdir}/comebin_res/comebin_res_bins"

@@ -1,3 +1,24 @@
+"""ProteinBERT embeddings for the ORFs -> proteinbert_embeddings + proteinbert_index.
+
+Two products, and they are ONE artifact: the index names the sequences in the order
+the embedding stack's rows appear, so the consumer addresses the stack BY ROW. An
+index from one run against a stack from another misindexes every row and emits a
+full, confident, wrong table with nothing raised.
+
+THE ALPHABET IS NARROWED BEFORE THE EMBEDDER SEES IT. ProteinBERT tokenises exactly
+ACDEFGHIKLMNPQRSTUVWXY, and the image's encoder sizes its lookup array to the
+largest of those ordinals ('Y', 89) while guarding it with `c > len(arrayed_map)` --
+off by one, so a residue at ordinal exactly 90 indexes past the end and the run dies
+with `IndexError: getitem out of range` after the model has loaded. 'Z' is 90.
+Prodigal does not emit it, but this transform also runs on proteomes that are not
+prodigal's, and the same recoding is what makes the pool
+(build_references/compile/reference_label_pool.py) comparable to this query in the
+first place -- two different alphabets are two different embedding spaces.
+
+THE INDEX COLUMN IS RENAMED HERE, ONCE. `pbert` writes `id,batch`; every consumer
+reads `sequence_id`. Normalising at the producer means the type has one schema
+rather than each consumer guessing.
+"""
 from metasmith.python_api import *
 from pathlib import Path
 
@@ -10,6 +31,66 @@ orfs = model.AddRequirement(lib.GetType("sequences::orf_chunk"))
 out_embeddings = model.AddProduct(lib.GetType("annotation::proteinbert_embeddings_chunk"))
 out_index = model.AddProduct(lib.GetType("annotation::proteinbert_index_chunk"))
 
+# Shared with reference_label_pool.py -- see the header on why they must agree.
+POOL_ALPHABET = "ACDEFGHIKLMNPQRSTUVWXY"
+
+SANITIZE = f'''
+import sys
+ALPHA = set("{POOL_ALPHABET}")
+src, dst = sys.argv[1], sys.argv[2]
+n = recoded = 0
+with open(src) as fh, open(dst, "w") as out:
+    for line in fh:
+        if line.startswith(">"):
+            out.write(line); n += 1
+        else:
+            s = line.strip()
+            t = "".join(c if c in ALPHA else "X" for c in s.upper())
+            if t != s:
+                recoded += 1
+            out.write(t + "\\n")
+if n == 0:
+    raise SystemExit("[pbert] the input ORF FASTA has no records")
+print(f"[pbert] {{n:,}} sequences, {{recoded:,}} lines recoded to the embedder's alphabet",
+      flush=True)
+'''
+
+# `pbert` writes `id,batch`; the type's contract is `sequence_id`.
+COMBINE = '''
+import sys
+from pathlib import Path
+import numpy as np
+import polars as pl
+
+in_dir, emb_out, idx_out = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+
+npys = sorted(in_dir.glob("*.npy"))
+csvs = sorted(in_dir.glob("*.csv"))
+if not npys or not csvs:
+    raise SystemExit(f"[pbert] embedder produced no output under {in_dir}")
+
+# Both read in the SAME sorted order, so row i of the stack is sequence i of the
+# index by construction rather than by coincidence.
+stack = np.vstack([np.load(f) for f in npys])[:, -512:]
+idx = pl.concat([pl.read_csv(f) for f in csvs])
+for cand in ("sequence_id", "id"):
+    if cand in idx.columns:
+        idx = idx.rename({cand: "sequence_id"})
+        break
+else:
+    raise SystemExit(f"[pbert] the embedder index has no id column: {idx.columns}")
+
+if len(idx) != len(stack):
+    raise SystemExit(
+        f"[pbert] the index has {len(idx)} rows and the stack has {len(stack)}. "
+        f"The consumer addresses the stack by row, so pairing them would misindex "
+        f"every row silently")
+
+pl.DataFrame(stack, schema=[f"dim_{i}" for i in range(512)]).write_parquet(emb_out)
+idx.select("sequence_id").write_csv(idx_out)
+print(f"[pbert] {len(idx):,} embeddings x {stack.shape[1]} dims", flush=True)
+'''
+
 
 def protocol(context: ExecutionContext):
     iorfs = context.Input(orfs)
@@ -18,12 +99,17 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get("cpus", 8)
 
-    # Run ProteinBERT to generate embeddings
+    sanitize = Path("sanitize_orfs.py")
+    sanitize.write_text(SANITIZE)
+    combiner = Path("combine_embeddings.py")
+    combiner.write_text(COMBINE)
+
     context.ExecWithEnv().ifContainerDo(
         env=image_pbert,
         cmd=f"""
+            python3 {sanitize.name} {iorfs.container} _orfs_tokenisable.faa && \
             pbert run \
-                -i {iorfs.container} \
+                -i _orfs_tokenisable.faa \
                 -o pbert_output \
                 --threads {threads} \
                 --protein_size 512 \
@@ -32,42 +118,10 @@ def protocol(context: ExecutionContext):
         """,
     )
 
-    # Create combiner script using polars
-    combiner_script = Path("combine_embeddings.py")
-    with open(combiner_script, "w") as f:
-        f.write('''
-import sys
-import numpy as np
-import polars as pl
-from pathlib import Path
-
-input_dir = Path(sys.argv[1])
-output_file = Path(sys.argv[2])
-
-npy_files = sorted(input_dir.glob("*.npy"))
-if npy_files:
-    arrays = [np.load(f) for f in npy_files]
-    combined = np.vstack(arrays)[:, -512:]
-    col_names = [f"dim_{i}" for i in range(512)]
-    df = pl.DataFrame(combined, schema=col_names)
-    df.write_parquet(output_file)
-''')
-
-    # Combine embeddings using polars container
     context.ExecWithEnv().ifContainerDo(
         env=image_polars,
-        cmd=f"""
-            python {combiner_script} pbert_output {iemb.container}
-        """,
+        cmd=f"python {combiner.name} pbert_output {iemb.container} {iidx.container}",
     )
-
-    # Copy index file
-    index_files = list(Path("pbert_output").glob("*.csv"))
-    if index_files:
-        context.LocalShell(f"cp {index_files[0]} {iidx.local}")
-    else:
-        with open(iidx.local, "w") as f:
-            f.write("sequence_id,index\n")
 
     return ExecutionResult(
         manifest=[
@@ -76,7 +130,10 @@ if npy_files:
                 out_index: iidx.local,
             },
         ],
-        success=iemb.local.exists() and iidx.local.exists(),
+        # Non-empty, not merely present: the combiner refuses an index/stack
+        # mismatch, so a zero-byte file here means it died before writing.
+        success=(iemb.local.exists() and iemb.local.stat().st_size > 0
+                 and iidx.local.exists() and iidx.local.stat().st_size > 0),
     )
 
 

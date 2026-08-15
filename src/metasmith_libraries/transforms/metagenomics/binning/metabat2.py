@@ -19,14 +19,15 @@ def protocol(context: ExecutionContext):
     bin_dir = "metabat_bins"
     bin_prefix = f"{bin_dir}/bin"
 
-    context.ExecWithEnv().ifContainerDo(
-        env = image,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             mkdir -p {bin_dir}
             jgi_summarize_bam_contig_depths --outputDepth {depth_file} {ibam.container}
             metabat2 -i {iasm.container} -a {depth_file} -o {bin_prefix} -t {threads}
         """
-    )
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     # Find all bin files and output each one separately
     outputs = []
