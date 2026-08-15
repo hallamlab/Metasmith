@@ -59,12 +59,21 @@ def test_reuse_removes_the_producer(tmp_path):
     assert used == cv.EXPECTED_TRANSFORMS, (
         f"plan is {sorted(used)}, expected {sorted(cv.EXPECTED_TRANSFORMS)}")
 
-    # N shards fan out INSIDE each step; three steps, not 3N.
+    # N shards fan out INSIDE each step; one step per transform, not N.
     assert len(task.plan.steps) == len(cv.EXPECTED_TRANSFORMS)
+
+    # A step groups over the shard only if it is keyed on `sequences::orfs`. The
+    # sharded annotators are keyed on `sequences::orf_chunk`, which nothing has
+    # produced yet at compile time, so their slot holds ONE archetype standing
+    # for however many chunks the chunker emits per shard at run time -- not a
+    # collapsed fan-out. Both halves are named, so a step moving between them
+    # fails here rather than passing under a looser rule.
+    PER_CHUNK = {"diamond_uniref50", "proteinbert"}
     for s in task.plan.steps:
-        assert len(s.group_by_instances) == len(SHARDS), (
-            f"{Path(s.transform._path).stem} groups "
-            f"{len(s.group_by_instances)}, expected {len(SHARDS)}")
+        name = Path(s.transform._path).stem
+        want = 1 if name in PER_CHUNK else len(SHARDS)
+        assert len(s.group_by_instances) == want, (
+            f"{name} groups {len(s.group_by_instances)}, expected {want}")
 
 
 def test_without_the_given_the_producer_comes_back(tmp_path):
@@ -79,7 +88,10 @@ def test_without_the_given_the_producer_comes_back(tmp_path):
     assert cv.FORBIDDEN_TRANSFORMS <= used, (
         f"expected the producer to be planned when nothing supplies it; "
         f"got {sorted(used)}")
-    assert len(task.plan.steps) == 5
+    # Stated as the relationship rather than a count: what the reuse buys is
+    # exactly the forbidden set, so the unreused plan is the expected plan plus
+    # those steps. A literal here goes stale every time the lane changes shape.
+    assert len(task.plan.steps) == len(cv.EXPECTED_TRANSFORMS | cv.FORBIDDEN_TRANSFORMS)
 
 
 def test_an_unparented_given_does_not_satisfy_the_mapper(tmp_path):
