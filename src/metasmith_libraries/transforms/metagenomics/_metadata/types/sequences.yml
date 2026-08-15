@@ -24,6 +24,13 @@ types:
       Format: FASTA
       ext: fna
       origin: assembler
+  assembly_graph:
+    properties:
+      Data: assembly graph
+      _:
+      - the assembler's own graph of the assembly it produced -- the structure the
+        contigs were read off, retained so circularity and contig adjacency stay recoverable
+      origin: assembler
   assembly_per_bp_coverage:
     properties:
       _:
@@ -45,6 +52,13 @@ types:
       - fraction_reads_mapped
       - length
       - number_of_contigs
+  background_genome:
+    properties:
+      Data: host genome reference
+      Format: FASTA
+      _:
+      - host/background reference for read filtering
+      ext: fna
   bin_fasta:
     properties:
       Data: nucleic acid sequence
@@ -241,6 +255,18 @@ types:
       ext: fna
       method: hifiasm-meta
       origin: assembler
+  host_filtered_short_reads:
+    properties:
+      Data: nucleic acid sequence
+      Format: FASTQ
+      _:
+      - DNA reads
+      compression: gzip
+      ext: fq.gz
+      filter: host-removed
+      pair_state: complete
+      qc: filtered
+      read_length: short
   isolate_assembly:
     properties:
       Data: nucleic acid sequence
@@ -266,6 +292,16 @@ types:
       Data: nucleic acid sequence
       Format: FASTA
       ext: fna
+      method: megahit
+      origin: assembler
+  megahit_assembly_graph:
+    properties:
+      Data: assembly graph
+      Format: FASTG
+      _:
+      - megahit's de Bruijn graph at the largest k the run reached, reconstructed
+        from that k's contigs by megahit_toolkit contig2fastg
+      ext: fastg
       method: megahit
       origin: assembler
   metabat2_bin_fasta:
@@ -455,6 +491,33 @@ types:
       parity: single
       qc: none
       read_length: short
+  spades_assembly:
+    properties:
+      Data: nucleic acid sequence
+      Format: FASTA
+      ext: fna
+      method: spades
+      origin: assembler
+  spades_assembly_graph:
+    properties:
+      Data: assembly graph
+      Format: graphical fragment assembly
+      _:
+      - spades' consolidated assembly graph; its GFA P lines name scaffolds, so the
+        contig->walk mapping comes from the companion spades_contig_paths
+      ext: gfa
+      method: spades
+      origin: assembler
+  spades_contig_paths:
+    properties:
+      Data: assembly graph index
+      Format: spades paths
+      _:
+      - the walk through spades' assembly graph that each contigs.fasta record corresponds
+        to; meaningless without the graph it indexes
+      ext: paths
+      method: spades
+      origin: assembler
   structure_3di_tokens:
     properties:
       Format: Parquet

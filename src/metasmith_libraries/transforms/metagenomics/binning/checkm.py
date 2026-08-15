@@ -76,13 +76,14 @@ def protocol(context: ExecutionContext):
     for fa in sorted(input_dir.iterdir()):
         target = faa_dir / f"{fa.stem}.faa"
         Log.Info(f"gene-calling [{fa.stem}]")
-        context.ExecWithEnv().ifContainerDo(
-            env = image,
-            cmd = f"""
+        # Same command either way: this tool is a plain CLI in both worlds.
+        _cmd = f"""
                 export PATH=/opt/conda/envs/external_checkm2_env/bin:/opt/conda/bin:$PATH
                 prodigal -i {fa} -a {target} -o /dev/null -p meta -q || true
             """
-        )
+        context.ExecWithEnv() \
+            .ifContainerDo(env=image, cmd=_cmd) \
+            .ifVirtualEnvDo(env=image, cmd=_cmd)
         if not target.exists() or target.stat().st_size == 0:
             failed_prodigal.append(fa.stem)
             Log.Info(f"prodigal produced no FAA for [{fa.stem}] (likely v1.1.0 heap abort)")
@@ -95,13 +96,14 @@ def protocol(context: ExecutionContext):
     report = Path(out_dir) / "quality_report.tsv"
     surviving = [p for p in faa_dir.iterdir() if p.stat().st_size > 0]
     if surviving:
-        context.ExecWithEnv().ifContainerDo(
-            env = image,
-            cmd = f"""
+        # Same command either way: this tool is a plain CLI in both worlds.
+        _cmd = f"""
                 export PATH=/opt/conda/envs/external_checkm2_env/bin:/opt/conda/bin:$PATH
                 checkm2 predict {threads_arg} --genes -x faa --input ./faa --output-directory ./{out_dir} || true
             """
-        )
+        context.ExecWithEnv() \
+            .ifContainerDo(env=image, cmd=_cmd) \
+            .ifVirtualEnvDo(env=image, cmd=_cmd)
     else:
         Log.Info("all bins failed prodigal; skipping checkm2 predict")
 

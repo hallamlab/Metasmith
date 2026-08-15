@@ -19,12 +19,13 @@ def protocol(context: ExecutionContext):
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"--threads {threads}"
-    context.ExecWithEnv().ifContainerDo(
-        env = image,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             fastANI {threads} --queryList {genomes} --refList {genomes} --output {iout.container} 
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[

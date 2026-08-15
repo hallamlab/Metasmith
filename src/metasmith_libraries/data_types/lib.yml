@@ -28,3 +28,16 @@ types:
       src: bsr_histogram
       usage: command line
  
+  fabfos_evidence.py:
+    properties:
+      src: fabfos_evidence
+      usage: command line
+  fabfos_embed_transfer.py:
+    properties:
+      src: fabfos_embed_transfer
+      usage: command line
+  # The ECSPr engine used to be vendored here as three loose files staged into a
+  # job as if they were data. It is the `ecspr` conda package now -- declared by
+  # `env::ecspr.env`, invoked as a command -- so a consumer states a dependency
+  # on a version rather than on a copy, and the transform and a benchmark run the
+  # same executable. There is nothing left to stage.

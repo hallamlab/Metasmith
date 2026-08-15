@@ -53,6 +53,12 @@ CURATED = {
 
 BIOCONTAINERS = re.compile(r"quay\.io/biocontainers/([^:/]+):([^-\s]+)")
 
+# Tools whose conda env is a real multi-package spec rather than a derivable
+# one-liner, so `envs/tools/<tool>.yml` is written by something else and must
+# survive a regeneration. They still get a `conda:` key -- what is hands-off is
+# the recipe, not the declaration.
+HAND_WRITTEN = {"ecspr"}
+
 
 def derive_spec(stem: str, uri: str) -> str | None:
     m = BIOCONTAINERS.search(uri)
@@ -82,7 +88,10 @@ def main() -> int:
         spec = derive_spec(stem, uri)
         env_path = ENV_DIR / f"{stem}.env"
         lines = [f"container: {uri}"]
-        if spec:
+        if stem in HAND_WRITTEN:
+            lines.append(f"conda: {stem}")
+            portable.append((stem, f"{RECIPE_DIR.name}/{stem}.yml (hand-written)"))
+        elif spec:
             lines.append(f"conda: {stem}")
             portable.append((stem, spec))
             (RECIPE_DIR / f"{stem}.yml").write_text(

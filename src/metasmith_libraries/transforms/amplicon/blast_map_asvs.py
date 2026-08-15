@@ -19,9 +19,8 @@ def protocol(context: ExecutionContext):
     # Read threshold value from the input file
     pct_identity = ithreshold.local.read_text().strip()
 
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             makeblastdb \
                 -in {icontigs.container} \
                 -dbtype nucl \
@@ -34,8 +33,10 @@ def protocol(context: ExecutionContext):
                 -outfmt 6 \
                 -max_target_seqs 10000 \
                 -out {ihits.container}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     return ExecutionResult(
         manifest=[

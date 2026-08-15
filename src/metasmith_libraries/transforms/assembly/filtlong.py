@@ -16,19 +16,21 @@ def protocol(context: ExecutionContext):
     temp_unzipped = "temp_unzipped.fq"
     # --min_length 1000 --keep_percent 90 are default
     # todo: somehow cap at 100x coverage
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             filtlong --min_length 1000 --keep_percent 90 {ireads.container} >{temp_unzipped}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
-    context.ExecWithEnv().ifContainerDo(
-        env=im_bb,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             filterbyname.sh in={ireads.container} out={idisc.container} names={temp_unzipped}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=im_bb, cmd=_cmd) \
+        .ifVirtualEnvDo(env=im_bb, cmd=_cmd)
 
     threads = context.params.get('cpus')
     threads = "" if threads is None else f"-p {threads}"

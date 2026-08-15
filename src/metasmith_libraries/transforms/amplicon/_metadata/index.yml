@@ -1,6 +1,6 @@
 manifest:
   blast_map_asvs.py:
-    instance_id: 1e20d5a1815ce64127653d6a2e27f6620b836735a12a812dedb63b310489454f5427
+    instance_id: 1e204cdd9aebb8bec4874678d0330b39ec80da633cf737863a4a260b9911a9d11af2
     origin: leaf
     type: transforms::transform
   qiime2_taxonomy.py:

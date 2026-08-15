@@ -1,0 +1,143 @@
+ontology:
+  doi: https://doi.org/10.1093/bioinformatics/btt113
+  name: EDAM
+  strict: false
+  version: '1.25'
+schema: v1
+types:
+  ani_table:
+    properties:
+      _:
+      - fastani pairwise average nucleotide identity
+      ext: tsv
+  bracken_kreport:
+    properties:
+      _:
+      - bracken kraken-style report after abundance re-estimation (same 6-col kreport
+        format as kraken2_report)
+      ext: tsv
+  bracken_species:
+    properties:
+      _:
+      - bracken re-estimated species abundance (7 cols WITH header - name taxonomy_id
+        taxonomy_lvl kraken_assigned_reads added_reads new_est_reads fraction_total_reads)
+      ext: tsv
+  centrifuger_classifications:
+    properties:
+      _:
+      - centrifuger per-read classifications (8 cols WITH header - readID seqID taxID
+        score 2ndBestScore hitLength queryLength numMatches), zstd-compressed parquet
+      ext: parquet
+  centrifuger_kreport:
+    properties:
+      _:
+      - centrifuger kraken-style report via centrifuger-kreport (same 6-col format
+        as kraken2_report - the bridge target)
+      ext: tsv
+  centrifuger_summary:
+    properties:
+      _:
+      - centrifuger-quant per-taxon abundance summary (7 cols WITH header - name taxID
+        taxRank genomeSize numReads numUniqueReads abundance)
+      ext: tsv
+  checkm_raw:
+    properties:
+    - checkm workspace
+  checkm_stats:
+    properties:
+      _:
+      - checkm quality stats
+      ext: csv
+  ganon2_classifications:
+    properties:
+      _:
+      - ganon2 raw classifications (.rep - 7 cols, no header, plus trailing
+      ext: rep
+  ganon2_report:
+    properties:
+      _:
+      - ganon2 tree-like abundance report (.tre - 9 cols, no header - rank taxid lineage(pipe-sep)
+        name unique shared children total percent)
+      ext: tre
+  genomad_plasmid_summary:
+    properties:
+      _:
+      - genomad plasmid summary
+      ext: tsv
+  genomad_virus_summary:
+    properties:
+      _:
+      - genomad virus summary
+      ext: tsv
+  gtdbtk:
+    properties:
+      _:
+      - gtdbtk per contig classifications
+      ext: tsv
+  gtdbtk_raw:
+    properties:
+    - gtdbtk raw workspace
+  kraken2_classifications:
+    properties:
+      _:
+      - kraken2 per-read classifications (5 cols, no header - C/U readID taxID lenR1|lenR2
+        kmer_hits), zstd-compressed parquet
+      ext: parquet
+  kraken2_report:
+    properties:
+      _:
+      - kraken2 sample report (kraken-style 6-col format - pct reads_clade reads_taxon
+        rank taxid indented_name)
+      ext: tsv
+  metabuli:
+    properties:
+      _:
+      - metabuli per contig classifications
+      ext: tsv
+  metabuli_krona:
+    properties:
+      _:
+      - metabuli krona report
+      ext: html
+  metabuli_report:
+    properties:
+      _:
+      - metabuli report
+      ext: tsv
+  metaphlan_profile:
+    properties:
+      _:
+      - MetaPhlAn 4 relative-abundance profile (4 cols,
+      ext: tsv
+  metaphlan_sam:
+    properties:
+      _:
+      - MetaPhlAn 4 bowtie2 alignment SAM (companion artifact via --mapout - SAM format)
+      ext: sam
+  phyloflash_ntu_abundance:
+    properties:
+      _:
+      - phyloFlash NTU abundance table (2 cols CSV - taxonomy,read_count - <lib>.phyloFlash.NTUabundance.csv)
+      ext: csv
+  phyloflash_report_html:
+    properties:
+      _:
+      - phyloFlash run HTML report (interactive summary - <lib>.phyloFlash.html)
+      ext: html
+  phyloflash_ssu_spades:
+    properties:
+      _:
+      - phyloFlash SPAdes-reconstructed full-length SSU rRNA sequences (<lib>.spades_rRNAs.final.fasta)
+      ext: fasta
+  phyloflash_summary:
+    properties:
+      _:
+      - phyloFlash run summary report (key,value CSV - <lib>.phyloFlash.report.csv)
+      ext: csv
+  sylph_profile:
+    properties:
+      _:
+      - sylph profile output (15 cols WITH header - Sample_file Genome_file Taxonomic_abundance
+        Sequence_abundance Adjusted_ANI Eff_cov ANI_5-95_percentile Eff_lambda Lambda_5-95_percentile
+        Median_cov Mean_cov_geq1 Containment_ind Naive_ANI kmers_reassigned Contig_name)
+      ext: tsv

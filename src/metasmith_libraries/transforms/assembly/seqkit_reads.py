@@ -23,13 +23,14 @@ def protocol(context: ExecutionContext):
     # [INFO] guessed quality encoding: Sanger
     # [INFO] converting Sanger -> Sanger
     # [WARN] source and target quality encoding match.
-    context.ExecWithEnv().ifContainerDo(
-        env = img_sqk,
-        cmd = f"""
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""
             seqkit convert --dry-run {ireads.container} 2>&1 | tee {seqkit_guess_enc_file}
             seqkit stat {threads} --all --tabular {ireads.container} | tee {seqkit_stats_file}
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=img_sqk, cmd=_cmd) \
+        .ifVirtualEnvDo(env=img_sqk, cmd=_cmd)
     with open(seqkit_guess_enc_file) as f:
         K = "guessed quality encoding:"
         encoding = "sanger"

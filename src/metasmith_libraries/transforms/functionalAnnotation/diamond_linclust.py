@@ -27,9 +27,8 @@ def protocol(context: ExecutionContext):
     memory = "" if memory is None else f"--memory-limit {int(float(memory))-8}G"
 
     # Build diamond database and run linclust inside container
-    context.ExecWithEnv().ifContainerDo(
-        env=image,
-        cmd=f"""\
+    # Same command either way: this tool is a plain CLI in both worlds.
+    _cmd = f"""\
             diamond makedb --in {iorfs.container} -d orfs_db \
             && diamond linclust \
                 {threads} {memory} \
@@ -37,8 +36,10 @@ def protocol(context: ExecutionContext):
                 -o {CLUSTERS_TSV} \
                 --approx-id {min_id} \
                 --member-cover 80
-        """,
-    )
+        """
+    context.ExecWithEnv() \
+        .ifContainerDo(env=image, cmd=_cmd) \
+        .ifVirtualEnvDo(env=image, cmd=_cmd)
 
     # Parse cluster table to extract unique centroid IDs (column 1)
     centroid_ids = set()
