@@ -61,6 +61,27 @@ package. `dev/metasmith.sh --vendor-library` does exactly that before it copies,
 and refuses to stamp a bundle whose metadata came out empty. Shipping one that
 did would be silent: the GUI's type panel simply goes blank.
 
+## Four products, one repository, and what that costs the ref namespace
+
+The engine, the standard transform library, fabfos and ASPIRE live in this tree
+as directories rather than as pinned submodules, so a change to a library and to
+the consumer that needs it is **one commit** — which is the entire reason for the
+shape. Each product also gets a workspace scope layer named for it, and a scope's
+branch is named for the scope with no `feat/` prefix: `engine/dev`, `fabfos/dev`,
+`libraries/mono`, `aspire/release`.
+
+**Git stores refs as paths, so a nested branch permanently forbids a bare branch
+of its first segment.** With `fabfos/dev` in this repository, no ref may ever be
+named `fabfos` — and the reverse holds too, which is why the old `feat/fabfos`
+had to be deleted before the nested set could exist. `engine`, `fabfos`,
+`libraries` and `aspire` are therefore burnt names here, permanently. A create
+that would collide is refused by name rather than by git's error, but only when
+it goes through `scope_create`; a hand-rolled `git branch fabfos` just fails.
+
+`feat/monorepo` is the exception and predates the convention: it is the migration
+that assembled the tree, and it merges onto the engine's mainline rather than
+being a product line of its own.
+
 ---
 
 ## What Metasmith is
