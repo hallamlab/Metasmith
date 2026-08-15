@@ -95,7 +95,7 @@ def _assert_metadata_present(dst_path: Path) -> None:
         raise ValueError(
             f"vendored bundle at [{dst_path}] carries no _metadata/ at all -- "
             f"it was built from an uncompiled source tree. Compile first "
-            f"(`dev/libraries.sh -b` or `metasmith build all ...`), then re-vendor."
+            f"(`dev/libraries.sh -bm` or `metasmith build all ...`), then re-vendor."
         )
     empty = [d for d in found if not any(d.rglob("*"))]
     if empty:
@@ -138,7 +138,7 @@ def vendor_library(srcs: list[str], dst: str) -> dict:
     can later detect drift.
 
     Copies only -- it does not compile. `_metadata/` is a build product
-    (`metasmith build all`/`dev/libraries.sh -b`), and the caller must run
+    (`metasmith build all`/`dev/libraries.sh -bm`), and the caller must run
     that against the *source* directories named in `srcs` before vendoring,
     or this refuses the empty bundle that copying an uncompiled tree
     produces (see `_assert_metadata_present`).

@@ -171,9 +171,9 @@ _lib_vendor_srcs=(
     "--src" "envs=$HERE/envs/metasmith_libraries"
 )
 # `_metadata/` under src/metasmith_libraries/ is a build product, not tracked
-# source (dev/libraries.sh -b regenerates it the same way). --vendor-library
+# source (dev/libraries.sh -bm regenerates it the same way). --vendor-library
 # copies only, so a fresh checkout with nothing compiled yet would otherwise
-# ship an empty bundle -- compile in place first, same args as libraries.sh -b.
+# ship an empty bundle -- compile in place first, same args as libraries.sh -bm.
 _compile_library_metadata() {
     local lib="$HERE/src/metasmith_libraries"
     local args=(build all --types "$lib/data_types")

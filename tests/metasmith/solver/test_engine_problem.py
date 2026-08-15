@@ -192,7 +192,7 @@ def test_the_engine_reads_the_shipped_templates(engine):
 
     root = _libraries_root()
     if root is None:
-        pytest.skip("the standard library is not compiled — run `dev/libraries.sh -b`")
+        pytest.skip("the standard library is not compiled — run `dev/libraries.sh -bm`")
     from metasmith.agents import Template
 
     seen = 0

@@ -79,7 +79,7 @@ std_assembly_data
 
 # _metadata/ under the standard library and under fabfos's own algorithm
 # library is a build product (`metasmith build all`), not source -- compiled
-# from data_types/*.yml + the transform Python by dev/libraries.sh -b (the
+# from data_types/*.yml + the transform Python by dev/libraries.sh -bm (the
 # standard library) or dev/fabfos.sh -bm (fabfos's own, since it sits inside
 # the package and is not reached by --vendor-library). A stale or missing
 # copy is silent (the library loads and resolves nothing, no error anywhere),

@@ -144,7 +144,7 @@ def _libraries_root() -> Path | None:
     It is in this repo: `src/metasmith_libraries`, a sibling package of this
     one. The archived `metasmith-libraries` checkout this used to look for is
     gone, and `_metadata/` is compiled rather than tracked — so `None` here
-    means "nobody has run `dev/libraries.sh -b`", not "no library".
+    means "nobody has run `dev/libraries.sh -bm`", not "no library".
     """
     env = os.environ.get("METASMITH_LIBRARIES_ROOT")
     if env:
