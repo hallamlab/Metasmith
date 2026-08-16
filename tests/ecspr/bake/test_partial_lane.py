@@ -34,6 +34,7 @@ FORMULAS = {
     "MNXM1004": "C10H15N5O10P2",
     "MNXM1005": "H2O",
     "MNXM1006": "*",
+    "MNXM1007": "HO4P",
 }
 SMILES = {
     "MNXM1001": "OCC1OC(O)C(O)C(O)C1O",
@@ -41,6 +42,7 @@ SMILES = {
     "MNXM1003": "NC1=NC=NC2=C1N=CN2C1OC(COP(=O)(O)OP(=O)(O)OP(=O)(O)O)C(O)C1O",
     "MNXM1004": "NC1=NC=NC2=C1N=CN2C1OC(COP(=O)(O)OP(=O)(O)O)C(O)C1O",
     "MNXM1005": "O",
+    "MNXM1007": "OP(=O)(O)O",
 }
 
 
@@ -151,6 +153,56 @@ def test_the_forced_arm_is_emitted_in_the_extractor_s_shape():
     assert list(P.FORCED_COLS) == list(AP.PAIR_COLS)
     row = dict(zip(P.FORCED_COLS, forced[0]))
     assert row["mnxr"] == "MNXR900001", "the forced arm must key on the REAL reaction id"
+
+
+# --- the reduction is a reaction too, so it gets the same second reading ---
+
+# Nitrogenase's phosphorus, in miniature: 16 ATP in, 16 ADP + 16 phosphate out. The
+# reduction for P keeps all three and drops nothing, so it is SOUND -- and it is also a
+# thousand atoms of three molecules written sixteen times each, which is the exact
+# measure this whole scope exists to stop applying.
+EQ_REPEATED = {"MNXR900002": "16 MNXM1003@MNXD1 = 16 MNXM1004@MNXD1 + 16 MNXM1007@MNXD1"}
+
+# The same shape with coefficients that are NOT a common multiple: 60 ATP (180 P) into
+# 90 ADP (180 P) balances as written and does not balance per copy (3 into 2).
+EQ_UNEVEN = {"MNXR900003": "60 MNXM1003@MNXD1 = 90 MNXM1004@MNXD1"}
+
+
+def test_a_reduction_that_is_only_big_because_of_stoichiometry_is_collapsed():
+    """Otherwise the partial lane is the last place still measuring copies.
+
+    The expanded P reduction here is over a thousand atoms and would be refused for
+    size; written once per participant it is around sixty, and every P atom keeps the
+    destination it had, because the reaction is a whole multiple of a per-copy one.
+    """
+    uni, _f, tally = P.build(["MNXR900002"], EQ_REPEATED, FORMULAS, SMILES, _ranks(),
+                             char_limit=8000, atom_limit=600)
+    rows = {r[4]: dict(zip(P.UNIVERSE_COLS, r)) for r in uni}
+    assert "P" in rows, "the phosphorus reduction was refused for stoichiometric size"
+    p = rows["P"]
+    assert p["collapsed"] is True
+    assert p["atoms"] <= 600
+    assert p["sub_mnxms"] == ["MNXM1003"], "a collapsed submission still repeats a participant"
+    assert sorted(p["prod_mnxms"]) == ["MNXM1004", "MNXM1007"]
+    assert tally["reduced submission (collapsed)"] >= 1
+
+
+def test_a_collapse_that_breaks_the_element_balance_is_not_taken():
+    """The guard, and it is the only thing separating this from a strip.
+
+    60 ATP into 90 ADP balances at 180 P each way. Collapsed it offers three P sources
+    for two destinations, so the mapper would have to CHOOSE which of ATP's phosphates
+    survived -- an invention at rank level, where nothing downstream can see it. A gap
+    is the honest outcome, so the submission stays expanded and stays refused.
+    """
+    assert not P._still_balances(["MNXM1003"], ["MNXM1004"], FORMULAS, "P")
+    assert P._still_balances(["MNXM1003"], ["MNXM1004", "MNXM1007"], FORMULAS, "P")
+
+    uni, _f, tally = P.build(["MNXR900003"], EQ_UNEVEN, FORMULAS, SMILES, _ranks(),
+                             char_limit=8000, atom_limit=600)
+    assert not [r for r in uni if r[4] == "P"], (
+        "a collapse that changes the per-copy element balance was taken anyway")
+    assert sum(v for k, v in tally.items() if k.startswith("reduction over")) >= 1
 
 
 # --- the labelling, which is the stop line --------------------------------

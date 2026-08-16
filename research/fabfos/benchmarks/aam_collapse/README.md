@@ -43,6 +43,12 @@ rate holds at 81–94% up to 600 and falls to 26.9% at 600–650, 16.7% at 650�
 collapsed cap is 600 — re-derived rather than carried across, and landing on the same
 number is the finding rather than a shortcut.
 
+**THE CURVE IS CENSORED ABOVE THE THRESHOLD.** Both measures' rows past 600 describe
+MetaCyc, not a mapper: every mapper-derived method in the deployed table stops dead at the
+cap because the same cut sat upstream of all three lanes, and `curated` is the only thing
+banked above it. So the bins up to 600 warrant the constant and the bins past it warrant
+nothing. `../aam_cap/` tests the threshold from the other side.
+
 **`atom_pairs` is keyed by vocabulary CODE, not by MNXR.** Every join to the deployed
 bake goes through `vocab.parquet`; reading the code as an id yields an empty join and a
 curve of zeros, which reads as a result rather than as a bug.

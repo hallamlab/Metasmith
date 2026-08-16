@@ -45,6 +45,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import shard as aam_shard
+from . import worklist
 
 # The equation term grammar, verbatim from the deployed builder. NOTE it matches only
 # `MNXM...@compartment` terms -- specials like `WATER@MNXD1` and `BIOMASS@MNXD1` do NOT
@@ -191,6 +192,12 @@ def universe_from_worklist(worklist_parquet: Path, exclude=None) -> dict[str, st
     row for anything it excluded. Pointing a member at the raw lookup now fails loudly
     rather than quietly mapping the oversized tail that OOM-killed this lane twice.
 
+    THAT TAIL IS WHY THE FILTER IS `NEURAL_ADMITS` AND NOT `mappable` SPELLED OUT HERE.
+    The atom cap exists for these two members specifically -- a 512-token transformer and
+    the lane that was OOM-killed -- and Indigo takes the reactions above it. Naming the
+    set in `worklist` is what keeps "which member sees what" a single statement rather
+    than a literal in three files.
+
     `exclude` restricts to what a lower layer has NOT already claimed.
     """
     d = pd.read_parquet(worklist_parquet)
@@ -201,7 +208,7 @@ def universe_from_worklist(worklist_parquet: Path, exclude=None) -> dict[str, st
             f"the same column) -- never `lookup::reactions` directly, which has no row "
             f"for the reactions the adjudication refused and no record of why.")
     n_all = len(d)
-    d = d[(d["verdict"] == "mappable") & d["rxn_smiles"].notna()]
+    d = d[d["verdict"].isin(worklist.NEURAL_ADMITS) & d["rxn_smiles"].notna()]
     out = {r.mnxr: r.rxn_smiles for r in d.itertuples(index=False)}
     over = [m for m, s in out.items() if len(s) > SMILES_LEN_LIMIT]
     if over:

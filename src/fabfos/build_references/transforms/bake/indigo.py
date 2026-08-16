@@ -47,6 +47,13 @@ What happens to a reaction that times out is unchanged and was always the real a
 lands in the gap set LocalMapper exists to cover -- with RXNMapper independently holding
 about a third of them already. Widening the fan-out costs the same reactions far less.
 
+THIS MEMBER NOW READS A WIDER UNIVERSE THAN THE OTHER TWO, and it is the only place the
+three legitimately differ. `worklist.INDIGO_ADMITS` adds the `oversize` verdict: the atom
+cap bounds the neural members' cost and not this one's, so the reactions above it are
+attempted here rather than nowhere. They arrive as their collapsed string, they are a
+small population, and what they cost is one more watchdog cycle per shard -- the sidecar
+and the restart-past-the-last-line discipline below is exactly the machinery for it.
+
 A TIGHTER ATOM CAP IS NOT THE ANSWER EITHER, and it was the first thing tried. Timeout
 probability by reaction size is 0.04% under 200 atoms, 2.2% to 300, 12.8% to 400 and
 51.5% from 400 to the worklist's 600-atom ceiling. Refusing above 400 would avoid 169 of
