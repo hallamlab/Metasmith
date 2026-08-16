@@ -1,4 +1,8 @@
 manifest:
+  aam_algebra.py:
+    instance_id: 1e20b54aa99792313f465c216917043f4dabbd8f571b287616fd60e48aa14c464586
+    origin: leaf
+    type: transforms::transform
   aam_blockers.py:
     instance_id: 1e2095c583077f59381fff489165d97281679e800705dee1f2ef4b56d7eb6645c6f7
     origin: leaf

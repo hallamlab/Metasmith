@@ -28,7 +28,8 @@ MODULES = [
     "ecspr.bake.atom_pairs", "ecspr.bake.encoding",
     "ecspr.bake.metabolism", "ecspr.bake.evidence",
     "ecspr.bake.aam",
-    "ecspr.bake.aam.combine", "ecspr.bake.aam.curation",
+    "ecspr.bake.aam.algebra", "ecspr.bake.aam.combine",
+    "ecspr.bake.aam.curation",
     "ecspr.bake.aam.indigo_member", "ecspr.bake.aam.layers",
     "ecspr.bake.aam.metacyc_member", "ecspr.bake.aam.neural_members",
     "ecspr.bake.aam.partial", "ecspr.bake.aam.recount",
@@ -50,6 +51,7 @@ NEEDS_A_TOOL = {
     "ecspr.bake.direction.thermo_eq": "equilibrator_api",
     "ecspr.bake.direction.thermo_dgbyg": "dGbyG",
     "ecspr.bake.atom_pairs": "rdkit",
+    "ecspr.bake.aam.algebra": "rdkit",          # via ..atom_pairs
     "ecspr.bake.aam.combine": "rdkit",          # via ..atom_pairs
     "ecspr.bake.aam.curation": "rdkit",         # via ..atom_pairs
     "ecspr.bake.aam.partial": "rdkit",          # via ..atom_pairs
@@ -84,6 +86,12 @@ CLI = {
         "blockers": {"--lookups", "--element-counts", "--worklist", "--out",
                      "--no-synonyms"},
         "nametwin": {"--lookups", "--element-counts", "--worklist", "--out"},
+    },
+    "ecspr.bake.aam.algebra": {
+        # `--out-forced` and `--out-claims` are two flags because they are two grains.
+        # One `--out` writing both would be one product a reader could join.
+        "build": {"--lookups", "--element-counts", "--worklist", "--rescued",
+                  "--targets", "--out-forced", "--out-claims", "--out-summary"},
     },
     "ecspr.bake.aam.partial": {
         "build": {"--lookups", "--worklist", "--rescued", "--covered",

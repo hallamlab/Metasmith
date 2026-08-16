@@ -5,6 +5,18 @@ ontology:
   version: '1.25'
 schema: v1
 types:
+  aam_algebra:
+    properties:
+    - 'A DIRECTORY holding TWO GRAINS that must never be joined. `forced_pairs.parquet`
+      is atom-grain, in `atom_pairs.PAIR_COLS` shape, and holds only what conservation
+      leaves no choice about once a participant standing on both sides with equal
+      multiplicity has cancelled -- cancellation on identity, so no formula is consulted
+      and nothing is inferred. `claims.tsv` is species-grain: the count conservation
+      fixes for a lone unknown, and the generic-carrier class that pairs by name.
+      Those settle a number about a MOLECULE and imply no atom correspondence, so
+      they are reported and never banked; a structureless species has no canonical
+      rank to hang one on in any case. One type, because the pair table''s honesty
+      depends on the claim table being read beside it.'
   aam_blockers:
     properties:
     - 'A DIRECTORY: `crosswalk.tsv` (the accepted twins, in the shape the rescue''s
