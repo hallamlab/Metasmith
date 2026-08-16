@@ -850,6 +850,19 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
         elif dtype_name in spec["outputs"]:
             products[dtype_name] = path
 
+    # THE EVIDENCE IS PUBLISHED BUT NOT INDEXED, so the manifest cannot be the only way
+    # to it. A run's index records the products that are some target's lineage; evidence
+    # has no consumer and no target asks for it, so the directories land in results/ and
+    # nothing in `_metadata/index.yml` mentions them -- the `members` run wrote both tool
+    # directories and reported neither. The directory NAME is the attribution anyway,
+    # which is the whole reason the lanes copy their evidence ROOT rather than the
+    # directory under it, so walking for it is not a workaround for a lost fact.
+    for artifact in sorted(staging.glob("*evidence-tool_output/*")):
+        if not artifact.is_dir():
+            continue
+        for tool_dir in sorted(p for p in artifact.iterdir() if p.is_dir()):
+            found.setdefault(tool_dir.name, tool_dir)
+
     for tool, tool_dir in sorted(found.items()):
         dest = TEMP / tool
         if dest.exists():
