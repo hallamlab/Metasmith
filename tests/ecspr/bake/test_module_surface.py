@@ -29,12 +29,12 @@ MODULES = [
     "ecspr.bake.metabolism", "ecspr.bake.evidence",
     "ecspr.bake.aam",
     "ecspr.bake.aam.algebra", "ecspr.bake.aam.combine",
-    "ecspr.bake.aam.curation",
+    "ecspr.bake.aam.curation", "ecspr.bake.aam.forecast",
     "ecspr.bake.aam.indigo_member", "ecspr.bake.aam.layers",
     "ecspr.bake.aam.metacyc_member", "ecspr.bake.aam.neural_members",
     "ecspr.bake.aam.partial", "ecspr.bake.aam.recount",
     "ecspr.bake.aam.shard", "ecspr.bake.aam.twins",
-    "ecspr.bake.aam.worklist",
+    "ecspr.bake.aam.universe", "ecspr.bake.aam.worklist",
     "ecspr.bake.direction",
     "ecspr.bake.direction.calibrate", "ecspr.bake.direction.canon",
     "ecspr.bake.direction.combine", "ecspr.bake.direction.curated",
@@ -54,6 +54,8 @@ NEEDS_A_TOOL = {
     "ecspr.bake.aam.algebra": "rdkit",          # via ..atom_pairs
     "ecspr.bake.aam.combine": "rdkit",          # via ..atom_pairs
     "ecspr.bake.aam.curation": "rdkit",         # via ..atom_pairs
+    "ecspr.bake.aam.forecast": "rdkit",         # via ..atom_pairs
+    "ecspr.bake.aam.universe": "rdkit",         # via .partial -> ..atom_pairs
     "ecspr.bake.aam.partial": "rdkit",          # via ..atom_pairs
     "ecspr.bake.aam.recount": "rdkit",          # via ..atom_pairs
     "ecspr.bake.aam.twins": "rdkit",            # via .curation -> ..atom_pairs
@@ -94,9 +96,20 @@ CLI = {
                   "--targets", "--out-forced", "--out-claims", "--out-summary"},
     },
     "ecspr.bake.aam.partial": {
-        "build": {"--lookups", "--worklist", "--rescued", "--covered",
+        # `--forecast` REPLACES `--worklist`/`--rescued`/`--covered`, and the swap is the
+        # whole of T5 at this surface: the lane's targets used to be computed by
+        # subtracting finished member products, which is what forced it downstream of
+        # every mapper.
+        "build": {"--lookups", "--forecast",
                   "--atom-limit", "--char-limit",
                   "--out", "--out-forced", "--out-summary"},
+    },
+    "ecspr.bake.aam.forecast": {
+        "build": {"--lookups", "--worklist", "--rescued", "--element-counts",
+                  "--forced", "--prior-logs", "--out", "--out-summary"},
+    },
+    "ecspr.bake.aam.universe": {
+        "build": {"--worklist", "--rescued", "--partial", "--out", "--out-summary"},
     },
     "ecspr.bake.aam.recount": {
         "build": {"--metabolites", "--out", "--out-summary"},
@@ -105,19 +118,23 @@ CLI = {
         "check": {"--counts", "--atom-ranks"},
     },
     "ecspr.bake.aam.layers": {
-        "fuse": {"--member", "--out"},
+        # `--submission-class` is what a layer IS now that the members run once: the
+        # three files feed L2/L3/L4 by what each row CLAIMS rather than by which pass
+        # wrote which file.
+        "fuse": {"--member", "--submission-class", "--out"},
         "stack": {"--layer", "--out"},
     },
     "ecspr.bake.aam.indigo_member": {
-        "map": {"--worklist", "--out", "--limit", "--timeout", "--shard",
-                "--sidecar", "--exclude"},
+        "map": {"--universe", "--out", "--limit", "--timeout", "--shard",
+                "--sidecar", "--cache-dir", "--exclude"},
         "merge": {"--shard-file", "--expect", "--out"},
         "retry": {"--out", "--timeout"},
     },
     "ecspr.bake.aam.neural_members": {
-        "": {"--member", "--out", "--worklist", "--reac-prop", "--chem-prop",
+        "": {"--member", "--out", "--universe", "--reac-prop", "--chem-prop",
              "--limit", "--timeout", "--timeout-log", "--shard", "--sidecar",
-             "--exclude", "--covered", "--merge-from", "--mem-budget-gb"},
+             "--cache-dir", "--exclude", "--covered", "--merge-from",
+             "--mem-budget-gb"},
     },
     "ecspr.bake.aam.metacyc_member": {
         "": {"--smiles-dat", "--reac-xref", "--out", "--out-report"},
@@ -126,7 +143,7 @@ CLI = {
         "extract": {"--aam", "--reac-prop", "--chem-prop", "--out", "--out-status",
                     "--align", "--connectivity-fallback", "--fallback-forced",
                     "--balance", "--placeholders", "--resolved", "--min-confidence",
-                    "--partial"},
+                    "--universe"},
         "selftest": set(),
     },
     "ecspr.bake.metabolism": {

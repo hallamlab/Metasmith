@@ -176,9 +176,8 @@ def build_universe(reac_prop: Path, chem_prop: Path) -> dict[str, str]:
     return rxn_smiles
 
 
-def universe_from_worklist(worklist_parquet: Path, exclude=None) -> dict[str, str]:
-    """``{mnxr -> reaction SMILES}`` for the reactions `aam_worklist` ADJUDICATED as
-    mappable.
+def load_universe(universe_parquet: Path, exclude=None):
+    """``({key -> SMILES}, {key -> (base_mnxr, element)})`` for what these members admit.
 
     THE SMILES MUST BE THE SAME STRING FOR EVERY MEMBER, and that is the whole reason
     this path exists. When each member rebuilds the universe from reac_prop + chem_prop
@@ -198,42 +197,57 @@ def universe_from_worklist(worklist_parquet: Path, exclude=None) -> dict[str, st
     set in `worklist` is what keeps "which member sees what" a single statement rather
     than a literal in three files.
 
+    THE SECOND RETURN IS WHAT MAKES THE GAP COMPUTABLE. A submission key is a bare MNXR
+    for a whole reaction and `MNXR#X` for an element reduction, and the pairs table is
+    keyed on the REAL reaction -- so "has this submission been answered" is a question
+    about (reaction, element) for one class and about the reaction for the other. See
+    `gap_of`.
+
     `exclude` restricts to what a lower layer has NOT already claimed.
     """
-    d = pd.read_parquet(worklist_parquet)
+    d = pd.read_parquet(universe_parquet)
     if "verdict" not in d.columns:
         raise SystemExit(
-            f"[aam] {worklist_parquet} has no `verdict` column, so it is not a worklist. "
-            f"Members read `interm::aam_worklist` (or the rescued universe, which carries "
-            f"the same column) -- never `lookup::reactions` directly, which has no row "
-            f"for the reactions the adjudication refused and no record of why.")
+            f"[aam] {universe_parquet} has no `verdict` column, so it is not a submission "
+            f"table. Members read `interm::aam_universe` -- never `lookup::reactions` "
+            f"directly, which has no row for the submissions the adjudication refused "
+            f"and no record of why.")
     n_all = len(d)
     d = d[d["verdict"].isin(worklist.NEURAL_ADMITS) & d["rxn_smiles"].notna()]
     out = {r.mnxr: r.rxn_smiles for r in d.itertuples(index=False)}
+    meta = {}
+    has_base = "base_mnxr" in d.columns
+    for r in d.itertuples(index=False):
+        base = str(r.base_mnxr) if has_base else str(r.mnxr)
+        el = getattr(r, "element", None)
+        meta[r.mnxr] = (base, None if el is None or pd.isna(el) else str(el))
     over = [m for m, s in out.items() if len(s) > SMILES_LEN_LIMIT]
     if over:
-        # Belt and braces: the worklist applies this same cap, so a hit here means the
+        # Belt and braces: the universe applies this same cap, so a hit here means the
         # two limits have drifted apart rather than that a long reaction slipped
-        # through. It is checked against whichever string the worklist wrote -- for a
-        # collapsed reaction that is the collapsed one, which is what the member will
-        # actually be handed and therefore what the cap is about.
+        # through. It is checked against whichever string was written -- for a collapsed
+        # reaction that is the collapsed one, which is what the member will actually be
+        # handed and therefore what the cap is about.
         raise SystemExit(
-            f"[aam] {len(over):,} mappable reactions exceed SMILES_LEN_LIMIT "
-            f"({SMILES_LEN_LIMIT}), e.g. {over[0]}. The worklist and this module "
+            f"[aam] {len(over):,} admitted submissions exceed SMILES_LEN_LIMIT "
+            f"({SMILES_LEN_LIMIT}), e.g. {over[0]}. The universe and this module "
             f"disagree about the character cap; fix the constant, do not filter here.")
     n_collapsed = int(d["collapsed"].sum()) if "collapsed" in d.columns else 0
+    by_class = (d["submission_class"].value_counts().to_dict()
+                if "submission_class" in d.columns else {})
     n_map = len(out)
     if exclude:
         out = {m: s for m, s in out.items() if m not in exclude}
-    print(f"[aam] worklist: {n_all:,} reactions adjudicated, {n_map:,} mappable"
-          + (f" ({n_collapsed:,} as a stoichiometric collapse)" if n_collapsed else "")
+    print(f"[aam] universe: {n_all:,} submissions, {n_map:,} admitted "
+          + (f"{by_class} " if by_class else "")
+          + (f"({n_collapsed:,} as a stoichiometric collapse)" if n_collapsed else "")
           + (f", {n_map - len(out):,} already claimed by a lower layer" if exclude else ""),
           flush=True)
-    return out
+    return out, meta
 
 
-def covered_by(pairs_parquets) -> set[str]:
-    """Reactions some other member already produced pairs for.
+def covered_by(pairs_parquets) -> set:
+    """`(mnxr, element)` some other member already produced a pair for.
 
     THE GAP-FILLER'S INPUT. In the deployed chain LocalMapper never swept the universe:
     it ran over 487 reactions that the rest of the pipeline could reach but had no
@@ -241,6 +255,12 @@ def covered_by(pairs_parquets) -> set[str]:
     set -- zero outside it. Absence from every other member's pairs table is that same
     "reach AND no rxn" gap, expressed as something the graph can compute instead of
     something a person assembled by hand.
+
+    AT (reaction, element) GRAIN, NOT REACTION GRAIN, and with one universe that stops
+    being a nicety. A reduced submission answers ONE element; when the three passes were
+    separate the gap set was per pass and the conflation could not bite. In one pass a
+    reaction whose carbon mapped would mark its own nitrogen reduction as covered, and
+    the gap-filler would skip exactly the submission the forecast built for it.
     """
     done = set()
     for p in pairs_parquets:
@@ -250,10 +270,29 @@ def covered_by(pairs_parquets) -> set[str]:
                 f"[aam] {p} is missing or empty. The gap is defined as what the OTHER "
                 f"members did not reach, so an absent member would make the gap the "
                 f"whole universe -- which is exactly the sweep this lane stopped being.")
-        done |= set(pd.read_parquet(p, columns=["mnxr"])["mnxr"].astype(str))
-    print(f"[aam] {len(done):,} reactions already covered by the members handed in",
-          flush=True)
+        d = pd.read_parquet(p, columns=["mnxr", "element"])
+        done |= set(zip(d["mnxr"].astype(str), d["element"].astype(str)))
+    print(f"[aam] {len({m for m, _ in done}):,} reactions / {len(done):,} "
+          f"(reaction, element) already covered by the members handed in", flush=True)
     return done
+
+
+def gap_of(universe: dict, meta: dict, covered: set) -> dict:
+    """The submissions no other member answered.
+
+    A REDUCED submission is answered only when its OWN element was; a whole one when any
+    element was, because a whole map that produced any pair is a map the reaction has.
+    """
+    reached = {m for m, _el in covered}
+    out = {}
+    for key, smi in universe.items():
+        base, el = meta.get(key, (key, None))
+        if el is None:
+            if base not in reached:
+                out[key] = smi
+        elif (base, el) not in covered:
+            out[key] = smi
+    return out
 
 
 def _resume(out_tsv: Path) -> set[str]:
@@ -445,9 +484,15 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--member", required=True, choices=["rxnmapper", "localmapper"])
-    ap.add_argument("--worklist", type=Path, default=None,
-                    help="interm::aam_worklist (or the rescued universe, same schema) -- "
-                         "the adjudicated todo list every member shares")
+    ap.add_argument("--universe", type=Path, default=None,
+                    help="interm::aam_universe -- the one submission table every member "
+                         "shares, carrying all three submission classes")
+    ap.add_argument("--cache-dir", type=Path, default=None,
+                    help="the STAGED durable cache for this member: prior runs' "
+                         "cache.tsv and *.attempted. A row is reused only when its "
+                         "submission STRING matches the one this run would send, and "
+                         "the sidecars are re-partitioned onto this run's shard spec "
+                         "rather than refused across the change")
     ap.add_argument("--reac-prop", type=Path, default=None)
     ap.add_argument("--chem-prop", type=Path, default=None)
     ap.add_argument("--exclude", type=Path, default=None,
@@ -455,9 +500,10 @@ def main(argv=None):
                          "has already claimed; they are not re-mapped")
     ap.add_argument("--covered", type=Path, nargs="*", default=None,
                     help="other members' pairs parquets. With this the lane is a "
-                         "GAP-FILLER: it maps only what those members did not reach, "
-                         "which is the role LocalMapper actually had in the deployed "
-                         "chain and the reason it cost 487 reactions rather than a day")
+                         "GAP-FILLER: it maps only the submissions those members did "
+                         "not answer, at (reaction, element) grain -- which is the role "
+                         "LocalMapper actually had in the deployed chain and the reason "
+                         "it cost 487 reactions rather than a day")
     ap.add_argument("--shard", default=None,
                     help="i/n -- deterministic by crc32 of mnxr")
     ap.add_argument("--sidecar", type=Path, default=None,
@@ -508,32 +554,51 @@ def main(argv=None):
     exclude = None
     if a.exclude and a.exclude.exists():
         exclude = set(pd.read_parquet(a.exclude, columns=["mnxr"])["mnxr"])
-    if a.worklist:
-        universe = universe_from_worklist(a.worklist, exclude)
+    meta = {}
+    if a.universe:
+        universe, meta = load_universe(a.universe, exclude)
     elif a.reac_prop and a.chem_prop:
         universe = build_universe(a.reac_prop, a.chem_prop)
         if exclude:
             universe = {m: s for m, s in universe.items() if m not in exclude}
     else:
-        raise SystemExit("[aam] need --worklist, or both --reac-prop and --chem-prop")
+        raise SystemExit("[aam] need --universe, or both --reac-prop and --chem-prop")
 
     if a.covered:
         done_elsewhere = covered_by(a.covered)
         n = len(universe)
-        universe = {m: s for m, s in universe.items() if m not in done_elsewhere}
-        print(f"[aam:{a.member}] gap: {len(universe):,} of {n:,} mappable reactions "
+        universe = gap_of(universe, meta, done_elsewhere)
+        print(f"[aam:{a.member}] gap: {len(universe):,} of {n:,} admitted submissions "
               f"were not reached by the members handed in", flush=True)
 
     shard = aam_shard.parse_spec(a.shard)
     universe = aam_shard.select(universe, shard)
 
     a.out.parent.mkdir(parents=True, exist_ok=True)
-    # RESUME OFF BOTH: the cache holds what FINISHED, the sidecar holds what was STARTED,
+    # THE DURABLE CACHE. The in-task cache is node-local scratch and is discarded on
+    # retry, so its per-reaction resume protected this lane against nothing that actually
+    # happens on the cluster; the staged copy is the same file, handed in. A row is
+    # reused only when the SUBMISSION STRING it was produced from is the one this run
+    # would send -- a reaction has one id and up to four strings.
+    prior_caches, prior_sides = aam_shard.cache_files(a.cache_dir)
+    carried, _stale, _foreign = aam_shard.read_cache(prior_caches, universe,
+                                                     who=f"aam:{a.member}")
+    if carried:
+        fh0, emit0 = _writer(a.out)
+        here = _resume(a.out)
+        for row in carried:
+            if row[0] in here:
+                continue
+            emit0(row[0], row[1], row[2] if len(row) > 2 else "",
+                  row[3] if len(row) > 3 else "")
+        fh0.close()
+
+    # RESUME OFF BOTH: the cache holds what FINISHED, the sidecars hold what was STARTED,
     # and the difference is precisely the reaction a kill landed in. Resuming off the
     # cache alone re-attempts it, dies again, and never makes progress.
     done = _resume(a.out)
-    if a.sidecar:
-        done |= aam_shard.read_sidecar(a.sidecar, shard, who=f"aam:{a.member}")
+    done |= aam_shard.read_sidecars(prior_sides + ([a.sidecar] if a.sidecar else []),
+                                    shard, who=f"aam:{a.member}")
     todo = [(m, s) for m, s in universe.items() if m not in done]
     if a.limit:
         todo = todo[:a.limit]

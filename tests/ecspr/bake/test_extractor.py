@@ -20,6 +20,7 @@ import pytest
 pytest.importorskip("rdkit", reason="the extractor imports rdkit at module scope")
 
 from ecspr.bake import atom_pairs as AP
+from ecspr.bake.aam.partial import KEY_SEP as AP_KEY_SEP
 
 
 # --- the equation, expanded ------------------------------------------------
@@ -163,3 +164,117 @@ def test_forced_pairs_refuses_when_a_formula_cannot_be_trusted():
         formulas={"M_a": "C2H6O", "M_poly": "*", "M_b": "C2H4O2"},
         ranks_of={("M_a", "C"): [0, 1], ("M_b", "C"): [0, 1]})
     assert out == {}, "a wildcard formula licensed a forced pairing"
+
+
+# --- one extraction, three submission classes -------------------------------
+# The change one universe forced. Each member's cache now holds whole reactions AND
+# element reductions in one file, so the extractor has to give each row the template it
+# was actually submitted under -- and stamp which class it answered, because that is not
+# recoverable afterwards.
+
+def _mixed(tmp_path):
+    """A whole reaction and a nitrogen reduction OF THE SAME reaction, mapped together."""
+    import pandas as pd
+    from ecspr.bake.aam import partial as P
+    from ecspr.bake.aam import universe as U
+
+    # Two carbons in, two out; one nitrogen in, one out. Small enough to read by eye.
+    reac = tmp_path / "reac_prop.tsv"
+    reac.write_text("#ID\tequation\n"
+                    "MNXR1\t1 MNXM1@MNXD1 + 1 MNXM2@MNXD1 = "
+                    "1 MNXM3@MNXD1 + 1 MNXM4@MNXD1\n")
+    chem = tmp_path / "chem_prop.tsv"
+    chem.write_text(
+        "#ID\tname\treference\tformula\tcharge\tmass\tInChI\tInChIKey\tSMILES\n"
+        "MNXM1\ta\t\tC2H6\t0\t0\t\t\tCC\n"
+        "MNXM2\tb\t\tNH3\t0\t0\t\t\tN\n"
+        "MNXM3\tc\t\tC2H6O\t0\t0\t\t\tCCO\n"
+        "MNXM4\td\t\tCH5N\t0\t0\t\t\tCN\n")
+
+    uni = pd.DataFrame(
+        [("MNXR1", "mappable", "CC.N>>CCO.CN", "MNXR1", None, [], [], 10, 12, False,
+          "whole"),
+         (f"MNXR1{P.KEY_SEP}N", "mappable", "N>>CN", "MNXR1", "N",
+          ["MNXM2"], ["MNXM4"], 3, 5, False, "reduced")],
+        columns=list(U.UNIVERSE_COLS))
+    up = tmp_path / "universe.parquet"
+    uni.to_parquet(up, index=False)
+
+    # The two submissions as a mapper would return them. The reduction's map names only
+    # its own two participants, which is exactly why it needs its own template.
+    aam = tmp_path / "aam.tsv"
+    aam.write_text(
+        "mnxr\trxn_smiles\tmapped_rxn_smiles\tconfidence\n"
+        "MNXR1\tCC.N>>CCO.CN\t[CH3:1][CH3:2].[NH3:3]>>[CH3:1][CH2:2][OH:4].[CH3:5][NH2:3]\t0.9\n"
+        f"MNXR1{P.KEY_SEP}N\tN>>CN\t[NH3:1]>>[CH3:2][NH2:1]\t0.9\n")
+    return reac, chem, up, aam
+
+
+def test_one_extraction_gives_each_class_the_template_it_was_submitted_under(tmp_path):
+    """The reduction's participants are DELIBERATELY fewer than the equation's.
+
+    Re-deriving them from `reac_prop` would compare a two-fragment map against a
+    four-participant template and the strict guard would refuse it as `stripped` -- so
+    before one universe the reduced pass needed its own extraction. Here both are in one
+    call and each gets its own template, keyed on whether the row carries an element.
+    """
+    import argparse
+    import pandas as pd
+
+    reac, chem, up, aam = _mixed(tmp_path)
+    out, status = tmp_path / "pairs.parquet", tmp_path / "status.tsv"
+    AP.cmd_extract(argparse.Namespace(
+        aam=[str(aam)], universe=str(up), reac_prop=str(reac), chem_prop=str(chem),
+        out=str(out), out_status=str(status), align="strict",
+        connectivity_fallback=False, fallback_forced=False,
+        balance=None, placeholders=None, resolved=None, min_confidence=None))
+
+    st = pd.read_csv(status, sep="\t").set_index("mnxr")["status"].to_dict()
+    assert st["MNXR1"] == "ok"
+    assert st[f"MNXR1{AP_KEY_SEP}N"] == "ok", \
+        "the reduction must not be refused as `stripped` against the full equation"
+
+
+def test_every_pair_row_says_which_class_of_submission_it_answers(tmp_path):
+    """Not recoverable afterwards, which is why it is written here.
+
+    Both submissions above are for MNXR1, and the layer stack must put the whole map in
+    L2 and the reduction in L4. Keyed on (mnxr, element) alone the two are
+    indistinguishable, and a partial map sitting where a full map belongs is the one
+    thing the additive stack exists to prevent.
+    """
+    import argparse
+    import pandas as pd
+
+    reac, chem, up, aam = _mixed(tmp_path)
+    out, status = tmp_path / "pairs.parquet", tmp_path / "status.tsv"
+    AP.cmd_extract(argparse.Namespace(
+        aam=[str(aam)], universe=str(up), reac_prop=str(reac), chem_prop=str(chem),
+        out=str(out), out_status=str(status), align="strict",
+        connectivity_fallback=False, fallback_forced=False,
+        balance=None, placeholders=None, resolved=None, min_confidence=None))
+
+    d = pd.read_parquet(out)
+    assert set(d["mnxr"]) == {"MNXR1"}, "a pair row is keyed on the REAL reaction"
+    assert set(d["submission_class"]) == {"whole", "reduced"}
+    # The reduction is read for ONE element and every other element's map is discarded
+    # unread -- for those the reduction really is a strip.
+    assert set(d.loc[d["submission_class"] == "reduced", "element"]) == {"N"}
+
+
+def test_a_table_extracted_without_a_universe_cannot_be_split_into_layers(tmp_path):
+    """`layers.explode` refuses rather than fusing it as one layer.
+
+    Fusing it whole is the failure this guards: it would put every class in whichever
+    layer asked first, and the additive gates only refuse a CLAIM they can see.
+    """
+    import pandas as pd
+    from ecspr.bake.aam import layers as L
+
+    p = tmp_path / "nolabels.parquet"
+    pd.DataFrame([dict(mnxr="MNXR1", element="C", substrate="MNXM1", product="MNXM3",
+                       n_atoms=1, sub_idx="0", prod_idx="0", pair_w="1.0")]).to_parquet(
+        p, index=False)
+    assert len(L.explode(p, method="m", source="s")) == 1
+    with pytest.raises(SystemExit, match="submission_class"):
+        L.explode(p, method="m", source="s", only_class="whole")

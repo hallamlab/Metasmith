@@ -1,9 +1,16 @@
-"""The AAM assembly: fuse six members, lay the layers down, and mint the bake.
+"""The AAM assembly: fuse three members into three layers, stack them, mint the bake.
 
 WHAT IS HERE AND WHAT IS NOT. Every member that runs a MODEL is its own lane, and there
-are now six of them -- rxnmapper, localmapper and indigo over the adjudicated worklist,
-and the same three over the rescued universe. What is left is here: the curated layer,
-the arithmetic over the members, the stack, and the ledger close.
+are three of them -- rxnmapper, localmapper and indigo, each over `interm::aam_universe`
+ONCE. What is left is here: the curated layer, the arithmetic over the members, the
+stack, and the ledger close.
+
+THREE LAYERS FROM THREE FILES, NOT FROM NINE. The members used to run three times over
+three universes and the layer a row belonged to was "which pass wrote this file" -- an
+identity that depended on scheduling and cost three sequential mapper passes to
+establish. Each pair row now carries the SUBMISSION CLASS it answers, so the same three
+files partition into L2 / L3 / L4 by what a row CLAIMS rather than by when it was
+produced. See `layers.explode`'s `only_class`.
 
 THE CURATION SWEEP MOVED OUT, to `aam_rescue`, and that is the substantive change. It
 used to run here, after every member had finished, with Indigo mapping the completed
@@ -28,15 +35,19 @@ THE ARCHITECTURE IS THE ORDER, and the order is additive:
                   Extracted here from the drop-in, and laid down FIRST -- which is what
                   makes the members' overlap with it free rather than contested: stack
                   restricts each layer to what nothing below it claimed.
-  L2  ensemble    RXNMapper + LocalMapper + Indigo over the worklist, fused where they
-                  agree. The neural increment balances carbon in 12.5% of the candidates
+  L2  ensemble    RXNMapper + LocalMapper + Indigo on the WHOLE submissions, fused where
+                  they agree. The neural increment balances carbon in 12.5% of the candidates
                   it proposes, which is the whole argument for it being second rather
                   than first.
-  L3  curation    the SAME THREE over the rescued universe: reactions no mapper could
-                  see until `aam_rescue` supplied a structure for their structureless
-                  participants. Their bodies had to cancel and an element had to balance
-                  before the reaction was completed at all, so what reaches here has
-                  already passed the gates that used to run after the mapping.
+  L3  curation    the same three members' rows for the COMPLETED submissions: reactions
+                  no mapper could see until `aam_rescue` supplied a structure for their
+                  structureless participants. Their bodies had to cancel and an element
+                  had to balance before the reaction was completed at all, so what
+                  reaches here has already passed the gates that used to run after the
+                  mapping.
+  L4  partial     the conservation-forced arm, then the same three members' rows for the
+                  REDUCED submissions -- one element of a reaction nothing mapped whole.
+                  Laid down LAST, so it can only claim what nothing above it claimed.
 
 ADDITIVE MEANS ADDITIVE, AND THE CLAIM IS TESTED. `aam_layers.additive_gates` refuses
 rather than warns at every boundary: the added (mnxr, element) is absent from everything
@@ -51,7 +62,7 @@ spoke; it is never a usability gate, and every emitted pair is read.
 A MEMBER THAT DID NOT RUN IS A MISSING NODE, not a missing column. Under the old single
 transform an absent member was a `[ -s ... ] || continue` inside a shell loop, and a
 two-member ensemble looked exactly like a three-member one from the outside. Here each
-member is a required input: the planner cannot schedule this step without all six, and
+member is a required input: the planner cannot schedule this step without all three, and
 dropping one is an edit to the graph that someone has to make on purpose.
 
 IT CLOSES THE LEDGER. `aam_worklist close` joins the adjudication to the finished table
@@ -77,19 +88,13 @@ image       = model.AddRequirement(lib.GetType("env::rdkit.env"))
 metanetx    = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 
 metacyc     = model.AddRequirement(lib.GetType("fabfos_data::metacyc"))
+# THREE MEMBERS, NOT NINE, and the three layers they feed come from the SUBMISSION CLASS
+# each pair row carries rather than from which pass wrote which file. That is a strictly
+# better key: layer membership stops depending on scheduling, and it is what lets the
+# members run once. See `layers.explode`'s `only_class`.
 m_rxn       = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper"))
 m_local     = model.AddRequirement(lib.GetType("interm::aam_member_localmapper"))
 m_indigo    = model.AddRequirement(lib.GetType("interm::aam_member_indigo"))
-m_rxn_r     = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper_rescue"))
-m_local_r   = model.AddRequirement(lib.GetType("interm::aam_member_localmapper_rescue"))
-m_indigo_r  = model.AddRequirement(lib.GetType("interm::aam_member_indigo_rescue"))
-
-# PASS 3, the partial lane. Its three members are element-reduced submissions, so their
-# pairs reach only one element of a reaction each -- which is why they become a layer of
-# their own, laid down LAST, rather than a fourth member of L2.
-m_rxn_p     = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper_partial"))
-m_local_p   = model.AddRequirement(lib.GetType("interm::aam_member_localmapper_partial"))
-m_indigo_p  = model.AddRequirement(lib.GetType("interm::aam_member_indigo_partial"))
 partial     = model.AddRequirement(lib.GetType("interm::aam_partial"))
 
 worklist    = model.AddRequirement(lib.GetType("interm::aam_worklist"))
@@ -155,12 +160,6 @@ def protocol(context: ExecutionContext):
     irxn = context.Input(m_rxn)
     iloc = context.Input(m_local)
     iind = context.Input(m_indigo)
-    irxn_r = context.Input(m_rxn_r)
-    iloc_r = context.Input(m_local_r)
-    iind_r = context.Input(m_indigo_r)
-    irxn_p = context.Input(m_rxn_p)
-    iloc_p = context.Input(m_local_p)
-    iind_p = context.Input(m_indigo_p)
     ipar   = context.Input(partial)
     iwl  = context.Input(worklist)
     ires = context.Input(rescue)
@@ -204,29 +203,33 @@ def protocol(context: ExecutionContext):
             --file L1/metacyc.tsv L1/refused_residues.tsv L1/pairs.parquet \
                    L1/status.tsv
 
-        # ---- L2: fuse the three pass-1 members ------------------------------------
-        # All three are required inputs, so there is no "skip the absent one" branch to
-        # write. If a member is to be dropped, it is dropped from the graph.
-        {py} -m ecspr.bake.aam.layers fuse \
+        # ---- L2: the WHOLE submissions --------------------------------------------
+        # All three members are required inputs, so there is no "skip the absent one"
+        # branch to write. If a member is to be dropped, it is dropped from the graph.
+        # THE SAME THREE FILES FEED L2, L3 AND L4 and are partitioned by the class each
+        # pair row answers -- one pass, three layers, and no layer that exists only
+        # because of the order the passes happened to run in.
+        {py} -m ecspr.bake.aam.layers fuse --submission-class whole \
             --member rxnmapper={irxn.container} \
             --member localmapper={iloc.container} \
             --member indigo={iind.container} \
             --out L2/stack.parquet
 
-        # ---- L3: fuse the three pass-2 members ------------------------------------
-        # THE SAME ARITHMETIC AS L2, over the rescued universe. It is the same fusion
-        # because it is the same question -- three mappers, one reaction, who agrees --
-        # and the fact that the reaction reached them through a curated structure is
-        # already recorded in the crosswalk and already tested by the balance gate that
-        # let it through. Fusing rather than stamping `curated_recovery, 1.0` is what
-        # makes a rescued row's provenance say which members actually spoke.
-        {py} -m ecspr.bake.aam.layers fuse \
-            --member rxnmapper={irxn_r.container} \
-            --member localmapper={iloc_r.container} \
-            --member indigo={iind_r.container} \
+        # ---- L3: the COMPLETED submissions -----------------------------------------
+        # THE SAME ARITHMETIC AS L2, over the reactions the rescue made mappable at all.
+        # It is the same fusion because it is the same question -- three mappers, one
+        # reaction, who agrees -- and the fact that the reaction reached them through a
+        # curated structure is already recorded in the crosswalk and already tested by
+        # the balance gate that let it through. Fusing rather than stamping
+        # `curated_recovery, 1.0` is what makes a rescued row's provenance say which
+        # members actually spoke.
+        {py} -m ecspr.bake.aam.layers fuse --submission-class completed \
+            --member rxnmapper={irxn.container} \
+            --member localmapper={iloc.container} \
+            --member indigo={iind.container} \
             --out L3/stack.parquet
 
-        # ---- L4: fuse the three pass-3 members -------------------------------------
+        # ---- L4: the REDUCED submissions -------------------------------------------
         # Same arithmetic again, over the element-reduced submissions. What makes this
         # layer different is not how its members are fused but what a row of it CLAIMS:
         # one element of a reaction nothing mapped whole. That is carried in the method
@@ -237,10 +240,10 @@ def protocol(context: ExecutionContext):
         # mappers agreed about a reduced submission".
         mkdir -p L4
         cp {ipar.container}/partial_forced.parquet L4/forced.parquet
-        {py} -m ecspr.bake.aam.layers fuse \
-            --member rxnmapper={irxn_p.container} \
-            --member localmapper={iloc_p.container} \
-            --member indigo={iind_p.container} \
+        {py} -m ecspr.bake.aam.layers fuse --submission-class reduced \
+            --member rxnmapper={irxn.container} \
+            --member localmapper={iloc.container} \
+            --member indigo={iind.container} \
             --out L4/stack.parquet
 
         # ---- the stack ------------------------------------------------------------

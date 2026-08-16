@@ -28,11 +28,19 @@ requiring `ref::metabolism_vocab` and passing its identity through verbatim. Agr
 structural rather than two computations coinciding, and there is no step whose only job
 is to re-encode what the assemblies already produced.
 
-THIS GRAPH HAS EXACTLY ONE GIVEN, and that is the claim this asserts. MetaCyc is
-licensed and not redistributable, so nothing fetches it and nothing ever will; it is
-staged. Every other leaf -- MetaNetX, the eQuilibrator compound cache -- is a download
-with a transform behind it. A SECOND given appearing here means something fetchable is
-being handed in instead of produced.
+THIS GRAPH HAS EXACTLY ONE UPSTREAM GIVEN, and that is the claim this asserts. MetaCyc
+is licensed and not redistributable, so nothing fetches it and nothing ever will; it is
+staged. Every other upstream leaf -- MetaNetX, the eQuilibrator compound cache -- is a
+download with a transform behind it. A SECOND upstream given appearing here means
+something fetchable is being handed in instead of produced.
+
+TWO GIVENS ARE NOT UPSTREAM DATA AT ALL and are named separately for that reason. The
+previous bake's per-reaction logs are the empirical half of `aam_forecast`, and the
+mapper members' durable cache is a directory a run writes and the next run reads. Neither
+is fetchable and neither can have a producer -- the cache's producer would be the lane
+that consumes it -- so both are staged, and both are legitimately EMPTY on a first run.
+They are counted apart from the drop-in so that "one given" stays a claim about upstream
+data rather than a headcount that stops meaning anything.
 
 The given is also not a formality: MetaCyc is the INDEPENDENT member of both ensembles.
 RXNMapper and LocalMapper are two transformers over the same reaction SMILES, and
@@ -77,6 +85,15 @@ ARTIFACTS = REPO / "tests" / "fabfos" / "artifacts"
 GIVEN_TYPE = "fabfos_data::metacyc"
 GIVEN_AT = REPO / "data" / "fabfos" / "originals" / "metacyc"
 
+# RUN STATE, not upstream data. Both are staged and both may be empty -- see the
+# docstring for why neither can have a producer.
+RUN_GIVENS = {
+    "fabfos_data::prior_bake_logs":
+        REPO / "data" / "fabfos" / "processed" / "metabolism_bake" / "logs",
+    "fabfos_data::aam_cache":
+        REPO / "data" / "fabfos" / "temp" / "aam_cache",
+}
+
 # The R6 trio, by artifact id in build_references/REFERENCES.md.
 TARGETS = [
     ("R6", "ref::atom_pairs"),
@@ -100,9 +117,12 @@ EXPECTED = {
     # `(mnxm, canonical rank)` has to be produced by exactly ONE piece of code, and a
     # transform boundary inside that is an invitation for a second one to appear.
     "mnx_lookups",
-    # bake -- the adjudication, one lane per tool per PASS, the rescue between them, then
-    # the two assemblies. Six AAM member lanes: the same three mappers over the
-    # adjudicated universe and again over the reactions the rescue completed.
+    # bake -- three stages: prepare everything, map once, assemble. THREE AAM member
+    # lanes, not nine. The members used to run three times over three universes because
+    # each universe could only be built after the pass before it finished; with the
+    # forecast supplying the partial lane's targets up front, all three submission
+    # classes exist before a mapper starts and `interm::aam_universe` is the one table
+    # every member reads.
     "aam_worklist",
     # The preparation lanes, all of which run before any member and none of which needs
     # one. `aam_recount` reads a count off the structure where the formula declines to
@@ -110,15 +130,13 @@ EXPECTED = {
     # another id, under two different standards of proof. They are separate transforms
     # so that each delta stays a number of its own.
     "aam_recount", "aam_blockers", "aam_nametwin",
-    "rxnmapper", "localmapper", "indigo",
     "aam_rescue",
-    "rxnmapper_rescue", "localmapper_rescue", "indigo_rescue",
-    # Pass 3, the partial lane: element-reduced submissions for the reactions no full
-    # map reached, and the same three mappers over them. It sits AFTER both mapper
-    # passes because its target set is "what ended with nothing", which is a fact about
-    # a run rather than about a reaction.
-    "aam_partial",
-    "rxnmapper_partial", "localmapper_partial", "indigo_partial",
+    # The pre-filter and the element reductions it drives, both upstream of every mapper.
+    # `aam_algebra` is here too: it pairs what conservation forces for the reactions no
+    # member will ever be given, and the forecast reads its output so an already-banked
+    # (reaction, element) is not offered a reduction whose result the stack would discard.
+    "aam_algebra", "aam_forecast", "aam_partial", "aam_universe",
+    "rxnmapper", "localmapper", "indigo",
     "aam_ensemble",
     "dgbyg", "direction_ensemble",
 }
@@ -158,6 +176,11 @@ def plan(work: Path):
         print(f"NOTE: no MetaCyc drop-in at {GIVEN_AT}; standing in an empty directory "
               f"so the plan can resolve. A run refuses where the .dat is read.\n")
     inputs.AddItem(given, GIVEN_TYPE)
+    for dtype, at in RUN_GIVENS.items():
+        if not at.exists():
+            at = work / dtype.replace("::", "_")
+            at.mkdir(parents=True, exist_ok=True)
+        inputs.AddItem(at, dtype)
     inputs.Save()
 
     resources = [
@@ -214,11 +237,14 @@ def main() -> int:
               f"{sorted({n for _, n in staged})}")
 
         problems = []
-        if len(staged) != 1:
+        upstream = [n for _, n in staged if n not in RUN_GIVENS]
+        if upstream != [GIVEN_TYPE]:
             problems.append(
-                f"expected exactly one given, found {len(staged)}. Everything but the "
-                f"licensed MetaCyc drop-in is fetchable, so a second given means "
-                f"something with a transform behind it is being handed in instead.")
+                f"expected exactly one UPSTREAM given, found {sorted(upstream)}. "
+                f"Everything but the licensed MetaCyc drop-in is fetchable, so a second "
+                f"one means something with a transform behind it is being handed in "
+                f"instead. The run-state givens ({sorted(RUN_GIVENS)}) are counted apart "
+                f"-- neither is upstream data and neither can have a producer.")
         dups = set(DUPLICATE_PRODUCERS) & used
         if dups:
             print(f"\nDUPLICATE REFERENCE PRODUCER(S) in the plan: {sorted(dups)}. "
@@ -235,7 +261,8 @@ def main() -> int:
         for p in problems:
             print(f"FAIL: {p}")
         if not problems:
-            print("every expected transform is in the plan, and MetaCyc is the only given")
+            print("every expected transform is in the plan, and MetaCyc is the only "
+                  "upstream given")
 
         ARTIFACTS.mkdir(parents=True, exist_ok=True)
         svg = ARTIFACTS / "metabolism_references_dag.svg"
