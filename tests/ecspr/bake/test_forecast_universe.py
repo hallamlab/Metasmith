@@ -335,6 +335,85 @@ def test_the_mapper_is_an_ordinary_pipe_when_nothing_hangs():
         m.close()
 
 
+def _lm_swallows_its_alarm(conn, _timeout_s):
+    """A child that eats every exception raised into it, which is what broke the budget.
+
+    `localmapper.get_atom_map` catches broadly. An alarm raised inside it is therefore
+    absorbed, and `signal.alarm` is one-shot, so the budget is spent without ever having
+    bound anything. Reproduced here rather than described.
+    """
+    import time as _t
+    while True:
+        smi = conn.recv()
+        if smi is None:
+            return
+        if smi == "SWALLOW":
+            while True:
+                try:
+                    _t.sleep(60)
+                except BaseException:
+                    pass
+        conn.send((smi + ":mapped", 0.9, "ok"))
+
+
+def test_localmapper_bounds_a_reaction_that_swallows_its_alarm(tmp_path):
+    """THE BUG THIS RUN FOUND, at the grain it bit. On 2026-08-16 shard 3 spent 86
+    minutes on one reaction against a declared 240 s budget, with the timeout log EMPTY
+    -- the lane reported no timeouts while exceeding the budget twenty-one times over.
+    An in-process alarm bounds only a call that lets the exception out.
+
+    So the budget belongs to the parent, and the assertion is the one that matters: the
+    reaction ENDS, it is recorded as `killed` rather than silently waited on, and the
+    shard carries on afterwards. Checked with a child that genuinely swallows, because a
+    mapper that surfaces its own timeout cannot test the case that broke.
+    """
+    from ecspr.bake.aam.indigo_member import Mapper
+    from ecspr.bake.aam import neural_members as NM
+
+    rows = []
+    log = tmp_path / "lm.timeouts"
+    m = Mapper(1, serve=_lm_swallows_its_alarm)
+    with log.open("w") as tlog:
+        try:
+            NM.run_localmapper(
+                [("MNXR1", "A>>B"), ("MNXR2", "SWALLOW"), ("MNXR3", "C>>D")],
+                emit=lambda *a: rows.append(a),
+                timeout_s=1, timeout_log=tlog, mapper=m)
+        finally:
+            m.close()
+
+    assert [r[0] for r in rows] == ["MNXR1", "MNXR2", "MNXR3"], \
+        "every reaction must produce a row -- the bounded one abstains, it does not vanish"
+    assert rows[1][2] == "", "a killed reaction must not carry a map"
+    assert m.n_killed == 1
+    # THE EVIDENCE IS THE HALF THAT FAILED SILENTLY. An empty timeout log is what let 86
+    # minutes read as a normal run, so the record has to name which of the two it was.
+    assert log.read_text() == "MNXR2\tkilled\n"
+    # AND THE SHARD SURVIVES IT, which is why this is containment rather than a crash.
+    assert rows[2][2] == "C>>D:mapped"
+
+
+def test_localmapper_is_an_ordinary_loop_when_nothing_swallows(tmp_path):
+    from ecspr.bake.aam.indigo_member import Mapper
+    from ecspr.bake.aam import neural_members as NM
+
+    rows = []
+    log = tmp_path / "lm.timeouts"
+    m = Mapper(5, serve=_lm_swallows_its_alarm)
+    with log.open("w") as tlog:
+        try:
+            NM.run_localmapper([("MNXR1", "A>>B"), ("MNXR2", "C>>D")],
+                               emit=lambda *a: rows.append(a),
+                               timeout_s=5, timeout_log=tlog, mapper=m)
+        finally:
+            m.close()
+
+    assert [r[2] for r in rows] == ["A>>B:mapped", "C>>D:mapped"]
+    assert [r[3] for r in rows] == [0.9, 0.9], "the confidence must survive the pipe"
+    assert (m.n_killed, m.n_respawned) == (0, 0)
+    assert log.read_text() == ""
+
+
 # =====================================================================
 # the parquet seam
 # =====================================================================

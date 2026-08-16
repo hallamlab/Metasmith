@@ -410,8 +410,56 @@ def run_rxnmapper(todo: list[tuple[str, str]], emit, chunk_size: int = 4,
                   flush=True)
 
 
+def _lm_map_one(mapper, smi: str, timeout_s: int):
+    """(mapped, confidence, status). `status` is one of ok / empty / timeout / error."""
+    old = signal.signal(signal.SIGALRM, _alarm)
+    signal.alarm(timeout_s)
+    try:
+        r = mapper.get_atom_map(smi, return_dict=True)
+        mapped = r.get("mapped_rxn", "") if isinstance(r, dict) else (r or "")
+        # LocalMapper reports a template-match confidence under one of two names
+        # depending on version; absent means it did not score, not that it scored 0.
+        conf = float(r.get("confident", r.get("confidence", float("nan")))) \
+            if isinstance(r, dict) else float("nan")
+        return (mapped, conf, "ok") if mapped else ("", conf, "empty")
+    except _Timeout:
+        return "", float("nan"), "timeout"
+    except Exception:
+        return "", float("nan"), "error"
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old)
+
+
+def _lm_serve_with(budget_gb):
+    """Build the child entry point: one LocalMapper, then map until the pipe closes.
+
+    THE MODEL LOADS IN THE CHILD, not in the parent, and that is what keeps the
+    containment free. A fork from a parent already holding the 13 GB model would share
+    those pages copy-on-write and cost nothing either -- but the parent would then hold
+    them for the whole shard, and six shards on one node have no room for a second copy
+    if anything did write. So the parent stays small and a respawn pays one model load,
+    which is affordable precisely because a respawn is rare.
+    """
+    def _serve(conn, timeout_s: int):
+        from localmapper import localmapper
+        mapper = localmapper(device="cpu")
+        if budget_gb:
+            _address_space_guard(budget_gb)
+        try:
+            while True:
+                smi = conn.recv()
+                if smi is None:
+                    return
+                conn.send(_lm_map_one(mapper, smi, timeout_s))
+        except (EOFError, KeyboardInterrupt):
+            return
+    return _serve
+
+
 def run_localmapper(todo: list[tuple[str, str]], emit, sidecar=None, budget_gb=None,
-                    timeout_s: int = DEFAULT_LM_TIMEOUT_S, timeout_log=None):
+                    timeout_s: int = DEFAULT_LM_TIMEOUT_S, timeout_log=None,
+                    mapper=None):
     """Map the gap set, bounding EVERY reaction in time as well as in memory.
 
     THE MEMORY GUARD WAS ONLY HALF THE BOUND. `--mem-budget-gb` catches a reaction that
@@ -426,58 +474,72 @@ def run_localmapper(todo: list[tuple[str, str]], emit, sidecar=None, budget_gb=N
     0.86, 0.094, 0.061 rxn/s); something accumulates in-process, and the fix that matters
     is capping how many reactions one process handles. See `bake/localmapper.py`.
 
-    SO WHY KEEP THE TIMEOUT. Because it makes the worst case computable, and it is free:
-    it fired zero times on the full gap set. Without it a single reaction can still hold
-    a shard indefinitely and the lane has no upper bound of any kind -- which is exactly
-    the state that cost a run. A tighter SIZE cap would not have helped either: the
-    apparent culprit carries 280 atoms and 600-atom reactions had already gone through.
+    AN ALARM IN THIS PROCESS WAS NOT A BOUND, and the run that proved it is the reason
+    the mapper now lives in a child. `signal.alarm` plus a `_Timeout` raised in the
+    handler only bounds a call that lets the exception out; `localmapper.get_atom_map`
+    catches broadly, so the exception was swallowed, the one-shot alarm was spent, and
+    the reaction ran on unbounded. On 2026-08-16 shard 3 spent 86 minutes on one
+    reaction -- a nitrogen reduction of a 1,201-character chlorophyll -- at 99% CPU with
+    `timeout_log` EMPTY and `n_timeout` at zero. The evidence said the budget was never
+    reached while the budget was being exceeded twenty-one times over.
+    That is worse than a slow lane: a bound nobody can see failing is not a bound.
+    Sending the process a second SIGALRM by hand freed it in seconds, so it was never
+    blocked in a C call -- the signal always arrived, and the library simply ate it.
+
+    SO THE PARENT OWNS THE BUDGET, exactly as `indigo_member` already had to learn it.
+    `Mapper` sends one submission to a forked child and waits; silence past the budget is
+    answered with SIGKILL, which no `except` can swallow. The two lanes share that class
+    rather than growing two containments to keep in step.
+
+    WHAT THE ALARM IS STILL FOR. It runs INSIDE the child, where it is a cheap fast path:
+    when the library does let it out, the child answers `timeout` at the budget and the
+    parent never has to kill anything. `timeout` and `killed` are counted apart because
+    the difference measures how often the swallow happens.
 
     A TIMEOUT IS A RECORDED OUTCOME. The row is written with an empty map, which every
     consumer already reads as an abstention, and the mnxr is additionally appended to
-    `timeout_log` so the evidence distinguishes "LocalMapper could not" from "LocalMapper
-    never finished". That distinction is invisible in the cache alone: a hang writes no
-    row at all and shows up as sidecar-minus-cache, but a timeout writes one, so without
-    this file it would be indistinguishable from an ordinary template failure.
+    `timeout_log` with which of the two it was -- so the evidence distinguishes
+    "LocalMapper could not" from "LocalMapper never finished". That distinction is
+    invisible in the cache alone: a hang writes no row at all and shows up as
+    sidecar-minus-cache, but a timeout writes one, so without this file it would be
+    indistinguishable from an ordinary template failure.
     """
-    from localmapper import localmapper
-    mapper = localmapper(device="cpu")
-    if budget_gb:
-        _address_space_guard(budget_gb)
+    from .indigo_member import Mapper
+
+    # Injectable ONLY so the containment is testable without a 13 GB model, which is the
+    # same reason `Mapper` takes its server injectable.
+    m = mapper if mapper is not None else Mapper(timeout_s,
+                                                 serve=_lm_serve_with(budget_gb))
     t0 = time.time()
-    n_ok = n_fail = n_timeout = 0
-    for i, (mnxr, smi) in enumerate(todo, 1):
-        if sidecar is not None:
-            sidecar.mark(mnxr)
-        old = signal.signal(signal.SIGALRM, _alarm)
-        signal.alarm(timeout_s)
-        try:
-            r = mapper.get_atom_map(smi, return_dict=True)
-            mapped = r.get("mapped_rxn", "") if isinstance(r, dict) else (r or "")
-            # LocalMapper reports a template-match confidence under one of two names
-            # depending on version; absent means it did not score, not that it scored 0.
-            conf = float(r.get("confident", r.get("confidence", float("nan")))) \
-                if isinstance(r, dict) else float("nan")
-        except _Timeout:
-            mapped, conf = "", float("nan")
-            n_timeout += 1
-            if timeout_log is not None:
-                timeout_log.write(f"{mnxr}\n")
-        except Exception:
-            mapped, conf = "", float("nan")
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old)
-        n_ok, n_fail = (n_ok + 1, n_fail) if mapped else (n_ok, n_fail + 1)
-        emit(mnxr, smi, mapped, conf)
-        if i % 200 == 0 or i == len(todo):
-            dt = time.time() - t0
-            rate = i / dt if dt > 0 else 0
-            print(f"      {i}/{len(todo)}  ok={n_ok} fail={n_fail} timeout={n_timeout}  "
-                  f"({dt:.0f}s, {rate:.1f} rxn/s, eta {(len(todo)-i)/rate if rate else 0:.0f}s)",
-                  flush=True)
+    n_ok = n_fail = n_timeout = n_killed = 0
+    try:
+        for i, (mnxr, smi) in enumerate(todo, 1):
+            if sidecar is not None:
+                sidecar.mark(mnxr)
+            r = m.map_one(smi)
+            # The child answers in three fields; `Mapper`'s own kill and error paths
+            # answer in two, because they never got a confidence to report.
+            mapped, conf, status = r if len(r) == 3 else (r[0], float("nan"), r[1])
+            if status in ("timeout", "killed"):
+                n_timeout += 1
+                n_killed += status == "killed"
+                if timeout_log is not None:
+                    timeout_log.write(f"{mnxr}\t{status}\n")
+            n_ok, n_fail = (n_ok + 1, n_fail) if mapped else (n_ok, n_fail + 1)
+            emit(mnxr, smi, mapped, conf)
+            if i % 200 == 0 or i == len(todo):
+                dt = time.time() - t0
+                rate = i / dt if dt > 0 else 0
+                print(f"      {i}/{len(todo)}  ok={n_ok} fail={n_fail} "
+                      f"timeout={n_timeout} killed={n_killed}  "
+                      f"({dt:.0f}s, {rate:.1f} rxn/s, "
+                      f"eta {(len(todo)-i)/rate if rate else 0:.0f}s)", flush=True)
+    finally:
+        if mapper is None:
+            m.close()
     if n_timeout:
         print(f"[aam:localmapper] {n_timeout} reaction(s) hit the {timeout_s}s budget and "
-              f"abstained", flush=True)
+              f"abstained ({n_killed} of them only to SIGKILL)", flush=True)
 
 
 def main(argv=None):
