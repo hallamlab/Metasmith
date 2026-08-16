@@ -43,6 +43,15 @@ prediction:
 So the trade taken here is: one pass, an over-offered target set, and a recall number
 that is measured and reported rather than assumed. `--forecast` is the whole change.
 
+IT READS THE RESCUE'S STRUCTURES, and until it did it could not reach a single
+rescue-completed reaction: the reduction is built from the RAW equation and a reduction
+holding a structureless participant is refused, so the reactions the rescue exists to
+unblock were invisible here. The crosswalk supplies the SMILES and the formula is derived
+from it, because MetaNetX has neither. Placeholders are excluded -- their atoms are
+invented, and a formula taken off one would let the balance test certify a balance made of
+them. `load_lookups` reports how many structures this added, as its own number, because it
+is a coverage lever independent of the forecast.
+
 THE EXACT ARM STILL GOES FIRST. `atom_pairs.forced_pairs` emits the pairing conservation
 leaves no choice about -- one substrate and one product carrying X in equal counts is a
 unique bijection at full weight; n > 1 is the doubly-stochastic completion. That needs
@@ -126,25 +135,66 @@ def split_key(key: str):
     return base, el
 
 
-def load_lookups(lookups: Path):
-    """`(formulas, smiles_of, ranks_of)` -- everything the reduction needs.
+def _formula_of(smi: str):
+    """The molecular formula of a curated SMILES, or None if it will not parse.
+
+    Derived rather than looked up because the metabolites this is asked about are exactly
+    the ones MetaNetX has no formula for -- that is why they were blocked in the first
+    place. A formula read off the parsed molecule is the stronger source anyway; what it
+    is NOT allowed to be is a formula for an invented structure, which is why the caller
+    excludes the placeholders before it gets here.
+    """
+    from rdkit import Chem
+    from rdkit.Chem import rdMolDescriptors
+    m = Chem.MolFromSmiles(smi)
+    return rdMolDescriptors.CalcMolFormula(m) if m is not None else None
+
+
+def load_lookups(lookups: Path, rescue: Path | None = None):
+    """`(formulas, smiles_of, ranks_of, n_rescued)` -- everything the reduction needs.
 
     `ranks_of` is the canonical rank of each (metabolite, element)'s atoms, taken from
     the metabolite's OWN molecule rather than from a reaction template. That is the same
     identity the mapped path emits, which is what lets a forced pair and a mapped pair
     name the same node -- see `atom_pairs.canonical_ranks` for why a template index
     would not.
+
+    THE RESCUE'S STRUCTURES JOIN THE MAP, and without them this lane cannot reach a single
+    rescue-completed reaction: it reduces from the raw equation, and a reduction holding a
+    participant with no structure is refused. Both halves are needed -- the SMILES so the
+    submission can be written, and a formula derived from it so the balance test has
+    something to count -- because MetaNetX has neither for these metabolites.
+
+    PLACEHOLDERS ARE EXCLUDED, and that exclusion is the load-bearing half. A placeholder
+    is scaffolding invented so a mapper could see a sane reaction; its atoms are suppressed
+    downstream precisely because they are not real. Deriving a formula from one and feeding
+    it to `_still_balances` would let the reduction certify a balance out of invented
+    atoms, which is the one thing the balance test exists to prevent.
     """
     mets = pd.read_parquet(lookups / "metabolites.parquet",
                            columns=["mnxm", "formula", "smiles"])
     formulas = dict(zip(mets["mnxm"], mets["formula"]))
     smiles_of = {m: s for m, s in zip(mets["mnxm"], mets["smiles"])
                  if isinstance(s, str) and s}
+    n_rescued = 0
+    if rescue is not None:
+        resolved = AP.load_resolved(Path(rescue) / "crosswalk.tsv")
+        placeholders = set(AP.load_placeholders(Path(rescue) / "placeholders.tsv"))
+        for m, smi in resolved.items():
+            if m in placeholders or m in smiles_of:
+                continue
+            if not isinstance(smi, str) or not smi:
+                continue
+            f = _formula_of(smi)
+            if f is None:
+                continue
+            smiles_of[m], formulas[m] = smi, f
+            n_rescued += 1
     ar = pd.read_parquet(lookups / "atom_ranks.parquet",
                          columns=["mnxm", "element", "ranks"])
     ranks_of = {(r.mnxm, r.element): list(r.ranks) for r in ar.itertuples(index=False)
                 if len(r.ranks)}
-    return formulas, smiles_of, ranks_of
+    return formulas, smiles_of, ranks_of, n_rescued
 
 
 def _write(sub_mnxms: list, prod_mnxms: list, smiles_of: dict) -> str:
@@ -354,12 +404,13 @@ def cmd_build(args):
     rx = pd.read_parquet(args.lookups / "reactions.parquet",
                          columns=["mnxr", "equation"])
     equations = dict(zip(rx["mnxr"], rx["equation"]))
-    formulas, smiles_of, ranks_of = load_lookups(args.lookups)
+    formulas, smiles_of, ranks_of, n_rescued = load_lookups(args.lookups, args.rescue)
     targets = targets_from(args.forecast)
     n_offers = sum(len(v) for v in targets.values())
     print(f"[partial] {len(targets):,} target reactions, {n_offers:,} offered "
           f"(reaction, element) pairs "
-          f"({len(equations):,} equations, {len(smiles_of):,} structures)", flush=True)
+          f"({len(equations):,} equations, {len(smiles_of):,} structures, "
+          f"{n_rescued:,} of them the rescue's)", flush=True)
 
     uni, forced, tally = build(targets, equations, formulas, smiles_of, ranks_of,
                                args.char_limit, args.atom_limit)
@@ -383,6 +434,10 @@ def cmd_build(args):
     n_fre = len(fdf.groupby(["mnxr", "element"])) if len(fdf) else 0
     lines.append(f"product\tforced_reaction_elements\t{n_fre}")
     lines.append(f"product\ttarget_reactions\t{len(targets)}")
+    # ITS OWN NUMBER, on purpose. Reaching the rescue-completed reactions is a coverage
+    # lever independent of the forecast, and a gain that arrives with no way to tell the
+    # two apart is a gain nobody can attribute.
+    lines.append(f"input\trescued_structures_merged\t{n_rescued}")
     lines.append(f"product\toffered_pairs\t{n_offers}")
     lines.append(f"limit\tatom_limit\t{args.atom_limit}")
     lines.append(f"limit\tchar_limit\t{args.char_limit}")
@@ -409,6 +464,10 @@ def parse_args(argv=None):
                    help="interm::aam_forecast -- the (reaction, element) pairs a member "
                         "is expected to return nothing for, with the mechanism named. "
                         "This lane's whole target set, read rather than re-derived")
+    p.add_argument("--rescue", type=Path, default=None,
+                   help="interm::aam_rescue. Its crosswalk supplies the structures this "
+                        "lane needs to reduce a rescue-completed reaction at all; its "
+                        "placeholder list is what keeps the invented ones out")
     p.add_argument("--atom-limit", type=int, default=W.ATOM_LIMIT)
     p.add_argument("--char-limit", type=int, default=W.SMILES_LEN_LIMIT)
     p.add_argument("--out", required=True, help="the partial universe, parquet")

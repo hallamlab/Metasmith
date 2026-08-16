@@ -42,6 +42,19 @@ types:
         is never claimed. That asymmetry is what lets the partial lane move UPSTREAM
         of the mappers, which is what collapses three member passes into one.
       ext: parquet
+  aam_ledger:
+    properties:
+      _:
+      - 'ONE OUTCOME PER REACTION from a closed set, over the whole universe -- including
+        the reactions no lane ever attempted, which is what makes a miss against the
+        deployed table a result rather than a mystery. It crosses a step boundary
+        because the reference minting and the ledger close are the same step''s two
+        answers and the ledger is the one a human reads: what every reaction did,
+        next to the counts that explain it. A reaction the redox repair emptied carries
+        `redox_emptied` and never `mapped_nothing` -- a mapper answered and the answer
+        was an artifact, which is a different fact and the only one that says where
+        to look next.'
+      ext: parquet
   aam_member_indigo:
     properties:
       _:
@@ -76,14 +89,22 @@ types:
       nucleotide is the case it exists to refuse.'
   aam_pairs:
     properties:
-      _:
-      - 'Fused atom-atom correspondences with provenance -- mnxr, element, substrate,
-        product, sub_idx, prod_idx, pair_w, method, source, confidence. Three ensemble
-        members: RXNMapper + LocalMapper (neural, correlated, mutually discounted)
-        and MetaCyc curated (independent, full weight). method is one of consensus
-        / <member>_only / disagree_diluted -- a provenance record, never a usability
-        gate.'
-      ext: parquet
+    - 'The stack AFTER the redox repair -- mnxr, element, substrate, product, sub_idx,
+      prod_idx, pair_w, method, source, confidence. What the repair changed: every
+      C/N/P correspondence running between a NAD(P)/FAD/FMN couple and a substrate
+      is gone, because a hydride transfer leaves both skeletons intact and an MCS
+      mapper cannot see that (H is not in the element vocabulary). The atoms those
+      arms carried were not deleted -- each affected source atom''s surviving arms
+      were rescaled back to the total it started with, so a refusal CONCENTRATES the
+      claim. `method` is still a provenance record and never a usability gate.
+
+      A DIRECTORY, for the reason `aam_rescue` and `aam_algebra` are: the corrected
+      table''s honesty depends on being read beside what was corrected. It holds `aam_pairs.parquet`,
+      `refusals.parquet` (every refused correspondence under the named predicate),
+      `cofactors.tsv` (which ids were treated as which family and state, and which
+      carry a family''s signature under a name the map does not know), `emptied.txt`
+      (the reactions the repair left holding nothing, which is where the ledger''s
+      `redox_emptied` outcome comes from) and `summary.tsv`.'
   aam_partial:
     properties:
     - 'A DIRECTORY, for the same reason `aam_rescue` is: three artifacts that only
@@ -105,6 +126,18 @@ types:
       (the completed reaction SMILES, in the shape a mapper lane reads). Splitting
       them into four types would let a lane be handed one build''s crosswalk and another''s
       placeholders, and the extractor would suppress the wrong atoms without complaint.'
+  aam_stack:
+    properties:
+      _:
+      - 'The additive stack BEFORE any correction: curated, then the three members''
+        whole submissions, then their completed ones, then what conservation forces,
+        then their reduced ones -- each layer claiming only the (reaction, element)
+        combinations nothing below it claimed. One row per atom correspondence, in
+        `layers.ATOM_COLS` shape. It is a product rather than a local file because
+        the repair that follows is a separate step, and because a stack whose gates
+        passed is worth being able to hand to a re-run of the correction without re-fusing
+        anything.'
+      ext: parquet
   aam_universe:
     properties:
       _:

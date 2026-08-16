@@ -469,6 +469,13 @@ OUTCOMES = (
     # as banked overstates coverage, and one that reads as dropped hides it.
     "banked_partial",
     "partial_declined",        # offered to the partial lane, still no pair survived
+    # THE REDOX REPAIR'S OWN OUTCOME. This reaction DID map -- it reached the stack with
+    # pairs -- and every one of them ran between a NAD(P)/FAD/FMN couple and a substrate,
+    # which a hydride transfer cannot do. The repair refused them and conservation did not
+    # settle the remainder once the couple was removed. It is not `mapped_nothing`: a
+    # mapper answered and the answer was an artifact, which is a different fact about the
+    # reaction and the only one that points at where to look next.
+    "redox_emptied",
     "mapped_nothing",          # mappable, went to the lanes, no pair survived
     "rescued_nothing",         # completed by the rescue, still no pair survived
     "rescue_declined",         # blocked, and no lane could complete it
@@ -490,12 +497,24 @@ def cmd_close(args):
     if args.rescued:
         rescued = set(pd.read_parquet(args.rescued, columns=["mnxr"])["mnxr"])
 
-    # Offered to the partial lane. Read rather than inferred: which reactions a member
-    # returned nothing for is a fact about a RUN, and the lane's own universe is where
-    # that fact is written down.
+    # OFFERED TO THE PARTIAL LANE, WHICH IS THE FORECAST'S OFFER AND NOT THE LANE'S OWN
+    # UNIVERSE. The two differ by exactly the reactions the lane could not build a
+    # submission for -- the reduction did not balance, or it held a structureless
+    # participant -- and those are the reactions `partial_declined` is defined for. Reading
+    # the built universe instead made them `mapped_nothing`, which says nothing was
+    # offered when something was and it was declined for a reason the lane recorded.
     offered = set()
-    if args.partial:
-        offered = set(pd.read_parquet(args.partial, columns=["base_mnxr"])["base_mnxr"])
+    if args.forecast:
+        f = pd.read_parquet(args.forecast, columns=["base_mnxr", "offer"])
+        offered = set(f.loc[f["offer"].astype(bool), "base_mnxr"])
+
+    # Reactions the redox repair left holding nothing at all. Read as a plain id list
+    # because that is what the repair emits and because an empty file is a legitimate
+    # answer -- the expected residue is a handful of reactions.
+    redox_emptied = set()
+    if args.redox_emptied and Path(args.redox_emptied).exists():
+        redox_emptied = {l.strip() for l in Path(args.redox_emptied).read_text().splitlines()
+                         if l.strip()}
 
     full = pairs[pairs["source"] != PARTIAL_SOURCE]
     banked_full = set(full["mnxr"])
@@ -513,6 +532,10 @@ def cmd_close(args):
             # provenance of its other elements survives in the per-row method/source and
             # in the `sources` column, which is where a per-element question belongs.
             return "banked" if mnxr in banked_full else "banked_partial"
+        # Ahead of both the partial and the mapped answers, because it is a statement
+        # about what happened LAST: this reaction had pairs and the repair took them.
+        if mnxr in redox_emptied:
+            return "redox_emptied"
         if mnxr in offered:
             return "partial_declined"
         if verdict == "mappable":
@@ -549,6 +572,7 @@ def cmd_close(args):
                      f"{int(pairs.loc[pairs.element == X, 'mnxr'].nunique())}")
     lines.append(f"partial\toffered\t{len(offered)}")
     lines.append(f"partial\tpair_rows\t{int((pairs['source'] == PARTIAL_SOURCE).sum())}")
+    lines.append(f"redox\temptied\t{len(redox_emptied)}")
     lines.append(f"rescue\tcompleted\t{len(rescued)}")
     lines.append(f"rescue\tbanked\t{len(resc)}")
     lines.append(f"rescue\tbanked_with_consensus\t{n_consensus}")
@@ -578,10 +602,14 @@ def parse_args(argv=None):
     p.add_argument("--worklist", required=True)
     p.add_argument("--pairs", required=True, help="the stacked aam_pairs parquet")
     p.add_argument("--rescued", default=None, help="the rescued universe parquet")
-    p.add_argument("--partial", default=None,
-                   help="the partial lane's universe. Its `base_mnxr` set is what was "
-                        "OFFERED to the lane, which is what distinguishes a reaction the "
-                        "lane could not reach from one nothing tried.")
+    p.add_argument("--forecast", default=None,
+                   help="interm::aam_forecast. Its offered `base_mnxr` set is what the "
+                        "partial lane was ASKED to reach, which is what distinguishes a "
+                        "reaction the lane declined from one nothing tried. The lane's "
+                        "own universe is the wrong table: it holds only what the lane "
+                        "managed to build.")
+    p.add_argument("--redox-emptied", default=None,
+                   help="the redox repair's emptied-reaction list, one MNXR per line")
     p.add_argument("--out", required=True)
     p.add_argument("--out-summary", required=True)
 
