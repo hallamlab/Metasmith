@@ -59,6 +59,7 @@ import argparse
 import gzip
 import re
 import sys
+import time
 from collections import Counter, defaultdict
 from io import StringIO
 from pathlib import Path
@@ -1865,7 +1866,19 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
     merged = dict(smi)
     merged.update(ph_smi)
     rescued, bal_rows = [], []
-    for r in todo:
+    # A PROGRESS LINE, because this loop was silent for two hours and a lane with no
+    # output is a lane nobody can tell from a hung one. It parses a completed reaction
+    # SMILES per reaction and can collapse it, and a rescued reaction is the LARGEST
+    # string this build makes -- placeholder-completed polymers and lipids -- so the cost
+    # per reaction is bounded by nothing the caller can see. What it prints is what a
+    # reader needs to decide whether to wait: how far in, and how fast.
+    t0 = time.time()
+    for i, r in enumerate(todo):
+        if i and i % 2_000 == 0:
+            el = time.time() - t0
+            print(f"[curation] completing {i:,}/{len(todo):,} "
+                  f"({el / 60:.1f} min, {i / max(el, 1e-9):.1f} rxn/s, "
+                  f"{len(rescued):,} rescued so far)", flush=True)
         try:
             rxn = ".".join(merged[m] for m in r.substrates) + ">>" + \
                   ".".join(merged[m] for m in r.products)
@@ -1876,9 +1889,18 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
         # A completed reaction is a NEW string, so it has to be measured again rather
         # than inherited -- and both sides call the same functions against the same
         # constants, or the two disagree about what oversize means.
-        atoms = aam_worklist.count_atoms(rxn) if atom_limit else None
+        #
+        # THE CHAR GATE COMES FIRST AND IT GATES THE PARSE. `count_atoms` calls RDKit on
+        # the whole string, and a stoichiometric expansion can reach 80.7 MB
+        # (MNXR144749) -- a size RDKit does not return from. Counting unconditionally put
+        # that unbounded work AHEAD of the cheap bound that excludes it, which is how a
+        # 33-second loop became a two-hour one killed at its walltime. `worklist.adjudicate`
+        # has always ordered it this way; the two now agree.
+        chars = len(rxn)
+        atoms = (aam_worklist.count_atoms(rxn)
+                 if atom_limit and chars <= smiles_limit else None)
         collapsed = False
-        if len(rxn) > smiles_limit or (atom_limit and (atoms is None or atoms > atom_limit)):
+        if chars > smiles_limit or (atom_limit and (atoms is None or atoms > atom_limit)):
             rxn_c = aam_worklist.collapse(rxn)
             ok = False
             if rxn_c is not None and len(rxn_c) <= smiles_limit:

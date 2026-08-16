@@ -291,3 +291,83 @@ def test_blocker_family_assignment(name, family):
     patterns, and acyl_carrier is listed first.
     """
     assert W.family_of(name) == family
+
+
+# --- the same ordering, in the rescue's completion ------------------------
+# `curation.complete` measures a reaction it has just BUILT, so it re-applies these two
+# cuts rather than inheriting the worklist's. It did so in the wrong order: it counted
+# atoms unconditionally and only then consulted the character cap, which put the
+# unbounded parse ahead of the cheap bound that excludes it. A 33-second loop became a
+# two-hour one, killed at its walltime with nothing written.
+
+class _StubRefs:
+    """Just the attributes `complete` reads. A real Refs is a 1.5 M-row table."""
+
+    def __init__(self, smiles_of):
+        self.smiles_of = smiles_of
+        self.name_of = {}
+        self.formula_of = {}
+        self.counts_of = {}
+        self.residue_of = {}
+
+
+def _targets_frame(rows):
+    return pd.DataFrame(rows)
+
+
+def test_complete_gates_the_parse_on_the_character_cap(monkeypatch):
+    """The parse must never be reached for a string the char cap already refuses.
+
+    Enforced by making `count_atoms` FAIL on an over-length string rather than by timing
+    it: a timing assertion would pass on a fast machine with the order wrong, and the
+    failure this guards against is unbounded rather than slow. RDKit does not return from
+    MNXR144749's 80.7 MB expansion, so "how long" is not the question.
+    """
+    from ecspr.bake.aam import curation as C
+
+    original, calls = W.count_atoms, []
+
+    def _counted(smi):
+        calls.append(len(smi))
+        if len(smi) > 8000:
+            raise AssertionError(
+                f"count_atoms was handed {len(smi):,} characters, which the char cap "
+                f"already refuses -- the parse is ahead of the bound that excludes it")
+        return original(smi)
+
+    monkeypatch.setattr(C.aam_worklist, "count_atoms", _counted)
+
+    # One curated body and 400 copies of one substrate: an expansion the char cap
+    # refuses, which the collapse recovers to three components.
+    subs = ["G"] + ["W"] * 400
+    refs = _StubRefs({"W": "C" * 40, "P": "O"})
+    refs.formula_of = {"W": "C40H82", "P": "C16000H2"}
+    rescued, _bal, _ph, _tag, tally = C.complete(
+        refs, {"G": "N"},
+        _targets_frame([dict(mnxr="MNXR1", substrates=subs, products=["P"])]),
+        smiles_limit=8000, atom_limit=600, collapsed_atom_limit=600)
+
+    assert calls, "the collapsed string was never measured at all"
+    assert max(calls) <= 8000
+    assert tally["recovered by collapse"] == 1, tally
+    assert rescued and rescued[0]["collapsed"] is True
+    assert rescued[0]["rxn_smiles"] == "N." + "C" * 40 + ">>O"
+
+
+def test_complete_keeps_the_expanded_string_when_it_fits():
+    """The other half of the same rule: a reaction under both caps is untouched.
+
+    Same invariant the worklist carries -- only a reaction that would otherwise be
+    REFUSED is rewritten -- so no row this build already banks can move.
+    """
+    from ecspr.bake.aam import curation as C
+
+    refs = _StubRefs({"W": "CC", "P": "CC"})
+    refs.formula_of = {"W": "C2H6", "P": "C2H6"}
+    rescued, _bal, _ph, _tag, tally = C.complete(
+        refs, {"G": "N"},
+        _targets_frame([dict(mnxr="MNXR1", substrates=["G", "W"], products=["P"])]),
+        smiles_limit=8000, atom_limit=600, collapsed_atom_limit=600)
+    assert tally["recovered by collapse"] == 0
+    assert rescued and rescued[0]["rxn_smiles"] == "N.CC>>CC"
+    assert rescued[0]["collapsed"] is False
