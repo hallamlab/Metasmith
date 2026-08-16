@@ -124,9 +124,49 @@ network is right rather than merely non-empty.
 
 ## The seed design document's claims, restated as our outcomes
 
-The three CSVs (`prep_lane_results`, `prep_lane_union`, `prep_lane_union_reactions`) are not
-on this machine, so the 934-reaction join could not be run. Each lane's own evidence
-answers the same question.
+### The 934-reaction union banks at 1.6%, and one gate explains it
+
+The union of the three preparation lanes — the reactions the seed document expected to
+unblock, ~913 of 934 after its 97.7% mapper-survival discount — resolves in our ledger as:
+
+| outcome | n |
+|---|---:|
+| `rescue_declined` | 918 |
+| `banked` | **15** |
+| `rescued_nothing` | 1 |
+
+All 934 are present in the ledger, so this is a refusal, not a miss. The funnel locates it
+exactly:
+
+| stage | n |
+|---|---:|
+| in the union | 934 |
+| every blocker has a proposed structure | 903 |
+| **passes `gate_bodies_cancel`** | **61** |
+| reaches the per-element balance test | 24 |
+| banked | 15 |
+
+**842 of 903 fail the body-cancel gate**, and the mechanism is not a defect. Take
+`MNXR115025`: `MNXM1364002 + MNXM36 = MNXM1364163 + Acceptor`. The generic acceptor stands
+on **one side only** — MNXref writes no conjugate partner for it. Substituting a curated
+`H4*` body there makes its unknown residue count as zero atoms for every element, so the
+balance test that follows would be about a molecule that does not exist. The gate refuses
+rather than let that through, which is what its docstring says it is for.
+
+So the disagreement with the seed document is real and principled rather than a bug. Their
+lanes treat an element-neutral twin as bankable on the strength of its explicit atoms; this
+arbiter additionally requires the *unspecified* residue to cancel across the equation before
+any count is allowed to mean conservation. One hypothesis was tested and rejected on the way:
+the gate compares star COUNTS per side, not species ids, so the oxidised and reduced twins
+being different MNXM ids is not what refuses them.
+
+**The same gate explains B1's zero.** 13,556 of the algebra lane's targets are refused per
+element on residue slots not cancelling. One conservative rule accounts for the union's 1.6%,
+for B1's 0 against 5,492, and for a large share of the 13,910 `rescue_declined` overall.
+Whether to relax it is a judgement with a real correctness cost on the other side, and it is
+the decision this verification most wants a human to make.
+
+### Lane by lane
 
 | item | claimed | here |
 |---|---|---|
@@ -153,10 +193,24 @@ should be read as a lane that ran and refused, not a lane that failed to run. Th
 difference is almost certainly the arbiter: this one requires the unspecified slots to
 cancel before it will call a count a conservation claim.
 
-**A3 at zero is unexplained and is the open question here.** The gate is the same one the
+**A3 at zero is unexplained and is the second open question.** The gate is the same one the
 seed document describes (shared accession *or* post-substitution balance), so a yield of 0
 against 42 more likely reflects a narrower name normalisation in the twin search than a
 stricter gate. It is worth one measurement, not a rewrite.
+
+## The two decisions this hands back
+
+1. **The body-cancel gate.** It costs the seed document's whole preparation union (919 of
+   934), B1's entire yield, and a large share of `rescue_declined`. It is defensible: a `*`
+   residue on one side only is an unknown counted as zero. Relaxing it to "a curated
+   element-neutral body may stand unpaired" would recover on the order of a thousand
+   reactions and would weaken every balance verdict that depends on it. Neither side of
+   that is obviously right.
+2. **The NADPH–hemoprotein reductase couple.** Four ids, no formula, no SMILES, blocking
+   1,179 reactions worklist-wide and 1,088 of the 1,247 this run loses against the deployed
+   table. A curated `*` body for them is admissible under A1's own argument — but note that
+   it lands squarely on decision 1, because a protein redox partner is exactly the case
+   where the body may stand unpaired.
 
 ## What this does not verify
 
