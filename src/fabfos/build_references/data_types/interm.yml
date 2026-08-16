@@ -41,6 +41,36 @@ types:
         reaction is missing.
       ext: parquet
 
+  # -- the two twin searches, ahead of the rescue -----------------------------
+  # TWO TYPES FOR ONE MODULE, and the split is the point rather than an accident of
+  # packaging. `aam.twins` answers one question -- does MNXref already hold a structure
+  # for this, under another id -- with two evidence standards, and each standard's yield
+  # has to stay a number of its own: one admits a body with no tracked atoms, the other
+  # admits real atoms and has to earn it. Merged into one product, a gain in the safe
+  # half would cover a loss in the risky half.
+  aam_blockers:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        A DIRECTORY: `crosswalk.tsv` (the accepted twins, in the shape the rescue's
+        merge takes), `decisions.tsv` (EVERY candidate blocker with a named refusal
+        predicate) and `summary.tsv`. Accepts only an ELEMENT-NEUTRAL twin -- zero C, N,
+        S and P, all four known from the recount -- which is a coded predicate rather
+        than a maintained exclusion list: the acyl-carrier twin carries C14 N3 S1 P1 and
+        is refused by it without being named anywhere. `summary.tsv` also carries the
+        overlap with `curation.lane_acceptor`, because that lane already reaches six
+        spellings of the same claim and what this one ADDS is the number that matters.
+
+  aam_nametwin:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        Same three files, different standard of proof. This one admits a twin with REAL
+        atoms, so a shared name is never enough on its own: it wants a shared source
+        accession or a balance that closes only after the substitution, and it refuses
+        on a differing InChIKey connectivity block. `UDP` the glycan against `UDP` the
+        nucleotide is the case it exists to refuse.
+
   # -- the rescue, between the two mapper passes ------------------------------
   aam_rescue:
     extends: [build_intermediate]

@@ -97,8 +97,17 @@ CROSSWALK_COLS = ("mnxm", "smiles", "mnx_name", "element", "n_atoms", "basis", "
 # `lipid` sits below every lane that FINDS a structure someone asserted and above every
 # lane that draws a conserved body as `*`: it is a construction, so a real record beats
 # it, but it is a complete concrete structure, so it beats a placeholder.
-LANE_PRIORITY = ("twin", "transform", "fragment", "carrier", "supplier", "lipid",
-                 "conserved", "polymer", "acceptor", "override")
+# `nametwin` and `blockers` are produced OUTSIDE this module -- `aam.twins` writes them
+# as crosswalks and they are read in like `override`. They bracket the existing order
+# because they are the strongest and the weakest arguments in it. `nametwin` is first:
+# it recovers MNXref's OWN structured record for the same compound, gated on a shared
+# source accession or on a balance that closes only after the substitution, which is
+# harder evidence than any name-stem inference below it. `blockers` sits immediately
+# above `acceptor` because it makes the SAME claim -- a body with zero tracked atoms --
+# from MNXref's own record rather than from six hand-written spellings, so where both
+# fire the record wins and the regex stays as the fallback it was always meant to be.
+LANE_PRIORITY = ("nametwin", "twin", "transform", "fragment", "carrier", "supplier",
+                 "lipid", "conserved", "polymer", "blockers", "acceptor", "override")
 
 
 # =====================================================================
@@ -293,7 +302,8 @@ def gate_bodies_cancel(subs, prods, resolved: dict):
 count_formula = AP.count_element
 
 
-def concrete_balance(subs, prods, formula_of, ph_mnxms, X, resolved=None):
+def concrete_balance(subs, prods, formula_of, ph_mnxms, X, resolved=None,
+                     counts_of=None, residue_of=None):
     """Do the CONCRETE (non-placeholder) atoms of element X balance?
 
     THIS is what tests the conservation claim. If a carrier actually donated or absorbed
@@ -308,20 +318,38 @@ def concrete_balance(subs, prods, formula_of, ph_mnxms, X, resolved=None):
     scaffolding -- it is a metabolite whose structure this run supplies, so its atoms are
     part of the chemistry being balanced, and its asserted difference is precisely what
     the balance then tests.
+
+    `counts_of` IS THE RECOUNT, AND IT COMES FIRST. A `C70H131N3O9PS*2` species has no
+    countable formula and an exactly countable structure, so consulting the formula
+    first would abstain on a reaction whose atoms are known. The count it supplies is
+    exact for the EXPLICIT atoms only, which is why `residue_of` travels with it: the
+    unspecified slots have to cancel across the equation before the count means
+    anything about conservation, and an unknown slot count is a refusal like any other.
     """
     resolved = resolved or {}
-    tot = {}
+    counts_of = counts_of or {}
+    residue_of = residue_of or {}
+    tot, res = {}, {}
     for side, ms in (("s", subs), ("p", prods)):
-        n = 0
+        n, slots = 0, []
         for m in ms:
             if m in ph_mnxms:
                 continue
-            c = count_struct(resolved[m], X) if m in resolved \
-                else count_formula(formula_of.get(m), X)
+            if m in resolved:
+                c = count_struct(resolved[m], X)
+            elif m in counts_of:
+                c = counts_of[m][ELEMENTS.index(X)]
+                slots.append(residue_of.get(m))
+            else:
+                c = count_formula(formula_of.get(m), X)
             if c is None:
                 return None
             n += c
-        tot[side] = n
+        tot[side], res[side] = n, slots
+    if any(s is None for s in res["s"] + res["p"]):
+        return None          # an unknown residue count is not a zero
+    if sum(res["s"]) != sum(res["p"]):
+        return None          # the unspecified remainders do not cancel
     if tot["s"] == 0 and tot["p"] == 0:
         return None          # element absent; nothing to say
     return tot["s"] == tot["p"]
@@ -399,7 +427,7 @@ def residue_names(tok):
 class Refs:
     """The lookups, indexed the one way every lane needs them."""
 
-    def __init__(self, lookups: Path):
+    def __init__(self, lookups: Path, element_counts=None):
         self.reactions = pd.read_parquet(lookups / "reactions.parquet")
         mets = pd.read_parquet(
             lookups / "metabolites.parquet",
@@ -410,12 +438,30 @@ class Refs:
         self.formula_of = dict(zip(mets["mnxm"], mets["formula"]))
         struct = mets[mets["has_smiles"]]
         self.smiles_of = dict(zip(struct["mnxm"], struct["smiles"]))
+        # THE FORMULA COLUMNS ARE THE FALLBACK, NOT THE SOURCE. `n_C..n_P` are
+        # `count_element` over the MetaNetX formula, so every `*` species is NULL there
+        # -- and a NULL disqualifies the metabolite from every budget, every twin
+        # comparison and every balance below. `lookup::element_counts` reads the
+        # structure instead, which is where those counts actually are. Both are carried
+        # so this module still runs standalone against the five lookups alone.
         self.counts_of = {
             r.mnxm: (r.n_C, r.n_N, r.n_S, r.n_P)
             for r in mets.itertuples(index=False)
             if not (pd.isna(r.n_C) or pd.isna(r.n_N)
                     or pd.isna(r.n_S) or pd.isna(r.n_P))
         }
+        # Residues are 0 for a formula-derived count by construction: `count_element`
+        # refuses a `*` outright, so anything it counted had no unspecified remainder.
+        self.residue_of = {m: 0 for m in self.counts_of}
+        if element_counts is not None:
+            from . import twins as _twins
+            recounted, residue, _src = _twins.read_element_counts(element_counts)
+            gained = len(set(recounted) - set(self.counts_of))
+            self.counts_of.update(recounted)
+            self.residue_of.update({m: residue.get(m) for m in recounted})
+            print(f"[curation] recount: {len(recounted):,} metabolites counted from "
+                  f"their structure, {gained:,} of them unknown to the formula columns",
+                  flush=True)
         # name -> the SMALLEST structured metabolite carrying that name. Smallest,
         # because a name that matches both a monomer and a polymer of it should resolve
         # to the monomer: over-claiming atoms is the failure mode balance cannot catch.
@@ -1851,7 +1897,9 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
         banked = False
         for X in ELEMENTS:
             b = concrete_balance(r.substrates, r.products, refs.formula_of,
-                                 set(ph_smi), X, resolved)
+                                 set(ph_smi), X, resolved,
+                                 counts_of=refs.counts_of,
+                                 residue_of=refs.residue_of)
             if b is not None:
                 bal_rows.append(dict(mnxr=r.mnxr, element=X, balanced=bool(b)))
                 banked = banked or bool(b)
@@ -1897,7 +1945,7 @@ def _targets(refs: Refs, worklist=None):
 
 def cmd_propose(args):
     lookups = Path(args.lookups)
-    refs = Refs(lookups)
+    refs = Refs(lookups, args.element_counts)
     targets = _targets(refs, args.worklist)
 
     lanes = {
@@ -1911,6 +1959,16 @@ def cmd_propose(args):
         "polymer": lane_polymer(refs, targets),
         "acceptor": lane_acceptor(refs, targets),
     }
+    # THE TWO TWIN LANES ARE READ IN, NOT RUN HERE. They are separate transforms so
+    # each delta stays a separate number and a 3.9 M-row xref scan is not repeated
+    # inside every rescue; what arrives is a crosswalk in exactly the shape the merge
+    # takes, and it goes through `admit` with every other row rather than around it.
+    for key, path in (("nametwin", args.nametwin), ("blockers", args.blockers)):
+        if not path:
+            continue
+        t = read_crosswalk(path)
+        t["lane"] = key
+        lanes[key] = t.to_dict("records")
     if args.override:
         ov = read_crosswalk(args.override)
         ov["lane"] = "override"
@@ -1945,7 +2003,7 @@ def cmd_propose(args):
 
 def cmd_complete(args):
     lookups = Path(args.lookups)
-    refs = Refs(lookups)
+    refs = Refs(lookups, args.element_counts)
     rows = read_crosswalk(args.crosswalk)
     resolved = admit(rows, refs.mets)
     print(f"[curation] {len(resolved):,} curated structures admitted", flush=True)
@@ -1990,6 +2048,14 @@ def parse_args(argv=None):
 
     p = sub.add_parser("propose"); p.set_defaults(fn=cmd_propose)
     p.add_argument("--lookups", required=True)
+    p.add_argument("--element-counts", default=None,
+                   help="lookup::element_counts. Supplies the C/N/S/P of every species "
+                        "whose formula declines to state one, which is what most of "
+                        "these lanes abstain on")
+    p.add_argument("--blockers", default=None,
+                   help="interm::aam_blockers/crosswalk.tsv -- element-neutral twins")
+    p.add_argument("--nametwin", default=None,
+                   help="interm::aam_nametwin/crosswalk.tsv -- same-name duplicates")
     p.add_argument("--worklist", default=None,
                    help="interm::aam_worklist -- restricts the lanes to the reactions "
                         "adjudicated `blocked_no_structure`")
@@ -2004,6 +2070,9 @@ def parse_args(argv=None):
 
     p = sub.add_parser("complete"); p.set_defaults(fn=cmd_complete)
     p.add_argument("--lookups", required=True)
+    p.add_argument("--element-counts", default=None,
+                   help="lookup::element_counts. The balance gate consults it before "
+                        "the formula, and requires the residue slots to cancel")
     p.add_argument("--worklist", default=None)
     p.add_argument("--crosswalk", required=True)
     p.add_argument("--char-limit", type=int, default=aam_worklist.SMILES_LEN_LIMIT)

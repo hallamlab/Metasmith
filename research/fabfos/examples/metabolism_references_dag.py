@@ -104,6 +104,12 @@ EXPECTED = {
     # the two assemblies. Six AAM member lanes: the same three mappers over the
     # adjudicated universe and again over the reactions the rescue completed.
     "aam_worklist",
+    # The preparation lanes, all of which run before any member and none of which needs
+    # one. `aam_recount` reads a count off the structure where the formula declines to
+    # state one; the two twin searches recover a structure MNXref already holds under
+    # another id, under two different standards of proof. They are separate transforms
+    # so that each delta stays a number of its own.
+    "aam_recount", "aam_blockers", "aam_nametwin",
     "rxnmapper", "localmapper", "indigo",
     "aam_rescue",
     "rxnmapper_rescue", "localmapper_rescue", "indigo_rescue",

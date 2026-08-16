@@ -14,8 +14,10 @@ the one place the build is meant to BEAT the table it reproduces rather than mat
 
 NO MAPPER RUNS HERE. Everything this step decides is arithmetic:
 
-  * WHICH STRUCTURE each blocker gets, from nine proposer lanes, merged by a fixed
-    priority so one metabolite is claimed by exactly one argument.
+  * WHICH STRUCTURE each blocker gets, from eleven proposer lanes, merged by a fixed
+    priority so one metabolite is claimed by exactly one argument. Nine run here; the
+    two twin searches are transforms of their own and arrive as crosswalks, which is
+    what keeps each of their deltas a number rather than a contribution to a total.
   * WHETHER THE `*` BODIES CANCEL across the equation. A curated carrier draws its body
     as `*` and counts it as zero for every element; that is only safe when the same body
     stands on both sides.
@@ -48,6 +50,15 @@ atom_ranks  = model.AddRequirement(lib.GetType("lookup::atom_ranks"))
 xrefs       = model.AddRequirement(lib.GetType("lookup::xrefs"))
 synonyms    = model.AddRequirement(lib.GetType("lookup::synonyms"))
 
+# THREE INPUTS THAT CHANGE WHAT THE ARBITER CAN JUDGE, not what it judges by. The two
+# twin searches arrive as crosswalks and are merged like any other proposer lane, so
+# their rows face `admit`, the body-cancel gate and the balance test unchanged. The
+# recount is the one that moves the gate itself: a species whose formula states no count
+# used to make the balance abstain, and abstention is a refusal.
+counts      = model.AddRequirement(lib.GetType("lookup::element_counts"))
+blockers    = model.AddRequirement(lib.GetType("interm::aam_blockers"))
+nametwin    = model.AddRequirement(lib.GetType("interm::aam_nametwin"))
+
 bakelib     = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 out_rescue  = model.AddProduct(lib.GetType("interm::aam_rescue"))
@@ -63,6 +74,9 @@ def protocol(context: ExecutionContext):
     iar  = context.Input(atom_ranks)
     ixr  = context.Input(xrefs)
     isy  = context.Input(synonyms)
+    iec  = context.Input(counts)
+    ibl  = context.Input(blockers)
+    int_ = context.Input(nametwin)
     ilib = context.Input(bakelib)
     iout = context.Output(out_rescue)
     iev  = context.Output(ev)
@@ -89,11 +103,15 @@ def protocol(context: ExecutionContext):
 
         {py} -m ecspr.bake.aam.curation propose --lookups _lookups \
             --worklist {iwl.container} \
+            --element-counts {iec.container} \
+            --blockers {ibl.container}/crosswalk.tsv \
+            --nametwin {int_.container}/crosswalk.tsv \
             --chebi {ich.container} --modelseed {ims.container} \
             --out rescue/crosswalk.tsv
 
         {py} -m ecspr.bake.aam.curation complete --lookups _lookups \
             --worklist {iwl.container} \
+            --element-counts {iec.container} \
             --crosswalk rescue/crosswalk.tsv \
             --out rescue/rescued.parquet \
             --out-balance rescue/balance.tsv \

@@ -1,6 +1,14 @@
 manifest:
+  aam_blockers.py:
+    instance_id: 1e2095c583077f59381fff489165d97281679e800705dee1f2ef4b56d7eb6645c6f7
+    origin: leaf
+    type: transforms::transform
   aam_ensemble.py:
     instance_id: 1e200cb99acb6de37de46f9d18b533b7caddb1d88fab9ffe580f5432708b935f8cae
+    origin: leaf
+    type: transforms::transform
+  aam_nametwin.py:
+    instance_id: 1e20787d17a1cd1f22fc1b3999a88e6dd14f306646a43fd15fbcd52236da5e5c28b1
     origin: leaf
     type: transforms::transform
   aam_partial.py:
@@ -12,7 +20,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   aam_rescue.py:
-    instance_id: 1e20645ea214953d70ef2fa96c6e249d5cb2cdb35adac14dcc1e77cc7c6bae4bf2cd
+    instance_id: 1e20136a0030b65b324032e7a35d66aa9ed5aa39f072ded9d2c8a13babe48a181022
     origin: leaf
     type: transforms::transform
   aam_worklist.py:
