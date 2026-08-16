@@ -148,7 +148,11 @@ EXPECTED = {
     # artifact between "the layers agree" and "this is the reference" -- and the redox
     # repair has to run over exactly that. The seam is the point of the split.
     "aam_stack", "aam_redox", "aam_reference",
-    "dgbyg", "direction_ensemble",
+    # The direction side, and the trailing encode. `direction_bake` is the four lines that
+    # used to be `direction_ensemble`'s last four: splitting them is what lets the
+    # thermodynamic science run beside the AAM branch rather than behind it, and only the
+    # encode wait for a vocabulary.
+    "dgbyg", "direction_ensemble", "direction_bake",
 }
 
 # WHICH RUNTIME. This gate used to be MAMBA-only, because `rdkit.env` and

@@ -1,9 +1,9 @@
 # build-refs-rdkit -- the AAM ensemble's environment.
 #
 # Named by src/metasmith_libraries/resources/env/rdkit.env (`conda: build-refs-rdkit`)
-# and used by build_references/transforms/compile/aam_ensemble.py.
+# and used by every lane of the AAM branch under build_references/transforms/bake/.
 #
-# Holds all four members' dependencies, because the ensemble is one transform:
+# Holds all four members' dependencies, because one image serves the whole branch:
 #   metacyc      the curated member, LAYER 1        (rdkit only -- it parses the
 #                                                    shipped mapped reaction SMILES)
 #   rxnmapper    the BERT attention mapper          (transformers + torch)
