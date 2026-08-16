@@ -634,13 +634,31 @@ def lane_transform(refs: Refs, targets):
 
 def lane_fragment(refs: Refs, targets):
     """FRAGMENT SUM. A name that splits into >=2 residue tokens each resolving to a
-    metabolite (dipeptides, acyl-amino-acids, glycosides) -> the summed budget."""
+    metabolite (dipeptides, acyl-amino-acids, glycosides) -> the summed budget.
+
+    THE CURATED PAIR OUTRANKS AN INFERRED SUM, and this lane is the only one that has to
+    say so. Every other lane derives its budget from a structure or from a conservation
+    argument; this one infers it by reading the NAME as chemistry, which is exactly the
+    reading a redox carrier's name defeats. `oxidized [NADPH--hemoprotein reductase]` is
+    an enzyme in an oxidation state, but its tokens resolve -- `nadph` to real NADPH and
+    `oxidized` to MNXM588580, a ModelSEED fragment stub whose name is the bare word
+    `Oxidized-`, the trailing hyphen erased by `norm`. The sum handed the reductase
+    C33/N11/P3. Its reduced twin has no such stub to collide with, so it fell through to
+    the placeholder library's `[Fe+2]`, and the couple stopped balancing: 1,122 reactions
+    completed, failed `concrete_balance` on carbon, and were never mapped.
+
+    Deferring costs nothing measurable and is the weaker claim of the two -- the library's
+    entries are atom-matched ox/red pairs, so where it covers a metabolite it also covers
+    its twin, which is the property the balance gate is testing.
+    """
     rows, seen = [], set()
     for r in targets.itertuples(index=False):
         for P in r.blockers:
             if P in seen or P in refs.smiles_of:
                 continue
             nm = refs.name_of.get(P, "") or ""
+            if placeholder_for(nm) is not None:
+                continue
             toks = [t for t in norm(nm).split() if not _LOCANT.match(t)]
             tot, frags, parts = [0, 0, 0, 0], 0, []
             for t in toks:
