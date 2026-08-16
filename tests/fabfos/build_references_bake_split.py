@@ -776,16 +776,27 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
         elif dtype_name in spec["outputs"]:
             products[dtype_name] = path
 
-    # THE EVIDENCE IS PUBLISHED BUT NOT INDEXED. A run's index records the products that
-    # are some target's lineage; evidence has no consumer and no target asks for it, so
-    # the directories land in results/ and nothing in `_metadata/index.yml` names them.
-    # The directory NAME is the attribution regardless -- which is why the lanes copy
-    # their evidence ROOT rather than the directory under it.
-    for artifact in sorted(staging.glob("*evidence-tool_output/*")):
-        if not artifact.is_dir():
-            continue
-        for tool_dir in sorted(p for p in artifact.iterdir() if p.is_dir()):
-            found.setdefault(tool_dir.name, tool_dir)
+    # A DIRECTORY-TYPED PRODUCT IS PUBLISHED BUT NOT INDEXED. Every type carrying an
+    # `ext:` appears in `_metadata/index.yml` and every type without one -- the evidence,
+    # and the four seams that ship a table beside the refusals that make it readable --
+    # is written to results/ and named nowhere. The layout IS the attribution:
+    # `<order>_<namespace>-<type>/<artifact>/`, which is also why the lanes copy their
+    # evidence ROOT rather than the directory under it.
+    for d in sorted(p for p in staging.iterdir() if p.is_dir()):
+        stem = d.name.split("_", 1)[-1] if d.name[0].isdigit() else d.name
+        ns, _, tname = stem.partition("-")
+        dtype = f"{ns}::{tname}"
+        artifacts = sorted(p for p in d.iterdir() if p.is_dir())
+        if dtype == "evidence::tool_output":
+            for artifact in artifacts:
+                for tool_dir in sorted(p for p in artifact.iterdir() if p.is_dir()):
+                    found.setdefault(tool_dir.name, tool_dir)
+        elif dtype in spec["outputs"] and dtype not in products:
+            if len(artifacts) == 1:
+                products[dtype] = artifacts[0]
+            elif artifacts:
+                print(f"  AMBIGUOUS: {dtype} has {len(artifacts)} published artifacts "
+                      f"under {d.name}; refusing to choose", file=sys.stderr)
 
     for tool, tool_dir in sorted(found.items()):
         dest = TEMP / tool
