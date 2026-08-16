@@ -57,6 +57,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import shard as aam_shard
+from . import worklist
 from .shard import shard_of
 
 COLUMNS = ("mnxr", "rxn_smiles", "mapped_rxn_smiles", "confidence", "status")
@@ -102,12 +103,19 @@ def map_one(ind, smi: str, timeout_s: int):
 
 
 def load_universe(worklist_parquet: Path, exclude=None, shard=None):
-    """The reactions `aam_worklist` adjudicated as mappable, for this shard.
+    """The reactions `aam_worklist` admits to THIS member, for this shard.
 
     THE `verdict` COLUMN IS REQUIRED. Every member reads the SAME adjudicated list, so
     that "the three saw the same reactions" is a property of the graph rather than three
     filters that happen to agree; pointing this at `lookup::reactions` now fails loudly
     instead of quietly restoring the per-member universe.
+
+    AND THIS MEMBER SEES MORE OF IT, which is the one place the three legitimately
+    differ. The atom cap bounds the neural members' cost -- a 512-token transformer and
+    a lane that was OOM-killed twice. Indigo is a compiled substructure search with a
+    recorded timeout, so it takes the oversized tail as well and `worklist.ATOM_LIMIT`
+    says why. A reaction only Indigo reaches lands as `indigo_only` at half weight
+    through the ordinary fusion; nothing here needs a special case for it.
     """
     d = pd.read_parquet(worklist_parquet)
     if "verdict" not in d.columns:
@@ -116,13 +124,15 @@ def load_universe(worklist_parquet: Path, exclude=None, shard=None):
             f"worklist. Members read `interm::aam_worklist` (or the rescued universe, "
             f"which carries the same column), never `lookup::reactions` directly.")
     n_all = len(d)
-    d = d[(d["verdict"] == "mappable") & d["rxn_smiles"].notna()]
+    d = d[d["verdict"].isin(worklist.INDIGO_ADMITS) & d["rxn_smiles"].notna()]
+    n_over = int((d["verdict"] == "oversize").sum())
     out = {r.mnxr: r.rxn_smiles for r in d.itertuples(index=False)}
     n_map = len(out)
     if exclude:
         out = {m: s for m, s in out.items() if m not in exclude}
     out = aam_shard.select(out, shard)
-    print(f"[indigo] worklist {n_all:,} adjudicated, {n_map:,} mappable "
+    print(f"[indigo] worklist {n_all:,} adjudicated, {n_map:,} admitted "
+          f"({n_over:,} over the atom cap, which only this member takes) "
           f"-> {len(out):,} to map", flush=True)
     return out
 

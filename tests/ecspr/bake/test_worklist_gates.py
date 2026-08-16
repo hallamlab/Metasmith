@@ -215,20 +215,39 @@ def test_a_reaction_the_expanded_cap_refuses_is_recovered_collapsed():
     assert df["atoms_collapsed"][0] <= 200
 
 
-def test_the_collapsed_cap_is_its_own_bound_and_still_refuses():
-    """Collapse is a second chance, not an exemption.
+def test_the_collapsed_cap_is_its_own_bound_and_routes_to_indigo():
+    """Collapse is a second chance, not an exemption -- and `oversize` is a ROUTE.
 
-    A reaction whose DISTINCT chemistry is genuinely large is still refused, and
-    still as `oversize` -- the verdict set does not grow, because every reader of
-    the worklist would then need a branch for a new one.
+    A reaction whose DISTINCT chemistry is genuinely large keeps the `oversize`
+    verdict; the verdict set does not grow, because every reader of the worklist
+    would then need a branch for a new one. What that verdict now means is
+    "the neural members will not see this", not "nothing will".
     """
     smi = ".".join(["C" * 300] * 5) + ">>C"
     df = W.adjudicate(_reactions([dict(rxn_smiles=smi)]), {}, 600, 8000,
                       collapsed_atom_limit=100)
     assert df["verdict"][0] == "oversize"
-    assert not df["collapsed"][0]
     assert df["atoms_collapsed"][0] == 301, (          # the 300-carbon component + the product
         "the collapsed count is recorded even when the collapse does not rescue")
+    # It is still handed to Indigo, so it too carries the SMALLER of the two readings.
+    assert bool(df["collapsed"][0]) is True
+    assert df["rxn_smiles"][0] == "C" * 300 + ">>C"
+
+
+def test_the_two_members_read_two_universes_and_only_indigo_takes_the_tail():
+    """The whole of the routing change, as the two constants the readers share.
+
+    An `oversize` row is a cost statement about a 512-token transformer and a lane
+    that was OOM-killed twice. Indigo is neither, so it reads a wider set -- and
+    the sets live in one module precisely so a member cannot drift into seeing a
+    universe its siblings do not.
+    """
+    assert W.NEURAL_ADMITS == ("mappable",)
+    assert set(W.INDIGO_ADMITS) == {"mappable", "oversize"}
+    assert set(W.NEURAL_ADMITS) < set(W.INDIGO_ADMITS), (
+        "the neural universe must stay a subset; a reaction one member sees and "
+        "another cannot is what the shared worklist exists to prevent")
+    assert all(v in W.VERDICTS for v in W.INDIGO_ADMITS)
 
 
 def test_the_character_cap_applies_to_the_collapsed_string_and_still_gates_the_parse():

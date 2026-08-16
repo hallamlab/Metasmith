@@ -21,10 +21,11 @@ guess.
 WHAT THE NUMBERS MEAN. `forced` is (reaction, element) combinations conservation settles
 with NO mapper at all -- free, exact, and available whether or not the rebake runs.
 `reduced` is submissions that need one, so it is the lane's mapper cost as well as its
-projected yield. `forced_pair_rows` is the row count the forced arm alone would add, and
-it grows fast: an n-atom transfer with no unique bijection emits n^2 diluted candidates,
-which is the doubly-stochastic completion behaving as designed and still a real number of
-rows to carry.
+projected yield, and it splits: `to_all_members` is under the atom cap, `to_indigo_only`
+is over it and reaches the one member the cap is not about.  `forced_pair_rows` is the
+row count the forced arm alone would add, and it grows fast: an n-atom transfer with no
+unique bijection emits n^2 diluted candidates, which is the doubly-stochastic completion
+behaving as designed and still a real number of rows to carry.
 """
 from __future__ import annotations
 
@@ -47,11 +48,17 @@ def measure(label, targets, eq, formulas, smiles_of, ranks_of):
     uni, forced, tally = P.build(targets, eq, formulas, smiles_of, ranks_of,
                                  W.SMILES_LEN_LIMIT, W.ATOM_LIMIT)
     fre = len({(r[0], r[1]) for r in forced})
+    verdicts = [r[1] for r in uni]
     return dict(population=label, n_reactions=len(targets),
                 forced_reaction_elements=fre, reduced_submissions=len(uni),
+                # A submission over the atom cap is not refused; it is routed to Indigo
+                # alone. Split out because it is the half whose yield is uncertain --
+                # see `research/fabfos/benchmarks/aam_cap/` for what Indigo does up there.
+                to_all_members=verdicts.count("mappable"),
+                to_indigo_only=verdicts.count("oversize"),
+                collapsed=sum(1 for r in uni if r[9]),
                 partial_reaction_elements=fre + len(uni),
                 forced_pair_rows=sum(int(r[4]) for r in forced),
-                over_atom_cap=int(tally.get("reduction over the atom cap", 0)),
                 over_char_cap=int(tally.get("reduction over the character cap", 0)),
                 no_balanced_reduction=sum(v for k, v in tally.items()
                                           if k.startswith("no balanced reduction")))

@@ -60,7 +60,7 @@ from . import worklist as W
 KEY_SEP = "#"
 
 UNIVERSE_COLS = ("mnxr", "verdict", "rxn_smiles", "base_mnxr", "element",
-                 "sub_mnxms", "prod_mnxms", "atoms", "chars")
+                 "sub_mnxms", "prod_mnxms", "atoms", "chars", "collapsed")
 
 # The forced arm's pairs, in the EXTRACTOR's compact shape -- `atom_pairs.PAIR_COLS` --
 # so `aam_layers.explode` reads them with no special case and stamps their method and
@@ -123,6 +123,57 @@ def load_lookups(lookups: Path):
     return formulas, smiles_of, ranks_of
 
 
+def _write(sub_mnxms: list, prod_mnxms: list, smiles_of: dict) -> str:
+    """One SMILES component per kept participant, in order. The submission string."""
+    return (".".join(smiles_of[m] for m in sub_mnxms) + ">>"
+            + ".".join(smiles_of[m] for m in prod_mnxms))
+
+
+def _uniq(mnxms: list) -> list:
+    """Each distinct metabolite once, in order -- the reduction's own collapse.
+
+    Keyed on the MNXM rather than on the SMILES text, which is where this differs from
+    `worklist.collapse`. Two distinct metabolites that happen to share a structure stay
+    two components here, so `match_mols` keeps both name candidates and dilutes between
+    them rather than having one of them silently disappear from the submission.
+    """
+    seen, out = set(), []
+    for m in mnxms:
+        if m not in seen:
+            seen.add(m)
+            out.append(m)
+    return out
+
+
+def _still_balances(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str) -> bool:
+    """Does X still balance once each participant is written once per side?
+
+    THE GUARD THAT MAKES COLLAPSING A REDUCTION SAFE, and the reason it is not simply
+    `worklist.collapse` applied again. Collapsing is faithful exactly when the reaction
+    is a whole multiple of a per-copy reaction: `16 ATP >> 16 ADP + 16 Pi` collapses to
+    `ATP >> ADP + Pi` and every atom's destination is the one it had. When the
+    coefficients are not a common multiple -- `A + 3 B >> C`, one X in each B and five
+    in C -- the collapsed string offers three X sources for five X destinations, and the
+    mapper must then CHOOSE which three of C's atoms were filled. That choice is
+    fabricated, and it is fabricated at rank level where nothing downstream can see it.
+
+    So the balance is re-checked against the collapsed lists, and a collapse that breaks
+    it is not taken: the submission stays expanded and is refused for size as before.
+    A refusal is a gap, which is honest; a rank-level invention is not.
+    """
+    ns = np_ = 0
+    for ms, sink in ((sub_mnxms, "s"), (prod_mnxms, "p")):
+        for m in ms:
+            c = AP.count_element(formulas.get(m), X)
+            if c is None:
+                return False
+            if sink == "s":
+                ns += c
+            else:
+                np_ += c
+    return ns == np_
+
+
 def build(targets: list, equations: dict, formulas: dict, smiles_of: dict,
           ranks_of: dict, char_limit: int, atom_limit: int):
     """`(universe_rows, forced_rows, tally)` for the reactions in `targets`.
@@ -131,6 +182,10 @@ def build(targets: list, equations: dict, formulas: dict, smiles_of: dict,
     otherwise a reduced submission if the element balances across the kept participants,
     otherwise nothing -- and the tally says which, so the lane's yield is a number rather
     than a hope.
+
+    A reduction that is still over a size cut gets the same second reading pass 1 gives a
+    whole reaction: written once per distinct participant, and taken only if X still
+    balances that way. See `_still_balances` for why that guard is not optional.
     """
     uni, forced, tally = [], [], Counter()
     for mnxr in targets:
@@ -169,21 +224,49 @@ def build(targets: list, equations: dict, formulas: dict, smiles_of: dict,
                 # and leaving it out is the strip this lane exists not to do.
                 tally["reduction has a structureless participant"] += 1
                 continue
-            smi = (".".join(smiles_of[m] for m in ks) + ">>"
-                   + ".".join(smiles_of[m] for m in kp))
+            smi = _write(ks, kp, smiles_of)
             # The SAME two size cuts pass 1 applies, on the SAME constants. A reduced
             # submission is a new string; the whole point is that it is small, so one
             # that is not is not a submission worth making.
-            if len(smi) > char_limit:
+            n = W.count_atoms(smi) if len(smi) <= char_limit else None
+
+            # THE SECOND READING, and the reason it belongs here too. `reduce_for_element`
+            # preserves stoichiometry, so its submission is a stoichiometric EXPANSION --
+            # the exact measure the whole scope exists to stop applying. A phosphorus
+            # reduction of nitrogenase is `16 ATP >> 16 ADP + 16 Pi`, over a thousand
+            # atoms of one molecule written sixteen times.
+            #
+            # Attempted only where the expanded submission would be refused, so nothing
+            # that fits today moves -- the same monotonicity the worklist's collapse has.
+            collapsed = False
+            if len(smi) > char_limit or n is None or n > atom_limit:
+                cks, ckp = _uniq(ks), _uniq(kp)
+                if ((len(cks), len(ckp)) != (len(ks), len(kp))
+                        and _still_balances(cks, ckp, formulas, X)):
+                    smi_c = _write(cks, ckp, smiles_of)
+                    n_c = W.count_atoms(smi_c) if len(smi_c) <= char_limit else None
+                    if n_c is not None and n_c <= atom_limit:
+                        ks, kp, smi, n, collapsed = cks, ckp, smi_c, n_c, True
+
+            if len(smi) > char_limit or n is None:
+                # The character cap is universal: it is the bound that stops anything
+                # parsing MNXR144749's 80.7 MB string, and no member is exempt from it.
                 tally["reduction over the character cap"] += 1
                 continue
-            n = W.count_atoms(smi)
-            if n is None or n > atom_limit:
-                tally["reduction over the atom cap"] += 1
-                continue
-            uni.append((make_key(mnxr, X), "mappable", smi, mnxr, X,
-                        list(ks), list(kp), int(n), int(len(smi))))
+
+            # THE ATOM CAP ROUTES, IT DOES NOT REFUSE -- the same correction pass 1 got,
+            # carried through here with the same word. `oversize` means the neural
+            # members will not see this submission and Indigo will; both read the verdict
+            # through `worklist.NEURAL_ADMITS` / `INDIGO_ADMITS`, so the lane needs no
+            # column of its own and no member needs a special case.
+            verdict = "mappable" if n <= atom_limit else "oversize"
+            uni.append((make_key(mnxr, X), verdict, smi, mnxr, X,
+                        list(ks), list(kp), int(n), int(len(smi)), collapsed))
             tally["reduced submission"] += 1
+            if verdict == "oversize":
+                tally["reduced submission over the atom cap (Indigo only)"] += 1
+            if collapsed:
+                tally["reduced submission (collapsed)"] += 1
     return uni, forced, tally
 
 
@@ -192,6 +275,11 @@ UNIVERSE_SCHEMA = pa.schema([
     ("base_mnxr", pa.string()), ("element", pa.string()),
     ("sub_mnxms", pa.list_(pa.string())), ("prod_mnxms", pa.list_(pa.string())),
     ("atoms", pa.int32()), ("chars", pa.int32()),
+    # WHICH string this submission holds. The extractor does not need telling -- it
+    # recomputes the distinct-structure count from the same participant lists and the
+    # strict guard accepts either -- so this exists for the reader, and for the summary
+    # to be able to say how much of the lane's reach the collapse is responsible for.
+    ("collapsed", pa.bool_()),
 ])
 
 FORCED_SCHEMA = pa.schema([
@@ -269,6 +357,8 @@ def cmd_build(args):
     for k, v in sorted(tally.items()):
         lines.append(f"tally\t{k}\t{v}")
     lines.append(f"product\treduced_submissions\t{len(udf)}")
+    lines.append(f"product\tcollapsed_submissions\t"
+                 f"{int(udf['collapsed'].sum()) if len(udf) else 0}")
     lines.append(f"product\tforced_pair_rows\t{len(fdf)}")
     n_fre = len(fdf.groupby(["mnxr", "element"])) if len(fdf) else 0
     lines.append(f"product\tforced_reaction_elements\t{n_fre}")

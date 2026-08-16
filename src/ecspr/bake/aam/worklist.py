@@ -71,10 +71,34 @@ import pyarrow.parquet as pq
 # loud failure at the top of the lane rather than a quiet difference in coverage.
 SMILES_LEN_LIMIT = 8000
 
-# The atom cap on the EXPANDED string. See the header for the yield curve that
-# warrants 600. It stays exactly where it is: it is what decides whether a reaction is
-# mapped as written, and every reaction under it is mapped byte-for-byte as before.
+# The atom cap on the EXPANDED string.
+#
+# IT IS A MEMBER BOUNDARY, NOT A REFUSAL, and that is a correction rather than a
+# loosening. The cap was warranted by a yield curve joined to the deployed bake -- 98-99%
+# banking up to 600, 12.8% at 600-800, 1.3% above -- and that curve is CENSORED. Every
+# mapper method in the deployed table stops dead at the cap (`localmapper_only` max 600,
+# `indigo_only` 598, `rxnmapper_only` 563, `consensus` 581) because the same cut was
+# applied upstream of all three; the only thing banked above it is `curated`, which comes
+# from MetaCyc and never sees a mapper. So the curve above 600 measures the cap, not the
+# mappers, and the threshold has never been tested from the other side.
+#
+# Testing it says the cap belongs to the NEURAL members. RXNMapper's transformer takes
+# 512 tokens and LocalMapper is the lane that was OOM-killed twice -- both are real, both
+# scale with the string. Indigo is a compiled maximum-common-substructure search with a
+# recorded timeout, and over the refused population it maps a 1,666-atom reaction in
+# under two seconds. `research/fabfos/benchmarks/aam_cap/` is the sweep.
+#
+# So a reaction over this cap is `oversize`, which now means "the neural members will not
+# see it" rather than "nothing will". Indigo's universe admits it, its own timeout bounds
+# the cost, and a pair it finds alone lands as `indigo_only` -- the ordinary single-member
+# path, at half weight, which is what it is worth. Nothing under the cap moves.
 ATOM_LIMIT = 600
+
+# Which verdicts each member's universe admits. Stated once, here, because the two
+# readers live in different modules and a drift between them is a member silently seeing
+# a different universe from its siblings -- the exact failure the worklist exists to stop.
+NEURAL_ADMITS = ("mappable",)
+INDIGO_ADMITS = ("mappable", "oversize")
 
 # The atom cap on the COLLAPSED string -- the second chance a reaction gets when the
 # expanded measure would refuse it.
@@ -95,8 +119,8 @@ ATOM_LIMIT = 600
 COLLAPSED_ATOM_LIMIT = 600
 
 VERDICTS = (
-    "mappable",              # goes to the mapper lanes
-    "oversize",              # buildable, but over ATOM_LIMIT atoms
+    "mappable",              # goes to every mapper lane
+    "oversize",              # over the atom cap: Indigo only. See ATOM_LIMIT.
     "too_long",              # buildable, but over SMILES_LEN_LIMIT characters
     "blocked_no_structure",  # >=1 participant has no structure; the rescue lanes' target
     "non_molecule",          # >=1 participant is not a molecule; nothing can stand in
@@ -307,15 +331,22 @@ def adjudicate(reactions: pd.DataFrame, name_of: dict, atom_limit: int,
         else:
             verdict = "oversize"
 
+        # AN `oversize` ROW IS STILL HANDED TO A MAPPER -- Indigo -- so it too carries
+        # the smaller of the two readings. Nothing was ever mapped from these strings, so
+        # rewriting them moves nothing; what it does is make `rxn_smiles` mean one thing
+        # on every row: the string a member would be given.
+        if (verdict == "oversize" and not collapsed and smi_c is not None
+                and chars_c is not None and chars_c <= char_limit):
+            collapsed = True
+
         rows.append(dict(
             mnxr=r.mnxr, verdict=verdict, atoms=atoms, chars=chars,
             atoms_collapsed=atoms_c, chars_collapsed=chars_c, collapsed=collapsed,
             n_blockers=int(r.n_blockers), blockers=blockers, blocker_families=fams,
             is_transport=str(r.is_transport), is_balanced=str(r.is_balanced),
             classifs=str(r.classifs),
-            # THE STRING THE MEMBERS MAP. Expanded unless the collapse rescued this
-            # reaction, in which case it is the collapsed one -- and `collapsed` says
-            # which, so no consumer has to infer it from a length.
+            # THE STRING THE MEMBERS MAP, and `collapsed` says which one it is, so no
+            # consumer has to infer it from a length.
             rxn_smiles=(smi_c if collapsed else smi),
         ))
         if (i + 1) % 20000 == 0:
@@ -343,15 +374,19 @@ def load(path) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
-def mappable(path) -> dict:
-    """`{mnxr -> rxn_smiles}` for the reactions the lanes are allowed to attempt.
+def mappable(path, admits=NEURAL_ADMITS) -> dict:
+    """`{mnxr -> rxn_smiles}` for the reactions a lane is allowed to attempt.
 
     THE ONE READER EVERY MEMBER USES. A member that derived its own universe could drift
     from its siblings by one filter and the ensemble's disagreement rate would stop
     measuring disagreement between mappers.
+
+    `admits` is the only thing a member may vary, and it varies for one reason: the atom
+    cap is a statement about the neural members' cost, not about the chemistry. Pass
+    `INDIGO_ADMITS` for the lane that can take the oversized tail.
     """
     d = pd.read_parquet(path, columns=["mnxr", "verdict", "rxn_smiles"])
-    d = d[(d["verdict"] == "mappable") & d["rxn_smiles"].notna()]
+    d = d[d["verdict"].isin(admits) & d["rxn_smiles"].notna()]
     return dict(zip(d["mnxr"], d["rxn_smiles"]))
 
 
@@ -385,8 +420,13 @@ def cmd_build(args):
     for lo, hi in ((0, 300), (300, 600), (600, 1200), (1200, 100000)):
         n = int(((coll["atoms_collapsed"] >= lo) & (coll["atoms_collapsed"] < hi)).sum())
         lines.append(f"collapsed_atom_bin\t{lo}-{hi}\t{n}")
-    lines.append(f"collapse\trecovered\t{int(wl['collapsed'].sum())}")
+    # RECOVERED is not the same as WRITTEN COLLAPSED, now that an `oversize` row carries
+    # the collapsed string too. Recovered means the second reading changed the verdict.
+    recovered = int(((wl["verdict"] == "mappable") & wl["collapsed"]).sum())
+    lines.append(f"collapse\trecovered\t{recovered}")
+    lines.append(f"collapse\twritten_collapsed\t{int(wl['collapsed'].sum())}")
     lines.append(f"collapse\tattempted\t{int(wl['atoms_collapsed'].notna().sum())}")
+    lines.append(f"route\tindigo_only\t{int((wl['verdict'] == 'oversize').sum())}")
     lines.append(f"limit\tatom_limit\t{args.atom_limit}")
     lines.append(f"limit\tchar_limit\t{args.char_limit}")
     lines.append(f"limit\tcollapsed_atom_limit\t{args.collapsed_atom_limit}")
@@ -401,8 +441,9 @@ def cmd_build(args):
     if unknown:
         raise SystemExit(f"[worklist] verdict outside the closed set: {sorted(unknown)}")
     print(f"  {'TOTAL':<24} {len(wl):>8,}")
-    print(f"\n  of which mappable only after a stoichiometric collapse: "
-          f"{int(wl['collapsed'].sum()):,}")
+    print(f"\n  of which mappable only after a stoichiometric collapse: {recovered:,}")
+    print(f"  over the atom cap, so Indigo alone: "
+          f"{int((wl['verdict'] == 'oversize').sum()):,}")
     print("\nblocker families (metabolite-blocked reactions may carry several):")
     for f in FAMILIES:
         print(f"  {f:<24} {int(fam.get(f, 0)):>8,}")
