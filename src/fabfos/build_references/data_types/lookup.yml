@@ -74,6 +74,20 @@ types:
         many-to-one is legal (setdefault vs last-wins) is how the same crosswalk
         produced two different MetaCyc joins in one build.
 
+  element_counts:
+    extends: [lookup_table]
+    properties:
+      _: >-
+        One row per (metabolite, element): how many atoms of C/N/S/P the species has,
+        taken from its STRUCTURE where it has one, with the route recorded and the
+        number of unspecified residues carried alongside. It exists because a `*`
+        formula states no count while the SMILES beside it states one exactly, so
+        refusing the formula was refusing a species whose atoms are known. NULL still
+        means unknown -- never zero, which is a claim -- and `n_residue` is what keeps
+        an exact count of the explicit atoms from being read as a balance claim about
+        the whole molecule. Consistent with atom_ranks by construction: for a structured
+        participant this count IS len(ranks), and `recount check` asserts it.
+
   synonyms:
     extends: [lookup_table]
     properties:

@@ -16,11 +16,11 @@ manifest:
     origin: leaf
     type: buildlib::bench_universe.py
   ecspr:
-    instance_id: 1e20cca8decb392ab3b6c2e14f7ee2406e2ea4a531024f69fbc06e27eb870d8bf33c
+    instance_id: 1e20d2180b4eb26bc71facfa540dd2755c3b26ce2314002fcdbdd397c8792db18c8b
     origin: leaf
     type: buildlib::ecspr
   mnx_lookups.py:
-    instance_id: 1e20b0e04637a579ac3a7a2775eb4a90dfbd0329f4a27241556badc4530cb9b1c57e
+    instance_id: 1e20986808f407e92d7523e90090e01180db1e8b314d8b1cb8f182d35d77d7ea30da
     origin: leaf
     type: buildlib::mnx_lookups.py
 schema: v1
