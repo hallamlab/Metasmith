@@ -20,26 +20,31 @@ has no ledger, no worklist summary and no evidence directory for any AAM lane, s
 the first generation where a reaction that did not bank says why. `mapped_nothing` is 571,
 which is why the top-up pass the plan held in reserve was never needed.
 
-### The net hides a regression, and the regression has one cause
+### The net hid a regression, and the regression was a defect — since fixed
 
-+957 net is **+2,204 new and −1,247 lost**. All 1,247 are `rescue_declined`, and **1,088 of
-them (87%) are blocked by a single thing**: the NADPH–hemoprotein reductase couple —
-`MNXM1090405`, `MNXM1090406`, `MNXM728239`, `MNXM729103` — four ids with no formula and no
-SMILES. That is cytochrome P450 reductase, a protein electron donor MetaNetX models as an
-explicit participant.
++957 net is **+2,204 new and −1,247 lost**. All 1,247 are `rescue_declined`, and **1,090 of
+them (87.4%) turn on one thing**: the NADPH–hemoprotein reductase couple — `MNXM1090405`,
+`MNXM1090406`, `MNXM728239`, `MNXM729103`. That is cytochrome P450 reductase, a protein
+electron donor MetaNetX models as an explicit participant.
 
-The deployed run banked those reactions by mapping them with the protein **absent from the
-reaction SMILES**, and 92.5% of their 32,192 rows are indigo+rxnmapper agreement — so both
-mappers concurred on a mutilated equation. This generation refuses that: a reaction whose
-participants are not all structurally known is not mapped, because a partial SMILES maps
-the atoms it does have onto the wrong destinations. The loss is a principled refusal, not a
-capability regression — but it is a loss, and reporting only the net would hide it.
+**This was first read as a principled refusal, and it was not.** The four are not
+structureless at the gate: `curation.PLACEHOLDERS` has carried an atom-matched
+`[Fe+3]`/`[Fe+2]` pair for them since the library was written, and 1,185 of the 1,189
+reactions containing them pass triage as `completable`. They died at `concrete_balance`,
+because `lane_fragment` had already claimed the two *oxidized* ids and handed them
+C33/N11/P3 — it resolved the name token `nadph` to real NADPH and `oxidized` to
+`MNXM588580`, a ModelSEED fragment stub whose name is the bare word `Oxidized-`, its
+trailing hyphen erased by `norm`. The reduced twins have no such stub to collide with, so
+they fell through to `[Fe+2]`, and the couple stopped balancing on carbon.
 
-**It is also the cheapest lever left.** Those four ids are element-neutral in exactly the
-sense that made `Acceptor` → `MNXM35` safe: a protein redox partner carrying no tracked
-C/N/P/S can neither absorb nor emit a mapped atom, so a curated `*` body is admissible
-under the same argument. The twin search cannot reach them because MNXref holds no
-structured twin to copy. Across the whole worklist this would unblock **1,179 reactions**.
+The lane now defers to the placeholder library where it already holds a pair. Measured
+over all 24,098 targets: **+1,122 reactions rescued, 0 lost; +1,467 balanced
+`(mnxr, element)` keys, 0 lost** — C 1,179, N 271, P 17. Of the 1,122, 1,090 are the
+deployed-bake loss, so the residual regression is **157**, and the projected reaction
+coverage is **up to 68,130 (81.3%)** against 67,008 — an upper bound, since the recovered
+reactions still have to survive the mappers. The guard is scoped to `lane_fragment`: the
+same rule applied at merge scope costs 30 banked reactions, because `lane_conserved`'s
+cytochrome and ferredoxin rows are better than a placeholder.
 
 ### Where the table comes from
 
@@ -198,19 +203,43 @@ seed document describes (shared accession *or* post-substitution balance), so a 
 against 42 more likely reflects a narrower name normalisation in the twin search than a
 stricter gate. It is worth one measurement, not a rewrite.
 
-## The two decisions this hands back
+## The decision this hands back
 
-1. **The body-cancel gate.** It costs the seed document's whole preparation union (919 of
-   934), B1's entire yield, and a large share of `rescue_declined`. It is defensible: a `*`
-   residue on one side only is an unknown counted as zero. Relaxing it to "a curated
-   element-neutral body may stand unpaired" would recover on the order of a thousand
-   reactions and would weaken every balance verdict that depends on it. Neither side of
-   that is obviously right.
-2. **The NADPH–hemoprotein reductase couple.** Four ids, no formula, no SMILES, blocking
-   1,179 reactions worklist-wide and 1,088 of the 1,247 this run loses against the deployed
-   table. A curated `*` body for them is admissible under A1's own argument — but note that
-   it lands squarely on decision 1, because a protein redox partner is exactly the case
-   where the body may stand unpaired.
+**The body-cancel gate.** It costs the seed document's whole preparation union (919 of
+934), B1's entire yield, and 2,468 of the 13,910 `rescue_declined`. It is defensible: a `*`
+residue on one side only is an unknown counted as zero. Relaxing it to "a curated
+element-neutral body may stand unpaired" would recover on the order of a thousand
+reactions and would weaken every balance verdict that depends on it. Neither side of that
+is obviously right.
+
+The reductase couple was listed here as a second decision. It was not one — it was the
+fragment-lane collision above, and it is fixed rather than traded.
+
+### Where the rest of `rescue_declined` sits
+
+The rescue funnel over the 24,098 reactions adjudicated `blocked_no_structure`:
+
+| triage bucket | n | banked | declined |
+|---|---:|---:|---:|
+| no admissible placeholder | 9,146 | 4 | 9,142 |
+| curated bodies do not cancel | 3,072 | 604 | 2,468 |
+| completable, then no element balances | 2,300 | 0 | 2,300 |
+| completable and rescued | 9,580 | 9,484 | 93 |
+
+`no admissible placeholder` is the largest and the least tractable, and its shape says why:
+by family of the generic that refuses, **other_structureless 7,335**, acyl_carrier 798,
+generic_rgroup 651, polymer 587, trna_holo 376, electron_carrier 21. The long tail is a
+long tail — the biggest single blockers are `Enzyme-ligand complex` (183 reactions), `UDP`
+`MNXM1102130` (144) and `L-lysyl-[protein]` (80), so there is no second lever the size of
+the one just pulled. The 21 electron-carrier reactions are the only ones where the
+machinery exists and a name spelling is all that stands in the way.
+
+The fragment lane supplied a body in **1,915 of the 2,300** that die at the balance gate,
+so after the reductase fix it remains the largest single source of what that gate refuses.
+One hypothesis was tested and rejected on the way: dropping the other 28 fragment sums that
+absorb an `oxidized` token gains **0** reactions and costs 11, and dropping the 704 that
+absorb a `protein` token costs **515 banked** and gains 0 — that token is load-bearing,
+because `[protein]` stands on both sides and its budget cancels.
 
 ## What this does not verify
 
