@@ -20,6 +20,7 @@ downstream of the AAM branch, for an ENCODING it does in its last four lines. Th
 is `direction_bake` now, and the science runs the moment the two thermodynamic members
 are in. See build_references/transforms/bake/direction_bake.py.
 
+    lookups        -> the five lookup:: tables          first, alone -- everything reads them
     aam            -> vocab, atom_pairs                 nine lanes, most of a day
     members        -> direction_member_eq, _dgbyg       concurrent with it
     direction      -> direction_annotation              concurrent with it, after members
@@ -156,6 +157,32 @@ IMG = "docker://quay.io/hallamlab/ecspr_bake:{}"
 # `outputs` and `imports` are the same namespace: every import is some other part's
 # output, at the identical path, checked on startup by assert_seams_are_outputs.
 BRANCHES = {
+    # L0. Not a seam like the others and it runs FIRST, alone: every AAM lane reads these
+    # five tables, so a rebuild that silently differs from what REFERENCES.md describes is
+    # discovered six lanes later. They are also the reason `aam` lists them under
+    # `inputs` -- staged, all five or none, so `mnx_lookups` stays out of that plan.
+    "lookups": dict(
+        images=[IMG.format("aam")],
+        lanes={"mnx_lookups"},
+        targets=["lookup::reactions", "lookup::metabolites", "lookup::atom_ranks",
+                 "lookup::xrefs", "lookup::synonyms"],
+        inputs=["fabfos_data::metanetx", "fabfos_data::chebi",
+                "fabfos_data::modelseed"],
+        imports={},
+        # compounds.dat is 53,252 curated names in the synonym index, and the refusal for
+        # a missing drop-in is raised HERE rather than three transforms later.
+        needs_metacyc=True,
+        # No tool runs: four TSVs are parsed into five parquets. The `check` verb is the
+        # evidence, and it is an exit code rather than a directory.
+        evidence={},
+        outputs={
+            "lookup::reactions":   "processed/lookups/reactions.parquet",
+            "lookup::metabolites": "processed/lookups/metabolites.parquet",
+            "lookup::atom_ranks":  "processed/lookups/atom_ranks.parquet",
+            "lookup::xrefs":       "processed/lookups/xrefs.parquet",
+            "lookup::synonyms":    "processed/lookups/synonyms.parquet",
+        },
+    ),
     "aam": dict(
         images=[IMG.format("aam")],
         lanes={
@@ -724,9 +751,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("branch", choices=sorted(BRANCHES),
-                    help="which part of the graph this run owns. aam and members are "
-                         "independent and go first; direction waits on members only; "
-                         "direction_bake waits on aam and direction")
+                    help="which part of the graph this run owns. lookups goes first and "
+                         "alone; aam and members are then independent; direction waits on "
+                         "members only; direction_bake waits on aam and direction")
     ap.add_argument("--run", action="store_true",
                     help="execute on the host. Without it this plans, checks and renders "
                          "the DAG, and touches no remote machine")
