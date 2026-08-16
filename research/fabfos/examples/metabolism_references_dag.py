@@ -8,18 +8,24 @@ IDS, this turns reactions into a NETWORK: which atoms carry through a reaction, 
 which way it runs.
 
     rxnmapper / localmapper / indigo    the three atom-mapping members
-    aam_ensemble        vocab + atom_pairs   who maps to whom, and the bake's identity
+    aam_stack / aam_redox / aam_reference   the layers, the correction, and the bake
     equilibrator / dgbyg          the two thermodynamic members
     direction_ensemble  direction_ratios     which way, coded against that vocabulary
 
 ONE STEP PER TOOL, which is a change from the two-transform generation this gate was
 written against. Each member that runs a MODEL is its own node with its own image, its
 own resources and its own product, so a member that did not run is a hole the planner
-refuses to schedule around rather than a column that came out empty. What is left in the
-two `*_ensemble` steps is the curated member -- each reads its own .dat from the licensed
-drop-in -- the arithmetic over the model members, and the encoding.
+refuses to schedule around rather than a column that came out empty. What is left is the
+curated member -- each assembly reads its own .dat from the licensed drop-in -- the
+arithmetic over the model members, the correction, and the encoding.
 
-THE TRIO IS BUILT 2 + 1, and the edge that makes that safe is `aam_ensemble ->
+THE AAM ASSEMBLY IS THREE STEPS, and the middle one is why. `aam_ensemble` fused, stacked,
+closed the ledger and minted the bake in one protocol, so no artifact existed between "the
+layers agree" and "this is the reference" -- and a correction has to run over exactly that.
+`interm::aam_stack` is that seam; the redox repair reads it and `aam_reference` mints from
+what the repair produced.
+
+THE TRIO IS BUILT 2 + 1, and the edge that makes that safe is `aam_reference ->
 direction_ensemble`. All three files must carry a byte-identical bake-identity block --
 reading atom_pairs against another bake's vocab decodes every node to the wrong
 metabolite SILENTLY -- which is why a third step used to exist to write all three at
@@ -137,7 +143,11 @@ EXPECTED = {
     # (reaction, element) is not offered a reduction whose result the stack would discard.
     "aam_algebra", "aam_forecast", "aam_partial", "aam_universe",
     "rxnmapper", "localmapper", "indigo",
-    "aam_ensemble",
+    # The assembly, in three steps where there used to be one. `aam_ensemble` fused,
+    # stacked, closed the ledger and minted the bake in a single protocol, so there was no
+    # artifact between "the layers agree" and "this is the reference" -- and the redox
+    # repair has to run over exactly that. The seam is the point of the split.
+    "aam_stack", "aam_redox", "aam_reference",
     "dgbyg", "direction_ensemble",
 }
 

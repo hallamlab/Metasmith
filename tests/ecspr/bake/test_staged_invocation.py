@@ -35,6 +35,7 @@ STAGED = BUILDLIB / "ecspr"
 # nothing a third did not.
 INVOCATIONS = [
     "ecspr.bake.aam.worklist",
+    "ecspr.bake.aam.redox",
     "ecspr.bake.direction.drive",
     "ecspr.bake.atom_pairs",
     "ecspr.bake.evidence",
@@ -74,7 +75,7 @@ def test_a_transform_shaped_invocation_resolves(staged, module):
     writes it -- from a cold interpreter with the staging directory as the ONLY
     path entry, so a module that silently resolved from the source tree instead
     would not pass here."""
-    if module == "ecspr.bake.atom_pairs":
+    if module in ("ecspr.bake.atom_pairs", "ecspr.bake.aam.redox"):
         pytest.importorskip("rdkit", reason="the extractor imports it at module scope")
     # DONTWRITEBYTECODE because the test above asserts this tree is clean, and a
     # test that dirties the artifact it checks is a test that fails on its

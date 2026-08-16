@@ -7,10 +7,6 @@ manifest:
     instance_id: 1e2095c583077f59381fff489165d97281679e800705dee1f2ef4b56d7eb6645c6f7
     origin: leaf
     type: transforms::transform
-  aam_ensemble.py:
-    instance_id: 1e20fb76fcb21948088ffd0dfc69a50aa16701df1746cc1b1955bdd7c88fbb433319
-    origin: leaf
-    type: transforms::transform
   aam_forecast.py:
     instance_id: 1e201ac7d2dae9be8f8c371e1c305dbd9be47eb1c519d83f0c19cc3efcf549637f89
     origin: leaf
@@ -20,15 +16,27 @@ manifest:
     origin: leaf
     type: transforms::transform
   aam_partial.py:
-    instance_id: 1e208081d4ae77dada161e80c356746713ca2bae028148adfa18f12b7f18b8962a8b
+    instance_id: 1e20aece2b9f39f21c1721027c474c6c55e3c69d7d8238626292325948e4da60d620
     origin: leaf
     type: transforms::transform
   aam_recount.py:
     instance_id: 1e2042a7f545c14bab58013342330085d90a28f30638f5b7c91ee343550f9ae8c96a
     origin: leaf
     type: transforms::transform
+  aam_redox.py:
+    instance_id: 1e20be21b5e8e1c1ae4e78e36444becc8cca8ddbd3234affea2025387b57a7fedea5
+    origin: leaf
+    type: transforms::transform
+  aam_reference.py:
+    instance_id: 1e2073c278673cd14013ed3deb74da5534b31d900bea6f442cb7a2bf8680adfc5e5d
+    origin: leaf
+    type: transforms::transform
   aam_rescue.py:
     instance_id: 1e20136a0030b65b324032e7a35d66aa9ed5aa39f072ded9d2c8a13babe48a181022
+    origin: leaf
+    type: transforms::transform
+  aam_stack.py:
+    instance_id: 1e2059a19af02518fdecd5c4d7fdd251ca3bf95204059794b754faa3d50feafa230e
     origin: leaf
     type: transforms::transform
   aam_universe.py:

@@ -52,6 +52,13 @@ image       = model.AddRequirement(lib.GetType("env::rdkit.env"))
 # on a PREDICTION rather than on six finished member products, so the planner can schedule
 # it before a single mapper starts.
 forecast    = model.AddRequirement(lib.GetType("interm::aam_forecast"))
+# AND THE RESCUE, which is what lets this lane see a rescue-completed reaction at all. It
+# reduces from the RAW equation and refuses a reduction holding a structureless
+# participant, so without the crosswalk every reaction the rescue completed is invisible
+# here. Its placeholder list rides along for the opposite reason: a placeholder's atoms are
+# invented, and a formula derived from one would let the balance test certify a balance out
+# of them. No new wait -- the forecast already requires the rescue.
+rescue      = model.AddRequirement(lib.GetType("interm::aam_rescue"))
 reactions   = model.AddRequirement(lib.GetType("lookup::reactions"))
 metabolites = model.AddRequirement(lib.GetType("lookup::metabolites"))
 atom_ranks  = model.AddRequirement(lib.GetType("lookup::atom_ranks"))
@@ -64,6 +71,7 @@ ev          = model.AddProduct(lib.GetType("evidence::tool_output"))
 
 def protocol(context: ExecutionContext):
     ifc  = context.Input(forecast)
+    irs  = context.Input(rescue)
     irx  = context.Input(reactions)
     imt  = context.Input(metabolites)
     iar  = context.Input(atom_ranks)
@@ -90,6 +98,7 @@ def protocol(context: ExecutionContext):
 
         {py} -m ecspr.bake.aam.partial build --lookups _lookups \
             --forecast {ifc.container} \
+            --rescue {irs.container} \
             --out partial/partial_universe.parquet \
             --out-forced partial/partial_forced.parquet \
             --out-summary partial/summary.tsv

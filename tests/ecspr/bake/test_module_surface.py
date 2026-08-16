@@ -33,7 +33,7 @@ MODULES = [
     "ecspr.bake.aam.indigo_member", "ecspr.bake.aam.layers",
     "ecspr.bake.aam.metacyc_member", "ecspr.bake.aam.neural_members",
     "ecspr.bake.aam.partial", "ecspr.bake.aam.recount",
-    "ecspr.bake.aam.shard", "ecspr.bake.aam.twins",
+    "ecspr.bake.aam.redox", "ecspr.bake.aam.shard", "ecspr.bake.aam.twins",
     "ecspr.bake.aam.universe", "ecspr.bake.aam.worklist",
     "ecspr.bake.direction",
     "ecspr.bake.direction.calibrate", "ecspr.bake.direction.canon",
@@ -58,6 +58,7 @@ NEEDS_A_TOOL = {
     "ecspr.bake.aam.universe": "rdkit",         # via .partial -> ..atom_pairs
     "ecspr.bake.aam.partial": "rdkit",          # via ..atom_pairs
     "ecspr.bake.aam.recount": "rdkit",          # via ..atom_pairs
+    "ecspr.bake.aam.redox": "rdkit",            # via ..atom_pairs
     "ecspr.bake.aam.twins": "rdkit",            # via .curation -> ..atom_pairs
 }
 
@@ -70,8 +71,13 @@ CLI = {
     "ecspr.bake.aam.worklist": {
         "build": {"--reactions", "--metabolites", "--atom-limit", "--char-limit",
                   "--collapsed-atom-limit", "--out", "--out-summary"},
-        "close": {"--worklist", "--pairs", "--rescued", "--partial",
-                  "--out", "--out-summary"},
+        # `--forecast` REPLACES `--partial`: what was OFFERED to the partial lane is the
+        # forecast's offer, and the lane's own universe holds only what it managed to
+        # build -- so a declined reduction read as `mapped_nothing`. `--redox-emptied` is
+        # the other half of the same discipline: a reaction the repair took must not read
+        # as one no mapper answered.
+        "close": {"--worklist", "--pairs", "--rescued", "--forecast",
+                  "--redox-emptied", "--out", "--out-summary"},
     },
     "ecspr.bake.aam.curation": {
         "propose": {"--lookups", "--element-counts", "--blockers", "--nametwin",
@@ -100,7 +106,9 @@ CLI = {
         # whole of T5 at this surface: the lane's targets used to be computed by
         # subtracting finished member products, which is what forced it downstream of
         # every mapper.
-        "build": {"--lookups", "--forecast",
+        # `--rescue` is what lets the lane reach a rescue-completed reaction at all: it
+        # reduces from the raw equation and refuses a structureless participant.
+        "build": {"--lookups", "--forecast", "--rescue",
                   "--atom-limit", "--char-limit",
                   "--out", "--out-forced", "--out-summary"},
     },
@@ -110,6 +118,13 @@ CLI = {
     },
     "ecspr.bake.aam.universe": {
         "build": {"--worklist", "--rescued", "--partial", "--out", "--out-summary"},
+    },
+    "ecspr.bake.aam.redox": {
+        # Four outputs because four things have to be readable side by side: the corrected
+        # table, what was refused under the named predicate, which ids were treated as
+        # which cofactor, and the reactions the repair left holding nothing.
+        "repair": {"--pairs", "--lookups", "--out", "--out-refusals",
+                   "--out-cofactors", "--out-emptied", "--out-summary"},
     },
     "ecspr.bake.aam.recount": {
         "build": {"--metabolites", "--out", "--out-summary"},
