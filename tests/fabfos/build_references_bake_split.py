@@ -728,6 +728,47 @@ def agent_container() -> str:
     return f"docker://quay.io/hallamlab/metasmith:{VERSION}-{compute_build_hash()}"
 
 
+def recover_evidence(run_dir: str, host: str, missing: list[str], staging: Path) -> dict:
+    """Pull an evidence directory out of the task work dir when publishing lost it.
+
+    TWO LANES WITH THE SAME REQUIREMENT SET GET THE SAME EVIDENCE ARTIFACT ID, and the
+    engine publishes by artifact id, so the second one to finish lands on a path the first
+    already holds and is silently dropped. `rxnmapper` and `indigo` are exactly that pair
+    -- same universe, same cache, same image, different transform -- and in the `map` run
+    both wrote `<run>/results/2_evidence-tool_output/<one id>/`, of which only `indigo/`
+    survived. Every other part is safe by accident: its lanes read different inputs.
+
+    Nothing is lost when it happens. The step's own evidence root is intact in its task
+    work directory, which is where the transform's success check read it -- so the run was
+    green and correct and only the copy to `results/` collapsed. This reaches past the
+    collision to the original rather than re-running a member to re-derive it.
+    """
+    if not (missing and host and run_dir):
+        return {}
+    names = " -o ".join(f"-name {t}" for t in missing if t.replace("_", "").isalnum())
+    if not names:
+        return {}
+    listing = subprocess.run(
+        ["ssh", host, f"find {run_dir}/nxf_work -mindepth 4 -maxdepth 4 -type d "
+                      f"\\( {names} \\) 2>/dev/null"],
+        capture_output=True, text=True)
+    hits: dict[str, str] = {}
+    for line in listing.stdout.splitlines():
+        line = line.strip()
+        if line:
+            hits.setdefault(Path(line).name, line)
+    out: dict[str, Path] = {}
+    for tool, remote in sorted(hits.items()):
+        dest = staging / "_recovered" / tool
+        dest.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["rsync", "-aL", "--partial", f"{host}:{remote}/", f"{dest}/"],
+                       check=True)
+        print(f"  RECOVERED {tool:<14} from nxf_work -- publishing dropped it on an "
+              f"artifact-id collision")
+        out[tool] = dest
+    return out
+
+
 def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
     """Bring this part home, per lane, into data/temp -- where the other parts also land.
 
@@ -797,6 +838,11 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
             elif artifacts:
                 print(f"  AMBIGUOUS: {dtype} has {len(artifacts)} published artifacts "
                       f"under {d.name}; refusing to choose", file=sys.stderr)
+
+    for tool, tool_dir in recover_evidence(
+            str(Path(src_path).parent), host,
+            sorted(set(spec["evidence"]) - set(found)), staging).items():
+        found.setdefault(tool, tool_dir)
 
     for tool, tool_dir in sorted(found.items()):
         dest = TEMP / tool
