@@ -32,7 +32,8 @@ MODULES = [
     "ecspr.bake.aam.indigo_member", "ecspr.bake.aam.layers",
     "ecspr.bake.aam.metacyc_member", "ecspr.bake.aam.neural_members",
     "ecspr.bake.aam.partial", "ecspr.bake.aam.recount",
-    "ecspr.bake.aam.shard", "ecspr.bake.aam.worklist",
+    "ecspr.bake.aam.shard", "ecspr.bake.aam.twins",
+    "ecspr.bake.aam.worklist",
     "ecspr.bake.direction",
     "ecspr.bake.direction.calibrate", "ecspr.bake.direction.canon",
     "ecspr.bake.direction.combine", "ecspr.bake.direction.curated",
@@ -53,6 +54,7 @@ NEEDS_A_TOOL = {
     "ecspr.bake.aam.curation": "rdkit",         # via ..atom_pairs
     "ecspr.bake.aam.partial": "rdkit",          # via ..atom_pairs
     "ecspr.bake.aam.recount": "rdkit",          # via ..atom_pairs
+    "ecspr.bake.aam.twins": "rdkit",            # via .curation -> ..atom_pairs
 }
 
 # {module: {verb: {flags}}} -- "" is the verb-less case (one flat parser).
@@ -68,11 +70,20 @@ CLI = {
                   "--out", "--out-summary"},
     },
     "ecspr.bake.aam.curation": {
-        "propose": {"--lookups", "--worklist", "--chebi", "--modelseed",
+        "propose": {"--lookups", "--element-counts", "--blockers", "--nametwin",
+                    "--worklist", "--chebi", "--modelseed",
                     "--override", "--drop-lane", "--out"},
-        "complete": {"--lookups", "--worklist", "--crosswalk", "--char-limit",
-                     "--atom-limit", "--collapsed-atom-limit",
+        "complete": {"--lookups", "--element-counts", "--worklist", "--crosswalk",
+                     "--char-limit", "--atom-limit", "--collapsed-atom-limit",
                      "--out", "--out-balance", "--out-placeholders"},
+    },
+    "ecspr.bake.aam.twins": {
+        # Two verbs over one alias scan. `--no-synonyms` is on `blockers` alone: the
+        # nametwin claim is about MetaNetX's OWN filing, so there is no wider
+        # vocabulary for it to decline.
+        "blockers": {"--lookups", "--element-counts", "--worklist", "--out",
+                     "--no-synonyms"},
+        "nametwin": {"--lookups", "--element-counts", "--worklist", "--out"},
     },
     "ecspr.bake.aam.partial": {
         "build": {"--lookups", "--worklist", "--rescued", "--covered",
