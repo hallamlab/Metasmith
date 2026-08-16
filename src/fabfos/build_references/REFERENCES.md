@@ -286,6 +286,16 @@ authored after its mappers had run. And **there is one submission string per sub
 built once and read by all three, so the disagreement the ensemble measures is between
 mappers rather than partly between SMILES builders.
 
+**What the rescue refuses, and why it is the largest non-banked outcome.** A curated `*`
+body counts as zero atoms for every element, which is only safe when the same body stands
+on both sides — so a generic acceptor written on ONE side, with no conjugate partner in the
+equation, is refused before the balance test rather than balanced against a molecule that
+does not exist. That single rule is most of `rescue_declined`, and it is also why the
+conservation-algebra lane banks nothing: its targets are precisely the reactions holding an
+unresolved generic. Relaxing it would recover on the order of a thousand reactions and
+weaken every balance verdict beneath it; `research/fabfos/benchmarks/aam_r6_verification.md`
+measures both sides of that trade.
+
 **The stack is corrected before it becomes a reference.** `aam_redox` refuses every C/N/P
 correspondence running between a NAD(P)/FAD/FMN couple and a substrate: a hydride transfer
 leaves both carbon skeletons intact, and an MCS mapper cannot see that because hydrogen is
