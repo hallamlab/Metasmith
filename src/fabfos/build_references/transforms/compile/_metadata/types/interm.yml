@@ -27,6 +27,21 @@ types:
       and is refused by it without being named anywhere. `summary.tsv` also carries
       the overlap with `curation.lane_acceptor`, because that lane already reaches
       six spellings of the same claim and what this one ADDS is the number that matters.'
+  aam_forecast:
+    properties:
+      _:
+      - ONE ROW PER (reaction, element) carrying a predicted outcome from a closed
+        set and the NAMED MECHANISM behind it -- `char_cap`, `atom_cap`, `context_window`,
+        `prior_hang`, `prior_timeout`, `prior_empty`. Three of the six are exact (two
+        are our own constants and the third is a property of the string), and the
+        other three are read from the previous bake's records rather than predicted,
+        because which reaction Indigo hangs on is not a function of the string and
+        does not need to be. IT MAY ONLY EVER ADD SUBMISSIONS. Over-offering costs
+        mapper time and nothing else, since the layer stack is additive and its gates
+        refuse rather than warn -- so a reduction built for a reaction that maps fine
+        is never claimed. That asymmetry is what lets the partial lane move UPSTREAM
+        of the mappers, which is what collapses three member passes into one.
+      ext: parquet
   aam_member_indigo:
     properties:
       _:
@@ -36,15 +51,6 @@ types:
         timeouts at a longer budget. A hang writes no row; the sidecar is the only
         thing that says it happened.
       ext: parquet
-  aam_member_indigo_partial:
-    properties:
-    - Indigo over the element-reduced submissions; pairs keyed on (reaction, element)
-  aam_member_indigo_rescue:
-    properties:
-      _:
-      - Indigo over the rescued universe -- the deployed chain's only rescue mapper,
-        here one vote of three
-      ext: parquet
   aam_member_localmapper:
     properties:
       _:
@@ -53,16 +59,6 @@ types:
         reason this is its own step: a method change anywhere else must not re-pay
         it.'
       ext: parquet
-  aam_member_localmapper_partial:
-    properties:
-    - LocalMapper over the element-reduced submissions; pairs keyed on (reaction,
-      element)
-  aam_member_localmapper_rescue:
-    properties:
-      _:
-      - LocalMapper over what pass 2's other two members left unmapped or unbalanced
-        -- a gap set, like its pass-1 lane
-      ext: parquet
   aam_member_rxnmapper:
     properties:
       _:
@@ -70,15 +66,6 @@ types:
         correct for every L2 member and not for L1: WE build these reaction SMILES
         from the equation, one fragment per participant, so a template-count mismatch
         really does mean a molecule went missing and the mapper re-routed its atoms.'
-      ext: parquet
-  aam_member_rxnmapper_partial:
-    properties:
-    - RXNMapper over the element-reduced submissions; pairs keyed on (reaction, element)
-  aam_member_rxnmapper_rescue:
-    properties:
-      _:
-      - RXNMapper over the rescued universe -- the completed reactions pass 1 could
-        not build
       ext: parquet
   aam_nametwin:
     properties:
@@ -105,7 +92,9 @@ types:
       rather than re-parse the equation, or the strict guard calls every submission
       `stripped`. `partial_forced.parquet` holds the pairs conservation settles without
       any mapper, already in the extractor''s shape. `summary.tsv` records what the
-      reduction could NOT reach, which is the half a coverage claim is made of.'
+      reduction could NOT reach, which is the half a coverage claim is made of. Its
+      targets come from `interm::aam_forecast` now rather than from a finished run,
+      which is the single change that moves this lane upstream of the mappers.'
   aam_rescue:
     properties:
     - 'A DIRECTORY, because the rescue is four artifacts that only mean anything together:
@@ -116,6 +105,20 @@ types:
       (the completed reaction SMILES, in the shape a mapper lane reads). Splitting
       them into four types would let a lane be handed one build''s crosswalk and another''s
       placeholders, and the extractor would suppress the wrong atoms without complaint.'
+  aam_universe:
+    properties:
+      _:
+      - 'THE ONE SUBMISSION TABLE, and the only thing a mapper member consumes. Three
+        classes under one key: `whole` (the adjudicated reaction), `completed` (what
+        the rescue made mappable at all) and `reduced` (one element of a reaction
+        the forecast expects silence for). The keys cannot collide -- the first two
+        are disjoint on mnxr because the rescue completes exactly what the worklist
+        refused, and the third keys on `MNXR#X`, which is not a valid MNXR -- and
+        uniqueness is asserted rather than trusted, because a member reads this into
+        a dict and a duplicate silently drops one of two different molecules submitted
+        under one name. It also makes "the three members saw the same list" a fact
+        about the GRAPH rather than a convention three filters happen to honour.'
+      ext: parquet
   aam_worklist:
     properties:
       _:

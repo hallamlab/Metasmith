@@ -5,11 +5,11 @@ pairs and they fail for different reasons:
 
   * a small residual the size cut still refuses -- genuinely large distinct chemistry,
     78 reactions of the 57,593 buildable;
-  * a much larger set the ledger already names, where a member returned NOTHING. That
-    is not a chemistry verdict at all: RXNMapper's transformer accepts at most 512
-    tokens and these are the long reactions -- median SMILES length 983 against the
-    universe's 268. A context-window limit, eating a BIASED sample: the reactions with
-    the most and largest cofactors.
+  * a much larger set where a member returns NOTHING. That is not a chemistry verdict at
+    all: RXNMapper's transformer accepts at most 512 tokens and these are the long
+    reactions -- median SMILES length 1,040 against the successful population's 251. A
+    context-window limit, eating a BIASED sample: the reactions with the most and largest
+    cofactors.
 
 That bias is what makes the fix sound rather than a loosening. FOR A SINGLE ELEMENT
 most of a long reaction is irrelevant -- `3 NADPH + 3 NADP+` blows the limit while
@@ -19,19 +19,43 @@ map the much smaller reaction that results. Only X's pairs are read out. See
 `atom_pairs.reduce_for_element` for why dropping the X-free participants cannot
 re-route an X atom the way a strip does.
 
-THE EXACT ARM GOES FIRST. `atom_pairs.forced_pairs` emits the pairing conservation
+THE TARGETS COME FROM THE FORECAST NOW, AND THIS DOCSTRING USED TO ARGUE THE OPPOSITE.
+It said there was no way to know which reactions would end with nothing without having
+run the members, and that a lane guessing from reaction length would be aiming at a proxy
+for the thing it can simply be told. The first half is still true and the second half was
+the wrong conclusion, for a reason that is about the layer stack rather than about
+prediction:
+
+  * BEING TOLD COST THREE PASSES. The members had to run over the worklist, then over the
+    rescue's completions, then a third time over these reductions, because this lane's
+    target set was defined by subtracting finished products. Nine mapper lanes, three
+    sequential waits, for a lane whose submissions are small.
+  * BEING WRONG COSTS NOTHING IN ONE DIRECTION. Layers are additive and ordered and their
+    gates refuse rather than warn, so a reduced submission built for a reaction that maps
+    fine is never claimed by anything. Over-offer and you pay mapper time; under-offer and
+    you lose exactly the coverage this lane exists to add.
+  * AND THE PREDICTION IS NOT A PROXY. `aam_forecast` fires on NAMED MECHANISMS -- our own
+    two size caps, RXNMapper's context window as a property of the string, and the prior
+    run's own records of what hung, timed out and came back empty. Its offer rule catches
+    97.2% of the previous run's recorded RXNMapper silences. A proxy for length would have
+    been the wrong shape; a mechanism is not.
+
+So the trade taken here is: one pass, an over-offered target set, and a recall number
+that is measured and reported rather than assumed. `--forecast` is the whole change.
+
+THE EXACT ARM STILL GOES FIRST. `atom_pairs.forced_pairs` emits the pairing conservation
 leaves no choice about -- one substrate and one product carrying X in equal counts is a
 unique bijection at full weight; n > 1 is the doubly-stochastic completion. That needs
 no mapper at all, so it is tried before a submission is built, and what it produces is
 not partial in any sense that matters: nothing was chosen and nothing was dropped.
 It is still LABELLED partial, because it reaches only one element of the reaction.
 
-WHY A LANE AND NOT A FLAG. This follows the shape `aam_rescue` already established: a
-transform produces a universe parquet, the same three members map it, and the result is
-laid down as a layer. The partial layer is L4, laid down LAST, so it can only claim
-(reaction, element) combinations no layer above it claimed -- and `aam_layers`'
-additive gates REFUSE rather than warn, which is what makes "a partial map never
-overwrites a real one" a fact about machinery rather than a promise in a docstring.
+WHY A LANE AND NOT A FLAG. A transform produces a submission table, `aam_universe`
+concatenates it with the other two classes, the three members map the one table, and the
+result is laid down as its own layer -- LAST, so it can only claim (reaction, element)
+combinations no layer above it claimed. `aam_layers`' additive gates REFUSE rather than
+warn, which is what makes "a partial map never overwrites a real one" a fact about
+machinery rather than a promise in a docstring.
 
 AND IT IS LABELLED EVERYWHERE IT IS READ. That is the half the goal names explicitly: a
 partially-mapped reaction must be distinguishable from a banked one and from a dropped
@@ -174,21 +198,27 @@ def _still_balances(sub_mnxms: list, prod_mnxms: list, formulas: dict, X: str) -
     return ns == np_
 
 
-def build(targets: list, equations: dict, formulas: dict, smiles_of: dict,
+def build(targets: dict, equations: dict, formulas: dict, smiles_of: dict,
           ranks_of: dict, char_limit: int, atom_limit: int):
-    """`(universe_rows, forced_rows, tally)` for the reactions in `targets`.
+    """`(universe_rows, forced_rows, tally)` for the (reaction, element) pairs offered.
 
-    Per reaction, per element, in this order: the forced arm if conservation settles it,
-    otherwise a reduced submission if the element balances across the kept participants,
-    otherwise nothing -- and the tally says which, so the lane's yield is a number rather
-    than a hope.
+    `targets` is `{mnxr -> [elements]}` from the forecast. Per reaction, per OFFERED
+    element, in this order: the forced arm if conservation settles it, otherwise a reduced
+    submission if the element balances across the kept participants, otherwise nothing --
+    and the tally says which, so the lane's yield is a number rather than a hope.
+
+    THE FORCED ARM IS NOT RESTRICTED TO THE OFFERED ELEMENTS. It is exact and it is free
+    once the equation is parsed, so every element it settles is emitted whether or not the
+    forecast asked about it. Restricting it would make an exact pairing depend on a
+    prediction, which is the one direction this lane must not be wrong in.
 
     A reduction that is still over a size cut gets the same second reading pass 1 gives a
     whole reaction: written once per distinct participant, and taken only if X still
     balances that way. See `_still_balances` for why that guard is not optional.
     """
     uni, forced, tally = [], [], Counter()
-    for mnxr in targets:
+    for mnxr in sorted(targets):
+        offered = targets[mnxr]
         eq = equations.get(mnxr)
         if not isinstance(eq, str):
             tally["no equation"] += 1
@@ -210,8 +240,9 @@ def build(targets: list, equations: dict, formulas: dict, smiles_of: dict,
         settled = {X for (X, _s, _p) in fp}
         tally["forced (reaction, element)"] += len(settled)
 
-        for X in AP.ELEMENTS:
+        for X in offered:
             if X in settled:
+                tally[f"settled by the forced arm: {X}"] += 1
                 continue
             red = AP.reduce_for_element(subs, prods, formulas, X)
             if red is None:
@@ -289,47 +320,34 @@ FORCED_SCHEMA = pa.schema([
 ])
 
 
-def targets_from(worklist: Path, rescued: Path | None, covered: list) -> list:
-    """The reactions this lane is for: refused by size, or reached by nobody.
+def targets_from(forecast: Path) -> dict:
+    """`{mnxr -> [elements]}` -- exactly what `aam_forecast` offered, and nothing else.
 
-    TWO POPULATIONS, and neither is derivable from a reaction's text.
+    THE OFFER IS READ, NOT RE-DERIVED. Every rule about which reactions are at risk lives
+    in one module with its mechanisms named and its recall measured; a second copy of the
+    length threshold here is how the two would drift into predicting different things
+    while both looking reasonable.
 
-    The first is the worklist's own size refusals -- `oversize` and `too_long` after the
-    collapse has had its second reading, 78 reactions of the 57,593 buildable.
-
-    The second is every reaction that was ADMITTED and still ended with nothing. That is
-    a fact about a RUN, not about a reaction: it covers a member returning an empty
-    mapping (RXNMapper's 512-token limit, the population this lane is really aimed at),
-    a mapping the extractor refused as `stripped`, and one that named no pair. All three
-    end in the same place and want the same treatment, so the lane asks the question the
-    products can answer -- "did any member produce a pair for this reaction" -- rather
-    than reading three status codes and having to keep the list of them current.
-
-    `covered` is every member's pairs parquet, from both passes. An ABSENT one is
-    refused rather than treated as covering nothing: the gap is defined by subtraction,
-    so a missing member would silently make the gap the whole universe.
+    An EMPTY forecast is a legitimate answer -- it means nothing is expected to be silent
+    -- but an ABSENT one is not, because the target set is defined by this table and a
+    missing file would make it empty for the wrong reason.
     """
-    wl = pd.read_parquet(worklist, columns=["mnxr", "verdict"])
-    refused = list(wl.loc[wl["verdict"].isin(("oversize", "too_long")), "mnxr"])
-
-    admitted = set(wl.loc[wl["verdict"] == "mappable", "mnxr"].astype(str))
-    if rescued is not None:
-        admitted |= set(pd.read_parquet(rescued, columns=["mnxr"])["mnxr"].astype(str))
-
-    done = set()
-    for c in covered:
-        c = Path(c)
-        if not c.exists() or c.stat().st_size == 0:
-            raise SystemExit(
-                f"[partial] {c} is missing or empty. This lane's target set is what the "
-                f"members did NOT reach, so an absent member would make the target set "
-                f"the whole universe -- a pass 3 over everything, at full mapper cost, "
-                f"reported as a gap.")
-        done |= set(pd.read_parquet(c, columns=["mnxr"])["mnxr"].astype(str))
-
-    unreached = sorted(admitted - done)
-    seen = set(refused)
-    return refused + [m for m in unreached if m not in seen]
+    f = Path(forecast)
+    if not f.exists():
+        raise SystemExit(
+            f"[partial] {f} is not here. This lane's targets are the forecast's offers; "
+            f"without it the lane would produce an empty universe and report it as "
+            f"'nothing needed a reduction'.")
+    d = pd.read_parquet(f, columns=["base_mnxr", "element", "offer"])
+    d = d[d["offer"].astype(bool)]
+    out = {}
+    for mnxr, X in zip(d["base_mnxr"].astype(str), d["element"].astype(str)):
+        out.setdefault(mnxr, [])
+        if X not in out[mnxr]:
+            out[mnxr].append(X)
+    # Element order fixed to the vocabulary's rather than to the table's, so the lane's
+    # output is a function of its input and not of a parquet's row order.
+    return {m: [X for X in AP.ELEMENTS if X in els] for m, els in out.items()}
 
 
 def cmd_build(args):
@@ -337,8 +355,10 @@ def cmd_build(args):
                          columns=["mnxr", "equation"])
     equations = dict(zip(rx["mnxr"], rx["equation"]))
     formulas, smiles_of, ranks_of = load_lookups(args.lookups)
-    targets = targets_from(args.worklist, args.rescued, args.covered or [])
-    print(f"[partial] {len(targets):,} target reactions "
+    targets = targets_from(args.forecast)
+    n_offers = sum(len(v) for v in targets.values())
+    print(f"[partial] {len(targets):,} target reactions, {n_offers:,} offered "
+          f"(reaction, element) pairs "
           f"({len(equations):,} equations, {len(smiles_of):,} structures)", flush=True)
 
     uni, forced, tally = build(targets, equations, formulas, smiles_of, ranks_of,
@@ -363,6 +383,7 @@ def cmd_build(args):
     n_fre = len(fdf.groupby(["mnxr", "element"])) if len(fdf) else 0
     lines.append(f"product\tforced_reaction_elements\t{n_fre}")
     lines.append(f"product\ttarget_reactions\t{len(targets)}")
+    lines.append(f"product\toffered_pairs\t{n_offers}")
     lines.append(f"limit\tatom_limit\t{args.atom_limit}")
     lines.append(f"limit\tchar_limit\t{args.char_limit}")
     Path(args.out_summary).write_text("\n".join(lines) + "\n")
@@ -384,15 +405,10 @@ def parse_args(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("build"); p.set_defaults(fn=cmd_build)
     p.add_argument("--lookups", required=True, type=Path)
-    p.add_argument("--worklist", required=True, type=Path,
-                   help="the adjudicated universe; its refused verdicts are one target set")
-    p.add_argument("--rescued", type=Path, default=None,
-                   help="the rescued universe; its reactions were admitted too, so one "
-                        "that still banked nothing belongs in the target set")
-    p.add_argument("--covered", nargs="*", type=Path,
-                   help="every member's pairs parquet, from both passes. The target set "
-                        "is defined by SUBTRACTION from these, so a missing one is "
-                        "refused rather than treated as covering nothing.")
+    p.add_argument("--forecast", required=True, type=Path,
+                   help="interm::aam_forecast -- the (reaction, element) pairs a member "
+                        "is expected to return nothing for, with the mechanism named. "
+                        "This lane's whole target set, read rather than re-derived")
     p.add_argument("--atom-limit", type=int, default=W.ATOM_LIMIT)
     p.add_argument("--char-limit", type=int, default=W.SMILES_LEN_LIMIT)
     p.add_argument("--out", required=True, help="the partial universe, parquet")

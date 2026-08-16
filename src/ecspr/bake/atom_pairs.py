@@ -770,32 +770,48 @@ def cmd_extract(args):
     # the full equation, and the strict guard would call every one `stripped`. Reading
     # the lists the reduction actually made is also what keeps the reduction logic in
     # one file: this side never has to know how a submission was chosen.
+    # PER ROW, NOT PER RUN, and that is the change one universe forced. The submission
+    # table now carries all three classes at once, so the same extraction must give a
+    # whole reaction its equation-derived template and a reduced one the shorter list the
+    # reduction actually made. `element` is the discriminator: it is null for the two
+    # whole classes and names the one element a reduced submission is read for.
     partial_of = {}
-    if args.partial:
-        pu = pd.read_parquet(args.partial)
+    # WHICH CLASS OF SUBMISSION EACH PAIR ROW ANSWERS, carried out of here on the row
+    # itself. With three classes in one member's table it is not recoverable afterwards:
+    # a reaction can be submitted whole AND as a carbon reduction, and both produce
+    # (mnxr, C) rows. The layer stack partitions on this, and a partial map claiming a
+    # layer a full map should have held is the one thing the stack exists to prevent.
+    class_of = {}
+    if args.universe:
+        pu = pd.read_parquet(args.universe)
+        has_class = "submission_class" in pu.columns
         for r in pu.itertuples(index=False):
-            partial_of[r.mnxr] = (r.base_mnxr, r.element, list(r.sub_mnxms),
+            class_of[r.mnxr] = str(r.submission_class) if has_class else ""
+            el = getattr(r, "element", None)
+            if el is None or pd.isna(el):
+                continue
+            partial_of[r.mnxr] = (str(r.base_mnxr), str(el), list(r.sub_mnxms),
                                   list(r.prod_mnxms))
-        print(f"[atom-pairs] partial mode: {len(partial_of):,} element-reduced "
-              f"submissions, each read for ONE element", flush=True)
+        print(f"[atom-pairs] universe: {len(pu):,} submissions, of which "
+              f"{len(partial_of):,} are element reductions read for ONE element",
+              flush=True)
 
     want = set()
     parsed = {}
-    if partial_of:
-        for key, (_base, _el, ks, kp) in partial_of.items():
-            parsed[key] = (ks, kp)
-            want |= set(ks) | set(kp)
-        print(f"[atom-pairs] {len(parsed):,} reduced submissions; "
-              f"{len(want):,} metabolites", flush=True)
-    else:
-        eqs = load_equations(Path(args.reac_prop), mnxrs)
+    for key, (_base, _el, ks, kp) in partial_of.items():
+        parsed[key] = (ks, kp)
+        want |= set(ks) | set(kp)
+    rest = mnxrs - set(partial_of)
+    if rest:
+        eqs = load_equations(Path(args.reac_prop), rest)
         for r, eq in eqs.items():
             pe = parse_equation(eq)
             if pe:
                 parsed[r] = pe
                 want |= set(pe[0]) | set(pe[1])
-        print(f"[atom-pairs] {len(parsed):,} equations parsed; {len(want):,} metabolites",
-              flush=True)
+    print(f"[atom-pairs] {len(parsed):,} templates "
+          f"({len(partial_of):,} reduced, {len(parsed) - len(partial_of):,} from the "
+          f"equation); {len(want):,} metabolites", flush=True)
 
     raw = load_mnxm_smiles(Path(args.chem_prop), want)
     raw.update({m: s for m, s in ph.items() if m in want})
@@ -870,7 +886,7 @@ def cmd_extract(args):
             if not pairs:
                 status = "placeholder_only"
         out_mnxr = r
-        if partial_of:
+        if r in partial_of:
             # ONE ELEMENT IS READ OUT, and the rest are discarded UNREAD. For any other
             # element the reduction really is a strip -- the participants carrying it
             # were dropped and the mapper re-routed their atoms -- so a map that happens
@@ -892,11 +908,16 @@ def cmd_extract(args):
                              n_atoms=len(idxs),
                              sub_idx=",".join(str(i) for i, _, _ in idxs),
                              prod_idx=",".join(str(j) for _, j, _ in idxs),
-                             pair_w=",".join(repr(float(w)) for _, _, w in idxs)))
+                             pair_w=",".join(repr(float(w)) for _, _, w in idxs),
+                             submission_class=class_of.get(r, "")))
         if (k + 1) % 10000 == 0:
             print(f"[atom-pairs]   {k+1:,}/{len(aam):,}", flush=True)
 
-    df = pd.DataFrame(rows, columns=list(PAIR_COLS))
+    # `submission_class` is written BESIDE `PAIR_COLS` rather than into it: the compact
+    # pair shape is what `layers.explode` and the two forced arms all emit, and adding a
+    # column to it would oblige every producer of a pair row to know about submission
+    # classes it has no submission for.
+    df = pd.DataFrame(rows, columns=list(PAIR_COLS) + ["submission_class"])
     sdf = pd.DataFrame(status_rows, columns=list(STATUS_COLS))
     df.to_parquet(args.out, index=False)
     sdf.to_csv(args.out_status, sep="\t", index=False)
@@ -950,11 +971,13 @@ def parse_args(argv=None):
     p.add_argument("--balance", default=None,
                    help="ecspr_aam_rescue per-(reaction, element) concrete-balance "
                         "verdicts; unbalanced elements are dropped for that reaction.")
-    p.add_argument("--partial", default=None,
-                   help="an `ecspr.bake.aam.partial` universe. Its rows carry the "
-                        "element-reduced participant lists and the ONE element each "
-                        "submission is read for; every other element's map is discarded "
-                        "unread, because for those the reduction is a strip.")
+    p.add_argument("--universe", default=None,
+                   help="an `interm::aam_universe` submission table. Rows carrying an "
+                        "`element` are element reductions: their participant lists are "
+                        "read from here rather than from the equation, and every OTHER "
+                        "element's map is discarded unread because for those the "
+                        "reduction really is a strip. Rows without one are whole "
+                        "reactions and take the equation-derived template as always.")
     p.add_argument("--reac-prop", required=True)
     p.add_argument("--chem-prop", required=True)
     p.add_argument("--out", required=True, help="pairs parquet")

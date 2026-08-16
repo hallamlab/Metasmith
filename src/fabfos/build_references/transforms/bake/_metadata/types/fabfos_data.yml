@@ -5,6 +5,17 @@ ontology:
   version: '1.25'
 schema: v1
 types:
+  aam_cache:
+    properties:
+    - 'The mapper members'' durable cache, one directory per member holding `cache.tsv`
+      and the attempted-ids sidecars. STAGED EMPTY ON A FIRST RUN and that is the
+      ordinary state: it has no producer, because the thing that writes it is the
+      same lane that reads it. It exists because the in-task cache lives in node-local
+      scratch and is discarded on retry, so a lane OOM-killed two thirds of the way
+      through lost all of it. A cached row is reused only when the SUBMISSION STRING
+      it was produced from is the one this run would send -- a reaction has one id
+      and up to four strings, and serving the wrong one is not staleness but a map
+      of a different molecule filed under this one''s name.'
   bench_aromatic:
     properties:
     - 'PMC5583500, extracted by hand (benchmarks/aromatic/). Contrast case: a heterologous
@@ -117,6 +128,16 @@ types:
       git commit that last touched it. ModelSEED publishes no releases and the file
       is served from a branch, so the commit sha IS the version -- and it is a stronger
       pin than a release number, because it names the exact tree.
+  prior_bake_logs:
+    properties:
+    - 'A previous metabolism bake''s per-reaction records -- `indigo_status.tsv`,
+      `indigo_unreturned.tsv`, `attempted/`, and the two derived neural status tables.
+      THE EMPIRICAL HALF OF `aam_forecast`: which reaction Indigo hangs on is not
+      a function of the string and does not need to be, because the last run wrote
+      it down. Its coverage is PARTIAL by construction -- that run was killed two
+      thirds of the way through Indigo -- so a reaction absent from every table was
+      never asked, and the forecast reports that denominator rather than reading absence
+      as success.'
   rhea:
     properties:
     - 'Rhea release tree (rhea/<release>/), mirroring the FTP layout: tsv/, ctfiles/,

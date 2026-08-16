@@ -66,7 +66,7 @@ import pyarrow.parquet as pq
 # The character cap the neural members have always applied. It is stated in both places
 # rather than imported, because importing it here from a member would make the
 # adjudication depend on a mapper module it is meant to precede. The two are kept honest
-# at RUNTIME instead: `aam_neural_members.universe_from_worklist` re-checks every
+# at RUNTIME instead: `aam.neural_members.load_universe` re-checks every
 # reaction it is handed and refuses if any exceeds its own constant, so a drift is a
 # loud failure at the top of the lane rather than a quiet difference in coverage.
 SMILES_LEN_LIMIT = 8000

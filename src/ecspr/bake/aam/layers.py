@@ -58,13 +58,28 @@ PAIR_KEY = ("mnxr", "element", "substrate", "product", "sub_idx", "prod_idx")
 SINGLE_MEMBER_CREDIT = 0.5
 
 
-def explode(path, method: str, source: str, confidence: float = 1.0) -> pd.DataFrame:
+def explode(path, method: str, source: str, confidence: float = 1.0,
+            only_class: str | None = None) -> pd.DataFrame:
     """The extractor's compact rows -> one row per atom correspondence.
 
     `sub_idx`/`prod_idx`/`pair_w` arrive as comma-joined strings of equal length; the
     extractor guarantees that, and `mnx_lookups check` is where it is verified.
+
+    `only_class` keeps the rows a given SUBMISSION CLASS produced. Layer identity used to
+    be "which mapper pass wrote this file", which meant one member table per layer and
+    made layer membership a fact about scheduling. With one pass a member's table holds
+    all three classes, and the class each row answers is the strictly better key -- but it
+    has to be read from the row, because a reaction submitted whole AND as a carbon
+    reduction produces (mnxr, C) rows either way.
     """
     d = pd.read_parquet(path)
+    if only_class is not None:
+        if "submission_class" not in d.columns:
+            raise SystemExit(
+                f"[layers] {path} has no `submission_class` column, so its rows cannot be "
+                f"partitioned by layer -- it was extracted without `--universe`. Fusing "
+                f"it as one layer would let a partial map sit where a full map belongs.")
+        d = d[d["submission_class"].astype(str) == only_class]
     if not len(d):
         return pd.DataFrame(columns=list(ATOM_COLS))
     out = defaultdict(list)
@@ -281,9 +296,11 @@ def cmd_fuse(args):
     members = {}
     for s in args.member:
         name, path, method, conf = _spec(s)
-        members[name] = explode(path, method=method, source=name, confidence=conf)
+        members[name] = explode(path, method=method, source=name, confidence=conf,
+                                only_class=args.submission_class)
         print(f"[layers] member {name:<12} {len(members[name]):,} atom "
-              f"correspondences over {members[name].mnxr.nunique():,} reactions",
+              f"correspondences over {members[name].mnxr.nunique():,} reactions"
+              + (f"  [{args.submission_class}]" if args.submission_class else ""),
               flush=True)
     df, tally = fuse_members(members)
     df.to_parquet(args.out, index=False)
@@ -342,6 +359,13 @@ def parse_args(argv=None):
     p = sub.add_parser("fuse"); p.set_defaults(fn=cmd_fuse)
     p.add_argument("--member", action="append", required=True,
                    help="name=path[,method[,confidence]] -- an extractor pairs parquet")
+    p.add_argument("--submission-class", default=None,
+                   choices=("whole", "completed", "reduced"),
+                   help="keep only the rows this class of submission produced. One pass "
+                        "puts all three in every member's table, so this is what a layer "
+                        "IS now -- and it is a better key than 'which pass wrote the "
+                        "file', because it stops layer membership depending on "
+                        "scheduling")
     p.add_argument("--out", required=True)
 
     p = sub.add_parser("stack"); p.set_defaults(fn=cmd_stack)

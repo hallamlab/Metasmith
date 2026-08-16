@@ -3,17 +3,29 @@
 The third L2 member, and the only one that is not a model. It is also the ARBITER of
 the curation sweep, which is why it is a hard dependency of two layers rather than one.
 
-SHARDED, BECAUSE INDIGO HANGS. It can stall inside its compiled search where no signal
-and no timeout option reaches it -- a hang, not a slow reaction, and it writes no row on
-its way in. So the lane fans out over shards, each shard records the reaction it is
-about to attempt in a SIDECAR before attempting it, and a shard that dies is restarted
-past the hang having lost exactly one reaction. The difference between a sidecar and its
-cache is the only record that a hang happened at all.
+THE HANG IS CONTAINED NOW, AND THAT IS WHAT LETS THIS LANE TAKE THE OVERSIZED TAIL.
+Indigo can stall inside its compiled search where no signal and no timeout option reaches
+it -- a hang, not a slow reaction, and it writes no row on its way in. The answer used to
+be a sidecar plus a watchdog that restarted the shard past the last recorded id: an
+unbounded hang became a bounded cost, but only after the shard died. The mapper now runs
+in a CHILD PROCESS, so the parent kills it at the budget and respawns; a hang costs twenty
+seconds and a fork.
 
-A TIMEOUT IS A RECORDED OUTCOME, not a crash: the row is written with an empty map and
-`status=timeout`, so the difference between "Indigo could not" and "Indigo never got
-there" survives into the evidence. That distinction is the whole reason the sidecar and
-the status column are separate things.
+That mattered enough to build here rather than later because the graph now maps ONCE. A
+stalled member in a three-pass sequence loses one pass; in a single pass it is the whole
+ensemble's third vote. See `ecspr.bake.aam.indigo_member.Mapper`.
+
+SHARDED, still, but for cost rather than for hangs -- and the SIDECAR stays for the
+failure the child process does nothing about: an OOM kill or a cancelled job takes the
+parent too, and the attempted-ids log is what lets the next run skip the submission it
+died inside. With `fabfos_data::aam_cache` staged in, that resume now survives the task
+work directory being discarded, which is what it never did before.
+
+TWO KINDS OF TOO-SLOW ARE RECORDED SEPARATELY. `timeout` is Indigo's own budget expiring
+where a signal reached it; `killed` is the parent having to SIGKILL the child. The
+difference between those counts is the first direct measurement this project has of how
+often the compiled search runs away, and it is the number that decides whether the
+oversized tail stays affordable.
 
 A DEAD SHARD FAILS THE LANE, and that is a change from the shell driver this replaces.
 There, the shards were backgrounded and collected with a bare `wait`, which in bash
@@ -81,7 +93,9 @@ model = Transform()
 
 image     = model.AddRequirement(lib.GetType("env::rdkit.env"))
 metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
-worklist  = model.AddRequirement(lib.GetType("interm::aam_worklist"))
+universe  = model.AddRequirement(lib.GetType("interm::aam_universe"))
+rescue    = model.AddRequirement(lib.GetType("interm::aam_rescue"))
+cache     = model.AddRequirement(lib.GetType("fabfos_data::aam_cache"))
 bakelib   = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 pairs     = model.AddProduct(lib.GetType("interm::aam_member_indigo"))
@@ -105,8 +119,11 @@ RESOLVE = """
 
 def protocol(context: ExecutionContext):
     imnx = context.Input(metanetx)
-    irx  = context.Input(worklist)
+    iun  = context.Input(universe)
+    irs  = context.Input(rescue)
+    ica  = context.Input(cache)
     ilib = context.Input(bakelib)
+    R = irs.container
     iout = context.Output(pairs)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -123,7 +140,8 @@ def protocol(context: ExecutionContext):
         pids=""
         for i in $(seq 0 {SHARDS - 1}); do
             {py} -m ecspr.bake.aam.indigo_member map \
-                --worklist {irx.container} \
+                --universe {iun.container} \
+                --cache-dir {ica.container}/indigo \
                 --shard $i/{SHARDS} --timeout {TIMEOUT_S} \
                 --sidecar members/indigo_$i.attempted \
                 --out members/indigo_$i.tsv &
@@ -143,8 +161,14 @@ def protocol(context: ExecutionContext):
         {py} -m ecspr.bake.aam.indigo_member merge \
             --shard-file members/indigo_*.tsv --expect {SHARDS} \
             --out members/indigo.tsv
+        # ONE EXTRACTION OVER THREE SUBMISSION CLASSES -- see bake/rxnmapper.py for
+        # why the rescue's three tables ride along and why they are no-ops for a whole
+        # reaction.
         {py} -m ecspr.bake.atom_pairs extract \
             --aam members/indigo.tsv --align strict --fallback-forced \
+            --universe {iun.container} \
+            --resolved {R}/crosswalk.tsv --placeholders {R}/placeholders.tsv \
+            --balance {R}/balance.tsv \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
             --out {iout.container} --out-status members/indigo_status.tsv
 

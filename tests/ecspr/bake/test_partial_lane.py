@@ -19,6 +19,15 @@ from ecspr.bake import atom_pairs as AP
 from ecspr.bake.aam import layers as L, partial as P, worklist as W
 
 
+def _offer(*mnxrs):
+    """What the forecast hands the lane: `{reaction -> elements offered}`.
+
+    Every element, because these cases are about the REDUCTION rather than about which
+    reactions the forecast picks -- that is `test_forecast.py`'s subject.
+    """
+    return {m: list(AP.ELEMENTS) for m in mnxrs}
+
+
 # A small reaction with real chemistry in it: glucose -> pyruvate carries the carbon
 # while water carries none, and an ATP/ADP pair rides along. That asymmetry is the whole
 # point -- for carbon the water is irrelevant, for phosphorus the sugars are.
@@ -104,7 +113,7 @@ def test_the_lane_settles_what_conservation_settles_and_submits_the_rest():
     tally is what makes the lane's yield a number rather than a hope.
     """
     formulas, smiles_of, ranks_of = FORMULAS, SMILES, _ranks()
-    uni, forced, tally = P.build(["MNXR900001"], EQ, formulas, smiles_of, ranks_of,
+    uni, forced, tally = P.build(_offer("MNXR900001"), EQ, formulas, smiles_of, ranks_of,
                                  char_limit=8000, atom_limit=600)
     submitted = {(r[3], r[4]) for r in uni}
     assert ("MNXR900001", "C") in submitted, "the balanced element produced no submission"
@@ -122,7 +131,7 @@ def test_a_submission_carries_the_reduced_lists_the_extractor_must_read():
     lists the reduction actually made travel with it -- which is also what keeps the
     reduction logic in one file.
     """
-    uni, _f, _t = P.build(["MNXR900001"], EQ, FORMULAS, SMILES, _ranks(), 8000, 600)
+    uni, _f, _t = P.build(_offer("MNXR900001"), EQ, FORMULAS, SMILES, _ranks(), 8000, 600)
     row = dict(zip(P.UNIVERSE_COLS, uni[0]))
     assert row["verdict"] == "mappable", "a member reads `verdict == mappable`"
     assert row["base_mnxr"] == "MNXR900001" and row["element"] in AP.ELEMENTS
@@ -147,7 +156,7 @@ def test_the_forced_arm_is_emitted_in_the_extractor_s_shape():
     A second reader for an already-exploded shape would be a second place the atom
     identity contract is implemented, and the two would drift.
     """
-    _u, forced, _t = P.build(["MNXR900001"], EQ, FORMULAS, SMILES, _ranks(), 8000, 600)
+    _u, forced, _t = P.build(_offer("MNXR900001"), EQ, FORMULAS, SMILES, _ranks(), 8000, 600)
     if not forced:
         pytest.skip("this fixture's elements are all mapper-bound; shape is pinned above")
     assert list(P.FORCED_COLS) == list(AP.PAIR_COLS)
@@ -175,7 +184,7 @@ def test_a_reduction_that_is_only_big_because_of_stoichiometry_is_collapsed():
     size; written once per participant it is around sixty, and every P atom keeps the
     destination it had, because the reaction is a whole multiple of a per-copy one.
     """
-    uni, _f, tally = P.build(["MNXR900002"], EQ_REPEATED, FORMULAS, SMILES, _ranks(),
+    uni, _f, tally = P.build(_offer("MNXR900002"), EQ_REPEATED, FORMULAS, SMILES, _ranks(),
                              char_limit=8000, atom_limit=600)
     rows = {r[4]: dict(zip(P.UNIVERSE_COLS, r)) for r in uni}
     assert "P" in rows, "the phosphorus reduction was refused for stoichiometric size"
@@ -198,7 +207,7 @@ def test_a_collapse_that_breaks_the_element_balance_is_not_taken():
     assert not P._still_balances(["MNXM1003"], ["MNXM1004"], FORMULAS, "P")
     assert P._still_balances(["MNXM1003"], ["MNXM1004", "MNXM1007"], FORMULAS, "P")
 
-    uni, _f, tally = P.build(["MNXR900003"], EQ_UNEVEN, FORMULAS, SMILES, _ranks(),
+    uni, _f, tally = P.build(_offer("MNXR900003"), EQ_UNEVEN, FORMULAS, SMILES, _ranks(),
                              char_limit=8000, atom_limit=600)
     assert not [r for r in uni if r[4] == "P"], (
         "a collapse that changes the per-copy element balance was taken anyway")

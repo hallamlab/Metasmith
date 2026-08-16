@@ -100,6 +100,40 @@ types:
         has no canonical rank to hang one on in any case. One type, because the pair
         table's honesty depends on the claim table being read beside it.
 
+  # -- the pre-filter, and the one table the members read ----------------------
+  aam_forecast:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        ONE ROW PER (reaction, element) carrying a predicted outcome from a closed set
+        and the NAMED MECHANISM behind it -- `char_cap`, `atom_cap`, `context_window`,
+        `prior_hang`, `prior_timeout`, `prior_empty`. Three of the six are exact (two are
+        our own constants and the third is a property of the string), and the other three
+        are read from the previous bake's records rather than predicted, because which
+        reaction Indigo hangs on is not a function of the string and does not need to be.
+        IT MAY ONLY EVER ADD SUBMISSIONS. Over-offering costs mapper time and nothing
+        else, since the layer stack is additive and its gates refuse rather than warn --
+        so a reduction built for a reaction that maps fine is never claimed. That
+        asymmetry is what lets the partial lane move UPSTREAM of the mappers, which is
+        what collapses three member passes into one.
+      ext: parquet
+
+  aam_universe:
+    extends: [build_intermediate]
+    properties:
+      _: >-
+        THE ONE SUBMISSION TABLE, and the only thing a mapper member consumes. Three
+        classes under one key: `whole` (the adjudicated reaction), `completed` (what the
+        rescue made mappable at all) and `reduced` (one element of a reaction the forecast
+        expects silence for). The keys cannot collide -- the first two are disjoint on
+        mnxr because the rescue completes exactly what the worklist refused, and the third
+        keys on `MNXR#X`, which is not a valid MNXR -- and uniqueness is asserted rather
+        than trusted, because a member reads this into a dict and a duplicate silently
+        drops one of two different molecules submitted under one name. It also makes "the
+        three members saw the same list" a fact about the GRAPH rather than a convention
+        three filters happen to honour.
+      ext: parquet
+
   aam_partial:
     extends: [build_intermediate]
     properties:
@@ -110,23 +144,9 @@ types:
         rather than re-parse the equation, or the strict guard calls every submission
         `stripped`. `partial_forced.parquet` holds the pairs conservation settles without
         any mapper, already in the extractor's shape. `summary.tsv` records what the
-        reduction could NOT reach, which is the half a coverage claim is made of.
-
-  # A THIRD MEMBER PASS, over the partial universe. Same three members, same shape as
-  # the rescue pass -- what differs is only what they are pointed at, and that is the
-  # argument for keeping them separate types rather than one with a mode.
-  aam_member_rxnmapper_partial:
-    extends: [build_intermediate]
-    properties:
-      _: RXNMapper over the element-reduced submissions; pairs keyed on (reaction, element)
-  aam_member_localmapper_partial:
-    extends: [build_intermediate]
-    properties:
-      _: LocalMapper over the element-reduced submissions; pairs keyed on (reaction, element)
-  aam_member_indigo_partial:
-    extends: [build_intermediate]
-    properties:
-      _: Indigo over the element-reduced submissions; pairs keyed on (reaction, element)
+        reduction could NOT reach, which is the half a coverage claim is made of. Its
+        targets come from `interm::aam_forecast` now rather than from a finished run,
+        which is the single change that moves this lane upstream of the mappers.
 
   # -- the AAM lanes ----------------------------------------------------------
   # No `aam_layer_metacyc` here, and its absence is a decision. The curated layer was a
@@ -166,38 +186,21 @@ types:
         thing that says it happened.
       ext: parquet
 
-  # -- the AAM lanes, pass 2: the same three members over the RESCUED universe --
-  # SIX MEMBER TYPES, NOT THREE WITH TWO PRODUCERS EACH. The planner resolves a
-  # requirement to exactly one producer and reports a healthy plan; a second producer is
-  # silently dropped, so collapsing the passes would turn a six-member ensemble into a
-  # three-member one behind a plan that looks fine. It is also not the same question
-  # being asked twice: a rescued reaction has a DIFFERENT SMILES for the same MNXR --
-  # curated structures where MetaNetX had none, `*` bodies where the carrier is generic
-  # -- so merging the two passes' caches on `mnxr` would overwrite one map with a map of
-  # a different molecule.
+  # THERE ARE THREE MEMBER TYPES AND THERE USED TO BE NINE. Six of them existed because
+  # the three members ran three times over three universes, and a second producer for one
+  # type is silently DROPPED by the planner rather than reported -- so the passes could
+  # not be collapsed without also collapsing the ensemble to a third of its members behind
+  # a plan that looked fine. The distinction those six carried was real and it has not
+  # been lost, it has moved: a rescued reaction genuinely has a DIFFERENT SMILES for the
+  # same MNXR, and that is now the `submission_class` column on `interm::aam_universe`
+  # plus a key that cannot collide, rather than six types and six lanes.
   #
-  # WHY A SECOND PASS AT ALL. In the deployed table every rescue-derived reaction is
-  # `mcs_only`: Indigo alone, at half weight, because the crosswalk did not exist when
-  # the neural members ran. Showing the completed reactions to all three promotes what
-  # they agree on to full-weight consensus, which is the one place this build is meant to
-  # BEAT the table it reproduces rather than match it.
-  aam_member_rxnmapper_rescue:
-    extends: [build_intermediate]
-    properties:
-      _: RXNMapper over the rescued universe -- the completed reactions pass 1 could not build
-      ext: parquet
-
-  aam_member_localmapper_rescue:
-    extends: [build_intermediate]
-    properties:
-      _: LocalMapper over what pass 2's other two members left unmapped or unbalanced -- a gap set, like its pass-1 lane
-      ext: parquet
-
-  aam_member_indigo_rescue:
-    extends: [build_intermediate]
-    properties:
-      _: Indigo over the rescued universe -- the deployed chain's only rescue mapper, here one vote of three
-      ext: parquet
+  # What the collapse was FOR is unchanged. In the deployed table every rescue-derived
+  # reaction is `mcs_only`: Indigo alone, at half weight, because the crosswalk did not
+  # exist when the neural members ran. Showing the completed reactions to all three
+  # promotes what they agree on to full-weight consensus, which is the one place this
+  # build is meant to BEAT the table it reproduces rather than match it -- and it now
+  # costs one pass instead of three.
 
   # -- the direction lanes ----------------------------------------------------
   direction_member_eq:

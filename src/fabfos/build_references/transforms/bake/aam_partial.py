@@ -1,21 +1,31 @@
-"""The partial lane: build element-reduced submissions for what no full map reached.
+"""The partial lane: build element-reduced submissions for what no full map will reach.
 
-AFTER BOTH MAPPER PASSES, and that position is the point. This lane's target set is
-"reactions that ended with nothing", and there is no way to know which those are without
-having run the members -- so it is computed by SUBTRACTING every member's pairs table
-from what the worklist and the rescue admitted, and the worklist's own size refusals are
-added to it. A lane that guessed from reaction length would be aiming at a proxy for the
-thing it can simply be told.
+BEFORE ANY MAPPER RUNS, which is a reversal and the whole point of this task. This lane
+used to sit after both mapper passes because its target set was "reactions that ended with
+nothing" -- a fact about a RUN, computed by subtracting six finished member tables -- and
+its own docstring argued that a lane guessing from reaction length would be aiming at a
+proxy for the thing it could simply be told. Being told cost three sequential mapper
+passes and nine lanes.
+
+`interm::aam_forecast` is what changes the trade. It predicts silence from NAMED
+MECHANISMS rather than from a proxy -- our two size caps, RXNMapper's context window as a
+property of the string, and the previous bake's own records of what hung, timed out and
+came back empty -- and it may only ever ADD submissions. Over-offering costs mapper time
+and nothing else, because the layer stack is additive and its gates refuse rather than
+warn, so a reduction built for a reaction that maps fine is never claimed by anything.
 
 WHAT IT PRODUCES, and neither half needs a mapper to be useful:
 
   * `partial_forced.parquet` -- pairs conservation leaves no choice about. One substrate
     and one product carrying element X in equal counts is a unique bijection; n > 1 is
     the doubly-stochastic completion, spread rather than picked. Already in the
-    extractor's shape, so the layer stack reads it with no special case.
+    extractor's shape, so the layer stack reads it with no special case. NOT restricted to
+    the forecast's offers: it is exact and free once the equation is parsed, and making an
+    exact pairing depend on a prediction is the one direction this lane must not be wrong
+    in.
   * `partial_universe.parquet` -- element-reduced submissions for everything conservation
-    does not settle, one row per (reaction, element), in the schema the mapper lanes
-    read. Pass 3 is the same three members over this.
+    does not settle, one row per (reaction, element), which `aam_universe` concatenates
+    with the whole and completed classes into the one table the members read.
 
 WHY REDUCING IS NOT STRIPPING. An atom of X cannot come from a participant carrying no
 X, so dropping the X-free participants removes no possible source and no possible
@@ -38,24 +48,13 @@ model = Transform()
 
 image       = model.AddRequirement(lib.GetType("env::rdkit.env"))
 
-worklist    = model.AddRequirement(lib.GetType("interm::aam_worklist"))
+# THE TARGET SET IS ONE TABLE NOW, and this requirement is the reversal: the lane depends
+# on a PREDICTION rather than on six finished member products, so the planner can schedule
+# it before a single mapper starts.
+forecast    = model.AddRequirement(lib.GetType("interm::aam_forecast"))
 reactions   = model.AddRequirement(lib.GetType("lookup::reactions"))
 metabolites = model.AddRequirement(lib.GetType("lookup::metabolites"))
 atom_ranks  = model.AddRequirement(lib.GetType("lookup::atom_ranks"))
-
-# THE TARGET SET IS A FACT ABOUT A RUN, and it is computed by SUBTRACTION. Every member
-# of both passes is required -- not for the pairs themselves but for which reactions have
-# one: a reaction that was admitted and appears in no member's table is one that ended
-# with nothing, whether the mapper returned empty, the extractor called it `stripped`, or
-# it named no pair. An absent member would make the gap the whole universe, so the lane
-# refuses one rather than treating it as covering nothing.
-m_rxn       = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper"))
-m_local     = model.AddRequirement(lib.GetType("interm::aam_member_localmapper"))
-m_indigo    = model.AddRequirement(lib.GetType("interm::aam_member_indigo"))
-m_rxn_r     = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper_rescue"))
-m_local_r   = model.AddRequirement(lib.GetType("interm::aam_member_localmapper_rescue"))
-m_indigo_r  = model.AddRequirement(lib.GetType("interm::aam_member_indigo_rescue"))
-rescue      = model.AddRequirement(lib.GetType("interm::aam_rescue"))
 
 bakelib     = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
@@ -64,13 +63,10 @@ ev          = model.AddProduct(lib.GetType("evidence::tool_output"))
 
 
 def protocol(context: ExecutionContext):
-    iwl  = context.Input(worklist)
+    ifc  = context.Input(forecast)
     irx  = context.Input(reactions)
     imt  = context.Input(metabolites)
     iar  = context.Input(atom_ranks)
-    members = [context.Input(m) for m in
-               (m_rxn, m_local, m_indigo, m_rxn_r, m_local_r, m_indigo_r)]
-    ires = context.Input(rescue)
     ilib = context.Input(bakelib)
     iout = context.Output(out_partial)
     iev  = context.Output(ev)
@@ -86,7 +82,6 @@ def protocol(context: ExecutionContext):
         ln -sfn {imt.container} _lookups/metabolites.parquet
         ln -sfn {iar.container} _lookups/atom_ranks.parquet
     """
-    covered = " ".join(str(m.container) for m in members)
 
     cmd = f"""
         set -e
@@ -94,9 +89,7 @@ def protocol(context: ExecutionContext):
         mkdir -p partial
 
         {py} -m ecspr.bake.aam.partial build --lookups _lookups \
-            --worklist {iwl.container} \
-            --rescued {ires.container}/rescued.parquet \
-            --covered {covered} \
+            --forecast {ifc.container} \
             --out partial/partial_universe.parquet \
             --out-forced partial/partial_forced.parquet \
             --out-summary partial/summary.tsv
@@ -123,8 +116,9 @@ def protocol(context: ExecutionContext):
     return ExecutionResult(
         manifest=[{out_partial: iout.local}, {ev: iev.local}],
         # An EMPTY universe is a legitimate outcome here, unlike the rescue's: it means
-        # the members reached everything, which is the state this lane exists to make
-        # visible. So the check is that all three files exist, not that any is non-empty.
+        # nothing the forecast offered survived the balance test, which is the state this
+        # lane exists to make visible. So the check is that all three files exist, not
+        # that any is non-empty.
         success=(all((iout.local / f).exists() for f in want)
                  and (iev.local / "partial").is_dir()
                  and any((iev.local / "partial").iterdir())),
