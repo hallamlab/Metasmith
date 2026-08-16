@@ -158,8 +158,14 @@ TransformInstance(
     # The synonym index and the ChEBI/ModelSeed structure tables are the memory here;
     # the lanes themselves are name parsing and arithmetic. No mapper, so no long tail.
     # MEASURED over the full 24,098-reaction blocked set: propose 52 s at 3.4 GB, complete
-    # 33 s at 2.5 GB. The request is sized to that rather than to caution, because this
-    # step sits between the two mapper passes -- every minute it spends queueing is a
-    # minute pass 2 has not started, and a 48 GB ask queues behind a 24 GB one for nothing.
-    resources=Resources(cpus=2, memory=Size.GB(24), duration=Duration(hours=2)),
+    # 33 s at 2.5 GB.
+    #
+    # FOUR HOURS RATHER THAN TWO, and the extra is a margin rather than a measurement.
+    # `complete` once ran two hours and was killed at the wall having written nothing --
+    # it counted atoms before consulting the character cap, so an 80.7 MB stoichiometric
+    # expansion went to RDKit, which does not return from it. The ordering is fixed and
+    # tested (tests/ecspr/bake/test_worklist_gates.py) and the loop prints its rate now,
+    # so a repeat is legible rather than silent; the margin is what makes it legible
+    # rather than dead.
+    resources=Resources(cpus=2, memory=Size.GB(24), duration=Duration(hours=4)),
 )
