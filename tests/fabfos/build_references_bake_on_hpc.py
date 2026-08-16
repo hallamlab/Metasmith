@@ -14,39 +14,51 @@ backgrounded shard that dies is collected by a bare `wait` that returns zero, an
 provenance of the trio is whatever the shell happened to do that night. On 2026-07-26 an
 Indigo shard was OOM-killed and the stage carried on to merge a short member.
 
-So the lanes are transforms now (build_references/transforms/bake/), one per TOOL and,
-on the AAM side, one per PASS:
+So the lanes are transforms now (build_references/transforms/bake/), one per TOOL, and the
+AAM side runs as three stages rather than three passes:
 
-    aam_worklist         -> aam_worklist            the adjudicated universe
-    rxnmapper            -> aam_member_rxnmapper           pass 1
-    indigo               -> aam_member_indigo              pass 1
-    localmapper          -> aam_member_localmapper         pass 1, over their gap
-    aam_rescue           -> aam_rescue               structures for the blocked
-    rxnmapper_rescue     -> aam_member_rxnmapper_rescue    pass 2
-    indigo_rescue        -> aam_member_indigo_rescue       pass 2
-    localmapper_rescue   -> aam_member_localmapper_rescue  pass 2, over their gap
+    PREPARE -- nothing maps, and everything a mapper needs is settled
+    aam_recount          -> lookup::element_counts    counts read off the structure
+    aam_worklist         -> aam_worklist              the adjudicated universe
+    aam_blockers         -+
+    aam_nametwin         -+                           structures MNXref already holds
+    aam_rescue           -> aam_rescue                completions for the blocked
+    aam_algebra          -> aam_algebra               what conservation forces outright
+    aam_forecast         -> aam_forecast              where a member will return nothing
+    aam_partial          -> aam_partial               the element reductions that answers
+    aam_universe         -> aam_universe              ONE submission table, three classes
+
+    MAP -- once each, over that one table
+    rxnmapper / indigo / localmapper -> aam_member_*
+
+    ASSEMBLE
+    aam_stack            -> aam_stack                 curated, then the members, stacked
+    aam_redox            -> aam_pairs                 the invariance repair
+    aam_reference        -> the vocabulary and the encoded pairs
+
     equilibrator         -> direction_member_eq
     dgbyg                -> direction_member_dgbyg
 
-ADJUDICATE, MAP TWICE. The worklist classifies all 83,796 reactions before anything runs,
-so a reaction that produced nothing and a reaction nobody attempted are different rows.
-The rescue then supplies structures for the blocked ones and completes their reactions,
-and pass 2 shows those to all three mappers -- which is what the deployed chain could not
-do, having built its crosswalk after its mappers had already run.
+ADJUDICATE, PREPARE, THEN MAP ONCE. The worklist classifies all 83,796 reactions before
+anything runs, so a reaction that produced nothing and a reaction nobody attempted are
+different rows. The rescue completes the blocked ones and the forecast names where a
+member is expected to return nothing, so all three submission classes -- whole, completed,
+reduced -- exist before a mapper starts. That is what collapsed nine member lanes to three:
+the layer stack is additive and its gates refuse rather than warn, so a reduction built for
+a reaction that maps fine is never claimed, and over-offering costs compute and nothing
+else.
 
-The arithmetic over them is two assemblies (`aam_ensemble`, `direction_ensemble`).
-Each assembly reads the licensed MetaCyc drop-in directly for its own curated member --
-the AAM one takes atom-mappings-smiles.dat, the direction one takes reactions.dat -- so
-the drop-in feeds the graph at two leaves rather than through a step of its own. A member
-that did not run is now a missing NODE the planner refuses to schedule around, not a
-column that quietly came out empty.
+The arithmetic over them is `aam_stack` -> `aam_redox` -> `aam_reference` on one side and
+`direction_ensemble` on the other. Each side reads the licensed MetaCyc drop-in directly
+for its own curated member -- the AAM one takes atom-mappings-smiles.dat, the direction one
+takes reactions.dat -- so the drop-in feeds the graph at two leaves rather than through a
+step of its own. A member that did not run is a missing NODE the planner refuses to
+schedule around, not a column that quietly came out empty.
 
-THE TRIO IS BUILT 2 + 1, by the two assemblies, with no trailing encode step. The AAM
-assembly mints the vocabulary and encodes the pairs; the direction assembly requires that
-vocabulary, inherits its bake-identity block verbatim and encodes the ratios against it.
-That edge is why the direction side -- minutes of table arithmetic -- now waits on
-LocalMapper. It is not new wall clock, since the old bake waited on both, but it does
-mean a direction-only re-run needs the AAM product present.
+THE TRIO IS BUILT 2 + 1, and the trailing encode is its own step. `aam_reference` mints the
+bake-identity block with the vocabulary and the pairs; `direction_bake` inherits that block
+verbatim and encodes the ratios against it. `direction_ensemble` needs none of it, so the
+direction science runs beside the long branch and only the encode waits.
 
 WHAT IS DELIBERATELY NOT RUN, AND HOW YOU KNOW. Everything already on disk is STAGED as
 an input, and the driver then asserts that its producer is absent from the plan. That is
@@ -151,23 +163,37 @@ LOOKUPS = {
 # accept.
 METACYC_FILES = ("atom-mappings-smiles.dat", "reactions.dat", "compounds.dat")
 
+# RUN STATE, staged like the sources and unlike them in one way that matters: neither can
+# ever have a producer. `prior_bake_logs` is a record of a run that happened, and the thing
+# that would write `aam_cache` is the lane that reads it. Both may be empty; the mapper
+# lanes simply have nothing to resume from.
+RUN_GIVENS = {
+    "fabfos_data::prior_bake_logs": "processed/metabolism_bake/logs",
+    "fabfos_data::aam_cache":       "temp/aam_cache",
+}
+
 TARGETS = ["ref::atom_pairs", "ref::metabolism_vocab", "ref::direction_ratios"]
 
 # Every lane and assembly that must appear. A plan that quietly drops one renders a
 # smaller graph and produces a trio that looks complete.
 EXPECTED = {
-    "aam_worklist",
-    "rxnmapper", "localmapper", "indigo",
+    # STAGE A -- everything that can be settled without a mapper. The two twin searches and
+    # the recount restore structures MNXref already holds; the algebra pairs what
+    # conservation forces; the forecast names where a member is expected to return nothing
+    # and the partial lane builds the element reductions from that rather than from a
+    # finished run, which is what puts it upstream of the mappers.
+    "aam_recount", "aam_worklist", "aam_blockers", "aam_nametwin",
     "aam_rescue",
-    "rxnmapper_rescue", "localmapper_rescue", "indigo_rescue",
-    # Pass 3, the partial lane: element-reduced submissions for the reactions no full
-    # map reached, and the same three mappers over them. It sits AFTER both mapper
-    # passes because its target set is "what ended with nothing", which is a fact about
-    # a run rather than about a reaction.
-    "aam_partial",
-    "rxnmapper_partial", "localmapper_partial", "indigo_partial",
-    "aam_ensemble",
-    "equilibrator", "dgbyg", "direction_ensemble",
+    "aam_algebra", "aam_forecast", "aam_partial", "aam_universe",
+    # STAGE B -- THREE member lanes, not nine. All three submission classes exist before
+    # a mapper starts, so `interm::aam_universe` is the one table every member reads and
+    # each runs once over it.
+    "rxnmapper", "localmapper", "indigo",
+    # STAGE C -- fuse and stack, correct, then mint. Three steps where there used to be
+    # one, because a correction needs a finished stack to run over and `aam_ensemble` never
+    # produced one.
+    "aam_stack", "aam_redox", "aam_reference",
+    "equilibrator", "dgbyg", "direction_ensemble", "direction_bake",
 }
 
 # Producers of things that are already on disk. Any of these in the plan means a staging
@@ -196,18 +222,26 @@ STAGING = TEMP / "_run"
 # in these directory names and nowhere else. A lane whose raw output never arrived has to
 # be a loud absence, not six entries where seven were expected.
 EVIDENCE_TOOLS = {
+    "recount":               "aam_recount",
     "worklist":              "aam_worklist",
+    "blockers":              "aam_blockers",
+    "nametwin":              "aam_nametwin",
+    "rescue":                "aam_rescue",
+    "algebra":               "aam_algebra",
+    "forecast":              "aam_forecast",
+    "partial":               "aam_partial",
+    "universe":              "aam_universe",
     "rxnmapper":             "rxnmapper",
     "localmapper":           "localmapper",
     "indigo":                "indigo",
-    "rescue":                "aam_rescue",
-    "rxnmapper_rescue":      "rxnmapper_rescue",
-    "localmapper_rescue":    "localmapper_rescue",
-    "indigo_rescue":         "indigo_rescue",
+    # The curated extraction and the fusion are two tools in one lane, which is why the
+    # map is keyed by TOOL and not by transform.
+    "metacyc":               "aam_stack",
+    "stack":                 "aam_stack",
+    "redox":                 "aam_redox",
+    "reference":             "aam_reference",
     "equilibrator":          "equilibrator",
     "dgbyg":                 "dgbyg",
-    "metacyc":               "aam_ensemble",
-    "ensemble":              "aam_ensemble",
     "metacyc_direction":     "direction_ensemble",
     "direction_calibration": "direction_ensemble",
 }
@@ -278,6 +312,13 @@ def build_inputs(work: Path, remote_root: str | None):
 
     wanted = dict(SOURCES)
     wanted.update(LOOKUPS)
+    wanted.update(RUN_GIVENS)
+    for rel in RUN_GIVENS.values():
+        # Both may legitimately be empty, and the cache usually is on a first run. They
+        # have no producer -- one is a record of a previous run and the other is written by
+        # the lane that reads it -- so an absent directory does not schedule anything, it
+        # leaves a type unmet and the whole graph unplannable.
+        (DATA / rel).mkdir(parents=True, exist_ok=True)
 
     def declared(rel: str) -> Path:
         p = DATA / rel
@@ -419,7 +460,7 @@ def push_data(host: str, remote_root: str) -> None:
     the caches that make a lane resumable; deleting to match a local tree that never had
     them would throw away exactly what a resume needs.
     """
-    rels = list(SOURCES.values()) + list(LOOKUPS.values())
+    rels = list(SOURCES.values()) + list(LOOKUPS.values()) + list(RUN_GIVENS.values())
     # The drop-in, file by file rather than as a directory -- see METACYC_FILES.
     for release in sorted(p for p in (DATA / "originals/metacyc").glob("*") if p.is_dir()):
         for name in METACYC_FILES:

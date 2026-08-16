@@ -228,9 +228,11 @@ looks well-formed. That is the failure this retires.
 One artifact in three files, written by **two** steps. Each carries the same
 bake-identity block and `refs.assert_same_bake` refuses a mismatched trio — reading
 `atom_pairs` against another bake's `vocab` decodes every node to the wrong metabolite
-silently. `aam_ensemble` MINTS that block with the vocabulary and the pairs;
-`direction_ensemble` requires the vocabulary and writes the block through verbatim, so
-agreement is structural rather than two computations coinciding.
+silently. `aam_reference` MINTS that block with the vocabulary and the pairs;
+`direction_bake` requires the vocabulary and writes the block through verbatim, so
+agreement is structural rather than two computations coinciding. The minting and the
+ledger close are one step for that reason: whichever transform mints the block has to be
+the one that mints the vocabulary.
 
 The reaction space is the **reaction universe** (`lookup::reactions`), not the union of
 the two source tables: a reaction outside the vocabulary falls back to ratio 1.0 in
@@ -239,39 +241,69 @@ coding against the universe makes that unreachable rather than contingent. It ex
 MetaNetX's `EMPTY` sentinel, and the encoder refuses any symbol the vocabulary lacks
 because the id columns are unsigned and an unknown would land as 4,294,967,295.
 
-**`atom_pairs.parquet`** — the atom-atom mapping, in **three additive layers**, laid down
-in order of how much each is worth and each claiming only what the layer below left
-unclaimed. **Requires:** L0 + `originals/metacyc/` **[LICENSED]**.
+**`atom_pairs.parquet`** — the atom-atom mapping, in **six additive layers**, laid down in
+order of how much each is worth and each claiming only what the layer below left
+unclaimed, then corrected. **Requires:** L0 + `originals/metacyc/` **[LICENSED]**.
 
-| layer | source | reach |
-|---|---|---:|
-| L1 | MetaCyc `atom-mappings-smiles.dat` — expert-assigned, balances per element at 99.8%+ | **13,620** reactions / 379,217 correspondences |
-| L2 | RXNMapper + Indigo over the adjudicated worklist, LocalMapper over the gap they leave, fused | consensus / single-member / disagreement-diluted |
-| L3 | the same three over the **rescued** universe — reactions completed with structures proposed for their structure-less participants | the reactions no mapper had ever seen |
+| layer | source | what it adds |
+|---|---|---|
+| curated | MetaCyc `atom-mappings-smiles.dat` — expert-assigned, balances per element at 99.8%+ | **13,620** reactions / 379,217 correspondences |
+| whole | the three members' maps of the adjudicated reaction, fused | consensus / single-member / disagreement-diluted |
+| completed | the same three over what the **rescue** made mappable — reactions completed with structures proposed for their structure-less participants | the reactions no mapper had ever seen |
+| forced | `aam_algebra` — conservation leaves no choice once a participant standing on both sides at equal multiplicity has cancelled | reactions no member is ever given |
+| partial_forced | the element reduction's own forced arm | one element of a reaction nothing mapped whole |
+| partial_reduced | the three members' maps of those reductions | the same, where a mapper was needed |
 
 **Additive means additive, and the claim is tested.** Four gates at each boundary, all of
 which *refuse* rather than warn: the added `(mnxr, element)` is absent from every layer
 below; zero collisions on the 6-tuple pair key; no element loses reactions; no negative
 ranks. A gate that warns is a gate that gets read once.
 
-**The universe is adjudicated before any mapper runs, and the mappers run twice.** The
-worklist gives every one of the 83,796 reactions a closed-set verdict and, where it is
-blocked, the family of each blocker; the lanes take their todo list from that one table.
-Reactions over **600 atoms** are `oversize` and go to no lane — measured against the
-deployed table, reactions that large bank at 5.3% and reactions over 1,600 atoms bank at
-zero, while those are the ones costing minutes each. Then the rescue completes the blocked
-reactions and the same three mappers run again over what it produced.
+**Everything is prepared before any mapper runs, and then each runs ONCE.** The worklist
+gives every one of the 83,796 reactions a closed-set verdict and, where it is blocked, the
+family of each blocker. Reactions over **600 atoms** are `oversize` and go to no lane —
+measured against the deployed table, reactions that large bank at 5.3% and reactions over
+1,600 atoms bank at zero, while those are the ones costing minutes each. The rescue then
+completes the blocked reactions, and `aam_forecast` names, per `(reaction, element)`, where
+a member is expected to return nothing and under which mechanism — three of the six are
+exact (a 512-token context window, and our own two caps), the rest are read from the
+previous run's records. `aam_partial` builds its element reductions from that forecast
+rather than from a finished run, which is the single change that moves it upstream of the
+mappers, and `aam_universe` concatenates all three submission classes into the one table
+every member reads.
 
-Two things that ordering fixes. **LocalMapper is a gap-filler again**: it fills what
+The passes collapsed because **over-offering is free**: the layer stack is additive and its
+gates refuse rather than warn, so a reduction built for a reaction that maps fine is never
+claimed. Predicting failure wrongly is therefore asymmetric — over-predict and you pay
+compute, under-predict and you lose exactly the coverage the reduction would have added —
+so the forecast may only ever ADD submissions. It cannot remove one.
+
+Three things that ordering fixes. **LocalMapper is a gap-filler again**: it fills what
 Indigo and RXNMapper left, which is the role it actually had in the chain this ports —
-487 reactions there, not 57,522. And **the rescue's reactions get three votes**: in the
-deployed table every rescue-derived reaction is one mapper at half weight, because its
-crosswalk was authored after its mappers had run.
+487 reactions there, not 57,522. **The rescue's reactions get three votes**: in the deployed
+table every rescue-derived reaction is one mapper at half weight, because its crosswalk was
+authored after its mappers had run. And **there is one submission string per submission**,
+built once and read by all three, so the disagreement the ensemble measures is between
+mappers rather than partly between SMILES builders.
 
-**Every reaction ends with an outcome.** `aam_worklist close` joins the adjudication to
-the finished table, so "produced nothing", "never attempted" and "refused for this reason"
-are distinguishable after the build. `tests/build_references_tier4_agreement.py` reads
-that ledger to break each miss against the deployed table down by its reason.
+**The stack is corrected before it becomes a reference.** `aam_redox` refuses every C/N/P
+correspondence running between a NAD(P)/FAD/FMN couple and a substrate: a hydride transfer
+leaves both carbon skeletons intact, and an MCS mapper cannot see that because hydrogen is
+not in the element vocabulary. It is a **repair rather than a filter** — each affected
+source atom's surviving arms are rescaled back to the total it started with, so a refusal
+concentrates the atom's claim on the destination that survives the invariant instead of
+deleting it, and where no arm survives the couple is removed and conservation is asked
+about the remainder. Scope is the couple appearing OXIDISED on one side and REDUCED on the
+other, per family, so a reaction where NAD is a genuine substrate is untouched; sulfur is
+untouched everywhere, because these cofactors carry none and refusing S would be refusing on
+a coincidence. The refusals ship beside the corrected table under a named predicate, with
+the cofactor resolution that produced them.
+
+**Every reaction ends with an outcome.** `aam_worklist close` joins the adjudication to the
+corrected table, so "produced nothing", "never attempted", "offered a reduction and
+declined it", "emptied by the repair" and "refused for this reason" are distinguishable
+after the build. `tests/build_references_tier4_agreement.py` reads that ledger to break each
+miss against the deployed table down by its reason.
 
 **Putting MetaCyc first is a deliberate departure.** The previous generation kept the
 neural universe as the base and appended MetaCyc as a small increment, explicitly

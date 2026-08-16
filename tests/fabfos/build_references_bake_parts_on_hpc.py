@@ -4,27 +4,45 @@
     PYTHONPATH=src python tests/fabfos/build_references_bake_parts_on_hpc.py direction
     ... build_references_bake_parts_on_hpc.py members --run --user txyliu
 
-WHY PARTS AND NOT ONE RUN. `build_references_bake_on_hpc.py` plans all twelve lanes and
-submits them as one graph. That is the right shape when one host owns the whole thing and
-the wrong shape the moment two branches are in flight on different machines: the AAM
-branch is nine lanes and most of a day, the direction branch is a handful of table
-operations, and a single plan makes the second wait on the first even where no data flows
-between them. This driver runs ONE part at a time and treats the boundary between parts as
-a declared import.
+WHY PARTS AND NOT ONE RUN. `build_references_bake_on_hpc.py` plans every lane and submits
+them as one graph. That is the right shape when one host owns the whole thing and the
+wrong shape the moment two branches are in flight on different machines: the AAM branch is
+fifteen lanes and most of a day, the direction branch is a handful of table operations, and
+a single plan makes the second wait on the first even where no data flows between them.
+This driver runs ONE part at a time and treats the boundary between parts as a declared
+import.
 
-WHY THE PARTS ARE WHERE THEY ARE. Three of the four boundaries are the IMAGE boundary,
-which every bake transform already declares as its `group_by` -- so a part pulls one image
-and owns one coherent piece. The fourth is new and is the reason this file exists:
+WHY THE PARTS ARE WHERE THEY ARE. Some of the boundaries are the IMAGE boundary, which
+every bake transform already declares as its `group_by` -- so a part pulls one image and
+owns one coherent piece. Two are not. One is the reason this file exists:
 `direction_ensemble` used to require `ref::metabolism_vocab` and so sat strictly
 downstream of the AAM branch, for an ENCODING it does in its last four lines. That encode
 is `direction_bake` now, and the science runs the moment the two thermodynamic members
 are in. See build_references/transforms/bake/direction_bake.py.
 
     lookups        -> the five lookup:: tables          first, alone -- everything reads them
-    aam            -> vocab, atom_pairs                 nine lanes, most of a day
-    members        -> direction_member_eq, _dgbyg       concurrent with it
-    direction      -> direction_annotation              concurrent with it, after members
-    direction_bake -> direction_ratios                  seconds, once aam lands
+    prepare        -> interm::aam_universe              nine lanes, no mapper, ~an hour
+    map            -> the three member tables           three lanes, most of a day
+    assemble       -> vocab, atom_pairs                 fuse, correct, mint
+    members        -> direction_member_eq, _dgbyg       concurrent with all three
+    direction      -> direction_annotation              concurrent with them, after members
+    direction_bake -> direction_ratios                  seconds, once assemble lands
+
+THE AAM PARTS ARE THE THREE STAGES OF THE GRAPH, which is what makes their seams natural
+rather than negotiated: `prepare` ends where the last thing that can be settled without a
+mapper is settled, `map` ends at the three member tables, `assemble` ends at the reference
+trio. Splitting there means a failed assembly re-maps nothing, and a method change in the
+preparation costs an hour rather than a day. `redox` and `reference` are recovery cuts of
+the assembly and are not part of the normal route -- see BRANCHES.
+
+THE REUSE AUDIT IS WHY --run ON `map` IS NOT JUST A SUBMISSION. Before any job is placed
+the driver decomposes each member's work against the STAGED cache -- universe by
+submission class, what the cache holds as finished, what the sidecars hold as attempted,
+and the todo those leave -- and REFUSES when a cache that holds rows leaves a todo within
+a few percent of the whole universe. That is a cache that did not take, and the only thing
+distinguishing it from an honest first run is that somebody said there was one. It reads
+the cache off the REMOTE, because a path that resolves on this workstation and not on the
+cluster is exactly the failure it exists to catch. `--audit` runs it and stops.
 
 EVERY SEAM IS A DECLARED IMPORT, which is the mechanism this graph already uses everywhere
 else rather than one invented for the split -- the five `lookup::` tables are PRODUCED by
@@ -64,6 +82,8 @@ what makes the engine inside it the pinned one.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import shutil
 import subprocess
 import sys
 import time
@@ -130,7 +150,29 @@ ALL_INPUTS = {
     "lookup::atom_ranks":        "processed/lookups/atom_ranks.parquet",
     "lookup::xrefs":             "processed/lookups/xrefs.parquet",
     "lookup::synonyms":          "processed/lookups/synonyms.parquet",
+    # RUN STATE, not upstream data. Neither can have a producer -- the prior run's logs
+    # are a record of a run, and the thing that writes the cache is the lane that reads
+    # it -- so both are staged as givens and both may be empty. An absent cache is the
+    # ordinary first-run state; an absent cache DECLARED as one is what the audit
+    # refuses over.
+    "fabfos_data::prior_bake_logs": "processed/metabolism_bake/logs",
+    "fabfos_data::aam_cache":       "temp/aam_cache",
 }
+
+# The mapper members, and which verdicts each admits from `interm::aam_universe`. The two
+# neural members take `mappable`; Indigo also takes the oversized tail. Named here rather
+# than imported because the audit runs on a workstation that need not have the bake method
+# importable -- and `tests/ecspr/bake/test_worklist_gates.py` is what keeps the two honest.
+MEMBER_ADMITS = {
+    "rxnmapper":   ("mappable",),
+    "localmapper": ("mappable",),
+    "indigo":      ("mappable", "oversize"),
+}
+
+# The deployed bake, which is a FLOOR and not a baseline: its run stopped at 20,000 of
+# 83,795. The audit reports the todo against it so "how much of this run is new ground"
+# is a number rather than an impression.
+DEPLOYED_BAKE = DATA / "processed" / "metabolism_bake"
 
 # The MetaCyc files any transform in this graph opens. The whole distribution is NOT
 # pushed, and that is a licence decision rather than a transfer-size one: the drop-in is
@@ -183,52 +225,151 @@ BRANCHES = {
             "lookup::synonyms":    "processed/lookups/synonyms.parquet",
         },
     ),
-    "aam": dict(
+    # STAGE A. Everything that can be settled without a mapper, ending at the ONE
+    # submission table. It is a part rather than the head of the mapping part because the
+    # two have different failure characters: this is nine table operations and an hour,
+    # the next is most of a day of inference, and a method change in the preparation must
+    # not re-pay the mapping.
+    "prepare": dict(
         images=[IMG.format("aam")],
         lanes={
-            "aam_worklist",
-            "indigo", "rxnmapper", "localmapper",
+            "aam_recount", "aam_worklist", "aam_blockers", "aam_nametwin",
             "aam_rescue",
-            "indigo_rescue", "rxnmapper_rescue", "localmapper_rescue",
-            # Pass 3: element-reduced submissions for what no full map reached, and the
-            # same three mappers over them. Sequenced after both passes because its
-            # target set is what ENDED with nothing -- a fact about a run.
-            "aam_partial",
-            "indigo_partial", "rxnmapper_partial", "localmapper_partial",
-            "aam_ensemble",
+            # The forced-pair algebra and the pre-filter that drives the element
+            # reductions. Both are upstream of every member, which is what collapses
+            # three mapper passes into one.
+            "aam_algebra", "aam_forecast", "aam_partial", "aam_universe",
         },
-        targets=["ref::atom_pairs", "ref::metabolism_vocab"],
+        targets=["interm::aam_universe"],
         inputs=[
-            "fabfos_data::metanetx", "fabfos_data::chebi", "fabfos_data::modelseed",
+            "fabfos_data::chebi", "fabfos_data::modelseed",
+            "fabfos_data::prior_bake_logs",
             "lookup::reactions", "lookup::metabolites", "lookup::atom_ranks",
             "lookup::xrefs", "lookup::synonyms",
         ],
         imports={},
+        # No lane here opens the drop-in. The curated layer is extracted in `assemble`.
+        needs_metacyc=False,
+        evidence={
+            "recount":  "aam_recount",
+            "worklist": "aam_worklist",
+            "blockers": "aam_blockers",
+            "nametwin": "aam_nametwin",
+            "rescue":   "aam_rescue",
+            "algebra":  "aam_algebra",
+            "forecast": "aam_forecast",
+            "partial":  "aam_partial",
+            "universe": "aam_universe",
+        },
+        # SIX SEAMS, not one. `aam_universe` is what the mapping part reads, but the
+        # assembly reads four more of this part's products directly -- the stack lays the
+        # algebra down as its own layer and the reference closes the ledger against the
+        # worklist, the rescue and the forecast -- so every one of them has to survive
+        # this part rather than being recomputed by whoever needs it next.
+        outputs={
+            "interm::aam_universe":    "temp/_seams/aam_universe.parquet",
+            "interm::aam_worklist":    "temp/_seams/aam_worklist.parquet",
+            "interm::aam_forecast":    "temp/_seams/aam_forecast.parquet",
+            "interm::aam_rescue":      "temp/_seams/aam_rescue",
+            "interm::aam_partial":     "temp/_seams/aam_partial",
+            "interm::aam_algebra":     "temp/_seams/aam_algebra",
+            "lookup::element_counts":  "temp/_seams/element_counts.parquet",
+        },
+    ),
+    # STAGE B. The three members, once each, over the one universe. This is the part the
+    # reuse audit exists for and the only one that reads the durable cache.
+    "map": dict(
+        images=[IMG.format("aam")],
+        lanes={"rxnmapper", "indigo", "localmapper"},
+        targets=["interm::aam_member_rxnmapper", "interm::aam_member_indigo",
+                 "interm::aam_member_localmapper"],
+        inputs=["fabfos_data::metanetx", "fabfos_data::aam_cache"],
+        imports={
+            "interm::aam_universe": "temp/_seams/aam_universe.parquet",
+            # The extractor's three tables -- crosswalk, placeholders, per-element
+            # balance -- which is how a `completed` submission's invented atoms get
+            # suppressed and its conservation claim tested.
+            "interm::aam_rescue":   "temp/_seams/aam_rescue",
+        },
+        needs_metacyc=False,
+        evidence={"rxnmapper": "rxnmapper", "indigo": "indigo",
+                  "localmapper": "localmapper"},
+        outputs={
+            "interm::aam_member_rxnmapper":   "temp/_seams/aam_member_rxnmapper.parquet",
+            "interm::aam_member_indigo":      "temp/_seams/aam_member_indigo.parquet",
+            "interm::aam_member_localmapper": "temp/_seams/aam_member_localmapper.parquet",
+        },
+    ),
+    # STAGE C. Fuse, stack, correct, mint. Three lanes and no mapper.
+    "assemble": dict(
+        images=[IMG.format("aam")],
+        lanes={"aam_stack", "aam_redox", "aam_reference"},
+        targets=["ref::atom_pairs", "ref::metabolism_vocab"],
+        inputs=["fabfos_data::metanetx",
+                "lookup::reactions", "lookup::metabolites", "lookup::atom_ranks"],
+        imports={
+            "interm::aam_member_rxnmapper":   "temp/_seams/aam_member_rxnmapper.parquet",
+            "interm::aam_member_indigo":      "temp/_seams/aam_member_indigo.parquet",
+            "interm::aam_member_localmapper": "temp/_seams/aam_member_localmapper.parquet",
+            "interm::aam_worklist":           "temp/_seams/aam_worklist.parquet",
+            "interm::aam_forecast":           "temp/_seams/aam_forecast.parquet",
+            "interm::aam_rescue":             "temp/_seams/aam_rescue",
+            "interm::aam_partial":            "temp/_seams/aam_partial",
+            "interm::aam_algebra":            "temp/_seams/aam_algebra",
+        },
+        # The curated layer is read here, from atom-mappings-smiles.dat.
         needs_metacyc=True,
         evidence={
-            "worklist":           "aam_worklist",
-            "rxnmapper":          "rxnmapper",
-            "localmapper":        "localmapper",
-            "indigo":             "indigo",
-            "rescue":             "aam_rescue",
-            "rxnmapper_rescue":   "rxnmapper_rescue",
-            "localmapper_rescue": "localmapper_rescue",
-            "indigo_rescue":      "indigo_rescue",
-            "partial":            "aam_partial",
-            "rxnmapper_partial":  "rxnmapper_partial",
-            "localmapper_partial": "localmapper_partial",
-            "indigo_partial":     "indigo_partial",
-            "metacyc":            "aam_ensemble",
-            "ensemble":           "aam_ensemble",
+            "metacyc":   "aam_stack",
+            "stack":     "aam_stack",
+            "redox":     "aam_redox",
+            "reference": "aam_reference",
         },
         outputs={
             "ref::metabolism_vocab": "temp/metabolism/vocab.parquet",
             "ref::atom_pairs":       "temp/metabolism/atom_pairs.parquet",
-            # Not a seam and not part of the trio -- the UNCODED stack, which is what
-            # build_references_tier4_agreement.py compares against the deployed table.
-            # `ref::atom_pairs` is encoded against the vocabulary, so the gate cannot
-            # read it.
-            "interm::aam_pairs":     "temp/_seams/aam_pairs.parquet",
+            # The two internal seams, retrieved even though this part produces them and
+            # consumes them itself. `ref::atom_pairs` is ENCODED against the vocabulary,
+            # so neither the tier-4 gate nor the redox spot-checks can read it -- and
+            # having the stack on disk is what lets `redox` and `reference` below re-run
+            # a failed correction or a failed minting without re-fusing anything.
+            "interm::aam_stack":     "temp/_seams/aam_stack.parquet",
+            "interm::aam_pairs":     "temp/_seams/aam_pairs",
+            "interm::aam_ledger":    "temp/_seams/aam_ledger.parquet",
+        },
+    ),
+    # ---- the two recovery cuts of stage C -----------------------------------------
+    # Not part of the normal route: `assemble` runs all three lanes. These exist because
+    # the assembly's three steps have very different costs -- the fusion is the expensive
+    # one -- and a failure in the last of them must not re-pay the first. Each imports the
+    # seam immediately above it, so its lane-set equality proves nothing upstream re-ran.
+    "redox": dict(
+        images=[IMG.format("aam")],
+        lanes={"aam_redox"},
+        targets=["interm::aam_pairs"],
+        inputs=["lookup::reactions", "lookup::metabolites", "lookup::atom_ranks"],
+        imports={"interm::aam_stack": "temp/_seams/aam_stack.parquet"},
+        needs_metacyc=False,
+        evidence={"redox": "aam_redox"},
+        outputs={"interm::aam_pairs": "temp/_seams/aam_pairs"},
+    ),
+    "reference": dict(
+        images=[IMG.format("aam")],
+        lanes={"aam_reference"},
+        targets=["ref::atom_pairs", "ref::metabolism_vocab"],
+        inputs=["lookup::reactions"],
+        imports={
+            "interm::aam_pairs":    "temp/_seams/aam_pairs",
+            "interm::aam_worklist": "temp/_seams/aam_worklist.parquet",
+            "interm::aam_forecast": "temp/_seams/aam_forecast.parquet",
+            "interm::aam_rescue":   "temp/_seams/aam_rescue",
+        },
+        needs_metacyc=False,
+        evidence={"reference": "aam_reference"},
+        outputs={
+            "ref::metabolism_vocab": "temp/metabolism/vocab.parquet",
+            "ref::atom_pairs":       "temp/metabolism/atom_pairs.parquet",
+            "interm::aam_ledger":    "temp/_seams/aam_ledger.parquet",
         },
     ),
     "members": dict(
@@ -354,6 +495,12 @@ def build_inputs(work: Path, branch: str, remote_root: str | None):
     missing, imported_missing = [], []
     for dtype in sorted(spec["inputs"]):
         rel = ALL_INPUTS[dtype]
+        if dtype == "fabfos_data::aam_cache":
+            # AN EMPTY CACHE IS THE ORDINARY FIRST-RUN STATE, so its absence is created
+            # rather than reported. It has no producer -- the lane that writes it is the
+            # lane that reads it -- so a missing directory here would not schedule
+            # anything, it would make the part unplannable for want of a type.
+            (DATA / rel).mkdir(parents=True, exist_ok=True)
         if not (DATA / rel).exists():
             missing.append(f"{dtype:32s} data/{rel}")
             continue
@@ -431,7 +578,7 @@ def check_plan(task, branch: str) -> tuple[set[str], list[str]]:
     EQUALITY, not containment, and the extra-lane case is the one that matters. A declared
     import that does not satisfy its type is not an error anywhere in metasmith -- the
     planner finds the type unmet and schedules its PRODUCER. For the direction part that
-    means quietly re-running the entire AAM branch: nine lanes and most of a day, charged
+    means quietly re-running the entire mapping part: three lanes and most of a day, charged
     to an allocation, on nodes that have neither the image nor the inputs for them.
     """
     spec = BRANCHES[branch]
@@ -667,8 +814,6 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
     Nothing is published here. data/reference/ is written deliberately, because it
     rewrites DVC directory hashes.
     """
-    import shutil
-
     spec = BRANCHES[branch]
     staging.mkdir(parents=True, exist_ok=True)
     print(f"\n=== retrieving {branch} into {TEMP.relative_to(REPO)} ===", flush=True)
@@ -719,9 +864,23 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
             continue
         dest = DATA / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(p, dest)
-        print(f"  {dtype_name:<32} -> {dest.relative_to(REPO)}  "
-              f"({dest.stat().st_size / 1e6:.2f} MB)")
+        # A PRODUCT IS A DIRECTORY WHENEVER ITS TYPE HAS NO `ext:`, and four of the seams
+        # are -- the rescue, the algebra, the partial lane and the corrected pair table
+        # each ship a table beside the refusals that make it readable. `copy2` on a
+        # directory raises IsADirectoryError, which used to be unreachable because every
+        # seam was a single parquet.
+        if p.is_dir():
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(p, dest)
+            size = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file())
+        else:
+            shutil.copy2(p, dest)
+            size = dest.stat().st_size
+        print(f"  {dtype_name:<32} -> {dest.relative_to(REPO)}  ({size / 1e6:.2f} MB)")
+
+    if branch == "map":
+        promote_cache(found)
 
     rc = 0
     missing_tools = sorted(set(spec["evidence"]) - set(found))
@@ -747,16 +906,295 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
     return rc
 
 
+# ---------------------------------------------------------------------------
+# the reuse audit
+# ---------------------------------------------------------------------------
+#
+# What it answers, per member: how much of the universe is this run actually going to map,
+# and how much of that is ground the deployed bake already covers. What it REFUSES is the
+# case a run cannot tell from the inside -- a cache that was declared and did not take.
+# Every number below is a set difference over ids, so there is nothing to tune.
+
+CACHE_LOCAL = DATA / ALL_INPUTS["fabfos_data::aam_cache"]
+
+# Runs on the LOGIN NODE with nothing but the standard library, because the cache is TSV
+# and the point of the exercise is to read the copy that is actually there. A cached row
+# is identified by (id, hash of the submission string): the string is half the key, so a
+# row whose string moved is not a resumable row, and hashing it keeps the transfer at
+# ~40 bytes per row instead of shipping 15 MB of SMILES per member.
+CACHE_DIGEST_PY = r"""
+import hashlib, os, sys
+root = sys.argv[1]
+if not os.path.isdir(root):
+    print("MISSING\t" + root)
+    raise SystemExit(0)
+print("PRESENT\t" + root)
+for member in sorted(os.listdir(root)):
+    d = os.path.join(root, member)
+    if not os.path.isdir(d):
+        continue
+    for dirpath, _dirs, files in os.walk(d):
+        for fn in sorted(files):
+            p = os.path.join(dirpath, fn)
+            if fn.endswith(".attempted"):
+                with open(p) as fh:
+                    for line in fh:
+                        s = line.strip()
+                        if s and not s.startswith("#"):
+                            print(member + "\tattempted\t" + s)
+            elif fn.endswith(".tsv"):
+                with open(p) as fh:
+                    head = fh.readline().rstrip("\n").split("\t")
+                    if "mnxr" not in head or "rxn_smiles" not in head:
+                        continue
+                    i, j = head.index("mnxr"), head.index("rxn_smiles")
+                    for line in fh:
+                        f = line.rstrip("\n").split("\t")
+                        if len(f) <= max(i, j):
+                            continue
+                        h = hashlib.sha1(f[j].encode()).hexdigest()[:16]
+                        print(member + "\tcache\t" + f[i] + "\t" + h)
+"""
+
+# Below this the todo is a resume; at or above it, a cache that holds rows resumed
+# nothing. 0.95 rather than 1.0 because a handful of ids legitimately fall out between
+# runs -- a re-shard, a submission string that moved -- and rather than 0.5 because a
+# genuinely half-finished run is exactly what a resume is for.
+FULL_REMAP_FRACTION = 0.95
+
+
+def read_staged_cache(host: str, remote_cache: str) -> tuple[bool, dict, dict]:
+    """`(present, {member: {id: smiles_hash}}, {member: {attempted ids}})` from the REMOTE.
+
+    THE REMOTE COPY AND NOT THE LOCAL ONE, which is the whole point of the check. The
+    cache is staged at a path the task container binds by its own name, so a directory
+    that exists on this workstation and not on the cluster stages an EMPTY given and the
+    run silently re-maps everything -- and that is indistinguishable from a first run
+    unless somebody reads the far side. `present` is False when the path is not there at
+    all, which is the ordinary state before the first run and is reported rather than
+    refused.
+    """
+    return parse_cache_digest(
+        ssh_once(host, f"python3 - {remote_cache} <<'PYEOF'\n{CACHE_DIGEST_PY}\nPYEOF\n"))
+
+
+def parse_cache_digest(out: str) -> tuple[bool, dict, dict]:
+    """The digest above, as `(present, finished, attempted)`. Pure, so it is testable."""
+    finished: dict[str, dict[str, str]] = {}
+    attempted: dict[str, set[str]] = {}
+    present = False
+    for line in out.splitlines():
+        f = line.rstrip("\n").split("\t")
+        if f[0] == "PRESENT":
+            present = True
+        elif f[0] == "MISSING":
+            present = False
+        elif len(f) == 4 and f[1] == "cache":
+            finished.setdefault(f[0], {})[f[2]] = f[3]
+        elif len(f) == 3 and f[1] == "attempted":
+            attempted.setdefault(f[0], set()).add(f[2])
+    return present, finished, attempted
+
+
+def deployed_reactions() -> set[str]:
+    """The MNXRs the deployed bake carries at least one correspondence for.
+
+    Decoded rather than read: `ref::atom_pairs` is ENCODED against its vocabulary, so the
+    `rxn` column is an int code and the symbol table beside it is the only way back to an
+    MNXR. Returns an empty set when the deployed bake is not on disk -- that makes the
+    audit's last column absent, never zero, because zero is a claim.
+    """
+    import pandas as pd
+
+    pairs, vocab = DEPLOYED_BAKE / "atom_pairs.parquet", DEPLOYED_BAKE / "vocab.parquet"
+    if not (pairs.exists() and vocab.exists()):
+        return set()
+    codes = set(pd.read_parquet(pairs, columns=["rxn"])["rxn"].unique().tolist())
+    v = pd.read_parquet(vocab)
+    v = v[v["kind"] == "rxn"]
+    return {s for c, s in zip(v["code"], v["symbol"]) if c in codes}
+
+
+def decompose_member(keys: set, want: dict, have: dict, tried_all: set,
+                     covered: set, base_of: dict):
+    """`(reusable, stale, tried, todo, todo_new)` for one member. Set arithmetic, no I/O.
+
+    A cached row counts as FINISHED only where the string it was produced from is the
+    string this run would send. One reaction has up to four submissions in this graph --
+    whole, collapsed, rescue-completed, element-reduced -- so a row keyed on the id alone
+    would serve whichever ran last, which is not staleness but a map of a different
+    molecule filed under this one's name. `stale` counts what that drops, and a large
+    `stale` after a method change is the key doing its job rather than a fault.
+
+    ATTEMPTED COUNTS AS DONE for this arithmetic, and that is deliberate: Indigo resumes
+    off what it STARTED, because a reaction it hung inside writes no row and re-offering
+    it hangs the lane again. So the todo is what neither finished nor was reached, which
+    is exactly what the next run will spend its hours on.
+
+    `todo_new` is at REACTION grain where the rest is at submission grain -- an element
+    reduction and its whole reaction are two submissions of one reaction, and the deployed
+    table knows only the reaction. `None` where the deployed bake is not on disk.
+    """
+    reusable = {k for k in keys if k in have and want.get(k) == have[k]}
+    stale = sum(1 for k, h in have.items() if want.get(k) != h)
+    tried = tried_all & keys
+    todo = keys - reusable - tried
+    todo_new = ({base_of.get(k, k) for k in todo} - covered) if covered else None
+    return reusable, stale, tried, todo, todo_new
+
+
+def audit(host: str, remote_root: str) -> list[str]:
+    """Decompose each member's work before a single job is placed. Returns problems.
+
+    THE DECOMPOSITION IS THE REPORT AND THE REFUSAL IS ONE LINE OF IT. Reuse in this graph
+    happens at two grains and only one of them is visible in a plan: a declared import
+    keeps a whole transform out of the plan and `check_plan` proves it, while the durable
+    cache keeps individual REACTIONS out of a lane and nothing in the plan mentions it.
+    This is the second gate, and its numbers are what says whether a twelve-hour lane is
+    about to do twelve hours of work or twenty minutes of it.
+    """
+    import pandas as pd
+
+    problems: list[str] = []
+    uni_rel = BRANCHES["map"]["imports"]["interm::aam_universe"]
+    uni_local = DATA / uni_rel
+    if not uni_local.exists():
+        return [f"cannot audit: the universe is not at data/{uni_rel}. Run `prepare` and "
+                f"retrieve it first -- the audit reads the same table the members will."]
+
+    u = pd.read_parquet(uni_local, columns=["mnxr", "verdict", "rxn_smiles",
+                                            "base_mnxr", "submission_class"])
+    u = u[u["rxn_smiles"].notna()]
+    want = {r.mnxr: hashlib.sha1(str(r.rxn_smiles).encode()).hexdigest()[:16]
+            for r in u.itertuples(index=False)}
+    base_of = dict(zip(u["mnxr"], u["base_mnxr"]))
+
+    remote_cache = f"{remote_root}/{ALL_INPUTS['fabfos_data::aam_cache']}"
+    print(f"\n=== reuse audit -- staged cache at {host}:{remote_cache} ===", flush=True)
+    present, finished, attempted = read_staged_cache(host, remote_cache)
+    if not present:
+        print("  the staged cache directory is NOT on the remote. That is the ordinary "
+              "first-run state and it is what --run creates; every member below will map "
+              "its whole universe.")
+
+    covered = deployed_reactions()
+    print(f"  deployed bake covers {len(covered):,} reactions"
+          if covered else
+          "  the deployed bake is not on disk, so the last column is omitted rather "
+          "than reported as zero")
+
+    print(f"\n  {'member':<12} {'universe':>9} {'whole':>8} {'compl':>7} {'reduc':>7} "
+          f"{'cached':>8} {'tried':>8} {'todo':>9} {'todo new':>9}")
+    for member, admits in sorted(MEMBER_ADMITS.items()):
+        mine = u[u["verdict"].isin(admits)]
+        keys = set(mine["mnxr"])
+        by_class = mine["submission_class"].value_counts().to_dict()
+
+        have = finished.get(member, {})
+        reusable, stale, tried, todo, todo_new = decompose_member(
+            keys, want, have, attempted.get(member, set()), covered, base_of)
+
+        print(f"  {member:<12} {len(keys):>9,} {by_class.get('whole', 0):>8,} "
+              f"{by_class.get('completed', 0):>7,} {by_class.get('reduced', 0):>7,} "
+              f"{len(reusable):>8,} {len(tried):>8,} {len(todo):>9,} "
+              f"{(len(todo_new) if todo_new is not None else 0):>9,}")
+        if stale:
+            print(f"    {stale:,} cached rows are for a submission string this run would "
+                  f"not send, and are not counted as finished")
+
+        # THE REFUSAL. A cache holding rows and a todo that is still the whole universe
+        # are the same two facts an honest first run has, minus the rows -- so the rows
+        # are the only thing that can tell them apart, and here they say the cache did not
+        # take. Most likely the member directory is named differently on the remote, or
+        # the submission strings all moved and nothing said so.
+        if have and keys and len(todo) >= FULL_REMAP_FRACTION * len(keys):
+            problems.append(
+                f"{member}: the staged cache holds {len(have):,} rows and the todo is "
+                f"still {len(todo):,} of {len(keys):,} ({len(todo) / len(keys):.1%}). A "
+                f"cache that resumes nothing is not a cache -- either its member "
+                f"directory is not `{remote_cache}/{member}`, or every submission string "
+                f"moved ({stale:,} rows were dropped as stale) and this is a re-map "
+                f"wearing a resume's clothes. Submitting would cost the whole lane again.")
+
+    return problems
+
+
+def audit_plan(used: set[str], branch: str) -> list[str]:
+    """The two named absences, on top of check_plan's lane-set equality.
+
+    Equality already catches both. They are named anyway because the equality failure says
+    "a lane this part does not own is scheduled" and lists it, while these say what it
+    MEANS -- the lookups were not staged, or a driver is still pointed at a graph that no
+    longer exists. The `lookups` part is exempt from the first: producing them is its job.
+    """
+    problems = []
+    if "mnx_lookups" in used and "mnx_lookups" not in BRANCHES[branch]["lanes"]:
+        problems.append(
+            "mnx_lookups is in the plan. The five lookup:: tables are staged, all five or "
+            "none -- four satisfy four types and leave this lane to produce the fifth, "
+            "which re-derives all five and hands the run two generations of one table. "
+            "Run the `lookups` part and check data/fabfos/processed/lookups/.")
+    ghosts = sorted(l for l in used if l.endswith(("_rescue", "_partial"))
+                    and l not in ("aam_rescue", "aam_partial"))
+    if ghosts:
+        problems.append(
+            f"deleted mapper lanes are in the plan: {ghosts}. The three members run ONCE "
+            f"over `interm::aam_universe`, which carries all three submission classes; "
+            f"these six transforms and their types were removed in T5. A plan holding one "
+            f"is reading a transform library from before that.")
+    return problems
+
+
+def promote_cache(found: dict) -> None:
+    """Fold this run's member output back into the durable cache.
+
+    Cache-in is a staged directory and cache-out is the evidence, which is the only shape
+    available: the staged copy is an input and a lane cannot write to it. So the merged
+    per-member table and the attempted-ids sidecars come home with the evidence and land
+    here, where the next run stages them from.
+
+    The merged table is CUMULATIVE -- a member carries its reusable prior rows into its own
+    output -- so this overwrites rather than accumulates. The displaced copy is kept for
+    one generation under a name `shard.cache_files` still reads, because a run that died
+    before merging is the case where the old file is the only one with the rows.
+    """
+    for member in sorted(MEMBER_ADMITS):
+        src = found.get(member)
+        if src is None:
+            continue
+        dest = CACHE_LOCAL / member
+        dest.mkdir(parents=True, exist_ok=True)
+        merged = sorted(p for p in src.rglob(f"{member}.tsv"))
+        sidecars = sorted(src.rglob("*.attempted"))
+        for p in merged:
+            cur = dest / "cache.tsv"
+            if cur.exists():
+                shutil.copy2(cur, dest / "cache.prev.tsv")
+            shutil.copy2(p, cur)
+        for p in sidecars:
+            shutil.copy2(p, dest / p.name)
+        n = sum(1 for _ in (dest / "cache.tsv").open()) - 1 if (dest / "cache.tsv").exists() else 0
+        print(f"  cache    {member:<12} {n:,} rows, {len(sidecars)} sidecar(s) "
+              f"-> {dest.relative_to(REPO)}")
+    print("  the next run stages this directory; nothing here is pinned or committed.")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("branch", choices=sorted(BRANCHES),
                     help="which part of the graph this run owns. lookups goes first and "
-                         "alone; aam and members are then independent; direction waits on "
-                         "members only; direction_bake waits on aam and direction")
+                         "alone; then prepare -> map -> assemble in order, with members "
+                         "beside them and direction after members; direction_bake waits "
+                         "on assemble and direction. redox and reference are recovery cuts "
+                         "of assemble, not steps of the normal route")
     ap.add_argument("--run", action="store_true",
                     help="execute on the host. Without it this plans, checks and renders "
                          "the DAG, and touches no remote machine")
+    ap.add_argument("--audit", action="store_true",
+                    help="run the reuse audit and stop. Needs --user, because the whole "
+                         "point is to read the cache STAGED on the remote rather than the "
+                         "copy here. It runs anyway before `map` is submitted")
     ap.add_argument("--host", default=SOCKEYE_HOST)
     ap.add_argument("--user", default=None,
                     help="remote username, REQUIRED with --run and never auto-resolved. "
@@ -802,6 +1240,10 @@ def main() -> int:
     a = ap.parse_args()
 
     spec = BRANCHES[a.branch]
+    if "fabfos_data::aam_cache" in spec["inputs"]:
+        # Before the push, not just before the plan: an empty durable cache is the
+        # ordinary first-run state, and `push_data` refuses an input that is not here.
+        CACHE_LOCAL.mkdir(parents=True, exist_ok=True)
     work = a.work or (WORK_ROOT / a.branch)
     work.mkdir(parents=True, exist_ok=True)
     staging = TEMP / f"_run_{a.branch}"
@@ -810,8 +1252,9 @@ def main() -> int:
     if a.retrieve_only:
         return retrieve(a.retrieve_only, a.branch, a.host, staging)
 
-    if a.run and not a.user:
-        raise SystemExit("--run needs --user; see its help for why it is never guessed.")
+    if (a.run or a.audit) and not a.user:
+        raise SystemExit("--run and --audit both need --user; see its help for why it is "
+                         "never guessed.")
     if a.run and spec["needs_metacyc"] and not GIVEN_AT.exists():
         raise SystemExit(
             f"the MetaCyc drop-in is not at {GIVEN_AT}.\n"
@@ -822,7 +1265,7 @@ def main() -> int:
 
     remote_root = None
     agent_home = None
-    if a.run:
+    if a.run or a.audit:
         remote_root = a.remote_data or f"{a.scratch_root}/{a.user}/fabfos_r6/data"
         agent_home = f"{a.scratch_root}/{a.user}/fabfos_r6/agent_{a.branch}_{ts}"
 
@@ -865,6 +1308,7 @@ def main() -> int:
         return 1
 
     used, problems = check_plan(task, a.branch)
+    problems += audit_plan(used, a.branch)
 
     staged = [(p, n) for p, n, _ in inputs.Iterate()]
     print(f"\nstaged: {len(staged)} item(s) -- {sorted({n for _, n in staged})}")
@@ -886,6 +1330,20 @@ def main() -> int:
     if problems:
         return 1
     print(f"\nexactly the {a.branch} part's lanes are in the plan, and nothing else")
+
+    # THE SECOND GATE. The plan proves reuse at TRANSFORM grain -- an import satisfied is a
+    # producer absent. Nothing in a plan says anything about reuse at REACTION grain, which
+    # is where the twelve hours are, so the cache gets its own check and it runs before a
+    # job is placed rather than after one comes back short.
+    if a.branch == "map" and (a.run or a.audit):
+        audit_problems = audit(a.host, remote_root)
+        for p in audit_problems:
+            print(f"\nFAIL: {p}")
+        if audit_problems:
+            return 1
+    if a.audit:
+        print("\n(audit only -- nothing was submitted)")
+        return 0
 
     if not a.run:
         print("\n(plan only -- pass --run --user <name> to execute on the host)")
