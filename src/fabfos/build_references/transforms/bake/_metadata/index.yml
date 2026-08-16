@@ -7,12 +7,16 @@ manifest:
     instance_id: 1e2005efc98c3640dbb53ded6cb6d2365d73199f6be00d67a2d8c4e52539b6d2a3f0
     origin: leaf
     type: transforms::transform
+  aam_recount.py:
+    instance_id: 1e2042a7f545c14bab58013342330085d90a28f30638f5b7c91ee343550f9ae8c96a
+    origin: leaf
+    type: transforms::transform
   aam_rescue.py:
     instance_id: 1e20645ea214953d70ef2fa96c6e249d5cb2cdb35adac14dcc1e77cc7c6bae4bf2cd
     origin: leaf
     type: transforms::transform
   aam_worklist.py:
-    instance_id: 1e20212c2187bd1e9472126d2628e3bebb06ee82f7b5deac1a629f4b9d4f1456e922
+    instance_id: 1e20e4b14cd1ceed1cb3eed6330000ed49c0dea5ce10add16b5a087f84fe6e8eb74e
     origin: leaf
     type: transforms::transform
   dgbyg.py:
@@ -32,7 +36,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   indigo.py:
-    instance_id: 1e20cd36de0c19b2f674566e28ab730dd7a5affd4fe8209f3d76f50d67ec9a7dfd9f
+    instance_id: 1e2093a6d3130fe0e3e8c88f67f75977ac80d85a921e62674ce56c321d1ca0bddd64
     origin: leaf
     type: transforms::transform
   indigo_partial.py:

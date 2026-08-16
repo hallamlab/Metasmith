@@ -359,7 +359,10 @@ def canonical_ranks(mol):
         return None
 
 
-_FORMULA_TERM = re.compile(r"([A-Z][a-z]?)(\d*)")
+# PUBLIC because `aam.recount` needs the same tokenisation to read the countable core of
+# a `*` formula. There is one of these in the tree; a second one drifting is how the
+# balance test and the count it tests stopped meaning the same thing.
+FORMULA_TERM = re.compile(r"([A-Z][a-z]?)(\d*)")
 
 
 def count_element(formula: str, X: str):
@@ -374,7 +377,7 @@ def count_element(formula: str, X: str):
     if "*" in formula or "(" in formula or ")" in formula:
         return None
     n, seen = 0, False
-    for sym, num in _FORMULA_TERM.findall(formula):
+    for sym, num in FORMULA_TERM.findall(formula):
         if not sym:
             continue
         if sym == X:

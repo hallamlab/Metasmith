@@ -31,8 +31,8 @@ MODULES = [
     "ecspr.bake.aam.combine", "ecspr.bake.aam.curation",
     "ecspr.bake.aam.indigo_member", "ecspr.bake.aam.layers",
     "ecspr.bake.aam.metacyc_member", "ecspr.bake.aam.neural_members",
-    "ecspr.bake.aam.partial", "ecspr.bake.aam.shard",
-    "ecspr.bake.aam.worklist",
+    "ecspr.bake.aam.partial", "ecspr.bake.aam.recount",
+    "ecspr.bake.aam.shard", "ecspr.bake.aam.worklist",
     "ecspr.bake.direction",
     "ecspr.bake.direction.calibrate", "ecspr.bake.direction.canon",
     "ecspr.bake.direction.combine", "ecspr.bake.direction.curated",
@@ -50,7 +50,9 @@ NEEDS_A_TOOL = {
     "ecspr.bake.direction.thermo_dgbyg": "dGbyG",
     "ecspr.bake.atom_pairs": "rdkit",
     "ecspr.bake.aam.combine": "rdkit",          # via ..atom_pairs
+    "ecspr.bake.aam.curation": "rdkit",         # via ..atom_pairs
     "ecspr.bake.aam.partial": "rdkit",          # via ..atom_pairs
+    "ecspr.bake.aam.recount": "rdkit",          # via ..atom_pairs
 }
 
 # {module: {verb: {flags}}} -- "" is the verb-less case (one flat parser).
@@ -76,6 +78,12 @@ CLI = {
         "build": {"--lookups", "--worklist", "--rescued", "--covered",
                   "--atom-limit", "--char-limit",
                   "--out", "--out-forced", "--out-summary"},
+    },
+    "ecspr.bake.aam.recount": {
+        "build": {"--metabolites", "--out", "--out-summary"},
+        # `check` is part of the step rather than a test: it asserts the recount and
+        # atom_ranks agree about how many atoms of an element a structure has.
+        "check": {"--counts", "--atom-ranks"},
     },
     "ecspr.bake.aam.layers": {
         "fuse": {"--member", "--out"},

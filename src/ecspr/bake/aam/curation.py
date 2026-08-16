@@ -67,6 +67,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from .. import atom_pairs as AP
 from . import worklist as aam_worklist
 
 ELEMENTS = ("C", "N", "S", "P")
@@ -284,24 +285,12 @@ def gate_bodies_cancel(subs, prods, resolved: dict):
     return n_star(subs) == n_star(prods)
 
 
-_FORM = re.compile(r"([A-Z][a-z]?)(\d*)")
-
-
-def count_formula(formula, X: str):
-    """Atoms of X in a MetaNetX formula; None when it cannot be trusted (absent, a `*`
-    polymer, or nested groups). An unknown count can never balance."""
-    if not formula or not isinstance(formula, str) or formula.strip() in ("", "*"):
-        return None
-    if "*" in formula or "(" in formula or ")" in formula:
-        return None
-    n, seen = 0, False
-    for sym, num in _FORM.findall(formula):
-        if not sym:
-            continue
-        if sym == X:
-            seen = True
-            n += int(num) if num else 1
-    return n if seen else 0
+# ONE COUNTER IN THE TREE, and this is the alias rather than a second copy of it. Three
+# byte-identical implementations of "atoms of X in a MetaNetX formula" used to exist here,
+# in `atom_pairs`, and in `mnx_lookups`, all of which had to agree and none of which was
+# tested against the others. The one that is tested is the extractor's, so it is the one
+# that survives; the name stays because it is what this module's balance gates read.
+count_formula = AP.count_element
 
 
 def concrete_balance(subs, prods, formula_of, ph_mnxms, X, resolved=None):
