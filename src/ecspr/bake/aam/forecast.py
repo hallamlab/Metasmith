@@ -353,11 +353,33 @@ def load_settled(forced: Path | None) -> set:
     return set(zip(d["mnxr"].astype(str), d["element"].astype(str)))
 
 
-def cmd_build(args):
-    rx = pd.read_parquet(args.lookups / "reactions.parquet",
+def participants(reactions_parquet) -> dict:
+    """`{mnxr: (substrates, products)}` from `lookup::reactions`.
+
+    A LIST COLUMN COMES BACK FROM PARQUET AS A NUMPY ARRAY, and `array or []` raises
+    `ValueError: the truth value of an array with more than one element is ambiguous`.
+    It reads as an ordinary null-guard and is a crash on every reaction with two
+    substrates -- which is to say on the first row. `worklist.adjudicate` reads the same
+    three columns and has always written the explicit `is not None`; this is that.
+    """
+    rx = pd.read_parquet(Path(reactions_parquet),
                          columns=["mnxr", "substrates", "products"])
-    parts = {r.mnxr: (list(r.substrates or []), list(r.products or []))
-             for r in rx.itertuples(index=False)}
+
+    def seq(v):
+        if v is None:
+            return []
+        try:
+            return list(v)
+        except TypeError:
+            # A null in a list column arrives as a float NaN, which is not iterable.
+            return []
+
+    return {r.mnxr: (seq(r.substrates), seq(r.products))
+            for r in rx.itertuples(index=False)}
+
+
+def cmd_build(args):
+    parts = participants(Path(args.lookups) / "reactions.parquet")
     counts_of = load_counts(args.element_counts)
     settled = load_settled(args.forced)
     prior, had_logs = read_prior(args.prior_logs)

@@ -333,3 +333,31 @@ def test_the_mapper_is_an_ordinary_pipe_when_nothing_hangs():
             "a respawn per reaction would make the containment cost the lane"
     finally:
         m.close()
+
+
+# =====================================================================
+# the parquet seam
+# =====================================================================
+# `build` is exercised above with python lists, which is what a unit test naturally
+# writes. The CLI reads its participants from `lookup::reactions`, and a list column read
+# back from parquet is a numpy ARRAY -- so a guard spelled `array or []` raises rather
+# than defaulting, on the first reaction with two substrates. The tests all passed and
+# the lane died in the queue.
+
+def test_participants_survive_the_parquet_round_trip(tmp_path):
+    """The array's truth value is ambiguous, and a null-guard must not ask for it."""
+    p = tmp_path / "reactions.parquet"
+    pd.DataFrame([
+        dict(mnxr="MNXR1", substrates=["A", "B"], products=["C"]),
+        dict(mnxr="MNXR2", substrates=["A"], products=["B", "C", "D"]),
+        dict(mnxr="MNXR3", substrates=[], products=[]),
+        dict(mnxr="MNXR4", substrates=None, products=None),
+    ]).to_parquet(p, index=False)
+
+    parts = F.participants(p)
+    assert parts["MNXR1"] == (["A", "B"], ["C"])
+    assert parts["MNXR2"] == (["A"], ["B", "C", "D"])
+    assert parts["MNXR3"] == ([], [])
+    assert parts["MNXR4"] == ([], []), "a null list column arrives as NaN, not None"
+    assert all(isinstance(s, list) and isinstance(q, list)
+               for s, q in parts.values()), "a numpy array downstream is a second bug"
