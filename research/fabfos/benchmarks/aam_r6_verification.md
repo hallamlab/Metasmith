@@ -203,14 +203,35 @@ seed document describes (shared accession *or* post-substitution balance), so a 
 against 42 more likely reflects a narrower name normalisation in the twin search than a
 stricter gate. It is worth one measurement, not a rewrite.
 
-## The decision this hands back
+## The decision this hands back, and why it got smaller
 
-**The body-cancel gate.** It costs the seed document's whole preparation union (919 of
-934), B1's entire yield, and 2,468 of the 13,910 `rescue_declined`. It is defensible: a `*`
-residue on one side only is an unknown counted as zero. Relaxing it to "a curated
-element-neutral body may stand unpaired" would recover on the order of a thousand
-reactions and would weaken every balance verdict that depends on it. Neither side of that
-is obviously right.
+**The body-cancel gate** refuses 2,468 of the 13,910 `rescue_declined`, and that number
+was read as its price. It is not: **the gates are sequential**, so a reaction the gate
+stops refusing goes on to meet `concrete_balance`, and most fail there instead. Measured
+over all 24,098 targets by disabling the gates outright:
+
+| | rescued | Δ | projected reaction coverage |
+|---|---:|---:|---|
+| the lane as it now stands | 10,702 | — | 68,130 (81.3%) |
+| body-cancel gate relaxed | 11,229 | **+527** | 68,657 (81.9%) |
+| …and every generic handed a `*` | 14,575 | +3,873 | 72,003 (85.9%) |
+
+`no element balances` absorbs what the earlier gates release: 1,174 → 3,718 → 9,485 down
+that column. So relaxing the body-cancel gate buys **527 reactions, 0.6 points**, against
+weakening every balance verdict in the table — a worse trade than "on the order of a
+thousand" made it look, and the third row is the stop-line's own definition of wrong.
+
+**The rung that is left is not a gate.** In the permissive run the 9,523 still refused
+split into **4,808 disproved** — balance ran and every element came back False — and
+**4,715 abstained**, where no element could be tested because a concrete participant's
+count is untrustworthy. Only the second half is addressable, and it is the recount lane's
+territory rather than the arbiter's: A4 already put 201,722 metabolites on structure-derived
+counts and filled 5,736,648 of 5,982,672 element slots. Closing the remainder converts
+abstentions into verdicts at no cost in warrant.
+
+For calibration, the hard ceiling is **97.5%**: 1,355 `no_transfer` (both sides the same
+multiset), 603 `non_molecule` and 128 `unparseable_equation` are structurally out of scope,
+and no relaxation reaches them.
 
 The reductase couple was listed here as a second decision. It was not one — it was the
 fragment-lane collision above, and it is fixed rather than traded.
