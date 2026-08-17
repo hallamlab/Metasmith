@@ -15,52 +15,31 @@ All three parts are read from the SAME bake directory in one call, which is what
 the bake-identity invariant (`vocab`/`atom_pairs`/`direction` are one artifact) true by
 construction here -- there is no path through this module that mixes two bakes.
 
-The decoded tables are cached under `cache/`, keyed on the bake they were decoded from --
-see `_identity`. A cache keyed on the file merely existing outlived the r7->r8 repin in
-five sibling worktrees, each serving r7's ratios to a script that believed it was reading
-the current bake.
+The decoded tables are cached under `cache/`, keyed on the bake they were decoded from.
+That key, and the reason the shared identity block alone is not enough for it, live in
+`bake_identity` one directory up -- every study in this tree shares them.
 """
 from __future__ import annotations
 
-import json
+import sys
 from pathlib import Path
 
 import pandas as pd
-import pyarrow.parquet as pq
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import bake_identity                                                          # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[4]
-BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
+BAKE = bake_identity.DEPLOYED
 CACHE = Path(__file__).resolve().parent / "cache"
 
 
-def _identity() -> str:
-    """What bake the decode came from, as a cache key.
-
-    THE SHARED IDENTITY BLOCK IS NOT ENOUGH. `vocab_sha256` is a fact about the node
-    space, and a direction re-bake leaves the node space alone -- r8 inherits r7's
-    identity byte for byte, by construction. The field that moves is the per-file
-    `src_direction_sha256`, which lives under a SEPARATE footer key precisely so
-    `assert_same_bake` does not compare it across the trio. Both are in the key, so a
-    cache survives neither a new node space nor a new direction table.
-    """
-    md = pq.read_schema(BAKE / "direction.parquet").metadata or {}
-    ident = json.loads(md[b"ecspr_bake"])
-    per_file = json.loads(md[b"ecspr_bake_file"])
-    return f"{ident['vocab_sha256']}:{per_file['src_direction_sha256']}"
-
-
 def _fresh(name: str) -> Path | None:
-    """The cached decode of `name`, if the bake on disk is the one that produced it."""
-    out, stamp = CACHE / name, CACHE / f"{name}.from"
-    if out.exists() and stamp.exists() and stamp.read_text().strip() == _identity():
-        return out
-    return None
+    return bake_identity.fresh(CACHE / name, BAKE)
 
 
 def _keep(name: str) -> Path:
-    """Stamp a freshly written cache entry with the bake it came from."""
-    (CACHE / f"{name}.from").write_text(_identity())
-    return CACHE / name
+    return bake_identity.keep(CACHE / name, BAKE)
 
 
 def _vocab() -> dict:
@@ -98,12 +77,4 @@ def atom_pairs() -> Path:
 
 def direction_ratios() -> Path:
     """Path to `{mnxr: ratio}` with reaction codes resolved to MNXR ids."""
-    name = "direction_ratios.parquet"
-    if (hit := _fresh(name)) is not None:
-        return hit
-    sym = _vocab()
-    d = pd.read_parquet(BAKE / "direction.parquet")
-    d = d.assign(mnxr=d.rxn.map(sym["rxn"]))
-    CACHE.mkdir(parents=True, exist_ok=True)
-    d[d.mnxr != "EMPTY"][["mnxr", "ratio"]].to_parquet(CACHE / name)
-    return _keep(name)
+    return bake_identity.build_direction_ratios(CACHE / "direction_ratios.parquet", BAKE)

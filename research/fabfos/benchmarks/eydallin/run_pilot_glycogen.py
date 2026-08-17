@@ -55,6 +55,8 @@ from ecspr.model.graph import Terminal, measure_leak, solve                     
 from ecspr.model.directed import _HAVE_CHOLMOD                                     # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import bake_identity                                                          # noqa: E402
 import bake_pairs                                                             # noqa: E402
 
 ATOM_PAIRS = bake_pairs.atom_pairs()
@@ -84,14 +86,9 @@ SOURCE_NAME = "D-glucose"
 
 
 def build_direction_ratios(out_path: Path) -> Path:
-    direction = pd.read_parquet(BAKE / "direction.parquet")
-    vocab = pd.read_parquet(BAKE / "vocab.parquet")
-    rxn_vocab = vocab[vocab.kind == "rxn"][["code", "symbol"]].rename(
-        columns={"code": "rxn", "symbol": "mnxr"})
-    df = direction.merge(rxn_vocab, on="rxn", how="inner")
-    df = df[df.mnxr != "EMPTY"][["mnxr", "ratio"]]
-    df.to_parquet(out_path)
-    return out_path
+    """Stamped with the bake it came from -- this cache is the campaign's baseline, and
+    an unstamped one is how the r7 delivery split outlived the r8 repin."""
+    return bake_identity.build_direction_ratios(out_path, BAKE)
 
 
 def resolve_source(pairs: pd.DataFrame) -> str:
