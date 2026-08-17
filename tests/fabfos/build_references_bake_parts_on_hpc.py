@@ -1297,8 +1297,34 @@ def promote_logs() -> None:
 
     The step logs come from the run sandboxes rather than from the retrieved evidence,
     because they are the engine's record of the invocation and not a tool's output.
+
+    IT REFUSES ON A ROUTE THAT DID NOT MAP, and that guard is the whole reason this is
+    not a bare call. Every table `runlogs build` writes is derived from the mapper caches
+    -- indigo's status and sidecars, the two neural lanes' derived status -- and it
+    `rmtree`s its output before writing. A DIRECTION-ONLY RE-BAKE stages no aam_cache
+    (`direction_bake` declares no inputs), so the rebuild would succeed, write a `logs/`
+    describing zero mapped reactions, and the promote would fold that over the record the
+    last full run wrote. That record is ground truth for the recall benchmark, and it is
+    not reproducible without re-running the mapping.
+
+    So: the mapper caches are a PRECONDITION, checked here rather than trusted from the
+    branch name. `reference` and a full `direction_bake` stage them and pass; a direction
+    -only route does not and is told what it would have had to stage.
     """
     from ecspr.bake.aam import runlogs                                  # noqa: PLC0415
+
+    missing = [m for m in sorted(MEMBER_ADMITS)
+               if not (CACHE_LOCAL / m / "cache.tsv").exists()]
+    if missing:
+        print(f"  logs     NOT rebuilt -- no atom-mapping cache for {missing}.")
+        print(f"           `runlogs build` derives every table it writes from "
+              f"{CACHE_LOCAL.relative_to(REPO)}, and rmtree's its output first, so on a "
+              f"route that mapped nothing it would replace the last full run's logs with "
+              f"a record of zero reactions. Those logs are the recall benchmark's ground "
+              f"truth and cost a full mapping run to reproduce.")
+        print(f"           The promoted chunk KEEPS the logs/ it already has. To rebuild "
+              f"them deliberately, stage the cache and re-run this retrieval.")
+        return
 
     curated = sorted(TEMP.glob("metacyc/*/status.tsv"))
     runs = sorted(p for p in TEMP.glob("_run_*") if p.is_dir())

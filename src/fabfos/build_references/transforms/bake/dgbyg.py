@@ -103,6 +103,12 @@ def protocol(context: ExecutionContext):
 
     cmd = f"""
         {resolve}
+        # This lane has no package to be versioned by, and the fallback hash covers
+        # `bake/*.py` -- not `bake/direction/`, where all of its method lives. So the
+        # version is computed from the subpackage and handed over. See equilibrator.py.
+        DIRVER=$({py} -m ecspr.bake.evidence fingerprint --package direction)
+        echo "[dgbyg] direction method $DIRVER"
+
         # Recomputed rather than passed -- see equilibrator.py. Same release, same code,
         # same list; a shared node between two independent members would only serialise
         # them.
@@ -146,6 +152,7 @@ def protocol(context: ExecutionContext):
         # guard firing from the model failing, and a shard that abstained on everything is
         # only visible before the concatenation.
         {py} -m ecspr.bake.evidence collect --root _ev --tool dgbyg \
+            --version $DIRVER \
             --file _universe.json members/dgbyg_*.parquet {iout.container}
         mkdir -p {iev.container}
         cp -r _ev/. {iev.container}/

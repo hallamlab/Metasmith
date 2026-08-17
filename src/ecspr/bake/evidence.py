@@ -130,7 +130,7 @@ def buildlib_sha():
     return None
 
 
-def buildlib_fingerprint():
+def buildlib_fingerprint(sub: str | None = None):
     """A content hash over the buildlib, for the version the git sha cannot supply.
 
     `buildlib_sha` is None wherever it matters most: inside the container the buildlib
@@ -143,8 +143,19 @@ def buildlib_fingerprint():
     it in the container too: which method produced this. It changes when any module
     changes, which is the intended granularity -- coarser than per-file, and identical
     for two runs of the same tree.
+
+    THE GLOB IS ONE DIRECTORY DEEP, and that is a trap rather than a detail: the default
+    covers `bake/*.py` and NOT `bake/<subpackage>/*.py`, so the whole direction ensemble
+    is invisible to it. Two runs of materially different direction code would file their
+    evidence under one version directory -- exactly what `<tool>/<version>/` exists to
+    prevent. `sub` names a subpackage to fingerprint instead; the default stays as it was
+    so the version of every artifact already written keeps its meaning.
     """
     d = Path(__file__).resolve().parent
+    tag = "lib-"
+    if sub:
+        d = d / sub
+        tag = f"lib-{sub}-"
     h = hashlib.sha256()
     try:
         for p in sorted(d.glob("*.py")):
@@ -152,7 +163,7 @@ def buildlib_fingerprint():
             h.update(p.read_bytes())
     except OSError:
         return None
-    return "lib-" + h.hexdigest()[:12]
+    return tag + h.hexdigest()[:12]
 
 
 def tool_version(tool: str, explicit: str | None = None):
@@ -282,6 +293,21 @@ def cmd_manifest(args):
     return 0
 
 
+def cmd_fingerprint(args):
+    """Print the content hash a lane can pass back as `--version`.
+
+    A lane whose method lives in a subpackage cannot be versioned by the default
+    fingerprint, and the packages it imports are pinned by its image rather than by the
+    change it is running -- so the identity has to be computed and handed over.
+    """
+    fp = buildlib_fingerprint(args.package)
+    if fp is None:
+        raise SystemExit(f"[evidence] no python modules under buildlib "
+                         f"'{args.package or '.'}' to fingerprint")
+    print(fp)
+    return 0
+
+
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -299,6 +325,10 @@ def parse_args(argv=None):
     p = sub.add_parser("manifest"); p.set_defaults(fn=cmd_manifest)
     p.add_argument("--tool", required=True)
     p.add_argument("--version", default=None)
+    p = sub.add_parser("fingerprint"); p.set_defaults(fn=cmd_fingerprint)
+    p.add_argument("--package", default=None,
+                   help="a buildlib subpackage to hash, e.g. `direction`. Omitted, this "
+                        "is the same hash `collect` falls back to")
     return ap.parse_args(argv)
 
 

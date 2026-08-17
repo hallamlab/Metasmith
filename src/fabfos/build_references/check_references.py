@@ -20,8 +20,8 @@ still be joined wrongly at compile time, and the resulting graph is plausible ra
 broken.
 
 The constants check exists for a subtler reason. ``ecspr.bake.direction.canon`` is a copy of
-``src/fabfos/canon.py``'s ``DIR_*`` block, because the direction ensemble runs in a conda
-env that has no import path to the fabfos package. Two copies of a constant drift, and
+``src/fabfos/_deprecated_canon.py``'s ``DIR_*`` block, because the direction ensemble runs in a
+conda env that has no import path to the fabfos package. Two copies of a constant drift, and
 this pair drifts silently: one COMPUTES a ratio and the other VALIDATES a table carrying
 one, so a divergence produces a table that passes its own validator while meaning
 something else.
@@ -29,6 +29,7 @@ something else.
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
 import time
 from pathlib import Path
@@ -157,25 +158,35 @@ def check_equivalence(ident: dict, vocab_p: Path, pairs_p: Path, dir_p: Path,
          f"reference builder's {t_ref*1000:.0f} ms")
 
 
+MIRROR = "fabfos._deprecated_canon"
+
+
 def check_direction_constants() -> None:
     """The build-side copy of the DIR_* block must equal the run-side one.
 
     See the module docstring: these are the same numbers used at two different times, and
     a divergence is invisible from either side alone.
+
+    A FAILURE TO IMPORT IS A FAILURE, not a note. This check spent a generation passing
+    because it named `fabfos.canon`, which had been renamed to `fabfos._deprecated_canon`
+    -- the ImportError was caught, reported as a note, and the mirror it exists to guard
+    went unchecked through every run since. An unimportable mirror and a diverged one are
+    the same outcome for the reader, so they get the same verdict.
     """
     print("\nconstants -- the direction ensemble's two copies agree")
+    sys.path.insert(0, str(REPO / "src"))
     try:
         from ecspr.bake.direction import canon as dir_canon
-        sys.path.insert(0, str(REPO / "src"))
-        from fabfos import canon
+        canon = importlib.import_module(MIRROR)
     except Exception as e:                                       # pragma: no cover
-        note(f"could not import both copies ({e}); constants not checked")
+        check(f"both copies of the DIR_* block import", False,
+              f"{type(e).__name__}: {e}")
         return
     names = [n for n in dir(dir_canon) if n.startswith("DIR_")]
     bad = [n for n in names
            if not hasattr(canon, n) or getattr(canon, n) != getattr(dir_canon, n)]
-    check(f"all {len(names)} DIR_* constants match src/fabfos/canon.py", not bad,
-          f"diverged: {bad}" if bad else "")
+    check(f"all {len(names)} DIR_* constants match {MIRROR}", not bad,
+          f"diverged: {bad}" if bad else f"{len(names)} names")
 
 
 def check_bridge(bridge_p: Path) -> None:

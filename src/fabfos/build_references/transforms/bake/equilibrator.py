@@ -86,6 +86,14 @@ def protocol(context: ExecutionContext):
 
     cmd = f"""
         {resolve}
+        # WHAT VERSIONS THIS LANE'S EVIDENCE. Left to itself `evidence collect` would name
+        # the directory after component_contribution -- a package this image pins, so it
+        # does not move when the ensemble's own code does, and two runs of materially
+        # different direction code would land in one directory. The fallback is no better:
+        # it hashes `bake/*.py` and the whole ensemble lives in `bake/direction/`.
+        DIRVER=$({py} -m ecspr.bake.evidence fingerprint --package direction)
+        echo "[eq] direction method $DIRVER"
+
         {py} -m ecspr.bake.direction.drive universe --reac-prop $MNX/reac_prop.tsv \
             --out _universe.json
         # --require: this lane's ONLY product is the member table, so an unavailable
@@ -97,6 +105,7 @@ def protocol(context: ExecutionContext):
             --out {iout.container}
 
         {py} -m ecspr.bake.evidence collect --root _ev --tool equilibrator \
+            --version $DIRVER \
             --file _universe.json {iout.container}
         mkdir -p {iev.container}
         cp -r _ev/. {iev.container}/
@@ -123,6 +132,18 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # The cache load dominates the memory; the scan over the universe dominates the time.
-    resources=Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=12)),
+    # MEASURED, not budgeted -- `research/fabfos/benchmarks/direction_rescue/SHARD_COST.md`
+    # has the run this comes from. The declaration it replaces (4 cpus, 32 GB, 12 hours)
+    # was none of those things and was wrong in both directions at once.
+    #
+    #   cpus=1     the member is single-threaded and OMP_NUM_THREADS=1 is set above, so
+    #              the other three were never used.
+    #   GB(4)      against a 2.372 GB peak that is ENTIRELY FIXED -- the parsed chem_prop
+    #              props plus component-contribution's preprocessor matrices, ~0 marginal
+    #              per reaction. It does not grow with the universe, and it would not
+    #              amortise across a fan-out either: it would multiply.
+    #   hours=3    against 23 s of startup plus ~48 ms/reaction, i.e. ~68 minutes serially
+    #              over 83,795 reactions. The margin is for a cluster filesystem re-hashing
+    #              the 1.34 GB pooch cache cold, not for the chemistry.
+    resources=Resources(cpus=1, memory=Size.GB(4), duration=Duration(hours=3)),
 )
