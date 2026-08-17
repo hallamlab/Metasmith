@@ -63,8 +63,17 @@ MODEL_COLUMNS = ("model_key", "name", "smiles", "inchi", "inchikey", "basis")
 # none. Optional rather than required so a table can be authored before it is priced.
 MODEL_OPTIONAL = ("congener_of",)
 ROW_COLUMNS = ("kind", "mnxm", "mnx_name", "terms", "couple_id", "state",
-               "e0_V", "n_e", "n_h", "anchor_mnxr", "congeners", "basis")
-KINDS = ("carrier", "polymer")
+               "e0_V", "e0_model_V", "n_e", "n_h", "anchor_mnxr", "congeners", "basis")
+
+# `carrier`  a redox couple: both states substituted, no heavy atoms transferred, and the
+#            model's potential within a decade of the real carrier's.
+# `polymer`  a chain increment: the acceptor is inserted on the opposite side.
+# `thioester` an acyl carrier. NOT a redox couple -- the acyl group genuinely transits, so
+#            the model must carry it too, and the whole family must share one backbone or
+#            the anchor will not balance. There is no potential to declare, so the couple
+#            and potential gates do not apply and the ANCHOR is the entire safety argument.
+#            In scope by the principal's decision, against the recommendation to exclude.
+KINDS = ("carrier", "polymer", "thioester")
 
 # Faraday constant, kJ/(mol*V). Converts a declared couple potential difference into the
 # same units the members and `canon.DIR_DECADE` are in.
@@ -285,33 +294,35 @@ def _gate_couple(rows: pd.DataFrame, models: dict) -> None:
 
 
 def _gate_potential(rows: pd.DataFrame) -> dict:
-    """Both potentials declared, and the couple's implied dG inside one decade.
+    """The MODEL compound's potential, against the REAL carrier's, within one decade.
 
-    A generic with no defined potential fails by having no number to declare, which
-    refuses `Acceptor`, `A` and `AH2` by the same rule that admits NAD for NAD(P) -- no
+    THE TWO NUMBERS ARE THE REAL ONE AND THE STAND-IN'S, not the two states of one couple.
+    A couple has ONE E0', carried by both its rows, so comparing the ox row's declaration
+    to the red row's compares a value to itself and can never refuse anything. What has to
+    be small is the gap between the carrier MetaNetX would not let the member read and the
+    compound substituted for it -- that is the entire claim a carrier row makes.
+
+    A generic with no defined potential fails by having no number to declare, which refuses
+    `Acceptor`, `A` and `AH2` by the same rule that admits NAD for NAD(P) -- no
     special-casing, and no name list to keep in step with anything.
     """
     out = {}
-    for couple_id, g in rows[rows["kind"] == "carrier"].groupby("couple_id"):
-        for r in g.itertuples(index=False):
-            if not _cited(r.e0_V):
+    for r in rows[rows["kind"] == "carrier"].itertuples(index=False):
+        for col, val in (("e0_V", r.e0_V), ("e0_model_V", r.e0_model_V)):
+            if not _cited(val):
                 raise Refused(
-                    f"[substitute] couple {couple_id!r}: {r.mnxm} declares no e0_V. A "
+                    f"[substitute] couple {r.couple_id!r}: {r.mnxm} declares no {col}. A "
                     f"generic with no tabulated potential cannot be substituted -- there "
                     f"is no number to be right about")
-            if not _cited(r.basis):
-                raise Refused(f"[substitute] couple {couple_id!r}: {r.mnxm} has no basis "
-                              f"for its potential")
-        e0 = {str(r.state): float(r.e0_V) for r in g.itertuples(index=False)}
-        n_e = int(g["n_e"].iloc[0])
-        gap = abs(FARADAY * n_e * (e0["red"] - e0["ox"]))
+        n_e = int(r.n_e)
+        gap = abs(FARADAY * n_e * (float(r.e0_V) - float(r.e0_model_V)))
         if gap > canon.DIR_DECADE:
             raise Refused(
-                f"[substitute] couple {couple_id!r}: the declared potentials imply a "
-                f"{gap:.2f} kJ/mol gap between the real carrier and the model, past "
+                f"[substitute] couple {r.couple_id!r}: {r.mnxm} sits at {float(r.e0_V)} V "
+                f"and its model at {float(r.e0_model_V)} V, a {gap:.2f} kJ/mol gap past "
                 f"DIR_DECADE ({canon.DIR_DECADE:.2f}). One decade of conductance is the "
                 f"whole quantity being estimated")
-        out[couple_id] = gap
+        out[str(r.mnxm)] = gap
     return out
 
 
