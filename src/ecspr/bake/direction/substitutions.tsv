@@ -1,0 +1,65 @@
+# Which concrete couple stands in for which generic carrier. THIS is the curated file:
+# models.tsv only says what the model compounds are, and every structure there was copied
+# by machine.
+#
+# WHAT A CARRIER ROW CLAIMS, and what each gate checks:
+#   e0_V         the real generic carrier's tabulated E0' at pH 7. Cited in `basis`.
+#   e0_model_V   the model compound's. The potential gate refuses the row when the two
+#                are more than one DIR_DECADE apart at n_e electrons -- which is what
+#                declines `Acceptor`, `A` and `AH2` without a name list, since a generic
+#                acceptor has no number to be right about.
+#   anchor_mnxr  a reaction this row COVERS. `substitute anchor` rewrites it and runs the
+#                member for real; a row whose member stays silent there bought nothing.
+#   sibling_mnxr the same transformation as the anchor, written by MetaNetX with a
+#                DIFFERENT concrete couple, and already scored in the deployed bake.
+#   sibling_e0_V that couple's E0'. The anchor and its sibling must differ by
+#                -c_red*n_e*F*(e0_model_V - sibling_e0_V) and by nothing else, which is
+#                what makes e0_V falsifiable rather than decorative.
+#
+# WHY THE SIBLING IS A DIFFERENT COUPLE and not the same one: MetaNetX almost never writes
+# a generic-carrier reaction a second time with the same family concretely. It writes the
+# flavin monooxygenases again as their overall NADPH reactions. So the honest test is a
+# difference against a predicted number, not a drift toward zero.
+#
+# NOT IN THIS TABLE, and why -- these are decisions, not omissions:
+#   Acceptor / A / AH2 / a reduced two electron carrier / Reduced acceptor (1,272 tier-0
+#     reactions between them). No tabulated potential exists for a generic acceptor. The
+#     potential gate would refuse them; authoring rows to be refused would only move the
+#     decision into the ledger.
+#   Oxidized/Reduced flavoprotein, Oxidized/Reduced-Flavoproteins (59). A generic
+#     flavoprotein is not a couple, it is a class spanning roughly 600 mV of protein-tuned
+#     flavin potentials. Declaring one E0' for it would be the fabrication the gate exists
+#     to prevent.
+#   Ferredoxins, cytochromes, adrenodoxin, electron-transfer flavoprotein (~900). These
+#     are ONE-ELECTRON metal and radical couples; both states of a model pair would have
+#     to be open-shell, and neither member reads a radical structure. Not refused on
+#     chemistry -- unreachable by this mechanism.
+#   Protein histidine / phospho-histidine, and the phosphatidylcholine acyl slots. Not
+#     redox at all.
+#
+# A `#` is a comment ONLY at line start.
+kind	mnxm	mnx_name	terms	congener_terms	couple_id	state	e0_V	n_e	n_h	e0_model_V	anchor_mnxr	sibling_mnxr	sibling_e0_V	congeners	basis
+carrier	MNXM137	NAD(P)	1*MODEL:NAD_ox	1*MODEL:NADP_ox	nadp_generic	ox	-0.320	2	1	-0.320	MNXR118754	MNXR113761	-0.320	-11.8267;-11.8289;-11.8267	NAD+/NADH E0' -0.320 V and NADP+/NADPH -0.324 V, Loach 1976 Handbook of Biochemistry 3rd ed. The generic covers both; the 4 mV between them is the whole width of the choice and is carried as the congener spread.
+carrier	MNXM162231	NAD(P)H	1*MODEL:NAD_red	1*MODEL:NADP_red	nadp_generic	red	-0.320	2	1	-0.320	MNXR118754	MNXR113761	-0.320	-11.8267;-11.8289;-11.8267	NAD+/NADH E0' -0.320 V and NADP+/NADPH -0.324 V, Loach 1976 Handbook of Biochemistry 3rd ed.
+carrier	MNXM729101	Flavin	1*MODEL:FMN_ox		flavin_free	ox	-0.219	2	2	-0.219	MNXR173789	MNXR101898	-0.324	-19.8139;-20.2597	Free FMN and free FAD both sit at E0' -0.219 V, riboflavin at -0.208 V, Draper & Ingraham 1968 Arch Biochem Biophys 125:802. The generic is free flavin, so the model is the free cofactor and not a protein-bound one. NO CONGENER IS DECLARED: eQuilibrator resolves no FAD accession, and it misplaces riboflavin by 15.6 kJ/mol against riboflavin's own tabulated potential while placing FMN to 0.45 -- pricing the choice with a number the member gets wrong would report member noise as curator width. The width carried here is the anchor residual instead.
+carrier	MNXM728242	Reduced flavin	1*MODEL:FMN_red		flavin_free	red	-0.219	2	2	-0.219	MNXR173789	MNXR101898	-0.324	-19.8139;-20.2597	Free FMN and free FAD both sit at E0' -0.219 V, Draper & Ingraham 1968 Arch Biochem Biophys 125:802.
+carrier	MNXM729100	an oxidized flavin	1*MODEL:FMN_ox		flavin_free_2	ox	-0.219	2	2	-0.219	MNXR113076	MNXR101898	-0.324	-19.8139;-20.2597	Second MetaNetX accessioning of free flavin; same couple, same evidence as flavin_free.
+carrier	MNXM728238	a reduced flavin	1*MODEL:FMN_red		flavin_free_2	red	-0.219	2	2	-0.219	MNXR113076	MNXR101898	-0.324	-19.8139;-20.2597	Second MetaNetX accessioning of free flavin; same couple, same evidence as flavin_free.
+carrier	MNXM1090406	oxidized [NADPH--hemoprotein reductase]	1*MODEL:FMN_ox		cpr	ox	-0.190	2	2	-0.219	MNXR166745	MNXR173859	-0.324	-474.8879;-474.4421	The FMN of cytochrome P450 reductase, ox/sq -0.110 V and sq/hq -0.270 V (Iyanagi, Makino & Mason 1974 Biochemistry 13:1701), so the two-electron midpoint is -0.190 V. MARGINAL: 5.60 kJ/mol against DIR_DECADE 5.71 -- the protein tunes its flavin 29 mV off the free cofactor and that is most of one decade.
+carrier	MNXM1090405	reduced [NADPH--hemoprotein reductase]	1*MODEL:FMN_red		cpr	red	-0.190	2	2	-0.219	MNXR166745	MNXR173859	-0.324	-474.8879;-474.4421	The FMN of cytochrome P450 reductase, two-electron midpoint -0.190 V from Iyanagi, Makino & Mason 1974 Biochemistry 13:1701.
+carrier	MNXM729103	[Oxidized NADPH---hemoprotein reductase]	1*MODEL:FMN_ox		cpr_2	ox	-0.190	2	2	-0.219	MNXR112059	MNXR102255	-0.324	492.5331;492.0873	Second MetaNetX accessioning of P450 reductase; same couple, same evidence as cpr.
+carrier	MNXM728239	[Reduced NADPH---hemoprotein reductase]	1*MODEL:FMN_red		cpr_2	red	-0.190	2	2	-0.219	MNXR112059	MNXR102255	-0.324	492.5331;492.0873	Second MetaNetX accessioning of P450 reductase; same couple, same evidence as cpr.
+carrier	MNXM729080	Ox-Thioredoxin	1*MODEL:lipoamide_ox		trx	ox	-0.270	2	2	-0.290	MNXR173985	MNXR176934	-0.324	48.9480;43.9687	E. coli thioredoxin dithiol/disulfide E0' -0.270 V, Krause & Holmgren 1991 JBC 266:4056; lipoamide -0.290 V, Sanadi et al. 1959 JBC 234:178. Both are 2e-/2H+ dithiol couples differing in no heavy atom.
+carrier	MNXM741336	Red-Thioredoxin	1*MODEL:lipoamide_red		trx	red	-0.270	2	2	-0.290	MNXR173985	MNXR176934	-0.324	48.9480;43.9687	E. coli thioredoxin E0' -0.270 V, Krause & Holmgren 1991 JBC 266:4056.
+carrier	MNXM729079	trdox	1*MODEL:lipoamide_ox		trx_2	ox	-0.270	2	2	-0.290	MNXR145810	MNXR145782	-0.320	136.1903;131.9808	Second MetaNetX accessioning of thioredoxin; same couple, same evidence as trx.
+carrier	MNXM741334	Thioredoxin	1*MODEL:lipoamide_red		trx_2	red	-0.270	2	2	-0.290	MNXR145810	MNXR145782	-0.320	136.1903;131.9808	Second MetaNetX accessioning of thioredoxin. MNXM741334 is the reduced partner of three separately-accessioned disulfides, so it repeats below with identical terms.
+carrier	MNXM729077	Thioredoxin disulfide	1*MODEL:lipoamide_ox		trx_3	ox	-0.270	2	2	-0.290	MNXR146527	MNXR121600	-0.290	-1.5817;-1.5817	Third MetaNetX accessioning of thioredoxin; same couple, same evidence as trx. Its sibling is written with lipoamide itself, so the predicted offset here is zero.
+carrier	MNXM741334	Thioredoxin	1*MODEL:lipoamide_red		trx_3	red	-0.270	2	2	-0.290	MNXR146527	MNXR121600	-0.290	-1.5817;-1.5817	Shared reduced partner; identical terms to trx_2 by construction.
+carrier	MNXM729076	thioredoxin disulfide	1*MODEL:lipoamide_ox		trx_4	ox	-0.270	2	2	-0.290	MNXR146526	MNXR101898	-0.320	1.5817;5.7912	Fourth MetaNetX accessioning of thioredoxin; same couple, same evidence as trx.
+carrier	MNXM741334	Thioredoxin	1*MODEL:lipoamide_red		trx_4	red	-0.270	2	2	-0.290	MNXR146526	MNXR101898	-0.320	1.5817;5.7912	Shared reduced partner; identical terms to trx_2 by construction.
+carrier	MNXM1090214	[thioredoxin]-disulfide	1*MODEL:lipoamide_ox		trx_5	ox	-0.270	2	2	-0.290	MNXR166087	MNXR101898	-0.320	1.5817;5.7912	Fifth MetaNetX accessioning of thioredoxin; same couple, same evidence as trx.
+carrier	MNXM1090213	[thioredoxin]-dithiol	1*MODEL:lipoamide_red		trx_5	red	-0.270	2	2	-0.290	MNXR166087	MNXR101898	-0.320	1.5817;5.7912	Fifth MetaNetX accessioning of thioredoxin; same couple, same evidence as trx.
+carrier	MNXM729079	trdox	1*MODEL:lipoamide_ox		trx_6	ox	-0.270	2	2	-0.290	MNXR137353	MNXR101898	-0.320	1.5817;5.7912	trdox also pairs with MNXM155 rather than MNXM741334; found by the under-coverage report, not by reading the table.
+carrier	MNXM155	thioredoxin dithiol	1*MODEL:lipoamide_red		trx_6	red	-0.270	2	2	-0.290	MNXR137353	MNXR101898	-0.320	1.5817;5.7912	E. coli thioredoxin E0' -0.270 V, Krause & Holmgren 1991 JBC 266:4056.
+carrier	MNXM729082	trdox	1*MODEL:lipoamide_ox		trx_7	ox	-0.270	2	2	-0.290	MNXR179167	MNXR101898	-0.320	1.5817;5.7912	Sixth MetaNetX accessioning of thioredoxin; same couple, same evidence as trx.
+carrier	MNXM155	thioredoxin dithiol	1*MODEL:lipoamide_red		trx_7	red	-0.270	2	2	-0.290	MNXR179167	MNXR101898	-0.320	1.5817;5.7912	Shared reduced partner; identical terms to trx_6 by construction.

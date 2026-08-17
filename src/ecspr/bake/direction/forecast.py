@@ -246,11 +246,23 @@ def cmd_resolve(args):
     """
     from .thermo_eq import EquilibratorMember
 
+    from . import substitute
+    from .refdata import load_mnxm_names
+
     stoich = load_mnxr_stoich(args.reac_prop)
     universe = _universe(args.universe, stoich)
     props = _props(args.chem_prop, args.mnxm_only)
-    cpds = sorted(m for m in _participants(stoich, universe)
-                  if (props.get(m) or {}).get("inchikey"))
+    parts = set(_participants(stoich, universe))
+    # THE MODEL COMPOUNDS ARE PARTICIPANTS TOO, and the ones most likely to miss: a
+    # substitution that eQuilibrator's frozen cache cannot resolve silences the very
+    # reaction it was added to unblock. Paired with `--resume` over a finished table this
+    # costs seconds, so there is no reason to price the tables against a stale resolution.
+    if args.substitutions:
+        subs = substitute.load(args.substitutions, props,
+                               load_mnxm_names(args.chem_prop))
+        props = subs.props(props)
+        parts |= set(subs.models)
+    cpds = sorted(m for m in parts if (props.get(m) or {}).get("inchikey"))
     print(f"[resolve] {len(cpds):,} distinct participants carry an InChIKey", flush=True)
 
     # CHECKPOINTED, because this pass is long enough to be interrupted and holds
@@ -442,6 +454,8 @@ def parse_args(argv=None):
                    help="reproduce the pre-fix namespace filter, which withheld "
                         "WATER. For backtesting against a member table written "
                         "before the fix; never for a forecast of a future run.")
+    p.add_argument("--substitutions", default=None,
+                   help="also resolve the model compounds these tables declare")
     p.add_argument("--resume", default=None,
                    help="a partial table from an interrupted run (usually the same "
                         "path as --out). Its compounds are skipped.")
