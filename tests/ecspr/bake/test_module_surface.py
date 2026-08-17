@@ -178,6 +178,11 @@ CLI = {
     "ecspr.bake.evidence": {
         "collect": {"--root", "--tool", "--version", "--file"},
         "manifest": {"--tool", "--version"},
+        # A lane whose method lives in a subpackage has nothing to be versioned BY: the
+        # default fallback hashes `bake/*.py` and misses `bake/direction/` entirely, and
+        # the packages a direction lane imports are pinned by its image. So it computes
+        # its own version and passes it back as `--version`.
+        "fingerprint": {"--package"},
     },
     "ecspr.bake.direction.drive": {
         "universe": {"--reac-prop", "--out"},

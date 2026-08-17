@@ -121,6 +121,13 @@ def protocol(context: ExecutionContext):
 
     cmd = f"""
         {resolve}
+        # The calibration and the combiner ARE the direction subpackage, and neither the
+        # fallback hash (`bake/*.py`) nor any pinned package moves when that subpackage
+        # does -- so the version is computed from it. The curated member keeps $MCVER
+        # instead: what identifies that table is which MetaCyc release it read.
+        DIRVER=$({py} -m ecspr.bake.evidence fingerprint --package direction)
+        echo "[direction] method $DIRVER"
+
         # The base list, recomputed from the same release the members were asked about.
         {py} -m ecspr.bake.direction.drive universe --reac-prop $MNX/reac_prop.tsv \
             --out _universe.json
@@ -163,6 +170,7 @@ def protocol(context: ExecutionContext):
         # curated bins, and a claim whose points are gone cannot be re-examined when a
         # bin looks wrong.
         {py} -m ecspr.bake.evidence collect --root _ev --tool direction_calibration \
+            --version $DIRVER \
             --file _calibration.parquet _calibration_points.parquet \
                    direction_annotation.parquet
         mkdir -p {iev.container}
