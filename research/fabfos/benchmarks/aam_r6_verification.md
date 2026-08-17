@@ -319,6 +319,31 @@ So the remaining shortfall against the deployed table is not a gate to relax but
 fix, and closing it by admitting the pairs would bank carbon for reactions where carbon is
 not conserved.
 
+#### Why the two names resolve the same, and why the lane built for it does not take them
+
+`_LOCANT` discards a bare integer, and on a polymer ladder that integer **is the chain
+length**. `Keratan sulfate I, degradation product 2` and `… product 19` therefore reduce to
+one token key, and `lane_fragment` hands both `C=28 N=2 S=1` and the *same* vehicle SMILES.
+It is not confined to the shortfall: **1,468 of the fragment lane's 3,890 metabolites share
+a token key with a sibling**, across 367 collisions — the glycosaminoglycan ladders (keratan
+112, chondroitin 60, heparan 53), the O-antigen series, and the phosphatidylinositols, whose
+`(16:0/18:2(9Z,12Z))` acyl shorthand is stripped the same way.
+
+`lane_polymer` is built for exactly this ladder and would draw each rung as its levelled
+monomer cargo — but it never gets the chance, and the priority order is not the reason. Of
+the glycosaminoglycan chains it reaches, **183 of 188 are dropped as inconsistent families**;
+`fragment` outranks it at merge only for what is left. The inconsistency has at least one
+identified cause: **544 of the lane's 1,021 ladder edges carry an empty delta**, and an empty
+delta between two DISTINCT chains is read as evidence they are the same length. MNXR100165 is
+the whole of it — `Heparan sulfate, precursor 10 = Heparan sulfate, precursor 11`, one
+substrate, one product, no donor recorded — so the residual is zero because MetaNetX wrote no
+monomer, not because none moved. One such edge poisons a family through the BFS. Absence of
+evidence is being read as evidence.
+
+Dropping those edges alone was measured and **does not** rescue the families (183 → 182), so
+there is a second inconsistency source and it has not been isolated. That is the state of the
+lever, not a plan.
+
 ### Where the rest of `rescue_declined` sits
 
 The rescue funnel over the 24,098 reactions adjudicated `blocked_no_structure`, r6 and then
