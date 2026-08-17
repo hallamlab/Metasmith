@@ -23,6 +23,7 @@ does run one, and it runs it on a twentieth of the universe.
 | `measure_rescue.py` | the mechanism table — how much of the gap each repair reaches |
 | `reassemble.py` | re-runs the assembly locally and diffs it against a bake's own annotation |
 | `glycogen_delivery.py` | which reaction delivers the carbon that arrives at glycogen |
+| `glycogen_share_baseline.py` | what share of the injected carbon reaches glycogen at all |
 | `scan_direction_caches.py` | which bake each decoded cache in the workspace actually holds |
 | `shard_cost.sh` | what the eQuilibrator member costs before and after the fix |
 | `REBAKE.md` | how to re-bake direction, and what a re-bake must not rediscover |
