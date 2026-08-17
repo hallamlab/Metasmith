@@ -105,6 +105,15 @@ def load_mnxm_props(chem_prop: Path):
     chem_prop columns: ID, name, reference, formula, charge, mass, InChI,
     InChIKey, SMILES. eQuilibrator is routed by InChIKey (its cache is frozen at
     an older MetaNetX, so MNXM accessions silently miss); dGbyG takes SMILES.
+
+    THE NAMESPACE IS NOT FORCED TO MNXM, for the same reason `_split_terms`
+    above does not force it: MetaNetX 4.5 represents water only as the
+    pseudo-accession `WATER`, so an `MNXM` prefix test abstains both thermo
+    members on every water-bearing reaction -- 30,546 of 83,795 -- before any
+    chemistry is attempted. `WATER` and `BIOMASS` are the entire non-MNXM
+    population of the file, and `if rec:` below is what excludes BIOMASS: it
+    carries no InChI, no InChIKey and no SMILES, so it is dropped by having
+    nothing to say rather than by its name.
     """
     out = {}
     with open(chem_prop) as fh:
@@ -112,7 +121,7 @@ def load_mnxm_props(chem_prop: Path):
             if line.startswith("#"):
                 continue
             p = line.rstrip("\n").split("\t")
-            if len(p) < 9 or not p[0].startswith("MNXM"):
+            if len(p) < 9:
                 continue
             rec = {}
             if p[6]:

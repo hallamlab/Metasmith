@@ -107,18 +107,26 @@ def combine_row(r, calib, sigma_0):
         mu_eff = math.copysign(DG_CLAMP, mu_eff)
     ratio = math.exp(mu_eff / RT)
 
-    # provenance ladder: a record of which regime spoke, NOT a selection
+    # provenance ladder: a record of which regime spoke, NOT a selection.
+    # Presence is tested with _num(), never `is not None`: these columns come from
+    # a pandas LEFT MERGE, so an absent member arrives as NaN and `NaN is not None`
+    # is True -- which credits every silent member with a vote it never cast.
+    have_eq, have_db = _num(r.get("eq_dg")), _num(r.get("dgbyg_dg"))
     if tv is not None and tv[2]:
-        tier, method = 1, ("eq_rc+dgbyg" if r.get("dgbyg_dg") is not None else "eq_rc")
+        tier, method = 1, ("eq_rc+dgbyg" if have_db else "eq_rc")
     elif tv is not None:
-        both = (r.get("eq_dg") is not None) and (r.get("dgbyg_dg") is not None)
-        method = "eq_gc_x_dgbyg" if both else ("eq_gc" if r.get("eq_dg") is not None else "dgbyg")
+        method = ("eq_gc_x_dgbyg" if (have_eq and have_db)
+                  else ("eq_gc" if have_eq else "dgbyg"))
         tier = 2
     elif prior is not None:
         tier, method = 3, "biocyc_only"
     else:
         tier = 0
-        method = "refused" if r.get("dgbyg_wildcard") else "no_evidence"
+        # Same NaN hazard: an absent dGbyG row leaves a float NaN here, which is
+        # TRUTHY -- so a member that never ran would relabel every silent
+        # reaction as its own deliberate abstention.
+        wc = r.get("dgbyg_wildcard")
+        method = "refused" if (_num(wc) and bool(wc)) else "no_evidence"
     if prior is not None and tier in (1, 2):
         method += "+biocyc"
 

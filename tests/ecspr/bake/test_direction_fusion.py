@@ -135,3 +135,53 @@ def test_the_provenance_ladder_records_who_spoke_rather_than_selecting():
     curated_only = C.combine_row({"mnxr": "R", "biocyc_category": "LEFT-TO-RIGHT"},
                                  calib=calib, sigma_0=canon.DIR_SIGMA_0)
     assert curated_only["dir_tier"] == 3 and curated_only["dir_method"] == "biocyc_only"
+
+
+def test_a_silent_member_arrives_as_nan_and_must_not_read_as_a_vote():
+    """`build` left-merges, so an absent member is NaN -- and NaN is not None.
+
+    The ladder used to test `is not None`, which every NaN passes: 13,479 rows of
+    the deployed bake carry a `dir_method` naming a member that never spoke, of
+    which 12,405 are dGbyG-only rows labelled as an eQ/dGbyG agreement. The RATIO
+    was never affected (the vote itself goes through `_num`), so this is
+    provenance alone -- which is exactly why it could sit there unnoticed, and
+    exactly why a before/after member accounting cannot be read until it is fixed.
+    """
+    nan = float("nan")
+
+    db_only = C.combine_row({"mnxr": "R", "eq_dg": nan, "eq_sigma": nan,
+                             "eq_uses_gc": nan, "dgbyg_dg": -18.0,
+                             "dgbyg_sigma": 3.0},
+                            calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert db_only["dir_tier"] == 2
+    assert db_only["dir_method"] == "dgbyg", (
+        "a NaN eQ column read as an eQuilibrator vote")
+
+    eq_only = C.combine_row({"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0,
+                             "eq_uses_gc": True, "dgbyg_dg": nan,
+                             "dgbyg_sigma": nan},
+                            calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert eq_only["dir_tier"] == 2 and eq_only["dir_method"] == "eq_gc"
+
+    measured_alone = C.combine_row({"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0,
+                                    "eq_uses_gc": False, "dgbyg_dg": nan,
+                                    "dgbyg_sigma": nan},
+                                   calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert measured_alone["dir_tier"] == 1 and measured_alone["dir_method"] == "eq_rc"
+
+
+def test_an_absent_dgbyg_table_does_not_relabel_silence_as_refusal():
+    """`refused` is dGbyG declining on a wildcard. NaN is dGbyG not being there.
+
+    dGbyG cannot coexist with the eQ stack, so `drive eval` writes an EMPTY member
+    table when the env lacks it -- every `dgbyg_wildcard` then arrives as a float
+    NaN, which is truthy. Under the old test that turned all 47,266 no-evidence
+    reactions into deliberate abstentions by a member that never ran.
+    """
+    absent = C.combine_row({"mnxr": "R", "dgbyg_wildcard": float("nan")},
+                           calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert absent["dir_method"] == "no_evidence"
+
+    declined = C.combine_row({"mnxr": "R", "dgbyg_wildcard": True},
+                             calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert declined["dir_method"] == "refused"
