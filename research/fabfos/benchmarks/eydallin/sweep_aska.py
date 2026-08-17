@@ -100,12 +100,23 @@ def main() -> int:
     ap.add_argument("--fold", type=float, default=2.0)
     ap.add_argument("--element", default="C")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--min-lanes", type=int, default=1,
+                    help="de-novo only: credit the CLONE with a reaction only when at "
+                         "least this many of the four annotation lanes assert it. The "
+                         "background is left whole -- applying the same rule to it "
+                         "disconnects glycogen outright, because the glycogen-synthesis "
+                         "step has single-lane support, so there would be no probe left "
+                         "to run.")
     ap.add_argument("--limit", type=int, default=None, help="first N solvable clones (smoke test)")
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
     a = ap.parse_args()
     a.out_dir.mkdir(parents=True, exist_ok=True)
 
-    tag = f"aska_sweep_{a.channel}_e_coli_ag1_fold{a.fold}_{a.element}"
+    if a.min_lanes > 1 and a.channel != "denovo":
+        raise SystemExit("--min-lanes applies to the de-novo channel; the GEM channel is "
+                         "one curated lane and has nothing to agree with")
+    tag = (f"aska_sweep_{a.channel}_e_coli_ag1_fold{a.fold}_{a.element}"
+           + (f"_lanes{a.min_lanes}" if a.min_lanes > 1 else ""))
     part = a.out_dir / f"{tag}.partial.tsv"
     final = a.out_dir / f"{tag}.tsv"
 
@@ -121,6 +132,10 @@ def main() -> int:
 
     clone = pd.read_parquet(ASKA_GPR / f"gpr_{a.channel}.parquet")
     clone = clone[clone.in_atom_universe.fillna(False)]
+    if a.min_lanes > 1:
+        agree = clone.groupby(["condition_id", "mnxr"]).channel.nunique()
+        clone = clone[pd.MultiIndex.from_arrays([clone.condition_id, clone.mnxr])
+                      .isin(agree[agree >= a.min_lanes].index)]
     absent = sorted(set(clone.mnxr.astype(str)) - set(base_w))
     if absent:
         raise SystemExit(f"[sweep] {len(absent)} clone reaction(s) are not in the "
