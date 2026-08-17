@@ -1,0 +1,11 @@
+mechanism	reactions	in_graph	confidence	note
+water_fix.tier0.dgbyg	9677	9588	high	dGbyG answered 25,053/25,053 of the balanced reactions that reached it in r7
+water_fix.tier0.eq	5339	5241	high	eQuilibrator; upper bound unless the forecast was given --resolution
+water_fix.tier0.either	9963	9802	high	the reaction leaves tier 0 if EITHER member speaks
+water_fix.tier3.either	3806	3788	high	curated-only rows that gain a thermo vote and so change tier and ratio
+carrier.closed_remainder	2853	2489	medium	every unreadable participant is a generic carrier AND the rest of the equation balances -- the direction is a dE'0 lookup, not a model. Needs a curated E'0 table, which does not exist yet
+carrier.crosswalk_ceiling	6171	4080	low	every unreadable participant is a generic carrier, balance unknown. Needs structures AND a rebalance; the stretch case
+wildcard.closed_remainder	3679	3632	low-medium	the only blockers are R-group residues and the body balances without them -- capping the residues is structurally sound and unvalidated
+wildcard.ceiling	10772	10626	low	R-group residues are the only blocker, remainder not necessarily closed
+unbalanced.only_blocker	1145	1081	very low	dG'0 of an unbalanced equation is not a physical quantity; listed so the residue is accounted for, not because it is a lever
+element_neutral_twin	303	277	DEAD END	every structureless blocker has an element-neutral same-name twin. Only 1,411 of 1,434,162 compounds are element-neutral at all and 1,378 of those carry a structure -- the predicate has almost nothing to work with, and this is a ceiling on a looser key than `aam_blockers` uses

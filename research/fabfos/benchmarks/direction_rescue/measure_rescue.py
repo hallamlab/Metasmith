@@ -112,6 +112,8 @@ def main(argv=None):
     still = tier[0] & post_silent          # tier 0 that the water fix does NOT move
     print(f"universe {len(ann):,} · tier 0 {len(tier[0]):,} "
           f"(in-graph {len(tier[0] & mapped):,}) · tier 3 {len(tier[3]):,}")
+    print(f"tier 0 both members STILL silent after the water fix: {len(still):,} "
+          f"(in-graph {len(still & mapped):,})")
 
     rows = []
 
@@ -261,6 +263,26 @@ def main(argv=None):
     print(f"\nresidual after every mechanism above: "
           f"{len(still - carrier_only - wildcard_only - unb - neutral_rescue):,} "
           f"tier-0 reactions no named mechanism reaches")
+
+    # ---- who is doing the blocking, and how concentrated is it -----------
+    # The number that decides whether a carrier table is a week or a year. It is
+    # taken per MECHANISM because the two underspecifications are largely different
+    # accessions of the same kind of compound -- a table built from one list will
+    # miss most of the other, which is not visible in a combined ranking.
+    print("\nblockers among the still-silent tier-0 population")
+    blocked = post[(post["member"] == "dgbyg") & post["mnxr"].isin(still)]
+    for mech in ("no_smiles", "wildcard"):
+        s = blocked.loc[blocked["mechanism"] == mech, "blocker"].value_counts()
+        if not len(s):
+            continue
+        car = [m for m in s.index if CARRIER.search(names.get(m, "") or "")]
+        cum = (s[car].cumsum() / s[car].sum()) if car else None
+        top = {k: f"{cum.iloc[k-1]:.0%}" for k in (20, 100) if cum is not None and len(car) >= k}
+        print(f"  {mech:<10} {int(s.sum()):>7,} reactions · {len(s):>6,} distinct blockers"
+              f" · {len(car):>5,} generic carriers covering {int(s[car].sum()):,}"
+              f" ({s[car].sum()/s.sum():.0%}); carrier concentration {top}")
+        for m, n in s.head(6).items():
+            print(f"      {n:>5,}  {m:<14} {(names.get(m) or '?')[:52]}")
     if a.out:
         df.to_csv(a.out, sep="\t", index=False)
         print(f"wrote {a.out}")

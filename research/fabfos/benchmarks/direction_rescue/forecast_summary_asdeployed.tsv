@@ -1,0 +1,30 @@
+kind	key	n
+tally	dgbyg expected_ok	25116
+tally	dgbyg no_smiles	38225
+tally	dgbyg unbalanced	2418
+tally	dgbyg wildcard	18036
+tally	eq expected_ok	16290
+tally	eq no_props	48385
+tally	eq unresolved	19120
+product	rows	167590
+product	reactions	83795
+product	both_members_silent	57274
+product	at_least_one_member_speaks	26521
+input	participants	47646
+input	participants_with_inchikey	24150
+input	participants_with_smiles	32546
+input	participants_parseable	32546
+input	participants_wildcard	8307
+input	resolution_supplied	1
+input	mnxm_only	1
+mechanism	dgbyg:no_stoich	0
+mechanism	dgbyg:no_smiles	38225
+mechanism	dgbyg:unparseable	0
+mechanism	dgbyg:wildcard	18036
+mechanism	dgbyg:unbalanced	2418
+mechanism	dgbyg:expected_ok	25116
+mechanism	eq:no_stoich	0
+mechanism	eq:no_props	48385
+mechanism	eq:unresolved	19120
+mechanism	eq:expected_ok	16290
+limit	heavy_atom_tolerance	1e-9
