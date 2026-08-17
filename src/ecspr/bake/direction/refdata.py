@@ -135,6 +135,29 @@ def load_mnxm_props(chem_prop: Path):
     return out
 
 
+def load_mnxm_names(chem_prop: Path) -> dict[str, str]:
+    """MNXM -> chem_prop's own name.
+
+    SEPARATE FROM `load_mnxm_props` ON PURPOSE. That dict is handed to both thermo
+    members and carries exactly the three keys they compute with; a name is not one of
+    them, and widening it would put a curation concern inside the members' hot loop. The
+    only caller is the substitution lane's stale-id tripwire, which needs the id and the
+    name to be checkable against each other.
+
+    Same namespace rule as `load_mnxm_props`: the id is taken verbatim, so `WATER`
+    survives.
+    """
+    out = {}
+    with open(chem_prop) as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            p = line.rstrip("\n").split("\t")
+            if len(p) > 1 and p[0]:
+                out[p[0]] = p[1]
+    return out
+
+
 def load_source_to_mnxr(reac_xref: Path, prefix: str) -> dict[str, str]:
     """'<prefix>:<id>' -> MNXR, asserted 1:1 (no silent first-wins collapse).
 
