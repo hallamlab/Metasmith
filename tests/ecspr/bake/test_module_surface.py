@@ -39,7 +39,8 @@ MODULES = [
     "ecspr.bake.direction",
     "ecspr.bake.direction.calibrate", "ecspr.bake.direction.canon",
     "ecspr.bake.direction.combine", "ecspr.bake.direction.curated",
-    "ecspr.bake.direction.drive", "ecspr.bake.direction.metacyc_flatfile",
+    "ecspr.bake.direction.drive", "ecspr.bake.direction.forecast",
+    "ecspr.bake.direction.metacyc_flatfile",
     "ecspr.bake.direction.refdata", "ecspr.bake.direction.thermo_dgbyg",
     "ecspr.bake.direction.thermo_eq",
 ]
@@ -187,6 +188,17 @@ CLI = {
     "ecspr.bake.direction.curated": {
         "": {"--metacyc-reactions", "--reac-xref", "--reac-prop", "--chem-xref",
              "--out", "--out-per-reaction"},
+    },
+    "ecspr.bake.direction.forecast": {
+        # `resolve` is its own verb because it is the one part that needs
+        # eQuilibrator: `build` runs on table reads in any env with rdkit, and
+        # folding the two together would make the cheap half pay for the cache.
+        "resolve": {"--universe", "--reac-prop", "--chem-prop", "--mnxm-only",
+                    "--out"},
+        "build": {"--universe", "--reac-prop", "--chem-prop", "--resolution",
+                  "--mnxm-only", "--out", "--out-summary"},
+        "backtest": {"--forecast", "--member-eq", "--member-dgbyg",
+                     "--out-summary"},
     },
     "ecspr.bake.direction.calibrate": {
         "": {"--curated", "--reac-prop", "--chem-prop", "--eq-member", "--limit",
