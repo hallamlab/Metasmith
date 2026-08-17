@@ -43,7 +43,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.stats import mannwhitneyu, fisher_exact, hypergeom
+from scipy.stats import mannwhitneyu, fisher_exact, hypergeom, spearmanr
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
@@ -150,11 +150,68 @@ def resample(df: pd.DataFrame, *, n_neg: int, reps: int, seed: int, log) -> dict
     return out
 
 
+MEASURED = ROOT / "data/fabfos/benchmarks/eydallin/Y/measured_glycogen.tsv"
+
+
+def _direction(df: pd.DataFrame, log) -> dict:
+    """Does the SIGN of the modelled response match the sign of the phenotype?
+
+    Only askable of a probe that can go down. Reported two ways because they fail
+    differently: a 2x2 on sign alone over the labelled positives, and a SIGNED rank
+    correlation against the digitised Fig. 1 percentages. Clones whose response is exact
+    zero carry no sign and are excluded, with the count shown -- silently calling them
+    positive would be scoring a non-answer.
+    """
+    out = {}
+    pos = df[df.is_positive & (df.n_rxn > 0)].copy()
+    pos = pos[pos.delta.abs() > 1e-12]
+    pos["pred_excess"] = pos.delta > 0
+    pos["obs_excess"] = pos.eydallin_phenotype.astype(str).eq("glycogen_excess")
+    tab = [[int((pos.pred_excess & pos.obs_excess).sum()),
+            int((pos.pred_excess & ~pos.obs_excess).sum())],
+           [int((~pos.pred_excess & pos.obs_excess).sum()),
+            int((~pos.pred_excess & ~pos.obs_excess).sum())]]
+    orr, pf = fisher_exact(tab)
+    agree = tab[0][0] + tab[1][1]
+    out["sign_2x2"] = dict(table=tab, odds_ratio=float(orr), p=float(pf),
+                           n=len(pos), agree=agree)
+    log(f"\n-- direction " + "-" * 63)
+    log(f"  {len(pos)} labelled positives carry a non-zero response "
+        f"({int(df.is_positive.sum()) - len(pos)} are exact zeros and have no sign)")
+    log(f"  predicted excess / observed excess : {tab[0][0]:3d}      "
+        f"predicted excess / observed deficient : {tab[0][1]:3d}")
+    log(f"  predicted deficient / obs excess   : {tab[1][0]:3d}      "
+        f"predicted deficient / obs deficient   : {tab[1][1]:3d}")
+    log(f"  sign agreement {agree}/{len(pos)} = {agree / max(len(pos), 1):.1%}  "
+        f"OR={orr:.3g}  Fisher p={pf:.3g}")
+
+    if MEASURED.exists():
+        meas = pd.read_csv(MEASURED, sep="\t")
+        pct = {str(c).split(":")[-1].lower(): v
+               for c, v in zip(meas.condition_id, meas.pct_wt)}
+        pos["pct_wt"] = pos.gene.str.lower().map(pct)
+        q = pos.dropna(subset=["pct_wt"])
+        if len(q) >= 3:
+            y = np.log2(q.pct_wt.to_numpy() / 100.0)
+            rs, ps = spearmanr(y, q.delta.to_numpy())
+            out["signed_spearman"] = dict(rho=float(rs), p=float(ps), n=len(q))
+            log(f"  SIGNED Spearman vs the digitised Fig. 1: rho = {rs:+.4f}  "
+                f"p = {ps:.3g}  (n={len(q)})")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--fold", type=float, default=2.0)
     ap.add_argument("--element", default="C")
     ap.add_argument("--channels", nargs="+", default=["gem", "denovo"])
+    ap.add_argument("--score", choices=("delta", "absdelta"), default="delta",
+                    help="`absdelta` ranks by how far a clone moves glycogen in EITHER "
+                         "direction. Only meaningful for a sweep whose probe can go down; "
+                         "under the two-point probe every delta is >= 0 and the two agree.")
+    ap.add_argument("--direction", action="store_true",
+                    help="also ask whether the SIGN of the response matches the sign of "
+                         "the phenotype -- the question a monotone probe cannot pose")
     ap.add_argument("--suffix", default="",
                     help="tag appended by a variant sweep (e.g. `_lanes2`, `_dir2x100`); "
                          "reads that sweep and writes its own report beside it")
@@ -180,7 +237,8 @@ def main() -> int:
         # The ranking statistic. delta and log2FC are monotone in each other here (one
         # shared baseline), so which one is ranked on cannot change any AUC; delta is
         # used because a clone that reaches nothing is an exact 0 rather than a log of 1.
-        df["score"] = df.delta.astype(float)
+        df["score"] = (df.delta.abs() if a.score == "absdelta"
+                       else df.delta).astype(float)
         log(f"\n{'=' * 78}\n### channel {ch}  --  {len(df):,} clone genes, "
             f"{int((df.n_rxn > 0).sum()):,} atom-mapped, "
             f"{int(df.is_positive.sum())} Eydallin positives\n{'=' * 78}")
@@ -205,6 +263,9 @@ def main() -> int:
         top = df.nlargest(25, "score")
         log(top[["gene", "n_rxn", "score", "is_positive", "eydallin_phenotype"]]
             .to_string(index=False, float_format=lambda v: f"{v:.6g}"))
+
+        if a.direction:
+            report[ch]["direction"] = _direction(df, log)
 
     a.out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"aska_classifier_report{a.suffix}"

@@ -11,6 +11,12 @@ de-novo — is *beaten by reaction count alone*, which is the same confound that
 ASKA/FFA arm. The one annotation artifact the de-novo channel had was found and removed,
 and the AUC moved from below chance to chance.
 
+Since this was written the readout has been changed once, and the verdict did not move:
+grounding at the biomass precursors rather than at glycogen makes the response signed (§
+*Rayleigh binds the readout, not the method*), which recovers a weak positive correlation
+with the phenotype's direction but leaves the module-struck AUC at 0.508 against a size
+control of 0.520.
+
 This is a negative result about the method, not about the study. Reach is not confounded,
 the resolution is complete, the controls are the ones designed to break the claim, and the
 hundred random draws the question was originally posed as agree with the exhaustive sweep
@@ -198,6 +204,96 @@ And the fix makes the structural point sharper, not softer: with the direction s
 effective number of levers falls from 6.13 to **3.18**, with glgA and glgC alone holding
 0.77. Corrected, this target has one biosynthetic route, not three.
 
+## Rayleigh binds the readout, not the method
+
+Everything above, and three sessions before it, rests on one sentence: effective conductance
+is non-decreasing in every edge conductance, so a ×2 fold can only raise the readout and a
+two-sided phenotype is inexpressible. That is true, and it is a statement about the
+**two-point conductance**, not about ECSPr. Ground somewhere other than the target and the
+readout becomes a SHARE of the injected carbon — which is also what Fig. 1 measures, nmol
+glucose per mg protein, a fraction of the cell's carbon rather than a flux capacity.
+
+**The two identities are the whole argument, and both are just homogeneity.** Scale every
+conductance by *t*: the two-point conductance scales by *t*, so its elasticities sum to **+1**
+and Rayleigh makes them all non-negative. A share is unchanged, so its elasticities sum to
+**0** — which forces both signs to exist. The sign is a property of the readout, not of the
+network.
+
+`monotonicity_ladder.py` walks that from a two-edge fork up, each rung the smallest circuit
+that settles one claim; every number below is an assertion in the script.
+
+| rung | claim |
+|---|---|
+| A | a dead-end diversion is **exactly invisible** to the conductance — elasticity 0.000e+00, not merely non-negative |
+| B | a diversion that rejoins the sink raises it, monotonically |
+| C | with a competing ground the conductance still rises (+0.167) while the target's current **falls** (−0.500); Σε = +1.000 and −0.000 respectively |
+| D | **the control**: with ONE sink, KCL pins the delivered current at 1.000000000000 whatever the topology. An alternative *path* is not an alternative *ground* |
+| E | the same, through the `attach_leak`/`measure_leak` ECSPr already ships |
+| F | a shunt hurts more the further it sits from the target: ε −0.833 one step from the source, −0.500 one step from it |
+| G | with the competitor draining only through a background leak, the shunt's elasticity is **zero to five decimals at leak 1e-6** — the exact setting `cohort_delta_panel.py` ran at |
+| H | one circuit, three lever kinds: feed +0.273, shunt −0.227, exit −0.136; ×7 on every conductance leaves the share bit-identical |
+
+Rung G is why the earlier universal-leak panel came back flat rather than wrong. The probe
+was signed in principle and, at that leak, flat in practice: nothing could drain.
+
+## The signed probe on the real network
+
+`glycogen_share.py` grounds at the AG1 model's 48 biomass precursors plus glycogen and reads
+glycogen's share of the injected carbon. Base share 0.119. The shape of the answer inverts:
+
+| | two-point conductance | glycogen share |
+|---|---|---|
+| Σ elasticities | +1 (all non-negative) | 0 over all conductances |
+| positive mass | +1.000 over 1,553 reactions | **+0.181 over 23** |
+| negative mass | **zero, by theorem** | **−0.758 over 1,396** |
+| effective levers | 6.13 | **28.5** |
+| reactions past \|ε\| = 1e-2 | 11 | 22 |
+
+**96.5% of reactions are negative levers**, and they are the sugar shunts you would name by
+hand: galactokinase (galK/wcaK) −0.087, fructoselysine kinase (frlD) −0.075, frlB −0.059,
+**transaldolase (talA/talB) −0.052**, xylose isomerase (xylA) −0.041. `talA` is one of
+Eydallin's glycogen-deficient hits at 49.7% of wild type, and the share probe makes it the
+fourth-strongest negative lever in the network. The two-point probe scored it +0.00125 — the
+right gene, an unusable sign, and a magnitude 40× smaller.
+
+Over the cohort, **16 of 23 metabolic hits now move glycogen down**, against zero available to
+the two-point probe by construction.
+
+**One mechanism worth stating, because it bounds what direction evidence can buy.** A fold
+multiplies the reaction's weight, which scales `gp` and `gm` together, so an orientation
+change moves a lever's magnitude and not its sign. A reaction is a negative lever only if its
+net current already runs away from glycogen at the operating point. Rectifying glycogen
+phosphorylase toward degradation leaves it at ε = +0.005, not negative, because the carbon on
+that edge is flowing G1P → glycogen and widening the reaction widens the throttled branch too.
+
+**The direction ratios still change the answer, and the change is a plateau rather than a
+knob.** Supplying what the ensemble abstains on — glgA irreversible forward, the phosphorylase
+running to G1P — takes the signed Spearman against Fig. 1 from **+0.22 to +0.40**, and
+`--scan` shows that value saturating across four orders of magnitude of the ratio (100 to
+1e6), all three grounding schemes and the whole leak grid, at a permutation p of 0.03–0.07
+over n = 23. A number that appeared at one setting would be a knob; this one appears
+everywhere past a threshold and nowhere below it.
+
+| readout | signed Spearman vs Fig. 1 |
+|---|---|
+| two-point conductance | **undefined** — one-sided by theorem |
+| universal leak, 1e-6 (the old panel) | +0.21 (p = 0.31) |
+| glycogen share, baked ratios | +0.20 … +0.25 (p_perm 0.24–0.37) |
+| glycogen share, polymer directions supplied | **+0.40 … +0.45** (p_perm 0.03–0.07) |
+
+**It does not rescue the classifier.** Swept blind over the whole library under the share
+probe, the module-struck AUC on \|response\| is 0.5082 against a size control of 0.5204 —
+the same chance verdict, beaten by the same confound. Sign agreement over the labelled
+positives is 16/23 = 69.6% (OR 2.33, Fisher p = 0.58), and the blind signed Spearman is +0.29
+(n = 21; +0.37 on the 22 genes the cohort roster and the library roster both carry — the gap
+is roster resolution, not measurement). So the honest summary is that the readout change
+makes direction **askable** and yields a consistent weak positive answer, at n ≈ 22 and a p
+that never clears 0.03.
+
+What the library ranking surfaces under this probe is worth naming: galK, frlD, talA, frlB,
+maa, xylA — the shunts — beside the glycogen module. That is the probe doing what it now can
+do, and most of those are still clones Eydallin scored as unchanged.
+
 ## What bounds this
 
 **The de-novo channel has a specific pathology worth naming.** Twenty-seven unrelated ORFs
@@ -231,12 +327,14 @@ clone-side only, and the background stays whole.
 **The curated channel's positives are 25 genes.** The atom-mapped AUC of 0.573 rests on
 them, and 25 is small. It is reported with its p-value rather than as a result.
 
-**Direction remains inexpressible and this does not change that.** The two-point probe is
-monotone in every edge conductance (Rayleigh), so a ×2 fold can only raise the readout;
-glycogen-*deficient* and glycogen-*excess* hits get the same operation and the same sign.
-The classification framing was adopted precisely because the regression framing is closed
-by a theorem. The live test for direction is the asymmetric ratio-skew perturbation
-`graph_from_pairs` can already express, and it is not this.
+**Direction is inexpressible under THIS probe, which is a smaller claim than it looks.** The
+two-point probe is monotone in every edge conductance (Rayleigh), so a ×2 fold can only raise
+the readout and both phenotype directions get the same sign. That is why the classification
+framing was adopted here. It is a property of grounding at the target, not of the method —
+see § *Rayleigh binds the readout, not the method*, where grounding elsewhere makes the
+readout signed and recovers a weak positive correlation that this framing cannot express.
+Every AUC in this report is nonetheless the two-point probe's, and the share probe does not
+change any of them.
 
 **What the sweep does not test** is whether a different terminal pair, a different fold, or
 a signed perturbation would do better. It tests the probe as this benchmark has been running
