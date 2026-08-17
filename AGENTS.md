@@ -73,6 +73,15 @@ installed package. `dev/metasmith.sh --vendor-library` does exactly that before 
 refuses to stamp a bundle whose metadata came out empty. Shipping one that did would be silent:
 the GUI's type panel simply goes blank.
 
+A fourth step is needed before anything *stages an agent*, and its absence looks nothing like
+its cause: `bash envs/fabfos/setup_agent_env.sh` (idempotent; the script's own header explains
+what it installs and why). Without it a reference build plans fine and then dies at staging on
+`No module named metasmith`. **The `msm-fabfos` environment it builds is one host-level env
+shared by every worktree, and the activation hook inside it points at exactly one checkout** —
+so re-running the script silently repoints every other worktree's agent at yours, and two
+worktrees building concurrently will fight over it. Re-run it after switching worktrees, and
+do not assume a green build in one tree means another is still wired up.
+
 ## Four products, one repository, and what that costs the ref namespace
 
 The engine, the standard transform library, fabfos and ASPIRE live here as directories rather
