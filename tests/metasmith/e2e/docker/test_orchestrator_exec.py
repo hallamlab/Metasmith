@@ -31,16 +31,27 @@ class NxfTestRunner:
         lib_dir.mkdir(exist_ok=True)
         shutil.copy(ORCHESTRATOR_SRC, lib_dir / "Orchestrator.groovy")
 
-    def run(self, nxf_script: str, timeout: int = 120) -> subprocess.CompletedProcess:
+    def run(
+        self,
+        nxf_script: str,
+        timeout: int = 120,
+        extra_lib: dict = None,
+    ) -> subprocess.CompletedProcess:
         """Run a Nextflow script inside Docker.
 
         Args:
             nxf_script: Nextflow script content.
             timeout: Timeout in seconds.
+            extra_lib: Filename -> Groovy source, dropped beside
+                Orchestrator.groovy in lib/. Nextflow 26's parser rejects loops
+                and closures in a workflow body, so a test that needs either
+                puts them in a class here and calls it from the body.
 
         Returns:
             CompletedProcess with stdout/stderr/returncode.
         """
+        for name, source in (extra_lib or {}).items():
+            (self.work_dir / "lib" / name).write_text(source)
         script_path = self.work_dir / "test.nf"
         script_path.write_text(nxf_script)
 
@@ -1248,4 +1259,119 @@ workflow {{
         assert "LINEAGE_VIOLATION" not in dispatch, dispatch
         assert emits == ["G:root.txt|a0.txt+a1.txt"], (
             f"expected one whole group carrying both cached files, got {emits}"
+        )
+
+
+# Nextflow 26's parser rejects loops and closures in a workflow body, so the
+# probe logic for the tests below lives in a class dropped beside
+# Orchestrator.groovy in lib/, and the workflow body only calls it and prints.
+STRIP_RESERVED_PROBE = '''
+class Probe {
+
+    private static final List LINEAGE = ["k0", "k1", "k2", "k3"]
+
+    // One task's output index as _collateBatch builds it: lineage keys plus
+    // the two reserved bookkeeping entries the task reads.
+    private static Map freshIndex() {
+        def index = [:]
+        LINEAGE.each { index[it] = ["h_" + it] }
+        index[Orchestrator.PROV_KEY] = [[[:]]]
+        index[Orchestrator.FILES_KEY] = [["/work/staged/path"]]
+        return index
+    }
+
+    // F1a: the strip must not write to the map it is handed.
+    static String f1a() {
+        def index = freshIndex()
+        def snapshot = [:] + index
+        def returned = Orchestrator.stripReserved(index)
+        def caller_unchanged = (index == snapshot)
+        def returned_stripped = !returned.containsKey(Orchestrator.FILES_KEY) &&
+                                !returned.containsKey(Orchestrator.PROV_KEY)
+        def returned_keeps_lineage = LINEAGE.every { returned.containsKey(it) }
+        return "F1A caller_unchanged=${caller_unchanged}" +
+               " returned_stripped=${returned_stripped}" +
+               " returned_keeps_lineage=${returned_keeps_lineage}"
+    }
+
+    // F1b: a process declaring N output tuples binds the same index object to
+    // all N channels, so _debatch runs the strip over it on N operator threads
+    // and _post then copies the result. Count the copies that came out with
+    // their ancestry missing.
+    static String f1b(int streams, int rounds) {
+        int lost = 0
+        for (int r = 0; r < rounds; r++) {
+            def shared = freshIndex()
+            def copies = Collections.synchronizedList([])
+            def start = new java.util.concurrent.CountDownLatch(1)
+            def done = new java.util.concurrent.CountDownLatch(streams)
+            for (int s = 0; s < streams; s++) {
+                Thread.start {
+                    start.await()
+                    def stripped = Orchestrator.stripReserved(shared)
+                    copies.add([:] + stripped)
+                    done.countDown()
+                }
+            }
+            start.countDown()
+            done.await()
+            copies.each { copy ->
+                if (LINEAGE.any { !copy.containsKey(it) }) lost++
+            }
+        }
+        return "F1B streams=${streams} rounds=${rounds}" +
+               " copies=${streams * rounds} lost=${lost}"
+    }
+}
+'''
+
+
+class TestSharedIndexIsNeverWritten:
+    """The bench-scales root cause, as two properties of the shipped strip.
+
+    A process declaring more than one output tuple binds one index object to
+    every output channel, and each channel is a separate dataflow operator on
+    its own thread. Anything that writes to that object is therefore N threads
+    writing to one unsynchronized LinkedHashMap, and a lost race there does not
+    fail loudly -- it yields an empty copy, whose product is dropped by the next
+    grouping step and takes the branch of the DAG below it with it.
+    """
+
+    def _probe(self, nxf_runner, call, timeout=120):
+        result = nxf_runner.run(
+            "workflow {\n    println %s\n}\n" % call,
+            timeout=timeout,
+            extra_lib={"Probe.groovy": STRIP_RESERVED_PROBE},
+        )
+        NxfTestRunner.assert_nxf_ok(result)
+        return result.stdout
+
+    def test_strip_does_not_write_to_its_argument(self, nxf_runner):
+        """F1a -- the whole defect as one property, no threads, no timing."""
+        out = self._probe(nxf_runner, "Probe.f1a()")
+        assert "F1A caller_unchanged=true" in out, (
+            "stripReserved wrote to the map it was handed; that map is shared "
+            f"across every output channel of the task. Probe said: {out}"
+        )
+        assert "returned_stripped=true" in out, out
+        assert "returned_keeps_lineage=true" in out, out
+
+    @pytest.mark.parametrize("streams", [2, 3])
+    def test_concurrent_strips_lose_no_lineage(self, nxf_runner, streams):
+        """F1b -- race the shipped strip at the widths transforms actually use.
+
+        20,000 rounds puts a false green from luck near one in a million: the
+        mutating version loses on the order of 26 copies in 40,000 at two
+        streams and 60 in 60,000 at three.
+        """
+        out = self._probe(
+            nxf_runner, f"Probe.f1b({streams}, 20000)", timeout=600
+        )
+        line = next(
+            (ln for ln in out.splitlines() if ln.startswith("F1B ")), None
+        )
+        assert line is not None, f"probe produced no F1B line: {out}"
+        assert line.endswith("lost=0"), (
+            "concurrent strips dropped lineage from the shared index; every "
+            f"such copy is a product that gets dropped downstream. {line}"
         )
