@@ -2,9 +2,16 @@
 
 WHAT IS HERE AND WHAT IS NOT. The two thermodynamic members are lanes of their own
 (`equilibrator.py`, `dgbyg.py`); the curated member is read here, from the drop-in, the
-same way `aam_ensemble` reads the other .dat. It runs in the eQuilibrator image for a
-reason that is not obvious: `dir_calibrate` imports `dir_thermo_eq` at module level, so
-the calibration needs that env even though it no longer instantiates the member.
+same way `aam_ensemble` reads the other .dat.
+
+IT NEEDS NO CHEMISTRY ENV. `dir_calibrate` imports `dir_thermo_eq` at module level, but
+that module imports `equilibrator_api` inside `EquilibratorMember.__init__`, and the
+calibration reads the member table rather than instantiating it. All three commands here
+run in a plain pandas env off artifacts already on disk, in about fifteen seconds --
+`benchmarks/direction_rescue/reassemble.py` does exactly that and reproduces r8's
+annotation frame-for-frame. Which is what makes the three re-fit arms of a re-bake --
+chemistry, calibration, sigma_0 -- separable offline instead of confounded in one run.
+It still shares the eQuilibrator image because the lane is grouped by image.
 
 THE CURATED CALL IS THE LOAD-BEARING STEP, not a formality. REACTION-DIRECTION is stated
 in MetaCyc's equation orientation and MNXref re-canonicalises orientation on import, so a
@@ -195,6 +202,10 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    # Table arithmetic over the universe, plus one parse of reac_prop. Minutes.
-    resources=Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=2)),
+    # MEASURED against r8's own inputs, which this step reproduces exactly: curated
+    # 9.4 s / 224 MB, calibrate 3.6 s / 252 MB, combine 2.3 s / 354 MB. Fifteen seconds
+    # and a third of a gigabyte, single-threaded because the lane sets OMP_NUM_THREADS=1.
+    # The declaration it replaces -- 4 cpus, 32 GB, 2 hours -- was never a measurement.
+    # SHARD_COST.md carries the numbers and how they were taken.
+    resources=Resources(cpus=1, memory=Size.GB(4), duration=Duration(minutes=30)),
 )
