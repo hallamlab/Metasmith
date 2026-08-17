@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """V3 — is N2 a node in the Nostoc network, and what does it deliver.
 
-    python research/fabfos/benchmarks/aam_v3_nostoc.py metabolism_bake metabolism_bake_r6 metabolism_bake_r7
+    python research/fabfos/benchmarks/aam_v3_nostoc.py [chunk ...]
 
 One two-point solve per bake chunk: N2 into the `NOS` GPR, the biomass endpoints out,
 element N, no mask. The campaign's own success indicator, so it is a committed driver
 rather than a session's scratch file — the r6 reading was taken by hand and had to be
 rebuilt from the numbers it left behind before r7 could be compared to it.
+
+IT TAKES CHUNK NAMES BECAUSE IT USED TO COMPARE GENERATIONS, and only one is on disk
+now: r7 is `metabolism_bake` and the two it was measured against are reachable from the
+commits that pinned them, not from a second live copy. The readings all three gave are
+in `aam_r6_verification.md`; check one out here if a comparison needs re-running.
 
 Composition is not needed. `nostoc_ecspr.py` stages the singleton through
 `ecspr.model.compose`, but a singleton has no bridges and the carrier blacklist only
@@ -112,5 +117,5 @@ def run(chunk: str) -> dict:
 
 
 if __name__ == "__main__":
-    for chunk in sys.argv[1:] or ["metabolism_bake_r7"]:
+    for chunk in sys.argv[1:] or ["metabolism_bake"]:
         run(chunk)

@@ -200,7 +200,7 @@ def main():
         gene=args.gene, gene_reactions=rxns, fold=args.fold,
         element=args.element, leak=args.leak, ground="universal",
         source=SOURCE_NAME, source_mnxm=src_mnxm,
-        reference_basis="metabolism_bake atom pairs + direction (not the deployed canon)",
+        reference_basis="metabolism_bake atom pairs + direction",
         cholmod_available=_HAVE_CHOLMOD,
         base=dict(total=r_base["total"], converged=r_base["converged"],
                   n_metabolites=r_base["n_metabolites"],

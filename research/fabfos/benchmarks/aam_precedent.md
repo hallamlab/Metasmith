@@ -2,10 +2,11 @@
 
 A synthesis of the AAM precedent across generations, written because the two benchmark
 directories beside it (`aam_collapse/`, `aam_cap/`) each argue one point and neither says
-where that point sits in the history. Every percentage is measured against the deployed
-trio at `data/fabfos/processed/metabolism_bake` — bake `675826f1bdae1f20`, over an
-**83,795-reaction universe**, which is the denominator throughout. 100% is the objective,
-so completeness is the unit and raw pair counts are not reported.
+where that point sits in the history. Every percentage is measured against **Gen 1**, bake
+`675826f1bdae1f20`, over an **83,795-reaction universe**, which is the denominator
+throughout — that generation was the deployed one when this was written and is now
+reachable from commit `9354584` rather than from disk. 100% is the objective, so
+completeness is the unit and raw pair counts are not reported.
 
 ## Three generations
 
@@ -18,16 +19,19 @@ declined** to let curation replace prediction on the 15,539 reactions where both
 answer. Rescue-derived reactions were completed *after* the members ran and mapped by
 Indigo alone: all 9,089 of them are `mcs_only`, one member at half weight.
 
-**Gen 1 — R6, the ensemble** (deployed). Six model lanes across two passes plus a curated
+**Gen 1 — R6, the ensemble.** Six model lanes across two passes plus a curated
 member; three layers laid down in order of what they are worth, with gates that refuse
 rather than warn; a ledger that closes every MNXR onto an outcome from a closed set. The
 substantive change over Gen 0 is that curation moved *before* the mappers, so all three
 members see a completed reaction and agreement can reach consensus at full weight instead
 of one vote at half.
 
-**Gen 2 — in the working tree, not yet baked.** Stoichiometric collapse; the atom cap
+**Gen 2 — deployed, bake `0ffd4c8c6231696e`.** Stoichiometric collapse; the atom cap
 re-read as a member boundary that routes rather than a refusal; the partial
-(element-reduced) lane with its own ledger outcome.
+(element-reduced) lane with its own ledger outcome; one ledger for the unspecified `*`
+body. It banks 69,292 reactions and 175,005 `(mnxr, element)` keys — the measurement is
+`aam_r6_verification.md`, and the completeness figures below are Gen 1's and are left as
+the baseline the generation was argued against.
 
 ## Completeness today: 78.8% of reactions, 80.9% of element slots
 
