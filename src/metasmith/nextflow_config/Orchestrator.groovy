@@ -18,6 +18,14 @@ class Orchestrator {
     public static final String FILES_KEY = "FILES"
     public static final String PROV_KEY = "PROV"
 
+    // The lineage-only view of a task's output index, used by _debatch on the
+    // way out of every process.
+    public static Map stripReserved(index) {
+        index.remove(FILES_KEY)
+        index.remove(PROV_KEY)
+        return index
+    }
+
     private Map index_history
     private Map child2parent
     private def one_null
@@ -563,11 +571,7 @@ class Orchestrator {
                 // while index is a list of indexes
                 def is_batched = indexes instanceof List
                 indexes = is_batched ? indexes : [indexes]
-                indexes = indexes.collect(index -> {
-                    index.remove(FILES_KEY)
-                    index.remove(PROV_KEY)
-                    return index
-                })
+                indexes = indexes.collect(index -> Orchestrator.stripReserved(index))
                 bag = (bag instanceof List)? bag : [bag]
                 if (!is_batched) {
                     // Non-batched: return the single item directly without numeric-prefix parsing

@@ -147,15 +147,24 @@ def test_reserved_keys_are_the_set_lineage_index_filters():
 
 
 def test_the_orchestrator_strips_every_reserved_key_on_the_way_out():
-    """_debatch must remove each reserved key, or it propagates forever.
+    """_debatch must strip each reserved key, or it propagates forever.
 
     A key left in rides into every descendant index through `_post`, grows
     without bound, and lands in promoted shard manifests.
+
+    The strip lives in `stripReserved` rather than inline so it can be raced
+    directly in the orchestrator exec suite, so this checks the two halves:
+    `_debatch` routes every index through it, and it names both keys.
     """
     src = _orchestrator_source()
     debatch = src.split("public def _debatch(")[1]
+    assert "stripReserved(index)" in debatch, (
+        "_debatch no longer routes its indexes through stripReserved; the "
+        "strip is what keeps FILES and PROV out of every downstream index"
+    )
+    strip = src.split("public static Map stripReserved(")[1].split("\n    }\n")[0]
     for key in ("FILES_KEY", "PROV_KEY"):
-        assert f"index.remove({key})" in debatch, (
-            f"_debatch does not strip {key}; it will propagate into every "
-            "downstream index and into promoted shards"
+        assert key in strip, (
+            f"stripReserved does not strip {key}; it will propagate into "
+            "every downstream index and into promoted shards"
         )
