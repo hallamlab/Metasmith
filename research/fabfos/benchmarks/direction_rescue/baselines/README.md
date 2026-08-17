@@ -42,6 +42,20 @@ moved is the size of the correction still outstanding.
 `MNXR145639` is why the polymer fix's outcome is pre-registered rather than awaited: it is
 the same chemistry `MNXR145036` will get, it is already on disk, and it favours elongation.
 
+## The test baseline
+
+"No new skips" needs a skip count to compare against. Three environments, because no one
+of them carries rdkit, networkx and the metasmith engine together:
+
+| env | selection | result |
+|---|---|---|
+| `rdkit-scratch` | `tests/ecspr/bake` | 267 passed, 2 skipped |
+| `ecspr` | `tests/ecspr` | 126 passed, 35 skipped |
+| `msm` | `tests/fabfos` | 38 passed (5 min) |
+
+`rdkit-scratch` cannot collect `tests/ecspr` at all — no networkx — and `msm` and `ecspr`
+cannot run the bake tests, which need rdkit. Run the row that covers what you changed.
+
 ## The other two
 
 `aam_v3_nostoc_metabolism_bake.txt` — the N2 probe, unchanged by any direction work and
