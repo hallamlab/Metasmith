@@ -7,10 +7,14 @@ arithmetic, and carbon would exercise the arithmetic at a hundred times the
 cost. Sulfur is the same coverage for 24,198 pair rows instead of ~1.5M -- so
 this whole file runs in about a second against the real deployed trio.
 
-The counts below are the bake at vocab 675826f1bdae1f20. They are a REGRESSION
-pin over a fixed artifact, not a claim about what a rebake should produce: when
-the bake is rebuilt they move, and the honest response is to re-derive them and
-say in the commit which bake they now describe.
+The counts below are the r7 bake at vocab 0ffd4c8c6231696e. They are a
+REGRESSION pin over a fixed artifact, not a claim about what a rebake should
+produce: when the bake is rebuilt they move, and the honest response is to
+re-derive them and say in the commit which bake they now describe.
+
+The sulfur counts run through `ratio_by_code`, so they are DIRECTION-SENSITIVE
+as well as topology-sensitive: a re-bake that only changed the direction table
+would still move them.
 """
 from __future__ import annotations
 
@@ -19,9 +23,9 @@ import pytest
 from ecspr.bake import encoding as refs
 
 # The deployed trio, and the sulfur slice of it.
-BAKE = "675826f1bdae1f20"
-S_NODES, S_EDGES, S_PAIR_ROWS = 7241, 10165, 24198
-S_REACTIONS_USED, S_METABOLITES = 16757, 6062
+BAKE = "0ffd4c8c6231696e"
+S_NODES, S_EDGES, S_PAIR_ROWS = 7833, 11078, 26352
+S_REACTIONS_USED, S_METABOLITES = 18142, 6613
 
 
 @pytest.fixture(scope="module")
