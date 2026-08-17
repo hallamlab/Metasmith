@@ -1,12 +1,17 @@
 # How much of the direction gap is rescuable?
 
-The r7 bake gives every MetaNetX reaction a directional conductance ratio, fused from two
-thermodynamic estimators and MetaCyc's curated calls. **47,266 of 83,795 reactions carry no
-vote at all** and land at ratio 1.0. That is a real no-op in the conductance model, so "no
-evidence" and "genuinely reversible" are indistinguishable to every consumer downstream.
+The bake gives every MetaNetX reaction a directional conductance ratio, fused from two
+thermodynamic estimators and MetaCyc's curated calls. Where no member votes the ratio
+defaults to 1.0 — a real no-op in the conductance model, so "no evidence" and "genuinely
+reversible" are indistinguishable to every consumer downstream.
 
 The sibling scopes had been treating that gap as an irreducible evidence problem. It is
 not, mostly. This directory measures how much of it is machinery.
+
+**r8 cashed the machinery half.** The gap was 47,266 of 83,795 under r7 and is **37,404**
+now; the tables below are re-measured against r8 and read as *what is left*, not as what
+was available. What remains is a workable carrier-curation problem and a residue nobody
+has a lever on.
 
 Reproduce every number below with `measure_rescue.py`; the header of that file has the
 three commands. Nothing here runs a member — the two `direction forecast` tables and the
@@ -22,9 +27,10 @@ does run one, and it runs it on a twentieth of the universe.
 
 ## The one-line answer
 
-**Two defects in how the ensemble read its own inputs account for about a fifth of the
-gap, and they are fixed.** The rest divides into a workable carrier-curation problem and a
-residue nobody has a lever on.
+**Three defects in how the ensemble read its own inputs accounted for about a fifth of the
+gap, and r8 is the bake that carries the fixes.** 9,862 reactions left tier 0 and none that
+carried a vote in r7 lost one. The rest divides into a workable carrier-curation problem and
+a residue nobody has a lever on.
 
 ## The two defects
 
@@ -38,13 +44,22 @@ above where the loader ignored it.
 
 **`dir_method` named members that never spoke.** `combine.py` tested `is not None` against
 columns produced by a pandas left merge, where an absent member arrives as `NaN` and
-`NaN is not None` is `True`. 13,479 rows of the deployed bake name a member that was
-silent — 12,405 dGbyG-only rows labelled `eq_gc_x_dgbyg`, 954 eQ-only ones the same, 120
-tier-1 rows claiming a dGbyG that is not there. Ratios were never affected, which is
-exactly why it went unnoticed, and exactly why no before/after member accounting could be
-read until it was fixed.
+`NaN is not None` is `True`. 13,479 rows of **r7** named a member that was silent — 12,405
+dGbyG-only rows labelled `eq_gc_x_dgbyg`, 954 eQ-only ones the same, 120 tier-1 rows
+claiming a dGbyG that is not there. Ratios were never affected, which is exactly why it went
+unnoticed, and exactly why no before/after member accounting could be read until it was
+fixed. r8 carries **0**, and the three labels the bug made unreachable are present:
+`dgbyg` 19,142, `eq_gc` 1,068, `eq_rc` 163.
 
-Both landed in `T1: water was never a compound here, and NaN was never a vote`.
+Both landed in `T1: water was never a compound here, and NaN was never a vote` and reached
+a bake in r8.
+
+**A third defect was found while re-baking and is fixed in r8.** eQuilibrator returns
+dG'=0 at the sigma floor when a reaction's groups cancel identically — a statement about
+the equation, not a measurement of it — and the combiner was promoting those to tier 1.
+4,814 of r7's 5,554 tier-1 rows were group cancellations, so the tier a consumer reads as
+MEASURED was 87% no-information. r8's tier 1 is 2,171 rows, none of them at the floor. The
+same rows had also contaminated `DIR_SIGMA_0`, which is why it moved 9.505 → 23.489.
 
 ## The mechanism table
 
@@ -53,27 +68,40 @@ which is the only population where a direction ratio changes a conductance. Conf
 about whether *reaching the model* turns into *getting a number*, which is a different
 question from reachability and the one that decides whether a repair is worth building.
 
-| mechanism | reactions | in_graph | confidence |
-|---|---:|---:|---|
-| **water fix** — tier-0 reactions dGbyG can now score | **9,677** | **9,588** | high |
-| **water fix** — tier-0 reactions eQuilibrator can now score | 5,339 | 5,241 | high |
-| **water fix** — tier-0 reactions either member can now score | **9,963** | **9,802** | high |
-| **water fix** — tier-3 rows gaining a thermo vote | 3,806 | 3,788 | high |
-| carrier table, remainder already balanced | 2,853 | 2,489 | medium |
-| wildcard capping, remainder already balanced | 3,679 | 3,632 | low–medium |
-| carrier crosswalk ceiling (structures *and* a rebalance) | 6,171 | 4,080 | low |
-| wildcard ceiling | 10,772 | 10,626 | low |
-| unbalanced with nothing else in the way | 1,145 | 1,081 | very low |
-| element-neutral twin (the `aam_blockers` rule) | 303 | 277 | **dead end** |
+The water-fix rows were a forecast under r7 and are a *residue* under r8: the reactions the
+forecast expected to move that did not. The r7 column is kept because the difference between
+the two is the only honest way to read how well the forecast did.
+
+| mechanism | r7 forecast | r8 left | in_graph | confidence |
+|---|---:|---:|---:|---|
+| **water fix** — tier-0 reactions dGbyG can now score | 9,677 | **24** | 24 | high |
+| **water fix** — tier-0 reactions eQuilibrator can now score | 5,339 | **87** | 81 | high |
+| **water fix** — tier-0 reactions either member can now score | 9,963 | **101** | 95 | high |
+| **water fix** — tier-3 rows gaining a thermo vote | 3,806 | **6** | 6 | high |
+| carrier table, remainder already balanced | 2,853 | 2,853 | 2,489 | medium |
+| wildcard capping, remainder already balanced | 3,679 | 3,679 | 3,632 | low–medium |
+| carrier crosswalk ceiling (structures *and* a rebalance) | 6,171 | 6,171 | 4,080 | low |
+| wildcard ceiling | 10,772 | 10,772 | 10,626 | low |
+| unbalanced with nothing else in the way | 1,145 | 1,145 | 1,081 | very low |
+| element-neutral twin (the `aam_blockers` rule) | 303 | 303 | 277 | **dead end** |
+
+The carrier and wildcard rows do not move, and that is correct rather than suspicious: they
+are properties of MetaNetX's compound table, which r8 did not touch. Only the rows the
+re-bake was *about* moved.
+
+**The water fix delivered 9,862 of the 9,963 it was forecast to, and the 101 shortfall is
+the same 101 everywhere it appears.** dGbyG called them unbalanced where the forecast
+expected them to balance — the `heavy_atom_tolerance 1e-9` boundary the forecast declares in
+its own summary. The tier-3 row landed 3,800 of 3,806 on the same reading.
 
 The eQuilibrator rows are measurements rather than upper bounds because `--resolution` was
 supplied. Without it the eq arm over-counts badly and the forecast says so in its own
 summary — the difference is 10,175 against 5,339 on the first row, which is the whole
 argument for the `resolve` pass existing.
 
-**Realistic near-term rescue is the water fix plus the two closed-remainder rows: roughly
-13,000–16,500 reactions, of which about 12,900–15,900 carry graph edges.** The stretch case
-reaches ~20,000 and depends on curation that does not exist yet.
+**The water fix is spent; the two closed-remainder rows are what is left of the realistic
+near-term rescue: 6,532 reactions, 6,121 of them in-graph.** The stretch case reaches
+~20,000 and depends on curation that does not exist yet.
 
 ## Is the forecast to be believed?
 
@@ -104,6 +132,13 @@ than tuned away:
   the SMILES. Counting H instead gives 1,280 false positives; counting heavy atoms alone
   gives none in the 27,534 reactions that reached the check. The predicate is the
   conservative one on purpose.
+
+  **On the post-fix run this class is 101**, measured against r8's member table: the
+  forecast said 38,596 dGbyG `expected_ok` and 2,944 `unbalanced`, and the member returned
+  38,495 and 3,045. It is the whole of the water fix's shortfall, 0.26% of the prediction,
+  and still one-sided. `forecast_summary_postfix.tsv` carries both the prediction and the
+  observation rather than being edited to agree with the outcome — a forecast quietly
+  rewritten to match what happened stops being evidence about the forecast.
 
 ### Why dGbyG is the high-confidence arm
 

@@ -28,3 +28,11 @@ mechanism	eq:no_props	40036
 mechanism	eq:unresolved	19637
 mechanism	eq:expected_ok	24122
 limit	heavy_atom_tolerance	1e-9
+observed	dgbyg expected_ok	38495
+observed	dgbyg unbalanced	3045
+observed	dgbyg no_smiles	24179
+observed	dgbyg wildcard	18076
+observed	eq expected_ok	20025
+observed	eq no_props	40036
+observed	eq unresolved	19637
+observed	eq uninformative	4097

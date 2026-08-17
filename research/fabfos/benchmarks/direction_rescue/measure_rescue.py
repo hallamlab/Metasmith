@@ -1,10 +1,17 @@
 """How much of the direction gap is rescuable, per mechanism, measured.
 
-The r7 bake leaves 47,266 of 83,795 reactions at `dir_tier=0` -- no member spoke,
-so the ratio defaults to 1.0, and "no evidence" is indistinguishable downstream
-from "genuinely reversible". This script partitions that gap by the machinery that
-would have to change for each part of it to move, so a reader can price the repairs
-against each other instead of against a single aggregate.
+The bake leaves reactions at `dir_tier=0` when no member spoke, so the ratio
+defaults to 1.0 and "no evidence" is indistinguishable downstream from "genuinely
+reversible" -- 47,266 of 83,795 under r7, 37,404 under r8. This script partitions
+that gap by the machinery that would have to change for each part of it to move, so
+a reader can price the repairs against each other instead of against a single
+aggregate.
+
+IT READS THE DEPLOYED ANNOTATION, so it re-targets itself: run against r8 the
+water-fix rows report what the forecast expected to move and did not, rather than
+what was available to move. The rows that name MetaNetX's compound table instead of
+the bake -- the carrier and wildcard ceilings -- do not move at all, which is the
+check that a re-measure is reading what it thinks it is.
 
 EVERY ROW IS A SET OPERATION over three committed artifacts and nothing else: the
 deployed direction annotation, the two `ecspr.bake.direction.forecast` tables (one
@@ -121,16 +128,24 @@ def main(argv=None):
         rows.append((key, len(s), len(s & mapped), confidence, note))
 
     # ---- 1/2: the water fix, per member and per tier it lands in ----------
+    #
+    # THESE ROWS CHANGED MEANING WHEN r8 LANDED, and the code did not have to change for
+    # them to: they intersect the forecast's gain with the DEPLOYED annotation's tier 0,
+    # so against r7 they read as "available" and against r8 as "still there" -- the
+    # reactions the forecast expected to move that did not. Under r8 they are the 101
+    # dGbyG called unbalanced at the `heavy_atom_tolerance 1e-9` boundary.
     gained_db = spoke(post, "dgbyg") - spoke(pre, "dgbyg")
     gained_eq = spoke(post, "eq") - spoke(pre, "eq")
     row("water_fix.tier0.dgbyg", gained_db & tier[0], "high",
-        "dGbyG answered 25,053/25,053 of the balanced reactions that reached it in r7")
-    row("water_fix.tier0.eq", gained_eq & tier[0], "high" if "resolved" else "high",
-        "eQuilibrator; upper bound unless the forecast was given --resolution")
+        "forecast to gain dGbyG and still silent in the deployed bake")
+    row("water_fix.tier0.eq", gained_eq & tier[0], "high",
+        "forecast to gain eQuilibrator and still silent; an upper bound unless the "
+        "forecast was given --resolution")
     row("water_fix.tier0.either", (gained_db | gained_eq) & tier[0], "high",
-        "the reaction leaves tier 0 if EITHER member speaks")
+        "forecast to leave tier 0 and still in it; r8 delivered 9,862 of 9,963")
     row("water_fix.tier3.either", (gained_db | gained_eq) & tier[3], "high",
-        "curated-only rows that gain a thermo vote and so change tier and ratio")
+        "curated-only rows forecast to gain a thermo vote and still without one; "
+        "r8 delivered 3,800 of 3,806")
 
     # ---- 3/5: the carriers, which are ONE population wearing two hats -----
     # A reaction whose every unreadable participant is a generic carrier is one a
