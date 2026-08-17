@@ -1185,7 +1185,8 @@ class TestCacheHitLineage:
     `o.post`. `_post` stamps the produced key onto that empty map, so the
     tuple reaches a downstream `o.group` carrying nothing about where it
     came from. These two tests are the same workflow twice, differing only
-    in whether the synthetic tuple carries its ancestry.
+    in whether the synthetic tuple carries its ancestry: without it the run
+    stops, with it the hit is indistinguishable from the cold run.
     """
 
     # Mirrors tests/cache/fixtures/cache_fixtures/parallel_then_group.py:
@@ -1220,33 +1221,46 @@ workflow {{
 }}
 '''
 
-    def _run(self, nxf_runner, index_literal):
+    def _run(self, nxf_runner, index_literal, expect_ok=True):
         for n in ("root", "a0", "a1"):
             (nxf_runner.work_dir / f"{n}.txt").write_text(n)
         result = nxf_runner.run(self._SCRIPT.format(index=index_literal))
-        NxfTestRunner.assert_nxf_ok(result)
+        if expect_ok:
+            NxfTestRunner.assert_nxf_ok(result)
         emits = [l for l in result.stdout.splitlines() if l.startswith("G:")]
         dispatch = [l for l in result.stdout.splitlines() if l.startswith("DISPATCH:")]
         return emits, "".join(dispatch), result
 
-    def test_empty_index_is_dropped_as_a_lineage_violation(self, nxf_runner):
-        """The bug: a hit's files never reach the transform that consumes them.
+    def test_empty_index_stops_the_run(self, nxf_runner):
+        """The bug, now loud: a hit with no ancestry halts instead of vanishing.
 
-        `[[:], file(...)]` is what `nextflow_codegen` emits today. The
-        DESCENDANT_OF_BY branch looks for `index["root"]`, finds null, logs
-        LINEAGE_VIOLATION and drops the item — so the grouped channel is
-        empty and the downstream step is never submitted at all. A warm run
-        silently loses what a cold run computes.
+        `[[:], file(...)]` is what `nextflow_codegen` emits for a hit whose
+        shard carries no index. The DESCENDANT_OF_BY branch looks for
+        `index["root"]`, finds nothing, and used to log LINEAGE_VIOLATION and
+        drop — leaving the grouped channel empty, the downstream step never
+        submitted, and the run exiting 0 having silently lost what a cold run
+        computes. It now raises.
+
+        Halting is the right answer here but not the whole answer: a warm run
+        should re-compute such a shard, not die on it. That is the read-side
+        demotion in `cache_decisions`, which keeps this abort from ever firing
+        on a shard the cache could simply have missed.
         """
-        emits, dispatch, result = self._run(nxf_runner, "[:]")
+        emits, dispatch, result = self._run(nxf_runner, "[:]", expect_ok=False)
+        assert result.returncode != 0, (
+            "an empty replayed index must stop the run, not drop the item; "
+            f"exit was {result.returncode}, emissions: {emits}"
+        )
+        assert "declared descendant" in (result.stdout or "") + (result.stderr or ""), (
+            f"expected the lineage-violation message; stdout tail: "
+            f"{(result.stdout or '')[-1500:]}"
+        )
+        # The log is still what says which stream did it; the exception is
+        # only what stops the run.
         assert "LINEAGE_VIOLATION" in dispatch, (
-            "expected the empty-index tuples to be logged as lineage "
-            f"violations; dispatch log was: {dispatch}"
+            f"expected the violation to still be logged; dispatch log: {dispatch}"
         )
-        assert emits == [], (
-            "if group() no longer drops empty-index tuples this test has "
-            f"outlived its premise; emissions: {emits}"
-        )
+        assert emits == [], f"nothing should have been grouped; emissions: {emits}"
 
     def test_ancestor_bearing_index_reaches_the_group(self, nxf_runner):
         """The contract: carry the ancestry and the hit is indistinguishable.
