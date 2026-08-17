@@ -144,6 +144,41 @@ STUDIES = {
     # and assayed, of which six moved the phenotype. LASER records what its authors
     # chose to assay, so it has no negatives to speak of; this one does.
     "aska_ffa":   dict(reader="gene_ovx", cohort="aska_ffa", arm="gof", host="e_coli_k12"),
+    # THE TWO SCALEs ARMS. One method, one lab, two hosts, two media -- and they are
+    # separate studies rather than one because their readouts are not the same quantity:
+    # the later paper RECALCULATED the earlier selections, and the two fitness ranges
+    # differ sixfold. Nothing may join them by value.
+    #
+    # `scales_tol` IS THE CLASSIFIER ARM and the reason this benchmark exists. A
+    # genome-wide overexpression library assayed a fitness for all 4,225 genes, so the
+    # ~4,000 that did not enrich are MEASURED NEGATIVES rather than unlabelled absences
+    # -- the property that made the ASKA null work for eydallin, arriving here named and
+    # continuous. `neutral` therefore maps to `flat`, not to nothing: "the screen
+    # measured this gene and it did not move" is a claim, and dropping it would throw
+    # away exactly what makes this cohort better than its predecessor. Four-element
+    # default, because the readout is growth under ethanol and every element feeds it.
+    "scales_tol":  dict(reader="gene_ovx_row", cohort="scales_tol", arm="gof",
+                        host="e_coli_bw25113",
+                        directions={"tolerant_both": "up", "tolerant_15": "up",
+                                    "tolerant_30": "up", "neutral": "flat"}),
+    # `scales_prod` IS THE MECHANISTIC ARM AND IS NOT A CLASSIFIER. Its genome-wide
+    # values survive only as a chart cache whose gene names were lost with a dead OLE
+    # link, so 4,100 of its 4,103 rows are anonymous. Its ONE claim about named genes is
+    # negative -- betA/betB/betI were not enriched -- and that is all the direction map
+    # carries. `unlabelled` is deliberately absent from the map: a row the paper says
+    # nothing about must yield no expectation, which is a different fact from a measured
+    # negative and the tier already distinguishes the two by dropping the former.
+    #
+    # ELEMENTS=("C",) IS A JUDGEMENT CALL WORTH RE-EXAMINING. By the rule stated above
+    # this arm's readout is fitness, which every element feeds, so the four-element
+    # default would be the literal reading. It is narrowed because the only thing this
+    # arm is actually used for is the carbon-skeleton question -- can the cell reach a
+    # protectant from what the medium supplies -- and every axis of the declared sink
+    # panel in `originals/benchmarks/scales/gof_scales.tsv` is element C. Widening it
+    # would mint N/P/S expectations that no axis in this benchmark ever reads.
+    "scales_prod": dict(reader="gene_ovx_row", cohort="scales_prod", arm="gof",
+                        host="e_coli_lw06", elements=("C",),
+                        directions={"not_enriched": "flat"}),
 }
 
 # THREE KINDS OF CONTROL, because each catches a different failure, and they are

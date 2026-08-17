@@ -90,12 +90,26 @@ out      = model.AddProduct(lib.GetType("fabfos_data::genomes"))
 # only the former's `ECDH1ME8569_####` locus tags are the id space iECDH1ME8569_1439
 # is keyed on, and the other one would give the model 1,439 genes to match and no
 # join to match them by.
+# BW25113 IS HERE FOR THE SCALEs COHORTS and is not a fosmid host either. Both SCALEs
+# papers select in it or in a derivative of it: the tolerance study's host is BW25113
+# delta-recA, and the production study's LW06 is, verbatim from its Materials and
+# Methods, "BW25113 DldhA DackA DfrdABCD DadhE attTn7::PLlacO-1 pdcZm adhBZm AmpR"
+# (ATCC BAA-2466). LW06 has no assembly at NCBI, so BW25113 is where its SEQUENCE comes
+# from -- the same stand-in relation W3110 has to AG1, and declared the same way, in
+# benchmark/host_gpr_gem.py rather than as bytes written twice here.
+#
+# It gets no GEM entry for a reason that is NOT the EPI300/W3110 reason. BW25113 is
+# K-12, so iML1515 is a model of its own lineage rather than a cross-strain borrow --
+# what separates it from MG1655 is a handful of catabolic deletions, which the edit list
+# carries. Downloading iML1515 a second time under this host would assert an acquisition
+# that never happened.
 HOSTS = {
-    "e_coli_k12":    "GCF_000005845.2",
-    "e_coli_dh10b":  "GCF_000019425.1",
-    "e_coli_epi300": "GCF_052692645.1",
-    "e_coli_dh1":    "GCF_000270105.1",
-    "e_coli_w3110":  "GCF_048541595.1",
+    "e_coli_k12":     "GCF_000005845.2",
+    "e_coli_dh10b":   "GCF_000019425.1",
+    "e_coli_epi300":  "GCF_052692645.1",
+    "e_coli_dh1":     "GCF_000270105.1",
+    "e_coli_w3110":   "GCF_048541595.1",
+    "e_coli_bw25113": "GCF_050858555.1",
 }
 
 # host -> the BiGG model that strain's GPR is asserted by. Absent means the strain
