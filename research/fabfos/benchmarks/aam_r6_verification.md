@@ -6,8 +6,8 @@ produced; nothing is restated from a plan or from the seed design document.
 
 Two generations are reported because the second is a gapfill of the first rather than a
 rebuild: **r6** is the bake the three checks below were run against, and **r7** is r6 with
-the body ledger closed, re-mapping only the submissions that changed. V1 covers both. V2
-and V3 were measured on r6 and are not re-measured here — see *What this does not verify*.
+the body ledger closed, re-mapping only the submissions that changed. V1 and V3 cover both.
+V2 was measured on r6 and is not re-measured here — see *What this does not verify*.
 
 The reference is one bake — `check_references.py` passes over the r7 trio, bake identity
 `0ffd4c8c6231696e`, equivalence included: 2,530,589 pair rows, 35,860 metabolites, 83,795
@@ -146,7 +146,9 @@ keys emptied after rederivation, and **0 reactions emptied**.
 
 Of 21 nitrogenase reactions (EC 1.18.6.1 / 1.19.6.1), **13 bank pair rows and all 13 are
 injective**; the other 8 are `non_molecule`, a named refusal. **10 carry an N₂↔NH₄⁺ pair.**
-The deployed table's nitrogenases hold none.
+The deployed table's nitrogenases hold none. Counted the other way round — every reaction
+in the bake carrying an N₂↔NH₄⁺ pair, whatever its EC — r6 and r7 hold the same **17**
+against the deployed bake's 5.
 
 `MNXR109381` carries it as `NH4(+) → N2`, because MetaNetX files that reaction as N₂
 evolution and the bake stores `orientation: as_written`. Of its six nitrogen rows, one is
@@ -156,20 +158,33 @@ stays bare.
 
 In the Nostoc network (`NOS` GPR, 13,127 reactions, element N):
 
-| | deployed | r6 |
-|---|---|---|
-| N₂ a node at all | **no** | **yes** |
-| N₂↔NH₄⁺ edges | 0 | 4 (`MNXR109381`, `MNXR163643`, `MNXR166146`, `MNXR175605`) |
-| two-point probe from N₂ | `_missing_source=1`, **abstained** | converged, `_conservation_error=0` |
-| effective conductance | — | **3.2157** |
-| biomass endpoints reached | — | **31 of 31** |
-| reactions used / AAM gap | 7,820 / 5,307 | 7,978 / 5,149 |
+| | deployed | r6 | r7 |
+|---|---|---|---|
+| N₂ a node at all | **no** | **yes** | **yes** |
+| N₂↔NH₄⁺ edges | 0 | 4 (`MNXR109381`, `MNXR163643`, `MNXR166146`, `MNXR175605`) | the same 4 |
+| two-point probe from N₂ | `_missing_source=1`, **abstained** | converged | converged |
+| effective conductance | — | **3.2209** | **3.2210** |
+| biomass endpoints reached | — | **31 of 31** | **31 of 31** |
+| reactions used / AAM gap | 7,820 / 5,307 | 7,978 / 5,149 | **8,091 / 5,036** |
 
 The deployed bake does not return a small number; it **abstains**, because the source
-metabolite is not in the graph. And the largest draws from N₂ are **L-glutamine (0.216)
+metabolite is not in the graph. And the largest draws from N₂ are **L-glutamine (0.219)
 and L-glutamate (0.187)** — the GS/GOGAT route fixed nitrogen actually takes into
 metabolism. That the two biggest sinks are the biologically correct ones is evidence the
 network is right rather than merely non-empty.
+
+**r7 holds it and adds to it.** The two bakes carry the same four N₂↔NH₄⁺ reactions and
+the same conductance to three decimals; what moved is the network beneath it, 113
+reactions out of the AAM gap and into use. The gapfill did not touch nitrogen fixation
+and the measurement says so rather than assuming it.
+
+The driver is `aam_v3_nostoc.py`, beside this file. The r6 column above was re-measured
+through it rather than restated: the original reading was taken by hand and the loader's
+GPR schema has changed since, so the two are separated by a shim whose docstring says
+what it maps. Every structural number reproduces exactly — the deployed abstention, both
+reaction/gap splits, the endpoint count and the four reaction ids — while the recorded
+r6 conductance was **3.2157** against the 3.2209 the driver now returns. That 0.16% is
+unexplained; it is a scalar under a re-derived harness and it moves no verdict here.
 
 ## The seed design document's claims, restated as our outcomes
 
@@ -338,10 +353,6 @@ absorb a `protein` token costs **515 banked** and gains 0 — that token is load
 because `[protein]` stands on both sides and its budget cancels.
 
 ## What this does not verify
-
-- **V3 was measured on r6 and not re-measured on r7.** N₂ reachability depends on reactions
-  the gapfill did not touch, so it is not expected to have moved — but rebuilding the Nostoc
-  network to say so was not done, and "not expected to have moved" is not a measurement.
 
 - The forecast's recall against the prior run's recorded silences is reported by the lane
   (`aam_forecast/summary.tsv`) but not re-measured here; 22,592 of the buildable universe
