@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import canon
 from .refdata import load_mnxr_stoich, load_mnxm_props
 from .thermo_eq import EquilibratorMember
 
@@ -38,8 +39,10 @@ MAD_K = 1.4826  # MAD -> robust sigma for a normal
 
 # Below this, eQuilibrator's reported uncertainty is a floor rather than a measurement,
 # and the estimate it accompanies carries no information. See `calibrate` for why the
-# arm restriction does not already exclude these.
-SIGMA_FLOOR_KJ = 1e-4
+# arm restriction does not already exclude these. One value, in canon, because the
+# combiner rejects the same rows on the same grounds -- if the two ever disagree, sigma_0
+# gets fitted over a population the combiner does not use.
+SIGMA_FLOOR_KJ = canon.DIR_SIGMA_FLOOR
 
 
 def robust(x: np.ndarray):

@@ -170,6 +170,41 @@ def test_a_silent_member_arrives_as_nan_and_must_not_read_as_a_vote():
     assert measured_alone["dir_tier"] == 1 and measured_alone["dir_method"] == "eq_rc"
 
 
+def test_a_group_cancellation_is_not_a_measurement():
+    """eQuilibrator returns dG'=0 at the sigma floor when the groups cancel exactly.
+
+    That is a statement about the equation -- both sides built from the same pieces --
+    not a measurement of it, and `calibrate` already drops exactly these rows from the
+    arm it fits sigma_0 on. The combiner used to promote them to tier 1 at
+    S_MEAS_FLOOR: 4,841 of r8's 7,012 tier-1 rows, so the tier a consumer reads as
+    MEASURED was 69% no-information.
+
+    The normalisation has to happen above BOTH the vote and the ladder. Patching only
+    `thermo_vote` leaves `dir_method` reading the raw column, which trades one
+    provenance defect for another.
+    """
+    floor = canon.DIR_SIGMA_FLOOR
+    row = {"mnxr": "R", "eq_dg": 0.0, "eq_sigma": floor, "eq_uses_gc": False,
+           "dgbyg_dg": -18.0, "dgbyg_sigma": 3.0}
+
+    assert C.eq_vote(0.0, floor, False) == (None, None, None)
+    got = C.combine_row(dict(row), calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert got["dir_tier"] == 2, "a group cancellation was promoted to a measurement"
+    assert got["dir_method"] == "dgbyg", (
+        "the ladder named eQuilibrator after eq_vote refused to let it vote")
+
+    # the raw columns stay verbatim, so which rows were dropped is recoverable
+    assert got["eq_dg"] == 0.0 and got["eq_sigma"] == floor
+
+    # a real measurement at the same dG' is untouched -- sigma is the discriminator
+    real = C.combine_row(dict(row, eq_sigma=2.0), calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert real["dir_tier"] == 1 and real["dir_method"] == "eq_rc+dgbyg"
+
+    # and the group-contribution arm is not in scope: it is already a prediction
+    gc = C.combine_row(dict(row, eq_uses_gc=True), calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert gc["dir_method"] == "eq_gc_x_dgbyg"
+
+
 def test_an_absent_dgbyg_table_does_not_relabel_silence_as_refusal():
     """`refused` is dGbyG declining on a wildcard. NaN is dGbyG not being there.
 
