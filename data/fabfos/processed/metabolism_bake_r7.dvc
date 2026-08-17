@@ -1,0 +1,6 @@
+outs:
+- md5: af0dc6277b564ff07a886cdcbcb9ba96.dir
+  size: 471900645
+  nfiles: 76
+  hash: md5
+  path: metabolism_bake_r7
