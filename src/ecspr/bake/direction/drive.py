@@ -42,9 +42,15 @@ from pathlib import Path
 import pandas as pd
 
 from ..aam.shard import parse_spec, shard_of
-from .refdata import load_mnxr_stoich, load_mnxm_props
+from . import substitute
+from .refdata import load_mnxr_stoich, load_mnxm_names, load_mnxm_props
 
-MEMBER_COLS = ("mnxr", "dg", "sigma", "flag", "reason")
+# `sigma_sub` is the substitution lane's own width and is DELIBERATELY a separate column
+# from `sigma`. `combine.eq_vote` detects an eQuilibrator group cancellation by testing
+# sigma against the floor, so widening the member's own sigma would lift a cancelling zero
+# over that floor and re-promote it to tier 1 -- the defect r8 was baked to remove. It is
+# folded in downstream, after the vote has been taken.
+MEMBER_COLS = ("mnxr", "dg", "sigma", "flag", "reason", "sigma_sub")
 
 
 def cmd_universe(args):
@@ -98,6 +104,14 @@ def cmd_eval(args):
 
     stoich = load_mnxr_stoich(args.reac_prop)
     props = load_mnxm_props(args.chem_prop)
+    # No tables is the identity: an uncovered reaction walks the code path it walks today,
+    # which is what makes this switchable without re-validating the member.
+    subs = substitute.load(args.substitutions, props,
+                           load_mnxm_names(args.chem_prop) if args.substitutions else {})
+    props = subs.props(props)
+    if len(subs):
+        print(f"[eval:{args.member}] {len(subs):,} substitutions over "
+              f"{len(subs.models):,} model compounds", flush=True)
     member = M()
 
     rows = []
@@ -105,11 +119,12 @@ def cmd_eval(args):
         s = stoich.get(mnxr)
         if s is None:
             rows.append(dict(mnxr=mnxr, dg=None, sigma=None, flag=None,
-                             reason="no_stoich"))
+                             reason="no_stoich", sigma_sub=0.0))
             continue
         st, _is_bal, _is_tr = s
-        dg, sig, flag, reason = member.dgr(st, props)
-        rows.append(dict(mnxr=mnxr, dg=dg, sigma=sig, flag=flag, reason=reason))
+        dg, sig, flag, reason = member.dgr(subs.rewrite(st), props)
+        rows.append(dict(mnxr=mnxr, dg=dg, sigma=sig, flag=flag, reason=reason,
+                         sigma_sub=subs.sigma_sub(st)))
         if i % 2000 == 0:
             print(f"[eval:{args.member}] {i:,}/{len(mnxrs):,}", flush=True)
 
@@ -193,6 +208,10 @@ def parse_args(argv=None):
                    help="fail if the member cannot be imported, instead of writing an "
                         "empty table. For a dedicated member lane, where an empty "
                         "product is indistinguishable from total abstention.")
+    p.add_argument("--substitutions", default=None,
+                   help="a substitution table directory. Omit for the configuration "
+                        "every baseline was taken under. MUST match what `forecast build` "
+                        "is given, or the accounting describes a bake nobody built.")
     p.add_argument("--shard", default=None, metavar="i/n",
                    help="evaluate only the reactions this shard owns, under the same "
                         "crc32 partition the mapper lanes use. Merge with `merge`, which "

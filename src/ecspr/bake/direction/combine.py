@@ -49,6 +49,12 @@ def _num(x):
     return x is not None and not (isinstance(x, float) and math.isnan(x))
 
 
+def _zero(x) -> float:
+    """A missing width is zero width. r8's member tables predate `sigma_sub`, so its
+    column arrives absent or NaN there and must read as 'nothing was asserted'."""
+    return float(x) if _num(x) else 0.0
+
+
 def eq_vote(eq_dg, eq_sig, eq_gc):
     """The eQuilibrator row as evidence, or (None, None, None) if it is none.
 
@@ -121,6 +127,15 @@ def combine_row(r, calib, sigma_0):
         mu_post = sum(mu / s ** 2 for mu, s in votes) / wsum
         s_post = math.sqrt(1.0 / wsum)
 
+    # THE SUBSTITUTION WIDTH, FOLDED IN HERE AND NOWHERE EARLIER. `eq_vote` has already
+    # run above on the member's RAW sigma, so a group cancellation has already been
+    # refused; widening before that point lifts a cancelling zero over SIGMA_FLOOR and
+    # re-promotes it to tier 1, which is the defect r8 was baked to remove. An asserted
+    # structure has a width and a posterior that ignored it would read as a measurement.
+    sigma_sub = max(_zero(r.get("eq_sigma_sub")), _zero(r.get("dgbyg_sigma_sub")))
+    if s_post is not None and sigma_sub > 0:
+        s_post = math.hypot(s_post, sigma_sub)
+
     # shrinkage decision rule
     if s_post is None:
         lam, mu_eff, s_eff = 0.0, 0.0, sigma_0
@@ -141,8 +156,15 @@ def combine_row(r, calib, sigma_0):
     # reads eq_dg, the NORMALISED value, so a group cancellation is not named as eQ
     # evidence here after eq_vote() has already refused to let it vote above.
     have_eq, have_db = _num(eq_dg), _num(r.get("dgbyg_dg"))
-    if tv is not None and tv[2]:
+    if tv is not None and tv[2] and sigma_sub == 0:
         tier, method = 1, ("eq_rc+dgbyg" if have_db else "eq_rc")
+    elif tv is not None and tv[2]:
+        # Tier 1 is the tier a consumer reads as MEASURED. eQuilibrator measured the
+        # MODEL equation, not this one -- the anchor gate says the model reproduces a
+        # real scored reaction, which justifies the NUMBER without making it an
+        # observation of these reactants. Demoting is one-way: substitution can lower a
+        # tier here, never raise one.
+        tier, method = 2, ("eq_rc+dgbyg" if have_db else "eq_rc") + "_sub"
     elif tv is not None:
         method = ("eq_gc_x_dgbyg" if (have_eq and have_db)
                   else ("eq_gc" if have_eq else "dgbyg"))
@@ -165,7 +187,7 @@ def combine_row(r, calib, sigma_0):
         dG_raw=mu_post, lambda_shrink=lam, clamped=clamped,
         eq_dg=r.get("eq_dg"), eq_sigma=r.get("eq_sigma"), eq_uses_gc=r.get("eq_uses_gc"),
         dgbyg_dg=r.get("dgbyg_dg"), dgbyg_sigma=r.get("dgbyg_sigma"),
-        dgbyg_wildcard=r.get("dgbyg_wildcard"),
+        dgbyg_wildcard=r.get("dgbyg_wildcard"), sigma_sub=sigma_sub,
         biocyc_category=cat, biocyc_source=r.get("biocyc_source"),
         prior_mu=(prior[0] if prior else None),
         prior_tau=(prior[1] if prior else None),
@@ -174,13 +196,22 @@ def combine_row(r, calib, sigma_0):
 
 
 def build(base_mnxrs, eq_df, db_df, curated, calib_df, sigma_0):
-    eq = eq_df.rename(columns={"dg": "eq_dg", "sigma": "eq_sigma", "flag": "eq_uses_gc"})
-    db = db_df.rename(columns={"dg": "dgbyg_dg", "sigma": "dgbyg_sigma", "flag": "dgbyg_wildcard"})
+    eq = eq_df.rename(columns={"dg": "eq_dg", "sigma": "eq_sigma", "flag": "eq_uses_gc",
+                               "sigma_sub": "eq_sigma_sub"})
+    db = db_df.rename(columns={"dg": "dgbyg_dg", "sigma": "dgbyg_sigma",
+                               "flag": "dgbyg_wildcard", "sigma_sub": "dgbyg_sigma_sub"})
     cur = curated.rename(columns={"aligned": "biocyc_category", "source": "biocyc_source"})
+    # r8's member tables predate `sigma_sub`. Materialise it rather than branching on its
+    # presence, so every row below reads one shape.
+    for frame, col in ((eq, "eq_sigma_sub"), (db, "dgbyg_sigma_sub")):
+        if col not in frame.columns:
+            frame[col] = 0.0
     base = pd.DataFrame({"mnxr": base_mnxrs})
     df = (base
-          .merge(eq[["mnxr", "eq_dg", "eq_sigma", "eq_uses_gc"]], on="mnxr", how="left")
-          .merge(db[["mnxr", "dgbyg_dg", "dgbyg_sigma", "dgbyg_wildcard"]], on="mnxr", how="left")
+          .merge(eq[["mnxr", "eq_dg", "eq_sigma", "eq_uses_gc", "eq_sigma_sub"]],
+                 on="mnxr", how="left")
+          .merge(db[["mnxr", "dgbyg_dg", "dgbyg_sigma", "dgbyg_wildcard",
+                     "dgbyg_sigma_sub"]], on="mnxr", how="left")
           .merge(cur[["mnxr", "biocyc_category", "biocyc_source"]], on="mnxr", how="left"))
     calib = {r.category: (r.median, r.tau, int(r.n)) for r in calib_df.itertuples()}
     rows = [combine_row(rec, calib, sigma_0) for rec in df.to_dict("records")]

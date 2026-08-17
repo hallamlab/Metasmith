@@ -100,11 +100,21 @@ def points_from_member(curated_per_mnxr, reac_prop, eq_member):
     return pd.DataFrame(rows)
 
 
-def compute_points(curated_per_mnxr, reac_prop, chem_prop, limit=None):
+def compute_points(curated_per_mnxr, reac_prop, chem_prop, limit=None,
+                   substitutions=None):
     cur = pd.read_parquet(curated_per_mnxr)
     cur = cur[cur["aligned"].notna()][["mnxr", "aligned"]]
     stoich = load_mnxr_stoich(reac_prop)
     props = load_mnxm_props(chem_prop)
+    # The calibration fits the curated prior on what the member ACTUALLY answered, so it
+    # has to be handed the same equations the member was. Restaged here and not only in
+    # `drive`: a prior fitted on the unsubstituted arm and applied to the substituted one
+    # is the same class of mistake as an unstamped cache.
+    from .refdata import load_mnxm_names
+    from . import substitute
+    subs = substitute.load(substitutions, props,
+                           load_mnxm_names(chem_prop) if substitutions else {})
+    props = subs.props(props)
     eq = EquilibratorMember()
 
     rows, n = [], 0
@@ -123,7 +133,7 @@ def compute_points(curated_per_mnxr, reac_prop, chem_prop, limit=None):
             rows.append(dict(mnxr=mnxr, category=cat, dg=None, sigma=None,
                              uses_gc=None, reason="unbalanced", is_transport=False))
             continue
-        dg, sig, gc, reason = eq.dgr(st, props)
+        dg, sig, gc, reason = eq.dgr(subs.rewrite(st), props)
         rows.append(dict(mnxr=mnxr, category=cat, dg=dg, sigma=sig,
                          uses_gc=gc, reason=reason, is_transport=False))
         n += 1
@@ -216,12 +226,16 @@ def main(argv=None):
     ap.add_argument("--out-calibration", required=True)
     ap.add_argument("--out-points", required=True)
     ap.add_argument("--limit", type=int, default=None, help="cap eQ reactions (testing)")
+    ap.add_argument("--substitutions", default=None,
+                   help="a substitution table directory, for the --chem-prop recompute "
+                        "path. The --eq-member path needs none: it READS the member "
+                        "table, which already carries whatever the run was given.")
     a = ap.parse_args(argv)
     if a.eq_member:
         points = points_from_member(Path(a.curated), Path(a.reac_prop), Path(a.eq_member))
     elif a.chem_prop:
         points = compute_points(Path(a.curated), Path(a.reac_prop),
-                                Path(a.chem_prop), a.limit)
+                                Path(a.chem_prop), a.limit, a.substitutions)
     else:
         raise SystemExit("[calib] need --eq-member, or --chem-prop to re-score")
     cal = calibrate(points)

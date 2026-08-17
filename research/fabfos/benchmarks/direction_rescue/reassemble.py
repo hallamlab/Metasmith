@@ -118,8 +118,16 @@ def main() -> None:
     print(f"\n[reassemble] against {expect}")
     g = got.sort_values("mnxr").reset_index(drop=True)
     w = want.sort_values("mnxr").reset_index(drop=True)
-    if list(g.columns) != list(w.columns):
-        raise SystemExit(f"[reassemble] SCHEMA DIFFERS: {list(g.columns)} vs {list(w.columns)}")
+    # A re-bake may ADD a column -- r9 adds `sigma_sub` -- and that is a schema change to
+    # report, not a comparison failure. Dropping one is different and stays fatal: a
+    # consumer reading it would break.
+    added, gone = [c for c in g.columns if c not in w.columns], \
+                  [c for c in w.columns if c not in g.columns]
+    if gone:
+        raise SystemExit(f"[reassemble] COLUMNS DROPPED: {gone}")
+    if added:
+        print(f"[reassemble] new columns (not compared): {added}")
+        g = g[list(w.columns)]
     if g.equals(w):
         print(f"[reassemble] IDENTICAL over {len(g):,} reactions")
         return

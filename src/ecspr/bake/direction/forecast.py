@@ -178,8 +178,14 @@ def predict_dgbyg(stoich, profiles):
     return "expected_ok", ""
 
 
-def build(universe, stoich_by_mnxr, profiles, resolved):
-    """One row per (reaction, member). `rows, tally`."""
+def build(universe, stoich_by_mnxr, profiles, resolved, subs=None):
+    """One row per (reaction, member). `rows, tally`.
+
+    `subs` rewrites the equation the same way `drive.cmd_eval` will, so the forecast
+    describes the chemistry the run will actually be handed. Omitting it here and passing
+    it there is the failure mode this argument exists to prevent: the accounting would
+    describe a bake that was never built.
+    """
     rows, tally = [], collections.Counter()
     for mnxr in universe:
         s = stoich_by_mnxr.get(mnxr)
@@ -188,7 +194,7 @@ def build(universe, stoich_by_mnxr, profiles, resolved):
                 rows.append((mnxr, member, "no_stoich", "", 0))
                 tally[f"{member} no_stoich"] += 1
             continue
-        st = s[0]
+        st = subs.rewrite(s[0]) if subs is not None else s[0]
         for member, (mech, blocker) in (("eq", predict_eq(st, profiles, resolved)),
                                         ("dgbyg", predict_dgbyg(st, profiles))):
             assert mech in MEMBER_MECHANISMS[member], (
@@ -280,12 +286,21 @@ def cmd_resolve(args):
 
 
 def cmd_build(args):
+    from .refdata import load_mnxm_names
+    from . import substitute
+
     stoich = load_mnxr_stoich(args.reac_prop)
     universe = _universe(args.universe, stoich)
     props = _props(args.chem_prop, args.mnxm_only)
-    parts = _participants(stoich, universe)
+    # `Substitutions()` with no tables covers nothing, so the default path is the one the
+    # baselines were taken under -- not a mode, an empty table.
+    subs = substitute.load(args.substitutions, props,
+                           load_mnxm_names(args.chem_prop) if args.substitutions else {})
+    props = subs.props(props)
+    parts = _participants(stoich, universe) | set(subs.models)
     print(f"[forecast] {len(universe):,} reactions, {len(parts):,} distinct "
-          f"participants, {len(props):,} chem_prop rows with a structure", flush=True)
+          f"participants, {len(props):,} chem_prop rows with a structure"
+          + (f", {len(subs):,} substitutions" if len(subs) else ""), flush=True)
 
     profiles = profile_compounds(parts, props)
 
@@ -311,7 +326,7 @@ def cmd_build(args):
               "arm's `expected_ok` is an upper bound on what it will answer",
               flush=True)
 
-    rows, tally = build(universe, stoich, profiles, resolved)
+    rows, tally = build(universe, stoich, profiles, resolved, subs)
     df = pd.DataFrame(rows, columns=list(FORECAST_COLS))
     df.to_parquet(args.out, index=False)
 
@@ -338,6 +353,7 @@ def cmd_build(args):
     lines.append(f"input\tparticipants_wildcard\t"
                  f"{sum(1 for m in parts if profiles[m].wildcard)}")
     lines.append(f"input\tresolution_supplied\t{int(resolved is not None)}")
+    lines.append(f"input\tsubstitutions\t{len(subs)}")
     lines.append(f"input\tmnxm_only\t{int(bool(args.mnxm_only))}")
     for member, mechs in sorted(MEMBER_MECHANISMS.items()):
         for m in mechs:
@@ -441,6 +457,10 @@ def parse_args(argv=None):
                         "than absorbed into the other mechanisms.")
     p.add_argument("--mnxm-only", action="store_true",
                    help="see `resolve --mnxm-only`")
+    p.add_argument("--substitutions", default=None,
+                   help="a substitution table directory. Omit for the configuration\n"
+                        "every baseline was taken under. MUST match what `drive eval`\n"
+                        "is given, or the accounting describes a bake nobody built.")
     p.add_argument("--out", required=True)
     p.add_argument("--out-summary", required=True)
 

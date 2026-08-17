@@ -186,8 +186,11 @@ CLI = {
     },
     "ecspr.bake.direction.drive": {
         "universe": {"--reac-prop", "--out"},
+        # `--substitutions` is r9's. It is the ONE flag that changes what the member is
+        # asked, so it must appear here and on `forecast build` together: giving it to one
+        # and not the other makes the accounting describe a bake nobody built.
         "eval": {"--member", "--universe", "--reac-prop", "--chem-prop",
-                 "--shard", "--require", "--out"},
+                 "--shard", "--require", "--substitutions", "--out"},
         "merge": {"--member", "--shard-file", "--expect", "--universe", "--out"},
     },
     "ecspr.bake.direction.curated": {
@@ -201,13 +204,13 @@ CLI = {
         "resolve": {"--universe", "--reac-prop", "--chem-prop", "--mnxm-only",
                     "--resume", "--out"},
         "build": {"--universe", "--reac-prop", "--chem-prop", "--resolution",
-                  "--mnxm-only", "--out", "--out-summary"},
+                  "--mnxm-only", "--substitutions", "--out", "--out-summary"},
         "backtest": {"--forecast", "--member-eq", "--member-dgbyg",
                      "--out-summary"},
     },
     "ecspr.bake.direction.calibrate": {
         "": {"--curated", "--reac-prop", "--chem-prop", "--eq-member", "--limit",
-             "--out-calibration", "--out-points"},
+             "--substitutions", "--out-calibration", "--out-points"},
     },
     "ecspr.bake.direction.combine": {
         "": {"--base-mnxrs", "--eq", "--dgbyg", "--curated", "--calibration",
