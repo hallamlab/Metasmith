@@ -21,9 +21,13 @@ does run one, and it runs it on a twentieth of the universe.
 | file | what it answers |
 |---|---|
 | `measure_rescue.py` | the mechanism table — how much of the gap each repair reaches |
+| `reassemble.py` | re-runs the assembly locally and diffs it against a bake's own annotation |
+| `glycogen_delivery.py` | which reaction delivers the carbon that arrives at glycogen |
+| `scan_direction_caches.py` | which bake each decoded cache in the workspace actually holds |
 | `shard_cost.sh` | what the eQuilibrator member costs before and after the fix |
 | `REBAKE.md` | how to re-bake direction, and what a re-bake must not rediscover |
-| `SHARD_COST.md` | what the member costs, and the resource declaration it settled |
+| `SHARD_COST.md` | what the lane costs, and the two resource declarations it settled |
+| `baselines/` | the r8 readings r9 is measured against, each stamped with its bake |
 
 ## The one-line answer
 
@@ -113,6 +117,19 @@ comparison is like for like:
 |---|---:|---:|---:|
 | dGbyG | 83,732 / 83,795 (**99.92%**) | **0** | 63 |
 | eQuilibrator | 81,227 / 83,795 (**96.94%**) | **0** | 2,568 |
+
+Re-scored against **r8**'s member seams, with the post-fix forecast — `backtest_r8.tsv`,
+and the run that produced it also reproduces both `forecast_summary_*.tsv` byte for byte:
+
+| member | exact mechanism | predicted silent but spoke | predicted to speak but silent |
+|---|---:|---:|---:|
+| dGbyG | 83,694 / 83,795 (**99.88%**) | **0** | 101, all `unbalanced` |
+| eQuilibrator | 79,698 / 83,795 (**95.11%**) | **0** | 4,097, all `uninformative` |
+
+Both residuals grew because the water fix admitted reactions that then failed further
+down, and both stayed entirely inside the two mechanisms this lane declares it cannot
+predict. **The zero is what carries over, and it is the property the mechanism table
+rests on.**
 
 `no_smiles` is 38,225 predicted against 38,225 actual; `wildcard` 18,036 against 18,036;
 `no_props` 48,385 against 48,385; `unresolved` 19,120 against 19,120. Every one of those is
