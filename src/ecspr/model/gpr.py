@@ -99,8 +99,12 @@ def _normalise(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     orf = None
     for c in _ORF_FALLBACK:
-        s = out[c] if c in out.columns else None
-        orf = s if orf is None else orf.fillna(s)
+        if c not in out.columns:
+            continue
+        orf = out[c] if orf is None else orf.fillna(out[c])
+    if orf is None:
+        raise ValueError(f"GPR table carries none of {_ORF_FALLBACK}, so belief "
+                         f"conservation has no construct to conserve over")
     out["orf"] = orf.astype(str)
     out["intermediate_id"] = (out["evidence_id"] if "evidence_id" in out.columns
                               else out["mnxr"]).astype(str)
