@@ -15,8 +15,10 @@ gitignored, so the solves they came from are gone and only this file records the
 **Verdict, as of the library sweep: ECSPr does not predict this phenotype.** Not as a
 regression (closed by Rayleigh monotonicity — the probe is one-sided and the phenotype is
 not) and not as a classifier (`REPORT.md`: chance AUC once the glycogen module is struck,
-and beaten by reaction count). The sections below are in the order the question was asked,
-which is also the order in which each framing closed.
+and beaten by reaction count). The network says why: the minimum reaction cut from
+D-glucose to glycogen is three, all three are glg reactions, and five times the metabolism
+does not add a fourth. The sections below are in the order the question was asked, which is
+also the order in which each framing closed.
 
 ## What the pilot measured
 
@@ -318,9 +320,44 @@ conductances are therefore not comparable across channels; only ranks within one
 Rows append as they finish, so an interrupted sweep resumes. Budget 0.2 s/clone curated and
 0.9 s/clone de-novo at four workers — 2.6 and 54 minutes.
 
-`analyse_aska_sweep.py` scores it. Two things it does that a first draft would not:
+`analyse_aska_sweep.py` scores it. `--suffix` reads a variant sweep's table (`_lanes2`,
+`_dir2x100`) and writes its own report beside it. Two things it does that a first draft
+would not:
 the AUC is the mid-rank Mann–Whitney form throughout, because most of the library ties at
 exactly zero and a strictly-greater-than count scores every one of those ties as a loss;
 and each AUC is printed beside the same AUC computed on reaction count alone, because that
 confound is what sank the ASKA/FFA arm and a number that does not beat it carries no
 information.
+
+## How much was there to find — the network, not the ranking
+
+**See `REPORT.md` § *How much was there to find in the first place*; this section is the
+plumbing.** Short version: three routes from D-glucose to glycogen, all three glg, and about
+six reactions holding the whole response.
+
+The lever these four scripts share is `ecspr.model.build.reaction_elasticities`. Effective
+conductance is homogeneous of degree one in the conductances, so each reaction's
+`dlog C_eff / dlog g_r` is its share of the dissipated power and the shares SUM TO 1 — the
+measurement partitions rather than merely ranking, and one solve gives the whole partition.
+Read the spread, not the top: `1/sum(eps^2)` is the effective number of reactions the probe
+can respond to at all.
+
+| script | what it answers |
+|---|---|
+| `glycogen_cut.py` | the minimum reaction cut to glycogen, on both channels, plus which route carries the arriving carbon |
+| `glg_arm_share.py` | how the partition splits across Eydallin's 86, the library's non-hits, and reactions no clone carries |
+| `pathway_complexity.py` | the closed form's validation: an exhaustive per-reaction fold sweep plus every single knockout |
+| `target_complexity.py` | glycogen's percentile against every other reachable target — the number is meaningless without it |
+| `direction_sensitivity.py` | what changes if the direction ensemble stops abstaining on the polymer |
+
+Three traps these hit and a reader would not expect:
+
+- **The cut must be taken UNDIRECTED.** The solve is a resistor network and will push carbon
+  through a reaction either way; a cut computed on the written direction understates what
+  the probe can reach. It is also why the phosphorylase shows up as a synthesis route at
+  all.
+- **`sweep_aska.py --ratio-override` is a different measurement, and the filename says so.**
+  It tags the sweep `_dirNxT`, because a sweep run under a supplied direction must never be
+  confused with one run on the bake's own ensemble.
+- **Absolute conductances move under an override** (5.689 → 2.686 at ratio 100), so only
+  ranks within one setting are comparable — the same rule the two channels already have.

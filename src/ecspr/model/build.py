@@ -274,6 +274,42 @@ def reaction_currents(graph: AtomGraph, solution) -> pd.Series:
             .groupby(level=0).sum().sort_values(ascending=False))
 
 
+def reaction_elasticities(graph: AtomGraph, solution) -> pd.Series:
+    """Per-reaction ``dlog C_eff / dlog g_r``, descending. Sums to 1.
+
+    The two-point conductance is homogeneous of degree one in the conductances, so the
+    elasticities partition the measurement rather than merely ranking it -- and each one is
+    that reaction's share of the dissipated power, which one solve already knows. That
+    makes this the closed form of the perturbation sweep a caller would otherwise run: a
+    fold ``f`` on reaction ``r`` moves the readout by ``eps_r * log f`` to first order,
+    with no second solve.
+
+    Read the SPREAD, not just the ranking. ``1 / sum(eps^2)`` is the effective number of
+    reactions the probe can respond to at all: a series chain of k equal steps puts 1/k on
+    each, and a target whose chain is short has few levers no matter how large the network
+    around it is.
+
+    Exact on the symmetric network. Under the rectified law it is first-order, and the
+    diode's smoothing band can put a small negative share on an edge whose current and
+    drop disagree in sign; the sum stays 1 by Tellegen either way. Requires
+    ``with_provenance=True``, like :func:`reaction_currents`.
+    """
+    prov = graph.meta.get("edge_reactions")
+    if prov is None:
+        raise ValueError("graph was not built with with_provenance=True")
+    oe, pw_e = solution.edge_power()
+    tot = float(pw_e.sum())
+    if not tot > 0:
+        return pd.Series(dtype=float)
+    p = np.zeros(graph.m)
+    np.add.at(p, oe, pw_e)
+    pe = prov.edge.to_numpy()
+    denom = graph.gp[pe]
+    frac = prov.gp.to_numpy() / np.where(denom > 0, denom, 1.0)
+    return (pd.Series(p[pe] * frac / tot, index=prov.mnxr.to_numpy())
+            .groupby(level=0).sum().sort_values(ascending=False))
+
+
 # =====================================================================
 # GEM -> graph
 # =====================================================================
