@@ -59,8 +59,10 @@ CHEM_PROP = ROOT / "data" / "fabfos" / "originals" / "metanetx" / "4.5" / "chem_
 HOSTS_DIR = ROOT / "data" / "fabfos" / "benchmarks" / "hosts"
 EDITS = ROOT / "data" / "fabfos" / "benchmarks" / "laser" / "gpr_manual.parquet"
 
-_bake_direction = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake" / "direction.parquet"
-_bake_vocab = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake" / "vocab.parquet"
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import bake_identity                                                          # noqa: E402
+
+_BAKE = bake_identity.DEPLOYED
 
 # The host's own unit_id inside gpr_gem.parquet -- what "background" means for this
 # study. Read off the table rather than hardcoded, so a different host still works.
@@ -68,16 +70,9 @@ BASELINE_ID = "baseline"
 
 
 def build_direction_ratios(out_path: Path) -> Path:
-    """Join metabolism_bake's direction.parquet through vocab.parquet onto mnxr -- the
-    same shape examples/scadc_ecspr_t1_refs.py::build_direction_ratios already does it."""
-    direction = pd.read_parquet(_bake_direction)
-    vocab = pd.read_parquet(_bake_vocab)
-    rxn_vocab = vocab[vocab.kind == "rxn"][["code", "symbol"]].rename(
-        columns={"code": "rxn", "symbol": "mnxr"})
-    df = direction.merge(rxn_vocab, on="rxn", how="inner")
-    df = df[df.mnxr != "EMPTY"][["mnxr", "ratio"]]
-    df.to_parquet(out_path)
-    return out_path
+    """Join metabolism_bake's direction.parquet through vocab.parquet onto mnxr, stamped
+    with the bake it came from."""
+    return bake_identity.build_direction_ratios(out_path, _BAKE)
 
 
 def resolve_metabolite(name, exact_names, element) -> dict:

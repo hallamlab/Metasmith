@@ -66,7 +66,10 @@ EDITS = KEIO / "gpr_manual.parquet"
 EXTRACTION = KEIO / "extraction.tsv"
 EXPECTATIONS = KEIO / "Y" / "expectations.tsv"
 
-_BAKE = ROOT / "data" / "fabfos" / "processed" / "metabolism_bake"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import bake_identity                                                          # noqa: E402
+
+_BAKE = bake_identity.DEPLOYED
 
 SOURCE_NAME = "D-glucose"
 SOURCE_ALIASES = ["D-glucose", "glucose"]
@@ -90,18 +93,12 @@ DEFAULT_CONDITIONS = list(PANEL)
 # ---------------------------------------------------------------------------
 
 def build_direction_ratios(out_path: Path) -> Path:
-    """metabolism_bake's direction.parquet joined through vocab.parquet onto mnxr --
-    the shape examples/scadc_ecspr_t1_refs.py::build_direction_ratios already uses."""
-    if out_path.exists():
-        return out_path
-    direction = pd.read_parquet(_BAKE / "direction.parquet")
-    vocab = pd.read_parquet(_BAKE / "vocab.parquet")
-    rxn_vocab = vocab[vocab.kind == "rxn"][["code", "symbol"]].rename(
-        columns={"code": "rxn", "symbol": "mnxr"})
-    df = direction.merge(rxn_vocab, on="rxn", how="inner")
-    df = df[df.mnxr != "EMPTY"][["mnxr", "ratio"]]
-    df.to_parquet(out_path)
-    return out_path
+    """metabolism_bake's direction.parquet joined through vocab.parquet onto mnxr.
+
+    Stamped with the bake it came from: the previous `if out_path.exists()` served r7's
+    ratios across the r8 repin without saying so.
+    """
+    return bake_identity.build_direction_ratios(out_path, _BAKE)
 
 
 def chem_names() -> dict:
