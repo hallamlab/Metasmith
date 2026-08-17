@@ -112,6 +112,92 @@ property of the network and simply is not the phenotype: overexpressing a gene t
 the path does not reliably change how much glycogen accumulates, and Eydallin's own data
 says so.
 
+## How much was there to find in the first place
+
+The section above is a statement about a ranking. This one is a statement about the
+network, and it is the reason the ranking came out that way: **there are three routes from
+D-glucose to glycogen, all three are glg reactions, and the probe's whole response fits in
+about six.** Every number here is the curated AG1 background on the r7 bake, the same one
+the sweep ran on.
+
+**The measurement partitions exactly, so shares are available rather than only ranks.**
+Effective conductance is homogeneous of degree one in the conductances, so each reaction's
+elasticity `dlog C_eff / dlog g_r` is its share of the dissipated power, and the shares sum
+to 1 (`ecspr.model.build.reaction_elasticities`, one solve). `pathway_complexity.py`
+checks the closed form against an exhaustive fold-1.01 sweep of all 1,553 reactions that
+build an edge — 3,106 solves against one — and they agree: sum 1.0011 against 1.0000,
+Spearman 0.990, and every one of the five reactions that carries the answer inside 0.25%.
+The two places they part company are `fsaA` and `talA` at an elasticity of ~1e-3, where the
+diode's smoothing makes the first-order form wrong by a factor; nothing that size is a lever.
+
+**1. Three routes, named exhaustively.** Model the atom graph as a flow network with
+metabolites at infinite capacity and each reaction at capacity one, and the minimum cut
+between D-glucose and glycogen is **3** — so by Menger there are at most three
+reaction-disjoint routes and the cut names all of them: `MNXR145046` glgA, `MNXR145036`
+glgP/malP, `MNXR145021` glgB/glgX. Glycogen's only carbon partners in the whole host graph
+are ADP-glucose, G1P and branched glycogen. There is no route to it that misses the glg
+operon, and no single reaction is a cut on its own: the worst knockout leaves 58% of the
+conductance, and only four of the 1,553 cost more than 10%.
+
+**2. It is not a coverage gap.** The de-novo background carries 10,638 atom-mapped
+reactions against the curated 2,022 — five times the metabolism — and the cut does not
+grow, it **shrinks to 2** (glgA, glgB). Five times the reactions add zero new ways into
+glycogen, which is what says the neck is the chemistry and not the curation.
+
+**3. Six levers, and what the probe leans on.** `1/sum(eps^2)` — the effective number of
+reactions the probe can respond to at all — is **6.13**. The top reaction holds 0.306, the
+top five 0.746, the top ten 0.915; only 11 of 1,553 reactions clear an elasticity of 1e-2.
+Against every other reachable target this is on the simple side but not freakish (28th
+percentile of 984, median 11.96). The statistic that *is* extreme is distance: glycogen sits
+**two metabolite steps** from D-glucose where the median target sits at five — the 1.5th
+percentile. There is almost nothing between the source and the target for a response to
+spread over.
+
+**4. So the glg arm is not most of the signal, it is essentially all of it.** Splitting the
+partition by who can reach it (`glg_arm_share.py`):
+
+| | share of the probe |
+|---|---|
+| Eydallin's 86 hits | 0.685 |
+| — of which the glycogen module | **0.684** |
+| — of which the other 80 hits | **0.0015** |
+| ASKA clones the screen scored as non-hits | 0.312 |
+| reactions no clone in the library carries | 0.003 |
+
+Twenty-five of the 86 are metabolic in the sense that matters here — they carry an
+atom-mapped reaction in the curated GEM. Five of those 25 are glg genes and they hold
+99.8% of what the screen can move. The other twenty — transaldolase, sulfite reductase,
+glucosamine-6-phosphate deaminase, homoserine kinase and the rest — hold 0.15% between
+them, and 61 of the 86 carry no atom-mapped reaction at all. The screen's own composition is
+most of this: it is ~25 enzymes and ~60 regulators, transporters, prophage genes and
+hypotheticals, and a stoichiometric model has no representation for csrA or rpoS whatever
+its coverage.
+
+The 0.312 the non-hits hold is not hidden signal either — it is the model's false positives,
+led by `agp` (glucose-1-phosphatase) at **0.200**, the second-largest lever in the network
+and a clone Eydallin built, assayed and scored as unchanged.
+
+**5. Most of the modelled carbon arrives by running a catabolic enzyme backwards.** Of the
+unit current delivered to glycogen, **0.568 arrives through glycogen phosphorylase**, 0.328
+through glgA and 0.105 through debranching reversed. MetaNetX writes `MNXR145036` as G1P →
+glycogen and the direction ensemble has zero votes on it, so it falls to an explicit ratio
+of 1.0 and a symmetric edge is a free synthesis route. That is the polymer gap arriving at
+the readout rather than at the bake.
+
+`direction_sensitivity.py` supplies the direction the ensemble does not have, as a curve
+rather than a setting. Pushing the phosphorylase toward degradation moves the delivered
+carbon onto glgA — 0.328 → 0.765 at ratio 10, 0.965 at 100 — and reorders the top of the
+ranking to glgA, glgC, malP, agp, glgP: the two glycogen-*excess* genes first, which is the
+first time this benchmark has produced a sign-plausible ordering. **It changes no verdict.**
+Re-sweeping the whole library at ratio 100 gives AUC 0.5397 against a size control of
+0.5409, and 0.5130 with the module struck — the same two numbers, within noise of the
+0.5362 / 0.5092 the bake's own ratios give. The direction gap decides *which* glg gene
+leads; it does not create anything outside the module.
+
+And the fix makes the structural point sharper, not softer: with the direction supplied the
+effective number of levers falls from 6.13 to **3.18**, with glgA and glgC alone holding
+0.77. Corrected, this target has one biosynthetic route, not three.
+
 ## What bounds this
 
 **The de-novo channel has a specific pathology worth naming.** Twenty-seven unrelated ORFs

@@ -57,6 +57,15 @@ unit and accepts no mask; given a conditions table it measures every row, each c
 terminals and mask. There is no mode flag and no batch verb — two entry points into one probe is
 exactly the drift this package exists to end.
 
+**A two-point solve already knows its own derivative, so a perturbation sweep is usually the
+wrong tool.** Effective conductance is homogeneous of degree one in the conductances, so each
+reaction's `dlog C_eff / dlog g_r` equals its share of the dissipated power, which one solve
+carries; `reaction_elasticities` returns them and they sum to 1. The consequence for a caller
+is that "which reactions does this measurement respond to, and how much" costs one solve rather
+than two per reaction, and the answer is a partition rather than a ranking — `1/sum(eps^2)` is
+the effective number of reactions a given pair of terminals can respond to at all. Exact on the
+symmetric network and first-order under the rectified law; the sum holds either way, by Tellegen.
+
 `--orientation` flips the baked direction reference and nothing else. It cannot be spelled
 `--direction`, which is already the *path* to the direction-ratios parquet; the bake's own
 identity block calls this field `orientation`.

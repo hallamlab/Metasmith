@@ -322,6 +322,32 @@ class Solution:
         """``(original_edge_index, current)`` for every edge that survived contraction."""
         return self._oedge, self._cur
 
+    def edge_drops(self) -> tuple:
+        """``(original_edge_index, V_tail - V_head)`` for every solved edge."""
+        if self._cur.size == 0:
+            return self._oedge, np.zeros(0)
+        nodes = self.graph.nodes
+        ci = np.full(self._nin + 1, -1, np.int64)
+        for j in np.unique(np.concatenate([self._otail, self._ohead])):
+            k = self._cidx.get(self._cmap.get(nodes[j]))
+            if k is not None:
+                ci[j] = k
+        phi = np.append(np.asarray(self._phi_c, float), np.nan)
+        return self._oedge, phi[ci[self._otail]] - phi[ci[self._ohead]]
+
+    def edge_power(self) -> tuple:
+        """``(original_edge_index, i_e * dv_e)`` -- the power each edge dissipates.
+
+        Tellegen makes these sum to the injected power, which at unit injection is exactly
+        the effective RESISTANCE. So an edge's share of this is its share of the two-point
+        measurement, and on the symmetric network it is also that edge's elasticity: the
+        derivative of ``log`` effective conductance with respect to ``log`` edge
+        conductance. Individual shares can be slightly negative inside the diode's
+        smoothing band, where the rectified law is not passive; the sum is exact regardless.
+        """
+        oe, dv = self.edge_drops()
+        return oe, self._cur * dv
+
     # -- voltage -----------------------------------------------------------
     def voltage(self, node) -> float:
         """Potential at an original atom node. ``nan`` when the node is outside the

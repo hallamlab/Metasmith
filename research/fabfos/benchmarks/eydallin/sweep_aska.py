@@ -107,6 +107,13 @@ def main() -> int:
                          "disconnects glycogen outright, because the glycogen-synthesis "
                          "step has single-lane support, so there would be no probe left "
                          "to run.")
+    ap.add_argument("--ratio-override", default="",
+                    help="`MNXR...:ratio,...` applied on top of the baked direction "
+                         "ensemble. The ensemble ABSTAINS on the polymer reactions -- an "
+                         "explicit ratio of 1.0 from zero votes -- so this is how a "
+                         "direction it does not have gets supplied and the answer "
+                         "re-measured under it. Recorded in the output filename, because a "
+                         "sweep run under an override is a different measurement.")
     ap.add_argument("--limit", type=int, default=None, help="first N solvable clones (smoke test)")
     ap.add_argument("--out-dir", type=Path, default=OUT_DIR)
     a = ap.parse_args()
@@ -115,14 +122,23 @@ def main() -> int:
     if a.min_lanes > 1 and a.channel != "denovo":
         raise SystemExit("--min-lanes applies to the de-novo channel; the GEM channel is "
                          "one curated lane and has nothing to agree with")
+    override = {}
+    for item in filter(None, a.ratio_override.split(",")):
+        k, v = item.split(":")
+        override[k.strip()] = float(v)
     tag = (f"aska_sweep_{a.channel}_e_coli_ag1_fold{a.fold}_{a.element}"
-           + (f"_lanes{a.min_lanes}" if a.min_lanes > 1 else ""))
+           + (f"_lanes{a.min_lanes}" if a.min_lanes > 1 else "")
+           + (f"_dir{len(override)}x{min(override.values()):g}" if override else ""))
     part = a.out_dir / f"{tag}.partial.tsv"
     final = a.out_dir / f"{tag}.tsv"
 
     t0 = time.time()
     _S["pairs"] = load_pairs(bake_pairs.atom_pairs(), element=a.element)
     _S["ratios"] = load_direction_ratios(bake_pairs.direction_ratios())
+    if override:
+        was = {k: _S["ratios"].get(k) for k in override}
+        _S["ratios"].update(override)
+        print(f"[sweep] direction override: {was} -> {override}", file=sys.stderr)
     _S["element"], _S["fold"] = a.element, a.fold
 
     host_path = HOST_GEM if a.channel == "gem" else HOST_DENOVO

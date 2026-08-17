@@ -155,6 +155,9 @@ def main() -> int:
     ap.add_argument("--fold", type=float, default=2.0)
     ap.add_argument("--element", default="C")
     ap.add_argument("--channels", nargs="+", default=["gem", "denovo"])
+    ap.add_argument("--suffix", default="",
+                    help="tag appended by a variant sweep (e.g. `_lanes2`, `_dir2x100`); "
+                         "reads that sweep and writes its own report beside it")
     ap.add_argument("--reps", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out-dir", type=Path, default=OUT)
@@ -168,7 +171,7 @@ def main() -> int:
 
     report = {}
     for ch in a.channels:
-        f = SWEEPS / f"aska_sweep_{ch}_e_coli_ag1_fold{a.fold}_{a.element}.tsv"
+        f = SWEEPS / f"aska_sweep_{ch}_e_coli_ag1_fold{a.fold}_{a.element}{a.suffix}.tsv"
         if not f.exists():
             log(f"\n### {ch}: {f.name} not present -- skipped")
             continue
@@ -204,10 +207,10 @@ def main() -> int:
             .to_string(index=False, float_format=lambda v: f"{v:.6g}"))
 
     a.out_dir.mkdir(parents=True, exist_ok=True)
-    (a.out_dir / "aska_classifier_report.json").write_text(json.dumps(report, indent=2,
-                                                                     default=float))
-    (a.out_dir / "aska_classifier_report.txt").write_text("\n".join(lines) + "\n")
-    print(f"\n-> {a.out_dir}/aska_classifier_report.{{json,txt}}")
+    stem = f"aska_classifier_report{a.suffix}"
+    (a.out_dir / f"{stem}.json").write_text(json.dumps(report, indent=2, default=float))
+    (a.out_dir / f"{stem}.txt").write_text("\n".join(lines) + "\n")
+    print(f"\n-> {a.out_dir}/{stem}.{{json,txt}}")
     return 0
 
 
