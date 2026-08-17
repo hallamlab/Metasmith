@@ -194,7 +194,7 @@ CLI = {
         # eQuilibrator: `build` runs on table reads in any env with rdkit, and
         # folding the two together would make the cheap half pay for the cache.
         "resolve": {"--universe", "--reac-prop", "--chem-prop", "--mnxm-only",
-                    "--out"},
+                    "--resume", "--out"},
         "build": {"--universe", "--reac-prop", "--chem-prop", "--resolution",
                   "--mnxm-only", "--out", "--out-summary"},
         "backtest": {"--forecast", "--member-eq", "--member-dgbyg",

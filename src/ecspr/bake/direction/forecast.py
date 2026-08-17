@@ -247,15 +247,32 @@ def cmd_resolve(args):
                   if (props.get(m) or {}).get("inchikey"))
     print(f"[resolve] {len(cpds):,} distinct participants carry an InChIKey", flush=True)
 
-    member = EquilibratorMember()
+    # CHECKPOINTED, because this pass is long enough to be interrupted and holds
+    # nothing that has to be recomputed together: each answer is one compound's,
+    # independent of the rest. Writing the whole table only at the end means an
+    # interruption at 60% costs 60%, and the cache load alone is 15 s of it.
     rows = []
+    if args.resume and Path(args.resume).exists():
+        done = pd.read_parquet(args.resume)
+        rows = list(done.itertuples(index=False, name=None))
+        have = set(done["mnxm"])
+        cpds = [m for m in cpds if m not in have]
+        print(f"[resolve] resuming: {len(rows):,} already answered, "
+              f"{len(cpds):,} left", flush=True)
+
+    def flush():
+        pd.DataFrame(rows, columns=["mnxm", "inchikey", "resolved"]).to_parquet(
+            args.out, index=False)
+
+    member = EquilibratorMember()
     for i, m in enumerate(cpds, 1):
         p = props[m]
         rows.append((m, p["inchikey"], member._compound(p["inchikey"], p.get("inchi")) is not None))
         if i % 2000 == 0:
-            print(f"[resolve] {i:,}/{len(cpds):,}", flush=True)
-    df = pd.DataFrame(rows, columns=["mnxm", "inchikey", "resolved"])
-    df.to_parquet(args.out, index=False)
+            flush()
+            print(f"[resolve] {i:,}/{len(cpds):,} (checkpointed)", flush=True)
+    flush()
+    df = pd.read_parquet(args.out)
     n = int(df["resolved"].sum())
     print(f"[resolve] {n:,}/{len(df):,} ({n/max(1,len(df)):.1%}) resolve -> {args.out}",
           flush=True)
@@ -398,6 +415,9 @@ def parse_args(argv=None):
                    help="reproduce the pre-fix namespace filter, which withheld "
                         "WATER. For backtesting against a member table written "
                         "before the fix; never for a forecast of a future run.")
+    p.add_argument("--resume", default=None,
+                   help="a partial table from an interrupted run (usually the same "
+                        "path as --out). Its compounds are skipped.")
     p.add_argument("--out", required=True)
 
     p = sub.add_parser("build"); p.set_defaults(fn=cmd_build)
