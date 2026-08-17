@@ -41,11 +41,35 @@ RT = canon.DIR_RT
 TAU_SHARED = canon.DIR_TAU_SHARED
 TAU_CUR_FLOOR = canon.DIR_TAU_CUR_FLOOR
 S_MEAS_FLOOR = canon.DIR_S_MEAS_FLOOR
+SIGMA_FLOOR = canon.DIR_SIGMA_FLOOR
 DG_CLAMP = canon.DIR_DG_CLAMP
 
 
 def _num(x):
     return x is not None and not (isinstance(x, float) and math.isnan(x))
+
+
+def eq_vote(eq_dg, eq_sig, eq_gc):
+    """The eQuilibrator row as evidence, or (None, None, None) if it is none.
+
+    A reactant-contribution row whose sigma sits at SIGMA_FLOOR is a group
+    cancellation: eQuilibrator has returned dG'=0 with no uncertainty because the
+    equation's groups cancel identically, which says the two sides are built from the
+    same pieces, not that anyone measured them. The calibration arm already rejects
+    exactly these rows; without this the combiner promoted them to authoritative
+    MEASUREMENTS, and they were 69% of tier 1.
+
+    dGbyG almost always agrees on such a row (|dG'| < 1 kJ/mol) and that agreement is
+    not corroboration -- it is the same group cancellation seen through the second
+    TECRDB-fitted model. So the row is dropped rather than demoted to a prediction.
+
+    Called ONCE per row, above both the vote and the dir_method label: normalising in
+    `thermo_vote` alone would leave the provenance ladder reading the raw column and
+    naming an estimator that no longer votes.
+    """
+    if _num(eq_dg) and eq_gc is False and _num(eq_sig) and eq_sig <= SIGMA_FLOOR:
+        return None, None, None
+    return eq_dg, eq_sig, eq_gc
 
 
 def thermo_vote(eq_dg, eq_sig, eq_gc, db_dg, db_sig):
@@ -75,8 +99,11 @@ def thermo_vote(eq_dg, eq_sig, eq_gc, db_dg, db_sig):
 
 
 def combine_row(r, calib, sigma_0):
-    tv = thermo_vote(r.get("eq_dg"), r.get("eq_sigma"), r.get("eq_uses_gc"),
-                     r.get("dgbyg_dg"), r.get("dgbyg_sigma"))
+    # Normalise the eQ row ONCE, here: everything below reads eq_dg/eq_sig/eq_gc and
+    # never the raw columns, so the vote and the provenance label cannot disagree about
+    # whether eQuilibrator spoke. The raw columns are still emitted verbatim below.
+    eq_dg, eq_sig, eq_gc = eq_vote(r.get("eq_dg"), r.get("eq_sigma"), r.get("eq_uses_gc"))
+    tv = thermo_vote(eq_dg, eq_sig, eq_gc, r.get("dgbyg_dg"), r.get("dgbyg_sigma"))
     cat = r.get("biocyc_category")
     prior = calib.get(cat) if cat else None       # (mu, tau, n) or None
 
@@ -110,8 +137,10 @@ def combine_row(r, calib, sigma_0):
     # provenance ladder: a record of which regime spoke, NOT a selection.
     # Presence is tested with _num(), never `is not None`: these columns come from
     # a pandas LEFT MERGE, so an absent member arrives as NaN and `NaN is not None`
-    # is True -- which credits every silent member with a vote it never cast.
-    have_eq, have_db = _num(r.get("eq_dg")), _num(r.get("dgbyg_dg"))
+    # is True -- which credits every silent member with a vote it never cast. And it
+    # reads eq_dg, the NORMALISED value, so a group cancellation is not named as eQ
+    # evidence here after eq_vote() has already refused to let it vote above.
+    have_eq, have_db = _num(eq_dg), _num(r.get("dgbyg_dg"))
     if tv is not None and tv[2]:
         tier, method = 1, ("eq_rc+dgbyg" if have_db else "eq_rc")
     elif tv is not None:
