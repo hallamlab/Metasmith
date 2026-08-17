@@ -24,8 +24,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pandas as pd
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import bake_identity                                                          # noqa: E402
 
@@ -34,45 +32,9 @@ BAKE = bake_identity.DEPLOYED
 CACHE = Path(__file__).resolve().parent / "cache"
 
 
-def _fresh(name: str) -> Path | None:
-    return bake_identity.fresh(CACHE / name, BAKE)
-
-
-def _keep(name: str) -> Path:
-    return bake_identity.keep(CACHE / name, BAKE)
-
-
-def _vocab() -> dict:
-    v = pd.read_parquet(BAKE / "vocab.parquet")
-    return {k: g.set_index("code").symbol for k, g in v.groupby("kind")}
-
-
 def atom_pairs() -> Path:
     """Path to the atom-transfer table in the substrate/product schema."""
-    name = "atom_pairs_bake.parquet"
-    if (hit := _fresh(name)) is not None:
-        return hit
-    out = CACHE / name
-    sym = _vocab()
-    ap = pd.read_parquet(BAKE / "atom_pairs.parquet")
-    df = pd.DataFrame({
-        "mnxr": ap.rxn.map(sym["rxn"]),
-        "element": ap.element.map(sym["element"]),
-        "substrate": ap.tail_met.map(sym["met"]),
-        "product": ap.head_met.map(sym["met"]),
-        "sub_idx": ap.tail_rank,
-        "prod_idx": ap.head_rank,
-        "pair_w": ap.pair_w,
-        "method": ap.method.map(sym["method"]),
-        "source": ap.source.map(sym["source"]),
-        "confidence": ap.confidence,
-    })
-    # MetaNetX's EMPTY sentinel is a real code in the bake, not a null; it must not
-    # become a reaction id.
-    df = df[(df.mnxr != "EMPTY") & df.substrate.notna() & df["product"].notna()]
-    CACHE.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(out)
-    return _keep(name)
+    return bake_identity.build_atom_pairs(CACHE / "atom_pairs_bake.parquet", BAKE)
 
 
 def direction_ratios() -> Path:
