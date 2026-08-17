@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The three-member community as twelve DIRECTED networks, measured twice.
 
+    python research/fabfos/examples/nostoc_ecspr.py --refs           # names + blacklist, from the bake
     python research/fabfos/examples/nostoc_ecspr.py --compose        # build the networks + conditions
     python research/fabfos/examples/nostoc_ecspr.py --plan           # plan every unit, run nothing
     python research/fabfos/examples/nostoc_ecspr.py --run            # measure
@@ -59,6 +60,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -160,6 +162,22 @@ ARMS = ("bl-on", "bl-off")
 # what fir happens to hold -- and both are checked against quay by `_fir.preflight`.
 AGENT_CONTAINER = "docker://quay.io/hallamlab/metasmith:0.20.4"
 
+# THE LOCAL RUN USES MAMBA, AND THAT IS NOT A CONVENIENCE. `env::ecspr.env` names
+# `quay.io/hallamlab/ecspr:2026.07.14` as its container and its own first line says that
+# tag is not yet republished -- the image has the env but not the package, so `ecspr` is
+# not on PATH inside it. Under a container runtime the step therefore fails with a bare
+# 127 and NOTHING ELSE: nextflow reports `terminated with an error exit status (1) --
+# Error is ignored`, the run "completes", zero products are written, and the driver prints
+# `1 ok, 0 failed`. So the failure looks exactly like success from here.
+#
+# `ecspr.env`'s `conda:` key is the working route, which is what `--runtime mamba` takes.
+# Under mamba `--agent-env` is a conda env NAME rather than an image (see
+# `common.make_agent`), so the two move together and neither may be set without the other.
+# `dev/ecspr.sh --iecspr` is what puts the CLI in the `ecspr` env; a fresh checkout has the
+# env's console-script shim pointing at no package and fails the same 127 way.
+LOCAL_RUNTIME = "mamba"
+LOCAL_AGENT_ENV = "msm"
+
 
 def net_id(members, arm):
     """A singleton has no bridges, so the blacklist cannot touch it: one id, one
@@ -170,6 +188,69 @@ def net_id(members, arm):
 
 def unit_id(members, src, arm):
     return f"{net_id(members, arm)}__{src}"
+
+
+# =====================================================================
+# Refs -- the two tables cut from the bake's own metabolite universe
+# =====================================================================
+#
+# BOTH ARE FUNCTIONS OF THE BAKE AND MUST BE REBUILT WITH IT. `metabolite_names` is
+# chem_prop restricted to the metabolites the bake actually pairs, and the carrier
+# blacklist is name RULES materialised against that table -- so a metabolite the bake
+# newly reaches is simply absent from both, and absence from the blacklist is the
+# dangerous half: an unlisted degree-4,000 carrier gets bridged and every arm reports the
+# members as one well-mixed pot while looking entirely healthy. Nothing raises. Hence
+# `--refs` before `--compose`, and the coverage guard in `compose_all`.
+
+CHEM_PROP = REPO / "data/fabfos/originals/metanetx/4.5/chem_prop.tsv"
+_FORMULA_RE = re.compile(r"([A-Z][a-z]?)(\d*)")
+
+
+def _parse_formula(formula: str) -> dict:
+    """`"C6H12O6"` -> `{"C": 6, "H": 12, "O": 6}`; blank/non-string -> `{}`.
+
+    A `*` RESIDUE IS KEPT, counting its explicit atoms only. `C28H49N3O10PS*2` is an
+    acyl-ACP whose carrier body MetaNetX leaves unspecified; dropping the whole formula
+    for that would take 7,701 metabolites -- most of the ACP, polymer and protein-bound
+    series -- out of the name table, and with them out of reach of the carrier rules that
+    are the reason the table exists.
+    """
+    if not isinstance(formula, str) or not formula:
+        return {}
+    counts = {}
+    for el, n in _FORMULA_RE.findall(formula):
+        if not el:
+            continue
+        counts[el] = counts.get(el, 0) + (int(n) if n else 1)
+    return counts
+
+
+def build_refs(elements=ELEMENTS):
+    import ecspr.model.compose as _ec
+    OUT.mkdir(parents=True, exist_ok=True)
+    pairs = pd.read_parquet(bake_pairs.atom_pairs())
+    universe = set(pairs.substrate) | set(pairs["product"])
+    print(f"bake universe: {len(universe):,} metabolites over "
+          f"{pairs.mnxr.nunique():,} reactions", flush=True)
+
+    chem = pd.read_csv(CHEM_PROP, sep="\t", comment="#", usecols=[0, 1, 3], dtype=str,
+                       names=["id", "name", "reference", "formula", "charge", "mass",
+                              "inchi", "inchikey", "smiles"])
+    chem = chem[chem.id.isin(universe)]
+    rows = [(m, nm, f, el, n)
+            for m, nm, f in zip(chem.id, chem.name, chem.formula)
+            for el, n in _parse_formula(f).items() if el in elements]
+    names = pd.DataFrame(rows, columns=["mnxm", "name", "formula", "element", "n_atoms"])
+    names.to_parquet(OUT / "metabolite_names.parquet", index=False)
+    print(f"  metabolite_names: {len(names):,} rows, {names.mnxm.nunique():,} metabolites "
+          f"carrying a {'/'.join(elements)} atom "
+          f"({len(universe - set(names.mnxm)):,} of the universe carry none)")
+
+    bl = _ec.carrier_blacklist(names)
+    bl.to_parquet(OUT / "carrier_blacklist.parquet", index=False)
+    print(f"  carrier_blacklist: {len(bl):,} ids over "
+          f"{bl.carrier_class.nunique()} classes")
+    return names, bl
 
 
 # =====================================================================
@@ -185,6 +266,25 @@ def compose_all(g0=1.0, elements=ELEMENTS):
     blacklist = set(pd.read_parquet(OUT / "carrier_blacklist.parquet").mnxm)
     gprs = {o: pd.read_parquet(GPR / o / "gpr_4lane.parquet") for o in MEMBERS}
     print(f"  {len(pairs):,} pair rows, {len(blacklist):,} blacklisted carriers")
+
+    # THE GUARD IS THE SUBSET DIRECTION, and only that direction. `--refs` cuts the name
+    # table FROM this universe, so a name the bake does not pair cannot have come from
+    # here -- it is the tell that the table was built against a different bake, which is
+    # exactly the silent staleness a repin leaves behind (the retired bake's table left 9).
+    #
+    # The converse is NOT a staleness signal and must not be checked: 4,633 metabolites
+    # the bake pairs carry no parseable formula in chem_prop and so appear in no name row
+    # by construction -- including hubs like `Ferrocytochrome b5` at degree 3,462. That is
+    # a real hole in what the carrier rules can reach, but it is a property of MetaNetX
+    # rather than of which bake this is, and refusing on it refuses every run.
+    strays = set(names.mnxm) - (set(pairs.substrate) | set(pairs["product"]))
+    if strays:
+        raise SystemExit(
+            f"REFUSING: {len(strays):,} metabolites in "
+            f"{OUT/'metabolite_names.parquet'} are absent from the bake "
+            f"(e.g. {', '.join(sorted(strays)[:4])}).\n"
+            f"  The name table is cut from the bake's own universe, so it was built "
+            f"against a different one. Re-run --refs.")
 
     present = {e: set(g.substrate) | set(g["product"]) for e, g in pairs.groupby("element")}
     prec_by_el, missing = {}, []
@@ -291,7 +391,8 @@ def invocations():
     return {n: sorted(set(s)) for n, s in by_net.items()}
 
 
-def build_cmd(nid, srcs, *, run, threads, outdir, agent_container=AGENT_CONTAINER):
+def build_cmd(nid, srcs, *, run, threads, outdir, agent_container=LOCAL_AGENT_ENV,
+              runtime=LOCAL_RUNTIME):
     d = NETS / nid
     # `--agent-env` is the one lever the CLI has over where the AGENT runs: it becomes
     # `Agent.container`, which is a conda env name under mamba and an image URI under a
@@ -299,6 +400,7 @@ def build_cmd(nid, srcs, *, run, threads, outdir, agent_container=AGENT_CONTAINE
     # can guess; under apptainer it is how you refuse the engine-version-derived default,
     # which names a tag nobody necessarily pushed.
     cmd = [sys.executable, "-m", "fabfos.pipelines.ecspr",
+           "--runtime", runtime,
            "--agent-env", agent_container,
            "--atom-pairs", str(d / "atom_pairs.parquet"),
            "--direction-ratios", str(d / "direction.parquet"),
@@ -509,7 +611,23 @@ def drive(*, run, threads, outdir, only=None):
         cmd = build_cmd(nid, srcs, run=run, threads=threads, outdir=outdir)
         print(f"\n{'='*70}\n[{nid}] {len(srcs)} unit(s): {', '.join(srcs)}\n{'='*70}", flush=True)
         r = subprocess.run(cmd, cwd=REPO, env=env)
-        (ok if r.returncode == 0 else bad).append(nid)
+        # EXIT ZERO IS NOT EVIDENCE OF A MEASUREMENT. `slurm.nf`/`local.nf` run the step
+        # with `errorStrategy 'ignore'`, so a transform that dies -- a missing binary in
+        # the declared image is the one that has actually happened -- is reported as
+        # `terminated with an error exit status (1) -- Error is ignored`, the run
+        # "completes" with zero outputs, and the driver's exit code is 0. Count the
+        # products instead: one per (unit, element), and nothing else distinguishes the
+        # two outcomes from out here.
+        got = len(list((outdir / nid).rglob("ecspr-ground_results/*.parquet"))) if run else 1
+        want = len(srcs) * len(ELEMENTS) if run else 1
+        if r.returncode == 0 and got >= want:
+            ok.append(nid)
+        else:
+            bad.append(nid)
+            if r.returncode == 0:
+                print(f"[{nid}] FAILED SILENTLY: {got} ground products, expected {want}. "
+                      f"The step's own stderr is in the run's nxf_work task dir.",
+                      file=sys.stderr, flush=True)
     print(f"\n{len(ok)} ok, {len(bad)} failed" + (f": {bad}" if bad else ""))
     return 1 if bad else 0
 
@@ -517,6 +635,8 @@ def drive(*, run, threads, outdir, only=None):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--refs", action="store_true",
+                    help="rebuild metabolite_names + carrier_blacklist from the bake")
     p.add_argument("--compose", action="store_true", help="build networks + conditions")
     p.add_argument("--plan", action="store_true", help="plan every unit, run nothing")
     p.add_argument("--run", action="store_true", help="plan and execute")
@@ -539,8 +659,10 @@ def main(argv=None):
     a = p.parse_args(argv)
 
     fir = a.fir or a.fir_preflight or a.fir_wait
-    if not (a.compose or a.plan or a.run or fir):
-        p.error("pick one of --compose / --plan / --run / --fir")
+    if not (a.refs or a.compose or a.plan or a.run or fir):
+        p.error("pick one of --refs / --compose / --plan / --run / --fir")
+    if a.refs:
+        build_refs(elements=tuple(a.elements))
     if a.compose:
         compose_all(g0=a.g0, elements=tuple(a.elements))
     if fir:
