@@ -61,7 +61,11 @@ def note(msg: str) -> None:
 
 
 def find(results: Path, name: str) -> Path | None:
-    hits = sorted(results.rglob(name))
+    """The first FILE matching `name`. Directories are skipped rather than returned:
+    a bake chunk names its seam directory `aam_pairs/`, so `*aam_pairs*` matched the
+    directory, and `read_parquet` died on the zero-byte `emptied.txt` inside it.
+    """
+    hits = sorted(p for p in results.rglob(name) if p.is_file())
     return hits[0] if hits else None
 
 
