@@ -33,7 +33,8 @@ MODULES = [
     "ecspr.bake.aam.indigo_member", "ecspr.bake.aam.layers",
     "ecspr.bake.aam.metacyc_member", "ecspr.bake.aam.neural_members",
     "ecspr.bake.aam.partial", "ecspr.bake.aam.recount",
-    "ecspr.bake.aam.redox", "ecspr.bake.aam.shard", "ecspr.bake.aam.twins",
+    "ecspr.bake.aam.redox", "ecspr.bake.aam.runlogs",
+    "ecspr.bake.aam.shard", "ecspr.bake.aam.twins",
     "ecspr.bake.aam.universe", "ecspr.bake.aam.worklist",
     "ecspr.bake.direction",
     "ecspr.bake.direction.calibrate", "ecspr.bake.direction.canon",
@@ -125,6 +126,14 @@ CLI = {
         # which cofactor, and the reactions the repair left holding nothing.
         "repair": {"--pairs", "--lookups", "--out", "--out-refusals",
                    "--out-cofactors", "--out-emptied", "--out-summary"},
+    },
+    "ecspr.bake.aam.runlogs": {
+        # `--evidence` is separate from `--cache` because the two hold different halves of
+        # one record: the cache says who answered, the retrieved shard tables say who
+        # timed out. Either alone writes a table; only both write the one the forecast
+        # reads for anything but coverage.
+        "build": {"--cache", "--evidence", "--curated-status", "--runs", "--out",
+                  "--step-max-bytes"},
     },
     "ecspr.bake.aam.recount": {
         "build": {"--metabolites", "--out", "--out-summary"},

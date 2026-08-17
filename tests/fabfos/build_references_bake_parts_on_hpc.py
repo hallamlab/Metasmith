@@ -968,6 +968,8 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
 
     if branch == "map":
         promote_cache(found)
+    if branch in ("direction_bake", "reference"):
+        promote_logs()
 
     rc = 0
     missing_tools = sorted(set(spec["evidence"]) - set(found))
@@ -1283,6 +1285,33 @@ def promote_cache(found: dict) -> None:
         print(f"  cache    {member:<12} {n:,} rows, {len(sidecars)} sidecar(s) "
               f"-> {dest.relative_to(REPO)}")
     print("  the next run stages this directory; nothing here is pinned or committed.")
+
+
+def promote_logs() -> None:
+    """Write the finished bake's own run logs, from this run's evidence and its cache.
+
+    `prior_bake_logs` is staged FROM the bake a run is superseding, so a bake that does
+    not write its own leaves the next one reading its grandparent -- which is how the
+    logs beside the deployed table came to describe a run two generations back. This is
+    that loop closed: the last part of the route writes the logs the next route stages.
+
+    The step logs come from the run sandboxes rather than from the retrieved evidence,
+    because they are the engine's record of the invocation and not a tool's output.
+    """
+    from ecspr.bake.aam import runlogs                                  # noqa: PLC0415
+
+    curated = sorted(TEMP.glob("metacyc/*/status.tsv"))
+    runs = sorted(p for p in TEMP.glob("_run_*") if p.is_dir())
+    argv = ["build", "--cache", str(CACHE_LOCAL), "--evidence", str(TEMP),
+            "--out", str(TEMP / "logs")]
+    if curated:
+        argv += ["--curated-status", str(curated[-1])]
+    if runs:
+        argv += ["--runs"] + [str(p) for p in runs]
+    a = runlogs.parse_args(argv)
+    a.fn(a)
+    print(f"  logs     -> {(TEMP / 'logs').relative_to(REPO)}; they belong in the bake "
+          f"chunk beside the trio, which is where the next run stages them from.")
 
 
 def main() -> int:
