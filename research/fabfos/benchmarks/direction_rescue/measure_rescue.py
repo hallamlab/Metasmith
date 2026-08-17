@@ -135,6 +135,37 @@ def spoke(fc, member=None):
     return set(d.loc[d["mechanism"] == "expected_ok", "mnxr"])
 
 
+def agrees_with_forecast(ann: pd.DataFrame, post: pd.DataFrame) -> int:
+    """Does the annotation's record of who spoke agree with the forecast's prediction?
+
+    Every row below is `still` intersected with something, and `still` is the annotation
+    and the forecast agreeing about silence. If the two describe different bakes the rows
+    are arithmetic over a contradiction, and they will look entirely ordinary -- which is
+    how a stale seam has failed here before.
+
+    So check the two independently. The forecast's error is ONE-SIDED by construction: it
+    never predicts silence where the member spoke. That direction is an assertion. The
+    other direction is a residue, reported rather than bounded, because it is exactly the
+    two mechanisms the forecast declines to predict from tables -- dGbyG's heavy-atom
+    boundary and eQuilibrator's degenerate sigma. This is `forecast backtest` reduced to
+    what a rescue table depends on, so a re-measure needs no member table to be checked.
+    """
+    bad = 0
+    for member, col in (("dgbyg", "dgbyg_dg"), ("eq", "eq_dg")):
+        actually = set(ann.loc[ann[col].notna(), "mnxr"])
+        predicted = spoke(post, member)
+        broke = actually - predicted
+        print(f"  forecast vs annotation · {member:<5} spoke {len(actually):>6,} · "
+              f"predicted {len(predicted):>6,} · predicted-silent-but-spoke "
+              f"{len(broke):>4,} · predicted-to-speak-but-silent "
+              f"{len(predicted - actually):>6,}")
+        if broke:
+            print(f"    ONE-SIDEDNESS BROKEN on {member}: "
+                  f"{sorted(broke)[:8]}{' ...' if len(broke) > 8 else ''}")
+            bad += 1
+    return bad
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -172,10 +203,13 @@ def main(argv=None):
     pre = pd.read_parquet(a.work / "forecast_asdeployed.parquet")
     post = pd.read_parquet(a.work / "forecast_postfix.parquet")
     ann = pd.read_parquet(bake / "seams" / "direction_annotation.parquet",
-                          columns=["mnxr", "dir_tier"])
+                          columns=["mnxr", "dir_tier", "eq_dg", "dgbyg_dg"])
     mapped = load_mapped(bake)
     stamp = bake_stamp(bake)
     print(f"bake {bake.name} · substitutions {a.substitutions} · {stamp}")
+    if agrees_with_forecast(ann, post) != 0:
+        raise SystemExit("[rescue] the forecast and the annotation disagree about which "
+                         "members spoke; one of them is not describing this bake")
     names = load_names()
     stoich = load_mnxr_stoich(MNX / "reac_prop.tsv")
     props = load_mnxm_props(MNX / "chem_prop.tsv")
