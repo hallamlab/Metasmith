@@ -22,8 +22,8 @@ does run one, and it runs it on a twentieth of the universe.
 |---|---|
 | `measure_rescue.py` | the mechanism table — how much of the gap each repair reaches |
 | `shard_cost.sh` | what the eQuilibrator member costs before and after the fix |
-| `REBAKE_HANDOFF.md` | what the deferred re-bake session must not rediscover |
-| `SHARD_COST.md` | the shard measurement, and the resource declaration it implies |
+| `REBAKE.md` | how to re-bake direction, and what a re-bake must not rediscover |
+| `SHARD_COST.md` | what the member costs, and the resource declaration it settled |
 
 ## The one-line answer
 
@@ -32,7 +32,7 @@ gap, and r8 is the bake that carries the fixes.** 9,862 reactions left tier 0 an
 carried a vote in r7 lost one. The rest divides into a workable carrier-curation problem and
 a residue nobody has a lever on.
 
-## The two defects
+## The three defects
 
 **Water was filtered out of the compound table.** MetaNetX 4.5 files water only as the
 pseudo-accession `WATER`, and `load_mnxm_props` admitted only accessions beginning `MNXM`.
