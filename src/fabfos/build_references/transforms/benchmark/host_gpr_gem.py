@@ -82,6 +82,15 @@ GEM_SOURCE = {
     # the model, and W3110 is deliberately NOT here: it is where a clone's sequence
     # comes from, not a strain this tree reads a model against.
     "e_coli_ag1":    "e_coli_dh1",
+    # BW25113 AND LW06 ARE THE SCALEs PAIR, and they sit in DH1's and AG1's seats
+    # respectively. BW25113 is sequenced (GCF_050858555.1) and reads against iML1515 --
+    # not as a cross-strain borrow but because it IS K-12, differing from MG1655 by
+    # catabolic deletions the edit list below carries. LW06 is the derivative with no
+    # assembly anywhere: BW25113 stands in for its sequence, and its own four deletions
+    # ride on top of BW25113's, which is why its edit list is a superset and not a
+    # separate list. `check_lw06_identity.py` measures both.
+    "e_coli_bw25113": "e_coli_k12",
+    "e_coli_lw06":    "e_coli_k12",
 }
 
 # host -> the borrowed model's reactions that strain cannot carry, by the MODEL's own
@@ -117,8 +126,33 @@ GEM_SOURCE = {
 # fabricated deletion is worse than a known gap because nothing downstream can tell.
 # What the marker really says is that AG1 needs thiamine in the medium, which is a claim
 # about the medium and belongs where the medium is declared.
+#
+# BW25113 AND LW06 ARE THE ONLY ENTRIES HERE WHOSE DELETIONS ARE ENGINEERED RATHER THAN
+# INCIDENTAL, and both lists are measured by `check_lw06_identity.py` by evaluating every
+# GPR rule twice rather than by counting deleted genes. The counting answer is wrong in
+# both directions and that is the whole reason the check exists:
+#
+#   BW25113's six catabolic loci (lacZ, araBAD, rhaBAD) darken SEVEN reactions, while
+#   hsdR514 and the tolerance host's recA name no gene in the model at all. All seven are
+#   sugar catabolism the selections never fed -- arabinose, rhamnose and lactose are
+#   absent from both papers' minimal media -- so the edit is real but inert here.
+#
+#   LW06's four deletions span SEVEN genes and darken only THREE reactions. FRD2 and FRD3
+#   go with frdABCD and LDH_D with ldhA, but ACKr survives on purT/tdcD, and ALCD2x,
+#   ALCD19 and ACALD all survive adhE on adhP and mhpF. So iML1515 says LW06 can still
+#   make ethanol without its engineered pathway. That is a statement about what a curated
+#   GEM can express about a strain engineering, and it is reported rather than papered
+#   over: deleting the surviving reactions to force the expected topology would be
+#   asserting a genome nobody sequenced.
+#
+# THE HETEROLOGOUS HALF OF LW06 IS NOT HERE AND CANNOT BE. attTn7::pdcZm adhBZm ADDS
+# reactions, and this transform only subtracts. The pyruvate decarboxylase edge rides in
+# as study GPR rows and concatenates with the host's at solve time.
 EDIT_LIST = {
     "e_coli_ag1": ("GTPDPK",),
+    "e_coli_bw25113": ("ARAI", "LACZ", "LYXI", "RBK_L1", "RMI", "RMK", "RMPA"),
+    "e_coli_lw06": ("ARAI", "FRD2", "FRD3", "LACZ", "LDH_D", "LYXI", "RBK_L1",
+                    "RMI", "RMK", "RMPA"),
 }
 
 DRIVER = r'''
