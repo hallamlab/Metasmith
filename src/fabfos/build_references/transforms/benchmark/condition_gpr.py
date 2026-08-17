@@ -194,6 +194,10 @@ for route, df in frames.items():
     ev["raw_score"] = 1.0
     c = nomination_contributions(ev)
     assert_conservation(c, f"condition_gpr/{{route}}")
+    # Belief MASS per (route_key, mnxr), not a conductance: this is a per-edge
+    # attribution weight for the curated crosswalk, so it stops before the log-odds
+    # pooling that `ecspr.model.evidence.compute_E` applies. The column keeps its
+    # name because it is in a staged reference table.
     contrib[route] = (c.groupby(["orf", "mnxr"], sort=False)["contrib"].sum()
                       .rename("E_full").reset_index())
 

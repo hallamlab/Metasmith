@@ -11,7 +11,8 @@ import pytest
 
 from ecspr.model import conditions as cond_mod
 from ecspr.model import nulls, probes, scoring
-from ecspr.model.gpr import condition_weights, load_gpr
+from ecspr.model.evidence import nomination_contributions
+from ecspr.model.gpr import _normalise, condition_weights, load_gpr
 
 HOST = "iML1515"
 
@@ -94,17 +95,71 @@ def test_a_deletion_is_the_drop_mask(gpr_path):
     assert w == {"R1": 1.0, "R2": 1.0}
 
 
+def _belief(rows, **mask):
+    w, _ = condition_weights(pd.DataFrame(rows), weighting="belief",
+                             background_column="unit_id", background_values=(HOST,),
+                             **mask)
+    return w
+
+
 def test_belief_weighting_conserves_per_feature(gpr_path):
-    """Each feature's nominations sum to 1.0, so a promiscuous annotation cannot
-    out-vote a specific one."""
+    """Each feature's nominations still sum to 1.0 BEFORE pooling, so a promiscuous
+    annotation cannot out-vote a specific one. That ledger is `belief_mass`."""
     df = load_gpr(gpr_path)
     extra = pd.DataFrame(_gpr_rows(HOST, "b4", ["R1", "R2"]))
-    w, _ = condition_weights(pd.concat([df, extra], ignore_index=True),
-                             weighting="belief", background_column="unit_id",
-                             background_values=(HOST,))
-    assert w["R3"] == pytest.approx(1.0)
-    assert w["R1"] == pytest.approx(1.5)   # b1's whole 1.0, plus half of b4's
-    assert w["R2"] == pytest.approx(1.5)
+    rows = _normalise(pd.concat([df, extra], ignore_index=True))
+    rows = rows[rows.unit_id == HOST]
+    mass = nomination_contributions(rows).groupby("mnxr")["contrib"].sum()
+    assert mass["R3"] == pytest.approx(1.0)
+    assert mass["R1"] == pytest.approx(1.5)   # b1's whole 1.0, plus half of b4's
+    assert mass["R2"] == pytest.approx(1.5)
+    assert mass.sum() == pytest.approx(rows.feature_id.nunique())
+
+
+def test_belief_weighting_is_a_bounded_probability(gpr_path):
+    """The conductance a mask hands the builder is in (0, 1) however much evidence
+    piles onto one reaction. An unbounded sum is what made a paralog family read as
+    strength of evidence."""
+    rows = [r for f in range(40) for r in _gpr_rows(HOST, f"b{f}", ["R1"])]
+    w = _belief(rows)
+    assert 0.0 < w["R1"] < 1.0
+
+
+def test_repeating_one_assertion_saturates(gpr_path):
+    """N genes asserting the SAME (unit, channel, evidence) is not N times the
+    evidence. Two genes and forty land within a hair of each other, and neither
+    reaches what a single second, independent assertion would buy."""
+    one = _belief(_gpr_rows(HOST, "b1", ["R1"]))["R1"]
+    two = _belief([r for f in range(2) for r in _gpr_rows(HOST, f"b{f}", ["R1"])])["R1"]
+    forty = _belief([r for f in range(40) for r in _gpr_rows(HOST, f"b{f}", ["R1"])])["R1"]
+    assert one < two < forty
+    assert forty - two < 0.1 * (two - one)
+
+
+def test_two_channels_agreeing_beat_one_channel_repeated(gpr_path):
+    """The point of pooling. The same total belief mass, arriving through two distinct
+    annotation methods rather than one repeated, is worth strictly and substantially
+    more."""
+    repeated = _belief([r for f in range(2) for r in _gpr_rows(HOST, f"b{f}", ["R1"])])
+    agreeing = _belief(_gpr_rows(HOST, "b1", ["R1"], channel="ch_a")
+                       + _gpr_rows(HOST, "b1", ["R1"], channel="ch_b"))
+    assert agreeing["R1"] > 1.5 * repeated["R1"]
+
+
+def test_a_second_unit_is_a_second_assertion(gpr_path):
+    """The unit is inside the assertion key, so an overexpression is not a no-op even
+    when the clone asserts the very same evidence through the very same channel.
+
+    Two HOST paralogs saying this would pool as one assertion; a physically separate
+    copy is separate evidence. (The feature ids differ because belief conservation is
+    per-ORF and a shared id would merge the two rows before pooling ever sees them.)
+    """
+    host = _gpr_rows(HOST, "b2", ["R2"])
+    clone = _gpr_rows("clone", "cA", ["R2"], condition="C_over")
+    alone = _belief(host)["R2"]
+    together = _belief(host + clone, mask_column="condition_id",
+                       mask_values=("C_over",))["R2"]
+    assert together > 1.5 * alone
 
 
 def test_an_unknown_mask_column_is_refused(gpr_path):
