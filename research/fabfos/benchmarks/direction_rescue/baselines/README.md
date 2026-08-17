@@ -29,6 +29,25 @@ attribution with `--against <their cache>`.
 The phosphorylase is still the largest feeder, so the finding they reported stands. What
 moved is the size of the correction still outstanding.
 
+## The glycogen share
+
+`glycogen_share_baseline.py`, biomass grounding — glycogen plus the AG1 model's 48
+carbon-bearing biomass precursors as real ports, everything else draining at `leak=1e-3`.
+The quantity `fabfos/bench-eydallin` moved its cohort work onto, because a share can fall
+where a two-point conductance provably cannot.
+
+| | r7 | r8 (here) |
+|---|---:|---:|
+| share of injected carbon reaching glycogen | 0.119216 | **0.140811** |
+
+Same 49 ports, same atom pairs, direction table swapped: **r8 alone raised it 18%**.
+
+**This is one number and not their panel.** `two_ground_panel.py` sweeps folds, ground-B
+choices and leak magnitudes to ask whether talA's *sign* survives — a
+glycogen-deficient phenotype arising from competition rather than damage. That question
+needs their whole instrument and is **not** covered here. What is covered is a before-value
+on the quantity all of it rests on, taken while r8 was still deployed.
+
 ## The glycogen module under r8
 
 | reaction | tier | ratio | what |
