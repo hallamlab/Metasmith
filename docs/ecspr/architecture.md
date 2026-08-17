@@ -61,6 +61,17 @@ exactly the drift this package exists to end.
 `--direction`, which is already the *path* to the direction-ratios parquet; the bake's own
 identity block calls this field `orientation`.
 
+**`E_r` is a probability, not a vote count.** The evidence lane dilutes per gene — each ORF's
+nomination sums to 1.0 across the reactions it names — and then *pools* that mass in log-odds
+over distinct `(unit, channel, evidence)` assertions. The dilution alone is one-sided: it stops a
+promiscuous annotation out-voting a specific one, but nothing stops a paralog family out-voting
+three independent methods, and summing the mass is what let 65 ORFs repeating one EC number reach
+the top of the K-12 table. Pooling makes repetition saturate and agreement add, which is the whole
+of the difference. Two consequences: `E_r` is bounded, so the conductance range across a genome is
+now ~20x rather than ~10⁵; and the pre-pooling mass survives as `belief_mass`, because that — not
+`E_full` — is the additive ledger per-ORF conservation is a statement about, and the quantity a
+gene *count* has to read. `compose` reads both, one for the bridge mismatch and one for its scale.
+
 ## Dependencies are declared once
 
 `env.yml` is the single dependency spec, feeding three consumers that would otherwise drift: the

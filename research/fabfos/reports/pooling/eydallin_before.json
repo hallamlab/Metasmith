@@ -1,0 +1,30 @@
+{
+  "base": {
+    "label": "base (ag1 alone)",
+    "n_rows": 61591,
+    "n_units": 1,
+    "n_reactions": 14180,
+    "n_used": 10998,
+    "nodes": 168565,
+    "edges": 193922,
+    "E_sum": 4363.000001836568,
+    "E_max": 74.65,
+    "conductance": 0.35641092967989946
+  },
+  "conditions": [
+    {
+      "label": "eydallin:glgC",
+      "n_rows": 61598,
+      "n_units": 2,
+      "n_reactions": 14180,
+      "n_used": 10998,
+      "nodes": 168565,
+      "edges": 193922,
+      "E_sum": 4364.000001836568,
+      "E_max": 74.65,
+      "conductance": 0.35655460661886007,
+      "d_abs": 0.00014367693896061295,
+      "d_rel": 0.0004031215852152806
+    }
+  ]
+}

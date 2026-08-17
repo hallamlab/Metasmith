@@ -24,11 +24,14 @@ Two consequences worth stating because they are load-bearing rather than inciden
 
   * The composed pair table is NOT network-agnostic, unlike the reference bake it is cut
     from. It must be staged per network, never shared -- see `ecspr::atom_pairs`.
-  * A bridge carries its conductance in `pair_w`, at `E_r == 1.0`, because
-    `graph_from_pairs` forms `gp = E_r * pair_w` and drops any reaction absent from the
-    weight dict. One synthetic ORF per bridge reaction puts that 1.0 there through the
-    ordinary belief-conservation path, so `sum(E_full) == n_orfs` still holds exactly and
-    the driver's conservation assert stays meaningful instead of being weakened for us.
+  * A bridge carries its conductance in `pair_w`, because `graph_from_pairs` forms
+    `gp = E_r * pair_w` and drops any reaction absent from the weight dict. One synthetic
+    ORF per bridge reaction puts it in the weight dict through the ordinary evidence path,
+    so `sum(belief_mass) == n_orfs` still holds exactly and the driver's conservation
+    assert stays meaningful instead of being weakened for us. That ORF spends its whole
+    1.0 on one pseudo-reaction, so every bridge pools to the SAME `E_r` --
+    `evidence.pooled_E_of_mass(1.0)`, not 1.0 -- and `pair_w` is divided by it so the
+    product is the `g_bridge` the bridge table computed.
 
 THE BRIDGE WEIGHT IS A GENE-LEVEL MISMATCH, DILUTED TWICE
 ---------------------------------------------------------
@@ -45,6 +48,11 @@ The unit is the GENE, not the reaction, and a gene's belief is diluted on the wa
 
     M_o(m) = SUM_{g in o} c_g(m)                    the diluted gene count
     D(m)   = |M_A - M_B| / (M_A + M_B)              RELATIVE asymmetry, in [0, 1]
+
+`M` counts GENES, so it reads `belief_mass` -- the pre-pooling ledger, in ORF units. `G`
+is a CONDUCTANCE and reads the pooled `E_r`, the same numbers the member edges carry.
+They were one quantity before pooling and are two now; feeding `M`'s scale into `G` would
+put bridges one to two orders of magnitude above every member edge in the same network.
 
 `D` is relative rather than a raw difference because the raw difference is 96% correlated
 with metabolite size (corr = 0.963 on this community): Nostoc carries 1.86x
@@ -222,8 +230,17 @@ def carrier_blacklist(names: pd.DataFrame, *, extra=(), keep=CARRIER_KEEP) -> pd
 def reaction_beliefs(gpr: pd.DataFrame) -> pd.Series:
     """`{mnxr: SUM_g e_g(r)}` -- the belief-conserving allocation, one genome's worth.
 
-    This is `ecspr.model.evidence.compute_E`, named here because the bridge math reads the same
-    quantity the conductances do and must not drift from it.
+    In ORF units, so it is `ecspr.model.evidence.belief_mass` rather than the pooled
+    conductance: the gene-level mismatch `M` is a gene count and has to stay one.
+    """
+    return _net.belief_mass(gpr, "compose")
+
+
+def reaction_conductances(gpr: pd.DataFrame) -> pd.Series:
+    """`{mnxr: E_r}` -- the pooled conductances, one genome's worth.
+
+    `ecspr.model.evidence.compute_E`, named here because the bridge scale must read the
+    same quantity the member edges carry and must not drift from it.
     """
     return _net.compute_E(gpr, "compose")
 
@@ -250,14 +267,17 @@ def diluted_gene_counts(beliefs: pd.Series, pairs: pd.DataFrame) -> pd.Series:
     return touch.groupby("met")["c"].sum()
 
 
-def incident_conductance(beliefs: pd.Series, pairs: pd.DataFrame) -> pd.Series:
+def incident_conductance(weights: pd.Series, pairs: pd.DataFrame) -> pd.Series:
     """`G_o(m)` -- total conductance incident on a metabolite, `SUM E_r * pair_w` over
     every pair row that names it. The scale the dimensionless asymmetry is multiplied by.
+
+    `weights` is the POOLED `E_r`, not the belief mass: this is the only quantity in the
+    bridge math that has to be commensurate with the member edges it competes with.
     """
-    df = pairs[pairs.mnxr.isin(beliefs.index)]
+    df = pairs[pairs.mnxr.isin(weights.index)]
     if not len(df):
         return pd.Series(dtype=float)
-    g = df.mnxr.map(beliefs).astype(float).to_numpy() * \
+    g = df.mnxr.map(weights).astype(float).to_numpy() * \
         pd.to_numeric(df.get("pair_w", 1.0), errors="coerce").fillna(1.0).to_numpy()
     both = pd.concat([pd.Series(g, index=df["substrate"].to_numpy()),
                       pd.Series(g, index=df["product"].to_numpy())])
@@ -278,13 +298,17 @@ def atom_ranks(beliefs: pd.Series, pairs: pd.DataFrame) -> dict:
     return out
 
 
-def bridge_table(members: dict, pairs: pd.DataFrame, element: str, *,
+def bridge_table(members: dict, pairs: pd.DataFrame, element: str, conductances: dict, *,
                  g0=1.0, blacklist=frozenset(), names=None, ranks=None) -> pd.DataFrame:
     """One row per (organism pair, metabolite) candidate bridge, for one element.
 
     Every candidate is reported, including the ones that get no edge -- blacklisted, or
     present in only one copy. A skipped bridge that leaves no trace would make a coverage
     hole read as a modelling choice.
+
+    `members` is `{org: belief_mass}` and sets the mismatch `D`; `conductances` is
+    `{org: E_r}` and sets the scale `G`. See the module docstring for why those are two
+    maps and not one.
 
     `ranks` is the `{org: {met: ranks}}` map from `atom_ranks`; it is passed in rather than
     recomputed because the caller needs the same map to emit one edge per shared rank, and
@@ -298,9 +322,8 @@ def bridge_table(members: dict, pairs: pd.DataFrame, element: str, *,
     M, G = {}, {}
     K = ranks if ranks is not None else {o: atom_ranks(members[o], el) for o in orgs}
     for o in orgs:
-        b = members[o]
-        M[o] = diluted_gene_counts(b, el)
-        G[o] = incident_conductance(b, el)
+        M[o] = diluted_gene_counts(members[o], el)
+        G[o] = incident_conductance(conductances[o], el)
 
     rows = []
     for i, a in enumerate(orgs):
@@ -326,8 +349,8 @@ def bridge_table(members: dict, pairs: pd.DataFrame, element: str, *,
 # =====================================================================
 
 def _synthetic_orf_rows(mnxr: str, source: str) -> dict:
-    """One ORF whose entire belief goes to one pseudo-reaction, so `compute_weights` gives
-    it `E_full == 1.0` through the ordinary path and `sum(E_full) == n_orfs` still holds."""
+    """One ORF whose entire belief goes to one pseudo-reaction, so it reaches the weight
+    dict through the ordinary path and `sum(belief_mass) == n_orfs` still holds."""
     return dict(source=source, orf=f"__bridge__{SEP}{mnxr}", channel=BRIDGE_CHANNEL,
                 mnxr=mnxr, intermediate_id=mnxr, intermediate_name=mnxr,
                 raw_score=1.0, score_kind="bridge", projection_via="compose",
@@ -346,6 +369,11 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
     orgs = sorted(members)
     network_id = network_id or "-".join(orgs)
     beliefs = {o: reaction_beliefs(members[o]) for o in orgs}
+    conduct = {o: reaction_conductances(members[o]) for o in orgs}
+    # Every bridge is one synthetic ORF spending 1.0 on one pseudo-reaction, so they all
+    # pool to this same E_r. Dividing it out of pair_w is what makes E_r * pair_w equal
+    # the g_bridge the bridge table computed.
+    e_bridge = _net.pooled_E_of_mass(1.0)
 
     dup = set()
     seen = {}
@@ -378,8 +406,8 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
     for el in elements:
         el_pairs = keep_el[keep_el.element == el] if "element" in keep_el.columns else keep_el
         ranks = {o: atom_ranks(beliefs[o], el_pairs) for o in orgs}
-        bt = bridge_table(beliefs, el_pairs, el, g0=g0, blacklist=blacklist,
-                          names=names, ranks=ranks)
+        bt = bridge_table(beliefs, el_pairs, el, conduct, g0=g0,
+                          blacklist=blacklist, names=names, ranks=ranks)
         bridge_parts.append(bt)
         live = bt[bt.bridged == 1]
         if not len(live):
@@ -392,7 +420,8 @@ def compose(members: dict, pairs: pd.DataFrame, direction: pd.DataFrame | None =
             for r in grp.itertuples(index=False):
                 for i in sorted(ka.get(r.metabolite, set()) & kb.get(r.metabolite, set())):
                     bridge_pairs.append((rxn, el, tag(a, r.metabolite),
-                                         tag(b, r.metabolite), i, i, r.g_bridge))
+                                         tag(b, r.metabolite), i, i,
+                                         r.g_bridge / e_bridge))
 
     out_pairs = pd.concat(pair_parts, ignore_index=True)
     if bridge_pairs:
@@ -562,7 +591,9 @@ def _selftest_mismatch():
     # A carries R2 only; B carries R2 and R3. X is touched by both, P2 only by B.
     a, b = _toy_gpr("A", ["R2"]), _toy_gpr("B", ["R2", "R3"])
     bt = bridge_table({"A": reaction_beliefs(a), "B": reaction_beliefs(b)},
-                      pairs, "C", g0=1.0)
+                      pairs, "C",
+                      {"A": reaction_conductances(a), "B": reaction_conductances(b)},
+                      g0=1.0)
     row = bt[bt.metabolite == "X"].iloc[0]
     # Second dilution: R2 touches {X, P1} so contributes 1/2 to each; R3 touches {X, P2}.
     # M_A(X) = 0.5, M_B(X) = 0.5 + 0.5 = 1.0  ->  D = 0.5/1.5 = 1/3.
@@ -573,7 +604,9 @@ def _selftest_mismatch():
     # Relative asymmetry must not move when one member's genome is scaled up wholesale.
     b2 = pd.concat([b, _toy_gpr("B2", ["R2", "R3"]).assign(source="B")], ignore_index=True)
     bt2 = bridge_table({"A": reaction_beliefs(a), "B": reaction_beliefs(b2)},
-                       pairs, "C", g0=1.0)
+                       pairs, "C",
+                       {"A": reaction_conductances(a), "B": reaction_conductances(b2)},
+                       g0=1.0)
     r2 = bt2[bt2.metabolite == "X"].iloc[0]
     print(f"  X after doubling B's genes: M_B={r2.M_b:.4f} D={r2.asymmetry:.6f}")
     assert r2.M_b > row.M_b, "the raw count must grow"
@@ -600,15 +633,21 @@ def _selftest_bridge_conductance():
     print(f"  {len(br)} bridge rows: {sorted(set(zip(br.substrate, br['product'])))}")
     assert len(br) > 0
     assert (br.substrate.str.startswith("A:") & br["product"].str.startswith("B:")).all()
-    # Every bridge reaction must be present in the composed GPR with belief EXACTLY 1.0,
-    # or the driver's conservation assert is measuring something other than what it says.
+    # Every bridge reaction must be present in the composed GPR carrying belief mass
+    # EXACTLY 1.0, or the driver's conservation assert is measuring something other than
+    # what it says. Its POOLED E is not 1.0 and cannot be -- but it is the same constant
+    # for every bridge, which is what lets pair_w carry g_bridge exactly.
     w = _net.compute_weights(out["gpr"])
     n_orf = out["gpr"]["orf"].nunique()
-    print(f"  sum(E_full)={w.E_full.sum():.9f} over {n_orf} ORFs")
-    assert abs(w.E_full.sum() - n_orf) < 1e-9
-    for r in br.mnxr.unique():
-        e = float(w.loc[w.mnxr == r, "E_full"].iloc[0])
-        assert abs(e - 1.0) < 1e-12, (r, e)
+    print(f"  sum(belief_mass)={w.belief_mass.sum():.9f} over {n_orf} ORFs")
+    assert abs(w.belief_mass.sum() - n_orf) < 1e-9
+    e_br = w.loc[w.mnxr.isin(br.mnxr.unique())]
+    print(f"  {len(e_br)} bridge reactions, mass {e_br.belief_mass.unique()}, "
+          f"E {e_br.E_full.unique()}")
+    assert (e_br.belief_mass.sub(1.0).abs() < 1e-12).all()
+    assert e_br.E_full.std(ddof=0) < 1e-15 or len(e_br) == 1
+    assert abs(float(e_br.E_full.iloc[0]) - _net.pooled_E_of_mass(1.0)) < 1e-12
+    assert (w.E_full > 0).all() and (w.E_full < 1).all()
     # g0 scales the conductance linearly and nothing else -- the sweep that must converge
     # to the isolated members as g0 -> 0 is only meaningful if this holds.
     out2 = compose({"A": a, "B": b}, pairs, elements=("C",), g0=2.5)

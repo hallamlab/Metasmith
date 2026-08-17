@@ -21,26 +21,27 @@ and withholds rows the other two let through, which is how a deletion is stated.
 Deciding WHICH rows a deletion withholds is the experiment designer's job -- this
 module applies the mask it is handed and interprets no ``action`` column.
 
-TWO WEIGHTINGS, ONE SHAPE
--------------------------
-Both are a sum over the UNITS a mask selected, differing only in what a unit
-contributes to a reaction:
-
-  * ``belief``  -- :mod:`ecspr.model.evidence`'s belief-conserving allocation, so each
-    feature's total nomination is 1.0 spread across the reactions it nominates.
-    The evidence lane: a promiscuous annotation must not out-vote a specific one.
+TWO WEIGHTINGS
+--------------
+  * ``belief``  -- :mod:`ecspr.model.evidence`'s allocation: each feature's total
+    nomination is 1.0 spread across the reactions it nominates, and that mass is then
+    pooled in log-odds over distinct ``(unit, channel, evidence)`` assertions. The
+    evidence lane: a promiscuous annotation must not out-vote a specific one, and a
+    paralog family must not out-vote three methods agreeing. ``E`` is a probability.
   * ``uniform`` -- 1.0 per unit that nominates the reaction at all. The curated-GEM
     lane: a curated model asserts a reaction is PRESENT, not how much evidence
     there is for it, so weighting it by anything would be inventing a quantity.
 
-Under either, a reaction nominated by both the host unit and a clone unit gets both
-contributions -- the duplicated edge, arrived at by summation rather than by a rule.
+Under either, a reaction nominated by both the host unit and a clone unit is carried by
+both -- ``uniform`` by summing units, ``belief`` by pooling two assertions rather than
+one. That the unit is inside ``belief``'s assertion key is what keeps an overexpression
+from being a no-op.
 """
 from __future__ import annotations
 
 import pandas as pd
 
-from .evidence import per_unit_weights
+from .evidence import nomination_contributions, pool_logodds
 
 WEIGHTINGS = ("belief", "uniform")
 
@@ -114,7 +115,7 @@ def _normalise(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def weights_from_rows(rows: pd.DataFrame, weighting: str = "belief") -> dict:
-    """``{mnxr: E}`` for one condition's selected rows, summed over units."""
+    """``{mnxr: E}`` for one condition's selected rows."""
     if weighting not in WEIGHTINGS:
         raise ValueError(f"weighting must be one of {WEIGHTINGS}, got {weighting!r}")
     if rows.empty:
@@ -123,12 +124,8 @@ def weights_from_rows(rows: pd.DataFrame, weighting: str = "belief") -> dict:
         n = (rows.dropna(subset=["mnxr"])
                  .groupby(rows["mnxr"].astype(str))[UNIT_COL].nunique())
         return {str(r): float(v) for r, v in n.items() if v > 0}
-    per_unit = per_unit_weights(_normalise(rows), UNIT_COL)
-    out: dict = {}
-    for unit_map in per_unit.values():
-        for mnxr, e in unit_map.items():
-            out[mnxr] = out.get(mnxr, 0.0) + float(e)
-    return {k: v for k, v in out.items() if v > 0}
+    E = pool_logodds(nomination_contributions(_normalise(rows)))
+    return {str(r): float(e) for r, e in E.items()}
 
 
 def condition_weights(df: pd.DataFrame, *, weighting="belief", **mask) -> tuple:

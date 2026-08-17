@@ -21,7 +21,7 @@ checked, not assumed.
 THE GPR IS IN THE COMMUNITY SCHEMA AND THE LOADER READS THE STUDY-TIER ONE. `gpr_4lane`
 names its unit `orf` and its evidence `intermediate_id`; `ecspr.model.gpr` reads
 `unit_id` / `feature_id` / `evidence_id`. The shim below is the only mapping under which
-belief conservation means what `compose.py` asserts it means (`sum(E_full) == n_orfs`);
+belief conservation means what `compose.py` asserts it means (`sum(belief_mass) == n_orfs`);
 the alternatives are off by a factor, not by a rounding. It reproduces the r6 reading's
 network exactly — 7,978 reactions used against 5,149 in the AAM gap, 31 endpoints, the
 same four N2<->NH4 reactions, and the deployed bake abstaining on a missing source — and
