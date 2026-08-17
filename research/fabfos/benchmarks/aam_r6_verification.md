@@ -1,19 +1,27 @@
-# The r6 bake, verified
+# The bake, verified
 
-The three checks the campaign set for itself, measured against the finished reference at
-`data/fabfos/temp/metabolism/` and against the deployed `metabolism_bake` it replaces.
-Every number here is read off an artifact the run produced; nothing is restated from a
-plan or from the seed design document.
+The three checks the campaign set for itself, measured against the deployed
+`metabolism_bake` this generation replaces. Every number here is read off an artifact a run
+produced; nothing is restated from a plan or from the seed design document.
 
-The reference is one bake — `assert_same_bake` passes over the trio: 2,472,761 pair rows,
-35,349 metabolites, 83,795 reactions, elements C/N/P/S, `orientation as_written`.
+Two generations are reported because the second is a gapfill of the first rather than a
+rebuild: **r6** is the bake the three checks below were run against, and **r7** is r6 with
+the body ledger closed, re-mapping only the submissions that changed. V1 covers both. V2
+and V3 were measured on r6 and are not re-measured here — see *What this does not verify*.
+
+The reference is one bake — `check_references.py` passes over the r7 trio, bake identity
+`0ffd4c8c6231696e`, equivalence included: 2,530,589 pair rows, 35,860 metabolites, 83,795
+reactions, elements C/N/P/S, `orientation as_written`.
 
 ## V1 — coverage
 
-|  | deployed | r6 |
-|---|---|---|
-| reactions carrying at least one pair row | 66,051 (78.8%) | **67,008 (80.0%)** |
-| `(mnxr, element)` keys | 167,216 (80.9% of achievable) | **171,123 (82.8%)** |
+|  | deployed | r6 | r7 |
+|---|---|---|---|
+| reactions carrying at least one pair row | 66,051 (78.8%) | 67,008 (80.0%) | **69,292 (82.7%)** |
+| `(mnxr, element)` keys | 167,216 (80.9% of achievable) | 171,123 (82.8%) | **175,005 (84.7%)** |
+
+r7 against r6 is **+2,284 reactions and +3,882 keys, with none of either lost**. Every one
+of the 2,284 was `rescue_declined` in r6.
 
 **The ledger closes.** Thirteen outcomes over exactly 83,795 reactions — the deployed bake
 has no ledger, no worklist summary and no evidence directory for any AAM lane, so this is
@@ -39,28 +47,58 @@ they fell through to `[Fe+2]`, and the couple stopped balancing on carbon.
 
 The lane now defers to the placeholder library where it already holds a pair. Measured
 over all 24,098 targets: **+1,122 reactions rescued, 0 lost; +1,467 balanced
-`(mnxr, element)` keys, 0 lost** — C 1,179, N 271, P 17. Of the 1,122, 1,090 are the
-deployed-bake loss, so the residual regression is **157**, and the projected reaction
-coverage is **up to 68,130 (81.3%)** against 67,008 — an upper bound, since the recovered
-reactions still have to survive the mappers. The guard is scoped to `lane_fragment`: the
-same rule applied at merge scope costs 30 banked reactions, because `lane_conserved`'s
-cytochrome and ferredoxin rows are better than a placeholder.
+`(mnxr, element)` keys, 0 lost** — C 1,179, N 271, P 17. The guard is scoped to
+`lane_fragment`: the same rule applied at merge scope costs 30 banked reactions, because
+`lane_conserved`'s cytochrome and ferredoxin rows are better than a placeholder.
+
+### The `*` body was tallied in two places, each blind to the other's half
+
+The same shape twice more, and both were arithmetic rather than chemistry.
+
+`gate_bodies_cancel` counted `*` only in the curated crosswalk; `concrete_balance` counted
+residue slots only for metabolites the recount had reached. The two saw **disjoint halves
+of the same participant set**, so a curated body on one side of an equation and a MetaNetX
+R-group on the other failed both checks — each for the half it could not see — when between
+them the two bodies cancel exactly. `residue_slots` is now the one answer to how many
+unspecified slots a participant carries, and both gates read it.
+
+Separately, a lane that *builds* a vehicle now draws the cap count its name declares.
+`lane_conserved` drew `4-methyl-trans-hex-2-enoyl-ACP` with one `*` while `lane_transform`
+drew its substrate twin with none, and the dehydratase between them was refused for an
+imbalance neither lane's chemistry claims: the carrier cannot leave. ACP is the top unpaired
+body by a wide margin, which is what pointed at a convention mismatch rather than a
+shortage of carriers.
+
+Neither change relaxes the arbiter. The rule that an unpaired `*` refuses a completion is
+exactly as it was; the rule can now see the whole equation.
+
+Measured together over all 24,098 targets, against what r6 baked: **rescued 9,580 →
+12,472 (+2,892, 0 lost); balanced keys 23,138 → 28,027 (+4,889, 0 lost)**. Two candidate
+changes were measured and **refused for costing coverage**: resolving a transform's base
+against the carrier-stripped core (−338 reactions) and declining a borrowed twin whose name
+declares a body its donor structure lacks (−52). Two motif classes are excluded from the cap
+rule for the same reason — `holo`/`apo`/`trna` are state prefixes rather than body markers
+(−49), and `[protein]` costs MNXR171321, which genuinely joins two protein bodies into one.
 
 ### Where the table comes from
 
-| layer | pair rows | reactions | keys |
-|---|---:|---:|---:|
-| curated (MetaCyc L1) | 379,199 | 13,620 | 30,499 |
-| whole | 1,696,006 | 46,699 | 117,670 |
-| rescued | 379,559 | 9,465 | 22,855 |
-| forced (conservation) | 17,997 | 69 | 99 |
+Grouped from `aam_stack` by source, method and the universe's submission class, both
+generations the same way:
 
-**The rescued layer is the one that changed character.** 9,580 reactions completed, 9,484
-banked, **7,969 of them with consensus**. The deployed table's 9,089 rescue-derived
-reactions are all `mcs_only` at half weight, because the crosswalk did not exist when the
-neural members ran — the completion happened after them. Preparing before mapping is what
-turns one member's assertion into corroboration, and it is the single largest quality
-change in this generation.
+| layer | pair rows | reactions | keys | r7 Δ reactions |
+|---|---:|---:|---:|---:|
+| curated (MetaCyc L1) | 379,217 | 13,620 | 30,499 | — |
+| whole | 1,748,741 | 46,699 | 117,684 | — |
+| rescued | 443,501 | 11,752 | 26,752 | **+2,287** |
+| forced (conservation) | 17,997 | 69 | 99 | — |
+
+**The whole gain is in the rescued layer, and it kept its character.** 9,874 of the 11,752
+carry consensus, against r6's 7,970 of 9,465 — the same 84% share, so the added reactions
+are corroborated at the rate the existing ones were rather than being one member's
+assertion. The deployed table's 9,089 rescue-derived reactions are all `mcs_only` at half
+weight, because the crosswalk did not exist when the neural members ran. Preparing before
+mapping is what turns one member's assertion into corroboration, and it remains the single
+largest quality change in this generation.
 
 ## V2 — the redox repair
 
@@ -97,6 +135,12 @@ bijection; the residue is 27 where conservation does not settle the remainder an
 nothing is left once the couple is removed. The plan predicted a residue of 26. **No
 reaction was emptied**, so `redox_emptied` is 0 and nothing traded its outcome for the
 correction.
+
+**Re-run on r7 the repair holds its shape**, which is the check worth making on a bake whose
+rescued layer grew by a quarter: scope rises with the table (10,785 reactions, 5,828 with a
+refusal, 58,979 rows refused, 46,617 arms rescaled), and every invariant is unmoved — S rows
+26,352 → 26,352 untouched, refusals C/N/P only, the same 27 / 2 / 13 rederivation split, 29
+keys emptied after rederivation, and **0 reactions emptied**.
 
 ## V3 — nitrogenase, and Nostoc
 
@@ -236,16 +280,47 @@ and no relaxation reaches them.
 The reductase couple was listed here as a second decision. It was not one — it was the
 fragment-lane collision above, and it is fixed rather than traded.
 
+**And the gate's price was smaller again than this section makes it look**, because 1,447
+of the 3,072 it refused were never its to refuse: it was reading half the equation. Closing
+the ledger moved them without touching the rule, so the decision that remains is narrower
+than the 527 measured above — it is about genuinely unpaired bodies only. It is still open,
+and it is still not one to settle unilaterally.
+
+### The 621 keys r7 still owes the deployed bake
+
+r6 was 2,063 `(mnxr, element)` keys short of the deployed table; r7 is **621**, over 462
+reactions, of which 311 are banked here and short one element rather than absent. The
+refusals are overwhelmingly carbon (428 of 621) and they are refusals rather than gaps: the
+rescue tested carbon and it did not balance.
+
+The family is glycosyltransfer onto a polymer, and the mechanism is one lane's budget. In
+MNXR100000 the fragment lane gives the chondroitin polymer **C=14 on both sides** of a
+reaction that transfers a GalNAc onto it — 31 carbons in, 23 out — because both names
+resolve to the same residue tokens and the lane cannot see that the chain grew. MNXR100004
+loses a hexose the same way. The deployed bake carries `consensus` and `disagree_diluted`
+pairs for these: both mappers agreed on a completed string whose carbon does not add up.
+
+So the remaining shortfall against the deployed table is not a gate to relax but a budget to
+fix, and closing it by admitting the pairs would bank carbon for reactions where carbon is
+not conserved.
+
 ### Where the rest of `rescue_declined` sits
 
-The rescue funnel over the 24,098 reactions adjudicated `blocked_no_structure`:
+The rescue funnel over the 24,098 reactions adjudicated `blocked_no_structure`, r6 and then
+r7. `rescue_declined` falls 13,910 → 11,622.
 
-| triage bucket | n | banked | declined |
-|---|---:|---:|---:|
-| no admissible placeholder | 9,146 | 4 | 9,142 |
-| curated bodies do not cancel | 3,072 | 604 | 2,468 |
-| completable, then no element balances | 2,300 | 0 | 2,300 |
-| completable and rescued | 9,580 | 9,484 | 93 |
+| triage bucket | r6 | r7 |
+|---|---:|---:|
+| no admissible placeholder | 9,146 | 9,146 |
+| curated bodies do not cancel | 3,072 | 1,625 |
+| completable, then no element balances | 2,300 | 853 |
+| completable and rescued | 9,580 | 12,472 |
+
+**What is left in `no element balances` is the balance check working.** Of the 853, 109 can
+read no count at all and 725 read carbon fine and refuse it — a third of those by twenty
+atoms or more. That is a lane-inferred budget being wrong, not a gate being wrong, and
+making the lane decline them would move the bucket and recover nothing. It is the same
+finding as the 621 keys below, arriving from the other direction.
 
 `no admissible placeholder` is the largest and the least tractable, and its shape says why:
 by family of the generic that refuses, **other_structureless 7,335**, acyl_carrier 798,
@@ -263,6 +338,10 @@ absorb a `protein` token costs **515 banked** and gains 0 — that token is load
 because `[protein]` stands on both sides and its budget cancels.
 
 ## What this does not verify
+
+- **V3 was measured on r6 and not re-measured on r7.** N₂ reachability depends on reactions
+  the gapfill did not touch, so it is not expected to have moved — but rebuilding the Nostoc
+  network to say so was not done, and "not expected to have moved" is not a measurement.
 
 - The forecast's recall against the prior run's recorded silences is reported by the lane
   (`aam_forecast/summary.tsv`) but not re-measured here; 22,592 of the buildable universe
