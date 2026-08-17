@@ -20,10 +20,23 @@ class Orchestrator {
 
     // The lineage-only view of a task's output index, used by _debatch on the
     // way out of every process.
+    //
+    // Returns a fresh map and never writes to its argument. A process
+    // declaring N output tuples binds the SAME index object to all N output
+    // channels, and each channel is a separate dataflow operator on its own
+    // thread, so this runs N times over one unsynchronized LinkedHashMap. The
+    // in-place remove() this replaced therefore raced its sibling streams and
+    // _post's `[:]+index` read, and a lost race there does not corrupt the map
+    // visibly -- it yields an EMPTY copy, whose product reaches the next
+    // o.group carrying only its own key and is dropped for lineage violation,
+    // taking the branch of the DAG below it with it. Concurrent readers of a
+    // map nobody writes to are safe; that is the whole fix.
+    //
+    // Shallow by design. The value lists are shared by reference across many
+    // descendant indexes (_collateBatch and _post both copy shallowly) and no
+    // production path mutates one.
     public static Map stripReserved(index) {
-        index.remove(FILES_KEY)
-        index.remove(PROV_KEY)
-        return index
+        return index.findAll((k, v) -> !(k in [FILES_KEY, PROV_KEY]))
     }
 
     private Map index_history
@@ -131,6 +144,13 @@ class Orchestrator {
     // generator emits `o.asStreams(process_call(...))` instead. Handles both
     // single-output processes (returns a Channel) and multi-output ones
     // (returns an iterable ChannelOut).
+    //
+    // NOTHING INSERTED BETWEEN HERE AND _debatch MAY WRITE TO AN INDEX. The
+    // streams returned by a multi-output process all carry the SAME index
+    // object, so an operator added here -- a .map{} that stamps a key, a
+    // .view{} that sorts a value for printing -- runs once per stream on its
+    // own thread over one shared map, and the losing thread's product is
+    // silently dropped downstream. Read freely; copy before you write.
     public List asStreams(out) {
         if (out instanceof Iterable) {
             def result = []
