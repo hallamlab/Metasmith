@@ -42,7 +42,9 @@ and the todo those leave -- and REFUSES when a cache that holds rows leaves a to
 a few percent of the whole universe. That is a cache that did not take, and the only thing
 distinguishing it from an honest first run is that somebody said there was one. It reads
 the cache off the REMOTE, because a path that resolves on this workstation and not on the
-cluster is exactly the failure it exists to catch. `--audit` runs it and stops.
+cluster is exactly the failure it exists to catch. `--audit` runs it and stops. The
+gap-filling member is asked a different question -- see GAP_FILLERS, whose universe column
+is an upper bound it never reaches, so only its resume rate carries any signal.
 
 EVERY SEAM IS A DECLARED IMPORT, which is the mechanism this graph already uses everywhere
 else rather than one invented for the split -- the five `lookup::` tables are PRODUCED by
@@ -168,6 +170,16 @@ MEMBER_ADMITS = {
     "localmapper": ("mappable",),
     "indigo":      ("mappable", "oversize"),
 }
+
+# THE MEMBER THAT IS A GAP-FILLER RATHER THAN A THIRD VOTE, and the reason the audit has
+# to know. `localmapper.py` takes the indigo and rxnmapper products as REQUIREMENTS and
+# hands them to the member as `--covered`, so at run time it maps only what those two left
+# behind -- a couple of thousand reactions, which is what its six shards and twelve hours
+# are sized for. Its `universe` column below is therefore an upper bound it never reaches,
+# and the whole-universe todo ratio says nothing about whether its cache took: on the r7
+# gapfill the cache resumed 2,258 rows against 2,256 previously attempted -- a COMPLETE
+# resume -- and the ratio test read it as 97.2% unresumed and refused the run.
+GAP_FILLERS = {"localmapper"}
 
 # The deployed bake, which is a FLOOR and not a baseline: its run stopped at 20,000 of
 # 83,795. The audit reports the todo against it so "how much of this run is new ground"
@@ -1177,12 +1189,31 @@ def audit(host: str, remote_root: str) -> list[str]:
             print(f"    {stale:,} cached rows are for a submission string this run would "
                   f"not send, and are not counted as finished")
 
-        # THE REFUSAL. A cache holding rows and a todo that is still the whole universe
-        # are the same two facts an honest first run has, minus the rows -- so the rows
-        # are the only thing that can tell them apart, and here they say the cache did not
-        # take. Most likely the member directory is named differently on the remote, or
-        # the submission strings all moved and nothing said so.
-        if have and keys and len(todo) >= FULL_REMAP_FRACTION * len(keys):
+        # THE REFUSAL, and it asks a different question of a gap-filler. For an ordinary
+        # member, a cache holding rows and a todo that is still the whole universe are the
+        # same two facts an honest first run has, minus the rows -- so the rows are the
+        # only thing that can tell them apart, and there they say the cache did not take.
+        # Most likely the member directory is named differently on the remote, or the
+        # submission strings all moved and nothing said so.
+        #
+        # A gap-filler never sees the universe this column reports, so that ratio is not a
+        # signal about it either way. What IS a signal is whether the cache resumed what
+        # the member previously reached: a resume that drops rows it already has is the
+        # same fault, and it is the only form of it this member can exhibit.
+        if member in GAP_FILLERS:
+            print(f"    gap-filler: bounded at run time to what indigo and rxnmapper "
+                  f"leave, so the todo above is an upper bound it does not reach")
+            if have and tried and len(reusable) < FULL_REMAP_FRACTION * len(tried):
+                problems.append(
+                    f"{member}: the staged cache holds {len(have):,} rows but resumes "
+                    f"only {len(reusable):,} of the {len(tried):,} submissions this "
+                    f"member previously reached "
+                    f"({len(reusable) / len(tried):.1%}). For a gap-filler that is the "
+                    f"whole signal -- its todo is most of its universe by construction --"
+                    f" and it says the cache did not take: either its member directory "
+                    f"is not `{remote_cache}/{member}`, or the submission strings moved "
+                    f"({stale:,} rows were dropped as stale).")
+        elif have and keys and len(todo) >= FULL_REMAP_FRACTION * len(keys):
             problems.append(
                 f"{member}: the staged cache holds {len(have):,} rows and the todo is "
                 f"still {len(todo):,} of {len(keys):,} ({len(todo) / len(keys):.1%}). A "
