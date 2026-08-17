@@ -12,6 +12,12 @@ below are the tier4 measurement, kept because the diagnosis is why this cohort s
 not because they still describe the basis — and kept *here* because `cache/` is
 gitignored, so the solves they came from are gone and only this file records them.
 
+**Verdict, as of the library sweep: ECSPr does not predict this phenotype.** Not as a
+regression (closed by Rayleigh monotonicity — the probe is one-sided and the phenotype is
+not) and not as a classifier (`REPORT.md`: chance AUC once the glycogen module is struck,
+and beaten by reaction count). The sections below are in the order the question was asked,
+which is also the order in which each framing closed.
+
 ## What the pilot measured
 
 Universal-ground (`measure_leak`) probe, source D-glucose, element C, leak 1e-6, host
@@ -170,23 +176,38 @@ that loader the encoded table does not raise — the element filter compares int
 and returns zero rows — so the graph comes back empty rather than obviously wrong. Clear
 `cache/*.parquet` after a bake repin.
 
-## Whole-metabolome delta panel — ECSPr has real discriminating power here
+## Whole-metabolome delta panel — a leak reading, and it moves with host and bake
 
 `delta_panel.py --gene <g> --rxn <MNXR> --fold <f>` runs a base-vs-perturbed universal-leak
 solve (source D-glucose) and reports `delta = draw_pert - draw_base` for every metabolite
-that became a node, not just glycogen; `plot_delta_panel.py` histograms it with glycogen
-marked. Two runs on the bake basis, host `e_coli_k12`, fold ×2:
+that became a node; `plot_delta_panel.py` histograms it. `ag1_delta_panel.py` is the same
+model on the strain the screen was actually run in, several genes per invocation.
 
-| perturbed gene | reaction | hops from glycogen | glycogen's rank by \|delta\| |
-|---|---|---|---|
-| `glgC` (ADP-glucose pyrophosphorylase, the committed step) | `MNXR145050` | 1 | **40 / 1027** (top 4%) |
-| `ddg` = `lpxP` (lipid A acyltransferase, unrelated pathway) | `MNXR97903` | unreachable in this neighbourhood | 888 / 1027 (bottom 14%) |
+**Read the probe before the number.** `measure_leak` grounds at OMEGA, so `draw[m]` is the
+current through *m*'s own leak resistor. Glycogen is never a terminal here and this is not
+a glucose → glycogen measurement — for that, see *The two-point probe* below. Nothing in
+this section, or in the cohort panel built on the same probe, can answer a question about
+flux to glycogen, whatever its direction ratios become.
+
+Glycogen's rank by |delta| under `glgC ×2` moves with both the host and the bake, which is
+the reason to distrust it as a specificity read:
+
+| host / basis | glgC ×2 | ddg ×2 |
+|---|---|---|
+| `e_coli_k12`, pre-r7 bake | 40 / 1027 (top 4%) | 888 / 1027 |
+| `e_coli_k12`, r7 bake | 165 / 1041 | — |
+| **`e_coli_ag1`, r7 bake** | **975 / 1060 (bottom 8%)** | 288 / 1060 |
+
+On the correct host, glgC — the cohort's strongest measured hit — is *less* specific than
+the unrelated-pathway control, so the glgC/ddg pair this file once proposed as
+positive/negative controls does not separate there. `pfkA`/`pfkB` are the better negative
+control (below). A fold-1.0 run returns bit-exact zero, so these are real numbers rather
+than solver jitter; they are just not measuring reachability to the target.
 
 `ddg` is the historic gene-name synonym for `lpxP` (`NC_000913.3.gbk`
-`/gene_synonym="ddg; ECK2374"`) — the host GEM's `feature_name` column only carries
-`lpxP`, so a gene-name lookup alone misses it, but its reaction is already a host edge at
-weight 1.0. This is the pair to reuse as positive/negative controls for any future
-perturbation on this cohort.
+`/gene_synonym="ddg; ECK2374"`). iML1515's `feature_name` carries only `lpxP`, so a
+gene-name lookup misses it there; the ag1 GEM (iECDH1ME8569_1439) carries `ddg` directly.
+Its reaction `MNXR97903` is a host edge at weight 1.0 under either name.
 
 `voltage_vs_minpath.py` / `plot_voltage_hist.py` probe the same base graph's per-metabolite
 voltage. Under `attach_leak`'s uniform-per-metabolite leak, ~93% of metabolites sit within
@@ -215,33 +236,91 @@ not significant.** The two strongest measured hits point in opposite directions:
 (453% WT) shows the expected positive delta, but `glgA` (328% WT, one bond closer to the
 product) shows the *largest-magnitude negative* delta in the cohort.
 
-Two independent, verified causes, not noise:
+**This section's diagnosis was wrong, and the correction is the useful part.** It read
+glgA's negative delta as evidence that the fold model cannot tell anabolic from catabolic
+when the direction evidence is missing, and it is true that glgA's `MNXR145046` and glgP's
+`MNXR145036`/`MNXR145038` sit at an *explicit* ratio = 1.0 from zero ensemble votes —
+MetaCyc has no xref row for `MNXR145046`, and the thermo members abstain because MetaNetX
+models glycogen as a fixed-formula molecule rather than a polymer increment, so
+`reac_prop.tsv` cannot balance it and `dir_combine.py` falls to its empty-votes limit. That
+gap is real and worth fixing. It is not what produced the sign. Re-measuring the identical
+genes at the identical ratios under a probe that actually grounds at glycogen gives glgA a
+*positive* delta (below), so the direction evidence cannot be the cause of a sign the
+direction evidence never touched. What produced it was the probe: `cohort_delta_panel.py`
+inherits `measure_leak`, and a current through glycogen's own leak resistor is not flux to
+glycogen. **Do not re-run this panel to test a direction fix.** No ratio can make an
+OMEGA-grounded readout answer this question.
 
-1. **The GOF fold model can't distinguish anabolic from catabolic edges when the direction
-   evidence is absent.** Conductance IS directional in this graph in general (`gp = E_r *
-   pair_w` forward, `gm = ratio * gp` reverse, throttle-only by construction — see
-   glgC's `MNXR145050` at ratio 27.9 and glgB's `MNXR145021` at 0.154, both genuinely
-   asymmetric). But glgA's reaction (`MNXR145046`) and glgP's (`MNXR145036`/`MNXR145038`,
-   shared with `malP` as an isozyme call in this GEM's GPR) each sit at an *explicit*
-   ratio=1.0 — traced through `build_references/transforms/bake/direction_ensemble.py` to
-   zero votes from every member: MetaCyc's xref table has no `metacyc.reaction:` row for
-   `MNXR145046` at all, and the thermo members (eQuilibrator, dGbyG) abstain because
-   MetaNetX represents glycogen as one fixed-formula molecule rather than a polymer
-   increment, which fails their mass-balance check (`reac_prop.tsv`'s `is_balanced` column
-   is empty for this reaction). Zero votes hits the fusion rule's own limit
-   (`dir_combine.py`: empty `votes` → `mu_post=0` → `ratio=exp(0/RT)=1.0`), not a computed
-   near-equilibrium estimate. So overexpressing glgA (anabolic) and glgP (catabolic) get
-   the identical operation — "widen this pipe both ways" — with nothing in the graph
-   saying which direction favours accumulation.
-2. **Even a correctly-anabolic, directly-incident edge isn't guaranteed the right sign.**
-   glgA's edge touches glycogen directly and is unambiguously synthetic biology, yet its
-   modelled delta is still negative — the same non-monotonic conductance→draw behaviour
-   the leak sweep above already diagnosed: strengthening one edge into a well-connected
-   node can make that node more of a through-path than a trap under a universal leak,
-   independent of whether the edge "should" be anabolic.
+## The two-point probe — the right measurement, and what it can and cannot say
 
-Net: this cohort's GOF arm is not fixable by leak tuning (closed above) or by a bigger
-fold (noise-floor was already the wrong diagnosis for glgA/glgP specifically — the sign
-itself is unreliable, not just small). A signed/directed perturbation model or the
-point-to-point resistance readout are the two live directions; a bigger fold on the same
-architecture is not.
+`twopoint_panel.py` (a few genes, both fold directions) and `twopoint_cohort.py` (the 25
+cohort genes the curated AG1 GEM can see) ground at glycogen: source D-glucose
+`MNXM1364061`, sink glycogen `MNXM738130`, element C, host `e_coli_ag1` on the r7 bake,
+base conductance **5.689489**. Overexpression is a ×2 conductance fold on the gene's
+reactions, as before.
+
+**Direction is inexpressible under this probe, by a theorem rather than by a gap in the
+data.** Effective conductance is non-decreasing in every edge conductance (Rayleigh), so a
+fold > 1 can only raise the readout and a fold < 1 can only lower it — verified 8/8 both
+ways in `twopoint_panel.py`. A signed correlation against a phenotype that goes both ways
+is therefore not weak here; it is undefined. Every number below is a magnitude.
+
+What the probe does separate is on-path from off-path, by about five orders of magnitude:
+
+| gene | log2 FC of I_eff under ×2 |
+|---|---|
+| malP | 0.484 |
+| glgP | 0.314 |
+| glgA | 0.127 |
+| glgC | 0.063 |
+| glgB | 0.052 |
+| talA | 2.0e-3 |
+| pfkA / pfkB (external controls) | 1.9e-6 / 4.5e-7 |
+
+Against the graded phenotype this is still not a regression: |log2FC| measured vs log2FC
+I_eff over the 25 is Spearman ρ = +0.31 (p = 0.14). That is the last regression framing this
+cohort will get. The gap between glgA and pfkA is a *classification* claim, and the next
+section tests it as one.
+
+## The whole ASKA library as the null — the classifier test, and it fails
+
+**See `REPORT.md` for the result; this section is the plumbing.** Short version: beyond the
+glycogen module, which the probe finds tautologically, ECSPr does not nominate Eydallin's
+genes. Full-library AUC 0.536 curated / 0.464 de-novo, both beaten by reaction count alone;
+strike glgA/glgB/glgC/glgP/glgS/malP and the top 25 holds one positive against an
+expectation of half of one.
+
+Eydallin screened the entire library, so the ~4,000 clones absent from the paper are
+measured negatives rather than unlabelled ones. That is the property this benchmark has and
+the others do not, and it is what makes an AUC available at all.
+
+`build_aska_gpr.py --publish` builds the population into `data/fabfos/runs/aska/gpr/` —
+4,123 clones over 4,102 gene names from the GFP-minus roster, both channels on the shared
+eighteen-column GPR schema, one census row per clone. Neither channel runs an annotator:
+an ASKA clone is a chromosomal *E. coli* ORF, so AG1's own curated GPR and its own de-novo
+GPR already answer "what reactions does this clone carry". The de-novo side joins through
+`NC_017638.1.faa`'s headers, whose first token *is* the de-novo table's `feature_id`; that
+table's `feature_name` is blank for all but 73 of its 4,363 ORFs and must not be joined on,
+and its `in_atom_universe` is entirely null and is recomputed here.
+
+Resolution decides the answer's honesty. All 86 positives label, six of them only through
+the b-number (aspP/nudF, csrD/yhdA, mlc/dgsA, rutF/ycdH, yifJ/wzxE, ppK/ppk); the
+census carries `b_number` and `eydallin_phenotype` so the labels ship with the population.
+As a cross-check the curated channel reproduces the cohort panel exactly — the same 25
+genes, the same reaction sets, the same deltas.
+
+`sweep_aska.py --channel {gem,denovo}` is `twopoint_cohort.py` with the gene list widened
+and nothing else changed. **Each channel folds against its own background** (2,022
+atom-mapped reactions curated, 10,998 de-novo): `graph_from_pairs` builds a graph out of
+exactly the reactions its weight dict names, so mixing them would let a clone *create* a
+reaction its background never had, which is not what a second plasmid copy does. Absolute
+conductances are therefore not comparable across channels; only ranks within one are.
+Rows append as they finish, so an interrupted sweep resumes. Budget 0.2 s/clone curated and
+0.9 s/clone de-novo at four workers — 2.6 and 54 minutes.
+
+`analyse_aska_sweep.py` scores it. Two things it does that a first draft would not:
+the AUC is the mid-rank Mann–Whitney form throughout, because most of the library ties at
+exactly zero and a strictly-greater-than count scores every one of those ties as a loss;
+and each AUC is printed beside the same AUC computed on reaction count alone, because that
+confound is what sank the ASKA/FFA arm and a number that does not beat it carries no
+information.
