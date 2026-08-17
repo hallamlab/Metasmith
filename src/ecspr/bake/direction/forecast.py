@@ -293,6 +293,17 @@ def cmd_build(args):
     if args.resolution:
         r = pd.read_parquet(args.resolution)
         resolved = dict(zip(r["mnxm"].astype(str), r["resolved"].astype(bool)))
+        # `resolve` CHECKPOINTS INTO ITS OWN --out, so a partial table is indistinguishable
+        # from a finished one by inspection. Building on one under-reports `unresolved`
+        # and inflates the eq arm's expected_ok, and every downstream count inherits it
+        # without a warning anywhere. Same universe rule as `cmd_resolve`.
+        want = {m for m in parts if (props.get(m) or {}).get("inchikey")}
+        if not want <= set(resolved):
+            raise SystemExit(
+                f"[forecast] {args.resolution} answers {len(resolved):,} compounds but "
+                f"{len(want):,} participants carry an InChIKey ({len(want - set(resolved)):,} "
+                f"missing). A `resolve` pass that was interrupted leaves exactly this -- "
+                f"finish it (--resume {args.resolution}) before building on it")
         print(f"[forecast] eQuilibrator resolution for {len(resolved):,} compounds; "
               f"{int(r['resolved'].sum()):,} resolve", flush=True)
     else:

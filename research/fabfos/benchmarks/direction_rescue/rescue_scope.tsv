@@ -1,3 +1,9 @@
+# bake	metabolism_bake
+# bake_stamp	0ffd4c8c6231696e8ba0dee859253df75d8a29320355c42b0fcac0f317d264c6:96cc532cdf2ed3a1bd3d7673a9020f46d584d5e7cf4176b95f92b2728131517c
+# substitutions	none
+# couples	none
+# forecast_asdeployed	d01e6c3233973250
+# forecast_postfix	536223622fb23524
 mechanism	reactions	in_graph	confidence	note
 water_fix.tier0.dgbyg	24	24	high	forecast to gain dGbyG and still silent in the deployed bake
 water_fix.tier0.eq	87	81	high	forecast to gain eQuilibrator and still silent; an upper bound unless the forecast was given --resolution

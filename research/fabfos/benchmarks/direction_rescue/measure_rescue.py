@@ -7,14 +7,15 @@ that gap by the machinery that would have to change for each part of it to move,
 a reader can price the repairs against each other instead of against a single
 aggregate.
 
-IT READS THE DEPLOYED ANNOTATION, so it re-targets itself: run against r8 the
-water-fix rows report what the forecast expected to move and did not, rather than
-what was available to move. The rows that name MetaNetX's compound table instead of
-the bake -- the carrier and wildcard ceilings -- do not move at all, which is the
-check that a re-measure is reading what it thinks it is.
+IT READS AN ANNOTATION AND `--bake` NAMES WHICH ONE, so it re-targets itself: run
+against r8 the water-fix rows report what the forecast expected to move and did not,
+rather than what was available to move. It is the third verifier that can be aimed at
+a chunk STAGED BESIDE the deployed one -- `check_references.py --results` and
+`aam_v3_nostoc.py` are the other two -- which matters because a suffixed chunk is read
+by nothing, so a green suite at the deployed path proves only that the old bake works.
 
 EVERY ROW IS A SET OPERATION over three committed artifacts and nothing else: the
-deployed direction annotation, the two `ecspr.bake.direction.forecast` tables (one
+named bake's direction annotation, the two `ecspr.bake.direction.forecast` tables (one
 built with `--mnxm-only` to reproduce the pre-fix loader, one without), and the
 bake's atom_pairs. No member is run. That is what makes the numbers cheap enough to
 re-take rather than transcribe -- the r7 lesson is that a reading left as prose is
@@ -24,18 +25,39 @@ TWO DENOMINATORS, ALWAYS. A reaction with no atom pairs carries no graph edge, s
 rescuing its direction changes no conductance. `in_graph` is the number that
 matters to a consumer; the bare count is the number that matters to the ensemble.
 
-Reproduce:
+WHAT CHECKS A RE-MEASURE IS READING WHAT IT THINKS IT IS. It used to be that the
+carrier and wildcard rows name MetaNetX's compound table rather than the bake and so
+never move. r9 substitutes structures for exactly those compounds, which retires that
+check. `--expect` replaces it with a stronger one: a committed table of the numbers
+this configuration produced last time, compared row for row, so a stale annotation
+surfaces as a disagreement between two independent readings rather than as a
+familiar-looking number. `--substitutions none` is what the r8 baseline was taken
+under and what reproduces `rescue_scope.tsv`.
+
+Reproduce. Two resolve passes -- the `--mnxm-only` build needs a `--mnxm-only`
+resolution or its eq arm is not the one r7 ran -- and they need eQuilibrator, which
+`rdkit-scratch` does not carry. **`resolve` checkpoints into `--out` every 2,000
+compounds, so the file existing does not mean the pass finished**; wait for the process,
+and check `len(resolution) == participants_with_inchikey` before building on it. A
+partial table silently under-reports `unresolved` and the forecast will not notice.
     R=data/fabfos/originals/metanetx/4.5
-    W=<scratch>
+    W=research/fabfos/benchmarks/direction_rescue/work
+    for f in "--mnxm-only resolution_mnxmonly" " resolution"; do set -- $f
+      PYTHONPATH=src mamba run -n build-refs-equilibrator \\
+        python -m ecspr.bake.direction.forecast resolve \\
+        --reac-prop $R/reac_prop.tsv --chem-prop $R/chem_prop.tsv $1 --out $W/$2.parquet
+    done
     PYTHONPATH=src mamba run -n rdkit-scratch python -m ecspr.bake.direction.forecast build \\
         --reac-prop $R/reac_prop.tsv --chem-prop $R/chem_prop.tsv --mnxm-only \\
+        --resolution $W/resolution_mnxmonly.parquet \\
         --out $W/forecast_asdeployed.parquet --out-summary $W/summary_asdeployed.tsv
     PYTHONPATH=src mamba run -n rdkit-scratch python -m ecspr.bake.direction.forecast build \\
         --reac-prop $R/reac_prop.tsv --chem-prop $R/chem_prop.tsv \\
-        [--resolution $W/resolution.parquet] \\
+        --resolution $W/resolution.parquet \\
         --out $W/forecast_postfix.parquet --out-summary $W/summary_postfix.tsv
     PYTHONPATH=src mamba run -n rdkit-scratch python \\
-        research/fabfos/benchmarks/direction_rescue/measure_rescue.py --work $W
+        research/fabfos/benchmarks/direction_rescue/measure_rescue.py --work $W \\
+        --expect research/fabfos/benchmarks/direction_rescue/rescue_scope.tsv
 """
 from __future__ import annotations
 
@@ -48,16 +70,23 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[4]
 MNX = REPO / "data" / "fabfos" / "originals" / "metanetx" / "4.5"
-BAKE = REPO / "data" / "fabfos" / "processed" / "metabolism_bake"
+PROCESSED = REPO / "data" / "fabfos" / "processed"
 
-# The generic-carrier vocabulary, as a name predicate over chem_prop's own names.
+# The generic-carrier vocabulary, as a COVERAGE predicate over chem_prop's own names.
 #
-# MetaNetX underspecifies these two ways -- a `*`-bearing SMILES or no SMILES at
-# all -- and the two populations are the SAME COMPOUNDS, which is why the two
-# rescue rows below share this one predicate. A name rule rather than a curated
-# accession list because MetaNetX files the same carrier under many accessions
-# (`AH2` is at least MNXM1102421 and MNXM1105763), so an accession list would be a
-# list of the ones somebody happened to look at.
+# MetaNetX underspecifies these two ways -- a `*`-bearing SMILES or no SMILES at all --
+# and the two rescue rows below share this one predicate because both underspecify the
+# same KIND of compound. They are largely not the same accessions: of the top 200
+# blockers on each side, four normalise to a shared name. A name rule rather than a
+# curated accession list because MetaNetX files the same carrier under many accessions
+# (`AH2` is at least MNXM1102421 and MNXM1105763), so an accession list would be a list
+# of the ones somebody happened to look at.
+#
+# IT IS DELIBERATELY LOOSER THAN A SUBSTITUTION PREDICATE. It matches `Acceptor`, `A`,
+# `AH2`, `Unknown` -- generics with no tabulated potential, which a thermodynamic
+# substitution must decline because there is no number to declare. `--couples` measures
+# that admissible subpopulation separately rather than by tightening this regex, so the
+# ceiling and the reachable set stay two readable numbers instead of one.
 CARRIER = re.compile(
     r"(acceptor|donor|\[|^ACP$|carrier|ferredoxin|cytochrome|flavodoxin|thioredoxin"
     r"|glutaredoxin|^AH2$|^A$|^Unknown$|^R$|^RH$|protein|oxidized|reduced|electron)",
@@ -76,14 +105,28 @@ def load_names():
     return out
 
 
-def load_mapped():
+def load_mapped(bake: Path):
     """Reactions carrying at least one atom pair -- the in-graph denominator."""
     from ecspr.bake import encoding as refs
-    V = refs.load_vocab(BAKE / "vocab.parquet")
+    V = refs.load_vocab(bake / "vocab.parquet")
     rxn = V.df[V.df["kind"] == "rxn"]
     sym = dict(zip(rxn["code"], rxn["symbol"]))
-    codes = pd.read_parquet(BAKE / "atom_pairs.parquet", columns=["rxn"])["rxn"].unique()
+    codes = pd.read_parquet(bake / "atom_pairs.parquet", columns=["rxn"])["rxn"].unique()
     return {sym[c] for c in codes}
+
+
+def bake_stamp(bake: Path) -> str:
+    """`<vocab_sha256>:<src_direction_sha256>` -- which bake this reading describes.
+
+    The shared identity block alone cannot say it: it is a fact about the node space, so
+    a direction-only re-bake inherits it byte for byte. `benchmarks/bake_identity.py`
+    carries the same pairing for the decode caches.
+    """
+    import json
+    import pyarrow.parquet as pq
+    md = pq.read_schema(bake / "direction.parquet").metadata or {}
+    return (f"{json.loads(md[b'ecspr_bake'])['vocab_sha256']}:"
+            f"{json.loads(md[b'ecspr_bake_file'])['src_direction_sha256']}")
 
 
 def spoke(fc, member=None):
@@ -98,8 +141,29 @@ def main(argv=None):
     ap.add_argument("--work", required=True, type=Path,
                     help="directory holding forecast_asdeployed.parquet and "
                          "forecast_postfix.parquet")
+    ap.add_argument("--bake", default="metabolism_bake",
+                    help="chunk under data/fabfos/processed, or an absolute path. Aim it "
+                         "at a chunk staged beside the deployed one to verify BEFORE the "
+                         "promote -- a suffixed chunk is read by nothing else")
+    ap.add_argument("--substitutions", default="none",
+                    help="'none' is the configuration the r8 baseline was taken under "
+                         "and the one that reproduces rescue_scope.tsv. The ON path "
+                         "arrives with ecspr.bake.direction.substitute")
+    ap.add_argument("--couples", type=Path, default=None,
+                    help="the carrier couples table. Adds carrier.couple_admissible: the "
+                         "subpopulation blocked only by carriers that HAVE a tabulated "
+                         "potential, which is what a substitution can actually reach")
+    ap.add_argument("--expect", type=Path, default=None,
+                    help="a previous run's TSV; compared row for row and a mismatch is a "
+                         "non-zero exit")
     ap.add_argument("--out", type=Path, default=None, help="write the table as TSV")
     a = ap.parse_args(argv)
+
+    if a.substitutions != "none":
+        raise SystemExit("[rescue] --substitutions accepts only 'none' until "
+                         "ecspr.bake.direction.substitute lands; refusing to report a "
+                         "configuration this script cannot actually apply")
+    bake = Path(a.bake) if Path(a.bake).is_absolute() else PROCESSED / a.bake
 
     from ecspr.bake.direction.refdata import load_mnxr_stoich, load_mnxm_props
     from rdkit import Chem, RDLogger
@@ -107,9 +171,11 @@ def main(argv=None):
 
     pre = pd.read_parquet(a.work / "forecast_asdeployed.parquet")
     post = pd.read_parquet(a.work / "forecast_postfix.parquet")
-    ann = pd.read_parquet(BAKE / "seams" / "direction_annotation.parquet",
+    ann = pd.read_parquet(bake / "seams" / "direction_annotation.parquet",
                           columns=["mnxr", "dir_tier"])
-    mapped = load_mapped()
+    mapped = load_mapped(bake)
+    stamp = bake_stamp(bake)
+    print(f"bake {bake.name} · substitutions {a.substitutions} · {stamp}")
     names = load_names()
     stoich = load_mnxr_stoich(MNX / "reac_prop.tsv")
     props = load_mnxm_props(MNX / "chem_prop.tsv")
@@ -226,6 +292,28 @@ def main(argv=None):
     row("wildcard.ceiling", wildcard_only, "low",
         "R-group residues are the only blocker, remainder not necessarily closed")
 
+    # ---- 5b: what a SUBSTITUTION can reach, which is not the ceiling ------
+    # The rows above are priced on a name regex, and a name regex has no opinion about
+    # whether a compound has a potential to look up. `Acceptor` matches it and cannot be
+    # substituted; `Reduced flavin` matches it and can. Given the couples table, the
+    # honest number is the reactions whose every blocker is an accession that table
+    # names -- which is smaller than the ceiling and is what T3 is actually buying.
+    if a.couples is not None:
+        named = set(pd.read_csv(a.couples, sep="\t", comment="#")["mnxm"].astype(str))
+        adm, adm_closed = set(), set()
+        for mnxr in still:
+            s = stoich[mnxr][0]
+            bad = set(unreadable(s)) | set(wildcards(s))
+            if bad and bad <= named:
+                adm.add(mnxr)
+                if remainder_balances(s, bad):
+                    adm_closed.add(mnxr)
+        row("carrier.couple_admissible", adm, "medium",
+            f"every blocker is one of the {len(named):,} accessions in {a.couples.name} "
+            f"-- a carrier with a tabulated potential, not merely a carrier-shaped name")
+        row("carrier.couple_admissible.closed", adm_closed, "medium-high",
+            "and the remainder already balances, so the direction is a dE'0 lookup")
+
     # ---- 6: unbalanced, with nothing else in the way ---------------------
     unb = set(post.loc[(post["member"] == "dgbyg")
                        & (post["mechanism"] == "unbalanced"), "mnxr"]) & still
@@ -244,7 +332,7 @@ def main(argv=None):
     # for every compound and is read by NO direction-lane code; this is what it is
     # for. The name key is looser than `twins`' alias keys, so this OVER-counts what
     # the real predicate could reach -- which is the right direction for a ceiling.
-    ec = pd.read_parquet(BAKE / "seams" / "element_counts.parquet",
+    ec = pd.read_parquet(bake / "seams" / "element_counts.parquet",
                          columns=["mnxm", "element", "n_atoms"])
     piv = ec.pivot_table(index="mnxm", columns="element", values="n_atoms",
                          aggfunc="first")
@@ -298,10 +386,62 @@ def main(argv=None):
               f" ({s[car].sum()/s.sum():.0%}); carrier concentration {top}")
         for m, n in s.head(6).items():
             print(f"      {n:>5,}  {m:<14} {(names.get(m) or '?')[:52]}")
+    # ---- what this reading describes, carried with it ---------------------
+    # A rescue table read without its configuration is how the r7 delivery split outlived
+    # the r8 repin. The header names the bake, the substitution set and the forecast
+    # tables, so `--expect` is comparing two readings of the SAME thing or says so.
+    header = [f"# bake\t{bake.name}",
+              f"# bake_stamp\t{stamp}",
+              f"# substitutions\t{a.substitutions}",
+              f"# couples\t{a.couples.name if a.couples else 'none'}",
+              f"# forecast_asdeployed\t{_sha(a.work / 'forecast_asdeployed.parquet')}",
+              f"# forecast_postfix\t{_sha(a.work / 'forecast_postfix.parquet')}"]
+
+    rc = 0
+    if a.expect is not None:
+        want = pd.read_csv(a.expect, sep="\t", comment="#")
+        rc = _compare(want, df, a.expect)
+
     if a.out:
-        df.to_csv(a.out, sep="\t", index=False)
+        with open(a.out, "w") as fh:
+            fh.write("\n".join(header) + "\n")
+            df.to_csv(fh, sep="\t", index=False)
         print(f"wrote {a.out}")
-    return 0
+    return rc
+
+
+def _sha(path: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()[:16]
+
+
+def _compare(want: pd.DataFrame, got: pd.DataFrame, source: Path) -> int:
+    """Row for row against a previous reading. A disagreement is an exit code.
+
+    Two independent computations of the same partition -- one now, one committed -- so a
+    stale annotation or a half-swapped seam surfaces here rather than as a plausible
+    number nobody re-derived.
+    """
+    w = want.set_index("mechanism")[["reactions", "in_graph"]]
+    g = got.set_index("mechanism")[["reactions", "in_graph"]]
+    bad = []
+    for mech in sorted(set(w.index) | set(g.index)):
+        if mech not in w.index:
+            bad.append(f"  + {mech:<34} new: {tuple(g.loc[mech])}")
+        elif mech not in g.index:
+            bad.append(f"  - {mech:<34} gone, was {tuple(w.loc[mech])}")
+        elif tuple(w.loc[mech]) != tuple(g.loc[mech]):
+            bad.append(f"  ~ {mech:<34} {tuple(w.loc[mech])} -> {tuple(g.loc[mech])}")
+    if not bad:
+        print(f"\n[expect] {len(g)} rows agree with {source} exactly")
+        return 0
+    print(f"\n[expect] DISAGREES with {source}:")
+    print("\n".join(bad))
+    return 1
 
 
 if __name__ == "__main__":
