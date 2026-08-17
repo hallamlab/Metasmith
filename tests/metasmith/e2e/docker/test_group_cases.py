@@ -1506,3 +1506,86 @@ workflow {
         f"Dispatch coverage incomplete: missing {missing}. "
         f"Observed: {relations}"
     )
+
+
+# ===========================================================================
+# F2 — a declared descendant arriving without the by-key must stop the run.
+#
+# `classify()` has already proved the stream descends from the by-stream, so
+# an item on it whose index does not carry the by-key is data loss by
+# construction: the join has nothing to match on, the item is dropped, and
+# every task downstream of it is never created. A task that is never created
+# cannot fail, so no error strategy sees it — the run ends early, submits
+# every task it did create at exit 0, and reports success. That is how a
+# nine-step benchmark finished seven steps and how a 34-member group lost two.
+#
+# Two arms because a guard written only against a null key passes the first
+# and still misses the second, which is the one seen in the field.
+# ===========================================================================
+
+
+def _f2_script(b_index: str) -> str:
+    """A one-item descendant stream carrying `b_index` as its lineage index."""
+    return '''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+    // b is DECLARED a descendant of a, so classify() routes it through the
+    // DESCENDANT_OF_BY branch and the by-key is mandatory from here on.
+    o.seedParents(["b": ["a"]])
+
+    def ch_a = Channel.fromList([[["a": [7L]], file("${projectDir}/a.txt")]])
+    def ch_b = Channel.fromList([[%s, file("${projectDir}/b.txt")]])
+
+    def grouped = o.group(
+        "a",
+        [new Tuple2("a", ch_a), new Tuple2("b", ch_b)],
+        ["target"],
+        1,
+    )
+    grouped.view { idx, a_vals, b_vals -> "G:a=${a_vals.size()}:b=${b_vals.size()}" }
+}
+''' % b_index
+
+
+def _assert_f2_aborts(result, arm: str):
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert result.returncode != 0, (
+        f"{arm}: a declared descendant arrived without its by-key and the run "
+        f"still exited 0. Downstream sees an empty channel, which nextflow "
+        f"treats as a legitimate end of the DAG.\n"
+        f"emits: {_emit_lines(result.stdout)}\n"
+        f"stdout tail: {(result.stdout or '')[-1500:]}"
+    )
+    # The message has to name all three, or the operator cannot act on it: the
+    # stream says which edge, the key says which ancestor went missing, and the
+    # file says which item to trace back to its producer.
+    for needle, what in (("[b]", "the stream"), ("[a]", "the by-key"), ("b.txt", "the file")):
+        assert needle in combined, (
+            f"{arm}: the abort message does not name {what} ({needle!r}).\n"
+            f"output tail: {combined[-1500:]}"
+        )
+
+
+def test_f2a_absent_by_key_stops_the_run(nxf_runner):
+    """The by-key is absent from the descendant's index."""
+    (nxf_runner.work_dir / "a.txt").write_text("a")
+    (nxf_runner.work_dir / "b.txt").write_text("b")
+
+    result = _run_with_retry(nxf_runner, _f2_script("[:]"), timeout=60)
+    _assert_f2_aborts(result, "F2a")
+
+
+def test_f2b_empty_by_key_list_stops_the_run(nxf_runner):
+    """The by-key is present but holds an empty list.
+
+    The worse of the two and the variant `lung-microbiome` hit: the loop over
+    the hash list iterates zero times, so the item vanishes without even
+    reaching the dispatch log. A run that lost items this way had nothing at
+    all to show for it — which is why that scope reported "no violations
+    logged" while items were disappearing.
+    """
+    (nxf_runner.work_dir / "a.txt").write_text("a")
+    (nxf_runner.work_dir / "b.txt").write_text("b")
+
+    result = _run_with_retry(nxf_runner, _f2_script('["a": []]'), timeout=60)
+    _assert_f2_aborts(result, "F2b")
