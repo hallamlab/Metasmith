@@ -94,6 +94,30 @@ per-shard cost nearly pure arithmetic and remove the duplication entirely.
 **Flagged, not adopted.** Doing it mid-prototype would change what the before/after arms
 above are comparing, and the numbers say the sharded lane is affordable as it stands.
 
+## The assembly step, and why it can be measured without a cluster
+
+`direction_ensemble` declared `cpus=4, GB(32), hours=2` beside a comment reading
+"Minutes." It now reads `cpus=1, GB(4), minutes=30`, and this is the measurement.
+
+Every input the step takes is on disk from r8 — the two member seams in the bake, the
+MetaCyc `reactions.dat`, MetaNetX — and none of the three commands imports heavy
+chemistry, so the whole step runs locally in the `msm` env. It reproduces r8 exactly:
+the calibration and its 17,184 points frame-identical to the deployed ones, and
+`direction_annotation.parquet` frame-identical to the deployed seam, whose own sha256
+is `src_direction_sha256`.
+
+| command | wall clock | peak RSS |
+|---|---:|---:|
+| `direction.curated` | 9.4 s | 224 MB |
+| `direction.calibrate` | 3.6 s | 252 MB |
+| `direction.combine` | 2.3 s | 354 MB |
+
+Single-threaded, because the lane sets `OMP_NUM_THREADS=1` itself.
+
+**That the assembly reproduces r8 locally is worth more than the resource number.** It
+means the calibration, σ₀ and combine arms of a re-bake can be re-run and compared off
+the cluster, one variable at a time, against member tables the cluster produced.
+
 ## What was not measured
 
 **dGbyG was not run locally.** `build-refs-dgbyg` does not exist on this workstation and
