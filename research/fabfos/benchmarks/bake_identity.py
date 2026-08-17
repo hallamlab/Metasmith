@@ -85,6 +85,48 @@ def require_fresh(out: Path, bake: Path = DEPLOYED) -> Path:
 # the one decode every study was writing for itself
 # ---------------------------------------------------------------------------
 
+def _vocab(bake: Path) -> dict:
+    v = pd.read_parquet(Path(bake) / "vocab.parquet")
+    return {k: g.set_index("code").symbol for k, g in v.groupby("kind")}
+
+
+def decode_atom_pairs(bake: Path = DEPLOYED) -> pd.DataFrame:
+    """The atom-transfer table in the substrate/product schema `load_pairs` reads.
+
+    The bake stores `(rxn, tail_met, head_met, element, ...)` as integer vocab codes.
+    Handing `load_pairs` the encoded table does not raise -- `df[df.element == "C"]`
+    compares ints to a string and returns zero rows -- so the graph comes back empty
+    rather than wrong-looking.
+    """
+    sym = _vocab(bake)
+    ap = pd.read_parquet(Path(bake) / "atom_pairs.parquet")
+    df = pd.DataFrame({
+        "mnxr": ap.rxn.map(sym["rxn"]),
+        "element": ap.element.map(sym["element"]),
+        "substrate": ap.tail_met.map(sym["met"]),
+        "product": ap.head_met.map(sym["met"]),
+        "sub_idx": ap.tail_rank,
+        "prod_idx": ap.head_rank,
+        "pair_w": ap.pair_w,
+        "method": ap.method.map(sym["method"]),
+        "source": ap.source.map(sym["source"]),
+        "confidence": ap.confidence,
+    })
+    # MetaNetX's EMPTY sentinel is a real code in the bake, not a null; it must not
+    # become a reaction id.
+    return df[(df.mnxr != "EMPTY") & df.substrate.notna() & df["product"].notna()]
+
+
+def build_atom_pairs(out: Path, bake: Path = DEPLOYED) -> Path:
+    """`decode_atom_pairs` cached at `out` and stamped."""
+    out, bake = Path(out), Path(bake)
+    if (hit := fresh(out, bake)) is not None:
+        return hit
+    out.parent.mkdir(parents=True, exist_ok=True)
+    decode_atom_pairs(bake).to_parquet(out)
+    return keep(out, bake)
+
+
 def decode_direction_ratios(bake: Path = DEPLOYED) -> pd.DataFrame:
     """`(mnxr, ratio)` from the bake's integer-coded table -- the shape
     `ecspr.model.build.load_direction_ratios` reads, in memory."""
