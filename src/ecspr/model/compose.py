@@ -51,8 +51,12 @@ The unit is the GENE, not the reaction, and a gene's belief is diluted on the wa
 
 `M` counts GENES, so it reads `belief_mass` -- the pre-pooling ledger, in ORF units. `G`
 is a CONDUCTANCE and reads the pooled `E_r`, the same numbers the member edges carry.
-They were one quantity before pooling and are two now; feeding `M`'s scale into `G` would
-put bridges one to two orders of magnitude above every member edge in the same network.
+They were one quantity before pooling and are two now, and the map between them is not a
+rescale `g0` could absorb: it is compressive at the top and floored at `sigma(lam0)` at
+the bottom, so feeding mass into `G` mis-scales each bridge by a factor that runs from
+0.009 to 103 across the carbon metabolites of one genome. A metabolite whose neighbours
+are well-corroborated would get a bridge ~10x too strong against a network that had
+moved, while a sparsely-annotated one got 100x too weak.
 
 `D` is relative rather than a raw difference because the raw difference is 96% correlated
 with metabolite size (corr = 0.963 on this community): Nostoc carries 1.86x
