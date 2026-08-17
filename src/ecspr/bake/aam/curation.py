@@ -277,22 +277,58 @@ def admit(rows: pd.DataFrame, mets: pd.DataFrame, strict=True):
     return out
 
 
-def gate_bodies_cancel(subs, prods, resolved: dict):
-    """Do the curated `*` bodies pair across the reaction?
+def residue_slots(m, resolved, ph_mnxms, counts_of, residue_of):
+    """Unspecified `*` slots this participant carries, whichever source drew it.
 
-    A curated carrier draws its body as `*` and counts it as zero for every element.
-    That is only safe for balance when the SAME body stands on both sides and cancels. A
-    carrier appearing on ONE side would have its unknown body silently counted as
-    nothing, and the balance verdict would be about a molecule that does not exist.
+    ONE LEDGER FOR THE BODY, and that is the whole point of the function existing. A
+    body reaches a reaction by two routes -- a curated row draws it as `*` in the SMILES
+    this run supplies, and MetaNetX draws it as an R-group in a structure it already
+    had, recounted into `residue_of`. Those two used to be tallied in two different
+    places: `gate_bodies_cancel` saw only the curated half and `concrete_balance` only
+    the recounted half. A curated body on one side and a MetaNetX body on the other
+    therefore failed BOTH checks, each for the half it could not see, when between them
+    the two bodies cancel exactly.
+
+    `None` is an UNKNOWN slot count and is not a zero -- the caller must refuse it. A
+    placeholder is scaffolding whose atoms are suppressed downstream, so it carries no
+    body here either. A plain-formula participant carries none by construction:
+    `count_element` refuses a `*` outright, so anything it counted had no remainder.
+    """
+    if m in ph_mnxms:
+        return 0
+    if m in resolved:
+        return resolved[m].count("*")
+    if m in counts_of:
+        return residue_of.get(m)
+    return 0
+
+
+def gate_bodies_cancel(subs, prods, resolved: dict, ph_mnxms=(), counts_of=None,
+                       residue_of=None):
+    """Do the unspecified `*` bodies pair across the reaction?
+
+    A carrier draws its body as `*` and counts it as zero for every element. That is only
+    safe for balance when the SAME body stands on both sides and cancels. A carrier
+    appearing on ONE side would have its unknown body silently counted as nothing, and
+    the balance verdict would be about a molecule that does not exist.
 
     This is also the answer to the standing objection that "the body cancels, so a wrong
     carrier balances as well as the right one". That objection kills IDENTITY assertion
     and not this one: identity was never tested by balance, whereas the DIFFERENCE the
     row asserts -- one sulfur, say -- is both what is claimed and what is tested.
+
+    AN UNKNOWN SLOT COUNT PASSES HERE and is refused by `concrete_balance` instead. Both
+    are refusals and the reaction dies either way; refusing it there keeps "the bodies do
+    not cancel" and "a count is unknown" as separate verdicts in the tally, which is the
+    difference between a diagnosable bucket and an undiagnosable one.
     """
-    def n_star(ms):
-        return sum(resolved[m].count("*") for m in ms if m in resolved)
-    return n_star(subs) == n_star(prods)
+    def slots(ms):
+        return [residue_slots(m, resolved, ph_mnxms, counts_of or {}, residue_of or {})
+                for m in ms]
+    s, p = slots(subs), slots(prods)
+    if any(v is None for v in s + p):
+        return True
+    return sum(s) == sum(p)
 
 
 # ONE COUNTER IN THE TREE, and this is the alias rather than a second copy of it. Three
@@ -323,9 +359,13 @@ def concrete_balance(subs, prods, formula_of, ph_mnxms, X, resolved=None,
     `counts_of` IS THE RECOUNT, AND IT COMES FIRST. A `C70H131N3O9PS*2` species has no
     countable formula and an exactly countable structure, so consulting the formula
     first would abstain on a reaction whose atoms are known. The count it supplies is
-    exact for the EXPLICIT atoms only, which is why `residue_of` travels with it: the
+    exact for the EXPLICIT atoms only, which is why the residue travels with it: the
     unspecified slots have to cancel across the equation before the count means
     anything about conservation, and an unknown slot count is a refusal like any other.
+
+    THE SLOTS ARE COUNTED BY `residue_slots`, NOT HERE, and the reason is in that
+    function's docstring: a curated `*` and a MetaNetX R-group are the same claim from
+    two sources, and this check used to see only the second of them.
     """
     resolved = resolved or {}
     counts_of = counts_of or {}
@@ -340,12 +380,12 @@ def concrete_balance(subs, prods, formula_of, ph_mnxms, X, resolved=None,
                 c = count_struct(resolved[m], X)
             elif m in counts_of:
                 c = counts_of[m][ELEMENTS.index(X)]
-                slots.append(residue_of.get(m))
             else:
                 c = count_formula(formula_of.get(m), X)
             if c is None:
                 return None
             n += c
+            slots.append(residue_slots(m, resolved, ph_mnxms, counts_of, residue_of))
         tot[side], res[side] = n, slots
     if any(s is None for s in res["s"] + res["p"]):
         return None          # an unknown residue count is not a zero
@@ -550,6 +590,12 @@ def lane_twin(refs: Refs, targets):
         cD = refs.counts_of.get(D)
         if not cD:
             continue
+        # THIS LANE BORROWS A STRUCTURE AND SO CANNOT ADD A BODY TO IT, which makes it
+        # the one lane that cannot be brought into line with the others on how many `*`
+        # a carrier-bodied name declares. Declining those was measured and REFUSED: it
+        # strands 50 metabolites that no lower lane picks up, and 52 reactions lose their
+        # only structure -- a larger loss than the inconsistency costs. The stem-overlap
+        # requirement above is what keeps the borrow honest instead.
         seen.add(P)
         basis = (f"single-blocker conservation: {P} '{refs.name_of.get(P)}' is the "
                  f"skeleton twin of structured {D} '{refs.name_of.get(D)}' in the 1:1 "
@@ -593,6 +639,18 @@ def lane_transform(refs: Refs, targets):
             if P in seen or P in refs.smiles_of:
                 continue
             nm = refs.name_of.get(P, "") or ""
+            # THE BODY BELONGS TO THE NAME, NOT TO THE LANE. `lane_conserved` drew
+            # `4-methyl-trans-hex-2-enoyl-ACP` with one `*`; this lane drew its substrate
+            # twin with none, and the dehydratase step between them was refused for an
+            # imbalance neither lane's chemistry claims -- the carrier cannot leave, and
+            # both sides say so once they agree on how many bodies the name declares.
+            #
+            # ONLY THE CAP COUNT IS TAKEN FROM THE SPLIT, not the cargo. Resolving the
+            # base against `strip_carriers`' core instead of the whole name reads better
+            # and measured worse: it costs 338 reactions and 808 balanced keys, because
+            # a name whose carrier tokens are part of how its budget resolves stops
+            # resolving at all and the reaction loses its only structure.
+            caps = len(BODY_RE.findall(nm))
             toks = norm(nm).split()
             if not toks:
                 continue
@@ -621,13 +679,15 @@ def lane_transform(refs: Refs, targets):
             counts = tuple(cB[i] + delta[i] for i in range(4))
             if any(c < 0 for c in counts):
                 continue
-            veh = _vehicle(counts)
+            veh = _vehicle(counts, caps=caps)
             if not veh:
                 continue
             seen.add(P)
             basis = (f"named transform: '{nm}' parses as base '{' '.join(base_toks)}' "
                      f"({bid}, C/N/S/P {cB}) plus modifier(s) contributing {tuple(delta)}; "
-                     f"vehicle carries the summed budget")
+                     f"vehicle carries the summed budget"
+                     + (f" plus {caps} `*` for the carrier body the name declares"
+                        if caps else ""))
             rows += _row(P, veh, refs.name_of.get(P), counts, basis, "transform")
     return rows
 
@@ -659,6 +719,8 @@ def lane_fragment(refs: Refs, targets):
             nm = refs.name_of.get(P, "") or ""
             if placeholder_for(nm) is not None:
                 continue
+            # The cap count only, and for the reason `lane_transform` records.
+            caps = len(BODY_RE.findall(nm))
             toks = [t for t in norm(nm).split() if not _LOCANT.match(t)]
             tot, frags, parts = [0, 0, 0, 0], 0, []
             for t in toks:
@@ -675,12 +737,14 @@ def lane_fragment(refs: Refs, targets):
                         tot[i] += c[i]
             if frags < 2:
                 continue
-            veh = _vehicle(tuple(tot))
+            veh = _vehicle(tuple(tot), caps=caps)
             if not veh:
                 continue
             seen.add(P)
             basis = (f"fragment sum: '{nm}' resolves into {frags} residues "
-                     f"({', '.join(parts)}) summing to C/N/S/P {tuple(tot)}")
+                     f"({', '.join(parts)}) summing to C/N/S/P {tuple(tot)}"
+                     + (f", plus {caps} `*` for the carrier body the name declares"
+                        if caps else ""))
             rows += _row(P, veh, refs.name_of.get(P), tuple(tot), basis, "fragment")
     return rows
 
@@ -1280,6 +1344,27 @@ CARRIER_PATS = [r"\[acyl-carrier protein\]", r"acyl-?carrier ?protein-?", r"\[ac
                 r"\bholo\b", r"\bapo\b"]
 CARRIER_RE = re.compile("|".join(CARRIER_PATS), re.I)
 
+# THE SUBSET A VEHICLE-BUILDING LANE MAY DRAW A BODY FOR, derived from the list above so
+# the two cannot drift. Two different reasons for the two groups:
+#
+#   * `holo`, `apo` and `trna` are STATE PREFIXES rather than body markers. The bare form
+#     of the same protein carries no word at all, so drawing a cap for `apo-[X ligase]`
+#     and none for `[X ligase]` manufactures on one side exactly the asymmetry this rule
+#     exists to remove on the other. Measured: 49 reactions and 112 balanced keys lost
+#     against r6, gaining nothing.
+#   * `[protein]` IS a body and is excluded anyway, for one reaction. MNXR171321 joins two
+#     protein bodies into one, so counting them refuses it -- correctly, the two do not
+#     cancel -- and the r6 bake holds its sulfur key. Counting them is worth +7 reactions
+#     and +10 keys and costs that one, and the coverage stop-line does not permit the
+#     trade. Revisit if the stop-line is ever relaxed to net rather than per-key.
+#
+# `lane_conserved` still reads the FULL list: it resolves a budget rather than adding a
+# cap to one, and there a prefix is evidence of a body rather than a claim about count.
+STATE_PREFIX_PATS = (r"\btrna\b", r"\bholo\b", r"\bapo\b",
+                     r"\[protein\]", r"protein\]-", r"-\[protein")
+BODY_RE = re.compile("|".join(p for p in CARRIER_PATS if p not in STATE_PREFIX_PATS),
+                     re.I)
+
 
 def strip_carriers(name):
     """(caps, the name with its carrier motifs removed) -- the cargo half of the split."""
@@ -1844,7 +1929,7 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
     consensus. The completion itself -- which structures, which bodies cancel, which
     elements balance -- is unchanged, and it never needed a mapper:
 
-      * `gate_bodies_cancel` is arithmetic over the curated `*` counts.
+      * `gate_bodies_cancel` is arithmetic over the `*` counts, curated and MetaNetX's.
       * `concrete_balance` is arithmetic over formulas and curated structures.
 
     Both are computed here so a rescued reaction arrives at the mappers already carrying
@@ -1873,7 +1958,9 @@ def complete(refs: Refs, resolved: dict, targets, smiles_limit=8000, atom_limit=
         if any(v is None for v in res.values()):
             tally["a generic with no admissible placeholder"] += 1
             continue
-        if not gate_bodies_cancel(r.substrates, r.products, resolved):
+        if not gate_bodies_cancel(r.substrates, r.products, resolved,
+                                  ph_mnxms=set(res), counts_of=refs.counts_of,
+                                  residue_of=refs.residue_of):
             tally["REFUSED: curated bodies do not cancel"] += 1
             continue
         for m, (s, t) in res.items():
