@@ -220,3 +220,51 @@ def test_an_absent_dgbyg_table_does_not_relabel_silence_as_refusal():
     declined = C.combine_row({"mnxr": "R", "dgbyg_wildcard": True},
                              calib={}, sigma_0=canon.DIR_SIGMA_0)
     assert declined["dir_method"] == "refused"
+
+
+# --- the substitution width -----------------------------------------------
+#
+# r9 lets a curated model compound stand in for a participant MetaNetX underspecifies.
+# That is an ASSERTION with a width, and where the width is folded in decides whether the
+# lane repeats r8's defect. `eq_vote` recognises an eQuilibrator group cancellation by
+# testing sigma against the floor, so widening the member's own sigma would lift a
+# cancelling zero over that floor and hand it back the tier r8 was baked to take away.
+
+def test_a_group_cancellation_stays_refused_however_wide_the_substitution():
+    """The re-promotion r8 removed, attempted through the new column."""
+    r = {"mnxr": "R", "eq_dg": 0.0, "eq_sigma": C.SIGMA_FLOOR, "eq_uses_gc": False,
+         "eq_sigma_sub": 5.0}
+    row = C.combine_row(r, calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert row["dir_tier"] == 0, "a group cancellation was voted through sigma_sub"
+    assert row["ratio"] == 1.0
+
+
+def test_a_substituted_measurement_is_not_reported_as_measured():
+    """Tier 1 is the tier a consumer reads as MEASURED, and eQuilibrator measured the
+    MODEL equation. The anchor gate justifies the number, not the provenance."""
+    base = {"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0, "eq_uses_gc": False}
+    plain = C.combine_row(base, calib={}, sigma_0=canon.DIR_SIGMA_0)
+    subbed = C.combine_row({**base, "eq_sigma_sub": 2.0}, calib={},
+                           sigma_0=canon.DIR_SIGMA_0)
+    assert plain["dir_tier"] == 1 and plain["dir_method"] == "eq_rc"
+    assert subbed["dir_tier"] == 2, "a substituted row was reported as measured"
+    assert subbed["dir_method"] == "eq_rc_sub"
+
+
+def test_the_substitution_width_widens_the_posterior_and_shrinks_the_ratio():
+    """An asserted structure that changed nothing about the answer's confidence would be
+    a number nobody could audit."""
+    base = {"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0, "eq_uses_gc": True}
+    plain = C.combine_row(base, calib={}, sigma_0=canon.DIR_SIGMA_0)
+    subbed = C.combine_row({**base, "dgbyg_sigma_sub": 8.0}, calib={},
+                           sigma_0=canon.DIR_SIGMA_0)
+    assert subbed["sigma"] > plain["sigma"]
+    assert abs(subbed["dG_prime"]) < abs(plain["dG_prime"]), "shrinkage ignored the width"
+    assert subbed["sigma_sub"] == 8.0
+
+
+def test_an_absent_sigma_sub_column_reads_as_no_assertion():
+    """r8's member tables predate the column; it must arrive as zero width, not NaN."""
+    r = {"mnxr": "R", "eq_dg": -20.0, "eq_sigma": 1.0, "eq_uses_gc": False}
+    row = C.combine_row(r, calib={}, sigma_0=canon.DIR_SIGMA_0)
+    assert row["sigma_sub"] == 0.0 and row["dir_tier"] == 1

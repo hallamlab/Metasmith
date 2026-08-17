@@ -16,6 +16,7 @@ input	participants_with_smiles	32547
 input	participants_parseable	32547
 input	participants_wildcard	8307
 input	resolution_supplied	1
+input	substitutions	0
 input	mnxm_only	0
 mechanism	dgbyg:no_stoich	0
 mechanism	dgbyg:no_smiles	24179

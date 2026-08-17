@@ -56,6 +56,12 @@ from .thermo_dgbyg import _has_wildcard
 MODEL_PREFIX = "MODEL:"
 
 MODEL_COLUMNS = ("model_key", "name", "smiles", "inchi", "inchikey", "basis")
+# Optional. A model row naming another model key declares itself an ALTERNATIVE to it --
+# a different compound a curator could defensibly have chosen for the same role. `anchor`
+# scores the anchor reaction under each and writes the spread back as the row's
+# `congeners`, which is how an asserted structure acquires a width instead of implying
+# none. Optional rather than required so a table can be authored before it is priced.
+MODEL_OPTIONAL = ("congener_of",)
 ROW_COLUMNS = ("kind", "mnxm", "mnx_name", "terms", "couple_id", "state",
                "e0_V", "n_e", "n_h", "anchor_mnxr", "congeners", "basis")
 KINDS = ("carrier", "polymer")
@@ -121,8 +127,11 @@ class Substitutions:
     def __init__(self, models: dict | None = None, rows: pd.DataFrame | None = None,
                  by_mnxm: dict | None = None):
         self.models = models or {}
-        self.rows = rows if rows is not None else pd.DataFrame(columns=ROW_COLUMNS)
+        self.rows = rows if rows is not None else pd.DataFrame(columns=list(ROW_COLUMNS))
         self._by_mnxm = by_mnxm or {}
+        # Refusals ship beside accepts, so a table's silence about a compound is a
+        # recorded decision rather than an absence somebody has to reconstruct.
+        self.decisions = pd.DataFrame(columns=list(DECISION_COLS))
 
     def __len__(self) -> int:
         return len(self._by_mnxm)
@@ -208,7 +217,15 @@ def _admit_models(df: pd.DataFrame) -> dict:
         if not _cited(r.basis):
             raise Refused(f"[substitute] model {key}: no basis. A curated row cannot be "
                           f"verified against anything -- the citation IS its evidence")
-        out[key] = {c: getattr(r, c) for c in MODEL_COLUMNS}
+        rec = {c: getattr(r, c) for c in MODEL_COLUMNS}
+        for c in MODEL_OPTIONAL:
+            rec[c] = getattr(r, c, "")
+        out[key] = rec
+    for key, rec in out.items():
+        parent = rec.get("congener_of")
+        if _cited(parent) and str(parent) not in out:
+            raise Refused(f"[substitute] model {key}: congener_of {parent!r} is not a "
+                          f"declared model")
     return out
 
 
@@ -311,11 +328,94 @@ def _heavy_counts(smiles: str) -> dict[str, int]:
     return out
 
 
-def load(directory: Path | None, props: dict, names: dict) -> Substitutions:
+DECISION_COLS = ("kind", "mnxm", "mnx_name", "couple_id", "verdict", "predicate", "detail")
+
+# The order a reader gets their reason in. First failure wins, so the ladder runs from
+# "this row is not about what you think" to "this row's chemistry is wrong" -- a stale id
+# reported as a potential-gate failure would send a curator to the wrong question.
+ROW_PREDICATES = ("kind_known", "not_duplicated", "stale_id", "cited", "anchored",
+                  "replaceable_only", "terms_parse", "models_declared", "congener_spread")
+COUPLE_PREDICATES = ("couple_complete", "no_heavy_transfer", "potential_declared",
+                     "potential_within_decade")
+
+
+def _check_row(r, props: dict, names: dict, models: dict, seen: set):
+    """`(predicate, detail)` for the first predicate this row fails, or `(None, rec)`."""
+    row_id = f"{r.kind}/{r.mnxm}"
+    if str(r.kind) not in KINDS:
+        return "kind_known", f"[substitute] {row_id}: kind must be one of {KINDS}"
+    if str(r.mnxm) in seen:
+        return "not_duplicated", f"[substitute] {r.mnxm} substituted twice"
+    # STALE-ID TRIPWIRE. Not name-as-proof -- the check that the id the curator reasoned
+    # about is the id they wrote down.
+    have = str(names.get(str(r.mnxm), "") or "").strip()
+    if have != str(r.mnx_name).strip():
+        return "stale_id", (
+            f"[substitute] {r.mnxm}: row says {str(r.mnx_name)!r}, chem_prop says "
+            f"{have!r}. The id is the key -- a mismatch means the row is about a "
+            f"different compound than the curator reasoned about")
+    if not _cited(r.basis):
+        return "cited", f"[substitute] {row_id}: no basis"
+    if not _cited(r.anchor_mnxr):
+        return "anchored", (
+            f"[substitute] {row_id}: no anchor_mnxr. Balance is necessary and worthless "
+            f"as evidence here -- a row is admitted because a reaction a member already "
+            f"scored still scores the same under the model compound, not because the "
+            f"atoms add up")
+    try:
+        _gate_replaceable(str(r.mnxm), props, row_id)
+    except Refused as e:
+        return "replaceable_only", str(e)
+    try:
+        terms = _parse_terms(r.terms, row_id)
+    except Refused as e:
+        return "terms_parse", str(e)
+    for key, _ in terms:
+        if key not in models:
+            return "models_declared", (f"[substitute] {row_id}: term names {key!r}, "
+                                       f"which models.tsv does not declare")
+    try:
+        sigma_sub = _congener_spread(r, models, row_id)
+    except Refused as e:
+        return "congener_spread", str(e)
+    rec = {c: getattr(r, c) for c in ROW_COLUMNS}
+    rec["terms"] = terms
+    rec["sigma_sub"] = sigma_sub
+    return None, rec
+
+
+def _check_couples(frame: pd.DataFrame, models: dict):
+    """`(predicate, detail)` for the first couple-level failure, or `(None, None)`.
+
+    Two gates, four named outcomes: each gate can fail for the structural reason or the
+    chemical one, and a curator needs those apart -- "you forgot the reduced row" and
+    "this couple carries atoms through" are different work.
+    """
+    for default, run in (("couple_complete", lambda: _gate_couple(frame, models)),
+                         ("potential_declared", lambda: _gate_potential(frame))):
+        try:
+            run()
+        except Refused as e:
+            msg = str(e)
+            if "differ by heavy atoms" in msg:
+                return "no_heavy_transfer", msg
+            if "past DIR_DECADE" in msg:
+                return "potential_within_decade", msg
+            return default, msg
+    return None, None
+
+
+def load(directory: Path | None, props: dict, names: dict,
+         *, collect: bool = False) -> Substitutions:
     """Read and admit the tables, or return the empty configuration.
 
     `props` and `names` are MetaNetX's own, and both are needed: props for the
     replaceable-only gate, names for the stale-id tripwire.
+
+    `collect=True` is the `check` verb's mode: run every predicate on every row and record
+    the verdicts instead of aborting on the first. The pipeline never uses it -- a table
+    that half-loads is worse than one that refuses -- but a curator authoring twenty rows
+    needs all twenty verdicts, not the first.
     """
     if directory is None:
         return Substitutions()
@@ -327,44 +427,35 @@ def load(directory: Path | None, props: dict, names: dict) -> Substitutions:
     if missing:
         raise Refused(f"[substitute] substitutions table lacks columns: {sorted(missing)}")
 
-    parsed, by_mnxm = [], {}
+    parsed, by_mnxm, decisions = [], {}, []
     for r in df.itertuples(index=False):
-        row_id = f"{r.kind}/{r.mnxm}"
-        if str(r.kind) not in KINDS:
-            raise Refused(f"[substitute] {row_id}: kind must be one of {KINDS}")
-        if r.mnxm in by_mnxm:
-            raise Refused(f"[substitute] {r.mnxm} substituted twice")
-        # STALE-ID TRIPWIRE. Not name-as-proof -- the check that the id the curator
-        # reasoned about is the id they wrote down.
-        have = str(names.get(str(r.mnxm), "") or "").strip()
-        if have != str(r.mnx_name).strip():
-            raise Refused(
-                f"[substitute] {r.mnxm}: row says {str(r.mnx_name)!r}, chem_prop says "
-                f"{have!r}. The id is the key -- a mismatch means the row is about a "
-                f"different compound than the curator reasoned about")
-        if not _cited(r.basis):
-            raise Refused(f"[substitute] {row_id}: no basis")
-        if not _cited(r.anchor_mnxr):
-            raise Refused(f"[substitute] {row_id}: no anchor_mnxr. Balance is necessary "
-                          f"and worthless as evidence here -- a row is admitted because a "
-                          f"reaction a member already scored still scores the same under "
-                          f"the model compound, not because the atoms add up")
-        _gate_replaceable(str(r.mnxm), props, row_id)
-        terms = _parse_terms(r.terms, row_id)
-        for key, _ in terms:
-            if key not in models:
-                raise Refused(f"[substitute] {row_id}: term names {key!r}, which "
-                              f"models.tsv does not declare")
-        rec = {c: getattr(r, c) for c in ROW_COLUMNS}
-        rec["terms"] = terms
-        rec["sigma_sub"] = _congener_spread(r, models, row_id)
-        parsed.append(rec)
-        by_mnxm[str(r.mnxm)] = rec
+        pred, payload = _check_row(r, props, names, models, set(by_mnxm))
+        base = dict(kind=r.kind, mnxm=r.mnxm, mnx_name=r.mnx_name, couple_id=r.couple_id)
+        if pred is not None:
+            if not collect:
+                raise Refused(payload)
+            decisions.append(dict(base, verdict="refused", predicate=pred, detail=payload))
+            continue
+        decisions.append(dict(base, verdict="admitted", predicate="", detail=""))
+        parsed.append(payload)
+        by_mnxm[str(r.mnxm)] = payload
 
-    frame = pd.DataFrame(parsed)
-    _gate_couple(frame, models)
-    _gate_potential(frame)
-    return Substitutions(models, frame, by_mnxm)
+    frame = pd.DataFrame(parsed) if parsed else pd.DataFrame(columns=list(ROW_COLUMNS))
+    if parsed:
+        pred, detail = _check_couples(frame, models)
+        if pred is not None:
+            if not collect:
+                raise Refused(detail)
+            # A couple-level failure condemns the whole couple, not one row: the reader
+            # needs to see both halves marked, or they fix one and re-run into the other.
+            for d in decisions:
+                if d["verdict"] == "admitted":
+                    d.update(verdict="refused", predicate=pred, detail=detail)
+            parsed, by_mnxm = [], {}
+            frame = pd.DataFrame(columns=list(ROW_COLUMNS))
+    out = Substitutions(models, frame, by_mnxm)
+    out.decisions = pd.DataFrame(decisions, columns=list(DECISION_COLS))
+    return out
 
 
 def _congener_spread(r, models: dict, row_id: str) -> float:
@@ -396,3 +487,158 @@ def _congener_spread(r, models: dict, row_id: str) -> float:
             f"({canon.DIR_DECADE:.2f}). The model compound is not pinning the answer -- "
             f"bring it back rather than widening this gate")
     return spread / 2.0
+
+
+# =====================================================================
+# the command line
+# =====================================================================
+
+def _tables(args):
+    from .refdata import load_mnxm_names, load_mnxm_props
+    props = load_mnxm_props(args.chem_prop)
+    names = load_mnxm_names(args.chem_prop)
+    return props, names
+
+
+def cmd_check(args):
+    """Every predicate on every row, and what the admitted rows would reach.
+
+    Reports two numbers a curator cannot get from the table itself: how many reactions the
+    admitted rows actually unblock, and -- the answer to "this is just the ones somebody
+    happened to look at" -- which accessions carry a name already admitted under some other
+    id and are NOT in the table. Under-coverage becomes a printed number instead of an
+    absence, the way `twins.alias_index` answers the same objection.
+    """
+    from .refdata import load_mnxr_stoich
+    props, names = _tables(args)
+    subs = load(args.tables, props, names, collect=True)
+    d = subs.decisions
+    n_bad = int((d["verdict"] == "refused").sum())
+    print(f"[substitute] {len(d):,} rows · {len(d) - n_bad:,} admitted · {n_bad:,} refused")
+    for pred in ROW_PREDICATES + COUPLE_PREDICATES:
+        n = int((d["predicate"] == pred).sum())
+        if n:
+            print(f"    {pred:<26} {n:>5,}")
+            for detail in d.loc[d["predicate"] == pred, "detail"].head(3):
+                print(f"        {detail}")
+
+    reached = 0
+    if args.reac_prop:
+        stoich = load_mnxr_stoich(args.reac_prop)
+        reached = sum(1 for _, (st, _b, _t) in stoich.items() if subs.covers(st))
+        print(f"[substitute] admitted rows touch {reached:,} of {len(stoich):,} reactions")
+
+    # The under-coverage report. An accession whose name normalises to one already admitted
+    # is a compound the curator's own reasoning covers and their table does not.
+    admitted = {str(m) for m in d.loc[d["verdict"] == "admitted", "mnxm"]}
+    want = {_norm(names.get(m, "")) for m in admitted} - {""}
+    missed = sorted(m for m, n in names.items()
+                    if m not in admitted and _norm(n) in want)
+    print(f"[substitute] {len(missed):,} accessions share an admitted name and are NOT in "
+          f"the table" + (f": {missed[:10]}" if missed else ""))
+
+    if args.out:
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        d.to_csv(out / "decisions.tsv", sep="\t", index=False)
+        pd.DataFrame([dict(rows=len(d), admitted=len(d) - n_bad, refused=n_bad,
+                           reactions_reached=reached, name_missed=len(missed))]) \
+            .to_csv(out / "summary.tsv", sep="\t", index=False)
+        pd.DataFrame([dict(mnxm=m, name=names.get(m, "")) for m in missed]) \
+            .to_csv(out / "name_missed.tsv", sep="\t", index=False)
+        print(f"[substitute] -> {out}")
+    return 1 if n_bad else 0
+
+
+def _norm(name) -> str:
+    import re as _re
+    return _re.sub(r"[^a-z0-9]", "", str(name or "").lower())
+
+
+def cmd_anchor(args):
+    """Re-score each row's anchor reaction under the model compound, and refuse a drift.
+
+    THE ANSWER TO "how do you refuse a substitution that balances but is thermodynamically
+    unjustified". Balance is necessary and worthless as evidence here: `[Fe+3]`/`[Fe+2]`
+    balances ferredoxin perfectly and returns a confident wrong number. What a row has to
+    survive is a reaction MetaNetX ALREADY balances and a member ALREADY scored still
+    scoring the same once the real carrier is swapped for the model.
+
+    The member runs for real -- that is the point, and it is why this is a verb rather than
+    a load-time gate. Only `eq` is runnable on this workstation; `build-refs-dgbyg` does
+    not exist here, so the dGbyG arm has to be run in its own image.
+    """
+    from .refdata import load_mnxr_stoich
+    props, names = _tables(args)
+    subs = load(args.tables, props, names)
+    stoich = load_mnxr_stoich(args.reac_prop)
+    wide = subs.props(props)
+
+    if args.member == "eq":
+        from .thermo_eq import EquilibratorMember as M
+    else:
+        from .thermo_dgbyg import DgbygMember as M
+    member = M()
+
+    baseline = {}
+    if args.member_table:
+        mt = pd.read_parquet(args.member_table)
+        baseline = dict(zip(mt["mnxr"].astype(str), mt["dg"]))
+
+    rows, bad = [], 0
+    for rec in subs.rows.to_dict("records"):
+        mnxr = str(rec["anchor_mnxr"])
+        s = stoich.get(mnxr)
+        if s is None:
+            rows.append(dict(mnxm=rec["mnxm"], anchor=mnxr, verdict="no_stoich"))
+            bad += 1
+            continue
+        st = s[0]
+        was = baseline.get(mnxr)
+        dg, sig, _flag, reason = member.dgr(subs.rewrite(st), wide)
+        drift = None if (dg is None or was is None or pd.isna(was)) else abs(dg - float(was))
+        verdict = ("member_silent" if dg is None else
+                   "no_baseline" if drift is None else
+                   "ok" if drift <= canon.DIR_DECADE else "DRIFT")
+        bad += verdict in ("DRIFT", "member_silent", "no_stoich")
+        rows.append(dict(mnxm=rec["mnxm"], anchor=mnxr, member=args.member,
+                         baseline_dg=was, model_dg=dg, sigma=sig, drift=drift,
+                         reason=reason, verdict=verdict))
+        print(f"  {rec['mnxm']:<14} {mnxr:<12} {verdict:<14} "
+              f"baseline {was} -> model {dg} (drift {drift})")
+
+    df = pd.DataFrame(rows)
+    if args.out:
+        df.to_csv(args.out, sep="\t", index=False)
+        print(f"[substitute] -> {args.out}")
+    print(f"[substitute] {len(df):,} anchors · {bad:,} not ok "
+          f"(DIR_DECADE = {canon.DIR_DECADE:.2f} kJ/mol)")
+    return 1 if bad else 0
+
+
+def parse_args(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("check"); p.set_defaults(fn=cmd_check)
+    p.add_argument("--tables", required=True)
+    p.add_argument("--chem-prop", required=True)
+    p.add_argument("--reac-prop", default=None)
+    p.add_argument("--out", default=None)
+
+    p = sub.add_parser("anchor"); p.set_defaults(fn=cmd_anchor)
+    p.add_argument("--tables", required=True)
+    p.add_argument("--chem-prop", required=True)
+    p.add_argument("--reac-prop", required=True)
+    p.add_argument("--member", required=True, choices=["eq", "dgbyg"])
+    p.add_argument("--member-table", default=None,
+                   help="the deployed member table the anchor's baseline dG is read from")
+    p.add_argument("--out", default=None)
+    return ap.parse_args(argv)
+
+
+if __name__ == "__main__":
+    import sys
+    a = parse_args()
+    sys.exit(a.fn(a))
