@@ -41,7 +41,7 @@ MODELS = pd.DataFrame([
 def _row(**kw):
     base = dict(kind="carrier", mnxm="MNXM137", mnx_name="NAD(P)",
                 terms=f"1*{NAD_OX}", couple_id="nadp", state="ox",
-                e0_V=-0.320, n_e=2, n_h=1, anchor_mnxr="MNXR100001",
+                e0_V=-0.324, e0_model_V=-0.320, n_e=2, n_h=1, anchor_mnxr="MNXR100001",
                 congeners="", basis="Fig. 1 of somewhere")
     base.update(kw)
     return base
@@ -182,10 +182,26 @@ def test_a_generic_with_no_tabulated_potential_is_refused(tmp_path):
         _load(tmp_path, rows=rows)
 
 
-def test_a_couple_whose_potentials_are_a_decade_apart_is_refused(tmp_path):
+def test_a_model_whose_potential_is_a_decade_off_the_real_carrier_is_refused(tmp_path):
+    """THE REAL CARRIER AGAINST ITS STAND-IN, not the two states of one couple.
+
+    A couple has one E0' carried by both its rows, so comparing the ox row's declaration
+    to the red row's compares a value to itself and can never refuse anything. This is the
+    comparison that can.
+    """
     rows = _pair()
-    rows.loc[1, "e0_V"] = -0.320 + (canon.DIR_DECADE / (S.FARADAY * 2)) * 1.5
+    rows.loc[0, "e0_model_V"] = -0.324 + (canon.DIR_DECADE / (S.FARADAY * 2)) * 1.5
     with pytest.raises(SystemExit, match="past DIR_DECADE"):
+        _load(tmp_path, rows=rows)
+
+
+def test_a_couple_carrying_only_its_own_potential_twice_is_not_admitted_vacuously(tmp_path):
+    """The regression for the gate that could not fire: both rows declaring the same
+    number on both columns must still be checked against the model, not against each
+    other."""
+    rows = _pair()
+    rows["e0_model_V"] = None
+    with pytest.raises(SystemExit, match="declares no e0_model_V"):
         _load(tmp_path, rows=rows)
 
 
