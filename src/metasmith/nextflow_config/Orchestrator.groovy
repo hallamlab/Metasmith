@@ -18,6 +18,21 @@ class Orchestrator {
     public static final String FILES_KEY = "FILES"
     public static final String PROV_KEY = "PROV"
 
+    // Raised when a stream `classify()` proved to be a descendant of the
+    // by-stream delivers an item whose index does not carry the by-key.
+    //
+    // Thrown rather than logged because the alternative is invisible: a
+    // dropped item makes the join emit nothing, an empty channel is not an
+    // error in nextflow, and the DAG simply ends early with every submitted
+    // task at exit 0. Two production runs lost days to exactly that -- one
+    // truncated a nine-step workflow after seven steps, one lost 2 of 34 group
+    // members -- and in both the only trace was a `_dispatchLog` row nothing
+    // reads. A task that is never created cannot fail, so no error strategy
+    // can see it.
+    static class LineageViolation extends RuntimeException {
+        LineageViolation(String message) { super(message) }
+    }
+
     // The lineage-only view of a task's output index, used by _debatch on the
     // way out of every process.
     //
@@ -57,6 +72,15 @@ class Orchestrator {
 
     private void _logDispatch(name, relation, by_hash, item_hash) {
         this._dispatchLog.add([name, relation, by_hash, item_hash])
+    }
+
+    // The lineage keys of an index, without the reserved entries. FILES holds
+    // absolute task-workdir paths and PROV holds nested maps, so an unfiltered
+    // render buries the one fact the reader needs -- which keys the item
+    // actually carries -- under kilobytes of noise.
+    private static String _renderLineage(index) {
+        if (!(index instanceof Map)) return "${index}"
+        return "${stripReserved(index)}"
     }
 
     public void seedParents(Map data) {
@@ -374,12 +398,24 @@ class Orchestrator {
                     }
                     def (_index, _value) = item
                     def by_hashes = _index[by_name]
-                    if (by_hashes == null) {
-                        // Lineage violation: stream is declared as a
-                        // descendant of by_name but the item's index
-                        // doesn't carry by_name. Log and drop.
+                    // An ABSENT key and an EMPTY list are the same defect and
+                    // are treated the same way. The empty list is the more
+                    // dangerous of the two: `by_hashes.each` below iterates
+                    // zero times, so before this check the item vanished
+                    // without even reaching the dispatch log -- which is why
+                    // the run that hit it reported no violations logged while
+                    // items were disappearing.
+                    if (by_hashes == null || by_hashes.size() == 0) {
                         this._logDispatch(_name, "LINEAGE_VIOLATION", null, null)
-                        return []
+                        throw new LineageViolation(
+                            "stream [${_name}] is a declared descendant of "
+                            + "[${by_name}], so every item must carry "
+                            + "[${by_name}] in its index, but [${_value}] "
+                            + "arrived with ${_renderLineage(_index)}. "
+                            + "Grouping it would drop it, and a dropped item "
+                            + "silently truncates the DAG. Fix the producer of "
+                            + "[${_name}] so it propagates its input index."
+                        )
                     }
                     // Bag-insertion dedup guards against retry/replay
                     // duplication, matching the WILDCARD branch.
@@ -440,7 +476,18 @@ class Orchestrator {
                     }
                     def (_index, _value) = item
                     def anc_hashes = _index[anc_key]
-                    if (anc_hashes == null) return []
+                    // Logged, not thrown, unlike DESCENDANT_OF_BY above.
+                    // `_firstSharedAncestor` picks an arbitrary member of the
+                    // ancestor-set intersection, so an item can legitimately
+                    // relate to the by-stream through a different shared
+                    // ancestor than the one keyed on here; raising would be a
+                    // false positive. The drop is still worth seeing, because
+                    // a stream that drops every item is the same truncated DAG
+                    // wearing a weaker relation.
+                    if (anc_hashes == null || anc_hashes.size() == 0) {
+                        this._logDispatch(_name, "LINEAGE_VIOLATION", null, null)
+                        return []
+                    }
                     def item_hash = "$_value".md5()
                     def ready = []
                     anc_hashes.each((h) -> {
@@ -461,7 +508,7 @@ class Orchestrator {
                 .combine(by_stream.flatMap((item) -> {
                     def (_index, _value) = item
                     def anc_hashes = _index[anc_key]
-                    if (anc_hashes == null) return []
+                    if (anc_hashes == null || anc_hashes.size() == 0) return []
                     return anc_hashes.collect((h) -> new Tuple2([h], _index[by]))
                 }), by: 0)
                 .map((combined) -> {

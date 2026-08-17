@@ -987,13 +987,19 @@ workflow {{
 
 
 # ===========================================================================
-# C18 — DESCENDANT_OF_BY declared, idx[by] null on S, bs=1. WARN.
-# Required: drop and log lineage violation. PINNED CURRENT BEHAVIOR.
+# C18 — DESCENDANT_OF_BY declared, idx[by] null on S, bs=1.
+# Required: stop the run. See the F2 section at the end of this file.
 # ===========================================================================
 
 
 def test_c18_idx_by_null_on_s_pinned(nxf_runner):
-    """B carries no `a` key in its index. Should pair via cartesian today."""
+    """B is a declared descendant of A but carries no `a` key: the run stops.
+
+    Three contracts have held this case. Cartesian fallback paired them (wrong
+    answer, silently); then the DESCENDANT branch dropped the item and logged
+    (no answer, silently, which is how a nine-step run finished seven steps and
+    exited 0); now it raises.
+    """
     (nxf_runner.work_dir / "a.txt").write_text("a")
     (nxf_runner.work_dir / "b.txt").write_text("b")
 
@@ -1020,14 +1026,15 @@ workflow {
 }
 '''
     result = _run_with_retry(nxf_runner, script, timeout=60)
-    NxfTestRunner.assert_nxf_ok(result)
-    lines = _emit_lines(result.stdout)
-    # Phase B behavior tightening: b is declared descendant of a but carries
-    # no idx["a"] — the DESCENDANT branch now logs LINEAGE_VIOLATION and
-    # drops the item (0 emits). Pre-fix path was wildcard fallback (1 emit).
-    assert len(lines) == 0, (
-        f"C18 expected 0 emits (lineage violation drop), got {len(lines)}: {lines}"
+    assert result.returncode != 0, (
+        f"C18 expected the run to stop, got exit 0. "
+        f"stdout tail: {(result.stdout or '')[-1500:]}"
     )
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "declared descendant" in combined, (
+        f"C18 expected the lineage-violation message; got: {combined[-1500:]}"
+    )
+    assert _emit_lines(result.stdout) == [], "nothing should have been grouped"
 
 
 # ===========================================================================
@@ -1423,13 +1430,12 @@ workflow {{
 
 # ===========================================================================
 # Meta-test: dispatch-log coverage.
-# Asserts the union of lineage classifications observed across a
-# representative sub-matrix covers every classifier outcome
+# Asserts the union of lineage classifications observed covers every
+# classifier outcome
 # {PARENT_OF_BY, DESCENDANT_OF_BY, SIBLING, WILDCARD, LINEAGE_VIOLATION}.
 #
-# Today: marked xfail. Phase B adds `Orchestrator.getDispatchLog()` and a
-# `_dispatchLog` field; this test parses it from stdout and asserts coverage.
-# Phase B5 unxfails this test.
+# Two scripts rather than one, because LINEAGE_VIOLATION now stops the run and
+# would take the other four classifications' groups down with it.
 # ===========================================================================
 
 
@@ -1474,6 +1480,17 @@ workflow {
     def ps_w = (o.postIn([ch_s_w], ["sw"]))[0]
     o.group("bw", [pb_w, ps_w], ["t_wild"], 1).view { x -> null }
 
+    workflow.onComplete {
+        println "DISPATCH_LOG:" + groovy.json.JsonOutput.toJson(o.getDispatchLog())
+    }
+}
+'''
+
+    violation_script = '''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+    o.seedParents(["v": ["a"]])
+
     // LINEAGE_VIOLATION: v is declared descendant of a but its idx has no "a".
     def ch_a_v = Channel.fromList([[["a": [9L]], file("${projectDir}/a0.txt")]])
     def ch_v_v = Channel.fromList([[[:], file("${projectDir}/v.txt")]])
@@ -1484,16 +1501,29 @@ workflow {
     }
 }
 '''
-    result = _run_with_retry(nxf_runner, script, timeout=90)
-    NxfTestRunner.assert_nxf_ok(result)
-    dispatch_lines = [l for l in result.stdout.splitlines() if l.startswith("DISPATCH_LOG:")]
-    assert dispatch_lines, (
-        f"meta-test: no DISPATCH_LOG line — Phase B instrumentation missing.\n"
-        f"stdout tail: {result.stdout[-1500:]}"
-    )
+
     import json as _json
-    payload = _json.loads(dispatch_lines[0][len("DISPATCH_LOG:"):])
-    relations = {row[1] for row in payload}
+
+    def _relations(result):
+        lines = [l for l in result.stdout.splitlines() if l.startswith("DISPATCH_LOG:")]
+        assert lines, (
+            "meta-test: no DISPATCH_LOG line — getDispatchLog() instrumentation "
+            f"missing.\nstdout tail: {result.stdout[-1500:]}"
+        )
+        return {row[1] for row in _json.loads(lines[0][len("DISPATCH_LOG:"):])}
+
+    ok = _run_with_retry(nxf_runner, script, timeout=90)
+    NxfTestRunner.assert_nxf_ok(ok)
+    relations = _relations(ok)
+
+    violated = _run_with_retry(nxf_runner, violation_script, timeout=90)
+    assert violated.returncode != 0, (
+        f"a lineage violation must stop the run; exit was {violated.returncode}"
+    )
+    # The dispatch log still has to record it: the exception is what stops the
+    # run, the log is what says which stream did it.
+    relations |= _relations(violated)
+
     expected = {
         "PARENT_OF_BY",
         "DESCENDANT_OF_BY",
