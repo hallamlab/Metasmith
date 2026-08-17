@@ -8,7 +8,8 @@ grounds at glycogen. Strike those six genes and the ranking collapses to chance:
 0.509 on the curated channel, 0.436 on the de-novo one, one positive in the top 25
 against an expectation of half of one. The full-library AUC — 0.536 curated, 0.464
 de-novo — is *beaten by reaction count alone*, which is the same confound that sank the
-ASKA/FFA arm.
+ASKA/FFA arm. The one annotation artifact the de-novo channel had was found and removed,
+and the AUC moved from below chance to chance.
 
 This is a negative result about the method, not about the study. Reach is not confounded,
 the resolution is complete, the controls are the ones designed to break the claim, and the
@@ -124,6 +125,22 @@ most of the de-novo channel's top thirty, and it is the concrete reason the de-n
 *below* chance rather than merely at it. The four lanes are unioned here and unweighted,
 deliberately — the lanes' `raw_score` is not normalised across them — so this is what an
 unfiltered de-novo channel costs.
+
+**That pathology was fixed, and fixing it changed nothing.** `sweep_aska.py --min-lanes 2`
+credits a clone with a reaction only when at least two of the four lanes assert it — an
+annotation-confidence rule chosen on its own merits and reported whichever way it came out.
+It does exactly what it was supposed to: `MNXR145051` survives on glgC alone (three lanes)
+and all 28 spurious attributions drop, the tie block disappears, and mean reactions per
+clone falls from 9.66 to 2.10, which also makes the de-novo channel size-comparable to the
+curated one. The AUC rises from 0.4636 to **0.4922** — from below chance to chance — and
+with the glycogen module struck it is **0.4706 with zero positives in the top fifty**. The
+contamination was real; there was no signal underneath it.
+
+Applying the same rule to the *background* was tried first and is a finding in its own
+right: it disconnects glycogen outright, because the glycogen-synthesis step has only
+single-lane support in the de-novo annotation. Under a confidence rule strict enough to
+trust, the de-novo channel cannot reach the target at all. The filter is therefore
+clone-side only, and the background stays whole.
 
 **The curated channel's positives are 25 genes.** The atom-mapped AUC of 0.573 rests on
 them, and 25 is small. It is reported with its p-value rather than as a result.
