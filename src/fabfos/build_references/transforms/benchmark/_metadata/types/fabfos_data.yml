@@ -134,9 +134,9 @@ types:
       `indigo_unreturned.tsv`, `attempted/`, and the two derived neural status tables.
       THE EMPIRICAL HALF OF `aam_forecast`: which reaction Indigo hangs on is not
       a function of the string and does not need to be, because the last run wrote
-      it down. Its coverage is PARTIAL by construction -- that run was killed two
-      thirds of the way through Indigo -- so a reaction absent from every table was
-      never asked, and the forecast reports that denominator rather than reading absence
+      it down. Coverage may be PARTIAL -- a run that dies leaves nothing about the
+      reactions past where it died -- so a reaction absent from every table was never
+      asked, and the forecast reports that denominator rather than reading absence
       as success.'
   rhea:
     properties:

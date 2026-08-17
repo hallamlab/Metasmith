@@ -4,6 +4,10 @@ The three checks the campaign set for itself, measured against the deployed
 `metabolism_bake` this generation replaces. Every number here is read off an artifact a run
 produced; nothing is restated from a plan or from the seed design document.
 
+**r7 has since been promoted: it IS `metabolism_bake` now.** The "deployed" column below is
+the generation it replaced, reachable from commit `9354584`, and r6 from `2f4f70a` —
+neither is on disk, which is what makes this the reading of record for both.
+
 Two generations are reported because the second is a gapfill of the first rather than a
 rebuild: **r6** is the bake the three checks below were run against, and **r7** is r6 with
 the body ledger closed, re-mapping only the submissions that changed. V1 and V3 cover both.
