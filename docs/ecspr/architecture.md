@@ -69,6 +69,16 @@ exactly the drift this package exists to end.
 `--direction`, which is already the *path* to the direction-ratios parquet; the bake's own
 identity block calls this field `orientation`.
 
+**An abundance perturbation cannot express direction.** `gm = ratio * gp`, so scaling a
+reaction's evidence weight scales both diode branches by the same factor: the asymmetry is
+scale-invariant and every readout built on the solve is non-decreasing in `E_r` (Rayleigh).
+Direction evidence can therefore mute a false positive but never flip its sign, whatever
+the ratios become. A benchmark that scores a signed phenotype against a fold-change in
+`E_r` is unanswerable by construction, not undertrained — the perturbation has to be
+asymmetric, or the observable has to be something other than a function of the solve.
+Related: the network is a steady state and has no state variable for accumulation, so a
+metabolite *pool* — the time-integral of net flux — is not a quantity any probe returns.
+
 ## Dependencies are declared once
 
 `env.yml` is the single dependency spec, feeding three consumers that would otherwise drift: the
