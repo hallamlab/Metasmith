@@ -1,9 +1,11 @@
 # What the eQuilibrator member costs, before and after the water fix
 
-The lane declares `Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=12))` and
-**none of that is a measurement** — r7's step log shows it finished in about 35 minutes.
-It is about to stop short-circuiting on roughly 14,000 reactions it used to refuse for free,
-so the declaration needs re-deriving rather than inflating. This is the measurement.
+The lane used to declare `Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=12))`
+and **none of that was a measurement** — r7's step log shows it finished in about 35 minutes,
+and it was about to stop short-circuiting on roughly 14,000 reactions it had been refusing
+for free. This is the measurement that replaced it. The declaration now reads
+`cpus=1, GB(4), hours=3`, and r8's run settled it: **38:58 for the whole universe,
+unsharded**, against the sixteen-fold walltime and eight-fold memory the old one reserved.
 
 Reproduce with `shard_cost.sh <work-dir> [i/n]`. Shard 0/20 is 4,218 of the 83,795
 reactions; crc32 sharding makes it a uniform sample, so the histogram extrapolates.
@@ -64,16 +66,17 @@ count.
 - Sharding also duplicates the 23-second startup, so 20 shards spend **7.7 minutes of pure
   duplicated setup** to save an hour of chemistry. Still worth it; just not free.
 
-### The declaration this implies
+### The declaration this implies — and what was adopted
 
-For a **sharded** eQuilibrator lane, the resources are per shard, not per universe:
+For a **sharded** eQuilibrator lane the resources would be per shard, not per universe:
+`Resources(cpus=1, memory=Size.GB(4), duration=Duration(minutes=30))` with 10–12 shards.
 
-    Resources(cpus=1, memory=Size.GB(4), duration=Duration(minutes=30))
-
-with **10–12 shards**. One cpu because the member is single-threaded and
-`OMP_NUM_THREADS=1` is already set; 4 GB against a measured 2.37 GB peak; 30 minutes against
-a measured 4 minutes, which is a wide margin for a cluster filesystem rather than a guess at
-the chemistry.
+**That restructure was not adopted, and the r8 run is why.** The lane kept r7's unsharded
+shape with the declaration corrected to `cpus=1, GB(4), hours=3`, and finished the whole
+universe in **38:58** — comfortably inside the extrapolation above, on one cpu, at a peak
+the 4 GB covers. Sharding buys about half an hour and costs the duplicated startup, the
+fragmented compound cache and a staggered launch; at 39 minutes there is nothing to buy.
+One cpu because the member is single-threaded and `OMP_NUM_THREADS=1` is already set.
 
 **Stagger the launch.** Each process re-hashes the 1.34 GB cache through pooch on
 construction. That was free here — the second run reported *zero* filesystem inputs against
