@@ -61,9 +61,15 @@ MODEL_COLUMNS = ("model_key", "name", "smiles", "inchi", "inchikey", "basis")
 # scores the anchor reaction under each and writes the spread back as the row's
 # `congeners`, which is how an asserted structure acquires a width instead of implying
 # none. Optional rather than required so a table can be authored before it is priced.
-MODEL_OPTIONAL = ("congener_of",)
-ROW_COLUMNS = ("kind", "mnxm", "mnx_name", "terms", "couple_id", "state",
-               "e0_V", "e0_model_V", "n_e", "n_h", "anchor_mnxr", "congeners", "basis")
+# `source_mnxm` is the MetaNetX accession the structure was copied from, verbatim and by
+# machine. It is not used for anything -- the members read the declared structure, never
+# the accession -- and it is here so a reader can re-derive the row rather than trust a
+# hand-transcribed 300-character InChI, which is the transcription error the stale-id
+# tripwire exists to catch one level up.
+MODEL_OPTIONAL = ("congener_of", "source_mnxm")
+ROW_COLUMNS = ("kind", "mnxm", "mnx_name", "terms", "congener_terms", "couple_id", "state",
+               "e0_V", "e0_model_V", "n_e", "n_h", "anchor_mnxr", "sibling_mnxr",
+               "sibling_e0_V", "congeners", "basis")
 
 # `carrier`  a redox couple: both states substituted, no heavy atoms transferred, and the
 #            model's potential within a decade of the real carrier's.
@@ -344,19 +350,30 @@ DECISION_COLS = ("kind", "mnxm", "mnx_name", "couple_id", "verdict", "predicate"
 # The order a reader gets their reason in. First failure wins, so the ladder runs from
 # "this row is not about what you think" to "this row's chemistry is wrong" -- a stale id
 # reported as a potential-gate failure would send a curator to the wrong question.
-ROW_PREDICATES = ("kind_known", "not_duplicated", "stale_id", "cited", "anchored",
+ROW_PREDICATES = ("kind_known", "consistent_repeat", "stale_id", "cited", "anchored",
                   "replaceable_only", "terms_parse", "models_declared", "congener_spread")
 COUPLE_PREDICATES = ("couple_complete", "no_heavy_transfer", "potential_declared",
                      "potential_within_decade")
 
 
-def _check_row(r, props: dict, names: dict, models: dict, seen: set):
-    """`(predicate, detail)` for the first predicate this row fails, or `(None, rec)`."""
+def _check_row(r, props: dict, names: dict, seen: dict, models: dict):
+    """`(predicate, detail)` for the first predicate this row fails, or `(None, rec)`.
+
+    `seen` maps an already-admitted mnxm to its terms string. A REPEAT IS LEGAL AND
+    NECESSARY: MetaNetX carries one reduced thioredoxin (`MNXM741334`) as the partner of
+    three separately-accessioned disulfides, so the couple rows must share it. What has to
+    hold is that `_by_mnxm` stays single-valued -- one compound, one rewrite -- so a repeat
+    is admitted when it asks for the same terms and refused when it asks for different
+    ones, which is a conflict no later stage could detect.
+    """
     row_id = f"{r.kind}/{r.mnxm}"
     if str(r.kind) not in KINDS:
         return "kind_known", f"[substitute] {row_id}: kind must be one of {KINDS}"
-    if str(r.mnxm) in seen:
-        return "not_duplicated", f"[substitute] {r.mnxm} substituted twice"
+    prior = seen.get(str(r.mnxm))
+    if prior is not None and str(prior).strip() != str(r.terms).strip():
+        return "consistent_repeat", (
+            f"[substitute] {r.mnxm} substituted twice with different terms: {prior!r} then "
+            f"{str(r.terms)!r}. One compound rewrites one way or the rewrite is ambiguous")
     # STALE-ID TRIPWIRE. Not name-as-proof -- the check that the id the curator reasoned
     # about is the id they wrote down.
     have = str(names.get(str(r.mnxm), "") or "").strip()
@@ -438,9 +455,9 @@ def load(directory: Path | None, props: dict, names: dict,
     if missing:
         raise Refused(f"[substitute] substitutions table lacks columns: {sorted(missing)}")
 
-    parsed, by_mnxm, decisions = [], {}, []
+    parsed, seen, decisions = [], {}, []
     for r in df.itertuples(index=False):
-        pred, payload = _check_row(r, props, names, models, set(by_mnxm))
+        pred, payload = _check_row(r, props, names, seen, models)
         base = dict(kind=r.kind, mnxm=r.mnxm, mnx_name=r.mnx_name, couple_id=r.couple_id)
         if pred is not None:
             if not collect:
@@ -449,21 +466,26 @@ def load(directory: Path | None, props: dict, names: dict,
             continue
         decisions.append(dict(base, verdict="admitted", predicate="", detail=""))
         parsed.append(payload)
-        by_mnxm[str(r.mnxm)] = payload
+        seen[str(r.mnxm)] = str(r.terms)
 
+    # PER COUPLE, not over the whole table. A couple-level failure condemns its own two
+    # rows; condemning every admitted row would let one bad couple empty a table of twelve,
+    # and a curator would then be fixing the couple the ledger happened to name first.
     frame = pd.DataFrame(parsed) if parsed else pd.DataFrame(columns=list(ROW_COLUMNS))
-    if parsed:
-        pred, detail = _check_couples(frame, models)
-        if pred is not None:
-            if not collect:
-                raise Refused(detail)
-            # A couple-level failure condemns the whole couple, not one row: the reader
-            # needs to see both halves marked, or they fix one and re-run into the other.
-            for d in decisions:
-                if d["verdict"] == "admitted":
-                    d.update(verdict="refused", predicate=pred, detail=detail)
-            parsed, by_mnxm = [], {}
-            frame = pd.DataFrame(columns=list(ROW_COLUMNS))
+    for couple_id in sorted({str(p["couple_id"]) for p in parsed}):
+        g = frame[frame["couple_id"].astype(str) == couple_id]
+        pred, detail = _check_couples(g, models)
+        if pred is None:
+            continue
+        if not collect:
+            raise Refused(detail)
+        for d in decisions:
+            if d["verdict"] == "admitted" and str(d["couple_id"]) == couple_id:
+                d.update(verdict="refused", predicate=pred, detail=detail)
+        parsed = [p for p in parsed if str(p["couple_id"]) != couple_id]
+        frame = frame[frame["couple_id"].astype(str) != couple_id]
+
+    by_mnxm = {str(p["mnxm"]): p for p in parsed}
     out = Substitutions(models, frame, by_mnxm)
     out.decisions = pd.DataFrame(decisions, columns=list(DECISION_COLS))
     return out
@@ -541,10 +563,21 @@ def cmd_check(args):
 
     # The under-coverage report. An accession whose name normalises to one already admitted
     # is a compound the curator's own reasoning covers and their table does not.
+    # RESTRICTED TO COMPOUNDS THE MEMBER CANNOT READ TODAY. `_norm` strips parentheses and
+    # charges, so `NAD(P)` and `NADP(+)` collide -- without this the report tells a curator
+    # to substitute real NADP+, which `_gate_replaceable` would then refuse. Only an
+    # accession the member is actually blocked on is a miss.
+    def blocked(m):
+        smi = (props.get(m) or {}).get("smiles")
+        if not smi:
+            return True
+        wc = _has_wildcard(str(smi))
+        return wc is None or bool(wc)
+
     admitted = {str(m) for m in d.loc[d["verdict"] == "admitted", "mnxm"]}
     want = {_norm(names.get(m, "")) for m in admitted} - {""}
     missed = sorted(m for m, n in names.items()
-                    if m not in admitted and _norm(n) in want)
+                    if m not in admitted and _norm(n) in want and blocked(m))
     print(f"[substitute] {len(missed):,} accessions share an admitted name and are NOT in "
           f"the table" + (f": {missed[:10]}" if missed else ""))
 
@@ -566,18 +599,45 @@ def _norm(name) -> str:
     return _re.sub(r"[^a-z0-9]", "", str(name or "").lower())
 
 
+def predicted_offset(n_e: float, c_red: float, e0_model_V: float,
+                     e0_sibling_V: float) -> float:
+    """kJ/mol the substituted anchor should sit from its sibling, from the two potentials.
+
+    Anchor and sibling are the SAME transformation written with two different carriers, so
+    their standard free energies differ only by the carriers' half-cells. For a reaction
+    written `A_ox + carrier_red = A_red + carrier_ox`, dG'0 = -nF(E_A - E_carrier), and the
+    acceptor term cancels in the difference:
+
+        dG(anchor) - dG(sibling) = -c_red * n_e * F * (E_model - E_sibling)
+
+    `c_red` is the reduced carrier's signed coefficient in the MNXR equation, which is what
+    carries the orientation -- MetaNetX's left/right is arbitrary, and reading the sign off
+    the equation is the only way the prediction tracks it.
+    """
+    return -float(c_red) * float(n_e) * FARADAY * (float(e0_model_V) - float(e0_sibling_V))
+
+
 def cmd_anchor(args):
-    """Re-score each row's anchor reaction under the model compound, and refuse a drift.
+    """Score each row's anchor under the model couple and check it against a sibling.
 
     THE ANSWER TO "how do you refuse a substitution that balances but is thermodynamically
     unjustified". Balance is necessary and worthless as evidence here: `[Fe+3]`/`[Fe+2]`
-    balances ferredoxin perfectly and returns a confident wrong number. What a row has to
-    survive is a reaction MetaNetX ALREADY balances and a member ALREADY scored still
-    scoring the same once the real carrier is swapped for the model.
+    balances ferredoxin perfectly and returns a confident wrong number.
 
-    The member runs for real -- that is the point, and it is why this is a verb rather than
-    a load-time gate. Only `eq` is runnable on this workstation; `build-refs-dgbyg` does
-    not exist here, so the dGbyG arm has to be run in its own image.
+    THE TEST IS A DIFFERENCE AGAINST A PREDICTED NUMBER, not a drift toward zero, and it
+    has to be: MetaNetX writes almost no generic-carrier reaction a second time with the
+    same family of carrier concretely. It writes it with a DIFFERENT one -- the flavin
+    monooxygenases appear again as their overall NADPH reactions -- so an anchor and its
+    sibling differ by a real quantity rather than by nothing. `predicted_offset` computes
+    that quantity from the two declared potentials, and the row survives only if the member,
+    running on the substituted equation, lands within one decade of it.
+
+    That makes `e0_V` falsifiable instead of decorative: a carrier row asserting the wrong
+    potential predicts the wrong offset and is refused here rather than shipping a
+    confident number nothing checked.
+
+    Only `eq` is runnable on this workstation; `build-refs-dgbyg` does not exist here, so
+    the dGbyG arm has to be run in its own image or reported unverified.
     """
     from .refdata import load_mnxr_stoich
     props, names = _tables(args)
@@ -596,27 +656,85 @@ def cmd_anchor(args):
         mt = pd.read_parquet(args.member_table)
         baseline = dict(zip(mt["mnxr"].astype(str), mt["dg"]))
 
+    def score(st):
+        return member.dgr(subs.rewrite(st), wide)
+
     rows, bad = [], 0
     for rec in subs.rows.to_dict("records"):
-        mnxr = str(rec["anchor_mnxr"])
+        mnxm, mnxr = str(rec["mnxm"]), str(rec["anchor_mnxr"])
+        out = dict(mnxm=mnxm, couple_id=rec["couple_id"], anchor=mnxr, member=args.member)
         s = stoich.get(mnxr)
         if s is None:
-            rows.append(dict(mnxm=rec["mnxm"], anchor=mnxr, verdict="no_stoich"))
-            bad += 1
-            continue
+            rows.append(dict(out, verdict="no_stoich")); bad += 1; continue
         st = s[0]
-        was = baseline.get(mnxr)
-        dg, sig, _flag, reason = member.dgr(subs.rewrite(st), wide)
-        drift = None if (dg is None or was is None or pd.isna(was)) else abs(dg - float(was))
-        verdict = ("member_silent" if dg is None else
-                   "no_baseline" if drift is None else
-                   "ok" if drift <= canon.DIR_DECADE else "DRIFT")
-        bad += verdict in ("DRIFT", "member_silent", "no_stoich")
-        rows.append(dict(mnxm=rec["mnxm"], anchor=mnxr, member=args.member,
-                         baseline_dg=was, model_dg=dg, sigma=sig, drift=drift,
-                         reason=reason, verdict=verdict))
-        print(f"  {rec['mnxm']:<14} {mnxr:<12} {verdict:<14} "
-              f"baseline {was} -> model {dg} (drift {drift})")
+        # A row whose anchor it does not cover tests nothing: `rewrite` is the identity
+        # there and the comparison passes however wrong the model compound is.
+        if mnxm not in st:
+            rows.append(dict(out, verdict="ANCHOR_UNCOVERED")); bad += 1; continue
+
+        dg, sig, _flag, reason = score(st)
+        out.update(model_dg=dg, sigma=sig, reason=reason)
+        if dg is None:
+            # The substitution bought nothing: the member is still silent on the very
+            # reaction the row exists to unblock.
+            rows.append(dict(out, verdict="member_silent")); bad += 1; continue
+
+        sib = str(rec.get("sibling_mnxr") or "")
+        was = baseline.get(sib) if _cited(rec.get("sibling_mnxr")) else None
+        if was is None or pd.isna(was) or not _cited(rec.get("sibling_e0_V")):
+            rows.append(dict(out, verdict="no_sibling"))
+        else:
+            want = predicted_offset(rec["n_e"], st[mnxm] if str(rec["state"]) == "red"
+                                    else -st[mnxm], rec["e0_model_V"], rec["sibling_e0_V"])
+            gap = abs((dg - float(was)) - want)
+            out.update(sibling=sib, sibling_dg=float(was), predicted=want, gap=gap)
+            verdict = "ok" if gap <= canon.DIR_DECADE else "DRIFT"
+            bad += verdict == "DRIFT"
+            rows.append(dict(out, verdict=verdict))
+
+        # The congener spread: the same anchor under each declared alternative couple. This
+        # is what fills `congeners`, and it prices the curator's CHOICE rather than the
+        # chemistry -- a spread past a decade means the model compound is not pinning the
+        # answer and no single one of them should be asserted.
+        #
+        # SWAPPED A COUPLE AT A TIME, never a row at a time. Replacing NAD+ with NADP+ and
+        # leaving the reduced half as NADH writes a reaction with a phosphate on one side
+        # only; eQuilibrator scores it happily and the spread comes back as ~900 kJ/mol,
+        # which reads as "this model compound pins nothing" when it means "the variant was
+        # nonsense". `_cited` first, because `str(nan)` is 'nan' and would parse as a term.
+        family = [r2 for r2 in subs.rows.to_dict("records")
+                  if str(r2["couple_id"]) == str(rec["couple_id"])]
+        depth = max((len(str(r2["congener_terms"]).split("|"))
+                     if _cited(r2.get("congener_terms")) else 0) for r2 in family)
+        vals = [dg]
+        for i in range(depth):
+            swapped = dict(subs._by_mnxm)
+            for r2 in family:
+                if not _cited(r2.get("congener_terms")):
+                    continue
+                alt = str(r2["congener_terms"]).split("|")
+                if i >= len(alt):
+                    continue
+                key = str(r2["mnxm"])
+                swapped[key] = dict(r2, terms=_parse_terms(alt[i], f"{key}/congener{i}"))
+            v, _s, _f, _r = member.dgr(
+                Substitutions(subs.models, subs.rows, swapped).rewrite(st), wide)
+            vals.append(v)
+        # THE TABULATED PREDICTION IS ONE OF THE CANDIDATES. A row's width is how far the
+        # answer moves across everything it could defensibly have been, and a second model
+        # compound is only one source of that -- the other is the member disagreeing with
+        # the potentials the row cites. A couple with no second defensible model would
+        # otherwise report a width of zero, which is the "asserted structure looks like a
+        # measurement" failure `sigma_sub` exists to prevent.
+        if rows[-1].get("predicted") is not None:
+            vals.append(rows[-1]["sibling_dg"] + rows[-1]["predicted"])
+        got = [v for v in vals if v is not None]
+        if len(got) > 1:
+            rows[-1]["congeners"] = ";".join(f"{v:.4f}" for v in got)
+            rows[-1]["spread"] = max(got) - min(got)
+        print(f"  {mnxm:<14} {mnxr:<12} {rows[-1]['verdict']:<17} "
+              f"model {dg} vs sibling {rows[-1].get('sibling_dg')} "
+              f"(predicted {rows[-1].get('predicted')}, gap {rows[-1].get('gap')})")
 
     df = pd.DataFrame(rows)
     if args.out:

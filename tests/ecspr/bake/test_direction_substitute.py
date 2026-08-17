@@ -40,8 +40,9 @@ MODELS = pd.DataFrame([
 
 def _row(**kw):
     base = dict(kind="carrier", mnxm="MNXM137", mnx_name="NAD(P)",
-                terms=f"1*{NAD_OX}", couple_id="nadp", state="ox",
+                terms=f"1*{NAD_OX}", congener_terms="", couple_id="nadp", state="ox",
                 e0_V=-0.324, e0_model_V=-0.320, n_e=2, n_h=1, anchor_mnxr="MNXR100001",
+                sibling_mnxr="", sibling_e0_V="",
                 congeners="", basis="Fig. 1 of somewhere")
     base.update(kw)
     return base
@@ -57,11 +58,15 @@ NAMES = {"MNXM137": "NAD(P)", "MNXM138": "NAD(P)H", "MNXM99": "ethanol"}
 PROPS = {"MNXM99": {"smiles": "CCO"}}          # readable today, so not replaceable
 
 
-def _load(tmp_path, models=MODELS, rows=None, props=PROPS, names=NAMES):
-    rows = _pair() if rows is None else rows
+def _written(tmp_path, rows, models=MODELS):
     models.to_csv(tmp_path / "models.tsv", sep="\t", index=False)
     rows.to_csv(tmp_path / "substitutions.tsv", sep="\t", index=False)
-    return S.load(tmp_path, props, names)
+    return tmp_path
+
+
+def _load(tmp_path, models=MODELS, rows=None, props=PROPS, names=NAMES):
+    rows = _pair() if rows is None else rows
+    return S.load(_written(tmp_path, rows, models), props, names)
 
 
 # --- the empty configuration ----------------------------------------------
@@ -257,10 +262,35 @@ def test_a_term_naming_an_undeclared_model_is_refused(tmp_path):
         _load(tmp_path, rows=rows)
 
 
-def test_the_same_participant_cannot_be_substituted_twice(tmp_path):
-    rows = pd.concat([_pair(), _pair()])
-    with pytest.raises(SystemExit, match="substituted twice"):
-        _load(tmp_path, rows=rows)
+def test_a_participant_may_repeat_when_it_asks_for_the_same_rewrite(tmp_path):
+    """MetaNetX carries one reduced thioredoxin as the partner of three separately
+    accessioned disulfides, so the couple rows have to share it. What must stay true is
+    that the compound rewrites one way."""
+    second = _pair()
+    second["couple_id"] = "nadp_again"
+    s = _load(tmp_path, rows=pd.concat([_pair(), second]))
+    assert s.rewrite({"MNXM137": -1.0}) == {NAD_OX: -1.0}
+
+
+def test_a_participant_repeating_with_different_terms_is_refused(tmp_path):
+    """A conflict no later stage could detect: `_by_mnxm` would silently keep one."""
+    second = _pair()
+    second["couple_id"] = "nadp_again"
+    second.loc[0, "terms"] = f"1*{NAD_RED}"
+    with pytest.raises(SystemExit, match="substituted twice with different terms"):
+        _load(tmp_path, rows=pd.concat([_pair(), second]))
+
+
+def test_one_bad_couple_does_not_condemn_a_good_one(tmp_path):
+    """The ledger has to name the couple that is wrong. Emptying the table would send a
+    curator to whichever couple it happened to list first."""
+    bad = _pair()
+    bad["couple_id"] = "broken"
+    bad = bad.iloc[[0]]                                   # ox with no red: incomplete
+    d = S.load(_written(tmp_path, pd.concat([_pair(), bad])), PROPS, NAMES,
+               collect=True).decisions
+    assert set(d.loc[d.couple_id == "nadp", "verdict"]) == {"admitted"}
+    assert set(d.loc[d.couple_id == "broken", "verdict"]) == {"refused"}
 
 
 # --- the comment rule -----------------------------------------------------

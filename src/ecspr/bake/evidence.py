@@ -150,6 +150,13 @@ def buildlib_fingerprint(sub: str | None = None):
     evidence under one version directory -- exactly what `<tool>/<version>/` exists to
     prevent. `sub` names a subpackage to fingerprint instead; the default stays as it was
     so the version of every artifact already written keeps its meaning.
+
+    AND IT GLOBS BY EXTENSION, which is the same trap one level down. The direction lane's
+    substitution tables are curated `.tsv` beside the modules that read them: they are
+    method, not data -- swapping one changes every ratio the members produce -- so a
+    `.py`-only hash would file two materially different bakes at one version. Adding a
+    suffix here is safe for what is already written only while no directory being
+    fingerprinted holds a file of that suffix today; check before adding a third.
     """
     d = Path(__file__).resolve().parent
     tag = "lib-"
@@ -158,7 +165,7 @@ def buildlib_fingerprint(sub: str | None = None):
         tag = f"lib-{sub}-"
     h = hashlib.sha256()
     try:
-        for p in sorted(d.glob("*.py")):
+        for p in sorted(q for ext in ("*.py", "*.tsv") for q in d.glob(ext)):
             h.update(p.name.encode())
             h.update(p.read_bytes())
     except OSError:
