@@ -30,9 +30,10 @@ three proteomes staged as unrelated givens give that pin nothing to bind to. The
 would then satisfy the mapper from whatever ORF set is cheapest to reach and the host
 attribution would land on a table built from something else.
 
-WHICH LANES RAN IS PART OF THE RESULT. The fourth lane needs `ref::reference_label_pool`,
-which has no producer in this tree. If it is absent on fir the tables ship three lanes,
-and B2 records that by name in its BUILD.json -- a smaller claim, not a smaller table.
+THE LANE SET IS CHECKED, NOT REPORTED. The fourth lane needs `ref::reference_label_pool`;
+`check_refs` probes it on the site before anything is staged, and B2's collector refuses a
+table whose channels are not the declared four. An absent reference stops the run here --
+it never yields a shorter table.
 
 Everything else -- the reference staging rule, the GPU declaration, the preflight, the
 walltime check, the task-table verdict -- is `examples/scadc_gpr.py`'s, imported rather

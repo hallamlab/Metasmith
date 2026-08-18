@@ -14,10 +14,12 @@ the genomes folder and walks the mapper's outputs as a batch. The alternative, o
 per mapper output, cannot name its host: the mapper is host-agnostic by design and the
 attribution has to come from the proteome the table was built from.
 
-WHICH LANES RAN IS PART OF THE TABLE'S IDENTITY. The fourth lane needs
-`ref::reference_label_pool`, which has no producer in this tree; if it was absent the
-tables ship three lanes, and that is recorded in BUILD.json by name rather than
-averaged away. Three lanes is a smaller claim, not a smaller table.
+THE LANE SET IS THE TABLE'S CONTRACT, not a property of the run. A table here carries
+exactly the channels `lib::fabfos_evidence.LANE_SETS["chosen_4"]` declares, and this step
+refuses by name when the mapper's output does not. A lane short of that set is not a
+smaller claim about the proteome: `nomination_contributions` divides each ORF's belief by
+its own distinct-channel count, so a missing lane silently rescales every weight the table
+feeds. There is no degraded mode here.
 """
 from metasmith.python_api import *
 import os
@@ -36,9 +38,12 @@ genomes = model.AddRequirement(lib.GetType("fabfos_data::genomes"))
 # this host set; without the pin the planner may satisfy it from any ORF set it can
 # reach, and the host attribution below would be attached to the wrong table.
 gpr     = model.AddRequirement(lib.GetType("annotation::gpr_table"), parents={genomes})
+# The declared lane set is read from the library that declares it, never restated here.
+ev_lib  = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 out     = model.AddProduct(lib.GetType("ref::gpr_table_denovo"))
 
 CHANNEL_PREFIX = "denovo"
+LANE_SET = "chosen_4"
 
 # The same frozen 14-column schema the GEM table uses, so the two lines of evidence line
 # up column for column. See benchmark/host_gpr_gem.py.
@@ -49,15 +54,19 @@ GPR_COLS = (
 )
 
 DRIVER = r'''
-import json
+import json, os, sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+
+sys.path.insert(0, os.path.dirname("{ev_lib}"))
+import fabfos_evidence as fe
 
 GENOMES = Path("{genomes}")
 OUT     = Path("{out}")
 GPR_COLS = {gpr_cols}
 PREFIX = "{prefix}"
+LANE_SET = "{lane_set}"
 
 # staged mapper table -> the host it describes, BY THE ORF IDS IN IT.
 #
@@ -118,6 +127,15 @@ for path in tables:
     print(f"[denovo_gpr] {{host}}: {{len(g):,}} mapper rows, {{g['orf'].nunique():,}} ORFs, "
           f"{{g['mnxr'].nunique():,}} MNXR, lanes {{lanes}}", flush=True)
 
+    expected = sorted(fe.LANE_SETS[LANE_SET])
+    if lanes != expected:
+        raise SystemExit(
+            f"[denovo_gpr] {{host}}: lane set is {{lanes}}, not {{expected}}. Missing "
+            f"{{sorted(set(expected) - set(lanes))}}; unexpected "
+            f"{{sorted(set(lanes) - set(expected))}}. A lane that contributed no rows is a "
+            f"broken join or an unstaged reference, and a table short of the declared set "
+            f"rescales every belief weight downstream.")
+
     df = pd.DataFrame({{
         "build_id": "denovo_" + host,
         "host": host,
@@ -163,16 +181,11 @@ if missing:
     raise SystemExit(f"[denovo_gpr] no mapper table for {{missing}} -- the de-novo half "
                      f"of the host benchmark is not comparable across a missing host")
 
-# WHICH LANES RAN, by name, per host. The lane set is part of each table's build
-# identity; a three-lane table and a four-lane one are different claims about the same
-# proteome, and a consumer that cannot tell them apart will average them.
+# The lane set, by name, per host -- a record of something checked rather than merely
+# observed. Every host passed the same gate above, so cross-host comparison is
+# like-for-like by construction and needs no warning here.
 (OUT / "BUILD.json").write_text(json.dumps(
-    dict(channel_prefix=PREFIX, hosts=summary), indent=2))
-lane_sets = {{tuple(s["lanes"]) for s in summary}}
-if len(lane_sets) != 1:
-    print(f"[denovo_gpr] WARNING: hosts do not share a lane set: "
-          f"{{{{s['host']: s['lanes'] for s in summary}}}} -- cross-host comparison is "
-          f"not like-for-like", flush=True)
+    dict(channel_prefix=PREFIX, lane_set=LANE_SET, hosts=summary), indent=2))
 print(f"[denovo_gpr] {{len(summary)}} hosts -> {{OUT}}/hosts/<host>/gpr_denovo.parquet",
       flush=True)
 '''
@@ -219,6 +232,7 @@ def protocol(context: ExecutionContext):
         genomes=context.Input(genomes).container,
         gpr_paths=repr(gpr_paths), prefix=CHANNEL_PREFIX,
         gpr_cols=repr(GPR_COLS), out=iout.container,
+        ev_lib=context.Input(ev_lib).container, lane_set=LANE_SET,
     )
     context.LocalShell("cat > _host_gpr_denovo.py << 'PYEOF'\n" + driver + "\nPYEOF\n")
     context.ExecWithEnv() \

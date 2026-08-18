@@ -8,7 +8,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   host_gpr_denovo.py:
-    instance_id: 1e2041396051f5e05f2e3af486f575897735f1a629184ec035d821e951f1ae611ee2
+    instance_id: 1e208c1248727a9a03c17ac1c9e134235e44188c52b9426e29ad366441a273ea3b0c
     origin: leaf
     type: transforms::transform
   host_gpr_gem.py:

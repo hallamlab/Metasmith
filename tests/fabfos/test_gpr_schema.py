@@ -350,3 +350,19 @@ def test_the_channel_vocabulary_has_exactly_one_spelling():
         src = (MLIB / "transforms" / "fabfos" / f"{mapper}.py").read_text()
         for dead in ("dl_ec", "uniref50_dr", "pbert_transfer"):
             assert f'"{dead}"' not in src, f"{mapper} still spells a channel {dead!r}"
+
+    # Every re-emitter of a mapper table, too. These carry the lane forward into the
+    # benchmark schema, so a retired spelling here is a join that silently returns
+    # nothing against a table the mapper wrote. `pbert_transfer` is NOT checked for
+    # them: `lib::fabfos_embed_transfer.py` owns that name for a different
+    # measurement, and `fabfos_evidence.read_embed_transfer` reads it on purpose.
+    reemitters = {
+        "host_gpr_denovo": REPO_ROOT / "src" / "fabfos" / "build_references" / "transforms"
+                           / "benchmark" / "host_gpr_denovo.py",
+        "host_denovo_from_mapper": REPO_ROOT / "src" / "fabfos" / "build_references"
+                                   / "host_denovo_from_mapper.py",
+    }
+    for name, path in reemitters.items():
+        src = path.read_text()
+        for dead in ("dl_ec", "uniref50_dr", "clean_ec"):
+            assert f'"{dead}"' not in src, f"{name} still spells a channel {dead!r}"
