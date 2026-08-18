@@ -1,0 +1,69 @@
+{
+  "bake": "data/fabfos/processed/metabolism_bake",
+  "stamp": "0ffd4c8c6231696e8ba0dee859253df75d8a29320355c42b0fcac0f317d264c6:e8f72b8b298a97ef2023c7f842e8873290a1de4cdd933577504d63c067b6c9a6",
+  "host": "e_coli_ag1",
+  "element": "C",
+  "sink": "MNXM738130",
+  "source": "MNXM1364061",
+  "n_background": 2308,
+  "n_reactions_used": 2022,
+  "delivery": [
+    {
+      "mnxr": "MNXR145036",
+      "genes": "glgP,malP",
+      "share": 0.5475790896790005,
+      "ratio": 0.20440153072057107,
+      "dir_tier": 2,
+      "dir_method": "eq_gc_x_dgbyg"
+    },
+    {
+      "mnxr": "MNXR145046",
+      "genes": "glgA",
+      "share": 0.3895043774032178,
+      "ratio": 0.016672204338834547,
+      "dir_tier": 2,
+      "dir_method": "eq_gc_x_dgbyg"
+    },
+    {
+      "mnxr": "MNXR145021",
+      "genes": "glgB,glgX",
+      "share": 0.06291653291778171,
+      "ratio": 0.08887647468269047,
+      "dir_tier": 2,
+      "dir_method": "dgbyg"
+    }
+  ],
+  "against": null,
+  "module": {
+    "MNXR145036": {
+      "ratio": 0.20440153072057107,
+      "dir_tier": 2,
+      "dir_method": "eq_gc_x_dgbyg",
+      "dG_prime": -3.9355440727028355
+    },
+    "MNXR145038": {
+      "ratio": 1.0,
+      "dir_tier": 0,
+      "dir_method": "no_evidence",
+      "dG_prime": 0.0
+    },
+    "MNXR145046": {
+      "ratio": 0.016672204338834547,
+      "dir_tier": 2,
+      "dir_method": "eq_gc_x_dgbyg",
+      "dG_prime": -10.14831602636163
+    },
+    "MNXR145021": {
+      "ratio": 0.08887647468269047,
+      "dir_tier": 2,
+      "dir_method": "dgbyg",
+      "dG_prime": -6.000000961935363
+    },
+    "MNXR145639": {
+      "ratio": 0.20440178681762072,
+      "dir_tier": 2,
+      "dir_method": "eq_gc_x_dgbyg",
+      "dG_prime": -3.9355409669635666
+    }
+  }
+}

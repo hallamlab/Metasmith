@@ -7,17 +7,17 @@ arithmetic, and carbon would exercise the arithmetic at a hundred times the
 cost. Sulfur is the same coverage for 24,198 pair rows instead of ~1.5M -- so
 this whole file runs in about a second against the real deployed trio.
 
-The counts below are the r8 bake. They are a REGRESSION pin over a fixed
+The counts below are the r9 bake. They are a REGRESSION pin over a fixed
 artifact, not a claim about what a rebake should produce: when the bake is
 rebuilt they move, and the honest response is to re-derive them and say in the
 commit which bake they now describe.
 
 `BAKE` CANNOT TELL YOU WHICH BAKE THAT IS. The identity is a fact about the node
-space, so r8 -- a direction-only re-bake -- inherits r7's 0ffd4c8c6231696e byte
+space, so r9 -- a direction-only re-bake -- inherits r7's 0ffd4c8c6231696e byte
 for byte. The field that separates them is `direction.parquet`'s per-file
-`src_direction_sha256`, 96cc532c for r8 against d3acf218 for r7, and it lives
-under a different footer key so that `assert_same_bake` does not compare it
-across the trio.
+`src_direction_sha256`, e8f72b8b for r9 against 96cc532c for r8 and d3acf218 for
+r7, and it lives under a different footer key so that `assert_same_bake` does
+not compare it across the trio.
 
 The sulfur counts run through `ratio_by_code`, so they are DIRECTION-SENSITIVE
 as well as topology-sensitive: a re-bake that only changed the direction table
@@ -31,7 +31,7 @@ from ecspr.bake import encoding as refs
 
 # The deployed trio, and the sulfur slice of it.
 BAKE = "0ffd4c8c6231696e"
-S_NODES, S_EDGES, S_PAIR_ROWS = 7833, 11084, 26352
+S_NODES, S_EDGES, S_PAIR_ROWS = 7833, 11076, 26352
 S_REACTIONS_USED, S_METABOLITES = 18142, 6613
 
 

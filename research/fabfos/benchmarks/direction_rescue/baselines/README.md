@@ -84,9 +84,35 @@ kept as the invariant. 8,091 reactions used, effective conductance 2.96871550915
 `measure_rescue.py --substitutions none --expect`. Its own header records the bake and the
 forecast tables it was computed from.
 
-**r9's own readings are here too**, stamped `0ffd4c8c…:e8f72b8b…`. r9 is pinned at
-`metabolism_bake_r9` and not deployed, so these are not baselines in the sense above — they
-are what r10 will be measured against once the promote happens, taken from the staged chunk
-rather than from a deployed one. The rescue reading was taken against r9's OWN rebuilt
-forecast (`--substitutions src/ecspr/bake/direction`); read against r8's forecast the two
-disagree about which members spoke, which is the check working rather than a defect.
+## r9, now deployed
+
+**r9's own readings are here too**, stamped `0ffd4c8c…:e8f72b8b…` — the pairing that
+separates it from r8, since a direction-only re-bake inherits r7's vocab identity byte for
+byte. The rescue reading was taken against r9's OWN rebuilt forecast (`--substitutions
+src/ecspr/bake/direction`); read against r8's forecast the two disagree about which members
+spoke, which is the check working rather than a defect.
+
+The promote renamed the staged chunk onto `metabolism_bake`. The three verifiers were
+re-run at that path and reproduce the staged readings exactly — `aam_v3_nostoc` returns the
+same effective conductance to the last digit, `measure_rescue --expect` agrees on all ten
+rows, and `check_references` passes. Only `S_EDGES` in `test_deployed_bake.py` moved,
+11,084 → 11,076, which is the direction-sensitivity that file's docstring predicts;
+`S_NODES`, `S_PAIR_ROWS`, `S_REACTIONS_USED` and `S_METABOLITES` all held.
+
+The two glycogen readings were taken after the promote, so they describe the bake every
+consumer now resolves:
+
+| route | r7 (published) | r8 | **r9 (deployed)** |
+|---|---:|---:|---:|
+| `MNXR145036` glgP/malP, phosphorylase run backwards | 0.5678 | 0.5342 | **0.5476** |
+| `MNXR145046` glgA, synthase | 0.3276 | 0.4044 | **0.3895** |
+| `MNXR145021` glgB/glgX, branching | 0.1046 | 0.0614 | **0.0629** |
+
+| | r7 | r8 | **r9** |
+|---|---:|---:|---:|
+| share of injected carbon reaching glycogen | 0.119216 | 0.140811 | **0.144764** |
+
+Both move *further* in the direction `fabfos/bench-eydallin` reported as over-fed. That is
+the mechanism working: `MNXR145036` left tier 0 for a tier-2 vote at ratio 0.204402, and a
+reaction the ensemble had been abstaining on is now one it has an opinion about. The
+opinion favours synthesis.
