@@ -160,7 +160,7 @@ genes.
 ## What this leaves behind
 
 `data/fabfos/runs/aska/gpr/` is now a maintained ASKA population — both channels on the
-shared eighteen-column GPR schema, one census row per clone with its b-number and its
+shared GPR schema, one census row per clone with its b-number and its
 Eydallin label, and every clone present including the ones that resolve to nothing. The
 existing ASKA/FFA arm builds its own null pool ad hoc from the roster and a GenBank parse;
 it now has a table to read instead.
