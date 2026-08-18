@@ -96,9 +96,25 @@ MODEL_COLUMNS = ("model_key", "name", "smiles", "inchi", "inchikey", "basis")
 # compounds it inserted. Copied by machine from chem_prop like every other structure here,
 # and cross-checked against `source_mnxm` when both are declared.
 MODEL_OPTIONAL = ("congener_of", "source_mnxm", "formula")
+
+# THE WIDTH AND THE GATE ARE PER MEMBER, AND THE COLUMN NAMES SAY WHICH.
+#
+# A stand-in structure is an assertion, and how wrong it is depends on WHO IS READING IT.
+# eQuilibrator places the FMN model pair 0.45 kJ/mol from the potentials this table cites;
+# dGbyG places it 9.60 away -- the same offset to five decimals across four different
+# anchors with four different siblings, so it is a systematic property of the model pair
+# and not anchor noise. One number cannot describe both members, and the one that used to
+# be written described eQuilibrator while being read as though it described dGbyG too.
+#
+# So there is no member-agnostic `congeners` column any more. Each member gets its own,
+# and `load` REQUIRES a member -- a table scored by one member and read by another is a
+# refusal rather than a silent reuse, because that silent reuse is exactly the defect
+# these columns replace.
+MEMBERS = ("eq", "dgbyg")
+MEMBER_COLUMNS = tuple(f"{c}_{m}" for m in MEMBERS for c in ("congeners", "gap"))
 ROW_COLUMNS = ("kind", "mnxm", "mnx_name", "terms", "congener_terms", "couple_id", "state",
                "e0_V", "e0_model_V", "n_e", "n_h", "anchor_mnxr", "sibling_mnxr",
-               "sibling_e0_V", "congeners", "basis")
+               "sibling_e0_V") + MEMBER_COLUMNS + ("basis",)
 
 # `carrier`  a redox couple: both states substituted, no heavy atoms transferred, and the
 #            model's potential within a decade of the real carrier's.
@@ -232,6 +248,12 @@ class Substitutions:
         self.rows = rows if rows is not None else pd.DataFrame(columns=list(ROW_COLUMNS))
         self._by_mnxm = by_mnxm or {}
         self.formulas = formulas or {}
+        # WHICH MEMBER THIS SET WAS ADMITTED FOR. `None` on the empty instance, which
+        # covers nothing and so cannot disagree with anyone; set by `load`. Everything
+        # downstream -- the rewrite, the width, the props extension -- is this member's,
+        # which is why the member is fixed once here rather than threaded through each
+        # call and forgotten at one of them.
+        self.member = None
         # Refusals ship beside accepts, so a table's silence about a compound is a
         # recorded decision rather than an absence somebody has to reconstruct.
         self.decisions = pd.DataFrame(columns=list(DECISION_COLS))
@@ -536,13 +558,30 @@ DECISION_COLS = ("kind", "mnxm", "mnx_name", "couple_id", "verdict", "predicate"
 # reported as a potential-gate failure would send a curator to the wrong question.
 ROW_PREDICATES = ("kind_known", "consistent_repeat", "stale_id", "cited", "anchored",
                   "replaceable_only", "terms_parse", "models_declared", "polymer_increment",
-                  "congener_spread")
+                  "member_unscored", "member_drift", "congener_spread")
 COUPLE_PREDICATES = ("couple_complete", "no_heavy_transfer", "potential_declared",
                      "potential_within_decade")
 
+# NON-FATAL, AND THE DISTINCTION IS THE WHOLE POINT OF THIS SET.
+#
+# Every other predicate is a defect in the table: a stale id, an unparseable term, a row
+# with no basis. Those abort, because a table that half-loads is worse than one that
+# refuses and the curator has to fix them before anything runs.
+#
+# `member_drift` is not a defect. It is the mechanism WORKING: this member cannot place
+# this stand-in, so it does not get the substitution, and the other member still does. The
+# load continues with the reduced set and the ensemble loses one vote rather than the
+# build. Aborting here would mean one member's disagreement could stop the other member's
+# bake, which is the opposite of what an independently-abstaining ensemble is for.
+#
+# `member_unscored` stays FATAL: an arm nobody has run the anchor for is an absence of
+# evidence, not evidence of absence, and admitting it silently is exactly the "asserted
+# structure nothing checked" failure the anchor gate exists to prevent.
+NONFATAL_PREDICATES = ("member_drift",)
+
 
 def _check_row(r, props: dict, names: dict, seen: dict, models: dict,
-               formulas: dict | None = None):
+               formulas: dict | None = None, member: str = "eq"):
     """`(predicate, detail)` for the first predicate this row fails, or `(None, rec)`.
 
     `seen` maps an already-admitted mnxm to its terms string. A REPEAT IS LEGAL AND
@@ -594,8 +633,11 @@ def _check_row(r, props: dict, names: dict, seen: dict, models: dict,
             _gate_polymer(str(r.mnxm), terms, models, formulas, row_id)
         except Refused as e:
             return "polymer_increment", str(e)
+    drift = _gate_member_drift(r, row_id, member)
+    if drift is not None:
+        return drift
     try:
-        sigma_sub = _congener_spread(r, models, row_id)
+        sigma_sub = _congener_spread(r, models, row_id, member)
     except Refused as e:
         return "congener_spread", str(e)
     rec = {c: getattr(r, c) for c in ROW_COLUMNS}
@@ -626,13 +668,20 @@ def _check_couples(frame: pd.DataFrame, models: dict):
 
 
 def load(directory: Path | None, props: dict, names: dict,
-         *, formulas: dict | None = None, collect: bool = False) -> Substitutions:
-    """Read and admit the tables, or return the empty configuration.
+         *, formulas: dict | None = None, collect: bool = False,
+         member: str | None = None) -> Substitutions:
+    """Read and admit the tables FOR ONE MEMBER, or return the empty configuration.
 
     `props`, `names` and `formulas` are MetaNetX's own, and each answers one gate: props
     the replaceable-only gate, names the stale-id tripwire, formulas the polymer scope. A
     caller with no polymer rows may omit `formulas`; one with polymer rows that omits it is
     refused rather than quietly given a table whose rows can never fire.
+
+    `member` IS REQUIRED AND HAS NO DEFAULT, because the admitted set differs between
+    members and the whole point of this argument is that the difference cannot be reached
+    by accident. A caller that wants the union -- `resolve`, which is asking which
+    compounds eQuilibrator can look up and does not care who will use them -- asks for it
+    by name with `member="any"`.
 
     `collect=True` is the `check` verb's mode: run every predicate on every row and record
     the verdicts instead of aborting on the first. The pipeline never uses it -- a table
@@ -641,6 +690,14 @@ def load(directory: Path | None, props: dict, names: dict,
     """
     if directory is None:
         return Substitutions()
+    if member is None:
+        raise Refused(
+            "[substitute] load() needs a member: the admitted set is per member, and a "
+            "table scored by one member and read by another is the defect these columns "
+            f"replace. Pass member= one of {MEMBERS + ('any',)}")
+    if member not in MEMBERS and member != "any":
+        raise Refused(f"[substitute] unknown member {member!r}; "
+                      f"expected one of {MEMBERS + ('any',)}")
     directory = Path(directory)
     models = _admit_models(read_table(directory / "models.tsv"), formulas)
     df = read_table(directory / "substitutions.tsv")
@@ -651,10 +708,10 @@ def load(directory: Path | None, props: dict, names: dict,
 
     parsed, seen, decisions = [], {}, []
     for r in df.itertuples(index=False):
-        pred, payload = _check_row(r, props, names, seen, models, formulas)
+        pred, payload = _check_row(r, props, names, seen, models, formulas, member)
         base = dict(kind=r.kind, mnxm=r.mnxm, mnx_name=r.mnx_name, couple_id=r.couple_id)
         if pred is not None:
-            if not collect:
+            if not collect and pred not in NONFATAL_PREDICATES:
                 raise Refused(payload)
             decisions.append(dict(base, verdict="refused", predicate=pred, detail=payload))
             continue
@@ -681,39 +738,96 @@ def load(directory: Path | None, props: dict, names: dict,
 
     by_mnxm = {str(p["mnxm"]): p for p in parsed}
     out = Substitutions(models, frame, by_mnxm, formulas)
+    out.member = member
     out.decisions = pd.DataFrame(decisions, columns=list(DECISION_COLS))
+    # SAID OUT LOUD, because a non-fatal refusal narrows what this member is given and a
+    # silent narrowing is indistinguishable from a table that was never written. The count
+    # belongs in the run log beside the member's own tally, so a bake can be read back and
+    # asked why an arm covered what it covered.
+    dropped = [d for d in decisions if d["predicate"] in NONFATAL_PREDICATES]
+    if dropped and not collect:
+        couples = sorted({str(d["couple_id"]) for d in dropped})
+        print(f"[substitute:{member}] {len(dropped)} row(s) across {len(couples)} couple(s) "
+              f"refused for this member and kept for the other: {', '.join(couples)}",
+              flush=True)
     return out
 
 
-def _congener_spread(r, models: dict, row_id: str) -> float:
-    """How much the answer moves across the declared alternatives to this model compound.
+def _congener_spread(r, models: dict, row_id: str, member: str) -> float:
+    """How much THIS MEMBER's answer moves across the declared alternatives, as a sigma.
 
     Carried as `sigma_sub` rather than discarded, because the choice of model compound is
     an assertion with a width and reporting it as zero would make an asserted structure
-    look like a measurement. Filled by `substitute congeners`, which scores each and
+    look like a measurement. Filled by `substitute anchor --member`, which scores each and
     writes the spread back; an unscored row declares 0.0 and the anchor verb says so.
+
+    THE REFUSAL LIVES IN `_gate_member_drift`, NOT HERE. This column mixes two things --
+    how far apart the alternative stand-ins are (a property of the curation) and how far
+    this member sits from the potentials the row cites (a property of the member). Refusing
+    on the mixture is what let eQuilibrator's 0.45 speak for dGbyG's 9.60: the conflated
+    number passed a gate the member-specific one fails. Width is reported here; admission
+    is decided there.
     """
-    if not _cited(r.congeners):
+    if member == "any":
+        return 0.0
+    raw = getattr(r, f"congeners_{member}", None)
+    if not _cited(raw):
         return 0.0
     values = []
-    for part in str(r.congeners).split(";"):
+    for part in str(raw).split(";"):
         part = part.strip()
         if not part:
             continue
         try:
             values.append(float(part))
         except ValueError:
-            raise Refused(f"[substitute] {row_id}: congener entry {part!r} is not a "
-                          f"kJ/mol number. Run `substitute congeners` to fill this")
+            raise Refused(f"[substitute] {row_id}: congeners_{member} entry {part!r} is "
+                          f"not a kJ/mol number. Run `substitute anchor --member {member}`")
     if not values:
         return 0.0
-    spread = max(values) - min(values)
-    if spread > canon.DIR_DECADE:
-        raise Refused(
-            f"[substitute] {row_id}: congeners span {spread:.2f} kJ/mol, past DIR_DECADE "
-            f"({canon.DIR_DECADE:.2f}). The model compound is not pinning the answer -- "
-            f"bring it back rather than widening this gate")
-    return spread / 2.0
+    return (max(values) - min(values)) / 2.0
+
+
+def _gate_member_drift(r, row_id: str, member: str):
+    """Can this member place this stand-in at all?
+
+    `gap` is the member's own disagreement with the potentials the row declares: it scores
+    the anchor under the model couple and compares the result to the offset those
+    potentials predict. Small means the member and the tabulation agree about where the
+    stand-in sits. Past a decade means they do not, and every reaction the row unblocks for
+    this member inherits that displacement as a systematic error -- not a wider answer, a
+    WRONG one, which is worse than the silence the substitution was added to remove.
+
+    So the refusal is per member and it is one-sided: a row refused here is refused FOR
+    THIS MEMBER ONLY. The other member keeps it, the ensemble loses one vote rather than
+    the reaction, and that is precisely what an ensemble of independently-abstaining
+    members is for.
+    """
+    # `any` is the union: which compounds exist at all, for a caller that is not asking
+    # anyone to score them. `resolve` uses it -- eQuilibrator's cache does not care which
+    # member will eventually read the structure it looks up.
+    if member == "any":
+        return None
+    raw = getattr(r, f"gap_{member}", None)
+    if not _cited(raw):
+        return ("member_unscored",
+                f"[substitute] {row_id}: gap_{member} is empty. The {member} arm of this "
+                f"row has never been scored, and admitting it would assert a structure "
+                f"this member has not been checked against. Run "
+                f"`substitute anchor --member {member}` and write the gap back")
+    try:
+        gap = abs(float(raw))
+    except ValueError:
+        return ("member_unscored",
+                f"[substitute] {row_id}: gap_{member} {raw!r} is not a kJ/mol number")
+    if gap > canon.DIR_DECADE:
+        return ("member_drift",
+                f"[substitute] {row_id}: {member} places this model couple {gap:.2f} "
+                f"kJ/mol from the potentials the row cites, past DIR_DECADE "
+                f"({canon.DIR_DECADE:.2f}). REFUSED FOR {member} ONLY -- the other member "
+                f"keeps the row. Widening this gate would ship a confident direction "
+                f"displaced by {gap / canon.DIR_DECADE:.2f} decades")
+    return None
 
 
 # =====================================================================
@@ -739,22 +853,35 @@ def cmd_check(args):
     """
     from .refdata import load_mnxr_stoich
     props, names, formulas = _tables(args)
-    subs = load(args.tables, props, names, formulas=formulas, collect=True)
-    d = subs.decisions
+    # ONE PASS PER MEMBER. The admitted set differs between them, so a single verdict
+    # column would have to pick a member to be about and would then read as though it were
+    # about both -- which is the defect the per-member columns exist to close.
+    per_member = {m: load(args.tables, props, names, formulas=formulas, collect=True,
+                          member=m) for m in MEMBERS}
+    for m in MEMBERS:
+        dm = per_member[m].decisions
+        bad_m = int((dm["verdict"] == "refused").sum())
+        print(f"[substitute:{m}] {len(dm):,} rows · {len(dm) - bad_m:,} admitted · "
+              f"{bad_m:,} refused")
+        for pred in ROW_PREDICATES + COUPLE_PREDICATES:
+            n = int((dm["predicate"] == pred).sum())
+            if n:
+                print(f"    {pred:<26} {n:>5,}")
+                for detail in dm.loc[dm["predicate"] == pred, "detail"].head(3):
+                    print(f"        {detail}")
+
+    d = pd.concat([per_member[m].decisions.assign(member=m) for m in MEMBERS],
+                  ignore_index=True)
     n_bad = int((d["verdict"] == "refused").sum())
-    print(f"[substitute] {len(d):,} rows · {len(d) - n_bad:,} admitted · {n_bad:,} refused")
-    for pred in ROW_PREDICATES + COUPLE_PREDICATES:
-        n = int((d["predicate"] == pred).sum())
-        if n:
-            print(f"    {pred:<26} {n:>5,}")
-            for detail in d.loc[d["predicate"] == pred, "detail"].head(3):
-                print(f"        {detail}")
 
     reached = 0
     if args.reac_prop:
         stoich = load_mnxr_stoich(args.reac_prop)
-        reached = sum(1 for _, (st, _b, _t) in stoich.items() if subs.covers(st))
-        print(f"[substitute] admitted rows touch {reached:,} of {len(stoich):,} reactions")
+        for m in MEMBERS:
+            n = sum(1 for _, (st, _b, _t) in stoich.items() if per_member[m].covers(st))
+            print(f"[substitute:{m}] admitted rows touch {n:,} of {len(stoich):,} "
+                  f"reactions")
+            reached = max(reached, n)
 
     # The under-coverage report. An accession whose name normalises to one already admitted
     # is a compound the curator's own reasoning covers and their table does not.
@@ -831,12 +958,17 @@ def cmd_anchor(args):
     potential predicts the wrong offset and is refused here rather than shipping a
     confident number nothing checked.
 
-    Only `eq` is runnable on this workstation; `build-refs-dgbyg` does not exist here, so
-    the dGbyG arm has to be run in its own image or reported unverified.
+    BOTH ARMS ARE RUNNABLE HERE. The dGbyG arm needs the IMAGE, not a conda env -- build it
+    with `TAGS=dgbyg docker/ecspr_bake/dev.sh --build` and run this verb inside it. The
+    long-standing note that it could not be run here named the wrong obstacle and outlived
+    its own justification.
     """
     from .refdata import load_mnxr_stoich
     props, names, formulas = _tables(args)
-    subs = load(args.tables, props, names, formulas=formulas)
+    # `any`, NOT `args.member`. This verb EXISTS to produce `gap_<member>`, so loading for
+    # that member would refuse every unscored row as `member_unscored` and the table could
+    # never be scored a first time. Scoring is not admitting.
+    subs = load(args.tables, props, names, formulas=formulas, member="any")
     stoich = load_mnxr_stoich(args.reac_prop)
     wide = subs.props(props)
 
@@ -945,11 +1077,21 @@ def cmd_anchor(args):
               f"(predicted {rows[-1].get('predicted')}, gap {rows[-1].get('gap')})")
 
     df = pd.DataFrame(rows)
+    # PASTE-READY AND NAMED FOR THE MEMBER THAT PRODUCED THEM. The defect this verb's
+    # output feeds was exactly a number computed per member and then transcribed into a
+    # column that did not say which member it came from. Emitting the destination column
+    # names makes that transcription mechanical instead of a judgement call.
+    if not df.empty:
+        df[f"congeners_{args.member}"] = df["congeners"] if "congeners" in df else ""
+        df[f"gap_{args.member}"] = df["gap"] if "gap" in df else ""
     if args.out:
         df.to_csv(args.out, sep="\t", index=False)
         print(f"[substitute] -> {args.out}")
     print(f"[substitute] {len(df):,} anchors · {bad:,} not ok "
           f"(DIR_DECADE = {canon.DIR_DECADE:.2f} kJ/mol)")
+    print(f"[substitute] write these back as congeners_{args.member} and "
+          f"gap_{args.member}; a row whose gap_{args.member} exceeds DIR_DECADE is "
+          f"refused for {args.member} alone and kept for the other member")
     return 1 if bad else 0
 
 

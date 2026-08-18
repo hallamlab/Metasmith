@@ -109,7 +109,8 @@ def cmd_eval(args):
     subs = substitute.load(
         args.substitutions, props,
         load_mnxm_names(args.chem_prop) if args.substitutions else {},
-        formulas=load_mnxm_formulas(args.chem_prop) if args.substitutions else None)
+        formulas=load_mnxm_formulas(args.chem_prop) if args.substitutions else None,
+        member=args.member)
     props = subs.props(props)
     if len(subs):
         print(f"[eval:{args.member}] {len(subs):,} substitutions over "

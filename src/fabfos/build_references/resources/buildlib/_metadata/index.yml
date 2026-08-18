@@ -16,7 +16,7 @@ manifest:
     origin: leaf
     type: buildlib::bench_universe.py
   ecspr:
-    instance_id: 1e20b5fc4013de8c79d5a5b0a8fe40f30ec0d424d45e5519b1c10167f8089a908403
+    instance_id: 1e202239512297ea25a32c6ab436679b8a7f4e6e65eb13029f48f8a266e737ec7223
     origin: leaf
     type: buildlib::ecspr
   mnx_lookups.py:

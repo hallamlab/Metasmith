@@ -112,10 +112,15 @@ def compute_points(curated_per_mnxr, reac_prop, chem_prop, limit=None,
     # is the same class of mistake as an unstamped cache.
     from .refdata import load_mnxm_formulas, load_mnxm_names
     from . import substitute
+    # `eq` AND NOT `any`: this path re-scores with EquilibratorMember, so it must be handed
+    # the set eQuilibrator was admitted for. Handing it the union would restage reactions
+    # under a couple this member is refused on and fit the prior to answers the run never
+    # produced.
     subs = substitute.load(
         substitutions, props,
         load_mnxm_names(chem_prop) if substitutions else {},
-        formulas=load_mnxm_formulas(chem_prop) if substitutions else None)
+        formulas=load_mnxm_formulas(chem_prop) if substitutions else None,
+        member="eq")
     props = subs.props(props)
     eq = EquilibratorMember()
 

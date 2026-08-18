@@ -178,13 +178,20 @@ def predict_dgbyg(stoich, profiles):
     return "expected_ok", ""
 
 
-def build(universe, stoich_by_mnxr, profiles, resolved, subs=None):
+def build(universe, stoich_by_mnxr, profiles, resolved, subs_by_member=None):
     """One row per (reaction, member). `rows, tally`.
 
-    `subs` rewrites the equation the same way `drive.cmd_eval` will, so the forecast
-    describes the chemistry the run will actually be handed. Omitting it here and passing
-    it there is the failure mode this argument exists to prevent: the accounting would
-    describe a bake that was never built.
+    `subs_by_member` rewrites the equation the same way `drive.cmd_eval` will, so the
+    forecast describes the chemistry the run will actually be handed. Omitting it here and
+    passing it there is the failure mode this argument exists to prevent: the accounting
+    would describe a bake that was never built.
+
+    KEYED BY MEMBER, because the admitted set is. A couple whose model compound a member
+    cannot place is refused for that member and kept for the other, so the two arms are
+    handed DIFFERENT equations for the same reaction. One shared rewrite would forecast
+    the refusing member as though it had been given the substitution -- over-predicting
+    precisely the reactions the refusal exists to withhold, which is the one place this
+    accounting is load-bearing.
     """
     rows, tally = [], collections.Counter()
     for mnxr in universe:
@@ -194,9 +201,11 @@ def build(universe, stoich_by_mnxr, profiles, resolved, subs=None):
                 rows.append((mnxr, member, "no_stoich", "", 0))
                 tally[f"{member} no_stoich"] += 1
             continue
-        st = subs.rewrite(s[0]) if subs is not None else s[0]
-        for member, (mech, blocker) in (("eq", predict_eq(st, profiles, resolved)),
-                                        ("dgbyg", predict_dgbyg(st, profiles))):
+        for member in ("eq", "dgbyg"):
+            sub = (subs_by_member or {}).get(member)
+            st = sub.rewrite(s[0]) if sub is not None else s[0]
+            mech, blocker = (predict_eq(st, profiles, resolved) if member == "eq"
+                             else predict_dgbyg(st, profiles))
             assert mech in MEMBER_MECHANISMS[member], (
                 f"{member} cannot report {mech!r}; the mechanism set and the "
                 f"member's branches have drifted apart")
@@ -258,9 +267,14 @@ def cmd_resolve(args):
     # reaction it was added to unblock. Paired with `--resume` over a finished table this
     # costs seconds, so there is no reason to price the tables against a stale resolution.
     if args.substitutions:
+        # `any`: this pass asks eQuilibrator's cache which structures it can look up, and
+        # that answer does not depend on which member will eventually read them. Loading a
+        # single member here would leave the other member's model compounds unresolved and
+        # silence the reactions they were added to unblock.
         subs = substitute.load(args.substitutions, props,
                                load_mnxm_names(args.chem_prop),
-                               formulas=load_mnxm_formulas(args.chem_prop))
+                               formulas=load_mnxm_formulas(args.chem_prop),
+                               member="any")
         props = subs.props(props)
         parts |= set(subs.models)
     cpds = sorted(m for m in parts if (props.get(m) or {}).get("inchikey"))
@@ -307,15 +321,24 @@ def cmd_build(args):
     props = _props(args.chem_prop, args.mnxm_only)
     # `Substitutions()` with no tables covers nothing, so the default path is the one the
     # baselines were taken under -- not a mode, an empty table.
-    subs = substitute.load(
-        args.substitutions, props,
-        load_mnxm_names(args.chem_prop) if args.substitutions else {},
-        formulas=load_mnxm_formulas(args.chem_prop) if args.substitutions else None)
-    props = subs.props(props)
-    parts = _participants(stoich, universe) | set(subs.models)
+    _names = load_mnxm_names(args.chem_prop) if args.substitutions else {}
+    _formulas = load_mnxm_formulas(args.chem_prop) if args.substitutions else None
+    subs_by_member = {m: substitute.load(args.substitutions, props, _names,
+                                         formulas=_formulas, member=m)
+                      for m in substitute.MEMBERS}
+    # The props extension is the UNION over members. It is purely additive and keyed on
+    # synthetic ids, so no member can shadow another's, and a model compound has to be
+    # lookup-able whichever arm asked for it.
+    for _s in subs_by_member.values():
+        props = _s.props(props)
+    parts = _participants(stoich, universe)
+    for _s in subs_by_member.values():
+        parts |= set(_s.models)
+    _counts = ", ".join(f"{m} {len(s):,}" for m, s in sorted(subs_by_member.items()))
     print(f"[forecast] {len(universe):,} reactions, {len(parts):,} distinct "
           f"participants, {len(props):,} chem_prop rows with a structure"
-          + (f", {len(subs):,} substitutions" if len(subs) else ""), flush=True)
+          + (f", substitutions admitted per member: {_counts}"
+             if any(len(s) for s in subs_by_member.values()) else ""), flush=True)
 
     profiles = profile_compounds(parts, props)
 
@@ -341,7 +364,7 @@ def cmd_build(args):
               "arm's `expected_ok` is an upper bound on what it will answer",
               flush=True)
 
-    rows, tally = build(universe, stoich, profiles, resolved, subs)
+    rows, tally = build(universe, stoich, profiles, resolved, subs_by_member)
     df = pd.DataFrame(rows, columns=list(FORECAST_COLS))
     df.to_parquet(args.out, index=False)
 
@@ -368,7 +391,11 @@ def cmd_build(args):
     lines.append(f"input\tparticipants_wildcard\t"
                  f"{sum(1 for m in parts if profiles[m].wildcard)}")
     lines.append(f"input\tresolution_supplied\t{int(resolved is not None)}")
-    lines.append(f"input\tsubstitutions\t{len(subs)}")
+    # PER MEMBER, because a single count can no longer describe the configuration: the
+    # arms are admitted separately and a summary that hid that would be the same class of
+    # under-declaration as the unstamped decode caches this campaign started with.
+    for _m in sorted(subs_by_member):
+        lines.append(f"input\tsubstitutions_{_m}\t{len(subs_by_member[_m])}")
     lines.append(f"input\tmnxm_only\t{int(bool(args.mnxm_only))}")
     for member, mechs in sorted(MEMBER_MECHANISMS.items()):
         for m in mechs:
