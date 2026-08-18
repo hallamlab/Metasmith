@@ -247,7 +247,7 @@ def cmd_resolve(args):
     from .thermo_eq import EquilibratorMember
 
     from . import substitute
-    from .refdata import load_mnxm_names
+    from .refdata import load_mnxm_formulas, load_mnxm_names
 
     stoich = load_mnxr_stoich(args.reac_prop)
     universe = _universe(args.universe, stoich)
@@ -259,7 +259,8 @@ def cmd_resolve(args):
     # costs seconds, so there is no reason to price the tables against a stale resolution.
     if args.substitutions:
         subs = substitute.load(args.substitutions, props,
-                               load_mnxm_names(args.chem_prop))
+                               load_mnxm_names(args.chem_prop),
+                               formulas=load_mnxm_formulas(args.chem_prop))
         props = subs.props(props)
         parts |= set(subs.models)
     cpds = sorted(m for m in parts if (props.get(m) or {}).get("inchikey"))
@@ -298,7 +299,7 @@ def cmd_resolve(args):
 
 
 def cmd_build(args):
-    from .refdata import load_mnxm_names
+    from .refdata import load_mnxm_formulas, load_mnxm_names
     from . import substitute
 
     stoich = load_mnxr_stoich(args.reac_prop)
@@ -306,8 +307,10 @@ def cmd_build(args):
     props = _props(args.chem_prop, args.mnxm_only)
     # `Substitutions()` with no tables covers nothing, so the default path is the one the
     # baselines were taken under -- not a mode, an empty table.
-    subs = substitute.load(args.substitutions, props,
-                           load_mnxm_names(args.chem_prop) if args.substitutions else {})
+    subs = substitute.load(
+        args.substitutions, props,
+        load_mnxm_names(args.chem_prop) if args.substitutions else {},
+        formulas=load_mnxm_formulas(args.chem_prop) if args.substitutions else None)
     props = subs.props(props)
     parts = _participants(stoich, universe) | set(subs.models)
     print(f"[forecast] {len(universe):,} reactions, {len(parts):,} distinct "

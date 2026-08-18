@@ -158,6 +158,29 @@ def load_mnxm_names(chem_prop: Path) -> dict[str, str]:
     return out
 
 
+def load_mnxm_formulas(chem_prop: Path) -> dict[str, str]:
+    """MNXM -> chem_prop's own `formula` string, verbatim.
+
+    SEPARATE FROM `load_mnxm_props` for the reason `load_mnxm_names` is: that dict holds
+    exactly the three keys the thermo members compute with, and a formula is not one of
+    them. The only caller is the substitution lane's polymer scope, which has to decide
+    whether an equation balances BEFORE handing it to a member -- and cannot ask RDKit,
+    because the polymer arm must run in environments that have no RDKit.
+
+    Same namespace rule as the loaders above: the id is taken verbatim, so `WATER`
+    survives with its `H2O`.
+    """
+    out = {}
+    with open(chem_prop) as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            p = line.rstrip("\n").split("\t")
+            if len(p) > 3 and p[0] and p[3]:
+                out[p[0]] = p[3]
+    return out
+
+
 def load_source_to_mnxr(reac_xref: Path, prefix: str) -> dict[str, str]:
     """'<prefix>:<id>' -> MNXR, asserted 1:1 (no silent first-wins collapse).
 

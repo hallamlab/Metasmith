@@ -41,10 +41,35 @@ which does not transfer: a dG'0 is one number over the whole equation, not a per
 ledger. What replaces it is weaker and sufficient -- if a carrier really did transfer atoms
 in some reaction, the fixed model structure fails to balance there and the member abstains
 exactly as it does today. The failure mode is silence, not a wrong number.
+
+A CARRIER ROW IS COMPOUND-KEYED; A POLYMER ROW IS NOT. A carrier substitution is a rename
+and is right wherever the carrier appears, so it applies unconditionally. A polymer row
+asserts something about the REACTION -- that MetaNetX wrote a chain increment as a fixed
+molecule and the equation is short an acceptor -- so it applies only where that is
+observably true, by three conditions computed per reaction:
+
+    (i)   exactly ONE flattened-polymer participant is present,
+    (ii)  the equation does not balance on heavy atoms today, and
+    (iii) it does balance once the acceptor is inserted.
+
+Condition (i) is not bookkeeping. MetaNetX ALIASES one physical polymer under several
+flattened accessions -- `Glycogen`, `Branching glycogen`, `1,4-alpha-D-glucan`, `Amylose`
+-- and writes reactions between two of them: `MNXR157776` is `1,4-alpha-D-glucan ->
+Glycogen`, a hexamer becoming a tetramer. Their residual is an artifact of the aliasing,
+not a chemical deficit, and substituting BOTH sides balances it perfectly and returns a
+confident dG'0 near zero: a tier-2 claim of reversibility on a reaction that does not
+exist. Balance is exactly as worthless as evidence here as it is for a carrier.
+
+Conditions (ii) and (iii) are computed from the chem_prop `formula` column and NOT from
+RDKit, both because heavy-atom counting needs no molecular graph and because this predicate
+has to run wherever the pipeline runs. Hydrogen is excluded: protonation state is the one
+thing the ledger cannot settle, and demanding it would refuse the ADP-glucose rows over
+MetaNetX's own charge conventions rather than over any chemistry.
 """
 from __future__ import annotations
 
 import math
+import re
 from io import StringIO
 from pathlib import Path
 
@@ -66,7 +91,11 @@ MODEL_COLUMNS = ("model_key", "name", "smiles", "inchi", "inchikey", "basis")
 # the accession -- and it is here so a reader can re-derive the row rather than trust a
 # hand-transcribed 300-character InChI, which is the transcription error the stale-id
 # tripwire exists to catch one level up.
-MODEL_OPTIONAL = ("congener_of", "source_mnxm")
+# `formula` is required of a model compound a POLYMER row names and ignored otherwise: the
+# polymer scope decides whether an equation balances, and it decides it over the model
+# compounds it inserted. Copied by machine from chem_prop like every other structure here,
+# and cross-checked against `source_mnxm` when both are declared.
+MODEL_OPTIONAL = ("congener_of", "source_mnxm", "formula")
 ROW_COLUMNS = ("kind", "mnxm", "mnx_name", "terms", "congener_terms", "couple_id", "state",
                "e0_V", "e0_model_V", "n_e", "n_h", "anchor_mnxr", "sibling_mnxr",
                "sibling_e0_V", "congeners", "basis")
@@ -132,6 +161,64 @@ def _parse_terms(spec: str, row_id: str) -> list[tuple[str, float]]:
     return out
 
 
+# The elements MetaNetX writes in `formula`. An unknown symbol is the point: a formula
+# carrying `R` or `X` is a residue placeholder, `R` would otherwise parse as an element,
+# and the reaction it appears in must be left alone rather than balanced against a
+# fiction. Same instinct as the wildcard guard one layer up.
+ELEMENTS = frozenset("""
+H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As
+Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu
+Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U
+""".split())
+
+_FORMULA_TOKEN = re.compile(r"([A-Z][a-z]?)(\d*)")
+
+
+def heavy_formula(formula) -> dict[str, int] | None:
+    """Heavy-atom counts from a MetaNetX `formula` string, or None if it is not one.
+
+    None means "this participant's composition is not knowable here" and every caller
+    treats it as a refusal to act, never as zero -- a missing formula that counted as an
+    empty molecule would make an unbalanced equation look balanced.
+
+    HYDROGEN IS DROPPED. MetaNetX writes each compound at its own charge convention, so
+    ADP-glucose and ADP differ by a proton nothing in the equation accounts for. Counting
+    H would refuse those rows over a bookkeeping convention; the members handle protonation
+    themselves, as they do for every reaction this lane never touches.
+    """
+    f = str(formula or "").strip()
+    if not f:
+        return None
+    f = re.sub(r"\(\d*[-+]\)$", "", f)              # a trailing charge, e.g. `HO4P(2-)`
+    out: dict[str, int] = {}
+    pos = 0
+    for m in _FORMULA_TOKEN.finditer(f):
+        if m.start() != pos:                        # a gap means an unparseable character
+            return None
+        pos = m.end()
+        el, n = m.group(1), m.group(2)
+        if el not in ELEMENTS:
+            return None
+        out[el] = out.get(el, 0) + (int(n) if n else 1)
+    if pos != len(f) or not out:
+        return None
+    out.pop("H", None)
+    return out
+
+
+def _apply(stoich: dict[str, float], rows: dict) -> dict[str, float]:
+    """`stoich` with each covered participant replaced by its row's terms."""
+    out: dict[str, float] = {}
+    for mnxm, coeff in stoich.items():
+        row = rows.get(mnxm)
+        if row is None:
+            out[mnxm] = out.get(mnxm, 0.0) + coeff
+            continue
+        for key, mult in row["terms"]:
+            out[key] = out.get(key, 0.0) + coeff * mult
+    return {k: v for k, v in out.items() if abs(v) > 1e-12}
+
+
 class Substitutions:
     """Loaded tables, or nothing at all. `Substitutions()` covers no reaction.
 
@@ -140,10 +227,11 @@ class Substitutions:
     """
 
     def __init__(self, models: dict | None = None, rows: pd.DataFrame | None = None,
-                 by_mnxm: dict | None = None):
+                 by_mnxm: dict | None = None, formulas: dict | None = None):
         self.models = models or {}
         self.rows = rows if rows is not None else pd.DataFrame(columns=list(ROW_COLUMNS))
         self._by_mnxm = by_mnxm or {}
+        self.formulas = formulas or {}
         # Refusals ship beside accepts, so a table's silence about a compound is a
         # recorded decision rather than an absence somebody has to reconstruct.
         self.decisions = pd.DataFrame(columns=list(DECISION_COLS))
@@ -168,22 +256,60 @@ class Substitutions:
             out[key] = rec
         return out
 
+    def _heavy(self, key: str) -> dict[str, int] | None:
+        """Heavy-atom counts for one participant, model compound or MetaNetX accession."""
+        if key.startswith(MODEL_PREFIX):
+            return heavy_formula((self.models.get(key) or {}).get("formula"))
+        return heavy_formula(self.formulas.get(key))
+
+    def _residual(self, stoich: dict[str, float]) -> dict[str, float] | None:
+        """Products minus substrates, per heavy element. None if any composition is not
+        knowable -- which is a refusal to judge the equation, never a zero."""
+        res: dict[str, float] = {}
+        for key, coeff in stoich.items():
+            counts = self._heavy(key)
+            if counts is None:
+                return None
+            for el, n in counts.items():
+                res[el] = res.get(el, 0.0) + coeff * n
+        return {el: v for el, v in res.items() if abs(v) > 1e-9}
+
+    def _applied(self, stoich: dict[str, float]) -> dict:
+        """The rows that act on THIS reaction, keyed by the participant each replaces.
+
+        A carrier or thioester row is compound-keyed and always acts. A polymer row acts
+        only where the three conditions in the module docstring hold, so the same table
+        rewrites `Glycogen + Pi = G1P` and leaves `1,4-alpha-D-glucan -> Glycogen` exactly
+        as MetaNetX wrote it.
+        """
+        hit = {m: self._by_mnxm[m] for m in stoich if m in self._by_mnxm}
+        poly = {m: r for m, r in hit.items() if str(r["kind"]) == "polymer"}
+        if not poly:
+            return hit
+        plain = {m: r for m, r in hit.items() if m not in poly}
+        if len(poly) != 1:                      # (i) two aliases of one polymer
+            return plain
+        base = _apply(stoich, plain) if plain else stoich
+        before = self._residual(base)
+        if not before:                          # (ii) unknowable, or already balanced
+            return plain
+        if self._residual(_apply(base, poly)) != {}:      # (iii) the insert must close it
+            return plain
+        return hit
+
     def rewrite(self, stoich: dict[str, float]) -> dict[str, float]:
         """The equation as the members should see it. Identity when nothing is covered."""
         if not self._by_mnxm or not (set(stoich) & set(self._by_mnxm)):
             return stoich
-        out: dict[str, float] = {}
-        for mnxm, coeff in stoich.items():
-            row = self._by_mnxm.get(mnxm)
-            if row is None:
-                out[mnxm] = out.get(mnxm, 0.0) + coeff
-                continue
-            for key, mult in row["terms"]:
-                out[key] = out.get(key, 0.0) + coeff * mult
-        return {k: v for k, v in out.items() if abs(v) > 1e-12}
+        use = self._applied(stoich)
+        if not use:
+            return stoich
+        return _apply(stoich, use)
 
     def covers(self, stoich: dict[str, float]) -> bool:
-        return bool(set(stoich) & set(self._by_mnxm))
+        if not self._by_mnxm or not (set(stoich) & set(self._by_mnxm)):
+            return False
+        return bool(self._applied(stoich))
 
     def sigma_sub(self, stoich: dict[str, float]) -> float:
         """Congener spread over the participants this reaction substituted, in quadrature.
@@ -192,12 +318,15 @@ class Substitutions:
         `combine.eq_vote` detects an eQuilibrator group cancellation by testing sigma
         against the floor; inflating the member's sigma lifts a cancelling zero over that
         floor and re-promotes it to tier 1 -- precisely the defect r8 was baked to remove.
+
+        Over the rows that ACTUALLY acted, so a polymer row the scope declined contributes
+        no width to a reaction it did not touch.
         """
+        if not self._by_mnxm or not (set(stoich) & set(self._by_mnxm)):
+            return 0.0
         var = 0.0
-        for mnxm in stoich:
-            row = self._by_mnxm.get(mnxm)
-            if row is not None:
-                var += float(row["sigma_sub"]) ** 2
+        for row in self._applied(stoich).values():
+            var += float(row["sigma_sub"]) ** 2
         return math.sqrt(var)
 
 
@@ -205,7 +334,7 @@ class Substitutions:
 # admission
 # =====================================================================
 
-def _admit_models(df: pd.DataFrame) -> dict:
+def _admit_models(df: pd.DataFrame, formulas: dict | None = None) -> dict:
     missing = set(MODEL_COLUMNS) - set(df.columns)
     if missing:
         raise Refused(f"[substitute] models table lacks columns: {sorted(missing)}")
@@ -241,16 +370,34 @@ def _admit_models(df: pd.DataFrame) -> dict:
         if _cited(parent) and str(parent) not in out:
             raise Refused(f"[substitute] model {key}: congener_of {parent!r} is not a "
                           f"declared model")
+        # THE TRANSCRIPTION TRIPWIRE, and the reason `source_mnxm` is worth carrying: a
+        # declared formula that disagrees with the accession it was copied from means the
+        # row was hand-edited after the copy, which is exactly the error the stale-id gate
+        # catches one level up for names.
+        src = str(rec.get("source_mnxm") or "").strip()
+        if _cited(rec.get("formula")) and formulas and src in formulas:
+            want, have = heavy_formula(formulas[src]), heavy_formula(rec["formula"])
+            if want != have:
+                raise Refused(
+                    f"[substitute] model {key}: formula {rec['formula']!r} disagrees with "
+                    f"{src}'s {formulas[src]!r} in chem_prop. Copy it by machine")
     return out
 
 
 def _gate_replaceable(mnxm: str, props: dict, row_id: str) -> None:
-    """A row may only displace a participant the member cannot use TODAY.
+    """A CARRIER row may only displace a participant the member cannot use TODAY.
 
     Tested with `thermo_dgbyg._has_wildcard` itself rather than a reimplementation, so the
     admission predicate cannot drift from the abstention it is meant to be undoing. A row
     that displaces a usable participant is not a substitution, it is an override of
     MetaNetX chemistry, and nothing here reviewed that.
+
+    CARRIER AND THIOESTER ONLY, and the scoping is load-bearing rather than tidy. A
+    flattened polymer carries a perfectly readable wildcard-free SMILES -- glycogen's is
+    maltotetraose's -- so this gate refuses every polymer row by construction, and a
+    polymer row is not making this claim in the first place. What blocks the member there
+    is not an unreadable participant but a MISSING one, and `_gate_polymer` plus the
+    per-reaction scope in `Substitutions._applied` is where a polymer row earns its place.
     """
     p = props.get(mnxm) or {}
     smi = p.get("smiles")
@@ -262,6 +409,43 @@ def _gate_replaceable(mnxm: str, props: dict, row_id: str) -> None:
     raise Refused(f"[substitute] {row_id}: {mnxm} already carries a usable structure "
                   f"({smi!r}). A row may only displace a participant the member cannot "
                   f"read; overriding one is a different and far larger claim")
+
+
+def _gate_polymer(mnxm: str, terms: list, models: dict, formulas: dict | None,
+                  row_id: str) -> None:
+    """A polymer row must be able to answer the balance question, and must change a count.
+
+    Two refusals, and both would otherwise surface as silent under-coverage rather than as
+    an authoring error. Without a formula the per-reaction scope can never conclude
+    anything and the row acts nowhere; with terms that sum to the polymer's own
+    composition the row is a rename, which closes no imbalance and therefore also acts
+    nowhere -- and a table row that provably cannot fire is a mistake, not a no-op.
+    """
+    if not formulas:
+        raise Refused(
+            f"[substitute] {row_id}: a polymer row needs chem_prop formulas and none were "
+            f"supplied. Pass `formulas=load_mnxm_formulas(chem_prop)` to `load`")
+    have = heavy_formula(formulas.get(mnxm))
+    if have is None:
+        raise Refused(f"[substitute] {row_id}: chem_prop gives {mnxm} formula "
+                      f"{formulas.get(mnxm)!r}, which is not a heavy-atom composition")
+    net: dict[str, float] = {}
+    for key, mult in terms:
+        counts = heavy_formula((models.get(key) or {}).get("formula"))
+        if counts is None:
+            raise Refused(
+                f"[substitute] {row_id}: model {key} declares no usable `formula`. A "
+                f"polymer row is admitted on whether its insert BALANCES a reaction, and "
+                f"that question cannot be asked of a compound with no composition")
+        for el, n in counts.items():
+            net[el] = net.get(el, 0.0) + mult * n
+    delta = {el: net.get(el, 0.0) - have.get(el, 0)
+             for el in set(net) | set(have)}
+    if not any(abs(v) > 1e-9 for v in delta.values()):
+        raise Refused(
+            f"[substitute] {row_id}: the terms sum to {mnxm}'s own composition, so this "
+            f"row inserts nothing. A polymer row exists to supply the acceptor MetaNetX "
+            f"left out; one that changes no count can never balance anything")
 
 
 def _gate_couple(rows: pd.DataFrame, models: dict) -> None:
@@ -351,12 +535,14 @@ DECISION_COLS = ("kind", "mnxm", "mnx_name", "couple_id", "verdict", "predicate"
 # "this row is not about what you think" to "this row's chemistry is wrong" -- a stale id
 # reported as a potential-gate failure would send a curator to the wrong question.
 ROW_PREDICATES = ("kind_known", "consistent_repeat", "stale_id", "cited", "anchored",
-                  "replaceable_only", "terms_parse", "models_declared", "congener_spread")
+                  "replaceable_only", "terms_parse", "models_declared", "polymer_increment",
+                  "congener_spread")
 COUPLE_PREDICATES = ("couple_complete", "no_heavy_transfer", "potential_declared",
                      "potential_within_decade")
 
 
-def _check_row(r, props: dict, names: dict, seen: dict, models: dict):
+def _check_row(r, props: dict, names: dict, seen: dict, models: dict,
+               formulas: dict | None = None):
     """`(predicate, detail)` for the first predicate this row fails, or `(None, rec)`.
 
     `seen` maps an already-admitted mnxm to its terms string. A REPEAT IS LEGAL AND
@@ -390,10 +576,11 @@ def _check_row(r, props: dict, names: dict, seen: dict, models: dict):
             f"as evidence here -- a row is admitted because a reaction a member already "
             f"scored still scores the same under the model compound, not because the "
             f"atoms add up")
-    try:
-        _gate_replaceable(str(r.mnxm), props, row_id)
-    except Refused as e:
-        return "replaceable_only", str(e)
+    if str(r.kind) != "polymer":
+        try:
+            _gate_replaceable(str(r.mnxm), props, row_id)
+        except Refused as e:
+            return "replaceable_only", str(e)
     try:
         terms = _parse_terms(r.terms, row_id)
     except Refused as e:
@@ -402,6 +589,11 @@ def _check_row(r, props: dict, names: dict, seen: dict, models: dict):
         if key not in models:
             return "models_declared", (f"[substitute] {row_id}: term names {key!r}, "
                                        f"which models.tsv does not declare")
+    if str(r.kind) == "polymer":
+        try:
+            _gate_polymer(str(r.mnxm), terms, models, formulas, row_id)
+        except Refused as e:
+            return "polymer_increment", str(e)
     try:
         sigma_sub = _congener_spread(r, models, row_id)
     except Refused as e:
@@ -434,11 +626,13 @@ def _check_couples(frame: pd.DataFrame, models: dict):
 
 
 def load(directory: Path | None, props: dict, names: dict,
-         *, collect: bool = False) -> Substitutions:
+         *, formulas: dict | None = None, collect: bool = False) -> Substitutions:
     """Read and admit the tables, or return the empty configuration.
 
-    `props` and `names` are MetaNetX's own, and both are needed: props for the
-    replaceable-only gate, names for the stale-id tripwire.
+    `props`, `names` and `formulas` are MetaNetX's own, and each answers one gate: props
+    the replaceable-only gate, names the stale-id tripwire, formulas the polymer scope. A
+    caller with no polymer rows may omit `formulas`; one with polymer rows that omits it is
+    refused rather than quietly given a table whose rows can never fire.
 
     `collect=True` is the `check` verb's mode: run every predicate on every row and record
     the verdicts instead of aborting on the first. The pipeline never uses it -- a table
@@ -448,7 +642,7 @@ def load(directory: Path | None, props: dict, names: dict,
     if directory is None:
         return Substitutions()
     directory = Path(directory)
-    models = _admit_models(read_table(directory / "models.tsv"))
+    models = _admit_models(read_table(directory / "models.tsv"), formulas)
     df = read_table(directory / "substitutions.tsv")
 
     missing = set(ROW_COLUMNS) - set(df.columns)
@@ -457,7 +651,7 @@ def load(directory: Path | None, props: dict, names: dict,
 
     parsed, seen, decisions = [], {}, []
     for r in df.itertuples(index=False):
-        pred, payload = _check_row(r, props, names, seen, models)
+        pred, payload = _check_row(r, props, names, seen, models, formulas)
         base = dict(kind=r.kind, mnxm=r.mnxm, mnx_name=r.mnx_name, couple_id=r.couple_id)
         if pred is not None:
             if not collect:
@@ -486,7 +680,7 @@ def load(directory: Path | None, props: dict, names: dict,
         frame = frame[frame["couple_id"].astype(str) != couple_id]
 
     by_mnxm = {str(p["mnxm"]): p for p in parsed}
-    out = Substitutions(models, frame, by_mnxm)
+    out = Substitutions(models, frame, by_mnxm, formulas)
     out.decisions = pd.DataFrame(decisions, columns=list(DECISION_COLS))
     return out
 
@@ -527,10 +721,11 @@ def _congener_spread(r, models: dict, row_id: str) -> float:
 # =====================================================================
 
 def _tables(args):
-    from .refdata import load_mnxm_names, load_mnxm_props
+    from .refdata import load_mnxm_formulas, load_mnxm_names, load_mnxm_props
     props = load_mnxm_props(args.chem_prop)
     names = load_mnxm_names(args.chem_prop)
-    return props, names
+    formulas = load_mnxm_formulas(args.chem_prop)
+    return props, names, formulas
 
 
 def cmd_check(args):
@@ -543,8 +738,8 @@ def cmd_check(args):
     absence, the way `twins.alias_index` answers the same objection.
     """
     from .refdata import load_mnxr_stoich
-    props, names = _tables(args)
-    subs = load(args.tables, props, names, collect=True)
+    props, names, formulas = _tables(args)
+    subs = load(args.tables, props, names, formulas=formulas, collect=True)
     d = subs.decisions
     n_bad = int((d["verdict"] == "refused").sum())
     print(f"[substitute] {len(d):,} rows · {len(d) - n_bad:,} admitted · {n_bad:,} refused")
@@ -640,8 +835,8 @@ def cmd_anchor(args):
     the dGbyG arm has to be run in its own image or reported unverified.
     """
     from .refdata import load_mnxr_stoich
-    props, names = _tables(args)
-    subs = load(args.tables, props, names)
+    props, names, formulas = _tables(args)
+    subs = load(args.tables, props, names, formulas=formulas)
     stoich = load_mnxr_stoich(args.reac_prop)
     wide = subs.props(props)
 
@@ -668,8 +863,10 @@ def cmd_anchor(args):
             rows.append(dict(out, verdict="no_stoich")); bad += 1; continue
         st = s[0]
         # A row whose anchor it does not cover tests nothing: `rewrite` is the identity
-        # there and the comparison passes however wrong the model compound is.
-        if mnxm not in st:
+        # there and the comparison passes however wrong the model compound is. Asked of
+        # the SCOPE and not of the equation's participant list, because a polymer row that
+        # is present in a reaction the three conditions decline is exactly that case.
+        if mnxm not in subs._applied(st):
             rows.append(dict(out, verdict="ANCHOR_UNCOVERED")); bad += 1; continue
 
         dg, sig, _flag, reason = score(st)
@@ -679,13 +876,23 @@ def cmd_anchor(args):
             # reaction the row exists to unblock.
             rows.append(dict(out, verdict="member_silent")); bad += 1; continue
 
+        # A POLYMER ROW PREDICTS A ZERO OFFSET, and zero is a real prediction here rather
+        # than the absence of one. The anchor rewritten and its sibling are the SAME
+        # transformation at two chain lengths -- one glucosyl moving between the same two
+        # partners -- and MetaNetX's own maltodextrin ladder demonstrates that dG'0 is
+        # chain-length invariant to six decimals across n = 5, 6, 7. So a polymer row is
+        # refused unless the restaged equation lands on a number the deployed bake already
+        # holds for the transformation, computed from different accessions. No potential is
+        # declared or wanted: a sugar has none.
+        is_poly = str(rec["kind"]) == "polymer"
         sib = str(rec.get("sibling_mnxr") or "")
         was = baseline.get(sib) if _cited(rec.get("sibling_mnxr")) else None
-        if was is None or pd.isna(was) or not _cited(rec.get("sibling_e0_V")):
+        if was is None or pd.isna(was) or not (is_poly or _cited(rec.get("sibling_e0_V"))):
             rows.append(dict(out, verdict="no_sibling"))
         else:
-            want = predicted_offset(rec["n_e"], st[mnxm] if str(rec["state"]) == "red"
-                                    else -st[mnxm], rec["e0_model_V"], rec["sibling_e0_V"])
+            want = 0.0 if is_poly else predicted_offset(
+                rec["n_e"], st[mnxm] if str(rec["state"]) == "red" else -st[mnxm],
+                rec["e0_model_V"], rec["sibling_e0_V"])
             gap = abs((dg - float(was)) - want)
             out.update(sibling=sib, sibling_dg=float(was), predicted=want, gap=gap)
             verdict = "ok" if gap <= canon.DIR_DECADE else "DRIFT"
@@ -718,7 +925,8 @@ def cmd_anchor(args):
                 key = str(r2["mnxm"])
                 swapped[key] = dict(r2, terms=_parse_terms(alt[i], f"{key}/congener{i}"))
             v, _s, _f, _r = member.dgr(
-                Substitutions(subs.models, subs.rows, swapped).rewrite(st), wide)
+                Substitutions(subs.models, subs.rows, swapped,
+                              subs.formulas).rewrite(st), wide)
             vals.append(v)
         # THE TABULATED PREDICTION IS ONE OF THE CANDIDATES. A row's width is how far the
         # answer moves across everything it could defensibly have been, and a second model
