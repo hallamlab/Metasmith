@@ -50,13 +50,9 @@ GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 sys.path.insert(0, str(REPO / "src" / "metasmith_libraries" / "resources" / "lib"))
 import fabfos_evidence as fe                                          # noqa: E402
 
-PREFIX = "denovo"
 LANE_SET = "chosen_4"
-GPR_COLS = (
-    "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
-    "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
-    "projection_via", "in_atom_universe", "gpr_rule",
-)
+# The host de-novo layer's blocks. `cohort` is a study's, not a host's.
+EXTENSIONS = ("attribution", "feature", "universe")
 
 
 def main() -> int:
@@ -103,27 +99,29 @@ def main() -> int:
             f"{sorted(set(lanes) - set(expected))}. A lane that contributed no rows is a "
             f"broken join or an unstaged reference.")
 
-    df = pd.DataFrame({
-        "build_id": f"denovo_{a.host}_" + "+".join(lanes),
-        "host": a.host,
-        "unit_id": "proteome",
-        "feature_id": g["orf"],
-        "feature_kind": "orf",
-        "feature_name": g["intermediate_name"],
-        "mnxr": g["mnxr"],
-        "channel": PREFIX + "_" + g["channel"].astype(str),
-        "evidence_id": g["intermediate_id"],
-        "evidence_name": g["intermediate_name"],
-        "raw_score": g["raw_score"].astype(np.float32),
-        "projection_via": g["projection_via"],
-        # Null, exactly as the transform leaves it: the bake is not staged here either,
-        # and a guessed `in_atom_universe` is worse than an absent one because the
-        # consumer trusts it.
-        "in_atom_universe": pd.Series([None] * len(g), dtype="object"),
-        "gpr_rule": None,
-    })[list(GPR_COLS)]
-    df = df.sort_values(["feature_kind", "feature_id", "mnxr", "channel"],
-                        kind="mergesort", na_position="last").reset_index(drop=True)
+    # The mapper's own columns are the core, carried through unchanged -- the channel
+    # keeps the frozen spelling, and `lane_set` is what says these rows are de-novo
+    # evidence rather than a curated assertion. Attribution is what this step adds.
+    df = g.copy()
+    df["build_id"] = f"denovo_{a.host}_" + "+".join(lanes)
+    df["host"] = a.host
+    # The unit is the proteome the lanes were keyed on, not a model: naming a GEM here
+    # would imply a curated model was consulted, which is the whole thing the de-novo
+    # line is not.
+    df["unit_id"] = df["source"]
+    df["feature_kind"] = "orf"
+    df["feature_name"] = df["intermediate_name"]
+    # There is no boolean rule: a de-novo call is per ORF, and inventing "orf" as a
+    # one-gene rule would make this look like the same kind of claim as a GEM's.
+    df["gpr_rule"] = None
+    # Null, exactly as the in-graph collector leaves it: the bake is not staged here,
+    # and a guessed `in_atom_universe` is worse than an absent one because the consumer
+    # trusts it.
+    df["in_atom_universe"] = pd.Series([None] * len(df), dtype="object")
+    df = df[fe.schema_for(EXTENSIONS)]
+    df = df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
+                        na_position="last").reset_index(drop=True)
+    fe.validate_gpr(df, LANE_SET, ids, df["source"].iat[0], EXTENSIONS)
 
     out = (REPO / "data" / "fabfos" / "runs" / a.host / "gpr" if a.publish
            else Path(__file__).resolve().parent / "out" / a.host)
@@ -131,7 +129,8 @@ def main() -> int:
     df.to_parquet(out / "gpr_denovo.parquet", index=False, compression="zstd")
     (out / "BUILD_denovo.json").write_text(json.dumps(dict(
         host=a.host, source=str(src), proteome=faa[0].name, lane_set=LANE_SET,
-        lanes=lanes, n_lanes=len(lanes), rows=len(df), orfs=int(df["feature_id"].nunique()),
+        lanes=lanes, n_lanes=len(lanes), extensions=list(EXTENSIONS),
+        rows=len(df), orfs=int(df["orf"].nunique()),
         mnxr=int(df["mnxr"].nunique()),
         route="clone_gpr_on_hpc.py per ORF set; see this module's docstring",
     ), indent=2))

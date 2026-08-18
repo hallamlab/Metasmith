@@ -366,3 +366,54 @@ def test_the_channel_vocabulary_has_exactly_one_spelling():
         src = path.read_text()
         for dead in ("dl_ec", "uniref50_dr", "clean_ec"):
             assert f'"{dead}"' not in src, f"{name} still spells a channel {dead!r}"
+
+
+def test_the_schema_covers_every_gpr_table_in_the_tree():
+    """One schema, one validator, for hosts, clones, cohorts, runs and communities.
+
+    Four incompatible layouts existed here, and `validate_gpr` could check only one of
+    them -- so the tables that most needed a contract were the ones outside it. This
+    walks the actual tree: every GPR table either already carries SCHEMA_COLS plus a
+    declared extension block, or `to_unified` puts it there, and then one validator
+    passes on all of them.
+
+    A table that cannot make it through is meant to be a loud failure. The only ones
+    that ever have are the three that shipped a short lane set, which is the defect the
+    gate exists to name.
+    """
+    import glob
+    import io
+    import contextlib
+
+    legacy = sorted(set(
+        glob.glob(str(REPO_ROOT / "data/fabfos/runs/*/gpr/*.parquet"))
+        + glob.glob(str(REPO_ROOT / "data/fabfos/benchmarks/hosts/*/gpr_gem.parquet"))
+        + glob.glob(str(REPO_ROOT / "data/fabfos/benchmarks/*/gpr_manual.parquet"))))
+    if not legacy:
+        pytest.skip("the DVC-tracked GPR tables are not materialised here")
+
+    refused = []
+    checked = 0
+    for f in legacy:
+        df = pd.read_parquet(f)
+        # A GPR table is (nominator -> reaction, with a strength). The two epi300 union
+        # files are derived aggregates over one -- reaction sets with an origin, no
+        # score -- so the schema is not theirs to carry.
+        if not {"channel", "mnxr", "raw_score"} <= set(df.columns):
+            continue
+        if fe.is_unified(df):
+            continue                       # already on-schema; checked by the tests above
+        ext = ["attribution", "feature", "universe"]
+        if "condition_id" in df.columns:
+            ext.append("cohort")
+        try:
+            u = fe.to_unified(df, tuple(ext))
+            with contextlib.redirect_stdout(io.StringIO()):
+                fe.validate_gpr(u, u["lane_set"].iat[0], None, u["source"].iat[0],
+                                tuple(ext))
+            checked += 1
+        except SystemExit as e:
+            refused.append(f"{Path(f).relative_to(REPO_ROOT)}: {e}")
+
+    assert checked, "no legacy table was converted -- the walk found nothing"
+    assert not refused, "tables outside the schema:\n" + "\n".join(refused)
