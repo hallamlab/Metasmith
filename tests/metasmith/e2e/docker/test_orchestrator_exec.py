@@ -36,6 +36,7 @@ class NxfTestRunner:
         nxf_script: str,
         timeout: int = 120,
         extra_lib: dict = None,
+        extra_args: list = None,
     ) -> subprocess.CompletedProcess:
         """Run a Nextflow script inside Docker.
 
@@ -46,6 +47,8 @@ class NxfTestRunner:
                 Orchestrator.groovy in lib/. Nextflow 26's parser rejects loops
                 and closures in a workflow body, so a test that needs either
                 puts them in a class here and calls it from the body.
+            extra_args: Extra `nextflow run` arguments, in container
+                coordinates (the runner's work dir is mounted at /ws).
 
         Returns:
             CompletedProcess with stdout/stderr/returncode.
@@ -64,6 +67,7 @@ class NxfTestRunner:
                 "nextflow", "run", "test.nf",
                 "-lib", "./lib",
                 "-ansi-log", "false",
+                *(extra_args or []),
             ],
             capture_output=True,
             text=True,

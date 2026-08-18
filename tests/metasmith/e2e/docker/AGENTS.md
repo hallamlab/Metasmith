@@ -11,6 +11,7 @@ End-to-end against real Nextflow + real Docker. Slow; opt-in for full local runs
 | `test_orchestrator_exec.py` | The Orchestrator combinator cases that genuinely need real channels (split from old `test_e2e_orchestrator.py`). |
 | `test_publish_intermediates.py` | Intermediate artifact publishing. |
 | `test_direct_run.py` | Direct workflow execution without agent. |
+| `test_scratch_metadata.py` | Whether `.command.metadata` survives the `scratch` directive, and what the cache does when it doesn't. Splices the compiler's own metadata lines into a minimal process rather than mimicking them. |
 
 Default marker: `e2e_docker + slow + requires_docker`. Not in CI smoke.
 
