@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from ecspr.model.build import (graph_from_pairs, read_graph_dir, write_graph_dir,
-                         _elements_in)
+                               reaction_elasticities, _elements_in)
 from ecspr.model.graph import Terminal, solve
 
 
@@ -165,3 +165,53 @@ def test_reversed_orientation_inverts_the_ratio():
 def test_an_unknown_orientation_is_refused():
     with pytest.raises(ValueError):
         graph_from_pairs(toy_pairs(), "C", {"R1": 1.0}, orientation="backwards")
+
+
+def _chain_pairs(steps) -> pd.DataFrame:
+    """A series chain ``M0 -> M1 -> ... -> Mn``, one reaction and one carbon per step."""
+    return pd.DataFrame([
+        dict(mnxr=f"R{i}", element="C", substrate=f"M{i}", product=f"M{i + 1}",
+             sub_idx=0, prod_idx=0, pair_w=1.0)
+        for i in range(steps)])
+
+
+def test_elasticities_partition_the_measurement():
+    """A series chain of k equal steps puts exactly 1/k on each, and they sum to 1.
+
+    This is what makes the spread readable as "how many levers": the shares are a
+    partition, not a ranking, so 1/sum(eps^2) counts the steps.
+    """
+    p = _chain_pairs(4)
+    w = {f"R{i}": 1.0 for i in range(4)}
+    g = graph_from_pairs(p, "C", w, with_provenance=True)
+    sol = solve(g, Terminal.metabolite(g, "M0"), Terminal.metabolite(g, "M4"))
+    eps = reaction_elasticities(g, sol)
+    assert eps.sum() == pytest.approx(1.0, abs=1e-12)
+    assert set(eps.index) == set(w)
+    assert eps.to_numpy() == pytest.approx(np.full(4, 0.25), abs=1e-9)
+    assert 1.0 / float((eps ** 2).sum()) == pytest.approx(4.0, abs=1e-6)
+
+
+def test_elasticity_is_the_derivative_a_sweep_would_measure():
+    """The closed form against a numerical fold, on an unequal chain plus a parallel arm."""
+    p = pd.concat([_chain_pairs(3),
+                   pd.DataFrame([dict(mnxr="RB", element="C", substrate="M0",
+                                      product="M2", sub_idx=0, prod_idx=0, pair_w=1.0)])])
+    w = {"R0": 2.0, "R1": 0.5, "R2": 3.0, "RB": 0.25}
+    g = graph_from_pairs(p, "C", w, with_provenance=True)
+    term = (Terminal.metabolite(g, "M0"), Terminal.metabolite(g, "M3"))
+    base = solve(g, *term).total
+    eps = reaction_elasticities(g, solve(g, *term))
+    fold = 1.001
+    for r in w:
+        gp = graph_from_pairs(p, "C", dict(w, **{r: w[r] * fold}))
+        up = solve(gp, Terminal.metabolite(gp, "M0"), Terminal.metabolite(gp, "M3")).total
+        assert np.log(up / base) / np.log(fold) == pytest.approx(eps[r], abs=2e-3)
+    assert eps.sum() == pytest.approx(1.0, abs=1e-12)
+
+
+def test_elasticities_need_provenance():
+    g = graph_from_pairs(_chain_pairs(2), "C", {"R0": 1.0, "R1": 1.0})
+    sol = solve(g, Terminal.metabolite(g, "M0"), Terminal.metabolite(g, "M2"))
+    with pytest.raises(ValueError):
+        reaction_elasticities(g, sol)

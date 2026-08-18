@@ -15,8 +15,15 @@ gitignored, so the solves they came from are gone and only this file records the
 **Verdict, as of the library sweep: ECSPr does not predict this phenotype.** Not as a
 regression (closed by Rayleigh monotonicity — the probe is one-sided and the phenotype is
 not) and not as a classifier (`REPORT.md`: chance AUC once the glycogen module is struck,
-and beaten by reaction count). The sections below are in the order the question was asked,
-which is also the order in which each framing closed.
+and beaten by reaction count). The network says why: the minimum reaction cut from
+D-glucose to glycogen is three, all three are glg reactions, and five times the metabolism
+does not add a fourth. The sections below are in the order the question was asked, which is
+also the order in which each framing closed.
+
+**One of those closures reopened.** "Regression is closed by Rayleigh" is true of the
+two-point probe and not of the method: grounding at the biomass precursors instead of at
+glycogen makes the readout a share, shares are signed, and the signed correlation against
+Fig. 1 goes from undefined to +0.40. It is n = 23 and p ≈ 0.03–0.07, and it moves no AUC.
 
 ## What the pilot measured
 
@@ -265,6 +272,10 @@ fold > 1 can only raise the readout and a fold < 1 can only lower it — verifie
 ways in `twopoint_panel.py`. A signed correlation against a phenotype that goes both ways
 is therefore not weak here; it is undefined. Every number below is a magnitude.
 
+The theorem binds this PROBE, not the method. It bites because the sink IS the target, so KCL
+delivers the whole injection there and the conductance is the only readout left. Ground
+elsewhere and the readout becomes a share, which is signed — see *The signed probe* below.
+
 What the probe does separate is on-path from off-path, by about five orders of magnitude:
 
 | gene | log2 FC of I_eff under ×2 |
@@ -319,9 +330,79 @@ conductances are therefore not comparable across channels; only ranks within one
 Rows append as they finish, so an interrupted sweep resumes. Budget 0.2 s/clone curated and
 0.9 s/clone de-novo at four workers — 2.6 and 54 minutes.
 
-`analyse_aska_sweep.py` scores it. Two things it does that a first draft would not:
+`analyse_aska_sweep.py` scores it. `--suffix` reads a variant sweep's table (`_lanes2`,
+`_dir2x100`) and writes its own report beside it. Two things it does that a first draft
+would not:
 the AUC is the mid-rank Mann–Whitney form throughout, because most of the library ties at
 exactly zero and a strictly-greater-than count scores every one of those ties as a loss;
 and each AUC is printed beside the same AUC computed on reaction count alone, because that
 confound is what sank the ASKA/FFA arm and a number that does not beat it carries no
 information.
+
+## How much was there to find — the network, not the ranking
+
+**See `REPORT.md` § *How much was there to find in the first place*; this section is the
+plumbing.** Short version: three routes from D-glucose to glycogen, all three glg, and about
+six reactions holding the whole response.
+
+The lever these four scripts share is `ecspr.model.build.reaction_elasticities`. Effective
+conductance is homogeneous of degree one in the conductances, so each reaction's
+`dlog C_eff / dlog g_r` is its share of the dissipated power and the shares SUM TO 1 — the
+measurement partitions rather than merely ranking, and one solve gives the whole partition.
+Read the spread, not the top: `1/sum(eps^2)` is the effective number of reactions the probe
+can respond to at all.
+
+| script | what it answers |
+|---|---|
+| `glycogen_cut.py` | the minimum reaction cut to glycogen, on both channels, plus which route carries the arriving carbon |
+| `glg_arm_share.py` | how the partition splits across Eydallin's 86, the library's non-hits, and reactions no clone carries |
+| `pathway_complexity.py` | the closed form's validation: an exhaustive per-reaction fold sweep plus every single knockout |
+| `target_complexity.py` | glycogen's percentile against every other reachable target — the number is meaningless without it |
+| `direction_sensitivity.py` | what changes if the direction ensemble stops abstaining on the polymer |
+
+Three traps these hit and a reader would not expect:
+
+- **The cut must be taken UNDIRECTED.** The solve is a resistor network and will push carbon
+  through a reaction either way; a cut computed on the written direction understates what
+  the probe can reach. It is also why the phosphorylase shows up as a synthesis route at
+  all.
+- **`sweep_aska.py --ratio-override` is a different measurement, and the filename says so.**
+  It tags the sweep `_dirNxT`, because a sweep run under a supplied direction must never be
+  confused with one run on the bake's own ensemble.
+- **Absolute conductances move under an override** (5.689 → 2.686 at ratio 100), so only
+  ranks within one setting are comparable — the same rule the two channels already have.
+
+## The signed probe — grounding somewhere other than the target
+
+**See `REPORT.md` § *Rayleigh binds the readout, not the method* and § *The signed probe on
+the real network*; this section is the plumbing.** Short version: Rayleigh binds the
+two-point conductance, not ECSPr. Read a SHARE of the injected carbon instead and the
+elasticities sum to zero rather than to one, so negative levers must exist — 1,396 of them
+here, against 23 positive.
+
+| script | what it answers |
+|---|---|
+| `monotonicity_ladder.py` | eight toy circuits, from a fork up, that isolate exactly which readout and which topology admit a fall. Every claim is an assertion, so it is a test as much as a demonstration |
+| `glycogen_share.py` | the same reading on AG1. `--diagnose` is the grounding × leak grid, `--spectrum` the signed per-reaction elasticity, `--cohort` the 25 genes against Fig. 1, `--scan` the whole grid with a permutation p |
+
+`sweep_aska.py --probe share --ground biomass --leak 1e-3` runs the library under it, and
+`analyse_aska_sweep.py --score absdelta --direction` scores it — `--score absdelta` because
+under a signed probe "moved glycogen at all" and "moved it up" are different questions, and
+`--direction` because "did it move the right WAY" only becomes askable here at all.
+
+Four things that will bite:
+
+- **An alternative path is not an alternative ground.** With one sink KCL delivers the whole
+  injection to it, so the delivered current is pinned at 1 and only the conductance varies.
+  Rung D exists to make that failure mode impossible to talk past.
+- **The leak has to be big enough that a competitor can actually drain.** At 1e-6 — what
+  `cohort_delta_panel.py` used — a shunt's elasticity is zero to five decimals. Naming real
+  ports (`--ground biomass`) is the fix that does not depend on the leak at all: the answer
+  is flat from 1e-6 to 1e-1 there.
+- **A fold scales `gp` AND `gm` together**, so re-orienting a reaction changes a lever's
+  magnitude and not its sign. Only a reaction whose net current already runs away from
+  glycogen can be a negative lever, which is why rectifying the phosphorylase toward
+  degradation still leaves it at ε = +0.005.
+- **An edge between two members of a merged sink terminal is shorted away by contraction**,
+  so the merged-terminal form cannot express an exit from the target. That is why the real
+  probe uses `attach_leak`, whose drains are resistors to ground rather than shorts.

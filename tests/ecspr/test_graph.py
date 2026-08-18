@@ -160,3 +160,55 @@ def test_leak_sweep_reports_ranking(toy):
     assert len(runs) == 4
     assert all("rho_vs_prev" in r for r in runs)
     assert np.isnan(runs[0]["rho_vs_prev"])
+
+
+def _fork(shunt: float) -> AtomGraph:
+    """``s -> m``, then ``m`` splits between a target ``t`` and a competing drain ``d``."""
+    return AtomGraph.from_edge_records([
+        (("s", 0), ("m", 0), 1.0, 1.0),
+        (("m", 0), ("t", 0), 1.0, 1.0),
+        (("m", 0), ("d", 0), shunt, shunt),
+    ], dict(kind="fork"))
+
+
+def test_a_single_sink_pins_the_delivered_current():
+    """With one sink there is no share to read: KCL delivers the whole injection to it.
+
+    Which is why a one-sink probe's only readout is the conductance, and why Rayleigh then
+    forbids a fold from ever lowering it.
+    """
+    for shunt in (0.01, 1.0, 100.0):
+        g = _fork(shunt)
+        sol = solve(g, Terminal.metabolite(g, "s"), Terminal.metabolite(g, "t"))
+        assert abs(sol.delivered("t") - sol.injected) < 1e-9
+        # and the shunt is not merely non-negative, it is invisible: it carries no current
+        assert abs(sol.total - 0.5) < 1e-9
+
+
+def test_a_competing_drain_lets_the_share_fall_while_the_conductance_rises():
+    """The two readouts disagree in sign, which is the whole reason to have both.
+
+    Widening the shunt raises the two-terminal conductance -- Rayleigh, and it must -- and
+    lowers the target's share of the injected current, because the diverted carbon now has
+    somewhere else to ground.
+    """
+    prev_total, prev_share = -1.0, 2.0
+    for shunt in (0.1, 1.0, 10.0):
+        g = _fork(shunt)
+        sol = solve(g, Terminal.metabolite(g, "s"), Terminal.merge(g, ["t", "d"]))
+        assert abs(sol.delivered("t") - 1.0 / (1.0 + shunt)) < 1e-7, "exact current divider"
+        assert sol.total > prev_total, "Rayleigh: the conductance may not fall"
+        assert sol.share("t") < prev_share, "the share must be able to"
+        prev_total, prev_share = sol.total, sol.share("t")
+
+
+def test_the_share_is_homogeneous_of_degree_zero():
+    """Scaling every conductance leaves a share unchanged -- so a share's elasticities sum
+    to zero and cannot all be non-negative, which is exactly what the conductance's cannot
+    do."""
+    g = _fork(1.0)
+    a = solve(g, Terminal.metabolite(g, "s"), Terminal.merge(g, ["t", "d"]))
+    g7 = AtomGraph(list(g.nodes), list(g.edges), 7.0 * g.gp, 7.0 * g.gm, dict(g.meta))
+    b = solve(g7, Terminal.metabolite(g7, "s"), Terminal.merge(g7, ["t", "d"]))
+    assert abs(b.share("t") - a.share("t")) < 1e-12
+    assert abs(b.total - 7.0 * a.total) < 1e-9, "the conductance scales by the same factor"
