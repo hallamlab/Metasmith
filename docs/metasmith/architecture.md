@@ -156,10 +156,50 @@ which is always safe.
 **A cache hit must put the same lineage on the wire that a real run does.** The synthetic
 channel replays each shard file with the index its producing task carried, captured at promote
 time into the manifest's `index` field — compile time cannot reconstruct it, since which inputs
-an output descends from is decided inside the task. Emitting a bare `[:]` makes `o.group` log
-`LINEAGE_VIOLATION` and drop the tuple, so the consuming step never runs and the warm run
-quietly computes less than the cold one. A shard that cannot supply an index is demoted to a
-miss rather than replayed.
+an output descends from is decided inside the task. A shard that cannot supply an index for
+every matched file is demoted to a miss rather than replayed, and an index present but **empty**
+counts as absent on both sides of that exchange: it renders to Groovy's `[:]`, which `_post`
+stamps the produced key onto, so the replayed file reaches a downstream `o.group` carrying
+exactly one key — its own — and is refused.
+
+**That index is captured from a file beside the outputs, which survives only if it is copied
+back.** Each task appends its lineage to `.command.metadata` in the current directory and
+`promote` scans the work tree for it. Under `scratch` the current directory is node-local and
+Nextflow copies back only the declared outputs plus `.command.{out,err,trace}` — the metadata
+file is neither, so it dies with the scratch directory and every shard of that run is stored
+with no ancestry. Twelve field runs produced 88 tasks and zero metadata files. The generated
+script therefore resolves its own work directory from `$0` — absolute because of how the
+launcher invokes it, and the only handle there is, since `task.workDir` is null at render time
+and `NXF_TASK_WORKDIR` is exported *after* the chdir into scratch — and copies the file there
+before the step runs. That copy is deliberately non-fatal: a miss costs a demoted shard and a
+recompute, never a wrong result.
+
+**A task's index arrives shared across every one of its output channels and must never be
+written to.** A process declaring N output tuples binds the *same* map object to all N, and
+each output channel is a separate dataflow operator on its own thread, so an in-place edit is N
+threads writing one unsynchronised map — which does not fail loudly, it yields an emptied copy
+and a product that reaches the next join with no ancestry at all. The sharing is Nextflow's,
+decided before anything here loads, and cannot be fixed from this side; the writer can be.
+`stripReserved` filters into a fresh map rather than deleting in place, and `_post`'s
+`[:] + index` is where each stream stops sharing — so nothing inserted between the process call
+and `_debatch` may write to an index, a safety that is positional rather than structural.
+`test_the_streams_own_their_index_only_after_post` pins both halves on `identityHashCode`, so a
+Nextflow that stops sharing announces itself there instead of leaving this paragraph quietly
+false. The copy is shallow on purpose: value lists stay shared by reference across descendant
+indexes, and no production path mutates one.
+
+**A stream declared `DESCENDANT_OF_BY` must carry the by-key, and `group()` raises when one does
+not.** Absent and empty-list are the same defect; the empty list is the worse one, because the
+loop over it iterates zero times and used to leave no trace at all. The alternative to raising is
+invisible: a dropped item makes the join emit nothing, an empty channel is not an error in
+Nextflow, and the DAG simply ends early with every submitted task at exit 0 — a task that is
+never created cannot fail, so no `errorStrategy` and no failure count can see it. Two production
+runs lost days to exactly that, one truncating a nine-step workflow after seven, and in both the
+only record was a dispatch-log row nothing reads. The producer-side guards each close one route
+(the cache-hit index above, `promote._collect_output_indexes` for a replayed output); this is the
+one that does not have to be re-derived for the next producer. `SIBLING` only logs, because
+`_firstSharedAncestor` picks an arbitrary member of the ancestor intersection and an item may
+legitimately relate through a different one.
 
 **Two grouped slots are paired by ancestry, never by position.** A collecting step receives
 each slot as an independently accumulated, independently deduped list in task-arrival order, so

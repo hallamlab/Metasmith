@@ -42,6 +42,10 @@ Reuse: `src/metasmith/testing/{virtual_runtime.py, contract_runtime.py, plan_ora
 | F2 | Four-slot producer; per-slot derived_hex is stable across re-runs (cache identity) | `[T(A→{s1..s4})]` | `test_fan_out.py` |
 | F3 | Downstream consuming slot N gets the slot-N instance, not slot-(N+1) — slot routing | parametrized over slot index | `test_fan_out.py` |
 | F4 | Slot lineage isolation — modifying slot-A's downstream does not leak into slot-B's lineage walk | sibling consumers per slot | `test_fan_out.py` |
+| F5 | End-to-end: a two-slot producer compiles, runs and promotes both slots in one `CollectResults` pass | `[T(A→{s0,s1})]` | `test_fan_out.py` |
+| F6 | N products in ONE product group (no `NewProductGroup`) stay in one branch, keep distinct instance_ids, and both promote — the shipped library's normal shape, where F1-F5 all put one product per branch | `[T(A→{s0,s1} one group)]` | `test_fan_out.py` |
+| F7 | Both outputs of a two-output-tuple process keep the index their task arrived with, and a downstream group joins on BOTH at once — **real-channel**, since the multi-output `ChannelOut` → `asStreams` → `_debatch` path only exists under Nextflow | `[T(A→{s0,s1})] → [merge(s0,s1) group_by=A's parent]` | `tests/e2e/docker/test_orchestrator_exec.py` |
+| F8 | Index ownership: the two raw streams before `post()` carry the *same* index object and the two posted streams carry distinct ones, asserted on `identityHashCode` — pins the Nextflow output-binding behaviour the whole no-writer rule rests on, so a release that stops sharing announces itself here — **real-channel** | as F7, `.view` on both sides of `post()` | `tests/e2e/docker/test_orchestrator_exec.py` |
 
 ## Axis 4 — Batching & group_by
 
@@ -55,6 +59,7 @@ Reuse: `src/metasmith/testing/{virtual_runtime.py, contract_runtime.py, plan_ora
 | G6 | Group-by under late arrival; out-of-order inputs land in correct batch by group key, not arrival order | parametrized | `test_batching.py` |
 | G7 | Incremental emit on parent stream (inbox #16 fix) — non-parent stream buffering until parent closes | the 20-case matrix repro | `tests/e2e/docker/test_group_buffering.py` (relocate) |
 | G8 | Duplicate group keys in input; both inputs land in one batch (no false split) | as G2 with collisions | `test_batching.py` |
+| G9 | An item on a `DESCENDANT_OF_BY` stream whose index lacks the by-key (absent OR empty list) stops the run; it used to be dropped, which truncated the DAG and still exited 0 — **real-channel** | any group whose descendant stream lost its index | `tests/e2e/docker/test_orchestrator_exec.py` |
 
 ## Axis 5 — Group then split (collect → unfold)
 
