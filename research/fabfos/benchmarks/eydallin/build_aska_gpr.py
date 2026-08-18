@@ -56,6 +56,9 @@ from build_extraction import gene_to_bnumber                          # noqa: E4
 sys.path.insert(0, str(REPO / "src/fabfos/build_references/resources/buildlib"))
 import bench_universe as bu                                           # noqa: E402
 
+sys.path.insert(0, str(REPO / "src/metasmith_libraries/resources/lib"))
+import fabfos_evidence as fe                                          # noqa: E402
+
 ROSTER = REPO / "data/fabfos/originals/benchmarks/aska/library/aska_clone_minus.tsv"
 MG1655_GBK = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"
 MG1655_FAA = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.faa"
@@ -73,20 +76,20 @@ COHORT = "aska"
 # The ASKA ORFs were amplified from W3110; the host they are expressed in is AG1.
 SOURCE_ORGANISM = "e_coli_w3110"
 
-GPR_COLS = (
-    "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
-    "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
-    "projection_via", "in_atom_universe", "gpr_rule",
-    "condition_id", "cohort", "action", "source_organism",
-)
+# Both channels are the host's own rows re-attributed to a clone, so both carry the
+# host layer's blocks plus the condition. The lane set differs because the evidence
+# does: one is a curated model, the other four annotation lanes.
+EXTENSIONS = ("attribution", "feature", "universe", "cohort")
+GEM_LANE_SET = "curated"
+DENOVO_LANE_SET = "chosen_4"
 
 
 def faa_index(faa: Path) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     """``(id -> gene, id -> locus_tag, locus_tag -> id)`` from a RefSeq protein FASTA.
 
-    The header's first token is the id the de-novo GPR keys its ``feature_id`` on, so this
-    is the only join the de-novo side needs; that table's own ``feature_name`` is blank for
-    all but 73 of its 4,363 ORFs and cannot be used.
+    The header's first token is the id the de-novo GPR keys its ``orf`` on, so this is the
+    only join the de-novo side needs; that table's own ``feature_name`` is blank for all
+    but 73 of its 4,363 ORFs and cannot be used.
     """
     gene, tag, by_tag = {}, {}, {}
     for line in faa.open():
@@ -150,7 +153,7 @@ def main() -> int:
     gem_id = str(gem["unit_id"].iloc[0])
     gem_by_symbol: dict[str, set[str]] = {}
     for name, fid in zip(gem[gem.feature_kind == "gem_gene"]["feature_name"],
-                         gem[gem.feature_kind == "gem_gene"]["feature_id"]):
+                         gem[gem.feature_kind == "gem_gene"]["orf"]):
         if name:
             gem_by_symbol.setdefault(str(name), set()).add(str(fid))
 
@@ -159,7 +162,7 @@ def main() -> int:
         dn_by_symbol.setdefault(g, set()).add(fid)
 
     def resolve(gene: str, current: str, by_symbol: dict, by_tag=None, to_tag=None):
-        """``(feature_ids, how)`` -- current symbol first, then the roster's own name,
+        """``(orfs, how)`` -- current symbol first, then the roster's own name,
         then the target genome's synonym table."""
         for key, how in ((current, "current_symbol"), (gene, "roster_symbol")):
             if key and key in by_symbol:
@@ -181,9 +184,9 @@ def main() -> int:
     dn_lanes = sorted(dn["channel"].astype(str).unique())
 
     # ---- per gene, both channels ---------------------------------------------
-    gem_rows, dn_rows, census = [], [], []
-    gem_idx = {f: g for f, g in gem.groupby("feature_id")}
-    dn_idx = {f: g for f, g in dn.groupby("feature_id")}
+    gem_parts, dn_parts, census = [], [], []
+    gem_idx = {f: g for f, g in gem.groupby("orf")}
+    dn_idx = {f: g for f, g in dn.groupby("orf")}
 
     per_gene = {}
     for gene in genes:
@@ -199,27 +202,22 @@ def main() -> int:
         d_hit = (pd.concat([dn_idx[f] for f in sorted(d_fids) if f in dn_idx])
                  if any(f in dn_idx for f in d_fids) else dn.iloc[0:0])
 
-        for h in g_hit.itertuples(index=False):
-            gem_rows.append(dict(
-                build_id=f"direct_{COHORT}_{gem_id}", host=HOST, unit_id=gem_id,
-                feature_id=h.feature_id, feature_kind="clone_gene",
-                feature_name=h.feature_name, mnxr=h.mnxr, channel=h.channel,
-                evidence_id=h.evidence_id, evidence_name=h.evidence_name,
-                raw_score=h.raw_score, projection_via=h.projection_via,
-                in_atom_universe=h.in_atom_universe, gpr_rule=h.gpr_rule,
-                condition_id=cond, cohort=COHORT, action="add",
-                source_organism=SOURCE_ORGANISM))
-        for h in d_hit.itertuples(index=False):
-            dn_rows.append(dict(
+        if len(g_hit):
+            gem_parts.append(g_hit.assign(
+                source=gem_id, build_id=f"direct_{COHORT}_{gem_id}", host=HOST,
+                unit_id=gem_id, feature_kind="clone_gene", condition_id=cond,
+                cohort=COHORT, action="add", source_organism=SOURCE_ORGANISM))
+        if len(d_hit):
+            dn_parts.append(d_hit.assign(
+                # `source` names the ORF set these rows describe. They were READ from the
+                # host proteome's table, but as a cohort row each one is a claim about a
+                # clone, so the library is the artifact and the host is in `host`.
+                source="aska_orfs",
                 build_id=f"denovo_{COHORT}_" + "+".join(dn_lanes), host=HOST,
-                unit_id="aska_orfs", feature_id=h.feature_id, feature_kind="clone_gene",
+                unit_id="aska_orfs", feature_kind="clone_gene",
                 # The de-novo table's own feature_name is blank; the roster's gene name is
                 # the only symbol this row can honestly carry.
-                feature_name=gene, mnxr=h.mnxr, channel=h.channel,
-                evidence_id=h.evidence_id, evidence_name=h.evidence_name,
-                raw_score=h.raw_score, projection_via=h.projection_via,
-                in_atom_universe=h.in_atom_universe, gpr_rule=h.gpr_rule,
-                condition_id=cond, cohort=COHORT, action="add",
+                feature_name=gene, condition_id=cond, cohort=COHORT, action="add",
                 source_organism=SOURCE_ORGANISM))
 
         per_gene[gene] = dict(
@@ -236,12 +234,22 @@ def main() -> int:
         census.append(dict(jw_id=r.jw_id, **per_gene[r.gene]))
     cen = pd.DataFrame(census)
 
-    gem_df = pd.DataFrame(gem_rows, columns=list(GPR_COLS))
-    dn_df = pd.DataFrame(dn_rows, columns=list(GPR_COLS))
+    cols = fe.schema_for(EXTENSIONS)
+
+    def assemble(parts, like):
+        """The cohort table, on the schema. `like` gives the columns when nothing hit."""
+        df = (pd.concat(parts, ignore_index=True) if parts
+              else like.reindex(columns=cols))
+        return (df[cols].sort_values(fe.grain_key(EXTENSIONS), kind="mergesort")
+                        .reset_index(drop=True))
+
+    gem_df = assemble(gem_parts, gem)
+    dn_df = assemble(dn_parts, dn)
     dn_df["raw_score"] = dn_df["raw_score"].astype(np.float32)
-    for df in (gem_df, dn_df):
-        df.sort_values(["condition_id", "channel", "mnxr"], kind="mergesort", inplace=True)
-        df.reset_index(drop=True, inplace=True)
+    # No `orf_ids`: the nominators are the HOST's ORFs, and which of them a clone reaches
+    # is what the census above reports rather than something to refuse on.
+    fe.validate_gpr(gem_df, GEM_LANE_SET, None, gem_id, EXTENSIONS)
+    fe.validate_gpr(dn_df, DENOVO_LANE_SET, None, "aska_orfs", EXTENSIONS)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     gem_df.to_parquet(out_dir / "gpr_gem.parquet", index=False, compression="zstd")

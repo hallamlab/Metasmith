@@ -108,7 +108,7 @@ def main():
     null_conditions = out / "conditions_null.tsv"
     if not null_conditions.exists():
         ecspr("draw", "--gpr", POOL, "--like", LIKE, "-n", args.draws,
-              "--seed", args.seed, "--draw-column", "feature_id",
+              "--seed", args.seed, "--draw-column", "orf",
               "--out", null_conditions, "--log", log, log=log)
         carry_the_drop(null_conditions)
     else:

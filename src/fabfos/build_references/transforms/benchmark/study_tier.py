@@ -36,10 +36,11 @@ GPR tables, which is what keeps the derivation expressed rather than frozen.
 
 WHERE THE CURATOR ATTRIBUTED PER GENE, SO DOES THE TABLE; WHERE THEY DID NOT, IT SAYS SO.
 The LASER extraction resolves reactions per OBSERVATION -- `genes_json` names each gene's
-action but no gene carries its own MNXR -- so those rows are `feature_kind=curated_set`
-with a null `feature_id`. Splitting an observation's reaction list across its genes would
-manufacture an attribution the curator never made, and every downstream per-gene count
-would then be reading an invention.
+action but no gene carries its own MNXR -- so on those rows `orf` names the whole gene
+SET and `feature_kind` is `curated_set`, which is the schema's rule that a nominator is
+whatever made the claim rather than always a sequence. Splitting an observation's reaction
+list across its genes would manufacture an attribution the curator never made, and every
+downstream per-gene count would then be reading an invention.
 """
 from metasmith.python_api import *
 
@@ -63,19 +64,21 @@ metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 # condition's rows and a host's rows CONCATENATE, so the two cannot be allowed to mean
 # different things by `in_atom_universe`.
 universe_m = model.AddRequirement(lib.GetType("buildlib::bench_universe.py"))
+# The GPR schema itself -- the column list, the grain and the validator -- read from the
+# one place that declares them rather than restated here, for the same reason: these rows
+# CONCATENATE with a host's, so a second copy of the schema is a way for them to diverge.
+ev_lib    = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 hosts_gem = model.AddRequirement(lib.GetType("ref::gpr_table_gem"))
 out       = model.AddProduct(lib.GetType("bench::study_benchmark"))
 
 CHANNEL = "manual_gpr"
+# An assertion, not a lane: a curator wrote these rows, so there is no lane set behind
+# them and the strict per-lane checks do not apply.
+LANE_SET = "curated"
 
-# The 14 host columns, so a condition's rows and a host's rows concatenate without
-# reshaping, plus the four that scope a row to a condition.
-GPR_COLS = (
-    "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
-    "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
-    "projection_via", "in_atom_universe", "gpr_rule",
-    "condition_id", "cohort", "action", "source_organism",
-)
+# The host layer's blocks, so a condition's rows and a host's rows concatenate without
+# reshaping, plus the `cohort` block that scopes a row to a condition.
+EXTENSIONS = ("attribution", "feature", "universe", "cohort")
 
 # Y's own schema. `basis` says HOW the metabolite was derived and `tier` how much the
 # claim is worth, because a mechanically-derived product and a curator-named pathway
@@ -205,16 +208,20 @@ import pyarrow.parquet as pq
 
 sys.path.insert(0, os.path.dirname("{universe_m}"))
 import bench_universe as bu
+sys.path.insert(0, os.path.dirname("{ev_lib}"))
+import fabfos_evidence as fe
 
 EXTRACT = Path("{extract}")
 OUT     = Path("{out}")
 HOSTS   = Path("{hosts_gem}") / "hosts"
-GPR_COLS = {gpr_cols}
+EXTENSIONS = {extensions}
+GPR_COLS = fe.schema_for(EXTENSIONS)
 CONDITION_COLS = {condition_cols}
 Y_COLS = {y_cols}
 ELEMENTS = {elements}
 STUDIES = {studies}
 CHANNEL = "{channel}"
+LANE_SET = "{lane_set}"
 
 # ---- the atom universe, decoded straight off the vocab -------------------------------
 # Same argument as host_gpr_gem.py: this reads `atom_pairs.rxn`, a plain vocab code, and
@@ -288,8 +295,9 @@ def split_ids(cell):
 def rows_obs_mnxr(df, spec):
     """One row per observation, reactions in add_mnxr / del_mnxr list columns.
 
-    feature_id is NULL and feature_kind is `curated_set`: the extraction attributes
-    reactions to the OBSERVATION, not to a gene within it. See the module docstring.
+    `orf` names the whole gene SET and feature_kind is `curated_set`: the extraction
+    attributes reactions to the OBSERVATION, not to a gene within it, and the schema's
+    nominator column is never null. See the module docstring.
     """
     out = []
     for _, r in df.iterrows():
@@ -300,8 +308,8 @@ def rows_obs_mnxr(df, spec):
         for action, col in (("add", "add_mnxr"), ("del", "del_mnxr")):
             for mnxr in split_ids(r.get(col)):
                 out.append(dict(
-                    feature_id=None, feature_kind="curated_set", feature_name=genes,
-                    mnxr=mnxr, evidence_id=cid, evidence_name=genes,
+                    orf=genes or cid, feature_kind="curated_set", feature_name=genes,
+                    mnxr=mnxr, intermediate_id=cid, intermediate_name=genes,
                     condition_id=cid, action=action,
                     source_organism=str(r.get("host") or ""),
                     measured=str(r.get("measured") or "unknown").strip().lower(),
@@ -326,10 +334,10 @@ def rows_gene_del(df, spec):
         mnxrs = split_ids(r.get("del_mnxr")) or [None]
         for mnxr in mnxrs:
             out.append(dict(
-                feature_id=gene, feature_kind="curated_gene",
+                orf=gene, feature_kind="curated_gene",
                 feature_name=str(r.get("function_supplTableS1") or r.get("subsystem") or ""),
-                mnxr=mnxr, evidence_id=cid,
-                evidence_name=str(r.get("b_number") or r.get("gene_norm") or ""),
+                mnxr=mnxr, intermediate_id=cid,
+                intermediate_name=str(r.get("b_number") or r.get("gene_norm") or ""),
                 condition_id=cid, action="del", source_organism="",
                 # THE LOF ARM IS UNIFORM. A knockout removes a route; that is a
                 # CONDUCTANCE claim, not a growth claim, and it never was.
@@ -368,10 +376,10 @@ def rows_gene_ovx_row(df, spec):
         mnxrs = split_ids(r.get("add_mnxr") or r.get("del_mnxr")) or [None]
         for mnxr in mnxrs:
             out.append(dict(
-                feature_id=gene, feature_kind="curated_gene",
+                orf=gene, feature_kind="curated_gene",
                 feature_name=str(r.get("function_supplTableS1") or r.get("subsystem") or ""),
-                mnxr=mnxr, evidence_id=cid,
-                evidence_name=str(r.get("b_number") or r.get("gene_norm") or ""),
+                mnxr=mnxr, intermediate_id=cid,
+                intermediate_name=str(r.get("b_number") or r.get("gene_norm") or ""),
                 condition_id=cid, action="add", source_organism="",
                 measured=directions.get(label, ""),
                 citation=str(r.get("doi") or r.get("citation") or ""),
@@ -451,9 +459,9 @@ def rows_gene_row(df, spec):
             continue
         cid = f"{{spec['cohort']}}:{{gene}}:{{i}}"
         out.append(dict(
-            feature_id=gene, feature_kind="curated_gene",
+            orf=gene, feature_kind="curated_gene",
             feature_name=cell(r, "ec"),
-            mnxr=mnxr, evidence_id=cid, evidence_name=cell(r, "ec"),
+            mnxr=mnxr, intermediate_id=cid, intermediate_name=cell(r, "ec"),
             condition_id=cid, action="del" if role == "del" else "add",
             source_organism="",
             # These tables carry no separate `measured` column: `expected_dir` IS the
@@ -479,7 +487,7 @@ def rows_gene_ovx(df, spec):
 
     Attribution is per gene, because here the curator could make it -- the
     extraction resolves each ORF to its own b-number and that b-number's own
-    reactions. `feature_id` is therefore the b-number, which is also what the
+    reactions. `orf` is therefore the b-number, which is also what the
     null pool is drawn on: a drawn clone and a tested clone have to be the same
     kind of thing or the comparison is between two different questions.
 
@@ -496,9 +504,11 @@ def rows_gene_ovx(df, spec):
             continue
         gene = cell(r, "gene")
         out.append(dict(
-            feature_id=cell(r, "b_number") or None, feature_kind="curated_gene",
+            # The b-number where the extraction resolved one, else the symbol: the
+            # nominator column is never null, and the strain named SOMETHING.
+            orf=cell(r, "b_number") or gene or cid, feature_kind="curated_gene",
             feature_name=gene, mnxr=cell(r, "mnxr") or None,
-            evidence_id=cid, evidence_name=cell(r, "strain_id"),
+            intermediate_id=cid, intermediate_name=cell(r, "strain_id"),
             condition_id=cid, action="del" if role == "del" else "add",
             source_organism="",
             measured=cell(r, "measured") or "unknown",
@@ -567,10 +577,18 @@ for study, spec in sorted(STUDIES.items()):
     gpr = pd.DataFrame(raw)
     if gpr.empty:
         raise SystemExit(f"[study] {{study}}: the extraction produced no rows")
+    # `source` names the artifact these rows came out of, which for a curated tier is
+    # the study's own extraction.
+    gpr["source"] = study
     gpr["build_id"] = f"manual_{{study}}"
     gpr["host"] = host
     gpr["unit_id"] = study
     gpr["channel"] = CHANNEL
+    gpr["score_kind"] = fe.ASSERTION_CHANNELS[CHANNEL]
+    gpr["lane_set"] = LANE_SET
+    # NOT ASSERTED. The extractions carry no quality grade, and inventing one would let a
+    # downstream filter act on a distinction no curator drew.
+    gpr["evidence_quality"] = "unknown"
     # A curator asserts that an edge IS claimed, not how strongly -- the same argument
     # the GEM table's uniform 1.0 rests on. The evidence-weighted line is gpr_denovo.
     gpr["raw_score"] = np.float32(1.0)
@@ -588,8 +606,11 @@ for study, spec in sorted(STUDIES.items()):
     meta = gpr[["condition_id", "measured", "citation", "note"]].drop_duplicates(
         subset=["condition_id"])
     gpr = gpr[list(GPR_COLS)]
-    gpr = gpr.sort_values(["condition_id", "action", "feature_id", "mnxr"],
-                          kind="mergesort", na_position="last").reset_index(drop=True)
+    gpr = gpr.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
+                          na_position="last").reset_index(drop=True)
+    # No `orf_ids`: a curated row names a gene the paper reported, and whether the host's
+    # proteome carries it under that symbol is what the reach columns below report.
+    fe.validate_gpr(gpr, LANE_SET, None, study, EXTENSIONS)
     gpr.to_parquet(d / "gpr_manual.parquet", index=False, compression="zstd")
 
     named = gpr[gpr["mnxr"].notna()]
@@ -769,8 +790,8 @@ for study, spec in sorted(STUDIES.items()):
         f"{{narrowed}}"
         f"Reaction attribution is `{{attribution}}`. Where the extraction resolved "
         f"reactions to the "
-        f"observation rather than to a gene, `feature_id` is null and `feature_kind` is "
-        f"`curated_set`: splitting the list across the observation's genes would "
+        f"observation rather than to a gene, `orf` names the gene SET and `feature_kind` "
+        f"is `curated_set`: splitting the list across the observation's genes would "
         f"manufacture an attribution the curator never made.\n\n"
         f"Coverage is REPORTED, never enforced. A study whose edges the annotation lanes "
         f"cannot see is a finding about the method, which is what the benchmark exists "
@@ -846,9 +867,11 @@ def protocol(context: ExecutionContext):
         hosts_gem=context.Input(hosts_gem).container,
         metanetx=context.Input(metanetx).container,
         universe_m=context.Input(universe_m).container,
-        gpr_cols=repr(GPR_COLS), condition_cols=repr(CONDITION_COLS),
+        ev_lib=context.Input(ev_lib).container,
+        extensions=repr(EXTENSIONS), condition_cols=repr(CONDITION_COLS),
         y_cols=repr(Y_COLS),
         elements=repr(ELEMENTS), studies=repr(STUDIES), channel=CHANNEL,
+        lane_set=LANE_SET,
         out=iout.container,
     )
     context.LocalShell("cat > _study_tier.py << 'PYEOF'\n" + driver + "\nPYEOF\n")

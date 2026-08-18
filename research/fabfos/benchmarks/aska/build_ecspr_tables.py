@@ -26,7 +26,7 @@ null draw, and therefore cancels in every delta.
 
 `gpr_null_pool.parquet` is the whole ASKA (-) library on the same schema, one unit
 per clone. A clone whose ORF resolves to no reaction STILL GETS A ROW, with a null
-mnxr: `ecspr draw` samples the pool's `feature_id` values, so a clone absent from
+mnxr: `ecspr draw` samples the pool's `orf` values, so a clone absent from
 the table cannot be drawn, and a null made only of clones the model can see is a
 null for a different question than the one being asked.
 
@@ -34,12 +34,12 @@ null for a different question than the one being asked.
 background is the host and the plasmid; the mask is this condition's own id; the
 drop withholds the host's fadE rows, because every strain in the paper is
 MG1655(DE3) dfadE -- and, for the two rfaY-deletion strains, the host's waaY row
-as well. The drop is keyed on `evidence_id` rather than `mnxr` on purpose: the
+as well. The drop is keyed on `intermediate_id` rather than `mnxr` on purpose: the
 complementation strain deletes the chromosomal copy and carries a plasmid one, and
 only a key that separates the host's row from the clone's row can say that. Both
 genes are sole-gene reactions in iML1515, so the drop is exact.
 
-Writes everything under `main/benchmarks/aska/cache/`.
+Writes everything under `research/fabfos/benchmarks/aska/cache/`.
 """
 from __future__ import annotations
 
@@ -50,15 +50,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import sys                                                            # noqa: E402
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
+sys.path.insert(0, str(ROOT / "src/metasmith_libraries/resources/lib"))
+import fabfos_evidence as fe                                          # noqa: E402
 CACHE = HERE / "cache"
 BAKE = ROOT / "data/fabfos/processed/metabolism_bake"
 HOST_GEM = ROOT / "data/fabfos/benchmarks/hosts/e_coli_k12/gpr_gem.parquet"
 STUDY = ROOT / "data/fabfos/benchmarks/aska_ffa"
 ROSTER = ROOT / "data/fabfos/originals/benchmarks/aska/library/aska_clone_minus.tsv"
 GENOME = ROOT / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"
-PAIRS = ROOT / "data/fabfos/benchmark/reference_tier4/atom_pairs_tier4.parquet"
 
 HOST_UNIT = "iML1515"
 TESA_UNIT = "tesA_prime"
@@ -89,9 +92,11 @@ WAAY_EVIDENCE = ("HEPK2",)
 DELETION_EVIDENCE = {"rfaY": WAAY_EVIDENCE}
 
 SEP = "|"
-GPR_COLS = ("build_id", "host", "unit_id", "feature_id", "feature_kind",
-            "feature_name", "mnxr", "channel", "evidence_id", "evidence_name",
-            "raw_score", "projection_via", "in_atom_universe", "gpr_rule")
+# The plasmid and the pool describe units of a background, not conditions of a cohort,
+# so they carry the host layer's blocks and no `cohort` block. The clone table inherits
+# whatever the study tier wrote, cohort block included.
+EXTENSIONS = ("attribution", "feature", "universe")
+GPR_COLS = tuple(fe.schema_for(EXTENSIONS))
 COND_COLS = ("condition_id", "element", "source_hub", "sink_hub", "readout_hub",
              "media", "background_column", "background_values", "mask_column",
              "mask_values", "drop_column", "drop_values", "arm", "cohort",
@@ -113,10 +118,32 @@ def gene_to_bnumber(gbk: Path) -> dict:
     return {**alias, **primary}
 
 
+def carbon_pairs(bake: Path) -> pd.DataFrame:
+    """The bake's carbon atom pairs, decoded onto MNXR and MNXM.
+
+    `atom_pairs.parquet` is integer-coded against `vocab.parquet`; the tier-4 table this
+    once read was plain strings and no longer exists.
+    """
+    v = pd.read_parquet(bake / "vocab.parquet")
+    rxn = v[v["kind"] == "rxn"].set_index("code")["symbol"]
+    met = v[v["kind"] == "met"].set_index("code")["symbol"]
+    ele = v[v["kind"] == "element"].set_index("symbol")["code"]
+    if "C" not in ele.index:
+        raise SystemExit(f"[terminals] {bake}/vocab.parquet codes no carbon element")
+    p = pd.read_parquet(bake / "atom_pairs.parquet",
+                        columns=["rxn", "element", "tail_met", "head_met"])
+    p = p[p["element"] == int(ele.loc["C"])]
+    return pd.DataFrame(dict(mnxr=rxn.reindex(p["rxn"]).to_numpy(),
+                             substrate=met.reindex(p["tail_met"]).to_numpy(),
+                             product=met.reindex(p["head_met"]).to_numpy()))
+
+
 def _blank_row(**kw):
+    """One asserted row. Everything a human put there rather than measured."""
     row = {c: None for c in GPR_COLS}
-    row.update(channel="manual_gpr", raw_score=np.float32(1.0),
-               projection_via="curated", host="e_coli_k12")
+    row.update(channel="manual_gpr", raw_score=np.float32(1.0), score_kind="presence",
+               projection_via="curated", evidence_quality="unknown", lane_set="curated",
+               host="e_coli_k12")
     row.update(kw)
     return row
 
@@ -129,17 +156,19 @@ def build_tesa(host: pd.DataFrame) -> pd.DataFrame:
             raise SystemExit(f"[tesa] {mnxr} is not a host reaction; the plasmid "
                              f"may only duplicate edges the host already has")
         rows.append(_blank_row(
-            build_id="plasmid_pF", unit_id=TESA_UNIT, feature_id="tesA_prime",
+            source="pF", build_id="plasmid_pF", unit_id=TESA_UNIT, orf="tesA_prime",
             feature_kind="curated_gene", feature_name="tesA'", mnxr=mnxr,
-            evidence_id=f"pF:{mnxr}",
-            evidence_name="leaderless cytosolic acyl-ACP thioesterase (pF)",
+            intermediate_id=f"pF:{mnxr}",
+            intermediate_name="leaderless cytosolic acyl-ACP thioesterase (pF)",
             in_atom_universe=bool(hit["in_atom_universe"].iloc[0])))
-    return pd.DataFrame(rows, columns=list(GPR_COLS))
+    df = pd.DataFrame(rows, columns=list(GPR_COLS))
+    fe.validate_gpr(df, "curated", None, "pF", EXTENSIONS)
+    return df
 
 
 def build_pool(host: pd.DataFrame, lookup: dict) -> tuple:
     roster = pd.read_csv(ROSTER, sep="\t", dtype=str, keep_default_na=False)
-    by_gene = {t: grp for t, grp in host.groupby("feature_id")}
+    by_gene = {t: grp for t, grp in host.groupby("orf")}
     rows, seen, unresolved = [], 0, 0
     for _, r in roster.iterrows():
         clone, gene = r["JW ID"].strip(), r["Gene Name"].strip()
@@ -149,9 +178,9 @@ def build_pool(host: pd.DataFrame, lookup: dict) -> tuple:
         got = by_gene.get(tag)
         if not tag:
             unresolved += 1
-        common = dict(build_id="aska_minus", unit_id=clone, feature_id=tag or clone,
-                      feature_kind="aska_clone", feature_name=gene,
-                      evidence_id=clone, evidence_name=f"pCA24N-{gene}")
+        common = dict(source="aska_minus", build_id="aska_minus", unit_id=clone,
+                      orf=tag or clone, feature_kind="aska_clone", feature_name=gene,
+                      intermediate_id=clone, intermediate_name=f"pCA24N-{gene}")
         if got is None or got.empty:
             # In the pool with a null reaction: drawable, and a genuine zero.
             rows.append(_blank_row(mnxr=None, in_atom_universe=None, **common))
@@ -163,9 +192,18 @@ def build_pool(host: pd.DataFrame, lookup: dict) -> tuple:
                                    **common))
     pool = pd.DataFrame(rows, columns=list(GPR_COLS))
     pool["in_atom_universe"] = pool["in_atom_universe"].astype("boolean")
+    # The host table keeps one row per MODEL reaction, so two of them projecting to the
+    # same MNXR are two host rows. The pool's claim is "this clone adds this reaction",
+    # and the model reaction that carried it is the host's business, not the clone's.
+    pool = (pool.drop_duplicates(fe.grain_key(EXTENSIONS))
+                .sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
+                             na_position="last").reset_index(drop=True))
+    # A clone that resolves to nothing keeps its row with a null `mnxr` -- see the module
+    # docstring -- which only an assertion channel may do.
+    fe.validate_gpr(pool, "curated", None, "aska_minus", EXTENSIONS)
     return pool, dict(clones=int(pool["unit_id"].nunique()), with_reactions=seen,
                       unresolved=unresolved,
-                      draw_values=int(pool["feature_id"].nunique()))
+                      draw_values=int(pool["orf"].nunique()))
 
 
 def condition_rows(study_conds: pd.DataFrame, ext: pd.DataFrame,
@@ -198,7 +236,7 @@ def condition_rows(study_conds: pd.DataFrame, ext: pd.DataFrame,
                   readout_hub=SEP.join(SINKS), media="",
                   background_column="unit_id",
                   background_values=SEP.join((HOST_UNIT, TESA_UNIT)),
-                  drop_column="evidence_id", draw_id=None)
+                  drop_column="intermediate_id", draw_id=None)
 
     rows = [dict(condition_id="aska_ffa:BASELINE", mask_column="", mask_values="",
                  drop_values=SEP.join(base_drop), arm="observed", cohort="aska_ffa",
@@ -233,8 +271,7 @@ def main():
     # The terminals have to be NODES, and a source that never became one makes the
     # probe abstain on every condition at once -- checked here, where it is one
     # message, rather than discovered as 92 abstentions.
-    pairs = pd.read_parquet(PAIRS, columns=["mnxr", "element", "substrate", "product"])
-    pairs = pairs[pairs["element"] == "C"]
+    pairs = carbon_pairs(BAKE)
     # Every reaction the basis can carry an edge for. This, not the study tier's
     # atom universe, is what decides whether a condition is a no-op -- see
     # `condition_rows`.
@@ -254,7 +291,7 @@ def main():
     print(f"[tesa] {len(tesa)} rows over {tesa['mnxr'].nunique()} host reactions")
 
     clones = pd.read_parquet(STUDY / "gpr_manual.parquet")
-    clones = clones[list(GPR_COLS) + ["condition_id"]].copy()
+    clones = clones[fe.schema_for(fe.extensions_of(clones))].copy()
     # The clone is the unit. See the module docstring.
     clones["unit_id"] = ("aska:" + clones["feature_name"].fillna("none").astype(str))
     clones.to_parquet(args.out / "gpr_clones.parquet", index=False)
@@ -266,7 +303,7 @@ def main():
     print(f"[pool] {len(pool):,} rows | {stats['clones']:,} clones | "
           f"{stats['with_reactions']:,} with >=1 reaction | "
           f"{stats['unresolved']} unresolved names | "
-          f"{stats['draw_values']:,} distinct feature_id to draw from")
+          f"{stats['draw_values']:,} distinct orf to draw from")
 
     ext = pd.read_csv(STUDY / "extraction.tsv", sep="\t", keep_default_na=False)
     sc = pd.read_csv(STUDY / "conditions.tsv", sep="\t", keep_default_na=False)
