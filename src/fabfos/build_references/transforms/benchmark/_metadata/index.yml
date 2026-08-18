@@ -8,11 +8,11 @@ manifest:
     origin: leaf
     type: transforms::transform
   host_gpr_denovo.py:
-    instance_id: 1e208c1248727a9a03c17ac1c9e134235e44188c52b9426e29ad366441a273ea3b0c
+    instance_id: 1e20717c79cfeb4c4daf18814f856264f8a09c340f3a111e6d6ae8ce30ef2725f3e1
     origin: leaf
     type: transforms::transform
   host_gpr_gem.py:
-    instance_id: 1e207e575ec3e162ad49e61694e2beb8eac91ff2a78c8abc145f95b39e03c8d28b65
+    instance_id: 1e2066f69619b0e2d845adfdbc7a9343a1828daefe58aee345ac908ad22e7d7c99ba
     origin: leaf
     type: transforms::transform
   host_proteomes.py:
