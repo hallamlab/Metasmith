@@ -244,9 +244,9 @@
   .edge.pointed {
     stroke: var(--accent);
     stroke-opacity: 1;
-    stroke-width: 3;
+    stroke-width: 4;
   }
-  .edge.related { stroke-opacity: 0.95; stroke-width: 2; }
+  .edge.related { stroke-opacity: 0.95; stroke-width: 2.6; }
 
   /* what a hover marks: the node itself, not a box drawn around its whole row.
      The rectangle this replaces was the one part of the panel that had no

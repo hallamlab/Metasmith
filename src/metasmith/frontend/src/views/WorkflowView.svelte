@@ -1,6 +1,9 @@
 <script>
   import { api } from '../lib/api.svelte.js'
-  import { app, attempt, loadRuns, loadWorkflows, notify, select } from '../lib/state.svelte.js'
+  import {
+    app, attempt, cachedWorkflow, cacheWorkflow, loadRuns, loadTypeIndex, loadTypes,
+    loadWorkflows, notify, patchWorkflowSummary, select, ui,
+  } from '../lib/state.svelte.js'
   import Ago from '../components/Ago.svelte'
   import EditableName from '../components/EditableName.svelte'
   import Field from '../components/Field.svelte'
@@ -29,8 +32,10 @@
   let { name } = $props()
 
   let wf = $state(null)
-  let types = $state([])
-  let index = $state(null)
+  // the standard-library type vocabulary is the same on every workflow page;
+  // loaded once per session in state.svelte.js, not refetched per mount
+  let types = $derived(app.types)
+  let index = $derived(app.index)
   // a readout of what the last solve built the library into, not a form:
   // the recipe's rows are the form
   let items = $state([])
@@ -263,8 +268,20 @@
   let rowSeq = 0
   const nextRowId = () => `d${(rowSeq++).toString(36)}${Math.random().toString(36).slice(2, 7)}`
 
-  async function load() {
-    wf = await api.get(`/workflows/${name}`)
+  // `withAttachments` folds in what used to be `loadInputs`/`loadTable` as
+  // separate requests -- one `include=inputs,table` call instead of three,
+  // for a caller (the mount effect) that wants all of it. A caller that wants
+  // only `wf` (a rename, an unarchive, the live-run poll) asks for that alone.
+  async function load(withAttachments = false) {
+    const q = withAttachments ? '?include=inputs,table' : ''
+    const out = await api.get(`/workflows/${name}${q}`)
+    if (withAttachments) {
+      items = out.inputs?.items ?? []
+      table = out.table ?? { attached: false }
+      delete out.inputs
+      delete out.table
+    }
+    wf = out
     if (loadedFor !== name) {
       loadedFor = name
       recipe = {
@@ -273,35 +290,41 @@
         rows: normalizeRows(wf.request.input_drafts),
       }
     }
+    cacheWorkflow(name, { wf, items, table })
   }
 
-  async function loadInputs() {
-    items = (await api.get(`/workflows/${name}/inputs`)).items ?? []
-  }
-
-  // Four reads, and only one of them is the page: the workflow itself decides
-  // whether anything renders, while the type vocabulary and the index behind
-  // the panel are what fill it in. Run together rather than in a chain, so the
-  // recipe is up as soon as the workflow lands instead of after the slowest of
-  // the four -- a newly-created workflow is empty, and waiting on the standard
-  // library to describe itself before drawing an empty recipe is all lag.
+  // Three reads, and only one of them is the page: the workflow (with its
+  // inputs and table folded in, one request) decides whether anything
+  // renders, while the type vocabulary and the index behind the panel are
+  // what fill it in. Run together rather than in a chain, so the recipe is up
+  // as soon as the workflow lands instead of after the slowest of the three.
   $effect(() => {
     const n = name
-    wf = null
-    table = null
+    // A workflow visited in the last 8 renders instantly from the cache while
+    // the fetch below still runs behind it and overwrites both the live state
+    // and the cache entry once it resolves -- stale-while-revalidate, not a
+    // substitute for the fetch: the CLI can still write to a workflow between
+    // visits, and this is a single-user local tool with no other way to notice.
+    const hit = cachedWorkflow(n)
+    if (hit) {
+      wf = hit.wf
+      items = hit.items
+      table = hit.table
+    } else {
+      wf = null
+      table = null
+    }
     jobId = null
     jobStatus = null
     focus = null
     drawing = null
+    // reset unconditionally, cache hit or not: this is what lets the one-time
+    // recipe rebuild in `load()` still run on the background revalidation
+    // fetch, so a recipe edited outside the browser surfaces even on a hit
     loadedFor = null
+    planFocus = null
     attempt(async () => {
-      await Promise.all([
-        load(),
-        loadInputs(),
-        loadTable(),
-        api.get('/project/types').then((v) => (types = v)),
-        api.get('/project/type-index').then((v) => (index = v)),
-      ])
+      await Promise.all([load(true), loadTypes(), loadTypeIndex()])
       void n
     })
   })
@@ -377,6 +400,10 @@
   function pickPlanNode(id) {
     const n = (planGraph?.nodes ?? []).find((x) => x.id === id)
     if (!n) return
+    // a click pins the lighting to this node, so it survives the pointer
+    // leaving -- opening the panel is a kind of pointing too, and one that
+    // outlasts the mouse
+    planFocus = id
     if (n.kind !== 'transform') pickType(n.id)
     else if (n.transform_index != null) pickTransform(n.transform_index)
   }
@@ -388,9 +415,13 @@
   // 73-node plan lights half the drawing, which is the same as lighting none.
   let planUpstream = $state(true)
   let planPointed = $state(null)
+  // the last node clicked: kept lit once the pointer leaves, so a click reads
+  // as a decision rather than a hover that happened to land on a button. The
+  // live pointer still wins while it is somewhere on the drawing.
+  let planFocus = $state(null)
   let planMarks = $derived(
     around(planGraph, {
-      pointed: planPointed,
+      pointed: planPointed ?? planFocus,
       relation: planUpstream ? parents : children,
     }),
   )
@@ -1008,10 +1039,47 @@
               bind:status={jobStatus}
               bind:phase={jobPhase}
               onend={async (summary) => {
-                // four independent reads, not a chain: solving is ~400ms of
-                // server and this used to add three sequential round trips to
-                // the end of it
-                await Promise.all([load(), loadInputs(), loadTable(), loadWorkflows()])
+                // The SSE stream's own final payload already carries what a
+                // solve produced -- plan_graph, step_display, given, targets,
+                // hints, all of it, written to disk before the stream said
+                // done -- so the plan updates from that directly rather than
+                // paying a fresh `GET /workflows/<name>` to see what the
+                // server just told us. `_workflow_summary`'s mirror fields
+                // are rebuilt from the same result rather than re-read.
+                const r = summary?.result
+                if (r) {
+                  wf = {
+                    ...wf,
+                    planned: true,
+                    success: !!r.success,
+                    task_key: r.task_key ?? null,
+                    step_count: r.step_count ?? null,
+                    // `write_result` stamps this at write time; the job's own
+                    // `finished_at` lands at the same moment and is what the
+                    // SSE summary actually carries
+                    generated_at: summary.finished_at ?? new Date().toISOString(),
+                    result: r,
+                  }
+                  // updates the one sidebar row a solve can change, rather
+                  // than refetching and re-deriving every row's run count
+                  patchWorkflowSummary(name, {
+                    planned: wf.planned,
+                    success: wf.success,
+                    step_count: wf.step_count,
+                    generated_at: wf.generated_at,
+                    task_key: wf.task_key,
+                  })
+                }
+                // Not skippable: `op_inputs.sync` runs before the solve and
+                // can genuinely change registered-item counts and
+                // sample-array expansion, so the existing items/table state
+                // can be stale relative to what this solve just did. One
+                // batched request stands in for the old `loadInputs` +
+                // `loadTable` pair.
+                const fresh = await api.get(`/workflows/${name}?include=inputs,table`)
+                items = fresh.inputs?.items ?? []
+                table = fresh.table ?? { attached: false }
+                cacheWorkflow(name, { wf, items, table })
                 if (summary?.status === 'failed') {
                   notify(summary?.error ?? 'solve failed', 'refused')
                 }
@@ -1076,20 +1144,37 @@
                    labelled halves, one of them lit -- the same shape as the
                    recipe's file/value switch, so a direction is a thing you
                    pick rather than a single button whose own label is the only
-                   record of which way it is currently pointed. -->
-              <div class="dag-dir" role="group" aria-label="which way the diagram lights">
-                <button
-                  type="button"
-                  class:on={planUpstream}
-                  title="hovering a step lights what it needs"
-                  onclick={() => (planUpstream = true)}
-                >parents</button>
-                <button
-                  type="button"
-                  class:on={!planUpstream}
-                  title="hovering a step lights what needs it"
-                  onclick={() => (planUpstream = false)}
-                >children</button>
+                   record of which way it is currently pointed. The download
+                   sits beside it rather than getting its own sticky corner --
+                   two elements independently sticking to the same offset would
+                   fight once both were stuck. -->
+              <div class="dag-controls">
+                <div class="dag-dir" role="group" aria-label="which way the diagram lights">
+                  <button
+                    type="button"
+                    class:on={planUpstream}
+                    title="hovering a step lights what it needs"
+                    onclick={() => (planUpstream = true)}
+                  >parents</button>
+                  <button
+                    type="button"
+                    class:on={!planUpstream}
+                    title="hovering a step lights what needs it"
+                    onclick={() => (planUpstream = false)}
+                  >children</button>
+                </div>
+                <!-- The server keeps its own rendering of this same plan around
+                     (`GET /workflows/<name>/dag`, cached beside the bundle) --
+                     `DagRail` draws the nodes as buttons for the click-to-panel
+                     behaviour above, which is not a file a person can keep, so
+                     the download reaches past it for the plain SVG instead of
+                     trying to serialize the interactive one. -->
+                <a
+                  class="dag-download"
+                  href="/api/workflows/{name}/dag?theme={ui.theme}"
+                  download="{name}.svg"
+                  title="download this diagram as an SVG"
+                >svg ⭳</a>
               </div>
             {/if}
             <div class="dag-scroll">
@@ -1398,13 +1483,18 @@
      diagram, not after it -- and top right is where the info panel's own
      grip sits when this same diagram is reused there. */
   .dag-details { position: relative; }
-  .dag-dir {
+  .dag-controls {
     position: sticky;
     z-index: 5;
     /* below the summary's own row, not over it -- top:0 here is the same
        corner the "diagram" disclosure text already occupies */
     top: 18px;
     left: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dag-dir {
     display: inline-flex;
     border: 1px solid var(--line);
     border-radius: 999px;
@@ -1421,6 +1511,18 @@
     font-size: 11px;
   }
   .dag-dir button.on { background: var(--accent); color: var(--panel); }
+  .dag-download {
+    display: inline-block;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--muted);
+    padding: 1px 8px;
+    font-size: 11px;
+    text-decoration: none;
+    opacity: 0.75;
+  }
+  .dag-download:hover { opacity: 1; color: var(--text); }
   .link {
     background: none;
     border: none;

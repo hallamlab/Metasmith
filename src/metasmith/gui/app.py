@@ -136,7 +136,7 @@ def create_app(
     ssh_config_path: Path | str | None = None,
     watch: bool = True,
 ) -> "Flask":  # noqa: F821
-    from flask import Flask, Response, jsonify, send_from_directory
+    from flask import Flask, Response, jsonify, request, send_from_directory
 
     app = Flask(__name__, static_folder=None)
     # A sample sheet is the only thing anyone uploads here, and a sheet that
@@ -146,6 +146,40 @@ def create_app(
     bind_project(app, project_root, ssh_config_path=ssh_config_path, watch=watch)
 
     app.register_blueprint(api_bp)
+
+    # `flask-compress` would be one import instead of this, but the env's conda
+    # policy forbids pip dependencies -- see envs/metasmith/base.yml -- and stdlib
+    # `gzip` already covers what a single hook needs. Allowlisted by mimetype
+    # rather than excluded by route: a new response type defaults to
+    # uncompressed (safe) instead of silently gaining a header nothing expects.
+    # That allowlist is also what keeps the SSE job-stream (`text/event-stream`)
+    # and the file-download route (`direct_passthrough`, streamed) untouched --
+    # neither mimetype matches, so `get_data()` is never called on them.
+    GZIP_MIMETYPES = {"application/json", "text/plain", "image/svg+xml"}
+    GZIP_MIN_BYTES = 512
+
+    @app.after_request
+    def _gzip_response(response):
+        import gzip as gzip_mod
+
+        if response.direct_passthrough or response.is_streamed:
+            return response
+        if "gzip" not in (request.headers.get("Accept-Encoding", "") or ""):
+            return response
+        if response.headers.get("Content-Encoding"):
+            return response
+        mimetype = (response.mimetype or "").lower()
+        if mimetype not in GZIP_MIMETYPES:
+            return response
+        data = response.get_data()
+        if len(data) < GZIP_MIN_BYTES:
+            return response
+        response.set_data(gzip_mod.compress(data))
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Content-Length"] = str(len(response.get_data()))
+        vary = response.headers.get("Vary")
+        response.headers["Vary"] = f"{vary}, Accept-Encoding" if vary else "Accept-Encoding"
+        return response
 
     @app.errorhandler(413)
     def _too_large(_exc):

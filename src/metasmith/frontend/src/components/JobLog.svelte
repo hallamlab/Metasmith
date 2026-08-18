@@ -39,9 +39,14 @@
         lines = [...lines.slice(-2000), line]
         queueMicrotask(() => box && (box.scrollTop = box.scrollHeight))
       },
-      (summary) => {
+      // `onend` runs to completion before `status` flips: `status` is what
+      // un-disables the solve button and stops the spinner, and a caller's
+      // `onend` is what brings the rest of the page (the diagram, the recipe)
+      // up to date with what this job just did. Flipping `status` first says
+      // "done" a full render cycle before the page actually is.
+      async (summary) => {
+        await onend?.(summary)
         status = summary?.status ?? 'done'
-        onend?.(summary)
       },
     )
     return stop

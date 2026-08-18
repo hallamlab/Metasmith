@@ -52,7 +52,6 @@
     }
     const ro = new ResizeObserver(remeasure)
     ro.observe(box)
-    remeasure()
     return () => ro.disconnect()
   })
 
