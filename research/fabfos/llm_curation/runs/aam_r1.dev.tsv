@@ -1,0 +1,401 @@
+mnxr	stratum	verdict	detail	prompt_tokens	completion_tokens
+MNXR100800	movable	unbalanced	{"C": 6.0, "O": 7.0, "S": -1.0}	2321	554
+MNXR195341	movable	balanced	{}	2381	161
+MNXR96187	movable	unbalanced	{"C": 6.0, "O": 5.0}	2421	532
+MNXR164297	no_lever	balanced	{}	3140	223
+MNXR132219	movable	balanced	{}	2252	472
+MNXR160017	movable	unbalanced	{"C": 649.0, "O": 601.0, "P": 2.0}	2343	475
+MNXR148975	movable	unbalanced	{"C": 3.0, "S": 1.0, "O": 3.0}	2239	181
+MNXR102768	movable	unbalanced	{"C": -394.0, "O": 3.0, "P": 1.0}	2372	427
+MNXR157602	movable	unbalanced	{"N": 5.0, "C": -17.0, "O": 7.0, "P": 1.0}	2488	801
+MNXR133086	movable	balanced	{}	2297	310
+MNXR168237	movable	balanced	{}	2428	300
+MNXR160065	movable	unbalanced	{"N": 2.0, "C": 121.0, "O": 93.0, "P": 2.0}	2708	385
+MNXR102365	movable	balanced	{}	2312	479
+MNXR129891	movable	refused	["All participants except water lack defined structures, and the reaction involves complex peptides or conjugates with no "]	2306	75
+MNXR136562	movable	balanced	{}	2207	291
+MNXR135755	movable	unbalanced	{"N": -1.0, "C": 16.0, "O": -3.0}	2237	468
+MNXR175815	movable	unbalanced	{"*": 2.0, "N": 3.0, "C": 10.0, "O": 7.0, "P": 1.0}	2314	174
+MNXR144386	movable	unusable	["smiles 'CC(C)CNC1=C2N=CNC2=NC(=O)O[C@H]3[C@H](O)[C@@H](O)[C@H](O)[C@H](O)[C@H]3O' unparseable"]	2422	296
+MNXR183004	movable	unbalanced	{"C": 6.0, "O": 5.0}	2423	701
+MNXR165779	movable	unbalanced	{"N": 26.0, "C": 122.0, "Co": 2.0, "S": -2.0, "O": 30.0, "P": 2.0}	2740	327
+MNXR199047	movable	unbalanced	{"N": -1.0, "C": -3.0, "O": -1.0}	2435	577
+MNXR195285	movable	refused	["No structure is available for any participant, and the reaction involves an enzyme-inhibitor complex and a protein (MurA"]	2285	89
+MNXR97376	movable	unbalanced	{"C": 5.0, "O": 1.0}	2311	486
+MNXR178543	movable	unbalanced	{"C": 1.0, "O": 1.0}	2421	252
+MNXR172289	movable	refused	["The reaction involves only structureless complement components (C3a, C3b, C3), and no concrete structures are available "]	2205	67
+MNXR168297	movable	unusable	["smiles 'NC1=NC2=C(N1)N=CNC2=O[C@H]1[C@H](O)[C@@H](O)[C@H](CO)O1' unparseable"]	2432	424
+MNXR137588	movable	refused	["The reaction involves two structureless amorphous masses with no defined chemistry, and no concrete transformation can b"]	2209	71
+MNXR182858	movable	unbalanced	{"*": 4.0, "C": -1.0}	2315	190
+MNXR159892	movable	unbalanced	{"N": 2.0, "C": 121.0, "O": 93.0, "P": 2.0}	2698	383
+MNXR135018	movable	unusable	["id MNXM6281 has no structure in MetaNetX"]	2387	287
+MNXR138265	movable	refused	["All participants are structureless and cannot be replaced with concrete structures without inventing chemistry. The reac"]	2233	87
+MNXR182432	movable	unbalanced	{"C": 5.0, "O": 4.0}	2386	540
+MNXR123195	movable	refused	["The reaction describes a reversal of orientation of a DNA segment, which is a topological or positional change, not a ch"]	2151	96
+MNXR109980	movable	refused	["All participants lack chemical structure information, and no concrete chemical transformation can be inferred without in"]	2223	52
+MNXR202061	movable	unusable	["smiles 'C[C@@H](O)[C@H](NC(=O)[C@H](C1C(C2C(C(C3C(C(C(C3O)O)O)O2)O)N(CCC4C(C(C(C(O4)O)O)O)O)C1O)O)C(=O)[O-]' unparseable"]	2246	544
+MNXR162888	movable	unbalanced	{"O": -1.0, "C": -18.0}	2350	501
+MNXR130870	movable	unbalanced	{"C": -4.0, "S": 1.0, "O": -3.0}	2275	256
+MNXR121147	no_lever	balanced	{}	3001	139
+MNXR135856	movable	unbalanced	{"*": -1.0, "C": -2.0, "O": -1.0}	2311	225
+MNXR180043	movable	unusable	["a side of the rewrite is empty"]	2181	87
+MNXR146891	movable	unbalanced	{"*": 1.0, "N": -1.0, "C": -1.0, "O": -4.0, "P": -1.0}	2245	281
+MNXR206480	no_lever	balanced	{}	2338	121
+MNXR179151	movable	unbalanced	{"*": -1.0, "O": -1.0}	2437	232
+MNXR165636	movable	unbalanced	{"N": 1.0, "C": -6.0, "S": 1.0, "O": 1.0}	2508	522
+MNXR133114	movable	unbalanced	{"C": 1.0}	2216	186
+MNXR156084	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 15 column 17 (char 1026); usage=Usage(prompt_tokens=2245, completion_tokens=1024, seconds=72.24613841300015)"]	0	0
+MNXR191145	movable	unusable	["smiles 'Oc1ccc2c(n1)nc[nH]2C([O-])P(=O)([O-])[C@H]1O[C@H](CO)[C@@H](O)[C@H]1O' unparseable"]	2339	396
+MNXR176641	movable	unbalanced	{"*": -2.0, "N": -1.0, "C": -7.0, "O": -6.0, "P": -1.0}	2587	237
+MNXR194746	movable	unbalanced	{"O": -1.0}	2342	586
+MNXR116707	movable	unbalanced	{"O": 3.0, "P": 1.0}	2377	419
+MNXR148047	movable	unbalanced	{"*": -1.0}	2353	236
+MNXR176554	movable	unbalanced	{"*": 1.0, "N": 1.0, "C": 6.0, "O": 5.0, "P": 1.0}	2551	223
+MNXR116665	movable	unbalanced	{"*": 1.0, "C": -2.0}	2300	211
+MNXR131982	movable	unusable	["smiles 'N[C@@H](CC(C)C)C(=O)NCC(=O)NH2' unparseable"]	2228	327
+MNXR162766	movable	unbalanced	{"O": 7.0, "P": 2.0}	2473	525
+MNXR172417	movable	unbalanced	{"N": -5.0, "C": -9.0, "O": -4.0}	2243	342
+MNXR155730	movable	unusable	["smiles 'CCCCCCCCCCCCC=C(=O)SCCNC(=O)CCNC(=O)[C@H](O)C(C)(C)COP(=O)([O-])OP(=O)([O-])OC[C@H]1O[C@@H](N2C=NC3=C2N=CN=C3N)[C@H](O)[C@@H]1OP(=O)([O-])[O-]' unparseable"]	2592	409
+MNXR158948	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 38 column 17 (char 1469); usage=Usage(prompt_tokens=2423, completion_tokens=1024, seconds=76.02179685997544)"]	0	0
+MNXR171178	movable	unusable	["smiles 'NC1=NC2=C(N1)N=CNC2=O[C@H]1[C@H](O)[C@@H](CO)[C@H](O)[C@@H]1O' unparseable", "smiles 'NC1=NC2=C(N1)N=CNC2=O[C@H]1[C@H](O)[C@@H](CO[C@H](C)O)[C@H](O)[C@@H]1O' unparseable"]	2392	451
+MNXR136233	movable	unusable	["smiles 'CC(C)CC(C)C(=O)O[C@]([H])(COP([O-])(=O)OCC[N+](C)(C)C)([H])C(=O)O[C@H]1C[C@H](O)[C@@H](O)[C@H](O)C1N' unparseable", "smiles 'CC(C)CC(C)C(=O)O[C@]([H])(COP([O-])(=O)OCC[N+](C)(C)C)([H])C(=O)OCC[N+](C)(C)C' unparseable"]	2221	518
+MNXR172413	movable	refused	["All participants are structureless complexes or protein assemblies with no defined chemical structure. No concrete chemi"]	2225	64
+MNXR130372	movable	unbalanced	{"N": -1.0, "C": 1.0, "O": 1.0}	2271	211
+MNXR119061	movable	unbalanced	{"*": 1.0, "N": -1.0, "C": -5.0, "O": -1.0}	2243	303
+MNXR184274	movable	unbalanced	{"C": 18.0, "O": 16.0}	2336	266
+MNXR194707	movable	unbalanced	{"C": 3.0}	2460	320
+MNXR129946	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 26 column 13 (char 1498); usage=Usage(prompt_tokens=2308, completion_tokens=1024, seconds=85.21357332498883)"]	0	0
+MNXR185852	movable	unbalanced	{"*": 2.0, "C": 5.0, "O": 4.0, "P": 1.0}	2364	221
+MNXR174509	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 14 column 17 (char 1092); usage=Usage(prompt_tokens=2226, completion_tokens=1024, seconds=79.73969932901673)"]	0	0
+MNXR155301	movable	unusable	["smiles 'NC1=NC(=O)N([C@@H]2O[C@H](COP(=O)([O-])[O-])[C@@H](O)[C@H]2O)[C@H]2CC(=O)O[C@H]2COP(=O)(O)O' unparseable", "smiles 'CC(C)=O[C@H](COP(=O)(O)O)COP(=O)(O)O' unparseable", "smiles 'CC(C)=O[C@H](COP(=O)(O)O)COP(=O)(O)O[C@H]1[C@H](O)[C@@H](O)[C@H](O)[C@H](O)C1O' unparseable"]	2302	618
+MNXR144736	movable	unbalanced	{"N": -2.0, "C": -3.0, "S": 1.0, "O": -4.0, "P": -1.0}	2317	480
+MNXR133337	movable	unbalanced	{"N": -2.0, "C": -12.0, "S": -1.0, "O": -3.0}	2232	185
+MNXR143111	movable	balanced	{}	2500	653
+MNXR165537	movable	unbalanced	{"N": -1.0, "C": -3.0, "O": -1.0}	2468	329
+MNXR102663	movable	unbalanced	{"C": -3.0, "O": 3.0, "P": 1.0}	2258	367
+MNXR202471	movable	unbalanced	{"N": 1.0, "C": -1.0, "O": -2.0}	2289	383
+MNXR133906	movable	unbalanced	{"O": 2.0}	2229	184
+MNXR157703	movable	unbalanced	{"C": -20.0}	2571	755
+MNXR142642	movable	unbalanced	{"C": -24.0, "O": -24.0, "P": -8.0}	3014	463
+MNXR100502	movable	unbalanced	{"*": 2.0, "C": -2.0}	2346	481
+MNXR136250	movable	balanced	{}	2380	312
+MNXR143183	movable	unbalanced	{"C": 144.0, "O": 120.0}	2432	447
+MNXR143219	movable	refused	["All participants lack concrete structures and cannot be meaningfully truncated or replaced without inventing chemistry. "]	2335	72
+MNXR174346	movable	unbalanced	{"*": 1.0, "C": -5.0, "O": -4.0}	2325	225
+MNXR155516	movable	unbalanced	{"O": -1.0, "C": -18.0}	2342	430
+MNXR130563	movable	balanced	{}	2508	336
+MNXR136428	movable	unusable	["id MNXM13697994 has no structure in MetaNetX"]	2373	201
+MNXR99254	movable	unbalanced	{"C": -1.0}	3021	483
+MNXR137690	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 32 column 24 (char 1452); usage=Usage(prompt_tokens=6917, completion_tokens=1024, seconds=88.2385348759999)"]	0	0
+MNXR145380	movable	balanced	{}	2440	282
+MNXR129599	movable	unbalanced	{"Na": 1.0}	2366	509
+MNXR137691	movable	unbalanced	{"N": -373.0, "C": -948.0, "O": -693.0, "P": -98.0}	2743	302
+MNXR169490	movable	unbalanced	{"N": 7.0, "C": 28.0, "O": 16.0, "P": 3.0}	2816	489
+MNXR132659	movable	unbalanced	{"N": 3.0, "C": 200.0, "O": 106.0, "P": 3.0}	2918	343
+MNXR183476	movable	unbalanced	{"N": -7.0, "C": -10.0, "S": 1.0, "O": -8.0, "P": -2.0}	2603	529
+MNXR127242	movable	unbalanced	{"C": 1.0}	2318	252
+MNXR179616	movable	unbalanced	{"O": 1.0}	2189	288
+MNXR156061	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 25 column 17 (char 1204); usage=Usage(prompt_tokens=2267, completion_tokens=1024, seconds=85.3721921099932)"]	0	0
+MNXR154373	movable	unbalanced	{"N": -2.0, "C": -7.0, "S": -1.0, "O": -1.0}	2267	310
+MNXR159961	movable	unbalanced	{"N": 2.0, "C": 127.0, "O": 98.0, "P": 2.0}	2706	444
+MNXR96170	movable	unbalanced	{"N": 1.0, "C": 6.0, "O": 4.0}	2570	523
+MNXR167266	movable	unbalanced	{"N": 5.0, "C": 11.0, "O": 7.0, "P": 1.0}	2369	474
+MNXR129908	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 25 column 17 (char 1366); usage=Usage(prompt_tokens=2306, completion_tokens=1024, seconds=83.82059094600845)"]	0	0
+MNXR137198	movable	unbalanced	{"C": 4.0, "O": 3.0}	2451	715
+MNXR172730	movable	balanced	{}	2314	438
+MNXR130672	movable	unbalanced	{"O": 1.0}	2305	351
+MNXR169516	movable	balanced	{}	2436	325
+MNXR130871	movable	unbalanced	{"N": -1.0, "C": -1.0, "S": 1.0, "O": -1.0}	2275	270
+MNXR194791	movable	refused	["All participants are structureless and cannot be replaced with concrete structures or truncated forms without inventing "]	2207	68
+MNXR137303	movable	unbalanced	{"*": -2.0, "C": 8.0}	2225	287
+MNXR143159	movable	refused	["All participants lack concrete structures, and the reaction involves complex, undefined glycolipid and dolichol species "]	2427	83
+MNXR131854	movable	unbalanced	{"C": 6.0, "O": 5.0}	2514	410
+MNXR172494	movable	balanced	{}	2225	591
+MNXR103091	movable	unbalanced	{"O": 2.0}	2214	294
+MNXR173896	movable	unbalanced	{"O": 1.0}	2235	297
+MNXR148266	movable	unbalanced	{"C": 2.0, "O": -1.0}	2356	412
+MNXR146029	movable	unbalanced	{"O": 3.0, "P": 1.0}	2333	329
+MNXR142682	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 61 column 17 (char 1767); usage=Usage(prompt_tokens=6361, completion_tokens=1024, seconds=84.42269020099775)"]	0	0
+MNXR102118	movable	balanced	{}	2372	209
+MNXR183106	movable	unusable	["smiles 'O[C@H]1[C@H](O)[C@@H](O[C@H]2[C@H](O)[C@@H](O[C@H]3[C@H](O)[C@@H](O[C@H]4[C@H](O)[C@@H](O[C@H]5[C@H](O)[C@@H](O[C@H]6[C@H](O)[C@@H](O[C@H]7[C@H](O)[C@@H](O[C@H]8[C@H](O)[C@@H](O[C@H]9[C@H](O)[C@@H](O[C@H]10[C@H](O)[C@@H](O[C@H]11[C@H](O)[C@@H](O[C@H]12[C@H](O)[C@@H](O)[C@H](O)[C@H]12O)[C@H](O)[C@H]11N=C(C)O)[C@H]10O)[C@H](O)[C@H]9N=C(C)O)[C@H]8O)[C@H](O)[C@H]7N=C(C)O)[C@H]6O)[C@H](O)[C@H]5N=C(C)O)' unparseable"]	2625	769
+MNXR170526	movable	unbalanced	{"N": 2.0, "C": 5.0, "O": 3.0}	2408	375
+MNXR183421	movable	unbalanced	{"N": -4.0, "C": -5.0, "O": 1.0}	2569	442
+MNXR145154	movable	unbalanced	{"C": 6.0, "O": 8.0, "P": 1.0}	2378	385
+MNXR159956	movable	unbalanced	{"N": 2.0, "C": 128.0, "O": 99.0, "P": 2.0}	2712	439
+MNXR159703	movable	unbalanced	{"N": 1.0, "C": 5.0, "S": 1.0, "O": 6.0}	2575	584
+MNXR95970	movable	balanced	{}	2265	291
+MNXR100525	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 15 column 17 (char 1228); usage=Usage(prompt_tokens=2441, completion_tokens=1024, seconds=79.98281480898731)"]	0	0
+MNXR203365	movable	balanced	{}	2302	386
+MNXR159197	movable	unusable	["smiles 'CC(=O)SC[C@H](O)C(=O)SCCNC(=O)[C@H](N)C(=O)NCC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)N[C@@H](CC(=O)' unparseable"]	2245	820
+MNXR171685	movable	balanced	{}	2422	603
+MNXR157728	movable	unbalanced	{"O": 2.0}	2489	687
+MNXR177666	no_lever	unbalanced	{"*": 5.0, "C": 5.0, "O": 4.0}	2254	93
+MNXR136415	movable	unbalanced	{"C": 3.0}	2404	228
+MNXR178248	movable	refused	["Both participants are structureless and identical in name except for the 'intermediate' label, but no chemical transform"]	2233	70
+MNXR99083	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 27 column 17 (char 1141); usage=Usage(prompt_tokens=2442, completion_tokens=1024, seconds=89.37433636598871)"]	0	0
+MNXR109263	movable	unusable	["smiles 'CC(C)C1=C(C)C2=C(C=C)C3=C(C=C)C4=C(C=C)C(C)=C5C=C6C(C)=C(CCC(=O)O)C7=N[Fe]8(N9C(=CC1=N[Fe]28)C(C)=C(CCC(=O)O)C9=C7)N65' unparseable", "smiles 'CC(C)C1=C(C)C2=C(C=C)C3=C(C=C)C4=C(C=C)C(C)=C5C=C6C(C)=C(CCC(=O)O)C7=N[Fe]8(N9C(=CC1=N[Fe]28)C(C)=C(CCC(=O)O)C9=C7)N65' unparseable"]	2248	548
+MNXR130209	movable	unbalanced	{"C": 2.0, "O": 3.0}	2263	286
+MNXR135709	movable	unbalanced	{"N": -1.0, "C": 11.0, "O": -3.0, "P": -1.0}	2466	538
+MNXR97513	movable	unbalanced	{"C": 3.0}	2280	345
+MNXR174255	no_lever	unbalanced	{"*": 4.0, "C": 20.0, "O": 25.0, "P": 5.0}	2661	133
+MNXR145940	movable	unbalanced	{"C": -2.0, "O": -1.0}	2408	301
+MNXR102342	movable	unusable	["id MNXM147491 has no structure in MetaNetX", "id MNXM148296 has no structure in MetaNetX"]	2362	358
+MNXR179667	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 25 column 17 (char 1144); usage=Usage(prompt_tokens=2336, completion_tokens=1024, seconds=76.61554530099966)"]	0	0
+MNXR137787	movable	balanced	{}	2344	878
+MNXR178085	movable	unbalanced	{"*": -3.0, "O": -1.0}	2452	603
+MNXR182759	one_sided	refused	["The reaction has no participants and cannot be made concrete."]	2087	36
+MNXR143323	movable	unbalanced	{"C": 1.0}	2206	311
+MNXR182864	movable	unbalanced	{"*": -4.0}	2275	198
+MNXR183055	movable	unusable	["smiles 'O[C@H]1[C@H](O)[C@@H](O)[C@H](O)[C@@H](O)[C@H]1NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(NC(=O)C(N' unparseable"]	2423	868
+MNXR202847	movable	balanced	{}	2504	505
+MNXR119153	movable	unbalanced	{"*": -1.0, "N": 7.0, "C": 21.0, "O": 11.0, "P": 2.0}	2231	245
+MNXR180931	movable	balanced	{}	2678	164
+MNXR151432	movable	unusable	["smiles 'Cl-' unparseable"]	2223	171
+MNXR137259	movable	unbalanced	{"N": -1.0, "C": -7.0, "O": -10.0, "P": -1.0}	2383	304
+MNXR199086	movable	unbalanced	{"C": 2.0, "O": 7.0, "P": 2.0}	2388	324
+MNXR164254	movable	unbalanced	{"*": 1.0}	2229	177
+MNXR104475	movable	balanced	{}	2181	114
+MNXR132240	movable	balanced	{}	2326	341
+MNXR130601	movable	unbalanced	{"O": 14.0, "C": 18.0}	2391	289
+MNXR171492	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 29 column 17 (char 1206); usage=Usage(prompt_tokens=2424, completion_tokens=1024, seconds=73.40366687698406)"]	0	0
+MNXR184672	movable	unbalanced	{"N": -1.0, "C": -2.0, "O": -1.0}	2282	245
+MNXR178517	movable	unbalanced	{"*": -4.0, "N": 1.0, "C": -3.0, "O": -3.0}	2334	232
+MNXR199014	movable	unbalanced	{"N": -1.0, "C": -4.0, "O": -3.0, "P": -1.0}	2342	308
+MNXR200749	movable	unbalanced	{"C": 5.0, "O": 7.0, "P": 1.0}	2526	808
+MNXR195305	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 17 column 17 (char 1050); usage=Usage(prompt_tokens=2256, completion_tokens=1024, seconds=81.93217946801451)"]	0	0
+MNXR160519	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 34 column 17 (char 1787); usage=Usage(prompt_tokens=2552, completion_tokens=1024, seconds=76.89805979700759)"]	0	0
+MNXR130525	movable	unbalanced	{"N": -1.0, "C": -1.0, "O": 1.0}	2504	375
+MNXR201770	one_sided	refused	["The reaction has no participants and cannot be made concrete."]	2087	36
+MNXR97899	movable	unbalanced	{"C": -12.0, "O": -1.0}	2540	157
+MNXR129560	movable	unbalanced	{"N": -3.0, "C": -14.0, "O": -8.0, "S": -2.0}	2254	173
+MNXR178204	movable	balanced	{}	2256	461
+MNXR153073	movable	unbalanced	{"C": 12.0, "O": 10.0}	2446	740
+MNXR164147	movable	balanced	{}	2473	796
+MNXR175822	movable	unbalanced	{"C": 6.0, "O": 5.0}	2415	244
+MNXR156024	movable	balanced	{}	2386	662
+MNXR130483	movable	refused	["Both participants are structureless and represent protein states without chemical transformation; no concrete chemistry "]	2157	55
+MNXR142645	movable	unbalanced	{"N": -11.0, "C": -150.0, "S": 1.0, "O": -1.0, "P": 3.0}	2273	300
+MNXR136350	movable	unbalanced	{"N": 5.0, "C": 13.0, "S": -1.0, "O": 14.0, "P": 3.0}	2486	316
+MNXR195279	movable	unusable	["smiles 'CC1(C)[C@@H](O[C@H]2O[C@H](C(=O)O)[C@@H](O)[C@H](O)[C@H]2O)CC[C@]2(C)[C@H]3C(=O)C=C4[C@@H]5C[C@@](C)(C(=O)O)[C@H]2CC[C@@]4(C)[C@]3(C)CC[C@@H]12' unparseable"]	2410	405
+MNXR129643	movable	unbalanced	{"O": 1.0}	2476	270
+MNXR160598	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 28 column 17 (char 1196); usage=Usage(prompt_tokens=2262, completion_tokens=1024, seconds=91.50144640900544)"]	0	0
+MNXR174270	movable	unbalanced	{"*": 10.0, "C": 24.0, "O": 34.0, "P": 6.0}	2470	238
+MNXR144356	movable	unbalanced	{"O": 1.0}	2237	201
+MNXR160082	movable	balanced	{}	2343	472
+MNXR168281	movable	balanced	{}	2405	447
+MNXR101827	movable	unbalanced	{"N": -2.0, "C": -10.0, "O": -5.0}	2369	294
+MNXR132449	movable	unbalanced	{"C": 1.0, "O": 1.0}	2273	256
+MNXR133479	movable	unbalanced	{"C": 1.0, "O": 1.0}	2420	238
+MNXR171488	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 29 column 17 (char 1225); usage=Usage(prompt_tokens=2444, completion_tokens=1024, seconds=83.24063469399698)"]	0	0
+MNXR165576	movable	unbalanced	{"N": -1.0, "C": 1.0}	2523	379
+MNXR159060	movable	unbalanced	{"C": 2.0, "O": 1.0}	2447	360
+MNXR162087	movable	unbalanced	{"C": -1.0}	2390	432
+MNXR143148	movable	unbalanced	{"*": 1.0, "C": -1.0}	2430	336
+MNXR117626	movable	balanced	{}	2266	309
+MNXR144821	movable	unbalanced	{"N": 2.0, "C": 17.0, "O": 9.0}	2698	354
+MNXR154568	movable	refused	["The reaction involves polymers with no structure and no concrete chemistry to extract. The transformation is unclear and"]	2217	61
+MNXR168254	movable	unbalanced	{"C": 1.0}	2409	480
+MNXR203709	movable	unbalanced	{"N": 1.0, "C": 2.0}	2400	388
+MNXR136453	movable	unbalanced	{"O": -6.0, "C": -8.0}	2266	544
+MNXR161043	movable	unbalanced	{"N": 1.0, "C": 6.0, "O": 4.0, "P": 1.0}	2272	229
+MNXR130409	movable	balanced	{}	2393	262
+MNXR176730	movable	unbalanced	{"O": 1.0}	2172	446
+MNXR179248	movable	unbalanced	{"*": -3.0, "C": -1412.0, "O": -100.0}	2561	670
+MNXR150950	movable	unbalanced	{"*": 4.0, "C": -1.0, "O": 1.0}	2262	202
+MNXR159994	movable	unbalanced	{"C": -196.0, "O": 26.0, "P": 2.0}	2332	386
+MNXR183914	movable	unbalanced	{"*": -1.0, "C": -1.0, "O": -1.0}	2353	255
+MNXR195025	movable	unbalanced	{"O": -1.0}	2436	232
+MNXR137703	movable	balanced	{}	2277	317
+MNXR144396	movable	balanced	{}	2408	267
+MNXR203260	movable	unbalanced	{"S": -1.0}	2306	320
+MNXR159640	movable	unbalanced	{"O": -1.0, "C": -16.0}	2410	759
+MNXR169510	movable	unbalanced	{"C": 6.0, "O": 1.0}	2841	433
+MNXR132464	movable	refused	["All participants are structureless and represent amorphous complexes or macromolecular assemblies with no defined chemis"]	2203	72
+MNXR172583	movable	unbalanced	{"C": 1.0, "O": 2.0}	2227	299
+MNXR145459	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 15 column 17 (char 1225); usage=Usage(prompt_tokens=2272, completion_tokens=1024, seconds=75.21569382600137)"]	0	0
+MNXR102841	movable	unbalanced	{"S": 1.0, "O": -4.0, "P": -1.0}	2362	349
+MNXR133928	movable	unbalanced	{"N": -3.0, "C": 4.0, "F": 2.0, "O": -7.0, "P": -1.0}	2345	323
+MNXR132295	movable	unbalanced	{"O": 2.0}	2358	571
+MNXR178413	movable	balanced	{}	2256	417
+MNXR137536	movable	unbalanced	{"O": -1.0}	2428	324
+MNXR203312	movable	unbalanced	{"C": -1.0}	2249	344
+MNXR160607	movable	unbalanced	{"N": 2.0, "C": 10.0, "S": 2.0, "O": -3.0}	2375	415
+MNXR183666	movable	unbalanced	{"*": 2.0, "C": 32.0, "O": 28.0}	2384	249
+MNXR135253	movable	unbalanced	{"Fe": 1.0, "N": 4.0, "C": 34.0, "O": 4.0}	2679	422
+MNXR180734	movable	unbalanced	{"N": 3.0, "C": 16.0, "O": 8.0, "P": 1.0}	2406	505
+MNXR144662	movable	refused	["All participants lack concrete structures, and no clear chemistry (bonds made/broken) is evident from the reaction as wr"]	2321	89
+MNXR162091	movable	unbalanced	{"N": 1.0, "C": -12.0, "O": 2.0, "P": 1.0}	2404	375
+MNXR195725	no_lever	unbalanced	{"O": 4.0}	2159	80
+MNXR177477	no_lever	balanced	{}	2306	102
+MNXR132270	movable	unbalanced	{"N": 2.0, "C": 6.0, "O": 1.0}	2280	431
+MNXR97087	movable	unbalanced	{"O": 5.0, "C": 3.0}	2367	509
+MNXR170906	movable	balanced	{}	2452	471
+MNXR195205	movable	unusable	["a side of the rewrite is empty"]	2231	127
+MNXR154661	movable	unbalanced	{"C": 2.0, "O": 2.0}	2257	245
+MNXR162531	movable	unbalanced	{"N": -10.0, "C": -29.0, "S": -2.0, "O": -13.0}	2221	452
+MNXR131058	movable	balanced	{}	2370	431
+MNXR131579	movable	unbalanced	{"C": -1.0, "O": -2.0}	2486	351
+MNXR153464	movable	unbalanced	{"C": 1.0, "O": 1.0}	2475	620
+MNXR200505	movable	unbalanced	{"C": -1.0, "O": 1.0}	2441	272
+MNXR188080	movable	unbalanced	{"C": 1.0}	2444	311
+MNXR154140	movable	unbalanced	{"C": 2.0, "O": 1.0}	2221	291
+MNXR177849	movable	unbalanced	{"*": 2.0, "N": -4.0, "C": -9.0, "O": -9.0, "P": -2.0}	2507	339
+MNXR132420	movable	unbalanced	{"O": -1.0}	2768	353
+MNXR155717	movable	unbalanced	{"C": -2.0}	2472	572
+MNXR136860	movable	unbalanced	{"C": -1.0}	2441	696
+MNXR130830	movable	unusable	["smiles 'O=[N+]([O-])C1=CC=C(C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N)C)C)C)C)C=C1' unparseable", "smiles 'NC1=CC=C(C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N)C)C)C)C)C)C=C1' unparseable", "smiles 'O=[N+]([O-])C1=CC=C(C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N[C@@H](C(=O)N)C)C)C)C=C1' unparseable"]	2292	931
+MNXR157846	movable	unbalanced	{"N": -4.0, "C": -12.0, "S": -2.0, "O": -3.0}	2433	304
+MNXR168219	movable	unusable	["smiles 'CC1=C(C(=O)N1C(=O)N1C(=O)N2C(C1=O)C(=O)N(C2=O)C1=O)O' unparseable", "smiles 'CC1=C(C(=O)N1C(=O)N1C(=O)N2C(C1=O)C(=O)N(C2=O)C1=O)O' unparseable"]	2259	407
+MNXR136531	movable	refused	["All participants are structureless and represent protein complexes or phosphorylated states without concrete chemical st"]	2225	67
+MNXR184868	movable	unbalanced	{"*": -2.0, "N": -3.0, "C": -10.0, "O": -5.0, "P": -1.0}	2466	194
+MNXR159943	movable	unusable	["id MNXM1092337 has no structure in MetaNetX", "id MNXM1094376 has no structure in MetaNetX"]	2344	107
+MNXR148042	movable	unbalanced	{"*": 2.0, "C": -5.0, "O": -5.0}	2315	274
+MNXR104671	movable	unbalanced	{"O": 3.0, "C": 10.0}	2387	219
+MNXR166646	movable	unbalanced	{"O": -1.0}	2370	512
+MNXR102778	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 34 column 17 (char 1455); usage=Usage(prompt_tokens=2406, completion_tokens=1024, seconds=79.01509158097906)"]	0	0
+MNXR144694	movable	unbalanced	{"C": 17.0, "O": 7.0}	2426	558
+MNXR165527	movable	unbalanced	{"*": -1.0, "N": -5.0, "C": -8.0, "O": -3.0}	2316	379
+MNXR147905	movable	unbalanced	{"*": -1.0}	2366	270
+MNXR131049	movable	unbalanced	{"C": 1.0}	2571	352
+MNXR183295	movable	unbalanced	{"N": -1.0, "C": -8.0, "O": -5.0}	2460	977
+MNXR153988	movable	balanced	{}	2516	264
+MNXR153291	no_lever	balanced	{}	2639	123
+MNXR133818	movable	unbalanced	{"N": -1.0, "O": 1.0}	2262	254
+MNXR179945	movable	refused	["The reaction involves two polymer-like structureless entities (biomass and cellulose) with no concrete chemistry describ"]	2161	83
+MNXR158770	movable	unbalanced	{"O": -1.0}	2297	328
+MNXR136190	movable	unbalanced	{"*": 2.0, "N": -1.0, "C": -5.0, "O": -3.0}	2373	267
+MNXR207158	movable	unbalanced	{"*": 4.0, "N": -113.0, "C": -460.0, "S": -6.0, "O": -238.0}	3631	511
+MNXR174462	movable	unbalanced	{"O": 1.0}	2238	248
+MNXR150466	movable	unbalanced	{"*": -1.0, "N": 1.0, "S": -1.0, "O": 1.0}	2422	272
+MNXR135849	movable	unbalanced	{"*": 1.0, "C": -1.0}	2304	251
+MNXR171844	movable	unbalanced	{"C": -5.0, "O": -3.0}	2373	358
+MNXR195204	movable	unbalanced	{"Na": 4.0}	2335	405
+MNXR131265	movable	unbalanced	{"C": -2.0}	2285	214
+MNXR137557	movable	unbalanced	{"N": 5.0, "C": 12.0, "S": -1.0, "O": 9.0, "P": 1.0}	2468	980
+MNXR162548	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 29 column 17 (char 1233); usage=Usage(prompt_tokens=2340, completion_tokens=1024, seconds=77.37179816502612)"]	0	0
+MNXR183210	movable	unbalanced	{"O": -1.0}	2418	583
+MNXR157086	one_sided	refused	["The reaction has no participants and cannot be made concrete."]	2087	36
+MNXR201485	movable	unbalanced	{"S": -1.0, "O": 1.0}	2282	498
+MNXR170935	movable	unbalanced	{"*": 1.0, "C": 5.0, "O": 3.0}	2546	506
+MNXR100233	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 22 column 17 (char 1118); usage=Usage(prompt_tokens=2423, completion_tokens=1024, seconds=97.26742083701538)"]	0	0
+MNXR175370	movable	unbalanced	{"*": -1.0, "C": 4.0, "O": 2.0}	2544	476
+MNXR159574	movable	unbalanced	{"C": -2.0, "O": -3.0}	2429	337
+MNXR153128	movable	balanced	{}	2495	301
+MNXR132514	movable	balanced	{}	2241	93
+MNXR166380	movable	unbalanced	{"Ca": -3.0, "N": -3.0, "C": -25.0, "O": -3.0}	2345	233
+MNXR138261	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 29 column 17 (char 1221); usage=Usage(prompt_tokens=2435, completion_tokens=1024, seconds=82.63828470901353)"]	0	0
+MNXR97723	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 35 column 17 (char 1480); usage=Usage(prompt_tokens=2387, completion_tokens=1024, seconds=74.18818848099909)"]	0	0
+MNXR133869	movable	unbalanced	{"*": 1.0, "N": 11.0, "C": 7.0, "O": -9.0, "P": -1.0}	2584	553
+MNXR148400	movable	unbalanced	{"O": 1.0}	2422	325
+MNXR172620	movable	unbalanced	{"C": -2.0, "O": -6.0}	2473	338
+MNXR195326	movable	unbalanced	{"N": -2.0, "C": -5.0, "O": -4.0}	2281	295
+MNXR131287	movable	unbalanced	{"C": 3.0}	2272	257
+MNXR178497	movable	refused	["Both participants are structureless and cannot be replaced with concrete structures based on available information. The "]	2173	61
+MNXR169735	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 29 column 17 (char 1223); usage=Usage(prompt_tokens=2396, completion_tokens=1024, seconds=81.82648793800035)"]	0	0
+MNXR131440	movable	unbalanced	{"N": -2.0, "C": -15.0, "O": -2.0}	2276	150
+MNXR137497	movable	unbalanced	{"C": 8.0, "O": 16.0}	2829	495
+MNXR194931	movable	balanced	{}	2357	426
+MNXR167914	movable	unusable	["id MNXM1088856 has no structure in MetaNetX", "id MNXM1088934 has no structure in MetaNetX"]	2409	929
+MNXR159897	movable	unbalanced	{"C": -4851.0, "O": 501.0, "P": 2.0}	2339	390
+MNXR102757	movable	unbalanced	{"O": -3.0, "P": -1.0}	2414	841
+MNXR135298	movable	refused	["Transferrin and its iron-bound form are large proteins with no structure provided; they cannot be simplified into concre"]	2191	86
+MNXR104111	movable	unbalanced	{"*": 1.0, "N": 7.0, "C": 22.0, "S": 1.0, "O": 17.0, "P": 3.0}	2398	217
+MNXR179240	movable	unusable	["smiles 'CC(C)=CCC/C(C)=C/CC/C(C)=C/CC/C(C)=C\",' unparseable"]	2354	393
+MNXR144486	movable	balanced	{}	2308	307
+MNXR178081	movable	unbalanced	{"*": -1.0, "O": 1.0}	2404	292
+MNXR155784	movable	unbalanced	{"C": -4.0}	2425	399
+MNXR130645	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 37 column 17 (char 1558); usage=Usage(prompt_tokens=2306, completion_tokens=1024, seconds=85.11310390601284)"]	0	0
+MNXR133403	movable	unbalanced	{"O": 3.0}	2394	223
+MNXR103153	movable	refused	["Both participants are structureless and represent redox forms of PQQ, but no concrete structures are available to repres"]	2199	75
+MNXR129531	movable	unusable	["smiles 'N[C@H](C(=O)O)C(=O)N[C@@H](C(=O)O)C(=O)N1C(=O)C2=C(S[C@H]1C(=O)O)CSC3=CN=NS3' unparseable"]	2243	273
+MNXR176149	movable	unbalanced	{"N": 1.0, "C": -16.0}	2509	243
+MNXR131722	movable	unbalanced	{"C": -1.0}	2510	294
+MNXR131727	movable	unbalanced	{"C": 2.0, "O": 1.0}	2512	292
+MNXR142696	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 63 column 17 (char 1871); usage=Usage(prompt_tokens=6635, completion_tokens=1024, seconds=79.26801908499328)"]	0	0
+MNXR123125	movable	unbalanced	{"*": 1.0, "N": -5.0, "C": -6.0, "O": -2.0}	2431	237
+MNXR145486	movable	unbalanced	{"O": -1.0}	2570	511
+MNXR153544	no_lever	balanced	{}	2302	103
+MNXR131664	movable	unbalanced	{"O": -2.0}	2287	235
+MNXR132256	movable	unbalanced	{"C": -1.0}	2247	354
+MNXR130931	movable	unbalanced	{"N": 1.0, "C": -2.0, "O": -2.0}	2282	398
+MNXR130165	movable	balanced	{}	2516	259
+MNXR156174	movable	unbalanced	{"O": 2.0}	2188	310
+MNXR132067	movable	unbalanced	{"N": 1.0, "C": 4.0, "O": 1.0}	2267	254
+MNXR158978	movable	unbalanced	{"O": -7.0, "*": -2.0, "C": -32.0}	2483	511
+MNXR180642	movable	refused	["The reaction involves only photons of different wavelengths and no chemical transformation or atom movement occurs. Ther"]	2338	89
+MNXR145059	movable	unusable	["smiles 'C1COP(=O)([O-])OC[C@H]2O[C@@H](N3C=CC(N)=NC3=O)[C@H](O)[C@@H]2OP(=O)([O-])OC[C@H]2O[C@@H](N3C=CC(N)=NC3=O)[C@H](O)[C@@H]2OP(=O)([O-])OC[C@H]2O[C@@H](N3C=NC4=C(N)N=CN=C43)[C@H](OC(=O)[C@@H]([NH3+])CC(=O)OP(=O)([O-])[O-])[C@@H]2O' unparseable"]	2668	565
+MNXR200823	movable	unbalanced	{"O": -2.0}	2893	768
+MNXR117094	movable	refused	["The reaction involves the hydrolysis of an insulin-like growth factor-binding protein 4 into two C-terminal proteinogeni"]	2209	160
+MNXR136293	movable	unusable	["smiles 'O[C@H]1[C@H](O)[C@@H](O[C@H]2[C@H](O)[C@@H](O)[C@H](O)[C@H](O)O2)[C@H](O)COP(=O)(O)O[C@@H](C(C)CC)C(=O)O' unparseable", "smiles 'O[C@H]1[C@H](O)[C@@H](O[C@H]2[C@H](O)[C@@H](O)[C@H](O)[C@H](O)O2)[C@H](O)C(C(C)CC)C(C(C)CC)O' unparseable"]	2402	562
+MNXR133174	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 37 column 17 (char 1332); usage=Usage(prompt_tokens=2531, completion_tokens=1024, seconds=77.64290223698481)"]	0	0
+MNXR179838	movable	unbalanced	{"C": 6.0, "O": 4.0}	2481	463
+MNXR96189	movable	unbalanced	{"N": 1.0, "C": 7.0, "O": 4.0}	2395	509
+MNXR186336	movable	unbalanced	{"*": -2.0, "N": -3.0, "C": -5.0, "O": -5.0, "P": -1.0}	2459	229
+MNXR187702	movable	unbalanced	{"*": -2.0, "N": 1.0, "C": -4.0, "S": -1.0, "O": 1.0}	2473	300
+MNXR129642	movable	unbalanced	{"F": -1.0, "N": -1.0, "C": -1.0}	2315	432
+MNXR96544	movable	unbalanced	{"N": -3.0, "C": 4.0, "O": 6.0}	2343	477
+MNXR142961	one_sided	refused	["The reaction has no participants and cannot be meaningfully rewritten or balanced."]	2087	50
+MNXR203500	movable	balanced	{}	2471	265
+MNXR180536	movable	balanced	{}	2378	272
+MNXR103238	movable	unbalanced	{"N": -1.0, "O": 1.0}	2191	345
+MNXR180679	movable	unbalanced	{"C": 161.0}	2349	822
+MNXR137563	movable	unbalanced	{"C": 9.0, "O": 2.0, "P": -1.0}	2240	545
+MNXR170595	movable	unbalanced	{"Ca": -3.0, "C": 2.0, "O": 2.0}	2209	310
+MNXR195054	movable	unbalanced	{"C": 3.0}	2571	270
+MNXR135924	movable	unbalanced	{"O": 3.0, "P": 1.0}	2910	268
+MNXR129987	movable	unbalanced	{"C": 2.0}	2472	236
+MNXR96798	movable	unbalanced	{"Fe": 1.0, "C": -1.0, "O": -1.0}	2270	421
+MNXR178508	movable	refused	["All participants are structureless and cannot be replaced with concrete chemical structures without inventing unknown ch"]	2245	75
+MNXR131979	movable	unbalanced	{"C": 1.0, "O": 1.0}	2224	398
+MNXR159561	movable	unbalanced	{"*": -2.0, "N": -4.0, "C": -30.0, "S": -2.0, "O": -21.0, "P": -2.0}	2326	554
+MNXR187103	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 18 column 17 (char 1192); usage=Usage(prompt_tokens=2672, completion_tokens=1024, seconds=72.02169927000068)"]	0	0
+MNXR104704	movable	unbalanced	{"C": -14.0, "O": 5.0, "P": 1.0}	2370	375
+MNXR133432	movable	unusable	["smiles 'NC1=CC=CC=C1C(=O)[CH@H](CC(=O)O)N' unparseable"]	2264	230
+MNXR169248	movable	unbalanced	{"C": -1.0, "O": 1.0}	2374	468
+MNXR161741	movable	unbalanced	{"C": 1.0, "O": 2.0}	2373	675
+MNXR133433	movable	unbalanced	{"C": -2.0}	2294	397
+MNXR104678	movable	unusable	["smiles 'C(=O)OCC(COC(=O)CCCCCCCC/C=C\\x0cfffffff)COC(=O)CCCCCCCCCCCCCCCCC' unparseable"]	2392	275
+MNXR131359	one_sided	refused	["The reaction has no participants and cannot be made concrete."]	2087	36
+MNXR178180	movable	refused	["All participants are structureless and represent protein complexes or generic groups with no defined chemistry. No concr"]	2243	67
+MNXR195030	movable	refused	["All participants except water lack defined structures, and the reaction involves concatenation of undefined peptides/flu"]	2242	86
+MNXR153480	movable	unbalanced	{"N": 5.0, "C": 14.0, "S": -1.0, "O": 14.0, "P": 3.0}	2508	278
+MNXR133981	movable	unbalanced	{"N": -1.0, "O": 2.0}	2264	779
+MNXR166183	movable	balanced	{}	2358	328
+MNXR144652	movable	unbalanced	{"*": 2.0, "N": -1.0, "C": -9.0, "O": -3.0, "P": -1.0}	2392	263
+MNXR131415	movable	unbalanced	{"O": -3.0, "P": -1.0}	2380	350
+MNXR101902	movable	unbalanced	{"O": 1.0}	2386	902
+MNXR199171	movable	unbalanced	{"*": 8.0, "N": -1.0, "Fe": 2.0, "C": -5.0, "S": 1.0, "O": -2.0}	2429	235
+MNXR152278	movable	balanced	{}	2269	673
+MNXR154812	movable	unbalanced	{"*": 1.0, "N": -1.0, "O": 1.0}	2566	357
+MNXR172876	movable	balanced	{}	2414	190
+MNXR162411	no_lever	balanced	{}	2402	116
+MNXR133596	movable	balanced	{}	2250	511
+MNXR135945	movable	unbalanced	{"*": -1.0, "C": 14.0}	2310	238
+MNXR159871	movable	unbalanced	{"N": 2.0, "C": 121.0, "O": 99.0, "P": 4.0}	2702	410
+MNXR159037	movable	unbalanced	{"C": 3.0, "O": 1.0}	2487	708
+MNXR158165	movable	unbalanced	{"C": -1.0, "O": 1.0}	2494	261
+MNXR194122	movable	unbalanced	{"N": -1.0, "C": -8.0}	2564	344
+MNXR133740	movable	balanced	{}	2208	387
+MNXR170569	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 15 column 17 (char 1028); usage=Usage(prompt_tokens=2520, completion_tokens=1024, seconds=81.37855578502058)"]	0	0
+MNXR195274	movable	refused	["All participants are structureless and represent macromolecular complexes without defined chemistry; no concrete reactio"]	2205	47
+MNXR135205	movable	unbalanced	{"*": 2.0, "C": 13.0, "O": 13.0, "P": 2.0}	2464	228
+MNXR100766	movable	refused	["All participants are structureless and represent proteins or iron-sulfur clusters without concrete chemical structures. "]	2319	67
+MNXR136351	movable	unbalanced	{"N": 5.0, "C": 12.0, "S": -1.0, "O": 13.0, "P": 3.0}	2492	375
+MNXR160710	movable	unbalanced	{"C": 7.0, "O": 1.0}	2359	387
+MNXR132848	movable	unbalanced	{"Si": 4.0, "C": 21.0, "O": 4.0}	2432	245
+MNXR206090	one_sided	refused	["The reaction has no participants and cannot be made concrete."]	2087	36
+MNXR169591	movable	unbalanced	{"C": 1.0}	2421	471
+MNXR162818	movable	unbalanced	{"O": 3.0}	2512	505
+MNXR177647	movable	refused	["The reaction involves DNA with a recognition site being cleaved, but no concrete structures are provided for either part"]	2149	89
+MNXR131304	movable	unbalanced	{"N": -1.0, "C": -3.0, "O": -1.0}	2278	262
+MNXR172074	movable	balanced	{}	2270	402
+MNXR194966	movable	unbalanced	{"O": 1.0}	2525	515
+MNXR96285	movable	refused	["The reaction is a biomass equation with many structureless components and no clear, concrete chemistry to preserve. It c"]	7659	87
+MNXR178452	movable	balanced	{}	2251	93
+MNXR178076	movable	unbalanced	{"N": -5.0, "C": -10.0, "O": -11.0, "P": -2.0}	2316	382
+MNXR158797	movable	unbalanced	{"O": -1.0}	2340	335
+MNXR172789	movable	refused	["The reaction involves an enzyme (AKR4C8) and an enzyme-ligand complex, both of which are structureless and represent mac"]	2296	95
+MNXR183259	movable	unbalanced	{"N": 1.0, "C": 11.0, "O": 8.0}	2452	489
+MNXR175500	movable	unusable	["harness: BadJSON: Unterminated string starting at: line 15 column 17 (char 1094); usage=Usage(prompt_tokens=2300, completion_tokens=1024, seconds=58.013756353000645)"]	0	0
+MNXR113433	movable	balanced	{}	2449	228
+MNXR206459	no_lever	unbalanced	{"N": 1.0, "C": 25.0, "F": 1.0, "Ca": 1.0, "O": 4.0}	2436	118
