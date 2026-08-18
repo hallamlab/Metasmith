@@ -53,3 +53,45 @@ prompt came to 4,105 tokens against a 4,096-token slot, whose harness error the 
 scored as a regression. Harness errors are `unscorable` now. A gate that fails a revision
 because a prompt overran its slot is not measuring chemistry, and zero-regressions is a hard
 gate, so a false positive there blocks a revision that deserved to ship.
+
+## The crosswalk is a mapping aid, not a structure claim
+
+Harvested from r2's dev run: 83 metabolites through all four `admit()` gates, 177 element
+rows, 12.2% of the panel's 683 blockers. Per-metabolite and per-reaction coverage coincide
+here only because substitutions are taken from balanced rewrites alone, and a rewrite that
+balanced had already covered every blocker in its reaction.
+
+Oxidized and reduced coenzyme F420 harvest to the **same** skeleton. That is correct for
+this pipeline — hydrogen is excluded from the recount on purpose, and a redox couple does
+share its heavy atoms — but it means a harvested row asserts a carbon skeleton for mapping
+and nothing about oxidation state. Anything reading these rows as structures rather than as
+mapping stand-ins will be wrong about redox partners specifically.
+
+## The direction lane, measured on both splits
+
+The prompt was never iterated, so dev and held-out are two samples of one measurement
+rather than a tuning set and a test set.
+
+| split | baseline | ungated | gated accuracy | gated coverage |
+|---|---:|---:|---:|---:|
+| dev, n=200 | 50.0% | 59.4% | 81.8% | 5.5% |
+| held-out, n=400 | 50.0% | 57.9% | 86.7% | 3.8% |
+
+The pilot's bias reproduces at four times the sample size and is, if anything, sharper:
+**99.4% correct on equations MetaNetX writes left-to-right, 6.5% on those it writes
+right-to-left.** The model ratifies the layout. A single ungated pass beats guessing by 8
+points, and every additional independent opinion would share the bias rather than cancel
+it — which is why this lane's ensemble had to shrink to two orientations of one opinion
+instead of growing to three opinions of one orientation.
+
+The gate works and it is expensive. Abstaining wherever the two orientations agree throws
+away 248 of 400 reactions and converts an untrustworthy 58% into a defensible 87%. What
+survives is 15 reactions. Scaled to the 36,151 reactions with no direction evidence that is
+roughly 1,400 calls at ~87%, which is below every thermodynamic tier and belongs — if
+anywhere — as a low tier that never overrides a member vote.
+
+**This is an argument against running the direct-opinion direction lane at universe scale.**
+Two orientations of 83,795 reactions buys a four-figure number of tie-breaks at an accuracy
+the existing tiers already beat. The indirect path is the one worth taking: a simplified
+balanced equation with real structures is what dGbyG and eQuilibrator need, and those
+members are calibrated against measurement in a way this is not.
