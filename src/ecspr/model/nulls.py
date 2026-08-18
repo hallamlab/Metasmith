@@ -45,7 +45,7 @@ def _terminal_key(c: cond_mod.Condition) -> tuple:
             c.background_column, c.background_values)
 
 
-def draw(pool_paths, like, *, n: int, seed: int, draw_column="feature_id",
+def draw(pool_paths, like, *, n: int, seed: int, draw_column="orf",
          size=None, log=print) -> list:
     """``[Condition, ...]`` -- ``n`` draws per size stratum, per distinct terminal
     spec in ``like``. Deterministic in ``seed``: the same seed writes the same file,

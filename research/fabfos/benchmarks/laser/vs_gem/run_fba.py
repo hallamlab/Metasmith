@@ -52,9 +52,9 @@ def native_map(host_dir: str) -> dict:
     """MNXR -> [model reaction id]. From gpr_gem.parquet, which covers 2710 of
     2712 iML1515 reactions and is MNXref-4.5-current -- unlike the model's own
     embedded annotations, which are MetaNetX 3.x."""
-    g = pd.read_parquet(C.HOSTS / host_dir / "gpr_gem.parquet")
+    g = C.read_gpr(C.HOSTS / host_dir / "gpr_gem.parquet")
     out = {}
-    for mnxr, ev in zip(g.mnxr.astype(str), g.evidence_id.astype(str)):
+    for mnxr, ev in zip(g.mnxr.astype(str), g.intermediate_id.astype(str)):
         out.setdefault(mnxr, set()).add(ev)
     return {k: sorted(v) for k, v in out.items()}
 

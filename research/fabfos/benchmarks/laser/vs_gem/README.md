@@ -10,6 +10,30 @@ The reasoning that is not recoverable by reading the scripts: why the metric is
 shaped the way it is, and which choices silently decide the answer. Per-script
 behaviour lives in each module's docstring; the numbers live in `out/*.tsv`.
 
+## The de-novo arms in `out/` are STALE, and by how much
+
+Everything under `out/` was computed against the k12 and dh10b de-novo GPR tables as
+they were before those hosts were rebuilt. Both have changed, and not slightly: they
+carried three lanes and no ProteinBERT, over an ORF namespace no other host shared.
+k12 went from 25,799 rows over 2,137 ORFs to 61,715 over 4,311, and its reaction set
+from 10,478 to 14,122.
+
+So every `denovo_ev` and `denovo_uni` number in `out/` — `T2_headline.tsv` through
+`T15`, `scalars_all.parquet`, the matrices, and the figures and report built from them
+— describes tables that no longer exist. The `gem` and `fba_*` arms are untouched: they
+read `gpr_gem.parquet`, which changed shape but not content.
+
+Two things follow. The de-novo arms move in BOTH directions and the direction is not
+predictable from here: a third more reactions raises coverage, while the fourth lane
+changes every ORF's belief denominator, and `unit` is a median over the new weights so
+the size of one added gene copy moves too. And there is no incremental path — `cache/`
+is gitignored and empty, and `score.py` rebuilds every table by globbing it, so
+refreshing one arm means re-running all eight ECSPr units and the FBA and trivial arms
+before the scoring chain.
+
+Re-running is deliberately not done here, so the rebuild stays attributable. When it
+happens: leave `POOL_SEED` alone, or every head-to-head p-value in the report is void.
+
 ## Why the design axis, and not the obvious metric
 
 Ranking the measured target among a metabolite panel cannot work here.

@@ -361,7 +361,9 @@ def host_gem_edges(gpr_gem, entries: pd.DataFrame) -> pd.DataFrame:
     """
     g = gpr_gem if isinstance(gpr_gem, pd.DataFrame) else pd.read_parquet(gpr_gem)
     by_sym = {}
-    for fid, fname, mnxr in zip(g["feature_id"], g["feature_name"], g["mnxr"]):
+    # `orf` is the schema's nominator; a pre-schema table spells it `feature_id`.
+    nominator = g["orf"] if "orf" in g.columns else g["feature_id"]
+    for fid, fname, mnxr in zip(nominator, g["feature_name"], g["mnxr"]):
         if not isinstance(mnxr, str) or not mnxr:
             continue
         for k in (fid, fname):
