@@ -92,6 +92,8 @@ std_assembly_data
 # at vendor time. See AGENTS.md > "The build is not optional".
 /src/metasmith_libraries/resources/*/_metadata/
 /src/metasmith_libraries/transforms/*/_metadata/
+# staged in from envs/metasmith_libraries by `dev/libraries.sh --stage-envs`
+/src/metasmith_libraries/envs/
 /src/fabfos/algorithm/_metadata/
 
 # A deployed agent home is a build product of running something, not repo

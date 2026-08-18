@@ -1,104 +1,198 @@
 """The standard library snapshot, and what a project bootstrap consists of.
 
 `msm lab` and `msm gui` open the same working directory and need the same things
-in it: the bundled example resources, and a copy of the standard library. That
-bootstrap lives here so the two front ends share it rather than drifting apart.
+in it: the bundled example resources, and a working copy of the standard
+library.  That bootstrap lives here so the two front ends share it rather than
+drifting apart.
 
 There is deliberately no UI for it and no per-project pin. Everything the
 library contains is offered to the planner, so adding a transform library to
 the repository is enough to make it available.
+
+**The library is an installed module, and the project gets a compiled copy of
+it.** `metasmith_libraries` ships as its own distribution; this module locates
+that package, copies it into the project, and compiles the copy in place.
+Three things follow, and each replaces a failure mode the older
+git-pull/vendored-bundle path had:
+
+* The install directory is treated as read-only — a site-packages or conda
+  `pkgs` tree may genuinely be, and compiling there would write build products
+  into a shared install that other projects also read.
+* `_metadata/` is a build product, so the copy is stripped of any it inherited
+  and rebuilt here. Nothing shipped needs to carry compiled metadata, which
+  is what retires the compile-before-copy ordering that used to be enforced by
+  a guard in the release script.
+* Materialisation is atomic: the copy is built under a `.partial` name and
+  renamed only once its metadata compiles. A library directory that exists is
+  therefore a library that resolves — the half-materialised state that would
+  otherwise persist across restarts, silently, cannot be reached.
 """
 from __future__ import annotations
 
-import os
+import importlib.util
 import shutil
+import stat
 import subprocess
-import tempfile
 from pathlib import Path
 
 from ..agents.templates import library_index
-from ..constants import MODULE_PATH, STDLIB_NAME, STDLIB_SPARSE_PATH, STDLIB_URL
+from ..constants import MODULE_PATH, STDLIB_NAME
 from ..logging import Log
 
+# Written into the materialised copy; `stdlib_commit` reads it back. The GUI
+# keys its type index and its cached template drawings on that value, so it
+# has to change whenever the library's content does and cost nothing to read.
+LIBRARY_STAMP = "LIBRARY_STAMP"
 
-def _vendor_bundle_dir() -> Path:
-    return MODULE_PATH / "vendor" / "metasmith_libraries"
-
-
-def _sparse_checkout_library(url: str, dest: Path) -> subprocess.CompletedProcess:
-    """Fetch just `STDLIB_SPARSE_PATH` from `url` into a scratch clone, then
-    copy it into `dest`. A cone-mode sparse-checkout keeps the fetch to one
-    path instead of the whole monorepo; copying rather than leaving `dest`
-    inside the scratch clone keeps `dest` itself the library root, the same
-    shape `discover()` expects from a vendored bundle."""
-    with tempfile.TemporaryDirectory(prefix="metasmith_stdlib_") as tmp:
-        clone = Path(tmp) / "clone"
-        steps = [
-            ["git", "clone", "--depth", "1", "--filter=blob:none",
-             "--no-checkout", url, str(clone)],
-            ["git", "-C", str(clone), "sparse-checkout", "init", "--cone"],
-            ["git", "-C", str(clone), "sparse-checkout", "set", STDLIB_SPARSE_PATH],
-            ["git", "-C", str(clone), "checkout"],
-        ]
-        for cmd in steps:
-            res = subprocess.run(cmd, text=True, capture_output=True)
-            if res.returncode != 0:
-                return res
-        shutil.copytree(clone / STDLIB_SPARSE_PATH, dest)
-    return subprocess.CompletedProcess(steps[-1], 0, "", "")
+# `_metadata/` is rebuilt here, never inherited; the rest is Python build litter.
+_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "_metadata", ".git")
 
 
-def clone_stdlib(root: Path, url: str = STDLIB_URL) -> dict:
+def library_module_root() -> Path | None:
+    """The installed `metasmith_libraries` package directory, or None.
+
+    Resolved by import rather than by path so one arm covers both worlds: a
+    conda/pip install finds it in site-packages, and a source checkout run
+    with `PYTHONPATH=src` finds `src/metasmith_libraries` — the same directory
+    the authoring tools edit. Shape is checked, not just importability, since
+    a namespace package with no `data_types/` is not a library.
+    """
+    try:
+        spec = importlib.util.find_spec("metasmith_libraries")
+    except (ImportError, ValueError):
+        return None
+    if spec is None or not spec.origin:
+        return None
+    root = Path(spec.origin).resolve().parent
+    return root if (root / "data_types").is_dir() else None
+
+
+def _library_dirs(root: Path) -> tuple[list[str], list[str], list[str]]:
+    """The three argument lists a compile takes, read off the library layout."""
+    def dirs(name: str) -> list[str]:
+        d = root / name
+        if not d.is_dir():
+            return []
+        return sorted(
+            str(p) for p in d.iterdir()
+            if p.is_dir() and not p.name.startswith((".", "_"))
+        )
+    types = [str(root / "data_types")] if (root / "data_types").is_dir() else []
+    return types, dirs("transforms"), dirs("resources")
+
+
+def compile_library(root: Path) -> dict:
+    """Compile `_metadata/` for the library at `root`, in place.
+
+    The same build `dev/libraries.sh -bm` runs, called in-process. A library
+    with no metadata does not degrade to resolving fewer types — it raises
+    before planning begins — so this is what makes a fresh copy usable.
+
+    CAUTION: this imports every transform in the library, through the same
+    process-global path the planner uses. Callers inside a running GUI must
+    hold `_plan_lock` (see `gui/api.py`); the bootstrap runs before serving.
+    """
+    from ..ops import build as op_build
+
+    root = Path(root)
+    types, transforms, uniques = _library_dirs(root)
+    if not types:
+        raise FileNotFoundError(f"[{root}] has no data_types/ — not a library")
+    return op_build.build_all(types, transforms, uniques)
+
+
+def _library_version(root: Path) -> str:
+    v = root / "version.txt"
+    return v.read_text().strip() if v.is_file() else "unknown"
+
+
+def _stamp(src: Path) -> str:
+    """Version plus a content hash of the source the copy was made from.
+
+    Two libraries of the same version are not necessarily the same library —
+    a dev checkout changes under a fixed `version.txt` all day — so the hash
+    is what actually keys the caches. Computed once here rather than on every
+    `discover()`, which the template list calls per request.
+    """
+    from .._build_hash import compute_build_hash
+
+    return f"{_library_version(src)}+{compute_build_hash(src)}"
+
+
+def _make_writable(root: Path) -> None:
+    """Give the owner write permission over the whole copy.
+
+    `copytree` preserves the source's mode bits, and an install directory is
+    routinely read-only -- conda's `pkgs` cache hardlinks its files in as
+    read-only, and a system-wide site-packages is not the user's to write. The
+    copy inherits that, and the compile then fails partway through trying to
+    create `_metadata/` inside it. Applied to the copy, never to the source,
+    which is the reason there is a copy at all.
+    """
+    for p in (root, *root.rglob("*")):
+        try:
+            p.chmod(p.stat().st_mode | stat.S_IWUSR)
+        except OSError:
+            pass  # not ours to chmod; the compile will say so if it mattered
+
+
+def clone_stdlib(root: Path) -> dict:
     """Materialize the standard library into `root` if it is not already there.
 
-    Prefers the version-pinned snapshot vendored into this install
-    (`dev/metasmith.sh --vendor-library`) -- deterministic, offline, and
-    exactly what the running engine was built against; the standalone
-    MetasmithLibraries repo `url` used to point at is retired post-migration.
-    Falls back to a live sparse-checkout of `url` (now the monorepo) only when
-    `METASMITH_STDLIB_LIVE=1` is set: an explicit opt-in, not automatic, since
-    a silent live-fetch default would mask a missing vendor bundle instead of
-    saying so plainly. Either way, a failure is reported, not raised: a user
-    without network access should still get a notebook or a page, with the
-    absence stated in the UI rather than a traceback at startup.
+    A failure is reported, not raised: a user whose install is missing the
+    library package should still get a notebook or a page, with the absence
+    stated in the UI rather than a traceback at startup.
     """
     dest = Path(root) / STDLIB_NAME
     if dest.exists():
         return {"path": str(dest), "cloned": False}
 
-    bundle = _vendor_bundle_dir()
-    if bundle.is_dir():
-        Log.Info(f"copying vendored standard library from [{bundle}]...")
-        shutil.copytree(bundle, dest)
-        return {"path": str(dest), "cloned": True, "source": "vendor"}
-
-    if not os.environ.get("METASMITH_STDLIB_LIVE"):
+    src = library_module_root()
+    if src is None:
         err = (
-            "no vendored standard library shipped with this install, and live "
-            f"fetch is opt-in. Set METASMITH_STDLIB_LIVE=1 to sparse-checkout "
-            f"[{STDLIB_SPARSE_PATH}] from [{url}] instead."
+            "the metasmith_libraries package is not installed, so there is no "
+            "standard library to copy. Install it (`conda install -c hallamlab "
+            "metasmith_libraries`), or run from a source checkout with "
+            "PYTHONPATH pointed at its src/."
         )
         Log.Error(err)
         return {"path": str(dest), "cloned": False, "error": err}
 
-    Log.Info(f"sparse-checking out standard library from [{url}]...")
-    res = _sparse_checkout_library(url, dest)
-    if res.returncode != 0:
-        err = res.stderr.strip() or f"git exited {res.returncode}"
-        Log.Error(f"failed to fetch [{url}]: {err}")
+    Log.Info(f"copying the standard library from [{src}]...")
+    staging = dest.with_name(dest.name + ".partial")
+    if staging.exists():
+        # left by an attempt that died between the copy and the rename. It may
+        # be read-only, having inherited the install's mode bits, so it is made
+        # writable before being removed rather than after -- otherwise a single
+        # failed bootstrap wedges every later one.
+        _make_writable(staging)
+        shutil.rmtree(staging)
+    try:
+        shutil.copytree(src, staging, ignore=_COPY_IGNORE)
+        _make_writable(staging)
+        Log.Info("compiling the standard library...")
+        compile_library(staging)
+        (staging / LIBRARY_STAMP).write_text(_stamp(src))
+    except Exception as e:
+        shutil.rmtree(staging, ignore_errors=True)
+        err = f"could not build the standard library from [{src}]: {e}"
+        Log.Error(err)
         return {"path": str(dest), "cloned": False, "error": err}
-    return {"path": str(dest), "cloned": True, "source": "live"}
+    staging.rename(dest)
+    return {"path": str(dest), "cloned": True, "source": str(src)}
 
 
 def stdlib_commit(root: Path) -> str | None:
-    """The commit the clone is on, recorded with each plan so a result is traceable."""
-    dest = Path(root) / STDLIB_NAME
-    if not (dest / ".git").exists():
+    """What version of the library this project holds, recorded with each plan.
+
+    Named for the git commit it used to be, because that is what it still is
+    to every caller: an opaque token that changes when the library does.
+    """
+    stamp = Path(root) / STDLIB_NAME / LIBRARY_STAMP
+    try:
+        return stamp.read_text().strip() or None
+    except OSError:
         return None
-    res = subprocess.run(
-        ["git", "-C", str(dest), "rev-parse", "HEAD"], text=True, capture_output=True,
-    )
-    return res.stdout.strip() or None if res.returncode == 0 else None
 
 
 def copy_example_resources(root: Path) -> dict:
@@ -114,14 +208,14 @@ def copy_example_resources(root: Path) -> dict:
     return {"path": str(dest), "copied": True}
 
 
-def bootstrap_project(root: Path, with_examples: bool = True, url: str = STDLIB_URL) -> dict:
+def bootstrap_project(root: Path, with_examples: bool = True) -> dict:
     """Everything a fresh working directory needs before either front end opens."""
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     out: dict = {"root": str(root)}
     if with_examples:
         out["examples"] = copy_example_resources(root)
-    out["stdlib"] = clone_stdlib(root, url)
+    out["stdlib"] = clone_stdlib(root)
     return out
 
 
@@ -129,15 +223,15 @@ def bootstrap_project(root: Path, with_examples: bool = True, url: str = STDLIB_
 
 
 def discover(root: Path) -> dict:
-    """What the clone holds: `library_index` plus what a clone knows about itself.
+    """What the copy holds: `library_index` plus the stamp it was built under.
 
     The three library lists are the repository convention, which
     `agents/templates.py` owns because a template is read against it -- both
     a library-shipped one, resolved against the repository it ships in, and a
     user's, resolved against this list.
 
-    Resolved: `MetasmithLibraries` is sometimes a symlink -- someone iterating
-    on a shared stdlib checkout across several projects, say -- and
+    Resolved: `MetasmithLibraries` is sometimes a symlink -- someone pointing
+    several projects at one built copy, say -- and
     `Template.Load`/`Spec.Unpack` already resolve a template's own root before
     joining its relative library references onto it (`templates.py`,
     `spec.py`). Leaving this one unresolved meant the two sides named the same

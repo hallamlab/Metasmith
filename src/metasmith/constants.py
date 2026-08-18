@@ -15,15 +15,11 @@ CONDA_URL = f"https://anaconda.org/{USER}/{NAME}"
 CONTAINER_URL = f"https://quay.io/repository/{USER}/{NAME}"
 
 # The standard library of data types, transforms, and resources. Both `msm lab`
-# and `msm gui` materialize this into the working directory under STDLIB_NAME;
-# there is no configuration for it, so this is the single place it is pinned.
-# STDLIB_NAME is the local directory name only and outlives the source it
-# comes from: the standalone MetasmithLibraries repo is retired post-migration,
-# so STDLIB_URL now points at the monorepo, and STDLIB_SPARSE_PATH is the
-# subtree within it `clone_stdlib`'s live fallback checks out.
+# and `msm gui` materialize it into the working directory under this name.
+# It is the local directory name only, and outlives the source it comes from:
+# the library is now the installed `metasmith_libraries` package, located by
+# import (`gui/stdlib.library_module_root`), so there is nothing here to pin.
 STDLIB_NAME = "MetasmithLibraries"
-STDLIB_URL = GIT_URL
-STDLIB_SPARSE_PATH = "src/metasmith_libraries"
 
 _cli_call = "metasmith.coms.cli:main"
 ENTRY_POINTS = [
