@@ -1,0 +1,1402 @@
+{
+"MNXR200613": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.006371207991412309,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR192968": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 2.4348169420068895,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR102048": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 42644.36695630877,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR144082": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 292.988845760879,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR195931": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.07327918477671572,
+"method": "dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR118477": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 2271.6658558287,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR165294": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.8867180913820802,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR193834": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR152055": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 1.9563155658317724,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR198245": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 1.5835283420639747,
+"method": "dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR106629": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 842.5107821343059,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR119395": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 4182.802884479096,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR113634": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.014652455406509477,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR122463": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 90.83390062633528,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR184482": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.006243967750550545,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR116684": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR112563": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 567016097234.8903,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR116812": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 3.312965098201726e+17,
+"method": "eq_gc+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR116000": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 13.956725376475207,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR164687": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR119870": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "eq_gc+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR164601": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR120216": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 573.2818125730729,
+"method": "dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR188579": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.08310766807658863,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR191457": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 100.27289518423292,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR114250": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.002691914572344346,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR153081": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.0003340675045399441,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR165011": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 86238205859.12762,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR118302": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.004920962747745423,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR151839": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 2.1757000554762755,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR117565": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.015507892466712013,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR197441": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.0016171216219963036,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR116905": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR190501": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 48044.64085520943,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR191561": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 326035.5053265829,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR97026": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 1,
+"ratio": 155748.35517676242,
+"method": "eq_rc+dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR123208": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.0016966235095723886,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR140858": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 9859.379152560132,
+"method": "dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR106536": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.057027132527223e-10,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR110378": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 109.43175555582224,
+"method": "dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR121623": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 0.0011891875603998593,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR117474": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.016986319180409073,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR191744": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 10499346263.22214,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR186240": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.584014440131831,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR195991": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR121972": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 2.5269467362056253e-06,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR104952": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 1307579849797.4167,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR121964": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR197617": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 352.39689323392946,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR115703": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR120722": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "eq_gc+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR193185": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.2342389662765195,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR192896": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.01985009349441314,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR193075": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 0.6254085070646935,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR119713": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.0026864228879946756,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR118972": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 99.43216445121939,
+"method": "dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR120711": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR120910": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 5.056471329394277,
+"method": "dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR153431": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 1,
+"ratio": 0.757062019098856,
+"method": "eq_rc+dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR123760": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 15.874991301555712,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR114928": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 3.312965098201726e+17,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR184511": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 14.934881570866652,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR144095": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 42.46220373225208,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR186641": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 0.10767944966518643,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR145737": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 1230.6728904586228,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR107777": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.0030923847849599734,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR117147": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 2.172182102824011e-05,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR164406": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 3.0184441138326476e-18,
+"method": "eq_gc+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR165075": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 9.175040266122267,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR197982": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 1,
+"ratio": 338.73102665863195,
+"method": "eq_rc+dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR196803": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 834.0893368734652,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR144034": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 0.004045099730897644,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR143999": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 352.5235434996507,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR121959": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 86.77250694143687,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR114274": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 2,
+"ratio": 0.005494766072330438,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR192042": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 1,
+"ratio": 45.55463910101659,
+"method": "eq_rc+dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR120891": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 10252.561873758072,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR152870": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 75.93635202620267,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR108199": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 0.00675256209113261,
+"method": "eq_gc_x_dgbyg+biocyc",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR164380": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 2,
+"ratio": 0.5297344718318497,
+"method": "dgbyg+biocyc",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR164586": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR193289": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR147547": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR119823": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 2.1113068347879613,
+"method": "biocyc_only",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR163552": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR119145": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR122639": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 2.1113068347879613,
+"method": "biocyc_only",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR187506": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR200708": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR143743": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR115235": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR151132": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR199586": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR193202": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR118595": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR163647": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR151821": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 2.1113068347879613,
+"method": "biocyc_only",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR165235": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR115041": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR150752": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR123111": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR123612": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.7612764162959712,
+"method": "biocyc_only",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR116745": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.7612764162959712,
+"method": "biocyc_only",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR163908": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR164839": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR199355": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR163985": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR150756": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR164876": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR119529": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR147219": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR140139": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR117660": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 2.1113068347879613,
+"method": "biocyc_only",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR115981": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR123556": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.7612764162959712,
+"method": "biocyc_only",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR164362": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR145329": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.7612764162959712,
+"method": "biocyc_only",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR115022": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.7612764162959712,
+"method": "biocyc_only",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR115629": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 2.1113068347879613,
+"method": "biocyc_only",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR121427": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687718425361903,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR120661": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 2.1113068347879613,
+"method": "biocyc_only",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR117199": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR164960": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR121068": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR200593": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR116593": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR196496": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR120462": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 2.1113068347879613,
+"method": "biocyc_only",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR192822": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR193662": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR199334": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR165207": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR118847": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.7612764162959712,
+"method": "biocyc_only",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR165107": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.6459318263237984,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR121469": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR123726": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687718425361903,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR199656": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR130446": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR122186": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR120296": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR164302": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR117336": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR118051": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 2.1113068347879613,
+"method": "biocyc_only",
+"cat": "RIGHT-TO-LEFT"
+},
+"MNXR197079": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687718425361903,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR164150": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR193854": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR123296": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR164883": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR165021": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR164683": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR121209": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR193855": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR163996": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.7612764162959712,
+"method": "biocyc_only",
+"cat": "LEFT-TO-RIGHT"
+},
+"MNXR187761": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR120713": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR121199": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR116019": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750016187,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR186626": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR193108": {
+"truth": "LEFT_TO_RIGHT",
+"tier": 3,
+"ratio": 0.645929078376963,
+"method": "biocyc_only",
+"cat": "PHYSIOL-LEFT-TO-RIGHT"
+},
+"MNXR194025": {
+"truth": "RIGHT_TO_LEFT",
+"tier": 3,
+"ratio": 1.3687742750608602,
+"method": "biocyc_only",
+"cat": "PHYSIOL-RIGHT-TO-LEFT"
+},
+"MNXR196904": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "refused",
+"cat": null
+},
+"MNXR149366": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR137927": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR199180": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR185417": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "refused",
+"cat": null
+},
+"MNXR173083": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR149983": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR192734": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR168334": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR170452": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR179631": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "refused",
+"cat": null
+},
+"MNXR115025": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "refused",
+"cat": null
+},
+"MNXR168974": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR109809": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR130466": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR132331": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR108902": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR170873": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR163409": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR157993": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR199186": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR194469": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR168383": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR163442": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR168969": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR203503": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR177652": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "refused",
+"cat": null
+},
+"MNXR170554": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR165467": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR170970": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR146960": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR196464": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "refused",
+"cat": null
+},
+"MNXR113845": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR135173": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR153930": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR170420": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR173546": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR189377": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR99496": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+},
+"MNXR183327": {
+"truth": null,
+"tier": 0,
+"ratio": 1.0,
+"method": "no_evidence",
+"cat": null
+}
+}
