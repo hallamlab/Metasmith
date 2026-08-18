@@ -1086,6 +1086,36 @@ class TestWorkflowDag:
         assert (wf_dir / "plan.dag.svg").read_text() == light
         assert (wf_dir / "plan.dag.dark.svg").read_text() == dark
 
+    def test_the_background_is_off_by_default_and_cached_apart(self, client):
+        # the page's own card paints the ground behind the diagram, so what it
+        # shows is transparent; a download onto someone else's slide is the case
+        # that wants the plate, and the two are separate files rather than one
+        # repainted over the other on every switch
+        name = _make_workflow(client)
+        _seed_inputs(client, name, 1)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        wf_dir = Path(client.get(f"/api/workflows/{name}").get_json()["path"])
+
+        bare = self._drawn(client, name)
+        filled = self._drawn(client, name, background=1)
+        assert bare != filled
+        # the plate is a full-bleed rect at the top of the drawing, and only the
+        # filled one has it
+        assert filled.count("<rect") == bare.count("<rect") + 1
+
+        assert (wf_dir / "plan.dag.svg").read_text() == bare
+        assert (wf_dir / "plan.dag.filled.svg").read_text() == filled
+        assert self._drawn(client, name, theme="dark", background=1) == (
+            wf_dir / "plan.dag.dark.filled.svg"
+        ).read_text()
+
+    def test_an_unknown_background_reads_as_off(self, client):
+        # same posture as the theme below: the value comes off a url
+        name = _make_workflow(client)
+        _seed_inputs(client, name, 1)
+        _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
+        assert self._drawn(client, name, background="please") == self._drawn(client, name)
+
     def test_an_unknown_theme_draws_the_default_rather_than_failing(self, client):
         # the value comes off a url; a malformed one must not turn the diagram
         # into an error card
@@ -1101,12 +1131,17 @@ class TestWorkflowDag:
         wf_dir = Path(client.get(f"/api/workflows/{name}").get_json()["path"])
         self._drawn(client, name)
         self._drawn(client, name, theme="dark")
+        self._drawn(client, name, background=1)
+        self._drawn(client, name, theme="dark", background=1)
 
         _seed_inputs(client, name, 2, prefix="more")
         _finish(client, client.post(f"/api/workflows/{name}/generate", json={}).get_json())
-        # a stale drawing outliving its plan is the bug; one theme swept and the
-        # other left is the same bug wearing the other hat
-        for f in ("plan.dag.svg", "plan.dag.dark.svg"):
+        # a stale drawing outliving its plan is the bug; one variant swept and
+        # another left is the same bug wearing a different hat
+        for f in (
+            "plan.dag.svg", "plan.dag.dark.svg",
+            "plan.dag.filled.svg", "plan.dag.dark.filled.svg",
+        ):
             assert not (wf_dir / f).exists(), f
 
     def test_a_workflow_with_no_plan_is_refused(self, client):

@@ -1,8 +1,10 @@
 <script>
+  import { tick } from 'svelte'
   import { api } from '../lib/api.svelte.js'
   import {
     app, attempt, cachedWorkflow, cacheWorkflow, loadRuns, loadTypeIndex, loadTypes,
-    loadWorkflows, notify, patchWorkflowSummary, select, ui,
+    loadWorkflows, notify, patchWorkflowSummary, renameWorkflow, select, ui,
+    workflowRenameable,
   } from '../lib/state.svelte.js'
   import Ago from '../components/Ago.svelte'
   import EditableName from '../components/EditableName.svelte'
@@ -20,7 +22,6 @@
   import HintsPanel from './HintsPanel.svelte'
   import LibraryList from './LibraryList.svelte'
   import RecipeCard from './RecipeCard.svelte'
-  import TypeInspector from './TypeInspector.svelte'
   import ParamRows from '../components/ParamRows.svelte'
   import { isPlumbing, libraryGraph, transformGraph, typeGraph } from '../lib/graphs.js'
   import { around, children, parents } from '../lib/highlight.js'
@@ -414,7 +415,75 @@
   // need" and "what needs this", answered one at a time. One hop: two hops on a
   // 73-node plan lights half the drawing, which is the same as lighting none.
   let planUpstream = $state(true)
+  // whether the drawing and its step rows are showing at all -- see the switch
+  // in `.dag-controls`, which is the only thing left up when this is off
+  let dagOpen = $state(true)
   let planPointed = $state(null)
+
+  // -- folding the diagram without the page moving under the pointer ---------
+  //
+  // The control row is sticky *inside* the section, so while you are scrolled
+  // into a tall diagram it is pinned to the top of the column. Fold the
+  // diagram away and the section becomes a few pixels tall: the row has
+  // nothing left to be stuck to and drops back to wherever that short block
+  // sits, which is usually off the top of the screen -- the switch you just
+  // clicked is gone, and so is the plan you were reading around it.
+  //
+  // So the row is put back where it was. Collapsing the section also takes most
+  // of the column's height with it, and the scroll position that puts the row
+  // back is often past the end of what is left, so a spacer at the tail lends
+  // the column the missing room. It is temporary: it is dropped on the first
+  // scroll that no longer needs it to stand where it is, which is the only
+  // moment removing it moves nothing.
+  let dagEl = $state(null)
+  let dagControlsEl = $state(null)
+  let scrollPad = $state(0)
+
+  const dagScroller = () => dagEl?.closest('.main') ?? null
+
+  // Whether the control row has left its place and is riding the top of the
+  // column. Only then is there a drawing behind it to blur; sitting where it
+  // belongs it is over the card, and hazing that is a smudge over nothing.
+  //
+  // Read off a sentinel at the top of the section rather than by measuring the
+  // row on every scroll event -- `getBoundingClientRect` in a scroll handler is
+  // a forced layout per frame, and this is a yes/no that changes twice a page.
+  let dagStuck = $state(false)
+  let dagSentinel = $state(null)
+
+  $effect(() => {
+    const mark = dagSentinel
+    const root = dagEl?.closest('.main')
+    if (!mark || !root) return
+    const io = new IntersectionObserver(([e]) => (dagStuck = !e.isIntersecting), { root })
+    io.observe(mark)
+    return () => io.disconnect()
+  })
+
+  async function toggleDag() {
+    const scroller = dagScroller()
+    const before = dagControlsEl?.getBoundingClientRect().top
+    dagOpen = !dagOpen
+    scrollPad = 0
+    if (!scroller || before == null) return
+    await tick()
+    const want = scroller.scrollTop + (dagControlsEl.getBoundingClientRect().top - before)
+    const room = scroller.scrollHeight - scroller.clientHeight
+    if (want > room) {
+      scrollPad = Math.ceil(want - room)
+      await tick()
+    }
+    scroller.scrollTop = want
+  }
+
+  // Safe exactly when the column would still reach this scroll position without
+  // the spacer; anything earlier and dropping it hauls the page up by the
+  // difference, which is the jump the spacer was borrowed to prevent.
+  function releasePad(e) {
+    if (!scrollPad) return
+    const el = e.currentTarget
+    if (el.scrollTop <= Math.max(0, el.scrollHeight - scrollPad - el.clientHeight)) scrollPad = 0
+  }
   // the last node clicked: kept lit once the pointer leaves, so a click reads
   // as a decision rather than a hover that happened to land on a button. The
   // live pointer still wins while it is somewhere on the drawing.
@@ -425,6 +494,85 @@
       relation: planUpstream ? parents : children,
     }),
   )
+
+  // -- taking the diagram away -------------------------------------------
+  //
+  // What the page shows and what a person wants to keep are different
+  // pictures, so the download asks for its own rather than saving the one on
+  // screen. Two of the three choices are the reason: the page is drawn in the
+  // theme you are reading it in and on a ground its own card paints, and a
+  // transparent dark-theme diagram dropped on a white slide is pale text on
+  // white. So both default to what is in front of you -- the theme you are
+  // reading in, on a ground of its own -- and the common case is one press.
+  let dlTheme = $state(ui.theme)
+  let dlFilled = $state(true)
+  let downloading = $state(null)
+
+  // mirrors the server's own cache naming, so two variants of one plan do not
+  // land in the downloads folder as `plan.svg` and `plan (1).svg`
+  let dlStem = $derived(
+    `${name}${dlTheme === 'light' ? '' : '.dark'}${dlFilled ? '.filled' : ''}`,
+  )
+
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    // not immediately: Safari reads the href after the click returns
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
+
+  // The PNG is the SVG, rasterized here. `RenderDAG` can write one -- but its
+  // raster arm goes out through graphviz, which lays the graph out its own way,
+  // so asking the server for a PNG would hand back a different picture under
+  // the same name. A canvas draws exactly what the SVG says.
+  async function svgToPng(svg, scale = 2) {
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+    try {
+      const img = new Image()
+      await new Promise((ok, fail) => {
+        img.onload = ok
+        img.onerror = () => fail(new Error('the diagram could not be rasterized'))
+        img.src = url
+      })
+      // the renderer always writes width/height, and a canvas sized 0 saves a
+      // blank file rather than failing, so this is checked rather than assumed
+      const w = img.naturalWidth
+      const h = img.naturalHeight
+      if (!w || !h) throw new Error('the diagram has no size to rasterize at')
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(w * scale)
+      canvas.height = Math.round(h * scale)
+      const ctx = canvas.getContext('2d')
+      ctx.scale(scale, scale)
+      ctx.drawImage(img, 0, 0)
+      return await new Promise((ok, fail) =>
+        canvas.toBlob((b) => (b ? ok(b) : fail(new Error('the PNG could not be encoded'))), 'image/png'),
+      )
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+
+  async function downloadDag(format) {
+    downloading = format
+    await attempt(async () => {
+      const url =
+        `/api/workflows/${name}/dag?theme=${dlTheme}&background=${dlFilled ? 1 : 0}`
+      const res = await fetch(url)
+      // fetch resolves on a 404 as happily as on a 200, and a saved error page
+      // named `plan.svg` is the worst possible way to find that out
+      if (!res.ok) throw new Error(`the diagram could not be drawn (${res.status})`)
+      const svg = await res.text()
+      saveBlob(
+        format === 'svg' ? new Blob([svg], { type: 'image/svg+xml' }) : await svgToPng(svg),
+        `${dlStem}.${format}`,
+      )
+    })
+    downloading = null
+  }
 
   let drawingLabel = $derived.by(() => {
     if (drawing?.kind === 'transform') return index?.transforms?.[drawing.i]?.name ?? 'transform'
@@ -885,35 +1033,19 @@
   }
 
   // The name was made up at create time -- there is no form before this page to
-  // have chosen it on -- so it is editable here, for as long as nothing is keyed
-  // to it. The server decides that; past that point the *directory* keeps its
-  // name (the plan is keyed to it), but the label everyone reads does not have
-  // to be — `display_name` rides in `request.yml` beside it, an ordinary field
-  // `write_request` already merges through, and changes it without moving
-  // anything a run or a cache key points at.
-  let renameable = $derived(!wf?.planned && !wf?.runs?.length && !wf?.archived_at)
+  // have chosen it on -- so it is editable here. Only the title the field wears
+  // depends on which of the two names is still free to move; the rule itself,
+  // and the rename, are `state.svelte.js`'s, since the rail renames too.
+  let renameable = $derived(workflowRenameable(wf))
   let displayName = $derived(wf?.request?.display_name || wf?.name || '')
 
   async function commitRename(next) {
-    if (renameable) {
-      const out = await attempt(async () => {
-        // the same PUT the recipe saves through: a workflow's name is a field
-        // of it, and an id in the body that differs from the url is a rename
-        const body = await api.put(`/workflows/${name}`, { name: next })
-        await loadWorkflows()
-        return body
-      })
-      // the name is the route: reselect so the pane reloads against the new one
-      if (out) select('workflows', out.name)
-      return
-    }
-    // locked: the label changes, the directory does not, so there is nothing
-    // to reselect -- just a field of the same record to reload
-    await attempt(async () => {
-      await api.put(`/workflows/${name}`, { display_name: next })
-      await load()
-      return true
-    })
+    // The rail renames too, so the rule for which of the two names moves lives
+    // in `state.svelte.js` rather than here. A rename that moved the directory
+    // reselects, which remounts this pane against the new route and reloads on
+    // its own; a label change leaves the route alone and has to be re-read.
+    const now = await renameWorkflow(wf, next)
+    if (now === name) await load()
   }
 
   async function unarchive() {
@@ -929,7 +1061,7 @@
   <p class="muted loading">loading…</p>
 {:else}
   <div class="pane">
-    <div class="col main" style="gap:14px">
+    <div class="col main" style="gap:14px" onscroll={releasePad}>
       <div class="spread">
         <div class="row grow">
           <EditableName
@@ -1117,10 +1249,14 @@
                drawing in words -- which is also why a row carries no name: the
                node level with it is the name. No height cap: this grows with
                the plan, and only a diagram wider than the card scrolls,
-               sideways. It does fold, though -- behind a `<details>`, open by
-               default -- because a plan with enough steps to need that room is
-               also tall enough to push the run controls below it off screen,
-               and closing it is the way back to them without scrolling past.
+               sideways. It does fold, though -- open by default -- because a
+               plan with enough steps to need that room is also tall enough to
+               push the run controls below it off screen, and closing it is the
+               way back to them without scrolling past. The fold is a chip in
+               the control row rather than a `<summary>`: the row has to stay up
+               while the diagram is down, or there is nothing left to click to
+               get it back, and a disclosure that outlives what it discloses is
+               a stranger thing than a switch.
 
                The drawing is `DagRail`, the same component the recipe's
                lineage rails and the info panel use, over placement the server
@@ -1135,8 +1271,10 @@
           {@const topCy = planGraph?.nodes?.length
             ? Math.min(...planGraph.nodes.map((n) => n.cy))
             : HEAD_H / 2}
-          <details class="dag-details" open>
-            <summary class="small muted">diagram</summary>
+          <div class="dag-details" bind:this={dagEl}>
+            <!-- where the control row sits when it is not riding the top of the
+                 column; once this has scrolled out, the row is stuck -->
+            <div class="dag-mark" bind:this={dagSentinel} aria-hidden="true"></div>
             {#if planGraph}
               <!-- Outside `.dag-scroll` on purpose: a plan wider than the card
                    scrolls sideways, and a control inside that scroller leaves
@@ -1148,35 +1286,112 @@
                    sits beside it rather than getting its own sticky corner --
                    two elements independently sticking to the same offset would
                    fight once both were stuck. -->
-              <div class="dag-controls">
-                <div class="dag-dir" role="group" aria-label="which way the diagram lights">
-                  <button
-                    type="button"
-                    class:on={planUpstream}
-                    title="hovering a step lights what it needs"
-                    onclick={() => (planUpstream = true)}
-                  >parents</button>
-                  <button
-                    type="button"
-                    class:on={!planUpstream}
-                    title="hovering a step lights what needs it"
-                    onclick={() => (planUpstream = false)}
-                  >children</button>
+              <div class="dag-controls" class:stuck={dagStuck} bind:this={dagControlsEl}>
+                <!-- three stacked panes of blurred drawing, strongest and
+                     smallest last; they compound, so the blur falls off from
+                     the corner the row is pinned to -- see `.dag-haze` -->
+                <div class="dag-haze" aria-hidden="true">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="dag-group">
+                  <span class="dag-group-label">diagram</span>
+                  <div class="dag-chips">
+                    <div class="dag-dir" role="group" aria-label="show or fold away the diagram">
+                      <button
+                        type="button"
+                        class:on={dagOpen}
+                        title="the drawing and its step rows, at their natural size"
+                        onclick={() => !dagOpen && toggleDag()}
+                      >show</button>
+                      <button
+                        type="button"
+                        class:on={!dagOpen}
+                        title="fold it away — the run controls are below it"
+                        onclick={() => dagOpen && toggleDag()}
+                      >hide</button>
+                    </div>
+                    <div class="dag-dir" role="group" aria-label="which way the diagram lights">
+                      <button
+                        type="button"
+                        class:on={planUpstream}
+                        title="hovering a step lights what it needs"
+                        onclick={() => (planUpstream = true)}
+                      >parents</button>
+                      <button
+                        type="button"
+                        class:on={!planUpstream}
+                        title="hovering a step lights what needs it"
+                        onclick={() => (planUpstream = false)}
+                      >children</button>
+                    </div>
+                  </div>
                 </div>
                 <!-- The server keeps its own rendering of this same plan around
                      (`GET /workflows/<name>/dag`, cached beside the bundle) --
                      `DagRail` draws the nodes as buttons for the click-to-panel
                      behaviour above, which is not a file a person can keep, so
                      the download reaches past it for the plain SVG instead of
-                     trying to serialize the interactive one. -->
-                <a
-                  class="dag-download"
-                  href="/api/workflows/{name}/dag?theme={ui.theme}"
-                  download="{name}.svg"
-                  title="download this diagram as an SVG"
-                >svg ⭳</a>
+                     trying to serialize the interactive one.
+
+                     Set apart from the direction switch by a gap, and then
+                     gathered under a heading and a rule of its own: the two
+                     toggles on the left of it choose what gets saved, and
+                     reading them as more ways to light the diagram is the one
+                     mistake this row can make. It goes with the diagram: what
+                     it saves is a picture that is not on the screen, and a
+                     folded section is not the moment to be offered one. -->
+                {#if dagOpen}
+                <div class="dag-group dag-export">
+                  <span class="dag-group-label">export</span>
+                  <div class="dag-chips">
+                    <div class="dag-dir" role="group" aria-label="which theme to save in">
+                      <button
+                        type="button"
+                        class:on={dlTheme === 'light'}
+                        title="dark ink on a light ground"
+                        onclick={() => (dlTheme = 'light')}
+                      >light</button>
+                      <button
+                        type="button"
+                        class:on={dlTheme === 'dark'}
+                        title="light ink on a dark ground"
+                        onclick={() => (dlTheme = 'dark')}
+                      >dark</button>
+                    </div>
+                    <div class="dag-dir" role="group" aria-label="what ground to save on">
+                      <button
+                        type="button"
+                        class:on={dlFilled}
+                        title="carry the theme's own background"
+                        onclick={() => (dlFilled = true)}
+                      >filled</button>
+                      <button
+                        type="button"
+                        class:on={!dlFilled}
+                        title="no background — takes the colour of whatever it is placed on"
+                        onclick={() => (dlFilled = false)}
+                      >transparent</button>
+                    </div>
+                    <button
+                      type="button"
+                      class="dag-download"
+                      disabled={!!downloading}
+                      onclick={() => downloadDag('svg')}
+                      title="download this diagram as an SVG"
+                    >{downloading === 'svg' ? '…' : 'svg ⭳'}</button>
+                    <button
+                      type="button"
+                      class="dag-download"
+                      disabled={!!downloading}
+                      onclick={() => downloadDag('png')}
+                      title="download this diagram as a PNG, at twice its drawn size"
+                    >{downloading === 'png' ? '…' : 'png ⭳'}</button>
+                  </div>
+                </div>
+                {/if}
               </div>
             {/if}
+            {#if dagOpen}
             <div class="dag-scroll">
               <div class="dag-box">
                 <div class="dag-body">
@@ -1207,6 +1422,19 @@
                         style={`height: ${HEAD_H}px; top: ${topCy - HEAD_H / 2}px`}
                       >
                         <span>cpus</span><span>memory (GB)</span><span>time (h)</span><span></span>
+                      </div>
+                      <!-- One line down the middle of each value column, so a
+                           number can be followed to its heading across the gap
+                           the rows leave between them. Starts under the header
+                           and runs to the foot; on the same grid template as
+                           the rows, which is the only thing keeping it
+                           centred. -->
+                      <div
+                        class="res-guides"
+                        aria-hidden="true"
+                        style={`top: ${topCy + HEAD_H / 2}px`}
+                      >
+                        <span></span><span></span><span></span>
                       </div>
                       {#each wf.result.step_display as step, i}
                         {@const cy = planCy.get(step.order) ?? (i + 0.5) * pitch}
@@ -1260,7 +1488,8 @@
                 </div>
               </div>
             </div>
-          </details>
+            {/if}
+          </div>
 
           <p class="small muted">
             solved <Ago iso={wf.generated_at} />{#if wf.result.stdlib_commit}
@@ -1372,10 +1601,17 @@
           </table>
         </div>
       {/if}
+
+      <!-- borrowed room, so folding the diagram away can put the control row
+           back where it was; see `toggleDag` -->
+      {#if scrollPad}
+        <div class="scroll-pad" aria-hidden="true" style={`height: ${scrollPad}px`}></div>
+      {/if}
     </div>
 
     <SidePanel
       id="workflow"
+      fill
       title={drawingLabel ?? 'types'}
       subtitle={graph?.caption ?? (focus ? null : 'nothing selected')}
     >
@@ -1389,15 +1625,14 @@
         {/if}
       {/snippet}
 
-      <!-- One column, one scrollbar. These three used to be two sections with a
-           grip between them: the libraries and the drawing pinned at a
-           remembered height, the inspector scrolling in whatever was left. That
-           made reading the bottom of the inspector a matter of first resizing
-           the top, and the drawing was squeezed by whatever the last drag had
-           left it. Now the panel scrolls as a whole and the drawing is a fixed
-           frame within it. `SidePanel` still has the split -- the run page's
-           tree and preview want it. -->
+      <!-- Two things, and the second one takes what the first leaves. There was
+           a third below the drawing, listing what the library adds up to; those
+           numbers are under the chips now, which is where the switches that
+           move them are, and the drawing gets the height it was giving up to
+           them. `SidePanel` still has its own split -- the run page's tree and
+           preview want it. -->
       <LibraryList
+        {index}
         libraries={index?.libraries ?? []}
         {enabled}
         viewing={drawing?.kind === 'library' ? drawing.path : null}
@@ -1410,16 +1645,6 @@
         empty="Pick a type, a transform, or a library’s eye — this draws what it connects to."
         onpicktype={pickType}
         onpicktransform={pickTransform}
-      />
-
-      <TypeInspector
-        type={focus}
-        {index}
-        {enabled}
-        selected={drawing?.kind === 'transform' ? drawing.i : null}
-        onpick={pickType}
-        onselect={pickTransform}
-        onapply={applyTransform}
       />
     </SidePanel>
   </div>
@@ -1443,6 +1668,9 @@
      mode for this view (App.svelte) so this row owns the height. */
   .pane { display: flex; flex: 1; min-width: 0; height: 100%; align-items: stretch; }
   .main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px; }
+  /* the column is a flex box with a gap, and an empty tail item would still be
+     given one; this has to be exactly the height it is asked for */
+  .scroll-pad { flex: 0 0 auto; margin-top: -14px; }
   .loading { padding: 18px; }
   /* The diagram sits on the card's own ground: it is drawn with no plate of its
      own, and one painted under it was never any colour but this card's -- which
@@ -1456,16 +1684,7 @@
   /* the drawing and the rows box, flex siblings with nothing between them: they
      share a top by construction, which is the whole of the alignment */
   .dag-body { display: flex; align-items: flex-start; gap: 10px; }
-  /* the fold around the diagram: a `summary` its own row, not indented under
-     the drawing the way a browser default reads, since this one is a sibling
-     of the run controls it is standing between the plan and */
-  .dag-details summary {
-    cursor: pointer;
-    width: fit-content;
-    user-select: none;
-  }
-  .dag-details summary:hover { color: var(--text); }
-  /* the same fold, for the same reason, around the job log: a summary its own
+  /* the fold around the job log: a summary its own
      row with the status pill riding beside it, so a job's outcome reads
      without opening the scrollback that produced it */
   .log-details summary {
@@ -1483,16 +1702,101 @@
      diagram, not after it -- and top right is where the info panel's own
      grip sits when this same diagram is reused there. */
   .dag-details { position: relative; }
+  /* zero, as far as the layout is concerned: it exists to be watched */
+  .dag-mark { height: 1px; margin-bottom: -1px; }
   .dag-controls {
     position: sticky;
     z-index: 5;
-    /* below the summary's own row, not over it -- top:0 here is the same
-       corner the "diagram" disclosure text already occupies */
-    top: 18px;
+    top: 0;
     left: 0;
     display: inline-flex;
-    align-items: center;
+    /* the export block is a heading taller than the direction switch; bottom
+       alignment is what keeps the one pill level with the row of chips rather
+       than floating against the middle of the taller block */
+    align-items: flex-end;
     gap: 6px;
+  }
+  /* The row floats over the drawing it controls, and small type over a diagram
+     is hard to read; a plate under it would fix that and put a hard-edged card
+     across the middle of the plan. So: the drawing itself, blurred -- and the
+     blur itself eased off toward the rim rather than a single blurred patch
+     faded out, which still ends in a ring you can see the edge of.
+
+     One layer per step of that ramp. Each is masked to a smaller patch than the
+     one below, and since `backdrop-filter` takes in everything already painted
+     under it, the four compound: ~3.5px at the middle, ~1.75px at the widest
+     ring, nothing at all by the rim.
+
+     The tint is the panel's own colour, which makes the whole thing invisible
+     rather than a smudge when the diagram is folded away and there is nothing
+     behind it to blur. */
+  /* Anchored to the top-left corner the row is pinned to. Hard on two sides and
+     soft on two: flush left at the card's own border and flush top, where the
+     column's overflow clips it against the nav bar -- both are edges the page
+     already draws, so an edge there reads as the card, not as a plate. It fades
+     out rightwards and downwards instead, which are the two sides that sit out
+     over the drawing.
+
+     Only while the row is riding the top of the column. Docked, it is over the
+     card with nothing behind it to blur. */
+  .dag-haze { display: none; }
+  .dag-controls.stuck .dag-haze {
+    display: block;
+    position: absolute;
+    inset: -24px -46px -24px -14px;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--panel) 55%, transparent) 20%,
+      transparent 80%
+    );
+  }
+  /* Each pane is blurrier and stops sooner than the one under it, and they
+     compound -- `backdrop-filter` reads in whatever is already painted below.
+     So the blur *strength* steps down across the box rather than one uniform
+     blur being faded out, which only ever reads as a plate with a soft rim.
+
+     Sideways the ramp is in pixels, not per cent: the row is several times
+     wider than it is tall, so a proportional fade ran halfway across the panel
+     while the same number down the side looked right. Each pane ends 46px
+     before the last and softens over the 46px before that, so the whole
+     falloff is the width of a chip or two regardless of how wide the row is.
+     Down the side it stays proportional, which is what looked right. */
+  .dag-haze span {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    -webkit-mask-image:
+      linear-gradient(to right, #000 calc(100% - 46px), transparent 100%),
+      linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
+    mask-image:
+      linear-gradient(to right, #000 calc(100% - 46px), transparent 100%),
+      linear-gradient(to bottom, #000 var(--vcore), transparent var(--vedge));
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+  }
+  .dag-haze span:nth-child(1) {
+    right: 0;
+    --vcore: 45%;
+    --vedge: 100%;
+    -webkit-backdrop-filter: blur(1.5px);
+    backdrop-filter: blur(1.5px);
+  }
+  .dag-haze span:nth-child(2) {
+    right: 46px;
+    --vcore: 18%;
+    --vedge: 55%;
+    -webkit-backdrop-filter: blur(2.5px);
+    backdrop-filter: blur(2.5px);
+  }
+  .dag-haze span:nth-child(3) {
+    right: 92px;
+    --vcore: 0%;
+    --vedge: 26%;
+    -webkit-backdrop-filter: blur(3.5px);
+    backdrop-filter: blur(3.5px);
   }
   .dag-dir {
     display: inline-flex;
@@ -1511,6 +1815,32 @@
     font-size: 11px;
   }
   .dag-dir button.on { background: var(--accent); color: var(--panel); }
+  /* Each cluster under a heading and a rule of its own, so what a chip acts on
+     is read off the group rather than guessed from the chip. */
+  .dag-group {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+  .dag-group-label {
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .dag-chips {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 4px;
+    border-top: 1px solid var(--line);
+  }
+  /* the gap that says these choose what is saved rather than what is drawn */
+  .dag-export { margin-left: 18px; }
+  /* a lone pill, where `.dag-dir` is a pair of them: one gesture whose result
+     arrives as a file, so there is no state for a second half to name */
   .dag-download {
     display: inline-block;
     border: 1px solid var(--line);
@@ -1523,6 +1853,7 @@
     opacity: 0.75;
   }
   .dag-download:hover { opacity: 1; color: var(--text); }
+  .dag-download:disabled { opacity: 0.4; }
   .link {
     background: none;
     border: none;
@@ -1556,7 +1887,8 @@
      template so they line up like a table's columns did; there is no name
      column, because the node level with the row is the name. */
   .res-head,
-  .res-row {
+  .res-row,
+  .res-guides {
     display: grid;
     /* rem, not em: the header is 12px and a row is the body's 14px, so an
        em-based track resolves to two different widths and the rows overflow
@@ -1572,6 +1904,7 @@
      what sizes the box -- and is only painted lower */
   .res-head {
     position: relative;
+    z-index: 1;
     font-weight: normal;
     color: var(--muted);
     font-size: 12px;
@@ -1584,12 +1917,34 @@
      level with; its height is the diagram's own row pitch, set inline */
   .res-row {
     position: absolute;
+    z-index: 1;
     left: 0;
     right: 0;
     box-sizing: border-box;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     padding: 0 6px;
+  }
+  /* the guides, under everything above. Border and padding are the row's, not
+     the header's: a track has to land where the numbers are, and the row's 1px
+     outline shifts its content box by that much. */
+  .res-guides {
+    position: absolute;
+    z-index: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    padding: 0 6px;
+    align-items: stretch;
+    pointer-events: none;
+    /* well under the row outlines they run between: a guide is for following a
+       column, not for being looked at */
+    opacity: 0.45;
+  }
+  .res-guides span {
+    background: linear-gradient(var(--line), var(--line)) center / 1px 100% no-repeat;
   }
   /* trimmed to clear the row's outline: growing the row instead would break
      the alignment, since its height is the diagram's pitch */

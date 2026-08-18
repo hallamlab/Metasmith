@@ -32,6 +32,7 @@
     action = null,
     top = null,
     topDefault = PANEL_TOP_DEFAULT,
+    fill = false,
     children,
   } = $props()
 
@@ -186,7 +187,7 @@
       ></div>
     {/if}
 
-    <div class="body">{@render children()}</div>
+    <div class="body" class:fill>{@render children()}</div>
   </aside>
 {:else}
   <button class="strip" onclick={() => setPanelOpen(id, true)} title="show the panel">
@@ -276,6 +277,11 @@
   .hgrip:focus-visible { outline: none; }
 
   .body { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+  /* for a body whose last child is a frame rather than a list: a column, so a
+     `flex: 1` child takes whatever the ones above it left instead of standing
+     at a fixed height with the panel empty under it. It still scrolls -- a
+     child that will not shrink past its own floor pushes past the bottom. */
+  .body.fill { display: flex; flex-direction: column; }
 
   .strip {
     align-self: stretch;

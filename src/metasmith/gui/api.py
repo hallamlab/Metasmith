@@ -992,6 +992,11 @@ def _theme_arg() -> str:
     return theme if theme in THEMES else "light"
 
 
+def _background_arg() -> bool:
+    """Whether the drawing is asked to carry its theme's plate. Off by default."""
+    return request.args.get("background", "").lower() in {"1", "true", "yes"}
+
+
 def _template_summary(p, name: str, tmpl: Template, source: str, theme: str) -> dict:
     return {
         "name": name,
@@ -1533,7 +1538,7 @@ def generate_workflow(name):
             # a stale bundle from a previous generate must not outlive it: the
             # result the user sees and the bundle the CLI stages have to agree.
             stale_names = ("task.yml", "data", "transforms")
-            stale_names += tuple(_dag_cache_name(t) for t in THEMES)
+            stale_names += _dag_cache_names()
             for stale in stale_names:
                 target = wf.path / stale
                 if target.is_dir():
@@ -1608,14 +1613,25 @@ def generate_workflow(name):
     return jsonify(job.summary()), 202
 
 
-def _dag_cache_name(theme: str) -> str:
-    """Where a rendering is cached beside the bundle, one file per theme.
+def _dag_cache_name(theme: str, background: bool = False) -> str:
+    """Where a rendering is cached beside the bundle, one file per variant.
 
     The suffix has to stay `.svg`: `DagRenderer.render` derives the format from
-    it. And the light name is the historical one, since the CLI stages that
-    exact file into the bundle.
+    it. And the transparent light name is the historical one, since the CLI
+    stages that exact file into the bundle — which is also why `background`
+    marks the file rather than its absence: the page draws the transparent one.
     """
-    return "plan.dag.svg" if theme == "light" else f"plan.dag.{theme}.svg"
+    parts = ["plan", "dag"]
+    if theme != "light": parts.append(theme)
+    if background: parts.append("filled")
+    return ".".join(parts) + ".svg"
+
+
+def _dag_cache_names() -> tuple[str, ...]:
+    """Every variant of the above — what a re-generate has to sweep away."""
+    return tuple(
+        _dag_cache_name(theme, bg) for theme in THEMES for bg in (False, True)
+    )
 
 
 def _load_task(bundle: Path):
@@ -1760,25 +1776,27 @@ def _step_display_from_task(task, root: Path, bundle: Path | None = None) -> tup
 
 @bp.get("/workflows/<name>/dag")
 def workflow_dag(name):
-    """Render the plan's DAG. Cached beside the bundle; regenerated if missing."""
+    """Render the plan's DAG. Cached beside the bundle; regenerated if missing.
+
+    Transparent by default, because the page's own diagram card paints the
+    ground behind it (`--panel-2`, so its bounds read against the rest of the
+    page) and a plate here was never any colour but that card's. A download is
+    the case that wants the other answer: a transparent SVG dropped on a white
+    slide is a dark theme's pale text on white. So `background=1` asks for the
+    plate, and the two are cached as separate files rather than one being
+    re-rendered over the other on every switch.
+    """
     p = _project()
     wf = p.read_workflow(name)
     if not wf.ok:
         raise ProjectError(f"workflow [{name}] has no successful plan to draw")
-    # an unknown theme falls back rather than raising: the value arrives from a
-    # url, and a malformed one should not turn the diagram into an error card
-    theme = request.args.get("theme", "light")
-    if theme not in THEMES:
-        theme = "light"
-    # the light drawing keeps the historical name, so a bundle staged by the
-    # CLI and one drawn here are still one file; another theme is a sibling
-    svg = wf.path / _dag_cache_name(theme)
+    theme, background = _theme_arg(), _background_arg()
+    # the transparent light drawing keeps the historical name, so a bundle
+    # staged by the CLI and one drawn here are still one file
+    svg = wf.path / _dag_cache_name(theme, background)
     if not svg.is_file():
         task = _load_task(wf.path)
-        # transparent: the diagram card now paints its own ground (`--panel-2`,
-        # so its bounds read against the rest of the page), and a filled plate
-        # here was never any colour but that card's -- see WorkflowView.svelte
-        task.plan.RenderDAG(str(svg), theme=theme, background=False)
+        task.plan.RenderDAG(str(svg), theme=theme, background=background)
     return Response(svg.read_text(), mimetype="image/svg+xml")
 
 
