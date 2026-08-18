@@ -44,11 +44,16 @@ from .evidence import per_unit_weights
 
 WEIGHTINGS = ("belief", "uniform")
 
-# The long GPR schema's own names, mapped onto the ones `ecspr.model.evidence` speaks.
-# `feature_id` is null on curated rows (a curated set names a construct, not an
-# ORF), so the fallback chain is what keeps belief conservation per-construct there
-# instead of collapsing every curated row onto one null "ORF".
-_ORF_FALLBACK = ("feature_id", "feature_name", "evidence_id")
+# `orf` NAMES THE NOMINATOR and is never null -- an ORF usually, a construct or model
+# gene on a curated row. The schema populates it once, at the producer, so belief
+# conservation groups per nominator without this layer deciding which column that is.
+#
+# The pre-schema layouts left `feature_id` null on curated rows, and the fallback below
+# is what reads them. It is for tables written before the schema, nothing else: a
+# fallback that reaches `feature_name` on a de-novo table would group by EC description
+# and silently merge unrelated ORFs into one construct.
+ORF_COL = "orf"
+_LEGACY_ORF_FALLBACK = ("feature_id", "feature_name", "evidence_id")
 UNIT_COL = "unit_id"
 
 
@@ -98,16 +103,22 @@ def _normalise(df: pd.DataFrame) -> pd.DataFrame:
     """Rename the long GPR schema onto the column names `ecspr.model.evidence` reads."""
     out = df.copy()
     orf = None
-    for c in _ORF_FALLBACK:
-        if c not in out.columns:
-            continue
-        orf = out[c] if orf is None else orf.fillna(out[c])
+    if ORF_COL in out.columns:
+        orf = out[ORF_COL]
+    else:
+        for c in _LEGACY_ORF_FALLBACK:
+            if c not in out.columns:
+                continue
+            orf = out[c] if orf is None else orf.fillna(out[c])
     if orf is None:
-        raise ValueError(f"GPR table carries none of {_ORF_FALLBACK}, so belief "
-                         f"conservation has no construct to conserve over")
+        raise ValueError(f"GPR table carries neither {ORF_COL!r} nor any of "
+                         f"{_LEGACY_ORF_FALLBACK}, so belief conservation has no "
+                         f"construct to conserve over")
     out["orf"] = orf.astype(str)
-    out["intermediate_id"] = (out["evidence_id"] if "evidence_id" in out.columns
-                              else out["mnxr"]).astype(str)
+    out["intermediate_id"] = (
+        out["intermediate_id"] if "intermediate_id" in out.columns
+        else out["evidence_id"] if "evidence_id" in out.columns
+        else out["mnxr"]).astype(str)
     out["mnxr"] = out["mnxr"].astype(str)
     out["raw_score"] = pd.to_numeric(out["raw_score"], errors="coerce").fillna(1.0)
     return out.dropna(subset=["mnxr"])
