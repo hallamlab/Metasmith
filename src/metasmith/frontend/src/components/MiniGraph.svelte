@@ -294,11 +294,14 @@
 
 <style>
   .frame {
+    /* whatever the panel has left under the chips, and never less than this:
+       the drawing is the thing you came to the panel for, so it takes the room
+       rather than sitting at a fixed height with the panel empty below it.
+       Its contents are absolutely placed, so without the floor it would flex
+       from nothing -- and `fit()` reads `clientHeight`, which has to be a real
+       number before the first fit. */
     flex: 1 0 auto;
-    /* a fixed height inside a scrolling column: the panel is one scroller now,
-       so this frame cannot be "whatever is left" -- and `fit()` reads
-       `clientHeight`, so it has to be a number before the first fit */
-    height: 340px;
+    min-height: 340px;
     position: relative;
     overflow: hidden;
     padding: 2px;

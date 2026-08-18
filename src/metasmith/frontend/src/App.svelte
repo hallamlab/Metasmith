@@ -13,6 +13,8 @@
     loadRuns,
     refresh,
     openRunGroup,
+    renameAgent,
+    renameWorkflow,
     select,
     selectSection,
     toggleRunGroup,
@@ -22,6 +24,7 @@
   import Ago from './components/Ago.svelte'
   import Rail from './components/Rail.svelte'
   import DeleteControl from './components/DeleteControl.svelte'
+  import RailName from './components/RailName.svelte'
   import Icon from './components/Icon.svelte'
   import CopyButton from './components/CopyButton.svelte'
   import NewWorkflow from './components/NewWorkflow.svelte'
@@ -375,7 +378,11 @@
         {#snippet row(item)}
           <div class="spread">
             <div class="grow truncate">
-              <div>{item.agent.name}</div>
+              <RailName
+                value={item.agent.name}
+                title="double click to rename this agent"
+                oncommit={(next) => renameAgent(item.agent, next)}
+              />
               <div class="small muted truncate mono">{item.agent.home ?? item.agent.error}</div>
             </div>
             <div class="row">
@@ -413,7 +420,11 @@
         {#snippet row(item)}
           <div class="spread">
             <div class="grow truncate">
-              <div>{item.wf.display_name || item.wf.name}</div>
+              <RailName
+                value={item.wf.display_name || item.wf.name}
+                title="double click to rename this workflow"
+                oncommit={(next) => renameWorkflow(item.wf, next)}
+              />
               <div class="small muted">
                 {item.wf.planned
                   ? item.wf.success

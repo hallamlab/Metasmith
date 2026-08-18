@@ -301,11 +301,28 @@ export function watchOsTheme() {
   }
 }
 
+// Kinds that stay up until something replaces or clears them. A failure is a
+// thing to act on, and one that cleared itself while you were reading the log
+// under it is a failure you have to reproduce to read again. Everything else --
+// a "copied", a refusal you have already had the answer to -- is about a moment,
+// and a banner about a moment that outlives it is read as a standing state.
+const NOTICE_STICKY = new Set(['error', 'offline'])
+const NOTICE_TTL_MS = 60_000
+
+let noticeTimer = null
+
 export function notify(message, kind = 'error') {
+  clearTimeout(noticeTimer)
+  noticeTimer = null
   app.notice = message ? { message, kind } : null
+  if (app.notice && !NOTICE_STICKY.has(kind)) {
+    noticeTimer = setTimeout(clearNotice, NOTICE_TTL_MS)
+  }
 }
 
 export function clearNotice() {
+  clearTimeout(noticeTimer)
+  noticeTimer = null
   app.notice = null
 }
 
@@ -498,6 +515,68 @@ export async function forkWorkflow(name) {
     loadWorkflows()
   }
   return out
+}
+
+/** Whether a workflow still owns its directory name.
+ *
+ *  A workflow that has never been planned and has no runs does: nothing points
+ *  at the directory yet, so the rename can move it. Once either exists, the
+ *  directory is what the runs and the task cache are addressed by, and only the
+ *  label on top of it is free to change.
+ */
+export function workflowRenameable(wf) {
+  return !!wf && !wf.planned && !(wf.run_count || wf.runs?.length) && !wf.archived_at
+}
+
+/** Rename a workflow by whichever of its two names is still free to move.
+ *
+ *  Lives here rather than in the view because both the rail and the workflow
+ *  page rename, and the rule above is the kind that goes wrong quietly if the
+ *  two ever hold their own copy of it. Returns the name the caller should now
+ *  address the workflow by, or `null` if nothing was written.
+ */
+export async function renameWorkflow(wf, next) {
+  const from = wf.name
+  if (workflowRenameable(wf)) {
+    // the same PUT the recipe saves through: a workflow's name is a field of
+    // it, and an id in the body that differs from the url is a rename
+    const out = await attempt(async () => {
+      const body = await api.put(`/workflows/${from}`, { name: next })
+      await loadWorkflows()
+      return body
+    })
+    if (!out) return null
+    // the name is the route, so the open pane has to be moved onto the new one
+    // -- but only if this was the row that was open. Renaming some other row
+    // should not steal the selection.
+    if (app.selected.workflows === from) select('workflows', out.name)
+    return out.name
+  }
+  // Locked: the label moves and the directory does not. `display_name` rides in
+  // `request.yml` beside the rest of the spec, an ordinary field `write_request`
+  // already merges through, so this changes nothing a run or a cache key points
+  // at -- and there is nothing to reselect.
+  const ok = await attempt(async () => {
+    await api.put(`/workflows/${from}`, { display_name: next })
+    await loadWorkflows()
+    return true
+  })
+  return ok ? from : null
+}
+
+/** Rename an agent. The reply is authoritative, not the name that was sent:
+ *  typing one is also what stops an agent's name following its host, and the
+ *  server settles the result (see `update_agent`). */
+export async function renameAgent(agent, next) {
+  const from = agent.name
+  const out = await attempt(async () => {
+    const body = await api.put(`/agents/${from}`, { name: next })
+    await loadAgents()
+    return body
+  })
+  if (!out?.name) return null
+  if (app.selected.agents === from) select('agents', out.name)
+  return out.name
 }
 
 export const selection = () => app.selected[app.section]

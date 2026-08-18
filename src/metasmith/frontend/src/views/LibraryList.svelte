@@ -8,7 +8,12 @@
   // This used to be a fold in the middle of the builder, a long way from the
   // counts and the list it narrows. It lives here now, above both, with a rule
   // under it to keep it from reading as part of the graph below.
-  let { libraries = [], enabled = null, viewing = null, ontoggle, onview } = $props()
+  //
+  // The tally under the dropdown is what the panel's third section used to
+  // hold. It says how much of the library is switched on behind the drawing --
+  // which is the one thing the drawing cannot say about itself -- so it belongs
+  // beside the switches rather than below the picture.
+  let { index = null, libraries = [], enabled = null, viewing = null, ontoggle, onview } = $props()
 
   // `enabled` is null for "all of them" and a Set otherwise -- stored that way so
   // a library added to the standard library later is picked up rather than
@@ -17,6 +22,12 @@
 
   let onLibs = $derived(libraries.filter(on))
   let offLibs = $derived(libraries.filter((l) => !on(l)))
+
+  let transformCount = $derived(
+    (index?.transforms ?? []).filter((t) => !enabled || enabled.has(t.library)).length,
+  )
+  let typeCount = $derived(Object.keys(index?.by_type ?? {}).length)
+  let unreadable = $derived((index?.libraries ?? []).filter((l) => l.error))
 
   function addFromSelect(e) {
     const path = e.currentTarget.value
@@ -28,11 +39,6 @@
 <div class="wrap">
   <div class="head small">
     <span class="muted grow">transform libraries</span>
-    <span class="muted" title={offLibs.length
-      ? 'a generate may only use the ticked ones, and narrowing marks a result stale'
-      : 'all of them are offered to the planner'}>
-      {onLibs.length} of {libraries.length}
-    </span>
   </div>
 
   <div class="chips">
@@ -66,6 +72,25 @@
         <option value={l.path}>{l.name}</option>
       {/each}
     </select>
+  {/if}
+
+  {#if index}
+    <table class="tally small">
+      <tbody>
+        <tr><td class="muted">transforms</td><td>{transformCount}</td></tr>
+        <tr><td class="muted">types known</td><td>{typeCount}</td></tr>
+        <tr>
+          <td class="muted">libraries</td>
+          <td title={offLibs.length
+            ? 'a generate may only use the enabled ones, and narrowing marks a result stale'
+            : 'all of them are offered to the planner'}>{onLibs.length} of {libraries.length}</td>
+        </tr>
+      </tbody>
+    </table>
+    {#each unreadable as l}
+      <p class="small err"><span class="tag bad">unreadable</span>
+        <span class="mono">{l.name}</span> — {l.error}</p>
+    {/each}
   {/if}
 </div>
 
@@ -137,4 +162,6 @@
   }
   .chip .x:hover { color: var(--bad); }
   .add { margin: 6px 0 0; }
+  .tally { margin-top: 8px; }
+  .err { margin: 6px 0 0; line-height: 1.3; }
 </style>
