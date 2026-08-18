@@ -90,9 +90,9 @@ the two is the only honest way to read how well the forecast did.
 | unbalanced with nothing else in the way | 1,145 | 1,145 | 1,081 | very low |
 | element-neutral twin (the `aam_blockers` rule) | 303 | 303 | 277 | **dead end** |
 
-The carrier and wildcard rows do not move, and that is correct rather than suspicious: they
-are properties of MetaNetX's compound table, which r8 did not touch. Only the rows the
-re-bake was *about* moved.
+The carrier and wildcard rows do not move, and under r8 that was correct rather than
+suspicious: they are properties of MetaNetX's compound table, which r8 did not touch. r9
+does touch them — see *r9, staged and not deployed* below.
 
 **The water fix delivered 9,862 of the 9,963 it was forecast to, and the 101 shortfall is
 the same 101 everywhere it appears.** dGbyG called them unbalanced where the forecast
@@ -107,6 +107,38 @@ argument for the `resolve` pass existing.
 **The water fix is spent; the two closed-remainder rows are what is left of the realistic
 near-term rescue: 6,532 reactions, 6,121 of them in-graph.** The stretch case reaches
 ~20,000 and depends on curation that does not exist yet.
+
+## r9, staged and not deployed
+
+r8 is still the deployed bake, so every table above remains the deployed reading. r9 is
+pinned beside it at `metabolism_bake_r9` and measured with the same script against its own
+rebuilt forecast (`work/r9/`, `--substitutions src/ecspr/bake/direction`).
+
+**r9 is the first bake in which the substitution tables actually reach the members.**
+Neither member lane was passed `--substitutions` before `f4642fc`, so the rows committed
+for r8 were inert in it, and the r8 sentence above — *the carrier and wildcard rows do not
+move, and that is correct* — expired the moment they were wired through.
+
+| mechanism | r8 left | r9 left | in_graph r9 |
+|---|---:|---:|---:|
+| carrier, remainder already balanced | 2,853 | **2,086** | 1,745 |
+| wildcard, remainder already balanced | 3,679 | **3,051** | 3,005 |
+| carrier crosswalk ceiling | 6,171 | **5,367** | 3,332 |
+| wildcard ceiling | 10,772 | **10,093** | 9,949 |
+| unbalanced with nothing else in the way | 1,145 | 1,168 | 1,073 |
+| element-neutral twin | 303 | 303 | 277 |
+
+**The near-term rescue budget falls 6,532 → 5,137 reactions (6,121 → 4,750 in-graph): the
+substitution lane has already cashed about a fifth of it.** The residue no named mechanism
+reaches is 18,786, essentially where r8 left it — the floor is not what moved.
+
+Tier 0 goes 37,404 → 36,151. 1,173 of the 1,253 that leave carry atom-pair edges and 1,108
+of those point past tenfold, so they are calls and not nudges; 568 tier-3 rows trade the
+curated prior for a measured vote. **Tier 1 is unchanged to the reaction and σ₀ is
+unchanged to four decimals** — nothing substituted reaches eQuilibrator's
+reactant-contribution arm, so the tier a consumer reads as *measured* gained nothing and the
+prior width that shrinks every row was not set by asserted chemistry. `unbalanced` rising by
+23 is the same restaging boundary the r8 shortfall came from.
 
 ## Is the forecast to be believed?
 

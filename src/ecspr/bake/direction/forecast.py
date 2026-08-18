@@ -329,8 +329,18 @@ def cmd_build(args):
     # The props extension is the UNION over members. It is purely additive and keyed on
     # synthetic ids, so no member can shadow another's, and a model compound has to be
     # lookup-able whichever arm asked for it.
+    #
+    # EACH MEMBER IS WIDENED AGAINST THE ORIGINAL chem_prop, not against the running
+    # union. `props()` refuses a base that already carries one of its model ids -- the
+    # tripwire for a MODEL: id colliding with a real MetaNetX accession -- and the two
+    # members declare most of the SAME models, so chaining the calls trips it on the
+    # second member over ids the first just added. Widening from the untouched base keeps
+    # the tripwire asking the question it exists for. A shared id carries one definition
+    # because both members read the one models.tsv.
+    _base = props
+    props = dict(_base)
     for _s in subs_by_member.values():
-        props = _s.props(props)
+        props.update(_s.props(_base))
     parts = _participants(stoich, universe)
     for _s in subs_by_member.values():
         parts |= set(_s.models)

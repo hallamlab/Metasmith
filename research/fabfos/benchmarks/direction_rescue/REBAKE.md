@@ -17,6 +17,19 @@ it — were being promoted to tier 1.
 Tier 0 fell 47,266 → 37,404 with nothing losing a vote; tier 1 is 2,171 rows, none at the
 floor. What is left of the gap is a carrier-curation problem, measured in `README.md`.
 
+**r9 is built, pinned and NOT deployed** — staged at `data/fabfos/processed/metabolism_bake_r9`
+(md5 `4f2148b92ebfda8e65124660eabad711.dir`), gated, verified by all three verifiers, and
+held for r10 by the principal. It is the first bake whose members actually receive the
+substitution tables: `--substitutions` reached neither member lane until `f4642fc`, so every
+substitution row committed for r8 was inert in it. Read any r8-vs-r9 delta with that in
+mind — it is the whole substitution lane arriving, not the acyl rows alone.
+
+Tier 0 falls 37,404 → 36,151. 1,173 of the 1,253 are in-graph and 1,108 of those point past
+tenfold, so they are calls rather than nudges; 568 tier-3 rows trade the curated prior for a
+measured vote. Tier 1 does not move by a single reaction and neither does σ₀ (23.4892,
+n=532): nothing substituted lands on eQuilibrator's reactant-contribution arm, which is the
+same fact read from two directions.
+
 ## The sequence
 
 **Build the new chunk beside the deployed one, verify against *that path*, then promote.**
@@ -84,6 +97,63 @@ Two instances remain live and are not this lane's to fix:
 
 Before adding a cache here, ask what it would serve after the next repin.
 
+## What r9 added to the mechanism
+
+**A substitution is admitted per member, not per table.** `sigma_sub` and the congener
+spread are `congeners_eq`/`gap_eq` and `congeners_dgbyg`/`gap_dgbyg`, `load()` refuses to
+run without a `member=`, and a row whose anchor drifts past `DIR_DECADE` for one member is
+refused **for that member only** — `member_drift` is non-fatal by design, so one member's
+disagreement cannot cost the other its vote. `member_unscored` stays fatal: an arm nobody
+ran the anchor for is an absence of evidence, not a small number.
+
+**A `thioester` row predicts a zero offset, like a `polymer` one.** Both are the same
+transformation written twice, so there is no potential to declare and zero is the
+prediction rather than the absence of one — `ZERO_OFFSET_KINDS`. The anchor is then the
+entire safety argument for the kind, which is why a row is refused unless the restaged
+equation lands on the number the deployed bake already holds from different accessions.
+
+**The acyl carriers are dGbyG's alone, and eQuilibrator's refusal is its own arithmetic.**
+Modelling acyl-[ACP] as acyl-4′-phosphopantetheine — ACP's actual prosthetic arm, which
+MetaNetX carries readably — makes the anchor a real comparison. dGbyG places all 19 within
+6e-05; eQuilibrator places 17 of them at a constant (8.8776 for the C8–C14 series, 15.1953
+acetyl, 14.0755 malonyl). The constant does not vary with the acyl group, so it is not a
+property of the thioester bond, and the transacylation `X-S-Ppant + CoA = X-S-CoA + Ppant`
+carries identical groups on both sides yet returns the same constants. `MNXR204097` carries
+acetyl *and* malonyl, where the offsets partly cancel to 1.12 and the row passes — additive
+per thioester, which is what a decomposition artifact looks like. The rows therefore go to
+dGbyG through the ordinary one-sided path, with nothing special-cased and `DIR_DECADE`
+untouched. Because tier 1 needs eQuilibrator's reactant-contribution arm, these reactions
+can never reach it.
+
+## Traps this re-bake paid for
+
+**The relay workspace is shared across agent homes.** It is `/tmp/msm_<login-node>_<user>`,
+symlinked from each new agent home, so a watcher that fails to hand over wedges the *next*
+run's `StageWorkflow` — the client sees `produced no output for 300s` while the remote
+process sits at zero CPU. Clear that directory and kill any leftover `msm_relay` before
+launching. (`pkill -f 'relay/msm_relay'` matches its own ssh command line and kills the
+session; bracket the pattern.)
+
+**Verify a float table with a tolerance, not with `!=`.** The eq lane runs sharded now and
+ran single-pass in r8, and no member promises bit-identical accumulation across a different
+batching. `dg`, `flag` and `reason` are identical on every uncovered row; `sigma` moves by
+up to 2.8e-14 kJ/mol. `prove_subs.py` compares verdict columns exactly and measured ones to
+1e-9, and prints the largest drift it tolerated so a real one cannot hide under the bound.
+
+**The forecast must be rebuilt with `--substitutions` before `measure_rescue` can read the
+bake.** Against a forecast built without them the two disagree about which members spoke,
+which is the check doing its job. Rebuilding also needs a `resolve` pass covering the model
+compounds — all 32 resolve against eQuilibrator's cache, so no substituted reaction is
+silenced by an unlookup-able stand-in.
+
+**A `bake/direction/*.py` edit moves `DIRVER` whether or not it moves chemistry.** The
+fingerprint hashes the package, so the `forecast.py` union fix taken after r9's artifacts
+were produced carried the tree `lib-direction-2865c03abc32` → `lib-direction-d938deb31ec7`
+while every member table, annotation and ratio stayed exactly as baked. **r9's staged
+artifacts are stamped `2865c03abc32` and that is the version that describes them.** If r10
+re-bakes from this tree the version moves for a real reason; do not "fix" the mismatch by
+restamping anything.
+
 ## Two decisions r9 deliberately does not carry
 
 **Branching glycogen stays out**, and it costs exactly three tier-0 reactions --
@@ -101,15 +171,30 @@ fit is the unsubstituted subset -- so the constant is settled and only the bins 
 mix of chemistry and calibration change and cost the attribution the four-way pricing was
 built to give.
 
-## The negative control
+## The negative control, and why the old one expired
 
-glgA (`MNXR145046`) and glgP (`MNXR145036`, `MNXR145038`) contain no water and gain nothing
-from any of this — eQuilibrator-`unresolved`, dGbyG-`unbalanced`. They are the polymer
-budget, a separate defect with a separate fix. If they leave tier 0 after a direction
-re-bake, something is wrong.
+**A control has to be chosen against the repair being made.** glgA (`MNXR145046`) and glgP
+(`MNXR145036`) served r7 and r8 because they carry no water and therefore could not move
+under a water fix. They carry linear glycogen (`MNXM738130`), which is precisely what the
+polymer substitution row covers, so under r9 both leave tier 0 — `MNXR145036` to 0.204.
+That is the mechanism working. Reading it as a regression would have meant reverting the
+row that was built to reach it.
+
+`MNXR145038` is the part of the old control that still holds: it carries *branching*
+glycogen (`MNXM8348`), left uncovered on purpose above, and stays tier 0 at 1.000.
+
+So a control for a substitution bake must be a reaction the tables **do not cover**, and it
+must name which member's uncovered set it comes from — the two differ, and `covers()` now
+answers per member.
 
 ## Resources
 
 The measured cost of both members is in `SHARD_COST.md`. The short form: the eQuilibrator
 lane runs the whole universe unsharded in about 39 minutes on one cpu in 4 GB, and the
 declaration that used to ask for 4 cpus / 32 GB / 12 hours was never a measurement.
+
+**Substitutions cost roughly what the sharding saved.** On r9 the eQuilibrator lane took
+37 min at 16-wide and dGbyG 20 min at 32-wide, against a plan expecting 4 and 12 — a newly
+readable equation is a component-contribution call the previous bake never made, so
+coverage and wall clock move together. dGbyG is no longer the critical path; eQuilibrator
+is, again, for a different reason than before.
