@@ -316,6 +316,58 @@ TransformInstance(protocol=protocol, model=model, group_by=dep)
     }
 
 
+def multi_product_one_group(products: int = 2) -> dict[str, str]:
+    """Single-input transform with N products in ONE product group.
+
+    The sibling of `multi_slot_producer`, and the distinction is the whole
+    point: that one calls `NewProductGroup` between slots, so each product is
+    its own branch and the generated process declares one output tuple per
+    branch, each `optional: true`. This one declares no groups, so all N
+    products share branch 0 and the process declares N output tuples that are
+    all mandatory — a different Nextflow output-binding path.
+
+    It is also the shape the shipped library overwhelmingly uses: of its 77
+    multi-product transforms — merge_proteinbert, esm_c, megahit, bbduk,
+    prodigal among them — exactly one calls `NewProductGroup`. It had no
+    coverage at all until a run truncated its DAG on it.
+    """
+    assert products >= 1, "multi_product_one_group needs at least one product"
+    decls = "\n".join(
+        f'out_{i} = model.AddProduct(lib.GetType("mock::slot_{i}"))'
+        for i in range(products)
+    )
+    writes = "\n    ".join(
+        f'p_{i} = Path("slot_{i}.txt"); p_{i}.write_text("slot {i} content")'
+        for i in range(products)
+    )
+    # One manifest ENTRY holding every product, mirroring merge_proteinbert's
+    # `manifest=[{merged_emb: ..., merged_idx: ...}]`.
+    entry = ", ".join(f"out_{i}: p_{i}" for i in range(products))
+    return {
+        "multi_product_one_group": f'''
+from pathlib import Path
+from metasmith.models.libraries import (
+    TransformInstanceLibrary,
+    TransformInstance,
+    ExecutionContext,
+    ExecutionResult,
+)
+from metasmith.models.solver import Transform
+
+lib = TransformInstanceLibrary.ResolveParentLibrary(__file__)
+model = Transform()
+dep = model.AddRequirement(lib.GetType("mock::assembly"))
+{decls}
+
+def protocol(context: ExecutionContext):
+    {writes}
+    return ExecutionResult(manifest=[{{{entry}}}], success=True)
+
+TransformInstance(protocol=protocol, model=model, group_by=dep)
+'''
+    }
+
+
 def group_then_unfold() -> dict[str, str]:
     """Group-then-unfold pair: T1 groups by root, T2 unfolds via `AsBatch`.
 
