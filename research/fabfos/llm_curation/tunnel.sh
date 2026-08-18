@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
-# Point localhost:8080 at whichever fir job is currently serving.
+# Move localhost:8080 onto whichever node is serving, using the existing ControlMaster.
 #
-# The MIG jobs are chained on `afterany`, so the serving node changes every three hours
-# and the tunnel has to follow it. Run this after a hand-off; it is idempotent.
+# `-O forward` reuses the open master; opening a second `ssh -L` instead trips the guard
+# that exists because a fresh direct connection to fir fires Duo. The old forward has to
+# be cancelled first or the new one is refused as a duplicate bind.
 set -uo pipefail
-ssh -O check fir >/dev/null 2>&1 || { echo "no ControlMaster to fir; reconnect first"; exit 3; }
-
-JOB_NODE=$(timeout 60 ssh -o BatchMode=yes fir 'squeue -u phyberos -h -t R -o "%i %N"' | head -1)
-[ -n "$JOB_NODE" ] || { echo "no running job"; exit 1; }
-JOB=${JOB_NODE%% *}; NODE=${JOB_NODE##* }
-echo "serving job $JOB on $NODE"
-
-pkill -f "ssh -N -L 8080:" 2>/dev/null
-ssh -o BatchMode=yes -f -N -L 8080:"$NODE":8080 fir
-for i in $(seq 1 60); do
-    curl -sf --max-time 5 http://127.0.0.1:8080/v1/models && { echo " <- up"; exit 0; }
-    sleep 10
-done
-echo "endpoint never answered"; exit 2
+NEW="${1:?usage: retunnel.sh <node>}"
+OLD="${2:-}"
+[ -n "$OLD" ] && ssh -O cancel -L 8080:"$OLD":8080 fir 2>/dev/null
+ssh -O forward -L 8080:"$NEW":8080 fir 2>&1 | tail -1
+curl -sf --max-time 15 http://127.0.0.1:8080/v1/models >/dev/null \
+    && echo "tunnel up on $NEW" || echo "tunnel FAILED"

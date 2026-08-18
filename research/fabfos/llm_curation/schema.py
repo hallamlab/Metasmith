@@ -50,16 +50,21 @@ SUBSTITUTION = {
     "additionalProperties": False,
 }
 
+# `working` is first because a constrained decode emits properties in schema order, which
+# makes field order the only scratchpad a non-thinking model gets. Asked for the sides
+# straight away it has nowhere to do the arithmetic the prompt demands; asked to tally the
+# elements first, the tally is in its context when it writes them.
 SIMPLIFY = {
     "type": "object",
     "properties": {
+        "working": {"type": "string", "maxLength": 400},
         "action": {"type": "string", "enum": ["rewrite", "refuse"]},
         "reason": {"type": "string", "maxLength": 160},
         "left": {"type": "array", "maxItems": 24, "items": TERM},
         "right": {"type": "array", "maxItems": 24, "items": TERM},
         "substitutions": {"type": "array", "maxItems": 12, "items": SUBSTITUTION},
     },
-    "required": ["action", "reason", "left", "right", "substitutions"],
+    "required": ["working", "action", "reason", "left", "right", "substitutions"],
     "additionalProperties": False,
 }
 
