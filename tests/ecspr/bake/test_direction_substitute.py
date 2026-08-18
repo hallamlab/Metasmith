@@ -535,6 +535,35 @@ def test_the_member_lanes_hand_the_tables_to_the_member(lane):
     assert f"--substitutions {STAGED_TABLES}" in src
 
 
+@pytest.mark.parametrize("lane", ["equilibrator.py", "dgbyg.py"])
+def test_both_member_lanes_shard_and_reap_their_shards(lane):
+    """A bare `wait` returns 0 whatever the children did.
+
+    That is how a short member reached the fusion once already, so both lanes collect the
+    child pids and check each one. The eQuilibrator lane ran `cpus=1` while dGbyG ran
+    twenty-wide, which made a members run cost whatever eQuilibrator cost serially -- this
+    asserts the fan-out is in BOTH lanes rather than remembered for one.
+    """
+    src = (LANES / lane).read_text()
+    assert "--shard $i/" in src, "lane does not partition its universe"
+    assert 'for p in $pids; do wait $p || rc=1; done' in src, (
+        "lane does not check each shard's exit status")
+
+
+@pytest.mark.parametrize("lane", ["equilibrator.py", "dgbyg.py"])
+def test_the_merge_expects_the_count_the_lane_actually_ran(lane):
+    """`--expect` and the loop bound must be ONE symbol.
+
+    They fail at opposite ends of a run: a loop that ran fewer shards than the merge
+    expects fails after the whole member has been computed, which is the expensive place
+    to discover a typo. Reading both off `SHARDS` is what makes the count un-driftable,
+    so what is under test is that neither is a literal.
+    """
+    src = (LANES / lane).read_text()
+    assert "--expect {SHARDS}" in src, "merge hardcodes a shard count"
+    assert "$(seq 0 {SHARDS - 1})" in src, "loop hardcodes a shard count"
+
+
 def test_the_staged_tree_carries_the_tables_it_is_pointed_at():
     """The vendored copy is where the lanes look. Build product, so absent is a skip."""
     staged = (REPO / "src" / "fabfos" / "build_references" / "resources"

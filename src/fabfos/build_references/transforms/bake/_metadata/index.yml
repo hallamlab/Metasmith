@@ -48,7 +48,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   dgbyg.py:
-    instance_id: 1e203ed0565de1840a3468373132dce2352e4461de575a0b7f49646585055a5cad8b
+    instance_id: 1e20d39e1d9f5c0ef98208d2692eb1d717abfbbd550a113b7979256890fcccecf438
     origin: leaf
     type: transforms::transform
   direction_bake.py:
@@ -60,7 +60,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   equilibrator.py:
-    instance_id: 1e200cc80e7ad512e7401fbb61e14ac8d3885b64b20167fd9596871a87c5cf22f712
+    instance_id: 1e20af5d6c059aace45ec9468d36f47654511948409b41c1a77c85ffbecdb50e141b
     origin: leaf
     type: transforms::transform
   indigo.py:

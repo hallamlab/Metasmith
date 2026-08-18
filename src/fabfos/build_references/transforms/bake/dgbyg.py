@@ -74,7 +74,7 @@ ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
 # is content-addressed (crc32 of the MNXR), not positional, so a table written at eight
 # and one written at twenty are the same table -- only `merge --expect` has to agree with
 # the fan-out, which is why this is one constant and not two.
-SHARDS = 20
+SHARDS = 32
 
 RESOLVE = """
     set -e
@@ -190,6 +190,14 @@ TransformInstance(
     # Memory TRACKS SHARDS and must -- the footprint is flat per process at an observed
     # 2.15 GB and does not fall as the partition narrows, so raising the shard count
     # without raising this is how a fan-out gets OOM-killed at the exact moment it starts
-    # paying off. Twenty at 2.15 plus room for the merge's concatenation.
-    resources=Resources(cpus=SHARDS, memory=Size.GB(56), duration=Duration(hours=2)),
+    # paying off. Thirty-two at 2.15 plus room for the merge's concatenation.
+    #
+    # THIRTY-TWO IS THE CEILING OF ONE NODE, AND THAT IS WHAT BOUNDS THIS LANE. The shards
+    # are launched by a shell `&` loop and reaped by `wait`, so they all live in one
+    # allocation: Sockeye's skylake nodes carry 32 cores (cascade 40) against 190 GB, so
+    # cores run out roughly six times sooner than memory does. At 0.286 s/reaction this is
+    # ~12 minutes over 83,795 reactions and it is the members run's critical path.
+    # Going faster is not a bigger number here -- it needs an `srun` fan-out across nodes,
+    # or the forward pass moved onto a GPU. Both are real changes; neither is a knob.
+    resources=Resources(cpus=SHARDS, memory=Size.GB(80), duration=Duration(hours=2)),
 )
