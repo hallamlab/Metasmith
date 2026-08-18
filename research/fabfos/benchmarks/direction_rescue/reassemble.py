@@ -19,6 +19,9 @@ The members still have to run on the cluster; everything downstream of them does
     # r9 members, r8's calibration and sigma_0: the chemistry arm alone
     ... --eq <r9_eq.parquet> --dgbyg <r9_dgbyg.parquet> --expect <r9_annotation.parquet>
 
+    # the curated crosswalk arm alone: r8's members, r9's curated table
+    ... --supplementary-crosswalk
+
 `curated` needs the licensed MetaCyc drop-in; without it, pass `--curated` a table from a
 previous run (the lane leaves one under `data/fabfos/temp/metacyc_direction/`).
 """
@@ -72,6 +75,9 @@ def main() -> None:
                     help="passed to combine; omit to use canon.DIR_SIGMA_0")
     ap.add_argument("--metacyc", type=Path, default=None,
                     help="MetaCyc reactions.dat (default: newest under data/fabfos/originals)")
+    ap.add_argument("--supplementary-crosswalk", action="store_true",
+                    help="build the curated table with the r9 supplementary crosswalk; "
+                         "ignored when --curated supplies a table already built")
     ap.add_argument("--expect", type=Path, default=None,
                     help="annotation to compare against (default: the bake's own seam)")
     a = ap.parse_args()
@@ -97,7 +103,8 @@ def main() -> None:
         run("curated", "--metacyc-reactions", dat,
             "--reac-xref", MNX / "reac_xref.tsv", "--reac-prop", MNX / "reac_prop.tsv",
             "--chem-xref", MNX / "chem_xref.tsv", "--out", curated,
-            "--out-per-reaction", out / "_curated_per_reaction.parquet")
+            "--out-per-reaction", out / "_curated_per_reaction.parquet",
+            *(["--supplementary-crosswalk"] if a.supplementary_crosswalk else []))
 
     calibration = a.calibration
     if calibration is None:

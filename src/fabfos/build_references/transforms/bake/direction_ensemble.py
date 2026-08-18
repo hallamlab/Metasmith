@@ -142,11 +142,18 @@ def protocol(context: ExecutionContext):
         # The curated member. Per-reaction AND per-MNXR are both kept, because the
         # orientation alignment between them IS the claim: a per-MNXR table alone cannot
         # be checked against what MetaCyc actually said.
+        #
+        # `--supplementary-crosswalk` reaches the 545 directed MetaCyc reactions
+        # reac_xref never joined -- overwhelmingly generic-polymer chemistry, which is
+        # the same MetaNetX weakness the substitution lane exists for. It is additive
+        # only, so it cannot move a call the primary join already made; the OFF
+        # configuration remains what reproduces r8.
         {py} -m ecspr.bake.direction.curated \
             --metacyc-reactions $MC/{CURATED_DAT} \
             --reac-xref $MNX/reac_xref.tsv \
             --reac-prop $MNX/reac_prop.tsv \
             --chem-xref $MNX/chem_xref.tsv \
+            --supplementary-crosswalk \
             --out _curated_per_mnxr.parquet \
             --out-per-reaction _curated_per_reaction.parquet
         {py} -m ecspr.bake.evidence collect --root _ev --tool metacyc_direction \
