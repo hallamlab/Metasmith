@@ -162,6 +162,14 @@ def compute_cache_decisions(
         # the cold run computes. A shard that cannot supply an index for
         # every matched file is DEMOTED to a miss: re-running is slower, a
         # silent drop is wrong.
+        #
+        # An EMPTY index counts as absent, not as an index. It renders to the
+        # Groovy `[:]` literal, which `_post` then stamps the produced key
+        # onto — so the replayed file reaches a downstream `o.group` carrying
+        # exactly one key, its own, and gets dropped by the same
+        # DESCENDANT_OF_BY branch this whole path exists to satisfy. A step
+        # with inputs always has ancestry to capture, so empty means "not
+        # captured"; a step with none has nothing to lose by re-running.
         if hit:
             from ...caching.store import decode_manifest
 
@@ -175,11 +183,16 @@ def compute_cache_decisions(
                         f"{cache_key.hex()[:8]}: {e}"
                     )
             out_indexes = {
-                str(row.get("relpath", "")).rsplit("/", 1)[-1]: dict(
-                    row.get("index", {})
+                name: index
+                for name, index in (
+                    (
+                        str(row.get("relpath", "")).rsplit("/", 1)[-1],
+                        dict(row.get("index") or {}),
+                    )
+                    for row in (manifest.get("index") or [])
+                    if row.get("relpath")
                 )
-                for row in (manifest.get("index") or [])
-                if row.get("relpath")
+                if index
             }
             need = {
                 str(f.get("relpath", "")).rsplit("/", 1)[-1]
