@@ -35,10 +35,23 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parent.parent
+def _repo_root(start: Path) -> Path:
+    """Walk up until a directory holding `data/fabfos` is found."""
+    for d in (start, *start.parents):
+        if (d / "data" / "fabfos").is_dir():
+            return d
+    raise SystemExit(f"no ancestor of {start} contains data/fabfos")
+
+
+REPO = _repo_root(Path(__file__).resolve())
 GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 
+# The declared lane set is read from the library that declares it, never restated here.
+sys.path.insert(0, str(REPO / "src" / "metasmith_libraries" / "resources" / "lib"))
+import fabfos_evidence as fe                                          # noqa: E402
+
 PREFIX = "denovo"
+LANE_SET = "chosen_4"
 GPR_COLS = (
     "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
     "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
@@ -79,6 +92,17 @@ def main() -> int:
     print(f"{src.name}: {len(g):,} rows, {g['orf'].nunique():,} ORFs, "
           f"{g['mnxr'].nunique():,} MNXR, lanes {lanes}")
 
+    # The same gate the in-graph collector applies, because this is the same claim by
+    # another route. A lane short of the declared set rescales every belief weight
+    # downstream, so it is refused here rather than recorded and shipped.
+    expected = sorted(fe.LANE_SETS[LANE_SET])
+    if lanes != expected:
+        raise SystemExit(
+            f"{src.name}: lane set is {lanes}, not {expected}. Missing "
+            f"{sorted(set(expected) - set(lanes))}; unexpected "
+            f"{sorted(set(lanes) - set(expected))}. A lane that contributed no rows is a "
+            f"broken join or an unstaged reference.")
+
     df = pd.DataFrame({
         "build_id": f"denovo_{a.host}_" + "+".join(lanes),
         "host": a.host,
@@ -101,13 +125,13 @@ def main() -> int:
     df = df.sort_values(["feature_kind", "feature_id", "mnxr", "channel"],
                         kind="mergesort", na_position="last").reset_index(drop=True)
 
-    out = (REPO / "data" / "fabfos" / a.host / "gpr" if a.publish
+    out = (REPO / "data" / "fabfos" / "runs" / a.host / "gpr" if a.publish
            else Path(__file__).resolve().parent / "out" / a.host)
     out.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out / "gpr_denovo.parquet", index=False, compression="zstd")
     (out / "BUILD_denovo.json").write_text(json.dumps(dict(
-        host=a.host, source=str(src), proteome=faa[0].name, lanes=lanes,
-        n_lanes=len(lanes), rows=len(df), orfs=int(df["feature_id"].nunique()),
+        host=a.host, source=str(src), proteome=faa[0].name, lane_set=LANE_SET,
+        lanes=lanes, n_lanes=len(lanes), rows=len(df), orfs=int(df["feature_id"].nunique()),
         mnxr=int(df["mnxr"].nunique()),
         route="clone_gpr_on_hpc.py per ORF set; see this module's docstring",
     ), indent=2))

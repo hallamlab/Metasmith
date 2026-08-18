@@ -10,12 +10,18 @@ scadc paths). Ported verbatim from:
   - 50_apply_fosmid.py          (the lane-4 producer: distance-weighted kNN vote)
 
 The lane transfers MetaNetX reaction (MNXR) labels to *dark* fosmid ORFs -- fosmid
-ORFs carrying ZERO reaction evidence from the other 3 lanes (kofam / dl_ec /
-uniref50_dr) -- through protein-LM embedding space, using a distance-weighted kNN
+ORFs carrying ZERO reaction evidence from the other three lanes (kofam / clean /
+uniref50) -- through protein-LM embedding space, using a distance-weighted kNN
 vote over the full labeled reference pool (metag + epi300 + fosmid). Per-backbone
 we apply the variant that won its own dark-regime (c30) validation:
   - pbert_transfer : RAW ProteinBERT embeddings   (floor 0.20)
   - esmc_transfer  : PROJECTED ESM-C embeddings   (floor 0.10)
+
+THESE TWO CHANNEL NAMES ARE THIS MODULE'S OWN, and deliberately not the shipped
+mapper's `pbert` / `esmc`. Same backbones, different measurement: this votes over a
+metag+epi300+fosmid pool and only for dark ORFs, where `transforms/fabfos/gpr_4lane.py`
+votes over the Swiss-Prot `ref::reference_label_pool` for every ORF. Giving them one
+name would put two numbers with different referents in one column.
 
 Every emitted row uses the unified 8-column lane schema
     source, orf, channel, mnxr, intermediate_id, intermediate_name,
@@ -49,7 +55,7 @@ Practical: kNN is an all-pairs cosine over a ~270k-row reference pool per query
 batch -- GPU is required to be practical (local RTX 3060 in scadc). Pass
 `--device cuda`; it falls back to CPU if CUDA is unavailable. Needs the `ml` conda
 env (torch + CUDA) plus numpy / pandas / pyarrow. This lane is FOSMID-DARK-ONLY:
-it only annotates fosmid ORFs with zero reaction evidence from the other 3 lanes.
+it only annotates fosmid ORFs with zero reaction evidence from the other three lanes.
 
 Per-source input paths are supplied via a JSON manifest (--sources), NOT hardcoded:
   {

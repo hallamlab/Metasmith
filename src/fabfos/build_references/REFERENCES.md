@@ -647,9 +647,11 @@ four lane tables in one id space, refusing to write anything short of total cove
 only k12's is a reconstruction rather than the generating file, and that script's
 docstring says so — with the evidence: the lanes key on `NP_416485.4`, the current
 proteome publishes `.5`, and the match is made on the versionless accession.
-**Which lanes ran is part of the table's identity.** The fourth lane needs
-`ref::reference_label_pool`, which has no producer in this tree; three lanes is a smaller
-claim, not a smaller table, and B2 records the lane set by name in its `BUILD.json`.
+**The lane set is the table's contract, and it is checked.** A B2 table carries exactly
+the four channels `lib::fabfos_evidence.LANE_SETS["chosen_4"]` declares; the collector
+refuses by name when the mapper's output does not, and its `BUILD.json` records the set it
+checked. The fourth lane's reference is R7 above, built by `compile/reference_label_pool.py`
+— an absent pool is a staging failure that stops the run, never a shorter table.
 
 ### B3 · `<study>/gpr_manual.parquet`  (7 studies)
 Each study's edges, as the curator read them. Where the extraction attributed reactions
@@ -817,8 +819,10 @@ Everything under `data/` not named above.
 ## Open decisions
 
 **R7 — the reference label pool. RESOLVED in the contract, open in its consequence.**
-The pool is now built from UniRef50 + the bridge rather than from a separate labelled
-proteome, which removes an acquisition and the KEGG licensing question with it. What
+The pool is now built from Swiss-Prot (2026_02, 222,019 reviewed sequences) labelled
+through the `mnxr_lookup` bridge rather than from a separate labelled proteome, which
+removes an acquisition and the KEGG licensing question with it. The built artifact
+records its own provenance in `pool_source.txt`. What
 stays open is that this is *not* the deployed pool: that one is KEGG-derived (54,005
 sequences keyed on KEGG gene ids, labelled by KO), so the `pbert_transfer` lane's
 numbers will move and must not be reported as a reproduction of the deployed lane.
