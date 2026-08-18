@@ -55,6 +55,9 @@ REPO = _repo_root(Path(__file__).resolve())
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_lw06_identity import BW25113_MARKERS, LW06_MARKERS          # noqa: E402
 
+sys.path.insert(0, str(REPO / "src" / "metasmith_libraries" / "resources" / "lib"))
+import fabfos_evidence as fe                                           # noqa: E402
+
 GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 PARENT = "e_coli_bw25113"
 LW06 = "e_coli_lw06"
@@ -102,6 +105,9 @@ def main() -> int:
             f"data/fabfos/runs/{PARENT} --site sockeye --run`, then --publish, then "
             f"rename gpr_denovo_mapper.parquet to gpr_denovo.parquet")
     d = pd.read_parquet(a.src)
+    # THE PARENT IS CHECKED BEFORE ANYTHING IS BORROWED FROM IT -- see
+    # `derive_ag1_denovo.py`, which does the same for the other pair.
+    fe.validate_gpr(d, "chosen_4", None, str(d["source"].iat[0]), fe.extensions_of(d))
     print(f"{a.src.name}: {len(d):,} rows, {d['orf'].nunique():,} ORFs")
 
     # The parent's own deletions must already be absent from its own proteome.
