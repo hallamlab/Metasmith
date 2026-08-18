@@ -45,7 +45,12 @@ def _row(**kw):
                 terms=f"1*{NAD_OX}", congener_terms="", couple_id="nadp", state="ox",
                 e0_V=-0.324, e0_model_V=-0.320, n_e=2, n_h=1, anchor_mnxr="MNXR100001",
                 sibling_mnxr="", sibling_e0_V="",
-                congeners="", basis="Fig. 1 of somewhere")
+                # Both arms SCORED AND AGREEING, because that is the only state in which a
+                # row is admissible for both members and these fixtures are about the other
+                # gates. A row with an empty gap is refused as `member_unscored`, which is
+                # its own test rather than an accident in every other one.
+                congeners_eq="", gap_eq=0.0, congeners_dgbyg="", gap_dgbyg=0.0,
+                basis="Fig. 1 of somewhere")
     base.update(kw)
     return base
 
@@ -66,9 +71,11 @@ def _written(tmp_path, rows, models=MODELS):
     return tmp_path
 
 
-def _load(tmp_path, models=MODELS, rows=None, props=PROPS, names=NAMES, formulas=None):
+def _load(tmp_path, models=MODELS, rows=None, props=PROPS, names=NAMES, formulas=None,
+          member="eq"):
     rows = _pair() if rows is None else rows
-    return S.load(_written(tmp_path, rows, models), props, names, formulas=formulas)
+    return S.load(_written(tmp_path, rows, models), props, names, formulas=formulas,
+                  member=member)
 
 
 # --- the empty configuration ----------------------------------------------
@@ -376,27 +383,76 @@ def test_a_couple_transferring_heavy_atoms_is_refused(tmp_path):
         _load(tmp_path, models=models)
 
 
-def test_congeners_spanning_more_than_a_decade_are_refused(tmp_path):
+def test_a_member_that_cannot_place_the_stand_in_is_refused_for_that_member_alone(tmp_path):
+    """The defect r9 was blocked on, as a test.
+
+    dGbyG places the FMN model pair 9.60 kJ/mol from the potentials the flavin rows cite --
+    the same offset to five decimals across four anchors, so a systematic property of the
+    model pair. eQuilibrator places it 0.45 away. One `sigma_sub` column was written from
+    the eQuilibrator run and read as though it described both, so the arm that was 1.68
+    decades out was the one whose error went undisclosed.
+
+    The refusal is ONE-SIDED on purpose: an ensemble whose members abstain independently
+    should lose the vote, not the reaction.
+    """
     rows = _pair()
-    rows.loc[0, "congeners"] = f"-30.0;{-30.0 - canon.DIR_DECADE * 1.2}"
-    with pytest.raises(SystemExit, match="span"):
-        _load(tmp_path, rows=rows)
+    rows["gap_dgbyg"] = canon.DIR_DECADE * 1.2
+    assert len(_load(tmp_path, rows=rows, member="eq")) == 2
+    assert len(_load(tmp_path, rows=rows, member="dgbyg")) == 0
+
+
+def test_a_member_drift_refusal_does_not_abort_the_build(tmp_path):
+    """A table defect is the curator's to fix and aborts. A member refusal is the mechanism
+    WORKING, so it drops the row and carries on -- otherwise one member's disagreement
+    could stop the other member's bake."""
+    rows = _pair()
+    rows["gap_dgbyg"] = canon.DIR_DECADE * 1.2
+    s = _load(tmp_path, rows=rows, member="dgbyg")          # no raise
+    assert set(s.decisions["predicate"]) == {"member_drift"}
+
+
+def test_an_unscored_member_arm_is_refused_rather_than_admitted_blind(tmp_path):
+    """Absence of evidence is not evidence of absence: a row whose arm nobody has scored
+    would otherwise assert a structure this member has never been checked against."""
+    rows = _pair()
+    rows["gap_dgbyg"] = ""
+    with pytest.raises(SystemExit, match="has never been scored"):
+        _load(tmp_path, rows=rows, member="dgbyg")
+
+
+def test_load_refuses_to_guess_a_member(tmp_path):
+    """The admitted set is per member, so reading a table without naming one is the exact
+    silent reuse these columns replace."""
+    with pytest.raises(SystemExit, match="needs a member"):
+        S.load(_written(tmp_path, _pair()), PROPS, NAMES)
 
 
 def test_congener_spread_is_carried_as_sigma_sub_not_discarded(tmp_path):
     """An asserted structure has a width; reporting it as zero would make it look like
     a measurement."""
     rows = _pair()
-    rows.loc[0, "congeners"] = "-30.0;-32.0"
+    rows.loc[0, "congeners_eq"] = "-30.0;-32.0"
     s = _load(tmp_path, rows=rows)
     assert s.sigma_sub({"MNXM137": -1.0}) == pytest.approx(1.0)
     assert s.sigma_sub({"MNXM138": 1.0}) == 0.0
 
 
+def test_the_width_is_read_from_the_arm_that_is_loaded(tmp_path):
+    """The two members carry different widths for the same row, and each must get its own.
+    Reading one arm's width under the other member's name IS the defect."""
+    rows = _pair()
+    rows.loc[0, "congeners_eq"] = "-30.0;-32.0"          # eq half-width 1.0
+    rows.loc[0, "congeners_dgbyg"] = "-30.0;-34.0"       # dgbyg half-width 2.0
+    assert _load(tmp_path, rows=rows, member="eq").sigma_sub(
+        {"MNXM137": -1.0}) == pytest.approx(1.0)
+    assert _load(tmp_path, rows=rows, member="dgbyg").sigma_sub(
+        {"MNXM137": -1.0}) == pytest.approx(2.0)
+
+
 def test_sigma_sub_accumulates_in_quadrature_over_substituted_participants(tmp_path):
     rows = _pair()
-    rows.loc[0, "congeners"] = "-30.0;-32.0"
-    rows.loc[1, "congeners"] = "-10.0;-12.0"
+    rows.loc[0, "congeners_eq"] = "-30.0;-32.0"
+    rows.loc[1, "congeners_eq"] = "-10.0;-12.0"
     s = _load(tmp_path, rows=rows)
     assert s.sigma_sub({"MNXM137": -1.0, "MNXM138": 1.0}) == pytest.approx(2 ** 0.5)
 
@@ -441,7 +497,7 @@ def test_one_bad_couple_does_not_condemn_a_good_one(tmp_path):
     bad["couple_id"] = "broken"
     bad = bad.iloc[[0]]                                   # ox with no red: incomplete
     d = S.load(_written(tmp_path, pd.concat([_pair(), bad])), PROPS, NAMES,
-               collect=True).decisions
+               collect=True, member="eq").decisions
     assert set(d.loc[d.couple_id == "nadp", "verdict"]) == {"admitted"}
     assert set(d.loc[d.couple_id == "broken", "verdict"]) == {"refused"}
 
