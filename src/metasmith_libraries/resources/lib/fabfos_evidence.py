@@ -319,6 +319,11 @@ def to_unified(df, extensions=("attribution", "feature", "universe")):
         raise SystemExit(f"[gpr] {out['unit_id'].nunique()} unit_ids in one table "
                          f"{sorted(out['unit_id'].unique())[:4]}; `source` names one "
                          f"artifact, so this table is really several")
+    # `source` names the artifact the rows were read out of. A pre-schema table did not
+    # record one, and `unit_id` is the closest thing it has -- so a migrated table says
+    # the model or proteome where a freshly produced one says the ORF set it was mapped
+    # from. Both are true of the table; they are not the same string, and a reader
+    # comparing `source` across the two eras has to know that.
     out["source"] = out["unit_id"].astype(str) if "unit_id" in out.columns else ""
     # The lane set is a property of the evidence, not of the file: a table with no lane
     # channels asserts rather than measures, whatever it is called.

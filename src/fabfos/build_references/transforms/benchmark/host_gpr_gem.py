@@ -54,18 +54,17 @@ direction = model.AddRequirement(lib.GetType("ref::direction_ratios"))
 # two cannot answer the same question differently. It is the bake's coverage less
 # transport; see the module for why the filter is here and not at the bake.
 universe_m = model.AddRequirement(lib.GetType("buildlib::bench_universe.py"))
+# The declared schema is read from the library that declares it, never restated here.
+ev_lib     = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 out       = model.AddProduct(lib.GetType("ref::gpr_table_gem"))
 
 CHANNEL = "gem_gpr"
-
-# The frozen 14-column host GPR schema, from the pre-library hosts.py. Shared with the
-# de-novo table so the two lines of evidence can be compared column for column -- which is
-# the only thing they are jointly good for, and the reason they stay separate files.
-GPR_COLS = (
-    "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
-    "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
-    "projection_via", "in_atom_universe", "gpr_rule",
-)
+# A curated model asserts; it does not measure. `curated` is the lane_set that says so.
+LANE_SET = "curated"
+# The same blocks the de-novo table carries, so the two lines of evidence compare
+# column for column -- which is the only thing they are jointly good for, and the
+# reason they stay separate files.
+EXTENSIONS = ("attribution", "feature", "universe")
 
 # host -> the host whose GEM it uses. A host mapping to itself has its own published
 # model; a host mapping to another BORROWS it, and the borrow is licensed by a measured
@@ -163,6 +162,8 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 sys.path.insert(0, os.path.dirname("{universe_m}"))
+sys.path.insert(0, os.path.dirname("{ev_lib}"))
+import fabfos_evidence as fe
 # Both halves come from the installed ecspr: `model` builds the network, `bake`
 # reads the compiled tables. Only bench_universe is still a staged flat file.
 from ecspr.model.build import crosswalk_gem, load_model
@@ -172,7 +173,8 @@ import bench_universe as bu
 GENOMES = Path("{genomes}")
 OUT     = Path("{out}")
 CHANNEL = "{channel}"
-GPR_COLS = {gpr_cols}
+LANE_SET = "{lane_set}"
+EXTENSIONS = tuple({extensions})
 GEM_SOURCE = {gem_source}
 EDIT_LIST = {edit_list}
 
@@ -272,8 +274,12 @@ for host, src_host in sorted(GEM_SOURCE.items()):
         rule = (r.gene_reaction_rule or "").strip()
         genes = list(r.genes)
         common = dict(
-            build_id=build_id, host=host, unit_id=gem_id, mnxr=mnxr, channel=CHANNEL,
-            evidence_id=r.id, evidence_name=r.name or None,
+            build_id=build_id, host=host, unit_id=gem_id, source=gem_id,
+            mnxr=mnxr, channel=CHANNEL, lane_set=LANE_SET,
+            intermediate_id=r.id, intermediate_name=r.name or "",
+            # A curated model's assertion is a presence claim; `evidence_quality` says
+            # a human curated it, which is a stronger statement than any lane makes.
+            score_kind="presence", evidence_quality="reviewed",
             # A curated model asserts that a reaction is PRESENT, not how much evidence
             # there is for it, so weighting it by anything would be inventing a quantity.
             # The evidence-weighted line is gpr_denovo.
@@ -291,18 +297,23 @@ for host, src_host in sorted(GEM_SOURCE.items()):
             # but they are live in every condition. Dropping them would make every gene
             # set look like starvation.
             n_ruleless += 1
-            rows.append(dict(common, feature_id=None, feature_kind="ruleless",
-                             feature_name=None))
+            # `orf` names whatever nominates the reaction and is never null. A ruleless
+            # reaction nominates ITSELF -- there is no gene to name -- so the model
+            # reaction id is the nominator, and belief conservation then groups these
+            # per reaction instead of collapsing every one of them onto a single null.
+            rows.append(dict(common, orf=r.id, feature_kind="ruleless",
+                             feature_name=""))
             continue
         for g in genes:
-            rows.append(dict(common, feature_id=g.id, feature_kind="gem_gene",
-                             feature_name=g.name or None))
+            rows.append(dict(common, orf=g.id, feature_kind="gem_gene",
+                             feature_name=g.name or ""))
 
-    df = pd.DataFrame(rows, columns=list(GPR_COLS))
+    df = pd.DataFrame(rows, columns=fe.schema_for(EXTENSIONS))
     df["raw_score"] = df["raw_score"].astype(np.float32)
     df["in_atom_universe"] = df["in_atom_universe"].astype(bool)
-    df = df.sort_values(["feature_kind", "feature_id", "mnxr", "evidence_id"],
-                        kind="mergesort", na_position="last").reset_index(drop=True)
+    df = df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
+                        na_position="last").reset_index(drop=True)
+    fe.validate_gpr(df, LANE_SET, None, gem_id, EXTENSIONS)
     d = OUT / "hosts" / host
     d.mkdir(parents=True, exist_ok=True)
     df.to_parquet(d / "gpr_gem.parquet", index=False, compression="zstd")
@@ -360,7 +371,8 @@ def protocol(context: ExecutionContext):
         vocab=context.Input(vocab).container, pairs=context.Input(pairs).container,
         direction=context.Input(direction).container,
         bridge=context.Input(bridge).container,
-        channel=CHANNEL, gpr_cols=repr(GPR_COLS), gem_source=repr(GEM_SOURCE),
+        channel=CHANNEL, lane_set=LANE_SET, extensions=repr(list(EXTENSIONS)),
+        ev_lib=context.Input(ev_lib).container, gem_source=repr(GEM_SOURCE),
         edit_list=repr(EDIT_LIST),
         out=iout.container,
     )
