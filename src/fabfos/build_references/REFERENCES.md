@@ -556,9 +556,11 @@ read.
 
 Networks are **not stored**. Each x in X is constructed at run time from the conditions
 table plus two GPR tables — the host's, which is the background network, and the study's,
-which carries the edges each condition adds or deletes. They share one 14-column schema
-so the two concatenate without reshaping; the study table appends four columns
-(`condition_id`, `cohort`, `action`, `source_organism`) that scope a row to a condition.
+which carries the edges each condition adds or deletes. Both are the GPR schema's core
+plus the `attribution`, `feature` and `universe` blocks, so the two concatenate without
+reshaping; the study table adds the `cohort` block (`condition_id`, `cohort`, `action`,
+`source_organism`) that scopes a row to a condition. `lib::fabfos_evidence` declares all
+of it, and every producer on both sides validates against it before writing.
 
 **The cut is by PUBLICATION, not by processing stage.** `benchmarks/<study>/` holds one
 study each, on one file schema, so a study can be added, revised or withdrawn without

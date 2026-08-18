@@ -1,6 +1,6 @@
 """One host's de-novo GPR table, from one mapper table. B2's collector, by hand.
 
-    mamba run -n figure-net python build_references/host_denovo_from_mapper.py \\
+    mamba run -n msm-fabfos python src/fabfos/build_references/host_denovo_from_mapper.py \\
         --host e_coli_dh1 --mapper data/scratch/clone_gpr_sockeye_NC_017638.1/results \\
         [--publish]
 
@@ -16,13 +16,13 @@ the wrong pairing in the first place.
 SO THE FAN-OUT IS AVOIDED RATHER THAN PATCHED. `examples/clone_gpr_on_hpc.py` runs the
 same four lanes and the same mapper over ONE ORF set, where there is no pairing to get
 wrong -- five jobs and one table, and the table can only describe the FASTA that went in.
-This step then does what the collector would have: attach the host and re-emit on the
-frozen 14-column schema.
+This step then does what the collector would have: attach the host and re-emit with the
+attribution, feature and universe blocks the benchmark layer needs.
 
-THE COLUMN MAPPING IS THE TRANSFORM'S, and it is a third copy of it (the study-side
-`main/benchmarks/eydallin/build_clone_gpr_denovo.py` is the second). That is a cost worth
-naming: if the schema moves, these move together or the two lines of evidence stop lining
-up column for column, which is the only thing they are jointly good for.
+THE SCHEMA IS READ, NOT RESTATED. The columns, the grain and the validator all come from
+`lib::fabfos_evidence`, which is the only reason this step and the in-graph collector
+cannot drift apart -- they used to carry a copy of the mapping each, and a third lived on
+the study side.
 """
 from __future__ import annotations
 

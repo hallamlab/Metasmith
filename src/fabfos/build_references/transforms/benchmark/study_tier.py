@@ -9,7 +9,7 @@ and joining later produces a conditions table that looks complete and silently d
 rows at scoring time.
 
     <study>/extraction.tsv       the human reading of the paper, copied verbatim
-    <study>/gpr_manual.parquet   its edges, on the host GPR schema + 4 condition columns
+    <study>/gpr_manual.parquet   its edges, on the host GPR schema + the `cohort` block
     <study>/conditions.tsv       how those rows compose onto a host, and the controls
     <study>/Y/expectations.tsv   the answer key, per (condition, element, metabolite)
     <study>/README.md            what the cohort is and what its acquisition was
