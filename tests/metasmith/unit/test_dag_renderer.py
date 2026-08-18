@@ -548,10 +548,11 @@ def test_the_two_directions_of_travel_land_in_different_bands():
     assert len(ys) > 4
 
 
-def test_a_jog_one_row_long_is_banded_by_what_it_is_doing():
-    # the band used to be read off the half-row, and for an edge between
-    # adjacent rows `src + 0.5` and `dst - 0.5` are the same number — so every
-    # one-row jog came out in the departure band whatever it was doing
+def test_a_jog_is_banded_by_the_way_it_travels():
+    # the band used to be read off the half-row -- departure above, arrival
+    # below -- which only agrees with the direction while the rail lane is
+    # outside both endpoints' lanes. Here it is not, and the two readings
+    # disagree.
     from metasmith.models import dag_draw as dd
 
     r = _build(
@@ -561,22 +562,54 @@ def test_a_jog_one_row_long_is_banded_by_what_it_is_doing():
     lay = r.layout()
     g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
     e = next(x for x in lay.edges if (x.src, x.dst) == ("r", "j"))
-    assert lay["j"].row - lay["r"].row == 1  # the case only exists here
-    assert lay["j"].lane != lay["r"].lane  # ... and there is a jog to band
+    assert lay["j"].lane < lay["r"].lane  # it runs back inwards, to the right
 
     pts = dd._pixel_path(lay, e, g, STYLES)[0]
     lo, hi = sorted((g.x(lay["r"].lane), g.x(lay["j"].lane)))
     band = [y for x, y in pts if lo < x < hi]
     assert band, "the jog should have left a point between the two lanes"
-    assert all(y > g.y(lay["r"].row + 0.5) for y in band)  # under, not over
+    assert all(y > g.y(lay["r"].row + 0.5) for y in band)  # rightward: under
 
-    # ... and a rail that really is departing still hugs the row it left
+    # ... and one running the other way sits in the other band
     down = next(x for x in lay.edges if (x.src, x.dst) == ("a", "r"))
-    assert lay["r"].row - lay["a"].row > 1
+    assert down.lane > lay["a"].lane  # leaves lane 0 outwards, to the left
     pts = dd._pixel_path(lay, down, g, STYLES)[0]
     lo, hi = sorted((g.x(lay["a"].lane), g.x(down.lane)))
     band = [y for x, y in pts if lo < x < hi]
     assert band and all(y < g.y(lay["a"].row + 0.5) for y in band)
+
+
+def test_rails_travelling_the_same_way_share_one_line():
+    """Two jogs crossing the same gap in the same direction line up.
+
+    A fan-out's children and a fan-in's parents can land in the same gap, and
+    banding them by role rather than by direction put one line of a converging
+    fan a band away from the rest of it -- visible as a seam. Nothing here is
+    about which band is which: only that two rails a reader sees as running
+    together are drawn at one height.
+    """
+    from metasmith.models import dag_draw as dd
+
+    r = load_dag()
+    lay = r.layout()
+    g, _ = dd._grid(lay, font_size=13.0, labels=r.labels)
+
+    runs = {}
+    for e in lay.edges:
+        pts = [
+            (g.x(lane), g.y(row) + role * dd.BAND * g.gap(row))
+            for role, (row, lane) in zip(dd._jog_roles(lay, e), e.points)
+        ]
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            if y0 != y1 or x0 == x1:
+                continue
+            runs.setdefault((round(y0, 6), x1 < x0), []).append(f"{e.src}->{e.dst}")
+
+    by_gap = {}
+    for (y, leftward), names in runs.items():
+        by_gap.setdefault((round(y / g.row_pitch), leftward), set()).add(y)
+    split = {k: v for k, v in by_gap.items() if len(v) > 1}
+    assert not split, f"same-direction rails at different heights: {split}"
 
 
 def _edge_paths(svg: str) -> list[list[tuple[float, float]]]:

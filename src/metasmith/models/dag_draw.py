@@ -499,43 +499,28 @@ def _grid(
 def _jog_roles(lay: Layout, edge) -> list[int]:
     """Which band each point of `edge.points` belongs in: -1 up, +1 down, 0 none.
 
-    A jog gets its band from what it is *doing*, not from which half-row it
-    happens to sit on. `_polyline` emits the departure pair only when the rail
-    lane differs from the source's and the arrival pair only when it differs
-    from the target's, so the pairs can be identified by index; a departure
-    hugs the row it left and an arrival hugs the row it feeds.
+    A jog is banded by the way it *travels*: every leftward run in a gap sits
+    at one height and every rightward run at the other. Two rails going the
+    same way share a line and read as one bundle, and only rails passing each
+    other are pulled apart — which is the whole point of having two bands.
 
-    The one case the row alone gets wrong is an edge between adjacent rows,
-    where `src + 0.5` and `dst - 0.5` are the same number. Both jogs live in
-    the one gap there, and reading it positionally makes every one of them a
-    departure — which is why a fan-in arriving from one lane over used to read
-    as though it were leaving the node above it.
+    Read positionally instead (departure hugs the row it left, arrival hugs
+    the row it feeds) and the two coincide only while the rail lane is outside
+    both endpoints' lanes. When it is not — a jog that leaves a node and comes
+    back inwards, or an edge between adjacent rows, where `src + 0.5` and
+    `dst - 0.5` are the same number — one line of a converging fan lands a
+    band away from the rest of it.
 
-    But row distance alone over-fires: a plain fan-out child that happens to
-    sit one row down is not a join, and flipping it anyway split it from its
-    own siblings — the same source's other children, one row further out,
-    still banded as departures. The row is only evidence of a join if the
-    *target* actually has more than one parent to converge; a source with
-    other children of its own settles it the other way, since matching those
-    siblings is what the drawing is actually being read against.
+    Lane 0 is the one beside the labels and lanes count leftwards, so a rising
+    lane index is a leftward run.
     """
-    src, dst = lay[edge.src].row, lay[edge.dst].row
-    has_dep = edge.lane != lay[edge.src].lane
-    has_arr = edge.lane != lay[edge.dst].lane
     roles = [0] * len(edge.points)
-    i = 1
-    if has_dep:
-        is_join = sum(1 for e in lay.edges if e.dst == edge.dst) > 1
-        is_fanout = sum(1 for e in lay.edges if e.src == edge.src) > 1
-        # with no arrival pair the rail *is* the target's lane, so on adjacent
-        # rows a lone jog into a real join is the arrival and belongs under,
-        # not over — unless it is also one of several children leaving this
-        # same source, in which case its siblings settle it as a departure
-        flip = not has_arr and dst - src == 1 and is_join and not is_fanout
-        roles[1] = roles[2] = 1 if flip else -1
-        i = 3
-    if has_arr:
-        roles[i] = roles[i + 1] = 1
+    for i, ((row, lane), (next_row, next_lane)) in enumerate(
+        zip(edge.points, edge.points[1:])
+    ):
+        if row != next_row:  # a rail down its own lane, banded by nothing
+            continue
+        roles[i] = roles[i + 1] = -1 if next_lane > lane else 1
     return roles
 
 
