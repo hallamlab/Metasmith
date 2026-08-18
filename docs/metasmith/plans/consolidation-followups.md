@@ -398,3 +398,64 @@ corpus; together they add roughly 35 minutes to a gate that was 16. They were
 free only because they were broken. Note the axis is assigned by directory and
 markers are additive, so adding `slow` does not remove `fast` — moving them is a
 change to `_DIR_MARKERS` or to the file's location, not a one-line annotation.
+
+## From the lineage-race fix (2026-08)
+
+Found while root-causing the two inbox reports (a nine-step benchmark that ran
+seven and reported success, and a pipeline whose cache never survived a
+restart). Each was traced far enough to be sure it is real and left alone
+because it is not that defect.
+
+**The results index of a chunked step records only leaf ancestors and drops the
+chunk itself.** A step run in chunks has the chunk as a real node in its
+ancestry, and the post-run index walks past it to the leaves. Nothing in the
+runtime reads that index, so the loss is invisible today; anything that later
+asks "which chunk produced this" gets a plausible answer built from the wrong
+level. First move: decide whether the index is a provenance record or a
+convenience lookup, because the two want different walks.
+
+**Index value lists are shared by reference across the whole DAG, and that is
+safe only by audit.** `_collateBatch` and `_post` both copy shallowly, so one
+value list is reachable from many descendant indexes; the no-writer rule that
+`Orchestrator.stripReserved` now enforces covers the top-level map only. Every
+write in `Orchestrator.groovy` was audited and independently re-checked, and no
+production path mutates a value list — which is why deep-copying was rejected:
+it buys nothing against a live defect and changes the rendered index, which
+feeds `file_instance_id` and would orphan every existing cache shard.
+Deep-copying the values is the hardening to reach for the first time a
+value-list mutation actually appears.
+
+**The generated `stub:` block sorts one of those shared lists in place.**
+`nextflow_codegen.py:691` renders `.collectEntries { k, v -> [k, v.sort()] }`,
+and Groovy's `List.sort()` is in-place. It has never bitten because stubs run
+alone, but it is the one known writer to a shared value list and it sits in
+generated code where the audit above does not reach. `v.sort(false)` returns a
+copy and is the whole fix.
+
+**The differential solver gate is comparing against a binary that predates the
+source.** The four `test_a_generated_script_agrees_draw_for_draw` failures ride
+on `src/metasmith/engine.dvc`'s staged `msm_solver`, built 2026-08-04, so the
+one-ULP `log2` story recorded above is a hypothesis about *that* binary rather
+than about the current Rust. Rebuilding needs a host `cargo` or a container
+pull, neither of which belongs in a bug-fix run. First move: rebuild, re-run
+the gate, and only then decide the ULP policy — the question above is not
+answerable while the two sides are months apart.
+
+**`test_the_engine_reads_the_shipped_templates` does not finish.** Stronger
+than the "expensive" note above: it grows RSS by roughly 360 MB every 30
+seconds and never terminates, so every suite run in this work carried
+`--deselect` for it. A test that must be deselected to run the suite is a test
+the suite does not have. Whether the leak is the engine's or the fixture's is
+unknown; it was never profiled.
+
+**Three wall-clock budgets do not survive a shared machine.**
+`test_e3_large_fanout_under_5s` (5 s), `repro_16_group_buffering`, and
+`test_c05_descendant_single_bs3_folds_three_keys` (the 60 s docker timeout
+`_run_with_retry` imposes) each fail under load and pass in isolation — c05 in
+15.6 s against its 60 s budget on a quiet box, and repro_16 flipped from red to
+green between two runs of the same commit. Only c05's harness catches
+`TimeoutExpired`; elsewhere it surfaces as an ordinary failure, which is how a
+loaded box reads as a regression. These are the wrong kind of assertion: they
+measure the host, not the code. First move: decide whether they should assert
+on work done rather than seconds elapsed, or be marked so they only run on a
+quiet gate.
