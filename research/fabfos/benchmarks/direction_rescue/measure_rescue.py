@@ -178,8 +178,10 @@ def main(argv=None):
                          "promote -- a suffixed chunk is read by nothing else")
     ap.add_argument("--substitutions", default="none",
                     help="'none' is the configuration the r8 baseline was taken under "
-                         "and the one that reproduces rescue_scope.tsv. The ON path "
-                         "arrives with ecspr.bake.direction.substitute")
+                         "and the one that reproduces rescue_scope.tsv. Otherwise a "
+                         "substitution table directory, which MUST be the one the "
+                         "forecast in --work was built with and the one the members "
+                         "were run with -- it is recorded, not applied")
     ap.add_argument("--couples", type=Path, default=None,
                     help="the carrier couples table. Adds carrier.couple_admissible: the "
                          "subpopulation blocked only by carriers that HAVE a tabulated "
@@ -190,10 +192,17 @@ def main(argv=None):
     ap.add_argument("--out", type=Path, default=None, help="write the table as TSV")
     a = ap.parse_args(argv)
 
-    if a.substitutions != "none":
-        raise SystemExit("[rescue] --substitutions accepts only 'none' until "
-                         "ecspr.bake.direction.substitute lands; refusing to report a "
-                         "configuration this script cannot actually apply")
+    # `substitute` HAS landed, so the refusal it was waiting on is retired. What the
+    # argument records is still only a LABEL -- nothing here applies a substitution. The
+    # chemistry enters through `forecast_postfix.parquet`, which must have been built
+    # with the same `--substitutions` the members were given, and `agrees_with_forecast`
+    # below is what actually catches a mismatch: a forecast built for the wrong
+    # configuration disagrees with the annotation about which members spoke, whichever
+    # string was passed here. The path is checked so the header cannot name a table that
+    # was never read.
+    if a.substitutions != "none" and not Path(a.substitutions).is_dir():
+        raise SystemExit(f"[rescue] --substitutions {a.substitutions!r} is neither "
+                         f"'none' nor a substitution table directory")
     bake = Path(a.bake) if Path(a.bake).is_absolute() else PROCESSED / a.bake
 
     from ecspr.bake.direction.refdata import load_mnxr_stoich, load_mnxm_props
