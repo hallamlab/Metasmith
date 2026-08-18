@@ -5,6 +5,23 @@ ontology:
   version: '1.25'
 schema: v1
 types:
+  amrfinderplus_db:
+    properties:
+    - AMRFinderPlus database directory (version must match the bundled binary)
+  amrfinderplus_results:
+    properties:
+      Format: TSV
+      _:
+      - AMRFinderPlus protein hits (TSV; Protein_id column = k141_XXXXXX_N)
+      ext: tsv
+  amrfinderplus_results_chunk:
+    properties:
+      Format: TSV
+      _:
+      - Per-chunk AMRFinderPlus hits (distinct sibling of amrfinderplus_results; merge_amrfinderplus
+        produces the per-sample dtype)
+      ext: tsv
+      granularity: chunk
   ankh_embeddings:
     properties:
       Format: Parquet
@@ -35,6 +52,24 @@ types:
   antismash_source:
     properties:
     - Marker for antiSMASH database download
+  bacmet_diamond_db:
+    properties:
+      _:
+      - DIAMOND-formatted BacMet2 database (metal + biocide resistance)
+      ext: dmnd
+  bacmet_diamond_results:
+    properties:
+      Format: BLAST6
+      _:
+      - DIAMOND alignment of ORFs to BacMet2 (metal/biocide resistance genes)
+      ext: tsv
+  bacmet_diamond_results_chunk:
+    properties:
+      Format: BLAST6
+      _:
+      - Per-chunk DIAMOND BacMet2 BLAST6 (sibling of bacmet_diamond_results)
+      ext: tsv
+      granularity: chunk
   bakta_db:
     properties:
     - Bakta light database directory
@@ -68,6 +103,13 @@ types:
       _:
       - BUSCO full results table with per-sequence marker assignments
       ext: tsv
+  busco_full_table_chunk:
+    properties:
+      Format: TSV
+      _:
+      - Per-chunk BUSCO full_table.tsv (sibling of busco_full_table)
+      ext: tsv
+      granularity: chunk
   busco_lineage:
     properties:
     - Pre-downloaded BUSCO lineage dataset directory
@@ -80,23 +122,52 @@ types:
   busco_source:
     properties:
     - Marker for BUSCO lineage dataset specification
+  card_db:
+    properties:
+    - CARD database loaded into the RGI image (card.json + wildcard, post rgi load)
   clean_predictions:
     properties:
       Format: TSV
       _:
       - CLEAN contrastive EC predictions (Query ID, Predicted EC number, clean_score)
       ext: tsv
+  crassphage_coverage:
+    properties:
+      Format: TSV
+      _:
+      - BBMap per-sample crAssphage coverage stats (human faecal marker)
+      ext: tsv
+  crassphage_ref:
+    properties:
+      Format: FASTA
+      _:
+      - crAssphage reference genome NC_024711 FASTA (for BBMap mapping)
+      ext: fa
   deepec_predictions:
     properties:
       _:
       - DeepEC EC number predictions
       ext: tsv
+  deepec_predictions_chunk:
+    properties:
+      Format: TSV
+      _:
+      - Per-chunk DeepEC TSV (sibling of deepec_predictions)
+      ext: tsv
+      granularity: chunk
   deeptfactor_results:
     properties:
       Format: TSV
       _:
       - DeepTFactor TF predictions (binary TF/non-TF with probability score)
       ext: tsv
+  deeptfactor_results_chunk:
+    properties:
+      Format: TSV
+      _:
+      - Per-chunk DeepTFactor TSV (sibling of deeptfactor_results)
+      ext: tsv
+      granularity: chunk
   diamond_tcdb2_results:
     properties:
       Format: BLAST6
@@ -109,17 +180,38 @@ types:
       _:
       - DIAMOND alignment to TCDB (Transporter Classification Database)
       ext: tsv
+  diamond_tcdb_results_chunk:
+    properties:
+      Format: BLAST6
+      _:
+      - Per-chunk DIAMOND TCDB BLAST6 (sibling of diamond_tcdb_results)
+      ext: tsv
+      granularity: chunk
   diamond_uniref50_results:
     properties:
       Format: BLAST6
       _:
       - DIAMOND alignment to UniRef50
       ext: tsv
+  diamond_uniref50_results_chunk:
+    properties:
+      Format: BLAST6
+      _:
+      - Per-chunk DIAMOND UniRef50 BLAST6 (sibling of diamond_uniref50_results)
+      ext: tsv
+      granularity: chunk
   dram_annotations:
     properties:
       _:
       - DRAM gene annotations (dbCAN/KOfam/Pfam) TSV
       ext: tsv
+  dram_annotations_chunk:
+    properties:
+      Format: TSV
+      _:
+      - Per-chunk DRAM annotations.tsv (sibling of dram_annotations)
+      ext: tsv
+      granularity: chunk
   dram_db:
     properties:
     - DRAM database directory
@@ -140,6 +232,13 @@ types:
       _:
       - eggNOG-mapper functional annotations (GO, KEGG, Pfam, COG)
       ext: tsv
+  eggnog_results_chunk:
+    properties:
+      Format: TSV
+      _:
+      - Per-chunk eggNOG-mapper annotations (sibling of eggnog_results)
+      ext: tsv
+      granularity: chunk
   eggnog_source:
     properties:
     - Marker for eggNOG database download
@@ -173,6 +272,15 @@ types:
       _:
       - EZpred DL-only EC-head predictions (sequence_id, ec_number, score, head_kind)
       ext: csv
+  feast_proportions:
+    properties:
+      Format: TSV
+      _:
+      - FEAST estimated source-environment contribution proportions
+      ext: tsv
+  feast_sources:
+    properties:
+    - FEAST external source community profiles (gut/livestock/wildlife/soil/freshwater)
   gpr_table:
     properties:
       Format: Parquet
@@ -190,6 +298,31 @@ types:
         ESM-C)
       ext: parquet
       lane_set: full_7
+  instrain_compare:
+    properties:
+    - inStrain compare output (cross-sample popANI / strain sharing over the shared
+      derep-MAG ref)
+  instrain_genome_info:
+    properties:
+      Format: TSV
+      _:
+      - inStrain per-genome summary (coverage, nucleotide diversity, breadth)
+      ext: tsv
+  instrain_profile:
+    properties:
+    - inStrain profile output directory (per-MAG SNV/microdiversity vs derep-MAG ref)
+  integronfinder_integrons:
+    properties:
+      Format: TSV
+      _:
+      - IntegronFinder detailed integron elements table (contig IDs preserved)
+      ext: tsv
+  integronfinder_summary:
+    properties:
+      Format: TSV
+      _:
+      - IntegronFinder per-contig integron summary (CALIN/complete/in0 counts)
+      ext: tsv
   interproscan_gff:
     properties:
       Format: GFF3
@@ -208,6 +341,13 @@ types:
       _:
       - Parsed InterProScan protein matches
       ext: csv
+  interproscan_results_chunk:
+    properties:
+      Format: CSV
+      _:
+      - Per-chunk InterProScan CSV (sibling of interproscan_results)
+      ext: csv
+      granularity: chunk
   interproscan_source:
     properties:
     - Marker for InterProScan data location
@@ -217,9 +357,70 @@ types:
       _:
       - Filtered KofamScan KO assignments
       ext: csv
+  kofamscan_results_chunk:
+    properties:
+      Format: CSV
+      _:
+      - Per-chunk KofamScan CSV (sibling of kofamscan_results)
+      ext: csv
+      granularity: chunk
   kofamscan_source:
     properties:
     - Marker for KofamScan database download
+  megares_diamond_db:
+    properties:
+      _:
+      - DIAMOND-formatted MEGARes database
+      ext: dmnd
+  megares_diamond_results:
+    properties:
+      Format: BLAST6
+      _:
+      - DIAMOND alignment of ORFs to MEGARes (antibiotic/biocide/metal ARGs)
+      ext: tsv
+  megares_diamond_results_chunk:
+    properties:
+      Format: BLAST6
+      _:
+      - Per-chunk DIAMOND MEGARes BLAST6 (sibling of megares_diamond_results)
+      ext: tsv
+      granularity: chunk
+  metaphlan_db:
+    properties:
+    - MetaPhlAn vJan25 CHOCOPhlAnSGB marker database (dir holding the .pkl)
+  mobileelementfinder_results:
+    properties:
+      Format: CSV
+      _:
+      - MobileElementFinder MGE/IS-element hits (CSV; contig IDs preserved)
+      ext: csv
+  pathofact_amr:
+    properties:
+      Format: TSV
+      _:
+      - PathoFact ARG predictions (contig IDs preserved)
+      ext: tsv
+  pathofact_db:
+    properties:
+    - PathoFact 2.0 bundled databases (HMMs + models)
+  pathofact_mge:
+    properties:
+      Format: TSV
+      _:
+      - PathoFact mobile-genetic-element predictions (contig IDs preserved)
+      ext: tsv
+  pathofact_tox:
+    properties:
+      Format: TSV
+      _:
+      - PathoFact toxin predictions (contig IDs preserved)
+      ext: tsv
+  pathofact_vf:
+    properties:
+      Format: TSV
+      _:
+      - PathoFact virulence-factor predictions (contig IDs preserved)
+      ext: tsv
   pgdb_archive:
     properties:
       Format: tar.gz
@@ -242,12 +443,26 @@ types:
       _:
       - PredicTF lower-confidence potential TF predictions
       ext: tsv
+  predictf_potential_chunk:
+    properties:
+      Format: TSV
+      _:
+      - Per-chunk PredicTF potential TF mapping (sibling of predictf_potential)
+      ext: tsv
+      granularity: chunk
   predictf_results:
     properties:
       Format: TSV
       _:
       - PredicTF high-confidence TF predictions with family classification
       ext: tsv
+  predictf_results_chunk:
+    properties:
+      Format: TSV
+      _:
+      - Per-chunk PredicTF TF mapping (sibling of predictf_results)
+      ext: tsv
+      granularity: chunk
   promotech_predictions:
     properties:
       Format: TSV
@@ -278,12 +493,26 @@ types:
       _:
       - ProteinBERT embedding vectors
       ext: parquet
+  proteinbert_embeddings_chunk:
+    properties:
+      Format: Parquet
+      _:
+      - Per-chunk ProteinBERT embeddings (sibling of proteinbert_embeddings)
+      ext: parquet
+      granularity: chunk
   proteinbert_index:
     properties:
       Format: CSV
       _:
       - ProteinBERT sequence index
       ext: csv
+  proteinbert_index_chunk:
+    properties:
+      Format: CSV
+      _:
+      - Per-chunk ProteinBERT index (sibling of proteinbert_index)
+      ext: csv
+      granularity: chunk
   prott5_embeddings:
     properties:
       Format: Parquet
@@ -303,6 +532,20 @@ types:
       - Long-format per-ORF functional annotations (EC / GO / KEGG / UniProt / FUNCTION)
         for ingestion by Pathway Tools
       ext: parquet
+  rgi_results:
+    properties:
+      Format: TSV
+      _:
+      - RGI main ARG hits on Prodigal proteins (TSV; ORF_ID column = k141_XXXXXX_N)
+      ext: txt
+  rgi_results_chunk:
+    properties:
+      Format: TSV
+      _:
+      - Per-chunk RGI hits (distinct sibling of rgi_results; merge_rgi produces the
+        per-sample dtype)
+      ext: txt
+      granularity: chunk
   saprot_embeddings:
     properties:
       Format: Parquet
@@ -315,6 +558,11 @@ types:
       _:
       - SaProt sequence index
       ext: csv
+  strainphlan_consensus_markers:
+    properties:
+      _:
+      - StrainPhlAn per-sample consensus markers from the MetaPhlAn SAM
+      ext: pkl
   tcdb_diamond_db:
     properties:
       _:
@@ -323,6 +571,24 @@ types:
   uniref50_source:
     properties:
     - Marker for UniRef50 database download
+  vfdb_diamond_db:
+    properties:
+      _:
+      - DIAMOND-formatted VFDB database (virulence factor proteins)
+      ext: dmnd
+  vfdb_diamond_results:
+    properties:
+      Format: BLAST6
+      _:
+      - DIAMOND alignment of ORFs to VFDB (virulence factors)
+      ext: tsv
+  vfdb_diamond_results_chunk:
+    properties:
+      Format: BLAST6
+      _:
+      - Per-chunk DIAMOND VFDB BLAST6 (sibling of vfdb_diamond_results)
+      ext: tsv
+      granularity: chunk
   virsorter2_affi_contigs:
     properties:
       _:

@@ -115,56 +115,67 @@ def content_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
     return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
 
 
-def directory_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
-    """`content_multihash_key`, for a library item that is a directory.
+def tree_multihash_key(path, *, chunk_size: int = 1 << 20) -> bytes:
+    """Return the multihash key over a DIRECTORY's contents, recursively.
 
-    A leaf whose path is a directory used to fall through to the random-id
-    branch, because only `is_file()` was content-addressable. The standard
-    library ships one such item (`lib::local`), so every compile minted it a
-    fresh id -- which defeats the staleness arm of the bundle guard and denied a
-    cache hit to every transform consuming it, on runs that were otherwise
-    perfectly reusable.
+    The file analogue of `content_multihash_key`, and it exists for the same
+    reason: a leaf that is a directory -- a vendored python package, a profile
+    database -- otherwise falls through to a random per-call id, so an unchanged
+    tree gets a new identity on every library recompile and invalidates every
+    downstream cache entry that ever read it. That is a silent miss, not a
+    silent hit, but for a multi-day bake it is expensive enough to be a bug.
 
-    The digest covers each entry's tree-relative path *and* its bytes, walked in
-    sorted order so it never depends on readdir order, with an explicit type tag
-    and length framing so no two distinct trees can serialize to the same byte
-    stream. Symlinks are digested as their target text rather than followed: a
-    link is part of the tree's shape, and following one can leave the directory
-    or fail to terminate. OSError propagates, as it does for a file.
+    Every entry contributes its LIBRARY-RELATIVE path and its bytes, so a rename
+    with no content change and a content change with no rename both move the
+    digest. Directories are not hashed as entries themselves: an empty directory
+    carries nothing a consumer can read, and git cannot represent one anyway, so
+    counting it would make a tree's identity depend on whether it survived a
+    checkout. A symlink contributes its TARGET STRING rather than the bytes it
+    points at -- following it would make the digest depend on something outside
+    the tree, and `Logistics` copies symlinks as symlinks.
+
+    Per-file digests are memoized on `(path, size, mtime_ns)`, so re-staging an
+    untouched tree costs one stat per file rather than a full read. The cache is
+    keyed on mtime and can therefore be fooled by a write that preserves both
+    size and mtime -- which is why it is a within-process cache over a tree the
+    build step just wrote, and never a substitute for the digest itself.
+
+    OSError propagates: an unreadable entry in a tree being addressed is not
+    something to paper over with a partial digest.
     """
-    hasher = blake3()
     root = Path(path)
-
-    def feed(tag: bytes, rel: bytes, extra: bytes = b""):
-        hasher.update(tag + len(rel).to_bytes(8, "big") + rel)
-        hasher.update(len(extra).to_bytes(8, "big") + extra)
-
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        # Sorted in place so os.walk itself descends deterministically, not just
-        # so this level is ordered.
-        dirnames.sort()
-        here = Path(dirpath)
-        rel_dir = here.relative_to(root)
-        for name in sorted(dirnames + filenames):
-            p = here/name
-            rel = (rel_dir/name).as_posix().encode("utf-8")
-            if p.is_symlink():
-                feed(b"l", rel, os.readlink(p).encode("utf-8"))
-            elif p.is_dir():
-                feed(b"d", rel)
-            elif p.is_file():
-                feed(b"f", rel, p.stat().st_size.to_bytes(8, "big"))
-                with open(p, "rb") as f:
-                    while True:
-                        chunk = f.read(chunk_size)
-                        if not chunk:
-                            break
-                        hasher.update(chunk)
-            else:
-                # A fifo, socket or device node. It has no content to address,
-                # but its presence and name are still part of the tree.
-                feed(b"o", rel)
+    hasher = blake3()
+    hasher.update(b"tree\x00")
+    for p in sorted(root.rglob("*")):
+        rel = str(p.relative_to(root)).encode("utf-8")
+        if p.is_symlink():
+            hasher.update(b"l\x00" + rel + b"\x00" + os.readlink(p).encode("utf-8") + b"\x00")
+            continue
+        if not p.is_file():
+            continue
+        hasher.update(b"f\x00" + rel + b"\x00" + _file_digest(p, chunk_size) + b"\x00")
     return KEY_PREFIX + hasher.digest(length=BLAKE3_DIGEST_LEN)
+
+
+_FILE_DIGEST_CACHE: dict[tuple[str, int, int], bytes] = {}
+
+
+def _file_digest(path, chunk_size: int) -> bytes:
+    st = path.stat()
+    ck = (str(path), st.st_size, st.st_mtime_ns)
+    hit = _FILE_DIGEST_CACHE.get(ck)
+    if hit is not None:
+        return hit
+    hasher = blake3()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    digest = hasher.digest(length=BLAKE3_DIGEST_LEN)
+    _FILE_DIGEST_CACHE[ck] = digest
+    return digest
 
 
 def lineage_key(

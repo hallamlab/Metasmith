@@ -9,18 +9,23 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ecspr import conditions as cond_mod
-from ecspr import nulls, probes, scoring
-from ecspr.gpr import condition_weights, load_gpr
+from ecspr.model import conditions as cond_mod
+from ecspr.model import nulls, probes, scoring
+from ecspr.model.gpr import condition_weights, load_gpr
 
 HOST = "iML1515"
 
 
 def _gpr_rows(unit, feature, mnxrs, *, condition=None, channel="gem_gpr"):
-    return [dict(build_id="t", host="h", unit_id=unit, feature_id=feature,
-                 feature_kind="gene", feature_name=feature, mnxr=r, channel=channel,
-                 evidence_id=r, evidence_name=r, raw_score=1.0, projection_via="x",
-                 in_atom_universe=True, gpr_rule=None, condition_id=condition)
+    """A GPR table on the declared schema: `orf` names the nominator (a gene here),
+    `intermediate_id` the thing it was called through."""
+    return [dict(source=unit, orf=feature, channel=channel, mnxr=r,
+                 intermediate_id=r, intermediate_name=r, raw_score=1.0,
+                 score_kind="presence", projection_via="x",
+                 evidence_quality="reviewed", lane_set="curated",
+                 build_id="t", host="h", unit_id=unit,
+                 feature_kind="gene", feature_name=feature, gpr_rule=None,
+                 in_atom_universe=True, condition_id=condition)
             for r in mnxrs]
 
 
@@ -218,9 +223,9 @@ def test_orientation_is_inert_on_a_symmetric_reference(pairs_path, gpr_path, tmp
 
 def test_draw_is_deterministic_and_emits_a_conditions_table(gpr_path, tmp_path):
     like = [_cond("C_new", ("C_new",), n_units=1)]
-    a = nulls.draw(gpr_path, like, n=8, seed=7, draw_column="feature_id",
+    a = nulls.draw(gpr_path, like, n=8, seed=7, draw_column="orf",
                    log=lambda m: None)
-    b = nulls.draw(gpr_path, like, n=8, seed=7, draw_column="feature_id",
+    b = nulls.draw(gpr_path, like, n=8, seed=7, draw_column="orf",
                    log=lambda m: None)
     assert [c.mask_values for c in a] == [c.mask_values for c in b]
     pa = cond_mod.write(a, tmp_path / "n1.parquet")
@@ -229,7 +234,7 @@ def test_draw_is_deterministic_and_emits_a_conditions_table(gpr_path, tmp_path):
     # ...and what it wrote is a conditions table the probes read like any other.
     back = cond_mod.read(pa)
     assert len(back) == 8
-    assert all(c.mask_column == "feature_id" for c in back)
+    assert all(c.mask_column == "orf" for c in back)
     assert all(c.source_hub == "S" and c.sinks == ("P1", "P2") for c in back), \
         "a drawn condition inherits the terminals of the arm it is the null for"
 

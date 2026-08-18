@@ -9,15 +9,13 @@ rather than a subtype, so this stage has exactly one producer and no tiebreak
 is needed (unlike ``gpr_7lane`` -> ``gpr_table_7lane``, which stays available
 but is not this driver's target). See ``transforms/fabfos/gpr_4lane.py``.
 
-REFERENCE DEFAULTS. Four of the five staged references this stage needs have
-real pinned copies in this repo's DVC-tracked ``data/processed/`` and are used
-as defaults when not overridden: KOfam profiles + KO list, the UniRef50 DIAMOND
-db, and the MNXR lookup bridge. ``ref::reference_label_pool`` also defaults
-there, but per the README's "Known gaps" it ships only 3 of 4 declared lanes
-(no ``pbert_transfer`` reference proteome) -- the ``proteinbert`` kNN transfer
-``gpr_4lane`` performs still runs against what pool is staged. Every default
-can be overridden with the matching flag; omit both and a stub is staged so
-planning still succeeds.
+REFERENCE DEFAULTS. All five staged references this stage needs have real
+pinned copies in this repo's DVC-tracked ``data/processed/`` and are used as
+defaults when not overridden: KOfam profiles + KO list, the UniRef50 DIAMOND db,
+the MNXR lookup bridge, and ``ref::reference_label_pool`` -- the ProteinBERT
+label stack the fourth lane votes against, built by ``compile/reference_label_pool.py``
+over Swiss-Prot. Every default can be overridden with the matching flag; omit
+both and a stub is staged so planning still succeeds.
 
 SEVERAL ORF SETS, ONE RUN. ``--orfs`` repeats. Every lane and the mapper are
 ``group_by=orfs`` with ``parents={orfs}`` pins, so N proteomes fan out INSIDE

@@ -49,9 +49,18 @@ A TIGHTER SIZE CAP WOULD HAVE BEEN THE WRONG FIX TWICE OVER: the reaction it app
 stall on carries 280 atoms while reactions at the worklist's 600 ceiling had already gone
 through, and the stall was not about the reaction at all.
 
-THE CACHE IS IN THE TASK WORK DIRECTORY, which on the cluster is node-local scratch and
-is discarded on retry. Its per-reaction resume therefore protects a run against nothing
-that actually happens on Sockeye; what protects this lane is the timeout and the shards.
+THE CACHE IS STAGED IN NOW, which is what it never was. It used to live only in the task
+work directory -- node-local scratch on the cluster, discarded on retry -- so its
+per-reaction resume protected a run against nothing that actually happens on Sockeye.
+`fabfos_data::aam_cache` is the same file handed in as a given, keyed on the SUBMISSION
+STRING rather than on the reaction id, because one MNXR now has up to four possible
+submissions and serving the wrong one is a map of a different molecule.
+
+THE GAP IS COMPUTED AT (reaction, element) GRAIN, and with one universe that stops being a
+nicety. When the three passes were separate, a reduced submission could only ever be
+compared against the other members of ITS OWN pass. In one pass a reaction whose carbon
+mapped would mark its own nitrogen reduction as covered, and this member would skip exactly
+the submission the forecast built for it.
 """
 from metasmith.python_api import *
 
@@ -60,16 +69,17 @@ model = Transform()
 
 image     = model.AddRequirement(lib.GetType("env::rdkit.env"))
 metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
-worklist  = model.AddRequirement(lib.GetType("interm::aam_worklist"))
+universe  = model.AddRequirement(lib.GetType("interm::aam_universe"))
+rescue    = model.AddRequirement(lib.GetType("interm::aam_rescue"))
+cache     = model.AddRequirement(lib.GetType("fabfos_data::aam_cache"))
 # THE GAP IS DEFINED BY THESE TWO, so they are requirements rather than an ordering
 # convention. The planner cannot schedule this lane before them, which is exactly the
-# constraint the role implies: a gap-filler that runs first fills the whole universe.
+# constraint the role implies: a gap-filler that runs first fills the whole universe --
+# and with one pass instead of three that ordering is the ONLY thing keeping this member
+# a gap-filler rather than a third redundant vote.
 m_indigo  = model.AddRequirement(lib.GetType("interm::aam_member_indigo"))
 m_rxn     = model.AddRequirement(lib.GetType("interm::aam_member_rxnmapper"))
-neural    = model.AddRequirement(lib.GetType("buildlib::aam_neural_members.py"))
-sharder   = model.AddRequirement(lib.GetType("buildlib::aam_shard.py"))
-extractor = model.AddRequirement(lib.GetType("buildlib::ecspr_atom_pairs.py"))
-evidence  = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib   = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 pairs     = model.AddProduct(lib.GetType("interm::aam_member_localmapper"))
 ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -103,13 +113,16 @@ RESOLVE = """
 
 def protocol(context: ExecutionContext):
     imnx = context.Input(metanetx)
-    iwl  = context.Input(worklist)
+    iun  = context.Input(universe)
+    irs  = context.Input(rescue)
+    ica  = context.Input(cache)
     iind = context.Input(m_indigo)
     irxn = context.Input(m_rxn)
-    ilib = context.Input(neural)
+    ilib = context.Input(bakelib)
     iout = context.Output(pairs)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
+    R = irs.container
 
     resolve = RESOLVE.format(metanetx=imnx.container, member=MEMBER)
     # HOME IS NOT WRITABLE IN THIS CONTAINER AND DGL DIES ON THAT. The agent execs with
@@ -131,8 +144,9 @@ def protocol(context: ExecutionContext):
 
         pids=""
         for i in $(seq 0 {SHARDS - 1}); do
-            {py} {libdir}/aam_neural_members.py --member {MEMBER} \
-                --worklist {iwl.container} \
+            {py} -m ecspr.bake.aam.neural_members --member {MEMBER} \
+                --universe {iun.container} \
+                --cache-dir {ica.container}/{MEMBER} \
                 --covered {iind.container} {irxn.container} \
                 --shard $i/{SHARDS} --timeout {TIMEOUT_S} \
                 --sidecar members/{MEMBER}_$i.attempted \
@@ -161,18 +175,24 @@ def protocol(context: ExecutionContext):
         for i in $(seq 0 {SHARDS - 1}); do
             shards="$shards members/{MEMBER}_$i.tsv"
         done
-        {py} {libdir}/aam_neural_members.py --member {MEMBER} \
+        {py} -m ecspr.bake.aam.neural_members --member {MEMBER} \
             --merge-from $shards \
             --out members/{MEMBER}.tsv
-        {py} {libdir}/ecspr_atom_pairs.py extract \
+        # ONE EXTRACTION OVER THREE SUBMISSION CLASSES -- see bake/rxnmapper.py for
+        # why the rescue's three tables ride along and why they are no-ops for a whole
+        # reaction.
+        {py} -m ecspr.bake.atom_pairs extract \
             --aam members/{MEMBER}.tsv --align strict --fallback-forced \
+            --universe {iun.container} \
+            --resolved {R}/crosswalk.tsv --placeholders {R}/placeholders.tsv \
+            --balance {R}/balance.tsv \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
             --out {iout.container} --out-status members/{MEMBER}_status.tsv
 
         # The per-shard caches, sidecars AND timeout logs are all evidence. The timeout
         # log is the only thing separating "LocalMapper declined" from "LocalMapper ran
         # out of budget", because unlike a hang a timeout writes a row.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool {MEMBER} \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool {MEMBER} \
             --file members/{MEMBER}.tsv members/{MEMBER}_*.tsv \
                    members/{MEMBER}_*.attempted members/{MEMBER}_*.timeouts \
                    members/{MEMBER}_status.tsv {iout.container}

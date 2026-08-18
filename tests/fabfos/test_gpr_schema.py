@@ -350,3 +350,75 @@ def test_the_channel_vocabulary_has_exactly_one_spelling():
         src = (MLIB / "transforms" / "fabfos" / f"{mapper}.py").read_text()
         for dead in ("dl_ec", "uniref50_dr", "pbert_transfer"):
             assert f'"{dead}"' not in src, f"{mapper} still spells a channel {dead!r}"
+
+    # Every re-emitter of a mapper table, too. These carry the lane forward into the
+    # benchmark schema, so a retired spelling here is a join that silently returns
+    # nothing against a table the mapper wrote. `pbert_transfer` is NOT checked for
+    # them: `lib::fabfos_embed_transfer.py` owns that name for a different
+    # measurement, and `fabfos_evidence.read_embed_transfer` reads it on purpose.
+    reemitters = {
+        "host_gpr_denovo": REPO_ROOT / "src" / "fabfos" / "build_references" / "transforms"
+                           / "benchmark" / "host_gpr_denovo.py",
+        "host_denovo_from_mapper": REPO_ROOT / "src" / "fabfos" / "build_references"
+                                   / "host_denovo_from_mapper.py",
+    }
+    for name, path in reemitters.items():
+        src = path.read_text()
+        for dead in ("dl_ec", "uniref50_dr", "clean_ec"):
+            assert f'"{dead}"' not in src, f"{name} still spells a channel {dead!r}"
+
+
+def test_the_schema_covers_every_gpr_table_in_the_tree():
+    """One schema, one validator, for hosts, clones, cohorts, runs and communities.
+
+    Four incompatible layouts existed here, and `validate_gpr` could check only one of
+    them -- so the tables that most needed a contract were the ones outside it. This
+    walks the actual tree and asserts the standing property: every GPR table carries the
+    core plus whole declared blocks, and one validator passes on it.
+
+    A table that needs converting on the way through is reported by name and fails.
+    `to_unified` exists for reading an old file, not for letting a PRODUCER keep writing
+    one: the layouts drifted apart in the first place because nothing said, at the point
+    a table was written, which schema it was supposed to be on.
+    """
+    import glob
+    import io
+    import contextlib
+
+    tables = sorted(set(
+        glob.glob(str(REPO_ROOT / "data/fabfos/runs/*/gpr/*.parquet"))
+        + glob.glob(str(REPO_ROOT / "data/fabfos/nostoc/annotation/*/gpr_4lane.parquet"))
+        + glob.glob(str(REPO_ROOT / "data/fabfos/benchmarks/hosts/*/gpr_gem.parquet"))
+        + glob.glob(str(REPO_ROOT / "data/fabfos/benchmarks/*/gpr_manual.parquet"))))
+    if not tables:
+        pytest.skip("the DVC-tracked GPR tables are not materialised here")
+
+    refused, legacy_layout, checked = [], [], 0
+    for f in tables:
+        df = pd.read_parquet(f)
+        # A GPR table is (nominator -> reaction, with a strength). The two epi300 union
+        # files are derived aggregates over one -- reaction sets with an origin, no
+        # score -- so the schema is not theirs to carry.
+        if not {"channel", "mnxr", "raw_score"} <= set(df.columns):
+            continue
+        ext = fe.extensions_of(df)
+        try:
+            if not fe.is_unified(df):
+                ext = ["attribution", "feature", "universe"]
+                if "condition_id" in df.columns:
+                    ext.append("cohort")
+                df = fe.to_unified(df, tuple(ext))
+                ext = tuple(ext)
+                legacy_layout.append(str(Path(f).relative_to(REPO_ROOT)))
+            with contextlib.redirect_stdout(io.StringIO()):
+                fe.validate_gpr(df, df["lane_set"].iat[0], None, df["source"].iat[0],
+                                ext)
+            checked += 1
+        except SystemExit as e:
+            refused.append(f"{Path(f).relative_to(REPO_ROOT)}: {e}")
+
+    assert checked, "the walk found no GPR table at all"
+    assert not refused, "tables outside the schema:\n" + "\n".join(refused)
+    assert not legacy_layout, (
+        "these tables are on a pre-schema layout -- whatever wrote them is still "
+        "building the old columns by hand:\n" + "\n".join(legacy_layout))

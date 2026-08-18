@@ -15,8 +15,9 @@ tier rule rather than an oversight.
 Our copy of the tree is *patched* — the DL-only fork: no MMseqs2 homolog
 augmentation, no Foldseek template fusion, a `--dl-only` flag on `predict.py`. A
 patched tree is not what any URL returns, so it cannot sit in `originals/`, whose
-whole contract is fidelity to the source. And it is a 77 MB directory, which does
-not fit `buildlib::`'s flat one-module-per-file shape.
+whole contract is fidelity to the source. And it is a directory, which at the time
+did not fit `buildlib::`'s flat one-module-per-file shape — that half has since
+been overtaken; see the second candidate below.
 
 The two candidate resolutions, neither taken:
 
@@ -28,6 +29,10 @@ The two candidate resolutions, neither taken:
 - **declare a directory-typed `buildlib::` resource** and vendor the patched tree.
   Simpler, but puts 77 MB of third-party source in this repo and makes "which
   upstream revision is this" a claim in a README rather than a fact in the graph.
+  The mechanism half of this objection is now settled: `buildlib::ecspr` is a
+  directory-typed entry whose `instance_id` is the tree digest, so a vendored tree
+  IS content-addressed in the graph. What remains is the third-party-source-in-repo
+  half, which is the real question here.
 
 Until one is chosen, `ref::ezpred_model` has no producer in the graph.
 

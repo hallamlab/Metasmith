@@ -40,8 +40,13 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(REPO / "build_references" / "resources" / "buildlib"))
+# `src/fabfos/`, not the repo root: the monorepo nested the package one level
+# deeper than the standalone fabfos repo this driver was written in, and the path
+# it kept pointing at does not exist -- so this import has not resolved since.
+sys.path.insert(0, str(REPO / "src" / "fabfos" / "build_references" / "resources" / "buildlib"))
 import bench_universe as bu                                            # noqa: E402
+sys.path.insert(0, str(REPO / "src" / "metasmith_libraries" / "resources" / "lib"))
+import fabfos_evidence as fe                                           # noqa: E402
 
 MAPPER = REPO / "data/scratch/clone_gpr_sockeye/results/annotation-gpr_table"
 BAKE = REPO / "data/fabfos/processed/metabolism_bake"
@@ -52,14 +57,9 @@ OUT = REPO / "data/fabfos/runs/eydallin_clones/gpr"
 HOST = "e_coli_ag1"
 COHORT = "eydallin"
 SOURCE_ORGANISM = "e_coli_w3110"
-PREFIX = "denovo"
-
-GPR_COLS = (
-    "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
-    "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
-    "projection_via", "in_atom_universe", "gpr_rule",
-    "condition_id", "cohort", "action", "source_organism",
-)
+LANE_SET = "chosen_4"
+# A cohort table is the host layer's blocks plus the condition each row belongs to.
+EXTENSIONS = ("attribution", "feature", "universe", "cohort")
 
 
 def main() -> int:
@@ -95,53 +95,47 @@ def main() -> int:
                          f"of this cohort: {unknown[:8]} -- the table was built from a "
                          f"different ORF set")
 
-    df = pd.DataFrame({
-        "build_id": f"denovo_{COHORT}_" + "+".join(lanes),
-        "host": HOST,
-        # Not a model: this table's claim is "the lanes infer these reactions from the
-        # clone's sequence", and naming a GEM here would imply one was consulted.
-        "unit_id": "clones",
-        "feature_id": g["orf"],
-        "feature_kind": "clone_gene",
-        "feature_name": g["intermediate_name"],
-        "mnxr": g["mnxr"],
-        "channel": PREFIX + "_" + g["channel"].astype(str),
-        "evidence_id": g["intermediate_id"],
-        "evidence_name": g["intermediate_name"],
-        # Carried through, unlike the GEM table's uniform 1.0: here the score IS evidence
-        # strength.
-        "raw_score": g["raw_score"].astype(np.float32),
-        "projection_via": g["projection_via"],
-        "in_atom_universe": g["mnxr"].isin(universe),
-        # No boolean rule: a de-novo call is per ORF, and inventing a one-gene rule would
-        # make the two tables look like the same kind of claim.
-        "gpr_rule": None,
-        "condition_id": COHORT + ":" + g["orf"].astype(str),
-        "cohort": COHORT,
-        "action": "add",
-        "source_organism": SOURCE_ORGANISM,
-    })[list(GPR_COLS)]
-    df = df.sort_values(["condition_id", "channel", "mnxr"],
+    # The mapper's own columns ARE the core; this step adds attribution and the
+    # condition each row belongs to, and nothing else.
+    df = g.copy()
+    df["build_id"] = f"denovo_{COHORT}_" + "+".join(lanes)
+    df["host"] = HOST
+    # Not a model: this table's claim is "the lanes infer these reactions from the
+    # clone's sequence", and naming a GEM here would imply one was consulted.
+    df["unit_id"] = "clones"
+    df["feature_kind"] = "clone_gene"
+    df["feature_name"] = df["intermediate_name"]
+    # No boolean rule: a de-novo call is per ORF, and inventing a one-gene rule would
+    # make the two tables look like the same kind of claim.
+    df["gpr_rule"] = None
+    df["in_atom_universe"] = df["mnxr"].isin(universe)
+    df["condition_id"] = COHORT + ":" + df["orf"].astype(str)
+    df["cohort"] = COHORT
+    df["action"] = "add"
+    df["source_organism"] = SOURCE_ORGANISM
+    df = df[fe.schema_for(EXTENSIONS)]
+    df = df.sort_values(fe.grain_key(EXTENSIONS),
                         kind="mergesort").reset_index(drop=True)
+    fe.validate_gpr(df, LANE_SET, None, df["source"].iat[0], EXTENSIONS)
 
     out_dir = OUT if a.publish else (HERE / "out")
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out_dir / "gpr_denovo.parquet", index=False, compression="zstd")
     (out_dir / "BUILD_denovo.json").write_text(json.dumps(dict(
         lane_set=lane_set, lanes=lanes, universe=stats, host=HOST, cohort=COHORT,
-        rows=len(df), clones=int(df["feature_id"].nunique()),
+        rows=len(df), clones=int(df["orf"].nunique()),
         mnxr=int(df["mnxr"].nunique()),
-        clones_in_universe=int(df[df["in_atom_universe"]]["feature_id"].nunique()),
+        clones_in_universe=int(df[df["in_atom_universe"]]["orf"].nunique()),
         mnxr_in_universe=int(df[df["in_atom_universe"]]["mnxr"].nunique()),
     ), indent=2))
 
     in_uni = df[df["in_atom_universe"]]
-    print(f"\n{len(df):,} rows over {df['feature_id'].nunique()} clones, "
+    print(f"\n{len(df):,} rows over {df['orf'].nunique()} clones, "
           f"{df['mnxr'].nunique():,} distinct MNXR")
-    print(f"    inside the atom universe: {in_uni['feature_id'].nunique()} clones, "
+    print(f"    inside the atom universe: {in_uni['orf'].nunique()} clones, "
           f"{in_uni['mnxr'].nunique():,} MNXR")
     per_lane = (df.groupby("channel")
-                  .agg(rows=("mnxr", "size"), clones=("feature_id", "nunique"),
+                  .agg(rows=("mnxr", "size"), clones=("orf", "nunique"),
                        mnxr=("mnxr", "nunique")))
     print(per_lane.to_string())
     print(f"\n-> {out_dir}/gpr_denovo.parquet")

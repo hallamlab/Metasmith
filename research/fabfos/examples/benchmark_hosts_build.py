@@ -88,7 +88,7 @@ STAGED = {
 # The producers of the staged types, asserted ABSENT from the plan by name. Loading
 # `bake/` would let the planner decide to rebuild R6 as a side effect of asking for a
 # host GPR table -- a 40-hour graph reached by a tiebreak.
-FORBIDDEN = ("aam_ensemble", "direction_ensemble", "mnx_lookups", "genomes", "metanetx")
+FORBIDDEN = ("aam_reference", "direction_bake", "mnx_lookups", "genomes", "metanetx")
 
 
 def plan(work: Path, *, hosts_only: bool = False):

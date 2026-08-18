@@ -8,7 +8,7 @@ manifest:
     origin: leaf
     type: transforms::transform
   mnx_lookups.py:
-    instance_id: 1e20bead9c1352acdbf0d98084b86df4eea70fda80c9e451fe04a2794fa8cad490f8
+    instance_id: 1e2024c112cdb85eeca6974bb960c36e149bc6eb36437462be8c115d11d2f74e76c5
     origin: leaf
     type: transforms::transform
   mnxr_lookup.py:

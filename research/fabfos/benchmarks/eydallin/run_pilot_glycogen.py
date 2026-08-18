@@ -50,9 +50,9 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ecspr.build import load_pairs, load_direction_ratios, graph_from_pairs  # noqa: E402
-from ecspr.graph import Terminal, measure_leak, solve                        # noqa: E402
-from ecspr.directed import _HAVE_CHOLMOD                                     # noqa: E402
+from ecspr.model.build import load_pairs, load_direction_ratios, graph_from_pairs  # noqa: E402
+from ecspr.model.graph import Terminal, measure_leak, solve                        # noqa: E402
+from ecspr.model.directed import _HAVE_CHOLMOD                                     # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bake_pairs                                                             # noqa: E402
@@ -200,7 +200,7 @@ def main():
         gene=args.gene, gene_reactions=rxns, fold=args.fold,
         element=args.element, leak=args.leak, ground="universal",
         source=SOURCE_NAME, source_mnxm=src_mnxm,
-        reference_basis="metabolism_bake atom pairs + direction (not the deployed canon)",
+        reference_basis="metabolism_bake atom pairs + direction",
         cholmod_available=_HAVE_CHOLMOD,
         base=dict(total=r_base["total"], converged=r_base["converged"],
                   n_metabolites=r_base["n_metabolites"],

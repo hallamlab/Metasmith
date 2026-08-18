@@ -45,8 +45,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from ecspr import conditions as cond_mod
-from ecspr import probes
+from ecspr.model import conditions as cond_mod
+from ecspr.model import probes
 
 # One deeper than it used to be: the driver moved into pilot/ alongside the
 # vs_gem harness, and the monorepo migration nested the whole tree under

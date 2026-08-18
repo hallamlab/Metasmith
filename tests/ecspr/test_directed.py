@@ -10,7 +10,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from ecspr.directed import _directed_ceff_dense, build_incidence, directed_ceff
+from ecspr.model.directed import _directed_ceff_dense, build_incidence, directed_ceff
 
 from conftest import SELFTEST_TOL, reff_dense
 

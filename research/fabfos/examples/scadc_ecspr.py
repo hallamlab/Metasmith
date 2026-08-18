@@ -24,9 +24,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ecspr.build import load_pairs, load_direction_ratios, graph_from_pairs
-from ecspr.evidence import per_unit_weights
-from ecspr.graph import Terminal, solve
+from ecspr.model.build import load_pairs, load_direction_ratios, graph_from_pairs
+from ecspr.model.evidence import per_unit_weights
+from ecspr.model.graph import Terminal, solve
 
 ROOT = Path(__file__).resolve().parents[3]
 

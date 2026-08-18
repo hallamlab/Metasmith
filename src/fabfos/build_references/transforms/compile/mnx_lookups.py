@@ -30,6 +30,10 @@ metacyc    = model.AddRequirement(lib.GetType("fabfos_data::metacyc"))
 chebi      = model.AddRequirement(lib.GetType("fabfos_data::chebi"))
 modelseed  = model.AddRequirement(lib.GetType("fabfos_data::modelseed"))
 builder    = model.AddRequirement(lib.GetType("buildlib::mnx_lookups.py"))
+# For ONE import: `atom_pairs.count_element`, the tree's single formula counter. This
+# step's own argument is that a derivation five consumers make for themselves drifts,
+# and it used to carry a private copy of exactly such a derivation.
+bakelib    = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 reactions   = model.AddProduct(lib.GetType("lookup::reactions"))
 metabolites = model.AddProduct(lib.GetType("lookup::metabolites"))
@@ -49,7 +53,12 @@ def protocol(context: ExecutionContext):
     ich  = context.Input(chebi)
     ims  = context.Input(modelseed)
     ilib = context.Input(builder)
+    iecs = context.Input(bakelib)
+    # TWO directories, not one. Staging is content-addressed, so a library's items are
+    # NOT siblings on the executing node -- `mnx_lookups.py` and `ecspr/` each land under
+    # their own hash. Both go on PYTHONPATH; only the first is where the script is.
     libdir = ilib.container.parent
+    ecsdir = iecs.container.parent
 
     outs = {
         "reactions": context.Output(reactions),
@@ -96,7 +105,7 @@ def protocol(context: ExecutionContext):
         echo "[lookups] metanetx $(basename $MNX) · metacyc $(basename $MCREL)"
 
         mkdir -p _lookups
-        PYTHONPATH={libdir} python3 {libdir}/mnx_lookups.py build \
+        PYTHONPATH={ecsdir}:{libdir} python3 {libdir}/mnx_lookups.py build \
             --reac-prop $MNX/reac_prop.tsv \
             --chem-prop $MNX/chem_prop.tsv \
             --reac-xref $MNX/reac_xref.tsv \
@@ -106,7 +115,7 @@ def protocol(context: ExecutionContext):
             --metacyc-data $MC \
             --outdir _lookups
 
-        PYTHONPATH={libdir} python3 {libdir}/mnx_lookups.py check --outdir _lookups
+        PYTHONPATH={ecsdir}:{libdir} python3 {libdir}/mnx_lookups.py check --outdir _lookups
     """
     for name, o in outs.items():
         _cmd += f"\n        mv _lookups/{name}.parquet {o.container}"
@@ -130,6 +139,13 @@ TransformInstance(
     protocol=protocol,
     model=model,
     group_by=image,
-    labels=["local"],
+    # NOT labels=["local"]. That label is right for `acquire/` -- a download needs the
+    # login node's network -- and copying it here is what pinned every compile to the
+    # login node under the slurm preset: `xlocalx` sets `executor = 'local'`, whose pool
+    # slurm.nf declares as 8 cores / 8 GB, and Nextflow's local executor REFUSES a
+    # process asking for more rather than queueing it. It also sets
+    # errorStrategy='ignore' with no retry, so the refusal is silent and the workflow
+    # goes green with all five tables absent. This step reads four staged TSVs and
+    # allocates 32 GB doing it; it belongs on a compute node.
     resources=Resources(cpus=4, memory=Size.GB(32), duration=Duration(hours=3)),
 )

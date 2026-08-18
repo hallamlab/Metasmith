@@ -21,6 +21,11 @@ types:
       arity: 1
       database: assemblies
       ext: txt
+  genome_name:
+    properties:
+      Data: name for a genome, chosen by whoever asked for it
+      arity: 1
+      ext: txt
   sra_accession:
     properties:
       Data: NCBI accession

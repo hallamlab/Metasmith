@@ -21,7 +21,7 @@ HERE = Path(os.path.realpath(__file__)).parent
 PKG = HERE.parent.parent / "src" / "ecspr"
 sys.path.insert(0, str(PKG.parent))
 
-from ecspr import NAME, SHORT_SUMMARY, USER, ENTRY_POINTS, VERSION, BUILD_HASH  # noqa: E402
+from ecspr.model import NAME, SHORT_SUMMARY, USER, ENTRY_POINTS, VERSION, BUILD_HASH  # noqa: E402
 
 # The conda package's VERSION is the bare release segment -- metasmith does the
 # same, and a `+local` there would be a version nobody can type into a spec. The

@@ -48,10 +48,10 @@ it, and `./dev.sh -e --where` says which package it imported.
   exactly this reason.
 - **Dropping a deletion by `mnxr`.** The ΔrfaY-complemented strain deletes the
   chromosomal copy and carries a plasmid one. A drop keyed on the reaction removes
-  both; the drop is keyed on `evidence_id`, which separates the host's row from the
-  clone's. Both deleted genes are sole-gene reactions in iML1515, so it is exact.
-- **A clone missing from the null pool.** `ecspr draw` samples the pool's
-  `feature_id` values, so a clone whose ORF resolves to no reaction must still get
+  both; the drop is keyed on `intermediate_id`, which separates the host's row from
+  the clone's. Both deleted genes are sole-gene reactions in iML1515, so it is exact.
+- **A clone missing from the null pool.** `ecspr draw` samples the pool's `orf`
+  values, so a clone whose ORF resolves to no reaction must still get
   a row with a null `mnxr`. Without it the null is made only of clones the model
   can see, which is a null for a different question.
 
@@ -66,7 +66,7 @@ and was true of seven eighths of the tree.
 Rebuilding the seven was deliberately not done here — until moving `eydallin` onto
 its real host forced a tier rebuild, which is all-or-nothing. That run put every
 study on v2 and made the record true. **What moved is only the universe flags**: the
-edges are identical study for study — same `(condition_id, feature_id, mnxr, action)`
+edges are identical study for study — same `(condition_id, orf, mnxr, action)`
 multiset in every one — while `in_atom_universe` flipped on 34 of keio's 230 rows,
 488 of laser's 3,257 and 2 of aromatic's 7. A number in a committed report that was
 read off a v1 `in_atom_universe` is therefore stale; one read off an edge set is not.

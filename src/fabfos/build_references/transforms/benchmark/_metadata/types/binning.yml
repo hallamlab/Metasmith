@@ -16,6 +16,9 @@ types:
       _:
       - contig to bin assignment table
       ext: tsv
+  derep_mag_ref:
+    properties:
+    - dereplicated representative-MAG reference dir (mag_ref.fna + mag_ref.stb + mag_ref.mmi)
   metabat2_contig_to_bin_table:
     properties:
       _:

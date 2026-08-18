@@ -1,0 +1,6 @@
+outs:
+- md5: 6e10e09eeb650f1edbea1901f36b53d1.dir
+  size: 1170468
+  nfiles: 5
+  hash: md5
+  path: gpr

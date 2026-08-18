@@ -113,9 +113,9 @@ def main():
     resp = pd.read_csv(RESPONSE, sep="\t", dtype=str, keep_default_na=False)
     resp["ffa"] = resp["ffa_mg_L"].astype(float)
     lookup = gene_to_bnumber(GENOME)
-    gem = pd.read_parquet(HOST_GEM, columns=["feature_id", "mnxr"])
+    gem = pd.read_parquet(HOST_GEM, columns=["orf", "mnxr"])
     rxns = defaultdict(list)
-    for tag, grp in gem.groupby("feature_id"):
+    for tag, grp in gem.groupby("orf"):
         rxns[tag] = sorted(set(grp["mnxr"]))
 
     # Every panel's control titer, so a strain's fold change is against the bar

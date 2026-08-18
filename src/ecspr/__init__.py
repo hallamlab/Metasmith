@@ -2,31 +2,40 @@
 
 WHAT THIS PACKAGE IS
 --------------------
-A GPR table in; a measurement out. Nothing here edits a network, resolves a
-metabolite name, or knows what a perturbation is: a condition is a MASK over the
-rows of a GPR table, and the difference between two conditions is a subtraction
-the caller does over the results. That is the whole contract, and it is what lets
-the deployed pipeline and a benchmark script run the identical command.
+A GPR table in; a measurement out. Nothing in :mod:`ecspr.model` edits a network,
+resolves a metabolite name, or knows what a perturbation is: a condition is a
+MASK over the rows of a GPR table, and the difference between two conditions is a
+subtraction the caller does over the results. That is the whole contract, and it
+is what lets the deployed pipeline and a benchmark script run the identical
+command.
 
-TWO LAYERS
-----------
+:mod:`ecspr.bake` is the other half and runs at a different time and in different
+containers: it turns the MNXref universe into the atom pairs and direction ratios
+the model layer reads. **The two never import each other at module scope.** They
+are installed into images with disjoint dependency stacks -- the bake images carry
+rdkit or a torch stack, the measurement env carries scipy and cobra -- so an
+import across the seam does not degrade, it fails at load.
+
+TWO LAYERS, IN :mod:`ecspr.model`
+---------------------------------
 The **engine** measures one network:
 
-  :mod:`ecspr.directed`  the rectified-diode Newton solve and its CHOLMOD binding
-  :mod:`ecspr.graph`     the atom network, its terminals, the solve, and the
-                         universal-leakage ground
-  :mod:`ecspr.build`     atom pairs x per-reaction weights x direction ratios ->
-                         a network; plus the GEM and GPR builders
+  :mod:`~ecspr.model.directed`   the rectified-diode Newton solve and its CHOLMOD
+                                 binding
+  :mod:`~ecspr.model.graph`      the atom network, its terminals, the solve, and
+                                 the universal-leakage ground
+  :mod:`~ecspr.model.build`      atom pairs x per-reaction weights x direction
+                                 ratios -> a network; plus the GEM and GPR builders
 
 The **experiment layer** runs the engine over a set of conditions:
 
-  :mod:`ecspr.evidence`   belief-conservation weights: GPR rows -> ``{mnxr: E}``
-  :mod:`ecspr.gpr`        the mask: which rows a condition selects, and what
-                          conductance they aggregate to
-  :mod:`ecspr.conditions` the conditions table -- terminals plus a mask, per row
-  :mod:`ecspr.probes`     both probes, over one condition or over a table
-  :mod:`ecspr.nulls`      draw a null pool, emitted AS a conditions table
-  :mod:`ecspr.scoring`    delta, z, percentile rank against that pool
+  :mod:`~ecspr.model.evidence`   belief-conservation weights: GPR rows -> ``{mnxr: E}``
+  :mod:`~ecspr.model.gpr`        the mask: which rows a condition selects, and what
+                                 conductance they aggregate to
+  :mod:`~ecspr.model.conditions` the conditions table -- terminals plus a mask, per row
+  :mod:`~ecspr.model.probes`     both probes, over one condition or over a table
+  :mod:`~ecspr.model.nulls`      draw a null pool, emitted AS a conditions table
+  :mod:`~ecspr.model.scoring`    delta, z, percentile rank against that pool
 
 :mod:`ecspr.cli` is the command line over the experiment layer -- four verbs,
 ``two-point`` / ``ground`` / ``draw`` / ``score`` -- and is the only interface the

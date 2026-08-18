@@ -26,6 +26,7 @@ sys.path.insert(0, str(LIB))
 sys.path.insert(0, str(REPO / "research" / "fabfos" / "examples" / "fir"))
 
 import pandas as pd                                                  # noqa: E402
+import pytest                                                        # noqa: E402
 
 import fabfos_evidence as fe                                         # noqa: E402
 import split_by_assembly as sp                                       # noqa: E402
@@ -200,24 +201,24 @@ def test_an_assembly_with_no_evidence_still_delivers(tmp_path):
     assert "QUIET" in (gpr / "split" / "no_evidence.tsv").read_text()
 
 
-def test_a_large_assembly_missing_a_channel_is_refused(tmp_path):
-    """The relaxation must NOT extend to an assembly big enough to know better.
+@pytest.mark.parametrize("n_orfs", [1, 12])
+def test_an_assembly_missing_a_channel_is_refused(tmp_path, n_orfs):
+    """A short lane set is a failure at every size.
 
     A header-only legacy kofam file for one sample is invisible to every
     shard-level check -- the shard's other ~34 members keep its own kofam count
-    non-zero -- so without a size bound the delivered table claims four lanes in
-    its `lane_set` column and carries three.
+    non-zero -- so nothing but this refusal stands between it and a delivered
+    table whose `lane_set` column claims four lanes it does not have. Size does
+    not enter into it: belief mass is split by each ORF's observed channel
+    count, so a one-ORF table short a lane is the same wrong denominator as a
+    hundred-thousand-ORF one.
     """
-    layout = {"shard_0000": {"BIGSAMP": [f"o{i}" for i in range(12)]}}
+    layout = {"shard_0000": {"SAMP": [f"o{i}" for i in range(n_orfs)]}}
     gpr, results, _ = _corpus(tmp_path, layout,
                               channels={"clean", "uniref50", "pbert"})
     assert sp.partition(gpr, [results]) == 0
-    sp.RELAX_MAX_ORFS = 5          # 12 ORFs is "large" for this fixture
-    try:
-        _expect_refusal(lambda: sp.compact(gpr), "lost evidence, not",
-                        "a large assembly missing a whole channel was delivered")
-    finally:
-        sp.RELAX_MAX_ORFS = 1000
+    _expect_refusal(lambda: sp.compact(gpr), "contributed 0 rows",
+                    "an assembly missing a whole channel was delivered")
 
 
 def test_the_row_ledger_catches_a_dropped_table(tmp_path):
@@ -234,44 +235,45 @@ def test_the_row_ledger_catches_a_dropped_table(tmp_path):
                     "a table that lost rows passed the delivery gate")
 
 
-def test_a_tiny_assembly_missing_a_channel_still_delivers(tmp_path):
-    """One ORF with no KOfam hit is biology, not a broken join.
+def test_one_short_assembly_refuses_the_whole_delivery(tmp_path):
+    """A healthy corpus does not launder one short table through.
 
-    `validate_gpr` refuses a table missing any of the four channels, which is
-    right for a 100,000-ORF shard and would block delivery for the smallest
-    assemblies in the corpus (the per-sample minimum is 1 ORF). The relaxation
-    must be scoped to the sample -- and `finish` must still refuse a channel
-    that is empty corpus-wide.
+    The busy shard keeps every channel's corpus-wide count non-zero, so the
+    delivery-level check at the end cannot see TINY at all. The per-sample
+    refusal is what catches it, and it must fire even when everything around it
+    is well-formed.
     """
     layout = {
         "shard_0000": {"TINY": ["o1"]},
         "shard_0001": {"BIG": ["o1", "o2"]},
     }
     gpr, results, _ = _corpus(tmp_path, layout)
-    # TINY gets three lanes; BIG keeps all four, so no channel is empty overall.
     _shard_table(results / "shard_0000.parquet", "shard_0000",
                  {"TINY": ["o1"]}, channels={"clean", "uniref50", "pbert"})
-    _run(gpr, results)
-
-    df = pd.read_parquet(gpr / "split" / "tables" / "TINY.gpr.parquet")
-    assert set(df["channel"]) == {"clean", "uniref50", "pbert"}
-    assert fe.LANE_SETS["chosen_4"] == ("kofam", "clean", "uniref50", "pbert"), \
-        "the per-sample relaxation leaked into the module constant"
-
-
-def test_a_channel_empty_corpus_wide_is_refused(tmp_path):
-    """The check the per-sample relaxation is standing in for."""
-    layout = {"shard_0000": {"SAMP_A": ["o1"]}, "shard_0001": {"SAMP_B": ["o1"]}}
-    gpr, results, _ = _corpus(tmp_path, layout,
-                              channels={"clean", "uniref50", "pbert"})
     assert sp.partition(gpr, [results]) == 0
-    assert sp.compact(gpr) == 0
-    try:
-        sp.finish(gpr)
-    except SystemExit as e:
-        assert "zero rows across all" in str(e), str(e)
-    else:
-        raise AssertionError("a corpus-wide empty channel was delivered")
+    _expect_refusal(lambda: sp.compact(gpr), "contributed 0 rows",
+                    "a short table rode along beside a well-formed one")
+    assert fe.LANE_SETS["chosen_4"] == ("kofam", "clean", "uniref50", "pbert"), \
+        "the declared lane set is not the module's to rewrite"
+
+
+def test_a_corpus_with_no_evidence_at_all_is_refused(tmp_path):
+    """Once every delivered table must carry four channels, the only way a
+    channel can be empty corpus-wide is for nothing to have been annotated at
+    all -- and that is caught at discovery, not at delivery.
+
+    A zero-row shard table is indistinguishable on disk from a lane that never
+    ran, so `partition` refuses before any table is written. Reaching for the
+    corpus-wide count in `finish` would be reaching one phase too late.
+    """
+    layout = {"shard_0000": {"SAMP_A": ["o1"]}, "shard_0001": {"SAMP_B": ["o1"]}}
+    gpr, results, _ = _corpus(tmp_path, layout)
+    for shard in ("shard_0000", "shard_0001"):
+        pd.DataFrame(columns=fe.SCHEMA_COLS).to_parquet(
+            results / f"{shard}.parquet", index=False)
+    _expect_refusal(lambda: sp.partition(gpr, [results]),
+                    "no gpr_table parquet found",
+                    "a corpus with no evidence at all was partitioned")
 
 
 def test_a_shard_collected_twice_is_refused(tmp_path):

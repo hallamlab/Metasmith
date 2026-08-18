@@ -1,0 +1,7 @@
+population	n_reactions	forced_reaction_elements	reduced_submissions	partial_reaction_elements	forced_pair_rows	over_atom_cap	over_char_cap	no_balanced_reduction
+size-refused (exact)	78	23	3	26	80	88	6	192
+mappable, SMILES >= 1600 chars (proxy)	94	5	60	65	93	10	0	301
+mappable, SMILES >= 1200 chars (proxy)	366	56	450	506	621	12	0	946
+mappable, SMILES >= 900 chars (proxy)	1254	332	1617	1949	12567	352	9	2706
+mappable, SMILES >= 600 chars (proxy)	4586	1892	6164	8056	306490	614	13	9661
+mappable, SMILES >= 400 chars (proxy)	13049	8746	17142	25888	685805	695	26	25587

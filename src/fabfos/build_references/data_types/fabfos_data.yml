@@ -198,6 +198,38 @@ types:
         record is a Hallam Lab sequencing result, so there is no upstream URL and
         no transform can produce it.
 
+  # The two below are givens for the same MECHANICAL reason as the drop-ins -- staged,
+  # never produced, no transform -- while living beside the bake they came from rather
+  # than under data/originals/. They are not upstream distributions; they are a previous
+  # run's own records. A run cannot produce the logs it reads: the producer is the
+  # PREVIOUS route, which writes them with `ecspr.bake.aam.runlogs` where it ends.
+  prior_bake_logs:
+    extends: [given]
+    properties:
+      _: >-
+        A previous metabolism bake's per-reaction records -- `indigo_status.tsv`,
+        `indigo_unreturned.tsv`, `attempted/`, and the two derived neural status tables.
+        THE EMPIRICAL HALF OF `aam_forecast`: which reaction Indigo hangs on is not a
+        function of the string and does not need to be, because the last run wrote it
+        down. Coverage may be PARTIAL -- a run that dies leaves nothing about the
+        reactions past where it died -- so a reaction absent from every table was never
+        asked, and the forecast reports that denominator rather than reading absence as
+        success.
+
+  aam_cache:
+    extends: [given]
+    properties:
+      _: >-
+        The mapper members' durable cache, one directory per member holding `cache.tsv`
+        and the attempted-ids sidecars. STAGED EMPTY ON A FIRST RUN and that is the
+        ordinary state: it has no producer, because the thing that writes it is the same
+        lane that reads it. It exists because the in-task cache lives in node-local
+        scratch and is discarded on retry, so a lane OOM-killed two thirds of the way
+        through lost all of it. A cached row is reused only when the SUBMISSION STRING it
+        was produced from is the one this run would send -- a reaction has one id and up
+        to four strings, and serving the wrong one is not staleness but a map of a
+        different molecule filed under this one's name.
+
   # -- benchmark studies -----------------------------------------------------
   # One type per STUDY, on the same one-type-per-source-folder rule as the sources
   # above and for the same reason: a study is where a mirror goes down, a licence
