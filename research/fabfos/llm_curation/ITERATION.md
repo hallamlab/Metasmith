@@ -95,3 +95,29 @@ Two orientations of 83,795 reactions buys a four-figure number of tie-breaks at 
 the existing tiers already beat. The indirect path is the one worth taking: a simplified
 balanced equation with real structures is what dGbyG and eQuilibrator need, and those
 members are calibrated against measurement in a way this is not.
+
+## What the lane is worth, measured through the existing machinery
+
+The crosswalk harvested from r2's dev run was merged into the deployed one and
+`curation.py complete` was run both ways. A metabolite the eleven existing lanes already
+settled keeps their row — they outrank `llm` in `LANE_PRIORITY` — so only the 52 genuinely
+new metabolites of the 83 proposed can move anything.
+
+| | eleven lanes | with the LLM lane | delta |
+|---|---:|---:|---:|
+| RESCUED | 12,472 | 12,555 | **+83** |
+| a generic with no admissible placeholder | 9,146 | 9,041 | -105 |
+| REFUSED: curated bodies do not cancel | 1,625 | 1,637 | +12 |
+
+**+83 reactions rescued from a 400-reaction sample**, which is 3.2% of the residual. The
+gain is larger than the sample because a crosswalk row is global: fixing one metabolite
+helps every reaction that contains it.
+
+The twelve extra refusals are the honest cost and they are cheap. A curated body that does
+not cancel is caught and dropped, not shipped — the same recount that makes the lane's
+precision 100% by construction.
+
+Scaling is closer to linear than saturating here, because the blocker tail is flat: 11,050
+distinct blockers across 12,417 residual reactions, with the top 100 covering only 20%.
+That argues the full residual is worth running, and it argues against expecting a shortcut
+from the common cases.
