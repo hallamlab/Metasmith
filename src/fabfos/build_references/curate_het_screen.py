@@ -317,9 +317,9 @@ def native_labels() -> dict:
     """
     import pandas as pd
     gem = pd.read_parquet(BENCH / "hosts" / "e_coli_k12" / "gpr_gem.parquet",
-                          columns=["feature_id", "feature_name"])
+                          columns=["orf", "feature_name"])
     have = {str(x).strip().lower()
-            for col in ("feature_id", "feature_name") for x in gem[col] if str(x).strip()}
+            for col in ("orf", "feature_name") for x in gem[col] if str(x).strip()}
 
     out: dict = {}
     def add(name, obs):

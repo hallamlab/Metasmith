@@ -82,13 +82,13 @@ def main() -> int:
     d = pd.read_parquet(a.src)
     symbols = {sym for sym, kind in MARKERS.values() if sym and kind == "loss"}
     found = proteins_for(DH1, symbols)
-    print(f"{a.src.name}: {len(d):,} rows, {d['feature_id'].nunique():,} ORFs")
+    print(f"{a.src.name}: {len(d):,} rows, {d['orf'].nunique():,} ORFs")
     for sym in sorted(symbols):
         print(f"    {sym:<5} -> {found[sym] or 'no record in the proteome'}")
 
     withheld = {o for ids in found.values() for o in ids}
-    keep = d[~d["feature_id"].isin(withheld)].copy()
-    lost = d[d["feature_id"].isin(withheld)]
+    keep = d[~d["orf"].isin(withheld)].copy()
+    lost = d[d["orf"].isin(withheld)]
     keep["host"] = AG1
     keep["build_id"] = keep["build_id"].astype(str) + f"_{AG1}"
 

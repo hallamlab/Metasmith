@@ -18,11 +18,11 @@ Composition is not needed. `nostoc_ecspr.py` stages the singleton through
 blocks bridges, so the composed graph and this bare bake slice measure identically —
 checked, not assumed.
 
-THE GPR IS IN THE COMMUNITY SCHEMA AND THE LOADER READS THE STUDY-TIER ONE. `gpr_4lane`
-names its unit `orf` and its evidence `intermediate_id`; `ecspr.model.gpr` reads
-`unit_id` / `feature_id` / `evidence_id`. The shim below is the only mapping under which
-belief conservation means what `compose.py` asserts it means (`sum(E_full) == n_orfs`);
-the alternatives are off by a factor, not by a rounding. It reproduces the r6 reading's
+THE ORF IS ALSO THE UNIT. `gpr_4lane` writes the schema's bare core, which carries no
+`attribution` block, so nothing in it names the background a row belongs to; the shim
+below supplies `unit_id` from `orf`. That is the only mapping under which belief
+conservation means what `compose.py` asserts it means (`sum(E_full) == n_orfs`); the
+alternatives are off by a factor, not by a rounding. It reproduces the r6 reading's
 network exactly — 7,978 reactions used against 5,149 in the AAM gap, 31 endpoints, the
 same four N2<->NH4 reactions, and the deployed bake abstaining on a missing source — and
 lands 0.16% high on the conductance scalar, which is unexplained and does not move any
@@ -78,8 +78,7 @@ def decoded(chunk: str):
 
 def nostoc_gpr() -> pd.DataFrame:
     g = pd.read_parquet(GPR)
-    return g.assign(unit_id=g.orf, feature_id=g.orf, feature_name=g.orf,
-                    evidence_id=g.intermediate_id)
+    return g.assign(unit_id=g.orf)
 
 
 def run(chunk: str) -> dict:

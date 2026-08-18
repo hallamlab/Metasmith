@@ -351,12 +351,12 @@ def main():
     gmid, glen = gbk_genes(args.gbk)
     gene_angle = {g: TAU * p / glen for g, p in gmid.items()}
     gem = pd.read_parquet(args.gem_table)
-    if "orf" in gem.columns:              # the schema; pre-schema tables say feature_id
-        gem = gem.rename(columns={"orf": "feature_id"})
-    gem = gem[["feature_id", "feature_kind", "mnxr"]]
+    if "orf" not in gem.columns:          # a table written before the schema
+        gem = gem.rename(columns={"feature_id": "orf"})
+    gem = gem[["orf", "feature_kind", "mnxr"]]
     gem = gem[(gem.feature_kind == "gem_gene") & gem.mnxr.isin(host_rxn)]
-    hr_angle, hr_R = reaction_angles(gene_angle, gem[["mnxr", "feature_id"]].values)
-    host_genes = sorted(set(gem.feature_id) & set(gene_angle))
+    hr_angle, hr_R = reaction_angles(gene_angle, gem[["mnxr", "orf"]].values)
+    host_genes = sorted(set(gem.orf) & set(gene_angle))
     print(f"host: {glen/1e6:.2f} Mb, {len(gmid)} CDS with an old locus tag; "
           f"{len(host_genes)} of them encode a network reaction; "
           f"{len(hr_angle)}/{len(host_rxn)} host reactions placed "
