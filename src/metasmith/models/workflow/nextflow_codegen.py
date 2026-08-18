@@ -655,6 +655,20 @@ def prepare_nextflow(task, context: NextflowGenContext):
             f'cat ${{params.workspace}}/{step_meta_file} >>{METADATA_FILE}',
             f'echo "inp {",".join(x.dtype.key for x in used_archetypes)}" >>{METADATA_FILE}',
             f'echo "out {";".join(",".join(x.dtype.key for x in g) for g in produced_archetypes)}" >>{METADATA_FILE}',
+            # Under `scratch` the lines above wrote into node-local disk that
+            # Nextflow discards: it copies back the declared outputs and
+            # `.command.{out,err,trace}`, and this is neither. Promote reads
+            # the index out of the work tree, so without the copy every shard
+            # from a scratch-enabled run is stored with no ancestry. `$0` is
+            # the launcher's absolute path to this script and so the only
+            # name for the real work dir available here — `task.workDir` is
+            # null at render time, and `NXF_TASK_WORKDIR` is exported after
+            # the chdir into scratch. Done before the step runs so the index
+            # survives a step that later fails, and non-fatal: a missed copy
+            # costs a demoted shard and a re-run, and no task should die over
+            # its own telemetry.
+            f'__msm_wd="\\$(cd "\\$(dirname "\\$0")" && pwd)"',
+            f'[ "\\$__msm_wd" = "\\$PWD" ] || cp -f {METADATA_FILE} "\\$__msm_wd/" || true',
         # ] + [
         #     f'echo "i{i+1:02} $_{i+1:02}">>{METADATA_FILE}'
         #     for i, x in enumerate(used_archetypes)
