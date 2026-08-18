@@ -1,0 +1,62 @@
+=== aam_r2 over dev ===
+  25/400  182s
+  50/400  260s
+  75/400  406s
+  100/400  535s
+  125/400  672s
+  150/400  772s
+  175/400  902s
+  200/400  1007s
+  225/400  1122s
+  250/400  1239s
+  275/400  1349s
+  300/400  1475s
+  325/400  1565s
+  350/400  1681s
+  375/400  1786s
+  400/400  1891s
+
+400 reactions in 1891s (12.7/min, 8-wide)
+  tokens 1,055,506 in + 129,010 out = 2961/reaction
+  !! 30 harness errors -- a constrained decode should not produce these
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.dev.jsonl
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.dev.meta.json
+=== COVERAGE  n=400 answered of 400 in the split (unanswered 0)
+stratum          balanced  unbalanced    unusable     refused
+movable                53         229          71          30
+no_lever                7           4           0           0
+one_sided               0           0           0           6
+ALL                    60         233          71          36
+
+  yield over the whole split : 60/400 = 15.0%
+  yield over `movable` only  : 53/383 = 13.8%
+
+  tokens: 1,055,506 in + 129,010 out = 1,184,516
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.dev.tsv
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/scoreboard.tsv
+=== aam_r2 control gate ===
+  25/200  65s
+  50/200  116s
+  75/200  168s
+  100/200  220s
+  125/200  271s
+  150/200  331s
+  175/200  382s
+  200/200  426s
+
+200 reactions in 426s (28.2/min, 8-wide)
+  tokens 590,290 in + 29,144 out = 3097/reaction
+  !! 1 harness errors -- a constrained decode should not produce these
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.controls.jsonl
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.controls.meta.json
+=== CONTROL GATE  n=200  (unanswered 0)
+  preserved    199
+  refused      0
+  regressed    1
+  unscorable   0
+
+  REGRESSIONS: 1  (FAIL)
+
+  tokens: 590,290 in + 29,144 out = 619,434
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.controls.tsv
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/scoreboard.tsv

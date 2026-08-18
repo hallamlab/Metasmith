@@ -151,6 +151,11 @@ def control_outcome(rec: dict, panel: dict, res: Resolver) -> str:
     fails to balance, or one that balances at different element totals, because that is
     the model editing chemistry it was not asked to touch.
     """
+    # A reaction the harness never got an answer for is not a regression. Scoring it as
+    # one fails a good revision for an infrastructure reason -- a prompt that overran its
+    # slot, a dropped connection -- and the gate is only worth having if it means chemistry.
+    if rec.get("error"):
+        return "unscorable"
     j = judge(rec, res)
     if j["verdict"] == "refused":
         return "refused"
