@@ -15,6 +15,8 @@ One file per axis — no overlap with `tests/e2e/virtual/cache_*` (those are int
 | `test_kill_switch.py` | `cacheable=False` per-transform: no cache entry written. `METASMITH_CACHE=0` env: probe short-circuited even with hot cache. Both assert via trace.jsonl. |
 | `test_store_meta.py` | `CacheStore.entries` schema, manifest.cbor shape, shard layout `<2>/<rest>`. |
 | `test_codegen.py` | What the compiler writes into `workflow.nf`: no plugin block, no `process.cache`, and the coordinate system of a cache hit's synthetic channel (container-rooted) versus its `publishDir` (host-rooted). |
+| `test_hit_lineage.py` | The on-channel lineage index across the cache boundary: promote captures the one each output travelled with, and a hit replays it instead of `[:]`. |
+| `test_empty_index.py` | The degenerate index `{}` at both ends of that contract — never stored, never trusted. Below the harness: hand-built manifest into the real probe, hand-built work tree into the real promote. |
 
 Default marker: `fast` — all axes run against the virtual runtime, no Docker.
 
