@@ -82,3 +82,15 @@ there than three opinions of one orientation.
 
 The third is why `schema.py` has no `balanced` field: self-reported balance was right seven
 times and wrong seven times.
+
+## Running one revision
+
+`revise.sh` is the whole loop: the split, the control gate, two scoreboard rows.
+
+    ./revise.sh aam_r1 "what changed"
+    LIMIT=20 ./revise.sh aam_r1 "probe"        # first 20 records
+    SPLIT=heldout ./revise.sh aam_r3 "final"   # once, at the end
+
+`BASE_URL` and `MODEL` point it somewhere else. It calls each env`s interpreter
+directly: `mamba run` buffers a long run until it exits, and its `--no-capture-output`
+is broken in mamba 2.5.0.
