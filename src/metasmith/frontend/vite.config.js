@@ -10,15 +10,15 @@ export default defineConfig({
   base: './',
   resolve: {
     alias: {
-      // The brand marks are one source of truth, and it is the python package's
-      // icon/ dir rather than a copy under frontend/. They are build-time
+      // The brand marks are one source of truth, and it is the sibling gui/icon
+      // dir rather than a copy under frontend/. They are build-time
       // inputs: vite emits them into static/assets, which is the only tree
       // setup.py packages, so nothing extra has to ship them.
-      $icon: fileURLToPath(new URL('../src/metasmith/gui/icon', import.meta.url)),
+      $icon: fileURLToPath(new URL('../gui/icon', import.meta.url)),
     },
   },
   build: {
-    outDir: '../src/metasmith/gui/static',
+    outDir: '../gui/static',
     emptyOutDir: true,
   },
   server: {
