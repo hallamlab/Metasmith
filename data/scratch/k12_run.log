@@ -1,0 +1,132 @@
+=== site: sockeye (sockeye) ===
+=== staging ===
+    sequences::orfs                  NC_000913.3.faa  (4318 records)
+    ref::kofamscan_profiles          /arc/project/st-shallam-1/fabfos_refs/processed/kofam_ref/profiles
+    ref::kofamscan_ko_list           /arc/project/st-shallam-1/fabfos_refs/processed/kofam_ref/ko_list.tsv
+    ref::uniref50_diamond_db         /arc/project/st-shallam-1/fabfos_refs/processed/uniref50_dmnd/uniref50.dmnd
+    ref::mnxr_lookup                 /arc/project/st-shallam-1/fabfos_refs/processed/mnxr_lookup/mnxr_lookup.parquet
+    ref::reference_label_pool        /arc/project/st-shallam-1/fabfos_refs/processed/reference_label_pool/pool
+2026-08-17_19-55-14  | [annotation::gpr_table] resolved by [...metasmith_libraries/transforms/functionalAnnotation]
+2026-08-17_19-55-15  | solving plan for [1] sample as [1] unique case
+2026-08-17_19-55-15 W| solver engine at [/home/tony/agentic_workspace/projects/metasmith/fabfos/dev/src/metasmith/engine/msm_solver.x86_64-linux] could not be run: [Errno 13] Permission denied: '/home/tony/agentic_workspace/projects/metasmith/fabfos/dev/src/metasmith/engine/msm_solver.x86_64-linux'
+2026-08-17_19-55-15 W| solving with the python implementation because the binary at [/home/tony/agentic_workspace/projects/metasmith/fabfos/dev/src/metasmith/engine/msm_solver.x86_64-linux] was refused at its handshake (see above). The plans are the same either way; the search is roughly 15x slower.
+
+Plan OK -- 9 steps
+
+    1  chunkOrfsForAnnotation   -> ['sequences::orf_chunk']
+    2  clean                    -> ['annotation::clean_predictions']
+    3  proteinbert              -> ['annotation::proteinbert_embeddings_chunk', 'annotation::proteinbert_index_chunk']
+    4  diamond_uniref50         -> ['annotation::diamond_uniref50_results_chunk']
+    5  kofamscan                -> ['annotation::kofamscan_results_chunk']
+    6  merge_diamond_uniref50   -> ['annotation::diamond_uniref50_results']
+    7  merge_kofamscan          -> ['annotation::kofamscan_results']
+    8  merge_proteinbert        -> ['annotation::proteinbert_embeddings', 'annotation::proteinbert_index']
+    9  gpr_4lane                -> ['annotation::gpr_table']
+
+four lanes and the mapper over one given ORF set
+
+=== task key: 8vBqTmYA ===
+=== Deploy() ===
+2026-08-17_19-55-15  | deploying agent version [0.20.4] to [ssh://sockeye:/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home] using runtime [APPTAINER] (native=False, rootfs=auto)
+2026-08-17_19-55-15  | starting ssh to [sockeye]
+2026-08-17_19-55-16  | >>> AGENT_HOME=/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home
+2026-08-17_19-55-16  | >>> mkdir -p $(pwd -P)
+2026-08-17_19-55-16  | >>> mkdir -p $AGENT_HOME
+2026-08-17_19-55-16  | >>> mkdir -p $AGENT_HOME
+2026-08-17_19-55-16  | >>> mkdir -p ${TMPDIR-"/tmp"}
+2026-08-17_19-55-16  | >>> mkdir -p /arc/home/txyliu/.globus
+2026-08-17_19-55-16  | >>> mkdir -p /arc/home/txyliu/.globusonline
+2026-08-17_19-55-16  | >>> {pull sif -> build sif (-no-fragments) -> unpack sandbox}
+2026-08-17_19-55-16  | staged [msm]
+2026-08-17_19-55-16  | staged [lib/agent.yml]
+2026-08-17_19-55-16  | staged [lib/msm_bootstrap]
+2026-08-17_19-55-16  | deploying [3] staged files
+2026-08-17_19-55-17 E| ssh sockeye: Pseudo-terminal will not be allocated because stdin is not a terminal.
+2026-08-17_19-55-17 E| ssh-check: Pseudo-terminal will not be allocated because stdin is not a terminal.
+2026-08-17_19-55-18  | relay-present
+2026-08-17_19-55-18  | relay binary present at [/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/relay/msm_relay], skipping container extraction
+2026-08-17_19-55-18  | deployed to [ssh://sockeye:/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home]
+dev overlay: src/metasmith -> sockeye:/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/dev/metasmith/ (+ metasmith.tar, stage key 1787010928-7106560)
+OK   dev/metasmith (login-node bind)
+OK   dev/metasmith.tar (slurm-task stage)
+OK   agent: docker://quay.io/hallamlab/metasmith:0.20.4
+OK   clean.env: docker://quay.io/hallamlab/external_clean:2026.06.14
+OK   diamond.env: docker://quay.io/biocontainers/diamond:2.1.8--h43eeafb_0
+OK   kofamscan.env: docker://quay.io/biocontainers/kofamscan:1.3.0--hdfd78af_2
+OK   polars.env: docker://quay.io/hallamlab/polars:1.38.1
+OK   proteinbert.env: docker://quay.io/hallamlab/external_proteinbert:2024.03.28
+OK   python_for_data_science.env: docker://quay.io/hallamlab/python_for_data_science@sha256:7684b1bd22038de100f4438b2ae049ce7f507960c362d5d0c8495417318d4a9c
+2026-08-17_19-55-29  | staging workflow [8vBqTmYA]
+2026-08-17_19-55-29  | connecting to deployed agent
+2026-08-17_19-55-29  | starting ssh to [sockeye]
+ | > relay-present[0;m
+2026-08-17_19-55-30  | starting relay service
+ | > Starting relay:[0;m
+ | >   - at: [/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/relay/login02][0;m
+ | >   - cwd: [/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home][0;m
+ | >  - Unlinking existing symlink at: /scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/relay/login02[0;m
+ | >  - Creating workspace at: /tmp/msm_login02_unknown_user[0;m
+ | >  - Linking workspace to: /scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/relay/login02[0;m
+ | > Watcher daemon PID: 290976[0;m
+ | > pid [290976][0;m
+ | > success[0;m
+2026-08-17_19-55-30  | sending context for workflow [8vBqTmYA]
+2026-08-17_19-55-38  | staging
+2026-08-17_19-55-38  | external binds ['/arc/project/st-shallam-1/fabfos_refs/processed']
+ | > including dev binds[0;m
+ | > binds [--bind /arc/project/st-shallam-1/fabfos_refs/processed:/arc/project/st-shallam-1/fabfos_refs/processed --bind /scratch/st-shallam-1/txyliu/fabfos_b2/agent_home:/ws,/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home:/msm_home,/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home:/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home,/tmp:/tmp,/arc/home/txyliu/.globus:/arc/home/txyliu/.globus,/arc/home/txyliu/.globusonline:/arc/home/txyliu/.globusonline --bind /scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/dev/metasmith:/opt/conda/envs/metasmith_env/lib/python3.12/site-packages/metasmith][0;m
+E| > INFO:    squashfuse not found, will not be able to use gocryptfs
+E| > INFO:    gocryptfs not found, will not be able to use gocryptfs
+ | > 2026-08-17_16-55-48  | api call to [stage_workflow] with [{'task_key': '8vBqTmYA', 'verify': 'False', 'host': 'login02'}][0;m
+ | > 2026-08-17_16-55-51  | staging workflow [8vBqTmYA] with:[0;m
+ | > 2026-08-17_16-55-51  |   [3] data libraries[0;m
+ | > 2026-08-17_16-55-51  |   [3] transform libraries[0;m
+ | > 2026-08-17_16-55-51  |   [9] total steps[0;m
+ | > 2026-08-17_16-55-51  | skipping verification of external inputs paths[0;m
+ | > 2026-08-17_16-55-51  | work [/ws/runs/8vBqTmYA][0;m
+ | > 2026-08-17_16-55-51  | data [/msm_home/data][0;m
+ | > 2026-08-17_16-55-51  | external work [/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/runs/8vBqTmYA][0;m
+ | > 2026-08-17_16-55-51  | external data [/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/data][0;m
+ | > 2026-08-17_16-55-51  | compiling nextflow script[0;m
+ | > 2026-08-17_16-55-51 W| cache_root and work_dir straddle mounts; forcing publishDir 'copy' strategy. (cache_root [/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/task_cache] is on mount [/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home] (lustre) but work_dir [/ws/runs/8vBqTmYA] is on mount [/ws] (lustre). Rename across mounts is non-atomic; metasmith refuses to compile. Move cache_root or work_dir so they share a mount.)[0;m
+ | > 2026-08-17_16-55-52 W| cache shard 1e20c82a carries no on-channel index for 2 output(s); demoting the hit so the step re-runs rather than emitting a tuple the orchestrator would drop[0;m
+ | > 2026-08-17_16-55-52  | creating launcher script at [/ws/runs/8vBqTmYA/start.sh][0;m
+ | > 2026-08-17_16-55-52  | external binds [PosixPath('/arc/project/st-shallam-1/fabfos_refs/processed')][0;m
+ | > 2026-08-17_16-55-52  | drawing DAG[0;m
+ | > 2026-08-17_16-55-52  | [8vBqTmYA] staged to [{AGENT_HOME}/runs/8vBqTmYA][0;m
+2026-08-17_19-55-52  | closing connection
+    staged workflow: every step goes to slurm
+    no whole-cluster maintenance window ahead
+    scheduler accepts a 4 h job (kofamscan): sbatch: Job 12623919 to start at 2026-08-17T17:22:58 a using 1 processors on nodes se201 in partition skylake
+2026-08-17_19-55-58  | connecting to deployed agent
+2026-08-17_19-55-58  | starting ssh to [sockeye]
+ | > relay-present[0;m
+2026-08-17_19-55-59  | starting relay service
+ | > Relay server already running at [/scratch/st-shallam-1/txyliu/fabfos_b2/agent_home/relay/login02][0;m
+2026-08-17_19-55-59  | GPU requests planned for [1] of [1] declaring steps
+2026-08-17_19-55-59  | sending config and params
+2026-08-17_19-56-01  | triggering execution of [8vBqTmYA]
+ | > start time was [2026-08-17_16-56-01][0;m
+2026-08-17_19-56-01  | closing connection
+=== waiting (timeout 8.0h) ===
+=== status: errored after 0.21 h ===
+    2026-08-17_17-08-29  |   _ATT5HeFt:
+    2026-08-17_17-08-29  |     - ['{"vRyYV0jO":["1e206b5ea316a1eb100bd942758196eef60d11f4fc4c5c3ded565c4ab7e3cfcdb57e"],"TaWN3G4e":["1e2091231775bac1de37db1ad8adaab72f49b9952318dcb3ee9a5bdadba66907b616"],"0PlvGw74":["1e2054841143b96ca6b76661aac830a8b62104e8486ccae634f9ff773816a9599dcc"],"d0g3dHTe":["67463fd2646a6934000c9e721671ba3e"],"RvITjPr0":["1e203570daffe81586aaa7fcd6594c92ce9fb50f25e55891f0e8546a9d4d6f483338"],"jh33jWJX":["1e20048664b73143fc986e895be39b7e9576a77f2e43681b7329ebfe6f566a4a8887"],"ATT5HeFt":["595989ce2fc90009ec769dad105a069c"]}', 5_annotation-kofamscan_results_chunk/1-1-1.e4zD1bmSNNWjGQVC-ATT5HeFt.csv]
+    2026-08-17_17-08-29  |   _9T0HhGxP:
+    2026-08-17_17-08-29  |   _S5fRZndZ:
+    2026-08-17_17-08-29  |     - ['{"pN0O2OQc":["1e20f20565c678d85daf20254ac084d10d7cb694b1dfe5e2a80cc2dc88341e401b66"],"TaWN3G4e":["1e2091231775bac1de37db1ad8adaab72f49b9952318dcb3ee9a5bdadba66907b616"],"0PlvGw74":["1e2054841143b96ca6b76661aac830a8b62104e8486ccae634f9ff773816a9599dcc"],"d0g3dHTe":["67463fd2646a6934000c9e721671ba3e"],"1Tw0lWc0":["1e20b115ce34314bf1d6a562e73a593e546c6315022c2642739f764f23efd0686e23"],"S5fRZndZ":["9ef0086fcb3f9a4f2b063bdc844f917b"]}', 4_annotation-diamond_uniref50_results_chunk/1-1-1.aDnTYaGiQyuWLHWZ-S5fRZndZ.tsv]
+    2026-08-17_17-08-29  |   _bE0uTgBK:
+    2026-08-17_17-08-29  |     - ['{"0PlvGw74":["1e2054841143b96ca6b76661aac830a8b62104e8486ccae634f9ff773816a9599dcc"],"vRyYV0jO":["1e206b5ea316a1eb100bd942758196eef60d11f4fc4c5c3ded565c4ab7e3cfcdb57e"],"TaWN3G4e":["1e2091231775bac1de37db1ad8adaab72f49b9952318dcb3ee9a5bdadba66907b616"],"d0g3dHTe":["67463fd2646a6934000c9e721671ba3e"],"RvITjPr0":["1e203570daffe81586aaa7fcd6594c92ce9fb50f25e55891f0e8546a9d4d6f483338"],"jh33jWJX":["1e20048664b73143fc986e895be39b7e9576a77f2e43681b7329ebfe6f566a4a8887"],"ATT5HeFt":["595989ce2fc90009ec769dad105a069c"],"bE0uTgBK":["13c97ec21b9e9c1a7e0e1c2f3f6e5bf9"]}', 7_annotation-kofamscan_results/1-1-1.jxFpgdvhj7GUTcxp-bE0uTgBK.csv]
+    2026-08-17_17-08-29  |   _d0g3dHTe:
+    2026-08-17_17-08-29  |     - ['{"TaWN3G4e":["1e2091231775bac1de37db1ad8adaab72f49b9952318dcb3ee9a5bdadba66907b616"],"0PlvGw74":["1e2054841143b96ca6b76661aac830a8b62104e8486ccae634f9ff773816a9599dcc"],"d0g3dHTe":["67463fd2646a6934000c9e721671ba3e"]}', 1_sequences-orf_chunk/1-1-1.yg98yhgzvcLokT5B-d0g3dHTe.faa]
+    2026-08-17_17-08-29  |   _8YkSc5PN:
+    2026-08-17_17-08-29  |     - ['{"xqR7Pp3D":["1e20c25b67383e488ba266f7fef96e2b3cb4aad7d11f3a3b72517019348630384027"],"TaWN3G4e":["1e2091231775bac1de37db1ad8adaab72f49b9952318dcb3ee9a5bdadba66907b616"],"0PlvGw74":["1e2054841143b96ca6b76661aac830a8b62104e8486ccae634f9ff773816a9599dcc"],"d0g3dHTe":["67463fd2646a6934000c9e721671ba3e"],"8YkSc5PN":["6c0cfd47fee4c7b67b7ec94f6621271b"]}', 3_annotation-proteinbert_embeddings_chunk/1-1-1.RlIeWrBWPuVo7Rws-8YkSc5PN.parquet]
+    2026-08-17_17-08-29  |   _BrlRjcce:
+    2026-08-17_17-08-29  |     - ['{"BrlRjcce":["c0dfc72f7558683c2b58e38bc107922f"]}', 8_annotation-proteinbert_embeddings/1-1-1.eMR6c4YSrDXHnw08-BrlRjcce.parquet]
+    2026-08-17_17-08-29  |   _i8IGm53H:
+    2026-08-17_17-08-29  |     - ['{"0H81WoXG":["1e20bd085975c55bda14288cf2ff66ee5cc2f79a9ec83029832a2c37bdd6d70ef02c"],"0PlvGw74":["1e2054841143b96ca6b76661aac830a8b62104e8486ccae634f9ff773816a9599dcc"],"i8IGm53H":["b7b16336880deb853c99477a65ac1582"]}', 2_annotation-clean_predictions/1-1-1.GGL1M1pjj5U8ISJv-i8IGm53H.tsv]
+    2026-08-17_17-08-29  |   _gA4taOg9:
+    2026-08-17_17-08-29  |     - ['{"0PlvGw74":["1e2054841143b96ca6b76661aac830a8b62104e8486ccae634f9ff773816a9599dcc"],"pN0O2OQc":["1e20f20565c678d85daf20254ac084d10d7cb694b1dfe5e2a80cc2dc88341e401b66"],"TaWN3G4e":["1e2091231775bac1de37db1ad8adaab72f49b9952318dcb3ee9a5bdadba66907b616"],"d0g3dHTe":["67463fd2646a6934000c9e721671ba3e"],"1Tw0lWc0":["1e20b115ce34314bf1d6a562e73a593e546c6315022c2642739f764f23efd0686e23"],"S5fRZndZ":["9ef0086fcb3f9a4f2b063bdc844f917b"],"gA4taOg9":["05755efb754869cfa3624484b5df733a"]}', 6_annotation-diamond_uniref50_results/1-1-1.40IOvCdI7NcYOnnj-gA4taOg9.tsv]
+    2026-08-17_17-08-32  | extracted task metadata to [/msm_home/runs/8vBqTmYA/_metasmith/logs.2026-08-17_16-56-01/nxf_tasks.csv]
+    2026-08-17_17-08-33  | cache promote: 7 written, 2 skipped
+    2026-08-17_17-08-33  | compiling results
