@@ -321,7 +321,7 @@ for host, src_host in sorted(GEM_SOURCE.items()):
     gene_rows = df[df["feature_kind"] == "gem_gene"]
     gem_mnxr = set(df["mnxr"].unique())
     print(f"[gem_gpr] {{host}}: {{len(df):,}} rows  "
-          f"{{gene_rows['feature_id'].nunique():,}} genes  {{df['mnxr'].nunique():,}} MNXR  "
+          f"{{gene_rows['orf'].nunique():,}} genes  {{df['mnxr'].nunique():,}} MNXR  "
           f"{{n_ruleless:,}} ruleless  "
           f"{{int(df['in_atom_universe'].sum()):,}} rows in the atom universe", flush=True)
     if dropped:
@@ -345,7 +345,7 @@ for host, src_host in sorted(GEM_SOURCE.items()):
           f"({{len(gem_mnxr & reachable)/max(1,len(gem_mnxr)):.1%}})", flush=True)
     summary.append(dict(host=host, gem_host=src_host, gem_id=gem_id,
                         edit_list=list(dropped), rows=len(df),
-                        genes=int(gene_rows["feature_id"].nunique()),
+                        genes=int(gene_rows["orf"].nunique()),
                         mnxr=int(df["mnxr"].nunique()), ruleless=n_ruleless,
                         in_atom_universe=int(df["in_atom_universe"].sum()),
                         bridge_reachable=len(gem_mnxr & reachable)))

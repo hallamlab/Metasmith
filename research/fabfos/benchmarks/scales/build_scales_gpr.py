@@ -19,7 +19,7 @@ the unresolvable silently redefines the population as the genes the model happen
 
 RESOLUTION, AND THE TWO TRAPS THE 2012 SHEET CARRIES
 ----------------------------------------------------
-The host GEM keys `feature_id` on the b-number, so a b-number join is direct -- but the
+The host GEM keys `orf` on the b-number, so a b-number join is direct -- but the
 sheet's own b-number column is NOT a key: 33 b-numbers appear on two rows each, carrying
 different fitness values (b3256 is written for both accC and fabG). `gene_norm` is unique
 across all 4,225 rows and is the condition key here; the sheet's b-number is only ever a
@@ -75,6 +75,9 @@ from build_extraction import gene_to_bnumber                          # noqa: E4
 sys.path.insert(0, str(REPO / "src/fabfos/build_references/resources/buildlib"))
 import bench_universe as bu                                           # noqa: E402
 
+sys.path.insert(0, str(REPO / "src/metasmith_libraries/resources/lib"))
+import fabfos_evidence as fe                                          # noqa: E402
+
 EXTRACTION = REPO / "data/fabfos/benchmarks/_extractions/scales_tol/extraction.tsv"
 CLONES = REPO / "data/fabfos/benchmarks/_extractions/scales_tol/clones.tsv"
 GOF = REPO / "data/fabfos/originals/benchmarks/scales/gof_scales.tsv"
@@ -98,19 +101,30 @@ PROD_COHORT = "scales_prod"
 # pdcZm and adhBZm are Zymomonas mobilis genes on a chromosomal Tn7 insertion.
 INSERT_SOURCE_ORGANISM = "z_mobilis"
 
-GPR_COLS = (
-    "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
-    "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
-    "projection_via", "in_atom_universe", "gpr_rule",
-    "condition_id", "cohort", "action", "source_organism",
-)
+# All three tables here are a cohort table: the host layer's blocks plus the condition
+# each row belongs to. The insertion table is one too -- it names a condition of the
+# production arm -- which is why it is not a shape of its own.
+EXTENSIONS = ("attribution", "feature", "universe", "cohort")
+COLS = fe.schema_for(EXTENSIONS)
+CURATED_LANE_SET = "curated"
+DENOVO_LANE_SET = "chosen_4"
+
+
+def assemble(parts, like) -> pd.DataFrame:
+    """The cohort table, on the schema. `like` supplies the columns when nothing hit."""
+    df = (pd.concat(parts, ignore_index=True) if parts else like.reindex(columns=COLS))
+    df = df[COLS]
+    if len(df):
+        df["raw_score"] = df["raw_score"].astype(np.float32)
+    return (df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort")
+              .reset_index(drop=True))
 
 
 def faa_index(faa: Path) -> tuple[dict[str, str], dict[str, str]]:
     """``(orf id -> gene symbol, locus_tag -> orf id)`` from a RefSeq protein FASTA.
 
-    The de-novo GPR keys `feature_id` on the header's first token, which is the only join
-    the de-novo side has: that table's own `feature_name` is blank for all but a handful of
+    The de-novo GPR keys `orf` on the header's first token, which is the only join the
+    de-novo side has: that table's own `feature_name` is blank for all but a handful of
     ORFs, so joining on the name looks like it works and drops almost everything.
     """
     gene, by_tag = {}, {}
@@ -144,9 +158,9 @@ def build_curated(ext: pd.DataFrame, gem: pd.DataFrame, universe: set) -> tuple:
     """Curated rows and the per-gene resolution record, keyed on `gene_norm`."""
     gem_id = str(gem["unit_id"].iloc[0])
     genes = gem[gem.feature_kind == "gem_gene"]
-    by_fid = {f: g for f, g in genes.groupby("feature_id")}
+    by_fid = {f: g for f, g in genes.groupby("orf")}
     by_symbol: dict[str, set[str]] = {}
-    for name, fid in zip(genes["feature_name"], genes["feature_id"]):
+    for name, fid in zip(genes["feature_name"], genes["orf"]):
         if name:
             by_symbol.setdefault(str(name), set()).add(str(fid))
     by_symbol_lower = {k.lower(): v for k, v in by_symbol.items()}
@@ -155,7 +169,7 @@ def build_curated(ext: pd.DataFrame, gem: pd.DataFrame, universe: set) -> tuple:
     to_bnum_lower = {k.lower(): v for k, v in to_bnum.items()}
     sym_for_b = symbol_for_bnumber(MG1655_FAA)
 
-    rows, record, disagree = [], [], []
+    parts, record, disagree = [], [], []
     for r in ext.itertuples(index=False):
         gene, norm, sheet_b = str(r.gene), str(r.gene_norm), str(r.bnum or "")
         name_b = to_bnum.get(gene) or to_bnum_lower.get(norm) or ""
@@ -185,16 +199,11 @@ def build_curated(ext: pd.DataFrame, gem: pd.DataFrame, universe: set) -> tuple:
         hit = (pd.concat([by_fid[f] for f in sorted(fids) if f in by_fid])
                if any(f in by_fid for f in fids) else genes.iloc[0:0])
         cond = f"{COHORT}:{norm}"
-        for h in hit.itertuples(index=False):
-            rows.append(dict(
-                build_id=f"direct_{COHORT}_{gem_id}", host=HOST, unit_id=gem_id,
-                feature_id=h.feature_id, feature_kind="clone_gene",
-                feature_name=h.feature_name, mnxr=h.mnxr, channel=h.channel,
-                evidence_id=h.evidence_id, evidence_name=h.evidence_name,
-                raw_score=h.raw_score, projection_via=h.projection_via,
-                in_atom_universe=h.in_atom_universe, gpr_rule=h.gpr_rule,
-                condition_id=cond, cohort=COHORT, action="add",
-                source_organism=SOURCE_ORGANISM))
+        if len(hit):
+            parts.append(hit.assign(
+                source=gem_id, build_id=f"direct_{COHORT}_{gem_id}", host=HOST,
+                unit_id=gem_id, feature_kind="clone_gene", condition_id=cond,
+                cohort=COHORT, action="add", source_organism=SOURCE_ORGANISM))
         record.append(dict(
             gene=gene, gene_norm=norm, condition_id=cond,
             bnum_sheet=sheet_b, bnum_from_name=name_b, current_symbol=current,
@@ -203,7 +212,9 @@ def build_curated(ext: pd.DataFrame, gem: pd.DataFrame, universe: set) -> tuple:
             gem_n_mnxr=int(hit["mnxr"].nunique()),
             gem_n_in_universe=int(hit[hit["in_atom_universe"].fillna(False)]["mnxr"].nunique()),
         ))
-    return rows, pd.DataFrame(record), disagree, gem_id
+    df = assemble(parts, genes)
+    fe.validate_gpr(df, CURATED_LANE_SET, None, gem_id, EXTENSIONS)
+    return df, pd.DataFrame(record), disagree, gem_id
 
 
 def build_denovo(ext: pd.DataFrame, rec: pd.DataFrame, universe: set) -> tuple:
@@ -218,9 +229,9 @@ def build_denovo(ext: pd.DataFrame, rec: pd.DataFrame, universe: set) -> tuple:
     for fid, g in dn_gene.items():
         by_symbol.setdefault(g, set()).add(fid)
     by_symbol_lower = {k.lower(): v for k, v in by_symbol.items()}
-    by_fid = {f: g for f, g in dn.groupby("feature_id")}
+    by_fid = {f: g for f, g in dn.groupby("orf")}
 
-    rows, cols = [], []
+    parts, cols = [], []
     cur = dict(zip(rec.gene_norm, rec.current_symbol))
     for r in ext.itertuples(index=False):
         gene, norm = str(r.gene), str(r.gene_norm)
@@ -240,25 +251,25 @@ def build_denovo(ext: pd.DataFrame, rec: pd.DataFrame, universe: set) -> tuple:
         hit = (pd.concat([by_fid[f] for f in sorted(fids) if f in by_fid])
                if any(f in by_fid for f in fids) else dn.iloc[0:0])
         cond = f"{COHORT}:{norm}"
-        for h in hit.itertuples(index=False):
-            rows.append(dict(
+        if len(hit):
+            parts.append(hit.assign(
+                # `source` names the ORF set these rows describe. They were read out of
+                # the host's table, but each one is now a claim about a cloned fragment.
+                source="bw25113_orfs",
                 build_id="denovo_" + COHORT + "_" + "+".join(lanes), host=HOST,
-                unit_id="bw25113_orfs", feature_id=h.feature_id,
-                feature_kind="clone_gene",
+                unit_id="bw25113_orfs", feature_kind="clone_gene",
                 # The de-novo table's own feature_name is blank; the screen's symbol is the
                 # only name this row can honestly carry.
-                feature_name=gene, mnxr=h.mnxr, channel=h.channel,
-                evidence_id=h.evidence_id, evidence_name=h.evidence_name,
-                raw_score=h.raw_score, projection_via=h.projection_via,
-                in_atom_universe=h.in_atom_universe, gpr_rule=h.gpr_rule,
-                condition_id=cond, cohort=COHORT, action="add",
+                feature_name=gene, condition_id=cond, cohort=COHORT, action="add",
                 source_organism=SOURCE_ORGANISM))
         cols.append(dict(
             gene_norm=norm,
             denovo_feature=";".join(sorted(fids)), denovo_resolved_via=how,
             denovo_n_mnxr=int(hit["mnxr"].nunique()),
             denovo_n_in_universe=int(hit[hit["in_atom_universe"]]["mnxr"].nunique())))
-    return rows, pd.DataFrame(cols), lanes
+    df = assemble(parts, dn)
+    fe.validate_gpr(df, DENOVO_LANE_SET, None, "bw25113_orfs", EXTENSIONS)
+    return df, pd.DataFrame(cols), lanes
 
 
 def build_insertion(universe: set) -> tuple:
@@ -273,15 +284,22 @@ def build_insertion(universe: set) -> tuple:
                                    note=str(r.note)[:120]))
             continue
         rows.append(dict(
+            source="attTn7_pdc_adhB", orf=gene, channel="curated_insertion", mnxr=mnxr,
+            # The insertion is asserted, not projected: the EC is the only intermediate
+            # between the gene and the reaction, and a human put it there.
+            intermediate_id=gene, intermediate_name=str(r.ec),
+            raw_score=np.float32(1.0), score_kind="presence", projection_via="manual",
+            evidence_quality="unknown", lane_set="curated",
             build_id="insertion_scales_prod", host=PROD_HOST, unit_id="attTn7_pdc_adhB",
-            feature_id=gene, feature_kind="insertion_gene", feature_name=gene,
-            mnxr=mnxr, channel="curated_insertion", evidence_id=gene,
-            evidence_name=str(r.ec), raw_score=np.float32(1.0),
-            projection_via="manual", in_atom_universe=mnxr in universe,
-            gpr_rule=gene, condition_id=f"{PROD_COHORT}:{gene}",
-            cohort=PROD_COHORT, action="add",
+            feature_kind="insertion_gene", feature_name=gene, gpr_rule=gene,
+            in_atom_universe=mnxr in universe,
+            condition_id=f"{PROD_COHORT}:{gene}", cohort=PROD_COHORT, action="add",
             source_organism=INSERT_SOURCE_ORGANISM))
-    return rows, unresolved
+    df = pd.DataFrame(rows, columns=COLS)
+    if len(df):
+        df["raw_score"] = df["raw_score"].astype(np.float32)
+        fe.validate_gpr(df, "curated", None, "attTn7_pdc_adhB", EXTENSIONS)
+    return df, unresolved
 
 
 def main() -> int:
@@ -302,30 +320,20 @@ def main() -> int:
     print(bu.universe_line(ustats, "scales"))
 
     gem = pd.read_parquet(HOST_GEM)
-    gem_rows, rec, disagree, gem_id = build_curated(ext, gem, universe)
-    print(f"curated : {len(gem_rows):,} rows over {gem_id}")
+    gem_df, rec, disagree, gem_id = build_curated(ext, gem, universe)
+    print(f"curated : {len(gem_df):,} rows over {gem_id}")
 
     if HOST_DENOVO.exists():
-        dn_rows, dn_cols, lanes = build_denovo(ext, rec, universe)
+        dn_df, dn_cols, lanes = build_denovo(ext, rec, universe)
         rec = rec.merge(dn_cols, on="gene_norm", how="left")
     else:
-        dn_rows, lanes = [], []
+        dn_df, lanes = pd.DataFrame(columns=COLS), []
         for c, v in (("denovo_feature", ""), ("denovo_resolved_via", "not_built"),
                      ("denovo_n_mnxr", 0), ("denovo_n_in_universe", 0)):
             rec[c] = v
         print(f"de-novo : NOT BUILT -- {HOST_DENOVO.relative_to(REPO)} does not exist")
 
-    ins_rows, ins_unresolved = build_insertion(universe)
-
-    gem_df = pd.DataFrame(gem_rows, columns=list(GPR_COLS))
-    dn_df = pd.DataFrame(dn_rows, columns=list(GPR_COLS))
-    ins_df = pd.DataFrame(ins_rows, columns=list(GPR_COLS))
-    for df in (gem_df, dn_df, ins_df):
-        if len(df):
-            df["raw_score"] = df["raw_score"].astype(np.float32)
-            df.sort_values(["condition_id", "channel", "mnxr"], kind="mergesort",
-                           inplace=True)
-            df.reset_index(drop=True, inplace=True)
+    ins_df, ins_unresolved = build_insertion(universe)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     gem_df.to_parquet(out_dir / "gpr_gem.parquet", index=False, compression="zstd")

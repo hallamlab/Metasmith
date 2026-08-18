@@ -123,19 +123,19 @@ def main() -> int:
     df.to_parquet(out_dir / "gpr_denovo.parquet", index=False, compression="zstd")
     (out_dir / "BUILD_denovo.json").write_text(json.dumps(dict(
         lane_set=lane_set, lanes=lanes, universe=stats, host=HOST, cohort=COHORT,
-        rows=len(df), clones=int(df["feature_id"].nunique()),
+        rows=len(df), clones=int(df["orf"].nunique()),
         mnxr=int(df["mnxr"].nunique()),
-        clones_in_universe=int(df[df["in_atom_universe"]]["feature_id"].nunique()),
+        clones_in_universe=int(df[df["in_atom_universe"]]["orf"].nunique()),
         mnxr_in_universe=int(df[df["in_atom_universe"]]["mnxr"].nunique()),
     ), indent=2))
 
     in_uni = df[df["in_atom_universe"]]
-    print(f"\n{len(df):,} rows over {df['feature_id'].nunique()} clones, "
+    print(f"\n{len(df):,} rows over {df['orf'].nunique()} clones, "
           f"{df['mnxr'].nunique():,} distinct MNXR")
-    print(f"    inside the atom universe: {in_uni['feature_id'].nunique()} clones, "
+    print(f"    inside the atom universe: {in_uni['orf'].nunique()} clones, "
           f"{in_uni['mnxr'].nunique():,} MNXR")
     per_lane = (df.groupby("channel")
-                  .agg(rows=("mnxr", "size"), clones=("feature_id", "nunique"),
+                  .agg(rows=("mnxr", "size"), clones=("orf", "nunique"),
                        mnxr=("mnxr", "nunique")))
     print(per_lane.to_string())
     print(f"\n-> {out_dir}/gpr_denovo.parquet")
