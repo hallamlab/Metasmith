@@ -350,7 +350,10 @@ def main():
 
     gmid, glen = gbk_genes(args.gbk)
     gene_angle = {g: TAU * p / glen for g, p in gmid.items()}
-    gem = pd.read_parquet(args.gem_table, columns=["feature_id", "feature_kind", "mnxr"])
+    gem = pd.read_parquet(args.gem_table)
+    if "orf" in gem.columns:              # the schema; pre-schema tables say feature_id
+        gem = gem.rename(columns={"orf": "feature_id"})
+    gem = gem[["feature_id", "feature_kind", "mnxr"]]
     gem = gem[(gem.feature_kind == "gem_gene") & gem.mnxr.isin(host_rxn)]
     hr_angle, hr_R = reaction_angles(gene_angle, gem[["mnxr", "feature_id"]].values)
     host_genes = sorted(set(gem.feature_id) & set(gene_angle))

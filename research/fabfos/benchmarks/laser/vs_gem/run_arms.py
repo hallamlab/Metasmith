@@ -53,18 +53,19 @@ def base_weights(arm: str, host_dir: str) -> tuple[dict, float]:
     de-novo median, so the CLI's scale-blind `weights[mnxr] += 1.0` is replaced by
     each arm's own median weight."""
     if arm == "gem":
-        g = pd.read_parquet(C.HOSTS / host_dir / "gpr_gem.parquet")
+        g = C.read_gpr(C.HOSTS / host_dir / "gpr_gem.parquet")
         w = {r: 1.0 for r in g.mnxr.astype(str).unique()}
         return w, 1.0
     src = C.DENOVO / host_dir / "gpr" / "gpr_denovo.parquet"
-    d = pd.read_parquet(src)
+    d = C.read_gpr(src)
     if arm == "denovo_uni":
         w = {r: 1.0 for r in d.mnxr.astype(str).unique()}
         return w, 1.0
     # compute_E's column contract, and the float32 conservation failure: the
     # library gates at 1e-9 and float32 raw_score lands at 8.9e-08. Cast in the
     # driver -- never loosen the library tolerance.
-    d = d.rename(columns={"feature_id": "orf", "evidence_id": "intermediate_id"})
+    # float32 -> float64 is not cosmetic: `_assert_conservation` gates at 1e-9 and
+    # float32 lands at 8.9e-08. Cast here; never loosen the library tolerance.
     d["raw_score"] = d["raw_score"].astype("float64")
     e = EV.compute_E(d[["orf", "channel", "intermediate_id", "mnxr", "raw_score"]],
                      label=f"{host_dir}/denovo")

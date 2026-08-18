@@ -339,6 +339,37 @@ def to_unified(df, extensions=("attribution", "feature", "universe")):
     return out[want].reset_index(drop=True)
 
 
+def read_gpr(paths, extensions=None):
+    """Read one or more GPR tables and return them on the declared schema.
+
+    The point of entry for a CONSUMER. A table written before the schema is converted
+    on the way through, so a reader never has to know which layout it got -- which is
+    what the four layouts cost every reader until now, each one re-deciding whether the
+    nominator lived in `feature_id`, `feature_name` or `evidence_id`.
+
+    `extensions` defaults to the blocks the table already carries. Pass it to require
+    a block: a reader that needs `unit_id` should say so and fail on a table without it,
+    rather than discover the gap as a KeyError three frames later.
+    """
+    import pandas as pd
+
+    if isinstance(paths, (str, bytes)) or hasattr(paths, "__fspath__"):
+        paths = [paths]
+    frames = []
+    for path in paths:
+        df = pd.read_parquet(path)
+        ext = tuple(extensions) if extensions is not None else extensions_of(df)
+        if not is_unified(df) or (extensions is not None
+                                  and list(df.columns) != schema_for(ext)):
+            df = to_unified(df, ext)
+        frames.append(df)
+    if len(frames) == 1:
+        return frames[0]
+    # Concatenating is how "this condition runs against this host" is expressed, and it
+    # only means anything once every frame is on one schema -- which it now is.
+    return pd.concat(frames, ignore_index=True)
+
+
 def _lane_set_for(lanes: set) -> str:
     """The declared set these lanes are, or CURATED when there are none."""
     if not lanes:
