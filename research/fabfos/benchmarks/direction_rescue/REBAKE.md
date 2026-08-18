@@ -1,6 +1,6 @@
 # Re-baking direction
 
-r8 is the deployed direction table. This is the protocol that produced it and the set of
+**r9 is the deployed direction table.** This is the protocol that produced it and the set of
 things that cost a run each when found the hard way. The artifact itself — the trio, its
 identity block, what `src_direction_sha256` is for — is documented at
 `src/fabfos/build_references/REFERENCES.md` § R6, and is not repeated here.
@@ -17,9 +17,9 @@ it — were being promoted to tier 1.
 Tier 0 fell 47,266 → 37,404 with nothing losing a vote; tier 1 is 2,171 rows, none at the
 floor. What is left of the gap is a carrier-curation problem, measured in `README.md`.
 
-**r9 is built, pinned and NOT deployed** — staged at `data/fabfos/processed/metabolism_bake_r9`
-(md5 `4f2148b92ebfda8e65124660eabad711.dir`), gated, verified by all three verifiers, and
-held for r10 by the principal. It is the first bake whose members actually receive the
+**r9 is promoted.** `data/fabfos/processed/metabolism_bake` now pins md5
+`4f2148b92ebfda8e65124660eabad711.dir`, and all three verifiers were re-run at that path
+after the rename rather than only at the staged one. It is the first bake whose members actually receive the
 substitution tables: `--substitutions` reached neither member lane until `f4642fc`, so every
 substitution row committed for r8 was inert in it. Read any r8-vs-r9 delta with that in
 mind — it is the whole substitution lane arriving, not the acyl rows alone.

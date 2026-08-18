@@ -1,0 +1,15 @@
+{
+  "bake": "data/fabfos/processed/metabolism_bake",
+  "stamp": "0ffd4c8c6231696e8ba0dee859253df75d8a29320355c42b0fcac0f317d264c6:e8f72b8b298a97ef2023c7f842e8873290a1de4cdd933577504d63c067b6c9a6",
+  "host": "e_coli_ag1",
+  "element": "C",
+  "leak": 0.001,
+  "port": 1.0,
+  "n_ports": 49,
+  "source": "MNXM1364061",
+  "sink": "MNXM738130",
+  "share": 0.1447635862657958,
+  "prec_share": 0.961398755952489,
+  "leak_frac": 0.03860124404751094,
+  "converged": true
+}
