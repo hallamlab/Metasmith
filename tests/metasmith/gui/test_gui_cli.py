@@ -1,6 +1,7 @@
 """`msm gui`, and the project bootstrap it shares with `msm lab`."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest import mock
 
@@ -30,63 +31,86 @@ class TestCommandSurface:
 
 
 class TestBootstrap:
-    def test_prefers_the_vendored_bundle(self, tmp_path):
-        """The default path: no network involved at all when a bundle shipped."""
-        bundle = tmp_path / "bundle"
-        (bundle / "data_types").mkdir(parents=True)
+    """What `clone_stdlib` guarantees now that the library is an installed module.
 
-        with mock.patch.object(stdlib, "_vendor_bundle_dir", return_value=bundle), \
+    The install directory is read-only in the cases that matter -- conda
+    hardlinks its `pkgs` files in that way -- and the copy has to be compiled,
+    so these pin the three properties that follow from that and nothing else.
+    """
+
+    def _fake_library(self, root: Path) -> Path:
+        """A directory shaped enough like a library for `library_module_root`."""
+        lib = root / "pkg" / "metasmith_libraries"
+        (lib / "data_types").mkdir(parents=True)
+        (lib / "version.txt").write_text("9.9.9")
+        return lib
+
+    def test_copies_from_the_installed_module_and_compiles_it(self, tmp_path):
+        """No network involved at all, and the copy is the thing that gets built."""
+        lib = self._fake_library(tmp_path)
+        built = []
+        with mock.patch.object(stdlib, "library_module_root", return_value=lib), \
+             mock.patch.object(stdlib, "compile_library", side_effect=built.append), \
              mock.patch.object(stdlib.subprocess, "run") as m:
             first = stdlib.clone_stdlib(tmp_path)
             second = stdlib.clone_stdlib(tmp_path)
         assert first["cloned"] is True
-        assert first["source"] == "vendor"
+        assert first["source"] == str(lib)
         assert (tmp_path / stdlib.STDLIB_NAME / "data_types").is_dir()
+        # compiled once, against the COPY -- never against the install
+        assert [Path(b).name for b in built] == [stdlib.STDLIB_NAME + ".partial"]
         assert second["cloned"] is False
         m.assert_not_called()
 
-    def test_no_bundle_and_no_opt_in_fails_without_touching_the_network(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("METASMITH_STDLIB_LIVE", raising=False)
-        with mock.patch.object(stdlib, "_vendor_bundle_dir", return_value=tmp_path / "absent"), \
-             mock.patch.object(stdlib.subprocess, "run") as m:
+    def test_a_read_only_install_still_yields_a_writable_copy(self, tmp_path):
+        """`copytree` inherits the source's mode bits; the compile needs to write."""
+        lib = self._fake_library(tmp_path)
+        for p in (lib, lib / "data_types", lib / "version.txt"):
+            p.chmod(0o500 if p.is_dir() else 0o400)
+        try:
+            with mock.patch.object(stdlib, "library_module_root", return_value=lib), \
+                 mock.patch.object(stdlib, "compile_library"):
+                out = stdlib.clone_stdlib(tmp_path)
+            assert out["cloned"] is True
+            copy = tmp_path / stdlib.STDLIB_NAME
+            assert os.access(copy / "data_types", os.W_OK)
+            assert os.access(copy / "version.txt", os.W_OK)
+        finally:
+            for p in (lib / "version.txt", lib / "data_types", lib):
+                p.chmod(0o700)
+
+    def test_a_failed_compile_leaves_nothing_behind(self, tmp_path):
+        """Materialisation is atomic: a directory that exists is one that resolves.
+
+        Otherwise a half-built copy persists across restarts and every later
+        bootstrap short-circuits on it, silently, with no metadata in it.
+        """
+        lib = self._fake_library(tmp_path)
+        with mock.patch.object(stdlib, "library_module_root", return_value=lib), \
+             mock.patch.object(stdlib, "compile_library",
+                               side_effect=RuntimeError("no transforms resolved")):
             out = stdlib.clone_stdlib(tmp_path)
         assert out["cloned"] is False
-        assert "opt-in" in out["error"]
-        assert "METASMITH_STDLIB_LIVE" in out["error"]
-        m.assert_not_called()
+        assert "no transforms resolved" in out["error"]
+        assert not (tmp_path / stdlib.STDLIB_NAME).exists()
+        assert not (tmp_path / (stdlib.STDLIB_NAME + ".partial")).exists()
 
-    def test_opt_in_live_fetch_sparse_checks_out_and_copies(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("METASMITH_STDLIB_LIVE", "1")
-        calls = []
-
-        def _fake_git(cmd, **kwargs):
-            calls.append(cmd)
-            if cmd[1] == "clone":
-                clone_dir = Path(cmd[-1])
-                (clone_dir / stdlib.STDLIB_SPARSE_PATH).mkdir(parents=True)
-                (clone_dir / stdlib.STDLIB_SPARSE_PATH / "data_types").mkdir()
-            return mock.Mock(returncode=0, stdout="", stderr="")
-
-        with mock.patch.object(stdlib, "_vendor_bundle_dir", return_value=tmp_path / "absent"), \
-             mock.patch.object(stdlib.subprocess, "run", side_effect=_fake_git):
-            out = stdlib.clone_stdlib(tmp_path)
-        assert out["cloned"] is True
-        assert out["source"] == "live"
-        assert (tmp_path / stdlib.STDLIB_NAME / "data_types").is_dir()
-        # clone --no-checkout, sparse-checkout init, sparse-checkout set, checkout
-        assert len(calls) == 4
-        assert calls[0][1] == "clone"
-        assert stdlib.STDLIB_SPARSE_PATH in calls[2]
-
-    def test_a_failed_live_fetch_is_reported_not_raised(self, tmp_path, monkeypatch):
-        """No network should still leave you with a usable page, not a traceback."""
-        monkeypatch.setenv("METASMITH_STDLIB_LIVE", "1")
-        with mock.patch.object(stdlib, "_vendor_bundle_dir", return_value=tmp_path / "absent"), \
-             mock.patch.object(stdlib.subprocess, "run") as m:
-            m.return_value = mock.Mock(returncode=128, stdout="", stderr="could not resolve host")
+    def test_a_missing_package_is_reported_not_raised(self, tmp_path):
+        """No library should still leave you with a usable page, not a traceback."""
+        with mock.patch.object(stdlib, "library_module_root", return_value=None):
             out = stdlib.clone_stdlib(tmp_path)
         assert out["cloned"] is False
-        assert "could not resolve host" in out["error"]
+        assert "metasmith_libraries" in out["error"]
+
+    def test_the_stamp_is_what_callers_key_caches_on(self, tmp_path):
+        """It stands in for the git commit, so it must move when the library does."""
+        lib = self._fake_library(tmp_path)
+        with mock.patch.object(stdlib, "library_module_root", return_value=lib), \
+             mock.patch.object(stdlib, "compile_library"):
+            stdlib.clone_stdlib(tmp_path)
+        stamp = stdlib.stdlib_commit(tmp_path)
+        assert stamp and stamp.startswith("9.9.9+")
+        assert stdlib.discover(tmp_path)["commit"] == stamp
 
     def test_lab_and_gui_share_it(self):
         """The bootstrap lives in one place so the two front ends cannot drift."""
@@ -94,8 +118,8 @@ class TestBootstrap:
 
         source = Path(legacy.__file__).read_text()
         assert "bootstrap_project" in source
-        assert "MetasmithLibraries.git" not in source, (
-            "the repository url should come from constants, not be re-hardcoded here"
+        assert "clone" not in source, (
+            "the library is copied from the installed module; nothing here clones"
         )
 
 

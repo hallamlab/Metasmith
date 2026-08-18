@@ -69,12 +69,6 @@ if __name__ == "__main__":
                 # the wheel and the conda package. Absent is a supported state:
                 # metasmith then plans on the python solver.
                 "engine/**",
-                # the vendored metasmith_libraries snapshot, built by
-                # `dev.sh --vendor-library` and never committed -- pure data,
-                # same reasoning as `std/**` above: find_packages cannot see it,
-                # so nothing but this line ships it. Placed inside src/metasmith/
-                # specifically so `_build_hash.py`'s recursive hash covers it too.
-                "vendor/**",
             ],
             # examples
             # "package-name": ["*.txt"],

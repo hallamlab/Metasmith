@@ -157,50 +157,6 @@ _assert_solver_engine() {
     return 0
 }
 
-# Refuse to package a build whose vendored standard library is missing or
-# stale relative to src/metasmith_libraries/envs/metasmith_libraries. Same
-# failure shape as the stub relays and the unbuilt GUI bundle: a metasmith
-# release without it still runs, just against clone_stdlib's live GitHub
-# clone instead of the pinned bundle -- so nothing fails and no one notices
-# until they build offline. Set MSM_SKIP_LIBRARY_CHECK=1 to override.
-_lib_vendor="$HERE/src/metasmith/vendor/metasmith_libraries"
-_lib_vendor_srcs=(
-    "--src" "data_types=$HERE/src/metasmith_libraries/data_types"
-    "--src" "resources=$HERE/src/metasmith_libraries/resources"
-    "--src" "transforms=$HERE/src/metasmith_libraries/transforms"
-    "--src" "envs=$HERE/envs/metasmith_libraries"
-)
-# `_metadata/` under src/metasmith_libraries/ is a build product, not tracked
-# source (dev/libraries.sh -bm regenerates it the same way). --vendor-library
-# copies only, so a fresh checkout with nothing compiled yet would otherwise
-# ship an empty bundle -- compile in place first, same args as libraries.sh -bm.
-_compile_library_metadata() {
-    local lib="$HERE/src/metasmith_libraries"
-    local args=(build all --types "$lib/data_types")
-    local d
-    for d in "$lib"/resources/*/; do args+=(--uniques "${d%/}"); done
-    for d in "$lib"/transforms/*/; do args+=(--transforms "${d%/}"); done
-    PYTHONPATH="$HERE/src" python -m metasmith "${args[@]}"
-}
-_assert_library_bundle() {
-    [ -n "$MSM_SKIP_LIBRARY_CHECK" ] && {
-        echo "MSM_SKIP_LIBRARY_CHECK set — skipping vendored-library check"
-        return 0
-    }
-    if PYTHONPATH="$HERE/src" python -m metasmith build vendor-library \
-        "${_lib_vendor_srcs[@]}" --dst "$_lib_vendor" --check; then
-        return 0
-    fi
-    echo ""
-    echo "ERROR: the vendored standard library at $_lib_vendor is missing or stale"
-    echo ""
-    echo "  Build it first:"
-    echo "    $HERE/dev/metasmith.sh --vendor-library"
-    echo ""
-    echo "  Override (NOT recommended) by setting MSM_SKIP_LIBRARY_CHECK=1."
-    return 1
-}
-
 _assert_dist_matches_source() {
     [ -n "$MSM_SKIP_DIST_CHECK" ] && {
         echo "MSM_SKIP_DIST_CHECK set — skipping dist/source hash check"
@@ -307,21 +263,10 @@ case $1 in
         [ -d node_modules ] || npm install --no-audit --no-fund
         npm run build
     ;;
-    --vendor-library) # bundle metasmith_libraries into src/metasmith/vendor/ for shipping
-        _compile_library_metadata
-        PYTHONPATH="$HERE/src" python -m metasmith build vendor-library \
-            "${_lib_vendor_srcs[@]}" --dst "$_lib_vendor"
-    ;;
     -bp) # pip
         # build pip package
         _assert_gui_bundle || exit 1
         _assert_solver_engine || exit 1
-        # Same place --build-gui/-be already sit relative to hash-stamping:
-        # build_hash.txt's recursive hash walks src/metasmith/, so checking
-        # the vendored library is present and current here is what makes the
-        # hash automatically start covering its content too. Vendor it first
-        # with --vendor-library if this fails.
-        _assert_library_bundle || exit 1
         [ -d ./build ] && rm -r build
         [ -d ./dist ] && rm -r dist
         # Stamp build_hash.txt before sdist/wheel so FULL_VERSION is baked in.
@@ -341,7 +286,6 @@ case $1 in
     -bc) # conda
         # requires built pip package
         _assert_solver_engine || exit 1
-        _assert_library_bundle || exit 1
         _assert_dist_matches_source || exit 1
         rm -r $HERE/conda_build
         python ./conda_recipe/metasmith/compile_recipe.py
@@ -372,11 +316,10 @@ case $1 in
     -bd) # docker
         _assert_gui_bundle || exit 1
         # The image installs the sdist, so it carries whatever is staged here.
-        # A stale stage is *mostly* self-detecting -- engine/ and vendor/ sit
-        # inside the tree _build_hash walks, so staging changes FULL_VERSION --
-        # but that reports a hash mismatch rather than naming the cause.
+        # A stale stage is *mostly* self-detecting -- engine/ sits inside the
+        # tree _build_hash walks, so staging changes FULL_VERSION -- but that
+        # reports a hash mismatch rather than naming the cause.
         _assert_solver_engine || exit 1
-        _assert_library_bundle || exit 1
         # pre-download requirements
         mkdir -p $HERE/lib
         cd $HERE/lib
