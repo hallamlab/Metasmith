@@ -1393,3 +1393,212 @@ class TestSharedIndexIsNeverWritten:
             "concurrent strips dropped lineage from the shared index; every "
             f"such copy is a product that gets dropped downstream. {line}"
         )
+
+
+# `val(index)` arrives as `_collateBatch` built it — a list holding one map per
+# batch member — so identity is a property of the map inside, not of the list.
+# The unwrap needs a conditional, and Nextflow 26's parser will not take one in
+# a workflow body, so it lives here and the body only calls and prints.
+OWNERSHIP_PROBE = '''
+class Ownership {
+    static String tag(String label, def idx) {
+        def m = (idx instanceof List) ? idx[0] : idx
+        return label + " id=" + System.identityHashCode(m) +
+               " keys=" + Orchestrator.stripReserved(m).keySet()
+    }
+}
+'''
+
+
+class TestMultiOutputProcess:
+    """A process declaring N output tuples in ONE product group.
+
+    The shipped library's ordinary shape: of its 77 multi-product transforms
+    exactly one calls `NewProductGroup`, so the emitter writes N mandatory
+    output tuples sharing one branch and the process call returns a
+    multi-output `ChannelOut` that goes through `asStreams` -> `post` ->
+    `_debatch`. Every other case in this file, and `multi_slot_producer` in
+    the flow suite, declares one output tuple per branch and so takes the
+    single-channel path instead — which is why a defect living only on the
+    multi-output path went unseen.
+
+    Three cases: each output keeps the index its task arrived with; a
+    downstream group joins on both at once, which is the merge shape and the
+    only step in the truncated production run with two descendant streams; and
+    the ownership pin, which records who owns the index map on either side of
+    `post`.
+    """
+
+    _PROCESSES = '''
+process two_out {
+    input:
+    tuple val(index), path(_01)
+    output:
+    tuple val(index), path("*-1.*-A.txt")
+    tuple val(index), path("*-1.*-B.txt")
+    script:
+    def h = "${index}".md5()[0..7]
+    """
+    touch 1-1-1.${h}-A.txt
+    touch 1-1-1.${h}-B.txt
+    """
+}
+
+process merge_both {
+    input:
+    tuple val(index), path(_01), path(_02), path(_03)
+    output:
+    tuple val(index), path("*-1.*-M.txt")
+    script:
+    def h = "${index}".md5()[0..7]
+    """
+    touch 1-1-1.${h}-M.txt
+    """
+}
+'''
+
+    _SCRIPT = _PROCESSES + '''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([
+        [[:], file("${projectDir}/g0.txt")],
+        [[:], file("${projectDir}/g1.txt")],
+    ])
+    def _g = (o.postIn([ch], ["g"]))[0]
+
+    def k = ["A", "B"]
+    def (_A, _B) = o.post(o.asStreams(two_out(o.group("g", [_g], k, 1, [:]))), k, ["sA", "sB"])
+
+    _A[1].view { idx, item -> "IDX_A:" + groovy.json.JsonOutput.toJson(idx) }
+    _B[1].view { idx, item -> "IDX_B:" + groovy.json.JsonOutput.toJson(idx) }
+
+    k = ["M"]
+    def _M = (o.post(o.asStreams(merge_both(o.group("g", [_g, _A, _B], k, 1, [:]))), k, ["sM"]))[0]
+    _M[1].view { idx, item -> "OUT_M:" + item.name }
+}
+'''
+
+    # One input, so one task, so exactly one item per stream and the raw and
+    # posted tags line up without having to be joined.
+    _PIN_SCRIPT = _PROCESSES + '''
+workflow {
+    o = new Orchestrator(Channel.fromList([null]))
+
+    ch = Channel.fromList([[[:], file("${projectDir}/g0.txt")]])
+    def _g = (o.postIn([ch], ["g"]))[0]
+
+    def k = ["A", "B"]
+    def raw = o.asStreams(two_out(o.group("g", [_g], k, 1, [:])))
+    raw[0].view { idx, item -> Ownership.tag("RAW_A", idx) }
+    raw[1].view { idx, item -> Ownership.tag("RAW_B", idx) }
+
+    def (_A, _B) = o.post(raw, k, ["sA", "sB"])
+    _A[1].view { idx, item -> Ownership.tag("POST_A", idx) }
+    _B[1].view { idx, item -> Ownership.tag("POST_B", idx) }
+}
+'''
+
+    def _run(self, nxf_runner, script=None, inputs=("g0", "g1"), **kwargs):
+        for n in inputs:
+            (nxf_runner.work_dir / f"{n}.txt").write_text(n)
+        result = nxf_runner.run(script or self._SCRIPT, **kwargs)
+        NxfTestRunner.assert_nxf_ok(result)
+        return result
+
+    def test_each_output_keeps_its_task_index(self, nxf_runner):
+        """Both outputs carry the whole incoming index, not just their own key.
+
+        An output whose index holds one key — its own — is a task whose
+        `val(index)` binding lost the ancestry `_post` copies forward. Nothing
+        at the producer shows it; it surfaces only as a downstream group that
+        drops everything it is handed.
+        """
+        result = self._run(nxf_runner)
+        for stream in ("A", "B"):
+            lines = [
+                l for l in result.stdout.splitlines()
+                if l.startswith(f"IDX_{stream}:")
+            ]
+            assert len(lines) == 2, (
+                f"expected 2 items on stream {stream}, got {len(lines)}: "
+                f"{lines}"
+            )
+            for line in lines:
+                idx = json.loads(line.split(":", 1)[1])
+                assert "g" in idx, (
+                    f"output {stream} lost its input lineage: {idx}"
+                )
+                assert stream in idx, (
+                    f"output {stream} is missing its own key: {idx}"
+                )
+
+    def test_both_outputs_join_one_downstream_group(self, nxf_runner):
+        """A group keyed on the shared ancestor of BOTH outputs still fires.
+
+        Two `DESCENDANT_OF_BY` streams from one producer is the shape that
+        truncated a production run after seven of nine steps: the merge was
+        never submitted and Nextflow reported success.
+        """
+        result = self._run(nxf_runner)
+        emits = [l for l in result.stdout.splitlines() if l.startswith("OUT_M:")]
+        assert len(emits) == 2, (
+            "the merge step must run once per group key; got "
+            f"{len(emits)} emission(s): {emits}"
+        )
+
+    def test_the_streams_own_their_index_only_after_post(self, nxf_runner):
+        """The ownership pin: who owns the index map on each side of `post`.
+
+        Everything in this plan rests on one fact about Nextflow — a process
+        declaring N output tuples binds the SAME index object to all N output
+        channels — and on the consequence that each stream gets a map of its
+        own once `_post` copies it. Both halves are asserted here on
+        `identityHashCode`, so a future Nextflow that stops sharing announces
+        itself in this test rather than leaving `stripReserved`'s comment and
+        `asStreams`'s warning quietly false.
+
+        Top-level maps only. The value lists inside stay shared by reference
+        across descendant indexes by design, so asserting on those would pin a
+        property the code does not have.
+        """
+        result = self._run(
+            nxf_runner,
+            script=self._PIN_SCRIPT,
+            inputs=("g0",),
+            extra_lib={"Ownership.groovy": OWNERSHIP_PROBE},
+        )
+        tags = {}
+        for line in result.stdout.splitlines():
+            for label in ("RAW_A", "RAW_B", "POST_A", "POST_B"):
+                if line.startswith(label + " id="):
+                    tags.setdefault(label, []).append(
+                        line.split("id=")[1].split(" ")[0]
+                    )
+        missing = [l for l in ("RAW_A", "RAW_B", "POST_A", "POST_B") if l not in tags]
+        assert not missing, (
+            f"the probe never tagged {missing}; stdout tail: "
+            f"{result.stdout[-2000:]}"
+        )
+        assert all(len(v) == 1 for v in tags.values()), (
+            f"one input should give one item per stream, got {tags}"
+        )
+
+        assert tags["RAW_A"] == tags["RAW_B"], (
+            "the two output channels of one process no longer share an index "
+            "object. That is Nextflow behaviour changing under us, and it is "
+            "the premise `stripReserved` and `asStreams` are written against: "
+            "re-read both comments before relaxing this. "
+            f"raw ids were {tags['RAW_A']} and {tags['RAW_B']}"
+        )
+        assert tags["POST_A"] != tags["POST_B"], (
+            "both streams left post() holding ONE index map, so a write on "
+            "either is a write on both and the sharing is no longer confined "
+            f"to the pre-post span. post ids were {tags['POST_A']} and "
+            f"{tags['POST_B']}"
+        )
+        assert tags["RAW_A"] != tags["POST_A"], (
+            "post() handed back the very map the process bound, rather than "
+            f"the copy `_post` makes. ids: raw {tags['RAW_A']}, post "
+            f"{tags['POST_A']}"
+        )

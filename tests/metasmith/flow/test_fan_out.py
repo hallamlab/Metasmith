@@ -16,7 +16,11 @@ from __future__ import annotations
 
 import pytest
 
-from .conftest import build_fan_out_plan, run_and_load
+from .conftest import (
+    build_fan_out_plan,
+    build_one_group_fan_out_plan,
+    run_and_load,
+)
 
 
 def test_f1_two_slot_distinct_ids(tmp_path):
@@ -130,5 +134,52 @@ def test_f5_multi_slot_end_to_end(tmp_path, virtual_runtime):
     dtypes = {pf.dtype_key for pf in ev.produces}
     assert len(dtypes) == 2, f"slots collapsed to a single dtype: {dtypes}"
     # The library walk should now resolve both promoted outputs.
+    promoted = lib.find_invocations(status="promoted")
+    assert len(promoted) == 1, f"expected 1 promoted step, got {len(promoted)}"
+
+
+def test_f6_one_group_multi_product_shape(tmp_path):
+    """<F6> N products in ONE product group stay in one branch.
+
+    The distinction F1-F5 never made. `multi_slot_producer` calls
+    `NewProductGroup` between slots, so the emitter sees N branches and writes
+    N optional output tuples with distinct branch indices. The shipped library
+    hardly ever does that — one of its 77 multi-product transforms — and
+    declaring every product in one group instead becomes N MANDATORY output
+    tuples sharing branch 0. If the planner ever
+    collapses that into branches the emitter's `optional` decision silently
+    inverts, so the group shape is the thing to pin.
+    """
+    bp = build_one_group_fan_out_plan(tmp_path, n_products=2)
+    assert len(bp.plan.steps) == 1
+    step = bp.plan.steps[0]
+    assert len(step.transform.model.produces) == 1, (
+        "products declared without NewProductGroup must stay in one group, "
+        f"got {len(step.transform.model.produces)} groups"
+    )
+    assert len(step.produces) == 1, (
+        f"expected 1 produce group, got {len(step.produces)}"
+    )
+    assert len(step.produces[0]) == 2, (
+        f"expected 2 products in the single group, got {len(step.produces[0])}"
+    )
+    a, b = step.produces[0]
+    assert a.instance_id != b.instance_id, (
+        "two products of one group collapsed onto a single instance_id"
+    )
+
+
+def test_f6_one_group_multi_product_end_to_end(tmp_path, virtual_runtime):
+    """<F6> A one-group two-product transform compiles, runs, and promotes both."""
+    bp = build_one_group_fan_out_plan(tmp_path, n_products=2)
+    task, lib = run_and_load(virtual_runtime, bp)
+    events = lib._trace.events
+    assert len(events) == 1, f"expected 1 invocation, got {len(events)}"
+    ev = events[0]
+    assert len(ev.produces) == 2, (
+        f"expected 2 produces from one manifest entry, got {len(ev.produces)}"
+    )
+    dtypes = {pf.dtype_key for pf in ev.produces}
+    assert len(dtypes) == 2, f"products collapsed to a single dtype: {dtypes}"
     promoted = lib.find_invocations(status="promoted")
     assert len(promoted) == 1, f"expected 1 promoted step, got {len(promoted)}"
