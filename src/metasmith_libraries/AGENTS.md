@@ -95,8 +95,17 @@ listed in `build_templates.py`; `_authoring.py` owns the rest. Read
 that cannot ship stays listed in `BLOCKED` with the reason rather than being deleted, so
 a build that omits it does not read as "these are all the templates there are".
 
-Four rules, each quiet if you break it:
+Five rules, each quiet if you break it:
 
+- **Pin every target that descends from an ambiguous type.** A target names a type, and
+  the solver may satisfy it from any transform producing a subtype — so once a second
+  producer joins a type (`spades_assembly` beside `megahit_assembly` under
+  `sequences::assembly`), each unpinned target downstream is free to be answered from a
+  different one. `metagenomics_from_paired_reads` then ran both assemblers and split its
+  binning across them, and the search that found that took ~190s and 6 GB where the
+  pinned form takes 3s. Neither symptom names its cause: the plan is valid, and the cost
+  lands on whoever is waiting behind the GUI's plan lock. Write the shared ancestor as
+  target 0 and hang the rest off it with `parents=[0]`.
 - **No agent.** A template says what to build, never where. Whoever loads it supplies the host.
 - **References stay inside the repo.** `Template.Save` refuses one that does not, because an
   absolute path is one machine's checkout and arrives at a colleague naming nothing.
