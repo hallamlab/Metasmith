@@ -25,6 +25,7 @@ Exit 0 only if all four pass on both members. Anything else and the run must be 
 import sys
 from pathlib import Path
 sys.path.insert(0, "src")
+import numpy as np
 import pandas as pd
 from ecspr.bake.direction import substitute as S
 from ecspr.bake.direction.refdata import (load_mnxr_stoich, load_mnxm_names,
@@ -34,20 +35,33 @@ MNX = Path("data/fabfos/originals/metanetx/4.5")
 R8 = Path("data/fabfos/processed/metabolism_bake/seams")
 TABLES = Path("src/ecspr/bake/direction")
 SILENT = {"no_props", "no_smiles", "wildcard", "unresolved", "no_stoich", "unparseable"}
+# kJ/mol. See check 4: eight orders below anything that can move a tier.
+TOL = 1e-9
 
 new_eq, new_dg = Path(sys.argv[1]), Path(sys.argv[2])
 
 props = load_mnxm_props(MNX / "chem_prop.tsv")
-subs = S.load(TABLES, props, load_mnxm_names(MNX / "chem_prop.tsv"),
-              formulas=load_mnxm_formulas(MNX / "chem_prop.tsv"))
+names = load_mnxm_names(MNX / "chem_prop.tsv")
+formulas = load_mnxm_formulas(MNX / "chem_prop.tsv")
 allst = load_mnxr_stoich(MNX / "reac_prop.tsv")
-covered = {m for m, v in allst.items() if subs.covers(v[0])}
-print(f"substitution tables cover {len(covered):,} reactions\n")
+
+# THE COVERED SET IS PER MEMBER. A row refused for one member and kept for the other is
+# the ordinary `member_drift` path, so a reaction covered for dGbyG may be untouched for
+# eQuilibrator. Loading once and reusing the set would test check 3 against reactions this
+# member was never given, and -- worse -- exempt from check 4 rows that no table touches
+# for this member, which is the one invariant nothing else asserts.
+covered_by = {}
+for member in ("eq", "dgbyg"):
+    subs = S.load(TABLES, props, names, formulas=formulas, member=member)
+    covered_by[member] = {m for m, v in allst.items() if subs.covers(v[0])}
+    print(f"substitution tables cover {len(covered_by[member]):,} reactions for {member}")
+print()
 
 bad = []
 for member, newp, oldp in (("eq", new_eq, R8 / "direction_member_eq.parquet"),
                            ("dgbyg", new_dg, R8 / "direction_member_dgbyg.parquet")):
     print(f"===== {member} =====")
+    covered = covered_by[member]
     if not newp.exists():
         bad.append(f"{member}: {newp} does not exist"); print("  MISSING\n"); continue
     new = pd.read_parquet(newp)
@@ -79,18 +93,49 @@ for member, newp, oldp in (("eq", new_eq, R8 / "direction_member_eq.parquet"),
         bad.append(f"{member}: {len(was_silent):,} covered reactions were silent in r8 "
                    f"and NONE speaks in r9")
 
-    # 4 -- the invariant, at the far end of the cluster
+    # 4 -- the invariant, at the far end of the cluster.
+    #
+    # THE VERDICT COLUMNS ARE COMPARED EXACTLY AND THE MEASURED ONES ARE NOT. `flag` and
+    # `reason` are decisions, so any change is a changed decision. `dg` and `sigma` are
+    # float64 arriving from a different SHARDING than the deployed bake's -- the eq lane
+    # ran as one pass in r8 and 16-wide here -- and a member's linear algebra does not
+    # promise bit-identical accumulation across a different batching. Exact `!=` on those
+    # asserts reproducible summation order, which nothing offers and which was only ever
+    # holding because the two sides had shared provenance.
+    #
+    # TOL IS SET WHERE CHEMISTRY CANNOT HIDE UNDER IT. `canon.DIR_DECADE` is 5.71 kJ/mol
+    # and DIR_SIGMA_FLOOR is a comparable scale; 1e-9 kJ/mol is eight orders below the
+    # smallest difference that could move a tier or a ratio. The largest tolerated drift
+    # is PRINTED rather than swallowed, so a real movement that happens to sit under the
+    # bound still shows up as a number that grew.
     unc = sorted((set(n.index) & set(o.index)) - covered)
-    cols = ["dg", "sigma", "flag", "reason"]
-    a, b = n.loc[unc, cols], o.loc[unc, cols]
-    neq = (a.ne(b) & ~(a.isna() & b.isna())).any(axis=1)
-    ndiff = int(neq.sum())
+    verdicts, measured = ["flag", "reason"], ["dg", "sigma"]
+    a, b = n.loc[unc], o.loc[unc]
+
+    va, vb = a[verdicts], b[verdicts]
+    changed = (va.ne(vb) & ~(va.isna() & vb.isna())).any(axis=1)
+
+    worst = 0.0
+    for c in measured:
+        x, y = a[c].astype(float), b[c].astype(float)
+        both = x.notna() & y.notna()
+        drift = (x[both] - y[both]).abs()
+        if len(drift):
+            worst = max(worst, float(drift.max()))
+        # NaN on exactly one side is an appearance or a disappearance, not a drift.
+        changed |= (x.isna() != y.isna())
+        changed |= both & ~np.isclose(x, y, rtol=1e-12, atol=TOL, equal_nan=True)
+
+    ndiff = int(changed.sum())
     print(f"  [4] {'ok' if ndiff == 0 else 'FAIL'} uncovered rows unchanged:"
-          f" {len(unc):,} compared, {ndiff:,} differ")
+          f" {len(unc):,} compared, {ndiff:,} differ"
+          f"  (largest tolerated drift {worst:.2e} kJ/mol, bound {TOL:g})")
     if ndiff:
         bad.append(f"{member}: {ndiff:,} UNCOVERED reactions changed -- chemistry moved "
                    f"where no table touches it")
-        print(a[neq].join(b[neq], lsuffix="_r9", rsuffix="_r8").head(15).to_string())
+        cols = verdicts + measured
+        print(a[changed][cols].join(b[changed][cols], lsuffix="_r9",
+                                    rsuffix="_r8").head(15).to_string())
     print(f"  reasons r9: {dict(new['reason'].value_counts().head(8))}\n")
 
 print("=" * 70)
