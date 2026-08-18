@@ -110,3 +110,6 @@ std_assembly_data
 # deeper and is named by tests/metasmith_libraries/conftest.py.
 /msm_home/
 /tests/metasmith_libraries/test_msm_home/
+
+# authoring aid: `build_templates.py --dag` renders here, never committed
+/src/metasmith_libraries/results/
