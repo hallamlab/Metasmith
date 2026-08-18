@@ -99,9 +99,15 @@ def protocol(context: ExecutionContext):
         # --require: this lane's ONLY product is the member table, so an unavailable
         # member is a failed step, not a missing vote. The tolerant path belongs to the
         # combiner, which is where "one member is absent" is a legitimate state.
+        # --substitutions: the carrier and polymer tables ship INSIDE the vendored
+        # code, so this path is the same tree `evidence fingerprint` just hashed and a
+        # table cannot come apart from the DIRVER that describes it. It must match what
+        # `forecast build` priced, or the accounting describes a bake nobody built.
+        # Omitting it is what reproduces r8.
         {py} -m ecspr.bake.direction.drive eval --member eq --require \
             --universe _universe.json \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
+            --substitutions {libdir}/ecspr/bake/direction \
             --out {iout.container}
 
         {py} -m ecspr.bake.evidence collect --root _ev --tool equilibrator \
