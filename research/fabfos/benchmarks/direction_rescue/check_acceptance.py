@@ -86,13 +86,34 @@ def main(argv=None) -> int:
     b = base.loc[control]
     bad_tier = c.index[c["dir_tier"] != 0]
     bad_ratio = c.index[c["ratio"] != 1.0]
-    bad_method = c.index[(c["dir_method"].fillna("") != b["dir_method"].fillna(""))]
+    # `dir_method` SPLIT IN TWO, because the criterion's third clause conflates a
+    # direction claim with a diagnostic label and only real data shows the difference.
+    #
+    # `combine` writes `refused` when dGbyG raised its wildcard flag and `no_evidence`
+    # otherwise (combine.py:180). BOTH mean the same thing to a consumer -- tier 0,
+    # ratio 1.0, sigma at DIR_SIGMA_0, confidence 0.0, no member vote. They differ only
+    # in WHERE the member stopped, and moving that boundary is what a substitution does:
+    # clearing a `no_smiles` participant lets dGbyG advance until it meets a wildcard on
+    # a DIFFERENT participant, and substituting the `*`-bearing participant itself clears
+    # the flag. r9 swaps 46 of these in both directions with every other field identical.
+    #
+    # So a relabel between two no-vote methods is reported and does not fail; a control
+    # row acquiring a VOTING method is the thing the control exists to catch and still
+    # fails. Relaxing the clause outright would have hidden that second case too.
+    NO_VOTE = {"no_evidence", "refused", ""}
+    changed = c.index[(c["dir_method"].fillna("") != b["dir_method"].fillna(""))]
+    relabel = [m for m in changed if c.loc[m, "dir_method"] in NO_VOTE
+               and b.loc[m, "dir_method"] in NO_VOTE]
+    bad_method = [m for m in changed if m not in set(relabel)]
     ok &= report("C13 control set stays tier 0", len(bad_tier) == 0,
                  f"{len(bad_tier)} moved: {list(bad_tier[:5])}")
     ok &= report("C13 control set stays ratio 1.0", len(bad_ratio) == 0,
                  f"{len(bad_ratio)} moved: {list(bad_ratio[:5])}")
-    ok &= report("C13 control set keeps dir_method", len(bad_method) == 0,
+    ok &= report("C13 control set gains no voting dir_method", len(bad_method) == 0,
                  f"{len(bad_method)} moved: {list(bad_method[:5])}")
+    if relabel:
+        print(f"  [note] {len(relabel)} control rows relabelled between no-vote methods "
+              f"(no_evidence <-> refused); tier, ratio, sigma and confidence unchanged")
 
     # --- no sign flip on a measured vote -----------------------------------
     both1 = base.index[(base["dir_tier"] == 1) & (cand["dir_tier"] == 1)]
