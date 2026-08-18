@@ -83,3 +83,10 @@ kept as the invariant. 8,091 reactions used, effective conductance 2.96871550915
 `rescue_scope.tsv` in the parent directory is the mechanism table, reproduced with
 `measure_rescue.py --substitutions none --expect`. Its own header records the bake and the
 forecast tables it was computed from.
+
+**r9's own readings are here too**, stamped `0ffd4c8c…:e8f72b8b…`. r9 is pinned at
+`metabolism_bake_r9` and not deployed, so these are not baselines in the sense above — they
+are what r10 will be measured against once the promote happens, taken from the staged chunk
+rather than from a deployed one. The rescue reading was taken against r9's OWN rebuilt
+forecast (`--substitutions src/ecspr/bake/direction`); read against r8's forecast the two
+disagree about which members spoke, which is the check working rather than a defect.
