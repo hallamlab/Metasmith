@@ -48,17 +48,23 @@ form that is right under both.
 ## A fresh checkout is not runnable until the libraries are compiled
 
 Every transform library carries a `_metadata/` directory compiled from its `data_types/*.yml` and
-its transform Python. **It is a build product and is not tracked**, so a fresh clone has none —
-and a library with no metadata does not degrade, it raises: `DataTypeLibrary` asserts the index
-exists before planning begins. Three commands, because there are three libraries and only one of
-them is reached by the vendoring step:
+its transform Python. **It is a build product**, and a library with no metadata does not degrade,
+it raises: `DataTypeLibrary` asserts the index exists before planning begins. Three commands,
+because there are three libraries and only one of them is reached by the vendoring step:
 
     dev/libraries.sh -bm                        # the standard library under src/metasmith_libraries
     dev/fabfos.sh -bm                           # fabfos's own algorithm library, inside the package
     src/fabfos/build_references/build.sh        # the build-side library (also vendors src/ecspr)
 
 The second is easy to forget precisely because it sits inside `src/fabfos/` rather than under a
-library root, which is also why `--vendor-library` never sees it. The third does two jobs in one
+library root, which is also why `--vendor-library` never sees it.
+
+**Whether the compiled metadata is TRACKED differs between them, and it matters when you edit a
+transform.** `src/metasmith_libraries/**/_metadata/` is gitignored, so a fresh clone has none and
+you simply build it. `src/fabfos/build_references/transforms/*/_metadata/index.yml` is tracked:
+each transform's `instance_id` is a digest over its requirement set, so changing what a transform
+requires changes a file git is watching. Recompile and commit it with the change, or the tracked
+index describes a transform that no longer exists. The third does two jobs in one
 script and the order between them is load-bearing: it copies `src/ecspr` in as `buildlib::ecspr`
 *before* compiling, so the index it writes describes the tree that was actually staged. A copy
 made by any other invocation is a copy the index does not describe.
