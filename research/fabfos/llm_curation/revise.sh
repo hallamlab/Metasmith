@@ -15,6 +15,10 @@ SPLIT="${SPLIT:-dev}"
 LIMIT="${LIMIT:-0}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8080/v1}"
 MODEL="${MODEL:-qwen3-32b}"
+# The chained jobs serve 8 slots out of a 32768 context, so a slot holds 4096 tokens.
+# Rendered prompts top out near 2,336 and answers have not exceeded 300, so 1024 leaves
+# room without letting one runaway generation overrun its slot.
+MAX_TOKENS="${MAX_TOKENS:-1024}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 RUNS="$HERE/runs"; mkdir -p "$RUNS"
@@ -26,7 +30,8 @@ ENVS=/home/tony/lib/miniforge3/envs
 export PYTHONPATH="$ROOT/src"
 
 run () { "$ENVS/ecspr/bin/python" -u "$HERE/run_panel.py" --limit "$LIMIT" \
-             --base-url "$BASE_URL" --model "$MODEL" "$@"; }
+             --base-url "$BASE_URL" --model "$MODEL" \
+             --max-tokens "$MAX_TOKENS" "$@"; }
 score () { "$ENVS/rdkit-scratch/bin/python" -u "$HERE/arbiter.py" \
                --scoreboard "$HERE/scoreboard.tsv" "$@"; }
 

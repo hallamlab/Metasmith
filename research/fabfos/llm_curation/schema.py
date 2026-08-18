@@ -44,7 +44,7 @@ SUBSTITUTION = {
     "properties": {
         "id": {"type": "string", "maxLength": 24},
         "smiles": {"type": "string", "maxLength": 400},
-        "why": {"type": "string", "maxLength": 300},
+        "why": {"type": "string", "maxLength": 120},
     },
     "required": ["id", "smiles", "why"],
     "additionalProperties": False,
@@ -54,10 +54,10 @@ SIMPLIFY = {
     "type": "object",
     "properties": {
         "action": {"type": "string", "enum": ["rewrite", "refuse"]},
-        "reason": {"type": "string", "maxLength": 300},
+        "reason": {"type": "string", "maxLength": 160},
         "left": {"type": "array", "maxItems": 24, "items": TERM},
         "right": {"type": "array", "maxItems": 24, "items": TERM},
-        "substitutions": {"type": "array", "maxItems": 24, "items": SUBSTITUTION},
+        "substitutions": {"type": "array", "maxItems": 12, "items": SUBSTITUTION},
     },
     "required": ["action", "reason", "left", "right", "substitutions"],
     "additionalProperties": False,
