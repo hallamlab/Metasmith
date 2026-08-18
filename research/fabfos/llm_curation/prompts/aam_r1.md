@@ -36,6 +36,13 @@ Each term in `left` and `right` is either `{"n":coeff,"id":"MNXM..."}` — an ac
 from the HAS STRUCTURE list — or `{"n":coeff,"smiles":"...","label":"short name"}` when you
 introduce a stand-in. Coefficients are positive on both sides.
 
+`substitutions` is where you record **which NO STRUCTURE accession each stand-in stands in
+for**, one entry per replaced accession: `{"id":"MNXM...","smiles":"...","why":"one clause
+saying what the stand-in preserves"}`. The equation alone cannot say this — nothing in it
+marks the thioester on the right as replacing `MNXM1090405` rather than being unrelated —
+and the `why` is kept as the row's citation. Leave it empty when you cancelled a
+participant rather than replacing it, or when you refused.
+
 Heavy atoms (C, N, O, P, S, and any metal) must balance left to right. Count them.
 Hydrogen is excluded — do not try to balance H or charge.
 
