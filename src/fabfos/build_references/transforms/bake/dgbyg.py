@@ -121,11 +121,17 @@ def protocol(context: ExecutionContext):
         # remains a missing vote at the combiner, which is the right place for that.
         # Written without `${{...}}`: this is an f-string, and a brace that survives into
         # the shell fails at the end of the lane rather than at import.
+        # --substitutions: the carrier and polymer tables ship INSIDE the vendored
+        # code, so this path is the same tree `evidence fingerprint` just hashed and a
+        # table cannot come apart from the DIRVER that describes it. It must match what
+        # `forecast build` priced, or the accounting describes a bake nobody built.
+        # Omitting it is what reproduces r8.
         pids=""
         for i in $(seq 0 {SHARDS - 1}); do
             {py} -m ecspr.bake.direction.drive eval --member dgbyg --require \
                 --universe _universe.json --shard $i/{SHARDS} \
                 --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
+                --substitutions {libdir}/ecspr/bake/direction \
                 --out members/dgbyg_$i.parquet &
             pids="$pids $!"
         done

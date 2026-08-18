@@ -455,3 +455,35 @@ def test_a_hash_inside_a_smiles_survives_the_comment_stripper(tmp_path):
     p.write_text("# a real comment\nmodel_key\tsmiles\nMODEL:x\tC#N\n")
     df = S.read_table(p)
     assert list(df.smiles) == ["C#N"]
+
+
+# --- the lanes that must hand the tables to the member --------------------
+
+REPO = Path(__file__).resolve().parents[3]
+LANES = REPO / "src" / "fabfos" / "build_references" / "transforms" / "bake"
+STAGED_TABLES = "{libdir}/ecspr/bake/direction"
+
+
+@pytest.mark.parametrize("lane", ["equilibrator.py", "dgbyg.py"])
+def test_the_member_lanes_hand_the_tables_to_the_member(lane):
+    """A member lane that omits `--substitutions` runs r8 chemistry and says nothing.
+
+    The flag is wired in the module and priced in the forecast, and neither of those
+    reaches the cluster: what the job runs is the command string in this file. The path
+    is the STAGED one, so the tables the member reads are inside the tree
+    `evidence fingerprint --package direction` hashes -- a table and the DIRVER that
+    describes it cannot come apart.
+    """
+    src = (LANES / lane).read_text()
+    assert "drive eval" in src
+    assert f"--substitutions {STAGED_TABLES}" in src
+
+
+def test_the_staged_tree_carries_the_tables_it_is_pointed_at():
+    """The vendored copy is where the lanes look. Build product, so absent is a skip."""
+    staged = (REPO / "src" / "fabfos" / "build_references" / "resources"
+              / "buildlib" / "ecspr" / "bake" / "direction")
+    if not staged.is_dir():
+        pytest.skip("buildlib not vendored in this checkout")
+    for name in ("models.tsv", "substitutions.tsv"):
+        assert (staged / name).is_file(), f"vendored tree lacks {name}"
