@@ -1,0 +1,59 @@
+name: fosmid_inserts_from_pooled_reads
+description: 'Recover cloned fosmid inserts from pooled short reads: host filtering,
+  megahit
+
+  and spades per pool, then backbone-anchored insert resolution and cross-pool
+
+  dedup into a representative insert set.'
+sample_type: null
+target_types:
+- fabfos::putative_inserts
+- fabfos::insert_metadata
+- type: sequences::assembly_stats
+  parents:
+  - 0
+transform_libraries:
+- assembly
+- fabfos
+resource_libraries:
+- env
+- lib
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/0286d3072dcb4277ae0c552a559bde1f:
+      type: sequences::short_reads_pe
+      parents:
+        aioP56cER0EF@read_metadata.json: sequences::read_metadata
+      instance_id: 1e2064ee6ff773bc6dd5317dfb870aa9684490f055e28ed7e2388a465d0ff0b5fed1
+      origin: leaf
+    /msm_deferred/27b3cdc7337f45688b605ed67b9c4a5c:
+      type: fabfos::vector_backbone
+      parents:
+        aioP56cER0EF@experiment.txt: fabfos::experiment
+      instance_id: 1e202ae20f4c01b90e1ce15d556657927e72307f4f9e651c92b134a5347d4cf15f7f
+      origin: leaf
+    /msm_deferred/3f8db8ce7372408e86b993da7c99418b:
+      type: algorithm::fabfos_recovery.py
+      instance_id: 1e205e0a2487a0cef3c6c14dd6b1f5ae7625aa0aa7c38817bd9832254c97deef668a
+      origin: leaf
+    /msm_deferred/5da5772f8c184c24b226d94bb20c92d7:
+      type: sequences::background_genome
+      parents:
+        aioP56cER0EF@experiment.txt: fabfos::experiment
+      instance_id: 1e2047d06bb2e069fbb3026a4148db8a7481607859341f59f6cc1fa591842f8149b8
+      origin: leaf
+    experiment.txt:
+      type: fabfos::experiment
+      instance_id: 1e20c16161cd6391273ad5437ffd2c3943f92ef21e044108eb77e37f6ee4240fa9e4
+      origin: leaf
+    read_metadata.json:
+      type: sequences::read_metadata
+      parents:
+        aioP56cER0EF@experiment.txt: fabfos::experiment
+      instance_id: 1e20c6c4ef97976eadab8eb8d90542d770e1c8aadced7c5975ac418a38fa78050717
+      origin: leaf
+  values:
+    experiment.txt: fosmid_pool_study
+    read_metadata.json: '{"parity": "paired", "length_class": "short"}'
