@@ -639,16 +639,14 @@ already in one globus session.
 lineage reason: B2 pins the mapper's output to `parents={genomes}`, and three proteomes
 staged as unrelated givens give that pin nothing to bind to.
 
-**The proteome a lane was keyed on is NOT the one in `originals/genomes/`.** Each
-`fabfos/<host>/annotations/` ships its own `.faa`, and it has to: the lanes
-already in that tree came from an earlier ORF call, and their ids overlap the current
-NCBI proteome by **0%** for dh10b and epi300 (`ECDH10B_0001`/`C1_1` against `WP_`/`NP_`
-accessions). Copying an original over one of those files replaces a working join with a
-file that matches nothing. `derive_annotation_faa.py` is what keeps each `.faa` and its
-four lane tables in one id space, refusing to write anything short of total coverage;
-only k12's is a reconstruction rather than the generating file, and that script's
-docstring says so — with the evidence: the lanes key on `NP_416485.4`, the current
-proteome publishes `.5`, and the match is made on the versionless accession.
+**Every B2 table is keyed on the registry proteome, and `runs/<host>/annotations/` is
+not.** All eight hosts now share one ORF namespace — `lcl|<accession>_prot_<id>_<n>`, the
+headers of the `.faa` under `originals/genomes/<host>/genome/` — which is what makes a
+cross-host comparison at ORF grain mean anything. The `annotations/` tree beside them is
+the superseded 2024 lane run and keys on an earlier ORF call (`NP_414542.1`,
+`ECDH10B_0001`, `C1_1`); it overlaps the current namespace by **0%** for dh10b and
+epi300. Joining a GPR table to it returns nothing, silently. `derive_annotation_faa.py`
+exists to keep that tree internally consistent and is about the tree, not about B2.
 **The lane set is the table's contract, and it is checked.** A B2 table carries exactly
 the four channels `lib::fabfos_evidence.LANE_SETS["chosen_4"]` declares; the collector
 refuses by name when the mapper's output does not, and its `BUILD.json` records the set it
