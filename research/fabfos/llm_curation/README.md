@@ -9,8 +9,10 @@ deciding. Nothing here trusts a model's account of its own work.
     panel.py      freeze the reactions the lane is measured on   [rdkit-scratch]
     run_panel.py  one prompt revision over one split, billed     [ecspr]
     arbiter.py    recount the elements; append the scoreboard    [rdkit-scratch]
+    harvest.py    model output -> crosswalk rows `admit` accepts [rdkit-scratch]
+    direction.py  panel / run / score for the direction lane     [both, per subcommand]
     client.py     the constrained-decoding chat client
-    schema.py     the output contract all three agree on
+    schema.py     the output contract they all agree on
 
 The environment split is forced, not chosen: rdkit is in `rdkit-scratch` and httpx is not,
 so the runner writes JSONL and the arbiter reads it rather than calling it. Both need
@@ -39,6 +41,25 @@ Controls are a gate, not a metric: a reaction that banks today must not come bac
 unbalanced or with different element totals. Zero regressions or the revision does not
 count. Over-refusal on a control costs nothing, because in production a banked reaction
 never reaches this lane at all.
+
+## The direction lane is a different shape, for a measured reason
+
+`direction.py` asks each reaction twice — as written, and with the sides exchanged — and
+keeps a call **only where the two answers disagree**. Agreement across a swap means the
+model answered the layout rather than the chemistry, so agreement is the failure signal
+here, which inverts the usual reading of a consistency check.
+
+That is not a hunch. The pilot's model scored 100% on reactions MetaNetX writes
+left-to-right and 15–30% on those it writes right-to-left, which is a bias every
+independent opinion would share: an ensemble raises apparent confidence and leaves accuracy
+untouched. So this lane's ensemble shrinks rather than grows — two orientations of one
+opinion, not three opinions of one orientation.
+
+`score` prints three rows and they are meant to be read together: the trivial baseline of
+answering "as written" every time, the ungated single pass the pilot measured, and the
+gated result. The panel is balanced by written orientation in every split so the baseline
+sits at 50% rather than at whatever the class mix happens to be, and MetaCyc's curated call
+is the answer key and never appears in the prompt.
 
 ## Cost
 
