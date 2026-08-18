@@ -126,6 +126,16 @@ ROW_COLUMNS = ("kind", "mnxm", "mnx_name", "terms", "congener_terms", "couple_id
 #            In scope by the principal's decision, against the recommendation to exclude.
 KINDS = ("carrier", "polymer", "thioester")
 
+# Kinds whose anchor predicts a ZERO offset instead of one computed from two potentials.
+# A polymer row's anchor and sibling are one glucosyl moving between the same two partners
+# at two chain lengths. A thioester row's are the same acyl transfer written on two
+# carriers that share the 4'-phosphopantetheine thiol -- the only part of either carrier
+# the acyl group is bonded to, and the part the model compound reproduces exactly. Neither
+# has a potential to declare, so ZERO IS THE PREDICTION rather than the absence of one, and
+# a row is refused unless the restaged equation lands on the number the deployed bake
+# already holds for the transformation, computed from different accessions.
+ZERO_OFFSET_KINDS = ("polymer", "thioester")
+
 # Faraday constant, kJ/(mol*V). Converts a declared couple potential difference into the
 # same units the members and `canon.DIR_DECADE` are in.
 FARADAY = 96.485
@@ -1008,21 +1018,19 @@ def cmd_anchor(args):
             # reaction the row exists to unblock.
             rows.append(dict(out, verdict="member_silent")); bad += 1; continue
 
-        # A POLYMER ROW PREDICTS A ZERO OFFSET, and zero is a real prediction here rather
-        # than the absence of one. The anchor rewritten and its sibling are the SAME
-        # transformation at two chain lengths -- one glucosyl moving between the same two
-        # partners -- and MetaNetX's own maltodextrin ladder demonstrates that dG'0 is
-        # chain-length invariant to six decimals across n = 5, 6, 7. So a polymer row is
-        # refused unless the restaged equation lands on a number the deployed bake already
-        # holds for the transformation, computed from different accessions. No potential is
-        # declared or wanted: a sugar has none.
-        is_poly = str(rec["kind"]) == "polymer"
+        # A ZERO-OFFSET KIND PREDICTS 0.0, and zero is a real prediction here rather than
+        # the absence of one -- see ZERO_OFFSET_KINDS for why each kind earns it. The
+        # polymer case rests on MetaNetX's own maltodextrin ladder, which demonstrates dG'0
+        # chain-length invariant to six decimals across n = 5, 6, 7. No potential is
+        # declared or wanted: neither a sugar nor a thioester has one.
+        zero_offset = str(rec["kind"]) in ZERO_OFFSET_KINDS
         sib = str(rec.get("sibling_mnxr") or "")
         was = baseline.get(sib) if _cited(rec.get("sibling_mnxr")) else None
-        if was is None or pd.isna(was) or not (is_poly or _cited(rec.get("sibling_e0_V"))):
+        if was is None or pd.isna(was) or not (zero_offset
+                                              or _cited(rec.get("sibling_e0_V"))):
             rows.append(dict(out, verdict="no_sibling"))
         else:
-            want = 0.0 if is_poly else predicted_offset(
+            want = 0.0 if zero_offset else predicted_offset(
                 rec["n_e"], st[mnxm] if str(rec["state"]) == "red" else -st[mnxm],
                 rec["e0_model_V"], rec["sibling_e0_V"])
             gap = abs((dg - float(was)) - want)

@@ -84,6 +84,23 @@ Two instances remain live and are not this lane's to fix:
 
 Before adding a cache here, ask what it would serve after the next repin.
 
+## Two decisions r9 deliberately does not carry
+
+**Branching glycogen stays out**, and it costs exactly three tier-0 reactions --
+`MNXR136341`, `MNXR145038`, `MNXR145039`. 411 MetaNetX compounds carry the acceptor
+formula `C18H32O16` and at least three are defensible branched alpha-glucans (panose
+`MNXM1104683`, isomaltotriose `MNXM1104226`/`MNXM1106015`, 6-O-glucosylmaltose
+`MNXM1107398`). No gate separates them, so authoring a row would be choosing one by hand
+and calling it a lookup. Open for the principal, not refused on evidence.
+
+**Calibrate's stale balance gate is deferred to r10.** `calibrate.py:85` returns
+`unbalanced` from raw `reac_prop` BEFORE consulting the member, discarding 479 reactions
+the member balanced after restaging. Sigma_0 is 23.489 either way, because the committed
+fit is the unsubstituted subset -- so the constant is settled and only the bins move
+(`PHYSIOL-LEFT-TO-RIGHT` tau 98.27 -> 112.18). Fixing it inside r9 would make every ratio a
+mix of chemistry and calibration change and cost the attribution the four-way pricing was
+built to give.
+
 ## The negative control
 
 glgA (`MNXR145046`) and glgP (`MNXR145036`, `MNXR145038`) contain no water and gain nothing

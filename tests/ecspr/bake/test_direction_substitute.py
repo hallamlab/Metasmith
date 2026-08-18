@@ -572,3 +572,100 @@ def test_the_staged_tree_carries_the_tables_it_is_pointed_at():
         pytest.skip("buildlib not vendored in this checkout")
     for name in ("models.tsv", "substitutions.tsv"):
         assert (staged / name).is_file(), f"vendored tree lacks {name}"
+
+
+# --- the acyl carriers ----------------------------------------------------
+#
+# A `thioester` row is unlike the other two kinds in what its anchor can prove. A carrier
+# row's sibling is a reference because a TABULATED E0' says where the stand-in should sit;
+# a polymer row's is one because MetaNetX's maltodextrin ladder says the offset is zero. An
+# acyl carrier has neither, so the anchor is doing the whole job and these assert that it
+# is actually reachable, actually predicts, and actually refuses.
+
+THIO_PP = "MODEL:octanoyl_Ppant"
+THIO_COA = "MODEL:octanoyl_CoA"
+
+THIO_MODELS = pd.DataFrame([
+    dict(model_key=THIO_PP, name="S-octanoyl-4'-phosphopantetheine",
+         smiles="CCCCCCCC(=O)SCCNC(=O)CCNC(=O)[C@H](O)C(C)(C)COP(=O)([O-])[O-]",
+         inchi="", inchikey="", basis="chem_prop MNXM163542, copied by machine"),
+    dict(model_key=THIO_COA, name="octanoyl-CoA",
+         smiles="CCCCCCCC(=O)SCCNC(=O)CCNC(=O)[C@H](O)C(C)(C)COP(=O)([O-])OP(=O)([O-])OC"
+                "[C@H]1O[C@@H](N2C=NC3=C2N=CN=C3N)[C@H](O)[C@@H]1OP(=O)([O-])[O-]",
+         inchi="", inchikey="", basis="chem_prop MNXM1093479, copied by machine"),
+])
+
+
+def _thio_row(**kw):
+    base = dict(kind="thioester", mnxm="MNXM1091247", mnx_name="octanoyl-[ACP]",
+                terms=f"1*{THIO_PP}", congener_terms="", couple_id="acp_octanoyl",
+                state="", e0_V="", e0_model_V="", n_e="", n_h="",
+                anchor_mnxr="MNXR166524", sibling_mnxr="MNXR135811", sibling_e0_V="",
+                congeners_eq="", gap_eq=0.0, congeners_dgbyg="", gap_dgbyg=0.0,
+                basis="ACP presents its acyl group on 4'-phosphopantetheine")
+    base.update(kw)
+    return base
+
+
+THIO_NAMES = {"MNXM1091247": "octanoyl-[ACP]"}
+THIO_PROPS = {"MNXM1091247": {"smiles": "CCCCCCCC(=O)S*"}}     # the residue that blocks it
+
+
+def _thio(tmp_path, rows=None, member="dgbyg", props=None):
+    rows = pd.DataFrame([_thio_row()]) if rows is None else rows
+    return S.load(_written(tmp_path, rows, THIO_MODELS),
+                  THIO_PROPS if props is None else props, THIO_NAMES, member=member)
+
+
+def test_a_thioester_row_predicts_a_zero_offset_like_a_polymer_and_not_a_potential():
+    """THE GATE THIS KIND COULD NOT REACH.
+
+    `cmd_anchor` used to send anything that was not a polymer down the potential branch,
+    which requires a cited `sibling_e0_V`. An acyl carrier has no potential to cite, so
+    every such row scored `no_sibling`, wrote no gap, and then died as the FATAL
+    `member_unscored` -- the kind was declared in KINDS and was unreachable in practice.
+    """
+    assert "thioester" in S.ZERO_OFFSET_KINDS
+    assert "polymer" in S.ZERO_OFFSET_KINDS
+    assert "carrier" not in S.ZERO_OFFSET_KINDS, (
+        "a carrier's offset is computed from two potentials, never assumed zero")
+
+
+def test_a_thioester_row_is_admitted_without_declaring_any_potential(tmp_path):
+    """No `e0_V`, no `n_e`, no `sibling_e0_V` -- and the couple and potential gates, which
+    scope themselves to `kind == 'carrier'`, must not reach in and refuse it."""
+    s = _thio(tmp_path)
+    assert len(s) == 1
+    assert s.rewrite({"MNXM1091247": -1.0, "MNXM99": 1.0}) == {THIO_PP: -1.0, "MNXM99": 1.0}
+
+
+def test_an_acyl_carrier_is_replaceable_because_its_protein_is_a_residue(tmp_path):
+    """The `*` is why both members abstain, and so is why the row is allowed to act. A
+    readable participant would be an override of MetaNetX chemistry, not a substitution."""
+    with pytest.raises(S.Refused, match="replaceable|already read|usable"):
+        _thio(tmp_path, props={"MNXM1091247": {"smiles": "CCCCCCCC(=O)SCC"}})
+
+
+def test_the_acyl_arm_eq_refuses_is_the_arm_dgbyg_keeps(tmp_path):
+    """THE MEASURED SPLIT, held as a regression.
+
+    dGbyG places the 4'-phosphopantetheine model on the CoA-written sibling to float noise;
+    eQuilibrator places it 8.8776 away, and that constant does not vary with the acyl group
+    -- so it is a property of how eQuilibrator decomposes the two backbones, not of the
+    thioester bond. The refusal is therefore ONE-SIDED and the ensemble keeps dGbyG's vote.
+    """
+    rows = pd.DataFrame([_thio_row(gap_eq=8.877555255995048, gap_dgbyg=1.239776611328125e-05)])
+    assert len(_thio(tmp_path, rows=rows, member="dgbyg")) == 1, "dgbyg lost its vote"
+    assert len(_thio(tmp_path, rows=rows, member="eq")) == 0, "eq admitted a 1.56-decade drift"
+
+
+def test_the_shipped_acyl_rows_carry_both_arms_and_a_sibling():
+    """`member_unscored` is fatal, so a shipped row eQuilibrator was never asked about
+    would abort the build rather than lose one vote. Asserted on the real table."""
+    tab = S.read_table(Path(S.__file__).parent / "substitutions.tsv")
+    acyl = tab[tab["kind"] == "thioester"]
+    assert len(acyl) > 0, "the shipped table carries no acyl carriers"
+    for r in acyl.itertuples(index=False):
+        for c in ("anchor_mnxr", "sibling_mnxr", "gap_eq", "gap_dgbyg"):
+            assert S._cited(getattr(r, c)), f"{r.mnxm}: {c} is empty"
+        assert not S._cited(r.e0_V), f"{r.mnxm}: an acyl carrier has no potential to declare"
