@@ -41,11 +41,48 @@ prose and not in the number. Re-run it after any scored run.
 
 <!-- BEGIN generated: costs.py -->
 
-_No runs recorded yet._
+| model | revision | split | n | tok/reaction | rxn/min | parallel | note |
+|---|---|---|---:|---:|---:|---:|---|
+| `qwen3-32b` | `aam_r0` | dev | 400 | 1798 | 13.4 |  | baseline under constrained decoding |
+| `qwen3-32b` | `aam_r1` | dev | 400 | 2549 | 10.4 |  | structure annotations, worked polymer cases |
+| `qwen3-32b` | `aam_r2` | dev | 400 | 2961 | 12.7 |  | count C/N/O/P/S and close with WATER or CO2, else refuse |
+| `qwen3-32b` | `aam_r2` | controls | 200 | 3097 | 28.2 |  | control gate: count C/N/O/P/S and close with WATER or CO2, else refuse |
+| `qwen3-32b` | `aam_r3` | dev | 400 | 3248 | 12.4 |  | working scratchpad emitted first, schema-ordered |
+| `qwen3-32b` | `aam_r3` | controls | 200 | 3375 | 22.0 |  | control gate: working scratchpad emitted first, schema-ordered |
+| `qwen3-32b` | `aam_r2` | heldout | 842 | 2978 | 12.6 |  | FINAL: frozen prompt, held-out scored once |
+| `qwen3-32b` | `aam_r2` | controls | 200 | 3097 | 27.9 |  | control gate: FINAL: frozen prompt, held-out scored once |
 
-_Projection needs at least one measured run._
+At the most recent measured rate of **2,978 tokens/reaction** and **13 reactions/min**:
+
+| lane | reactions | passes | completions | tokens |
+|---|---:|---:|---:|---:|
+| AAM, over the residual | 12,417 | 3 | 37,251 | 111 M |
+| direction, over the universe | 83,795 | 2 | 167,590 | 499 M |
+| **total** | | | 204,841 | **610 M** |
+
+That is roughly **271.0 GPU-hours** on one card at the measured throughput, which is the number a held allocation is actually billed on. The direction rate is measured on the AAM prompt here and will be lower in practice: a direction call is one word out, an AAM rewrite is a whole equation.
 
 <!-- END generated -->
+
+## What a universe-scale run would actually buy
+
+The projection below is the plan's arithmetic. The measurements changed what it is worth,
+so read this first.
+
+**The AAM lane earns its run.** 12.6% held-out coverage over the 12,417-reaction residual
+is roughly 1,560 reactions repaired, and the measured end-to-end delta was +83 reactions
+rescued from a 3.2% sample. The blocker tail is flat — 11,050 distinct blockers, top 100
+covering 20% — so there is no shortcut and no saturation; the cost scales with the residual,
+not with the universe.
+
+**The direction lane does not.** Two orientations of 83,795 reactions is 544 M tokens for
+~1,400 tie-breaks at 86.7%, below every thermodynamic tier already deployed. Run the AAM
+lane and feed its balanced equations to dGbyG and eQuilibrator instead; those members are
+calibrated against measurement, and the direction table is what they produce.
+
+**Three opinions is unproven here.** The 3x multiplier below assumes independent AAM
+failures cancel. That held for the pilot's twelve cases and has not been tested at this
+scale; a single-opinion run is one third the cost and the honest starting point.
 
 ## Universe-scale projection, as planned (83,795 reactions)
 

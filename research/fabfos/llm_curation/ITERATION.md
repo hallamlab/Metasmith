@@ -11,6 +11,10 @@ the machine-readable version; this file is why the numbers came out that way.
 | **r2 count and close** | **15.0%** | 60 | 233 | 71 | 36 | **0 regressions** |
 | r3 `working` scratchpad | 12.2% | 49 | 226 | 70 | 55 | 21 regressions, FAIL |
 
+**Held out, scored once: 12.6% (106/842), movable-only 10.7%, control gate zero
+regressions.** Dev said 15.0%, and the 2.4-point drop is the ordinary optimism of the split
+the prompt was chosen on. 12.6% is the number to plan against.
+
 **r2 is the frozen prompt.** r2 over r1 is +0.8 points against a standard error near 1.8 at
 n=400, so it is flat; r3 is worse on both axes. Two consecutive revisions without
 improvement is the stopping rule, and it fired.
@@ -121,3 +125,30 @@ Scaling is closer to linear than saturating here, because the blocker tail is fl
 distinct blockers across 12,417 residual reactions, with the top 100 covering only 20%.
 That argues the full residual is worth running, and it argues against expecting a shortcut
 from the common cases.
+
+## Why this converges at 12.6% and not near 100%
+
+Worth stating plainly, because "success rate" invites the wrong reading.
+
+**Precision is already 100%.** An unbalanced rewrite is rejected by the element recount, not
+shipped. The lane cannot be wrong in the way that would damage a bake; it can only decline
+to help. So the only number that moves is coverage, and coverage is not a quality score —
+it is the fraction of the *hardest reactions in the database* that one model could repair.
+
+**This panel is the residual, not a random sample of metabolism.** These 12,417 reactions
+are what eleven mechanical lanes — name twins, fragments, suppliers, lipids, conserved
+moieties, polymers — already failed to settle. Every easy case was removed before the LLM
+saw anything. A high score here was never available.
+
+**Three strata cannot be rewritten at all**, and refusal is the correct answer on all of
+them: 23 of the held-out 842 have an empty side, 35 have no blockers to remove, and an
+unmeasured share are one-electron protein couples and genuinely unrepresentable species.
+They are in the denominator because excluding them would flatter the number.
+
+**The remaining failure is knowledge, not format or arithmetic.** 499 of 842 came back as
+real rewrites that did not balance. Two revisions attacked that directly — instructing the
+tally, then giving the tally a scratchpad — and both failed, one of them breaking 21
+controls. The model is not failing to count. It does not know what these reactions do.
+
+That is the finding: prompt engineering is spent. Moving this number needs a stronger model
+or a real reasoning budget, and the harness now measures either in one command.
