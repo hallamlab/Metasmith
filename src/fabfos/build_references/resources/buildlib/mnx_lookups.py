@@ -66,8 +66,6 @@ ELEMENTS = ("C", "N", "S", "P")
 # regexes disagreed. That cost 19,930 reactions once already.
 EQ_TERM = re.compile(r"(\d+(?:\.\d+)?)\s+(MNXM\w+)@\w+")
 
-_FORMULA_TERM = re.compile(r"([A-Z][a-z]?)(\d*)")
-
 BATCH = 200_000
 
 
@@ -75,25 +73,13 @@ BATCH = 200_000
 # shared derivations -- one definition each, which is the entire point
 # =====================================================================
 
-def count_element(formula, X: str):
-    """Atoms of element X in a MetaNetX formula; None when it cannot be trusted.
-
-    Untrustworthy means absent, a `*` polymer/R-group, or nested groups. An unknown
-    count must propagate as None to a refusal, never collapse to a zero -- a zero is a
-    claim, and it is the claim that lets an unbalanced reaction pass a balance gate.
-    """
-    if not formula or not isinstance(formula, str) or formula.strip() in ("", "*"):
-        return None
-    if "*" in formula or "(" in formula or ")" in formula:
-        return None
-    n, seen = 0, False
-    for sym, num in _FORMULA_TERM.findall(formula):
-        if not sym:
-            continue
-        if sym == X:
-            seen = True
-            n += int(num) if num else 1
-    return n if seen else 0
+# ONE COUNTER IN THE TREE. This file's whole argument is that a derivation five consumers
+# make for themselves drifts, so carrying a private copy of "atoms of X in a MetaNetX
+# formula" -- byte-identical to the extractor's, untested against it -- was the argument
+# failing on its own terms. The transform requires `buildlib::ecspr` for this import and
+# for nothing else; staging is content-addressed, so the two library items land in
+# SEPARATE directories and the caller must put both on PYTHONPATH.
+from ecspr.bake.atom_pairs import count_element                        # noqa: E402
 
 
 def inchikey_connectivity(ik):

@@ -100,8 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("-n", "--n", type=int, required=True, dest="n",
                     help="draws per size stratum per terminal spec")
     dr.add_argument("--seed", type=int, required=True)
-    dr.add_argument("--draw-column", default="feature_id",
-                    help="the pool column a draw selects on (default feature_id)")
+    dr.add_argument("--draw-column", default="orf",
+                    help="the pool column a draw selects on (default orf, the schema's "
+                         "nominator; pre-schema tables spell it feature_id)")
     dr.add_argument("--size", type=int, default=None,
                     help="stratum size for conditions carrying no n_units")
     dr.add_argument("--element", default="C")

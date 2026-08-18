@@ -7,7 +7,7 @@ solving the rectified network reports, in a single solve, the current every *oth
 reaction draws -- so an N x N pairwise table costs N solves rather than N^2. Entry (a, b)
 is that attributed current; the layout consumes ``R = 1/max(I, I^T)``.
 
-**Why this file exists rather than calling the library.** ``ecspr.directed._SPDReuse``
+**Why this file exists rather than calling the library.** ``ecspr.model.directed._SPDReuse``
 tries CHOLMOD, accepts the result when ``|Hx - rhs|_inf <= 1e-6 (|rhs|_inf + 1)``, and
 otherwise drops to a Tikhonov-ridged ``splu``. Three things about that shape are wrong and
 all three bite at 589k unknowns:
@@ -52,8 +52,8 @@ from pathlib import Path                                             # noqa: E40
 SRC = os.environ.get("ECSPR_SRC", str(Path(__file__).resolve().parents[4] / "src"))
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
-import ecspr.directed as ed                                          # noqa: E402
-from ecspr.graph import attach_leak, OMEGA                           # noqa: E402
+import ecspr.model.directed as ed                                          # noqa: E402
+from ecspr.model.graph import attach_leak, OMEGA                           # noqa: E402
 
 from atom_graph import incidence                                     # noqa: E402
 
@@ -248,11 +248,11 @@ class VerifiedSPD:
 def newton_rhs(B, gp, gm, I, keep, reuse, phi0=None,
                tol=ed.DIRECTED_TOL, maxit=ed.DIRECTED_MAXIT,
                delta=ed.DIODE_SMOOTH_DELTA, etol=1e-13, stale_ok=False):
-    """``ecspr.directed.directed_ceff``'s smoothed-diode Newton, generalized from
+    """``ecspr.model.directed.directed_ceff``'s smoothed-diode Newton, generalized from
     ``I = e_s - e_t`` to an arbitrary injection vector.
 
     That generalization is what fixes the sparsity pattern across sources: contracting a
-    source terminal into a supernode (which is what ``ecspr.graph.solve`` does) changes the
+    source terminal into a supernode (which is what ``ecspr.model.graph.solve`` does) changes the
     topology, so CHOLMOD must re-analyse per source. Injecting distributed current instead
     leaves the pattern identical, and is the more physical reading for a probe that reads
     downstream current anyway.

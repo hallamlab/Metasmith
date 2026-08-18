@@ -7,9 +7,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ecspr.build import (graph_from_pairs, read_graph_dir, write_graph_dir,
+from ecspr.model.build import (graph_from_pairs, read_graph_dir, write_graph_dir,
                          _elements_in)
-from ecspr.graph import Terminal, solve
+from ecspr.model.graph import Terminal, solve
 
 
 def toy_pairs() -> pd.DataFrame:

@@ -50,23 +50,21 @@ metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
 pairs     = model.AddRequirement(lib.GetType("ref::atom_pairs"))
 vocab     = model.AddRequirement(lib.GetType("ref::metabolism_vocab"))
 direction = model.AddRequirement(lib.GetType("ref::direction_ratios"))
-encoding  = model.AddRequirement(lib.GetType("buildlib::refs_encoding.py"))
 # What `in_atom_universe` MEANS for a benchmark row, shared with the study tier so the
 # two cannot answer the same question differently. It is the bake's coverage less
 # transport; see the module for why the filter is here and not at the bake.
 universe_m = model.AddRequirement(lib.GetType("buildlib::bench_universe.py"))
+# The declared schema is read from the library that declares it, never restated here.
+ev_lib     = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 out       = model.AddProduct(lib.GetType("ref::gpr_table_gem"))
 
 CHANNEL = "gem_gpr"
-
-# The frozen 14-column host GPR schema, from the pre-library hosts.py. Shared with the
-# de-novo table so the two lines of evidence can be compared column for column -- which is
-# the only thing they are jointly good for, and the reason they stay separate files.
-GPR_COLS = (
-    "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
-    "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
-    "projection_via", "in_atom_universe", "gpr_rule",
-)
+# A curated model asserts; it does not measure. `curated` is the lane_set that says so.
+LANE_SET = "curated"
+# The same blocks the de-novo table carries, so the two lines of evidence compare
+# column for column -- which is the only thing they are jointly good for, and the
+# reason they stay separate files.
+EXTENSIONS = ("attribution", "feature", "universe")
 
 # host -> the host whose GEM it uses. A host mapping to itself has its own published
 # model; a host mapping to another BORROWS it, and the borrow is licensed by a measured
@@ -83,6 +81,15 @@ GEM_SOURCE = {
     # the model, and W3110 is deliberately NOT here: it is where a clone's sequence
     # comes from, not a strain this tree reads a model against.
     "e_coli_ag1":    "e_coli_dh1",
+    # BW25113 AND LW06 ARE THE SCALEs PAIR, and they sit in DH1's and AG1's seats
+    # respectively. BW25113 is sequenced (GCF_050858555.1) and reads against iML1515 --
+    # not as a cross-strain borrow but because it IS K-12, differing from MG1655 by
+    # catabolic deletions the edit list below carries. LW06 is the derivative with no
+    # assembly anywhere: BW25113 stands in for its sequence, and its own four deletions
+    # ride on top of BW25113's, which is why its edit list is a superset and not a
+    # separate list. `check_lw06_identity.py` measures both.
+    "e_coli_bw25113": "e_coli_k12",
+    "e_coli_lw06":    "e_coli_k12",
 }
 
 # host -> the borrowed model's reactions that strain cannot carry, by the MODEL's own
@@ -118,8 +125,33 @@ GEM_SOURCE = {
 # fabricated deletion is worse than a known gap because nothing downstream can tell.
 # What the marker really says is that AG1 needs thiamine in the medium, which is a claim
 # about the medium and belongs where the medium is declared.
+#
+# BW25113 AND LW06 ARE THE ONLY ENTRIES HERE WHOSE DELETIONS ARE ENGINEERED RATHER THAN
+# INCIDENTAL, and both lists are measured by `check_lw06_identity.py` by evaluating every
+# GPR rule twice rather than by counting deleted genes. The counting answer is wrong in
+# both directions and that is the whole reason the check exists:
+#
+#   BW25113's six catabolic loci (lacZ, araBAD, rhaBAD) darken SEVEN reactions, while
+#   hsdR514 and the tolerance host's recA name no gene in the model at all. All seven are
+#   sugar catabolism the selections never fed -- arabinose, rhamnose and lactose are
+#   absent from both papers' minimal media -- so the edit is real but inert here.
+#
+#   LW06's four deletions span SEVEN genes and darken only THREE reactions. FRD2 and FRD3
+#   go with frdABCD and LDH_D with ldhA, but ACKr survives on purT/tdcD, and ALCD2x,
+#   ALCD19 and ACALD all survive adhE on adhP and mhpF. So iML1515 says LW06 can still
+#   make ethanol without its engineered pathway. That is a statement about what a curated
+#   GEM can express about a strain engineering, and it is reported rather than papered
+#   over: deleting the surviving reactions to force the expected topology would be
+#   asserting a genome nobody sequenced.
+#
+# THE HETEROLOGOUS HALF OF LW06 IS NOT HERE AND CANNOT BE. attTn7::pdcZm adhBZm ADDS
+# reactions, and this transform only subtracts. The pyruvate decarboxylase edge rides in
+# as study GPR rows and concatenates with the host's at solve time.
 EDIT_LIST = {
     "e_coli_ag1": ("GTPDPK",),
+    "e_coli_bw25113": ("ARAI", "LACZ", "LYXI", "RBK_L1", "RMI", "RMK", "RMPA"),
+    "e_coli_lw06": ("ARAI", "FRD2", "FRD3", "LACZ", "LDH_D", "LYXI", "RBK_L1",
+                    "RMI", "RMK", "RMPA"),
 }
 
 DRIVER = r'''
@@ -129,16 +161,20 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-sys.path.insert(0, os.path.dirname("{encoding}"))
 sys.path.insert(0, os.path.dirname("{universe_m}"))
-from ecspr.build import crosswalk_gem, load_model
-import refs_encoding as refs
+sys.path.insert(0, os.path.dirname("{ev_lib}"))
+import fabfos_evidence as fe
+# Both halves come from the installed ecspr: `model` builds the network, `bake`
+# reads the compiled tables. Only bench_universe is still a staged flat file.
+from ecspr.model.build import crosswalk_gem, load_model
+from ecspr.bake import encoding as refs
 import bench_universe as bu
 
 GENOMES = Path("{genomes}")
 OUT     = Path("{out}")
 CHANNEL = "{channel}"
-GPR_COLS = {gpr_cols}
+LANE_SET = "{lane_set}"
+EXTENSIONS = tuple({extensions})
 GEM_SOURCE = {gem_source}
 EDIT_LIST = {edit_list}
 
@@ -238,8 +274,12 @@ for host, src_host in sorted(GEM_SOURCE.items()):
         rule = (r.gene_reaction_rule or "").strip()
         genes = list(r.genes)
         common = dict(
-            build_id=build_id, host=host, unit_id=gem_id, mnxr=mnxr, channel=CHANNEL,
-            evidence_id=r.id, evidence_name=r.name or None,
+            build_id=build_id, host=host, unit_id=gem_id, source=gem_id,
+            mnxr=mnxr, channel=CHANNEL, lane_set=LANE_SET,
+            intermediate_id=r.id, intermediate_name=r.name or "",
+            # A curated model's assertion is a presence claim; `evidence_quality` says
+            # a human curated it, which is a stronger statement than any lane makes.
+            score_kind="presence", evidence_quality="reviewed",
             # A curated model asserts that a reaction is PRESENT, not how much evidence
             # there is for it, so weighting it by anything would be inventing a quantity.
             # The evidence-weighted line is gpr_denovo.
@@ -257,18 +297,23 @@ for host, src_host in sorted(GEM_SOURCE.items()):
             # but they are live in every condition. Dropping them would make every gene
             # set look like starvation.
             n_ruleless += 1
-            rows.append(dict(common, feature_id=None, feature_kind="ruleless",
-                             feature_name=None))
+            # `orf` names whatever nominates the reaction and is never null. A ruleless
+            # reaction nominates ITSELF -- there is no gene to name -- so the model
+            # reaction id is the nominator, and belief conservation then groups these
+            # per reaction instead of collapsing every one of them onto a single null.
+            rows.append(dict(common, orf=r.id, feature_kind="ruleless",
+                             feature_name=""))
             continue
         for g in genes:
-            rows.append(dict(common, feature_id=g.id, feature_kind="gem_gene",
-                             feature_name=g.name or None))
+            rows.append(dict(common, orf=g.id, feature_kind="gem_gene",
+                             feature_name=g.name or ""))
 
-    df = pd.DataFrame(rows, columns=list(GPR_COLS))
+    df = pd.DataFrame(rows, columns=fe.schema_for(EXTENSIONS))
     df["raw_score"] = df["raw_score"].astype(np.float32)
     df["in_atom_universe"] = df["in_atom_universe"].astype(bool)
-    df = df.sort_values(["feature_kind", "feature_id", "mnxr", "evidence_id"],
-                        kind="mergesort", na_position="last").reset_index(drop=True)
+    df = df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
+                        na_position="last").reset_index(drop=True)
+    fe.validate_gpr(df, LANE_SET, None, gem_id, EXTENSIONS)
     d = OUT / "hosts" / host
     d.mkdir(parents=True, exist_ok=True)
     df.to_parquet(d / "gpr_gem.parquet", index=False, compression="zstd")
@@ -276,7 +321,7 @@ for host, src_host in sorted(GEM_SOURCE.items()):
     gene_rows = df[df["feature_kind"] == "gem_gene"]
     gem_mnxr = set(df["mnxr"].unique())
     print(f"[gem_gpr] {{host}}: {{len(df):,}} rows  "
-          f"{{gene_rows['feature_id'].nunique():,}} genes  {{df['mnxr'].nunique():,}} MNXR  "
+          f"{{gene_rows['orf'].nunique():,}} genes  {{df['mnxr'].nunique():,}} MNXR  "
           f"{{n_ruleless:,}} ruleless  "
           f"{{int(df['in_atom_universe'].sum()):,}} rows in the atom universe", flush=True)
     if dropped:
@@ -300,7 +345,7 @@ for host, src_host in sorted(GEM_SOURCE.items()):
           f"({{len(gem_mnxr & reachable)/max(1,len(gem_mnxr)):.1%}})", flush=True)
     summary.append(dict(host=host, gem_host=src_host, gem_id=gem_id,
                         edit_list=list(dropped), rows=len(df),
-                        genes=int(gene_rows["feature_id"].nunique()),
+                        genes=int(gene_rows["orf"].nunique()),
                         mnxr=int(df["mnxr"].nunique()), ruleless=n_ruleless,
                         in_atom_universe=int(df["in_atom_universe"].sum()),
                         bridge_reachable=len(gem_mnxr & reachable)))
@@ -320,14 +365,14 @@ print(f"[gem_gpr] {{len(summary)}} hosts -> {{OUT}}/hosts/<host>/gpr_gem.parquet
 def protocol(context: ExecutionContext):
     iout = context.Output(out)
     driver = DRIVER.format(
-        encoding=context.Input(encoding).container,
         universe_m=context.Input(universe_m).container,
         genomes=context.Input(genomes).container,
         metanetx=context.Input(metanetx).container,
         vocab=context.Input(vocab).container, pairs=context.Input(pairs).container,
         direction=context.Input(direction).container,
         bridge=context.Input(bridge).container,
-        channel=CHANNEL, gpr_cols=repr(GPR_COLS), gem_source=repr(GEM_SOURCE),
+        channel=CHANNEL, lane_set=LANE_SET, extensions=repr(list(EXTENSIONS)),
+        ev_lib=context.Input(ev_lib).container, gem_source=repr(GEM_SOURCE),
         edit_list=repr(EDIT_LIST),
         out=iout.container,
     )

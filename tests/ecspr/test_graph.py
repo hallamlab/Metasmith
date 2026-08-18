@@ -10,7 +10,7 @@ import networkx as nx
 import numpy as np
 import pytest
 
-from ecspr.graph import AtomGraph, Terminal, measure_leak, solve, sweep_leak
+from ecspr.model.graph import AtomGraph, Terminal, measure_leak, solve, sweep_leak
 
 from conftest import SELFTEST_TOL, reff_dense, toy_graph
 

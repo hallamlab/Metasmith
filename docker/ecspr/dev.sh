@@ -47,7 +47,7 @@ A = sp.csc_matrix(np.array([[4.0,1.0],[1.0,3.0]])); \
 x = cho_factor(A).solve(np.array([1.0,2.0]).reshape(-1,1)).ravel(); \
 assert np.allclose(x, np.linalg.solve(A.toarray(), [1.0,2.0])), 'CHOLMOD solve is wrong'; \
 import ecspr, cobra, pandas, pyarrow; \
-from ecspr.directed import _HAVE_CHOLMOD; assert _HAVE_CHOLMOD, 'built without CHOLMOD'; \
+from ecspr.model.directed import _HAVE_CHOLMOD; assert _HAVE_CHOLMOD, 'built without CHOLMOD'; \
 print('ecspr OK:', ecspr.__version__, '| cholmod + cobra', cobra.__version__)"
 
 case "${1:-}" in

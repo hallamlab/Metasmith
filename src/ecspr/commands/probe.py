@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .. import conditions as cond_mod
-from .. import probes
+from ..model import conditions as cond_mod
+from ..model import probes
 
 
 def _conditions(args, probe):

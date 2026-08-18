@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="677" height="1004" viewBox="0 0 677 1004">
+<rect width="677" height="1004" fill="#FFFFFF"/>
+<g fill="none" stroke="#666666" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+<path d="M 531.8,41.3 L 531.8,307.0" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.4,8.4 0 0 1 523.4,50.5 A 8.4,8.4 0 0 0 514.9,59.0 L 514.9,83.4 A 8.5,8.5 0 0 1 506.5,91.8 L 506.5,91.8 A 8.5,8.5 0 0 0 498.0,100.3 L 498.0,100.3" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 506.5,50.5 A 8.5,8.5 0 0 0 498.0,59.0 L 498.0,65.8" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 489.6,50.5 A 8.5,8.5 0 0 0 481.1,59.0 L 481.1,134.7" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 472.7,50.5 A 8.5,8.5 0 0 0 464.2,59.0 L 464.2,169.2" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 455.8,50.5 A 8.5,8.5 0 0 0 447.3,59.0 L 447.3,203.6" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 438.9,50.5 A 8.5,8.5 0 0 0 430.4,59.0 L 430.4,238.1" stroke="#636EFA"/>
+<path d="M 531.8,41.3 L 531.8,42.1 A 8.5,8.5 0 0 1 523.4,50.5 L 422.0,50.5 A 8.5,8.5 0 0 0 413.5,59.0 L 413.5,272.5" stroke="#636EFA"/>
+<path d="M 498.0,76.5 A 8.5,8.5 0 0 0 506.5,85.0 L 506.5,85.0 A 8.5,8.5 0 0 1 514.9,93.4 L 514.9,600.1 A 8.4,8.4 0 0 0 523.4,608.6 A 8.4,8.4 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 498.0,111.0 L 498.0,600.1 A 8.5,8.5 0 0 0 506.5,608.6 L 523.4,608.6 A 8.5,8.5 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 481.1,145.4 L 481.1,737.9 A 8.5,8.5 0 0 0 489.6,746.4 L 523.4,746.4 A 8.5,8.5 0 0 1 531.8,754.8 L 531.8,755.6" stroke="#636EFA"/>
+<path d="M 464.2,179.9 L 464.2,480.0" stroke="#636EFA"/>
+<path d="M 464.2,179.9 A 8.4,8.4 0 0 1 455.8,188.3 L 405.1,188.3 A 8.5,8.5 0 0 0 396.6,196.8 L 396.6,600.1 A 8.5,8.5 0 0 0 405.1,608.6 L 523.4,608.6 A 8.5,8.5 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 447.3,214.3 L 447.3,462.3 A 8.4,8.4 0 0 0 455.8,470.8 A 8.4,8.4 0 0 1 464.2,479.2 L 464.2,480.0" stroke="#636EFA"/>
+<path d="M 447.3,214.3 A 8.4,8.4 0 0 1 438.9,222.8 L 388.2,222.8 A 8.5,8.5 0 0 0 379.7,231.2 L 379.7,531.2 A 8.5,8.5 0 0 0 388.2,539.7 L 523.4,539.7 A 8.5,8.5 0 0 1 531.8,548.1 L 531.8,548.9" stroke="#636EFA"/>
+<path d="M 447.3,214.3 A 8.4,8.4 0 0 1 438.9,222.8 L 371.3,222.8 A 8.5,8.5 0 0 0 362.8,231.2 L 362.8,600.1 A 8.5,8.5 0 0 0 371.3,608.6 L 523.4,608.6 A 8.5,8.5 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 430.4,248.8 L 430.4,393.4 A 8.5,8.5 0 0 0 438.9,401.9 L 523.4,401.9 A 8.5,8.5 0 0 1 531.8,410.3 L 531.8,411.1" stroke="#636EFA"/>
+<path d="M 430.4,248.8 L 430.4,248.8 A 8.5,8.5 0 0 1 422.0,257.2 L 354.4,257.2 A 8.5,8.5 0 0 0 345.9,265.7 L 345.9,600.1 A 8.5,8.5 0 0 0 354.4,608.6 L 523.4,608.6 A 8.5,8.5 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 430.4,248.8 L 430.4,248.8 A 8.5,8.5 0 0 1 422.0,257.2 L 337.5,257.2 A 8.5,8.5 0 0 0 329.0,265.7 L 329.0,669.0 A 8.5,8.5 0 0 0 337.5,677.5 L 523.4,677.5 A 8.5,8.5 0 0 1 531.8,685.9 L 531.8,686.7" stroke="#636EFA"/>
+<path d="M 430.4,248.8 L 430.4,248.8 A 8.5,8.5 0 0 1 422.0,257.2 L 320.6,257.2 A 8.5,8.5 0 0 0 312.1,265.7 L 312.1,806.8 A 8.5,8.5 0 0 0 320.6,815.3 L 523.4,815.3 A 8.5,8.5 0 0 1 531.8,823.7 L 531.8,824.5" stroke="#636EFA"/>
+<path d="M 413.5,283.2 L 413.5,342.2" stroke="#636EFA"/>
+<path d="M 413.5,283.2 L 413.5,283.2 A 8.5,8.5 0 0 1 405.1,291.7 L 303.7,291.7 A 8.5,8.5 0 0 0 295.2,300.1 L 295.2,462.3 A 8.5,8.5 0 0 0 303.7,470.8 L 455.8,470.8 A 8.5,8.5 0 0 1 464.2,479.2 L 464.2,480.0" stroke="#636EFA"/>
+<path d="M 413.5,283.2 L 413.5,283.2 A 8.5,8.5 0 0 1 405.1,291.7 L 286.8,291.7 A 8.5,8.5 0 0 0 278.3,300.1 L 278.3,531.2 A 8.5,8.5 0 0 0 286.8,539.7 L 523.4,539.7 A 8.5,8.5 0 0 1 531.8,548.1 L 531.8,548.9" stroke="#636EFA"/>
+<path d="M 413.5,283.2 L 413.5,283.2 A 8.5,8.5 0 0 1 405.1,291.7 L 269.9,291.7 A 8.5,8.5 0 0 0 261.4,300.1 L 261.4,600.1 A 8.5,8.5 0 0 0 269.9,608.6 L 523.4,608.6 A 8.5,8.5 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 413.5,283.2 L 413.5,283.2 A 8.5,8.5 0 0 1 405.1,291.7 L 253.0,291.7 A 8.5,8.5 0 0 0 244.5,300.1 L 244.5,669.0 A 8.5,8.5 0 0 0 253.0,677.5 L 523.4,677.5 A 8.5,8.5 0 0 1 531.8,685.9 L 531.8,686.7" stroke="#636EFA"/>
+<path d="M 413.5,283.2 L 413.5,283.2 A 8.5,8.5 0 0 1 405.1,291.7 L 236.1,291.7 A 8.5,8.5 0 0 0 227.6,300.1 L 227.6,737.9 A 8.5,8.5 0 0 0 236.1,746.4 L 523.4,746.4 A 8.5,8.5 0 0 1 531.8,754.8 L 531.8,755.6" stroke="#636EFA"/>
+<path d="M 413.5,283.2 L 413.5,283.2 A 8.5,8.5 0 0 1 405.1,291.7 L 219.2,291.7 A 8.5,8.5 0 0 0 210.7,300.1 L 210.7,806.8 A 8.5,8.5 0 0 0 219.2,815.3 L 523.4,815.3 A 8.5,8.5 0 0 1 531.8,823.7 L 531.8,824.5" stroke="#636EFA"/>
+<path d="M 531.8,317.7 L 531.8,411.1" stroke="#636EFA"/>
+<path d="M 531.8,317.7 A 8.4,8.4 0 0 1 523.4,326.1 L 422.0,326.1 A 8.5,8.5 0 0 0 413.5,334.6 L 413.5,342.2" stroke="#636EFA"/>
+<path d="M 531.8,317.7 A 8.4,8.4 0 0 1 523.4,326.1 L 202.3,326.1 A 8.5,8.5 0 0 0 193.8,334.6 L 193.8,462.3 A 8.5,8.5 0 0 0 202.3,470.8 L 455.8,470.8 A 8.5,8.5 0 0 1 464.2,479.2 L 464.2,480.0" stroke="#636EFA"/>
+<path d="M 531.8,317.7 A 8.4,8.4 0 0 1 523.4,326.1 L 185.4,326.1 A 8.5,8.5 0 0 0 176.9,334.6 L 176.9,531.2 A 8.5,8.5 0 0 0 185.4,539.7 L 523.4,539.7 A 8.5,8.5 0 0 1 531.8,548.1 L 531.8,548.9" stroke="#636EFA"/>
+<path d="M 531.8,317.7 A 8.4,8.4 0 0 1 523.4,326.1 L 168.5,326.1 A 8.5,8.5 0 0 0 160.0,334.6 L 160.0,600.1 A 8.5,8.5 0 0 0 168.5,608.6 L 523.4,608.6 A 8.5,8.5 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 531.8,317.7 A 8.4,8.4 0 0 1 523.4,326.1 L 151.6,326.1 A 8.5,8.5 0 0 0 143.1,334.6 L 143.1,669.0 A 8.5,8.5 0 0 0 151.6,677.5 L 523.4,677.5 A 8.5,8.5 0 0 1 531.8,685.9 L 531.8,686.7" stroke="#636EFA"/>
+<path d="M 531.8,317.7 A 8.4,8.4 0 0 1 523.4,326.1 L 134.7,326.1 A 8.5,8.5 0 0 0 126.2,334.6 L 126.2,806.8 A 8.5,8.5 0 0 0 134.7,815.3 L 523.4,815.3 A 8.5,8.5 0 0 1 531.8,823.7 L 531.8,824.5" stroke="#636EFA"/>
+<path d="M 413.5,351.4 L 413.5,375.9" stroke="#636EFA"/>
+<path d="M 413.5,351.4 L 413.5,352.1 A 8.5,8.5 0 0 1 405.1,360.6 L 117.8,360.6 A 8.5,8.5 0 0 0 109.3,369.0 L 109.3,910.2 A 8.5,8.5 0 0 0 117.8,918.6 L 523.4,918.6 A 8.4,8.4 0 0 1 531.8,927.1 L 531.8,927.1" stroke="#636EFA"/>
+<path d="M 413.5,386.6 L 413.5,386.6 A 8.4,8.4 0 0 0 422.0,395.0 A 8.4,8.4 0 0 1 430.4,403.5 L 430.4,462.3 A 8.5,8.5 0 0 0 438.9,470.8 L 455.8,470.8 A 8.5,8.5 0 0 1 464.2,479.2 L 464.2,480.0" stroke="#636EFA"/>
+<path d="M 413.5,386.6 L 413.5,531.2 A 8.5,8.5 0 0 0 422.0,539.7 L 523.4,539.7 A 8.5,8.5 0 0 1 531.8,548.1 L 531.8,548.9" stroke="#636EFA"/>
+<path d="M 413.5,386.6 L 413.5,386.6 A 8.5,8.5 0 0 1 405.1,395.0 L 100.9,395.0 A 8.5,8.5 0 0 0 92.4,403.5 L 92.4,600.1 A 8.5,8.5 0 0 0 100.9,608.6 L 523.4,608.6 A 8.5,8.5 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 413.5,386.6 L 413.5,386.6 A 8.5,8.5 0 0 1 405.1,395.0 L 84.0,395.0 A 8.5,8.5 0 0 0 75.5,403.5 L 75.5,669.0 A 8.5,8.5 0 0 0 84.0,677.5 L 523.4,677.5 A 8.5,8.5 0 0 1 531.8,685.9 L 531.8,686.7" stroke="#636EFA"/>
+<path d="M 413.5,386.6 L 413.5,386.6 A 8.5,8.5 0 0 1 405.1,395.0 L 67.1,395.0 A 8.5,8.5 0 0 0 58.6,403.5 L 58.6,737.9 A 8.5,8.5 0 0 0 67.1,746.4 L 523.4,746.4 A 8.5,8.5 0 0 1 531.8,754.8 L 531.8,755.6" stroke="#636EFA"/>
+<path d="M 413.5,386.6 L 413.5,386.6 A 8.5,8.5 0 0 1 405.1,395.0 L 50.2,395.0 A 8.5,8.5 0 0 0 41.7,403.5 L 41.7,875.7 A 8.5,8.5 0 0 0 50.2,884.2 L 523.4,884.2 A 8.5,8.5 0 0 1 531.8,892.6 L 531.8,893.4" stroke="#636EFA"/>
+<path d="M 531.8,420.3 L 531.8,444.8" stroke="#636EFA"/>
+<path d="M 531.8,420.3 L 531.8,421.0 A 8.5,8.5 0 0 1 523.4,429.5 L 33.3,429.5 A 8.5,8.5 0 0 0 24.8,437.9 L 24.8,910.2 A 8.5,8.5 0 0 0 33.3,918.6 L 523.4,918.6 A 8.4,8.4 0 0 1 531.8,927.1 L 531.8,927.1" stroke="#636EFA"/>
+<path d="M 531.8,455.5 L 531.8,548.9" stroke="#636EFA"/>
+<path d="M 531.8,455.5 A 8.4,8.4 0 0 1 523.4,463.9 L 472.7,463.9 A 8.5,8.5 0 0 0 464.2,472.4 L 464.2,480.0" stroke="#636EFA"/>
+<path d="M 531.8,455.5 A 8.4,8.4 0 0 1 523.4,463.9 L 455.8,463.9 A 8.5,8.5 0 0 0 447.3,472.4 L 447.3,600.1 A 8.5,8.5 0 0 0 455.8,608.6 L 523.4,608.6 A 8.5,8.5 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 531.8,455.5 A 8.4,8.4 0 0 1 523.4,463.9 L 438.9,463.9 A 8.5,8.5 0 0 0 430.4,472.4 L 430.4,669.0 A 8.5,8.5 0 0 0 438.9,677.5 L 523.4,677.5 A 8.5,8.5 0 0 1 531.8,685.9 L 531.8,686.7" stroke="#636EFA"/>
+<path d="M 531.8,455.5 A 8.4,8.4 0 0 1 523.4,463.9 L 303.7,463.9 A 8.5,8.5 0 0 0 295.2,472.4 L 295.2,737.9 A 8.5,8.5 0 0 0 303.7,746.4 L 523.4,746.4 A 8.5,8.5 0 0 1 531.8,754.8 L 531.8,755.6" stroke="#636EFA"/>
+<path d="M 464.2,489.2 L 464.2,513.7" stroke="#636EFA"/>
+<path d="M 464.2,489.2 L 464.2,489.9 A 8.5,8.5 0 0 1 455.8,498.4 L 202.3,498.4 A 8.5,8.5 0 0 0 193.8,506.8 L 193.8,910.2 A 8.5,8.5 0 0 0 202.3,918.6 L 523.4,918.6 A 8.4,8.4 0 0 1 531.8,927.1 L 531.8,927.1" stroke="#636EFA"/>
+<path d="M 464.2,524.4 A 8.4,8.4 0 0 1 455.8,532.8 L 388.2,532.8 A 8.5,8.5 0 0 0 379.7,541.3 L 379.7,600.1 A 8.5,8.5 0 0 0 388.2,608.6 L 523.4,608.6 A 8.5,8.5 0 0 1 531.8,617.0 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 531.8,558.1 L 531.8,582.6" stroke="#636EFA"/>
+<path d="M 531.8,558.1 L 531.8,558.8 A 8.5,8.5 0 0 1 523.4,567.3 L 472.7,567.3 A 8.5,8.5 0 0 0 464.2,575.7 L 464.2,910.2 A 8.5,8.5 0 0 0 472.7,918.6 L 523.4,918.6 A 8.4,8.4 0 0 1 531.8,927.1 L 531.8,927.1" stroke="#636EFA"/>
+<path d="M 531.8,593.3 L 531.8,617.8" stroke="#636EFA"/>
+<path d="M 531.8,627.0 L 531.8,651.5" stroke="#636EFA"/>
+<path d="M 531.8,627.0 L 531.8,627.7 A 8.4,8.4 0 0 1 523.4,636.2 A 8.4,8.4 0 0 0 514.9,644.6 L 514.9,910.2 A 8.4,8.4 0 0 0 523.4,918.6 A 8.4,8.4 0 0 1 531.8,927.1 L 531.8,927.1" stroke="#636EFA"/>
+<path d="M 531.8,662.2 L 531.8,686.7" stroke="#636EFA"/>
+<path d="M 531.8,662.2 A 8.4,8.4 0 0 1 523.4,670.6 L 506.5,670.6 A 8.5,8.5 0 0 0 498.0,679.1 L 498.0,737.9 A 8.5,8.5 0 0 0 506.5,746.4 L 523.4,746.4 A 8.5,8.5 0 0 1 531.8,754.8 L 531.8,755.6" stroke="#636EFA"/>
+<path d="M 531.8,662.2 A 8.4,8.4 0 0 1 523.4,670.6 L 455.8,670.6 A 8.5,8.5 0 0 0 447.3,679.1 L 447.3,806.8 A 8.5,8.5 0 0 0 455.8,815.3 L 523.4,815.3 A 8.5,8.5 0 0 1 531.8,823.7 L 531.8,824.5" stroke="#636EFA"/>
+<path d="M 531.8,662.2 A 8.4,8.4 0 0 1 523.4,670.6 L 422.0,670.6 A 8.5,8.5 0 0 0 413.5,679.1 L 413.5,875.7 A 8.5,8.5 0 0 0 422.0,884.2 L 523.4,884.2 A 8.5,8.5 0 0 1 531.8,892.6 L 531.8,893.4" stroke="#636EFA"/>
+<path d="M 531.8,695.9 L 531.8,720.4" stroke="#636EFA"/>
+<path d="M 531.8,695.9 L 531.8,696.6 A 8.5,8.5 0 0 1 523.4,705.1 L 388.2,705.1 A 8.5,8.5 0 0 0 379.7,713.5 L 379.7,910.2 A 8.5,8.5 0 0 0 388.2,918.6 L 523.4,918.6 A 8.4,8.4 0 0 1 531.8,927.1 L 531.8,927.1" stroke="#636EFA"/>
+<path d="M 531.8,731.1 L 531.8,755.6" stroke="#636EFA"/>
+<path d="M 531.8,764.8 L 531.8,789.3" stroke="#636EFA"/>
+<path d="M 531.8,764.8 L 531.8,765.5 A 8.5,8.5 0 0 1 523.4,774.0 L 506.5,774.0 A 8.5,8.5 0 0 0 498.0,782.4 L 498.0,910.2 A 8.5,8.5 0 0 0 506.5,918.6 L 523.4,918.6 A 8.4,8.4 0 0 1 531.8,927.1 L 531.8,927.1" stroke="#636EFA"/>
+<path d="M 531.8,800.0 L 531.8,824.5" stroke="#636EFA"/>
+<path d="M 531.8,833.7 L 531.8,858.2" stroke="#636EFA"/>
+<path d="M 531.8,833.7 L 531.8,834.4 A 8.5,8.5 0 0 1 523.4,842.9 L 489.6,842.9 A 8.5,8.5 0 0 0 481.1,851.3 L 481.1,910.2 A 8.5,8.5 0 0 0 489.6,918.6 L 523.4,918.6 A 8.4,8.4 0 0 1 531.8,927.1 L 531.8,927.1" stroke="#636EFA"/>
+<path d="M 531.8,868.9 L 531.8,893.4" stroke="#636EFA"/>
+<path d="M 531.8,902.6 L 531.8,927.1" stroke="#636EFA"/>
+<path d="M 531.8,902.6 L 531.8,903.3 A 8.5,8.5 0 0 1 523.4,911.8 L 472.7,911.8 A 8.5,8.5 0 0 0 464.2,920.2 L 464.2,961.5" stroke="#636EFA"/>
+</g>
+<g><title>given</title>
+<polygon points="526.5,32.1 537.2,32.1 531.8,41.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="41.4" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">given</text></g>
+<g><title>fabfos_data::chebi</title>
+<circle cx="498.0" cy="71.2" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="65.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">fabfos_data</text>
+<text x="544.3" y="75.9" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">chebi</text></g>
+<g><title>fabfos_data::modelseed</title>
+<circle cx="498.0" cy="105.6" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="100.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">fabfos_data</text>
+<text x="544.3" y="110.3" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">modelseed</text></g>
+<g><title>fabfos_data::prior_bake_logs</title>
+<circle cx="481.1" cy="140.1" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="134.6" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">fabfos_data</text>
+<text x="544.3" y="144.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">prior_bake_logs</text></g>
+<g><title>lookup::synonyms</title>
+<circle cx="464.2" cy="174.5" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="169.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">lookup</text>
+<text x="544.3" y="179.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">synonyms</text></g>
+<g><title>lookup::xrefs</title>
+<circle cx="447.3" cy="209.0" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="203.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">lookup</text>
+<text x="544.3" y="213.7" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">xrefs</text></g>
+<g><title>lookup::atom_ranks</title>
+<circle cx="430.4" cy="243.4" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="238.0" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">lookup</text>
+<text x="544.3" y="248.1" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">atom_ranks</text></g>
+<g><title>lookup::reactions</title>
+<circle cx="413.5" cy="277.9" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="272.4" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">lookup</text>
+<text x="544.3" y="282.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">reactions</text></g>
+<g><title>lookup::metabolites</title>
+<circle cx="531.8" cy="312.3" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="306.9" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">lookup</text>
+<text x="544.3" y="317.0" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">metabolites</text></g>
+<g><title>2 aam_worklist</title>
+<polygon points="408.2,342.2 418.9,342.2 413.5,351.4" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="351.5" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">aam_worklist</text></g>
+<g><title>interm::aam_worklist</title>
+<circle cx="413.5" cy="381.2" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="375.8" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">interm</text>
+<text x="544.3" y="385.9" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">aam_worklist</text></g>
+<g><title>1 aam_recount</title>
+<polygon points="526.5,411.1 537.2,411.1 531.8,420.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="420.4" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">aam_recount</text></g>
+<g><title>lookup::element_counts</title>
+<circle cx="531.8" cy="450.1" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="444.7" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">lookup</text>
+<text x="544.3" y="454.8" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">element_counts</text></g>
+<g><title>4 aam_blockers</title>
+<polygon points="458.9,480.0 469.6,480.0 464.2,489.2" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="489.3" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">aam_blockers</text></g>
+<g><title>interm::aam_blockers</title>
+<circle cx="464.2" cy="519.0" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="513.6" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">interm</text>
+<text x="544.3" y="523.7" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">aam_blockers</text></g>
+<g><title>3 aam_nametwin</title>
+<polygon points="526.5,548.9 537.2,548.9 531.8,558.1" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="558.2" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">aam_nametwin</text></g>
+<g><title>interm::aam_nametwin</title>
+<circle cx="531.8" cy="587.9" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="582.5" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">interm</text>
+<text x="544.3" y="592.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">aam_nametwin</text></g>
+<g><title>5 aam_rescue</title>
+<polygon points="526.5,617.8 537.2,617.8 531.8,627.0" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="627.1" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">aam_rescue</text></g>
+<g><title>interm::aam_rescue</title>
+<circle cx="531.8" cy="656.8" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="651.4" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">interm</text>
+<text x="544.3" y="661.5" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">aam_rescue</text></g>
+<g><title>6 aam_algebra</title>
+<polygon points="526.5,686.7 537.2,686.7 531.8,695.9" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="696.0" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">aam_algebra</text></g>
+<g><title>interm::aam_algebra</title>
+<circle cx="531.8" cy="725.7" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="720.3" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">interm</text>
+<text x="544.3" y="730.4" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">aam_algebra</text></g>
+<g><title>7 aam_forecast</title>
+<polygon points="526.5,755.6 537.2,755.6 531.8,764.8" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="764.9" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">aam_forecast</text></g>
+<g><title>interm::aam_forecast</title>
+<circle cx="531.8" cy="794.6" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="789.2" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">interm</text>
+<text x="544.3" y="799.3" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">aam_forecast</text></g>
+<g><title>8 aam_partial</title>
+<polygon points="526.5,824.5 537.2,824.5 531.8,833.7" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="833.8" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">aam_partial</text></g>
+<g><title>interm::aam_partial</title>
+<circle cx="531.8" cy="863.5" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="858.1" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">interm</text>
+<text x="544.3" y="868.2" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">aam_partial</text></g>
+<g><title>9 aam_universe</title>
+<polygon points="526.5,893.4 537.2,893.4 531.8,902.6" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="544.3" y="902.7" font-family="Arial" font-size="13" fill="#7A7A7A" text-anchor="start">aam_universe</text></g>
+<g><title>evidence::tool_output</title>
+<circle cx="531.8" cy="932.4" r="5.3" fill="#FFFFFF" stroke="#636EFA" stroke-width="1.5"/>
+<text x="544.3" y="927.0" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">evidence</text>
+<text x="544.3" y="937.1" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">tool_output</text></g>
+<g><title>interm::aam_universe</title>
+<circle cx="464.2" cy="966.9" r="5.3" fill="#636EFA" stroke="#2B2B2B" stroke-width="3.0"/>
+<text x="544.3" y="961.4" font-family="Arial" font-size="6.5" fill="#8A8A8A" text-anchor="start">interm</text>
+<text x="544.3" y="971.6" font-family="Arial" font-size="13" fill="#111111" text-anchor="start">aam_universe</text></g>
+</svg>

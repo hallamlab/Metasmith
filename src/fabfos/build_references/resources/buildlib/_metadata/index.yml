@@ -1,46 +1,10 @@
 manifest:
-  aam_combine.py:
-    instance_id: 1e200e536d82b336d47dc3e59cdedaaafb7f752fa5ea15694bf3be4a3d38575a169e
-    origin: leaf
-    type: buildlib::aam_combine.py
-  aam_curation.py:
-    instance_id: 1e20a3d58aeb262e4907854cba50e079fbe6e75876501e070a86a1e94673b03b7853
-    origin: leaf
-    type: buildlib::aam_curation.py
-  aam_indigo_member.py:
-    instance_id: 1e20012ef1dc53c82f0875357f819ce7ffa600c944621344b3abdd2d550ba3b69a54
-    origin: leaf
-    type: buildlib::aam_indigo_member.py
-  aam_layers.py:
-    instance_id: 1e20fb11b5d2052a87395c5cf5f968c905dbac6427933047db3d6977079d7d0ef2e7
-    origin: leaf
-    type: buildlib::aam_layers.py
-  aam_metacyc_member.py:
-    instance_id: 1e201bd2017a964bef2136f043a14a92514e70c87c8ba2e352398c6940365feb6187
-    origin: leaf
-    type: buildlib::aam_metacyc_member.py
-  aam_neural_members.py:
-    instance_id: 1e207e06e81e4d56c3236faf2bf2fdd2322c4d3a81592add140b5fe23eb478fe14e2
-    origin: leaf
-    type: buildlib::aam_neural_members.py
-  aam_shard.py:
-    instance_id: 1e2014f2a5e03ec58f3830619d25fe4a22fcdfcd62b1c04e6c80aacbb9990dfdefd2
-    origin: leaf
-    type: buildlib::aam_shard.py
-  aam_worklist.py:
-    instance_id: 1e20d5fb7c89597a763d9012b2e182a25afc74e12ef0cd520ce420d18088ce9f9b73
-    origin: leaf
-    type: buildlib::aam_worklist.py
-  bake_metabolism.py:
-    instance_id: 1e20643e778344e50eceac5aa20644a0d2311bd1e10cb22c4d950a8e61da0eba0b2b
-    origin: leaf
-    type: buildlib::bake_metabolism.py
   bench_cohorts.py:
     instance_id: 1e20aced83b82d1cdbcbdf3ee5cff00b29a5b3a647effdd64212a9da3b8d47b1dc18
     origin: leaf
     type: buildlib::bench_cohorts.py
   bench_edges.py:
-    instance_id: 1e209a5bc2ad693530614e33fea2d23167edf3897dcd9d0a3835a8a6af7a3dbfe224
+    instance_id: 1e20d0aa5e59df2f28aa07b7896d07e6ba1c86bea84c9a0324be71bd9d0efa6ecb7d
     origin: leaf
     type: buildlib::bench_edges.py
   bench_evidence_weights.py:
@@ -51,56 +15,12 @@ manifest:
     instance_id: 1e20a58098102d859819721168653dd28ee86fbb209def6a6dd6dcbfedd8c58f5bb6
     origin: leaf
     type: buildlib::bench_universe.py
-  build_evidence.py:
-    instance_id: 1e206be0a1f655a82f4a8a33617344b1f43d76aec2c8dd99dae8f1d7b651551f7272
+  ecspr:
+    instance_id: 1e203acbd0707040999a81ba3397746fc6bedcb2f20bd5305f1286bd8b0423e9e669
     origin: leaf
-    type: buildlib::build_evidence.py
-  dir_calibrate.py:
-    instance_id: 1e200f2375dab25d1b48581203c519c24ed7b2820cd5ea437d4d37caee3273470743
-    origin: leaf
-    type: buildlib::dir_calibrate.py
-  dir_canon.py:
-    instance_id: 1e20f094ff7576e8dc391804a89afd32d0db434a00d89d7f27fe1ebc7acb70b54a11
-    origin: leaf
-    type: buildlib::dir_canon.py
-  dir_combine.py:
-    instance_id: 1e20d67f7d8b9b1eb06a93b601305c427fcbba2bb43147ffab33a2ab31b233b09c94
-    origin: leaf
-    type: buildlib::dir_combine.py
-  dir_curated.py:
-    instance_id: 1e20255e9299c7a0cffec53906a34920d8605449829596b90da27d6dd1489f8115da
-    origin: leaf
-    type: buildlib::dir_curated.py
-  dir_drive.py:
-    instance_id: 1e20b3e59580963a0478cbf7717a1ec7a7bc65bd08ee1a23acbbb3fd223a533352eb
-    origin: leaf
-    type: buildlib::dir_drive.py
-  dir_metacyc_flatfile.py:
-    instance_id: 1e200bd3f2ed6eb1e96b31ab8d847ce365c9448659b8a202ddb666c7c0e13c9686b2
-    origin: leaf
-    type: buildlib::dir_metacyc_flatfile.py
-  dir_refdata.py:
-    instance_id: 1e20a7cedbc8acdc2c1322e3401beb18de7a7b500d26f789d1420d85d53a943a9d25
-    origin: leaf
-    type: buildlib::dir_refdata.py
-  dir_thermo_dgbyg.py:
-    instance_id: 1e20f134f10deb7a19ac0b5d295c459c48e12db66f516f5a11706bfa2b257362b58d
-    origin: leaf
-    type: buildlib::dir_thermo_dgbyg.py
-  dir_thermo_eq.py:
-    instance_id: 1e206eb448022026972c312bab6891cfebe8706d9320cbe65c11eba5a3faffc51493
-    origin: leaf
-    type: buildlib::dir_thermo_eq.py
-  ecspr_atom_pairs.py:
-    instance_id: 1e2051047db9d14271e76144cf9708be0594872fd48f64d3e4f1096a2dd357e6e630
-    origin: leaf
-    type: buildlib::ecspr_atom_pairs.py
+    type: buildlib::ecspr
   mnx_lookups.py:
-    instance_id: 1e20b0e04637a579ac3a7a2775eb4a90dfbd0329f4a27241556badc4530cb9b1c57e
+    instance_id: 1e20986808f407e92d7523e90090e01180db1e8b314d8b1cb8f182d35d77d7ea30da
     origin: leaf
     type: buildlib::mnx_lookups.py
-  refs_encoding.py:
-    instance_id: 1e20d3353f843c9b8085ed12a6debb2c88de8a1cebe56805f393cf4b84e805b0086e
-    origin: leaf
-    type: buildlib::refs_encoding.py
 schema: v1

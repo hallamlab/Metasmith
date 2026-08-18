@@ -1,54 +1,78 @@
 manifest:
-  aam_ensemble.py:
-    instance_id: 1e20c911775add09280748fe256593abac468fcfc1886b7d00878364e1f9e085b7be
+  aam_algebra.py:
+    instance_id: 1e20b54aa99792313f465c216917043f4dabbd8f571b287616fd60e48aa14c464586
+    origin: leaf
+    type: transforms::transform
+  aam_blockers.py:
+    instance_id: 1e2095c583077f59381fff489165d97281679e800705dee1f2ef4b56d7eb6645c6f7
+    origin: leaf
+    type: transforms::transform
+  aam_forecast.py:
+    instance_id: 1e201ac7d2dae9be8f8c371e1c305dbd9be47eb1c519d83f0c19cc3efcf549637f89
+    origin: leaf
+    type: transforms::transform
+  aam_nametwin.py:
+    instance_id: 1e20787d17a1cd1f22fc1b3999a88e6dd14f306646a43fd15fbcd52236da5e5c28b1
+    origin: leaf
+    type: transforms::transform
+  aam_partial.py:
+    instance_id: 1e20aece2b9f39f21c1721027c474c6c55e3c69d7d8238626292325948e4da60d620
+    origin: leaf
+    type: transforms::transform
+  aam_recount.py:
+    instance_id: 1e2042a7f545c14bab58013342330085d90a28f30638f5b7c91ee343550f9ae8c96a
+    origin: leaf
+    type: transforms::transform
+  aam_redox.py:
+    instance_id: 1e20be21b5e8e1c1ae4e78e36444becc8cca8ddbd3234affea2025387b57a7fedea5
+    origin: leaf
+    type: transforms::transform
+  aam_reference.py:
+    instance_id: 1e2073c278673cd14013ed3deb74da5534b31d900bea6f442cb7a2bf8680adfc5e5d
     origin: leaf
     type: transforms::transform
   aam_rescue.py:
-    instance_id: 1e20412a9c93db11388abf8bc1d8f226ad691c5997de8cd804cc0d01b636b3f848c4
+    instance_id: 1e205d3592f326b62e900ed11e5be257352ab0292bb34e51c3d46546dc0eb3bef4b0
+    origin: leaf
+    type: transforms::transform
+  aam_stack.py:
+    instance_id: 1e2059a19af02518fdecd5c4d7fdd251ca3bf95204059794b754faa3d50feafa230e
+    origin: leaf
+    type: transforms::transform
+  aam_universe.py:
+    instance_id: 1e2046571cb1cb2b7e79d4c2acd4a03a0c9cd5e9e4f17b3ea46ef159038c00ed7848
     origin: leaf
     type: transforms::transform
   aam_worklist.py:
-    instance_id: 1e20655eafeefb1faaf572ef0db6c70739ee04c663ce21a6d558ca8ad693fe509b69
+    instance_id: 1e20e4b14cd1ceed1cb3eed6330000ed49c0dea5ce10add16b5a087f84fe6e8eb74e
     origin: leaf
     type: transforms::transform
   dgbyg.py:
-    instance_id: 1e207378998207e81ddb6a98d7f6888c0ae59754f70a46f59f46a8595cc196ca915f
+    instance_id: 1e207a3caa813db6b95364d34a1212a486ba1714363a29c241fcf500443b2ef568b0
     origin: leaf
     type: transforms::transform
   direction_bake.py:
-    instance_id: 1e20b465d3ededabc16eb80e0393912b857e2866f9bc4d48542c9526e7070724e016
+    instance_id: 1e2028b5826895908f60cb00c74f69b0292f1a4888c275c4f0d6a30680016a4d5650
     origin: leaf
     type: transforms::transform
   direction_ensemble.py:
-    instance_id: 1e2026acf030a322e48c52d89f091d457f040388709d517ab492bd035d17145005f3
+    instance_id: 1e20cbc6273afabedb81d44207184d7e30248136869e256a15945127cfe8fe74ff11
     origin: leaf
     type: transforms::transform
   equilibrator.py:
-    instance_id: 1e20fc14bf26619118d96e2f5db4fdbfb945e4411e5db4abc7124ecf82db63c5cecf
+    instance_id: 1e20fd84f051508970434b0ade4a31090c0a8eeddbc75f66ad0f63861926ae6e9285
     origin: leaf
     type: transforms::transform
   indigo.py:
-    instance_id: 1e20d9028c6729c10c678a21ee76e254d9230e788817cf02020b41ad6f70f5f128c4
-    origin: leaf
-    type: transforms::transform
-  indigo_rescue.py:
-    instance_id: 1e205f92c0a745a33fd295c4c6deab6a40673737043b8c67ada8f4c9b70062457350
+    instance_id: 1e2059f572e3fae71643e098f371ec6c05723cb87f9b431483a1b1b02976a5338792
     origin: leaf
     type: transforms::transform
   localmapper.py:
-    instance_id: 1e2075b60bdfc5894b983452ec3deca4a277dc4862a92cef3ff58922cd0bf918bdd5
-    origin: leaf
-    type: transforms::transform
-  localmapper_rescue.py:
-    instance_id: 1e201f71ce07f88be24f32949ca014c8b5c3efde158a96374e56e27f605fd3a63386
+    instance_id: 1e204fce2553b3f81573cdb0def9a1c9f8b2f71f6efa24e905aafd008197874ea5e5
     origin: leaf
     type: transforms::transform
   rxnmapper.py:
-    instance_id: 1e20b75d33abfbc677d55f0eba5947ba707e1783112475867f989c3618d55445591e
-    origin: leaf
-    type: transforms::transform
-  rxnmapper_rescue.py:
-    instance_id: 1e20f4f17020d1e8c52dd75ba9e77cd41965c538f8929f19f88cca264b6963c2d0bd
+    instance_id: 1e20802ef98ec57a6e167c1675267dc3d1e39059e95401c483fec5b8384dc29be48c
     origin: leaf
     type: transforms::transform
 schema: v1

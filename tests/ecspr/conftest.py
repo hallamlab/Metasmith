@@ -9,7 +9,7 @@ path's helper".
 import numpy as np
 import pytest
 
-from ecspr.graph import AtomGraph
+from ecspr.model.graph import AtomGraph
 
 # The bound the solver is held to against an independent dense rebuild.
 SELFTEST_TOL = 1e-9

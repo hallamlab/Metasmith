@@ -1,16 +1,27 @@
-"""AAM member lane: RXNMapper -- the BERT attention mapper. Pass 1, over the worklist.
+"""AAM member lane: RXNMapper -- the BERT attention mapper. ONE pass, over one universe.
 
 One tool, one step, one product. The lane maps and then EXTRACTS, so what leaves it is
 the shared pairs shape rather than the tool's private cache; the cache goes to
 evidence::, where the claim `source=rxnmapper+indigo` on a fused row can be checked
 against what the member actually said.
 
-IT READS `interm::aam_worklist`, NOT `lookup::reactions`. The worklist is the adjudicated
-universe -- one row per MNXR with a verdict -- and every member takes `verdict ==
-mappable` from it. Two things follow. The reaction SMILES is one string built once, so
-the disagreement this ensemble measures is between mappers and not between two SMILES
-builders. And the reactions this member does NOT attempt have a row saying why, which is
-the difference between a member that abstained and a member that never looked.
+IT READS `interm::aam_universe`, NOT `lookup::reactions` AND NOT THE WORKLIST. The
+universe is one submission table carrying all three classes at once -- the adjudicated
+whole reaction, the rescue's completion of a blocked one, and the forecast-driven element
+reduction -- so this member runs ONCE where the graph used to run it three times over
+three universes built one after another. Two things follow. The reaction SMILES is one
+string built once, so the disagreement this ensemble measures is between mappers and not
+between two SMILES builders. And a submission this member does NOT attempt has a row
+saying why, which is the difference between a member that abstained and one that never
+looked.
+
+THE CACHE IS STAGED IN AND IS KEYED ON THE SUBMISSION STRING. `fabfos_data::aam_cache` is
+a given -- empty on a first run, the previous run's caches and sidecars on a resubmission
+-- and it exists because the in-task cache lives in node-local scratch and is discarded on
+retry, so this lane's per-reaction resume protected it against nothing that actually
+happens. The string is half the key on purpose: one MNXR now has up to four possible
+submissions, and serving a cached map for the wrong one is not a stale row, it is a map of
+a different molecule filed under this one's name.
 
 IT MAPS THE WHOLE MAPPABLE UNIVERSE, including the ~13k the curated map already answers.
 That looks wasteful and is a deliberate trade. The member used to be handed an
@@ -39,11 +50,10 @@ model = Transform()
 
 image     = model.AddRequirement(lib.GetType("env::rdkit.env"))
 metanetx  = model.AddRequirement(lib.GetType("fabfos_data::metanetx"))
-worklist  = model.AddRequirement(lib.GetType("interm::aam_worklist"))
-neural    = model.AddRequirement(lib.GetType("buildlib::aam_neural_members.py"))
-sharder   = model.AddRequirement(lib.GetType("buildlib::aam_shard.py"))
-extractor = model.AddRequirement(lib.GetType("buildlib::ecspr_atom_pairs.py"))
-evidence  = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+universe  = model.AddRequirement(lib.GetType("interm::aam_universe"))
+rescue    = model.AddRequirement(lib.GetType("interm::aam_rescue"))
+cache     = model.AddRequirement(lib.GetType("fabfos_data::aam_cache"))
+bakelib   = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 pairs     = model.AddProduct(lib.GetType("interm::aam_member_rxnmapper"))
 ev        = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -67,11 +77,14 @@ RESOLVE = """
 
 def protocol(context: ExecutionContext):
     imnx = context.Input(metanetx)
-    iwl  = context.Input(worklist)
-    ilib = context.Input(neural)
+    iun  = context.Input(universe)
+    irs  = context.Input(rescue)
+    ica  = context.Input(cache)
+    ilib = context.Input(bakelib)
     iout = context.Output(pairs)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
+    R = irs.container
 
     resolve = RESOLVE.format(metanetx=imnx.container, member=MEMBER)
     # OMP pinned to 1 and re-exported HERE rather than inherited: the mapper forks, and
@@ -86,8 +99,9 @@ def protocol(context: ExecutionContext):
 
         pids=""
         for i in $(seq 0 {SHARDS - 1}); do
-            {py} {libdir}/aam_neural_members.py --member {MEMBER} \
-                --worklist {iwl.container} \
+            {py} -m ecspr.bake.aam.neural_members --member {MEMBER} \
+                --universe {iun.container} \
+                --cache-dir {ica.container}/{MEMBER} \
                 --shard $i/{SHARDS} \
                 --sidecar members/{MEMBER}_$i.attempted \
                 --out members/{MEMBER}_$i.tsv &
@@ -104,11 +118,22 @@ def protocol(context: ExecutionContext):
             exit 1
         fi
 
-        {py} {libdir}/aam_neural_members.py --member {MEMBER} \
+        {py} -m ecspr.bake.aam.neural_members --member {MEMBER} \
             --merge-from members/{MEMBER}_*.tsv \
             --out members/{MEMBER}.tsv
-        {py} {libdir}/ecspr_atom_pairs.py extract \
+        # ONE EXTRACTION OVER THREE SUBMISSION CLASSES, which is what `--universe` buys:
+        # a row carrying an `element` gets the reduced participant lists the reduction
+        # actually made, and a row without one gets the equation-derived template as
+        # always. The rescue's three tables come along for the completed class -- its
+        # curated structures are real and kept, its placeholders are scaffolding and
+        # suppressed, and its per-element balance is where the conservation claim is
+        # tested. All three are no-ops for a whole reaction, whose participants are
+        # structured by construction.
+        {py} -m ecspr.bake.atom_pairs extract \
             --aam members/{MEMBER}.tsv --align strict --fallback-forced \
+            --universe {iun.container} \
+            --resolved {R}/crosswalk.tsv --placeholders {R}/placeholders.tsv \
+            --balance {R}/balance.tsv \
             --reac-prop $MNX/reac_prop.tsv --chem-prop $MNX/chem_prop.tsv \
             --out {iout.container} --out-status members/{MEMBER}_status.tsv
 
@@ -118,7 +143,7 @@ def protocol(context: ExecutionContext):
         # `collect` resolves that itself; the lane just names the tool.
         # The SIDECARS are evidence in their own right: subtracting them from the caches
         # names the reactions a shard died inside, which nothing else records.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool {MEMBER} \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool {MEMBER} \
             --file members/{MEMBER}.tsv members/{MEMBER}_*.tsv \
                    members/{MEMBER}_*.attempted members/{MEMBER}_status.tsv \
                    {iout.container}

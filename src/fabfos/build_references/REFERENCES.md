@@ -7,9 +7,13 @@ transform instance library**, not a directory of scripts:
 build_references/
   data_types/     raw:: interm:: bench:: buildlib:: lookup::  (build-only namespaces)
   resources/
-    buildlib/     the ported method -- the AAM layer stack and its four members, the
-                  curation sweep, the direction ensemble, the bake encoding, the
-                  benchmark cohort readers. Build side only; never in the wheel.
+    buildlib/     ecspr/  -- the whole bake method, VENDORED from src/ecspr by
+                              build.sh: the AAM layer stack and its members, the
+                              curation sweep, the direction ensemble, the encoding.
+                              Generated, gitignored, invoked as `python3 -m ecspr.bake.*`
+                  the five flat modules small enough to stay files: the MetaNetX
+                  lookups builder and the four benchmark cohort readers.
+                  Build side only; never in the wheel.
   transforms/
     acquire/      one per upstream SOURCE FOLDER; nothing here is derived
     bake/         R6 -- the atom-mapping and direction ensembles
@@ -38,10 +42,14 @@ executing driver stages the DVC-pinned source folders under `data/fabfos/origina
 **asserts no acquire transform is in the plan** — a reference built from a fresh pull is
 not the reference these pins describe.
 
-The method behind each table lives in `resources/buildlib/` (`buildlib::`, build side
-only). It is derived from the previous generation's scripts rather than copied: the AAM
-recovery sweep's eleven scripts are consolidated into five proposer lanes plus one
-arbiter, and the chemistry tables three of them duplicated verbatim are now one table.
+The method behind each table lives in `buildlib::` (build side only). The bake half of
+it is `ecspr.bake`, a package staged as ONE hashed directory rather than as twenty-one
+flat files, because a requirement list that restates an import graph is a list that
+drifts from it — and the drift shows up as an ImportError six hours into a queued job.
+The five modules that remain flat are the ones nothing else imports. It is all derived
+from the previous generation's scripts rather than copied: the AAM recovery sweep's
+eleven scripts are consolidated into five proposer lanes plus one arbiter, and the
+chemistry tables three of them duplicated verbatim are now one table.
 One artifact is deliberately short of its deployed form and says so where it is built:
 B3/B4/B5 read the *extracted* cohort tables rather than re-extracting from the papers.
 That is not a gap to close — there is no transform that turns a PDF supplement into
@@ -220,9 +228,11 @@ looks well-formed. That is the failure this retires.
 One artifact in three files, written by **two** steps. Each carries the same
 bake-identity block and `refs.assert_same_bake` refuses a mismatched trio — reading
 `atom_pairs` against another bake's `vocab` decodes every node to the wrong metabolite
-silently. `aam_ensemble` MINTS that block with the vocabulary and the pairs;
-`direction_ensemble` requires the vocabulary and writes the block through verbatim, so
-agreement is structural rather than two computations coinciding.
+silently. `aam_reference` MINTS that block with the vocabulary and the pairs;
+`direction_bake` requires the vocabulary and writes the block through verbatim, so
+agreement is structural rather than two computations coinciding. The minting and the
+ledger close are one step for that reason: whichever transform mints the block has to be
+the one that mints the vocabulary.
 
 The reaction space is the **reaction universe** (`lookup::reactions`), not the union of
 the two source tables: a reaction outside the vocabulary falls back to ratio 1.0 in
@@ -231,39 +241,79 @@ coding against the universe makes that unreachable rather than contingent. It ex
 MetaNetX's `EMPTY` sentinel, and the encoder refuses any symbol the vocabulary lacks
 because the id columns are unsigned and an unknown would land as 4,294,967,295.
 
-**`atom_pairs.parquet`** — the atom-atom mapping, in **three additive layers**, laid down
-in order of how much each is worth and each claiming only what the layer below left
-unclaimed. **Requires:** L0 + `originals/metacyc/` **[LICENSED]**.
+**`atom_pairs.parquet`** — the atom-atom mapping, in **six additive layers**, laid down in
+order of how much each is worth and each claiming only what the layer below left
+unclaimed, then corrected. **Requires:** L0 + `originals/metacyc/` **[LICENSED]**.
 
-| layer | source | reach |
-|---|---|---:|
-| L1 | MetaCyc `atom-mappings-smiles.dat` — expert-assigned, balances per element at 99.8%+ | **13,620** reactions / 379,217 correspondences |
-| L2 | RXNMapper + Indigo over the adjudicated worklist, LocalMapper over the gap they leave, fused | consensus / single-member / disagreement-diluted |
-| L3 | the same three over the **rescued** universe — reactions completed with structures proposed for their structure-less participants | the reactions no mapper had ever seen |
+| layer | source | what it adds |
+|---|---|---|
+| curated | MetaCyc `atom-mappings-smiles.dat` — expert-assigned, balances per element at 99.8%+ | **13,620** reactions / 379,217 correspondences |
+| whole | the three members' maps of the adjudicated reaction, fused | consensus / single-member / disagreement-diluted |
+| completed | the same three over what the **rescue** made mappable — reactions completed with structures proposed for their structure-less participants | the reactions no mapper had ever seen |
+| forced | `aam_algebra` — conservation leaves no choice once a participant standing on both sides at equal multiplicity has cancelled | reactions no member is ever given |
+| partial_forced | the element reduction's own forced arm | one element of a reaction nothing mapped whole |
+| partial_reduced | the three members' maps of those reductions | the same, where a mapper was needed |
 
 **Additive means additive, and the claim is tested.** Four gates at each boundary, all of
 which *refuse* rather than warn: the added `(mnxr, element)` is absent from every layer
 below; zero collisions on the 6-tuple pair key; no element loses reactions; no negative
 ranks. A gate that warns is a gate that gets read once.
 
-**The universe is adjudicated before any mapper runs, and the mappers run twice.** The
-worklist gives every one of the 83,796 reactions a closed-set verdict and, where it is
-blocked, the family of each blocker; the lanes take their todo list from that one table.
-Reactions over **600 atoms** are `oversize` and go to no lane — measured against the
-deployed table, reactions that large bank at 5.3% and reactions over 1,600 atoms bank at
-zero, while those are the ones costing minutes each. Then the rescue completes the blocked
-reactions and the same three mappers run again over what it produced.
+**Everything is prepared before any mapper runs, and then each runs ONCE.** The worklist
+gives every one of the 83,796 reactions a closed-set verdict and, where it is blocked, the
+family of each blocker. Reactions over **600 atoms** are `oversize` and go to no lane —
+measured against the deployed table, reactions that large bank at 5.3% and reactions over
+1,600 atoms bank at zero, while those are the ones costing minutes each. The rescue then
+completes the blocked reactions, and `aam_forecast` names, per `(reaction, element)`, where
+a member is expected to return nothing and under which mechanism — three of the six are
+exact (a 512-token context window, and our own two caps), the rest are read from the
+previous run's records. `aam_partial` builds its element reductions from that forecast
+rather than from a finished run, which is the single change that moves it upstream of the
+mappers, and `aam_universe` concatenates all three submission classes into the one table
+every member reads.
 
-Two things that ordering fixes. **LocalMapper is a gap-filler again**: it fills what
+The passes collapsed because **over-offering is free**: the layer stack is additive and its
+gates refuse rather than warn, so a reduction built for a reaction that maps fine is never
+claimed. Predicting failure wrongly is therefore asymmetric — over-predict and you pay
+compute, under-predict and you lose exactly the coverage the reduction would have added —
+so the forecast may only ever ADD submissions. It cannot remove one.
+
+Three things that ordering fixes. **LocalMapper is a gap-filler again**: it fills what
 Indigo and RXNMapper left, which is the role it actually had in the chain this ports —
-487 reactions there, not 57,522. And **the rescue's reactions get three votes**: in the
-deployed table every rescue-derived reaction is one mapper at half weight, because its
-crosswalk was authored after its mappers had run.
+487 reactions there, not 57,522. **The rescue's reactions get three votes**: in the deployed
+table every rescue-derived reaction is one mapper at half weight, because its crosswalk was
+authored after its mappers had run. And **there is one submission string per submission**,
+built once and read by all three, so the disagreement the ensemble measures is between
+mappers rather than partly between SMILES builders.
 
-**Every reaction ends with an outcome.** `aam_worklist close` joins the adjudication to
-the finished table, so "produced nothing", "never attempted" and "refused for this reason"
-are distinguishable after the build. `tests/build_references_tier4_agreement.py` reads
-that ledger to break each miss against the deployed table down by its reason.
+**What the rescue refuses, and why it is the largest non-banked outcome.** A curated `*`
+body counts as zero atoms for every element, which is only safe when the same body stands
+on both sides — so a generic acceptor written on ONE side, with no conjugate partner in the
+equation, is refused before the balance test rather than balanced against a molecule that
+does not exist. That single rule is most of `rescue_declined`, and it is also why the
+conservation-algebra lane banks nothing: its targets are precisely the reactions holding an
+unresolved generic. Relaxing it would recover on the order of a thousand reactions and
+weaken every balance verdict beneath it; `research/fabfos/benchmarks/aam_r6_verification.md`
+measures both sides of that trade.
+
+**The stack is corrected before it becomes a reference.** `aam_redox` refuses every C/N/P
+correspondence running between a NAD(P)/FAD/FMN couple and a substrate: a hydride transfer
+leaves both carbon skeletons intact, and an MCS mapper cannot see that because hydrogen is
+not in the element vocabulary. It is a **repair rather than a filter** — each affected
+source atom's surviving arms are rescaled back to the total it started with, so a refusal
+concentrates the atom's claim on the destination that survives the invariant instead of
+deleting it, and where no arm survives the couple is removed and conservation is asked
+about the remainder. Scope is the couple appearing OXIDISED on one side and REDUCED on the
+other, per family, so a reaction where NAD is a genuine substrate is untouched; sulfur is
+untouched everywhere, because these cofactors carry none and refusing S would be refusing on
+a coincidence. The refusals ship beside the corrected table under a named predicate, with
+the cofactor resolution that produced them.
+
+**Every reaction ends with an outcome.** `aam_worklist close` joins the adjudication to the
+corrected table, so "produced nothing", "never attempted", "offered a reduction and
+declined it", "emptied by the repair" and "refused for this reason" are distinguishable
+after the build. `tests/build_references_tier4_agreement.py` reads that ledger to break each
+miss against the deployed table down by its reason.
 
 **Putting MetaCyc first is a deliberate departure.** The previous generation kept the
 neural universe as the base and appended MetaCyc as a small increment, explicitly
@@ -447,9 +497,11 @@ prediction — the heads' output columns are indexed by the IA tables' label ord
 `build.sh` skips along with any underscore-prefixed directory. It needs the EZpred
 *source tree*, and where patched source lives is unresolved: our copy carries the
 DL-only fork (no MMseqs2 homolog augmentation, no Foldseek template fusion), so it is
-not what any URL returns and cannot sit in `originals/`; and it does not fit
-`buildlib::`'s flat one-module-per-file shape. Both candidate resolutions are stated in
-`transforms/_deferred/README.md`.
+not what any URL returns and cannot sit in `originals/`. Its shape objection to
+`buildlib::` no longer holds — `buildlib::ecspr` is a directory-typed entry with a tree
+digest for an identity, which is exactly the resolution
+`transforms/_deferred/README.md` names as the second candidate. Where the patched source
+should LIVE is still open.
 
 **The lane runs regardless.** The assembled bundle is staged at
 `<processed>/ezpred_model/EZpred` and declared as a given in `examples/scadc_gpr.py`'s
@@ -504,9 +556,11 @@ read.
 
 Networks are **not stored**. Each x in X is constructed at run time from the conditions
 table plus two GPR tables — the host's, which is the background network, and the study's,
-which carries the edges each condition adds or deletes. They share one 14-column schema
-so the two concatenate without reshaping; the study table appends four columns
-(`condition_id`, `cohort`, `action`, `source_organism`) that scope a row to a condition.
+which carries the edges each condition adds or deletes. Both are the GPR schema's core
+plus the `attribution`, `feature` and `universe` blocks, so the two concatenate without
+reshaping; the study table adds the `cohort` block (`condition_id`, `cohort`, `action`,
+`source_organism`) that scopes a row to a condition. `lib::fabfos_evidence` declares all
+of it, and every producer on both sides validates against it before writing.
 
 **The cut is by PUBLICATION, not by processing stage.** `benchmarks/<study>/` holds one
 study each, on one file schema, so a study can be added, revised or withdrawn without
@@ -595,16 +649,19 @@ four lane tables in one id space, refusing to write anything short of total cove
 only k12's is a reconstruction rather than the generating file, and that script's
 docstring says so — with the evidence: the lanes key on `NP_416485.4`, the current
 proteome publishes `.5`, and the match is made on the versionless accession.
-**Which lanes ran is part of the table's identity.** The fourth lane needs
-`ref::reference_label_pool`, which has no producer in this tree; three lanes is a smaller
-claim, not a smaller table, and B2 records the lane set by name in its `BUILD.json`.
+**The lane set is the table's contract, and it is checked.** A B2 table carries exactly
+the four channels `lib::fabfos_evidence.LANE_SETS["chosen_4"]` declares; the collector
+refuses by name when the mapper's output does not, and its `BUILD.json` records the set it
+checked. The fourth lane's reference is R7 above, built by `compile/reference_label_pool.py`
+— an absent pool is a staging failure that stops the run, never a shorter table.
 
 ### B3 · `<study>/gpr_manual.parquet`  (7 studies)
 Each study's edges, as the curator read them. Where the extraction attributed reactions
 per gene, so does the table; where it attributed them to the OBSERVATION — LASER's
 `genes_json` names each gene's action but no gene carries its own MNXR — the rows are
-`feature_kind=curated_set` with a null `feature_id`. Splitting the list across an
-observation's genes would manufacture an attribution the curator never made.
+`feature_kind=curated_set` and `orf` names the whole gene SET rather than a gene.
+Splitting the list across an observation's genes would manufacture an attribution the
+curator never made.
 **Requires:** `<study>/extraction.tsv` (a given), R5, the bake, and B1 for the background.
 
 **The four contrast extractions are RAGGED and pandas does not say so.** Their `add` rows
@@ -731,9 +788,9 @@ about this community rests on, and `research/fabfos/examples/nostoc_ecspr_verify
 
 **`ecspr/networks/*/conditions_*.parquet` are readable history, not inputs.** They are the
 pre-split shape: one row per (condition, *sink*), with a `mode` column the two transforms
-filtered on themselves — 92 rows for the NOS singleton. `ecspr.conditions.read` has no
+filtered on themselves — 92 rows for the NOS singleton. `ecspr.model.conditions.read` has no
 `mode` and reads every row as its own condition, so those 92 become 92 one-sink ground
-solves where `ecspr.compose.make_conditions` now intends four, one per element, each
+solves where `ecspr.model.compose.make_conditions` now intends four, one per element, each
 naming every precursor at once. Nothing raises; the numbers are just a different
 measurement. `nostoc_ecspr.py --compose` writes the current shape beside them and
 `check_conditions` refuses the old one, which is the only thing standing between a re-run
@@ -765,8 +822,10 @@ Everything under `data/` not named above.
 ## Open decisions
 
 **R7 — the reference label pool. RESOLVED in the contract, open in its consequence.**
-The pool is now built from UniRef50 + the bridge rather than from a separate labelled
-proteome, which removes an acquisition and the KEGG licensing question with it. What
+The pool is now built from Swiss-Prot (2026_02, 222,019 reviewed sequences) labelled
+through the `mnxr_lookup` bridge rather than from a separate labelled proteome, which
+removes an acquisition and the KEGG licensing question with it. The built artifact
+records its own provenance in `pool_source.txt`. What
 stays open is that this is *not* the deployed pool: that one is KEGG-derived (54,005
 sequences keyed on KEGG gene ids, labelled by KO), so the `pbert_transfer` lane's
 numbers will move and must not be reported as a reproduction of the deployed lane.

@@ -35,9 +35,20 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO = Path(__file__).resolve().parent.parent
+def _repo_root(start: Path) -> Path:
+    """Walk up until a directory holding `data/fabfos` is found."""
+    for d in (start, *start.parents):
+        if (d / "data" / "fabfos").is_dir():
+            return d
+    raise SystemExit(f"no ancestor of {start} contains data/fabfos")
+
+
+REPO = _repo_root(Path(__file__).resolve())
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_ag1_identity import MARKERS                                 # noqa: E402
+
+sys.path.insert(0, str(REPO / "src" / "metasmith_libraries" / "resources" / "lib"))
+import fabfos_evidence as fe                                           # noqa: E402
 
 GENOMES = REPO / "data" / "fabfos" / "originals" / "genomes"
 DH1 = "e_coli_dh1"
@@ -69,30 +80,35 @@ def proteins_for(host: str, symbols: set[str]) -> dict[str, list[str]]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--from", dest="src", type=Path,
-                    default=REPO / "data/fabfos" / DH1 / "gpr" / "gpr_denovo.parquet")
+                    default=REPO / "data/fabfos/runs" / DH1 / "gpr" / "gpr_denovo.parquet")
     ap.add_argument("--publish", action="store_true",
                     help=f"write data/fabfos/{AG1}/gpr/gpr_denovo.parquet")
     a = ap.parse_args()
 
     if not a.src.exists():
-        raise SystemExit(f"no DH1 de-novo table at {a.src}.\n  Build it: "
-                         f"`python examples/benchmark_hosts_denovo_lanes.py --site "
-                         f"sockeye --lanes kofam,clean,diamond,proteinbert --run` then "
-                         f"`--collect`, then benchmark_hosts_denovo_assemble.py")
+        raise SystemExit(
+            f"no DH1 de-novo table at {a.src.relative_to(REPO)}.\n  Build it: "
+            f"`python research/fabfos/examples/clone_gpr_on_hpc.py --orfs "
+            f"data/fabfos/originals/genomes/{DH1}/genome/NC_017638.1.faa --into "
+            f"data/fabfos/runs/{DH1} --site sockeye --run`, then --publish")
     d = pd.read_parquet(a.src)
+    # THE PARENT IS CHECKED BEFORE ANYTHING IS BORROWED FROM IT. A borrow inherits
+    # whatever the parent got wrong, so a short-lane parent would have produced a
+    # short-lane derivative with no sign that anything was missing.
+    fe.validate_gpr(d, "chosen_4", None, str(d["source"].iat[0]), fe.extensions_of(d))
     symbols = {sym for sym, kind in MARKERS.values() if sym and kind == "loss"}
     found = proteins_for(DH1, symbols)
-    print(f"{a.src.name}: {len(d):,} rows, {d['feature_id'].nunique():,} ORFs")
+    print(f"{a.src.name}: {len(d):,} rows, {d['orf'].nunique():,} ORFs")
     for sym in sorted(symbols):
         print(f"    {sym:<5} -> {found[sym] or 'no record in the proteome'}")
 
     withheld = {o for ids in found.values() for o in ids}
-    keep = d[~d["feature_id"].isin(withheld)].copy()
-    lost = d[d["feature_id"].isin(withheld)]
+    keep = d[~d["orf"].isin(withheld)].copy()
+    lost = d[d["orf"].isin(withheld)]
     keep["host"] = AG1
     keep["build_id"] = keep["build_id"].astype(str) + f"_{AG1}"
 
-    out = REPO / "data" / "fabfos" / AG1 / "gpr"
+    out = REPO / "data" / "fabfos" / "runs" / AG1 / "gpr"
     if not a.publish:
         out = Path(__file__).resolve().parent / "out" / AG1
     out.mkdir(parents=True, exist_ok=True)

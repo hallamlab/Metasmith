@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""R6, the metabolism bake: planned here, executed on hardware we control, in three parts.
+"""R6, the metabolism bake: planned here, executed on hardware we control, in parts.
 
-    PYTHONPATH=src python tests/fabfos/build_references_bake_split.py aam
+    PYTHONPATH=src python tests/fabfos/build_references_bake_split.py prepare
     ... build_references_bake_split.py members --run --host chamois --user tliu
 
 WHY A SIBLING AND NOT A FLAG ON THE SOCKEYE DRIVER. `build_references_bake_on_hpc.py`
-plans the whole twelve-lane graph and runs it under SLURM, and its Sockeye assumptions are
+plans the whole graph and runs it under SLURM, and its Sockeye assumptions are
 load-bearing rather than incidental: the two-step Lmod load whose order matters, the
 allocation-scoped scratch path that has no per-user directory, the pre-pull onto a login
-node because compute nodes have no route out, the assertion that all twelve lanes are
-present. Threading a conditional through each of those would leave two half-explained
-paths instead of two explained ones. This file is the off-cluster driver; that one stays
-the record of how the cluster works.
+node because compute nodes have no route out, the assertion that every lane is present.
+Threading a conditional through each of those would leave two half-explained paths instead
+of two explained ones. This file is the off-cluster driver; that one stays the record of
+how the cluster works.
 
 WHY OFF-CLUSTER AT ALL. Three runs died in staging on Sockeye and the cause was not
 metasmith: the allocation's Lustre scratch is degraded to the point where a three-byte
@@ -20,29 +20,35 @@ milliseconds, and it reproduced over Globus's separate transfer network, which r
 the link. The other doors are shut too -- Sockeye forbids compute-node writes to project
 space and forbids submitting from it, fir's compute nodes are held for maintenance.
 
-THE CUT IS THE IMAGE BOUNDARY, and that is not a coincidence to be explained but the
+THE FIRST CUT IS THE IMAGE BOUNDARY, and that is not a coincidence to be explained but the
 reason the split is cheap. Every bake transform declares `group_by=image`, so the three
-environments already partition the twelve lanes into groups that share nothing but tables:
+environments already partition the lanes into groups that share nothing but tables:
 
-    aam        9 lanes   worklist, three mappers x two passes, the rescue, the assembly
-    direction  2 lanes   equilibrator, direction_ensemble
-    dgbyg      1 lane    dgbyg
+    aam        15 lanes  the preparation, the three mappers, the assembly
+    direction   3 lanes  equilibrator, direction_ensemble, direction_bake
+    dgbyg       1 lane   dgbyg
 
 So the host boundary goes there, and the only things crossing a host are things that
 already cross an image boundary inside the graph. `direction` and `dgbyg` ride the same
 host because the second is fifty minutes of work with no reason to hold a machine of its
 own -- see bake/dgbyg.py for the measurement that replaced its twenty-four-hour guess.
 
-THREE PARTS, NOT TWO, AND THE THIRD IS ABOUT WALL CLOCK. `direction_ensemble` needs the
-vocabulary the AAM assembly mints, so it cannot start until the long branch finishes -- but
-the two thermodynamic MEMBERS need nothing from it. Folding them into one direction run
-would idle a whole machine for a day and then ask it for several more hours. So `members`
-runs first and concurrently with `aam`, and `direction` is the few minutes of table
-arithmetic that waits for both.
+THE SECOND CUT IS THE AAM BRANCH'S THREE STAGES, which the graph already has: prepare
+everything a mapper needs, map once, then assemble and correct. The parts follow them
+because their failure characters differ -- the preparation is nine table operations and an
+hour, the mapping is most of a day of inference, the assembly is minutes over tables that
+already exist -- so a method change in one must not re-pay the others.
 
-    aam        -> vocab, atom_pairs                      the long branch, its own host
-    members    -> direction_member_eq, _dgbyg            concurrent with it
-    direction  -> direction_ratios                       waits on both
+THE REST IS ABOUT WALL CLOCK. `direction_ensemble` needs nothing the AAM branch produces
+and `direction_bake` needs only its vocabulary, so the thermodynamic members and their
+assembly run start to finish beside the long branch and only the final encode waits.
+
+    prepare    -> interm::aam_universe                   no mapper runs
+    map        -> the three member tables                the long one, its own host
+    assemble   -> vocab, atom_pairs                      fuse, correct, mint
+    members    -> direction_member_eq, _dgbyg            concurrent with all three
+    direction  -> direction_annotation                   waits on members only
+    direction_bake -> direction_ratios                   seconds, once assemble lands
 
 EVERY SEAM IS A DECLARED IMPORT, which is the mechanism this graph already uses everywhere
 else rather than one invented for the split. The five `lookup::` tables are PRODUCED by
@@ -111,6 +117,10 @@ ALL_INPUTS = {
     "lookup::atom_ranks":        "processed/lookups/atom_ranks.parquet",
     "lookup::xrefs":             "processed/lookups/xrefs.parquet",
     "lookup::synonyms":          "processed/lookups/synonyms.parquet",
+    # RUN STATE, not upstream data: a record of a previous run, and a cache whose producer
+    # is the lane that reads it. Both are staged givens and both may be empty.
+    "fabfos_data::prior_bake_logs": "processed/metabolism_bake/logs",
+    "fabfos_data::aam_cache":       "temp/aam_cache",
 }
 
 # The MetaCyc files any transform in this graph opens. The whole distribution is NOT
@@ -145,53 +155,140 @@ IMG = "docker://quay.io/hallamlab/ecspr_bake:{}"
 # output, at the identical path, and assert_seams_are_outputs checks that on startup so a
 # renamed file is a refusal here rather than a resurrected branch three lines later.
 BRANCHES = {
-    "aam": dict(
+    # THE AAM BRANCH IS THE GRAPH'S THREE STAGES, and the seam PATHS below are identical to
+    # the ones the Sockeye parts driver declares. That is not tidiness: both drivers write
+    # into the same `data/temp/_seams/` namespace, so a part run on the cluster and its
+    # successor run here only line up if the two files agree about where a seam lives.
+    "prepare": dict(
         images=[IMG.format("aam")],
         lanes={
-            "aam_worklist",
-            "indigo", "rxnmapper", "localmapper",
+            "aam_recount", "aam_worklist", "aam_blockers", "aam_nametwin",
             "aam_rescue",
-            "indigo_rescue", "rxnmapper_rescue", "localmapper_rescue",
-            "aam_ensemble",
+            "aam_algebra", "aam_forecast", "aam_partial", "aam_universe",
         },
-        targets=["ref::atom_pairs", "ref::metabolism_vocab"],
+        targets=["interm::aam_universe"],
         inputs=[
-            "fabfos_data::metanetx", "fabfos_data::chebi", "fabfos_data::modelseed",
+            "fabfos_data::chebi", "fabfos_data::modelseed",
+            "fabfos_data::prior_bake_logs",
             "lookup::reactions", "lookup::metabolites", "lookup::atom_ranks",
             "lookup::xrefs", "lookup::synonyms",
         ],
         imports={},
         evidence={
-            "worklist":           "aam_worklist",
-            "rxnmapper":          "rxnmapper",
-            "localmapper":        "localmapper",
-            "indigo":             "indigo",
-            "rescue":             "aam_rescue",
-            "rxnmapper_rescue":   "rxnmapper_rescue",
-            "localmapper_rescue": "localmapper_rescue",
-            "indigo_rescue":      "indigo_rescue",
-            "metacyc":            "aam_ensemble",
-            "ensemble":           "aam_ensemble",
+            "recount":  "aam_recount",
+            "worklist": "aam_worklist",
+            "blockers": "aam_blockers",
+            "nametwin": "aam_nametwin",
+            "rescue":   "aam_rescue",
+            "algebra":  "aam_algebra",
+            "forecast": "aam_forecast",
+            "partial":  "aam_partial",
+            "universe": "aam_universe",
+        },
+        outputs={
+            "interm::aam_universe":   "temp/_seams/aam_universe.parquet",
+            "interm::aam_worklist":   "temp/_seams/aam_worklist.parquet",
+            "interm::aam_forecast":   "temp/_seams/aam_forecast.parquet",
+            "interm::aam_rescue":     "temp/_seams/aam_rescue",
+            "interm::aam_partial":    "temp/_seams/aam_partial",
+            "interm::aam_algebra":    "temp/_seams/aam_algebra",
+            "lookup::element_counts": "temp/_seams/element_counts.parquet",
+        },
+        # Nine two-core lanes, the widest declaring 32 GB. Four at a time keeps the box
+        # busy without letting the memory asks stack.
+        executor=dict(cpus=8, memory="96 GB", queue=4),
+    ),
+    "map": dict(
+        images=[IMG.format("aam")],
+        lanes={"rxnmapper", "indigo", "localmapper"},
+        targets=["interm::aam_member_rxnmapper", "interm::aam_member_indigo",
+                 "interm::aam_member_localmapper"],
+        inputs=["fabfos_data::metanetx", "fabfos_data::aam_cache"],
+        imports={
+            "interm::aam_universe": "temp/_seams/aam_universe.parquet",
+            "interm::aam_rescue":   "temp/_seams/aam_rescue",
+        },
+        evidence={"rxnmapper": "rxnmapper", "indigo": "indigo",
+                  "localmapper": "localmapper"},
+        outputs={
+            "interm::aam_member_rxnmapper":   "temp/_seams/aam_member_rxnmapper.parquet",
+            "interm::aam_member_indigo":      "temp/_seams/aam_member_indigo.parquet",
+            "interm::aam_member_localmapper": "temp/_seams/aam_member_localmapper.parquet",
+        },
+        # A 32 vCPU / 120 GB Arbutus flavour, less a couple of cores for the agent and the
+        # nextflow driver itself. THE WHOLE BOX, because the pool admits by what a lane
+        # DECLARES: indigo's twenty-eight and rxnmapper's four coexist at exactly
+        # thirty-two and at thirty they do not, which is the difference between the two
+        # long lanes overlapping and queueing. LocalMapper runs after both regardless --
+        # it requires their tables, which is the gap-filler role expressed as a dependency.
+        executor=dict(cpus=32, memory="110 GB", queue=6),
+    ),
+    "assemble": dict(
+        images=[IMG.format("aam")],
+        lanes={"aam_stack", "aam_redox", "aam_reference"},
+        targets=["ref::atom_pairs", "ref::metabolism_vocab"],
+        inputs=["fabfos_data::metanetx",
+                "lookup::reactions", "lookup::metabolites", "lookup::atom_ranks"],
+        imports={
+            "interm::aam_member_rxnmapper":   "temp/_seams/aam_member_rxnmapper.parquet",
+            "interm::aam_member_indigo":      "temp/_seams/aam_member_indigo.parquet",
+            "interm::aam_member_localmapper": "temp/_seams/aam_member_localmapper.parquet",
+            "interm::aam_worklist":           "temp/_seams/aam_worklist.parquet",
+            "interm::aam_forecast":           "temp/_seams/aam_forecast.parquet",
+            "interm::aam_rescue":             "temp/_seams/aam_rescue",
+            "interm::aam_partial":            "temp/_seams/aam_partial",
+            "interm::aam_algebra":            "temp/_seams/aam_algebra",
+        },
+        evidence={
+            "metacyc":   "aam_stack",
+            "stack":     "aam_stack",
+            "redox":     "aam_redox",
+            "reference": "aam_reference",
         },
         outputs={
             "ref::metabolism_vocab": "temp/metabolism/vocab.parquet",
             "ref::atom_pairs":       "temp/metabolism/atom_pairs.parquet",
-            # Not a seam and not part of the trio -- the UNCODED stack, which is what
-            # build_references_tier4_agreement.py compares against the deployed table.
-            # `ref::atom_pairs` is encoded against the vocabulary, so the gate cannot read
-            # it; without this the one number the whole build is judged on would have to be
-            # dug out of the raw run directory by hand.
-            "interm::aam_pairs":     "temp/_seams/aam_pairs.parquet",
+            # The UNCODED stack and the corrected table, which is what
+            # build_references_tier4_agreement.py and the redox spot-checks read --
+            # `ref::atom_pairs` is encoded against the vocabulary, so neither can.
+            "interm::aam_stack":     "temp/_seams/aam_stack.parquet",
+            "interm::aam_pairs":     "temp/_seams/aam_pairs",
+            "interm::aam_ledger":    "temp/_seams/aam_ledger.parquet",
         },
-        # A 32 vCPU / 120 GB Arbutus flavour, less a couple of cores for the agent and the
-        # nextflow driver itself. The three concurrent pass-1 lanes declare 64 + 32 + 24 GB
-        # between them, so one of them WILL queue behind the others -- that is the pool
-        # doing its job, not a stall.
-        # THE WHOLE BOX, because the pool admits by what a lane DECLARES and the mapper
-        # lanes now declare close to what they use. Thirty left indigo's twenty-eight and
-        # rxnmapper's four unable to coexist by two cores, which on a thirty-two-core
-        # host is the difference between the two long lanes overlapping and queueing.
-        executor=dict(cpus=32, memory="110 GB", queue=6),
+        # Strictly sequential -- stack, then repair, then mint -- so the pool only has to
+        # hold the widest of the three.
+        executor=dict(cpus=8, memory="96 GB", queue=2),
+    ),
+    # The two recovery cuts of the assembly. See the Sockeye parts driver: a failed minting
+    # must not re-pay the fusion, and the seam that makes that possible is a type.
+    "redox": dict(
+        images=[IMG.format("aam")],
+        lanes={"aam_redox"},
+        targets=["interm::aam_pairs"],
+        inputs=["lookup::reactions", "lookup::metabolites", "lookup::atom_ranks"],
+        imports={"interm::aam_stack": "temp/_seams/aam_stack.parquet"},
+        evidence={"redox": "aam_redox"},
+        outputs={"interm::aam_pairs": "temp/_seams/aam_pairs"},
+        executor=dict(cpus=8, memory="64 GB", queue=1),
+    ),
+    "reference": dict(
+        images=[IMG.format("aam")],
+        lanes={"aam_reference"},
+        targets=["ref::atom_pairs", "ref::metabolism_vocab"],
+        inputs=["lookup::reactions"],
+        imports={
+            "interm::aam_pairs":    "temp/_seams/aam_pairs",
+            "interm::aam_worklist": "temp/_seams/aam_worklist.parquet",
+            "interm::aam_forecast": "temp/_seams/aam_forecast.parquet",
+            "interm::aam_rescue":   "temp/_seams/aam_rescue",
+        },
+        evidence={"reference": "aam_reference"},
+        outputs={
+            "ref::metabolism_vocab": "temp/metabolism/vocab.parquet",
+            "ref::atom_pairs":       "temp/metabolism/atom_pairs.parquet",
+            "interm::aam_ledger":    "temp/_seams/aam_ledger.parquet",
+        },
+        executor=dict(cpus=8, memory="64 GB", queue=1),
     ),
     "members": dict(
         images=[IMG.format("direction"), IMG.format("dgbyg")],
@@ -215,13 +312,11 @@ BRANCHES = {
     "direction": dict(
         images=[IMG.format("direction")],
         lanes={"direction_ensemble"},
-        targets=["ref::direction_ratios"],
+        # The UNCODED annotation, not the compiled ratios -- which is what lets this part
+        # run beside the AAM branch instead of behind it. The encode is `direction_bake`.
+        targets=["interm::direction_annotation"],
         inputs=["fabfos_data::metanetx"],
         imports={
-            # From the AAM host. Not an input to the science -- an input to the ENCODING:
-            # the ratios are coded against this vocabulary's reaction space and inherit its
-            # bake-identity block.
-            "ref::metabolism_vocab":          "temp/metabolism/vocab.parquet",
             # From the members run on this same host, hours earlier.
             "interm::direction_member_eq":    "temp/_seams/direction_member_eq.parquet",
             "interm::direction_member_dgbyg": "temp/_seams/direction_member_dgbyg.parquet",
@@ -230,9 +325,30 @@ BRANCHES = {
             "metacyc_direction":     "direction_ensemble",
             "direction_calibration": "direction_ensemble",
         },
-        outputs={"ref::direction_ratios": "temp/metabolism/direction.parquet"},
+        outputs={
+            "interm::direction_annotation": "temp/_seams/direction_annotation.parquet",
+        },
         # Minutes of table arithmetic over tables that already exist.
         executor=dict(cpus=8, memory="64 GB", queue=2),
+    ),
+    "direction_bake": dict(
+        images=[IMG.format("direction")],
+        lanes={"direction_bake"},
+        targets=["ref::direction_ratios"],
+        inputs=[],
+        imports={
+            # From whichever host ran the assembly, and an input to the ENCODING only: the
+            # ratios are coded against this vocabulary's `rxn` space and inherit its
+            # bake-identity block.
+            "ref::metabolism_vocab":        "temp/metabolism/vocab.parquet",
+            "interm::direction_annotation": "temp/_seams/direction_annotation.parquet",
+        },
+        # No tool runs -- one table is re-expressed in another's codes. The evidence for
+        # the direction call belongs to the assembly; the evidence for this step is
+        # `selftest_direction`, which is an exit code rather than a file.
+        evidence={},
+        outputs={"ref::direction_ratios": "temp/metabolism/direction.parquet"},
+        executor=dict(cpus=8, memory="64 GB", queue=1),
     ),
 }
 
@@ -373,6 +489,12 @@ def build_inputs(work: Path, branch: str, remote_root: str | None):
     missing, imported_missing = [], []
     for dtype in sorted(spec["inputs"]):
         rel = ALL_INPUTS[dtype]
+        if dtype == "fabfos_data::aam_cache":
+            # An empty durable cache is the ordinary first-run state, so its absence is
+            # created rather than reported: it has no producer, and a missing directory
+            # would make the part unplannable for want of a type rather than schedule
+            # anything.
+            (DATA / rel).mkdir(parents=True, exist_ok=True)
         if not (DATA / rel).exists():
             missing.append(f"{dtype:32s} data/{rel}")
             continue
@@ -449,7 +571,7 @@ def check_plan(task, branch: str) -> tuple[set[str], list[str]]:
     EQUALITY, not containment, and the extra-lane case is the one that matters. A declared
     import that does not satisfy its type is not an error anywhere in metasmith -- the
     planner simply finds the type unmet and schedules its PRODUCER. On the direction host
-    that means quietly re-running the entire AAM branch: nine lanes and most of a day, on a
+    that means quietly re-running the entire mapping part: three lanes and most of a day, on a
     machine that has neither the image nor the inputs for them, failing hours later in a
     way that names a container rather than a seam.
     """
@@ -606,6 +728,47 @@ def agent_container() -> str:
     return f"docker://quay.io/hallamlab/metasmith:{VERSION}-{compute_build_hash()}"
 
 
+def recover_evidence(run_dir: str, host: str, missing: list[str], staging: Path) -> dict:
+    """Pull an evidence directory out of the task work dir when publishing lost it.
+
+    TWO LANES WITH THE SAME REQUIREMENT SET GET THE SAME EVIDENCE ARTIFACT ID, and the
+    engine publishes by artifact id, so the second one to finish lands on a path the first
+    already holds and is silently dropped. `rxnmapper` and `indigo` are exactly that pair
+    -- same universe, same cache, same image, different transform -- and in the `map` run
+    both wrote `<run>/results/2_evidence-tool_output/<one id>/`, of which only `indigo/`
+    survived. Every other part is safe by accident: its lanes read different inputs.
+
+    Nothing is lost when it happens. The step's own evidence root is intact in its task
+    work directory, which is where the transform's success check read it -- so the run was
+    green and correct and only the copy to `results/` collapsed. This reaches past the
+    collision to the original rather than re-running a member to re-derive it.
+    """
+    if not (missing and host and run_dir):
+        return {}
+    names = " -o ".join(f"-name {t}" for t in missing if t.replace("_", "").isalnum())
+    if not names:
+        return {}
+    listing = subprocess.run(
+        ["ssh", host, f"find {run_dir}/nxf_work -mindepth 4 -maxdepth 4 -type d "
+                      f"\\( {names} \\) 2>/dev/null"],
+        capture_output=True, text=True)
+    hits: dict[str, str] = {}
+    for line in listing.stdout.splitlines():
+        line = line.strip()
+        if line:
+            hits.setdefault(Path(line).name, line)
+    out: dict[str, Path] = {}
+    for tool, remote in sorted(hits.items()):
+        dest = staging / "_recovered" / tool
+        dest.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["rsync", "-aL", "--partial", f"{host}:{remote}/", f"{dest}/"],
+                       check=True)
+        print(f"  RECOVERED {tool:<14} from nxf_work -- publishing dropped it on an "
+              f"artifact-id collision")
+        out[tool] = dest
+    return out
+
+
 def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
     """Bring this part home, per lane, into data/temp -- where the other parts also land.
 
@@ -654,6 +817,33 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
         elif dtype_name in spec["outputs"]:
             products[dtype_name] = path
 
+    # A DIRECTORY-TYPED PRODUCT IS PUBLISHED BUT NOT INDEXED. Every type carrying an
+    # `ext:` appears in `_metadata/index.yml` and every type without one -- the evidence,
+    # and the four seams that ship a table beside the refusals that make it readable --
+    # is written to results/ and named nowhere. The layout IS the attribution:
+    # `<order>_<namespace>-<type>/<artifact>/`, which is also why the lanes copy their
+    # evidence ROOT rather than the directory under it.
+    for d in sorted(p for p in staging.iterdir() if p.is_dir()):
+        stem = d.name.split("_", 1)[-1] if d.name[0].isdigit() else d.name
+        ns, _, tname = stem.partition("-")
+        dtype = f"{ns}::{tname}"
+        artifacts = sorted(p for p in d.iterdir() if p.is_dir())
+        if dtype == "evidence::tool_output":
+            for artifact in artifacts:
+                for tool_dir in sorted(p for p in artifact.iterdir() if p.is_dir()):
+                    found.setdefault(tool_dir.name, tool_dir)
+        elif dtype in spec["outputs"] and dtype not in products:
+            if len(artifacts) == 1:
+                products[dtype] = artifacts[0]
+            elif artifacts:
+                print(f"  AMBIGUOUS: {dtype} has {len(artifacts)} published artifacts "
+                      f"under {d.name}; refusing to choose", file=sys.stderr)
+
+    for tool, tool_dir in recover_evidence(
+            str(Path(src_path).parent), host,
+            sorted(set(spec["evidence"]) - set(found)), staging).items():
+        found.setdefault(tool, tool_dir)
+
     for tool, tool_dir in sorted(found.items()):
         dest = TEMP / tool
         if dest.exists():
@@ -668,9 +858,18 @@ def retrieve(src_path: str, branch: str, host: str, staging: Path) -> int:
             continue
         dest = DATA / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(p, dest)
-        print(f"  {dtype_name:<32} -> {dest.relative_to(REPO)}  "
-              f"({dest.stat().st_size / 1e6:.2f} MB)")
+        # A product is a DIRECTORY whenever its type has no `ext:`, which four of the
+        # seams are -- the rescue, the algebra, the partial lane and the corrected pair
+        # table each ship a table beside the refusals that make it readable.
+        if p.is_dir():
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(p, dest)
+            size = sum(f.stat().st_size for f in dest.rglob("*") if f.is_file())
+        else:
+            shutil.copy2(p, dest)
+            size = dest.stat().st_size
+        print(f"  {dtype_name:<32} -> {dest.relative_to(REPO)}  ({size / 1e6:.2f} MB)")
 
     rc = 0
     missing_tools = sorted(set(spec["evidence"]) - set(found))
@@ -700,9 +899,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("branch", choices=sorted(BRANCHES),
-                    help="which part of the graph this run owns. aam and members are\n"
-                         "independent and go first, on separate hosts; direction waits "
-                         "on both")
+                    help="which part of the graph this run owns. prepare -> map ->\n"
+                         "assemble in order on the AAM host; members and direction run\n"
+                         "beside them on another; direction_bake waits on both branches.\n"
+                         "redox and reference are recovery cuts of assemble")
     ap.add_argument("--run", action="store_true",
                     help="execute on the host. Without it this plans, checks and renders "
                          "the DAG, and touches no remote machine")
@@ -734,6 +934,10 @@ def main() -> int:
     a = ap.parse_args()
 
     spec = BRANCHES[a.branch]
+    if "fabfos_data::aam_cache" in spec["inputs"]:
+        # Before the push, not just before the plan: `push_data` refuses an input that is
+        # not here, and an empty cache is the ordinary first-run state.
+        (DATA / ALL_INPUTS["fabfos_data::aam_cache"]).mkdir(parents=True, exist_ok=True)
     work = a.work or (WORK_ROOT / a.branch)
     work.mkdir(parents=True, exist_ok=True)
     staging = TEMP / f"_run_{a.branch}"

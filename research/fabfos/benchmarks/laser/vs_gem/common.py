@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import unicodedata
 from pathlib import Path
 
@@ -31,6 +32,9 @@ CHEM_PROP = MNX / "chem_prop.tsv"
 CHEM_XREF = MNX / "chem_xref.tsv"
 REAC_PROP = MNX / "reac_prop.tsv"
 REAC_XREF = MNX / "reac_xref.tsv"
+sys.path.insert(0, str(ROOT / "src" / "metasmith_libraries" / "resources" / "lib"))
+import fabfos_evidence as FE                                          # noqa: E402
+
 HOSTS = ROOT / "data" / "fabfos" / "benchmarks" / "hosts"
 DENOVO = ROOT / "data" / "fabfos" / "runs"
 LIB = ROOT / "src" / "metasmith_libraries" / "resources" / "lib"
@@ -172,8 +176,19 @@ def atom_universe(element: str = "C") -> set:
     return set(p["substrate"].unique()) | set(p["product"].unique())
 
 
+def read_gpr(path):
+    """Every GPR read in this benchmark goes through here.
+
+    `fabfos_evidence.read_gpr` returns the declared schema whatever layout the file is
+    on, so a table written before the schema and one written after are the same frame
+    to a caller. The columns below are the schema's own: `orf` names the nominator,
+    `intermediate_id` the EC/KO/accession it was called through.
+    """
+    return FE.read_gpr(path)
+
+
 def host_native_reactions(host_dir: str) -> set:
-    g = pd.read_parquet(HOSTS / host_dir / "gpr_gem.parquet")
+    g = read_gpr(HOSTS / host_dir / "gpr_gem.parquet")
     return set(g.mnxr.astype(str).unique())
 
 

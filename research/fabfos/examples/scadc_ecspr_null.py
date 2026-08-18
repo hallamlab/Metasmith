@@ -31,7 +31,7 @@ ORFs from the metag pool (`data/fabfos/runs/scadc_metagenome/`, published by T1)
 styles -- A (uniform) and D (contiguous window on one contig) -- at N sizes
 bucketed off the OBSERVED run's own `n_orfs` distribution (computed fresh
 each `--run`, not copied from any other run's fixed buckets), resolves each
-draw to `{mnxr: E}` via `ecspr.evidence.per_unit_weights(metag_gpr, "orf")`,
+draw to `{mnxr: E}` via `ecspr.model.evidence.per_unit_weights(metag_gpr, "orf")`,
 adds the same host GEM weights `scadc_ecspr.py` adds, and solves. See that
 script's own docstring for the resumability/reproducibility contract.
 """

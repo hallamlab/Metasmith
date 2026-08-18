@@ -156,7 +156,7 @@ rows = []
 for gene in GENES:
     b = BNUM.get(gene)
     how = "primary" if gene in PRIMARY else ("synonym" if gene in SYN else "-")
-    sel = gpr[gpr.feature_id == b] if b else gpr.iloc[:0]
+    sel = gpr[gpr.orf == b] if b else gpr.iloc[:0]
     rxns = sorted(set(sel.mnxr))
     out = {"gene": gene, "b": b or "-", "via": how, "n_rxn": len(rxns)}
     for name, (dist, prev, _, _) in BASES.items():

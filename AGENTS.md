@@ -48,16 +48,26 @@ form that is right under both.
 ## A fresh checkout is not runnable until the libraries are compiled
 
 Every transform library carries a `_metadata/` directory compiled from its `data_types/*.yml` and
-its transform Python. **It is a build product and is not tracked**, so a fresh clone has none —
-and a library with no metadata does not degrade, it raises: `DataTypeLibrary` asserts the index
-exists before planning begins. Two commands, because there are two libraries and only one of them
-is reached by the vendoring step:
+its transform Python. **It is a build product**, and a library with no metadata does not degrade,
+it raises: `DataTypeLibrary` asserts the index exists before planning begins. Three commands,
+because there are three libraries and only one of them is reached by the vendoring step:
 
-    dev/libraries.sh -bm    # the standard library under src/metasmith_libraries
-    dev/fabfos.sh -bm       # fabfos's own algorithm library, inside the package
+    dev/libraries.sh -bm                        # the standard library under src/metasmith_libraries
+    dev/fabfos.sh -bm                           # fabfos's own algorithm library, inside the package
+    src/fabfos/build_references/build.sh        # the build-side library (also vendors src/ecspr)
 
 The second is easy to forget precisely because it sits inside `src/fabfos/` rather than under a
 library root, which is also why `--vendor-library` never sees it.
+
+**Whether the compiled metadata is TRACKED differs between them, and it matters when you edit a
+transform.** `src/metasmith_libraries/**/_metadata/` is gitignored, so a fresh clone has none and
+you simply build it. `src/fabfos/build_references/transforms/*/_metadata/index.yml` is tracked:
+each transform's `instance_id` is a digest over its requirement set, so changing what a transform
+requires changes a file git is watching. Recompile and commit it with the change, or the tracked
+index describes a transform that no longer exists. The third does two jobs in one
+script and the order between them is load-bearing: it copies `src/ecspr` in as `buildlib::ecspr`
+*before* compiling, so the index it writes describes the tree that was actually staged. A copy
+made by any other invocation is a copy the index does not describe.
 
 `dev/libraries.sh -b` is `-bm` plus a solve of every shipped template — an author's gate on
 whether a changed transform still supports them, not a prerequisite for using the library. It is
@@ -68,6 +78,15 @@ engine needs the library — so the compile must run **from the source tree**, n
 installed package. `dev/metasmith.sh --vendor-library` does exactly that before it copies, and
 refuses to stamp a bundle whose metadata came out empty. Shipping one that did would be silent:
 the GUI's type panel simply goes blank.
+
+A fourth step is needed before anything *stages an agent*, and its absence looks nothing like
+its cause: `bash envs/fabfos/setup_agent_env.sh` (idempotent; the script's own header explains
+what it installs and why). Without it a reference build plans fine and then dies at staging on
+`No module named metasmith`. **The `msm-fabfos` environment it builds is one host-level env
+shared by every worktree, and the activation hook inside it points at exactly one checkout** —
+so re-running the script silently repoints every other worktree's agent at yours, and two
+worktrees building concurrently will fight over it. Re-run it after switching worktrees, and
+do not assume a green build in one tree means another is still wired up.
 
 ## Four products, one repository, and what that costs the ref namespace
 
@@ -102,7 +121,7 @@ migration's own history rather than for anything you would branch from today.
 | `metasmith` | The engine. A type system for bioinformatics data plus a planner that searches backwards from a target, compiles the chain to Nextflow, and runs it on a deployment target. Also the CLI, the web GUI and the notebook API, which are veneers over one `ops` layer. | [docs/metasmith](docs/metasmith/architecture.md) |
 | `metasmith_libraries` | The standard transform library: the type graph, the transforms, the tool environments and the shipped GUI templates. Content, not engine code. | [docs/metasmith_libraries](docs/metasmith_libraries/architecture.md) · authoring: [`AGENTS.md`](src/metasmith_libraries/AGENTS.md) |
 | `fabfos` | A thin metasmith front end for fosmid pool processing. Owns its pipelines, its `algorithm::` methods and a build-side reference library that does not ship. | [docs/fabfos](docs/fabfos/architecture.md) |
-| `ecspr` | Atom-resolved conductance measurement over metabolic GPR tables. A package with a command line, because it is the one transform whose protocol is an algorithm rather than a dispatch into another tool. | [docs/ecspr](docs/ecspr/architecture.md) |
+| `ecspr` | Atom-resolved conductance measurement over metabolic GPR tables (`ecspr.model`), plus the metabolism bake that builds the tables it reads (`ecspr.bake`). A package with a command line, because these are algorithms rather than dispatches into somebody else's tool. The two subpackages never import each other at module scope. | [docs/ecspr](docs/ecspr/architecture.md) |
 | `bash_relay` | `msm_relay` — the Rust binary metasmith drives a remote host through. Cross-built to four targets and baked into the agent container image. | [docs/bash_relay](docs/bash_relay/architecture.md) |
 | `workflow_solver` | `msm_solver` — the Rust plan-search engine. Runs locally, so it is staged into `src/metasmith/engine/` and ships as package data rather than in the image. | [docs/workflow_solver](docs/workflow_solver/architecture.md) |
 

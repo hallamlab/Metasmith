@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The eydallin clones' edges, read off the curated model. The DIRECT route.
 
-    mamba run -n figure-net python main/benchmarks/eydallin/build_clone_gpr.py
-    mamba run -n figure-net python main/benchmarks/eydallin/build_clone_gpr.py --publish
+    mamba run -n msm-fabfos python research/fabfos/benchmarks/eydallin/build_clone_gpr.py
+    ... --publish        # writes data/fabfos/runs/eydallin_clones/gpr/
 
 Two lines of evidence answer "what reactions does this clone add", and this is the one
 that asks a curated genome-scale model. The other reads the sequence -- the four
@@ -42,8 +42,11 @@ import pandas as pd
 REPO = Path(__file__).resolve().parents[4]
 HERE = Path(__file__).resolve().parent
 
-sys.path.insert(0, str(REPO / "main" / "benchmarks" / "aska"))
+sys.path.insert(0, str(REPO / "research" / "fabfos" / "benchmarks" / "aska"))
 from build_extraction import gene_to_bnumber                          # noqa: E402
+
+sys.path.insert(0, str(REPO / "src/metasmith_libraries/resources/lib"))
+import fabfos_evidence as fe                                          # noqa: E402
 
 EXTRACTION = REPO / "data/fabfos/benchmarks/eydallin/extraction.tsv"
 MG1655_GBK = REPO / "data/fabfos/originals/genomes/e_coli_k12/genome/NC_000913.3.gbk"
@@ -58,12 +61,11 @@ COHORT = "eydallin"
 # exists to say which organism an edge's gene came from.
 SOURCE_ORGANISM = "e_coli_w3110"
 
-GPR_COLS = (
-    "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
-    "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
-    "projection_via", "in_atom_universe", "gpr_rule",
-    "condition_id", "cohort", "action", "source_organism",
-)
+# The host layer's blocks plus the condition each row belongs to -- the same shape
+# `build_clone_gpr_denovo.py` writes, because the comparison between the two channels is
+# the point and two shapes would not be one comparison.
+EXTENSIONS = ("attribution", "feature", "universe", "cohort")
+LANE_SET = "curated"
 
 
 def mg1655_symbol_for_bnumber(faa: Path) -> dict[str, str]:
@@ -102,14 +104,14 @@ def main() -> int:
     # symbol -> the model's gene id. The model's own `feature_name` is its symbol; a
     # symbol shared by two model genes would make this ambiguous, so it is counted.
     by_symbol: dict[str, set[str]] = {}
-    for name, fid in zip(genes["feature_name"], genes["feature_id"]):
+    for name, fid in zip(genes["feature_name"], genes["orf"]):
         if name:
             by_symbol.setdefault(str(name), set()).add(str(fid))
     ambiguous = {k: v for k, v in by_symbol.items() if len(v) > 1}
-    print(f"{HOST}: {len(host):,} rows, {genes['feature_id'].nunique():,} model genes, "
+    print(f"{HOST}: {len(host):,} rows, {genes['orf'].nunique():,} model genes, "
           f"{len(by_symbol):,} symbols ({len(ambiguous)} ambiguous)")
 
-    out_rows, census = [], []
+    parts, census = [], []
     for r in rows:
         gene = (r["gene"] or "").strip()
         norm = (r["gene_norm"] or "").strip() or gene
@@ -121,30 +123,28 @@ def main() -> int:
             if key and key in by_symbol:
                 fids = by_symbol[key]
                 break
-        hit = host[host["feature_id"].isin(fids)] if fids else host.iloc[0:0]
+        hit = host[host["orf"].isin(fids)] if fids else host.iloc[0:0]
         census.append(dict(gene=gene, b_number=b, current_symbol=current,
                            model_gene=";".join(sorted(fids)),
-                           n_reactions=int(hit["evidence_id"].nunique()),
+                           n_reactions=int(hit["intermediate_id"].nunique()),
                            n_mnxr=int(hit["mnxr"].nunique()),
                            n_in_universe=int(hit[hit["in_atom_universe"]]["mnxr"]
                                              .nunique())))
-        for _, h in hit.iterrows():
-            out_rows.append(dict(
-                build_id=f"direct_{COHORT}_{gem_id}",
-                host=HOST, unit_id=gem_id,
-                feature_id=h["feature_id"], feature_kind="clone_gene",
-                feature_name=h["feature_name"], mnxr=h["mnxr"],
-                channel=h["channel"], evidence_id=h["evidence_id"],
-                evidence_name=h["evidence_name"], raw_score=h["raw_score"],
-                projection_via=h["projection_via"],
-                in_atom_universe=h["in_atom_universe"], gpr_rule=h["gpr_rule"],
+        if len(hit):
+            parts.append(hit.assign(
+                source=gem_id, build_id=f"direct_{COHORT}_{gem_id}", host=HOST,
+                unit_id=gem_id, feature_kind="clone_gene",
                 # The paper measured overexpression, so a clone ADDS its reactions. The
                 # study tier currently labels this cohort `del`, which is the opposite
                 # perturbation; see the cohort README.
                 condition_id=cond, cohort=COHORT, action="add",
                 source_organism=SOURCE_ORGANISM))
 
-    df = pd.DataFrame(out_rows, columns=list(GPR_COLS))
+    cols = fe.schema_for(EXTENSIONS)
+    df = (pd.concat(parts, ignore_index=True) if parts else host.reindex(columns=cols))
+    df = (df[cols].sort_values(fe.grain_key(EXTENSIONS), kind="mergesort")
+                  .reset_index(drop=True))
+    fe.validate_gpr(df, LANE_SET, None, gem_id, EXTENSIONS)
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out_dir / "gpr_gem.parquet", index=False, compression="zstd")
     cen = pd.DataFrame(census)

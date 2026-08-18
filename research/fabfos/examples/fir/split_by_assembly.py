@@ -68,14 +68,6 @@ ORFS_DIR = Path(os.environ.get(
     "/project/rpp-shallam/phyberos/cyanoverse/data/orfs_and_metabuli"
     "/sequences-open_reading_frames"))
 
-# Above this many ORFs, an assembly missing a whole evidence channel is not
-# biology. Every lane calls a large fraction of ORFs -- CLEAN predicts an EC for
-# every sequence, DIAMOND hit ~96.6% of a measured 100,000 -- so a 1,000-ORF
-# assembly with zero rows in some channel means that channel's evidence was lost
-# upstream, and shipping it would be a table whose own `lane_set` column claims
-# four lanes it does not have.
-RELAX_MAX_ORFS = int(os.environ.get("CYANOVERSE_RELAX_MAX_ORFS", "1000"))
-
 # The contract this pass re-validates against is a COPY on the cluster, not the
 # `src/metasmith_libraries` file `gpr_4lane` ran under. A drift that reorders
 # SCHEMA_COLS refuses loudly; a drift that WIDENS a score range or adds a lane
@@ -164,9 +156,12 @@ def shard_tables(roots: list[Path]) -> dict[str, Path]:
                 continue                       # not readable as parquet at all
             if not set(fe.SCHEMA_COLS) <= names:
                 continue                       # not a gpr_table
+            # A zero-row table yields NO batch at all, so `next` without a default
+            # raises StopIteration and the num_rows guard below never runs. An
+            # assembly that annotated nothing is exactly that file.
             batch = next(pq.ParquetFile(rp).iter_batches(
-                batch_size=1, columns=["source"]))
-            if batch.num_rows == 0:
+                batch_size=1, columns=["source"]), None)
+            if batch is None or batch.num_rows == 0:
                 continue
             stem = batch.column("source")[0].as_py()
             if stem in found and found[stem] != rp:
@@ -274,9 +269,7 @@ def compact(gpr: Path) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     notes_dir = gpr / "split" / "notes"
     notes_dir.mkdir(parents=True, exist_ok=True)
-    relaxed = notes_dir / f"relaxed_channels.{TASK_I}.tsv"
     empty = notes_dir / f"no_evidence.{TASK_I}.tsv"
-    relaxed.write_text("sample\torfs\tmissing\n")
     empty.write_text("sample\torfs\n")
 
     for sample in mine:
@@ -331,7 +324,7 @@ def compact(gpr: Path) -> int:
             df["source"] = sample
             df = df.sort_values(["orf", "channel", "intermediate_id", "mnxr"],
                                 kind="stable").reset_index(drop=True)
-            _validate(df, ids, sample, relaxed)
+            _validate(df, ids, sample)
 
         tmp = out.with_suffix(f".parquet.part.{os.getpid()}")
         df.to_parquet(tmp, index=False)
@@ -355,47 +348,18 @@ def _fasta_ids(faa: Path) -> set[str]:
     return ids
 
 
-def _validate(df, ids: set[str], sample: str, relaxed: Path) -> None:
-    """`validate_gpr` unchanged, with EXACTLY ONE check relaxed, and BOUNDED.
+def _validate(df, ids: set[str], sample: str) -> None:
+    """`validate_gpr` as the transform runs it -- schema, nulls, score kinds,
+    ranges, MNXR pattern, evidence quality, the grain key, the stray-id check
+    against the sample's OWN fasta, and the completeness check over the declared
+    lane set.
 
-    Its completeness check refuses a table missing any of the four channels.
-    That is right for a 100,000-ORF shard and wrong for an assembly of one ORF,
-    and the corpus has those (per-sample minimum is 1, median 6,081). A single
-    ORF with no KOfam hit is a biological fact, not a broken join.
-
-    But the relaxation must not extend to a LARGE assembly, where a whole
-    missing channel means the evidence was lost upstream -- a header-only legacy
-    kofam file, say, which the shard-level checks cannot see because the other
-    ~34 samples in that shard keep the shard's own count non-zero. So above
-    RELAX_MAX_ORFS ORFs the original refusal stands, and every relaxed sample is
-    written to a file `finish` reads, rather than to a print in one of 32 logs.
-
-    Everything else -- schema, nulls, score kinds, ranges, MNXR pattern,
-    evidence quality, the grain key, and the stray-id check against the sample's
-    OWN fasta -- runs exactly as it does inside the transform. The `unknown
-    channel` check is NOT weakened: `observed` is a subset of the declared
-    tuple, so a channel outside the vocabulary still lands in `unknown`.
+    A delivered table carries every channel `LANE_SET` names. Its `lane_set`
+    column is a claim about which lanes ran, and belief mass downstream is split
+    by each ORF's observed channel count, so a table one lane short is not a
+    smaller table -- it is a different denominator wearing the same label.
     """
-    saved = fe.LANE_SETS[LANE_SET]
-    observed = tuple(c for c in saved if (df["channel"] == c).any())
-    missing = sorted(set(saved) - set(observed))
-    if missing and len(ids) > RELAX_MAX_ORFS:
-        raise SystemExit(
-            f"REFUSING {sample}: {len(ids):,} ORFs but channel(s) {missing} "
-            f"contributed zero rows. At this size that is lost evidence, not "
-            f"biology -- most likely this assembly's legacy lane input was "
-            f"empty or header-only, which no shard-level check can see because "
-            f"the shard's other member samples keep its own count non-zero. "
-            f"Shipping it would give a table whose `lane_set` column claims "
-            f"four lanes it does not have.")
-    try:
-        fe.LANE_SETS[LANE_SET] = observed
-        fe.validate_gpr(df, LANE_SET, ids, sample)
-    finally:
-        fe.LANE_SETS[LANE_SET] = saved
-    if missing:
-        with relaxed.open("a") as fh:
-            fh.write(f"{sample}\t{len(ids)}\t{','.join(missing)}\n")
+    fe.validate_gpr(df, LANE_SET, ids, sample)
 
 
 def finish(gpr: Path) -> int:
@@ -446,7 +410,6 @@ def finish(gpr: Path) -> int:
             f"equal; a difference means the transpose lost or duplicated rows.")
 
     empty_tables = [s for s, n in per_sample if n == 0]
-    relaxed = _collect_notes(gpr, "relaxed_channels")
     no_ev = _collect_notes(gpr, "no_evidence")
 
     missing_ch = [c for c in fe.LANE_SETS[LANE_SET] if per_channel.get(c, 0) == 0]
@@ -468,8 +431,6 @@ def finish(gpr: Path) -> int:
               f"({100.0 * per_channel[c] / rows:5.1f}%)")
     print(f"  {len(empty_tables):,} assemblies with no evidence in any lane "
           f"(empty tables delivered)")
-    print(f"  {len(relaxed):,} small assemblies missing >=1 channel "
-          f"(<= {RELAX_MAX_ORFS} ORFs, allowed)")
     print(f"  contract digest {digest[:16]}")
     print(f"per-assembly row counts -> {summary}")
     if len(no_ev) != len(empty_tables):

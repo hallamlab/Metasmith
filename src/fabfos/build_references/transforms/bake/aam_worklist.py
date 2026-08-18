@@ -8,12 +8,15 @@ ever see. Its product is one row per MNXR -- verdict, size, blockers and their f
     `lookup::reactions`; now they all read `verdict == mappable` from here, so "the three
     members saw the same reactions" is a fact about the graph rather than three filters
     that happen to agree today.
-  * THE SIZE CUT. Reactions over the atom threshold are recorded as `oversize` and go to
-    no lane. The threshold is not a guess: joined against the deployed tier-4 table,
-    reactions over 600 atoms bank at 5.3% and reactions over 1,600 atoms bank at zero,
-    while those are exactly the reactions that cost minutes each and OOM-killed the
-    LocalMapper lane twice. Cutting there drops 0.80% of the universe and 0.022% of what
-    the deployed table banked.
+  * THE SIZE CUT, WHICH ROUTES RATHER THAN REFUSES. Reactions over the atom threshold
+    are recorded as `oversize`, and that verdict now means "the neural members will not
+    see this" -- Indigo does. The threshold bounds a 512-token transformer and the lane
+    that was OOM-killed twice; Indigo is a compiled substructure search with a recorded
+    timeout and neither limit applies to it. The yield curve that once justified refusing
+    outright turns out to be censored -- every mapper method in the deployed table stops
+    dead at 600 because the same cut was applied upstream of all three, and the only
+    thing banked above it is `curated`, which never sees a mapper. See
+    `ecspr.bake.aam.worklist.ATOM_LIMIT` and `research/fabfos/benchmarks/aam_cap/`.
   * THE LEDGER SPINE. Every reaction ends the build with a reason, so the tier-4 gate can
     say WHY each reaction it expected is missing. A miss with a named reason is a result;
     a miss with no reason is a bug, and before this step they looked the same.
@@ -35,8 +38,7 @@ model = Transform()
 image       = model.AddRequirement(lib.GetType("env::rdkit.env"))
 reactions   = model.AddRequirement(lib.GetType("lookup::reactions"))
 metabolites = model.AddRequirement(lib.GetType("lookup::metabolites"))
-worklib     = model.AddRequirement(lib.GetType("buildlib::aam_worklist.py"))
-evidence    = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+bakelib     = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 out_wl      = model.AddProduct(lib.GetType("interm::aam_worklist"))
 ev          = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -45,7 +47,7 @@ ev          = model.AddProduct(lib.GetType("evidence::tool_output"))
 def protocol(context: ExecutionContext):
     irx  = context.Input(reactions)
     imt  = context.Input(metabolites)
-    ilib = context.Input(worklib)
+    ilib = context.Input(bakelib)
     iout = context.Output(out_wl)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -55,7 +57,7 @@ def protocol(context: ExecutionContext):
     cmd = f"""
         set -e
         mkdir -p wl
-        {py} {libdir}/aam_worklist.py build \
+        {py} -m ecspr.bake.aam.worklist build \
             --reactions {irx.container} --metabolites {imt.container} \
             --out wl/worklist.parquet --out-summary wl/summary.tsv
         cp wl/worklist.parquet {iout.container}
@@ -63,7 +65,7 @@ def protocol(context: ExecutionContext):
         # The SUMMARY is the half a human reads: the verdict histogram, the blocker
         # families, and the two limits the run was made under. A threshold recorded only
         # as a constant in a module is a threshold nobody can check a result against.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool worklist \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool worklist \
             --file wl/worklist.parquet wl/summary.tsv
         mkdir -p {iev.container}
         cp -r _ev/. {iev.container}/

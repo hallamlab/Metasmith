@@ -49,6 +49,89 @@ SCHEMA_COLS = [
 # The grain: one row per (source, orf, channel, intermediate_id, mnxr). NO cross-lane
 # dedup -- the same ORF->MNXR claim from two lanes stays two rows, distinguished by
 # `channel`. That is the point of having lanes.
+#
+# `orf` NAMES WHATEVER NOMINATES THE REACTION, and is never null. Usually that is an
+# ORF; on a curated row it is the construct or the model gene, because a curated set
+# names a construct rather than a sequence. One always-populated column is what lets
+# belief conservation group per nominator without a fallback chain deciding, per table,
+# which column that is.
+
+# ---------------------------------------------------------------------------
+# EXTENSION BLOCKS. Every GPR table in this tree is SCHEMA_COLS plus zero or more of
+# these, in this order -- hosts, clones, cohorts and runs alike. They exist because
+# three layers each grew the columns they needed and none of them declared any, which
+# left four incompatible layouts that one validator could not check.
+#
+# A block is added when a LAYER needs it, not when a table happens to have it: a
+# consumer can then test for the block rather than for a column.
+SCHEMA_EXTENSIONS = {
+    # WHICH BUILD, WHICH ORGANISM, WHICH BACKGROUND. `unit_id` is the background
+    # selector `ecspr.model.gpr` reads -- the model or proteome these rows describe --
+    # and is what makes "this condition runs against this host" a concatenation.
+    "attribution": ("build_id", "host", "unit_id"),
+    # HOW THE NOMINATOR MAPS TO REACTIONS. An ORF maps per gene; a GEM gene maps
+    # through a boolean rule, and `feature_kind=ruleless` says the model gave none.
+    "feature": ("feature_kind", "feature_name", "gpr_rule"),
+    # Whether the reaction has atom pairs, i.e. whether ECSPr can carry current through
+    # it. Null means NOT ASSERTED and is never defaulted to True: a row wrongly marked
+    # in-universe claims an edge for a reaction that has no atom pairs.
+    "universe": ("in_atom_universe",),
+    # WHICH EXPERIMENTAL CONDITION a row belongs to, for a cohort table.
+    "cohort": ("condition_id", "cohort", "action", "source_organism"),
+}
+
+
+GRAIN_KEY = ["source", "orf", "channel", "intermediate_id", "mnxr"]
+
+
+def grain_key(extensions=()) -> list:
+    """One row per this. `cohort` widens it: an ORF nominated under two conditions is
+    two claims about two constructs, not one claim written twice -- ASKA shares ORFs
+    between clones, and collapsing them would silently halve a clone's evidence."""
+    key = list(GRAIN_KEY)
+    if "cohort" in extensions:
+        # `action` too, and it is not redundant: a complementation condition deletes
+        # the chromosomal copy and adds a plasmid one, so the same gene appears twice
+        # under one condition_id with opposite actions. Both are true of it.
+        key.extend(("condition_id", "action"))
+    return key
+
+
+def extensions_of(df) -> tuple:
+    """The blocks a table carries, read off its columns.
+
+    Block membership is all-or-nothing: a table has the block or it does not. Counting
+    columns cannot answer this -- core plus attribution+feature+universe is 18 wide,
+    and so is the old cohort layout.
+    """
+    cols = set(df.columns)
+    found = []
+    for name, block in SCHEMA_EXTENSIONS.items():
+        have = [c for c in block if c in cols]
+        if not have:
+            continue
+        if len(have) != len(block):
+            raise SystemExit(f"[gpr] block {name!r} is half present: has {have}, "
+                             f"missing {[c for c in block if c not in cols]}. A block "
+                             f"is a unit; a table with part of one is not describable")
+        found.append(name)
+    return tuple(found)
+
+
+def is_unified(df) -> bool:
+    """True when the table already carries the core plus whole blocks, in order."""
+    return list(df.columns) == schema_for(extensions_of(df))
+
+
+def schema_for(extensions=()) -> list:
+    """The column list a table with these extension blocks must have, in order."""
+    cols = list(SCHEMA_COLS)
+    for b in extensions:
+        if b not in SCHEMA_EXTENSIONS:
+            raise SystemExit(f"[gpr] unknown schema extension {b!r}; "
+                             f"known: {sorted(SCHEMA_EXTENSIONS)}")
+        cols.extend(SCHEMA_EXTENSIONS[b])
+    return cols
 
 # ---------------------------------------------------------------------------
 # The frozen channel vocabulary. One name per lane, and the same name in every
@@ -61,6 +144,20 @@ LANE_SETS = {
     "full_7": ("kofam", "clean", "deepec", "ezpred", "uniref50", "pbert", "esmc"),
 }
 CHANNELS = tuple(sorted(set(c for cs in LANE_SETS.values() for c in cs)))
+
+# ASSERTIONS, not lane evidence. A lane can fail -- which is why a lane set is checked
+# for completeness, by name. These cannot: there is no "the gem_gpr lane returned
+# nothing", only a table that does or does not carry a curated model. They are legal in
+# any table, exempt from the completeness check, and score `presence`.
+# channel -> the score_kind it carries.
+ASSERTION_CHANNELS = {
+    "gem_gpr": "presence",           # a curated genome-scale model's own GPR
+    "manual_gpr": "presence",        # a curator's reading of a study
+    "curated_insertion": "presence", # an engineered construct the study introduced
+    "bridge": "bridge",              # an edge composed between two community members
+}
+# The `lane_set` value for a table that carries assertions and no lane evidence.
+CURATED = "curated"
 
 # ---------------------------------------------------------------------------
 # `raw_score` is a DIRECTION AND RANGE contract, not a calibration.
@@ -92,6 +189,10 @@ SCORE_KINDS = {
     # A score-less tool asserting presence. Exactly 1.0 -- NOT NaN, which the
     # share-of-sum reads as "no evidence anywhere in this lane".
     "presence": (1.0, 1.0),
+    # A composed edge between two members of a community. Unit weight because the
+    # bridge's conductance is set where the network is composed, not where it is
+    # nominated -- see the compose step, which reads this as an existence claim.
+    "bridge": (1.0, 1.0),
 }
 
 CHANNEL_SCORE_KIND = {
@@ -107,9 +208,18 @@ CHANNEL_SCORE_KIND = {
 # Carried from ref::mnxr_lookup, which already computes it and whose keep-first dedup
 # already retains the stronger claim -- it was simply being dropped at the join. It is
 # the only thing separating a Swiss-Prot-backed reaction call from a TrEMBL one.
-EVIDENCE_QUALITY = ("reviewed", "unreviewed")
+# `unknown` is what a row migrated off one of the pre-schema layouts carries: those
+# tables dropped the quality at the join, and the migration will not invent one.
+# `synthetic` is a row nothing observed: a composition's bridge pseudo-reaction exists
+# because the composition put it there. Keeping it distinct from `reviewed` is what
+# stops a community's own scaffolding being counted as evidence about its members.
+EVIDENCE_QUALITY = ("reviewed", "unreviewed", "unknown", "synthetic")
 
 _MNXR_RE = re.compile(r"^MNXR\d+$")
+# A composition namespaces each member's reactions by member (`ERY:MNXR183533`) so two
+# members' copies of one reaction stay distinct nodes, and adds `BRIDGE:...`
+# pseudo-reactions for the edges between them. Both only ever appear under `composed`.
+_MNXR_COMPOSED_RE = re.compile(r"^(?:[A-Za-z0-9_.-]+:)?MNXR\d+$|^BRIDGE:[^\s]+$")
 
 # EZpred `ezpred` lane keeps level-4 ECs whose softmax score clears this floor.
 DL_EC_SCORE_FLOOR = 0.3
@@ -127,11 +237,171 @@ def clean_distance_to_score(d):
 
 
 # =====================================================================
+# migration off the pre-schema layouts
+# =====================================================================
+
+# The retired spellings, and what each is now. A join written against one silently
+# returns nothing against the other, which is why they are mapped here once rather
+# than wherever a reader happens to notice.
+RETIRED_CHANNELS = {
+    "clean_ec": "clean",
+    "uniref50_dr": "uniref50",
+    "dl_ec": "ezpred",
+}
+
+# The 14-column benchmark layout and the 18-column cohort layout, by the column each
+# one contributed. Both are the same table with different blocks attached.
+_LEGACY_CORE = {
+    "feature_id": "orf",
+    "evidence_id": "intermediate_id",
+    "evidence_name": "intermediate_name",
+}
+# `feature_id` is null on a curated row -- a curated set names a construct, not a
+# sequence -- so the nominator is recovered in this order and `orf` is populated once,
+# here, instead of every consumer re-deciding which column to read.
+_ORF_SOURCES = ("feature_id", "feature_name", "evidence_id")
+
+
+def normalise_channel(ch: str) -> str:
+    """A legacy channel spelling -> the frozen vocabulary.
+
+    Strips the `denovo_` prefix as well: it existed so a lane survived a merge with a
+    GEM table, and `lane_set` and the assertion channels now carry that distinction.
+    """
+    ch = str(ch)
+    if ch.startswith("denovo_"):
+        ch = ch[len("denovo_"):]
+    return RETIRED_CHANNELS.get(ch, ch)
+
+
+def to_unified(df, extensions=("attribution", "feature", "universe")):
+    """One of the pre-schema layouts -> SCHEMA_COLS plus `extensions`.
+
+    Single place for the mapping, so a producer and a one-off data migration cannot
+    disagree about it. The caller names the blocks because only the caller knows which
+    layer the table belongs to; the 18-column cohort tables add `cohort`.
+
+    Raises rather than guessing: an assertion channel whose `raw_score` is not 1.0, or
+    a table carrying more than one `unit_id`, is a table this mapping does not describe.
+    """
+    import pandas as pd
+
+    out = df.rename(columns=_LEGACY_CORE).copy()
+
+    orf = None
+    for c in _ORF_SOURCES:
+        col = _LEGACY_CORE.get(c, c)
+        if col in out.columns:
+            orf = out[col] if orf is None else orf.fillna(out[col])
+    if orf is None or orf.isna().any():
+        raise SystemExit(f"[gpr] {int(orf.isna().sum()) if orf is not None else 'every'} "
+                         f"row(s) name no nominator in any of {_ORF_SOURCES}")
+    out["orf"] = orf.astype(str)
+
+    out["channel"] = out["channel"].map(normalise_channel)
+    lanes = sorted(set(out["channel"]) - set(ASSERTION_CHANNELS))
+    unknown = sorted(set(lanes) - set(CHANNELS))
+    if unknown:
+        raise SystemExit(f"[gpr] channel(s) {unknown} are neither a declared lane nor "
+                         f"an assertion; the vocabulary is {list(CHANNELS)} plus "
+                         f"{sorted(ASSERTION_CHANNELS)}")
+
+    out["score_kind"] = out["channel"].map(
+        lambda c: "presence" if c in ASSERTION_CHANNELS else CHANNEL_SCORE_KIND[c])
+    assertion = out["channel"].isin(ASSERTION_CHANNELS)
+    bad = out.loc[assertion & (out["raw_score"].astype(float) != 1.0)]
+    if len(bad):
+        raise SystemExit(f"[gpr] {len(bad):,} assertion rows carry a raw_score that is "
+                         f"not 1.0, e.g. {sorted(set(bad['raw_score']))[:3]} -- an "
+                         f"assertion is a presence claim, not a ranked one")
+
+    if "unit_id" in out.columns and out["unit_id"].nunique() != 1:
+        raise SystemExit(f"[gpr] {out['unit_id'].nunique()} unit_ids in one table "
+                         f"{sorted(out['unit_id'].unique())[:4]}; `source` names one "
+                         f"artifact, so this table is really several")
+    # `source` names the artifact the rows were read out of. A pre-schema table did not
+    # record one, and `unit_id` is the closest thing it has -- so a migrated table says
+    # the model or proteome where a freshly produced one says the ORF set it was mapped
+    # from. Both are true of the table; they are not the same string, and a reader
+    # comparing `source` across the two eras has to know that.
+    out["source"] = out["unit_id"].astype(str) if "unit_id" in out.columns else ""
+    # The lane set is a property of the evidence, not of the file: a table with no lane
+    # channels asserts rather than measures, whatever it is called.
+    out["lane_set"] = _lane_set_for(set(lanes))
+    if "evidence_quality" not in out.columns:
+        out["evidence_quality"] = "unknown"
+    if "projection_via" not in out.columns:
+        out["projection_via"] = ""
+    out["projection_via"] = out["projection_via"].fillna("")
+    out["intermediate_id"] = out["intermediate_id"].fillna("")
+    out["intermediate_name"] = out["intermediate_name"].fillna("")
+
+    want = schema_for(extensions)
+    missing = [c for c in want if c not in out.columns]
+    if missing:
+        raise SystemExit(f"[gpr] the source table has no {missing} to carry into "
+                         f"extension blocks {list(extensions)}")
+    return out[want].reset_index(drop=True)
+
+
+def read_gpr(paths, extensions=None):
+    """Read one or more GPR tables and return them on the declared schema.
+
+    The point of entry for a CONSUMER. A table written before the schema is converted
+    on the way through, so a reader never has to know which layout it got -- which is
+    what the four layouts cost every reader until now, each one re-deciding whether the
+    nominator lived in `feature_id`, `feature_name` or `evidence_id`.
+
+    `extensions` defaults to the blocks the table already carries. Pass it to require
+    a block: a reader that needs `unit_id` should say so and fail on a table without it,
+    rather than discover the gap as a KeyError three frames later.
+    """
+    import pandas as pd
+
+    if isinstance(paths, (str, bytes)) or hasattr(paths, "__fspath__"):
+        paths = [paths]
+    frames = []
+    for path in paths:
+        df = pd.read_parquet(path)
+        ext = tuple(extensions) if extensions is not None else extensions_of(df)
+        if not is_unified(df) or (extensions is not None
+                                  and list(df.columns) != schema_for(ext)):
+            df = to_unified(df, ext)
+        frames.append(df)
+    if len(frames) == 1:
+        return frames[0]
+    # Concatenating is how "this condition runs against this host" is expressed, and it
+    # only means anything once every frame is on one schema -- which it now is.
+    return pd.concat(frames, ignore_index=True)
+
+
+def _lane_set_for(lanes: set) -> str:
+    """The declared set these lanes are, or CURATED when there are none."""
+    if not lanes:
+        return CURATED
+    for name, members in LANE_SETS.items():
+        if lanes == set(members):
+            return name
+    raise SystemExit(
+        f"[gpr] lanes {sorted(lanes)} are not a declared set. Known: "
+        + "; ".join(f"{k}={list(v)}" for k, v in LANE_SETS.items())
+        + ". A table carrying some of a set is the failure this schema exists to name.")
+
+
+# =====================================================================
 # the validator -- called by both mappers immediately before to_parquet
 # =====================================================================
 
-def validate_gpr(df, lane_set: str, orf_ids, source: str):
+def validate_gpr(df, lane_set: str, orf_ids, source: str, extensions=(),
+                 composed: bool = False):
     """Refuse to write a GPR table that violates the contract above.
+
+    `extensions` names the blocks this table carries beyond SCHEMA_COLS (see
+    SCHEMA_EXTENSIONS). `lane_set` is a LANE_SETS key, or CURATED for a table of
+    assertions with no lane evidence. `orf_ids` may be None when there is no ORF set to
+    check against -- a curated model names genes, not sequences. `composed` says the
+    table is a community composition rather than one artifact's evidence, which is the
+    only thing that may namespace `mnxr` and mix `bridge` rows in.
 
     Every check here exists because its absence was silent. An empty concat, an
     ORF-id mismatch between two lanes, a CLEAN header drift, or a lane whose
@@ -143,15 +413,20 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str):
     """
     import numpy as np  # local: the module is pandas-only for its bridge callers
 
-    expected = LANE_SETS.get(lane_set)
-    if expected is None:
-        raise SystemExit(f"[gpr] unknown lane_set {lane_set!r}; known: {sorted(LANE_SETS)}")
+    if lane_set == CURATED:
+        expected = ()
+    else:
+        expected = LANE_SETS.get(lane_set)
+        if expected is None:
+            raise SystemExit(f"[gpr] unknown lane_set {lane_set!r}; known: "
+                             f"{sorted(LANE_SETS) + [CURATED]}")
 
-    if list(df.columns) != SCHEMA_COLS:
+    want = schema_for(extensions)
+    if list(df.columns) != want:
         raise SystemExit(
-            f"[gpr] column set/order is not the schema.\n"
+            f"[gpr] column set/order is not the schema for extensions {list(extensions)}.\n"
             f"      got:      {list(df.columns)}\n"
-            f"      expected: {SCHEMA_COLS}")
+            f"      expected: {want}")
 
     if len(df) == 0:
         raise SystemExit(
@@ -159,22 +434,48 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str):
             "staging or id-space failure, not a biological finding -- 157 fosmid "
             "inserts do not encode zero recognisable enzymes")
 
-    nulls = {c: int(df[c].isna().sum()) for c in SCHEMA_COLS if df[c].isna().any()}
+    # The CORE is non-null by contract. Extension columns are not: `in_atom_universe`
+    # null means "not asserted" and `gpr_rule` null means the model gave no rule, and
+    # both are information a consumer can see and act on.
+    assertion = df["channel"].isin(ASSERTION_CHANNELS)
+    # `mnxr` is null exactly on a ROSTER row: an assertion that this nominator is in the
+    # population and resolves to no reaction at all. A census keeps those rows on
+    # purpose -- dropping them would silently shrink the denominator of every rate
+    # measured over the population. On a lane row a null mnxr is a broken join.
+    core = [c for c in SCHEMA_COLS if c != "mnxr"]
+    nulls = {c: int(df[c].isna().sum()) for c in core if df[c].isna().any()}
+    n_bad_mnxr = int((df["mnxr"].isna() & ~assertion).sum())
+    if n_bad_mnxr:
+        nulls["mnxr (on lane rows)"] = n_bad_mnxr
     if nulls:
-        raise SystemExit(f"[gpr] null values in {nulls} -- every column is non-null by contract")
+        raise SystemExit(f"[gpr] null values in {nulls} -- every core column is "
+                         f"non-null by contract, except `mnxr` on an assertion row")
 
-    unknown = set(df["channel"].unique()) - set(expected)
+    allowed = set(expected) | set(ASSERTION_CHANNELS)
+
+    unknown = set(df["channel"].unique()) - allowed
     if unknown:
         raise SystemExit(
             f"[gpr] channels not in lane_set {lane_set}: {sorted(unknown)}; "
-            f"the vocabulary is {list(expected)}")
+            f"the vocabulary is {list(expected)} plus the assertion channels "
+            f"{sorted(ASSERTION_CHANNELS)}")
+
+    # An assertion is a presence claim. Scoring one any other way would put it on a
+    # lane's scale, where the share-of-sum would then rank it against real evidence.
+    bad_assert = sorted(
+        f"{c}:{k}" for c, k in
+        df.loc[assertion, ["channel", "score_kind"]].drop_duplicates().itertuples(index=False)
+        if k != ASSERTION_CHANNELS[c])
+    if bad_assert:
+        raise SystemExit(f"[gpr] assertion channel(s) carry the wrong score_kind "
+                         f"{bad_assert}; the declared kinds are {ASSERTION_CHANNELS}")
 
     # --- score contract
     bad_kind = set(df["score_kind"].unique()) - set(SCORE_KINDS)
     if bad_kind:
         raise SystemExit(f"[gpr] unknown score_kind(s) {sorted(bad_kind)}; known: {sorted(SCORE_KINDS)}")
     for ch, kind in df.groupby("channel")["score_kind"].agg(lambda s: sorted(set(s))).items():
-        want = CHANNEL_SCORE_KIND[ch]
+        want = ASSERTION_CHANNELS.get(ch) or CHANNEL_SCORE_KIND[ch]
         if kind != [want]:
             raise SystemExit(f"[gpr] channel {ch!r} carries score_kind {kind}, expected ['{want}']")
     s = df["raw_score"].astype(float)
@@ -197,24 +498,32 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str):
             raise SystemExit(f"[gpr] score_kind {kind!r}: max {v.max():.9g} above the declared ceiling {hi}")
 
     # --- keys and vocabularies
-    bad_mnxr = df.loc[~df["mnxr"].astype(str).str.match(_MNXR_RE), "mnxr"].unique()
+    named = df.loc[df["mnxr"].notna()]
+    pattern = _MNXR_COMPOSED_RE if composed else _MNXR_RE
+    bad_mnxr = named.loc[~named["mnxr"].astype(str).str.match(pattern), "mnxr"].unique()
     if len(bad_mnxr):
         raise SystemExit(f"[gpr] {len(bad_mnxr):,} non-MNXR reaction ids, e.g. {list(bad_mnxr[:5])}")
     bad_eq = set(df["evidence_quality"].unique()) - set(EVIDENCE_QUALITY)
     if bad_eq:
         raise SystemExit(f"[gpr] unknown evidence_quality {sorted(bad_eq)}; known: {list(EVIDENCE_QUALITY)}")
-    if set(df["lane_set"].unique()) != {lane_set}:
-        raise SystemExit(f"[gpr] lane_set column carries {sorted(set(df['lane_set']))}, expected [{lane_set!r}]")
+    # A COMPOSED network is a community, and its rows come from two places: each
+    # member's own lane evidence, and the bridges that join them. Those are different
+    # claims, so they carry different `lane_set` values in one table -- which is why a
+    # composition has to say so rather than be validated as a single-source table.
+    want_ls = {lane_set} | ({"bridge"} if composed else set())
+    if not set(df["lane_set"].unique()) <= want_ls or lane_set not in set(df["lane_set"]):
+        raise SystemExit(f"[gpr] lane_set column carries {sorted(set(df['lane_set']))}, "
+                         f"expected {sorted(want_ls)}")
     if set(df["source"].unique()) != {source}:
         raise SystemExit(f"[gpr] source column carries {sorted(set(df['source']))}, expected [{source!r}]")
 
-    key = ["source", "orf", "channel", "intermediate_id", "mnxr"]
+    key = grain_key(extensions)
     dupes = int(df.duplicated(subset=key).sum())
     if dupes:
         raise SystemExit(f"[gpr] {dupes:,} rows duplicate the grain key {key}")
 
-    ids = set(orf_ids)
-    stray = set(df["orf"].unique()) - ids
+    ids = set(orf_ids) if orf_ids is not None else None
+    stray = (set(df["orf"].unique()) - ids) if ids is not None else set()
     if stray:
         raise SystemExit(
             f"[gpr] {len(stray):,} ORF ids are not in the input FASTA, e.g. "
@@ -233,16 +542,19 @@ def validate_gpr(df, lane_set: str, orf_ids, source: str):
                 f"table anyway hides which of the {len(expected)} lanes failed")
 
     # --- the measurement half: everything below prints, nothing below raises
+    n_ids = len(ids) if ids is not None else df["orf"].nunique()
     print(f"[gpr] {len(df):,} rows | source={source} | lane_set={lane_set} | "
-          f"{df['orf'].nunique():,} of {len(ids):,} ORFs | {df['mnxr'].nunique():,} MNXR",
-          flush=True)
-    for ch in expected:
+          f"{df['orf'].nunique():,} of {n_ids:,} nominators | "
+          f"{df['mnxr'].nunique():,} MNXR", flush=True)
+    present_assertions = [c for c in sorted(ASSERTION_CHANNELS)
+                          if (df["channel"] == c).any()]
+    for ch in tuple(expected) + tuple(present_assertions):
         g = df[df["channel"] == ch]
         v = g["raw_score"].astype(float)
         print(f"[gpr]   {ch:9s} {len(g):>9,} rows  {g['orf'].nunique():>7,} ORFs "
-              f"({100.0*g['orf'].nunique()/max(len(ids),1):5.1f}% cover)  "
+              f"({100.0*g['orf'].nunique()/max(n_ids,1):5.1f}% cover)  "
               f"{g['mnxr'].nunique():>6,} MNXR  "
-              f"score[{CHANNEL_SCORE_KIND[ch]}] min={v.min():.4g} "
+              f"score[{g['score_kind'].iat[0]}] min={v.min():.4g} "
               f"med={v.median():.4g} max={v.max():.4g}", flush=True)
     print(f"[gpr]   evidence_quality {df['evidence_quality'].value_counts().to_dict()}", flush=True)
     return df

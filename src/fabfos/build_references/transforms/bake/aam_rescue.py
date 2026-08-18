@@ -14,8 +14,10 @@ the one place the build is meant to BEAT the table it reproduces rather than mat
 
 NO MAPPER RUNS HERE. Everything this step decides is arithmetic:
 
-  * WHICH STRUCTURE each blocker gets, from nine proposer lanes, merged by a fixed
-    priority so one metabolite is claimed by exactly one argument.
+  * WHICH STRUCTURE each blocker gets, from eleven proposer lanes, merged by a fixed
+    priority so one metabolite is claimed by exactly one argument. Nine run here; the
+    two twin searches are transforms of their own and arrive as crosswalks, which is
+    what keeps each of their deltas a number rather than a contribution to a total.
   * WHETHER THE `*` BODIES CANCEL across the equation. A curated carrier draws its body
     as `*` and counts it as zero for every element; that is only safe when the same body
     stands on both sides.
@@ -48,9 +50,16 @@ atom_ranks  = model.AddRequirement(lib.GetType("lookup::atom_ranks"))
 xrefs       = model.AddRequirement(lib.GetType("lookup::xrefs"))
 synonyms    = model.AddRequirement(lib.GetType("lookup::synonyms"))
 
-curation    = model.AddRequirement(lib.GetType("buildlib::aam_curation.py"))
-worklib     = model.AddRequirement(lib.GetType("buildlib::aam_worklist.py"))
-evidence    = model.AddRequirement(lib.GetType("buildlib::build_evidence.py"))
+# THREE INPUTS THAT CHANGE WHAT THE ARBITER CAN JUDGE, not what it judges by. The two
+# twin searches arrive as crosswalks and are merged like any other proposer lane, so
+# their rows face `admit`, the body-cancel gate and the balance test unchanged. The
+# recount is the one that moves the gate itself: a species whose formula states no count
+# used to make the balance abstain, and abstention is a refusal.
+counts      = model.AddRequirement(lib.GetType("lookup::element_counts"))
+blockers    = model.AddRequirement(lib.GetType("interm::aam_blockers"))
+nametwin    = model.AddRequirement(lib.GetType("interm::aam_nametwin"))
+
+bakelib     = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 out_rescue  = model.AddProduct(lib.GetType("interm::aam_rescue"))
 ev          = model.AddProduct(lib.GetType("evidence::tool_output"))
@@ -65,7 +74,10 @@ def protocol(context: ExecutionContext):
     iar  = context.Input(atom_ranks)
     ixr  = context.Input(xrefs)
     isy  = context.Input(synonyms)
-    ilib = context.Input(curation)
+    iec  = context.Input(counts)
+    ibl  = context.Input(blockers)
+    int_ = context.Input(nametwin)
+    ilib = context.Input(bakelib)
     iout = context.Output(out_rescue)
     iev  = context.Output(ev)
     libdir = ilib.container.parent
@@ -89,13 +101,17 @@ def protocol(context: ExecutionContext):
         {stage_lookups}
         mkdir -p rescue
 
-        {py} {libdir}/aam_curation.py propose --lookups _lookups \
+        {py} -m ecspr.bake.aam.curation propose --lookups _lookups \
             --worklist {iwl.container} \
+            --element-counts {iec.container} \
+            --blockers {ibl.container}/crosswalk.tsv \
+            --nametwin {int_.container}/crosswalk.tsv \
             --chebi {ich.container} --modelseed {ims.container} \
             --out rescue/crosswalk.tsv
 
-        {py} {libdir}/aam_curation.py complete --lookups _lookups \
+        {py} -m ecspr.bake.aam.curation complete --lookups _lookups \
             --worklist {iwl.container} \
+            --element-counts {iec.container} \
             --crosswalk rescue/crosswalk.tsv \
             --out rescue/rescued.parquet \
             --out-balance rescue/balance.tsv \
@@ -112,7 +128,7 @@ def protocol(context: ExecutionContext):
         # The CROSSWALK is the curation: the only place the assertions are written down,
         # each with the basis that warrants it and the lane that made it. Nothing else in
         # the build records what was CLAIMED, as against what survived the gates.
-        {py} {libdir}/build_evidence.py collect --root _ev --tool rescue \
+        {py} -m ecspr.bake.evidence collect --root _ev --tool rescue \
             --file rescue/crosswalk.tsv rescue/placeholders.tsv rescue/balance.tsv \
                    rescue/rescued.parquet
         mkdir -p {iev.container}
@@ -142,8 +158,14 @@ TransformInstance(
     # The synonym index and the ChEBI/ModelSeed structure tables are the memory here;
     # the lanes themselves are name parsing and arithmetic. No mapper, so no long tail.
     # MEASURED over the full 24,098-reaction blocked set: propose 52 s at 3.4 GB, complete
-    # 33 s at 2.5 GB. The request is sized to that rather than to caution, because this
-    # step sits between the two mapper passes -- every minute it spends queueing is a
-    # minute pass 2 has not started, and a 48 GB ask queues behind a 24 GB one for nothing.
-    resources=Resources(cpus=2, memory=Size.GB(24), duration=Duration(hours=2)),
+    # 33 s at 2.5 GB.
+    #
+    # FOUR HOURS RATHER THAN TWO, and the extra is a margin rather than a measurement.
+    # `complete` once ran two hours and was killed at the wall having written nothing --
+    # it counted atoms before consulting the character cap, so an 80.7 MB stoichiometric
+    # expansion went to RDKit, which does not return from it. The ordering is fixed and
+    # tested (tests/ecspr/bake/test_worklist_gates.py) and the loop prints its rate now,
+    # so a repeat is legible rather than silent; the margin is what makes it legible
+    # rather than dead.
+    resources=Resources(cpus=2, memory=Size.GB(24), duration=Duration(hours=4)),
 )

@@ -35,9 +35,9 @@ import shutil
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[3]
 
-_ENGINE = REPO / "src" / "metasmith" / "src"
+_ENGINE = REPO / "src"
 if (_ENGINE / "metasmith").is_dir():
     sys.path.insert(0, str(_ENGINE))
 
@@ -72,7 +72,10 @@ PUBLISH_AT = {
     "annotation::proteinbert_index": "annotations/lanes/proteinbert_index.csv",
 }
 
-EXPECTED = {"kofamscan", "clean", "diamond_uniref50", "proteinbert", "gpr_4lane"}
+EXPECTED = {"chunkOrfsForAnnotation",
+            "kofamscan", "clean", "diamond_uniref50", "proteinbert",
+            "merge_kofamscan", "merge_diamond_uniref50", "merge_proteinbert",
+            "gpr_4lane"}
 
 
 def plan(work: Path, agent, orfs: Path, remote_processed: str):
@@ -104,6 +107,7 @@ def plan(work: Path, agent, orfs: Path, remote_processed: str):
     transforms = [
         TransformInstanceLibrary.Load(MLIB / "transforms" / "functionalAnnotation"),
         TransformInstanceLibrary.Load(MLIB / "transforms" / "fabfos"),
+        TransformInstanceLibrary.Load(MLIB / "transforms" / "logistics"),
     ]
     tb = TargetBuilder()
     tb.Add(TARGET)

@@ -1,0 +1,10 @@
+verdict_before	verdict_after	n
+mappable	mappable	57061
+blocked_no_structure	blocked_no_structure	24098
+no_transfer	no_transfer	1355
+non_molecule	non_molecule	621
+oversize	mappable	394
+unparseable_equation	unparseable_equation	128
+oversize	oversize	67
+too_long	mappable	60
+too_long	too_long	11

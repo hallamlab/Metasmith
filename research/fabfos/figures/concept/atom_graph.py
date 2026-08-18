@@ -8,7 +8,7 @@ Reactions are what gets laid out; metabolites are the medium the current flows t
 Direction evidence may only *throttle*: a reaction whose ``ratio = g_rev/g_fwd`` exceeds 1
 runs against the way its equation is written, so its edge is FLIPPED and the ratio inverted
 rather than the reverse branch being handed conductance it has no evidence for. That is the
-rule stated in ``ecspr.build.graph_from_pairs`` and it is applied at build time here, which
+rule stated in ``ecspr.model.build.graph_from_pairs`` and it is applied at build time here, which
 is why per-reaction terminals below are read off the graph's own post-flip orientation
 instead of being re-derived from the pair table.
 
@@ -30,7 +30,7 @@ import os                                                            # noqa: E40
 SRC = os.environ.get("ECSPR_SRC", str(Path(__file__).resolve().parents[4] / "src"))
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
-from ecspr.graph import AtomGraph                                    # noqa: E402
+from ecspr.model.graph import AtomGraph                                    # noqa: E402
 
 BAKE = Path(os.environ.get(
     "ECSPR_BAKE",
@@ -108,7 +108,7 @@ def build_atom_graph(element="C", medium_rxn_symbols=None, weights=None):
         edges.append((_i((int(a), int(b))), _i((int(c), int(e)))))
 
     # edge -> reaction provenance. Two consumers: reaction terminals below, and
-    # ``ecspr.build.reaction_currents``, which needs it under this exact key to attribute a
+    # ``ecspr.model.build.reaction_currents``, which needs it under this exact key to attribute a
     # solution's edge currents back to reactions.
     mnxr_of_row = np.array([rxn_sym[c] for c in rxn_of_row], dtype=object)
     prov = pd.DataFrame(dict(edge=codes, mnxr=mnxr_of_row, gp=gp, rxn=rxn_of_row))
@@ -169,7 +169,7 @@ def restrict_to_giant(g, terminals):
 def incidence(edges, n):
     """Signed incidence (+1 tail, -1 head), vectorized.
 
-    ``ecspr.directed.build_incidence`` builds the same matrix with a Python loop over m,
+    ``ecspr.model.directed.build_incidence`` builds the same matrix with a Python loop over m,
     which is minutes at 1.6M edges.
     """
     e = np.asarray(edges, dtype=np.int64)

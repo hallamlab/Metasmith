@@ -38,8 +38,7 @@ image      = model.AddRequirement(lib.GetType("env::equilibrator.env"))
 annot      = model.AddRequirement(lib.GetType("interm::direction_annotation"))
 vocab      = model.AddRequirement(lib.GetType("ref::metabolism_vocab"))
 
-encoding   = model.AddRequirement(lib.GetType("buildlib::refs_encoding.py"))
-baker      = model.AddRequirement(lib.GetType("buildlib::bake_metabolism.py"))
+bakelib    = model.AddRequirement(lib.GetType("buildlib::ecspr"))
 
 ratios     = model.AddProduct(lib.GetType("ref::direction_ratios"))
 
@@ -47,14 +46,14 @@ ratios     = model.AddProduct(lib.GetType("ref::direction_ratios"))
 def protocol(context: ExecutionContext):
     iann = context.Input(annot)
     ivoc = context.Input(vocab)
-    ilib = context.Input(baker)
+    ilib = context.Input(bakelib)
     iout = context.Output(ratios)
     libdir = ilib.container.parent
 
     py = f"PYTHONPATH={libdir} OMP_NUM_THREADS=1 python3"
     cmd = f"""
         set -e
-        {py} {libdir}/bake_metabolism.py direction \
+        {py} -m ecspr.bake.metabolism direction \
             --direction {iann.container} \
             --vocab {ivoc.container} \
             --out {iout.container}

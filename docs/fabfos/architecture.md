@@ -26,9 +26,26 @@ resolution. It holds the methods FabFos *is*, and they live there so a cut or a 
 run directly against a directory of assemblies with no planner, staging or container, which is
 how one gets inspected before it is trusted.
 
-A method too big for one staged file gets a **package with a command line**, not more resource
-files. `src/ecspr` is the only one, because ECSPr is the only transform whose protocol is an
-algorithm rather than a dispatch into somebody else's tool — see `docs/ecspr/architecture.md`.
+**Custom algorithms live in a src module; work that is only a call to somebody else's tool
+stops at a transform.** That is the whole rule, and the size of the method is what decides which
+side of it you are on: one staged file is fine, but flat files that import each other by bare
+name are a package only by accident of landing in the same staged directory — and the accident's
+price is a requirement list that is a hand-maintained copy of an import graph, where a missing
+entry is an ImportError six hours into a queued job.
+
+So a method that imports itself gets a **package with a command line**, vendored into the
+library as one staged directory and invoked with `-m`. `src/ecspr` holds both: `ecspr.model` is
+the measurement ECSPr *is*, and `ecspr.bake` is the ~7,000-line method that builds the tables it
+reads. The two never import each other at module scope — they are installed into images with
+disjoint dependency stacks, so an import across that seam fails at load rather than degrading.
+See `docs/ecspr/architecture.md`.
+
+**Drivers stay where they are.** `research/fabfos/examples/` and `tests/fabfos/` hold scripts
+that call metasmith directly to orchestrate a run; moving one into `src/fabfos/` is a form of
+*publishing*, and most of these are genuine research runs that should not be published. The
+question to ask before promoting one is not "is it useful?" but "does a study depend on it?" —
+a driver a paper's numbers rest on belongs in the package, versioned with everything else that
+produced them; a driver that answered a question once belongs where it is.
 
 ## Entry points
 
