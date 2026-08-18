@@ -1,0 +1,69 @@
+# What the LLM curation lanes cost
+
+Every number here is either measured or labelled as an estimate, and the measured rows are
+generated from `scoreboard.tsv` rather than transcribed. A model swap should be a lookup in
+this file, not a re-derivation.
+
+## Where the numbers come from
+
+`run_panel.py` records `prompt_tokens` and `completion_tokens` per call — llama.cpp returns
+a `usage` block on every OpenAI-compatible response — and totals them per run alongside
+wall-clock into a `.meta.json`. `arbiter.py` appends one scoreboard row per revision
+carrying both cost and coverage. That is the whole mechanism, and it is in from the first
+run: a revision whose coverage rose because it spent triple the tokens is a different trade
+from one that did not, and a coverage number alone cannot tell you which happened.
+
+Wall-clock is the column that converts tokens into GPU-hours. A held allocation bills for
+its whole wall-clock whether or not the card is busy, so `rxn_per_min` at a given
+`--parallel` is what a universe-scale run is actually priced on.
+
+## Pilot measurements (Haiku as a tool-using agent)
+
+These are the two pilots that established the shape of the task. They are **upper bounds
+that a production run does not pay**: each agent spent three tool calls per batch and
+re-read a ~1,200-token spec every time.
+
+| pilot | reactions | tokens | tok/reaction |
+|---|---:|---:|---:|
+| directionality calls, batches of 40 | 200 | 169,058 | **845** |
+| AAM simplification, batches of 16 | 32 | 67,616 | **2,113** |
+
+AAM costs 2.5x direction, which is the larger output doing what it should. Stripping the
+agent overhead — spec amortised over the batch, no tool calls — the same work as a direct
+completion estimates at ~170 and ~420 tok/reaction respectively, so **agent-with-tools is
+roughly 5x a direct completion for this task.** Universe-scale work does not use agents.
+
+## Measured, per model
+
+Generated from `scoreboard.tsv`. Empty until the first real run lands; the stub rows that
+proved the harness are not models and are not recorded here.
+
+| model | task | tok/reaction | rxn/min | parallel | note |
+|---|---|---:|---:|---:|---|
+| _(pending Qwen3-32B-Q5_K_M on fir)_ | | | | | |
+
+## Universe-scale projection (83,795 reactions)
+
+**The direction lane got cheaper, not more expensive, when it got better.** The pilot
+planned three opinions per orientation. The measurement killed that: three opinions of one
+orientation share the as-written bias rather than cancelling it, so the ensemble raised
+apparent confidence without touching accuracy. Two orientations of *one* opinion replaced
+it — 2 passes where the plan said 6.
+
+| lane | passes/reaction | completions | note |
+|---|---:|---:|---|
+| AAM simplification, 3 opinions | 3 | 251,385 | failures are idiosyncratic; independent looks cancel them |
+| direction, 1 opinion x 2 orientations | 2 | 167,590 | failures are a shared bias; more opinions amplify it |
+| **total** | | **418,975** | against 754,155 under the pilot's plan |
+
+At the pilot's estimated direct-completion rates (~420 AAM, ~170 direction) that is roughly
+**106 M + 28 M = ~134 M tokens**, down from ~191 M. Replace both rates with measured ones
+from the table above before treating this as a commitment.
+
+Two things this projection does not include and one it overstates. It excludes the
+`no_lever` and `one_sided` strata, which are real reactions that will be sent and refused —
+see `panel/PANEL.md` for their share. It excludes Qwen3's reasoning preamble, which is
+billed as completion tokens whenever thinking is left on; `run_panel.py` disables it by
+default for exactly that reason. And it overstates AAM if the lane is run only over the
+residual rather than the universe: 12,417 reactions, not 83,795, which is **7% of the
+figure above**.
