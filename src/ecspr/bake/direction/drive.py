@@ -43,7 +43,7 @@ import pandas as pd
 
 from ..aam.shard import parse_spec, shard_of
 from . import substitute
-from .refdata import load_mnxr_stoich, load_mnxm_names, load_mnxm_props
+from .refdata import load_mnxr_stoich, load_mnxm_formulas, load_mnxm_names, load_mnxm_props
 
 # `sigma_sub` is the substitution lane's own width and is DELIBERATELY a separate column
 # from `sigma`. `combine.eq_vote` detects an eQuilibrator group cancellation by testing
@@ -106,8 +106,10 @@ def cmd_eval(args):
     props = load_mnxm_props(args.chem_prop)
     # No tables is the identity: an uncovered reaction walks the code path it walks today,
     # which is what makes this switchable without re-validating the member.
-    subs = substitute.load(args.substitutions, props,
-                           load_mnxm_names(args.chem_prop) if args.substitutions else {})
+    subs = substitute.load(
+        args.substitutions, props,
+        load_mnxm_names(args.chem_prop) if args.substitutions else {},
+        formulas=load_mnxm_formulas(args.chem_prop) if args.substitutions else None)
     props = subs.props(props)
     if len(subs):
         print(f"[eval:{args.member}] {len(subs):,} substitutions over "

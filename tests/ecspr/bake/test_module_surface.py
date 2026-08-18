@@ -201,8 +201,11 @@ CLI = {
         # `resolve` is its own verb because it is the one part that needs
         # eQuilibrator: `build` runs on table reads in any env with rdkit, and
         # folding the two together would make the cheap half pay for the cache.
+        # `--substitutions` is here because a model compound eQuilibrator's frozen cache
+        # cannot resolve silences the very reaction it was added to unblock, so the
+        # resolution table has to be able to include them.
         "resolve": {"--universe", "--reac-prop", "--chem-prop", "--mnxm-only",
-                    "--resume", "--out"},
+                    "--resume", "--substitutions", "--out"},
         "build": {"--universe", "--reac-prop", "--chem-prop", "--resolution",
                   "--mnxm-only", "--substitutions", "--out", "--out-summary"},
         "backtest": {"--forecast", "--member-eq", "--member-dgbyg",

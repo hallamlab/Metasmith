@@ -110,10 +110,12 @@ def compute_points(curated_per_mnxr, reac_prop, chem_prop, limit=None,
     # has to be handed the same equations the member was. Restaged here and not only in
     # `drive`: a prior fitted on the unsubstituted arm and applied to the substituted one
     # is the same class of mistake as an unstamped cache.
-    from .refdata import load_mnxm_names
+    from .refdata import load_mnxm_formulas, load_mnxm_names
     from . import substitute
-    subs = substitute.load(substitutions, props,
-                           load_mnxm_names(chem_prop) if substitutions else {})
+    subs = substitute.load(
+        substitutions, props,
+        load_mnxm_names(chem_prop) if substitutions else {},
+        formulas=load_mnxm_formulas(chem_prop) if substitutions else None)
     props = subs.props(props)
     eq = EquilibratorMember()
 

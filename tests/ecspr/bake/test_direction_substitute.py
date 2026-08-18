@@ -15,6 +15,8 @@ congener gate and the anchor requirement, and they get a test each.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -64,9 +66,9 @@ def _written(tmp_path, rows, models=MODELS):
     return tmp_path
 
 
-def _load(tmp_path, models=MODELS, rows=None, props=PROPS, names=NAMES):
+def _load(tmp_path, models=MODELS, rows=None, props=PROPS, names=NAMES, formulas=None):
     rows = _pair() if rows is None else rows
-    return S.load(_written(tmp_path, rows, models), props, names)
+    return S.load(_written(tmp_path, rows, models), props, names, formulas=formulas)
 
 
 # --- the empty configuration ----------------------------------------------
@@ -108,24 +110,175 @@ def test_a_carrier_row_renames_and_preserves_the_coefficient(tmp_path):
     assert out == {NAD_OX: -2.0, "MNXM99": 1.0}
 
 
+# --- the polymer scope ----------------------------------------------------
+#
+# A polymer row is not compound-keyed the way a carrier row is. It asserts something about
+# the REACTION -- that MetaNetX wrote a chain increment as a fixed molecule and left the
+# acceptor out -- so the fixtures below are reactions, and each test is one of the three
+# conditions deciding whether the row acts.
+
+POLY_MODELS = pd.concat([MODELS, pd.DataFrame([
+    dict(model_key="MODEL:g6", name="alpha-maltohexaose", smiles="OCC1OC(O)C(O)C(O)C1O",
+         inchi="", inchikey="", formula="C36H62O31",
+         basis="MNXR95153 identifies it with 1,4-alpha-D-glucan"),
+    dict(model_key="MODEL:g5", name="alpha-maltopentaose", smiles="OCC1OC(O)C(O)C(O)C1O",
+         inchi="", inchikey="", formula="C30H52O26", basis="MODEL:g6 less one glucosyl"),
+    dict(model_key="MODEL:g4", name="alpha-maltotetraose", smiles="OCC1OC(O)C(O)C(O)C1O",
+         inchi="", inchikey="", formula="C24H42O21", basis="glycogen's own composition"),
+    dict(model_key="MODEL:g3", name="alpha-maltotriose", smiles="OCC1OC(O)C(O)C(O)C1O",
+         inchi="", inchikey="", formula="C18H32O16", basis="MODEL:g4 less one glucosyl"),
+])])
+
+# `Glycogen`, `Branching glycogen` and `D-cellotetraose` are all C24H42O21 -- and the first
+# and last share the InChI CONNECTIVITY layer too, since MetaNetX built the flattened
+# polymer by deleting a real oligomer's stereochemistry. Nineteen stereo-complete compounds
+# sit on that skeleton block. Composition is therefore not a key, and these fixtures say so.
+POLY_FORMULAS = {
+    "MNXM738130": "C24H42O21",      # Glycogen, flattened
+    "MNXM733515": "C36H62O31",      # 1,4-alpha-D-glucan, flattened
+    "MNXM8348": "C24H42O21",        # Branching glycogen, a THIRD alias, not in the table
+    "MNXM1371942": "C24H42O21",     # D-cellotetraose -- glycogen's formula exactly
+    "MNXM1364212": "C6H11O9P",      # alpha-D-glucose 1-phosphate
+    "MNXM9": "HO4P",                # phosphate
+}
+
+
+def _poly_row(mnxm, name, terms, **kw):
+    return _row(kind="polymer", mnxm=mnxm, mnx_name=name, terms=terms, couple_id="glucan",
+                state="", e0_V="", e0_model_V="", n_e="", n_h="", **kw)
+
+
+GLYCOGEN_ROW = _poly_row("MNXM738130", "Glycogen", "1*MODEL:g4;-1*MODEL:g3")
+GLUCAN_ROW = _poly_row("MNXM733515", "1,4-alpha-D-glucan", "1*MODEL:g6;-1*MODEL:g5")
+POLY_NAMES = {**NAMES, "MNXM738130": "Glycogen", "MNXM733515": "1,4-alpha-D-glucan",
+              "MNXM1371942": "D-cellotetraose"}
+
+
+def _poly(tmp_path, rows=(GLYCOGEN_ROW,), models=POLY_MODELS, **kw):
+    return _load(tmp_path, models=models, rows=pd.DataFrame(list(rows)),
+                 names=POLY_NAMES, formulas=POLY_FORMULAS, **kw)
+
+
 def test_a_polymer_row_inserts_the_acceptor_on_the_opposite_side(tmp_path):
     """`G1P = Glycogen + Pi` has no acceptor to underspecify -- it is absent.
 
     A props-level override cannot express that, which is why the operation rewrites
     stoichiometry and extends props together rather than either alone.
     """
-    models = pd.concat([MODELS, pd.DataFrame([
-        dict(model_key="MODEL:g4", name="maltotetraose", smiles="OCC1OC(O)C(O)C(O)C1O",
-             inchi="", inchikey="", basis="MNXM738130 is C24H42O21"),
-        dict(model_key="MODEL:g3", name="maltotriose", smiles="OCC1OC(O)C(O)C(O)C1O",
-             inchi="", inchikey="", basis="the residual is exactly C18O16")])])
-    rows = pd.DataFrame([_row(kind="polymer", mnxm="MNXM738130", mnx_name="Glycogen",
-                              terms="1*MODEL:g4;-1*MODEL:g3", couple_id="", state="",
-                              e0_V="", n_e="", n_h="")])
-    s = _load(tmp_path, models=models, rows=rows,
-              names={**NAMES, "MNXM738130": "Glycogen"})
-    out = s.rewrite({"MNXM1364212": -1.0, "MNXM738130": 1.0})
-    assert out == {"MNXM1364212": -1.0, "MODEL:g4": 1.0, "MODEL:g3": -1.0}
+    s = _poly(tmp_path)
+    out = s.rewrite({"MNXM1364212": -1.0, "MNXM738130": 1.0, "MNXM9": 1.0})
+    assert out == {"MNXM1364212": -1.0, "MNXM9": 1.0, "MODEL:g4": 1.0, "MODEL:g3": -1.0}
+    assert s.covers({"MNXM1364212": -1.0, "MNXM738130": 1.0, "MNXM9": 1.0})
+
+
+def test_a_reaction_that_already_balances_is_left_exactly_as_metanetx_wrote_it(tmp_path):
+    """Condition (ii), and acceptance criterion 15's control in miniature.
+
+    `MNXR145021` (glgB) moves glycogen to branching glycogen and MetaNetX balances it
+    already -- it changes a LINKAGE, not a chain length. Inserting an acceptor there would
+    unbalance a balanced equation and hand a member a reaction nobody wrote.
+    """
+    s = _poly(tmp_path)
+    stoich = {"MNXM738130": -1.0, "MNXM8348": 1.0}
+    assert s.rewrite(stoich) is stoich
+    assert s.covers(stoich) is False
+    assert s.sigma_sub(stoich) == 0.0
+
+
+def test_two_flattened_aliases_of_one_polymer_are_left_alone(tmp_path):
+    """Condition (i), and the defect class it exists for.
+
+    MetaNetX aliases one physical polymer under several flattened accessions and writes
+    reactions BETWEEN them -- `MNXR157776` is `1,4-alpha-D-glucan -> Glycogen`, a hexamer
+    becoming a tetramer. The residual is an artifact of the aliasing, not a chemical
+    deficit, and this test pins BOTH halves: substituting both sides balances the equation
+    perfectly, which is exactly why balance cannot be the admission rule here.
+    """
+    s = _poly(tmp_path, rows=(GLYCOGEN_ROW, GLUCAN_ROW))
+    stoich = {"MNXM733515": -1.0, "MNXM738130": 1.0}
+    assert s.rewrite(stoich) is stoich
+
+    both = S._apply(stoich, {m: s._by_mnxm[m] for m in stoich})
+    assert s._residual(both) == {}, "the artifact balances -- that is the whole danger"
+
+
+def test_the_acceptor_is_declared_by_linkage_because_composition_cannot_declare_it(tmp_path):
+    """Acceptance criterion 5, as a mechanism rather than as a fact about a data file.
+
+    D-cellotetraose carries glycogen's formula exactly, and would balance perfectly against
+    glycogen's acceptor -- so nothing arithmetic separates them. What separates them is that
+    the table names a compound and declares its linkage. Swap the declaration and the wrong
+    acceptor fires with no gate objecting, which is why the declaration is the safety.
+    """
+    cellulose = {"MNXM1371942": -1.0, "MNXM1364212": 1.0, "MNXM9": -1.0}
+
+    s = _poly(tmp_path)
+    assert s.rewrite(cellulose) is cellulose, "a compound the table does not name"
+
+    swapped = _poly(tmp_path, rows=(_poly_row("MNXM1371942", "D-cellotetraose",
+                                              "1*MODEL:g4;-1*MODEL:g3"),))
+    assert swapped.rewrite(cellulose) != cellulose, (
+        "balance cannot tell the linkages apart -- if this ever stops firing, the test has "
+        "stopped making its point rather than the code having got safer")
+
+
+def test_the_shipped_table_names_glycogen_and_not_its_identically_composed_twin():
+    """The other half of criterion 5: the declaration actually shipped."""
+    rows = S.read_table(Path(S.__file__).with_name("substitutions.tsv"))
+    poly = set(rows.loc[rows["kind"] == "polymer", "mnxm"])
+    assert "MNXM738130" in poly and "MNXM733515" in poly
+    assert "MNXM1371942" not in poly, "D-cellotetraose is beta-1,4 and has no row"
+    assert "MNXM8348" not in poly, "branching glycogen's acceptor is an open decision"
+
+
+def test_a_polymer_row_without_formulas_is_refused_rather_than_silently_inert(tmp_path):
+    """Its scope cannot be computed without them, so every row would act nowhere -- and a
+    table that loads and does nothing is the worst of the three outcomes."""
+    with pytest.raises(SystemExit, match="needs chem_prop formulas"):
+        _load(tmp_path, models=POLY_MODELS, rows=pd.DataFrame([GLYCOGEN_ROW]),
+              names=POLY_NAMES)
+
+
+def test_a_polymer_row_that_inserts_nothing_is_refused(tmp_path):
+    """A rename closes no imbalance, so a row whose terms sum to the polymer's own
+    composition can never fire. That is an authoring error, not a no-op."""
+    with pytest.raises(SystemExit, match="inserts nothing"):
+        _poly(tmp_path, rows=(_poly_row("MNXM738130", "Glycogen", "1*MODEL:g4"),))
+
+
+def test_a_model_formula_disagreeing_with_its_source_accession_is_refused(tmp_path):
+    """The transcription tripwire: `source_mnxm` says where the structure was copied from,
+    so a formula that disagrees with it means the row was edited after the copy."""
+    models = POLY_MODELS.copy()
+    models.loc[models["model_key"] == "MODEL:g3", "source_mnxm"] = "MNXM1364212"
+    with pytest.raises(SystemExit, match="disagrees with"):
+        _poly(tmp_path, models=models)
+
+
+def test_a_polymer_participant_is_readable_so_the_carrier_gate_would_refuse_it(tmp_path):
+    """Why `_gate_replaceable` is scoped to carrier/thioester and not applied here.
+
+    MetaNetX builds a flattened polymer by deleting a real oligomer's stereochemistry, so
+    the SMILES is perfectly readable and wildcard-free. The carrier-lane rule would refuse
+    every polymer row by construction -- and it should, because a polymer row is not making
+    that claim.
+    """
+    with pytest.raises(S.Refused, match="already carries a usable structure"):
+        S._gate_replaceable("MNXM738130", {"MNXM738130": {"smiles": "OCC1OC(O)C(O)C(O)C1O"}},
+                            "carrier/MNXM738130")
+    s = _poly(tmp_path, props={**PROPS,
+                               "MNXM738130": {"smiles": "OCC1OC(O)C(O)C(O)C1O"}})
+    assert "MNXM738130" in s._by_mnxm
+
+
+def test_a_formula_carrying_a_residue_is_not_a_composition(tmp_path):
+    """MetaNetX writes the genuinely generic glucans with an `R` group and a formula like
+    `C24H40O21*2`. Reading that as a composition would balance an equation against a
+    fiction, so it is unknowable rather than parseable -- and unknowable refuses to act."""
+    assert S.heavy_formula("C24H40O21*2") is None
+    assert S.heavy_formula("") is None
+    assert S.heavy_formula("C24H42O21") == {"C": 24, "O": 21}
+    assert S.heavy_formula("HO4P(2-)") == {"O": 4, "P": 1}, "a trailing charge is not an atom"
 
 
 # --- the gates, each shown refusing ---------------------------------------
