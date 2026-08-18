@@ -38,6 +38,15 @@ def _genomes(tmp: Path) -> Path:
     return tmp / "genomes"
 
 
+def _score(channel: str, i: int) -> float:
+    """Inside the channel's own declared range -- the collector validates now, and a
+    fixture that ignores the score contract would fail for the wrong reason."""
+    lo, hi = fe.SCORE_KINDS[fe.CHANNEL_SCORE_KIND[channel]]
+    if hi is None:
+        return float(lo + 40.0 + i)
+    return float(lo + (hi - lo) * (0.4 + 0.05 * (i % 8)))
+
+
 def _mapper_table(path: Path, channels) -> pd.DataFrame:
     rows = []
     for i, orf in enumerate(ORFS):
@@ -45,7 +54,7 @@ def _mapper_table(path: Path, channels) -> pd.DataFrame:
             rows.append({
                 "source": ACC, "orf": orf, "channel": ch,
                 "mnxr": f"MNXR{100000 + i}", "intermediate_id": f"X{i}",
-                "intermediate_name": f"thing {i}", "raw_score": 1.0 + i,
+                "intermediate_name": f"thing {i}", "raw_score": _score(ch, i),
                 "score_kind": fe.CHANNEL_SCORE_KIND[ch], "projection_via": "ec",
                 "evidence_quality": "reviewed", "lane_set": "chosen_4",
             })
@@ -73,12 +82,8 @@ def _run_driver(tmp: Path, channels) -> subprocess.CompletedProcess:
     driver = _render_driver(
         genomes=str(genomes), out=str(out),
         gpr_paths=repr([str(tmp / "mapper.parquet")]),
-        gpr_cols=repr((
-            "build_id", "host", "unit_id", "feature_id", "feature_kind",
-            "feature_name", "mnxr", "channel", "evidence_id", "evidence_name",
-            "raw_score", "projection_via", "in_atom_universe", "gpr_rule")),
-        prefix="denovo", ev_lib=str(LIB / "fabfos_evidence.py"),
-        lane_set="chosen_4")
+        ev_lib=str(LIB / "fabfos_evidence.py"), lane_set="chosen_4",
+        extensions=repr(["attribution", "feature", "universe"]))
     script = tmp / "_driver.py"
     script.write_text(driver)
     return subprocess.run([sys.executable, str(script)], cwd=tmp,
@@ -103,7 +108,9 @@ def test_the_collector_accepts_the_declared_lane_set(tmp_path):
     made = tmp_path / "out" / "hosts" / HOST / "gpr_denovo.parquet"
     assert made.exists(), r.stdout + r.stderr
     df = pd.read_parquet(made)
-    assert set(df["channel"]) == {f"denovo_{c}" for c in fe.LANE_SETS["chosen_4"]}
+    assert set(df["channel"]) == set(fe.LANE_SETS["chosen_4"])
+    assert fe.is_unified(df) and fe.extensions_of(df) == (
+        "attribution", "feature", "universe")
 
 
 def _run_by_hand(tmp: Path, channels) -> subprocess.CompletedProcess:
