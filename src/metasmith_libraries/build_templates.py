@@ -34,6 +34,7 @@ AUTHORS = (
     "annotation_palette_from_assembly",
     "fosmid_inserts_from_pooled_reads",
     "amplicon_asv_study_from_paired_reads",
+    "viromics_survey_from_assembly",
 )
 
 # Authors that exist but cannot ship, and why. Kept visible rather than deleted:

@@ -7,11 +7,11 @@
                                   --> proteinbert
   assembly --> metabuli                            (contig-level taxonomy)
 
-`virsorter2` is deliberately not included: every virsorter2 transform requires
-`annotation::virsorter2_db`, which has no producing transform anywhere in the
-library (unlike uniref50/kofam/eggnog/metabuli, which all resolve through a
-`logistics/download*.py` transform) -- including it would make this template
-fail to solve.
+`virsorter2` is deliberately not included: it consumes `sequences::contig_batch`
+rather than the whole assembly, so adding it would pull the splitContigsForAmr
+fan-out and the viral legs downstream of it into what is otherwise a per-ORF
+annotation sweep. Those legs are their own template,
+`viromics_survey_from_assembly`.
 
     python main/annotation_palette_from_assembly.py [--rebuild] [--dag]
 """

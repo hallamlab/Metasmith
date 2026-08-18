@@ -1,0 +1,34 @@
+name: viromics_survey_from_assembly
+description: 'Call viral contigs from an assembly with VirSorter2 and geNomad, distill
+  their
+
+  auxiliary metabolic genes with DRAM-v, and quantify crAssphage coverage in the
+
+  clean reads as a faecal-source marker.'
+sample_type: sequences::assembly
+target_types:
+- annotation::virsorter2_viral_sequences
+- taxonomy::genomad_virus_summary
+- taxonomy::genomad_plasmid_summary
+- annotation::dramv_distill
+- annotation::crassphage_coverage
+transform_libraries:
+- logistics
+- metagenomics
+- functionalAnnotation
+resource_libraries:
+- env
+shared_input_paths: []
+input_library:
+  schema: v1
+  manifest:
+    /msm_deferred/b85571b9e0f04d4e8cac69342558e7c4:
+      type: sequences::clean_short_reads
+      parents:
+        e3qgeKW3ymgg@/msm_deferred/e532de30aa93439089b655c37ba559e7: sequences::assembly
+      instance_id: 1e2081563ae6739b7798a8f87d07ce4289c5269762fc90675e41f5c181a9758f566c
+      origin: leaf
+    /msm_deferred/e532de30aa93439089b655c37ba559e7:
+      type: sequences::assembly
+      instance_id: 1e2034ed7f5183a857d469983b92914de31b7918e92c5f7421f40403fec31a762516
+      origin: leaf
