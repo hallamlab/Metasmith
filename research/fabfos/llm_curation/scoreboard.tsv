@@ -5,3 +5,5 @@ aam_r2	qwen3-32b	dev	400	60	233	71	36	383	53	1055506	129010	2961	1891.1	12.7	30	
 aam_r2	qwen3-32b	controls	200	199	1	0	0	0	0	590290	29144	3097	426.1	28.2	1	control gate: count C/N/O/P/S and close with WATER or CO2, else refuse
 aam_r3	qwen3-32b	dev	400	49	226	70	55	383	43	1155500	143731	3248	1928.6	12.4	26	working scratchpad emitted first, schema-ordered
 aam_r3	qwen3-32b	controls	200	174	21	2	3	0	0	635602	39320	3375	544.9	22.0	2	control gate: working scratchpad emitted first, schema-ordered
+aam_r2	qwen3-32b	heldout	842	106	499	152	85	784	84	2229352	277867	2978	4003.0	12.6	57	FINAL: frozen prompt, held-out scored once
+aam_r2	qwen3-32b	controls	200	199	0	1	0	0	0	590290	29107	3097	430.0	27.9	1	control gate: FINAL: frozen prompt, held-out scored once

@@ -1,3 +1,80 @@
 === aam_r2 over heldout ===
   25/842  167s
   50/842  283s
+  75/842  397s
+  100/842  530s
+  125/842  655s
+  150/842  732s
+  175/842  847s
+  200/842  953s
+  225/842  1071s
+  250/842  1190s
+  275/842  1319s
+  300/842  1425s
+  325/842  1574s
+  350/842  1683s
+  375/842  1803s
+  400/842  1930s
+  425/842  2027s
+  450/842  2149s
+  475/842  2242s
+  500/842  2362s
+  525/842  2484s
+  550/842  2597s
+  575/842  2718s
+  600/842  2850s
+  625/842  2962s
+  650/842  3075s
+  675/842  3173s
+  700/842  3272s
+  725/842  3383s
+  750/842  3526s
+  775/842  3646s
+  800/842  3768s
+  825/842  3896s
+  842/842  4003s
+
+842 reactions in 4003s (12.6/min, 8-wide)
+  tokens 2,229,352 in + 277,867 out = 2978/reaction
+  !! 57 harness errors -- a constrained decode should not produce these
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.heldout.jsonl
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.heldout.meta.json
+=== COVERAGE  n=842 answered of 842 in the split (unanswered 0)
+stratum          balanced  unbalanced    unusable     refused
+movable                84         488         151          61
+no_lever               22          11           1           1
+one_sided               0           0           0          23
+ALL                   106         499         152          85
+
+  yield over the whole split : 106/842 = 12.6%
+  yield over `movable` only  : 84/784 = 10.7%
+
+  tokens: 2,229,352 in + 277,867 out = 2,507,219
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.heldout.tsv
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/scoreboard.tsv
+=== aam_r2 control gate ===
+  25/200  68s
+  50/200  118s
+  75/200  171s
+  100/200  223s
+  125/200  275s
+  150/200  333s
+  175/200  385s
+  200/200  430s
+
+200 reactions in 430s (27.9/min, 8-wide)
+  tokens 590,290 in + 29,107 out = 3097/reaction
+  !! 1 harness errors -- a constrained decode should not produce these
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.controls.jsonl
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.controls.meta.json
+=== CONTROL GATE  n=200  (unanswered 0)
+  preserved    199
+  refused      0
+  regressed    0
+  unscorable   1
+
+  REGRESSIONS: 0  (PASS -- the gate is zero)
+
+  tokens: 590,290 in + 29,107 out = 619,397
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/runs/aam_r2.controls.tsv
+  -> /home/tony/agentic_workspace/projects/metasmith/fabfos/directionality-scrape/research/fabfos/llm_curation/scoreboard.tsv
