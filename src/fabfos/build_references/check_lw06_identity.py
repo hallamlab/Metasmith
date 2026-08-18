@@ -257,11 +257,11 @@ def main() -> int:
                     problems.append(f"--gpr given but {pb} is missing")
                     continue
                 db = pd.read_parquet(pb)
-                only_base = set(da["evidence_id"]) - set(db["evidence_id"])
-                only_host = set(db["evidence_id"]) - set(da["evidence_id"])
+                only_base = set(da["intermediate_id"]) - set(db["intermediate_id"])
+                only_host = set(db["intermediate_id"]) - set(da["intermediate_id"])
                 in_universe = sorted(
-                    da.loc[da["evidence_id"].isin(found[host])
-                           & da["in_atom_universe"], "evidence_id"].unique())
+                    da.loc[da["intermediate_id"].isin(found[host])
+                           & da["in_atom_universe"], "intermediate_id"].unique())
                 print(f"\n  gpr tables: {len(da):,} ({GEM_HOST}) vs {len(db):,} "
                       f"({host}) rows; only in K-12's: {sorted(only_base)}; only in "
                       f"{host}'s: {sorted(only_host)}")

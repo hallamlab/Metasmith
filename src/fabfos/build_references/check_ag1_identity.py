@@ -199,9 +199,9 @@ def main() -> int:
             problems.append(f"--gpr given but {pa} or {pb} is missing")
         else:
             da, db = pd.read_parquet(pa), pd.read_parquet(pb)
-            only_dh1 = set(da["evidence_id"]) - set(db["evidence_id"])
-            only_ag1 = set(db["evidence_id"]) - set(da["evidence_id"])
-            in_universe = bool(da.loc[da["evidence_id"].isin(found_lost),
+            only_dh1 = set(da["intermediate_id"]) - set(db["intermediate_id"])
+            only_ag1 = set(db["intermediate_id"]) - set(da["intermediate_id"])
+            in_universe = bool(da.loc[da["intermediate_id"].isin(found_lost),
                                       "in_atom_universe"].any())
             print(f"\n  gpr tables: {len(da):,} ({GEM_HOST}) vs {len(db):,} ({BORROWER}) "
                   f"rows; reactions only in DH1's: {sorted(only_dh1)}; only in AG1's: "

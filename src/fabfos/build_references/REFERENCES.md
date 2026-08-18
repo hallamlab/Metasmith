@@ -657,8 +657,9 @@ checked. The fourth lane's reference is R7 above, built by `compile/reference_la
 Each study's edges, as the curator read them. Where the extraction attributed reactions
 per gene, so does the table; where it attributed them to the OBSERVATION — LASER's
 `genes_json` names each gene's action but no gene carries its own MNXR — the rows are
-`feature_kind=curated_set` with a null `feature_id`. Splitting the list across an
-observation's genes would manufacture an attribution the curator never made.
+`feature_kind=curated_set` and `orf` names the whole gene SET rather than a gene.
+Splitting the list across an observation's genes would manufacture an attribution the
+curator never made.
 **Requires:** `<study>/extraction.tsv` (a given), R5, the bake, and B1 for the background.
 
 **The four contrast extractions are RAGGED and pandas does not say so.** Their `add` rows

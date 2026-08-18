@@ -296,10 +296,11 @@ the others do not, and it is what makes an AUC available at all.
 
 `build_aska_gpr.py --publish` builds the population into `data/fabfos/runs/aska/gpr/` —
 4,123 clones over 4,102 gene names from the GFP-minus roster, both channels on the shared
-eighteen-column GPR schema, one census row per clone. Neither channel runs an annotator:
+GPR schema — its core plus the attribution, feature, universe and cohort blocks — and one
+census row per clone. Neither channel runs an annotator:
 an ASKA clone is a chromosomal *E. coli* ORF, so AG1's own curated GPR and its own de-novo
 GPR already answer "what reactions does this clone carry". The de-novo side joins through
-`NC_017638.1.faa`'s headers, whose first token *is* the de-novo table's `feature_id`; that
+`NC_017638.1.faa`'s headers, whose first token *is* the de-novo table's `orf`; that
 table's `feature_name` is blank for all but 73 of its 4,363 ORFs and must not be joined on,
 and its `in_atom_universe` is entirely null and is recomputed here.
 

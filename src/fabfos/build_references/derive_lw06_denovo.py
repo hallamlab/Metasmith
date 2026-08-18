@@ -102,7 +102,7 @@ def main() -> int:
             f"data/fabfos/runs/{PARENT} --site sockeye --run`, then --publish, then "
             f"rename gpr_denovo_mapper.parquet to gpr_denovo.parquet")
     d = pd.read_parquet(a.src)
-    print(f"{a.src.name}: {len(d):,} rows, {d['feature_id'].nunique():,} ORFs")
+    print(f"{a.src.name}: {len(d):,} rows, {d['orf'].nunique():,} ORFs")
 
     # The parent's own deletions must already be absent from its own proteome.
     parent_losses = {sym for sym, kind in BW25113_MARKERS.values()
@@ -132,8 +132,8 @@ def main() -> int:
             f"silently produce LW06 == BW25113.")
 
     withheld = {o for ids in found.values() for o in ids}
-    keep = d[~d["feature_id"].isin(withheld)].copy()
-    lost = d[d["feature_id"].isin(withheld)]
+    keep = d[~d["orf"].isin(withheld)].copy()
+    lost = d[d["orf"].isin(withheld)]
     keep["host"] = LW06
     keep["build_id"] = keep["build_id"].astype(str) + f"_{LW06}"
 
