@@ -100,10 +100,10 @@ case $1 in
         # whose products changed shape takes its templates down here, by name,
         # instead of in someone's GUI a week later.
         #
-        # This is the slow half, and unevenly so: three of the four templates
-        # solve in 2-3s and `metagenomics_from_paired_reads` -- 16 targets,
-        # three binners, per-lineage checkm/gtdbtk -- is the rest of the wall
-        # clock. Pass template names to solve a subset while iterating.
+        # This is the slow half: every template solves, at 1-3s each. Pass
+        # template names to solve a subset while iterating. A template that
+        # suddenly costs minutes rather than seconds has target ambiguity, not
+        # size -- see the pinning note in `metagenomics_from_paired_reads.py`.
         ${PYTHON:-python} "$LIB/build_templates.py" "${@:2}" || exit 1
     ;;
     --stage-envs) # copy envs/metasmith_libraries into the package for shipping

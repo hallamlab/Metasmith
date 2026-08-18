@@ -7,25 +7,42 @@ description: 'Full metagenomics workflow from paired short reads: QC, assembly, 
   and contig-, bin- and SSU-level taxonomy.'
 sample_type: sequences::read_metadata
 target_types:
+- sequences::megahit_assembly
 - sequences::read_qc_stats
-- sequences::orfs
-- sequences::assembly_stats
-- sequences::assembly_per_contig_coverage
-- sequences::assembly_per_bp_coverage
-- annotation::diamond_uniref50_results
-- annotation::kofamscan_results
-- taxonomy::metabuli
+- type: sequences::orfs
+  parents:
+  - 0
+- type: sequences::assembly_stats
+  parents:
+  - 0
+- type: sequences::assembly_per_contig_coverage
+  parents:
+  - 0
+- type: sequences::assembly_per_bp_coverage
+  parents:
+  - 0
+- type: annotation::diamond_uniref50_results
+  parents:
+  - 0
+- type: annotation::kofamscan_results
+  parents:
+  - 0
+- type: taxonomy::metabuli
+  parents:
+  - 0
 - taxonomy::phyloflash_summary
-- binning_local::cluster_table
-- sequences::metabat2_bin_fasta
-- sequences::semibin2_bin_fasta
-- sequences::comebin_bin_fasta
-- type: taxonomy::checkm_stats
+- type: binning_local::cluster_table
   parents:
-  - 10
-- type: taxonomy::gtdbtk
+  - 0
+- type: sequences::metabat2_bin_fasta
   parents:
-  - 10
+  - 0
+- type: sequences::semibin2_bin_fasta
+  parents:
+  - 0
+- type: sequences::comebin_bin_fasta
+  parents:
+  - 0
 - type: taxonomy::checkm_stats
   parents:
   - 11
@@ -38,9 +55,21 @@ target_types:
 - type: taxonomy::gtdbtk
   parents:
   - 12
-- binning::metabat2_contig_to_bin_table
-- binning::semibin2_contig_to_bin_table
-- binning::comebin_contig_to_bin_table
+- type: taxonomy::checkm_stats
+  parents:
+  - 13
+- type: taxonomy::gtdbtk
+  parents:
+  - 13
+- type: binning::metabat2_contig_to_bin_table
+  parents:
+  - 0
+- type: binning::semibin2_contig_to_bin_table
+  parents:
+  - 0
+- type: binning::comebin_contig_to_bin_table
+  parents:
+  - 0
 transform_libraries:
 - logistics
 - assembly
