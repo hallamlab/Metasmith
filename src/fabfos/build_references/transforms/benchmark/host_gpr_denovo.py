@@ -42,16 +42,12 @@ gpr     = model.AddRequirement(lib.GetType("annotation::gpr_table"), parents={ge
 ev_lib  = model.AddRequirement(lib.GetType("lib::fabfos_evidence.py"))
 out     = model.AddProduct(lib.GetType("ref::gpr_table_denovo"))
 
-CHANNEL_PREFIX = "denovo"
 LANE_SET = "chosen_4"
+# The host de-novo layer's blocks. `cohort` is a study's, not a host's.
+EXTENSIONS = ("attribution", "feature", "universe")
 
-# The same frozen 14-column schema the GEM table uses, so the two lines of evidence line
-# up column for column. See benchmark/host_gpr_gem.py.
-GPR_COLS = (
-    "build_id", "host", "unit_id", "feature_id", "feature_kind", "feature_name",
-    "mnxr", "channel", "evidence_id", "evidence_name", "raw_score",
-    "projection_via", "in_atom_universe", "gpr_rule",
-)
+# The schema and the same blocks the GEM table carries, so the two lines of evidence
+# line up column for column. See benchmark/host_gpr_gem.py.
 
 DRIVER = r'''
 import json, os, sys
@@ -64,9 +60,8 @@ import fabfos_evidence as fe
 
 GENOMES = Path("{genomes}")
 OUT     = Path("{out}")
-GPR_COLS = {gpr_cols}
-PREFIX = "{prefix}"
 LANE_SET = "{lane_set}"
+EXTENSIONS = tuple({extensions})
 
 # staged mapper table -> the host it describes, BY THE ORF IDS IN IT.
 #
@@ -136,44 +131,35 @@ for path in tables:
             f"broken join or an unstaged reference, and a table short of the declared set "
             f"rescales every belief weight downstream.")
 
-    df = pd.DataFrame({{
-        "build_id": "denovo_" + host,
-        "host": host,
-        # The unit is the proteome, not a model: this table's claim is "this host's own
-        # annotation lanes infer these reactions", and naming a GEM here would imply a
-        # curated model was consulted, which is the whole thing the de-novo line is not.
-        "unit_id": "proteome",
-        "feature_id": g["orf"],
-        "feature_kind": "orf",
-        "feature_name": g["intermediate_name"],
-        "mnxr": g["mnxr"],
-        # The lane stays in the channel, prefixed, so a row's provenance survives the
-        # merge with the GEM table (whose single channel is `gem_gpr`).
-        "channel": PREFIX + "_" + g["channel"].astype(str),
-        "evidence_id": g["intermediate_id"],
-        "evidence_name": g["intermediate_name"],
-        # Carried through from the lane, unlike the GEM table's uniform 1.0: here the
-        # score IS evidence strength, and it is what the condition GPR's belief split
-        # reads.
-        "raw_score": g["raw_score"].astype(np.float32),
-        "projection_via": g["projection_via"],
-        # Not computable here without the bake, and NOT defaulted to True: a row wrongly
-        # marked in-universe claims an edge can exist for a reaction that has no atom
-        # pairs. Null means "not asserted", which a consumer can see.
-        "in_atom_universe": pd.Series([None] * len(g), dtype="object"),
-        # There is no boolean rule: a de-novo call is per ORF, and inventing "orf" as a
-        # one-gene rule would make the two tables look like the same kind of claim.
-        "gpr_rule": None,
-    }})[list(GPR_COLS)]
-
-    df = df.sort_values(["feature_kind", "feature_id", "mnxr", "channel"],
-                        kind="mergesort", na_position="last").reset_index(drop=True)
+    # The mapper's own columns ARE the core -- channel keeps the frozen spelling, and
+    # `lane_set` is what says these rows are de-novo evidence rather than a curated
+    # assertion. This step adds attribution and nothing else.
+    df = g.copy()
+    df["build_id"] = "denovo_" + host
+    df["host"] = host
+    # The unit is the proteome, not a model: this table's claim is "this host's own
+    # annotation lanes infer these reactions", and naming a GEM here would imply a
+    # curated model was consulted, which is the whole thing the de-novo line is not.
+    df["unit_id"] = df["source"]
+    df["feature_kind"] = "orf"
+    df["feature_name"] = df["intermediate_name"]
+    # There is no boolean rule: a de-novo call is per ORF, and inventing "orf" as a
+    # one-gene rule would make the two tables look like the same kind of claim.
+    df["gpr_rule"] = None
+    # Not computable here without the bake, and NOT defaulted to True: a row wrongly
+    # marked in-universe claims an edge can exist for a reaction that has no atom
+    # pairs. Null means "not asserted", which a consumer can see.
+    df["in_atom_universe"] = pd.Series([None] * len(df), dtype="object")
+    df = df[fe.schema_for(EXTENSIONS)]
+    df = df.sort_values(fe.grain_key(EXTENSIONS), kind="mergesort",
+                        na_position="last").reset_index(drop=True)
+    fe.validate_gpr(df, LANE_SET, None, df["source"].iat[0], EXTENSIONS)
     d = OUT / "hosts" / host
     d.mkdir(parents=True, exist_ok=True)
     df.to_parquet(d / "gpr_denovo.parquet", index=False, compression="zstd")
     print(f"[denovo_gpr] wrote {{len(df):,}} rows for {{host}}", flush=True)
     summary.append(dict(host=host, orf_set=srcs[0], lanes=lanes, n_lanes=len(lanes),
-                        rows=len(df), orfs=int(df["feature_id"].nunique()),
+                        rows=len(df), orfs=int(df["orf"].nunique()),
                         mnxr=int(df["mnxr"].nunique())))
 
 missing = sorted(set(ACCESSION_FOR_HOST) - seen)
@@ -185,7 +171,7 @@ if missing:
 # observed. Every host passed the same gate above, so cross-host comparison is
 # like-for-like by construction and needs no warning here.
 (OUT / "BUILD.json").write_text(json.dumps(
-    dict(channel_prefix=PREFIX, lane_set=LANE_SET, hosts=summary), indent=2))
+    dict(lane_set=LANE_SET, extensions={extensions}, hosts=summary), indent=2))
 print(f"[denovo_gpr] {{len(summary)}} hosts -> {{OUT}}/hosts/<host>/gpr_denovo.parquet",
       flush=True)
 '''
@@ -230,9 +216,9 @@ def protocol(context: ExecutionContext):
     gpr_paths = staged_siblings(Path(igpr.local), str(igpr.container))
     driver = DRIVER.format(
         genomes=context.Input(genomes).container,
-        gpr_paths=repr(gpr_paths), prefix=CHANNEL_PREFIX,
-        gpr_cols=repr(GPR_COLS), out=iout.container,
+        gpr_paths=repr(gpr_paths), out=iout.container,
         ev_lib=context.Input(ev_lib).container, lane_set=LANE_SET,
+        extensions=repr(list(EXTENSIONS)),
     )
     context.LocalShell("cat > _host_gpr_denovo.py << 'PYEOF'\n" + driver + "\nPYEOF\n")
     context.ExecWithEnv() \
