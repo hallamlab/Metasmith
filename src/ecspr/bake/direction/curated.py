@@ -21,11 +21,29 @@ reaction ids MetaCyc already supplies rather than independent evidence -- and th
 is MetaCyc. The `source` column is kept so a second pgdb could be added back without a
 schema change.
 
+THE SUPPLEMENTARY CROSSWALK (`--supplementary-crosswalk`, off by default). 545 of the
+18,591 directed MetaCyc reactions carry no `metacyc.reaction` row in reac_xref, so the
+primary join never sees them -- and read as a list rather than as a count, they are
+overwhelmingly GENERIC-POLYMER chemistry (glucans, amylopectin, levan, maltodextrins,
+peptides, mRNA fragments), which is the same MetaNetX weakness the polymer substitution
+lane exists for. Those records are matched to an MNXR on the unordered set of their
+mapped MNXM participants, then re-expressed through `align_one` like any other -- never
+around it, which is the inversion this module is organised against.
+
+Two things make that safe rather than merely plausible. The key is PRICED, not argued:
+run over the 18,046 records reac_xref DOES crosswalk, where reac_xref is ground truth,
+it fires on 14,860 and is right on 14,801, and `SUPP_PRECISION_FLOOR` fails the build if
+that ever degrades. And the arm is ADDITIVE ONLY -- it matches only onto an MNXR no
+reac_xref row already claims -- so on every reaction it reaches there is no primary call
+for it to contradict. The orientation hazard is closed by construction; the precision
+figure is the backstop, not the argument.
+
 Standalone: `python -m ecspr.bake.direction.curated --out <parquet>` (any env with pandas).
 """
 from __future__ import annotations
 
 import argparse
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -88,10 +106,113 @@ def align_one(direction, left_ids, right_ids, sides_lr, cmap):
     return (FLIP[direction] if flipped else direction), ("flipped" if flipped else "same")
 
 
-def read_source(reactions_dat: Path, source: str, id2mnxr, sides, cmap, col3):
-    """One row per source reaction that carries a REACTION-DIRECTION and an MNXR."""
+# The measured precision of the supplementary key against reac_xref's own answers.
+# A floor, not a target: it fails the build if a MetaNetX or MetaCyc release ever makes
+# the participant-set key stop identifying reactions, rather than shipping the drift.
+SUPP_PRECISION_FLOOR = 0.99
+
+
+def _participant_index(sides):
+    """frozenset(MNXM participants) -> [MNXR]. The match key, and it is orientation-BLIND
+    on purpose: which side a compound sits on is what `align_one` decides afterwards, and
+    a key that encoded it would bake in the very flip this module exists to detect."""
+    idx = defaultdict(list)
+    for mnxr, (xl, xr) in sides.items():
+        idx[frozenset(xl | xr)].append(mnxr)
+    return idx
+
+
+def _match_one(rec, idx, sides, cmap):
+    """(mnxr, None) for the one MNXR this record is, else (None, refusal_reason).
+
+    Every refusal is a whole-record refusal. A partially mapped equation is declined
+    rather than matched on the compounds that happened to resolve: a subset of the
+    participants is a different reaction, and it would match a different MNXR.
+    """
+    left, right = list(rec["left"]), list(rec["right"])
+    if not left or not right:
+        return None, "empty_side"
+    if any(c not in cmap for c in left + right):
+        return None, "compound_unmapped"
+    ml = {cmap[c] for c in left}
+    mr = {cmap[c] for c in right}
+    cands = idx.get(frozenset(ml | mr), ())
+    if not cands:
+        return None, "no_mnxr_has_those_participants"
+    if len(cands) > 1:
+        return None, "ambiguous"
+    mnxr = cands[0]
+    xl, xr = sides[mnxr]
+    # A shared compound INVENTORY is not identity -- A+B=C+D and A+C=B+D have the same
+    # one. Demand that the two mapped sides ARE the MNXR's two sides, in either order;
+    # either order, because MNXref re-canonicalises orientation and a flip here is
+    # normal and is `align_one`'s to resolve.
+    if not ((ml == set(xl) and mr == set(xr)) or (ml == set(xr) and mr == set(xl))):
+        return None, "sides_do_not_correspond"
+    return mnxr, None
+
+
+def crosswalk_precision(records, id2mnxr, idx, sides, cmap):
+    """(correct, fired) for the key run over the records reac_xref DOES crosswalk.
+
+    A held-out check of thousands rather than an argument: on those records reac_xref is
+    the answer, so the key can simply be asked whether it agrees.
+    """
+    correct = fired = 0
+    for rec in records:
+        truth = id2mnxr.get(rec["unique_id"])
+        if truth is None:
+            continue
+        mnxr, _ = _match_one(rec, idx, sides, cmap)
+        if mnxr is None:
+            continue
+        fired += 1
+        correct += (mnxr == truth)
+    return correct, fired
+
+
+def supplementary_map(records, id2mnxr, sides, cmap):
+    """(mc_id -> MNXR, refusal ledger, (correct, fired)) for the reac_xref gap.
+
+    Refuses to return anything at all if the key fails `SUPP_PRECISION_FLOOR` on the
+    held-out corpus, because a key that no longer identifies reactions would otherwise
+    hand confident directions to the wrong ones.
+    """
+    idx = _participant_index(sides)
+    correct, fired = crosswalk_precision(records, id2mnxr, idx, sides, cmap)
+    prec = correct / fired if fired else 0.0
+    assert prec >= SUPP_PRECISION_FLOOR, (
+        f"curated: the supplementary key reproduces reac_xref on only {prec:.2%} of "
+        f"{fired:,} held-out records (floor {SUPP_PRECISION_FLOOR:.0%}) -- it is no "
+        f"longer identifying reactions, so it must not be used to direct them")
+    claimed = set(id2mnxr.values())
+    out, ledger = {}, Counter()
+    for rec in records:
+        if rec["unique_id"] in id2mnxr:
+            continue
+        mnxr, why = _match_one(rec, idx, sides, cmap)
+        if mnxr is None:
+            ledger[why] += 1
+            continue
+        # ADDITIVE ONLY. An MNXR reac_xref already crosswalks has a primary call, and a
+        # second opinion arriving by a weaker key could only contradict it. Declining
+        # here is what lets this arm carry no orientation risk of its own.
+        if mnxr in claimed:
+            ledger["primary_already_claims_it"] += 1
+            continue
+        out[rec["unique_id"]] = mnxr
+        ledger["matched"] += 1
+    return out, ledger, (correct, fired)
+
+
+def read_source(records, source: str, id2mnxr, sides, cmap, col3):
+    """One row per source reaction that carries a REACTION-DIRECTION and an MNXR.
+
+    Takes already-parsed records rather than a path because `build` runs it twice over
+    the one file -- once against reac_xref's map, once against the supplementary one.
+    """
     rows = []
-    for rec in load_reactions(Path(reactions_dat)):
+    for rec in records:
         d = rec["direction"]
         if not d:
             continue
@@ -147,12 +268,13 @@ def collapse_to_mnxr(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
-def build(metacyc_reactions, reac_xref, reac_prop, chem_xref):
+def build(metacyc_reactions, reac_xref, reac_prop, chem_xref, supplementary=False):
     id2mnxr = load_source_to_mnxr(reac_xref, "metacyc.reaction")
     sides = load_mnxr_sides(reac_prop)
     cmap = load_metacyc_compound_to_mnxm(chem_xref)
     col3 = parse_col3_sides(reac_xref)
-    per_rxn = read_source(metacyc_reactions, "metacyc", id2mnxr, sides, cmap, col3)
+    records = [r for r in load_reactions(Path(metacyc_reactions)) if r["direction"]]
+    per_rxn = read_source(records, "metacyc", id2mnxr, sides, cmap, col3)
     # Loud floor: if the crosswalk breaks (wrong prefix, stale reac_prop, empty
     # cmap) nearly everything lands 'no_overlap' and the table is silently empty
     # of direction. A run that decides almost nothing is not a curated member.
@@ -160,8 +282,18 @@ def build(metacyc_reactions, reac_xref, reac_prop, chem_xref):
     assert decided > 0.5, (
         f"curated: only {decided:.1%} of source reactions decided -- the MNXR "
         f"crosswalk or compound map is likely broken, not the data")
+    supp_ledger, supp_prec = None, None
+    if supplementary:
+        supp, supp_ledger, supp_prec = supplementary_map(records, id2mnxr, sides, cmap)
+        # Same function, same orientation check, a different id->MNXR map. The rows are
+        # tagged `metacyc_supp` so a consumer can tell how a call arrived; nothing
+        # downstream branches on it, and the additive gate guarantees no MNXR carries
+        # both tags.
+        per_rxn = pd.concat(
+            [per_rxn, read_source(records, "metacyc_supp", supp, sides, cmap, col3)],
+            ignore_index=True)
     per_mnxr = collapse_to_mnxr(per_rxn)
-    return per_rxn, per_mnxr
+    return per_rxn, per_mnxr, supp_ledger, supp_prec
 
 
 def main(argv=None):
@@ -173,13 +305,28 @@ def main(argv=None):
     ap.add_argument("--chem-xref", required=True)
     ap.add_argument("--out", required=True, help="per-MNXR parquet")
     ap.add_argument("--out-per-reaction", default=None)
+    ap.add_argument("--supplementary-crosswalk", action="store_true",
+                    help="also match the reactions reac_xref never crosswalked, on "
+                         "their participant set, additively (see the module docstring)")
     a = ap.parse_args(argv)
-    per_rxn, per_mnxr = build(Path(a.metacyc_reactions), Path(a.reac_xref),
-                              Path(a.reac_prop), Path(a.chem_xref))
+    per_rxn, per_mnxr, supp_ledger, supp_prec = build(
+        Path(a.metacyc_reactions), Path(a.reac_xref), Path(a.reac_prop),
+        Path(a.chem_xref), supplementary=a.supplementary_crosswalk)
     per_mnxr.to_parquet(a.out, index=False)
     if a.out_per_reaction:
         per_rxn.to_parquet(a.out_per_reaction, index=False)
     dec = per_rxn["reason"].value_counts()
+    print(f"[curated] supplementary crosswalk: "
+          f"{'ON' if a.supplementary_crosswalk else 'off'}")
+    if supp_prec is not None:
+        correct, fired = supp_prec
+        print(f"[curated] supplementary key vs reac_xref on {fired:,} held-out "
+              f"records: {correct:,} correct ({correct / fired:.2%})")
+        # The refusals are printed beside the matches for the reason `decisions.tsv`
+        # exists in the substitution lane: an arm that reports only what it admitted
+        # cannot be told apart from one that admitted everything it saw.
+        for k, v in sorted(supp_ledger.items(), key=lambda kv: -kv[1]):
+            print(f"[curated]   {k:<32} {v:,}")
     print(f"[curated] {len(per_rxn):,} source reactions -> {len(per_mnxr):,} MNXRs")
     print(f"[curated] per-reaction decidability:\n{dec.to_string()}")
     flipped = int((per_rxn['reason'] == 'flipped').sum())

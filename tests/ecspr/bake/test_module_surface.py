@@ -194,8 +194,11 @@ CLI = {
         "merge": {"--member", "--shard-file", "--expect", "--universe", "--out"},
     },
     "ecspr.bake.direction.curated": {
+        # `--supplementary-crosswalk` is a switch rather than always-on for the reason
+        # `--substitutions` is: the r8 baselines have to remain reproducible from this
+        # tree, and an arm that cannot be turned off cannot be shown to be off.
         "": {"--metacyc-reactions", "--reac-xref", "--reac-prop", "--chem-xref",
-             "--out", "--out-per-reaction"},
+             "--out", "--out-per-reaction", "--supplementary-crosswalk"},
     },
     "ecspr.bake.direction.forecast": {
         # `resolve` is its own verb because it is the one part that needs
