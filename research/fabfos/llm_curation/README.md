@@ -94,3 +94,20 @@ times and wrong seven times.
 `BASE_URL` and `MODEL` point it somewhere else. It calls each env`s interpreter
 directly: `mamba run` buffers a long run until it exits, and its `--no-capture-output`
 is broken in mamba 2.5.0.
+
+## Talking to the card
+
+`tunnel.sh` points `localhost:8080` at whichever fir job is currently serving. The
+allocation is a chain of 3-hour MIG jobs (`--dependency=afterany`), so the serving node
+changes and the tunnel has to follow it.
+
+Two things cost an hour each before they were understood, and neither is visible from the
+harness side. **llama.cpp logs to stderr**, so a readiness check that greps the job's
+`.out` file waits forever while the server is already listening. And **a full-H100 request
+queues for most of a day on fir while a single 3g.40gb MIG slice starts in minutes** — the
+queue depth is on whole cards, so size the request to the model rather than to the node.
+
+Qwen3 thinks out loud unless `chat_template_kwargs: {"enable_thinking": false}` is sent,
+which `client.py` does by default. A request without it comes back with an empty `content`
+and the answer stranded in `reasoning_content`, which reads exactly like a model that
+refused.
