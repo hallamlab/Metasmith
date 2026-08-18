@@ -55,6 +55,17 @@ import yaml
 
 from .names import assert_valid_name, generate_run_name, generate_workflow_name
 
+# libyaml's C bindings, when the interpreter has them: an order of magnitude
+# faster than PyYAML's pure-Python loader/dumper on a plan-sized result.yml,
+# and every request that reads or writes a workflow record pays this cost.
+# Falls back to the pure-Python pair on an interpreter built without libyaml.
+try:
+    _YamlLoader = yaml.CSafeLoader
+    _YamlDumper = yaml.CSafeDumper
+except AttributeError:
+    _YamlLoader = yaml.SafeLoader
+    _YamlDumper = yaml.SafeDumper
+
 SCHEMA = "v1"
 
 AGENTS_DIRNAME = "agents"
@@ -85,7 +96,7 @@ def _read_yaml(path: Path) -> dict:
     if not path.is_file():
         return {}
     with open(path) as f:
-        return yaml.safe_load(f) or {}
+        return yaml.load(f, Loader=_YamlLoader) or {}
 
 
 def _write_yaml(path: Path, data: dict):
@@ -101,7 +112,7 @@ def _write_yaml(path: Path, data: dict):
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident():x}.tmp")
     try:
         with open(tmp, "w") as f:
-            yaml.dump(data, f, sort_keys=False)
+            yaml.dump(data, f, Dumper=_YamlDumper, sort_keys=False)
         os.replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)

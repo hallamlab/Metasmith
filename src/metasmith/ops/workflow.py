@@ -7,7 +7,7 @@ from ..agents import Spec
 from . import workspace as _ws
 
 
-def plan_spec(spec: Spec, workspace: str | None = None) -> dict:
+def plan_spec(spec: Spec, workspace: str | None = None, return_task: bool = False) -> dict:
     """Solve a spec, and report it the way an ops caller needs.
 
     Two things a notebook does not want and every veneer does: a failure
@@ -17,12 +17,18 @@ def plan_spec(spec: Spec, workspace: str | None = None) -> dict:
 
     What the plan *means* -- what a sample type does, what a shared input is --
     is documented once, on `Spec.Solve`.
+
+    `return_task=True` hands back `(result, task)` instead of just `result` --
+    for a caller that needs the live, already-imported `WorkflowTask` for
+    something more (the GUI draws the diagram from it) and would otherwise
+    have to reload the bundle from disk, re-importing every transform in it a
+    second time.
     """
     task = spec.Solve()
     plan = task.plan
 
     if not plan.steps or plan.dropped_targets:
-        return {
+        result = {
             "success": False,
             "message": "solver could not find a complete plan",
             "step_count": len(plan.steps),
@@ -39,15 +45,17 @@ def plan_spec(spec: Spec, workspace: str | None = None) -> dict:
                 for h in plan.hints
             ],
         }
+        return (result, task) if return_task else result
 
     task_key = _ws.save_task(workspace, task)
-    return {
+    result = {
         "success": True,
         "task_key": task_key,
         "steps": [step.Pack() for step in plan.steps],
         "targets": [t.Pack() for t in plan.targets],
         "step_count": len(plan.steps),
     }
+    return (result, task) if return_task else result
 
 
 def plan_workflow(

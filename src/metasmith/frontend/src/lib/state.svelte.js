@@ -47,6 +47,10 @@ export const app = $state({
   runs: [],
   notice: null,
   loading: false,
+  // the standard-library type vocabulary: identical for every workflow in the
+  // project, so it is loaded once per session rather than once per workflow
+  types: [],
+  index: null,
 })
 
 // -- the left rail's width -------------------------------------------------
@@ -353,8 +357,69 @@ export async function loadWorkflows() {
   app.workflows = await api.get(`/workflows${archived()}`)
 }
 
+/** Patch one row of the sidebar in place, for a change (a solve finishing)
+ *  that alters only a few of its fields -- rather than a full `loadWorkflows`,
+ *  which re-derives every row's run count from scratch to update the one that
+ *  changed. Fields a solve cannot touch (`run_count`, `live_runs`, `display_name`,
+ *  ...) are left as they are. */
+export function patchWorkflowSummary(name, fields) {
+  const i = app.workflows.findIndex((w) => w.name === name)
+  if (i === -1) return
+  app.workflows[i] = { ...app.workflows[i], ...fields }
+}
+
+// -- recently-viewed workflows: an LRU cache, capacity 8 ---------------------
+//
+// A `Map` gives LRU for free: delete-then-reinsert on a hit moves a key to the
+// end, and the first key iterated is always the least recently used. This is a
+// single-user local tool where the CLI can still write to a workflow between
+// visits, so a hit is only ever shown immediately -- the caller still fires a
+// real fetch behind it and overwrites both the live state and this entry once
+// it resolves (stale-while-revalidate), rather than trusting the cache alone.
+
+const WORKFLOW_CACHE_SIZE = 8
+const workflowCache = new Map()
+
+export function cachedWorkflow(name) {
+  const hit = workflowCache.get(name)
+  if (!hit) return null
+  workflowCache.delete(name)
+  workflowCache.set(name, hit)
+  return hit
+}
+
+export function cacheWorkflow(name, snapshot) {
+  workflowCache.delete(name)
+  workflowCache.set(name, snapshot)
+  while (workflowCache.size > WORKFLOW_CACHE_SIZE) {
+    workflowCache.delete(workflowCache.keys().next().value)
+  }
+}
+
 export async function loadRuns() {
   app.runs = await api.get(`/runs${archived()}`)
+}
+
+// Both are the same vocabulary on every workflow page, so unlike the loaders
+// above (called deliberately, on a section switch) these are called on every
+// workflow mount and must not refetch just because the component remounted.
+// The in-flight/resolved promise itself is the memo -- a bare `if (app.types.length)`
+// guard would still fire twice for two workflows mounting back to back.
+let typesPromise = null
+let typeIndexPromise = null
+
+export function loadTypes(force = false) {
+  if (force || !typesPromise) {
+    typesPromise = api.get('/project/types').then((v) => (app.types = v))
+  }
+  return typesPromise
+}
+
+export function loadTypeIndex(force = false) {
+  if (force || !typeIndexPromise) {
+    typeIndexPromise = api.get('/project/type-index' + (force ? '?refresh=1' : '')).then((v) => (app.index = v))
+  }
+  return typeIndexPromise
 }
 
 export async function refresh(section = app.section) {

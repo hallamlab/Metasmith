@@ -248,12 +248,25 @@ def discover(root: Path) -> dict:
     } | library_index(lib)
 
 
-def available_types(root: Path) -> list[dict]:
-    """Every data type in the standard library, namespaced by its file stem."""
+_TYPES_CACHE: dict[tuple, list[dict]] = {}
+
+
+def available_types(root: Path, refresh: bool = False) -> list[dict]:
+    """Every data type in the standard library, namespaced by its file stem.
+
+    Cached the same way `type_index` below is, keyed on what would change the
+    answer -- unlike that function, this one never imports a transform, so it
+    needs none of `_plan_lock`.
+    """
     from ..models.libraries import DataTypeLibrary
 
+    found = discover(root)
+    key = (str(Path(root).resolve()), found["commit"], tuple(found["data_types"]))
+    if not refresh and key in _TYPES_CACHE:
+        return _TYPES_CACHE[key]
+
     out: list[dict] = []
-    for p in discover(root)["data_types"]:
+    for p in found["data_types"]:
         path = Path(p)
         namespace = path.stem
         try:
@@ -269,6 +282,7 @@ def available_types(root: Path) -> list[dict]:
                 "path": p,
                 "properties": sorted(endpoint.properties),
             })
+    _TYPES_CACHE[key] = out
     return out
 
 

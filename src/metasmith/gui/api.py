@@ -301,7 +301,8 @@ def agent_name_suggestion():
 
 @bp.get("/project/types")
 def get_types():
-    return jsonify(stdlib.available_types(_project().root))
+    refresh = request.args.get("refresh", "") in {"1", "true", "yes"}
+    return jsonify(stdlib.available_types(_project().root, refresh=refresh))
 
 
 @bp.get("/project/type-index")
@@ -1137,9 +1138,12 @@ def delete_template(name):
 # -- workflows ---------------------------------------------------------------
 
 
-def _workflow_summary(wf) -> dict:
-    p = _project()
-    runs = p.list_runs(workflow=wf.name, include_archived=True)
+def _workflow_summary(wf, runs=None) -> dict:
+    """`runs` lets a caller that already listed them (`get_workflow`, below)
+    hand them over rather than pay a second `list_runs` -- one parse per run
+    file in the workflow -- for the same request."""
+    if runs is None:
+        runs = _project().list_runs(workflow=wf.name, include_archived=True)
     return {
         "name": wf.name,
         # a cosmetic label, independent of the directory name a solved plan is
@@ -1161,18 +1165,45 @@ def _workflow_summary(wf) -> dict:
 
 @bp.get("/workflows")
 def list_workflows():
-    return jsonify([_workflow_summary(wf) for wf in _project().list_workflows(_wants_archived())])
+    """Every workflow's sidebar summary, one grouped run scan for all of them.
+
+    `_workflow_summary` accepts `runs=` for exactly this: `list_runs()` with no
+    `workflow` already walks every workflow's runs in a single traversal, so a
+    caller listing many workflows groups that once rather than paying for a
+    fresh per-workflow scan inside each summary.
+    """
+    p = _project()
+    by_workflow: dict[str, list] = {}
+    for r in p.list_runs(include_archived=True):
+        by_workflow.setdefault(r.workflow, []).append(r)
+    return jsonify([
+        _workflow_summary(wf, runs=by_workflow.get(wf.name, []))
+        for wf in p.list_workflows(_wants_archived())
+    ])
 
 
 @bp.get("/workflows/<name>")
 def get_workflow(name):
+    """The workflow itself, plus -- on request -- what its inputs page and its
+    table page would each separately fetch.
+
+    `?include=inputs,table` folds those two routes' payloads in as `inputs`/
+    `table` keys, shaped exactly like their standalone responses, computed
+    from the `wf`/`rows`/library record this route already has in hand rather
+    than three requests each re-deriving them. A caller switching workflows,
+    or refreshing after a solve, asks for both in the one call.
+    """
     p = _project()
+    wf = p.read_workflow(name)
     # before the record is read, not after: a library with items and no rows
     # gets rows here, and the page has to be handed the adopted recipe rather
-    # than the one that was on disk a moment ago
-    _rows_of(name)
-    wf = p.read_workflow(name)
-    out = _workflow_summary(wf)
+    # than the one that was on disk a moment ago. Handing over the record
+    # already in hand -- and letting it mutate `wf.request` in place when it
+    # adopts -- means this reaches the store's (slow: a full workflow record is
+    # two YAML parses) `read_workflow` once rather than twice.
+    rows = _rows_of(name, wf=wf)
+    runs = p.list_runs(workflow=name, include_archived=True)
+    out = _workflow_summary(wf, runs=runs)
     out["request"] = wf.request
     # backfill for results written before the summary existed, and for anything
     # planned by the CLI directly into a workflow directory. The drawing is
@@ -1188,9 +1219,22 @@ def get_workflow(name):
                 "step_display": display, "plan_graph": plan_graph,
             })
     out["result"] = wf.result
-    out["runs"] = [_run_summary(r) for r in p.list_runs(workflow=name, include_archived=True)]
-    lib_path = p.input_library_path(name)
+    out["runs"] = [_run_summary(r) for r in runs]
+    # the workflow's own request already names its library (`create_workflow`
+    # always sets it); resolved off `wf` rather than `Project.input_library_path`,
+    # which would re-read this workflow's own YAML files a second time for a
+    # value already in hand here.
+    lib_path = wf.path / wf.request.get("input_library", INPUT_LIBRARY_DIRNAME)
     out["input_library"] = {"path": str(lib_path), "exists": lib_path.is_dir()}
+
+    include = {s.strip() for s in request.args.get("include", "").split(",") if s.strip()}
+    if include & {"inputs", "table"} and lib_path.is_dir():
+        # read once, shared by both -- each standalone route reads its own copy
+        record = op_samples.read_record(str(lib_path))
+        if "inputs" in include:
+            out["inputs"] = _inputs_payload(lib_path, record=record)
+        if "table" in include:
+            out["table"] = _table_payload(name, lib_path, wf.path, rows=rows, record=record)
     return jsonify(out)
 
 
@@ -1384,9 +1428,10 @@ def _given_summary(lib_path: str) -> list[dict]:
     or failed on is what was registered.
     """
     try:
+        lib = op_data.load_data_lib(lib_path)
         info = op_data.inspect_library(lib_path)
         items = [
-            op_data.show_item_lineage(lib_path, item["path"], render=False)
+            op_data.show_item_lineage(lib_path, item["path"], render=False, lib=lib)
             for item in info.get("items", [])
         ]
     except Exception:
@@ -1516,7 +1561,14 @@ def generate_workflow(name):
             )
             job.emit("PHASE:solving")
             with _plan_lock:
-                result = op_workflow.plan_spec(spec, workspace=str(staging))
+                result, task = op_workflow.plan_spec(spec, workspace=str(staging), return_task=True)
+                if result.get("success"):
+                    # the solve already built and imported everything this
+                    # needs; drawing it from the live task, still under the
+                    # lock, skips reloading the bundle back off disk purely to
+                    # rebuild the same object (and re-import every transform
+                    # in it a second time)
+                    result["step_display"], result["plan_graph"] = _step_display_from_task(task, p.root)
             job.emit("PHASE:finishing")
             if result.get("success"):
                 # promote the bundle to the workflow directory, so the readable
@@ -1525,7 +1577,6 @@ def generate_workflow(name):
                 assert staged.is_dir(), f"planner wrote no bundle at [{staged}]"
                 for item in staged.iterdir():
                     shutil.move(str(item), str(wf.path / item.name))
-                result["step_display"], result["plan_graph"] = _step_display(wf.path, p.root)
             if staging.exists():
                 shutil.rmtree(staging)
             result["stdlib_commit"] = commit
@@ -1630,6 +1681,17 @@ def _step_display(bundle: Path, root: Path) -> tuple[list[dict], dict | None]:
         task = _load_task(bundle)
     except Exception:
         return [], None
+    return _step_display_from_task(task, root, bundle=bundle)
+
+
+def _step_display_from_task(task, root: Path, bundle: Path | None = None) -> tuple[list[dict], dict | None]:
+    """`_step_display`'s body, for a caller that already has the live task.
+
+    `spec.Solve()` builds this same object in memory; reloading it from disk
+    just to draw the diagram re-imports every transform in the plan a second
+    time. `bundle` is only for the warning below -- it names the case, not the
+    data, when there is no bundle to name (a fresh solve, not yet saved).
+    """
     catalogue, by_index = _stdlib_transforms(root)
     node_extra: dict[str, dict] = {}
     out = []
@@ -1688,7 +1750,10 @@ def _step_display(bundle: Path, root: Path) -> tuple[list[dict], dict | None]:
             if tr and tr.get("library_name"):
                 n["namespace"] = tr["library_name"]
     except Exception:
-        _LOG.warning("no dag geometry for [%s]; the diagram will not draw", bundle, exc_info=True)
+        _LOG.warning(
+            "no dag geometry for [%s]; the diagram will not draw",
+            bundle if bundle is not None else "in-memory task", exc_info=True,
+        )
 
     return out, plan_graph
 
@@ -1788,30 +1853,31 @@ def dag_theme():
 # -- the input library -------------------------------------------------------
 
 
-@bp.get("/workflows/<name>/inputs")
-def get_inputs(name):
+def _inputs_payload(lib_path: Path, *, lib=None, record=None) -> dict:
     """What the library holds -- a readout, not a form.
 
     The recipe's rows are what the page edits and what the library is built
     from; this says what the last solve made of them. It is how a sample-array
     row learns it stands for two hundred items, and how a row learns which
     manifest entry it ended up as.
+
+    `lib`/`record` let a caller that already loaded either (`get_workflow`'s
+    batched `include=`) hand them over rather than pay for a second load.
     """
-    p = _project()
-    lib_path = p.input_library_path(name)
-    if not lib_path.is_dir():
-        raise ProjectError(f"workflow [{name}] has no input library")
+    if lib is None:
+        lib = op_data.load_data_lib(str(lib_path))
     info = op_data.inspect_library(str(lib_path))
     info["items"] = [
         # render=False: this maps over every item in the library, and the page
         # wants declared identity and manifest parents, not a trace walk each.
-        op_data.show_item_lineage(str(lib_path), item["path"], render=False)
+        op_data.show_item_lineage(str(lib_path), item["path"], render=False, lib=lib)
         for item in info["items"]
     ]
     # Which row registered each item. The attribution is the server's: a
     # deferred path is minted rather than chosen, so the record beside the
     # library is the only place the answer is known.
-    record = op_samples.read_record(str(lib_path))
+    if record is None:
+        record = op_samples.read_record(str(lib_path))
     from_array = {
         path: tid for tid, paths in (record.get("generated") or {}).items() for path in paths
     }
@@ -1827,7 +1893,16 @@ def get_inputs(name):
         "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
         "row_count": record.get("row_count", 0),
     }
-    return jsonify(info)
+    return info
+
+
+@bp.get("/workflows/<name>/inputs")
+def get_inputs(name):
+    p = _project()
+    lib_path = p.input_library_path(name)
+    if not lib_path.is_dir():
+        raise ProjectError(f"workflow [{name}] has no input library")
+    return jsonify(_inputs_payload(lib_path))
 
 
 # -- the sample table --------------------------------------------------------
@@ -1839,19 +1914,26 @@ def _table_dir(name: str) -> Path:
     return p.workflow_path(name)
 
 
-def _rows_of(name: str) -> list[dict]:
-    return op_recipe.rows_of(_project(), name)
+def _rows_of(name: str, wf=None) -> list[dict]:
+    return op_recipe.rows_of(_project(), name, wf=wf)
 
 
-@bp.get("/workflows/<name>/table")
-def get_table(name):
-    table = op_samples.read_attached_table(_table_dir(name))
+def _table_payload(name: str, lib_path: Path, table_dir: Path, *, rows=None, record=None) -> dict:
+    """The attached sheet's summary, validated against the recipe's rows.
+
+    `rows`/`record` let a caller that already has either (`get_workflow`'s
+    batched `include=`) hand them over rather than pay for a second
+    `rows_of`/`read_record`.
+    """
+    table = op_samples.read_attached_table(table_dir)
     if table is None:
-        return jsonify({"attached": False})
-    rows = _rows_of(name)
-    checked = op_samples.validate(str(_project().input_library_path(name)), table, rows)
-    record = op_samples.read_record(str(_project().input_library_path(name)))
-    return jsonify({
+        return {"attached": False}
+    if rows is None:
+        rows = _rows_of(name)
+    checked = op_samples.validate(str(lib_path), table, rows)
+    if record is None:
+        record = op_samples.read_record(str(lib_path))
+    return {
         "attached": True,
         "filename": table["filename"],
         "format": table["format"],
@@ -1865,7 +1947,13 @@ def get_table(name):
             "counts": {k: len(v) for k, v in (record.get("generated") or {}).items()},
             "stale": record.get("row_count", 0) != table["row_count"],
         },
-    })
+    }
+
+
+@bp.get("/workflows/<name>/table")
+def get_table(name):
+    p = _project()
+    return jsonify(_table_payload(name, p.input_library_path(name), _table_dir(name)))
 
 
 @bp.post("/workflows/<name>/table")

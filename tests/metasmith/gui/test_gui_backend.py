@@ -205,6 +205,34 @@ class TestProject:
         assert {"mock::assembly", "mock::bam"} <= names
 
 
+class TestGzip:
+    """Compression over the tunnel: on for JSON, untouched for a stream."""
+
+    def test_json_is_gzipped_when_accepted(self, client):
+        import gzip
+
+        res = client.get("/api/project/type-index", headers={"Accept-Encoding": "gzip"})
+        assert res.headers.get("Content-Encoding") == "gzip"
+        assert gzip.decompress(res.data).startswith(b"{")
+
+    def test_json_is_plain_without_accept_encoding(self, client):
+        res = client.get("/api/project/type-index")
+        assert "Content-Encoding" not in res.headers
+        assert res.get_json() is not None
+
+    def test_the_job_stream_is_never_gzipped(self, client, tmp_path):
+        # a streamed SSE response has no fixed body to compress, and the hook
+        # must not touch it -- calling get_data() on one would buffer or break
+        # the stream it is meant to keep open
+        client.post("/api/agents", json={"name": "smith", "home": str(tmp_path / "h")})
+        with mock.patch("metasmith.ops.agent.deploy", return_value={"status": "deployed"}):
+            r = client.post("/api/agents/smith/deploy", json={})
+            _finish(client, r.get_json())
+        res = client.get(f"/api/jobs/{r.get_json()['id']}/stream", headers={"Accept-Encoding": "gzip"})
+        assert "Content-Encoding" not in res.headers
+        assert res.mimetype == "text/event-stream"
+
+
 class TestTypeIndex:
     """The map the builder consults while a type is being chosen."""
 

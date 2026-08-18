@@ -682,6 +682,7 @@ def show_item_lineage(
     depth: int | None = None,
     include_logs: bool = False,
     render: bool = True,
+    lib: DataInstanceLibrary | None = None,
 ) -> dict:
     """Describe an item: declared identity, manifest parents, and lineage tree.
 
@@ -703,8 +704,12 @@ def show_item_lineage(
     `render=False` returns the cheap half only. List endpoints map this
     over every item in a library and must not pay for a trace walk per
     item.
+
+    `lib`, when given, is used instead of reloading `library_path` from
+    disk -- a caller mapping this over every item in a library already
+    has it loaded once and must not pay for a reload per item.
     """
-    lib = load_data_lib(library_path)
+    lib = _lib_for(library_path, lib)
     p = Path(item_path)
     inst = lib.Get(p)
 

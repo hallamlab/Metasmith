@@ -15,7 +15,7 @@ from ..ops import samples as op_samples
 from .store import Project
 
 
-def rows_of(p: Project, name: str) -> list[dict]:
+def rows_of(p: Project, name: str, wf=None) -> list[dict]:
     """The recipe's input rows, adopting anything registered without one.
 
     One kind of row. A sample array is not a second list -- with a sheet
@@ -25,8 +25,16 @@ def rows_of(p: Project, name: str) -> list[dict]:
     the first time anything asks, and the record says so from then on. Without
     that mark, deleting a row could not be expressed at all -- the item outlives
     the row until the next solve, and every read in between would put it back.
+
+    `wf` lets a caller that already holds this workflow's record hand it over,
+    rather than pay a second `read_workflow` -- a full parse of both its YAML
+    files -- to look at one field. When adoption writes, it also updates
+    `wf.request["input_drafts"]` in place, so that caller's copy stays true to
+    what was just persisted without a re-read.
     """
-    rows = list(p.read_workflow(name).request.get("input_drafts") or [])
+    if wf is None:
+        wf = p.read_workflow(name)
+    rows = list(wf.request.get("input_drafts") or [])
     lib_path = p.input_library_path(name)
     if not lib_path.is_dir() or op_samples.read_record(str(lib_path)).get("adopted"):
         return rows
@@ -35,4 +43,5 @@ def rows_of(p: Project, name: str) -> list[dict]:
         return rows
     p.write_request(name, {"input_drafts": out["rows"]})
     op_samples.write_record(str(lib_path), out["record"])
+    wf.request["input_drafts"] = out["rows"]
     return out["rows"]
