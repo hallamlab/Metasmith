@@ -3,3 +3,5 @@ aam_r0	qwen3-32b	dev	400	21	98	255	26	383	15	593583	125620	1798	1792.0	13.4	1	ba
 aam_r1	qwen3-32b	dev	400	57	247	59	37	383	50	889924	129864	2549	2310.3	10.4	29	structure annotations, worked polymer cases
 aam_r2	qwen3-32b	dev	400	60	233	71	36	383	53	1055506	129010	2961	1891.1	12.7	30	count C/N/O/P/S and close with WATER or CO2, else refuse
 aam_r2	qwen3-32b	controls	200	199	1	0	0	0	0	590290	29144	3097	426.1	28.2	1	control gate: count C/N/O/P/S and close with WATER or CO2, else refuse
+aam_r3	qwen3-32b	dev	400	49	226	70	55	383	43	1155500	143731	3248	1928.6	12.4	26	working scratchpad emitted first, schema-ordered
+aam_r3	qwen3-32b	controls	200	174	21	2	3	0	0	635602	39320	3375	544.9	22.0	2	control gate: working scratchpad emitted first, schema-ordered

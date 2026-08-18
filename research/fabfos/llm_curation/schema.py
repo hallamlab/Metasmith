@@ -50,21 +50,20 @@ SUBSTITUTION = {
     "additionalProperties": False,
 }
 
-# `working` is first because a constrained decode emits properties in schema order, which
-# makes field order the only scratchpad a non-thinking model gets. Asked for the sides
-# straight away it has nowhere to do the arithmetic the prompt demands; asked to tally the
-# elements first, the tally is in its context when it writes them.
+# A `working` scratchpad field, emitted first so the model tallies before it commits, was
+# tried as r3 and measured worse on both axes -- 12.2% against r2's 15.0%, and 21 control
+# regressions against zero. Field order is a real lever on a constrained decode, but here
+# it bought prose and cost answers. See `ITERATION.md`.
 SIMPLIFY = {
     "type": "object",
     "properties": {
-        "working": {"type": "string", "maxLength": 400},
         "action": {"type": "string", "enum": ["rewrite", "refuse"]},
         "reason": {"type": "string", "maxLength": 160},
         "left": {"type": "array", "maxItems": 24, "items": TERM},
         "right": {"type": "array", "maxItems": 24, "items": TERM},
         "substitutions": {"type": "array", "maxItems": 12, "items": SUBSTITUTION},
     },
-    "required": ["working", "action", "reason", "left", "right", "substitutions"],
+    "required": ["action", "reason", "left", "right", "substitutions"],
     "additionalProperties": False,
 }
 

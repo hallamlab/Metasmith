@@ -1,0 +1,11 @@
+{
+ "revision": "dir_r0",
+ "model": "qwen3-32b",
+ "split": "dir_dev",
+ "n": 200,
+ "calls": 400,
+ "prompt_tokens": 261012,
+ "completion_tokens": 17861,
+ "seconds": 244.9,
+ "parallel": 8
+}
