@@ -766,8 +766,11 @@ def promote_run(
                         # means the hit route cannot reproduce the channel
                         # faithfully, which cache_decisions turns into a
                         # demotion rather than a silent drop downstream.
+                        # Empty is absent: an index with no keys replays as
+                        # `[:]`, which carries no ancestry and is dropped by
+                        # the consumer exactly as a missing one would be.
                         ix = output_indexes.get(name)
-                        if ix is None:
+                        if not ix:
                             no_index.append(name)
                         else:
                             index_payload.append(
