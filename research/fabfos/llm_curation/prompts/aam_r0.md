@@ -20,6 +20,10 @@ Each term in `left` and `right` is either `{"n":coeff,"id":"MNXM..."}` — reusi
 accession whose structure is already fine — or `{"n":coeff,"smiles":"...","label":"short
 name"}` when you introduce a stand-in. Coefficients are positive on both sides.
 
+`substitutions` records which accession each stand-in replaced, as
+`{"id":"MNXM...","smiles":"...","why":"what the stand-in preserves"}`. Leave it empty if
+you cancelled a participant rather than replacing it.
+
 Heavy atoms (C, N, O, P, S, and any metal) must balance left to right. Count them.
 Hydrogen is excluded — do not try to balance H or charge.
 

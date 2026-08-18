@@ -107,8 +107,14 @@ CROSSWALK_COLS = ("mnxm", "smiles", "mnx_name", "element", "n_atoms", "basis", "
 # above `acceptor` because it makes the SAME claim -- a body with zero tracked atoms --
 # from MNXref's own record rather than from six hand-written spellings, so where both
 # fire the record wins and the regex stays as the fallback it was always meant to be.
+# `llm` is the weakest argument here and sits last but for the bypass. Every other lane
+# reasons from a record -- a twin's own structure, an xref, a name stem MNXref wrote --
+# while this one reasons from a model's assertion, tested against a balance recount and
+# nothing else. A tested assertion is real evidence, which is why it is admitted at all;
+# it is still the thing to yield when any lane sourced from a record also fires.
 LANE_PRIORITY = ("nametwin", "twin", "transform", "fragment", "carrier", "supplier",
-                 "lipid", "conserved", "polymer", "blockers", "acceptor", "override")
+                 "lipid", "conserved", "polymer", "blockers", "acceptor", "llm",
+                 "override")
 
 
 # =====================================================================
@@ -2090,7 +2096,8 @@ def cmd_propose(args):
     # each delta stays a separate number and a 3.9 M-row xref scan is not repeated
     # inside every rescue; what arrives is a crosswalk in exactly the shape the merge
     # takes, and it goes through `admit` with every other row rather than around it.
-    for key, path in (("nametwin", args.nametwin), ("blockers", args.blockers)):
+    for key, path in (("nametwin", args.nametwin), ("blockers", args.blockers),
+                      ("llm", args.llm)):
         if not path:
             continue
         t = read_crosswalk(path)
@@ -2181,6 +2188,10 @@ def parse_args(argv=None):
                         "these lanes abstain on")
     p.add_argument("--blockers", default=None,
                    help="interm::aam_blockers/crosswalk.tsv -- element-neutral twins")
+    p.add_argument("--llm", default=None,
+                   help="a crosswalk harvested from the LLM curation lane. Pre-filtered "
+                        "to rows that pass `admit`: this reads it like any other, and "
+                        "`admit` aborts rather than skips, so one bad row kills the bake")
     p.add_argument("--nametwin", default=None,
                    help="interm::aam_nametwin/crosswalk.tsv -- same-name duplicates")
     p.add_argument("--worklist", default=None,

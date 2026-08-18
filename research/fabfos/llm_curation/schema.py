@@ -34,6 +34,22 @@ TERM = {
     "additionalProperties": False,
 }
 
+# Which blocker each stand-in stands in for. Without this the rewrite is harvestable per
+# REACTION and not per METABOLITE: the model emits a new equation, and nothing in it says
+# that the thioester on the right replaced `MNXM1090405` rather than being unrelated. The
+# crosswalk lane needs the correspondence, and `why` becomes the `basis` citation that
+# `admit()` refuses a row without.
+SUBSTITUTION = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string", "maxLength": 24},
+        "smiles": {"type": "string", "maxLength": 400},
+        "why": {"type": "string", "maxLength": 300},
+    },
+    "required": ["id", "smiles", "why"],
+    "additionalProperties": False,
+}
+
 SIMPLIFY = {
     "type": "object",
     "properties": {
@@ -41,8 +57,9 @@ SIMPLIFY = {
         "reason": {"type": "string", "maxLength": 300},
         "left": {"type": "array", "maxItems": 24, "items": TERM},
         "right": {"type": "array", "maxItems": 24, "items": TERM},
+        "substitutions": {"type": "array", "maxItems": 24, "items": SUBSTITUTION},
     },
-    "required": ["action", "reason", "left", "right"],
+    "required": ["action", "reason", "left", "right", "substitutions"],
     "additionalProperties": False,
 }
 

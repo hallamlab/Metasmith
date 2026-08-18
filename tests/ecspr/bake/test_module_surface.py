@@ -82,8 +82,11 @@ CLI = {
                   "--redox-emptied", "--out", "--out-summary"},
     },
     "ecspr.bake.aam.curation": {
+        # `--llm` is the twelfth proposer: a crosswalk harvested from the LLM
+        # curation lane, read in like `--nametwin` and `--blockers` rather than
+        # computed here, and pre-filtered to rows that pass `admit`.
         "propose": {"--lookups", "--element-counts", "--blockers", "--nametwin",
-                    "--worklist", "--chebi", "--modelseed",
+                    "--llm", "--worklist", "--chebi", "--modelseed",
                     "--override", "--drop-lane", "--out"},
         "complete": {"--lookups", "--element-counts", "--worklist", "--crosswalk",
                      "--char-limit", "--atom-limit", "--collapsed-atom-limit",
