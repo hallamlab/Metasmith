@@ -15,19 +15,21 @@ GPR mapper consumes:
 
     Query ID <TAB> Predicted EC number <TAB> clean_score
 
-`clean_score` is CLEAN's raw maxsep value, and it is a DISTANCE -- lower is better.
-Measured on the first real run (183 scadc inserts, 5,892 ORFs, 7,176 calls): the
-values are bounded in [0, 0.9988] with a median of 0.0015 and a 75th percentile of
-0.0612. So the docstring this replaced was wrong twice over -- it called the number a
-"GMM-calibrated confidence" and its worked example showed 8.06, which is neither the
-direction nor the range CLEAN actually emits. `fabfos_evidence.clean_distance_to_score`
-inverts it as `1/(1+d)`, which is monotone and lossless, so the lane's ORDERING is
-intact; but with d clustered near zero the resulting scores compress into
-[0.5003, 1.0] with a median of 0.9982, and any downstream scheme that weights by score
-MAGNITUDE rather than rank is treating almost every CLEAN call as maximally confident.
+`clean_score` IS A CONFIDENCE -- higher is better, bounded by 1 -- not the distance
+to the EC cluster centre. The 8.06 in CLEAN's own worked example is its un-calibrated
+path, and citing it is how this file once concluded the opposite; the calibrated one
+is what runs here, because the workspace below links `data/pretrained/gmm_ensumble.pkl`
+into place. The direction was settled by measurement, not by that reading. Against
+the 1,288-ORF DH10B truth set: correct calls sit at a
+median clean_score of 0.9973 and wrong ones at 0.1328, AUC 0.897 in the
+higher-is-better direction, and the ORFs with no known EC at all average 0.044 against
+0.884 for those that have one. The mapper stored it through a 1/(1+d) inversion until
+that was measured, which ranked every CLEAN call backwards.
 
-CLEAN never abstains, so the mapper gates the lane at a low score floor downstream --
-do not threshold here. CLEAN writes relative to CWD and /app is read-only under apptainer, so we
+CLEAN never abstains -- a full level-4 EC for ~99% of ORFs -- so the mapper drops
+calls below `fabfos_evidence.CLEAN_MIN_SCORE` at parse time, where kofam drops a hit
+below its family threshold. Do not threshold here: this transform emits what CLEAN
+said, and the lane decides what to keep. CLEAN writes relative to CWD and /app is read-only under apptainer, so we
 run from a writable, bind-mounted /clean_ws that symlinks the baked read-only
 assets. Retyped from cyanoverse functionalAnnotation/clean_lane.py onto the dev2
 sequences::orfs -> annotation::clean_predictions scheme.

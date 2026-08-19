@@ -25,6 +25,7 @@ Run: python tests/test_gpr_4lane_sparse_transfer.py   (or under pytest)
 from __future__ import annotations
 
 import re
+import string
 from pathlib import Path
 
 import numpy as np
@@ -44,17 +45,19 @@ def _sparse_impl():
     """
     src = TRANSFORM.read_text()
     body = re.search(r"DRIVER = r'''\n(.*?)\n'''", src, re.S).group(1)
-    filled = body.format(ev_lib="", orfs="", kofam="", clean="", uniref="",
-                         pbert_emb="", pbert_idx="", bridge="", pool="", out="",
-                         lane_set="chosen_4", source="s", threads=1)
+    keys = {k for _, k, _, _ in string.Formatter().parse(body) if k}
+    filled = body.format(**{k: {"lane_set": "chosen_4", "source": "s",
+                                "threads": 1}.get(k, "") for k in keys})
     # The vote is the middle of `lane_embed`; run it here against arrays rather
     # than files by re-executing just the arithmetic, which is the block below.
     start = filled.index("    # THE LABEL MATRIX IS SPARSE")
-    end = filled.index('    df = pd.DataFrame(rows, columns=["orf", "mnxr"')
+    end = filled.index('    print("[gpr] " + channel + ": "')
     block = filled[start:end]
-    # `_load_query` reads files; the harness supplies q_orf/q_emb directly.
-    block = block.replace('    q_orf, q_emb = _load_query(parquet, index_csv)\n', "")
-    block = block.replace("    q_emb = _norm(q_emb)\n", "")
+    # The reads and the width check want files and a `_read_query`; the harness
+    # supplies q_orf/q_emb directly.
+    block = re.sub(r"    q_orf, q_raw, _ = _read_query\(parquet\)\n"
+                   r"(    if q_raw\.shape\[1\].*?referent\"\)\n)"
+                   r"    q_emb = _norm\(q_raw\)\n", "", block, flags=re.S)
     return block
 
 
@@ -96,8 +99,14 @@ def dense_rows(ref_mnxr_list, ref_orf, ref_emb, q_orf, q_emb, floor=FLOOR):
 
 def sparse_rows(ref_mnxr_list, ref_orf, ref_emb, q_orf, q_emb, floor=FLOOR):
     import pandas as pd
+    # THE QUOTA IS SET TO ITS NO-OP. `nn_min = tau = 0` and `k_max = K` admit
+    # exactly the top-K neighbours the dense form voted with, which is the setting
+    # this equivalence is a claim about: the two forms must compute the SAME VOTE.
+    # The quota's own behaviour -- which ORFs it refuses and how many neighbours it
+    # admits -- is a different claim, and test_gpr_schema.py makes it.
     ns = {
-        "np": np, "pd": pd, "K": K, "floor": floor,
+        "np": np, "pd": pd, "floor": floor,
+        "nn_min": 0.0, "tau": 0.0, "k_max": K, "channel": "pbert",
         "ref": pd.DataFrame({"mnxr_list": ref_mnxr_list}),
         "ref_orf": np.asarray(ref_orf, dtype=object),
         "ref_emb": ref_emb, "q_orf": np.asarray(q_orf, dtype=object),

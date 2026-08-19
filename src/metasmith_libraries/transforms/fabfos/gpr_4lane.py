@@ -21,6 +21,14 @@ score_kind and its declared range, and the validator all live in
 copies, one in each mapper -- is how the tree came to hold two different channel
 vocabularies at once.
 
+EVERY LANE ABSTAINS BEFORE THE TABLE EXISTS. kofam has always kept only hits above
+their family's own KOfam cutoff; CLEAN and ProteinBERT now do the same, at their own
+parse and vote steps, against the cut-offs declared in `lib::fabfos_evidence.py`. So
+a GPR table carries the calls that cleared their lane's threshold and there is
+nothing here to opt out of -- a threshold applied by a reader is a threshold the
+published table did not have. The cost of that placement is that retuning a deployed
+cut-off means re-running this mapper rather than re-filtering a table.
+
 Modeled on ptools_annotation_gather.py (require orfs + the lane outputs,
 group_by=orfs, python_for_data_science image, long-format parquet). The embedding
 kNN vote is a lightweight numpy port of `fabfos_embed_transfer.py::apply_one`;
@@ -103,8 +111,15 @@ import fabfos_evidence as fe
 SCHEMA = fe.SCHEMA_COLS
 LANE_SET = "{lane_set}"
 SOURCE = "{source}"
-K = 30
-PBERT_FLOOR = 0.20
+
+# The lane cut-offs are fe's, not this driver's. They were literals here, in the
+# 7-lane driver and in fe at once, so a retuned floor shipped in whichever of the
+# three the tuning session happened to edit.
+PBERT_NN_MIN = fe.PBERT_NN_MIN
+PBERT_TAU = fe.PBERT_TAU
+PBERT_K_MAX = fe.PBERT_K_MAX
+PBERT_FLOOR = fe.PBERT_FLOOR
+CLEAN_MIN_SCORE = fe.CLEAN_MIN_SCORE
 
 
 def finish(df, channel, projection_via=None):
@@ -153,10 +168,14 @@ def lane_kofam(df, ko_to_mnxr):
 
 # ---- CLEAN lane: dev2 clean_predictions = Query ID \t Predicted EC number \t clean_score
 #
-# `clean_score` is CLEAN's maxsep value, which is a DISTANCE to the EC cluster
-# centre -- lower is better, and unbounded above (its own parser's worked example
-# is 8.06). Stored through fe.clean_distance_to_score so the schema's
-# higher-is-stronger contract holds; the transform is monotone and lossless.
+# `clean_score` IS A CONFIDENCE -- higher is better, bounded by 1 -- not the raw
+# maxsep distance this lane used to take it for. Stored through a 1/(1+d) inversion
+# it ranked every CLEAN call backwards; the retired `clean_maxsep_inv` in
+# fe.SCORE_KINDS carries the measurement. It needs no transform at all.
+#
+# CLEAN NEVER DECLINES -- a full level-4 EC for ~99% of ORFs -- so its coverage
+# measures willingness, not reach, and the lane abstains here at parse time, in the
+# same place and for the same reason kofam drops a hit below its family's threshold.
 def parse_clean(path):
     df = pd.read_csv(path, sep="\t")
     if list(df.columns) != ["Query ID", "Predicted EC number", "clean_score"]:
@@ -164,10 +183,13 @@ def parse_clean(path):
             "[gpr] clean_predictions header is not the 3 columns this lane parses: "
             "got " + repr(list(df.columns)) + ". CLEAN's wrapper writes the header, "
             "so a drift here silently renames every column and empties the lane")
-    df.columns = ["orf", "ec", "clean_dist"]
-    df["clean_dist"] = pd.to_numeric(df["clean_dist"], errors="coerce")
-    df = df[df["clean_dist"].notna() & (df["clean_dist"] >= 0)].copy()
-    df["raw_score"] = fe.clean_distance_to_score(df["clean_dist"])
+    df.columns = ["orf", "ec", "clean_score"]
+    df["clean_score"] = pd.to_numeric(df["clean_score"], errors="coerce")
+    n_in = len(df)
+    df = df[df["clean_score"].notna() & (df["clean_score"] >= CLEAN_MIN_SCORE)].copy()
+    print("[gpr] clean: " + str(n_in) + " calls, " + str(n_in - len(df))
+          + " below the abstain at " + str(CLEAN_MIN_SCORE), flush=True)
+    df["raw_score"] = df["clean_score"]
     return df[df["ec"].astype(str).str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
 
 def lane_clean(df, ec_to_mnxr):
@@ -198,7 +220,8 @@ def lane_uniref(df, uniprot_to_mnxr):
     return finish(joined, "uniref50")
 
 # ---- embedding lane: numpy kNN label transfer vs the labelled landmarks ----
-# lightweight port of fabfos_embed_transfer.apply_one (cosine top-K distance vote).
+# lightweight port of fabfos_embed_transfer.apply_one (cosine vote), plus the
+# distance quota and the ORF-level abstain that port never had.
 # An embedding table's ids and its vectors, taken from the SAME rows. Both the query
 # and the landmark tables carry their id beside their vector, so there is no ordering
 # here to get wrong -- which is the whole reason they were collapsed into one file
@@ -238,14 +261,20 @@ def _norm(x):
     return x / np.clip(n, 1e-9, None)
 
 
-def lane_embed(parquet, landmark_dir, channel, floor):
-    # The sparse vote skips a query whose whole neighbourhood is unlabelled,
-    # where the dense form computed an all-zero vote vector. Those agree for any
-    # positive floor and diverge at floor <= 0, where the dense form would emit
-    # the ENTIRE vocabulary at score 0 for such a query. Refused rather than
-    # silently reinterpreted.
-    if floor <= 0:
-        raise SystemExit("[gpr] the " + channel + " floor must be > 0")
+def lane_embed(parquet, landmark_dir, channel, floor, nn_min, tau, k_max):
+    # `floor` is a share of a vote normalised within the admitted set, so a negative
+    # one would admit labels no neighbour voted for. ZERO IS MEANINGFUL AND IS NOT
+    # REFUSED: it means "every label an admitted neighbour carries", which is a real
+    # setting now that `nn_min` decides which neighbours are admitted at all. The
+    # refusal here used to cover a dense vote form that emitted the ENTIRE vocabulary
+    # at score 0 for an unlabelled neighbourhood; that form is gone.
+    if floor < 0:
+        raise SystemExit("[gpr] the " + channel + " vote floor must be >= 0")
+    if not 0.0 <= tau <= 1.0:
+        raise SystemExit("[gpr] the " + channel + " tau is a fraction of this ORF's "
+                         "own best cosine and must lie in [0, 1]")
+    if k_max < 1:
+        raise SystemExit("[gpr] the " + channel + " k_max must be at least 1")
     table = os.path.join(landmark_dir, "landmarks.parquet")
     if not os.path.exists(table):
         raise SystemExit(
@@ -260,7 +289,7 @@ def lane_embed(parquet, landmark_dir, channel, floor):
     # THE LABEL MATRIX IS SPARSE AND IS STORED THAT WAY. This used to be a dense
     # (reference x MNXR) float32 indicator -- 222,019 x ~13,112 = 10.84 GiB that
     # is 99.97% zeros -- built so the vote could be a matmul. The vote is a
-    # weighted sum over at most K=30 neighbours' label lists, and those lists are
+    # weighted sum over at most PBERT_K_MAX neighbours' label lists, and those are
     # short, so the matrix bought nothing but the 48 GB the step had to declare
     # and a (30 x 13,112) fancy-index COPY per query, 100,000 times per shard.
     #
@@ -294,18 +323,43 @@ def lane_embed(parquet, landmark_dir, channel, floor):
             "landmarks are " + str(ref_emb.shape[1]) + ". A cosine between two "
             "embedding spaces is a number with no referent")
     q_emb = _norm(q_raw)
+    kk = min(k_max, ref_emb.shape[0])
     rows = []
+    n_refused = 0
+    n_admitted = 0
+    n_voting = 0
     for s in range(0, len(q_emb), 256):
         sim = q_emb[s:s+256] @ ref_emb.T
-        top = np.argpartition(-sim, min(K, sim.shape[1]-1), axis=1)[:, :K]
+        top = np.argpartition(-sim, min(kk, sim.shape[1]-1), axis=1)[:, :kk]
         for bi in range(sim.shape[0]):
-            nn = top[bi]
-            vals = np.clip(sim[bi, nn], 0, None)
+            cand = top[bi]
+            cs = np.clip(sim[bi, cand], 0, None)
+            order = np.argsort(-cs, kind="stable")
+            cand, cs = cand[order], cs[order]
+            # THE ORF-LEVEL ABSTAIN, and the thing this lane could not say before.
+            # `floor` gates the VOTE, and the vote is normalised within whatever
+            # neighbours are admitted, so it measures agreement and not proximity --
+            # thirty neighbours at cosine 0.15 that agree score 1.0. Nothing in the
+            # landmark set being close enough for a transferred label to mean
+            # anything is a different claim, and it is made here.
+            if cs[0] <= 0 or cs[0] < nn_min:
+                n_refused += 1
+                continue
+            # THE QUOTA. Absolute (`nn_min`) and relative (`tau` of this ORF's own
+            # best match) at once: the first says a neighbour is close enough to
+            # speak at all, the second stops a mediocre one voting at full weight
+            # beside a near-perfect one. So a dense neighbourhood votes with many
+            # neighbours and a thin one with a few or with exactly one, where a
+            # fixed K gave every ORF K votes whether or not it had K worth having.
+            keep = cs >= max(nn_min, tau * cs[0])
+            nn, vals = cand[keep], cs[keep]
+            n_admitted += len(nn)
+            n_voting += 1
             tot = vals.sum()
             if tot <= 0:
                 continue
             w = vals / tot
-            # Ragged gather of the K neighbours' label slices, then one bincount
+            # Ragged gather of the admitted neighbours' label slices, then one bincount
             # over only the labels they actually carry. Exactly `w @ L[nn]`
             # restricted to its non-zero support, and `np.unique` returns the
             # support sorted, so the emitted row order is the same ascending
@@ -321,8 +375,7 @@ def lane_embed(parquet, landmark_dir, channel, floor):
             uniq, inv = np.unique(gathered, return_inverse=True)
             votes = np.bincount(inv, weights=np.repeat(w, cnt),
                                 minlength=len(uniq))
-            best = int(np.argmax(sim[bi, nn]))
-            donor = ref_orf[nn[best]]
+            donor = ref_orf[nn[0]]
             qid = q_orf[s+bi]
             for j in np.nonzero(votes >= floor)[0]:
                 # intermediate_id names the DONOR neighbour, not a projected
@@ -330,6 +383,12 @@ def lane_embed(parquet, landmark_dir, channel, floor):
                 # KO or EC in between. `projection_via` says so.
                 rows.append((qid, vocab_arr[uniq[j]], donor,
                              float(min(votes[j], 1.0))))
+    print("[gpr] " + channel + ": " + str(len(q_emb)) + " ORFs, " + str(n_refused)
+          + " with no landmark at cosine " + ("%.4f" % nn_min) + " or better (abstain), "
+          + str(n_voting) + " voting on "
+          + ("%.1f" % (n_admitted / n_voting) if n_voting else "0")
+          + " admitted neighbours on average, " + str(len(rows)) + " calls",
+          flush=True)
     df = pd.DataFrame(rows, columns=["orf", "mnxr", "intermediate_id", "raw_score"])
     # The landmarks are the bridge's `reviewed` cut by construction (see
     # compile/label_transfer_landmarks.py), so every transferred label inherits it.
@@ -372,7 +431,8 @@ def main():
         lane_uniref(uni, bridge_slice("{bridge}", "uniprot", "uniprot_accession",
                                       uni["uniprot_accession"].unique())
                          .assign(dr_source="rhea")),
-        lane_embed("{pbert_emb}", "{landmarks}", "pbert", PBERT_FLOOR),
+        lane_embed("{pbert_emb}", "{landmarks}", "pbert", PBERT_FLOOR,
+                   PBERT_NN_MIN, PBERT_TAU, PBERT_K_MAX),
     ]
     del kof, cln, uni
     gpr = pd.concat(frames, ignore_index=True)

@@ -138,7 +138,8 @@ def run_lane():
             continue
         install_loader(ns, np, pd, lo, hi)
         t0 = time.time()
-        df = ns["lane_embed"](None, str(LANDMARKS), "pbert", ns["PBERT_FLOOR"])
+        df = ns["lane_embed"](None, str(LANDMARKS), "pbert", ns["PBERT_FLOOR"],
+                              ns["PBERT_NN_MIN"], ns["PBERT_TAU"], ns["PBERT_K_MAX"])
         tmp = out.with_suffix(".partial")
         df.to_parquet(tmp, index=False)
         tmp.rename(out)                     # atomic: a killed slab is absent, never half

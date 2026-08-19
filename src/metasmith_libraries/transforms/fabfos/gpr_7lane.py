@@ -69,9 +69,18 @@ import fabfos_evidence as fe
 SCHEMA = fe.SCHEMA_COLS
 LANE_SET = "{lane_set}"
 SOURCE = "{source}"
-K = 30
-PBERT_FLOOR = 0.20
-ESMC_FLOOR = 0.10
+
+# Every lane cut-off is fe's. See the block there for what each one gates and why
+# the ESM-C quota knobs are the pre-quota no-ops rather than pbert's tuned numbers.
+PBERT_NN_MIN = fe.PBERT_NN_MIN
+PBERT_TAU = fe.PBERT_TAU
+PBERT_K_MAX = fe.PBERT_K_MAX
+PBERT_FLOOR = fe.PBERT_FLOOR
+ESMC_NN_MIN = fe.ESMC_NN_MIN
+ESMC_TAU = fe.ESMC_TAU
+ESMC_K_MAX = fe.ESMC_K_MAX
+ESMC_FLOOR = fe.ESMC_FLOOR
+CLEAN_MIN_SCORE = fe.CLEAN_MIN_SCORE
 DL_EC_FLOOR = fe.DL_EC_SCORE_FLOOR
 
 
@@ -108,18 +117,22 @@ def lane_kofam(path, ko_to_mnxr):
     df["intermediate_id"] = df["ko"]
     return finish(df, "kofam", "kegg.reaction")
 
-# `clean_score` is CLEAN's maxsep DISTANCE (lower is better); stored through
-# fe.clean_distance_to_score so higher-is-stronger holds. See gpr_4lane.py.
+# `clean_score` is CLEAN's GMM-calibrated CONFIDENCE (higher is better), stored
+# unchanged, and the lane abstains below fe.CLEAN_MIN_SCORE at parse time the way
+# kofam drops a hit below its family threshold. See gpr_4lane.py.
 def lane_clean(path, ec_to_mnxr):
     df = pd.read_csv(path, sep="\t")
     if list(df.columns) != ["Query ID", "Predicted EC number", "clean_score"]:
         raise SystemExit(
             "[gpr] clean_predictions header is not the 3 columns this lane parses: "
             "got " + repr(list(df.columns)))
-    df.columns = ["orf", "ec", "clean_dist"]
-    df["clean_dist"] = pd.to_numeric(df["clean_dist"], errors="coerce")
-    df = df[df["clean_dist"].notna() & (df["clean_dist"] >= 0)].copy()
-    df["raw_score"] = fe.clean_distance_to_score(df["clean_dist"])
+    df.columns = ["orf", "ec", "clean_score"]
+    df["clean_score"] = pd.to_numeric(df["clean_score"], errors="coerce")
+    n_in = len(df)
+    df = df[df["clean_score"].notna() & (df["clean_score"] >= CLEAN_MIN_SCORE)].copy()
+    print("[gpr] clean: " + str(n_in) + " calls, " + str(n_in - len(df))
+          + " below the abstain at " + str(CLEAN_MIN_SCORE), flush=True)
+    df["raw_score"] = df["clean_score"]
     df = df[df["ec"].astype(str).str.match(r"^\d+\.\d+\.\d+\.\d+$", na=False)]
     df = df.merge(ec_to_mnxr, on="ec", how="inner")
     df["intermediate_id"] = df["ec"]
@@ -224,9 +237,18 @@ def _norm(x):
     n = np.linalg.norm(x, axis=1, keepdims=True)
     return x / np.clip(n, 1e-9, None)
 
-def lane_embed(parquet, index_csv, landmark_dir, channel, floor):
-    if floor <= 0:
-        raise SystemExit("[gpr] the " + channel + " floor must be > 0")
+def lane_embed(parquet, index_csv, landmark_dir, channel, floor,
+               nn_min, tau, k_max):
+    # Zero is a meaningful vote floor -- "every label an admitted neighbour carries" --
+    # now that `nn_min` decides which neighbours are admitted. Only a negative one is
+    # refused. See gpr_4lane.py for the dense vote form this used to guard against.
+    if floor < 0:
+        raise SystemExit("[gpr] the " + channel + " vote floor must be >= 0")
+    if not 0.0 <= tau <= 1.0:
+        raise SystemExit("[gpr] the " + channel + " tau is a fraction of this ORF's "
+                         "own best cosine and must lie in [0, 1]")
+    if k_max < 1:
+        raise SystemExit("[gpr] the " + channel + " k_max must be at least 1")
     table = os.path.join(landmark_dir, "landmarks.parquet")
     if not os.path.exists(table):
         raise SystemExit(
@@ -265,13 +287,32 @@ def lane_embed(parquet, index_csv, landmark_dir, channel, floor):
             + " dims and its landmarks are " + str(ref_emb.shape[1]) + ". A cosine "
             "between two embedding spaces is a number with no referent")
     q_emb = _norm(q_raw)
+    kk = min(k_max, ref_emb.shape[0])
     rows = []
+    n_refused = 0
+    n_admitted = 0
+    n_voting = 0
     for s in range(0, len(q_emb), 256):
         sim = q_emb[s:s+256] @ ref_emb.T
-        top = np.argpartition(-sim, min(K, sim.shape[1]-1), axis=1)[:, :K]
+        top = np.argpartition(-sim, min(kk, sim.shape[1]-1), axis=1)[:, :kk]
         for bi in range(sim.shape[0]):
-            nn = top[bi]
-            vals = np.clip(sim[bi, nn], 0, None)
+            cand = top[bi]
+            cs = np.clip(sim[bi, cand], 0, None)
+            order = np.argsort(-cs, kind="stable")
+            cand, cs = cand[order], cs[order]
+            # The ORF-level abstain: `floor` gates the vote, which is normalised
+            # within the admitted set and so measures AGREEMENT; this measures
+            # PROXIMITY. See gpr_4lane.py.
+            if cs[0] <= 0 or cs[0] < nn_min:
+                n_refused += 1
+                continue
+            # The quota: absolute floor and a band relative to this ORF's own best
+            # match, so a dense neighbourhood votes with many neighbours and a thin
+            # one with a few or with exactly one.
+            keep = cs >= max(nn_min, tau * cs[0])
+            nn, vals = cand[keep], cs[keep]
+            n_admitted += len(nn)
+            n_voting += 1
             tot = vals.sum()
             if tot <= 0:
                 continue
@@ -285,12 +326,18 @@ def lane_embed(parquet, index_csv, landmark_dir, channel, floor):
                 np.cumsum(cnt) - cnt, cnt)
             uniq, inv = np.unique(lab_idx[base + within], return_inverse=True)
             votes = np.bincount(inv, weights=np.repeat(w, cnt), minlength=len(uniq))
-            best = int(np.argmax(sim[bi, nn]))
             for j in np.nonzero(votes >= floor)[0]:
                 # intermediate_id names the DONOR neighbour: label transfer IS the
-                # projection, so there is no KO or EC in between.
-                rows.append((q_orf[s+bi], vocab_arr[uniq[j]], ref_orf[nn[best]],
+                # projection, so there is no KO or EC in between. `cs` is sorted
+                # descending, so the donor is the first admitted neighbour.
+                rows.append((q_orf[s+bi], vocab_arr[uniq[j]], ref_orf[nn[0]],
                              float(min(votes[j], 1.0))))
+    print("[gpr] " + channel + ": " + str(len(q_emb)) + " ORFs, " + str(n_refused)
+          + " with no landmark at cosine " + ("%.4f" % nn_min) + " or better (abstain), "
+          + str(n_voting) + " voting on "
+          + ("%.1f" % (n_admitted / n_voting) if n_voting else "0")
+          + " admitted neighbours on average, " + str(len(rows)) + " calls",
+          flush=True)
     df = pd.DataFrame(rows, columns=["orf", "mnxr", "intermediate_id", "raw_score"])
     df["evidence_quality"] = "reviewed"   # the landmarks ARE the bridge's reviewed cut
     return finish(df, channel, "embedding_knn")
@@ -317,8 +364,10 @@ def main():
         lane_deepec("{deepec}", ec_to_mnxr),
         lane_ezpred("{ezpred}", ec_to_mnxr),
         lane_uniref("{uniref}", up_to_mnxr),
-        lane_embed("{pbert_emb}", None, "{landmarks}", "pbert", PBERT_FLOOR),
-        lane_embed("{esmc_emb}", "{esmc_idx}", "{lm_esmc}", "esmc", ESMC_FLOOR),
+        lane_embed("{pbert_emb}", None, "{landmarks}", "pbert", PBERT_FLOOR,
+                   PBERT_NN_MIN, PBERT_TAU, PBERT_K_MAX),
+        lane_embed("{esmc_emb}", "{esmc_idx}", "{lm_esmc}", "esmc", ESMC_FLOOR,
+                   ESMC_NN_MIN, ESMC_TAU, ESMC_K_MAX),
     ]
     gpr = pd.concat(frames, ignore_index=True)
     gpr = gpr[gpr["orf"].isin(set(ids))]

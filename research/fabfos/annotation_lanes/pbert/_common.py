@@ -43,9 +43,18 @@ REAC_PROP = REPO / "data/fabfos/originals/metanetx/4.5/reac_prop.tsv"
 
 L4 = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
 
-# The lane's shipped configuration, from gpr_4lane.py's driver.
-K = 30
-PBERT_FLOOR = 0.20
+# The lane's shipped configuration, READ FROM THE LANE rather than restated. A sweep
+# that reports "the incumbent" against a number the mappers no longer carry is a
+# sweep reporting on nothing.
+import sys as _sys  # noqa: E402
+_sys.path.insert(0, str(REPO / "src/metasmith_libraries/resources/lib"))
+import fabfos_evidence as fe  # noqa: E402
+
+K = fe.PBERT_K_MAX
+PBERT_FLOOR = fe.PBERT_FLOOR
+PBERT_NN_MIN = fe.PBERT_NN_MIN
+PBERT_TAU = fe.PBERT_TAU
+CLEAN_MIN_SCORE = fe.CLEAN_MIN_SCORE
 
 
 def md5(s: str) -> str:
