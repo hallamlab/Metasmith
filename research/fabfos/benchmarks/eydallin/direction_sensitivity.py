@@ -59,12 +59,19 @@ def main():
     p.add_argument("--element", default="C")
     p.add_argument("--taus", type=float, nargs="+",
                    default=[1.0, 3.0, 10.0, 100.0, 1e3, 1e6])
+    p.add_argument("--ratio-cap", type=float, default=None,
+                   help="bound |log10 direction ratio| at this many decades before the "
+                        "graph is built (ecspr.model.build.cap_direction_ratios). The "
+                        "shipped table spans 28.7 decades over a host's reactions and "
+                        "saturates by 6; the arm is tagged so a capped run cannot be "
+                        "mistaken for an uncapped one")
     p.add_argument("--out-dir", type=Path, default=OUT_DIR)
     args = p.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     pairs = load_pairs(bake_pairs.atom_pairs(), element=args.element)
-    base_ratios = load_direction_ratios(bake_pairs.direction_ratios())
+    base_ratios = load_direction_ratios(bake_pairs.direction_ratios(),
+                                        cap=args.ratio_cap)
     host = pd.read_parquet(HOSTS / args.host / "gpr_gem.parquet")
     base_w = {m: 1.0 for m in host.mnxr.dropna().astype(str).unique()}
     gene = host.groupby(host.mnxr.astype(str)).feature_name.apply(
@@ -95,7 +102,8 @@ def main():
 
     df = pd.DataFrame(rows)
     rt = pd.DataFrame(routes)
-    out = args.out_dir / f"direction_sensitivity_{args.host}_{args.element}.tsv"
+    cap = f"_cap{args.ratio_cap:g}" if args.ratio_cap is not None else ""
+    out = args.out_dir / f"direction_sensitivity_{args.host}_{args.element}{cap}.tsv"
     df.to_csv(out, sep="\t", index=False)
     rt.to_csv(out.with_name(out.stem + "_routes.tsv"), sep="\t", index=False)
     print(f"\n[dir] wrote {out} (+ _routes.tsv)", file=sys.stderr)

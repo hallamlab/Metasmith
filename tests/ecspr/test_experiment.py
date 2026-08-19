@@ -289,3 +289,17 @@ def test_results_round_trip_exactly(pairs_path, gpr_path, tmp_path, ext):
     a = df[df.readout == "total"].value.iloc[0]
     b = back[back.readout == "total"].value.iloc[0]
     assert b == a, f"{b!r} != {a!r}"
+
+
+def test_responders_cover_what_they_claim_and_leave_the_rest_as_floor():
+    """The responder set is the smallest one carrying the stated share, and a run of zeros
+    has no responders rather than an arbitrary first one."""
+    import numpy as np
+    from ecspr.model.scoring import responders
+
+    v = np.array([10.0, 5.0, 1.0, 0.5, 0.1, 0.0])
+    keep = responders(v, 0.90)
+    assert v[keep].sum() / v.sum() >= 0.90
+    assert v[responders(v, 0.90) & ~responders(v, 0.5)].size >= 1
+    assert not responders(np.zeros(4)).any()
+    assert responders(v, 1.0).sum() == 5          # the exact zero never joins
