@@ -51,3 +51,75 @@ def test_every_shipping_build_checks_the_engine_stage(verb):
         f"dev.sh {verb} no longer runs _assert_solver_engine; it would build"
         " a shippable artifact with no usable solver engine in it, silently"
     )
+
+
+@pytest.mark.parametrize("verb", ["-ud", "-bs"])
+def test_every_publishing_step_checks_the_engine_inside_the_image(verb):
+    """The staging guard runs before pip, and the damage happens during pip.
+
+    A file staged mode 444 passes `_assert_solver_engine` -- it did not, until
+    that guard learned the exec bit, and it still would if the mode were lost
+    anywhere downstream: an sdist carries 444 through unchanged and a wheel
+    normalises it to 644. Neither runs. So the last gate before something
+    leaves this machine asks the *installed* package which backend it will use,
+    which is the only check downstream of every step that can mangle a mode.
+    """
+    text = DEV_SH.read_text(encoding="utf-8")
+    arm = re.search(rf"^    \{verb}\).*?(?=^    -|\A\Z)", text, re.S | re.M)
+    assert arm is not None, f"dev.sh has no [{verb}] arm any more"
+    assert "_assert_engine_in_image" in arm.group(0), (
+        f"dev.sh {verb} no longer runs _assert_engine_in_image; a published"
+        " image whose engine cannot execute is indistinguishable from a good"
+        " one until someone times a plan"
+    )
+
+
+def test_the_stage_guard_checks_the_executable_bit():
+    """Size and magic bytes say nothing about whether the file can run.
+
+    This is the assertion the 444 checkout walked straight past: four valid
+    ELF/Mach-O binaries of the right size, none of them executable.
+    """
+    text = DEV_SH.read_text(encoding="utf-8")
+    arm = re.search(r"^_assert_solver_engine\(\).*?^\}", text, re.S | re.M)
+    assert arm is not None, "dev.sh has no _assert_solver_engine any more"
+    assert '[ -x "$f" ]' in arm.group(0), (
+        "_assert_solver_engine no longer tests the executable bit; a stage"
+        " that lost its mode passes every other check it makes"
+    )
+
+
+def test_an_engine_is_staged_for_this_platform():
+    """`engine/` is generated, not committed, and nothing else notices its absence.
+
+    Every other engine test in the suite skips when there is no binary, by
+    design -- they are about behaviour, and there is none to test. This one is
+    about the build, so it fails.
+    """
+    found = packaged_engine_path()
+    assert found is not None, (
+        f"no {ENGINE_NAME} staged for this platform in {ENGINE_DIR}."
+        " It is a per-scope build artifact -- build it with:\n"
+        "    ./dev/metasmith.sh -bec   # one time: pull the cross-compile container\n"
+        "    ./dev/metasmith.sh -be    # build all 4 targets and stage them\n"
+        "  or ./dev/metasmith.sh -bel  # host-only, seconds, not shippable"
+    )
+
+
+def test_the_staged_engine_is_executable():
+    """The mode, on the file that is actually there.
+
+    Separate from the test above so the failure names which of the two
+    happened: nothing staged is a build that was not run, a staged file that
+    cannot run is a mode lost between the build and here.
+    """
+    import os
+
+    found = packaged_engine_path()
+    if found is None:
+        pytest.skip("nothing staged; test_an_engine_is_staged_for_this_platform reports that")
+    assert os.access(found, os.X_OK), (
+        f"{found} is mode {oct(found.stat().st_mode & 0o777)} and cannot be"
+        " executed, so every solve in this checkout falls back to the python"
+        " search. Restage it with ./dev/metasmith.sh -be (or chmod +x it)."
+    )

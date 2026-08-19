@@ -67,12 +67,15 @@ from metasmith.python_api import (
     TransformInstanceLibrary,
 )
 
+from .. import refs
 from . import common
 
 DOMAINS = ["fabfos"]
 
-DEFAULT_ATOM_PAIRS = common.DATA_PROCESSED / "metabolism_bake" / "atom_pairs.parquet"
-DEFAULT_DIRECTION_RATIOS = common.DATA_PROCESSED / "metabolism_bake" / "direction.parquet"
+# Relative paths come from the one table in `fabfos.refs`, which the freeze
+# step reads too -- a second copy here would mis-key an entry rather than fail.
+DEFAULT_ATOM_PAIRS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::atom_pairs")[0]
+DEFAULT_DIRECTION_RATIOS = common.DATA_PROCESSED / refs.relpaths_for("ecspr::direction_ratios")[0]
 
 
 @dataclass
@@ -93,8 +96,9 @@ def parse_unit(spec: str) -> Unit:
 
 
 def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
-                  direction_ratios: Path | None, stage: str = "reference"
-                  ) -> tuple[DataInstanceLibrary, dict[str, Path]]:
+                  direction_ratios: Path | None, stage: str = "reference",
+                  use_frozen_refs: bool = True,
+                  ) -> tuple[DataInstanceLibrary, dict[str, Path], "DataInstanceLibrary | None"]:
     lib = common.resolve_library_root()
 
     inputs = DataInstanceLibrary(work / "inputs.xgdb")
@@ -118,10 +122,20 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
              name=f"{unit.name}.conditions.parquet", parents={exp})
 
     stubs: dict[str, Path] = {}
+    frozen = refs.load_frozen_refs(common.DATA_PROCESSED) if use_frozen_refs else None
+    covered = set(frozen.manifest.values()) if frozen is not None else set()
+    overridden = set()
     for dtype, given, default, stem in (
         ("ecspr::atom_pairs", atom_pairs, DEFAULT_ATOM_PAIRS, "atom_pairs"),
         ("ecspr::direction_ratios", direction_ratios, DEFAULT_DIRECTION_RATIOS, "direction"),
     ):
+        # An override is a different file, so its identity is not the recorded one and it
+        # has to be staged; the recorded row is masked out below, or the solver sees two
+        # candidates of one type and picks arbitrarily.
+        if dtype in covered and given is None:
+            continue
+        if dtype in covered:
+            overridden.add(dtype)
         src = given if given is not None else default
         if stage == "copy" and src is not None and Path(src).expanduser().exists():
             _add(Path(src), dtype, name=f"{stem}.parquet")
@@ -131,7 +145,9 @@ def build_inputs(work: Path, *, units: list[Unit], atom_pairs: Path | None,
             stubs[dtype] = path
 
     inputs.Save()
-    return inputs, stubs
+    if frozen is not None:
+        frozen = refs.refs_view(frozen, set(refs.ECSPR_REFS) & covered - overridden)
+    return inputs, stubs, frozen
 
 
 def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
@@ -139,7 +155,7 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
                        agent_env: str | None = None, stage: str = "reference",
                        agent=None, on_inputs=None):
     lib = common.resolve_library_root()
-    inputs, stubs = build_inputs(
+    inputs, stubs, frozen_refs = build_inputs(
         work, units=units, atom_pairs=atom_pairs,
         direction_ratios=direction_ratios, stage=stage,
     )
@@ -149,6 +165,7 @@ def generate_workflow(work: Path, *, units: list[Unit], atom_pairs: Path | None,
     resources = [
         DataInstanceLibrary.Load(lib / "resources" / "env"),
         DataInstanceLibrary.Load(lib / "resources" / "lib"),
+        *([frozen_refs] if frozen_refs is not None else []),
         inputs,
     ]
     transforms = [TransformInstanceLibrary.Load(lib / f"transforms/{d}") for d in DOMAINS]

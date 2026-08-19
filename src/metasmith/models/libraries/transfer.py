@@ -3,10 +3,9 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import yaml
-
 from ...logging import Log
 from ..remote import Logistics, Source
+from ._atomic import write_yaml_atomic
 from .types import DataTypeLibrary, yaml_safe_load
 
 
@@ -37,10 +36,14 @@ class _StoreTransfer:
                 if payload is not None:
                     d["lineage_payload"] = payload.hex()
             return d
-        for _path, _dtype in self.manifest.items():
-            _meta = self.instance_meta.get(_path)
-            if _meta is not None and _meta.get("fork_id") != self.fork_id:
-                self._resolve_instance_meta(_path, _dtype)
+        # A fork id set after the entries were minted leaves every leaf id stale, so what
+        # gets serialized would not be what Get() reports. A frozen library is exempt --
+        # re-deriving one of its ids is exactly the re-hash the freeze exists to stop.
+        if not self.is_frozen:
+            for _path, _dtype in self.manifest.items():
+                _meta = self.instance_meta.get(_path)
+                if _meta is not None and _meta.get("fork_id") != self.fork_id:
+                    self._resolve_instance_meta(_path, _dtype)
         man = {str(k):_pack_instance(k, v) for k, v in self.manifest.items()}
         man = dict(sorted(man.items(), key=lambda t: t[0]))
         packed = dict(
@@ -48,6 +51,11 @@ class _StoreTransfer:
             manifest=man,
             fork_id=self.fork_id,
             remote_src=self.remote_src.Pack() if self.remote_src is not None else None,
+            # None for all but a frozen library, and the filter below drops it
+            # -- so an ordinary index.yml is byte-identical to what it was
+            # before freezing existed, which is what keeps every committed one
+            # loading and keying unchanged.
+            frozen=self._frozen,
         )
         return {k:v for k, v in packed.items() if v is not None}
 
@@ -75,6 +83,13 @@ class _StoreTransfer:
                     "instance_id": v["instance_id"],
                     "origin": v.get("origin", "leaf"),
                     "lineage_payload": payload,
+                    # The library's fork was never round-tripped onto its
+                    # entries, so every leaf of a forked library came back
+                    # looking stale and was re-minted on the first Get() after
+                    # a Load. Pack() re-derives stale entries against the
+                    # current fork before writing, so the ids on disk ARE the
+                    # forked ids and stamping the fork back on is idempotent.
+                    "fork_id": raw.get("fork_id"),
                 }
         lib = cls(
             location=location,
@@ -83,6 +98,7 @@ class _StoreTransfer:
         lib.manifest = manifest
         lib.instance_meta = instance_meta
         lib.fork_id = raw.get("fork_id")
+        lib._frozen = raw.get("frozen")
         remote_src = raw.get("remote_src")
         lib.remote_src = Source.Unpack(remote_src) if remote_src is not None else None
         for k, v in raw["manifest"].items():
@@ -125,6 +141,17 @@ class _StoreTransfer:
         return lib
 
     def Save(self, update_types=True):
+        """Write the index. Refused on a frozen library -- see frozen.py."""
+        self._refuse_if_frozen("Save")
+        self._persist(update_types=update_types)
+
+    def _persist(self, update_types=True):
+        """The write itself, without the refusal.
+
+        Freezing and unfreezing have to write the very index that says the
+        library is frozen, so the refusal lives on the public verb and the
+        mechanics live here. Nothing else should call this.
+        """
         ext = self._metadata_ext
         types_path = self.location/self._path_to_types
         types_path.mkdir(parents=True, exist_ok=True)
@@ -137,11 +164,22 @@ class _StoreTransfer:
         metadata_path.mkdir(parents=True, exist_ok=True)
         index_path = metadata_path/(self._index_name+ext)
         index_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(index_path, "w") as f:
-            yaml.dump(self.Pack(), f)
+        write_yaml_atomic(index_path, self.Pack())
+
+    def _ensure_saved(self, update_types=True):
+        """Persist unless frozen, where the on-disk index is authoritative.
+
+        Staging calls `Save()` as a side effect of preparing a transfer, and a
+        frozen library still has to be stageable. There is nothing to write:
+        by definition its index already describes it.
+        """
+        if self.is_frozen:
+            return
+        self._persist(update_types=update_types)
 
     @classmethod
-    def Load(cls, path: Path|str, check_integrity=False, attach_trace: bool=True):
+    def Load(cls, path: Path|str, check_integrity=False, attach_trace: bool=True,
+             check_frozen_stamps: bool=True):
         path = Path(path)
         ext = cls._metadata_ext
         meta_path = path/cls._path_to_meta
@@ -168,6 +206,12 @@ class _StoreTransfer:
         self = cls.Unpack(location=path, raw=d, dtypes=dtypes, check_integrity=check_integrity)
         self.types = dtypes
         self._calculate_key(_raw_override=d)
+        # `check_frozen_stamps=False` is for the tools that exist to ADJUDICATE a drift --
+        # `metasmith data verify` and `restamp`. Without it the documented remedy is
+        # unreachable exactly when it is needed: the load raises, so the verb that would
+        # report or clear the drift never runs.
+        if check_frozen_stamps:
+            self._verify_frozen_stamps()
         if attach_trace:
             for candidate in (
                 path / "_metasmith" / "trace.jsonl",
@@ -216,7 +260,7 @@ class _StoreTransfer:
         return lib
 
     def PrepTransfer(self, dest: Source, mover: Logistics|None=None):
-        self.Save()
+        self._ensure_saved()
         for p, name, dtype in self.Iterate():
             assert p.is_absolute() or (self.location/p).exists(), f"file not found [{p}]"
         if mover is None:
@@ -270,7 +314,8 @@ class _StoreTransfer:
         lib = cls.Load(dest, check_integrity=False)
         if as_image:
             lib.remote_src = src
-            lib.Save()
+            lib._refuse_if_frozen("LoadFrom(as_image=True)")
+            lib._ensure_saved()
         return lib
 
     def Consolidate(self):
@@ -308,6 +353,11 @@ class _StoreTransfer:
         return _lib
     
     def LocalizeContents(self):
+        # Copies absolute entries INTO the library and rewrites the manifest to
+        # the new paths. On a frozen reference library that would both move
+        # 24 GB and invalidate every recorded id, which is the opposite of what
+        # freezing it was for.
+        self._refuse_if_frozen("LocalizeContents")
         to_move = {}
         for path in self.manifest:
             if not path.is_absolute(): continue

@@ -78,6 +78,60 @@ _assert_real_relays() {
     return 0
 }
 
+# Refuse to publish or convert an image whose installed solver engine will not
+# run. Same shape as the relay check above and for the same reason: the
+# staging-directory guard (`_assert_solver_engine`) sees the files before pip
+# touches them, and the failure this catches happens *during* packaging. A
+# binary staged mode 444 -- which is how it arrived while `engine/` was
+# DVC-tracked -- ships through the sdist as 444 and lands in the wheel as 644,
+# so the guard at -bp passes and the image plans on the python fallback
+# forever. Asking the installed package what it will actually use is the only
+# check downstream of every mode-mangling step, and it is the clean-room
+# verification RELEASE_PROTOCOL.md otherwise asks a human to remember.
+# Set MSM_SKIP_SOLVER_CHECK=1 to override (shared with the staging guard: they
+# are the same claim, checked in two places).
+_assert_engine_in_image() {
+    [ -n "$MSM_SKIP_SOLVER_CHECK" ] && {
+        echo "MSM_SKIP_SOLVER_CHECK set — skipping in-image solver engine check"
+        return 0
+    }
+    local img="$DOCKER_IMAGE:$DOCKER_TAG"
+    echo "checking solver engine in $img"
+    local out rc
+    out=$(docker run --rm --entrypoint sh "$img" -c '
+        python - <<"PY"
+import os, sys
+from metasmith.models.solver_backend import Backend
+from metasmith.models.solver_engine import packaged_engine_path, platform_slot
+p = packaged_engine_path()
+print(f"  slot={platform_slot()}")
+print(f"  path={p}")
+if p is not None:
+    print(f"  mode={oct(os.stat(p).st_mode & 0o777)} exec={os.access(p, os.X_OK)}")
+b = Backend("solve")
+print(f"  backend={b}")
+sys.exit(0 if b == "rust" else 1)
+PY
+    ' 2>&1)
+    rc=$?
+    echo "$out"
+    if [ $rc -ne 0 ]; then
+        echo ""
+        echo "ERROR: the image at $img does not run the solver engine"
+        echo "  It will plan on the python fallback -- correct, and roughly 15x slower."
+        echo ""
+        echo "  Rebuild the engine and the artifacts that carry it:"
+        echo "    $HERE/dev/metasmith.sh -bec   # one time: pull the rust cross-compile container"
+        echo "    $HERE/dev/metasmith.sh -be    # build all 4 targets and stage them"
+        echo "    $HERE/dev/metasmith.sh -bp    # rebuild the sdist"
+        echo "    $HERE/dev/metasmith.sh -bd    # rebuild the image"
+        echo ""
+        echo "  Override (NOT recommended) by setting MSM_SKIP_SOLVER_CHECK=1."
+        return 1
+    fi
+    return 0
+}
+
 # Refuse to bake a stale pip artifact into the image or conda package. dist/ is
 # produced once by -bp and then frozen; -bd re-tags the image from the *live*
 # source tree while installing whatever sdist sits in dist/, and -bc packages
@@ -130,12 +184,20 @@ _assert_solver_engine() {
                 x86_64-darwin:cffaedfe arm64-darwin:cffaedfe; do
         local tgt=${slot%:*} want=${slot##*:}
         local f="$_engine_stage/msm_solver.$tgt"
-        local sz magic ok=yes
+        local sz magic mode ok=yes
         sz=$(stat -c %s "$f" 2>/dev/null || echo 0)
         magic=$(head -c 4 "$f" 2>/dev/null | od -An -tx1 | tr -d " ")
+        mode=$(stat -c %a "$f" 2>/dev/null || echo "---")
         [ "$magic" = "$want" ] || ok=no
         [ "$sz" -gt 100000 ] || ok=no
-        printf "  %-14s size=%-8s magic=%-8s %s\n" "$tgt" "$sz" "${magic:-none}" "$ok"
+        # The exec bit. It is the one way these fail that leaves a perfectly
+        # valid binary in place: DVC-tracking this directory checked it out
+        # mode 444, so every plan in every worktree hit a permission error at
+        # the handshake and silently reverted to the python solver. The mode
+        # follows the file into the artifacts too -- 444 survives an sdist and
+        # normalises to 644 in the wheel, neither of which runs.
+        [ -x "$f" ] || ok=no
+        printf "  %-14s size=%-8s magic=%-8s mode=%-4s %s\n" "$tgt" "$sz" "${magic:-none}" "$mode" "$ok"
         [ "$ok" = "yes" ] || bad="$bad $tgt"
     done
     if [ -n "$bad" ] || [ "$kind" != "cross" ]; then
@@ -360,6 +422,7 @@ case $1 in
     ;;
     -bs) # apptainer image *from docker*
         _assert_real_relays || exit 1
+        _assert_engine_in_image || exit 1
         apptainer build --force $NAME.sif docker-daemon://$DOCKER_IMAGE:$DOCKER_TAG
     ;;
     --update_container)
@@ -390,6 +453,7 @@ case $1 in
         # login and push image to quay.io
         # sudo docker login quay.io
         _assert_real_relays || exit 1
+        _assert_engine_in_image || exit 1
 	    docker push $DOCKER_IMAGE:$DOCKER_TAG
         echo "!!!"
         echo "remember to update the \"latest\" tag"

@@ -60,6 +60,16 @@ class _LeafIdentity:
         return self.instance_meta[path]
 
     def _resolve_instance_meta(self, path: Path, dtype_name: str) -> dict:
+        if self.is_frozen:
+            entry = self.instance_meta.get(path)
+            if entry is None:
+                from .frozen import FrozenLibraryError
+                raise FrozenLibraryError(
+                    f"[{path}] is not recorded in the frozen library at"
+                    f" [{self.location}], and a frozen library will not mint an"
+                    " id. Rebuild and re-freeze it."
+                )
+            return entry
         if path in self.instance_meta:
             entry = self.instance_meta[path]
             if entry.get("fork_id") == self.fork_id:

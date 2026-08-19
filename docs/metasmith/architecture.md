@@ -350,17 +350,6 @@ mksquashfs arguments, so the retry is a different command rather than the same o
 existence test the run command checks. The unpacked sandbox is the genuinely FUSE-free option and by far
 the most expensive, in both bytes and inodes.
 
-**Existence is not evidence, so each arm mounts what it produced before claiming it.** A SIF with
-a corrupt squashfs superblock passes both the existence test and a header-only `sif list`, and
-fails only inside a tool reading its own rootfs, hops away from the pull that caused it;
-`apptainer verify` answers a different question, about signatures biocontainers do not carry. So
-the probe is `apptainer exec <artifact> true`: a pass writes a sibling `.verified` stamp, a
-failure deletes the artifact and falls through to the next rung. The stamp is what makes this
-affordable — the already-materialised test requires artifact *and* stamp, so the cost is one
-container start per image per host rather than per task, and an artifact standing alone is
-mounted once and then either stamped or replaced. **Clear a stamp wherever you clear its
-artifact**, or `assertive` re-pulls into a "verified" claim nothing will re-check.
-
 `Rootfs` (`auto` | `sif` | `sandbox`) is the manual override, declared at `Agent.Deploy` for the
 host's standing tendency and at `StageWorkflow` for one task's steps; precedence falls out of
 absence. The stage-time override reaches *tool* images only — the agent's own image is settled at
